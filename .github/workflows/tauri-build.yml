@@ -4,9 +4,19 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'src-tauri/**'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
   pull_request:
     branches:
       - main
+    paths:
+      - 'src-tauri/**'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
 
 jobs:
   build:

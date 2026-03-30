@@ -33,6 +33,7 @@ jobs:
 
       - name: Type check
         run: npm run type-check
+        if: hashFiles('tsconfig.json') != ''
 
   unit-test:
     name: Unit Tests
