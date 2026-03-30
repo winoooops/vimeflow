@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VIBM | Code Editor</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "tertiary-container": "#c5b2ae",
+            "error-container": "#93000a",
+            "on-secondary-container": "#8fbaff",
+            "outline": "#968e9a",
+            "on-surface-variant": "#cdc3d1",
+            "surface-container-high": "#292839",
+            "surface-container-low": "#1a1a2a",
+            "inverse-on-surface": "#2f2f40",
+            "primary": "#e2c7ff",
+            "surface-dim": "#121221",
+            "on-background": "#e3e0f7",
+            "on-primary-fixed": "#290350",
+            "surface-tint": "#d9b9ff",
+            "error": "#ffb4ab",
+            "background": "#121221",
+            "primary-fixed-dim": "#d9b9ff",
+            "on-surface": "#e3e0f7",
+            "on-secondary": "#003062",
+            "on-tertiary-container": "#524442",
+            "surface-variant": "#333344",
+            "on-secondary-fixed": "#001b3c",
+            "inverse-surface": "#e3e0f7",
+            "surface-bright": "#383849",
+            "surface": "#121221",
+            "on-primary-container": "#57377f",
+            "on-error": "#690005",
+            "on-tertiary-fixed": "#241917",
+            "primary-container": "#cba6f7",
+            "secondary-container": "#124988",
+            "secondary": "#a8c8ff",
+            "inverse-primary": "#704f98",
+            "tertiary": "#e2cdc9",
+            "on-primary-fixed-variant": "#57377f",
+            "surface-container-highest": "#333344",
+            "primary-fixed": "#eedbff",
+            "tertiary-fixed-dim": "#d6c2be",
+            "on-tertiary-fixed-variant": "#514441",
+            "secondary-fixed": "#d5e3ff",
+            "on-secondary-fixed-variant": "#0e4685",
+            "secondary-fixed-dim": "#a8c8ff",
+            "on-error-container": "#ffdad6",
+            "on-primary": "#3f1e66",
+            "outline-variant": "#4a444f",
+            "surface-container": "#1e1e2e",
+            "on-tertiary": "#3a2e2b",
+            "tertiary-fixed": "#f3deda",
+            "surface-container-lowest": "#0d0d1c"
+          },
+          fontFamily: {
+            "headline": ["Manrope"],
+            "body": ["Inter"],
+            "label": ["Inter"],
+            "mono": ["JetBrains Mono"]
+          },
+          borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .syntax-keyword { color: #cba6f7; }
+    .syntax-string { color: #a6e3a1; }
+    .syntax-function { color: #89b4fa; }
+    .syntax-variable { color: #f5e0dc; }
+    .syntax-comment { color: #6c7086; font-style: italic; }
+    .syntax-type { color: #fab387; }
+    .syntax-tag { color: #f38ba8; }
+    .glass-effect { backdrop-filter: blur(16px); }
+  </style>
+</head>
+<body class="bg-background text-on-surface font-body overflow-hidden">
+<!-- Icon Rail (SideNavBar type: icon_rail) -->
+<aside class="w-[48px] h-screen fixed left-0 top-0 flex flex-col items-center py-4 bg-[#1a1a2a]/80 backdrop-blur-xl shadow-[0px_10px_40px_rgba(0,0,0,0.4)] z-50">
+<div class="mb-6 text-[#cba6f7] font-black text-xl">V</div>
+<div class="flex flex-col gap-4 items-center">
+<!-- Active: Current Project -->
+<button class="relative after:content-[''] after:absolute after:left-0 after:w-1 after:h-8 after:bg-[#cba6f7] after:rounded-r-full bg-[#cba6f7]/20 rounded-full p-2 scale-95 transition-transform">
+<span class="material-symbols-outlined text-[#cba6f7]">terminal</span>
+</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] p-2 hover:bg-[#333344]/50 transition-all duration-300">
+<span class="material-symbols-outlined">code</span>
+</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] p-2 hover:bg-[#333344]/50 transition-all duration-300">
+<span class="material-symbols-outlined">dashboard</span>
+</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] p-2 hover:bg-[#333344]/50 transition-all duration-300">
+<span class="material-symbols-outlined">database</span>
+</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] p-2 hover:bg-[#333344]/50 transition-all duration-300 mt-auto">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</aside>
+<!-- Standard Sidebar (SideNavBar type: standard_sidebar) -->
+<aside class="w-[260px] h-screen fixed left-[48px] top-0 border-r border-[#4a444f]/15 bg-[#1a1a2a] flex flex-col p-4 z-40">
+<div class="mb-6">
+<h2 class="text-[#e3e0f7] font-semibold text-sm">Conversations</h2>
+<p class="text-[#cdc3d1] text-[0.75rem] opacity-60">⌘K to search</p>
+</div>
+<nav class="flex flex-col gap-1">
+<button class="text-[#cdc3d1] px-3 py-2 hover:bg-[#1e1e2e]/50 flex items-center gap-3 transition-colors rounded-md group">
+<span class="material-symbols-outlined text-[20px]">chat</span>
+<span class="font-inter text-[0.875rem]">Recent Chats</span>
+</button>
+<button class="text-[#e3e0f7] font-semibold bg-[#1e1e2e] rounded-md px-3 py-2 flex items-center gap-3">
+<span class="material-symbols-outlined text-[20px]">bolt</span>
+<span class="font-inter text-[0.875rem]">Active Sessions</span>
+</button>
+<button class="text-[#cdc3d1] px-3 py-2 hover:bg-[#1e1e2e]/50 flex items-center gap-3 transition-colors rounded-md">
+<span class="material-symbols-outlined text-[20px]">inventory_2</span>
+<span class="font-inter text-[0.875rem]">Archived</span>
+</button>
+<button class="text-[#cdc3d1] px-3 py-2 hover:bg-[#1e1e2e]/50 flex items-center gap-3 transition-colors rounded-md mt-4">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+<span class="font-inter text-[0.875rem]">Settings</span>
+</button>
+</nav>
+<!-- File Explorer (Integrated into sidebar for context) -->
+<div class="mt-8">
+<h3 class="text-[#cdc3d1] text-[0.7rem] uppercase tracking-widest font-mono mb-3 px-3">Project Files</h3>
+<div class="flex flex-col gap-1 px-1">
+<div class="flex items-center gap-2 px-2 py-1 text-primary cursor-pointer hover:bg-surface-variant/30 rounded">
+<span class="material-symbols-outlined text-[16px]">folder_open</span>
+<span class="text-sm">src</span>
+</div>
+<div class="flex items-center gap-2 pl-6 py-1 text-on-surface-variant cursor-pointer hover:bg-surface-variant/30 rounded">
+<span class="material-symbols-outlined text-[16px]">description</span>
+<span class="text-sm">App.tsx</span>
+</div>
+<div class="flex items-center gap-2 pl-6 py-1 text-on-surface-variant cursor-pointer hover:bg-surface-variant/30 rounded">
+<span class="material-symbols-outlined text-[16px]">description</span>
+<span class="text-sm">utils.ts</span>
+</div>
+</div>
+</div>
+</aside>
+<!-- TopAppBar (type: tabbed) -->
+<header class="fixed top-0 left-0 right-0 h-14 pl-[308px] pr-4 bg-[#121221]/90 backdrop-blur-md border-b border-[#4a444f]/15 flex items-center justify-between z-30">
+<div class="flex items-center gap-8 h-full">
+<div class="text-[#cba6f7] font-bold text-lg">VIBM</div>
+<nav class="flex items-center h-full gap-2">
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] transition-all px-4 h-full flex items-center">Chat</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] transition-all px-4 h-full flex items-center">Files</button>
+<!-- ACTIVE TAB: Editor -->
+<button class="text-[#e2c7ff] border-b-2 border-[#cba6f7] font-semibold px-4 h-full flex items-center">Editor</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] transition-all px-4 h-full flex items-center">Diff</button>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative group">
+<span class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors cursor-pointer">notifications</span>
+<div class="absolute -top-1 -right-1 w-2 h-2 bg-error rounded-full"></div>
+</div>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest border border-outline-variant/30 overflow-hidden flex items-center justify-center">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="portrait of a professional male software engineer with a neutral expression and soft studio lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBAIVQj2OPT-bkpJQKCdL5DBoWv7tdukSZ0FtZSowclGHqO6jH3Sg42awtooTvn6EbAT7_IfLKptOcHdvpAy-ipa4rFC4CAy7Bj2_cNq8LZOYpSuboa0rXfQpagTHe02ktoltbFsrmvpF-ybRvUy3qtrHLbKDE4trNHqQ7HTDpJhBGlxN7s1Y-UiQdY5fr4yebrij5tF8bUkTQCyZu1iM3OI7dFk4gYe4XzmHCxniBmj-h1fiOYen80qWIXxvqcBWZxBGXuUQgSQ78"/>
+</div>
+</div>
+</header>
+<!-- Context Panel (SideNavBar type: context_panel) -->
+<aside class="w-[280px] h-screen fixed right-0 top-0 border-l border-[#4a444f]/15 bg-[#1a1a2a] flex flex-col p-4 z-40">
+<div class="mb-6">
+<h2 class="text-secondary font-bold font-mono text-[0.75rem]">Agent Status</h2>
+<p class="text-[#cdc3d1] font-mono text-[0.7rem] uppercase">GPT-4o Active</p>
+</div>
+<div class="space-y-6">
+<section>
+<h3 class="text-on-surface-variant text-[0.65rem] font-mono uppercase mb-3">Model Info</h3>
+<div class="bg-surface-container rounded-lg p-3 space-y-2 border border-[#4a444f]/10">
+<div class="flex justify-between items-center">
+<span class="text-[0.7rem] text-on-surface-variant">Context Window</span>
+<span class="text-[0.7rem] text-secondary">128k</span>
+</div>
+<div class="w-full h-1 bg-surface-variant rounded-full">
+<div class="h-full w-2/3 bg-gradient-to-r from-secondary to-secondary-container rounded-full"></div>
+</div>
+</div>
+</section>
+<section>
+<h3 class="text-on-surface-variant text-[0.65rem] font-mono uppercase mb-3">Recent Activity</h3>
+<div class="space-y-3">
+<div class="flex gap-3">
+<span class="material-symbols-outlined text-primary text-[18px]">history</span>
+<div>
+<p class="text-[0.75rem] text-on-surface">Updated App.tsx</p>
+<p class="text-[0.65rem] text-on-surface-variant">2 mins ago</p>
+</div>
+</div>
+<div class="flex gap-3">
+<span class="material-symbols-outlined text-secondary text-[18px]">memory</span>
+<div>
+<p class="text-[0.75rem] text-on-surface">Indexing Workspace</p>
+<p class="text-[0.65rem] text-on-surface-variant">10 mins ago</p>
+</div>
+</div>
+</div>
+</section>
+</div>
+</aside>
+<!-- Main Canvas: Integrated Code Editor -->
+<main class="fixed top-14 left-[308px] right-[280px] bottom-6 bg-surface overflow-hidden flex flex-col">
+<!-- Editor Tabs -->
+<div class="h-10 bg-surface-container-low flex items-center">
+<div class="flex h-full">
+<!-- App.tsx (Active) -->
+<div class="bg-surface flex items-center px-4 h-full border-t-2 border-primary-container relative group">
+<span class="material-symbols-outlined text-primary text-[16px] mr-2">description</span>
+<span class="text-xs text-on-surface font-medium">App.tsx</span>
+<span class="material-symbols-outlined text-[14px] ml-3 text-on-surface-variant hover:text-error transition-colors cursor-pointer">close</span>
+</div>
+<!-- utils.ts -->
+<div class="flex items-center px-4 h-full border-r border-[#4a444f]/10 hover:bg-surface-variant/20 transition-colors group">
+<span class="material-symbols-outlined text-secondary text-[16px] mr-2">description</span>
+<span class="text-xs text-on-surface-variant group-hover:text-on-surface">utils.ts</span>
+<span class="material-symbols-outlined text-[14px] ml-3 text-on-surface-variant/0 group-hover:text-on-surface-variant/100 hover:text-error transition-colors cursor-pointer">close</span>
+</div>
+<!-- types.ts -->
+<div class="flex items-center px-4 h-full border-r border-[#4a444f]/10 hover:bg-surface-variant/20 transition-colors group">
+<span class="material-symbols-outlined text-secondary text-[16px] mr-2">description</span>
+<span class="text-xs text-on-surface-variant group-hover:text-on-surface">types.ts</span>
+<span class="material-symbols-outlined text-[14px] ml-3 text-on-surface-variant/0 group-hover:text-on-surface-variant/100 hover:text-error transition-colors cursor-pointer">close</span>
+</div>
+</div>
+</div>
+<!-- Code View Area -->
+<div class="flex-1 flex overflow-hidden relative">
+<!-- Line Numbers Gutter -->
+<div class="w-12 bg-surface-container-lowest text-on-surface-variant/30 font-mono text-[11px] text-right pr-3 pt-4 select-none leading-6">
+<div>36</div><div>37</div><div>38</div><div>39</div><div>40</div><div>41</div>
+<div class="text-primary-container/60 bg-primary-container/5">42</div>
+<div>43</div><div>44</div><div>45</div><div>46</div><div>47</div><div>48</div><div>49</div><div>50</div>
+</div>
+<!-- Editor Content -->
+<div class="flex-1 bg-surface font-mono text-[13px] leading-6 pt-4 px-4 overflow-auto scrollbar-hide">
+<div class="whitespace-pre"><span class="syntax-keyword">import</span> React, { useState, useEffect } <span class="syntax-keyword">from</span> <span class="syntax-string">'react'</span>;</div>
+<div class="whitespace-pre"><span class="syntax-keyword">import</span> { DashboardCard } <span class="syntax-keyword">from</span> <span class="syntax-string">'./components/ui'</span>;</div>
+<div class="whitespace-pre"><span class="syntax-keyword">import</span> { useAnalytics } <span class="syntax-keyword">from</span> <span class="syntax-string">'./hooks'</span>;</div>
+<div class="whitespace-pre"></div>
+<div class="whitespace-pre"><span class="syntax-comment">// Main Application Component for the VIBM Dashboard</span></div>
+<div class="whitespace-pre"><span class="syntax-keyword">export const</span> <span class="syntax-function">App</span>: <span class="syntax-type">React.FC</span> = () =&gt; {</div>
+<div class="whitespace-pre"> <span class="syntax-keyword">const</span> [status, setStatus] = <span class="syntax-function">useState</span>&lt;<span class="syntax-type">string</span>&gt;(<span class="syntax-string">'idle'</span>);</div>
+<div class="whitespace-pre"> <span class="syntax-keyword">const</span> { data, loading } = <span class="syntax-function">useAnalytics</span>();</div>
+<div class="whitespace-pre"></div>
+<div class="whitespace-pre"> <span class="syntax-function">useEffect</span>(() =&gt; {</div>
+<div class="whitespace-pre"> <span class="syntax-keyword">if</span> (loading) <span class="syntax-function">setStatus</span>(<span class="syntax-string">'fetching'</span>);</div>
+<div class="whitespace-pre"> <span class="syntax-keyword">else</span> <span class="syntax-function">setStatus</span>(<span class="syntax-string">'ready'</span>);</div>
+<div class="whitespace-pre">  }, [loading]);</div>
+<div class="whitespace-pre"></div>
+<div class="whitespace-pre bg-primary-container/10 relative"> <span class="syntax-keyword">return</span> (<span class="bg-primary-container/80 w-[2px] h-[18px] inline-block absolute left-[122px] top-[4px] shadow-[0_0_8px_rgba(203,166,247,0.8)]"></span></div>
+<div class="whitespace-pre">    &lt;<span class="syntax-tag">div</span> <span class="syntax-variable">className</span>=<span class="syntax-string">"p-8 space-y-4"</span>&gt;</div>
+<div class="whitespace-pre">      &lt;<span class="syntax-tag">header</span>&gt;</div>
+<div class="whitespace-pre">        &lt;<span class="syntax-tag">h1</span>&gt;VIBM Dashboard&lt;/<span class="syntax-tag">h1</span>&gt;</div>
+<div class="whitespace-pre">      &lt;/<span class="syntax-tag">header</span>&gt;</div>
+<div class="whitespace-pre">      &lt;<span class="syntax-tag">section</span> <span class="syntax-variable">className</span>=<span class="syntax-string">"grid grid-cols-3 gap-6"</span>&gt;</div>
+<div class="whitespace-pre">        {data.<span class="syntax-function">map</span>(item =&gt; (</div>
+<div class="whitespace-pre">          &lt;<span class="syntax-tag">DashboardCard</span> <span class="syntax-variable">key</span>={item.id} <span class="syntax-variable">title</span>={item.title} /&gt;</div>
+<div class="whitespace-pre">        ))}</div>
+<div class="whitespace-pre">      &lt;/<span class="syntax-tag">section</span>&gt;</div>
+<div class="whitespace-pre">    &lt;/<span class="syntax-tag">div</span>&gt;</div>
+<div class="whitespace-pre">  );</div>
+<div class="whitespace-pre">};</div>
+</div>
+<!-- Minimap Overlay -->
+<div class="w-[80px] bg-surface-container-low/40 border-l border-[#4a444f]/10 pt-4 px-1 select-none flex flex-col gap-[2px]">
+<div class="h-[2px] w-full bg-primary/20"></div>
+<div class="h-[2px] w-3/4 bg-on-surface-variant/10"></div>
+<div class="h-[2px] w-1/2 bg-on-surface-variant/10"></div>
+<div class="h-[2px] w-full bg-surface-variant"></div>
+<div class="h-[2px] w-4/5 bg-on-surface-variant/10"></div>
+<div class="h-[2px] w-full bg-primary/20"></div>
+<div class="h-[2px] w-full bg-on-surface-variant/10"></div>
+<div class="h-[2px] w-full bg-primary/20"></div>
+<!-- Active box shadow for viewport -->
+<div class="absolute top-10 left-1 right-1 h-32 bg-on-surface/5 border border-on-surface/10 rounded-sm"></div>
+<div class="h-[2px] w-2/3 bg-on-surface-variant/10"></div>
+<div class="h-[2px] w-full bg-primary/20"></div>
+<div class="h-[2px] w-3/4 bg-on-surface-variant/10"></div>
+</div>
+</div>
+</main>
+<!-- Footer Status Bar -->
+<footer class="fixed bottom-0 left-[308px] right-[280px] h-6 bg-[#1a1a2a] border-t border-[#4a444f]/15 flex items-center justify-between px-4 z-30 font-jetbrains-mono text-[0.75rem] uppercase tracking-wider">
+<div class="flex items-center">
+<span class="bg-[#cba6f7] text-[#121221] px-2 font-bold mr-3">-- NORMAL --</span>
+<span class="text-[#cdc3d1] hover:bg-[#333344] px-3 cursor-pointer">App.tsx</span>
+</div>
+<div class="flex items-center">
+<span class="text-[#cdc3d1] px-3 border-r border-[#4a444f]/30">Ln 42, Col 12</span>
+<span class="text-[#cdc3d1] px-3 border-r border-[#4a444f]/30">UTF-8</span>
+<span class="text-[#cdc3d1] px-3">TypeScript</span>
+</div>
+</footer>
+</body></html>

@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Manrope:wght@600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary-container": "#cba6f7",
+            "error": "#ffb4ab",
+            "tertiary-fixed-dim": "#d6c2be",
+            "on-secondary": "#003062",
+            "surface-container": "#1e1e2e",
+            "inverse-on-surface": "#2f2f40",
+            "inverse-primary": "#704f98",
+            "secondary-container": "#124988",
+            "surface-dim": "#121221",
+            "error-container": "#93000a",
+            "secondary-fixed": "#d5e3ff",
+            "inverse-surface": "#e3e0f7",
+            "on-tertiary-fixed": "#241917",
+            "on-surface": "#e3e0f7",
+            "on-primary-fixed-variant": "#57377f",
+            "surface-container-low": "#1a1a2a",
+            "on-secondary-fixed": "#001b3c",
+            "on-tertiary": "#3a2e2b",
+            "surface-container-high": "#292839",
+            "on-error": "#690005",
+            "on-secondary-container": "#8fbaff",
+            "tertiary-fixed": "#f3deda",
+            "secondary-fixed-dim": "#a8c8ff",
+            "primary-fixed-dim": "#d9b9ff",
+            "surface-container-highest": "#333344",
+            "on-tertiary-fixed-variant": "#514441",
+            "secondary": "#a8c8ff",
+            "background": "#121221",
+            "on-primary-container": "#57377f",
+            "surface-variant": "#333344",
+            "surface-container-lowest": "#0d0d1c",
+            "on-surface-variant": "#cdc3d1",
+            "on-primary": "#3f1e66",
+            "on-primary-fixed": "#290350",
+            "surface-bright": "#383849",
+            "outline": "#968e9a",
+            "on-tertiary-container": "#524442",
+            "primary-fixed": "#eedbff",
+            "tertiary": "#e2cdc9",
+            "surface": "#121221",
+            "on-error-container": "#ffdad6",
+            "outline-variant": "#4a444f",
+            "tertiary-container": "#c5b2ae",
+            "surface-tint": "#d9b9ff",
+            "on-secondary-fixed-variant": "#0e4685",
+            "primary": "#e2c7ff",
+            "on-background": "#e3e0f7"
+          },
+          fontFamily: {
+            "headline": ["Manrope"],
+            "body": ["Inter"],
+            "label": ["JetBrains Mono"]
+          },
+          borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .diff-added { background-color: rgba(166, 227, 161, 0.15); }
+    .diff-removed { background-color: rgba(243, 139, 168, 0.15); }
+    .diff-highlight-added { background-color: rgba(166, 227, 161, 0.35); border-radius: 2px; }
+    .diff-highlight-removed { background-color: rgba(243, 139, 168, 0.35); border-radius: 2px; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #333344; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #4a444f; }
+  </style>
+</head>
+<body class="bg-background text-on-surface font-body overflow-hidden">
+<!-- Icon Rail (Shared Component) -->
+<aside class="w-[48px] h-screen fixed left-0 top-0 flex flex-col items-center py-4 z-50 bg-[#1a1a2a]/80 backdrop-blur-xl shadow-[0px_10px_40px_rgba(0,0,0,0.4)]">
+<div class="mb-8 text-[#cba6f7] font-black text-xl">V</div>
+<nav class="flex flex-col gap-4 items-center">
+<button class="relative after:content-[''] after:absolute after:left-0 after:w-1 after:h-8 after:bg-[#cba6f7] after:rounded-r-full bg-[#cba6f7]/20 rounded-full p-2 text-[#cba6f7] transition-transform scale-95 active:scale-90">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] p-2 transition-colors hover:bg-[#333344]/50 rounded-full transition-transform scale-95 active:scale-90">
+<span class="material-symbols-outlined" data-icon="code">code</span>
+</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] p-2 transition-colors hover:bg-[#333344]/50 rounded-full transition-transform scale-95 active:scale-90">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] p-2 transition-colors hover:bg-[#333344]/50 rounded-full transition-transform scale-95 active:scale-90">
+<span class="material-symbols-outlined" data-icon="database">database</span>
+</button>
+<div class="mt-auto">
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] p-2 transition-colors hover:bg-[#333344]/50 rounded-full transition-transform scale-95 active:scale-90">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+</div>
+</nav>
+</aside>
+<!-- Standard Sidebar (Shared Component) -->
+<aside class="w-[260px] h-screen fixed left-[48px] top-0 border-r border-[#4a444f]/15 bg-[#1a1a2a] z-40 flex flex-col p-4">
+<header class="mb-6 px-3">
+<h2 class="text-[#e3e0f7] font-semibold text-sm">Conversations</h2>
+<p class="text-[#cdc3d1] text-xs mt-1">⌘K to search</p>
+</header>
+<nav class="flex flex-col gap-1">
+<div class="text-[#cdc3d1] px-3 py-2 hover:bg-[#1e1e2e]/50 rounded-md transition-colors flex items-center gap-3">
+<span class="material-symbols-outlined text-sm" data-icon="chat">chat</span>
+<span class="text-[0.875rem]">Recent Chats</span>
+</div>
+<div class="text-[#e3e0f7] font-semibold bg-[#1e1e2e] rounded-md px-3 py-2 flex items-center gap-3">
+<span class="material-symbols-outlined text-sm" data-icon="bolt">bolt</span>
+<span class="text-[0.875rem]">Active Sessions</span>
+</div>
+<div class="text-[#cdc3d1] px-3 py-2 hover:bg-[#1e1e2e]/50 rounded-md transition-colors flex items-center gap-3">
+<span class="material-symbols-outlined text-sm" data-icon="inventory_2">inventory_2</span>
+<span class="text-[0.875rem]">Archived</span>
+</div>
+<div class="text-[#cdc3d1] px-3 py-2 hover:bg-[#1e1e2e]/50 rounded-md transition-colors flex items-center gap-3 mt-4">
+<span class="material-symbols-outlined text-sm" data-icon="settings">settings</span>
+<span class="text-[0.875rem]">Settings</span>
+</div>
+</nav>
+<!-- File Explorer Context for Diff -->
+<div class="mt-8 border-t border-[#4a444f]/15 pt-6 px-3">
+<span class="text-[0.7rem] font-bold text-[#cba6f7] uppercase tracking-wider mb-4 block">Changed Files</span>
+<div class="space-y-3">
+<div class="flex items-center justify-between text-xs bg-surface-container-highest/40 p-2 rounded-lg">
+<div class="flex items-center gap-2 truncate">
+<span class="material-symbols-outlined text-[1rem] text-primary" data-icon="description">description</span>
+<span class="truncate text-on-surface">src/App.tsx</span>
+</div>
+<div class="flex gap-1 font-label">
+<span class="text-[#a6e3a1]">+12</span>
+<span class="text-[#f38ba8]">-3</span>
+</div>
+</div>
+<div class="flex items-center justify-between text-xs p-2 hover:bg-surface-container-highest/20 rounded-lg transition-colors cursor-pointer">
+<div class="flex items-center gap-2 truncate">
+<span class="material-symbols-outlined text-[1rem] text-secondary" data-icon="style">style</span>
+<span class="truncate text-on-surface-variant">styles/main.css</span>
+</div>
+<div class="flex gap-1 font-label">
+<span class="text-[#a6e3a1]">+4</span>
+<span class="text-[#f38ba8]">-0</span>
+</div>
+</div>
+</div>
+</div>
+</aside>
+<!-- Top App Bar (Shared Component) -->
+<header class="fixed top-0 left-0 w-full h-14 pl-[308px] pr-4 bg-[#121221]/90 backdrop-blur-md border-b border-[#4a444f]/15 flex items-center justify-between z-30">
+<div class="flex items-center gap-8">
+<h1 class="text-[#cba6f7] font-bold text-lg font-headline">VIBM</h1>
+<nav class="flex gap-2">
+<a class="text-[#cdc3d1] hover:text-[#e3e0f7] pb-2 px-4 transition-all duration-400 font-headline headline-sm" href="#">Chat</a>
+<a class="text-[#cdc3d1] hover:text-[#e3e0f7] pb-2 px-4 transition-all duration-400 font-headline headline-sm" href="#">Files</a>
+<a class="text-[#cdc3d1] hover:text-[#e3e0f7] pb-2 px-4 transition-all duration-400 font-headline headline-sm" href="#">Editor</a>
+<a class="text-[#e2c7ff] border-b-2 border-[#cba6f7] pb-2 px-4 transition-all duration-400 font-headline headline-sm" href="#">Diff</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 bg-surface-container-highest/30 px-3 py-1.5 rounded-full border border-outline-variant/10">
+<span class="material-symbols-outlined text-[1rem] text-secondary" data-icon="search">search</span>
+<input class="bg-transparent border-none outline-none text-xs text-on-surface-variant w-32 focus:w-48 transition-all" placeholder="Search diff..." type="text"/>
+</div>
+<button class="text-[#cdc3d1] hover:text-white transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<img alt="Agent Status" class="w-8 h-8 rounded-full border-2 border-[#cba6f7]/30" data-alt="Close-up professional headshot of a person with friendly expression, soft studio lighting, high resolution" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCjN3PgVtYquJ8WEGyL6-KHV3Y03WybZWRoTosXeedyPWlmW0hoGZ2j8MLRJtmmTADQFzjxEbLS8vIjAHGPP11_ys4n9Fbo9JtlCcwzJV6Wsy2ATKBQ_T1LnoyRG-snVHq_jLJslE6dLJddXkqnJxdAc1eJxkSCm6IeI-EpS5nbvP6xL6mm-TYNGTNjsYj1L8fu5_3RK8wqud6cRH88Yd-Rx25mUmHru9QjJqnz3Ot74BEB4A9WuprqFUFcyfRIwoHu76IUTnIGuWY"/>
+</div>
+</header>
+<!-- Context Panel (Shared Component - Modified for Git Info) -->
+<aside class="w-[280px] h-screen fixed right-0 top-0 border-l border-[#4a444f]/15 bg-[#1a1a2a] z-40 flex flex-col">
+<div class="p-6">
+<header class="mb-6">
+<h3 class="font-headline text-on-surface font-bold text-lg">Agent Status</h3>
+<p class="font-label text-secondary text-[0.75rem]">GPT-4o Active</p>
+</header>
+<div class="space-y-6">
+<!-- Commit Info Section -->
+<div class="bg-surface-container rounded-xl p-4 shadow-sm">
+<div class="flex items-center gap-2 mb-3">
+<span class="material-symbols-outlined text-primary-container text-[1.2rem]" data-icon="history">history</span>
+<span class="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Commit Info</span>
+</div>
+<div class="flex flex-col gap-2">
+<code class="font-label text-[0.75rem] text-secondary bg-surface-container-highest px-2 py-1 rounded w-max">#a7f23c</code>
+<p class="text-sm font-medium leading-snug">refactor: optimize rendering loop in core engine</p>
+<div class="flex items-center gap-2 mt-2">
+<img class="w-5 h-5 rounded-full" data-alt="portrait of a focused software engineer in a modern workspace, natural lighting, high detail" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA6144LZ80SAcaEYTc8tv-aBBaAgPIeWDq21hzYT44BFpG-hB0YaMjRT9ZGJfpEe73zUFxVpTVi95_OK-PxlQgRcSb1fYIaQlPXYFt214H6_Eng0sJZBcFK2TGkXd9koIIMA9xPhMmeGbuHSNXmBd1o44TWuN2VaQMPLgqX6xNXtwNotCma_ZyxaVgYxeMjF8sDXpHSGUt5seKvMAEN9AAdr76dEENGiv_6bdNM9zHk2N7f7HeWaCV1ut7BHFR2EHM-sScosT46vlE"/>
+<span class="text-xs text-on-surface-variant">Alex Rivera · 2h ago</span>
+</div>
+</div>
+</div>
+<!-- Progress/Resources -->
+<div class="space-y-4">
+<div>
+<div class="flex justify-between text-[0.75rem] font-label mb-2">
+<span class="text-on-surface-variant">Context Memory</span>
+<span class="text-secondary">84%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-secondary to-secondary-container" style="width: 84%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-[0.75rem] font-label mb-2">
+<span class="text-on-surface-variant">Tokens Processed</span>
+<span class="text-primary-container">1.2M</span>
+</div>
+<div class="h-1.5 w-full bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-primary to-primary-container" style="width: 65%"></div>
+</div>
+</div>
+</div>
+<div class="pt-4 border-t border-[#4a444f]/15">
+<button class="w-full py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary font-bold rounded-lg text-sm transition-transform active:scale-95 shadow-lg shadow-primary/20">
+            Submit Review
+          </button>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas: Side-by-Side Diff Viewer -->
+<main class="ml-[308px] mr-[280px] mt-14 h-[calc(100vh-3.5rem)] bg-background flex flex-col p-6 gap-4">
+<!-- Action Bar -->
+<section class="flex items-center justify-between bg-surface-container-low/50 backdrop-blur-sm p-3 rounded-xl border border-outline-variant/10">
+<div class="flex items-center gap-4">
+<div class="flex bg-surface-container-highest rounded-lg p-1">
+<button class="px-3 py-1 text-xs font-medium rounded-md bg-surface-container text-on-surface shadow-sm">Side-by-side</button>
+<button class="px-3 py-1 text-xs font-medium rounded-md text-on-surface-variant hover:text-on-surface transition-colors">Unified</button>
+</div>
+<div class="h-6 w-px bg-outline-variant/20 mx-2"></div>
+<div class="flex items-center gap-2">
+<button class="p-1.5 hover:bg-surface-container-highest rounded-md transition-colors text-on-surface-variant">
+<span class="material-symbols-outlined text-[1.2rem]" data-icon="arrow_upward">arrow_upward</span>
+</button>
+<button class="p-1.5 hover:bg-surface-container-highest rounded-md transition-colors text-on-surface-variant">
+<span class="material-symbols-outlined text-[1.2rem]" data-icon="arrow_downward">arrow_downward</span>
+</button>
+<span class="text-xs font-label text-on-surface-variant ml-2">2 of 14 changes</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="px-4 py-1.5 text-xs font-bold text-on-surface hover:bg-surface-container-highest transition-colors rounded-lg border border-outline-variant/20">Discard</button>
+<button class="px-4 py-1.5 text-xs font-bold bg-surface-bright text-on-surface hover:bg-primary-container/20 hover:text-primary transition-all rounded-lg">Stage Hunk</button>
+</div>
+</section>
+<!-- Code Diff Container -->
+<section class="flex-grow grid grid-cols-2 gap-px bg-outline-variant/15 rounded-xl overflow-hidden shadow-2xl">
+<!-- Left Pane: Before -->
+<div class="bg-surface-container overflow-auto flex flex-col">
+<div class="bg-surface-container-highest/50 px-4 py-2 flex items-center gap-2 sticky top-0 z-10">
+<span class="material-symbols-outlined text-sm text-on-error" data-icon="history">history</span>
+<span class="text-[0.75rem] font-bold text-on-surface-variant">Before: src/App.tsx</span>
+</div>
+<div class="font-label text-[0.8rem] leading-relaxed py-4">
+<div class="flex hover:bg-surface-bright/20 transition-colors">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">102</div>
+<div class="whitespace-pre text-on-surface-variant">  const handleRender = () =&gt; {</div>
+</div>
+<div class="flex hover:bg-surface-bright/20 transition-colors">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">103</div>
+<div class="whitespace-pre text-on-surface-variant">    const start = performance.now();</div>
+</div>
+<div class="flex diff-removed">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">104</div>
+<div class="whitespace-pre text-on-surface"><span class="text-on-error-container">-</span>   executeLegacyLoop(data, (res) =&gt; {</div>
+</div>
+<div class="flex diff-removed">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">105</div>
+<div class="whitespace-pre text-on-surface"><span class="text-on-error-container">-</span> <span class="diff-highlight-removed">processSync</span>(res);</div>
+</div>
+<div class="flex diff-removed">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">106</div>
+<div class="whitespace-pre text-on-surface"><span class="text-on-error-container">-</span>     updateUI(res);</div>
+</div>
+<div class="flex hover:bg-surface-bright/20 transition-colors">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">107</div>
+<div class="whitespace-pre text-on-surface-variant">    });</div>
+</div>
+<div class="flex hover:bg-surface-bright/20 transition-colors">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">108</div>
+<div class="whitespace-pre text-on-surface-variant">  };</div>
+</div>
+<div class="flex hover:bg-surface-bright/20 transition-colors">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">109</div>
+<div class="whitespace-pre text-on-surface-variant"></div>
+</div>
+</div>
+</div>
+<!-- Right Pane: After -->
+<div class="bg-surface-container overflow-auto flex flex-col">
+<div class="bg-surface-container-highest/50 px-4 py-2 flex items-center gap-2 sticky top-0 z-10">
+<span class="material-symbols-outlined text-sm text-[#a6e3a1]" data-icon="edit">edit</span>
+<span class="text-[0.75rem] font-bold text-on-surface-variant">After: src/App.tsx</span>
+</div>
+<div class="font-label text-[0.8rem] leading-relaxed py-4 border-l border-outline-variant/10">
+<div class="flex hover:bg-surface-bright/20 transition-colors">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">102</div>
+<div class="whitespace-pre text-on-surface-variant">  const handleRender = () =&gt; {</div>
+</div>
+<div class="flex hover:bg-surface-bright/20 transition-colors">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">103</div>
+<div class="whitespace-pre text-on-surface-variant">    const start = performance.now();</div>
+</div>
+<div class="flex diff-added">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">104</div>
+<div class="whitespace-pre text-on-surface"><span class="text-[#a6e3a1]">+</span>   await <span class="text-[#cba6f7]">engine</span>.processAsync(data);</div>
+</div>
+<div class="flex diff-added">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">105</div>
+<div class="whitespace-pre text-on-surface"><span class="text-[#a6e3a1]">+</span> <span class="diff-highlight-added">notifyAgent</span>('Render optimized');</div>
+</div>
+<div class="flex diff-added">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">106</div>
+<div class="whitespace-pre text-on-surface-variant"><span class="text-transparent">+</span> </div>
+</div>
+<div class="flex hover:bg-surface-bright/20 transition-colors">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">107</div>
+<div class="whitespace-pre text-on-surface-variant">    console.log(`Duration: ${performance.now() - start}ms`);</div>
+</div>
+<div class="flex hover:bg-surface-bright/20 transition-colors">
+<div class="w-12 flex-shrink-0 text-right pr-4 text-on-surface-variant/40 select-none">108</div>
+<div class="whitespace-pre text-on-surface-variant">  };</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Floating Legend (Glassmorphism) -->
+<div class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-surface-container-high/60 backdrop-blur-xl px-6 py-3 rounded-full border border-outline-variant/20 shadow-2xl flex gap-6 items-center z-50">
+<div class="flex items-center gap-2">
+<div class="w-3 h-3 rounded-full bg-[#a6e3a1]/60"></div>
+<span class="text-[0.7rem] font-bold text-on-surface uppercase tracking-wider">Added</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="w-3 h-3 rounded-full bg-[#f38ba8]/60"></div>
+<span class="text-[0.7rem] font-bold text-on-surface uppercase tracking-wider">Removed</span>
+</div>
+<div class="w-px h-4 bg-outline-variant/30"></div>
+<div class="flex items-center gap-2 text-on-surface-variant text-[0.7rem] italic">
+<span class="material-symbols-outlined text-[0.9rem]" data-icon="mouse">mouse</span>
+        Right-click line to stage
+      </div>
+</div>
+</main>
+</body></html>

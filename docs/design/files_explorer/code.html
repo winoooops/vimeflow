@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VIBM - Files Explorer</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@700;800;900&amp;family=JetBrains+Mono:wght@400;500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "tertiary-container": "#c5b2ae",
+            "on-primary": "#3f1e66",
+            "primary-fixed-dim": "#d9b9ff",
+            "inverse-primary": "#704f98",
+            "on-surface-variant": "#cdc3d1",
+            "on-primary-fixed-variant": "#57377f",
+            "surface-container": "#1e1e2e",
+            "error": "#ffb4ab",
+            "surface": "#121221",
+            "on-secondary-container": "#8fbaff",
+            "on-tertiary-fixed-variant": "#514441",
+            "surface-container-low": "#1a1a2a",
+            "secondary": "#a8c8ff",
+            "outline-variant": "#4a444f",
+            "outline": "#968e9a",
+            "inverse-on-surface": "#2f2f40",
+            "on-tertiary": "#3a2e2b",
+            "surface-tint": "#d9b9ff",
+            "on-secondary-fixed": "#001b3c",
+            "surface-variant": "#333344",
+            "surface-container-lowest": "#0d0d1c",
+            "error-container": "#93000a",
+            "surface-container-highest": "#333344",
+            "surface-dim": "#121221",
+            "on-background": "#e3e0f7",
+            "on-secondary": "#003062",
+            "on-tertiary-container": "#524442",
+            "surface-container-high": "#292839",
+            "on-error": "#690005",
+            "background": "#121221",
+            "secondary-fixed-dim": "#a8c8ff",
+            "primary-container": "#cba6f7",
+            "on-primary-container": "#57377f",
+            "tertiary": "#e2cdc9",
+            "tertiary-fixed-dim": "#d6c2be",
+            "secondary-container": "#124988",
+            "on-primary-fixed": "#290350",
+            "inverse-surface": "#e3e0f7",
+            "primary": "#e2c7ff",
+            "on-secondary-fixed-variant": "#0e4685",
+            "primary-fixed": "#eedbff",
+            "surface-bright": "#383849",
+            "secondary-fixed": "#d5e3ff",
+            "tertiary-fixed": "#f3deda",
+            "on-surface": "#e3e0f7",
+            "on-tertiary-fixed": "#241917",
+            "on-error-container": "#ffdad6"
+          },
+          fontFamily: {
+            "headline": ["Manrope"],
+            "body": ["Inter"],
+            "label": ["Inter"],
+            "mono": ["JetBrains Mono"]
+          },
+          borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      vertical-align: middle;
+    }
+    .glass {
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #333344; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #4a444f; }
+  </style>
+</head>
+<body class="bg-background text-on-surface font-body overflow-hidden">
+<!-- SideNavBar: Icon Rail -->
+<aside class="w-[48px] h-screen fixed left-0 top-0 flex flex-col items-center py-4 bg-[#1a1a2a]/80 backdrop-blur-xl shadow-[0px_10px_40px_rgba(0,0,0,0.4)] z-50 gap-4">
+<div class="text-[#cba6f7] font-black text-xl mb-4">V</div>
+<!-- Active: Current Project -->
+<button class="relative after:content-[''] after:absolute after:left-0 after:w-1 after:h-8 after:bg-[#cba6f7] after:rounded-r-full bg-[#cba6f7]/20 rounded-full p-2 scale-95 active:scale-90 transition-all duration-300">
+<span class="material-symbols-outlined text-[#cba6f7]">terminal</span>
+</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] p-2 hover:bg-[#333344]/50 rounded-full transition-all duration-300 scale-95 active:scale-90">
+<span class="material-symbols-outlined">code</span>
+</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] p-2 hover:bg-[#333344]/50 rounded-full transition-all duration-300 scale-95 active:scale-90">
+<span class="material-symbols-outlined">dashboard</span>
+</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] p-2 hover:bg-[#333344]/50 rounded-full transition-all duration-300 scale-95 active:scale-90">
+<span class="material-symbols-outlined">database</span>
+</button>
+<div class="mt-auto">
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] p-2 hover:bg-[#333344]/50 rounded-full transition-all duration-300 scale-95 active:scale-90">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</aside>
+<!-- SideNavBar: Standard Sidebar -->
+<aside class="w-[260px] h-screen fixed left-[48px] top-0 border-r border-[#4a444f]/15 bg-[#1a1a2a] z-40 flex flex-col p-4">
+<div class="mb-6 px-3">
+<h2 class="text-[#cba6f7] font-semibold text-xs uppercase tracking-widest opacity-70 mb-1">Conversations</h2>
+<p class="text-[#cdc3d1] text-[0.75rem] font-mono">⌘K to search</p>
+</div>
+<nav class="flex flex-col gap-1">
+<button class="text-[#cdc3d1] px-3 py-2 hover:bg-[#1e1e2e]/50 hover:text-[#e3e0f7] rounded-md transition-colors text-[0.875rem] flex items-center gap-3">
+<span class="material-symbols-outlined text-lg">chat</span> Recent Chats
+      </button>
+<button class="text-[#cdc3d1] px-3 py-2 hover:bg-[#1e1e2e]/50 hover:text-[#e3e0f7] rounded-md transition-colors text-[0.875rem] flex items-center gap-3">
+<span class="material-symbols-outlined text-lg">bolt</span> Active Sessions
+      </button>
+<button class="text-[#cdc3d1] px-3 py-2 hover:bg-[#1e1e2e]/50 hover:text-[#e3e0f7] rounded-md transition-colors text-[0.875rem] flex items-center gap-3">
+<span class="material-symbols-outlined text-lg">inventory_2</span> Archived
+      </button>
+<button class="text-[#cdc3d1] px-3 py-2 hover:bg-[#1e1e2e]/50 hover:text-[#e3e0f7] rounded-md transition-colors text-[0.875rem] flex items-center gap-3">
+<span class="material-symbols-outlined text-lg">settings</span> Settings
+      </button>
+</nav>
+</aside>
+<!-- TopAppBar -->
+<header class="fixed top-0 left-0 w-full h-14 pl-[308px] pr-4 bg-[#121221]/90 backdrop-blur-md border-b border-[#4a444f]/15 flex items-center justify-between z-30">
+<div class="flex items-center gap-8">
+<div class="text-[#cba6f7] font-bold text-lg font-headline">VIBM</div>
+<nav class="flex items-center gap-2">
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] hover:bg-[#1e1e2e] transition-all duration-400 px-4 py-1 rounded-lg font-headline">Chat</button>
+<!-- ACTIVE TAB: Files -->
+<button class="text-[#e2c7ff] border-b-2 border-[#cba6f7] px-4 py-1 font-headline">Files</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] hover:bg-[#1e1e2e] transition-all duration-400 px-4 py-1 rounded-lg font-headline">Editor</button>
+<button class="text-[#cdc3d1] hover:text-[#e3e0f7] hover:bg-[#1e1e2e] transition-all duration-400 px-4 py-1 rounded-lg font-headline">Diff</button>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[#cdc3d1] hover:text-[#e3e0f7] cursor-pointer">notifications</span>
+<span class="material-symbols-outlined text-[#cdc3d1] hover:text-[#e3e0f7] cursor-pointer">more_vert</span>
+<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container-highest">
+<img alt="Agent Status" data-alt="professional avatar of a sleek futuristic AI agent with glowing purple accents minimalist background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCrBSDsnm6xI52CMT42eDnDtpqgf05zVpZ7CbEV9eqXyoJ3IYbY_GjM_dR1AyEJ1wtMJ3ll_uCF9d0aHOO4PGDvXLhQ4fKfxYk3l8qu2dHf2HrZNodh7aSW78pGKWN2Txq5XljC7RRW-VdCzP4RnjkQlyYzHqHQN8PRwyAdXg6EnZP9tULpbEQXGcIGYfuWit-tln9AJGyX7WjP6Q0zBI7KCqtSbdMJtDUK6NDDTC3YE3OOrQBLpB-PNVAotkFQhibu_aK-e_Sh5UM"/>
+</div>
+</div>
+</header>
+<!-- SideNavBar: Context Panel (Right) -->
+<aside class="w-[280px] h-screen fixed right-0 top-0 border-l border-[#4a444f]/15 bg-[#1a1a2a] z-40 flex flex-col p-4 pt-16">
+<div class="mb-6">
+<h3 class="text-[#a8c8ff] font-bold font-mono text-xs uppercase mb-1">Agent Status</h3>
+<p class="text-[#cdc3d1] text-[0.75rem] font-mono">GPT-4o Active</p>
+</div>
+<div class="space-y-4">
+<div class="p-3 bg-surface-container rounded-lg">
+<div class="flex items-center gap-2 text-[#a8c8ff] mb-2">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">psychology</span>
+<span class="font-mono text-[0.7rem]">Model Info</span>
+</div>
+<p class="text-[#cdc3d1] text-xs">Processing file tree context... Optimized for project exploration.</p>
+</div>
+<div class="p-3 bg-surface-container rounded-lg">
+<div class="flex items-center gap-2 text-[#cdc3d1] mb-2">
+<span class="material-symbols-outlined text-sm">memory</span>
+<span class="font-mono text-[0.7rem]">Context</span>
+</div>
+<div class="w-full bg-surface-variant h-1.5 rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-[#a8c8ff] to-[#124988] w-[65%]"></div>
+</div>
+<p class="text-[#cdc3d1] text-[0.65rem] mt-2 font-mono">8,421 / 12,000 tokens</p>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="fixed inset-0 pl-[308px] pr-[280px] pt-14 flex flex-col bg-surface">
+<!-- Breadcrumbs -->
+<nav class="h-10 flex items-center px-6 bg-surface-container-low/50 gap-2 border-b border-[#4a444f]/10">
+<span class="text-on-surface-variant hover:text-primary cursor-pointer transition-colors text-sm">vibm-project</span>
+<span class="text-outline-variant text-xs">/</span>
+<span class="text-on-surface-variant hover:text-primary cursor-pointer transition-colors text-sm">src</span>
+<span class="text-outline-variant text-xs">/</span>
+<span class="text-on-surface font-semibold text-sm">components</span>
+<span class="text-outline-variant text-xs">/</span>
+</nav>
+<!-- File Explorer Workspace -->
+<div class="flex-1 overflow-y-auto p-6 relative">
+<!-- File Tree Container -->
+<div class="max-w-4xl mx-auto bg-surface-container-low rounded-xl p-4 shadow-sm">
+<!-- Root: src/ -->
+<div class="space-y-1">
+<div class="flex items-center gap-2 py-1.5 px-3 hover:bg-surface-container rounded-md cursor-pointer group">
+<span class="material-symbols-outlined text-on-surface-variant text-sm transform rotate-90">chevron_right</span>
+<span class="material-symbols-outlined text-[#a8c8ff] text-lg" style="font-variation-settings: 'FILL' 1;">folder_open</span>
+<span class="text-sm font-medium">src</span>
+</div>
+<!-- Indented Level 1 -->
+<div class="pl-6 space-y-1 border-l border-[#4a444f]/20 ml-5">
+<!-- components/ folder (Blue Highlight Drop Target) -->
+<div class="flex items-center gap-2 py-1.5 px-3 bg-secondary-container/20 ring-1 ring-secondary/40 rounded-md cursor-pointer group">
+<span class="material-symbols-outlined text-on-surface-variant text-sm transform rotate-90">chevron_right</span>
+<span class="material-symbols-outlined text-[#a8c8ff] text-lg" style="font-variation-settings: 'FILL' 1;">folder_open</span>
+<span class="text-sm font-medium">components</span>
+<span class="ml-auto text-[0.65rem] font-mono text-secondary px-1.5 py-0.5 bg-secondary/10 rounded">DROP HERE</span>
+</div>
+<!-- Nested Files in components/ -->
+<div class="pl-6 space-y-1 border-l border-[#4a444f]/20 ml-5">
+<div class="flex items-center gap-2 py-1.5 px-3 hover:bg-surface-container rounded-md cursor-pointer group">
+<span class="material-symbols-outlined text-[#8fbaff] text-lg">description</span>
+<span class="text-sm font-mono">FileTree.tsx</span>
+<span class="ml-auto text-[10px] font-bold text-yellow-500/80 font-mono">M</span>
+</div>
+<div class="flex items-center gap-2 py-1.5 px-3 hover:bg-surface-container rounded-md cursor-pointer group">
+<span class="material-symbols-outlined text-[#8fbaff] text-lg">description</span>
+<span class="text-sm font-mono">NavBar.tsx</span>
+</div>
+<!-- Draggable Item Placeholder -->
+<div class="flex items-center gap-2 py-1.5 px-3 bg-surface-container-highest/60 opacity-60 rounded-md border border-dashed border-outline-variant scale-95 shadow-lg z-10 translate-x-4">
+<span class="material-symbols-outlined text-[#cba6f7] text-lg">terminal</span>
+<span class="text-sm font-mono italic">TerminalPanel.tsx</span>
+<span class="material-symbols-outlined text-xs ml-auto">drag_indicator</span>
+</div>
+</div>
+<div class="flex items-center gap-2 py-1.5 px-3 hover:bg-surface-container rounded-md cursor-pointer group">
+<span class="material-symbols-outlined text-on-surface-variant text-sm transform rotate-90">chevron_right</span>
+<span class="material-symbols-outlined text-[#a8c8ff] text-lg" style="font-variation-settings: 'FILL' 1;">folder_open</span>
+<span class="text-sm font-medium">utils</span>
+</div>
+<div class="pl-6 space-y-1 border-l border-[#4a444f]/20 ml-5">
+<div class="flex items-center gap-2 py-1.5 px-3 hover:bg-surface-container rounded-md cursor-pointer group">
+<span class="material-symbols-outlined text-[#f9e2af] text-lg">settings_ethernet</span>
+<span class="text-sm font-mono">api-helper.rs</span>
+<span class="ml-auto text-[10px] font-bold text-green-500/80 font-mono">A</span>
+</div>
+</div>
+</div>
+<!-- Root Files -->
+<div class="flex items-center gap-2 py-1.5 px-3 hover:bg-surface-container rounded-md cursor-pointer group">
+<span class="material-symbols-outlined text-on-surface-variant text-sm">chevron_right</span>
+<span class="material-symbols-outlined text-[#a8c8ff] text-lg">folder</span>
+<span class="text-sm font-medium">tests</span>
+</div>
+<div class="flex items-center gap-2 py-1.5 px-3 hover:bg-surface-container rounded-md cursor-pointer group">
+<span class="material-symbols-outlined text-[#f38ba8] text-lg">javascript</span>
+<span class="text-sm font-mono">package.json</span>
+</div>
+<!-- CONTEXT MENU OVERLAY (Near a file) -->
+<div class="absolute top-1/2 left-1/3 glass bg-surface-container-highest/80 border border-outline-variant/30 rounded-xl py-2 w-48 shadow-2xl z-50">
+<div class="flex items-center gap-3 px-4 py-1.5 hover:bg-primary/20 hover:text-primary transition-colors cursor-pointer text-sm">
+<span class="material-symbols-outlined text-sm">edit</span> Rename
+             </div>
+<div class="flex items-center gap-3 px-4 py-1.5 hover:bg-error/20 hover:text-error transition-colors cursor-pointer text-sm">
+<span class="material-symbols-outlined text-sm">delete</span> Delete
+             </div>
+<div class="border-t border-outline-variant/20 my-1"></div>
+<div class="flex items-center gap-3 px-4 py-1.5 hover:bg-primary/20 hover:text-primary transition-colors cursor-pointer text-sm">
+<span class="material-symbols-outlined text-sm">content_copy</span> Copy Path
+             </div>
+<div class="flex items-center gap-3 px-4 py-1.5 hover:bg-primary/20 hover:text-primary transition-colors cursor-pointer text-sm">
+<span class="material-symbols-outlined text-sm">open_in_new</span> Open in Editor
+             </div>
+<div class="flex items-center gap-3 px-4 py-1.5 hover:bg-primary/20 hover:text-primary transition-colors cursor-pointer text-sm">
+<span class="material-symbols-outlined text-sm">difference</span> View Diff
+             </div>
+</div>
+<div class="flex items-center gap-2 py-1.5 px-3 hover:bg-surface-container rounded-md cursor-pointer group">
+<span class="material-symbols-outlined text-[#89b4fa] text-lg">settings</span>
+<span class="text-sm font-mono">tsconfig.json</span>
+<span class="ml-auto text-[10px] font-bold text-red-500/80 font-mono">D</span>
+</div>
+<div class="flex items-center gap-2 py-1.5 px-3 hover:bg-surface-container rounded-md cursor-pointer group">
+<span class="material-symbols-outlined text-[#a6e3a1] text-lg">description</span>
+<span class="text-sm font-mono">README.md</span>
+</div>
+</div>
+</div>
+<!-- Drop Zone -->
+<div class="max-w-4xl mx-auto mt-8 border-2 border-dashed border-outline-variant/30 rounded-2xl p-8 flex flex-col items-center justify-center group hover:border-primary/40 transition-colors">
+<span class="material-symbols-outlined text-4xl text-outline-variant group-hover:text-primary transition-colors mb-2">upload_file</span>
+<p class="text-on-surface-variant text-sm font-medium">Drop files here to upload to <span class="text-primary">src/components/</span></p>
+</div>
+</div>
+<!-- Bottom Bar -->
+<footer class="h-8 bg-surface-container-lowest flex items-center px-4 justify-between border-t border-[#4a444f]/10">
+<div class="flex items-center gap-4 text-[0.65rem] font-mono text-on-surface-variant">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px]">folder_zip</span> 142 files
+        </span>
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px]">database</span> 12.4 MB
+        </span>
+</div>
+<div class="flex items-center gap-4 text-[0.65rem] font-mono text-on-surface-variant">
+<span class="text-primary-container">UTF-8</span>
+<span class="hover:text-primary cursor-pointer">main*</span>
+<span class="flex items-center gap-1 text-secondary">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> Live Sync
+        </span>
+</div>
+</footer>
+</main>
+</body></html>
