@@ -50,3 +50,11 @@ harness/__pycache__/
 harness/*.pyc
 *.py[cod]
 __pycache__/
+
+# Harness runtime files (generated per iteration, not source)
+app_spec.md
+feature_list.json
+claude-progress.txt
+SETUP.md
+init.sh
+harness/prompts/app_spec.md
