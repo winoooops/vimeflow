@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VIBM | AI Command Center</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@700;800&amp;family=JetBrains+Mono&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "on-secondary-fixed": "#001b3c",
+                "surface-container-lowest": "#0d0d1c",
+                "error-container": "#93000a",
+                "surface-variant": "#333344",
+                "surface-container-highest": "#333344",
+                "inverse-on-surface": "#2f2f40",
+                "on-tertiary": "#3a2e2b",
+                "surface-tint": "#d9b9ff",
+                "on-background": "#e3e0f7",
+                "on-secondary": "#003062",
+                "on-tertiary-container": "#524442",
+                "surface-dim": "#121221",
+                "on-primary-fixed-variant": "#57377f",
+                "surface-container": "#1e1e2e",
+                "tertiary-container": "#c5b2ae",
+                "on-primary": "#3f1e66",
+                "primary-fixed-dim": "#d9b9ff",
+                "inverse-primary": "#704f98",
+                "on-surface-variant": "#cdc3d1",
+                "on-tertiary-fixed-variant": "#514441",
+                "surface-container-low": "#1a1a2a",
+                "secondary": "#a8c8ff",
+                "outline": "#968e9a",
+                "outline-variant": "#4a444f",
+                "error": "#ffb4ab",
+                "surface": "#121221",
+                "on-secondary-container": "#8fbaff",
+                "primary-fixed": "#eedbff",
+                "surface-bright": "#383849",
+                "on-surface": "#e3e0f7",
+                "tertiary-fixed": "#f3deda",
+                "on-error-container": "#ffdad6",
+                "on-tertiary-fixed": "#241917",
+                "secondary-fixed": "#d5e3ff",
+                "on-error": "#690005",
+                "background": "#121221",
+                "on-primary-container": "#57377f",
+                "primary-container": "#cba6f7",
+                "secondary-fixed-dim": "#a8c8ff",
+                "tertiary": "#e2cdc9",
+                "surface-container-high": "#292839",
+                "tertiary-fixed-dim": "#d6c2be",
+                "secondary-container": "#124988",
+                "inverse-surface": "#e3e0f7",
+                "on-primary-fixed": "#290350",
+                "primary": "#e2c7ff",
+                "on-secondary-fixed-variant": "#0e4685"
+              },
+              fontFamily: {
+                "headline": ["Manrope"],
+                "body": ["Inter"],
+                "label": ["Inter"]
+              },
+              borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+            },
+          },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-panel {
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body overflow-hidden h-screen flex selection:bg-primary-container/30">
+<!-- 1. Icon Rail (Shared Component: SideNavBar type: icon_rail) -->
+<aside class="w-[48px] h-screen fixed left-0 top-0 flex flex-col items-center py-4 z-50 bg-[#1a1a2a]/80 backdrop-blur-xl shadow-[0px_10px_40px_rgba(0,0,0,0.4)]">
+<div class="mb-6 flex flex-col gap-1 items-center">
+<span class="text-[#cba6f7] font-black text-xl font-headline">V</span>
+</div>
+<nav class="flex flex-col gap-4 items-center flex-1">
+<!-- Active Project -->
+<div class="relative group cursor-pointer">
+<div class="absolute -left-4 top-1/2 -translate-y-1/2 w-1 h-8 bg-[#cba6f7] rounded-r-full"></div>
+<div class="w-9 h-9 rounded-full bg-[#cba6f7]/20 flex items-center justify-center text-[#cba6f7] transition-transform active:scale-90 overflow-hidden">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">terminal</span>
+</div>
+</div>
+<!-- Inactive Projects -->
+<div class="relative group cursor-pointer hover:bg-[#333344]/50 rounded-full transition-all duration-300 p-1">
+<div class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-[#cdc3d1] hover:text-[#e3e0f7] transition-colors">
+<span class="material-symbols-outlined">code</span>
+</div>
+<div class="absolute top-0 right-0 w-2.5 h-2.5 bg-secondary rounded-full border-2 border-surface-container-low"></div>
+</div>
+<div class="relative group cursor-pointer hover:bg-[#333344]/50 rounded-full transition-all duration-300 p-1">
+<div class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-[#cdc3d1] hover:text-[#e3e0f7] transition-colors">
+<span class="material-symbols-outlined">dashboard</span>
+</div>
+</div>
+<div class="relative group cursor-pointer hover:bg-[#333344]/50 rounded-full transition-all duration-300 p-1">
+<div class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-[#cdc3d1] hover:text-[#e3e0f7] transition-colors">
+<span class="material-symbols-outlined">database</span>
+</div>
+</div>
+<div class="relative group cursor-pointer hover:bg-[#333344]/50 rounded-full transition-all duration-300 p-1">
+<div class="w-9 h-9 rounded-full bg-surface-container-highest/40 flex items-center justify-center text-[#cdc3d1] hover:text-[#e3e0f7] transition-colors">
+<span class="material-symbols-outlined">add</span>
+</div>
+</div>
+</nav>
+<div class="mt-auto flex flex-col gap-4 items-center">
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant/30">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="minimalist 3d avatar of a developer with glasses and dark hoodie on a soft purple background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuASR_qbpXunxTazw6pajVlQGs34tUxub1dc_lmZhj0MNndZ28hUcsQhVvL_xG7MNz3lXToheqCtD1U372qMA-2BCatq3eLXHXraVr6vC6KQ09SwJywNvOp1f26bi5GCp4cjTza_8bqTZe4P9vQJucGdPL2gvhbRuxOUWhcxEAfXXWmaa-ZqcdtbLO_8MwQnxLEQ_15at85rFp2QZZe2nQWhWGSxdMmj5LtIbM_xFNqZiaqO8dYjoawTnotoFgDWqYuf7EuQ3me5IBA"/>
+</div>
+</div>
+</aside>
+<!-- 2. Sidebar (Shared Component: SideNavBar type: standard_sidebar) -->
+<aside class="w-[260px] h-screen fixed left-[48px] top-0 bg-[#1a1a2a] border-r border-[#4a444f]/15 flex flex-col z-40">
+<!-- macOS Style Header -->
+<div class="h-14 flex items-center px-4 gap-2">
+<div class="flex gap-1.5">
+<div class="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
+<div class="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
+<div class="w-3 h-3 rounded-full bg-[#27c93f]"></div>
+</div>
+</div>
+<!-- Search Bar -->
+<div class="px-4 mb-6">
+<div class="bg-surface-container-highest/50 rounded-lg flex items-center px-3 py-2 gap-2 text-on-surface-variant group focus-within:ring-1 focus-within:ring-primary/40 transition-all">
+<span class="material-symbols-outlined text-sm">search</span>
+<span class="text-xs font-body flex-1">Search sessions...</span>
+<span class="text-[10px] font-label opacity-50 px-1 border border-outline-variant/30 rounded">⌘K</span>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto no-scrollbar px-2">
+<!-- Category: Recent Chats -->
+<div class="mb-4">
+<div class="px-2 mb-1 flex items-center justify-between group">
+<span class="text-[10px] font-bold tracking-widest text-on-surface-variant uppercase font-headline">Recent Chats</span>
+<span class="material-symbols-outlined text-xs opacity-0 group-hover:opacity-100 cursor-pointer">add</span>
+</div>
+<!-- Active Conversation -->
+<div class="bg-[#1e1e2e] rounded-md px-3 py-3 mb-1 cursor-pointer transition-all duration-200 shadow-sm border border-primary/5">
+<div class="flex gap-3">
+<div class="w-8 h-8 rounded-lg bg-primary-container/20 flex items-center justify-center text-primary-container shrink-0">
+<span class="material-symbols-outlined text-lg" style="font-variation-settings: 'FILL' 1;">bolt</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-start mb-0.5">
+<span class="text-xs font-semibold text-[#e3e0f7] truncate">Auth Refactor</span>
+<span class="text-[10px] text-on-surface-variant">2m</span>
+</div>
+<p class="text-[11px] text-on-surface-variant truncate leading-snug">Agent is updating JWT logic...</p>
+</div>
+</div>
+<!-- Sub-threads UI -->
+<div class="mt-2 ml-11 border-l border-outline-variant/30 pl-3 flex flex-col gap-2">
+<div class="text-[10px] text-primary-container hover:text-primary transition-colors cursor-pointer flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[12px]">subdirectory_arrow_right</span>
+<span>Fix: Token Expiry</span>
+</div>
+</div>
+</div>
+<!-- Inactive Conversation -->
+<div class="px-3 py-2.5 rounded-md hover:bg-[#1e1e2e]/50 cursor-pointer group transition-all">
+<div class="flex gap-3 items-center">
+<div class="w-8 h-8 rounded-lg bg-surface-container-highest flex items-center justify-center text-on-surface-variant shrink-0 group-hover:bg-surface-bright transition-colors">
+<span class="material-symbols-outlined text-lg">chat</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-center mb-0.5">
+<span class="text-xs text-on-surface-variant group-hover:text-on-surface truncate">API Integration</span>
+<div class="w-1.5 h-1.5 bg-secondary rounded-full"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Category: Active Sessions -->
+<div class="mb-4">
+<div class="px-2 mb-1">
+<span class="text-[10px] font-bold tracking-widest text-on-surface-variant uppercase font-headline">Active Sessions</span>
+</div>
+<div class="px-3 py-2 rounded-md hover:bg-[#1e1e2e]/50 cursor-pointer transition-all text-on-surface-variant hover:text-on-surface flex items-center gap-3">
+<span class="material-symbols-outlined text-sm">inventory_2</span>
+<span class="text-xs">Frontend Cleanup</span>
+</div>
+<div class="px-3 py-2 rounded-md hover:bg-[#1e1e2e]/50 cursor-pointer transition-all text-on-surface-variant hover:text-on-surface flex items-center gap-3">
+<span class="material-symbols-outlined text-sm">inventory_2</span>
+<span class="text-xs">Database Migration</span>
+</div>
+</div>
+</div>
+<div class="p-4 mt-auto border-t border-[#4a444f]/10">
+<div class="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-[#1e1e2e]/50 cursor-pointer transition-all text-on-surface-variant">
+<span class="material-symbols-outlined text-sm">settings</span>
+<span class="text-xs">Settings</span>
+</div>
+</div>
+</aside>
+<!-- 3. Main Content Area (Shared Component: TopAppBar + Canvas) -->
+<main class="flex-1 ml-[308px] mr-[280px] h-screen flex flex-col bg-surface relative">
+<!-- Top Tab Bar -->
+<header class="h-14 flex items-center justify-between px-6 bg-[#121221]/90 backdrop-blur-md border-b border-[#4a444f]/15 z-30">
+<nav class="flex items-center h-full">
+<div class="flex h-full items-center gap-2">
+<button class="text-[#e2c7ff] border-b-2 border-[#cba6f7] h-full flex items-center px-4 font-headline text-sm font-semibold transition-all">Chat</button>
+<button class="text-on-surface-variant hover:text-on-surface hover:bg-[#1e1e2e] h-[calc(100%-16px)] my-2 rounded-lg flex items-center px-4 text-sm font-medium transition-all">Files</button>
+<button class="text-on-surface-variant hover:text-on-surface hover:bg-[#1e1e2e] h-[calc(100%-16px)] my-2 rounded-lg flex items-center px-4 text-sm font-medium transition-all">Editor</button>
+<button class="text-on-surface-variant hover:text-on-surface hover:bg-[#1e1e2e] h-[calc(100%-16px)] my-2 rounded-lg flex items-center px-4 text-sm font-medium transition-all">Diff</button>
+</div>
+</nav>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-xl">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-xl">more_vert</span>
+</button>
+</div>
+</header>
+<!-- Chat Canvas -->
+<section class="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar">
+<!-- User Message -->
+<div class="flex gap-4 max-w-3xl mx-auto">
+<div class="w-10 h-10 rounded-full overflow-hidden shrink-0 border-2 border-surface-container-highest">
+<img alt="User" class="w-full h-full object-cover" data-alt="minimalist 3d avatar of a developer with glasses and dark hoodie on a soft purple background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDezo4OJtN8ihltDEe3rfOo_tcwRaorxqxO2drME3RdFm2-XMzbnG-3dVHxRKddjEpLdLwoz5uKWTI6yVqEj7cU_qs_sHxG2C028olFFCt44zXEmglidLHxTIHh1FW2eqzIKlN59foFac12XsKgYsJJQiiiCXW25bEuXTE0H7_FCMTrV_7Uz5W0botvDH8ZUBVYVAUfTjvH3_OsND9gP7lO2YhsTO9hHLjwt5uXs2gXGjjcCnjJeawFJMj83LNctrTfeLn5gH4IWUs"/>
+</div>
+<div class="flex-1">
+<div class="flex items-center gap-3 mb-2">
+<span class="text-sm font-semibold text-on-surface">You</span>
+<span class="text-[10px] text-on-surface-variant/60 font-label uppercase">10:42 AM</span>
+</div>
+<div class="bg-surface-container p-4 rounded-xl rounded-tl-none text-sm text-on-surface leading-relaxed shadow-sm">
+                        Can you refactor the <code class="font-label bg-surface-container-highest px-1.5 py-0.5 rounded text-secondary">auth_middleware.py</code> to use the new Redis-backed session store? Also, ensure we handle token revocation correctly.
+                    </div>
+</div>
+</div>
+<!-- Agent Thinking State -->
+<div class="flex gap-4 max-w-3xl mx-auto">
+<div class="w-10 h-10 rounded-full bg-primary-container/10 flex items-center justify-center shrink-0 border border-primary-container/20">
+<span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">psychology</span>
+</div>
+<div class="flex-1">
+<div class="flex items-center gap-3 mb-2">
+<span class="text-sm font-semibold text-primary">VIBM Agent</span>
+<span class="bg-secondary/10 text-secondary text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Refactoring</span>
+</div>
+<div class="bg-surface-container-low/40 border border-outline-variant/10 p-5 rounded-xl rounded-tl-none space-y-4">
+<p class="text-sm text-on-surface-variant italic">Analyzing current middleware architecture...</p>
+<div class="bg-surface-container-highest rounded-lg p-4 font-label text-[13px] border-l-4 border-secondary overflow-x-auto shadow-inner">
+<div class="flex items-center justify-between mb-3 border-b border-outline-variant/20 pb-2">
+<span class="text-on-surface-variant flex items-center gap-2"><span class="material-symbols-outlined text-xs">description</span> auth_middleware.py</span>
+<span class="text-[10px] text-secondary">PYTHON</span>
+</div>
+<pre class="text-[#f8f8f2]"><span class="text-[#ff79c6]">import</span> redis_client
+<span class="text-[#ff79c6]">from</span> vibm.sessions <span class="text-[#ff79c6]">import</span> SessionStore
+
+<span class="text-[#6272a4]"># Initializing Redis-backed store</span>
+store = SessionStore(client=redis_client)</pre>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Message Input -->
+<footer class="p-6">
+<div class="max-w-3xl mx-auto relative">
+<textarea class="w-full bg-surface-container-highest/30 border-none rounded-2xl p-4 pr-16 focus:ring-2 focus:ring-primary/20 text-sm placeholder:text-on-surface-variant/40 resize-none glass-panel" placeholder="Ask anything or ' / ' for commands..." rows="3"></textarea>
+<div class="absolute right-4 bottom-4 flex gap-2">
+<button class="p-2 rounded-lg bg-primary-container text-on-primary-container shadow-lg shadow-primary-container/20 hover:scale-105 active:scale-95 transition-all">
+<span class="material-symbols-outlined">send</span>
+</button>
+</div>
+</div>
+</footer>
+</main>
+<!-- 4. Right Panel (Shared Component: SideNavBar type: context_panel) -->
+<aside class="w-[280px] h-screen fixed right-0 top-0 bg-[#1a1a2a] border-l border-[#4a444f]/15 z-40 flex flex-col overflow-hidden">
+<div class="h-14 flex items-center px-6">
+<h2 class="font-headline text-xs font-bold tracking-widest text-on-surface-variant uppercase">Agent Status</h2>
+</div>
+<div class="p-6 space-y-8 overflow-y-auto no-scrollbar">
+<!-- Model Info Card -->
+<div class="bg-surface-container p-4 rounded-xl space-y-4 border border-outline-variant/5">
+<div class="flex items-center justify-between">
+<span class="text-xs font-medium text-on-surface-variant">Model</span>
+<span class="bg-secondary/10 text-secondary text-[10px] font-bold px-2 py-0.5 rounded">GPT-4o</span>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between text-[10px] font-label text-on-surface-variant">
+<span>Context Usage</span>
+<span>70%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-secondary to-secondary-container rounded-full" style="width: 70%"></div>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-2">
+<div class="bg-surface-container-low p-2 rounded-lg text-center">
+<p class="text-[9px] text-on-surface-variant mb-1">Latency</p>
+<p class="text-[11px] font-label text-primary-container">1.2s</p>
+</div>
+<div class="bg-surface-container-low p-2 rounded-lg text-center">
+<p class="text-[9px] text-on-surface-variant mb-1">Tokens/s</p>
+<p class="text-[11px] font-label text-primary-container">42.5</p>
+</div>
+</div>
+</div>
+<!-- Recent Actions -->
+<div class="space-y-4">
+<h3 class="text-[10px] font-bold tracking-widest text-on-surface-variant uppercase flex items-center gap-2">
+<span class="material-symbols-outlined text-xs">history</span>
+                    Recent Actions
+                </h3>
+<div class="space-y-4">
+<div class="flex gap-3 items-start group">
+<div class="mt-1 w-2 h-2 rounded-full bg-primary-container shrink-0 shadow-[0_0_8px_rgba(203,166,247,0.5)]"></div>
+<div class="space-y-1">
+<p class="text-xs font-medium text-on-surface group-hover:text-primary transition-colors cursor-pointer">Modified auth_middleware.py</p>
+<p class="text-[10px] font-label text-on-surface-variant">Line 12-45: Added Redis import</p>
+</div>
+</div>
+<div class="flex gap-3 items-start group">
+<div class="mt-1 w-2 h-2 rounded-full bg-secondary shrink-0"></div>
+<div class="space-y-1">
+<p class="text-xs font-medium text-on-surface group-hover:text-secondary transition-colors cursor-pointer">Installed 'redis-py'</p>
+<p class="text-[10px] font-label text-on-surface-variant">via pip terminal</p>
+</div>
+</div>
+<div class="flex gap-3 items-start group opacity-60 hover:opacity-100 transition-opacity">
+<div class="mt-1 w-2 h-2 rounded-full bg-outline-variant shrink-0"></div>
+<div class="space-y-1">
+<p class="text-xs font-medium text-on-surface">Created sessions_test.py</p>
+<p class="text-[10px] font-label text-on-surface-variant">Unit test generation complete</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Context Summary Bento Section -->
+<div class="bg-primary-container/5 p-4 rounded-xl border border-primary-container/10">
+<div class="flex items-center gap-2 mb-3">
+<span class="material-symbols-outlined text-primary-container text-sm">psychology_alt</span>
+<span class="text-[10px] font-bold text-primary-container uppercase tracking-wide">AI Strategy</span>
+</div>
+<p class="text-[11px] leading-relaxed text-on-surface-variant">
+                    Current priority: <span class="text-[#e3e0f7] font-medium">Session Consistency</span>. 
+                    The agent is prioritizing statelessness in the refactor to support horizontal scaling.
+                </p>
+</div>
+</div>
+<!-- System Health Footer -->
+<div class="mt-auto p-4 bg-surface-container-lowest/50 border-t border-outline-variant/10">
+<div class="flex items-center justify-between text-[10px] font-label">
+<div class="flex items-center gap-1.5 text-secondary">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
+<span>System Online</span>
+</div>
+<span class="text-on-surface-variant/40">v0.9.4-beta</span>
+</div>
+</div>
+</aside>
+</body></html>

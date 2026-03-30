@@ -1,0 +1,31 @@
+{
+  "skill_name": "agent-browser",
+  "description": "Test whether the agent correctly uses CDP commands for browser automation",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Show me what tabs I have open in Chrome",
+      "expected_output": "Agent runs curl http://127.0.0.1:9222/json/list and displays the tab titles and URLs"
+    },
+    {
+      "id": 2,
+      "prompt": "Open https://github.com in my browser",
+      "expected_output": "Agent uses curl http://127.0.0.1:9222/json/new?url=https://github.com to open a new tab"
+    },
+    {
+      "id": 3,
+      "prompt": "Get the text content from my current browser tab",
+      "expected_output": "Agent lists tabs to find the active one, then uses cdp_get_page_text.py with the tab ID"
+    },
+    {
+      "id": 4,
+      "prompt": "Chrome CDP isn't responding, help me debug",
+      "expected_output": "Agent checks if Chrome is running with --remote-debugging-port=9222, verifies --user-data-dir is set, and suggests killing all Chrome processes before relaunching"
+    },
+    {
+      "id": 5,
+      "prompt": "I'm on WSL2 and can't connect to Chrome on Windows port 9222",
+      "expected_output": "Agent checks networkingMode in .wslconfig, verifies mirrored mode, checks firewall setting, and references the troubleshooting guide"
+    }
+  ]
+}

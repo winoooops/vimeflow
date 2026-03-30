@@ -1,0 +1,49 @@
+version: '0.2'
+language: en
+
+words:
+  # Project
+  - vibm
+
+  # Tauri
+  - tauri
+  - wry
+  - tao
+  - webview
+  - appimage
+  - rusqlite
+
+  # Rust
+  - thiserror
+  - anyhow
+  - serde
+  - tokio
+  - clippy
+  - rustfmt
+  - reqwest
+  - chrono
+
+  # React / TypeScript
+  - vitest
+  - tsx
+  - jsx
+  - unmount
+  - unlisten
+  - zustand
+  - tanstack
+
+  # Tools
+  - cspell
+  - eslint
+  - prettier
+  - storybook
+  - playwright
+
+ignorePaths:
+  - node_modules
+  - dist
+  - coverage
+  - src-tauri/target
+  - '**/*.min.js'
+  - '**/*.d.ts'
+  - playwright-report
