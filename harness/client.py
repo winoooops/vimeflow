@@ -1,0 +1,87 @@
+"""
+Claude SDK Client Configuration
+================================
+
+Creates a Claude Code SDK client configured for VIBM development.
+"""
+
+import json
+import os
+from pathlib import Path
+
+from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
+from claude_code_sdk.types import HookMatcher
+
+from security import bash_security_hook
+from hooks import pre_write_feature_list_hook
+
+
+BUILTIN_TOOLS = [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash",
+]
+
+
+def create_client(project_dir: Path, model: str) -> ClaudeSDKClient:
+    """
+    Create a Claude Code SDK client with security layers.
+
+    Security:
+      1. Sandbox — OS-level bash isolation
+      2. Permissions — file ops restricted to project_dir
+      3. Security hook — bash commands validated against allowlist
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ValueError("ANTHROPIC_API_KEY not set")
+
+    security_settings = {
+        "sandbox": {"enabled": True, "autoAllowBashIfSandboxed": True},
+        "permissions": {
+            "defaultMode": "acceptEdits",
+            "allow": [
+                "Read(.//**)",
+                "Write(.//**)",
+                "Edit(.//**)",
+                "Glob(.//**)",
+                "Grep(.//**)",
+                "Bash(*)",
+            ],
+        },
+    }
+
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    settings_file = project_dir / ".claude_settings.json"
+    with open(settings_file, "w") as f:
+        json.dump(security_settings, f, indent=2)
+
+    print(f"  Security: sandbox enabled, fs restricted to {project_dir.resolve()}")
+    print(f"  Bash: allowlist-validated (see harness/security.py)")
+    print()
+
+    return ClaudeSDKClient(
+        options=ClaudeCodeOptions(
+            model=model,
+            system_prompt=(
+                "You are an expert Tauri/TypeScript/Rust developer building VIBM, "
+                "a desktop coding agent conversation manager. "
+                "Follow the project's CLAUDE.md, rules/, and agents/ specifications. "
+                "Use immutable patterns, explicit error handling, and write tests first."
+            ),
+            allowed_tools=BUILTIN_TOOLS,
+            hooks={
+                "PreToolUse": [
+                    HookMatcher(matcher="Bash", hooks=[bash_security_hook]),
+                    HookMatcher(matcher="Write", hooks=[pre_write_feature_list_hook]),
+                ],
+            },
+            max_turns=1000,
+            cwd=str(project_dir.resolve()),
+            settings=str(settings_file.resolve()),
+        )
+    )

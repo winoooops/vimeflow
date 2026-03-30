@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+src-tauri/target
+playwright-report
+*.min.js
+*.d.ts
