@@ -9,9 +9,9 @@ Implements the two-agent pattern (initializer + coding agent) to
 autonomously build VIBM, a Tauri/TypeScript/Rust desktop application.
 
 Usage:
-  python3 autonomous_agent_demo.py
+  python3 autonomous_agent_demo.py --clean         # Fresh start: wipe runtime files, run initializer
   python3 autonomous_agent_demo.py --max-iterations 5
-  python3 autonomous_agent_demo.py --no-sandbox   # Windows/WSL2 only
+  python3 autonomous_agent_demo.py --no-sandbox    # Windows/WSL2 only
 """
 
 import argparse
@@ -59,6 +59,13 @@ def parse_args() -> argparse.Namespace:
         help="Disable OS-level sandbox (only recommended for Windows/WSL2)",
     )
 
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        default=False,
+        help="Wipe runtime files (feature_list.json, claude-progress.txt, app_spec.md) before starting. Forces the initializer agent to run fresh.",
+    )
+
     return parser.parse_args()
 
 
@@ -91,6 +98,24 @@ def resolve_sandbox(no_sandbox_flag: bool) -> bool:
         print()
 
     return True
+
+
+RUNTIME_FILES = [
+    "feature_list.json",
+    "claude-progress.txt",
+    "app_spec.md",
+]
+
+
+def clean_runtime_files(project_dir: Path) -> None:
+    """Remove harness runtime files to force a fresh initializer run."""
+    print("  Cleaning runtime files...")
+    for name in RUNTIME_FILES:
+        path = project_dir / name
+        if path.exists():
+            path.unlink()
+            print(f"    Removed {name}")
+    print()
 
 
 def preflight_checks() -> bool:
@@ -129,6 +154,9 @@ def main() -> None:
 
     if not preflight_checks():
         return
+
+    if args.clean:
+        clean_runtime_files(args.project_dir)
 
     # --no-sandbox flag or HARNESS_NO_SANDBOX env var
     no_sandbox = args.no_sandbox or os.environ.get("HARNESS_NO_SANDBOX") == "1"

@@ -33,6 +33,8 @@ python3 autonomous_agent_demo.py --max-iterations 5     # Capped
 python3 autonomous_agent_demo.py --model claude-sonnet-4-5-20250929  # Override model
 python3 autonomous_agent_demo.py --project-dir ../       # Custom project dir
 python3 autonomous_agent_demo.py --no-sandbox            # Windows/WSL2 only
+python3 autonomous_agent_demo.py --clean                 # Fresh start: wipe runtime files
+python3 autonomous_agent_demo.py --clean --max-iterations 10  # Typical new-phase launch
 ```
 
 Default model: `claude-sonnet-4-5-20250929`. Project dir defaults to repo root.
@@ -88,8 +90,15 @@ The coder agent picks the next feature whose dependencies are all satisfied.
 1. Write a new `app_spec.md` **at the project root** (not in `prompts/`)
    - `prompts.py` only copies `prompts/app_spec.md` → root if the root copy doesn't exist
    - Safest approach: write directly to the root `app_spec.md`
-2. Delete `feature_list.json` (or start fresh) to trigger the Initializer
-3. Run the harness — it generates a new feature list and begins implementing
+2. Run with `--clean` to wipe runtime files and trigger a fresh initializer:
+
+   ```bash
+   python3 autonomous_agent_demo.py --clean --max-iterations 10
+   ```
+
+   `--clean` removes `feature_list.json`, `claude-progress.txt`, and `app_spec.md` from the project root before starting. The initializer then reads the spec from `prompts/app_spec.md` (copied to root) and generates a fresh feature list.
+
+   Without `--clean`, the harness resumes from the existing `feature_list.json` — useful for continuing a previous run.
 
 ## SDK Hook API
 
