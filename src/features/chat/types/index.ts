@@ -94,7 +94,9 @@ export const isMessage = (value: unknown): value is Message => {
 /**
  * Type guard to check if an unknown value is a valid ConversationItem.
  */
-export const isConversationItem = (value: unknown): value is ConversationItem => {
+export const isConversationItem = (
+  value: unknown
+): value is ConversationItem => {
   if (typeof value !== 'object' || value === null) {
     return false
   }

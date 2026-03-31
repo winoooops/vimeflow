@@ -86,8 +86,13 @@ describe('mockConversations', () => {
   })
 
   test('should include conversations with and without sub-threads', () => {
-    const withSubThreads = mockConversations.filter((conv) => conv.hasSubThreads)
-    const withoutSubThreads = mockConversations.filter((conv) => !conv.hasSubThreads)
+    const withSubThreads = mockConversations.filter(
+      (conv) => conv.hasSubThreads
+    )
+
+    const withoutSubThreads = mockConversations.filter(
+      (conv) => !conv.hasSubThreads
+    )
 
     expect(withSubThreads.length).toBeGreaterThan(0)
     expect(withoutSubThreads.length).toBeGreaterThan(0)
@@ -137,7 +142,9 @@ describe('mockAgentStatus', () => {
 
   test('should have valid system health status', () => {
     expect(typeof mockAgentStatus.systemHealth).toBe('string')
-    expect(['online', 'offline', 'warning']).toContain(mockAgentStatus.systemHealth)
+    expect(['online', 'offline', 'warning']).toContain(
+      mockAgentStatus.systemHealth
+    )
   })
 })
 

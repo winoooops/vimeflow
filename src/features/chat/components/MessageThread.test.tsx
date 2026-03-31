@@ -13,7 +13,7 @@ describe('MessageThread', () => {
       'overflow-y-auto',
       'p-8',
       'space-y-8',
-      'no-scrollbar',
+      'no-scrollbar'
     )
   })
 
@@ -138,8 +138,13 @@ describe('MessageThread', () => {
       },
     ]
     render(<MessageThread messages={messages} />)
-    expect(screen.getByTestId('message-container-unique-id-1')).toBeInTheDocument()
-    expect(screen.getByTestId('message-container-unique-id-2')).toBeInTheDocument()
+    expect(
+      screen.getByTestId('message-container-unique-id-1')
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByTestId('message-container-unique-id-2')
+    ).toBeInTheDocument()
   })
 
   test('renders section element with semantic HTML', () => {

@@ -51,21 +51,21 @@ export default {
         'inverse-surface': '#e3e0f7',
         'on-primary-fixed': '#290350',
         primary: '#e2c7ff',
-        'on-secondary-fixed-variant': '#0e4685'
+        'on-secondary-fixed-variant': '#0e4685',
       },
       fontFamily: {
         headline: ['Manrope', 'sans-serif'],
         body: ['Inter', 'sans-serif'],
         label: ['Inter', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace']
+        mono: ['JetBrains Mono', 'monospace'],
       },
       borderRadius: {
         DEFAULT: '0.25rem',
         lg: '0.5rem',
         xl: '0.75rem',
-        full: '9999px'
-      }
-    }
+        full: '9999px',
+      },
+    },
   },
-  plugins: []
+  plugins: [],
 }

@@ -57,31 +57,31 @@ All tokens extracted from `docs/design/chat_or_main/code.html` Tailwind config:
 
 ### Colors (Catppuccin Mocha extended)
 
-| Token | Hex | Usage |
-|---|---|---|
-| `surface` | `#121221` | Base background (Level 0) |
-| `surface-container-lowest` | `#0d0d1c` | Deepest recessed areas |
-| `surface-container-low` | `#1a1a2a` | Sidebar backgrounds (Level 1) |
-| `surface-container` | `#1e1e2e` | Cards, message bubbles (Level 2) |
-| `surface-container-high` | `#292839` | Elevated surfaces |
-| `surface-container-highest` | `#333344` | Code blocks, inputs (Level 3) |
-| `surface-bright` | `#383849` | Hover states |
-| `surface-variant` | `#333344` | Progress bar backgrounds |
-| `on-surface` | `#e3e0f7` | Primary text, titles |
-| `on-surface-variant` | `#cdc3d1` | Body text, secondary text |
-| `on-background` | `#e3e0f7` | Text on base background |
-| `primary` | `#e2c7ff` | Primary accent, active tab text |
-| `primary-container` | `#cba6f7` | Primary CTA, active indicators |
-| `on-primary` | `#3f1e66` | Text on primary surfaces |
-| `on-primary-container` | `#57377f` | Text on primary container |
-| `secondary` | `#a8c8ff` | Secondary accent, code border |
-| `secondary-container` | `#124988` | Secondary gradient end |
-| `on-secondary-container` | `#8fbaff` | Text on secondary container |
-| `tertiary` | `#e2cdc9` | Tertiary accent |
-| `error` | `#ffb4ab` | Error states |
-| `outline` | `#968e9a` | Visible outlines |
-| `outline-variant` | `#4a444f` | Ghost borders (at 15% opacity) |
-| `inverse-surface` | `#e3e0f7` | Inverse surface |
+| Token                       | Hex       | Usage                            |
+| --------------------------- | --------- | -------------------------------- |
+| `surface`                   | `#121221` | Base background (Level 0)        |
+| `surface-container-lowest`  | `#0d0d1c` | Deepest recessed areas           |
+| `surface-container-low`     | `#1a1a2a` | Sidebar backgrounds (Level 1)    |
+| `surface-container`         | `#1e1e2e` | Cards, message bubbles (Level 2) |
+| `surface-container-high`    | `#292839` | Elevated surfaces                |
+| `surface-container-highest` | `#333344` | Code blocks, inputs (Level 3)    |
+| `surface-bright`            | `#383849` | Hover states                     |
+| `surface-variant`           | `#333344` | Progress bar backgrounds         |
+| `on-surface`                | `#e3e0f7` | Primary text, titles             |
+| `on-surface-variant`        | `#cdc3d1` | Body text, secondary text        |
+| `on-background`             | `#e3e0f7` | Text on base background          |
+| `primary`                   | `#e2c7ff` | Primary accent, active tab text  |
+| `primary-container`         | `#cba6f7` | Primary CTA, active indicators   |
+| `on-primary`                | `#3f1e66` | Text on primary surfaces         |
+| `on-primary-container`      | `#57377f` | Text on primary container        |
+| `secondary`                 | `#a8c8ff` | Secondary accent, code border    |
+| `secondary-container`       | `#124988` | Secondary gradient end           |
+| `on-secondary-container`    | `#8fbaff` | Text on secondary container      |
+| `tertiary`                  | `#e2cdc9` | Tertiary accent                  |
+| `error`                     | `#ffb4ab` | Error states                     |
+| `outline`                   | `#968e9a` | Visible outlines                 |
+| `outline-variant`           | `#4a444f` | Ghost borders (at 15% opacity)   |
+| `inverse-surface`           | `#e3e0f7` | Inverse surface                  |
 
 Plus all remaining tokens from the reference config (`surface-tint`, `surface-dim`, `primary-fixed`, `primary-fixed-dim`, `secondary-fixed`, `secondary-fixed-dim`, `tertiary-fixed`, `tertiary-fixed-dim`, `error-container`, `on-error`, `on-error-container`, `on-tertiary`, `on-tertiary-container`, `on-secondary`, `on-secondary-fixed`, `on-secondary-fixed-variant`, `on-primary-fixed`, `on-primary-fixed-variant`, `on-tertiary-fixed`, `on-tertiary-fixed-variant`, `inverse-on-surface`, `inverse-primary`).
 
@@ -204,6 +204,7 @@ borderRadius: {
 ## Mock Data
 
 Sample conversation with different content from the reference, exercising all component variants:
+
 - 1 user message with inline code spans
 - 1 agent message in "thinking" state with a code block
 - Types: `Message` (union of `UserMessage | AgentMessage`), `CodeSnippet` (file, language, content), `ConversationItem` (sidebar entries)
@@ -211,6 +212,7 @@ Sample conversation with different content from the reference, exercising all co
 ## Design Rules (from DESIGN.md)
 
 These rules must be followed in implementation:
+
 - **No-Line Rule**: No `1px solid` borders for sectioning — use background color shifts only
 - **Glass & Gradient Rule**: Floating elements use glassmorphism (60-80% opacity fill, 12-20px backdrop blur)
 - **Ghost Border Fallback**: If border needed, `outline-variant` at 15% opacity
