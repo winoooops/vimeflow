@@ -6,11 +6,13 @@ on:
       - main
     paths:
       - 'src-tauri/**'
+      # TODO: re-add 'src/**' once src-tauri/ is scaffolded
   pull_request:
     branches:
       - main
     paths:
       - 'src-tauri/**'
+      # TODO: re-add 'src/**' once src-tauri/ is scaffolded
 
 jobs:
   build:
