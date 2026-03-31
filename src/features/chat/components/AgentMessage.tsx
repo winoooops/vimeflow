@@ -15,7 +15,7 @@ interface AgentMessageProps {
  * Avatar: w-10 h-10 rounded-full bg-primary-container/10 border border-primary-container/20
  * Bubble: bg-surface-container-low/40 border border-outline-variant/10 p-5 rounded-xl rounded-tl-none
  */
-export const AgentMessage = ({ message }: AgentMessageProps): ReactElement => (
+const AgentMessage = ({ message }: AgentMessageProps): ReactElement => (
   <div
     data-testid="agent-message-container"
     className="flex gap-4 max-w-3xl mx-auto"
@@ -70,3 +70,5 @@ export const AgentMessage = ({ message }: AgentMessageProps): ReactElement => (
     </div>
   </div>
 )
+
+export default AgentMessage

@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { AgentMessage } from './AgentMessage'
+import AgentMessage from './AgentMessage'
 import type { Message } from '../types'
 
 describe('AgentMessage', () => {
