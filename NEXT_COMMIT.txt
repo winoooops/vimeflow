@@ -1,0 +1,26 @@
+# Next Commit Message
+
+feat: implement StatusBadge component
+
+- Add StatusBadge.tsx with pixel-perfect Tailwind classes from design spec
+- Add comprehensive test suite with 6 test cases (StatusBadge.test.tsx)
+- Configure Vitest with jsdom environment (vitest.config.ts)
+- Add Testing Library dependencies (@testing-library/react, jest-dom, jsdom)
+- Create test setup file with jest-dom matchers
+- Tests: Basic rendering, uppercase transformation, Tailwind classes, edge cases
+- feature_list.json: marked #5 as passing
+
+# Files to commit:
+# - src/features/chat/components/StatusBadge.tsx
+# - src/features/chat/components/StatusBadge.test.tsx
+# - vitest.config.ts
+# - src/test/setup.ts
+# - package.json
+# - feature_list.json
+# - claude-progress.txt
+
+# Manual verification needed:
+# 1. npm install
+# 2. npx vitest run src/features/chat/components/StatusBadge.test.tsx
+# 3. npx tsc --noEmit
+# 4. npx eslint .
