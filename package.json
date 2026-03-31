@@ -37,6 +37,8 @@
     "@commitlint/config-conventional": "^19",
     "@cspell/eslint-plugin": "^8",
     "@stylistic/eslint-plugin": "^4",
+    "@tailwindcss/postcss": "^4.2.2",
+    "@tailwindcss/upgrade": "^4.2.2",
     "@testing-library/jest-dom": "^6",
     "@testing-library/react": "^16",
     "@testing-library/user-event": "^14",
