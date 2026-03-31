@@ -4,13 +4,14 @@ You are the FIRST agent in a long-running autonomous development process for VIB
 
 ### FIRST: Read the Project Context
 
-1. Read `app_spec.md` in your working directory — the complete product specification.
+1. Read `app_spec.md` in your working directory — the product specification for this phase of work.
 2. Read `CLAUDE.md` — project conventions and architecture.
-3. Skim `rules/` and `agents/` — development standards you must follow.
+3. Run `git log --oneline -10` to understand what already exists.
+4. Check what source directories exist (`ls -la src/ src-tauri/ 2>/dev/null`).
 
-### CRITICAL FIRST TASK: Create feature_list.json
+### CRITICAL TASK: Create feature_list.json
 
-Based on `app_spec.md`, create `feature_list.json` with detailed, phased features. This is the single source of truth for what needs to be built.
+Based on `app_spec.md`, create `feature_list.json` with detailed, phased features. This is the single source of truth for what needs to be built **in this phase**.
 
 **Format:**
 
@@ -20,31 +21,26 @@ Based on `app_spec.md`, create `feature_list.json` with detailed, phased feature
     "id": 1,
     "phase": 1,
     "category": "scaffold",
-    "description": "Initialize Tauri project with cargo tauri init",
-    "steps": [
-      "Run cargo tauri init in project root",
-      "Verify src-tauri/ directory exists with Cargo.toml and tauri.conf.json",
-      "Verify npm dependencies installed",
-      "Run cargo tauri dev and confirm window opens"
-    ],
+    "description": "Short description of the feature",
+    "steps": ["Step 1", "Step 2", "Step 3"],
     "passes": false,
     "dependencies": []
   }
 ]
 ```
 
-**Phase ordering:**
+**Phase ordering depends on what app_spec.md describes.** Typical phases:
 
-1. **Scaffold** — Tauri init, React setup, tsconfig, ESLint config, Vitest config
-2. **Data models** — TypeScript types, Rust structs, serde serialization
-3. **Backend commands** — Rust #[tauri::command] handlers, state management
-4. **Frontend components** — React UI components, routing, state
-5. **IPC wiring** — Connect frontend invoke() to backend commands
-6. **Testing** — Unit tests (cargo test + vitest), integration tests
-7. **Polish** — Error handling, loading states, edge cases
+1. **Scaffold** — Project setup, configs, dependencies
+2. **Data models** — Types, structs, schemas
+3. **Core implementation** — Backend commands, frontend components, or both
+4. **Wiring** — Integration between layers
+5. **Testing** — Unit, integration, E2E tests
+6. **Polish** — Error handling, edge cases, verification
 
 **Requirements:**
 
+- Read `app_spec.md` carefully — it defines scope. Do NOT add features beyond what it specifies.
 - Order features by dependency (scaffold before components, backend before IPC)
 - Set `dependencies` array to feature IDs that must complete first
 - ALL features start with `"passes": false`
@@ -53,37 +49,24 @@ Based on `app_spec.md`, create `feature_list.json` with detailed, phased feature
 
 **CRITICAL:** Never remove or edit features in future sessions. Features can ONLY have their `passes` field changed to `true`.
 
-### SECOND TASK: Create init.sh
+### IMPORTANT: Do NOT Overwrite Existing Source Files
 
-Create `init.sh` that future agents use to set up the dev environment:
+The project may already have infrastructure in place (git repo, `init.sh`, `SETUP.md`, CI/CD workflows, `eslint.config.js`, etc.). Do NOT:
 
-```bash
-#!/bin/bash
-# Install frontend deps
-npm install
-# Check Rust toolchain
-rustup show
-# Start Tauri dev mode
-cargo tauri dev
-```
+- Run `git init` — the repo already exists
+- Overwrite `init.sh` — it is a tracked source file
+- Overwrite `SETUP.md` — it is a tracked source file
+- Recreate configs that already exist (eslint, prettier, vitest, etc.)
 
-### THIRD TASK: Initialize Git
+If `app_spec.md` describes scaffold features, check if they already exist before implementing.
 
-```bash
-git init
-git add feature_list.json init.sh CLAUDE.md rules/ agents/
-git commit -m "chore: initial setup with feature list and project standards"
-```
+### SECOND TASK: Begin Phase 1
 
-### FOURTH TASK: Begin Scaffolding
+After creating `feature_list.json`, start implementing Phase 1 features. Follow the project's development workflow:
 
-Start implementing Phase 1 features:
-
-- Run `cargo tauri init` (or `npm create tauri-app`)
-- Set up React with TypeScript
-- Copy `eslint.config.js` and `cspell.config.yaml` from project root
-- Configure Vitest
-- Verify `cargo tauri dev` launches a window
+- Check `DEVELOPMENT.md` for available commands
+- Write tests first (TDD)
+- Verify with `npm run lint`, `npm run type-check`, `npm test`
 
 ### ENDING THIS SESSION
 
