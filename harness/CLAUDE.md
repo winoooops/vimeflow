@@ -9,26 +9,41 @@ The harness is the project's primary engineering cycle — it drove the CI/CD an
 
 Each iteration creates a fresh SDK client (`client.py`) → loads the appropriate prompt (`prompts/initializer_prompt.md` or `prompts/coding_prompt.md`) → runs a session → prints progress → sleeps 3s → loops.
 
+## Environment Variables
+
+| Variable             | Required | Description                                              |
+| -------------------- | -------- | -------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`  | Yes      | API key from console.anthropic.com (or compatible proxy) |
+| `ANTHROPIC_BASE_URL` | No       | Override API endpoint (for proxies or self-hosted)       |
+
+The harness does **not** auto-load `.env`. Source it before running:
+
+```bash
+set -a && source .env && set +a
+```
+
 ## Running
 
 ```bash
-cd harness && pip install -r requirements.txt
+cd harness && pip3 install -r requirements.txt
 
-# Requires ANTHROPIC_API_KEY in env (or .env at project root)
-python autonomous_agent_demo.py                        # Unlimited iterations
-python autonomous_agent_demo.py --max-iterations 5     # Capped
-python autonomous_agent_demo.py --model claude-sonnet-4-5-20250929  # Override model
-python autonomous_agent_demo.py --project-dir ../       # Custom project dir
+# Source env vars first (see above), then:
+python3 autonomous_agent_demo.py                        # Unlimited iterations
+python3 autonomous_agent_demo.py --max-iterations 5     # Capped
+python3 autonomous_agent_demo.py --model claude-sonnet-4-5-20250929  # Override model
+python3 autonomous_agent_demo.py --project-dir ../       # Custom project dir
 ```
 
 Default model: `claude-sonnet-4-5-20250929`. Project dir defaults to repo root.
+
+**Tip:** Always dry-run with `--max-iterations 1` first to verify the environment works before scaling up.
 
 ## Safety Layers
 
 | Layer                       | File          | Purpose                                                                                                                                |
 | --------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| **Sandbox**                 | `client.py`   | OS-level bash isolation (`sandbox.enabled: true`)                                                                                      |
-| **Permissions**             | `client.py`   | File ops restricted to project dir (`acceptEdits` mode)                                                                                |
+| **Settings isolation**      | `client.py`   | `CLAUDE_CONFIG_DIR` set to temp dir — prevents user-level hooks from interfering                                                       |
+| **Permissions**             | `client.py`   | `bypassPermissions` mode with file ops restricted to project dir                                                                       |
 | **Bash allowlist**          | `security.py` | Only whitelisted commands pass (`npm`, `cargo`, `git`, `node`, etc.). Sensitive commands (`rm`, `pkill`, `chmod`) get extra validation |
 | **Feature list protection** | `hooks.py`    | PreToolUse hook on Write — features cannot be removed or reordered, only `passes` field can change, must remain valid JSON array       |
 
@@ -56,6 +71,31 @@ The coder agent picks the next feature whose dependencies are all satisfied.
 
 ## Adding New Work
 
-1. Write a new `app_spec.md` in `prompts/` describing the next phase of work
+1. Write a new `app_spec.md` **at the project root** (not in `prompts/`)
+   - `prompts.py` only copies `prompts/app_spec.md` → root if the root copy doesn't exist
+   - Safest approach: write directly to the root `app_spec.md`
 2. Delete `feature_list.json` (or start fresh) to trigger the Initializer
 3. Run the harness — it generates a new feature list and begins implementing
+
+## SDK Hook API
+
+The Claude Code SDK (v0.0.25+) passes the **full hook context** to PreToolUse hooks, not just the tool's input params. The tool parameters are nested inside `input_data["tool_input"]`:
+
+```python
+async def my_hook(input_data, tool_use_id=None, context=None):
+    # input_data keys: session_id, transcript_path, cwd, permission_mode,
+    #                  hook_event_name, tool_name, tool_input, tool_use_id
+    tool_input = input_data.get("tool_input", input_data)
+    command = tool_input.get("command", "")
+```
+
+## Troubleshooting
+
+| Symptom                                        | Cause                                                                               | Fix                                                                                                                                     |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `python: command not found`                    | WSL2/Linux may only have `python3`                                                  | Use `python3` instead of `python`                                                                                                       |
+| All Bash commands blocked with "Empty command" | Hook reads `input_data["command"]` instead of `input_data["tool_input"]["command"]` | Already fixed in `security.py` and `hooks.py`                                                                                           |
+| `spawn rg EACCES` in Glob/Grep                 | Claude Code's vendored ripgrep binary lost +x permission                            | Preflight check auto-fixes this; or run `chmod +x ~/.npm-global/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg` |
+| User-level hooks interfere                     | SDK subprocess loads `~/.claude/settings.json`                                      | `client.py` sets `CLAUDE_CONFIG_DIR` to an isolated temp dir                                                                            |
+| `app_spec.md` empty at root                    | `prompts.py` skips copy if root file exists                                         | Write spec directly to root `app_spec.md`, not `prompts/app_spec.md`                                                                    |
+| `ANTHROPIC_API_KEY not set`                    | `.env` not sourced                                                                  | Run `set -a && source .env && set +a` before launching                                                                                  |

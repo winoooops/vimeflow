@@ -17,6 +17,8 @@ Usage:
 import argparse
 import asyncio
 import os
+import shutil
+import stat
 from pathlib import Path
 
 from agent import run_autonomous_agent
@@ -53,13 +55,41 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def preflight_checks() -> bool:
+    """Run preflight checks before starting the harness."""
+    ok = True
+
+    # Check API key
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("Error: ANTHROPIC_API_KEY environment variable not set")
+        print("\nOption 1: export ANTHROPIC_API_KEY='your-key-here'")
+        print("Option 2: add it to .env at the project root")
+        print("   The harness does NOT auto-load .env; source it first:")
+        print("   set -a && source .env && set +a")
+        return False
+
+    # Check optional base URL
+    base_url = os.environ.get("ANTHROPIC_BASE_URL")
+    if base_url:
+        print(f"  API base URL: {base_url}")
+
+    # Fix ripgrep permissions (Claude Code vendor binary)
+    rg_paths = [
+        Path.home() / ".npm-global/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg",
+        Path.home() / ".local/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg",
+    ]
+    for rg_path in rg_paths:
+        if rg_path.exists() and not os.access(rg_path, os.X_OK):
+            print(f"  Fixing rg permissions: {rg_path}")
+            rg_path.chmod(rg_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    return ok
+
+
 def main() -> None:
     args = parse_args()
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("Error: ANTHROPIC_API_KEY environment variable not set")
-        print("\nGet your API key from: https://console.anthropic.com/")
-        print("Then: export ANTHROPIC_API_KEY='your-key-here'")
+    if not preflight_checks():
         return
 
     try:
