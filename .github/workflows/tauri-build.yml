@@ -6,13 +6,11 @@ on:
       - main
     paths:
       - 'src-tauri/**'
-      - 'src/**'
   pull_request:
     branches:
       - main
     paths:
       - 'src-tauri/**'
-      - 'src/**'
 
 jobs:
   build:
