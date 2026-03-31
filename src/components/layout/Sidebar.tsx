@@ -9,6 +9,7 @@ export const Sidebar = ({ conversations }: SidebarProps): ReactElement => (
   <aside
     className="w-[260px] h-screen fixed left-[48px] top-0 bg-[#1a1a2a] border-r border-[#4a444f]/15 flex flex-col z-40"
     role="complementary"
+    data-testid="sidebar"
   >
     {/* macOS Style Header */}
     <div className="h-14 flex items-center px-4 gap-2" role="banner">

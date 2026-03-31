@@ -1,7 +1,10 @@
 import type { ReactElement } from 'react'
 
 export const TopTabBar = (): ReactElement => (
-  <header className="h-14 flex items-center justify-between px-6 bg-[#121221]/90 backdrop-blur-md border-b border-[#4a444f]/15 z-30">
+  <header
+    className="h-14 flex items-center justify-between px-6 bg-[#121221]/90 backdrop-blur-md border-b border-[#4a444f]/15 z-30"
+    data-testid="top-tab-bar"
+  >
     <nav className="flex items-center h-full">
       <div className="flex h-full items-center gap-2">
         {/* Active tab - Chat */}

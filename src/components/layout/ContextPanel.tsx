@@ -31,6 +31,7 @@ const ContextPanel = (): ReactElement => {
       role="complementary"
       aria-label="Agent status panel"
       className="w-[280px] h-screen fixed right-0 top-0 bg-[#1a1a2a] border-l border-[#4a444f]/15 z-40 flex flex-col overflow-hidden"
+      data-testid="context-panel"
     >
       {/* Header */}
       <div className="h-14 flex items-center px-6">

@@ -1,7 +1,10 @@
 import type { ReactElement } from 'react'
 
 const IconRail = (): ReactElement => (
-  <aside className="w-[48px] h-screen fixed left-0 top-0 flex flex-col items-center py-4 z-50 bg-[#1a1a2a]/80 backdrop-blur-xl shadow-[0px_10px_40px_rgba(0,0,0,0.4)]">
+  <aside
+    className="w-[48px] h-screen fixed left-0 top-0 flex flex-col items-center py-4 z-50 bg-[#1a1a2a]/80 backdrop-blur-xl shadow-[0px_10px_40px_rgba(0,0,0,0.4)]"
+    data-testid="icon-rail"
+  >
     {/* Brand Logo */}
     <div className="mb-6 flex flex-col gap-1 items-center">
       <span className="text-[#cba6f7] font-black text-xl font-headline">V</span>

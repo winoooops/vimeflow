@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 
 const MessageInput = (): ReactElement => (
-  <footer className="p-6" role="contentinfo">
+  <footer className="p-6" role="contentinfo" data-testid="message-input">
     <div
       className="max-w-3xl mx-auto relative"
       data-testid="message-input-container"
