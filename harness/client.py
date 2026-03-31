@@ -39,9 +39,12 @@ def create_client(project_dir: Path, model: str) -> ClaudeSDKClient:
     Create a Claude Code SDK client with security layers.
 
     Security:
-      1. Sandbox — OS-level bash isolation
-      2. Permissions — file ops restricted to project_dir
-      3. Security hook — bash commands validated against allowlist
+      1. Settings isolation — CLAUDE_CONFIG_DIR prevents user-level hooks
+      2. Permissions — bypassPermissions for full autonomy, file ops scoped to project_dir
+      3. Python hooks — bash allowlist (security.py) + feature_list protection (hooks.py)
+
+    Note: sandbox.enabled is not used. On Linux/WSL2 it's unreliable (may be no-op)
+    and redundant when Python hooks already validate every bash command.
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -67,8 +70,9 @@ def create_client(project_dir: Path, model: str) -> ClaudeSDKClient:
     with open(settings_file, "w") as f:
         json.dump(security_settings, f, indent=2)
 
-    print(f"  Security: sandbox enabled, fs restricted to {project_dir.resolve()}")
+    print(f"  Security: bypassPermissions, fs restricted to {project_dir.resolve()}")
     print(f"  Bash: allowlist-validated (see harness/security.py)")
+    print(f"  Config: isolated from user settings (CLAUDE_CONFIG_DIR)")
     print()
 
     return ClaudeSDKClient(

@@ -47,6 +47,17 @@ Default model: `claude-sonnet-4-5-20250929`. Project dir defaults to repo root.
 | **Bash allowlist**          | `security.py` | Only whitelisted commands pass (`npm`, `cargo`, `git`, `node`, etc.). Sensitive commands (`rm`, `pkill`, `chmod`) get extra validation |
 | **Feature list protection** | `hooks.py`    | PreToolUse hook on Write — features cannot be removed or reordered, only `passes` field can change, must remain valid JSON array       |
 
+### Why No Sandbox?
+
+`sandbox.enabled` is a CLI-level setting that applies OS-level bash isolation. It is **not used** because:
+
+- On Linux/WSL2, sandbox support is unreliable or a no-op
+- `bypassPermissions` already skips CLI permission prompts; Python hooks provide the actual validation
+- Hooks fire regardless of permission mode and see the raw command (before any sandbox wrapping)
+- The Python allowlist in `security.py` gives finer control than OS-level sandbox
+
+The security model is: `bypassPermissions` (no CLI prompts) + Python hooks (command validation) + settings isolation (no user-level interference) + file path scoping (`permissions.allow` in `.claude_settings.json`).
+
 ## File Roles
 
 | File                       | Role                                                                                  |
