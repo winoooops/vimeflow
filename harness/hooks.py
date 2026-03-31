@@ -19,13 +19,19 @@ async def pre_write_feature_list_hook(input_data, tool_use_id=None, context=None
     Ensures features are never removed or reordered — only passes field can change.
     """
     try:
-        file_path = input_data.get("file_path", "") or input_data.get("path", "")
+        # SDK passes full hook context; tool params live in tool_input
+        if isinstance(input_data, dict) and "tool_input" in input_data:
+            tool_input = input_data["tool_input"]
+        else:
+            tool_input = input_data
+
+        file_path = tool_input.get("file_path", "") or tool_input.get("path", "")
 
         if "feature_list.json" not in file_path:
             return {}  # Not our concern
 
         # For Write tool, validate the new content
-        content = input_data.get("content", "")
+        content = tool_input.get("content", "")
         if not content:
             return {}  # Edit tool, harder to validate — let it through
 

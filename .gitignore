@@ -21,6 +21,9 @@ test-results/
 .env.local
 .env.*.local
 
+# Superpowers plugin working directory
+.superpowers/
+
 # IDE
 .vscode/*
 !.vscode/extensions.json

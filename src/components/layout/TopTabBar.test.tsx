@@ -1,0 +1,113 @@
+import { describe, test, expect } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { TopTabBar } from './TopTabBar'
+
+describe('TopTabBar', () => {
+  test('renders header element with correct role', () => {
+    render(<TopTabBar />)
+    const header = screen.getByRole('banner')
+    expect(header).toBeInTheDocument()
+    expect(header.tagName).toBe('HEADER')
+  })
+
+  test('applies correct layout classes', () => {
+    render(<TopTabBar />)
+    const header = screen.getByRole('banner')
+    expect(header).toHaveClass('h-14')
+    expect(header).toHaveClass('flex')
+    expect(header).toHaveClass('items-center')
+    expect(header).toHaveClass('justify-between')
+    expect(header).toHaveClass('px-6')
+  })
+
+  test('applies glassmorphism styling', () => {
+    render(<TopTabBar />)
+    const header = screen.getByRole('banner')
+    expect(header).toHaveClass('bg-[#121221]/90')
+    expect(header).toHaveClass('backdrop-blur-md')
+  })
+
+  test('applies ghost border at bottom', () => {
+    render(<TopTabBar />)
+    const header = screen.getByRole('banner')
+    expect(header).toHaveClass('border-b')
+    expect(header).toHaveClass('border-[#4a444f]/15')
+  })
+
+  test('applies correct z-index', () => {
+    render(<TopTabBar />)
+    const header = screen.getByRole('banner')
+    expect(header).toHaveClass('z-30')
+  })
+
+  test('renders navigation element', () => {
+    render(<TopTabBar />)
+    const nav = screen.getByRole('navigation')
+    expect(nav).toBeInTheDocument()
+  })
+
+  test('renders Chat tab as active with primary styling', () => {
+    render(<TopTabBar />)
+    const chatTab = screen.getByRole('button', { name: 'Chat' })
+    expect(chatTab).toBeInTheDocument()
+    expect(chatTab).toHaveClass('text-[#e2c7ff]') // text-primary
+    expect(chatTab).toHaveClass('border-b-2')
+    expect(chatTab).toHaveClass('border-[#cba6f7]') // border-primary-container
+    expect(chatTab).toHaveClass('h-full')
+    expect(chatTab).toHaveClass('font-headline')
+    expect(chatTab).toHaveClass('text-sm')
+    expect(chatTab).toHaveClass('font-semibold')
+  })
+
+  test('renders Files tab as inactive with hover state', () => {
+    render(<TopTabBar />)
+    const filesTab = screen.getByRole('button', { name: 'Files' })
+    expect(filesTab).toBeInTheDocument()
+    expect(filesTab).toHaveClass('text-on-surface-variant')
+    expect(filesTab).toHaveClass('hover:text-on-surface')
+    expect(filesTab).toHaveClass('hover:bg-[#1e1e2e]')
+    expect(filesTab).toHaveClass('h-[calc(100%-16px)]')
+    expect(filesTab).toHaveClass('my-2')
+    expect(filesTab).toHaveClass('rounded-lg')
+  })
+
+  test('renders Editor tab as inactive', () => {
+    render(<TopTabBar />)
+    const editorTab = screen.getByRole('button', { name: 'Editor' })
+    expect(editorTab).toBeInTheDocument()
+    expect(editorTab).toHaveClass('text-on-surface-variant')
+  })
+
+  test('renders Diff tab as inactive', () => {
+    render(<TopTabBar />)
+    const diffTab = screen.getByRole('button', { name: 'Diff' })
+    expect(diffTab).toBeInTheDocument()
+    expect(diffTab).toHaveClass('text-on-surface-variant')
+  })
+
+  test('renders notification bell icon', () => {
+    render(<TopTabBar />)
+    const bellButton = screen.getByRole('button', { name: /notification/i })
+    expect(bellButton).toBeInTheDocument()
+    expect(bellButton).toHaveClass('text-on-surface-variant')
+    expect(bellButton).toHaveClass('hover:text-primary')
+    expect(bellButton).toHaveTextContent('notifications')
+  })
+
+  test('renders more menu icon', () => {
+    render(<TopTabBar />)
+    const moreButton = screen.getByRole('button', { name: /more/i })
+    expect(moreButton).toBeInTheDocument()
+    expect(moreButton).toHaveClass('text-on-surface-variant')
+    expect(moreButton).toHaveClass('hover:text-on-surface')
+    expect(moreButton).toHaveTextContent('more_vert')
+  })
+
+  test('right action buttons are present', () => {
+    render(<TopTabBar />)
+    const bellButton = screen.getByRole('button', { name: /notification/i })
+    const moreButton = screen.getByRole('button', { name: /more/i })
+    expect(bellButton).toBeInTheDocument()
+    expect(moreButton).toBeInTheDocument()
+  })
+})

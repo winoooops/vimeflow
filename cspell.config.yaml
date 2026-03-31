@@ -31,6 +31,10 @@ words:
   - unlisten
   - zustand
   - tanstack
+  - conv
+
+  # Design / UI
+  - glassmorphism
 
   # Tools
   - cspell

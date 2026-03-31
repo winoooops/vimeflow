@@ -114,7 +114,12 @@ def validate_rm_command(command: str) -> tuple[bool, str]:
 async def bash_security_hook(input_data, tool_use_id=None, context=None):
     """Pre-tool-use hook that validates bash commands using an allowlist."""
     try:
-        command = input_data.get("command", "")
+        # SDK passes full hook context; command lives in tool_input
+        if isinstance(input_data, dict) and "tool_input" in input_data:
+            tool_input = input_data["tool_input"]
+            command = tool_input.get("command", "") if isinstance(tool_input, dict) else ""
+        else:
+            command = input_data.get("command", "") if isinstance(input_data, dict) else ""
 
         if not command or not command.strip():
             return {"decision": "block", "reason": "Empty command"}

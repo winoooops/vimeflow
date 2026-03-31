@@ -82,16 +82,6 @@ export default defineConfig([
         'error',
         { functions: 'defaultArguments' },
       ],
-      'no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            {
-              name: 'vitest',
-            },
-          ],
-        },
-      ],
     },
     languageOptions: {
       globals: globals.browser,
@@ -127,6 +117,10 @@ export default defineConfig([
   },
   {
     files: ['**/*.js', '**/*.mjs'],
+    ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    files: ['*.config.ts', '*.config.js'],
     ...tseslint.configs.disableTypeChecked,
   },
 
