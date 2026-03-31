@@ -34,22 +34,31 @@ BUILTIN_TOOLS = [
 ]
 
 
-def create_client(project_dir: Path, model: str) -> ClaudeSDKClient:
+def create_client(
+    project_dir: Path, model: str, *, sandbox: bool = True
+) -> ClaudeSDKClient:
     """
     Create a Claude Code SDK client with security layers.
 
     Security:
-      1. Sandbox — OS-level bash isolation
-      2. Permissions — file ops restricted to project_dir
-      3. Security hook — bash commands validated against allowlist
+      1. Settings isolation — CLAUDE_CONFIG_DIR prevents user-level hooks
+      2. Sandbox (default on) — OS-level bash isolation via the CLI
+      3. Permissions — acceptEdits with sandbox, bypassPermissions without
+      4. Python hooks — bash allowlist (security.py) + feature_list protection (hooks.py)
+
+    Args:
+        project_dir: Root directory for the project
+        model: Claude model identifier
+        sandbox: Enable OS-level sandbox (default: True).
+                 Recommended on macOS/Linux. On Windows/WSL2 the sandbox
+                 may be unreliable — pass --no-sandbox to disable.
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY not set")
 
-    security_settings = {
+    security_settings: dict = {
         "permissions": {
-            "defaultMode": "bypassPermissions",
             "allow": [
                 "Read(.//**)",
                 "Write(.//**)",
@@ -61,14 +70,26 @@ def create_client(project_dir: Path, model: str) -> ClaudeSDKClient:
         },
     }
 
+    if sandbox:
+        security_settings["sandbox"] = {
+            "enabled": True,
+            "autoAllowBashIfSandboxed": True,
+        }
+        security_settings["permissions"]["defaultMode"] = "acceptEdits"
+        mode_label = "sandbox + acceptEdits"
+    else:
+        security_settings["permissions"]["defaultMode"] = "bypassPermissions"
+        mode_label = "bypassPermissions (no sandbox)"
+
     project_dir.mkdir(parents=True, exist_ok=True)
 
     settings_file = project_dir / ".claude_settings.json"
     with open(settings_file, "w") as f:
         json.dump(security_settings, f, indent=2)
 
-    print(f"  Security: sandbox enabled, fs restricted to {project_dir.resolve()}")
+    print(f"  Security: {mode_label}, fs restricted to {project_dir.resolve()}")
     print(f"  Bash: allowlist-validated (see harness/security.py)")
+    print(f"  Config: isolated from user settings (CLAUDE_CONFIG_DIR)")
     print()
 
     return ClaudeSDKClient(

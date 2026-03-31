@@ -9,14 +9,16 @@ Implements the two-agent pattern (initializer + coding agent) to
 autonomously build VIBM, a Tauri/TypeScript/Rust desktop application.
 
 Usage:
-  python autonomous_agent_demo.py
-  python autonomous_agent_demo.py --max-iterations 5
-  python autonomous_agent_demo.py --model claude-sonnet-4-5-20250929
+  python3 autonomous_agent_demo.py --clean         # Fresh start: wipe runtime files, run initializer
+  python3 autonomous_agent_demo.py --max-iterations 5
+  python3 autonomous_agent_demo.py --no-sandbox    # Windows/WSL2 only
 """
 
 import argparse
 import asyncio
 import os
+import platform
+import stat
 from pathlib import Path
 
 from agent import run_autonomous_agent
@@ -50,17 +52,115 @@ def parse_args() -> argparse.Namespace:
         help=f"Claude model (default: {DEFAULT_MODEL})",
     )
 
+    parser.add_argument(
+        "--no-sandbox",
+        action="store_true",
+        default=False,
+        help="Disable OS-level sandbox (only recommended for Windows/WSL2)",
+    )
+
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        default=False,
+        help="Wipe runtime files (feature_list.json, claude-progress.txt, app_spec.md) before starting. Forces the initializer agent to run fresh.",
+    )
+
     return parser.parse_args()
+
+
+def _is_wsl() -> bool:
+    """Detect if running inside WSL."""
+    try:
+        with open("/proc/version", "r") as f:
+            return "microsoft" in f.read().lower()
+    except OSError:
+        return False
+
+
+def resolve_sandbox(no_sandbox_flag: bool) -> bool:
+    """
+    Determine whether sandbox should be enabled.
+
+    Default: sandbox ON (recommended for macOS/Linux).
+    Disabled only when --no-sandbox is explicitly passed.
+    On WSL2 first run without --no-sandbox, warn the user.
+    """
+    if no_sandbox_flag:
+        print("  Sandbox: DISABLED (--no-sandbox flag)")
+        print("  Python hooks still validate all bash commands.")
+        return False
+
+    if _is_wsl():
+        print("  Warning: WSL2 detected. OS-level sandbox may be unreliable.")
+        print("  If you encounter issues, re-run with --no-sandbox")
+        print("  Python hooks still validate all bash commands regardless.")
+        print()
+
+    return True
+
+
+RUNTIME_FILES = [
+    "feature_list.json",
+    "claude-progress.txt",
+    "app_spec.md",
+]
+
+
+def clean_runtime_files(project_dir: Path) -> None:
+    """Remove harness runtime files to force a fresh initializer run."""
+    print("  Cleaning runtime files...")
+    for name in RUNTIME_FILES:
+        path = project_dir / name
+        if path.exists():
+            path.unlink()
+            print(f"    Removed {name}")
+    print()
+
+
+def preflight_checks() -> bool:
+    """Run preflight checks before starting the harness."""
+    ok = True
+
+    # Check API key
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("Error: ANTHROPIC_API_KEY environment variable not set")
+        print("\nOption 1: export ANTHROPIC_API_KEY='your-key-here'")
+        print("Option 2: add it to .env at the project root")
+        print("   The harness does NOT auto-load .env; source it first:")
+        print("   set -a && source .env && set +a")
+        return False
+
+    # Check optional base URL
+    base_url = os.environ.get("ANTHROPIC_BASE_URL")
+    if base_url:
+        print(f"  API base URL: {base_url}")
+
+    # Fix ripgrep permissions (Claude Code vendor binary)
+    rg_paths = [
+        Path.home() / ".npm-global/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg",
+        Path.home() / ".local/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg",
+    ]
+    for rg_path in rg_paths:
+        if rg_path.exists() and not os.access(rg_path, os.X_OK):
+            print(f"  Fixing rg permissions: {rg_path}")
+            rg_path.chmod(rg_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    return ok
 
 
 def main() -> None:
     args = parse_args()
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("Error: ANTHROPIC_API_KEY environment variable not set")
-        print("\nGet your API key from: https://console.anthropic.com/")
-        print("Then: export ANTHROPIC_API_KEY='your-key-here'")
+    if not preflight_checks():
         return
+
+    if args.clean:
+        clean_runtime_files(args.project_dir)
+
+    # --no-sandbox flag or HARNESS_NO_SANDBOX env var
+    no_sandbox = args.no_sandbox or os.environ.get("HARNESS_NO_SANDBOX") == "1"
+    sandbox = resolve_sandbox(no_sandbox)
 
     try:
         asyncio.run(
@@ -68,6 +168,7 @@ def main() -> None:
                 project_dir=args.project_dir,
                 model=args.model,
                 max_iterations=args.max_iterations,
+                sandbox=sandbox,
             )
         )
     except KeyboardInterrupt:

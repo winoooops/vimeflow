@@ -78,6 +78,7 @@ async def run_autonomous_agent(
     project_dir: Path,
     model: str,
     max_iterations: Optional[int] = None,
+    sandbox: bool = True,
 ) -> None:
     """Run the autonomous agent loop."""
     print("\n" + "=" * 70)
@@ -112,7 +113,7 @@ async def run_autonomous_agent(
 
         print_session_header(iteration, is_first_run)
 
-        client = create_client(project_dir, model)
+        client = create_client(project_dir, model, sandbox=sandbox)
 
         if is_first_run:
             prompt = get_initializer_prompt()

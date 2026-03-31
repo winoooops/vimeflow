@@ -58,6 +58,5 @@ __pycache__/
 app_spec.md
 feature_list.json
 claude-progress.txt
-SETUP.md
-init.sh
 harness/prompts/app_spec.md
+harness/.env
