@@ -60,3 +60,13 @@ echo "  - Review feature_list.json for development roadmap"
 echo "  - Run 'npm run lint' to check code quality"
 echo "  - Run 'npm test' to run tests"
 echo "  - Review CLAUDE.md for project conventions"
+echo ""
+
+# Check if Tauri is initialized
+if [ -d "src-tauri" ]; then
+    echo "Tauri backend detected!"
+    echo "To start development server: cargo tauri dev"
+else
+    echo "Tauri backend not yet initialized."
+    echo "To initialize: npm create tauri-app (or see feature_list.json #1)"
+fi
