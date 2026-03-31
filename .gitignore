@@ -59,3 +59,4 @@ app_spec.md
 feature_list.json
 claude-progress.txt
 harness/prompts/app_spec.md
+harness/.env

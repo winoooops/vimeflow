@@ -9,15 +9,15 @@ Implements the two-agent pattern (initializer + coding agent) to
 autonomously build VIBM, a Tauri/TypeScript/Rust desktop application.
 
 Usage:
-  python autonomous_agent_demo.py
-  python autonomous_agent_demo.py --max-iterations 5
-  python autonomous_agent_demo.py --model claude-sonnet-4-5-20250929
+  python3 autonomous_agent_demo.py
+  python3 autonomous_agent_demo.py --max-iterations 5
+  python3 autonomous_agent_demo.py --no-sandbox   # Windows/WSL2 only
 """
 
 import argparse
 import asyncio
 import os
-import shutil
+import platform
 import stat
 from pathlib import Path
 
@@ -52,7 +52,45 @@ def parse_args() -> argparse.Namespace:
         help=f"Claude model (default: {DEFAULT_MODEL})",
     )
 
+    parser.add_argument(
+        "--no-sandbox",
+        action="store_true",
+        default=False,
+        help="Disable OS-level sandbox (only recommended for Windows/WSL2)",
+    )
+
     return parser.parse_args()
+
+
+def _is_wsl() -> bool:
+    """Detect if running inside WSL."""
+    try:
+        with open("/proc/version", "r") as f:
+            return "microsoft" in f.read().lower()
+    except OSError:
+        return False
+
+
+def resolve_sandbox(no_sandbox_flag: bool) -> bool:
+    """
+    Determine whether sandbox should be enabled.
+
+    Default: sandbox ON (recommended for macOS/Linux).
+    Disabled only when --no-sandbox is explicitly passed.
+    On WSL2 first run without --no-sandbox, warn the user.
+    """
+    if no_sandbox_flag:
+        print("  Sandbox: DISABLED (--no-sandbox flag)")
+        print("  Python hooks still validate all bash commands.")
+        return False
+
+    if _is_wsl():
+        print("  Warning: WSL2 detected. OS-level sandbox may be unreliable.")
+        print("  If you encounter issues, re-run with --no-sandbox")
+        print("  Python hooks still validate all bash commands regardless.")
+        print()
+
+    return True
 
 
 def preflight_checks() -> bool:
@@ -92,12 +130,17 @@ def main() -> None:
     if not preflight_checks():
         return
 
+    # --no-sandbox flag or HARNESS_NO_SANDBOX env var
+    no_sandbox = args.no_sandbox or os.environ.get("HARNESS_NO_SANDBOX") == "1"
+    sandbox = resolve_sandbox(no_sandbox)
+
     try:
         asyncio.run(
             run_autonomous_agent(
                 project_dir=args.project_dir,
                 model=args.model,
                 max_iterations=args.max_iterations,
+                sandbox=sandbox,
             )
         )
     except KeyboardInterrupt:

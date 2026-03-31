@@ -32,6 +32,7 @@ python3 autonomous_agent_demo.py                        # Unlimited iterations
 python3 autonomous_agent_demo.py --max-iterations 5     # Capped
 python3 autonomous_agent_demo.py --model claude-sonnet-4-5-20250929  # Override model
 python3 autonomous_agent_demo.py --project-dir ../       # Custom project dir
+python3 autonomous_agent_demo.py --no-sandbox            # Windows/WSL2 only
 ```
 
 Default model: `claude-sonnet-4-5-20250929`. Project dir defaults to repo root.
@@ -47,16 +48,18 @@ Default model: `claude-sonnet-4-5-20250929`. Project dir defaults to repo root.
 | **Bash allowlist**          | `security.py` | Only whitelisted commands pass (`npm`, `cargo`, `git`, `node`, etc.). Sensitive commands (`rm`, `pkill`, `chmod`) get extra validation |
 | **Feature list protection** | `hooks.py`    | PreToolUse hook on Write — features cannot be removed or reordered, only `passes` field can change, must remain valid JSON array       |
 
-### Why No Sandbox?
+### Sandbox Configuration
 
-`sandbox.enabled` is a CLI-level setting that applies OS-level bash isolation. It is **not used** because:
+OS-level sandbox is **enabled by default** (recommended for macOS/Linux). It provides an additional security layer via CLI-level bash isolation, on top of the Python allowlist hooks.
 
-- On Linux/WSL2, sandbox support is unreliable or a no-op
-- `bypassPermissions` already skips CLI permission prompts; Python hooks provide the actual validation
-- Hooks fire regardless of permission mode and see the raw command (before any sandbox wrapping)
-- The Python allowlist in `security.py` gives finer control than OS-level sandbox
+| Flag           | Sandbox | Permission Mode     | When to Use                       |
+| -------------- | ------- | ------------------- | --------------------------------- |
+| _(default)_    | ON      | `acceptEdits`       | macOS, native Linux               |
+| `--no-sandbox` | OFF     | `bypassPermissions` | Windows/WSL2 (sandbox unreliable) |
 
-The security model is: `bypassPermissions` (no CLI prompts) + Python hooks (command validation) + settings isolation (no user-level interference) + file path scoping (`permissions.allow` in `.claude_settings.json`).
+Python hooks (`security.py`, `hooks.py`) fire regardless of sandbox or permission mode. They always see the raw command before any sandbox wrapping.
+
+**WSL2 users:** The sandbox may be unreliable or a no-op on WSL2. If you encounter Bash commands being blocked unexpectedly, re-run with `--no-sandbox`. You accept the risk of running without OS-level isolation — Python hooks still validate every command.
 
 ## File Roles
 
