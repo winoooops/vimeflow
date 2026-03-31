@@ -1,0 +1,61 @@
+<h2>Chat View — Component Architecture</h2>
+<p class="subtitle">How should the Chat center column be decomposed into React components?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Flat Components (Recommended)</h3>
+      <p>Minimal component tree — a single <code>ChatView</code> page component containing <code>MessageThread</code>, <code>UserMessage</code>, <code>AgentMessage</code>, <code>CodeBlock</code>, <code>MessageInput</code>, and <code>StatusBadge</code>. Simple, matches the design 1:1, easy to lift into the full app shell later.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Direct mapping from HTML reference to React components</li>
+          <li>Easy to verify against screen.png</li>
+          <li>Fewer abstractions = fewer bugs</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Some repetition in message styling</li>
+          <li>Refactoring needed when adding real data</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Design System First</h3>
+      <p>Build a primitive component library first (<code>Surface</code>, <code>GlassPanel</code>, <code>Badge</code>, <code>Avatar</code>, <code>Typography</code>), then compose the Chat view from those primitives. Matches the design system spec more faithfully.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Reusable across all 5 screens later</li>
+          <li>Enforces design tokens from day 1</li>
+          <li>Easier to maintain consistency</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>More upfront work before seeing anything</li>
+          <li>Risk of over-abstracting for dead pages</li>
+          <li>Primitives may not survive contact with real implementation</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Hybrid — Tokens + Flat Components</h3>
+      <p>Set up the Tailwind theme config with all design tokens (colors, fonts, border-radius) from the reference HTML, then build flat Chat components using those tokens. No component abstractions, but the design system vocabulary is baked into Tailwind.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Design tokens defined once, used everywhere</li>
+          <li>Components stay simple and direct</li>
+          <li>Tailwind config carries forward to all future screens</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Slightly more setup than pure flat approach</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+</div>

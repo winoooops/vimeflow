@@ -1,0 +1,40 @@
+<h2>Google Stitch Prompt Strategy</h2>
+<p class="subtitle">Three approaches to get the best UI output from Stitch</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Single Comprehensive Prompt</h3>
+      <p>One detailed prompt describing the entire app — all 4 tabs, sidebar, theme, and interactions. Stitch generates everything in one shot.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Consistent visual language across all views</li><li>Single generation = unified design system</li><li>Fastest to execute</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>May lose detail on individual screens</li><li>Risk of generic output if prompt is too broad</li><li>Hard to iterate on specific views</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Screen-by-Screen Prompts (Recommended)</h3>
+      <p>Four focused prompts — one per tab view (Chat, Files, Editor, Diff). Each prompt shares a common "design system" preamble for consistency, then adds screen-specific details.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Maximum detail per screen</li><li>Can iterate on individual views without redoing everything</li><li>Shared preamble keeps visual consistency</li><li>Best control over each tab's UX</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>More prompts to manage (4-5 total)</li><li>Minor visual drift between screens possible</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Progressive Refinement</h3>
+      <p>Start with a broad "design system + main chat" prompt. Use Stitch's follow-up capability to generate each additional tab iteratively, refining as you go.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Most adaptive — refine based on what Stitch produces</li><li>Builds on established visual language</li><li>Good if Stitch supports multi-turn</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Depends on Stitch's multi-turn capabilities</li><li>Earlier decisions constrain later screens</li><li>Takes longest to execute</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
