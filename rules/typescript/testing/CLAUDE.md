@@ -61,7 +61,7 @@ Follow the [Testing Library query priority](https://testing-library.com/docs/que
 - `getByRole` is the default for interactive elements and landmarks
 - `getByText` is only for verifying displayed content, never as primary element locator
 - `getByTestId` is last resort for layout/styling tests only
-- Material Icons: add `aria-hidden="true"` to icon spans, query parent via `getByRole`
+- Material Symbols (Google Fonts icon font, **not** MUI): add `aria-hidden="true"` to icon spans, query parent via `getByRole`
 - Every a11y attribute in a component must be exercised by its test
 
 For test query examples (buttons, headings, status, landmarks, articles, figures), see [a11y-queries.md](./a11y-queries.md).
@@ -84,3 +84,22 @@ npx vitest run --coverage     # Coverage report
 
 - **tdd-guide** — Test-driven development enforcement
 - **e2e-runner** — Desktop E2E testing with tauri-driver/Playwright
+
+## QA
+
+Known gotchas and workarounds encountered in this project. See also [a11y-queries.md](./a11y-queries.md) for query pattern examples.
+
+### Material Symbols icon verification
+
+This project uses **Material Symbols** (Google Fonts icon font, **not** MUI). Icons render as text inside `<span class="material-symbols-outlined">`. Since icons are `aria-hidden`, Testing Library a11y queries can't reach them.
+
+To verify icon presence, extract the `querySelector` to a variable so `eslint-disable-next-line` survives Prettier wrapping:
+
+```typescript
+const button = screen.getByRole('button', { name: /send/i })
+// eslint-disable-next-line testing-library/no-node-access -- verifying icon CSS class
+const icon = button.querySelector('.material-symbols-outlined')
+expect(icon).toBeInTheDocument()
+```
+
+**Why a variable?** Prettier may wrap `expect(button.querySelector(...)).toBeInTheDocument()` across multiple lines, pushing `.querySelector` beyond the single-line eslint-disable range. A variable assignment keeps the violation on the disabled line.
