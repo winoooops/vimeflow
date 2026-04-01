@@ -1,7 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { describe, test, expect } from 'vitest'
 import MessageThread from './MessageThread'
-import type { Message } from '../types'
 
 describe('MessageThread', () => {
   test('renders scrollable container with correct Tailwind classes', () => {
@@ -18,57 +17,66 @@ describe('MessageThread', () => {
   })
 
   test('renders UserMessage components for user messages', () => {
-    const messages: Message[] = [
-      {
-        id: 'msg-1',
-        sender: 'user',
-        content: 'Test user message',
-        timestamp: '2026-03-31T10:00:00Z',
-      },
-    ]
-    render(<MessageThread messages={messages} />)
+    render(
+      <MessageThread
+        messages={[
+          {
+            id: 'msg-1',
+            sender: 'user',
+            content: 'Test user message',
+            timestamp: '2026-03-31T10:00:00Z',
+          },
+        ]}
+      />
+    )
     expect(screen.getByTestId('user-message-container')).toBeInTheDocument()
     expect(screen.getByText('Test user message')).toBeInTheDocument()
   })
 
   test('renders AgentMessage components for agent messages', () => {
-    const messages: Message[] = [
-      {
-        id: 'msg-2',
-        sender: 'agent',
-        content: 'Test agent response',
-        timestamp: '2026-03-31T10:01:00Z',
-        status: 'thinking',
-      },
-    ]
-    render(<MessageThread messages={messages} />)
+    render(
+      <MessageThread
+        messages={[
+          {
+            id: 'msg-2',
+            sender: 'agent',
+            content: 'Test agent response',
+            timestamp: '2026-03-31T10:01:00Z',
+            status: 'thinking',
+          },
+        ]}
+      />
+    )
     expect(screen.getByTestId('agent-message-container')).toBeInTheDocument()
     expect(screen.getByText('Test agent response')).toBeInTheDocument()
   })
 
   test('renders multiple messages in order', () => {
-    const messages: Message[] = [
-      {
-        id: 'msg-1',
-        sender: 'user',
-        content: 'First message',
-        timestamp: '2026-03-31T10:00:00Z',
-      },
-      {
-        id: 'msg-2',
-        sender: 'agent',
-        content: 'Second message',
-        timestamp: '2026-03-31T10:01:00Z',
-        status: 'completed',
-      },
-      {
-        id: 'msg-3',
-        sender: 'user',
-        content: 'Third message',
-        timestamp: '2026-03-31T10:02:00Z',
-      },
-    ]
-    render(<MessageThread messages={messages} />)
+    render(
+      <MessageThread
+        messages={[
+          {
+            id: 'msg-1',
+            sender: 'user',
+            content: 'First message',
+            timestamp: '2026-03-31T10:00:00Z',
+          },
+          {
+            id: 'msg-2',
+            sender: 'agent',
+            content: 'Second message',
+            timestamp: '2026-03-31T10:01:00Z',
+            status: 'completed',
+          },
+          {
+            id: 'msg-3',
+            sender: 'user',
+            content: 'Third message',
+            timestamp: '2026-03-31T10:02:00Z',
+          },
+        ]}
+      />
+    )
     expect(screen.getByTestId('message-container-msg-1')).toBeInTheDocument()
     expect(screen.getByTestId('message-container-msg-2')).toBeInTheDocument()
     expect(screen.getByTestId('message-container-msg-3')).toBeInTheDocument()
@@ -85,59 +93,69 @@ describe('MessageThread', () => {
   })
 
   test('wraps messages in max-w-3xl mx-auto container', () => {
-    const messages: Message[] = [
-      {
-        id: 'msg-1',
-        sender: 'user',
-        content: 'Test message',
-        timestamp: '2026-03-31T10:00:00Z',
-      },
-    ]
-    render(<MessageThread messages={messages} />)
+    render(
+      <MessageThread
+        messages={[
+          {
+            id: 'msg-1',
+            sender: 'user',
+            content: 'Test message',
+            timestamp: '2026-03-31T10:00:00Z',
+          },
+        ]}
+      />
+    )
     const container = screen.getByTestId('message-container-msg-1')
     expect(container).toBeInTheDocument()
     expect(container).toHaveClass('max-w-3xl', 'mx-auto')
   })
 
   test('renders agent messages with code snippets', () => {
-    const messages: Message[] = [
-      {
-        id: 'msg-4',
-        sender: 'agent',
-        content: 'Here is the refactored code:',
-        timestamp: '2026-03-31T10:03:00Z',
-        status: 'completed',
-        codeSnippets: [
+    render(
+      <MessageThread
+        messages={[
           {
-            language: 'typescript',
-            filename: 'test.ts',
-            code: 'const foo = "bar"',
+            id: 'msg-4',
+            sender: 'agent',
+            content: 'Here is the refactored code:',
+            timestamp: '2026-03-31T10:03:00Z',
+            status: 'completed',
+            codeSnippets: [
+              {
+                language: 'typescript',
+                filename: 'test.ts',
+                code: 'const foo = "bar"',
+              },
+            ],
           },
-        ],
-      },
-    ]
-    render(<MessageThread messages={messages} />)
+        ]}
+      />
+    )
     expect(screen.getByTestId('agent-message-container')).toBeInTheDocument()
     expect(screen.getByText('Here is the refactored code:')).toBeInTheDocument()
     expect(screen.getByText('test.ts')).toBeInTheDocument()
   })
 
   test('uses message id as key for rendering', () => {
-    const messages: Message[] = [
-      {
-        id: 'unique-id-1',
-        sender: 'user',
-        content: 'Message 1',
-        timestamp: '2026-03-31T10:00:00Z',
-      },
-      {
-        id: 'unique-id-2',
-        sender: 'agent',
-        content: 'Message 2',
-        timestamp: '2026-03-31T10:01:00Z',
-      },
-    ]
-    render(<MessageThread messages={messages} />)
+    render(
+      <MessageThread
+        messages={[
+          {
+            id: 'unique-id-1',
+            sender: 'user',
+            content: 'Message 1',
+            timestamp: '2026-03-31T10:00:00Z',
+          },
+          {
+            id: 'unique-id-2',
+            sender: 'agent',
+            content: 'Message 2',
+            timestamp: '2026-03-31T10:01:00Z',
+          },
+        ]}
+      />
+    )
+
     expect(
       screen.getByTestId('message-container-unique-id-1')
     ).toBeInTheDocument()
