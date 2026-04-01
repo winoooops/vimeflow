@@ -67,14 +67,16 @@ describe('UserMessage', () => {
   })
 
   test('renders inline code with special styling', () => {
-    const messageWithCode: Message = {
-      id: '2',
-      sender: 'user',
-      content: 'Can you refactor `auth_middleware.py` to use async?',
-      timestamp: '2026-03-31T10:42:00Z',
-    }
-
-    render(<UserMessage message={messageWithCode} />)
+    render(
+      <UserMessage
+        message={{
+          id: '2',
+          sender: 'user',
+          content: 'Can you refactor `auth_middleware.py` to use async?',
+          timestamp: '2026-03-31T10:42:00Z',
+        }}
+      />
+    )
 
     const codeElement = screen.getByText('auth_middleware.py')
     expect(codeElement.tagName).toBe('CODE')
