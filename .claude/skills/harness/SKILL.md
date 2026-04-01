@@ -1,3 +1,9 @@
+---
+name: harness
+description: Launch the VIBM autonomous development harness — gathers requirements, brainstorms spec, generates app_spec.md, and starts the agent loop
+tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion, Skill, Agent
+---
+
 # /harness — Autonomous Development Harness
 
 Launch the VIBM autonomous development harness. Gathers feature requirements, brainstorms the spec, generates `app_spec.md`, and starts the agent loop.
@@ -91,7 +97,7 @@ Structure the file as:
 Run the harness using Bash:
 
 ```bash
-cd /home/claw/projects/vibm/harness && pip install -r requirements.txt 2>/dev/null && python autonomous_agent_demo.py --max-iterations <N>
+cd harness && pip install -r requirements.txt 2>/dev/null && python autonomous_agent_demo.py --max-iterations <N>
 ```
 
 Where `<N>` is the iteration count from Step 1. If "Unlimited", omit the `--max-iterations` flag entirely.

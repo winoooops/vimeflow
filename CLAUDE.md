@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Structure: Index-Only by Design
+
+This file is intentionally minimal — it is an **index, not a reference**. Each linked document is self-contained. Read only what you need for the current task to keep context concise. Do NOT inline content from sub-documents back into this file.
+
 ## What This Project Is
 
 Vimeflow is a **coding agent conversation manager** — a Tauri desktop application (Rust backend + React/TypeScript frontend) for managing conversations with AI coding agents.
