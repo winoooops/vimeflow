@@ -19,7 +19,9 @@ const MessageInput = (): ReactElement => (
           className="p-2 rounded-lg bg-primary-container text-on-primary-container shadow-lg shadow-primary-container/20 hover:scale-105 active:scale-95 transition-all"
           aria-label="send"
         >
-          <span className="material-symbols-outlined">send</span>
+          <span className="material-symbols-outlined" aria-hidden="true">
+            send
+          </span>
         </button>
       </div>
     </div>

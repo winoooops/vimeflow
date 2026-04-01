@@ -61,8 +61,10 @@ describe('MessageInput', () => {
 
   test('send button contains Material Symbols icon', () => {
     render(<MessageInput />)
-    const icon = screen.getByText('send')
-    expect(icon).toHaveClass('material-symbols-outlined')
+    const button = screen.getByRole('button', { name: /send/i })
+    // eslint-disable-next-line testing-library/no-node-access -- checking icon CSS class requires DOM traversal
+    const icon = button.querySelector('.material-symbols-outlined')
+    expect(icon).toBeInTheDocument()
   })
 
   test('button is positioned absolutely within relative container', () => {

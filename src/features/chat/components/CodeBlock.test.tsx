@@ -12,7 +12,8 @@ describe('CodeBlock', () => {
       />
     )
 
-    expect(screen.getByTestId('code-block')).toBeInTheDocument()
+    const figure = screen.getByRole('figure', { name: 'auth_middleware.py' })
+    expect(figure).toBeInTheDocument()
     expect(screen.getByText('auth_middleware.py')).toBeInTheDocument()
     expect(screen.getByText('PYTHON')).toBeInTheDocument()
     expect(screen.getByText('import redis_client')).toBeInTheDocument()
@@ -23,7 +24,7 @@ describe('CodeBlock', () => {
       <CodeBlock filename="test.ts" language="typescript" code="const x = 1" />
     )
 
-    const container = screen.getByTestId('code-block')
+    const container = screen.getByRole('figure', { name: 'test.ts' })
     expect(container).toHaveClass('bg-surface-container-highest')
     expect(container).toHaveClass('rounded-lg')
     expect(container).toHaveClass('p-4')
@@ -46,9 +47,10 @@ describe('CodeBlock', () => {
   test('renders file icon in header', () => {
     render(<CodeBlock filename="test.py" language="python" code="print(1)" />)
 
-    const icon = screen.getByText('description')
+    const header = screen.getByTestId('code-block-header')
+    // eslint-disable-next-line testing-library/no-node-access -- verifying icon CSS class
+    const icon = header.querySelector('.material-symbols-outlined')
     expect(icon).toBeInTheDocument()
-    expect(icon).toHaveClass('material-symbols-outlined')
   })
 
   test('applies correct styling to header', () => {
@@ -95,6 +97,7 @@ describe('CodeBlock', () => {
       <CodeBlock filename={longFilename} language="python" code="print(1)" />
     )
 
-    expect(screen.getByText(longFilename)).toBeInTheDocument()
+    const figure = screen.getByRole('figure', { name: longFilename })
+    expect(figure).toBeInTheDocument()
   })
 })

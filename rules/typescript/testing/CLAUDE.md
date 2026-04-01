@@ -1,14 +1,12 @@
 ---
 paths:
-  - '**/*.ts'
-  - '**/*.tsx'
-  - '**/*.js'
-  - '**/*.jsx'
+  - '**/*.test.ts'
+  - '**/*.test.tsx'
 ---
 
 # TypeScript/JavaScript Testing
 
-> This file extends [common/testing.md](../common/testing.md) with TypeScript/JavaScript specific content.
+> This file extends [common/testing.md](../../common/testing.md) with TypeScript/JavaScript specific content.
 
 ## Unit & Integration Testing
 
@@ -51,6 +49,23 @@ test('renders agent message', () => {
   expect(screen.getByText('Hello')).toBeInTheDocument()
 })
 ```
+
+## Testing Library Query Priority
+
+Follow the [Testing Library query priority](https://testing-library.com/docs/queries/about/#priority). Use the **most accessible** query that works for your test case.
+
+**Priority order:** `getByRole` > `getByLabelText` > `getByPlaceholderText` > `getByText` (content only) > `getByAltText` > `getByTestId` (last resort)
+
+**Key rules:**
+
+- `getByRole` is the default for interactive elements and landmarks
+- `getByText` is only for verifying displayed content, never as primary element locator
+- `getByTestId` is last resort for layout/styling tests only
+- Material Icons: add `aria-hidden="true"` to icon spans, query parent via `getByRole`
+- Every a11y attribute in a component must be exercised by its test
+
+For test query examples (buttons, headings, status, landmarks, articles, figures), see [a11y-queries.md](./a11y-queries.md).
+For component-side a11y patterns (which attributes to add), see [../coding-style/a11y-components.md](../coding-style/a11y-components.md).
 
 ## E2E Testing
 

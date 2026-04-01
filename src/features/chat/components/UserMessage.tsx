@@ -63,8 +63,9 @@ const formatTimestamp = (isoString: string): string => {
 
 const UserMessage = ({ message }: UserMessageProps): ReactElement => (
   <div
+    role="article"
+    aria-label="Message from You"
     className="flex gap-4 max-w-3xl mx-auto"
-    data-testid="user-message-container"
   >
     {/* Avatar */}
     <div

@@ -5,19 +5,18 @@ import { StatusBadge } from './StatusBadge'
 describe('StatusBadge', () => {
   test('renders with provided status text', () => {
     render(<StatusBadge status="Thinking" />)
-    expect(screen.getByText('THINKING')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('THINKING')
   })
 
   test('transforms status text to uppercase', () => {
     render(<StatusBadge status="refactoring" />)
-    expect(screen.getByText('REFACTORING')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('REFACTORING')
   })
 
   test('applies correct Tailwind classes for styling', () => {
     render(<StatusBadge status="Completed" />)
-    const badge = screen.getByText('COMPLETED')
+    const badge = screen.getByRole('status')
 
-    // Check that the badge element exists and has the expected classes
     expect(badge).toHaveClass('bg-secondary/10')
     expect(badge).toHaveClass('text-secondary')
     expect(badge).toHaveClass('text-[9px]')
@@ -31,24 +30,25 @@ describe('StatusBadge', () => {
 
   test('renders with different status values', () => {
     const { rerender } = render(<StatusBadge status="Pending" />)
-    expect(screen.getByText('PENDING')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('PENDING')
 
     rerender(<StatusBadge status="Error" />)
-    expect(screen.getByText('ERROR')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('ERROR')
 
     rerender(<StatusBadge status="Success" />)
-    expect(screen.getByText('SUCCESS')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('SUCCESS')
   })
 
   test('handles empty string status', () => {
     render(<StatusBadge status="" />)
-    const badge = screen.getByTestId('status-badge')
+    const badge = screen.getByRole('status')
     expect(badge).toBeEmptyDOMElement()
   })
 
   test('renders as a span element', () => {
     render(<StatusBadge status="Active" />)
-    const badge = screen.getByText('ACTIVE')
+    const badge = screen.getByRole('status')
+    expect(badge).toHaveTextContent('ACTIVE')
     expect(badge.tagName).toBe('SPAN')
   })
 })
