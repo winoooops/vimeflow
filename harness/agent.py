@@ -289,6 +289,7 @@ async def run_autonomous_agent(
                     break
                 # Review said clean but feature didn't flip passes=true
                 print(f"  Feature #{feature_id} review clean but still pending. Continuing.")
+                findings = None  # Clear stale findings so next iteration starts fresh
                 await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
             elif status == "has_findings":
                 findings = new_findings
