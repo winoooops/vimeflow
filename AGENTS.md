@@ -56,6 +56,10 @@ Quick reference: no semicolons, single quotes, trailing commas (es5), arrow-func
 - `docs/design/git_diff/` — git diff viewer screen
 - `docs/design/command_palette/` — command palette overlay
 
+## Harness Integration
+
+This file is read by Codex during both **local reviews** (Phase 2 inner loop via `codex exec review --base main`) and **cloud reviews** (GitHub Action on PRs). It provides the project context that informs review quality. See `harness/CLAUDE.md` for the full three-phase harness workflow.
+
 ## Review Profile
 
 Follow the review process and checklist defined in `agents/code-reviewer.md`. Key points:

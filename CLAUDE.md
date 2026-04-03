@@ -24,6 +24,8 @@ npm run lint:fix        # ESLint with auto-fix
 npm run format:check    # Prettier check
 npm run format          # Prettier write
 npm run type-check      # tsc -b
+npm run review          # Local Codex code review (saves to .codex-reviews/)
+npm run review:fix      # Interactive review-fix loop (fetch → fix → push → poll)
 ```
 
 Node >= 24 (see `.nvmrc`). ESM-only (`"type": "module"`).
@@ -72,13 +74,14 @@ Dark atmospheric UI built on Catppuccin Mocha palette. Colors defined as semanti
 
 This file covers what you need to start working. For deeper topics, read the linked doc — do NOT inline their content back here.
 
-| Topic                                                    | Where                                                           |
-| -------------------------------------------------------- | --------------------------------------------------------------- |
-| Architecture decisions, Tauri IPC patterns               | `ARCHITECT.md`                                                  |
-| UI design system, screens, components                    | `DESIGN.md` → `docs/design/`                                    |
-| AI agent specs (planner, tdd-guide, code-reviewer, etc.) | `agents/CLAUDE.md`                                              |
-| Development standards (coding style, testing, security)  | `rules/CLAUDE.md`                                               |
-| Autonomous development loop (harness)                    | `harness/CLAUDE.md`                                             |
-| Architecture specs, exploration notes                    | `docs/CLAUDE.md`                                                |
-| Codex code review (project context for Codex)            | `AGENTS.md`                                                     |
-| Codex review design spec                                 | `docs/superpowers/specs/2026-04-02-codex-code-review-design.md` |
+| Topic                                                    | Where                                                             |
+| -------------------------------------------------------- | ----------------------------------------------------------------- |
+| Architecture decisions, Tauri IPC patterns               | `ARCHITECT.md`                                                    |
+| UI design system, screens, components                    | `DESIGN.md` → `docs/design/`                                      |
+| AI agent specs (planner, tdd-guide, code-reviewer, etc.) | `agents/CLAUDE.md`                                                |
+| Development standards (coding style, testing, security)  | `rules/CLAUDE.md`                                                 |
+| Autonomous development loop (harness + Codex review)     | `harness/CLAUDE.md`                                               |
+| Architecture specs, exploration notes                    | `docs/CLAUDE.md`                                                  |
+| Codex code review (project context for Codex)            | `AGENTS.md`                                                       |
+| Codex review design spec                                 | `docs/superpowers/specs/2026-04-02-codex-code-review-design.md`   |
+| Codex feedback loop design spec                          | `docs/superpowers/specs/2026-04-03-codex-feedback-loop-design.md` |
