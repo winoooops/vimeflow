@@ -1,7 +1,7 @@
 # Codex Feedback Loop — Design Spec
 
 **Date**: 2026-04-03
-**Status**: Draft
+**Status**: Implemented (in review)
 **Depends on**: Codex Code Review Agent (2026-04-02 spec, merged to main)
 
 ## Problem
@@ -167,6 +167,7 @@ Added to `harness/security.py`. Allowlist-only approach:
 | `gh pr create`                                    | Create a pull request           |
 | `gh pr view`                                      | Check existing PR status/number |
 | `gh pr list`                                      | List PRs for the current branch |
+| `gh repo view`                                    | Resolve repo nameWithOwner      |
 | `gh api repos/.../issues/.../comments` (GET only) | Read PR comments                |
 | `gh auth status`                                  | Verify authentication           |
 
@@ -175,7 +176,8 @@ Added to `harness/security.py`. Allowlist-only approach:
 - `gh pr close` / `gh pr merge` — no destructive PR operations
 - `gh issue close` / `gh issue delete` — no issue modification
 - `gh repo delete` / `gh repo archive` — no repo-level operations
-- `gh api -X DELETE` / `-X PUT` / `-X PATCH` — no write/delete API calls
+- `gh api -X DELETE` / `-X PUT` / `-X PATCH` / `-X POST` — no write API calls
+- `gh api -f` / `-F` / `--field` / `--raw-field` / `--input` — data flags that implicitly POST
 - `gh release` — no release operations
 
 **Implementation**: `validate_gh_command(command: str) -> bool` in `security.py`.
@@ -266,3 +268,14 @@ Python module containing:
 - `OPENAI_API_KEY` GitHub secret (for cloud Codex Action)
 - Codex review workflow on `main` (already merged)
 - `ANTHROPIC_API_KEY` for Claude Code SDK (already required by harness)
+
+## Deviations from Design (discovered during implementation)
+
+| Design                                                      | Actual                                                                                | Reason                                                                           |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `gh api repos/{owner}/{repo}/...` with literal placeholders | Resolve repo via `gh repo view --json nameWithOwner` first                            | `gh` CLI doesn't substitute `{owner}/{repo}` — must resolve and interpolate      |
+| `gh api` blocked only for explicit `-X DELETE/PUT/PATCH`    | Also block `-X POST` and data flags (`-f`, `-F`, `--field`, `--raw-field`, `--input`) | Data flags implicitly switch `gh api` to POST, bypassing read-only intent        |
+| Cloud review comment parsing via newline splitting          | Parse as JSON array via `--jq '[.[].body]'`                                           | Multi-line comments get fragmented by newline splitting, causing false positives |
+| `--max-relay-loops` defined but unused                      | Wired into Phase 3 loop                                                               | Codex review caught the unused flag at 91% confidence                            |
+| `client.py` edit for review fix cluster                     | Not needed yet                                                                        | Phase 3 fix cluster spawning is stubbed (TODO), client changes deferred          |
+| `harness/CLAUDE.md` update                                  | Deferred to post-merge                                                                | Will update once PR is merged and workflow is validated                          |
