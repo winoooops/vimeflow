@@ -91,7 +91,9 @@ describe('TopTabBar', () => {
     expect(bellButton).toBeInTheDocument()
     expect(bellButton).toHaveClass('text-on-surface-variant')
     expect(bellButton).toHaveClass('hover:text-primary')
-    expect(bellButton).toHaveTextContent('notifications')
+    // eslint-disable-next-line testing-library/no-node-access -- verifying icon CSS class
+    const bellIcon = bellButton.querySelector('.material-symbols-outlined')
+    expect(bellIcon).toBeInTheDocument()
   })
 
   test('renders more menu icon', () => {
@@ -100,7 +102,9 @@ describe('TopTabBar', () => {
     expect(moreButton).toBeInTheDocument()
     expect(moreButton).toHaveClass('text-on-surface-variant')
     expect(moreButton).toHaveClass('hover:text-on-surface')
-    expect(moreButton).toHaveTextContent('more_vert')
+    // eslint-disable-next-line testing-library/no-node-access -- verifying icon CSS class
+    const moreIcon = moreButton.querySelector('.material-symbols-outlined')
+    expect(moreIcon).toBeInTheDocument()
   })
 
   test('right action buttons are present', () => {

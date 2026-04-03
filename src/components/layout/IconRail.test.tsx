@@ -5,7 +5,7 @@ import IconRail from './IconRail'
 describe('IconRail', () => {
   test('renders brand logo with V character', () => {
     render(<IconRail />)
-    const logo = screen.getByText('V')
+    const logo = screen.getByRole('img', { name: /vimeflow logo/i })
     expect(logo).toBeInTheDocument()
     expect(logo).toHaveClass(
       'text-[#cba6f7]',
@@ -13,6 +13,7 @@ describe('IconRail', () => {
       'text-xl',
       'font-headline'
     )
+    expect(logo).toHaveTextContent('V')
   })
 
   test('applies correct container styling', () => {
@@ -36,27 +37,40 @@ describe('IconRail', () => {
 
   test('renders active project icon with correct styling', () => {
     render(<IconRail />)
-    const activeIcon = screen.getByText('terminal')
-    expect(activeIcon).toBeInTheDocument()
-    expect(activeIcon).toHaveClass('material-symbols-outlined')
+    const terminalButton = screen.getByRole('button', { name: /terminal/i })
+    expect(terminalButton).toBeInTheDocument()
+    // eslint-disable-next-line testing-library/no-node-access -- verifying icon CSS class
+    const icon = terminalButton.querySelector('.material-symbols-outlined')
+    expect(icon).toBeInTheDocument()
   })
 
   test('renders inactive project icons', () => {
     render(<IconRail />)
-    expect(screen.getByText('code')).toBeInTheDocument()
-    expect(screen.getByText('dashboard')).toBeInTheDocument()
-    expect(screen.getByText('database')).toBeInTheDocument()
-    expect(screen.getByText('add')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /code/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /dashboard/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: /database/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: /new project/i })
+    ).toBeInTheDocument()
   })
 
   test('all project icons use Material Symbols', () => {
     render(<IconRail />)
 
-    const icons = screen.getAllByText(
-      /^(terminal|code|dashboard|database|add)$/
-    )
-    icons.forEach((icon) => {
-      expect(icon).toHaveClass('material-symbols-outlined')
+    const nav = screen.getByRole('navigation')
+
+    const buttons = within(nav).getAllByRole('button')
+
+    buttons.forEach((button) => {
+      // eslint-disable-next-line testing-library/no-node-access -- verifying icon CSS class
+      const iconEl = button.querySelector('.material-symbols-outlined')
+      expect(iconEl).toBeInTheDocument()
     })
   })
 
@@ -98,10 +112,7 @@ describe('IconRail', () => {
     render(<IconRail />)
 
     const nav = screen.getByRole('navigation')
-
-    const icons = within(nav).getAllByText(
-      /^(terminal|code|dashboard|database|add)$/
-    )
-    expect(icons).toHaveLength(5)
+    const buttons = within(nav).getAllByRole('button')
+    expect(buttons).toHaveLength(5)
   })
 })

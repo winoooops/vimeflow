@@ -15,13 +15,12 @@ describe('AgentMessage', () => {
       />
     )
 
-    const avatar = screen.getByTestId('agent-avatar')
+    const avatar = screen.getByLabelText('Agent avatar')
     expect(avatar).toBeInTheDocument()
     expect(avatar).toHaveClass('w-10', 'h-10', 'rounded-full')
-
-    const icon = screen.getByText('psychology')
+    // eslint-disable-next-line testing-library/no-node-access -- verifying icon CSS class
+    const icon = avatar.querySelector('.material-symbols-outlined')
     expect(icon).toBeInTheDocument()
-    expect(icon).toHaveClass('material-symbols-outlined')
   })
 
   test('renders VIBM Agent name', () => {
@@ -52,7 +51,7 @@ describe('AgentMessage', () => {
       />
     )
 
-    const badge = screen.getByTestId('status-badge')
+    const badge = screen.getByRole('status')
     expect(badge).toBeInTheDocument()
     expect(badge).toHaveTextContent('THINKING')
   })
@@ -69,7 +68,7 @@ describe('AgentMessage', () => {
       />
     )
 
-    expect(screen.queryByTestId('status-badge')).not.toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   test('renders message content as thinking text when status is thinking', () => {
@@ -129,8 +128,10 @@ describe('AgentMessage', () => {
       />
     )
 
-    expect(screen.getByTestId('code-block')).toBeInTheDocument()
-    expect(screen.getByText('auth_middleware.py')).toBeInTheDocument()
+    const codeBlock = screen.getByRole('figure', {
+      name: 'auth_middleware.py',
+    })
+    expect(codeBlock).toBeInTheDocument()
     expect(screen.getByText('PYTHON')).toBeInTheDocument()
   })
 
@@ -158,7 +159,7 @@ describe('AgentMessage', () => {
       />
     )
 
-    const codeBlocks = screen.getAllByTestId('code-block')
+    const codeBlocks = screen.getAllByRole('figure')
     expect(codeBlocks).toHaveLength(2)
   })
 
@@ -197,7 +198,9 @@ describe('AgentMessage', () => {
       />
     )
 
-    const container = screen.getByTestId('agent-message-container')
+    const container = screen.getByRole('article', {
+      name: /vibm agent/i,
+    })
     expect(container).toHaveClass('flex', 'gap-4', 'max-w-3xl', 'mx-auto')
   })
 })

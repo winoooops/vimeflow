@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, test, expect } from 'vitest'
 import ContextPanel from './ContextPanel'
 
@@ -52,14 +52,18 @@ describe('ContextPanel', () => {
 
   test('renders latency stat', () => {
     render(<ContextPanel />)
-    expect(screen.getByText(/latency/i)).toBeInTheDocument()
-    expect(screen.getByText(/142ms/)).toBeInTheDocument()
+    const stats = screen.getByLabelText('Model statistics')
+
+    expect(within(stats).getByText('Latency')).toBeInTheDocument()
+    expect(within(stats).getByText(/142ms/)).toBeInTheDocument()
   })
 
   test('renders tokens stat', () => {
     render(<ContextPanel />)
-    expect(screen.getByText(/tokens/i)).toBeInTheDocument()
-    expect(screen.getByText(/12,847/)).toBeInTheDocument()
+    const stats = screen.getByLabelText('Model statistics')
+
+    expect(within(stats).getByText('Tokens')).toBeInTheDocument()
+    expect(within(stats).getByText(/12,847/)).toBeInTheDocument()
   })
 
   test('renders "Recent Actions" section with heading', () => {
@@ -78,24 +82,27 @@ describe('ContextPanel', () => {
     expect(screen.getByText(/syntax validation/i)).toBeInTheDocument()
   })
 
-  test('renders AI Strategy section with text content', () => {
+  test('renders AI Strategy section with heading', () => {
     render(<ContextPanel />)
 
-    expect(screen.getByText(/ai strategy/i)).toBeInTheDocument()
+    const heading = screen.getByRole('heading', { name: /ai strategy/i })
+    expect(heading).toBeInTheDocument()
     expect(screen.getByText(/current priority/i)).toBeInTheDocument()
     expect(screen.getByText(/code quality/i)).toBeInTheDocument()
   })
 
   test('renders system health footer with online status', () => {
     render(<ContextPanel />)
-    expect(screen.getByText(/system online/i)).toBeInTheDocument()
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent(/system online/i)
   })
 
   test('renders system health with online status and version', () => {
     render(<ContextPanel />)
 
-    expect(screen.getByText(/system online/i)).toBeInTheDocument()
-    expect(screen.getByText(/v0\.1\.0-alpha/i)).toBeInTheDocument()
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent(/system online/i)
+    expect(status).toHaveTextContent(/v0\.1\.0-alpha/i)
   })
 
   test('renders with proper flex layout', () => {

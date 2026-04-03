@@ -13,7 +13,7 @@ interface StatusBadgeProps {
  */
 export const StatusBadge = ({ status }: StatusBadgeProps): ReactElement => (
   <span
-    data-testid="status-badge"
+    role="status"
     className="bg-secondary/10 text-secondary text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider"
   >
     {status.toUpperCase()}

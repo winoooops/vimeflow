@@ -5,7 +5,7 @@ import MessageThread from './MessageThread'
 describe('MessageThread', () => {
   test('renders scrollable container with correct Tailwind classes', () => {
     render(<MessageThread messages={[]} />)
-    const section = screen.getByTestId('message-thread')
+    const section = screen.getByRole('region', { name: /message thread/i })
     expect(section).toBeInTheDocument()
     expect(section).toHaveClass(
       'flex-1',
@@ -29,7 +29,10 @@ describe('MessageThread', () => {
         ]}
       />
     )
-    expect(screen.getByTestId('user-message-container')).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('article', { name: /message from you/i })
+    ).toBeInTheDocument()
     expect(screen.getByText('Test user message')).toBeInTheDocument()
   })
 
@@ -47,7 +50,10 @@ describe('MessageThread', () => {
         ]}
       />
     )
-    expect(screen.getByTestId('agent-message-container')).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('article', { name: /vibm agent/i })
+    ).toBeInTheDocument()
     expect(screen.getByText('Test agent response')).toBeInTheDocument()
   })
 
@@ -77,9 +83,8 @@ describe('MessageThread', () => {
         ]}
       />
     )
-    expect(screen.getByTestId('message-container-msg-1')).toBeInTheDocument()
-    expect(screen.getByTestId('message-container-msg-2')).toBeInTheDocument()
-    expect(screen.getByTestId('message-container-msg-3')).toBeInTheDocument()
+    const articles = screen.getAllByRole('article')
+    expect(articles).toHaveLength(3)
     expect(screen.getByText('First message')).toBeInTheDocument()
     expect(screen.getByText('Second message')).toBeInTheDocument()
     expect(screen.getByText('Third message')).toBeInTheDocument()
@@ -87,9 +92,9 @@ describe('MessageThread', () => {
 
   test('handles empty messages array', () => {
     render(<MessageThread messages={[]} />)
-    const section = screen.getByTestId('message-thread')
+    const section = screen.getByRole('region', { name: /message thread/i })
     expect(section).toBeInTheDocument()
-    expect(screen.queryByTestId(/^message-container-/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('article')).not.toBeInTheDocument()
   })
 
   test('wraps messages in max-w-3xl mx-auto container', () => {
@@ -105,9 +110,11 @@ describe('MessageThread', () => {
         ]}
       />
     )
-    const container = screen.getByTestId('message-container-msg-1')
-    expect(container).toBeInTheDocument()
-    expect(container).toHaveClass('max-w-3xl', 'mx-auto')
+    const article = screen.getByRole('article', { name: /message from you/i })
+
+    // eslint-disable-next-line testing-library/no-node-access -- traversing to wrapper container
+    const wrapper = article.closest('[data-testid="message-container-msg-1"]')
+    expect(wrapper).toHaveClass('max-w-3xl', 'mx-auto')
   })
 
   test('renders agent messages with code snippets', () => {
@@ -131,9 +138,13 @@ describe('MessageThread', () => {
         ]}
       />
     )
-    expect(screen.getByTestId('agent-message-container')).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('article', { name: /vibm agent/i })
+    ).toBeInTheDocument()
+
     expect(screen.getByText('Here is the refactored code:')).toBeInTheDocument()
-    expect(screen.getByText('test.ts')).toBeInTheDocument()
+    expect(screen.getByRole('figure', { name: 'test.ts' })).toBeInTheDocument()
   })
 
   test('uses message id as key for rendering', () => {
@@ -156,20 +167,14 @@ describe('MessageThread', () => {
       />
     )
 
-    expect(
-      screen.getByTestId('message-container-unique-id-1')
-    ).toBeInTheDocument()
-
-    expect(
-      screen.getByTestId('message-container-unique-id-2')
-    ).toBeInTheDocument()
+    const articles = screen.getAllByRole('article')
+    expect(articles).toHaveLength(2)
   })
 
   test('renders section element with semantic HTML', () => {
     render(<MessageThread messages={[]} />)
 
-    const section = screen.getByTestId('message-thread')
-
+    const section = screen.getByRole('region', { name: /message thread/i })
     expect(section.tagName).toBe('SECTION')
   })
 })

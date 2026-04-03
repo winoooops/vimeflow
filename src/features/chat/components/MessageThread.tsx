@@ -9,6 +9,7 @@ interface MessageThreadProps {
 
 const MessageThread = ({ messages }: MessageThreadProps): ReactElement => (
   <section
+    aria-label="Message thread"
     className="flex-1 overflow-y-auto p-8 space-y-8 no-scrollbar"
     data-testid="message-thread"
   >

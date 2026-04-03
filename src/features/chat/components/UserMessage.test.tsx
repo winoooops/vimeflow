@@ -33,8 +33,9 @@ describe('UserMessage', () => {
   test('applies correct Tailwind classes to container', () => {
     render(<UserMessage message={mockMessage} />)
 
-    // Use data-testid to select the container
-    const messageContainer = screen.getByTestId('user-message-container')
+    const messageContainer = screen.getByRole('article', {
+      name: /message from you/i,
+    })
 
     expect(messageContainer).toHaveClass('flex')
     expect(messageContainer).toHaveClass('gap-4')

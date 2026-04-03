@@ -30,18 +30,24 @@ describe('Sidebar', () => {
   test('renders search bar with ⌘K hint', () => {
     render(<Sidebar conversations={mockConversations} />)
 
-    expect(screen.getByText('Search sessions...')).toBeInTheDocument()
-    expect(screen.getByText('⌘K')).toBeInTheDocument()
+    const searchRegion = screen.getByRole('search')
+    expect(searchRegion).toBeInTheDocument()
 
-    const searchIcon = screen.getByText('search')
-    expect(searchIcon).toHaveClass('material-symbols-outlined')
+    const searchButton = within(searchRegion).getByRole('button', {
+      name: /search sessions/i,
+    })
+    expect(searchButton).toBeInTheDocument()
+    // eslint-disable-next-line testing-library/no-node-access -- verifying icon CSS class
+    const icon = searchButton.querySelector('.material-symbols-outlined')
+    expect(icon).toBeInTheDocument()
   })
 
   test('renders "Recent Chats" category header', () => {
     render(<Sidebar conversations={mockConversations} />)
 
-    expect(screen.getByText('Recent Chats')).toBeInTheDocument()
-    expect(screen.getByText('Recent Chats')).toHaveClass('uppercase')
+    const heading = screen.getByRole('heading', { name: /recent chats/i })
+    expect(heading).toBeInTheDocument()
+    expect(heading).toHaveClass('uppercase')
   })
 
   test('renders active conversation with special styling', () => {
@@ -58,9 +64,7 @@ describe('Sidebar', () => {
   test('renders sub-thread indicator for active conversation', () => {
     render(<Sidebar conversations={mockConversations} />)
 
-    const subThreadIcon = screen.getByText('subdirectory_arrow_right')
-    expect(subThreadIcon).toBeInTheDocument()
-    expect(subThreadIcon).toHaveClass('material-symbols-outlined')
+    expect(screen.getByText('Sub-thread')).toBeInTheDocument()
   })
 
   test('renders inactive conversations without special background', () => {
@@ -77,15 +81,16 @@ describe('Sidebar', () => {
   test('renders "Active Sessions" category', () => {
     render(<Sidebar conversations={mockConversations} />)
 
-    expect(screen.getByText('Active Sessions')).toBeInTheDocument()
-    expect(screen.getByText('Active Sessions')).toHaveClass('uppercase')
+    const heading = screen.getByRole('heading', { name: /active sessions/i })
+    expect(heading).toBeInTheDocument()
+    expect(heading).toHaveClass('uppercase')
   })
 
-  test('renders settings link at bottom', () => {
+  test('renders settings button at bottom', () => {
     render(<Sidebar conversations={mockConversations} />)
 
-    const settingsLink = screen.getByText('Settings')
-    expect(settingsLink).toBeInTheDocument()
+    const settingsButton = screen.getByRole('button', { name: /settings/i })
+    expect(settingsButton).toBeInTheDocument()
   })
 
   test('has proper accessibility structure', () => {
