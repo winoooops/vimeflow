@@ -329,14 +329,14 @@ async def run_cloud_review_loop(
         return "SKIPPED"
 
     status = "ATTENTION"
-    last_review_body: str | None = None
+    last_comment_id: int | None = None
 
     for relay_loop in range(1, max_relay_loops + 1):
         print(f"\n  Relay loop {relay_loop}/{max_relay_loops}: waiting for Codex review...")
         review = poll_for_cloud_review(
             project_dir, pr_number,
             timeout=review_timeout,
-            previous_review=last_review_body,
+            previous_comment_id=last_comment_id,
         )
 
         if not review:
@@ -350,7 +350,7 @@ async def run_cloud_review_loop(
 
         print("  Cloud Codex review found issues.")
         print(f"  Findings:\n{review['raw_review'][:500]}")
-        last_review_body = review["raw_review"]
+        last_comment_id = review.get("comment_id")
 
         if relay_loop >= max_relay_loops:
             print(f"  Max relay loops ({max_relay_loops}) reached. ATTENTION needed.")

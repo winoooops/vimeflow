@@ -38,6 +38,13 @@ def run_local_review(project_dir: Path, base_branch: str = "main") -> dict:
             timeout=300,
         )
         output = result.stdout + result.stderr
+        if result.returncode != 0 and not output.strip():
+            return {
+                "has_findings": False,
+                "raw_review": f"Error: codex exited with code {result.returncode}",
+                "findings": [],
+                "error": "codex_failed",
+            }
     except FileNotFoundError:
         return {
             "has_findings": False,
@@ -134,14 +141,14 @@ def poll_for_cloud_review(
     pr_number: int,
     timeout: int = 300,
     poll_interval: int = 30,
-    previous_review: str | None = None,
+    previous_comment_id: int | None = None,
 ) -> dict | None:
     """
     Poll for a Codex review comment on the PR.
-    Returns parsed review dict or None on timeout.
+    Returns parsed review dict (with 'comment_id' field) or None on timeout.
 
-    If previous_review is provided, waits for a NEW comment that differs
-    from the previous one (avoids reprocessing stale reviews after fixes).
+    If previous_comment_id is provided, waits for a comment with a higher ID
+    (avoids reprocessing stale reviews after fixes, even if text is identical).
     """
     repo = _get_repo_name(project_dir)
     if not repo:
@@ -150,27 +157,30 @@ def poll_for_cloud_review(
 
     elapsed = 0
     while elapsed < timeout:
-        # Fetch full comment bodies as JSON array, preserve multi-line content
+        # Fetch comment id + body pairs as JSON array
         comments = subprocess.run(
             ["gh", "api", f"repos/{repo}/issues/{pr_number}/comments",
-             "--jq", "[.[].body]"],
+             "--jq", "[.[] | {id, body}]"],
             capture_output=True, text=True,
             cwd=str(project_dir),
         )
 
         if comments.returncode == 0:
             try:
-                bodies = json.loads(comments.stdout)
+                entries = json.loads(comments.stdout)
             except (json.JSONDecodeError, ValueError):
-                bodies = []
+                entries = []
 
-            # Reverse to get the latest (newest) Codex comment, not the oldest
-            for comment_body in reversed(bodies):
-                if "## Codex Code Review" in comment_body:
-                    # Skip if it's the same comment we already processed
-                    if previous_review and comment_body == previous_review:
+            # Reverse to get the latest (newest) Codex comment
+            for entry in reversed(entries):
+                if "## Codex Code Review" in entry.get("body", ""):
+                    comment_id = entry["id"]
+                    # Skip if it's the same or older comment
+                    if previous_comment_id and comment_id <= previous_comment_id:
                         break  # newest is stale, keep polling
-                    return parse_cloud_review_comment(comment_body)
+                    result = parse_cloud_review_comment(entry["body"])
+                    result["comment_id"] = comment_id
+                    return result
 
         print(f"  Waiting for Codex review... ({elapsed}s / {timeout}s)")
         time.sleep(poll_interval)
