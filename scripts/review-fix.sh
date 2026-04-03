@@ -5,7 +5,7 @@ MAX_LOOPS="${1:-2}"
 REVIEW_DIR=".codex-reviews"
 
 # Verify tools
-for cmd in gh claude; do
+for cmd in gh claude jq; do
   if ! command -v "$cmd" &> /dev/null; then
     echo "Error: $cmd not found in PATH"
     exit 1

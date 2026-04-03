@@ -141,19 +141,25 @@ def validate_gh_command(command: str) -> tuple[bool, str]:
     if not args:
         return False, "Empty gh command not allowed"
 
-    # Block explicit HTTP method overrides (both separated and combined forms)
-    # e.g. -X POST, -XPOST, --method POST, --method=POST
-    command_upper = command.upper()
-    for blocked in GH_BLOCKED_API_METHODS:
-        if blocked.upper() in command_upper:
-            return False, f"gh api with {blocked} not allowed"
-    # Combined forms: -XDELETE, -XPOST, --method=DELETE, etc.
-    for token in args:
+    # Block explicit HTTP method overrides via token-based parsing.
+    # Handles: -X POST, -X  POST, -XPOST, --method POST, --method=POST
+    blocked_methods = {"DELETE", "PUT", "PATCH", "POST"}
+    for i, token in enumerate(args):
         token_upper = token.upper()
-        if token_upper.startswith("-X") and len(token_upper) > 2 and token_upper[2:] in {"DELETE", "PUT", "PATCH", "POST"}:
-            return False, f"gh api with '{token}' not allowed"
-        if token_upper.startswith("--METHOD=") and token_upper.split("=", 1)[1] in {"DELETE", "PUT", "PATCH", "POST"}:
-            return False, f"gh api with '{token}' not allowed"
+        # Combined forms: -XPOST, -XDELETE, etc.
+        if token_upper.startswith("-X") and len(token_upper) > 2:
+            if token_upper[2:] in blocked_methods:
+                return False, f"gh api with '{token}' not allowed"
+        # Separated form: -X POST (next token is the method)
+        elif token_upper in ("-X", "--METHOD"):
+            next_val = args[i + 1].upper() if i + 1 < len(args) else ""
+            if next_val in blocked_methods:
+                return False, f"gh api with '{token} {args[i + 1]}' not allowed"
+        # Combined form: --method=POST
+        elif token_upper.startswith("--METHOD="):
+            val = token_upper.split("=", 1)[1]
+            if val in blocked_methods:
+                return False, f"gh api with '{token}' not allowed"
 
     # Block data flags on gh api (they implicitly switch to POST)
     # Check both standalone (-f value) and combined (-f=value, --field=value) forms
