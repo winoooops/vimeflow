@@ -248,7 +248,7 @@ async def run_autonomous_agent(
             print_session_header(iteration, is_initializer=False)
 
             if skip_review:
-                # No review -- just run Coder once
+                # No review -- just run Coder, then check if feature passed
                 client = create_client(project_dir, model, sandbox=sandbox)
                 prompt = get_coding_prompt()
 
@@ -256,7 +256,21 @@ async def run_autonomous_agent(
                     status, response = await run_agent_session(client, prompt, project_dir)
 
                 print_progress_summary(project_dir)
-                break  # One iteration per feature when review is off
+
+                # Re-check feature status after coder run
+                updated = [
+                    f for f in get_pending_features(project_dir)
+                    if f.get("id") == feature_id
+                ]
+                if not updated:
+                    # Feature is no longer pending — it passed
+                    print(f"  Feature #{feature_id} passed on iteration {iteration}.")
+                    break
+                # Feature still pending — let the loop continue so
+                # max_iterations is enforced on the next pass
+                print(f"  Feature #{feature_id} still pending after iteration {iteration}.")
+                await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
+                continue
 
             status, new_findings = await run_feature_iteration(
                 project_dir, model, sandbox, feature, iteration, findings
