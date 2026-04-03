@@ -272,3 +272,99 @@ async def run_autonomous_agent(
     print("=" * 70)
     print(f"\n  Project: {project_dir.resolve()}")
     print_progress_summary(project_dir)
+
+
+async def run_cloud_review_loop(
+    project_dir: Path,
+    model: str,
+    sandbox: bool,
+    max_relay_loops: int = 2,
+    review_timeout: int = 300,
+) -> str:
+    """
+    Phase 3: Push, create PR, poll for cloud Codex review, fix if needed.
+
+    The Coordinator handles GitHub ops (push/PR/poll) directly via subprocess.
+    Only the fix step spawns a Claude SDK session.
+
+    Returns: "CLEAN", "FIXED", "ATTENTION", or "SKIPPED".
+    """
+    import subprocess
+    from review import push_and_create_pr, poll_for_cloud_review
+    from prompts import get_reviewer_prompt
+
+    branch_result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True, text=True,
+        cwd=str(project_dir),
+    )
+    branch = branch_result.stdout.strip()
+
+    if not branch or branch == "main":
+        print("  On main branch — skipping cloud review.")
+        return "SKIPPED"
+
+    print("\n" + "=" * 70)
+    print("  PHASE 3: CLOUD REVIEW")
+    print("=" * 70)
+
+    pr_number = push_and_create_pr(
+        project_dir, branch,
+        title=f"feat: harness implementation ({branch})",
+        body="Automated implementation by VIBM harness.",
+    )
+
+    if not pr_number:
+        print("  Could not create PR. Skipping cloud review.")
+        return "SKIPPED"
+
+    status = "ATTENTION"
+    for relay_loop in range(1, max_relay_loops + 1):
+        print(f"\n  Relay loop {relay_loop}/{max_relay_loops}: waiting for Codex review...")
+        review = poll_for_cloud_review(
+            project_dir, pr_number,
+            timeout=review_timeout,
+        )
+
+        if not review:
+            print("  Cloud review timed out.")
+            break
+
+        if not review["has_findings"]:
+            print("  Cloud Codex review: CLEAN.")
+            status = "CLEAN" if relay_loop == 1 else "FIXED"
+            break
+
+        print("  Cloud Codex review found issues.")
+        print(f"  Findings:\n{review['raw_review'][:500]}")
+
+        if relay_loop >= max_relay_loops:
+            print(f"  Max relay loops ({max_relay_loops}) reached. ATTENTION needed.")
+            break
+
+        # Spawn Claude SDK session to fix findings
+        print("\n  Spawning fix agent...")
+        client = create_client(project_dir, model, sandbox=sandbox)
+        prompt = get_reviewer_prompt(review["raw_review"])
+
+        async with client:
+            fix_status, _ = await run_agent_session(client, prompt, project_dir)
+
+        if fix_status == "error":
+            print("  Fix agent errored. Stopping relay loop.")
+            break
+
+        # Push fixes — triggers new Codex review on PR (synchronize event)
+        push_result = subprocess.run(
+            ["git", "push"],
+            capture_output=True, text=True,
+            cwd=str(project_dir),
+        )
+        if push_result.returncode != 0:
+            print(f"  Push failed: {push_result.stderr}")
+            break
+
+        print("  Fixes pushed. Polling for next review...")
+
+    print(f"\n  Phase 3 result: {status}")
+    return status

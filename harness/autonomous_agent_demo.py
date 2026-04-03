@@ -19,10 +19,9 @@ import asyncio
 import os
 import platform
 import stat
-import subprocess
 from pathlib import Path
 
-from agent import run_autonomous_agent
+from agent import run_autonomous_agent, run_cloud_review_loop
 
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 
@@ -204,49 +203,15 @@ def main() -> None:
 
         # Phase 3: Cloud review (if not skipped)
         if not args.skip_relay:
-            from review import push_and_create_pr, poll_for_cloud_review
-
-            branch_result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                capture_output=True, text=True,
-                cwd=str(args.project_dir),
-            )
-            branch = branch_result.stdout.strip()
-
-            if branch and branch != "main":
-                print("\n" + "=" * 70)
-                print("  PHASE 3: CLOUD REVIEW")
-                print("=" * 70)
-
-                pr_number = push_and_create_pr(
-                    args.project_dir, branch,
-                    title=f"feat: harness implementation ({branch})",
-                    body="Automated implementation by VIBM harness.",
+            asyncio.run(
+                run_cloud_review_loop(
+                    project_dir=args.project_dir,
+                    model=args.model,
+                    sandbox=sandbox,
+                    max_relay_loops=args.max_relay_loops,
+                    review_timeout=args.review_timeout,
                 )
-
-                if pr_number:
-                    for relay_loop in range(1, args.max_relay_loops + 1):
-                        print(f"\n  Relay loop {relay_loop}/{args.max_relay_loops}: waiting for Codex review...")
-                        review = poll_for_cloud_review(
-                            args.project_dir, pr_number,
-                            timeout=args.review_timeout,
-                        )
-
-                        if review and review["has_findings"]:
-                            print("  Cloud Codex review found issues.")
-                            print(f"  Findings:\n{review['raw_review'][:500]}")
-                            if relay_loop < args.max_relay_loops:
-                                print("  TODO: Spawn Coder+Reviewer cluster for fixes.")
-                            else:
-                                print(f"  Max relay loops ({args.max_relay_loops}) reached. ATTENTION needed.")
-                        elif review:
-                            print("  Cloud Codex review: CLEAN.")
-                            break
-                        else:
-                            print("  Cloud review timed out.")
-                            break
-                else:
-                    print("  Could not create PR. Skipping cloud review.")
+            )
 
     except KeyboardInterrupt:
         print("\n\nInterrupted by user. Run again to resume.")
