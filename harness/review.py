@@ -118,6 +118,17 @@ def push_and_create_pr(project_dir: Path, branch: str, title: str, body: str) ->
     return int(match.group(1)) if match else None
 
 
+def _get_repo_name(project_dir: Path) -> str | None:
+    """Get owner/repo from gh CLI."""
+    result = subprocess.run(
+        ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+        capture_output=True, text=True,
+        cwd=str(project_dir),
+    )
+    name = result.stdout.strip()
+    return name if result.returncode == 0 and name else None
+
+
 def poll_for_cloud_review(
     project_dir: Path,
     pr_number: int,
@@ -128,10 +139,15 @@ def poll_for_cloud_review(
     Poll for a Codex review comment on the PR.
     Returns parsed review dict or None on timeout.
     """
+    repo = _get_repo_name(project_dir)
+    if not repo:
+        print("  Error: could not resolve repo name via gh CLI")
+        return None
+
     elapsed = 0
     while elapsed < timeout:
         comments = subprocess.run(
-            ["gh", "api", f"repos/{{owner}}/{{repo}}/issues/{pr_number}/comments",
+            ["gh", "api", f"repos/{repo}/issues/{pr_number}/comments",
              "--jq", ".[].body"],
             capture_output=True, text=True,
             cwd=str(project_dir),

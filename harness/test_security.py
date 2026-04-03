@@ -69,6 +69,15 @@ def test_gh_unknown_subcommand_blocked():
     assert not ok
 
 
+def test_gh_api_post_blocked():
+    ok, reason = validate_gh_command("gh api -X POST repos/owner/repo/issues/1/comments")
+    assert not ok
+
+
+def test_gh_repo_view_allowed():
+    assert validate_gh_command("gh repo view --json nameWithOwner") == (True, "")
+
+
 def test_extract_commands_includes_gh():
     cmds = extract_commands("gh pr create --title 'test'")
     assert "gh" in cmds

@@ -115,11 +115,15 @@ GH_ALLOWED_PATTERNS = [
     ("pr", "create"),
     ("pr", "view"),
     ("pr", "list"),
+    ("repo", "view"),
     ("api",),
     ("auth", "status"),
 ]
 
-GH_BLOCKED_API_METHODS = {"-X DELETE", "-X PUT", "-X PATCH", "--method DELETE", "--method PUT", "--method PATCH"}
+GH_BLOCKED_API_METHODS = {
+    "-X DELETE", "-X PUT", "-X PATCH", "-X POST",
+    "--method DELETE", "--method PUT", "--method PATCH", "--method POST",
+}
 
 
 def validate_gh_command(command: str) -> tuple[bool, str]:
