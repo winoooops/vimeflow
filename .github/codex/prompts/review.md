@@ -5,7 +5,7 @@ You are a senior code reviewer for Vimeflow, a Tauri desktop application (React/
 ## Scope
 
 - Review ONLY changes introduced by this PR — do not flag pre-existing issues
-- Read `AGENTS.md` at the repo root for project context, architecture, and deep references to standards
+- Read `AGENTS.md` & `CLAUDE.md` at the repo root for project context, architecture, and deep references to standards
 - Only report issues you are >80% confident about — do not flood with noise
 
 ## Review Profiles
