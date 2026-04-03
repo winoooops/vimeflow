@@ -115,9 +115,15 @@ async def run_feature_iteration(
     feature: dict,
     iteration: int,
     findings: str | None = None,
+    prompt_override: str | None = None,
 ) -> tuple[str, str | None]:
     """
     Run one Coder->Reviewer iteration for a feature.
+
+    Args:
+        prompt_override: If provided, use this prompt instead of the default
+            coding prompt. Used by the cloud review fix loop to pass the
+            reviewer prompt instead of the feature coding prompt.
 
     Returns (status, findings_text):
       - ("passed", None) -- review clean, feature done
@@ -133,7 +139,9 @@ async def run_feature_iteration(
     # --- Coder phase ---
     client = create_client(project_dir, model, sandbox=sandbox)
 
-    if findings:
+    if prompt_override:
+        prompt = prompt_override
+    elif findings:
         prompt = get_coding_prompt_with_findings(findings)
     else:
         prompt = get_coding_prompt()
@@ -332,6 +340,7 @@ async def run_cloud_review_loop(
     """
     import subprocess
     from review import push_and_create_pr, poll_for_cloud_review
+    from prompts import get_reviewer_prompt
 
     branch_result = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
@@ -358,9 +367,9 @@ async def run_cloud_review_loop(
         print("  Could not create PR. Skipping cloud review.")
         return "SKIPPED"
 
-    # Capture the latest existing Codex comment ID so the poller
-    # only accepts reviews newer than what's already on the PR.
-    existing = poll_for_cloud_review(project_dir, pr_number, timeout=5, poll_interval=5)
+    # Snapshot the latest Codex comment ID right after push, before the new
+    # review arrives (~1-2 min via GitHub Actions). Single fetch, no polling.
+    existing = poll_for_cloud_review(project_dir, pr_number, timeout=1, poll_interval=1)
     last_comment_id: int | None = existing.get("comment_id") if existing else None
     if last_comment_id:
         print(f"  Existing Codex comment ID: {last_comment_id} (will wait for newer)")
@@ -400,8 +409,10 @@ async def run_cloud_review_loop(
         for fix_iter in range(1, 3):
             print(f"  Fix iteration {fix_iter}/2...")
             fix_feature = {"id": "cloud-review", "description": "Fix cloud review findings"}
+            reviewer_prompt = get_reviewer_prompt(fix_findings)
             fix_status, new_findings = await run_feature_iteration(
                 project_dir, model, sandbox, fix_feature, fix_iter, fix_findings,
+                prompt_override=reviewer_prompt,
             )
             if fix_status == "passed":
                 print("  Local review clean after fix.")
