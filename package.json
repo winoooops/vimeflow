@@ -17,7 +17,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "type-check": "tsc -b",
-    "test": "vitest --passWithNoTests"
+    "test": "vitest --passWithNoTests",
+    "review": "bash scripts/review.sh"
   },
   "keywords": [
     "tauri",

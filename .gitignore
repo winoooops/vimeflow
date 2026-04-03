@@ -60,3 +60,6 @@ feature_list.json
 claude-progress.txt
 harness/prompts/app_spec.md
 harness/.env
+
+# Codex review output (local only)
+.codex-reviews/
