@@ -180,7 +180,17 @@ Added to `harness/security.py`. Allowlist-only approach:
 - `gh api -f` / `-F` / `--field` / `--raw-field` / `--input` — data flags that implicitly POST
 - `gh release` — no release operations
 
-**Implementation**: `validate_gh_command(command: str) -> bool` in `security.py`.
+**Implementation**: `validate_gh_command(command: str) -> tuple[bool, str]` in `security.py`.
+
+Key constants (defined at module level in `security.py`):
+
+- `GH_ALLOWED_PATTERNS` — tuple patterns for allowed subcommands
+- `GH_BLOCKED_METHODS` — `{"DELETE", "PUT", "PATCH", "POST"}` — HTTP methods blocked for `gh api`
+- `GH_API_DATA_FLAGS` — `{"-f", "-F", "--field", "--raw-field", "--input"}` — flags that implicitly POST
+
+The validator uses **token-based parsing** (via `shlex.split`) to detect method overrides
+regardless of whitespace. Handles `-X POST`, `-X  POST`, `-XPOST`, `--method POST`,
+and `--method=POST` forms.
 
 ## Component 4: Prompts
 

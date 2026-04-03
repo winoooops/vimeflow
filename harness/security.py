@@ -120,10 +120,8 @@ GH_ALLOWED_PATTERNS = [
     ("auth", "status"),
 ]
 
-GH_BLOCKED_API_METHODS = {
-    "-X DELETE", "-X PUT", "-X PATCH", "-X POST",
-    "--method DELETE", "--method PUT", "--method PATCH", "--method POST",
-}
+# HTTP methods blocked for gh api (write operations)
+GH_BLOCKED_METHODS = {"DELETE", "PUT", "PATCH", "POST"}
 
 # Flags that implicitly switch gh api to POST (write operations)
 GH_API_DATA_FLAGS = {"-f", "-F", "--field", "--raw-field", "--input"}
@@ -143,22 +141,21 @@ def validate_gh_command(command: str) -> tuple[bool, str]:
 
     # Block explicit HTTP method overrides via token-based parsing.
     # Handles: -X POST, -X  POST, -XPOST, --method POST, --method=POST
-    blocked_methods = {"DELETE", "PUT", "PATCH", "POST"}
     for i, token in enumerate(args):
         token_upper = token.upper()
         # Combined forms: -XPOST, -XDELETE, etc.
         if token_upper.startswith("-X") and len(token_upper) > 2:
-            if token_upper[2:] in blocked_methods:
+            if token_upper[2:] in GH_BLOCKED_METHODS:
                 return False, f"gh api with '{token}' not allowed"
         # Separated form: -X POST (next token is the method)
         elif token_upper in ("-X", "--METHOD"):
             next_val = args[i + 1].upper() if i + 1 < len(args) else ""
-            if next_val in blocked_methods:
+            if next_val in GH_BLOCKED_METHODS:
                 return False, f"gh api with '{token} {args[i + 1]}' not allowed"
         # Combined form: --method=POST
         elif token_upper.startswith("--METHOD="):
             val = token_upper.split("=", 1)[1]
-            if val in blocked_methods:
+            if val in GH_BLOCKED_METHODS:
                 return False, f"gh api with '{token}' not allowed"
 
     # Block data flags on gh api (they implicitly switch to POST)

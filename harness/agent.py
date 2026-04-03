@@ -327,7 +327,6 @@ async def run_cloud_review_loop(
     """
     import subprocess
     from review import push_and_create_pr, poll_for_cloud_review
-    from prompts import get_reviewer_prompt
 
     branch_result = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
@@ -382,17 +381,31 @@ async def run_cloud_review_loop(
             print(f"  Max relay loops ({max_relay_loops}) reached. ATTENTION needed.")
             break
 
-        # Spawn Claude SDK session to fix findings
-        print("\n  Spawning fix agent...")
-        client = create_client(project_dir, model, sandbox=sandbox)
-        prompt = get_reviewer_prompt(review["raw_review"])
+        # Run local Coder+Reviewer loop to fix cloud findings (budget: 2 iterations)
+        print("\n  Spawning local fix loop (Coder + Reviewer, max 2 iterations)...")
+        fix_findings = review["raw_review"]
+        fix_succeeded = False
 
-        async with client:
-            fix_status, _ = await run_agent_session(client, prompt, project_dir)
+        for fix_iter in range(1, 3):
+            print(f"  Fix iteration {fix_iter}/2...")
+            fix_feature = {"id": "cloud-review", "description": "Fix cloud review findings"}
+            fix_status, new_findings = await run_feature_iteration(
+                project_dir, model, sandbox, fix_feature, fix_iter, fix_findings,
+            )
+            if fix_status == "passed":
+                print("  Local review clean after fix.")
+                fix_succeeded = True
+                break
+            elif fix_status == "has_findings":
+                fix_findings = new_findings
+                print("  Local review found remaining issues. Retrying...")
+                await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
+            else:
+                print("  Fix iteration errored. Stopping local fix loop.")
+                break
 
-        if fix_status == "error":
-            print("  Fix agent errored. Stopping relay loop.")
-            break
+        if not fix_succeeded:
+            print("  Local fix loop did not achieve clean review. Pushing best effort.")
 
         # Push fixes — triggers new Codex review on PR (synchronize event)
         push_result = subprocess.run(

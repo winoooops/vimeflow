@@ -59,14 +59,32 @@ for loop in $(seq 1 "$MAX_LOOPS"); do
 
   # Feed to Claude Code for fixing
   echo "Spawning Claude Code to fix findings..."
-  PROMPT="You are fixing code review findings from Codex. Read the findings below, then:
-1. For each finding, read the file and fix the issue with minimal changes
-2. Skip false positives (explain why)
-3. Run: npm run lint && npm run test
-4. Commit all fixes: git commit -am 'fix: address Codex review findings'
+  PROMPT="## YOUR ROLE - REVIEW FIX AGENT
 
-FINDINGS:
-$(cat "$REVIEW_DIR/findings.md")"
+You are fixing code review findings from an automated cross-vendor review (OpenAI Codex).
+This is a FRESH context — you have no memory of previous sessions.
+
+### STEP 1: GET YOUR BEARINGS
+Read CLAUDE.md, then run: git log --oneline -10
+
+### STEP 2: REVIEW FINDINGS
+For each finding below:
+1. Read the file at the specified path and line range
+2. Understand the issue in context (read surrounding code)
+3. Decide: FIX (minimal change), SKIP (explain why), or ESCALATE (needs redesign)
+
+### FINDINGS:
+$(cat "$REVIEW_DIR/findings.md")
+
+### STEP 3: FIX ISSUES
+For each finding you decided to FIX:
+1. Make the minimal change — no drive-by refactoring
+2. Never introduce new issues while fixing existing ones
+3. If unsure, SKIP with explanation rather than guessing
+
+### STEP 4: VERIFY AND COMMIT
+Run: npm run lint && npm run test
+If all pass: git add the changed files and git commit -m 'fix: address Codex review findings'"
 
   echo "$PROMPT" | claude -p --allowedTools 'Read,Write,Edit,Bash,Grep,Glob'
 
