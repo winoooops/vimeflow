@@ -1,0 +1,29 @@
+name: Codex PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  codex-review:
+    name: Codex Code Review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout PR merge ref
+        uses: actions/checkout@v5
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+
+      - name: Run Codex review
+        id: codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .github/codex/prompts/review.md
+          output-schema-file: .github/codex/codex-output-schema.json
+          sandbox: read-only
+          model: gpt-5.2-codex
+          safety-strategy: drop-sudo
