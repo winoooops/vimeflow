@@ -1,7 +1,7 @@
 # Codex Feedback Loop — Design Spec
 
 **Date**: 2026-04-03
-**Status**: Implemented (in review)
+**Status**: Merged (PR #10, 2026-04-03)
 **Depends on**: Codex Code Review Agent (2026-04-02 spec, merged to main)
 
 ## Problem
@@ -287,5 +287,8 @@ Python module containing:
 | `gh api` blocked only for explicit `-X DELETE/PUT/PATCH`    | Also block `-X POST` and data flags (`-f`, `-F`, `--field`, `--raw-field`, `--input`) | Data flags implicitly switch `gh api` to POST, bypassing read-only intent        |
 | Cloud review comment parsing via newline splitting          | Parse as JSON array via `--jq '[.[].body]'`                                           | Multi-line comments get fragmented by newline splitting, causing false positives |
 | `--max-relay-loops` defined but unused                      | Wired into Phase 3 loop                                                               | Codex review caught the unused flag at 91% confidence                            |
-| `client.py` edit for review fix cluster                     | Not needed yet                                                                        | Phase 3 fix cluster spawning is stubbed (TODO), client changes deferred          |
-| `harness/CLAUDE.md` update                                  | Deferred to post-merge                                                                | Will update once PR is merged and workflow is validated                          |
+| `client.py` edit for review fix cluster                     | Uses existing `create_client` + `run_feature_iteration` with `prompt_override`        | No separate client needed — reuse Phase 2 infrastructure with reviewer prompt    |
+| `harness/CLAUDE.md` update                                  | Updated post-merge (docs/update-codex-feedback-loop branch)                           | Rewrote to document three-phase workflow, CLI flags, safety layers, file roles   |
+| Comment author not verified                                 | Filter by `user.login == "github-actions[bot]"` on all comment queries                | Codex review caught spoofing risk at 83% confidence                              |
+| Comment pagination missing                                  | Added `per_page=100&sort=created&direction=desc` to all `gh api` comment queries      | First page (30 oldest) could miss the latest review on busy PRs                  |
+| Substring-based `-X POST` blocking                          | Token-based parsing via `shlex.split` + `GH_BLOCKED_METHODS` constant                 | Extra whitespace (`-X   POST`) could bypass substring matching                   |
