@@ -134,10 +134,14 @@ def poll_for_cloud_review(
     pr_number: int,
     timeout: int = 300,
     poll_interval: int = 30,
+    previous_review: str | None = None,
 ) -> dict | None:
     """
     Poll for a Codex review comment on the PR.
     Returns parsed review dict or None on timeout.
+
+    If previous_review is provided, waits for a NEW comment that differs
+    from the previous one (avoids reprocessing stale reviews after fixes).
     """
     repo = _get_repo_name(project_dir)
     if not repo:
@@ -163,6 +167,9 @@ def poll_for_cloud_review(
             # Reverse to get the latest (newest) Codex comment, not the oldest
             for comment_body in reversed(bodies):
                 if "## Codex Code Review" in comment_body:
+                    # Skip if it's the same comment we already processed
+                    if previous_review and comment_body == previous_review:
+                        break  # newest is stale, keep polling
                     return parse_cloud_review_comment(comment_body)
 
         print(f"  Waiting for Codex review... ({elapsed}s / {timeout}s)")

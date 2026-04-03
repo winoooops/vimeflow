@@ -214,10 +214,18 @@ async def run_autonomous_agent(
     print_progress_summary(project_dir)
 
     feature_num = 0
+    exhausted_ids: set = set()  # Features that hit max iterations without passing
+
     while True:
-        pending = get_pending_features(project_dir)
+        pending = [
+            f for f in get_pending_features(project_dir)
+            if f.get("id") not in exhausted_ids
+        ]
         if not pending:
-            print("\n  All features complete (or no pending features with met dependencies).")
+            if exhausted_ids:
+                print(f"\n  Done. {len(exhausted_ids)} feature(s) exhausted max iterations: {exhausted_ids}")
+            else:
+                print("\n  All features complete (or no pending features with met dependencies).")
             break
 
         feature = pending[0]
@@ -235,6 +243,7 @@ async def run_autonomous_agent(
             iteration += 1
             if max_iterations is not None and iteration > max_iterations:
                 print(f"  Feature #{feature_id} hit max iterations ({max_iterations}). Moving on.")
+                exhausted_ids.add(feature_id)
                 break
             print_session_header(iteration, is_initializer=False)
 
@@ -320,11 +329,14 @@ async def run_cloud_review_loop(
         return "SKIPPED"
 
     status = "ATTENTION"
+    last_review_body: str | None = None
+
     for relay_loop in range(1, max_relay_loops + 1):
         print(f"\n  Relay loop {relay_loop}/{max_relay_loops}: waiting for Codex review...")
         review = poll_for_cloud_review(
             project_dir, pr_number,
             timeout=review_timeout,
+            previous_review=last_review_body,
         )
 
         if not review:
@@ -338,6 +350,7 @@ async def run_cloud_review_loop(
 
         print("  Cloud Codex review found issues.")
         print(f"  Findings:\n{review['raw_review'][:500]}")
+        last_review_body = review["raw_review"]
 
         if relay_loop >= max_relay_loops:
             print(f"  Max relay loops ({max_relay_loops}) reached. ATTENTION needed.")
