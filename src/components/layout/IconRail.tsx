@@ -7,52 +7,87 @@ const IconRail = (): ReactElement => (
   >
     {/* Brand Logo */}
     <div className="mb-6 flex flex-col gap-1 items-center">
-      <span className="text-[#cba6f7] font-black text-xl font-headline">V</span>
+      <span
+        role="img"
+        aria-label="Vimeflow logo"
+        className="text-[#cba6f7] font-black text-xl font-headline"
+      >
+        V
+      </span>
     </div>
 
     {/* Navigation Section */}
     <nav className="flex flex-col gap-4 items-center flex-1">
       {/* Active Project with Left Bar Indicator */}
-      <div className="relative group cursor-pointer">
+      <button
+        type="button"
+        aria-label="Terminal"
+        className="relative group cursor-pointer appearance-none border-none bg-transparent p-0"
+      >
         <div className="absolute -left-4 top-1/2 -translate-y-1/2 w-1 h-8 bg-[#cba6f7] rounded-r-full" />
         <div className="w-9 h-9 rounded-full bg-[#cba6f7]/20 flex items-center justify-center text-[#cba6f7] transition-transform active:scale-90 overflow-hidden">
           <span
             className="material-symbols-outlined"
             style={{ fontVariationSettings: "'FILL' 1" }}
+            aria-hidden="true"
           >
             terminal
           </span>
         </div>
-      </div>
+      </button>
 
       {/* Inactive Project - Code (with notification badge) */}
-      <div className="relative group cursor-pointer hover:bg-[#333344]/50 rounded-full transition-all duration-300 p-1">
+      <button
+        type="button"
+        aria-label="Code"
+        className="relative group cursor-pointer appearance-none border-none bg-transparent p-0 hover:bg-[#333344]/50 rounded-full transition-all duration-300"
+      >
         <div className="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-[#cdc3d1] hover:text-[#e3e0f7] transition-colors">
-          <span className="material-symbols-outlined">code</span>
+          <span className="material-symbols-outlined" aria-hidden="true">
+            code
+          </span>
         </div>
         <div className="absolute top-0 right-0 w-2.5 h-2.5 bg-secondary rounded-full border-2 border-surface-container-low" />
-      </div>
+      </button>
 
       {/* Inactive Project - Dashboard */}
-      <div className="relative group cursor-pointer hover:bg-[#333344]/50 rounded-full transition-all duration-300 p-1">
+      <button
+        type="button"
+        aria-label="Dashboard"
+        className="relative group cursor-pointer appearance-none border-none bg-transparent p-0 hover:bg-[#333344]/50 rounded-full transition-all duration-300"
+      >
         <div className="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-[#cdc3d1] hover:text-[#e3e0f7] transition-colors">
-          <span className="material-symbols-outlined">dashboard</span>
+          <span className="material-symbols-outlined" aria-hidden="true">
+            dashboard
+          </span>
         </div>
-      </div>
+      </button>
 
       {/* Inactive Project - Database */}
-      <div className="relative group cursor-pointer hover:bg-[#333344]/50 rounded-full transition-all duration-300 p-1">
+      <button
+        type="button"
+        aria-label="Database"
+        className="relative group cursor-pointer appearance-none border-none bg-transparent p-0 hover:bg-[#333344]/50 rounded-full transition-all duration-300"
+      >
         <div className="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-[#cdc3d1] hover:text-[#e3e0f7] transition-colors">
-          <span className="material-symbols-outlined">database</span>
+          <span className="material-symbols-outlined" aria-hidden="true">
+            database
+          </span>
         </div>
-      </div>
+      </button>
 
       {/* Add New Project Button */}
-      <div className="relative group cursor-pointer hover:bg-[#333344]/50 rounded-full transition-all duration-300 p-1">
+      <button
+        type="button"
+        aria-label="New project"
+        className="relative group cursor-pointer appearance-none border-none bg-transparent p-0 hover:bg-[#333344]/50 rounded-full transition-all duration-300"
+      >
         <div className="w-9 h-9 rounded-full bg-surface-container-highest/40 flex items-center justify-center text-[#cdc3d1] hover:text-[#e3e0f7] transition-colors">
-          <span className="material-symbols-outlined">add</span>
+          <span className="material-symbols-outlined" aria-hidden="true">
+            add
+          </span>
         </div>
-      </div>
+      </button>
     </nav>
 
     {/* User Avatar Section (Bottom) */}

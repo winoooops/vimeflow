@@ -69,26 +69,38 @@ const ContextPanel = (): ReactElement => {
           </div>
 
           {/* Stats grid: Latency and Tokens */}
-          <div className="grid grid-cols-2 gap-2">
+          <dl
+            aria-label="Model statistics"
+            className="m-0 grid grid-cols-2 gap-2"
+          >
             <div className="bg-surface-container-low p-2 rounded-lg text-center">
-              <p className="text-[9px] text-on-surface-variant mb-1">Latency</p>
-              <p className="text-[11px] font-label text-primary-container">
+              <dt className="text-[9px] text-on-surface-variant mb-1">
+                Latency
+              </dt>
+              <dd className="m-0 text-[11px] font-label text-primary-container">
                 {mockAgentStatus.latency}
-              </p>
+              </dd>
             </div>
             <div className="bg-surface-container-low p-2 rounded-lg text-center">
-              <p className="text-[9px] text-on-surface-variant mb-1">Tokens</p>
-              <p className="text-[11px] font-label text-primary-container">
+              <dt className="text-[9px] text-on-surface-variant mb-1">
+                Tokens
+              </dt>
+              <dd className="m-0 text-[11px] font-label text-primary-container">
                 {mockAgentStatus.tokens}
-              </p>
+              </dd>
             </div>
-          </div>
+          </dl>
         </div>
 
         {/* Recent Actions */}
         <div className="space-y-4">
           <h3 className="text-[10px] font-bold tracking-widest text-on-surface-variant uppercase flex items-center gap-2">
-            <span className="material-symbols-outlined text-xs">history</span>
+            <span
+              className="material-symbols-outlined text-xs"
+              aria-hidden="true"
+            >
+              history
+            </span>
             Recent Actions
           </h3>
           <div className="space-y-4">
@@ -131,12 +143,15 @@ const ContextPanel = (): ReactElement => {
         {/* AI Strategy Card */}
         <div className="bg-primary-container/5 p-4 rounded-xl border border-primary-container/10">
           <div className="flex items-center gap-2 mb-3">
-            <span className="material-symbols-outlined text-primary-container text-sm">
+            <span
+              className="material-symbols-outlined text-primary-container text-sm"
+              aria-hidden="true"
+            >
               psychology_alt
             </span>
-            <span className="text-[10px] font-bold text-primary-container uppercase tracking-wide">
+            <h3 className="m-0 text-[10px] font-bold text-primary-container uppercase tracking-wide">
               AI Strategy
-            </span>
+            </h3>
           </div>
           <p className="text-[11px] leading-relaxed text-on-surface-variant">
             Current priority:{' '}
@@ -149,7 +164,10 @@ const ContextPanel = (): ReactElement => {
 
       {/* System Health Footer */}
       <div className="mt-auto p-4 bg-surface-container-lowest/50 border-t border-outline-variant/10">
-        <div className="flex items-center justify-between text-[10px] font-label">
+        <div
+          role="status"
+          className="flex items-center justify-between text-[10px] font-label"
+        >
           <div className="flex items-center gap-1.5 text-secondary">
             <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
             <span>System Online</span>

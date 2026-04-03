@@ -17,17 +17,19 @@ interface AgentMessageProps {
  */
 const AgentMessage = ({ message }: AgentMessageProps): ReactElement => (
   <div
-    data-testid="agent-message-container"
+    role="article"
+    aria-label="Message from VIBM Agent"
     className="flex gap-4 max-w-3xl mx-auto"
   >
     {/* Agent Avatar */}
     <div
-      data-testid="agent-avatar"
+      aria-label="Agent avatar"
       className="w-10 h-10 rounded-full bg-primary-container/10 flex items-center justify-center shrink-0 border border-primary-container/20"
     >
       <span
         className="material-symbols-outlined text-primary-container"
         style={{ fontVariationSettings: "'FILL' 1" }}
+        aria-hidden="true"
       >
         psychology
       </span>

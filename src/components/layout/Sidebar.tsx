@@ -30,24 +30,33 @@ export const Sidebar = ({ conversations }: SidebarProps): ReactElement => (
     </div>
 
     {/* Search Bar */}
-    <div className="px-4 mb-6">
-      <div className="bg-surface-container-highest/50 rounded-lg flex items-center px-3 py-2 gap-2 text-on-surface-variant group focus-within:ring-1 focus-within:ring-primary/40 transition-all">
-        <span className="material-symbols-outlined text-sm">search</span>
-        <span className="text-xs font-body flex-1">Search sessions...</span>
-        <span className="text-[10px] font-label opacity-50 px-1 border border-outline-variant/30 rounded">
-          ⌘K
+    <div className="px-4 mb-6" role="search">
+      <button
+        type="button"
+        aria-label="Search sessions"
+        className="w-full appearance-none border-none bg-surface-container-highest/50 rounded-lg flex items-center px-3 py-2 gap-2 text-on-surface-variant group focus-within:ring-1 focus-within:ring-primary/40 transition-all"
+      >
+        <span className="material-symbols-outlined text-sm" aria-hidden="true">
+          search
         </span>
-      </div>
+        <span className="text-xs font-body flex-1">Search sessions...</span>
+        <kbd className="text-[10px] font-label opacity-50 px-1 border border-outline-variant/30 rounded">
+          ⌘K
+        </kbd>
+      </button>
     </div>
 
-    <nav className="flex-1 overflow-y-auto no-scrollbar px-2" role="navigation">
+    <nav className="flex-1 overflow-y-auto no-scrollbar px-2">
       {/* Category: Recent Chats */}
       <div className="mb-4">
         <div className="px-2 mb-1 flex items-center justify-between group">
-          <span className="text-[10px] font-bold tracking-widest text-on-surface-variant uppercase font-headline">
+          <h2 className="m-0 text-[10px] font-bold tracking-widest text-on-surface-variant uppercase font-headline">
             Recent Chats
-          </span>
-          <span className="material-symbols-outlined text-xs opacity-0 group-hover:opacity-100 cursor-pointer">
+          </h2>
+          <span
+            className="material-symbols-outlined text-xs opacity-0 group-hover:opacity-100 cursor-pointer"
+            aria-hidden="true"
+          >
             add
           </span>
         </div>
@@ -65,6 +74,7 @@ export const Sidebar = ({ conversations }: SidebarProps): ReactElement => (
                   <span
                     className="material-symbols-outlined text-lg"
                     style={{ fontVariationSettings: "'FILL' 1" }}
+                    aria-hidden="true"
                   >
                     bolt
                   </span>
@@ -88,7 +98,10 @@ export const Sidebar = ({ conversations }: SidebarProps): ReactElement => (
               {conv.hasSubThreads && (
                 <div className="mt-2 ml-11 border-l border-outline-variant/30 pl-3 flex flex-col gap-2">
                   <div className="text-[10px] text-primary-container hover:text-primary transition-colors cursor-pointer flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[12px]">
+                    <span
+                      className="material-symbols-outlined text-[12px]"
+                      aria-hidden="true"
+                    >
                       subdirectory_arrow_right
                     </span>
                     <span>Sub-thread</span>
@@ -108,7 +121,10 @@ export const Sidebar = ({ conversations }: SidebarProps): ReactElement => (
             >
               <div className="flex gap-3 items-center">
                 <div className="w-8 h-8 rounded-lg bg-surface-container-highest flex items-center justify-center text-on-surface-variant shrink-0 group-hover:bg-surface-bright transition-colors">
-                  <span className="material-symbols-outlined text-lg">
+                  <span
+                    className="material-symbols-outlined text-lg"
+                    aria-hidden="true"
+                  >
                     chat
                   </span>
                 </div>
@@ -128,16 +144,26 @@ export const Sidebar = ({ conversations }: SidebarProps): ReactElement => (
       {/* Category: Active Sessions */}
       <div className="mb-4">
         <div className="px-2 mb-1">
-          <span className="text-[10px] font-bold tracking-widest text-on-surface-variant uppercase font-headline">
+          <h2 className="m-0 text-[10px] font-bold tracking-widest text-on-surface-variant uppercase font-headline">
             Active Sessions
-          </span>
+          </h2>
         </div>
         <div className="px-3 py-2 rounded-md hover:bg-[#1e1e2e]/50 cursor-pointer transition-all text-on-surface-variant hover:text-on-surface flex items-center gap-3">
-          <span className="material-symbols-outlined text-sm">inventory_2</span>
+          <span
+            className="material-symbols-outlined text-sm"
+            aria-hidden="true"
+          >
+            inventory_2
+          </span>
           <span className="text-xs">Frontend Cleanup</span>
         </div>
         <div className="px-3 py-2 rounded-md hover:bg-[#1e1e2e]/50 cursor-pointer transition-all text-on-surface-variant hover:text-on-surface flex items-center gap-3">
-          <span className="material-symbols-outlined text-sm">inventory_2</span>
+          <span
+            className="material-symbols-outlined text-sm"
+            aria-hidden="true"
+          >
+            inventory_2
+          </span>
           <span className="text-xs">Database Migration</span>
         </div>
       </div>
@@ -145,10 +171,16 @@ export const Sidebar = ({ conversations }: SidebarProps): ReactElement => (
 
     {/* Settings */}
     <div className="p-4 mt-auto border-t border-[#4a444f]/10">
-      <div className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-[#1e1e2e]/50 cursor-pointer transition-all text-on-surface-variant">
-        <span className="material-symbols-outlined text-sm">settings</span>
+      <button
+        type="button"
+        aria-label="Settings"
+        className="w-full appearance-none border-none bg-transparent flex items-center gap-3 px-3 py-2 rounded-md hover:bg-[#1e1e2e]/50 cursor-pointer transition-all text-on-surface-variant"
+      >
+        <span className="material-symbols-outlined text-sm" aria-hidden="true">
+          settings
+        </span>
         <span className="text-xs">Settings</span>
-      </div>
+      </button>
     </div>
   </aside>
 )

@@ -8,7 +8,7 @@ paths:
 
 # TypeScript/JavaScript Coding Style
 
-> This file extends [common/coding-style.md](../common/coding-style.md) with TypeScript/JavaScript specific content.
+> This file extends [common/coding-style.md](../../common/coding-style.md) with TypeScript/JavaScript specific content.
 
 ## Types and Interfaces
 
@@ -193,6 +193,17 @@ type UserInput = z.infer<typeof userSchema>
 
 const validated: UserInput = userSchema.parse(input)
 ```
+
+## Component Accessibility
+
+React components must use semantic HTML and ARIA attributes to be accessible. Key rules:
+
+- Use semantic elements (`<nav>`, `<aside>`, `<figure>`, `<search>`, `<h2>`) over generic `<div>`
+- Add `role` and `aria-label` when semantic HTML alone is insufficient
+- Material Icon spans must have `aria-hidden="true"`; the parent element carries the accessible name
+- Every a11y attribute must be verified by a corresponding test query
+
+For component-level a11y patterns with WRONG/CORRECT JSX examples, see [a11y-components.md](./a11y-components.md).
 
 ## Linting
 

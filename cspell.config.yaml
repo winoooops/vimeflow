@@ -4,6 +4,7 @@ language: en
 words:
   # Project
   - vibm
+  - Vimeflow
 
   # Tauri
   - tauri
