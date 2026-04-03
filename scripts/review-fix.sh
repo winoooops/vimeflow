@@ -91,6 +91,11 @@ $(cat "$REVIEW_DIR/findings.md")"
       fi
       echo "  Still waiting... (${POLL_ELAPSED}s / ${POLL_MAX}s)"
     done
+
+    if [[ "$POLL_ELAPSED" -ge "$POLL_MAX" ]]; then
+      echo "Poll timed out after ${POLL_MAX}s. No new review detected. Stopping."
+      break
+    fi
   fi
 done
 

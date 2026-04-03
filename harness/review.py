@@ -38,10 +38,10 @@ def run_local_review(project_dir: Path, base_branch: str = "main") -> dict:
             timeout=300,
         )
         output = result.stdout + result.stderr
-        if result.returncode != 0 and not output.strip():
+        if result.returncode != 0:
             return {
                 "has_findings": False,
-                "raw_review": f"Error: codex exited with code {result.returncode}",
+                "raw_review": f"Error: codex exited with code {result.returncode}\n{output.strip()}",
                 "findings": [],
                 "error": "codex_failed",
             }
