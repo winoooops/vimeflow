@@ -358,8 +358,14 @@ async def run_cloud_review_loop(
         print("  Could not create PR. Skipping cloud review.")
         return "SKIPPED"
 
+    # Capture the latest existing Codex comment ID so the poller
+    # only accepts reviews newer than what's already on the PR.
+    existing = poll_for_cloud_review(project_dir, pr_number, timeout=5, poll_interval=5)
+    last_comment_id: int | None = existing.get("comment_id") if existing else None
+    if last_comment_id:
+        print(f"  Existing Codex comment ID: {last_comment_id} (will wait for newer)")
+
     status = "ATTENTION"
-    last_comment_id: int | None = None
 
     for relay_loop in range(1, max_relay_loops + 1):
         print(f"\n  Relay loop {relay_loop}/{max_relay_loops}: waiting for Codex review...")
