@@ -157,10 +157,10 @@ def poll_for_cloud_review(
 
     elapsed = 0
     while elapsed < timeout:
-        # Fetch comment id + body pairs as JSON array
+        # Fetch comment id, body, and author for verification
         comments = subprocess.run(
             ["gh", "api", f"repos/{repo}/issues/{pr_number}/comments?per_page=100&sort=created&direction=desc",
-             "--jq", "[.[] | {id, body}]"],
+             "--jq", '[.[] | {id, body, login: .user.login, user_type: .user.type}]'],
             capture_output=True, text=True,
             cwd=str(project_dir),
         )
@@ -173,8 +173,10 @@ def poll_for_cloud_review(
 
             # API returns newest first (direction=desc), so the first
             # Codex comment we find is the latest one.
+            # Only accept comments from github-actions[bot] to prevent spoofing.
             for entry in entries:
-                if "## Codex Code Review" in entry.get("body", ""):
+                if ("## Codex Code Review" in entry.get("body", "")
+                        and entry.get("login") == "github-actions[bot]"):
                     comment_id = entry["id"]
                     # Skip if it's the same or older comment
                     if previous_comment_id and comment_id <= previous_comment_id:

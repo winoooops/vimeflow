@@ -31,7 +31,7 @@ for loop in $(seq 1 "$MAX_LOOPS"); do
 
   # Fetch latest Codex review comment (track ID for poll detection)
   REVIEW_JSON=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100&sort=created&direction=desc" \
-    --jq '[.[] | select(.body | contains("## Codex Code Review"))] | first | {id, body}' 2>/dev/null || echo "{}")
+    --jq '[.[] | select(.body | contains("## Codex Code Review")) | select(.user.login == "github-actions[bot]")] | first | {id, body}' 2>/dev/null || echo "{}")
   REVIEW=$(echo "$REVIEW_JSON" | jq -r '.body // empty')
   REVIEW_ID=$(echo "$REVIEW_JSON" | jq -r '.id // empty')
 
@@ -102,7 +102,7 @@ If all pass: git add the changed files and git commit -m 'fix: address Codex rev
       sleep 30
       POLL_ELAPSED=$((POLL_ELAPSED + 30))
       NEW_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100&sort=created&direction=desc" \
-        --jq '[.[] | select(.body | contains("## Codex Code Review"))] | first | .id' 2>/dev/null || echo "")
+        --jq '[.[] | select(.body | contains("## Codex Code Review")) | select(.user.login == "github-actions[bot]")] | first | .id' 2>/dev/null || echo "")
       if [[ -n "$NEW_ID" ]] && [[ "$NEW_ID" != "null" ]] && [[ "$NEW_ID" != "$REVIEW_ID" ]]; then
         echo "New review detected (comment ID: $NEW_ID)."
         break
