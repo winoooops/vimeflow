@@ -125,6 +125,9 @@ GH_BLOCKED_API_METHODS = {
     "--method DELETE", "--method PUT", "--method PATCH", "--method POST",
 }
 
+# Flags that implicitly switch gh api to POST (write operations)
+GH_API_DATA_FLAGS = {"-f", "-F", "--field", "--raw-field", "--input"}
+
 
 def validate_gh_command(command: str) -> tuple[bool, str]:
     """Validate gh CLI commands against a strict allowlist."""
@@ -142,6 +145,12 @@ def validate_gh_command(command: str) -> tuple[bool, str]:
     for blocked in GH_BLOCKED_API_METHODS:
         if blocked.upper() in command_upper:
             return False, f"gh api with {blocked} not allowed"
+
+    # Block data flags on gh api (they implicitly switch to POST)
+    if args and args[0] == "api":
+        for token in args:
+            if token in GH_API_DATA_FLAGS:
+                return False, f"gh api with data flag '{token}' not allowed (implies POST)"
 
     for pattern in GH_ALLOWED_PATTERNS:
         if len(args) >= len(pattern) and tuple(args[:len(pattern)]) == pattern:

@@ -74,6 +74,22 @@ def test_gh_api_post_blocked():
     assert not ok
 
 
+def test_gh_api_data_flag_f_blocked():
+    ok, reason = validate_gh_command("gh api repos/owner/repo/issues -f title=test")
+    assert not ok
+    assert "data flag" in reason.lower()
+
+
+def test_gh_api_data_flag_field_blocked():
+    ok, reason = validate_gh_command("gh api repos/owner/repo/issues --field body=hello")
+    assert not ok
+
+
+def test_gh_api_data_flag_input_blocked():
+    ok, reason = validate_gh_command("gh api repos/owner/repo/issues --input data.json")
+    assert not ok
+
+
 def test_gh_repo_view_allowed():
     assert validate_gh_command("gh repo view --json nameWithOwner") == (True, "")
 

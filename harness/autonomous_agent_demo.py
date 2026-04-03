@@ -225,20 +225,26 @@ def main() -> None:
                 )
 
                 if pr_number:
-                    print(f"  PR #{pr_number} created. Waiting for Codex review...")
-                    review = poll_for_cloud_review(
-                        args.project_dir, pr_number,
-                        timeout=args.review_timeout,
-                    )
+                    for relay_loop in range(1, args.max_relay_loops + 1):
+                        print(f"\n  Relay loop {relay_loop}/{args.max_relay_loops}: waiting for Codex review...")
+                        review = poll_for_cloud_review(
+                            args.project_dir, pr_number,
+                            timeout=args.review_timeout,
+                        )
 
-                    if review and review["has_findings"]:
-                        print("  Cloud Codex review found issues.")
-                        print("  TODO: Spawn Coder+Reviewer cluster for fixes.")
-                        print(f"  Findings:\n{review['raw_review'][:500]}")
-                    elif review:
-                        print("  Cloud Codex review: CLEAN.")
-                    else:
-                        print("  Cloud review timed out.")
+                        if review and review["has_findings"]:
+                            print("  Cloud Codex review found issues.")
+                            print(f"  Findings:\n{review['raw_review'][:500]}")
+                            if relay_loop < args.max_relay_loops:
+                                print("  TODO: Spawn Coder+Reviewer cluster for fixes.")
+                            else:
+                                print(f"  Max relay loops ({args.max_relay_loops}) reached. ATTENTION needed.")
+                        elif review:
+                            print("  Cloud Codex review: CLEAN.")
+                            break
+                        else:
+                            print("  Cloud review timed out.")
+                            break
                 else:
                     print("  Could not create PR. Skipping cloud review.")
 

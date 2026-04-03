@@ -146,15 +146,21 @@ def poll_for_cloud_review(
 
     elapsed = 0
     while elapsed < timeout:
+        # Fetch full comment bodies as JSON array, preserve multi-line content
         comments = subprocess.run(
             ["gh", "api", f"repos/{repo}/issues/{pr_number}/comments",
-             "--jq", ".[].body"],
+             "--jq", "[.[].body]"],
             capture_output=True, text=True,
             cwd=str(project_dir),
         )
 
         if comments.returncode == 0:
-            for comment_body in comments.stdout.split("\n"):
+            try:
+                bodies = json.loads(comments.stdout)
+            except (json.JSONDecodeError, ValueError):
+                bodies = []
+
+            for comment_body in bodies:
                 if "## Codex Code Review" in comment_body:
                     return parse_cloud_review_comment(comment_body)
 
