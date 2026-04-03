@@ -257,6 +257,11 @@ async def run_autonomous_agent(
 
                 print_progress_summary(project_dir)
 
+                if status == "error":
+                    print(f"  Feature #{feature_id} coder errored on iteration {iteration}. Counting toward budget.")
+                    await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
+                    continue
+
                 # Re-check feature status after coder run
                 updated = [
                     f for f in get_pending_features(project_dir)
