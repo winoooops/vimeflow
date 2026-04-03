@@ -8,7 +8,7 @@ The harness is the project's primary engineering cycle — it drove the CI/CD an
 2. **Phase 2: Feature Loop** — for each pending feature, runs a Coder (Claude) + Reviewer (Codex CLI) inner loop. The Coder implements, Codex reviews locally, findings are fed back to the Coder. Repeats until clean or the per-feature iteration budget is exhausted.
 3. **Phase 3: Cloud Review** — the Coordinator pushes to GitHub, creates/finds a PR, polls for the cloud Codex review (via GitHub Action), and if issues are found, spawns a local Coder+Reviewer fix loop before pushing again. Up to `--max-relay-loops` cycles.
 
-Each phase creates fresh SDK clients as needed. The Coordinator (Python) handles all git/GitHub operations directly via subprocess — only Coder fix sessions spawn SDK agents.
+Phases 1 and 2 create SDK sessions for Initializer/Coder work. Phase 3 uses SDK sessions only for fix loops — all git/GitHub operations (push, PR, poll) are handled directly via subprocess by the Coordinator (Python).
 
 ## Environment Variables
 
@@ -74,7 +74,7 @@ Default model: `claude-sonnet-4-5-20250929`. Project dir defaults to repo root.
 | **Permissions**             | `client.py`   | `bypassPermissions` mode with file ops restricted to project dir                                                                                                                                               |
 | **Bash allowlist**          | `security.py` | Only whitelisted commands pass (`npm`, `cargo`, `git`, `gh`, `node`, etc.). Sensitive commands (`rm`, `pkill`, `chmod`, `gh`) get extra validation                                                             |
 | **gh subcommand validator** | `security.py` | Allowlist-only for `gh`: only `pr create/view/list`, `repo view`, `api` (GET), `auth status`. Blocks write methods (`-X POST/DELETE/PUT/PATCH`) and data flags (`-f`, `-F`, `--field`) via token-based parsing |
-| **Feature list protection** | `hooks.py`    | PreToolUse hook on Write — features cannot be removed or reordered, only `passes` field can change, must remain valid JSON array                                                                               |
+| **Feature list protection** | `hooks.py`    | PreToolUse hook on Write — features cannot be removed and descriptions cannot be edited; must remain valid JSON array. Note: Edit tool is not validated by this hook.                                          |
 | **Review comment auth**     | `review.py`   | Cloud review comments are only accepted from `github-actions[bot]` to prevent spoofing                                                                                                                         |
 
 ### Sandbox Configuration
