@@ -38,15 +38,15 @@ issues after iteration 5, the coordinator marks it and moves to the next feature
 
 ## Decisions
 
-| Decision           | Choice                                            | Rationale                                                          |
-| ------------------ | ------------------------------------------------- | ------------------------------------------------------------------ |
-| Inner loop agents  | Coder (Claude) + Reviewer (Codex CLI) per feature | Cross-vendor review catches blind spots; local = fast              |
-| Iteration model    | Per-feature budget, not global                    | Each feature gets fair attempt count; mirrors real engineering     |
-| Local review tool  | `codex exec review --base`                        | Already proven locally; reads AGENTS.md automatically              |
-| Cloud review       | Relay agent at end; spawns local pair if issues   | Separates local quality from PR-level review                       |
-| Fix agent          | Claude Code SDK                                   | Claude does code changes; Codex is read-only reviewer              |
-| Decision authority | Claude Code agent judges each finding             | Flexible; can fix, skip (false positive), or flag (needs redesign) |
-| `gh` permissions   | Scoped subcommand validator                       | Only allow specific operations; block destructive commands         |
+| Decision           | Choice                                                         | Rationale                                                          |
+| ------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Inner loop agents  | Coder (Claude) + Reviewer (Codex CLI) per feature              | Cross-vendor review catches blind spots; local = fast              |
+| Iteration model    | Per-feature budget, not global                                 | Each feature gets fair attempt count; mirrors real engineering     |
+| Local review tool  | `codex exec review --base`                                     | Already proven locally; reads AGENTS.md automatically              |
+| Cloud review       | Coordinator handles GitHub ops; spawns agent cluster for fixes | No SDK session needed for push/PR/poll; agents only for code fixes |
+| Fix agent          | Claude Code SDK                                                | Claude does code changes; Codex is read-only reviewer              |
+| Decision authority | Claude Code agent judges each finding                          | Flexible; can fix, skip (false positive), or flag (needs redesign) |
+| `gh` permissions   | Scoped subcommand validator                                    | Only allow specific operations; block destructive commands         |
 
 ## Architecture
 
@@ -80,14 +80,14 @@ issues after iteration 5, the coordinator marks it and moves to the next feature
 │  │      mark feature, move on                     │          │
 │  └────────────────────────────────────────────────┘          │
 │                                                              │
-│  Phase 3: Relay Agent                                        │
-│  ├── Push branch, create PR via gh CLI                       │
-│  ├── Poll for cloud Codex review comment (gh api)            │
-│  ├── If issues found:                                        │
-│  │   ├── Spawn local Coder + Reviewer pair                   │
-│  │   ├── Fix issues locally                                  │
-│  │   ├── Push fixes → poll again (max N relay loops)         │
-│  │   └── Report status                                       │
+│  Phase 3: Cloud Review (Coordinator orchestrates directly)    │
+│  ├── Coordinator (Python): push branch, create PR (gh CLI)   │
+│  ├── Coordinator (Python): poll for Codex comment (gh api)   │
+│  ├── If findings:                                            │
+│  │   ├── Spawn Coder + Reviewer cluster (same as Phase 2)    │
+│  │   ├── Cluster fixes issues locally                        │
+│  │   ├── Coordinator pushes → polls again (max N loops)      │
+│  │   └── Repeat until clean or max loops exhausted           │
 │  └── Final status: CLEAN / FIXED / ATTENTION                 │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -118,35 +118,43 @@ The core change to `harness/agent.py`. For each feature:
 the coordinator Python code (via subprocess), NOT a Claude Code SDK session.
 Codex CLI is the reviewer tool, not an SDK agent.
 
-## Component 2: Relay Agent (Cloud Review)
+## Component 2: Cloud Review Loop (Coordinator-Driven)
 
-Runs after all features are complete. Handles the GitHub round-trip:
+Runs after all features are complete. The Coordinator handles GitHub operations
+directly as Python subprocess calls (not an SDK agent session). Only the fix
+step spawns actual agents.
 
 ```
-1. Push current branch to origin
-   git push -u origin <branch>
-
-2. Create PR (or find existing)
-   gh pr create --title "..." --body "..."
-
-3. Poll for cloud Codex review comment
-   gh api repos/{owner}/{repo}/issues/{pr}/comments
-   Look for "## Codex Code Review" comment
-   Timeout: configurable (default 5 min), poll every 30s
-
-4. Parse findings from the formatted markdown comment
-
-5. If findings with CRITICAL/HIGH severity:
-   a. Spawn local Coder + Reviewer pair (same inner loop)
-   b. Fix issues locally
-   c. Push fixes → triggers new cloud review (synchronize event)
-   d. Poll again (max relay-loops, default 2)
-
-6. Report final status:
-   CLEAN     — cloud review found no issues
-   FIXED     — cloud review found issues, all resolved
-   ATTENTION — CRITICAL/HIGH issues remain after max relay loops
+Coordinator (Python, not an agent):
+│
+├── 1. git push -u origin <branch>
+├── 2. gh pr create --title "..." --body "..."
+│      (or gh pr view if PR already exists)
+├── 3. Poll: gh api repos/{owner}/{repo}/issues/{pr}/comments
+│      Look for "## Codex Code Review" comment
+│      Timeout: configurable (default 5 min), poll every 30s
+├── 4. Parse findings from formatted markdown comment
+│
+├── 5. If findings:
+│      ┌──────────────────────────────────────────┐
+│      │ Spawn Coder + Reviewer cluster           │
+│      │ (same inner loop as Phase 2)             │
+│      │ Coder (Claude SDK) fixes → Codex reviews │
+│      │ Repeat locally until clean               │
+│      └──────────────────────────────────────────┘
+│      Coordinator pushes fixes
+│      Coordinator polls for new cloud review
+│      (max relay-loops, default 2)
+│
+└── 6. Report final status:
+       CLEAN     — cloud review found no issues
+       FIXED     — cloud review found issues, all resolved
+       ATTENTION — CRITICAL/HIGH issues remain after max loops
 ```
+
+**Key**: The Coordinator is a thin orchestration layer — `git push`, `gh pr create`,
+`gh api` are all direct subprocess calls in `review.py`. No SDK session needed for
+the GitHub plumbing. Only the fix step spawns the Coder + Reviewer agent cluster.
 
 ## Component 3: `gh` Subcommand Validator
 
@@ -194,8 +202,9 @@ The following issues were found by the code reviewer. For each finding:
 
 ### Reviewer prompt (`harness/prompts/reviewer_prompt.md`)
 
-Instructions for the Relay agent's Claude Code session when fixing cloud
-Codex findings. Same approach as inner loop but with cloud review context.
+Instructions for the Claude Code session spawned by the Coordinator when
+fixing cloud Codex findings. Same approach as inner loop — Coder fixes,
+local Codex reviews — but with cloud review findings as the initial input.
 
 ## Component 5: Coordinator Changes
 
@@ -234,12 +243,12 @@ Python module containing:
 | File                                 | Action | Purpose                                                      |
 | ------------------------------------ | ------ | ------------------------------------------------------------ |
 | `harness/review.py`                  | Create | Local + cloud review: run Codex CLI, poll gh, parse findings |
-| `harness/prompts/reviewer_prompt.md` | Create | Claude prompt for Relay agent fix session                    |
+| `harness/prompts/reviewer_prompt.md` | Create | Claude prompt for cloud review fix session                   |
 | `harness/prompts/coding_prompt.md`   | Edit   | Add review findings section for iteration > 1                |
 | `harness/agent.py`                   | Edit   | Inner loop: Coder + Reviewer per feature, multi-iteration    |
-| `harness/autonomous_agent_demo.py`   | Edit   | New CLI flags, Phase 3 relay call, iteration semantics       |
+| `harness/autonomous_agent_demo.py`   | Edit   | New CLI flags, Phase 3 cloud review, iteration semantics     |
 | `harness/security.py`                | Edit   | Add `gh` allowlist with subcommand validator                 |
-| `harness/client.py`                  | Edit   | Reviewer/Relay agent client factory                          |
+| `harness/client.py`                  | Edit   | Agent client factory for review fix cluster                  |
 | `harness/CLAUDE.md`                  | Edit   | Document three-phase workflow (post-implementation)          |
 
 ## Future Phases (Out of Scope)
