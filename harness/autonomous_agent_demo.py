@@ -19,6 +19,7 @@ import asyncio
 import os
 import platform
 import stat
+import subprocess
 from pathlib import Path
 
 from agent import run_autonomous_agent
@@ -64,6 +65,34 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=False,
         help="Wipe runtime files (feature_list.json, claude-progress.txt, app_spec.md) before starting. Forces the initializer agent to run fresh.",
+    )
+
+    parser.add_argument(
+        "--skip-review",
+        action="store_true",
+        default=False,
+        help="Skip local Codex review in the feature loop",
+    )
+
+    parser.add_argument(
+        "--review-timeout",
+        type=int,
+        default=300,
+        help="Max seconds to wait for cloud Codex review (default: 300)",
+    )
+
+    parser.add_argument(
+        "--max-relay-loops",
+        type=int,
+        default=2,
+        help="Max cloud review-fix cycles in Phase 3 (default: 2)",
+    )
+
+    parser.add_argument(
+        "--skip-relay",
+        action="store_true",
+        default=False,
+        help="Skip Phase 3 cloud review entirely",
     )
 
     return parser.parse_args()
@@ -169,8 +198,50 @@ def main() -> None:
                 model=args.model,
                 max_iterations=args.max_iterations,
                 sandbox=sandbox,
+                skip_review=args.skip_review,
             )
         )
+
+        # Phase 3: Cloud review (if not skipped)
+        if not args.skip_relay:
+            from review import push_and_create_pr, poll_for_cloud_review
+
+            branch_result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True, text=True,
+                cwd=str(args.project_dir),
+            )
+            branch = branch_result.stdout.strip()
+
+            if branch and branch != "main":
+                print("\n" + "=" * 70)
+                print("  PHASE 3: CLOUD REVIEW")
+                print("=" * 70)
+
+                pr_number = push_and_create_pr(
+                    args.project_dir, branch,
+                    title=f"feat: harness implementation ({branch})",
+                    body="Automated implementation by VIBM harness.",
+                )
+
+                if pr_number:
+                    print(f"  PR #{pr_number} created. Waiting for Codex review...")
+                    review = poll_for_cloud_review(
+                        args.project_dir, pr_number,
+                        timeout=args.review_timeout,
+                    )
+
+                    if review and review["has_findings"]:
+                        print("  Cloud Codex review found issues.")
+                        print("  TODO: Spawn Coder+Reviewer cluster for fixes.")
+                        print(f"  Findings:\n{review['raw_review'][:500]}")
+                    elif review:
+                        print("  Cloud Codex review: CLEAN.")
+                    else:
+                        print("  Cloud review timed out.")
+                else:
+                    print("  Could not create PR. Skipping cloud review.")
+
     except KeyboardInterrupt:
         print("\n\nInterrupted by user. Run again to resume.")
     except Exception as e:
