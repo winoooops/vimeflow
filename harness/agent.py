@@ -150,8 +150,8 @@ async def run_feature_iteration(
 
     if review_result.get("error"):
         print(f"  Codex review error: {review_result['error']}")
-        print("  Skipping review, treating as passed.")
-        return "passed", None
+        print("  Review unavailable — treating as error so iteration budget is preserved.")
+        return "error", None
 
     if review_result["has_findings"]:
         print("  Codex found issues. Will feed back to Coder.")
@@ -279,8 +279,17 @@ async def run_autonomous_agent(
             print_progress_summary(project_dir)
 
             if status == "passed":
-                print(f"  Feature #{feature_id} passed on iteration {iteration}.")
-                break
+                # Verify feature is actually no longer pending
+                still_pending = [
+                    f for f in get_pending_features(project_dir)
+                    if f.get("id") == feature_id
+                ]
+                if not still_pending:
+                    print(f"  Feature #{feature_id} passed on iteration {iteration}.")
+                    break
+                # Review said clean but feature didn't flip passes=true
+                print(f"  Feature #{feature_id} review clean but still pending. Continuing.")
+                await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
             elif status == "has_findings":
                 findings = new_findings
                 print(f"  Feeding findings back to Coder (iteration {iteration + 1})...")
