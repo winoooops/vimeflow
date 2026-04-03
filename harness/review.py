@@ -160,7 +160,8 @@ def poll_for_cloud_review(
             except (json.JSONDecodeError, ValueError):
                 bodies = []
 
-            for comment_body in bodies:
+            # Reverse to get the latest (newest) Codex comment, not the oldest
+            for comment_body in reversed(bodies):
                 if "## Codex Code Review" in comment_body:
                     return parse_cloud_review_comment(comment_body)
 

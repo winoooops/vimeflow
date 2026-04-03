@@ -141,16 +141,29 @@ def validate_gh_command(command: str) -> tuple[bool, str]:
     if not args:
         return False, "Empty gh command not allowed"
 
+    # Block explicit HTTP method overrides (both separated and combined forms)
+    # e.g. -X POST, -XPOST, --method POST, --method=POST
     command_upper = command.upper()
     for blocked in GH_BLOCKED_API_METHODS:
         if blocked.upper() in command_upper:
             return False, f"gh api with {blocked} not allowed"
+    # Combined forms: -XDELETE, -XPOST, --method=DELETE, etc.
+    for token in args:
+        token_upper = token.upper()
+        if token_upper.startswith("-X") and len(token_upper) > 2 and token_upper[2:] in {"DELETE", "PUT", "PATCH", "POST"}:
+            return False, f"gh api with '{token}' not allowed"
+        if token_upper.startswith("--METHOD=") and token_upper.split("=", 1)[1] in {"DELETE", "PUT", "PATCH", "POST"}:
+            return False, f"gh api with '{token}' not allowed"
 
     # Block data flags on gh api (they implicitly switch to POST)
+    # Check both standalone (-f value) and combined (-f=value, --field=value) forms
     if args and args[0] == "api":
         for token in args:
             if token in GH_API_DATA_FLAGS:
                 return False, f"gh api with data flag '{token}' not allowed (implies POST)"
+            for flag in GH_API_DATA_FLAGS:
+                if token.startswith(flag + "="):
+                    return False, f"gh api with data flag '{token}' not allowed (implies POST)"
 
     for pattern in GH_ALLOWED_PATTERNS:
         if len(args) >= len(pattern) and tuple(args[:len(pattern)]) == pattern:

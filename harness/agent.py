@@ -228,10 +228,14 @@ async def run_autonomous_agent(
         print(f"  FEATURE {feature_num}: #{feature_id} — {feature.get('description', '')}")
         print("=" * 70)
 
-        budget = max_iterations or 999
         findings = None
+        iteration = 0
 
-        for iteration in range(1, budget + 1):
+        while True:
+            iteration += 1
+            if max_iterations is not None and iteration > max_iterations:
+                print(f"  Feature #{feature_id} hit max iterations ({max_iterations}). Moving on.")
+                break
             print_session_header(iteration, is_initializer=False)
 
             if skip_review:
@@ -261,9 +265,6 @@ async def run_autonomous_agent(
             elif status == "error":
                 print(f"  Feature #{feature_id} errored on iteration {iteration}. Moving on.")
                 break
-
-        else:
-            print(f"  Feature #{feature_id} hit max iterations ({budget}). Moving on.")
 
         await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
 

@@ -90,6 +90,26 @@ def test_gh_api_data_flag_input_blocked():
     assert not ok
 
 
+def test_gh_api_data_flag_combined_form_blocked():
+    ok, reason = validate_gh_command("gh api repos/owner/repo/issues --field=title=test")
+    assert not ok
+
+
+def test_gh_api_data_flag_f_equals_blocked():
+    ok, reason = validate_gh_command("gh api repos/owner/repo/issues -f=body=hello")
+    assert not ok
+
+
+def test_gh_api_combined_method_xpost_blocked():
+    ok, reason = validate_gh_command("gh api -XPOST repos/owner/repo/issues")
+    assert not ok
+
+
+def test_gh_api_method_equals_post_blocked():
+    ok, reason = validate_gh_command("gh api --method=POST repos/owner/repo")
+    assert not ok
+
+
 def test_gh_repo_view_allowed():
     assert validate_gh_command("gh repo view --json nameWithOwner") == (True, "")
 
