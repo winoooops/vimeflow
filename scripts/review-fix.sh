@@ -75,8 +75,20 @@ $(cat "$REVIEW_DIR/findings.md")"
 
   if [[ "$loop" -lt "$MAX_LOOPS" ]]; then
     echo ""
-    echo "Waiting 120s for next Codex review..."
-    sleep 120
+    echo "Waiting for next Codex review (polling up to 10 min)..."
+    POLL_ELAPSED=0
+    POLL_MAX=600
+    while [[ "$POLL_ELAPSED" -lt "$POLL_MAX" ]]; do
+      sleep 30
+      POLL_ELAPSED=$((POLL_ELAPSED + 30))
+      NEW_REVIEW=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+        --jq '[.[] | select(.body | contains("## Codex Code Review"))] | last | .body' 2>/dev/null || echo "")
+      if [[ -n "$NEW_REVIEW" ]] && [[ "$NEW_REVIEW" != "null" ]] && [[ "$NEW_REVIEW" != "$REVIEW" ]]; then
+        echo "New review detected."
+        break
+      fi
+      echo "  Still waiting... (${POLL_ELAPSED}s / ${POLL_MAX}s)"
+    done
   fi
 done
 
