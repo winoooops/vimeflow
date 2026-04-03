@@ -22,7 +22,7 @@ ALLOWED_COMMANDS = {
     # Rust / Tauri
     "cargo", "rustup", "rustfmt", "rustc",
     # Version control
-    "git",
+    "git", "gh",
     # Process management
     "ps", "lsof", "sleep", "pkill",
     # Utilities
@@ -32,7 +32,7 @@ ALLOWED_COMMANDS = {
     "init.sh", "bash", "sh",
 }
 
-COMMANDS_NEEDING_EXTRA_VALIDATION = {"pkill", "chmod", "rm"}
+COMMANDS_NEEDING_EXTRA_VALIDATION = {"pkill", "chmod", "rm", "gh"}
 
 
 def split_command_segments(command: str) -> list[str]:
@@ -111,6 +111,71 @@ def validate_rm_command(command: str) -> tuple[bool, str]:
     return True, ""
 
 
+GH_ALLOWED_PATTERNS = [
+    ("pr", "create"),
+    ("pr", "view"),
+    ("pr", "list"),
+    ("repo", "view"),
+    ("api",),
+    ("auth", "status"),
+]
+
+# HTTP methods blocked for gh api (write operations)
+GH_BLOCKED_METHODS = {"DELETE", "PUT", "PATCH", "POST"}
+
+# Flags that implicitly switch gh api to POST (write operations)
+GH_API_DATA_FLAGS = {"-f", "-F", "--field", "--raw-field", "--input"}
+
+
+def validate_gh_command(command: str) -> tuple[bool, str]:
+    """Validate gh CLI commands against a strict allowlist."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+
+    args = [t for t in tokens if t != "gh"]
+
+    if not args:
+        return False, "Empty gh command not allowed"
+
+    # Block explicit HTTP method overrides via token-based parsing.
+    # Handles: -X POST, -X  POST, -XPOST, --method POST, --method=POST
+    for i, token in enumerate(args):
+        token_upper = token.upper()
+        # Combined forms: -XPOST, -XDELETE, etc.
+        if token_upper.startswith("-X") and len(token_upper) > 2:
+            if token_upper[2:] in GH_BLOCKED_METHODS:
+                return False, f"gh api with '{token}' not allowed"
+        # Separated form: -X POST (next token is the method)
+        elif token_upper in ("-X", "--METHOD"):
+            next_val = args[i + 1].upper() if i + 1 < len(args) else ""
+            if next_val in GH_BLOCKED_METHODS:
+                return False, f"gh api with '{token} {args[i + 1]}' not allowed"
+        # Combined form: --method=POST
+        elif token_upper.startswith("--METHOD="):
+            val = token_upper.split("=", 1)[1]
+            if val in GH_BLOCKED_METHODS:
+                return False, f"gh api with '{token}' not allowed"
+
+    # Block data flags on gh api (they implicitly switch to POST)
+    # Check both standalone (-f value) and combined (-f=value, --field=value) forms
+    if args and args[0] == "api":
+        for token in args:
+            if token in GH_API_DATA_FLAGS:
+                return False, f"gh api with data flag '{token}' not allowed (implies POST)"
+            for flag in GH_API_DATA_FLAGS:
+                if token.startswith(flag + "="):
+                    return False, f"gh api with data flag '{token}' not allowed (implies POST)"
+
+    for pattern in GH_ALLOWED_PATTERNS:
+        if len(args) >= len(pattern) and tuple(args[:len(pattern)]) == pattern:
+            return True, ""
+
+    sub = " ".join(args[:2]) if len(args) >= 2 else args[0]
+    return False, f"gh subcommand '{sub}' not allowed. Allowed: pr create, pr view, pr list, api (GET), auth status"
+
+
 async def bash_security_hook(input_data, tool_use_id=None, context=None):
     """Pre-tool-use hook that validates bash commands using an allowlist."""
     try:
@@ -145,6 +210,8 @@ async def bash_security_hook(input_data, tool_use_id=None, context=None):
                     ok, reason = validate_chmod_command(command)
                 elif cmd == "rm":
                     ok, reason = validate_rm_command(command)
+                elif cmd == "gh":
+                    ok, reason = validate_gh_command(command)
                 else:
                     continue
 

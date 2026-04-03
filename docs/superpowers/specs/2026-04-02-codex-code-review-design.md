@@ -1,7 +1,7 @@
 # Codex Code Review Agent — Design Spec
 
 **Date**: 2026-04-02
-**Status**: Draft
+**Status**: Shipped
 **Approach**: Codex CLI Local + Official GitHub Action (Approach C)
 
 ## Problem
@@ -252,6 +252,18 @@ Codex reads this file for project-specific review context. Contents:
 - OpenAI API key stored as GitHub secret (`OPENAI_API_KEY`)
 - Codex CLI installed locally (`npm i -g @openai/codex` or equivalent)
 - Node >= 24 (already required by project)
+
+## Deviations from Design
+
+The following changes were made during implementation:
+
+| Design                                                    | Implementation                                     | Reason                                                                                                                                                     |
+| --------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared `prompt-file` at `.github/codex/prompts/review.md` | Removed; prompt is inline in each integration      | `codex exec review --base` does not support `--prompt-file`; GitHub Action needs PR-specific context (number, SHAs, title) that cannot go in a static file |
+| Single-job GitHub Action                                  | Two-job workflow (review + post comment)           | Codex Action outputs structured JSON; a second job formats it as a markdown PR comment with severity icons                                                 |
+| Schema without `additionalProperties`                     | Added `additionalProperties: false` to all objects | OpenAI API requirement for structured output — schema validation rejects objects without this field                                                        |
+| `codex exec` with flags                                   | `codex exec review` subcommand                     | The `review` subcommand with `--base` is the correct CLI interface for diff-based review                                                                   |
+| Prompt references `AGENTS.md`                             | `AGENTS.md` read automatically by Codex            | Codex reads `AGENTS.md` at repo root by default; no explicit reference needed in prompts                                                                   |
 
 ## Sources
 

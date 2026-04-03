@@ -18,7 +18,8 @@
     "format:check": "prettier --check .",
     "type-check": "tsc -b",
     "test": "vitest --passWithNoTests",
-    "review": "bash scripts/review.sh"
+    "review": "bash scripts/review.sh",
+    "review:fix": "bash scripts/review-fix.sh"
   },
   "keywords": [
     "tauri",

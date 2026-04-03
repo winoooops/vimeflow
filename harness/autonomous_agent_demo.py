@@ -21,7 +21,7 @@ import platform
 import stat
 from pathlib import Path
 
-from agent import run_autonomous_agent
+from agent import run_autonomous_agent, run_cloud_review_loop
 
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 
@@ -42,7 +42,7 @@ def parse_args() -> argparse.Namespace:
         "--max-iterations",
         type=int,
         default=None,
-        help="Maximum iterations (default: unlimited)",
+        help="Maximum iterations per feature (default: unlimited)",
     )
 
     parser.add_argument(
@@ -64,6 +64,34 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=False,
         help="Wipe runtime files (feature_list.json, claude-progress.txt, app_spec.md) before starting. Forces the initializer agent to run fresh.",
+    )
+
+    parser.add_argument(
+        "--skip-review",
+        action="store_true",
+        default=False,
+        help="Skip local Codex review in the feature loop",
+    )
+
+    parser.add_argument(
+        "--review-timeout",
+        type=int,
+        default=300,
+        help="Max seconds to wait for cloud Codex review (default: 300)",
+    )
+
+    parser.add_argument(
+        "--max-relay-loops",
+        type=int,
+        default=2,
+        help="Max cloud review-fix cycles in Phase 3 (default: 2)",
+    )
+
+    parser.add_argument(
+        "--skip-relay",
+        action="store_true",
+        default=False,
+        help="Skip Phase 3 cloud review entirely",
     )
 
     return parser.parse_args()
@@ -169,8 +197,22 @@ def main() -> None:
                 model=args.model,
                 max_iterations=args.max_iterations,
                 sandbox=sandbox,
+                skip_review=args.skip_review,
             )
         )
+
+        # Phase 3: Cloud review (if not skipped)
+        if not args.skip_relay:
+            asyncio.run(
+                run_cloud_review_loop(
+                    project_dir=args.project_dir,
+                    model=args.model,
+                    sandbox=sandbox,
+                    max_relay_loops=args.max_relay_loops,
+                    review_timeout=args.review_timeout,
+                )
+            )
+
     except KeyboardInterrupt:
         print("\n\nInterrupted by user. Run again to resume.")
     except Exception as e:

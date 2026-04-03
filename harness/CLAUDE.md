@@ -112,6 +112,20 @@ async def my_hook(input_data, tool_use_id=None, context=None):
     command = tool_input.get("command", "")
 ```
 
+## Codex Code Review Integration
+
+A cross-vendor automated code review using OpenAI Codex runs alongside the harness workflow. It provides a second-opinion gate that catches blind spots a same-model review would miss.
+
+### How It Works
+
+- **GitHub Action** (`.github/workflows/codex-review.yml`): Runs `openai/codex-action@v1` on every PR. Posts a formatted markdown comment with severity-tagged findings (CRITICAL/HIGH/MEDIUM/LOW).
+- **Local review** (`npm run review`): Runs `codex exec review --base main` locally, saves structured output to `.codex-reviews/latest.md`.
+- **Project context**: Codex reads `AGENTS.md` at the repo root for project-specific review guidelines.
+
+### Relationship to the Harness
+
+The Codex review is currently independent of the harness loop — it runs on PRs created after the harness completes a feature. The planned feedback loop (`docs/superpowers/specs/2026-04-03-codex-feedback-loop-design.md`) will integrate Codex as **Phase 3: Reviewer agent**, closing the loop so the Coder agent can automatically address review findings before the PR is merged.
+
 ## Troubleshooting
 
 | Symptom                                        | Cause                                                                               | Fix                                                                                                                                     |

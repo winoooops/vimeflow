@@ -2,16 +2,23 @@
 Agent Session Logic
 ===================
 
-Core loop for running autonomous coding sessions.
+Core loop for running autonomous coding sessions with local Codex review.
 """
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Optional
 
 from client import create_client
 from progress import print_session_header, print_progress_summary
-from prompts import get_initializer_prompt, get_coding_prompt, copy_spec_to_project
+from prompts import (
+    get_initializer_prompt,
+    get_coding_prompt,
+    get_coding_prompt_with_findings,
+    copy_spec_to_project,
+)
+from review import run_local_review
 
 AUTO_CONTINUE_DELAY_SECONDS = 3
 
@@ -74,19 +81,114 @@ async def run_agent_session(
         return "error", str(e)
 
 
+def get_pending_features(project_dir: Path) -> list[dict]:
+    """Get features where passes=false and all dependencies are met."""
+    tests_file = project_dir / "feature_list.json"
+    if not tests_file.exists():
+        return []
+
+    try:
+        with open(tests_file, "r") as f:
+            features = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return []
+
+    passing_ids = {
+        f.get("id") for f in features if f.get("passes", False)
+    }
+
+    pending = []
+    for f in features:
+        if f.get("passes", False):
+            continue
+        deps = set(f.get("dependencies", []))
+        if deps.issubset(passing_ids):
+            pending.append(f)
+
+    return pending
+
+
+async def run_feature_iteration(
+    project_dir: Path,
+    model: str,
+    sandbox: bool,
+    feature: dict,
+    iteration: int,
+    findings: str | None = None,
+    prompt_override: str | None = None,
+) -> tuple[str, str | None]:
+    """
+    Run one Coder->Reviewer iteration for a feature.
+
+    Args:
+        prompt_override: If provided, use this prompt instead of the default
+            coding prompt. Used by the cloud review fix loop to pass the
+            reviewer prompt instead of the feature coding prompt.
+
+    Returns (status, findings_text):
+      - ("passed", None) -- review clean, feature done
+      - ("has_findings", "...") -- review found issues
+      - ("error", None) -- session errored
+    """
+    feature_desc = feature.get("description", f"Feature #{feature.get('id', '?')}")
+
+    print(f"\n  Feature: {feature_desc}")
+    print(f"  Iteration: {iteration}")
+    print()
+
+    # --- Coder phase ---
+    client = create_client(project_dir, model, sandbox=sandbox)
+
+    if prompt_override:
+        prompt = prompt_override
+    elif findings:
+        prompt = get_coding_prompt_with_findings(findings)
+    else:
+        prompt = get_coding_prompt()
+
+    async with client:
+        status, response = await run_agent_session(client, prompt, project_dir)
+
+    if status == "error":
+        return "error", None
+
+    # --- Reviewer phase (local Codex CLI) ---
+    print("  Running local Codex review...")
+    review_result = run_local_review(project_dir)
+
+    if review_result.get("error"):
+        print(f"  Codex review error: {review_result['error']}")
+        print("  Review unavailable — treating as error so iteration budget is preserved.")
+        return "error", None
+
+    if review_result["has_findings"]:
+        print("  Codex found issues. Will feed back to Coder.")
+        return "has_findings", review_result["raw_review"]
+    else:
+        print("  Codex review: clean. Feature passed.")
+        return "passed", None
+
+
 async def run_autonomous_agent(
     project_dir: Path,
     model: str,
     max_iterations: Optional[int] = None,
     sandbox: bool = True,
+    skip_review: bool = False,
 ) -> None:
-    """Run the autonomous agent loop."""
+    """
+    Run the autonomous agent loop.
+
+    Phase 1: Initializer (if no feature_list.json)
+    Phase 2: Feature loop with per-feature Coder->Reviewer iterations
+    """
     print("\n" + "=" * 70)
     print("  VIBM AUTONOMOUS DEVELOPMENT HARNESS")
     print("=" * 70)
     print(f"\n  Project:    {project_dir.resolve()}")
     print(f"  Model:      {model}")
-    print(f"  Iterations: {max_iterations or 'unlimited'}")
+    print(f"  Iterations: {max_iterations or 'unlimited'} (per feature)")
+    print(f"  Review:     {'disabled' if skip_review else 'enabled (local Codex)'}")
     print()
 
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -94,50 +196,250 @@ async def run_autonomous_agent(
     tests_file = project_dir / "feature_list.json"
     is_first_run = not tests_file.exists()
 
+    # --- Phase 1: Initializer ---
     if is_first_run:
         print("  Mode: INITIALIZER (generating feature list from app_spec.md)")
         print()
         copy_spec_to_project(project_dir)
-    else:
-        print("  Mode: CODER (implementing features)")
-        print_progress_summary(project_dir)
 
-    iteration = 0
-
-    while True:
-        iteration += 1
-
-        if max_iterations and iteration > max_iterations:
-            print(f"\n  Reached max iterations ({max_iterations}). Run again to continue.")
-            break
-
-        print_session_header(iteration, is_first_run)
+        print_session_header(1, is_initializer=True)
 
         client = create_client(project_dir, model, sandbox=sandbox)
-
-        if is_first_run:
-            prompt = get_initializer_prompt()
-            is_first_run = False
-        else:
-            prompt = get_coding_prompt()
+        prompt = get_initializer_prompt()
 
         async with client:
             status, response = await run_agent_session(client, prompt, project_dir)
 
-        if status == "continue":
-            print(f"  Auto-continuing in {AUTO_CONTINUE_DELAY_SECONDS}s...")
+        if status == "error":
+            print("  Initializer failed. Check logs and retry.")
+            return
+
+        print_progress_summary(project_dir)
+        await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
+
+    # --- Phase 2: Feature loop ---
+    print("\n  Mode: FEATURE LOOP (Coder + Reviewer per feature)")
+    print_progress_summary(project_dir)
+
+    feature_num = 0
+    exhausted_ids: set = set()  # Features that hit max iterations without passing
+
+    while True:
+        pending = [
+            f for f in get_pending_features(project_dir)
+            if f.get("id") not in exhausted_ids
+        ]
+        if not pending:
+            if exhausted_ids:
+                print(f"\n  Done. {len(exhausted_ids)} feature(s) exhausted max iterations: {exhausted_ids}")
+            else:
+                print("\n  All features complete (or no pending features with met dependencies).")
+            break
+
+        feature = pending[0]
+        feature_num += 1
+        feature_id = feature.get("id", "?")
+
+        print("\n" + "=" * 70)
+        print(f"  FEATURE {feature_num}: #{feature_id} — {feature.get('description', '')}")
+        print("=" * 70)
+
+        findings = None
+        iteration = 0
+
+        while True:
+            iteration += 1
+            if max_iterations is not None and iteration > max_iterations:
+                print(f"  Feature #{feature_id} hit max iterations ({max_iterations}). Moving on.")
+                exhausted_ids.add(feature_id)
+                break
+            print_session_header(iteration, is_initializer=False)
+
+            if skip_review:
+                # No review -- just run Coder, then check if feature passed
+                client = create_client(project_dir, model, sandbox=sandbox)
+                prompt = get_coding_prompt()
+
+                async with client:
+                    status, response = await run_agent_session(client, prompt, project_dir)
+
+                print_progress_summary(project_dir)
+
+                if status == "error":
+                    print(f"  Feature #{feature_id} coder errored on iteration {iteration}. Counting toward budget.")
+                    await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
+                    continue
+
+                # Re-check feature status after coder run
+                updated = [
+                    f for f in get_pending_features(project_dir)
+                    if f.get("id") == feature_id
+                ]
+                if not updated:
+                    # Feature is no longer pending — it passed
+                    print(f"  Feature #{feature_id} passed on iteration {iteration}.")
+                    break
+                # Feature still pending — let the loop continue so
+                # max_iterations is enforced on the next pass
+                print(f"  Feature #{feature_id} still pending after iteration {iteration}.")
+                await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
+                continue
+
+            status, new_findings = await run_feature_iteration(
+                project_dir, model, sandbox, feature, iteration, findings
+            )
+
             print_progress_summary(project_dir)
-            await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
 
-        elif status == "error":
-            print("  Session errored. Retrying with fresh context...")
-            await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
+            if status == "passed":
+                # Verify feature is actually no longer pending
+                still_pending = [
+                    f for f in get_pending_features(project_dir)
+                    if f.get("id") == feature_id
+                ]
+                if not still_pending:
+                    print(f"  Feature #{feature_id} passed on iteration {iteration}.")
+                    break
+                # Review said clean but feature didn't flip passes=true
+                print(f"  Feature #{feature_id} review clean but still pending. Continuing.")
+                findings = None  # Clear stale findings so next iteration starts fresh
+                await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
+            elif status == "has_findings":
+                findings = new_findings
+                print(f"  Feeding findings back to Coder (iteration {iteration + 1})...")
+                await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
+            elif status == "error":
+                print(f"  Feature #{feature_id} errored on iteration {iteration}. Counting toward budget.")
+                # Don't break — let the max_iterations check at loop top
+                # handle exhaustion so transient errors get retried.
+                await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
 
-        if max_iterations is None or iteration < max_iterations:
-            await asyncio.sleep(1)
+        await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
 
     print("\n" + "=" * 70)
-    print("  HARNESS COMPLETE")
+    print("  HARNESS COMPLETE (Phase 2: Feature Loop)")
     print("=" * 70)
     print(f"\n  Project: {project_dir.resolve()}")
     print_progress_summary(project_dir)
+
+
+async def run_cloud_review_loop(
+    project_dir: Path,
+    model: str,
+    sandbox: bool,
+    max_relay_loops: int = 2,
+    review_timeout: int = 300,
+) -> str:
+    """
+    Phase 3: Push, create PR, poll for cloud Codex review, fix if needed.
+
+    The Coordinator handles GitHub ops (push/PR/poll) directly via subprocess.
+    Only the fix step spawns a Claude SDK session.
+
+    Returns: "CLEAN", "FIXED", "ATTENTION", or "SKIPPED".
+    """
+    import subprocess
+    from review import push_and_create_pr, poll_for_cloud_review
+    from prompts import get_reviewer_prompt
+
+    branch_result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True, text=True,
+        cwd=str(project_dir),
+    )
+    branch = branch_result.stdout.strip()
+
+    if not branch or branch == "main":
+        print("  On main branch — skipping cloud review.")
+        return "SKIPPED"
+
+    print("\n" + "=" * 70)
+    print("  PHASE 3: CLOUD REVIEW")
+    print("=" * 70)
+
+    pr_number = push_and_create_pr(
+        project_dir, branch,
+        title=f"feat: harness implementation ({branch})",
+        body="Automated implementation by VIBM harness.",
+    )
+
+    if not pr_number:
+        print("  Could not create PR. Skipping cloud review.")
+        return "SKIPPED"
+
+    # Snapshot the latest Codex comment ID right after push, before the new
+    # review arrives (~1-2 min via GitHub Actions). Single fetch, no polling.
+    existing = poll_for_cloud_review(project_dir, pr_number, timeout=1, poll_interval=1)
+    last_comment_id: int | None = existing.get("comment_id") if existing else None
+    if last_comment_id:
+        print(f"  Existing Codex comment ID: {last_comment_id} (will wait for newer)")
+
+    status = "ATTENTION"
+
+    for relay_loop in range(1, max_relay_loops + 1):
+        print(f"\n  Relay loop {relay_loop}/{max_relay_loops}: waiting for Codex review...")
+        review = poll_for_cloud_review(
+            project_dir, pr_number,
+            timeout=review_timeout,
+            previous_comment_id=last_comment_id,
+        )
+
+        if not review:
+            print("  Cloud review timed out.")
+            break
+
+        if not review["has_findings"]:
+            print("  Cloud Codex review: CLEAN.")
+            status = "CLEAN" if relay_loop == 1 else "FIXED"
+            break
+
+        print("  Cloud Codex review found issues.")
+        print(f"  Findings:\n{review['raw_review'][:500]}")
+        last_comment_id = review.get("comment_id")
+
+        if relay_loop >= max_relay_loops:
+            print(f"  Max relay loops ({max_relay_loops}) reached. ATTENTION needed.")
+            break
+
+        # Run local Coder+Reviewer loop to fix cloud findings (budget: 2 iterations)
+        print("\n  Spawning local fix loop (Coder + Reviewer, max 2 iterations)...")
+        fix_findings = review["raw_review"]
+        fix_succeeded = False
+
+        for fix_iter in range(1, 3):
+            print(f"  Fix iteration {fix_iter}/2...")
+            fix_feature = {"id": "cloud-review", "description": "Fix cloud review findings"}
+            reviewer_prompt = get_reviewer_prompt(fix_findings)
+            fix_status, new_findings = await run_feature_iteration(
+                project_dir, model, sandbox, fix_feature, fix_iter, fix_findings,
+                prompt_override=reviewer_prompt,
+            )
+            if fix_status == "passed":
+                print("  Local review clean after fix.")
+                fix_succeeded = True
+                break
+            elif fix_status == "has_findings":
+                fix_findings = new_findings
+                print("  Local review found remaining issues. Retrying...")
+                await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
+            else:
+                print("  Fix iteration errored. Stopping local fix loop.")
+                break
+
+        if not fix_succeeded:
+            print("  Local fix loop did not achieve clean review. Pushing best effort.")
+
+        # Push fixes — triggers new Codex review on PR (synchronize event)
+        push_result = subprocess.run(
+            ["git", "push"],
+            capture_output=True, text=True,
+            cwd=str(project_dir),
+        )
+        if push_result.returncode != 0:
+            print(f"  Push failed: {push_result.stderr}")
+            break
+
+        print("  Fixes pushed. Polling for next review...")
+
+    print(f"\n  Phase 3 result: {status}")
+    return status
