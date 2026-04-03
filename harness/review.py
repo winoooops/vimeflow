@@ -159,7 +159,7 @@ def poll_for_cloud_review(
     while elapsed < timeout:
         # Fetch comment id + body pairs as JSON array
         comments = subprocess.run(
-            ["gh", "api", f"repos/{repo}/issues/{pr_number}/comments",
+            ["gh", "api", f"repos/{repo}/issues/{pr_number}/comments?per_page=100&sort=created&direction=desc",
              "--jq", "[.[] | {id, body}]"],
             capture_output=True, text=True,
             cwd=str(project_dir),
