@@ -64,16 +64,52 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - name: Post Codex review as PR comment
+      - name: Format and post Codex review
         uses: actions/github-script@v7
         env:
           CODEX_FINAL_MESSAGE: ${{ needs.codex-review.outputs.final_message }}
         with:
           github-token: ${{ github.token }}
           script: |
+            const raw = process.env.CODEX_FINAL_MESSAGE;
+            let body;
+
+            try {
+              const review = JSON.parse(raw);
+              const lines = ['## Codex Code Review', ''];
+
+              if (review.findings && review.findings.length > 0) {
+                const icon = { CRITICAL: '🔴', HIGH: '🟠', MEDIUM: '🟡', LOW: '🔵' };
+                for (const f of review.findings) {
+                  const sev = icon[f.severity] || '⚪';
+                  lines.push(`### ${sev} [${f.severity}] ${f.title}`);
+                  lines.push('');
+                  lines.push(`📍 \`${f.code_location.absolute_file_path}\` L${f.code_location.line_range.start}-${f.code_location.line_range.end}`);
+                  lines.push(`🎯 Confidence: ${(f.confidence_score * 100).toFixed(0)}%`);
+                  lines.push('');
+                  lines.push(f.body);
+                  lines.push('');
+                  lines.push('---');
+                  lines.push('');
+                }
+              } else {
+                lines.push('✅ No issues found.');
+                lines.push('');
+              }
+
+              const verdict = review.overall_correctness === 'patch is correct' ? '✅' : '⚠️';
+              lines.push(`**Overall: ${verdict} ${review.overall_correctness}** (confidence: ${(review.overall_confidence_score * 100).toFixed(0)}%)`);
+              lines.push('');
+              lines.push(`> ${review.overall_explanation}`);
+
+              body = lines.join('\n');
+            } catch {
+              body = `## Codex Code Review\n\n${raw}`;
+            }
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
-              body: process.env.CODEX_FINAL_MESSAGE,
+              body,
             });
