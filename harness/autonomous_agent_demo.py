@@ -42,7 +42,7 @@ def parse_args() -> argparse.Namespace:
         "--max-iterations",
         type=int,
         default=None,
-        help="Maximum iterations (default: unlimited)",
+        help="Maximum iterations per feature (default: unlimited)",
     )
 
     parser.add_argument(
