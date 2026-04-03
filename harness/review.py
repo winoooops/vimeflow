@@ -1,0 +1,160 @@
+"""
+Code Review Integration
+=======================
+
+Local Codex CLI review and cloud review polling via gh CLI.
+The Coordinator calls these functions directly — no SDK session needed.
+"""
+
+import json
+import re
+import subprocess
+import time
+from pathlib import Path
+
+
+def run_local_review(project_dir: Path, base_branch: str = "main") -> dict:
+    """
+    Run Codex CLI review locally.
+
+    Returns dict with:
+      - has_findings: bool
+      - raw_review: str (the full Codex output)
+      - findings: list (parsed if possible)
+    """
+    cmd = [
+        "codex", "exec", "review",
+        "--base", base_branch,
+        "--model", "gpt-5.2-codex",
+        "--full-auto",
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(project_dir),
+            timeout=300,
+        )
+        output = result.stdout + result.stderr
+    except FileNotFoundError:
+        return {
+            "has_findings": False,
+            "raw_review": "Error: codex CLI not found",
+            "findings": [],
+            "error": "codex_not_found",
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "has_findings": False,
+            "raw_review": "Error: codex review timed out",
+            "findings": [],
+            "error": "timeout",
+        }
+
+    return parse_codex_output(output)
+
+
+def parse_codex_output(output: str) -> dict:
+    """Parse Codex CLI review output into structured findings."""
+    codex_sections = re.split(r"^codex$", output, flags=re.MULTILINE)
+    review_text = codex_sections[-1].strip() if len(codex_sections) > 1 else output.strip()
+
+    no_issue_patterns = [
+        r"no\s+(?:actionable\s+)?issues",
+        r"no\s+issues\s+(?:found|introduced|identified|meeting)",
+        r"changes\s+appear\s+consistent",
+        r"patch\s+(?:is\s+)?correct",
+    ]
+
+    has_findings = True
+    for pattern in no_issue_patterns:
+        if re.search(pattern, review_text, re.IGNORECASE):
+            has_findings = False
+            break
+
+    return {
+        "has_findings": has_findings,
+        "raw_review": review_text,
+        "findings": [],
+    }
+
+
+def push_and_create_pr(project_dir: Path, branch: str, title: str, body: str) -> int | None:
+    """
+    Push branch and create PR. Returns PR number or None on failure.
+    """
+    push_result = subprocess.run(
+        ["git", "push", "-u", "origin", branch],
+        capture_output=True, text=True,
+        cwd=str(project_dir),
+    )
+    if push_result.returncode != 0:
+        print(f"  Error pushing: {push_result.stderr}")
+        return None
+
+    check = subprocess.run(
+        ["gh", "pr", "view", "--json", "number"],
+        capture_output=True, text=True,
+        cwd=str(project_dir),
+    )
+    if check.returncode == 0:
+        try:
+            return json.loads(check.stdout)["number"]
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    create = subprocess.run(
+        ["gh", "pr", "create", "--title", title, "--body", body],
+        capture_output=True, text=True,
+        cwd=str(project_dir),
+    )
+    if create.returncode != 0:
+        print(f"  Error creating PR: {create.stderr}")
+        return None
+
+    match = re.search(r"/pull/(\d+)", create.stdout)
+    return int(match.group(1)) if match else None
+
+
+def poll_for_cloud_review(
+    project_dir: Path,
+    pr_number: int,
+    timeout: int = 300,
+    poll_interval: int = 30,
+) -> dict | None:
+    """
+    Poll for a Codex review comment on the PR.
+    Returns parsed review dict or None on timeout.
+    """
+    elapsed = 0
+    while elapsed < timeout:
+        comments = subprocess.run(
+            ["gh", "api", f"repos/{{owner}}/{{repo}}/issues/{pr_number}/comments",
+             "--jq", ".[].body"],
+            capture_output=True, text=True,
+            cwd=str(project_dir),
+        )
+
+        if comments.returncode == 0:
+            for comment_body in comments.stdout.split("\n"):
+                if "## Codex Code Review" in comment_body:
+                    return parse_cloud_review_comment(comment_body)
+
+        print(f"  Waiting for Codex review... ({elapsed}s / {timeout}s)")
+        time.sleep(poll_interval)
+        elapsed += poll_interval
+
+    return None
+
+
+def parse_cloud_review_comment(body: str) -> dict:
+    """Parse a formatted Codex review PR comment."""
+    has_findings = "No issues found" not in body and "patch is correct" not in body.lower()
+
+    return {
+        "has_findings": has_findings,
+        "raw_review": body,
+        "findings": [],
+    }
