@@ -29,9 +29,11 @@ for loop in $(seq 1 "$MAX_LOOPS"); do
   echo "=== Review-fix loop $loop/$MAX_LOOPS ==="
   echo ""
 
-  # Fetch latest Codex review comment
-  REVIEW=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
-    --jq '[.[] | select(.body | contains("## Codex Code Review"))] | last | .body' 2>/dev/null || echo "")
+  # Fetch latest Codex review comment (track ID for poll detection)
+  REVIEW_JSON=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+    --jq '[.[] | select(.body | contains("## Codex Code Review"))] | last | {id, body}' 2>/dev/null || echo "{}")
+  REVIEW=$(echo "$REVIEW_JSON" | jq -r '.body // empty')
+  REVIEW_ID=$(echo "$REVIEW_JSON" | jq -r '.id // empty')
 
   if [[ -z "$REVIEW" ]] || [[ "$REVIEW" == "null" ]]; then
     echo "No Codex review comment found. Waiting..."
@@ -81,10 +83,10 @@ $(cat "$REVIEW_DIR/findings.md")"
     while [[ "$POLL_ELAPSED" -lt "$POLL_MAX" ]]; do
       sleep 30
       POLL_ELAPSED=$((POLL_ELAPSED + 30))
-      NEW_REVIEW=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
-        --jq '[.[] | select(.body | contains("## Codex Code Review"))] | last | .body' 2>/dev/null || echo "")
-      if [[ -n "$NEW_REVIEW" ]] && [[ "$NEW_REVIEW" != "null" ]] && [[ "$NEW_REVIEW" != "$REVIEW" ]]; then
-        echo "New review detected."
+      NEW_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+        --jq '[.[] | select(.body | contains("## Codex Code Review"))] | last | .id' 2>/dev/null || echo "")
+      if [[ -n "$NEW_ID" ]] && [[ "$NEW_ID" != "null" ]] && [[ "$NEW_ID" != "$REVIEW_ID" ]]; then
+        echo "New review detected (comment ID: $NEW_ID)."
         break
       fi
       echo "  Still waiting... (${POLL_ELAPSED}s / ${POLL_MAX}s)"

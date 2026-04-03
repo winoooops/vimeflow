@@ -295,7 +295,8 @@ async def run_autonomous_agent(
                 print(f"  Feeding findings back to Coder (iteration {iteration + 1})...")
                 await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
             elif status == "error":
-                print(f"  Feature #{feature_id} errored on iteration {iteration}. Moving on.")
+                print(f"  Feature #{feature_id} errored on iteration {iteration}. Marking exhausted.")
+                exhausted_ids.add(feature_id)
                 break
 
         await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
