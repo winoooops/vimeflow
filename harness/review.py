@@ -171,8 +171,9 @@ def poll_for_cloud_review(
             except (json.JSONDecodeError, ValueError):
                 entries = []
 
-            # Reverse to get the latest (newest) Codex comment
-            for entry in reversed(entries):
+            # API returns newest first (direction=desc), so the first
+            # Codex comment we find is the latest one.
+            for entry in entries:
                 if "## Codex Code Review" in entry.get("body", ""):
                     comment_id = entry["id"]
                     # Skip if it's the same or older comment
