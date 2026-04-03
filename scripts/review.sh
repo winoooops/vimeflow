@@ -19,8 +19,6 @@ echo "Running Codex code review (base: $BASE)..."
 echo ""
 
 # Codex reads AGENTS.md automatically for project context.
-# Output goes to stderr (progress) and stdout (result).
-# Capture both to file while showing in terminal.
 codex exec review \
   --base "$BASE" \
   --model gpt-5.2-codex \
