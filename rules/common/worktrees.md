@@ -6,6 +6,7 @@
 2. **All code changes happen in worktrees** — any work that produces commits (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`) must use a dedicated worktree.
 3. **Read-only tasks skip worktrees** — research, exploration, and answering questions can use the main worktree.
 4. **Harness always uses a worktree** — autonomous loops (`/init`) must be fully isolated.
+5. **Git commands start with `git`** — always invoke git as the first token in the command (e.g., `git push`, not `ENV=val git push` or `cd repo && git push`). This ensures the PreToolUse hook can reliably detect and guard git operations. This framework is designed for agents, not humans — compound shell expressions are unnecessary.
 
 ## Worktree Location
 

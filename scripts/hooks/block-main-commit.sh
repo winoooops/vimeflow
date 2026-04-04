@@ -7,6 +7,11 @@
 #
 # Hook input (JSON on stdin) contains the tool parameters.
 # We check the Bash command for git commit/push patterns.
+#
+# Design constraint: agents must start git commands with "git" as the first
+# token (see rules/common/worktrees.md principle 5). This hook does not parse
+# compound shell expressions (&&, ||, ;) or env-prefixed commands (ENV=val git).
+# This is intentional — this framework is for agents, not humans.
 
 set -euo pipefail
 
