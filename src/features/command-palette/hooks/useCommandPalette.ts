@@ -206,13 +206,13 @@ export const useCommandPalette = (): UseCommandPaletteReturn => {
   // Global keyboard listener
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      // Check if an input element is focused
-      if (isInputElement(document.activeElement)) {
-        return
-      }
-
-      // Open palette on ':'
+      // Open palette on ':' (only when no input is focused and palette is closed)
       if (event.key === ':' && !state.isOpen) {
+        // Skip if user is typing in another input
+        if (isInputElement(document.activeElement)) {
+          return
+        }
+
         event.preventDefault()
         open()
 
