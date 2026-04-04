@@ -63,3 +63,6 @@ harness/.env
 
 # Codex review output (local only)
 .codex-reviews/
+
+# Git worktrees (local per-agent checkouts)
+.claude/worktrees/

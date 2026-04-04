@@ -36,6 +36,7 @@ Each directory contains files covering the same topics:
 | `performance.md`          | Profiling, caching, bundle size (common only)                        |
 | `code-review.md`          | Review triggers, severity levels, agent delegation (common only)     |
 | `agents.md`               | Agent orchestration, parallel execution (common only)                |
+| `worktrees.md`            | Git worktree lifecycle, lock guardrails, cleanup (common only)       |
 
 ## Precedence
 
