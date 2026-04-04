@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, test, expect } from 'vitest'
 import FilesView from './FilesView'
 
@@ -141,5 +142,57 @@ describe('FilesView', () => {
     expect(screen.getByText('12.4 MB')).toBeInTheDocument()
     expect(screen.getByText('UTF-8')).toBeInTheDocument()
     expect(screen.getByText('main*')).toBeInTheDocument()
+  })
+
+  test('updates breadcrumbs when a file node is clicked', async () => {
+    const user = userEvent.setup()
+    render(<FilesView />)
+
+    // Click on NavBar.tsx (inside src/components/)
+    const navBarNode = screen.getByText('NavBar.tsx')
+    await user.click(navBarNode)
+
+    // Breadcrumbs should show: vibm-project / src / components / NavBar.tsx
+    const breadcrumbNav = screen.getByRole('navigation', {
+      name: /breadcrumb/i,
+    })
+    expect(breadcrumbNav).toHaveTextContent('vibm-project')
+    expect(breadcrumbNav).toHaveTextContent('src')
+    expect(breadcrumbNav).toHaveTextContent('components')
+    expect(breadcrumbNav).toHaveTextContent('NavBar.tsx')
+  })
+
+  test('updates breadcrumbs when a folder node is clicked', async () => {
+    const user = userEvent.setup()
+    render(<FilesView />)
+
+    // Click on utils folder text in the tree
+    const allUtils = screen.getAllByText('utils')
+    // The first "utils" in the tree (not in breadcrumbs initially since default is vibm-project/src/components)
+    await user.click(allUtils[0])
+
+    // Breadcrumbs should show: vibm-project / src / utils
+    const breadcrumbNav = screen.getByRole('navigation', {
+      name: /breadcrumb/i,
+    })
+    expect(breadcrumbNav).toHaveTextContent('vibm-project')
+    expect(breadcrumbNav).toHaveTextContent('src')
+    expect(breadcrumbNav).toHaveTextContent('utils')
+  })
+
+  test('updates breadcrumbs when a root-level file is clicked', async () => {
+    const user = userEvent.setup()
+    render(<FilesView />)
+
+    // Click on README.md (root level)
+    const readmeNode = screen.getByText('README.md')
+    await user.click(readmeNode)
+
+    // Breadcrumbs should show: vibm-project / README.md
+    const breadcrumbNav = screen.getByRole('navigation', {
+      name: /breadcrumb/i,
+    })
+    expect(breadcrumbNav).toHaveTextContent('vibm-project')
+    expect(breadcrumbNav).toHaveTextContent('README.md')
   })
 })

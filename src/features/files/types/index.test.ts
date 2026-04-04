@@ -1,9 +1,11 @@
 import { describe, test, expect } from 'vitest'
+import type { FileNode } from './index'
 import {
   isGitStatus,
   isFileNode,
   isContextMenuAction,
   isContextMenuState,
+  getNodePath,
 } from './index'
 
 describe('GitStatus type guard', () => {
@@ -297,5 +299,69 @@ describe('ContextMenuState type guard', () => {
 
   test('returns false for non-object', () => {
     expect(isContextMenuState('not an object')).toBe(false)
+  })
+})
+
+describe('getNodePath', () => {
+  const tree: FileNode[] = [
+    {
+      id: 'src',
+      name: 'src',
+      type: 'folder',
+      children: [
+        {
+          id: 'components',
+          name: 'components',
+          type: 'folder',
+          children: [
+            { id: 'file-tree', name: 'FileTree.tsx', type: 'file' },
+            { id: 'navbar', name: 'NavBar.tsx', type: 'file' },
+          ],
+        },
+        {
+          id: 'utils',
+          name: 'utils',
+          type: 'folder',
+          children: [{ id: 'helper', name: 'api-helper.rs', type: 'file' }],
+        },
+      ],
+    },
+    { id: 'readme', name: 'README.md', type: 'file' },
+  ]
+
+  test('returns path to a root-level file', () => {
+    expect(getNodePath(tree, 'readme')).toEqual(['README.md'])
+  })
+
+  test('returns path to a root-level folder', () => {
+    expect(getNodePath(tree, 'src')).toEqual(['src'])
+  })
+
+  test('returns path to a nested folder', () => {
+    expect(getNodePath(tree, 'components')).toEqual(['src', 'components'])
+  })
+
+  test('returns path to a deeply nested file', () => {
+    expect(getNodePath(tree, 'file-tree')).toEqual([
+      'src',
+      'components',
+      'FileTree.tsx',
+    ])
+  })
+
+  test('returns path to a file in a different subtree', () => {
+    expect(getNodePath(tree, 'helper')).toEqual([
+      'src',
+      'utils',
+      'api-helper.rs',
+    ])
+  })
+
+  test('returns empty array for non-existent node', () => {
+    expect(getNodePath(tree, 'does-not-exist')).toEqual([])
+  })
+
+  test('returns empty array for empty tree', () => {
+    expect(getNodePath([], 'any-id')).toEqual([])
   })
 })

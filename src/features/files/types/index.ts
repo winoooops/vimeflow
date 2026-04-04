@@ -137,6 +137,30 @@ export const isContextMenuAction = (
 }
 
 /**
+ * Find the path of node names from root to a target node by ID.
+ * Returns an empty array if the node is not found.
+ */
+export const getNodePath = (
+  nodes: readonly FileNode[],
+  targetId: string
+): string[] => {
+  for (const node of nodes) {
+    if (node.id === targetId) {
+      return [node.name]
+    }
+
+    if (node.children) {
+      const childPath = getNodePath(node.children, targetId)
+      if (childPath.length > 0) {
+        return [node.name, ...childPath]
+      }
+    }
+  }
+
+  return []
+}
+
+/**
  * Type guard to check if an unknown value is a valid ContextMenuState.
  */
 export const isContextMenuState = (

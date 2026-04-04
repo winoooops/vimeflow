@@ -5,6 +5,7 @@ import type { FileNode, GitStatus } from '../types'
 interface FileTreeNodeProps {
   node: FileNode
   onContextMenu: (event: MouseEvent, node: FileNode) => void
+  onNodeSelect?: (node: FileNode) => void
 }
 
 /**
@@ -59,6 +60,7 @@ const getGitStatusColor = (status: GitStatus): string => {
 export const FileTreeNode = ({
   node,
   onContextMenu,
+  onNodeSelect = undefined,
 }: FileTreeNodeProps): ReactElement => {
   const [isExpanded, setIsExpanded] = useState(node.defaultExpanded ?? false)
 
@@ -66,6 +68,7 @@ export const FileTreeNode = ({
     if (node.type === 'folder') {
       setIsExpanded(!isExpanded)
     }
+    onNodeSelect?.(node)
   }
 
   const handleContextMenu = (event: React.MouseEvent): void => {
@@ -160,6 +163,7 @@ export const FileTreeNode = ({
               key={child.id}
               node={child}
               onContextMenu={onContextMenu}
+              onNodeSelect={onNodeSelect}
             />
           ))}
         </div>

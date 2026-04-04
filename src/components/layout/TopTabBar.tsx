@@ -1,13 +1,15 @@
 import type { ReactElement } from 'react'
 
-type TabName = 'Chat' | 'Files' | 'Editor' | 'Diff'
+export type TabName = 'Chat' | 'Files' | 'Editor' | 'Diff'
 
 interface TopTabBarProps {
   activeTab?: TabName
+  onTabChange?: (tab: TabName) => void
 }
 
 export const TopTabBar = ({
   activeTab = 'Chat',
+  onTabChange = undefined,
 }: TopTabBarProps): ReactElement => {
   const tabs: TabName[] = ['Chat', 'Files', 'Editor', 'Diff']
 
@@ -31,6 +33,7 @@ export const TopTabBar = ({
               key={tab}
               className={getTabClassName(tab)}
               aria-current={tab === activeTab ? 'page' : undefined}
+              onClick={(): void => onTabChange?.(tab)}
             >
               {tab}
             </button>
