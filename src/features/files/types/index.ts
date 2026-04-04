@@ -41,10 +41,8 @@ export interface ContextMenuState {
 /**
  * Type guard to check if a value is a valid GitStatus.
  */
-export const isGitStatus = (value: unknown): value is GitStatus => (
-    typeof value === 'string' &&
-    ['M', 'A', 'D', 'U'].includes(value)
-  )
+export const isGitStatus = (value: unknown): value is GitStatus =>
+  typeof value === 'string' && ['M', 'A', 'D', 'U'].includes(value)
 
 /**
  * Type guard to check if an unknown value is a valid FileNode.
@@ -88,7 +86,10 @@ export const isFileNode = (value: unknown): value is FileNode => {
   }
 
   // Validate optional defaultExpanded
-  if (obj.defaultExpanded !== undefined && typeof obj.defaultExpanded !== 'boolean') {
+  if (
+    obj.defaultExpanded !== undefined &&
+    typeof obj.defaultExpanded !== 'boolean'
+  ) {
     return false
   }
 
@@ -118,10 +119,7 @@ export const isContextMenuAction = (
   const obj = value as Record<string, unknown>
 
   // Check required fields
-  if (
-    typeof obj.label !== 'string' ||
-    typeof obj.icon !== 'string'
-  ) {
+  if (typeof obj.label !== 'string' || typeof obj.icon !== 'string') {
     return false
   }
 

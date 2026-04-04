@@ -29,7 +29,8 @@ describe('ContextMenu', () => {
   })
 
   test('does not render when not visible', () => {
-    render(<ContextMenu {...defaultProps}  />)
+    // eslint-disable-next-line react/jsx-boolean-value
+    render(<ContextMenu {...defaultProps} visible={false} />)
 
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
@@ -37,11 +38,25 @@ describe('ContextMenu', () => {
   test('renders all action items', () => {
     render(<ContextMenu {...defaultProps} />)
 
-    expect(screen.getByRole('menuitem', { name: /rename/i })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: /delete/i })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: /copy path/i })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: /open in editor/i })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: /view diff/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('menuitem', { name: /rename/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('menuitem', { name: /delete/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('menuitem', { name: /copy path/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('menuitem', { name: /open in editor/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('menuitem', { name: /view diff/i })
+    ).toBeInTheDocument()
   })
 
   test('renders separator', () => {
@@ -115,7 +130,10 @@ describe('ContextMenu', () => {
     render(<ContextMenu {...defaultProps} />)
 
     const menu = screen.getByRole('menu', { name: /context menu/i })
-    expect(menu).toHaveClass('backdrop-blur-[16px]', 'bg-surface-container-highest/80')
+    expect(menu).toHaveClass(
+      'backdrop-blur-[16px]',
+      'bg-surface-container-highest/80'
+    )
   })
 
   test('has correct width', () => {

@@ -23,10 +23,7 @@ export const FileTree = ({
     targetNode: null,
   })
 
-  const handleContextMenu = (
-    event: React.MouseEvent,
-    node: FileNode
-  ): void => {
+  const handleContextMenu = (event: React.MouseEvent, node: FileNode): void => {
     setContextMenuState({
       visible: true,
       x: event.clientX,

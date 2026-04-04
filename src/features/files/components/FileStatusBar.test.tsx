@@ -58,7 +58,8 @@ describe('FileStatusBar', () => {
   })
 
   test('hides pulse dot when live sync is inactive', () => {
-    render(<FileStatusBar {...defaultProps}  />)
+    // eslint-disable-next-line react/jsx-boolean-value
+    render(<FileStatusBar {...defaultProps} liveSyncActive={false} />)
 
     expect(screen.queryByLabelText('Active')).not.toBeInTheDocument()
   })
@@ -74,6 +75,11 @@ describe('FileStatusBar', () => {
     render(<FileStatusBar {...defaultProps} />)
 
     const statusBar = screen.getByRole('status', { name: /file status bar/i })
-    expect(statusBar).toHaveClass('fixed', 'bottom-0', 'left-[308px]', 'right-[280px]')
+    expect(statusBar).toHaveClass(
+      'fixed',
+      'bottom-0',
+      'left-[308px]',
+      'right-[280px]'
+    )
   })
 })

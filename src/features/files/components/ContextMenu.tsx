@@ -84,7 +84,10 @@ export const ContextMenu = ({
               onClose()
             }}
           >
-            <span className="material-symbols-outlined text-base" aria-hidden="true">
+            <span
+              className="material-symbols-outlined text-base"
+              aria-hidden="true"
+            >
               {action.icon}
             </span>
             <span>{action.label}</span>

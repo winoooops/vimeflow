@@ -63,7 +63,9 @@ describe('FileTree', () => {
 
     fireEvent.contextMenu(screen.getByText('test.ts'))
 
-    expect(screen.getByRole('menu', { name: /context menu/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('menu', { name: /context menu/i })
+    ).toBeInTheDocument()
   })
 
   test('context menu shows correct actions', () => {
@@ -71,8 +73,13 @@ describe('FileTree', () => {
 
     fireEvent.contextMenu(screen.getByText('test.ts'))
 
-    expect(screen.getByRole('menuitem', { name: /rename/i })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: /delete/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('menuitem', { name: /rename/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('menuitem', { name: /delete/i })
+    ).toBeInTheDocument()
   })
 
   test('closes context menu on Escape', () => {
@@ -80,7 +87,9 @@ describe('FileTree', () => {
 
     // Open context menu
     fireEvent.contextMenu(screen.getByText('test.ts'))
-    expect(screen.getByRole('menu', { name: /context menu/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('menu', { name: /context menu/i })
+    ).toBeInTheDocument()
 
     // Press Escape
     fireEvent.keyDown(document, { key: 'Escape' })
@@ -92,7 +101,9 @@ describe('FileTree', () => {
 
     // Open context menu
     fireEvent.contextMenu(screen.getByText('test.ts'))
-    expect(screen.getByRole('menu', { name: /context menu/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('menu', { name: /context menu/i })
+    ).toBeInTheDocument()
 
     // Click outside
     fireEvent.mouseDown(document)
@@ -115,7 +126,13 @@ describe('FileTree', () => {
     render(<FileTree nodes={mockNodes} contextMenuActions={mockActions} />)
 
     const tree = screen.getByRole('tree', { name: /file tree/i })
-    expect(tree).toHaveClass('bg-surface-container-low', 'rounded-xl', 'p-4', 'max-w-4xl', 'mx-auto')
+    expect(tree).toHaveClass(
+      'bg-surface-container-low',
+      'rounded-xl',
+      'p-4',
+      'max-w-4xl',
+      'mx-auto'
+    )
   })
 
   test('renders empty tree gracefully', () => {

@@ -6,7 +6,9 @@ describe('Breadcrumbs', () => {
   test('renders navigation element', () => {
     render(<Breadcrumbs segments={['vibm-project', 'src', 'components']} />)
 
-    const nav = screen.getByRole('navigation', { name: /file path breadcrumbs/i })
+    const nav = screen.getByRole('navigation', {
+      name: /file path breadcrumbs/i,
+    })
     expect(nav).toBeInTheDocument()
   })
 
@@ -50,7 +52,9 @@ describe('Breadcrumbs', () => {
   test('renders empty array gracefully', () => {
     render(<Breadcrumbs segments={[]} />)
 
-    const nav = screen.getByRole('navigation', { name: /file path breadcrumbs/i })
+    const nav = screen.getByRole('navigation', {
+      name: /file path breadcrumbs/i,
+    })
     expect(nav).toBeInTheDocument()
     expect(nav).toBeEmptyDOMElement()
   })

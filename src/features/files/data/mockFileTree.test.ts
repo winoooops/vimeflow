@@ -30,13 +30,19 @@ describe('mockFileTree', () => {
 
   test('components folder has isDragTarget flag', () => {
     const srcNode = mockFileTree[0]
-    const componentsNode = srcNode.children?.find((n) => n.name === 'components')
+
+    const componentsNode = srcNode.children?.find(
+      (n) => n.name === 'components'
+    )
     expect(componentsNode?.isDragTarget).toBe(true)
   })
 
   test('TerminalPanel.tsx has isDragging flag', () => {
     const srcNode = mockFileTree[0]
-    const componentsNode = srcNode.children?.find((n) => n.name === 'components')
+
+    const componentsNode = srcNode.children?.find(
+      (n) => n.name === 'components'
+    )
 
     const terminalNode = componentsNode?.children?.find(
       (n) => n.name === 'TerminalPanel.tsx'
@@ -49,13 +55,21 @@ describe('mockFileTree', () => {
     const srcNode = mockFileTree[0]
 
     // NavBar.tsx has M status
-    const componentsNode = srcNode.children?.find((n) => n.name === 'components')
-    const navBarNode = componentsNode?.children?.find((n) => n.name === 'NavBar.tsx')
+    const componentsNode = srcNode.children?.find(
+      (n) => n.name === 'components'
+    )
+
+    const navBarNode = componentsNode?.children?.find(
+      (n) => n.name === 'NavBar.tsx'
+    )
     expect(navBarNode?.gitStatus).toBe('M')
 
     // api-helper.rs has A status
     const utilsNode = srcNode.children?.find((n) => n.name === 'utils')
-    const apiHelperNode = utilsNode?.children?.find((n) => n.name === 'api-helper.rs')
+
+    const apiHelperNode = utilsNode?.children?.find(
+      (n) => n.name === 'api-helper.rs'
+    )
     expect(apiHelperNode?.gitStatus).toBe('A')
 
     // tsconfig.json has D status
@@ -78,7 +92,9 @@ describe('mockBreadcrumbs', () => {
 
 describe('contextMenuActions', () => {
   test('contains valid ContextMenuAction objects', () => {
-    const validActions = contextMenuActions.filter((action) => !action.separator)
+    const validActions = contextMenuActions.filter(
+      (action) => !action.separator
+    )
     validActions.forEach((action) => {
       expect(isContextMenuAction(action)).toBe(true)
     })

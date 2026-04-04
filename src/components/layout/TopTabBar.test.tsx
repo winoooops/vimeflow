@@ -118,14 +118,22 @@ describe('TopTabBar', () => {
   test('defaults to Chat tab when activeTab prop is not provided', () => {
     render(<TopTabBar />)
     const chatTab = screen.getByRole('button', { name: 'Chat' })
-    expect(chatTab).toHaveClass('text-[#e2c7ff]', 'border-b-2', 'border-[#cba6f7]')
+    expect(chatTab).toHaveClass(
+      'text-[#e2c7ff]',
+      'border-b-2',
+      'border-[#cba6f7]'
+    )
     expect(chatTab).toHaveAttribute('aria-current', 'page')
   })
 
   test('renders Files tab as active when activeTab="Files"', () => {
     render(<TopTabBar activeTab="Files" />)
     const filesTab = screen.getByRole('button', { name: 'Files' })
-    expect(filesTab).toHaveClass('text-[#e2c7ff]', 'border-b-2', 'border-[#cba6f7]')
+    expect(filesTab).toHaveClass(
+      'text-[#e2c7ff]',
+      'border-b-2',
+      'border-[#cba6f7]'
+    )
     expect(filesTab).toHaveAttribute('aria-current', 'page')
   })
 

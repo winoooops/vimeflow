@@ -41,6 +41,7 @@ describe('FileTreeNode', () => {
       <FileTreeNode node={folderNode} onContextMenu={mockOnContextMenu} />
     )
 
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     const chevron = container.querySelector('.material-symbols-outlined')
     expect(chevron).toHaveTextContent('chevron_right')
   })
@@ -56,6 +57,7 @@ describe('FileTreeNode', () => {
       <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
     )
 
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     const icons = container.querySelectorAll('.material-symbols-outlined')
 
     const chevron = Array.from(icons).find((icon) =>
@@ -179,6 +181,7 @@ describe('FileTreeNode', () => {
       <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
     )
 
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     const row = container.querySelector('.opacity-60')
     expect(row).toBeInTheDocument()
     expect(row).toHaveClass('scale-95', 'translate-x-4')
@@ -196,10 +199,7 @@ describe('FileTreeNode', () => {
     fireEvent.contextMenu(screen.getByText('test.ts'))
 
     expect(mockOnContextMenu).toHaveBeenCalledTimes(1)
-    expect(mockOnContextMenu).toHaveBeenCalledWith(
-      expect.any(Object),
-      fileNode
-    )
+    expect(mockOnContextMenu).toHaveBeenCalledWith(expect.any(Object), fileNode)
   })
 
   test('renders TypeScript file with code icon', () => {
@@ -213,6 +213,7 @@ describe('FileTreeNode', () => {
       <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
     )
 
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     const icons = container.querySelectorAll('.material-symbols-outlined')
 
     const fileIcon = Array.from(icons).find((icon) =>
@@ -232,6 +233,7 @@ describe('FileTreeNode', () => {
       <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
     )
 
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     const icons = container.querySelectorAll('.material-symbols-outlined')
 
     const fileIcon = Array.from(icons).find((icon) =>
@@ -251,6 +253,7 @@ describe('FileTreeNode', () => {
       <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
     )
 
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     const icons = container.querySelectorAll('.material-symbols-outlined')
 
     const fileIcon = Array.from(icons).find((icon) =>
@@ -301,6 +304,7 @@ describe('FileTreeNode', () => {
       <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
     )
 
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     const icons = container.querySelectorAll('.material-symbols-outlined')
 
     const fileIcon = Array.from(icons).find((icon) =>

@@ -74,10 +74,12 @@ export const FileTreeNode = ({
   }
 
   // Build row classes based on drag states
-  let rowClasses = 'flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-surface-bright cursor-pointer transition-all duration-300'
+  let rowClasses =
+    'flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-surface-bright cursor-pointer transition-all duration-300'
 
   if (node.isDragging) {
-    rowClasses += ' opacity-60 scale-95 shadow-lg border-dashed border border-outline-variant translate-x-4'
+    rowClasses +=
+      ' opacity-60 scale-95 shadow-lg border-dashed border border-outline-variant translate-x-4'
   }
 
   if (node.isDragTarget) {
@@ -114,7 +116,11 @@ export const FileTreeNode = ({
               ? 'text-[#a8c8ff]'
               : 'text-on-surface-variant'
           }`}
-          style={isFolder && isExpanded ? { fontVariationSettings: '"FILL" 1' } : undefined}
+          style={
+            isFolder && isExpanded
+              ? { fontVariationSettings: '"FILL" 1' }
+              : undefined
+          }
           aria-hidden="true"
         >
           {isFolder ? folderIcon : fileIcon}

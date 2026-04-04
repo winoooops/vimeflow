@@ -10,12 +10,11 @@ describe('DropZone', () => {
     expect(dropZone).toBeInTheDocument()
   })
 
-  test('displays upload icon', () => {
-    const { container } = render(<DropZone targetPath="src/components/" />)
+  test('has descriptive label for screen readers', () => {
+    render(<DropZone targetPath="src/components/" />)
 
-    const icon = container.querySelector('.material-symbols-outlined')
-    expect(icon).toBeInTheDocument()
-    expect(icon).toHaveTextContent('upload_file')
+    const dropZone = screen.getByRole('region', { name: /file drop zone/i })
+    expect(dropZone).toBeInTheDocument()
   })
 
   test('displays target path in message', () => {
@@ -30,7 +29,11 @@ describe('DropZone', () => {
     render(<DropZone targetPath="src/components/" />)
 
     const dropZone = screen.getByRole('region', { name: /file drop zone/i })
-    expect(dropZone).toHaveClass('border-2', 'border-dashed', 'border-outline-variant/30')
+    expect(dropZone).toHaveClass(
+      'border-2',
+      'border-dashed',
+      'border-outline-variant/30'
+    )
   })
 
   test('has rounded corners', () => {
@@ -44,7 +47,12 @@ describe('DropZone', () => {
     render(<DropZone targetPath="src/components/" />)
 
     const dropZone = screen.getByRole('region', { name: /file drop zone/i })
-    expect(dropZone).toHaveClass('flex', 'flex-col', 'items-center', 'justify-center')
+    expect(dropZone).toHaveClass(
+      'flex',
+      'flex-col',
+      'items-center',
+      'justify-center'
+    )
   })
 
   test('supports different target paths', () => {

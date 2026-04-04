@@ -38,10 +38,16 @@ export const FilesView = (): ReactElement => (
       <TopTabBar activeTab="Files" />
 
       {/* File explorer content area */}
-      <div className="flex-1 flex flex-col overflow-y-auto p-6" data-testid="files-area">
+      <div
+        className="flex-1 flex flex-col overflow-y-auto p-6"
+        data-testid="files-area"
+      >
         <Breadcrumbs segments={mockBreadcrumbs} />
         <div className="mt-6">
-          <FileTree nodes={mockFileTree} contextMenuActions={contextMenuActions} />
+          <FileTree
+            nodes={mockFileTree}
+            contextMenuActions={contextMenuActions}
+          />
         </div>
         <DropZone targetPath="src/components/" />
       </div>

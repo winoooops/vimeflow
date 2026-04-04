@@ -37,26 +37,32 @@ export const TopTabBar = ({
           ))}
         </div>
       </nav>
-    <div className="flex items-center gap-4">
-      {/* Notification bell */}
-      <button
-        className="text-on-surface-variant hover:text-primary transition-colors"
-        aria-label="Notifications"
-      >
-        <span className="material-symbols-outlined text-xl" aria-hidden="true">
-          notifications
-        </span>
-      </button>
-      {/* More menu */}
-      <button
-        className="text-on-surface-variant hover:text-on-surface transition-colors"
-        aria-label="More options"
-      >
-        <span className="material-symbols-outlined text-xl" aria-hidden="true">
-          more_vert
-        </span>
-      </button>
-    </div>
-  </header>
+      <div className="flex items-center gap-4">
+        {/* Notification bell */}
+        <button
+          className="text-on-surface-variant hover:text-primary transition-colors"
+          aria-label="Notifications"
+        >
+          <span
+            className="material-symbols-outlined text-xl"
+            aria-hidden="true"
+          >
+            notifications
+          </span>
+        </button>
+        {/* More menu */}
+        <button
+          className="text-on-surface-variant hover:text-on-surface transition-colors"
+          aria-label="More options"
+        >
+          <span
+            className="material-symbols-outlined text-xl"
+            aria-hidden="true"
+          >
+            more_vert
+          </span>
+        </button>
+      </div>
+    </header>
   )
 }
