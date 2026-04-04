@@ -33,9 +33,11 @@ words:
   - zustand
   - tanstack
   - conv
+  - framer
 
   # Design / UI
   - glassmorphism
+  - contenteditable
 
   # Tools
   - cspell
