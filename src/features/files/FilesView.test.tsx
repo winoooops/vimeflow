@@ -88,7 +88,12 @@ describe('FilesView', () => {
     render(<FilesView />)
 
     const container = screen.getByTestId('files-view')
-    expect(container).toHaveClass('h-screen', 'overflow-hidden', 'flex', 'bg-background')
+    expect(container).toHaveClass(
+      'h-screen',
+      'overflow-hidden',
+      'flex',
+      'bg-background'
+    )
   })
 
   test('main content has correct margins for sidebars', () => {
@@ -102,14 +107,20 @@ describe('FilesView', () => {
     render(<FilesView />)
 
     const filesArea = screen.getByTestId('files-area')
-    expect(filesArea).toHaveClass('flex-1', 'flex', 'flex-col', 'overflow-y-auto', 'p-6')
+    expect(filesArea).toHaveClass(
+      'flex-1',
+      'flex',
+      'flex-col',
+      'overflow-y-auto',
+      'p-6'
+    )
   })
 
   test('renders mock file tree nodes', () => {
     render(<FilesView />)
 
-    // Check for root nodes from mockFileTree
-    expect(screen.getByText('src')).toBeInTheDocument()
+    // Check for root nodes from mockFileTree (src appears in both breadcrumbs and tree)
+    expect(screen.getAllByText('src').length).toBeGreaterThan(0)
     expect(screen.getByText('package.json')).toBeInTheDocument()
     expect(screen.getByText('README.md')).toBeInTheDocument()
   })
@@ -118,8 +129,9 @@ describe('FilesView', () => {
     render(<FilesView />)
 
     expect(screen.getByText('vibm-project')).toBeInTheDocument()
-    expect(screen.getByText('src')).toBeInTheDocument()
-    expect(screen.getByText('components')).toBeInTheDocument()
+    // src and components appear in both breadcrumbs and file tree
+    expect(screen.getAllByText('src').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('components').length).toBeGreaterThan(0)
   })
 
   test('renders file status bar data', () => {
