@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { describe, test, expect } from 'vitest'
-import { FilesView } from './FilesView'
+import FilesView from './FilesView'
 
 describe('FilesView', () => {
   test('renders files view container', () => {

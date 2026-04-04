@@ -20,7 +20,7 @@ import { mockConversations } from '../chat/data/mockMessages'
  * This component integrates the Icon Rail, Sidebar, Top Tab Bar, Context Panel,
  * Breadcrumbs, File Tree, Drop Zone, and File Status Bar into a single cohesive file explorer interface.
  */
-export const FilesView = (): ReactElement => (
+const FilesView = (): ReactElement => (
   <div
     className="h-screen overflow-hidden flex bg-background text-on-surface font-body selection:bg-primary-container/30"
     data-testid="files-view"
@@ -60,3 +60,5 @@ export const FilesView = (): ReactElement => (
     <ContextPanel />
   </div>
 )
+
+export default FilesView
