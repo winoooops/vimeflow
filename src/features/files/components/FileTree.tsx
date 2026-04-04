@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ReactElement } from 'react'
+import type { ReactElement, MouseEvent } from 'react'
 import type { FileNode, ContextMenuState, ContextMenuAction } from '../types'
 import { FileTreeNode } from './FileTreeNode'
 import { ContextMenu } from './ContextMenu'
@@ -23,7 +23,7 @@ export const FileTree = ({
     targetNode: null,
   })
 
-  const handleContextMenu = (event: React.MouseEvent, node: FileNode): void => {
+  const handleContextMenu = (event: MouseEvent, node: FileNode): void => {
     setContextMenuState({
       visible: true,
       x: event.clientX,

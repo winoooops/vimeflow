@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import type { ReactElement } from 'react'
+import type { ReactElement, MouseEvent } from 'react'
 import type { FileNode, GitStatus } from '../types'
 
 interface FileTreeNodeProps {
   node: FileNode
-  onContextMenu: (event: React.MouseEvent, node: FileNode) => void
+  onContextMenu: (event: MouseEvent, node: FileNode) => void
 }
 
 /**
