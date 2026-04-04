@@ -34,6 +34,18 @@ When creating PRs:
 4. Include test plan with TODOs
 5. Push with `-u` flag if new branch
 6. Merge with `--squash` only
+7. **Stay on the branch** — do not switch back to `main` after creating the PR
+
+## Post-PR Protocol
+
+After creating a PR, the agent remains on the feature branch/worktree until the PR is resolved:
+
+1. **Stay**: remain in the worktree/branch — do not return to `main`
+2. **Review-fix loop**: run `/review-fix` to fetch and address code review findings
+3. **Push fixes**: commit and push from the same branch
+4. **Repeat**: wait for next review cycle, fix, push
+5. **Done**: only the user merges or closes the PR
+6. **Cleanup**: after merge, return to main and clean up the worktree/branch (see [worktrees.md](./worktrees.md))
 
 > For the full development process (planning, TDD, code review) before git operations,
 > see [development-workflow.md](./development-workflow.md).

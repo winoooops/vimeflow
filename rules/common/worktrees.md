@@ -41,9 +41,19 @@ Or use Claude Code's built-in: `EnterWorktree` (creates under `.claude/worktrees
 
 Agent works normally — edit, commit, push, create PR. The worktree is a fully independent working directory.
 
+**Once a PR is created, the agent stays in the worktree/branch until the PR is resolved.** Do not switch back to `main` between creating the PR and the PR being merged or closed. This ensures review-fix cycles (`/review-fix`) happen in the correct working directory without branch switching.
+
+The PR lifecycle within a worktree:
+
+```
+create PR → wait for review → fix findings → push → wait for review → ... → merged/closed
+```
+
+Only the **user** decides when a PR is merged. Agents do not merge PRs unless explicitly instructed.
+
 ### CLEANUP
 
-After PR merge (or abandonment):
+After the user merges or closes the PR:
 
 ```bash
 # From the main worktree
