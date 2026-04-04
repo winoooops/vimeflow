@@ -16,42 +16,37 @@ if [ -z "$command" ]; then
   exit 0
 fi
 
-# Extract the git subcommand and any -C/--git-dir target, skipping flags and their values.
+# Extract the git subcommand and any -C/--work-tree target, skipping flags and their values.
 # Known git flags that consume the next token as a value:
 #   -C, -c, --git-dir, --work-tree, --namespace, --super-prefix
 subcmd=""
 git_target_dir=""
+next_is_target=false
 skip_next=false
-capture_next=""
 for token in $(echo "$command" | sed -n 's/^\s*git\s\+//p'); do
+  if $next_is_target; then
+    git_target_dir="$token"
+    next_is_target=false
+    continue
+  fi
   if $skip_next; then
-    if [ -n "$capture_next" ]; then
-      eval "$capture_next=\"$token\""
-      capture_next=""
-    fi
     skip_next=false
     continue
   fi
   case "$token" in
-    -C)
-      skip_next=true
-      capture_next="git_target_dir"
+    -C|--work-tree)
+      next_is_target=true
       continue
       ;;
-    --git-dir|--work-tree)
-      skip_next=true
-      capture_next="git_target_dir"
-      continue
-      ;;
-    --git-dir=*|--work-tree=*)
+    --work-tree=*)
       git_target_dir="${token#*=}"
       continue
       ;;
-    -c|--namespace|--super-prefix)
+    -c|--git-dir|--namespace|--super-prefix)
       skip_next=true
       continue
       ;;
-    --namespace=*|--super-prefix=*)
+    --git-dir=*|--namespace=*|--super-prefix=*)
       continue
       ;;
     -*)
@@ -87,8 +82,13 @@ else
   git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
 fi
 
-resolved_git_dir=$(cd "$git_dir" 2>/dev/null && pwd)
-resolved_common_dir=$(cd "$git_common_dir" 2>/dev/null && pwd)
+# Guard against empty paths — if git rev-parse failed, allow the command
+if [ -z "$git_dir" ] || [ -z "$git_common_dir" ]; then
+  exit 0
+fi
+
+resolved_git_dir=$(cd "$git_dir" 2>/dev/null && pwd || echo "")
+resolved_common_dir=$(cd "$git_common_dir" 2>/dev/null && pwd || echo "")
 
 if [ "$resolved_git_dir" = "$resolved_common_dir" ]; then
   echo "BLOCKED: Cannot commit/push from the main worktree. Create a worktree first: git worktree add .claude/worktrees/<branch-name> -b <branch-name>" >&2
