@@ -113,6 +113,7 @@ export default defineConfig([
       // Test rules
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/unbound-method': 'off',
+      '@typescript-eslint/no-unnecessary-condition': 'off',
     },
   },
   {

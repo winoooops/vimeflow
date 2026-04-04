@@ -1,5 +1,6 @@
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { TopTabBar } from './TopTabBar'
 
 describe('TopTabBar', () => {
@@ -113,5 +114,79 @@ describe('TopTabBar', () => {
     const moreButton = screen.getByRole('button', { name: /more/i })
     expect(bellButton).toBeInTheDocument()
     expect(moreButton).toBeInTheDocument()
+  })
+
+  test('defaults to Chat tab when activeTab prop is not provided', () => {
+    render(<TopTabBar />)
+    const chatTab = screen.getByRole('button', { name: 'Chat' })
+    expect(chatTab).toHaveClass(
+      'text-[#e2c7ff]',
+      'border-b-2',
+      'border-[#cba6f7]'
+    )
+    expect(chatTab).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('renders Files tab as active when activeTab="Files"', () => {
+    render(<TopTabBar activeTab="Files" />)
+    const filesTab = screen.getByRole('button', { name: 'Files' })
+    expect(filesTab).toHaveClass(
+      'text-[#e2c7ff]',
+      'border-b-2',
+      'border-[#cba6f7]'
+    )
+    expect(filesTab).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('renders Chat tab as inactive when activeTab="Files"', () => {
+    render(<TopTabBar activeTab="Files" />)
+    const chatTab = screen.getByRole('button', { name: 'Chat' })
+    expect(chatTab).toHaveClass('text-on-surface-variant')
+    expect(chatTab).not.toHaveClass('text-[#e2c7ff]')
+    expect(chatTab).not.toHaveAttribute('aria-current')
+  })
+
+  test('renders Editor tab as active when activeTab="Editor"', () => {
+    render(<TopTabBar activeTab="Editor" />)
+    const editorTab = screen.getByRole('button', { name: 'Editor' })
+    expect(editorTab).toHaveClass('text-[#e2c7ff]', 'border-b-2')
+    expect(editorTab).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('renders Diff tab as active when activeTab="Diff"', () => {
+    render(<TopTabBar activeTab="Diff" />)
+    const diffTab = screen.getByRole('button', { name: 'Diff' })
+    expect(diffTab).toHaveClass('text-[#e2c7ff]', 'border-b-2')
+    expect(diffTab).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('calls onTabChange when a tab is clicked', async () => {
+    const handleTabChange = vi.fn()
+    const user = userEvent.setup()
+    render(<TopTabBar onTabChange={handleTabChange} />)
+
+    await user.click(screen.getByRole('button', { name: 'Files' }))
+    expect(handleTabChange).toHaveBeenCalledWith('Files')
+  })
+
+  test('calls onTabChange with correct tab name for each tab', async () => {
+    const handleTabChange = vi.fn()
+    const user = userEvent.setup()
+    render(<TopTabBar onTabChange={handleTabChange} />)
+
+    await user.click(screen.getByRole('button', { name: 'Editor' }))
+    expect(handleTabChange).toHaveBeenCalledWith('Editor')
+
+    await user.click(screen.getByRole('button', { name: 'Diff' }))
+    expect(handleTabChange).toHaveBeenCalledWith('Diff')
+  })
+
+  test('does not crash when onTabChange is not provided', async () => {
+    const user = userEvent.setup()
+    render(<TopTabBar />)
+
+    await user.click(screen.getByRole('button', { name: 'Files' }))
+    // No error thrown
+    expect(screen.getByRole('button', { name: 'Files' })).toBeInTheDocument()
   })
 })

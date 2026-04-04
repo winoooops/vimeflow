@@ -1,18 +1,18 @@
 import type { ReactElement } from 'react'
 import IconRail from '../../components/layout/IconRail'
 import { Sidebar } from '../../components/layout/Sidebar'
+import type { TabName } from '../../components/layout/TopTabBar'
 import { TopTabBar } from '../../components/layout/TopTabBar'
 import ContextPanel from '../../components/layout/ContextPanel'
 import MessageThread from './components/MessageThread'
 import MessageInput from './components/MessageInput'
 import { mockMessages, mockConversations } from './data/mockMessages'
 
-/**
- * ChatView component - Main page assembly with all layout components and chat content.
- * This component integrates the Icon Rail, Sidebar, Top Tab Bar, Context Panel,
- * Message Thread, and Message Input into a single cohesive chat interface.
- */
-const ChatView = (): ReactElement => (
+interface ChatViewProps {
+  onTabChange?: (tab: TabName) => void
+}
+
+const ChatView = ({ onTabChange = undefined }: ChatViewProps): ReactElement => (
   <div
     className="h-screen overflow-hidden flex bg-background text-on-surface font-body selection:bg-primary-container/30"
     data-testid="chat-view"
@@ -27,7 +27,7 @@ const ChatView = (): ReactElement => (
       data-testid="main-content"
     >
       {/* Top navigation bar */}
-      <TopTabBar />
+      <TopTabBar activeTab="Chat" onTabChange={onTabChange} />
 
       {/* Message area containing thread and input */}
       <div className="flex-1 flex flex-col" data-testid="message-area">
