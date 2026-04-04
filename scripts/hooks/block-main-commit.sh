@@ -16,10 +16,35 @@ if [ -z "$command" ]; then
   exit 0
 fi
 
-# Check if the command contains git commit or git push,
-# handling flags between git and the subcommand (e.g., git -C /path commit).
-# Extract the first non-flag token after "git" as the subcommand.
-subcmd=$(echo "$command" | sed -n 's/^\s*git\s\+//p' | tr ' ' '\n' | grep -v '^-' | head -1 || true)
+# Extract the git subcommand, skipping flags and their values.
+# Handles: git -C /path commit, git -c key=val push, git --git-dir=/x commit, etc.
+# Known git flags that consume the next token as a value:
+#   -C, -c, --git-dir, --work-tree, --namespace, --super-prefix
+subcmd=""
+skip_next=false
+for token in $(echo "$command" | sed -n 's/^\s*git\s\+//p'); do
+  if $skip_next; then
+    skip_next=false
+    continue
+  fi
+  case "$token" in
+    -C|-c|--git-dir|--work-tree|--namespace|--super-prefix)
+      skip_next=true
+      continue
+      ;;
+    --git-dir=*|--work-tree=*|--namespace=*|--super-prefix=*)
+      continue
+      ;;
+    -*)
+      continue
+      ;;
+    *)
+      subcmd="$token"
+      break
+      ;;
+  esac
+done
+
 if [ "$subcmd" != "commit" ] && [ "$subcmd" != "push" ]; then
   exit 0
 fi

@@ -14,8 +14,33 @@ if [ -z "$command" ]; then
   exit 0
 fi
 
-# Check for git push, handling flags between git and subcommand (e.g., git -C /path push)
-subcmd=$(echo "$command" | sed -n 's/^\s*git\s\+//p' | tr ' ' '\n' | grep -v '^-' | head -1 || true)
+# Extract the git subcommand, skipping flags and their values.
+# Handles: git -C /path push, git -c key=val push, git --git-dir=/x push, etc.
+subcmd=""
+skip_next=false
+for token in $(echo "$command" | sed -n 's/^\s*git\s\+//p'); do
+  if $skip_next; then
+    skip_next=false
+    continue
+  fi
+  case "$token" in
+    -C|-c|--git-dir|--work-tree|--namespace|--super-prefix)
+      skip_next=true
+      continue
+      ;;
+    --git-dir=*|--work-tree=*|--namespace=*|--super-prefix=*)
+      continue
+      ;;
+    -*)
+      continue
+      ;;
+    *)
+      subcmd="$token"
+      break
+      ;;
+  esac
+done
+
 if [ "$subcmd" != "push" ]; then
   exit 0
 fi
