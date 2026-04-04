@@ -142,9 +142,14 @@ git branch --merged main | grep -v '^\*\|main' | xargs -r git branch -d
 
 ## Hook Enforcement
 
-A PreToolUse hook blocks commits and pushes from the main worktree. See `scripts/hooks/block-main-commit.sh`.
+Two hooks support the worktree workflow:
 
-To register the hook, add to `.claude/settings.local.json`:
+| Hook               | Type        | Script                               | Purpose                                                             |
+| ------------------ | ----------- | ------------------------------------ | ------------------------------------------------------------------- |
+| Block main commits | PreToolUse  | `scripts/hooks/block-main-commit.sh` | Prevents `git commit`/`git push` on the main worktree               |
+| Post-push review   | PostToolUse | `scripts/hooks/post-push-review.sh`  | After `git push`, reminds agent to wait ~90s then run `/review-fix` |
+
+To register both hooks, add to `.claude/settings.local.json`:
 
 ```json
 {
@@ -156,6 +161,17 @@ To register the hook, add to `.claude/settings.local.json`:
           {
             "type": "command",
             "command": "bash scripts/hooks/block-main-commit.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/hooks/post-push-review.sh"
           }
         ]
       }
