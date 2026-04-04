@@ -8,13 +8,15 @@
 
 set -euo pipefail
 
-input=$(cat)
+# Extract the bash command from the tool input (portable — no GNU grep -P)
+command=$(jq -r '.command // empty' 2>/dev/null || echo "")
+if [ -z "$command" ]; then
+  exit 0
+fi
 
-# Extract the bash command from the tool input
-command=$(echo "$input" | grep -oP '"command"\s*:\s*"[^"]*"' | head -1 | sed 's/"command"\s*:\s*"//;s/"$//')
-
-# Only trigger on git push
-if ! echo "$command" | grep -qE '^\s*git\s+push'; then
+# Check for git push, handling flags between git and subcommand (e.g., git -C /path push)
+subcmd=$(echo "$command" | sed -n 's/^\s*git\s\+//p' | tr ' ' '\n' | grep -v '^-' | head -1 || true)
+if [ "$subcmd" != "push" ]; then
   exit 0
 fi
 
