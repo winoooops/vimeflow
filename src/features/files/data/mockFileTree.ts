@@ -22,6 +22,7 @@ export const mockFileTree: FileNode[] = [
             id: 'node-file-tree',
             name: 'FileTree.tsx',
             type: 'file',
+            gitStatus: 'M',
           },
           {
             id: 'node-navbar',
