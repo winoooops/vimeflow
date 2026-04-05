@@ -7,7 +7,7 @@
     {
       "name": "harness-plugin",
       "source": "./plugins/harness",
-      "description": "Adds a /harness skill for harness loop, local code reviews and github PR reviews"
+      "description": "Adds /harness-plugin:loop, /harness-plugin:review, and /harness-plugin:github-review skills for autonomous dev loop, local code reviews, and cloud PR review fixes"
     }
   ]
 }
