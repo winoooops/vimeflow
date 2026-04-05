@@ -23,18 +23,25 @@ export interface DiffViewProps {
   selectedDiffFile?: string | null
   onClearSelectedFile?: () => void
   onTabChange?: (tab: TabName) => void
+  isContextPanelOpen?: boolean
+  onToggleContextPanel?: () => void
 }
 
 const defaultProps = {
   selectedDiffFile: null,
   onClearSelectedFile: undefined,
   onTabChange: undefined,
+  isContextPanelOpen: true,
+  onToggleContextPanel: undefined,
 }
 
 export const DiffView = ({
   selectedDiffFile = defaultProps.selectedDiffFile,
   onClearSelectedFile = defaultProps.onClearSelectedFile,
   onTabChange = defaultProps.onTabChange,
+  isContextPanelOpen: _isContextPanelOpen = defaultProps.isContextPanelOpen, // eslint-disable-line @typescript-eslint/no-unused-vars
+  onToggleContextPanel:
+    _onToggleContextPanel = defaultProps.onToggleContextPanel, // eslint-disable-line @typescript-eslint/no-unused-vars
 }: DiffViewProps): ReactElement => {
   const gitService = createGitService()
 

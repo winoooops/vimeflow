@@ -288,7 +288,7 @@
       "Update tests",
       "Verify tab switching works"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [18, 19]
   },
   {

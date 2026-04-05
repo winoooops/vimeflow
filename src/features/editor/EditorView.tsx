@@ -21,13 +21,20 @@ import type { FileNode } from './types'
 
 interface EditorViewProps {
   onTabChange?: (tab: TabName) => void
+  onFileDiffRequest?: (filePath: string) => void
+  isContextPanelOpen?: boolean
+  onToggleContextPanel?: () => void
 }
 
 export const EditorView = ({
   onTabChange = undefined,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onFileDiffRequest: _onFileDiffRequest = undefined,
+  isContextPanelOpen = true,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onToggleContextPanel: _onToggleContextPanel = undefined,
 }: EditorViewProps): ReactElement => {
   const [isExplorerOpen, setIsExplorerOpen] = useState<boolean>(true)
-  const [isContextPanelOpen] = useState<boolean>(true)
   const [tabs, setTabs] = useState(mockEditorTabs)
 
   const handleExplorerToggle = useCallback((): void => {
