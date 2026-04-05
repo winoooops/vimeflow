@@ -145,9 +145,9 @@ git branch --merged main | grep -v '^\*\|main' | xargs -r git branch -d
 
 Two hooks support the worktree workflow:
 
-| Hook               | Type        | Script                               | Purpose                                                               |
-| ------------------ | ----------- | ------------------------------------ | --------------------------------------------------------------------- |
-| Block main commits | PreToolUse  | `scripts/hooks/block-main-commit.sh` | Prevents `git commit`/`git push` on the main worktree                 |
+| Hook               | Type        | Script                               | Purpose                                                                      |
+| ------------------ | ----------- | ------------------------------------ | ---------------------------------------------------------------------------- |
+| Block main commits | PreToolUse  | `scripts/hooks/block-main-commit.sh` | Prevents `git commit`/`git push` on the main worktree                        |
 | Post-push review   | PostToolUse | `scripts/hooks/post-push-review.sh`  | After `git push` or `gh pr create`, triggers `/harness-plugin:github-review` |
 
 To register both hooks, add to `.claude/settings.local.json`:
