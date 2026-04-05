@@ -1,0 +1,13 @@
+{
+  "name": "harness",
+  "owner": {
+    "name": "winoooops"
+  },
+  "plugins": [
+    {
+      "name": "harness-plugin",
+      "source": "./plugins/harness",
+      "description": "Adds /harness-plugin:loop, /harness-plugin:review, and /harness-plugin:github-review skills for autonomous dev loop, local code reviews, and cloud PR review fixes"
+    }
+  ]
+}

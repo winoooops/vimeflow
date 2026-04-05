@@ -41,7 +41,7 @@ When creating PRs:
 After creating a PR, the agent remains on the feature branch/worktree until the PR is resolved:
 
 1. **Stay**: remain in the worktree/branch — do not return to `main`
-2. **Review-fix loop**: run `/harness:github-review` to fetch and address code review findings
+2. **Review-fix loop**: run `/harness-plugin:github-review` to fetch and address code review findings
 3. **Push fixes**: commit and push from the same branch
 4. **Repeat**: wait for next review cycle, fix, push
 5. **Done**: only the user merges or closes the PR
