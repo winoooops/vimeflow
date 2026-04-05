@@ -62,7 +62,7 @@ describe('CommandPalette - Integration Tests', () => {
     })
 
     await waitFor(() => {
-      const input = screen.getByRole('textbox', {
+      const input = screen.getByRole('combobox', {
         name: 'Command palette search',
       })
 
@@ -85,7 +85,7 @@ describe('CommandPalette - Integration Tests', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
 
-    const input = screen.getByRole('textbox', {
+    const input = screen.getByRole('combobox', {
       name: 'Command palette search',
     })
 
@@ -138,7 +138,7 @@ describe('CommandPalette - Integration Tests', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
 
-    const input = screen.getByRole('textbox', {
+    const input = screen.getByRole('combobox', {
       name: 'Command palette search',
     })
 
@@ -225,7 +225,7 @@ describe('CommandPalette - Integration Tests', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
 
-    const input = screen.getByRole('textbox', {
+    const input = screen.getByRole('combobox', {
       name: 'Command palette search',
     })
 
@@ -272,7 +272,7 @@ describe('CommandPalette - Integration Tests', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
 
-    const input = screen.getByRole('textbox', {
+    const input = screen.getByRole('combobox', {
       name: 'Command palette search',
     })
 
@@ -309,7 +309,7 @@ describe('CommandPalette - Integration Tests', () => {
     })
 
     await waitFor(() => {
-      const input = screen.getByRole('textbox', {
+      const input = screen.getByRole('combobox', {
         name: 'Command palette search',
       })
 

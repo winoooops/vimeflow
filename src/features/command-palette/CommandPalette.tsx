@@ -40,7 +40,15 @@ export const CommandPalette = (): ReactElement | null => {
             className="relative w-full max-w-2xl mx-4 bg-[#1e1e2e]/90 glass-panel rounded-2xl border border-[#4a444f]/30 shadow-2xl overflow-hidden flex flex-col h-fit"
           >
             {/* Input section */}
-            <CommandInput value={state.query} onChange={setQuery} />
+            <CommandInput
+              value={state.query}
+              onChange={setQuery}
+              activeDescendantId={
+                state.filteredResults[state.selectedIndex]
+                  ? `command-${state.filteredResults[state.selectedIndex].id}`
+                  : undefined
+              }
+            />
 
             {/* Divider */}
             <div className="h-px bg-surface-container-low/30" />

@@ -2,17 +2,20 @@ import type { ReactElement } from 'react'
 import type { Command } from '../types'
 
 interface CommandResultItemProps {
+  id: string
   command: Command
   isSelected: boolean
   onSelect: () => void
 }
 
 export const CommandResultItem = ({
+  id,
   command,
   isSelected,
   onSelect,
 }: CommandResultItemProps): ReactElement => (
   <div
+    id={id}
     role="option"
     aria-selected={isSelected}
     onClick={onSelect}

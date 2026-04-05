@@ -101,7 +101,7 @@ describe('CommandResults', () => {
     expect(options[2]).not.toHaveClass('bg-primary-container/10')
   })
 
-  test('aria-activedescendant points to selected item', () => {
+  test('listbox has id for aria-controls reference', () => {
     const mockOnSelect = vi.fn()
 
     render(
@@ -114,39 +114,25 @@ describe('CommandResults', () => {
 
     const listbox = screen.getByRole('listbox')
 
-    expect(listbox).toHaveAttribute('aria-activedescendant', 'command-cmd2')
+    expect(listbox).toHaveAttribute('id', 'command-palette-listbox')
   })
 
-  test('aria-activedescendant is undefined when no results', () => {
-    const mockOnSelect = vi.fn()
-
-    render(
-      <CommandResults
-        filteredResults={[]}
-        selectedIndex={0}
-        onSelect={mockOnSelect}
-      />
-    )
-
-    const listbox = screen.getByRole('listbox')
-
-    expect(listbox).not.toHaveAttribute('aria-activedescendant')
-  })
-
-  test('aria-activedescendant is undefined when selectedIndex out of bounds', () => {
+  test('option elements have ids for aria-activedescendant', () => {
     const mockOnSelect = vi.fn()
 
     render(
       <CommandResults
         filteredResults={mockCommands}
-        selectedIndex={99}
+        selectedIndex={0}
         onSelect={mockOnSelect}
       />
     )
 
-    const listbox = screen.getByRole('listbox')
+    const options = screen.getAllByRole('option')
 
-    expect(listbox).not.toHaveAttribute('aria-activedescendant')
+    expect(options[0]).toHaveAttribute('id', 'command-cmd1')
+    expect(options[1]).toHaveAttribute('id', 'command-cmd2')
+    expect(options[2]).toHaveAttribute('id', 'command-cmd3')
   })
 
   test('calls onSelect with correct index when item clicked', async () => {

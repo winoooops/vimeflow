@@ -17,6 +17,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected={false}
         onSelect={mockOnSelect}
@@ -32,6 +33,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected={false}
         onSelect={mockOnSelect}
@@ -48,6 +50,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected={false}
         onSelect={mockOnSelect}
@@ -68,6 +71,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={commandWithDescription}
         isSelected={false}
         onSelect={mockOnSelect}
@@ -84,6 +88,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected
         onSelect={mockOnSelect}
@@ -100,6 +105,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected
         onSelect={mockOnSelect}
@@ -116,6 +122,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected={false}
         onSelect={mockOnSelect}
@@ -132,6 +139,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected={false}
         onSelect={mockOnSelect}
@@ -148,6 +156,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected
         onSelect={mockOnSelect}
@@ -165,6 +174,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected={false}
         onSelect={mockOnSelect}
@@ -180,6 +190,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected
         onSelect={mockOnSelect}
@@ -196,6 +207,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected
         onSelect={mockOnSelect}
@@ -211,6 +223,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected={false}
         onSelect={mockOnSelect}
@@ -228,6 +241,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected={false}
         onSelect={mockOnSelect}
@@ -246,6 +260,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={mockCommand}
         isSelected={false}
         onSelect={mockOnSelect}
@@ -266,6 +281,7 @@ describe('CommandResultItem', () => {
 
     render(
       <CommandResultItem
+        id="command-test"
         command={commandWithDifferentIcon}
         isSelected={false}
         onSelect={mockOnSelect}

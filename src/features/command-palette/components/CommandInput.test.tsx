@@ -20,7 +20,7 @@ describe('CommandInput', () => {
 
     render(<CommandInput value=":" onChange={mockOnChange} />)
 
-    const input = screen.getByRole('textbox', {
+    const input = screen.getByRole('combobox', {
       name: /command palette search/i,
     })
     expect(input).toBeInTheDocument()
@@ -34,7 +34,7 @@ describe('CommandInput', () => {
 
     render(<CommandInput value=":open" onChange={mockOnChange} />)
 
-    const input = screen.getByRole('textbox', {
+    const input = screen.getByRole('combobox', {
       name: /command palette search/i,
     })
     expect(input).toHaveValue(':open')
@@ -45,7 +45,7 @@ describe('CommandInput', () => {
 
     render(<CommandInput value=":" onChange={mockOnChange} />)
 
-    const input = screen.getByRole('textbox', {
+    const input = screen.getByRole('combobox', {
       name: /command palette search/i,
     })
     expect(input).toHaveClass(
@@ -91,7 +91,7 @@ describe('CommandInput', () => {
 
     render(<CommandInput value=":" onChange={mockOnChange} />)
 
-    const input = screen.getByRole('textbox', {
+    const input = screen.getByRole('combobox', {
       name: /command palette search/i,
     })
     expect(input).toHaveFocus()
@@ -104,7 +104,7 @@ describe('CommandInput', () => {
 
     render(<CommandInput value=":" onChange={mockOnChange} />)
 
-    const input = screen.getByRole('textbox', {
+    const input = screen.getByRole('combobox', {
       name: /command palette search/i,
     })
 
@@ -121,7 +121,7 @@ describe('CommandInput', () => {
 
     render(<CommandInput value="" onChange={mockOnChange} />)
 
-    const input = screen.getByRole('textbox', {
+    const input = screen.getByRole('combobox', {
       name: /command palette search/i,
     })
 

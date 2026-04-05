@@ -3,11 +3,13 @@ import { type ChangeEvent, type ReactElement, useEffect, useRef } from 'react'
 interface CommandInputProps {
   value: string
   onChange: (value: string) => void
+  activeDescendantId?: string
 }
 
 export const CommandInput = ({
   value,
   onChange,
+  activeDescendantId = undefined,
 }: CommandInputProps): ReactElement => {
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -35,7 +37,11 @@ export const CommandInput = ({
         onChange={handleChange}
         className="flex-1 bg-transparent border-none outline-none text-on-surface font-medium text-lg"
         placeholder=":"
+        role="combobox"
         aria-label="Command palette search"
+        aria-expanded
+        aria-controls="command-palette-listbox"
+        aria-activedescendant={activeDescendantId}
       />
 
       {/* ESC badge */}

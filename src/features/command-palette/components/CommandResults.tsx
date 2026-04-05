@@ -15,18 +15,13 @@ export const CommandResults = ({
   onSelect,
 }: CommandResultsProps): ReactElement => (
   <div
+    id="command-palette-listbox"
     role="listbox"
-    aria-activedescendant={
-      filteredResults[selectedIndex]
-        ? `command-${filteredResults[selectedIndex].id}`
-        : undefined
-    }
     className="p-2 overflow-y-auto max-h-96"
   >
     {filteredResults.map((command, index) => (
       <motion.div
         key={command.id}
-        id={`command-${command.id}`}
         initial={{ opacity: 0, y: -4 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{
@@ -35,6 +30,7 @@ export const CommandResults = ({
         }}
       >
         <CommandResultItem
+          id={`command-${command.id}`}
           command={command}
           isSelected={index === selectedIndex}
           onSelect={() => {
