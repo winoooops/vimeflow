@@ -31,8 +31,7 @@ export const EditorView = ({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onFileDiffRequest: _onFileDiffRequest = undefined,
   isContextPanelOpen = true,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onToggleContextPanel: _onToggleContextPanel = undefined,
+  onToggleContextPanel = undefined,
 }: EditorViewProps): ReactElement => {
   const [isExplorerOpen, setIsExplorerOpen] = useState<boolean>(true)
   const [tabs, setTabs] = useState(mockEditorTabs)
@@ -114,7 +113,7 @@ export const EditorView = ({
       {/* Main content area with dynamic margins */}
       <main
         className={`ml-[308px] ${isContextPanelOpen ? 'mr-[280px]' : 'mr-0'} flex-1 flex flex-col transition-all duration-300`}
-        data-testid="main-content"
+        data-testid="editor-main-content"
       >
         {/* Top navigation bar */}
         <TopTabBar activeTab="Editor" onTabChange={onTabChange} />
@@ -150,7 +149,10 @@ export const EditorView = ({
       </main>
 
       {/* Fixed right panel */}
-      <ContextPanel />
+      <ContextPanel
+        isOpen={isContextPanelOpen}
+        onToggle={onToggleContextPanel}
+      />
 
       {/* Fixed bottom status bar */}
       <EditorStatusBar

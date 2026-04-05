@@ -60,7 +60,7 @@ const ContextPanel = ({
         </div>
         <button
           onClick={onToggle}
-          aria-label="Toggle panel"
+          aria-label="Dock to right"
           className="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors cursor-pointer text-lg"
         >
           dock_to_right

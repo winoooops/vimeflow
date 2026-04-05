@@ -394,7 +394,7 @@
       "Test EditorStatusBar positioning updates",
       "Verify transitions are smooth (300ms)"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [18, 23]
   },
   {

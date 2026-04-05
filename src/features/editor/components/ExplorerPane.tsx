@@ -22,7 +22,7 @@ export const ExplorerPane = ({
 }: ExplorerPaneProps): ReactElement => (
   <nav
     className={`
-        ${isOpen ? 'w-64' : 'w-0 overflow-hidden'}
+        ${isOpen ? 'w-64' : 'w-0'}
         bg-surface-container-low/50
         backdrop-blur-lg
         flex
@@ -31,8 +31,10 @@ export const ExplorerPane = ({
         border-outline-variant/10
         transition-all
         duration-300
+        overflow-hidden
       `}
     aria-label="File explorer"
+    data-testid="explorer-pane"
   >
     {/* Header */}
     <div className="p-4 flex items-center justify-between">
@@ -42,7 +44,7 @@ export const ExplorerPane = ({
       <button
         onClick={onToggle}
         className="text-on-surface-variant/60 hover:text-on-surface transition-colors"
-        aria-label="Collapse explorer"
+        aria-label={isOpen ? 'Collapse explorer' : 'Expand explorer'}
         type="button"
       >
         <span className="material-symbols-outlined text-[20px]">
