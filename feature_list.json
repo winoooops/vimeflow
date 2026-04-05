@@ -440,7 +440,7 @@
       "Verify glassmorphism on floating elements",
       "Document any intentional deviations"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [28]
   }
 ]
