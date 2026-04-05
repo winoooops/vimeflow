@@ -23,6 +23,7 @@ export const EditorStatusBar = ({
   return (
     <div
       role="status"
+      data-testid="editor-status-bar"
       className={`fixed bottom-0 left-[308px] ${isContextPanelOpen ? 'right-[280px]' : 'right-0'} h-6 bg-[#1a1a2a] border-t border-[#4a444f]/15 flex items-center justify-between z-30 font-label text-[10px] uppercase tracking-wider text-[#cdc3d1] transition-all duration-300`}
     >
       <div className="flex items-center gap-2">

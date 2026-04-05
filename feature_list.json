@@ -379,7 +379,7 @@
       "Test closing last tab behavior",
       "Verify EditorStatusBar updates with active file"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [18]
   },
   {
