@@ -29,6 +29,29 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
 If no PR exists, tell the user and stop.
 
+## Step 1.5: Check CI Status
+
+Before looking at Codex review comments, check if the PR's CI checks are passing:
+
+```bash
+gh pr checks $PR_NUMBER
+```
+
+If any checks **other than Codex Code Review** are failing (e.g., Code Quality Check, Unit Tests):
+
+1. Read the failing check's log: `gh run view <run_id> --log-failed`
+2. Fix the issue (formatting, lint, type errors, test failures)
+3. Commit and push the fix
+4. Re-run this step until CI is green
+
+Common CI failures:
+
+- **Code Quality Check (Prettier)**: run `npx prettier --write <file>` on the flagged files
+- **Code Quality Check (ESLint)**: run `npm run lint:fix`
+- **Unit Tests**: run `npm run test` to reproduce, then fix
+
+Only proceed to Step 2 once all non-Codex checks are passing.
+
 ## Step 2: Fetch Latest Codex Review
 
 ```bash
