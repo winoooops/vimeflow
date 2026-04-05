@@ -65,4 +65,32 @@ describe('ChatView', () => {
     expect(messageArea).toHaveClass('flex')
     expect(messageArea).toHaveClass('flex-col')
   })
+
+  test('applies dynamic right margin when ContextPanel is open', () => {
+    render(<ChatView isContextPanelOpen />)
+    const mainContent = screen.getByTestId('main-content')
+    expect(mainContent).toHaveClass('mr-[280px]')
+  })
+
+  test('applies no right margin when ContextPanel is closed', () => {
+    // eslint-disable-next-line react/jsx-boolean-value
+    render(<ChatView isContextPanelOpen={false} />)
+    const mainContent = screen.getByTestId('main-content')
+    expect(mainContent).toHaveClass('mr-0')
+  })
+
+  test('applies transition classes for smooth margin animations', () => {
+    render(<ChatView />)
+    const mainContent = screen.getByTestId('main-content')
+    expect(mainContent).toHaveClass('transition-all')
+    expect(mainContent).toHaveClass('duration-300')
+  })
+
+  test('accepts onToggleContextPanel callback prop', () => {
+    const handleToggle = (): void => {
+      // Mock toggle handler
+    }
+    render(<ChatView onToggleContextPanel={handleToggle} />)
+    expect(screen.getByTestId('chat-view')).toBeInTheDocument()
+  })
 })

@@ -302,7 +302,7 @@
       "Update tests",
       "Verify margin transitions work"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [20]
   },
   {
