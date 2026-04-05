@@ -149,18 +149,19 @@ function gitApiPlugin(): Plugin {
                 (fileStatus.index === '?' || fileStatus.working_dir === '?')
               ) {
                 // Generate diff for untracked file using --no-index
-                const { execSync } = await import('child_process')
+                // Use spawnSync with args array to prevent command injection
+                const { spawnSync } = await import('child_process')
+                const safeFile = file.replace(/\.\./g, '') // reject path traversal
 
-                try {
-                  diff = execSync(`git diff --no-index -- /dev/null ${file}`, {
-                    cwd: process.cwd(),
-                    encoding: 'utf-8',
-                  })
-                } catch (err: unknown) {
-                  // git diff --no-index exits with 1 when files differ (expected)
-                  if (err && typeof err === 'object' && 'stdout' in err) {
-                    diff = (err as { stdout: string }).stdout
-                  }
+                const result = spawnSync(
+                  'git',
+                  ['diff', '--no-index', '--', '/dev/null', safeFile],
+                  { cwd: process.cwd(), encoding: 'utf-8' }
+                )
+
+                // git diff --no-index exits with 1 when files differ (expected)
+                if (result.stdout) {
+                  diff = result.stdout
                 }
               }
             }
@@ -195,7 +196,7 @@ function gitApiPlugin(): Plugin {
 
             if (hunkIndex !== undefined) {
               // Stage a specific hunk by extracting the patch and applying it
-              const fullDiff = await git.diff(['--', file])
+              const fullDiff = await git.diff(['main', '--', file])
 
               if (fullDiff) {
                 const hunks = fullDiff.split(/(?=^@@\s)/m)
@@ -272,7 +273,7 @@ function gitApiPlugin(): Plugin {
               await git.clean('f', ['--', file])
             } else if (hunkIndex !== undefined) {
               // Discard a specific hunk via reverse patch
-              const fullDiff = await git.diff(['--', file])
+              const fullDiff = await git.diff(['main', '--', file])
 
               if (fullDiff) {
                 const hunks = fullDiff.split(/(?=^@@\s)/m)

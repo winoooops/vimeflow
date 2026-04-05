@@ -120,15 +120,8 @@ describe('ChangedFilesList', () => {
     expect(handleSelect).toHaveBeenCalledWith('src/components/NavBar.tsx')
   })
 
-  test('sorts files by status: M, A, D', () => {
-    const unsortedFiles: ChangedFile[] = [
-      {
-        path: 'deleted.txt',
-        status: 'D',
-        insertions: 0,
-        deletions: 5,
-        staged: false,
-      },
+  test('renders files in the order provided (sorting done by parent)', () => {
+    const orderedFiles: ChangedFile[] = [
       {
         path: 'modified.ts',
         status: 'M',
@@ -143,11 +136,18 @@ describe('ChangedFilesList', () => {
         deletions: 0,
         staged: false,
       },
+      {
+        path: 'deleted.txt',
+        status: 'D',
+        insertions: 0,
+        deletions: 5,
+        staged: false,
+      },
     ]
 
     render(
       <ChangedFilesList
-        files={unsortedFiles}
+        files={orderedFiles}
         selectedPath={null}
         onSelectFile={vi.fn()}
       />
@@ -157,7 +157,7 @@ describe('ChangedFilesList', () => {
       .getAllByRole('button')
       .map((btn) => btn.textContent)
 
-    // Expected order: M, A, D
+    // Renders in the order given
     expect(fileNames[0]).toContain('modified.ts')
     expect(fileNames[1]).toContain('added.rs')
     expect(fileNames[2]).toContain('deleted.txt')

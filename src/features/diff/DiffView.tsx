@@ -1,4 +1,10 @@
-import { type ReactElement, useState, useEffect, useCallback } from 'react'
+import {
+  type ReactElement,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react'
 import IconRail from '../../components/layout/IconRail'
 import type { TabName } from '../../components/layout/TopTabBar'
 import { TopTabBar } from '../../components/layout/TopTabBar'
@@ -10,7 +16,7 @@ import CommitInfoPanel from './components/CommitInfoPanel'
 import { useGitStatus } from './hooks/useGitStatus'
 import { useFileDiff } from './hooks/useFileDiff'
 import { useDiffKeyboard } from './hooks/useDiffKeyboard'
-import type { DiffViewMode, DiffFocusTarget } from './types'
+import type { DiffViewMode, DiffFocusTarget, GitStatus } from './types'
 import { createGitService } from './services/gitService'
 
 export interface DiffViewProps {
@@ -47,13 +53,34 @@ export const DiffView = ({
   const [focusedLineIndex, setFocusedLineIndex] = useState(0)
   const [diffVersion, setDiffVersion] = useState(0)
 
+  // Sort files consistently: M first, then A, then D, then U
+  const statusOrder: Record<GitStatus, number> = { M: 0, A: 1, D: 2, U: 3 }
+
+  const sortedFiles = useMemo(
+    () =>
+      [...changedFiles].sort(
+        (a, b) => statusOrder[a.status] - statusOrder[b.status]
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [changedFiles]
+  )
+
+  // Clamp selectedFileIndex when file list shrinks (after stage/discard)
+  useEffect(() => {
+    if (sortedFiles.length === 0) {
+      setSelectedFileIndex(0)
+    } else if (selectedFileIndex >= sortedFiles.length) {
+      setSelectedFileIndex(sortedFiles.length - 1)
+    }
+  }, [sortedFiles.length, selectedFileIndex])
+
   // Determine which file to show
   let currentFile: string | null = null
 
   if (selectedDiffFile) {
     currentFile = selectedDiffFile
-  } else if (changedFiles[selectedFileIndex]?.path) {
-    currentFile = changedFiles[selectedFileIndex].path
+  } else if (sortedFiles[selectedFileIndex]?.path) {
+    currentFile = sortedFiles[selectedFileIndex].path
   }
 
   // Fetch diff for current file (diffVersion triggers re-fetch after mutations)
@@ -63,13 +90,13 @@ export const DiffView = ({
     diffVersion
   )
 
-  // Sync selectedFileIndex when changedFiles loads, then clear the prop
+  // Sync selectedFileIndex when sortedFiles loads, then clear the prop
   useEffect(() => {
-    if (!selectedDiffFile || changedFiles.length === 0) {
+    if (!selectedDiffFile || sortedFiles.length === 0) {
       return
     }
 
-    const index = changedFiles.findIndex((f) => f.path === selectedDiffFile)
+    const index = sortedFiles.findIndex((f) => f.path === selectedDiffFile)
 
     if (index !== -1) {
       setSelectedFileIndex(index)
@@ -77,7 +104,7 @@ export const DiffView = ({
 
     // Clear prop only after index is synced so selection is preserved
     onClearSelectedFile?.()
-  }, [selectedDiffFile, changedFiles, onClearSelectedFile])
+  }, [selectedDiffFile, sortedFiles, onClearSelectedFile])
 
   // Handlers
   const handleSelectFile = useCallback((index: number): void => {
@@ -137,7 +164,7 @@ export const DiffView = ({
 
   useDiffKeyboard({
     focusTarget,
-    filesCount: changedFiles.length,
+    filesCount: sortedFiles.length,
     selectedFileIndex,
     focusedHunkIndex,
     focusedLineIndex,
@@ -164,10 +191,10 @@ export const DiffView = ({
       {/* Custom sidebar for changed files list - replaces standard Sidebar */}
       <aside className="w-[260px] h-screen fixed left-[48px] top-0 bg-[#1a1a2a] border-r border-[#4a444f]/15 flex flex-col z-40">
         <ChangedFilesList
-          files={changedFiles}
+          files={sortedFiles}
           selectedPath={currentFile}
           onSelectFile={(file) => {
-            const index = changedFiles.findIndex((f) => f.path === file)
+            const index = sortedFiles.findIndex((f) => f.path === file)
 
             if (index !== -1) {
               handleSelectFile(index)
