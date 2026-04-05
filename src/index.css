@@ -34,3 +34,22 @@
     display: none;
   }
 }
+
+/* Diff viewer styling */
+.diff-added {
+  background-color: rgba(166, 227, 161, 0.15);
+}
+
+.diff-removed {
+  background-color: rgba(243, 139, 168, 0.15);
+}
+
+.diff-highlight-added {
+  background-color: rgba(166, 227, 161, 0.35);
+  border-radius: 2px;
+}
+
+.diff-highlight-removed {
+  background-color: rgba(243, 139, 168, 0.35);
+  border-radius: 2px;
+}
