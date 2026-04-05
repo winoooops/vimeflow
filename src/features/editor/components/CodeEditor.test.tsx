@@ -1,6 +1,41 @@
-import { describe, test, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import { CodeEditor } from './CodeEditor'
+import * as shikiService from '../services/shikiService'
+
+// Mock Shiki service
+vi.mock('../services/shikiService', () => ({
+  highlightCode: vi.fn((code: string) =>
+    // Return mock LineTokens structure
+    Promise.resolve(
+      code.split('\n').map((line) => ({
+        tokens: [
+          {
+            content: line || ' ',
+            color: '#cdd6f4',
+            fontStyle: 0,
+          },
+        ],
+      }))
+    )
+  ),
+  detectLanguage: vi.fn((fileName: string) => {
+    if (fileName.endsWith('.tsx') || fileName.endsWith('.ts')) {
+      return 'typescript'
+    }
+    if (fileName.endsWith('.jsx') || fileName.endsWith('.js')) {
+      return 'javascript'
+    }
+    if (fileName.endsWith('.css')) {
+      return 'css'
+    }
+    if (fileName.endsWith('.md')) {
+      return 'markdown'
+    }
+
+    return 'plaintext'
+  }),
+}))
 
 describe('CodeEditor', () => {
   const sampleCode = `import React from 'react'
@@ -11,21 +46,31 @@ const App = () => {
 
 export default App`
 
-  test('renders code content', () => {
-    render(<CodeEditor content={sampleCode} currentLine={null} />)
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
-    expect(screen.getByTestId('code-line-1')).toBeInTheDocument()
-    expect(screen.getByTestId('code-line-3')).toHaveTextContent(
-      'const App = () => {'
+  test('renders code content', async () => {
+    render(
+      <CodeEditor content={sampleCode} currentLine={null} fileName="App.tsx" />
     )
 
-    expect(screen.getByTestId('code-line-7')).toHaveTextContent(
-      'export default App'
-    )
+    await waitFor(() => {
+      expect(screen.getByTestId('code-line-1')).toBeInTheDocument()
+      expect(screen.getByTestId('code-line-3')).toHaveTextContent(
+        'const App = () => {'
+      )
+
+      expect(screen.getByTestId('code-line-7')).toHaveTextContent(
+        'export default App'
+      )
+    })
   })
 
   test('applies correct container styling', () => {
-    render(<CodeEditor content={sampleCode} currentLine={null} />)
+    render(
+      <CodeEditor content={sampleCode} currentLine={null} fileName="App.tsx" />
+    )
 
     const container = screen.getByTestId('code-editor')
 
@@ -36,7 +81,9 @@ export default App`
   })
 
   test('uses correct font size and line height', () => {
-    render(<CodeEditor content={sampleCode} currentLine={null} />)
+    render(
+      <CodeEditor content={sampleCode} currentLine={null} fileName="App.tsx" />
+    )
 
     const container = screen.getByTestId('code-editor')
 
@@ -44,36 +91,57 @@ export default App`
     expect(container).toHaveClass('leading-6')
   })
 
-  test('highlights current line', () => {
-    render(<CodeEditor content={sampleCode} currentLine={3} />)
+  test('highlights current line with bg-primary/5 and border', async () => {
+    render(
+      <CodeEditor content={sampleCode} currentLine={3} fileName="App.tsx" />
+    )
+
+    await waitFor(() => {
+      const lines = screen.getAllByTestId(/^code-line-/)
+      const currentLine = lines[2] // 0-indexed, so line 3 is index 2
+
+      expect(currentLine).toHaveClass('bg-primary/5')
+    })
 
     const lines = screen.getAllByTestId(/^code-line-/)
-    const currentLine = lines[2] // 0-indexed, so line 3 is index 2
+    const currentLine = lines[2]
 
-    expect(currentLine).toHaveClass('bg-surface-container-high')
+    expect(currentLine).toHaveClass('border-l-2')
+    expect(currentLine).toHaveClass('border-primary')
   })
 
   test('renders all lines correctly', () => {
-    render(<CodeEditor content={sampleCode} currentLine={null} />)
+    render(
+      <CodeEditor content={sampleCode} currentLine={null} fileName="App.tsx" />
+    )
 
     const lines = screen.getAllByTestId(/^code-line-/)
 
     expect(lines).toHaveLength(7) // 7 lines in sampleCode
   })
 
-  test('applies syntax highlighting to keywords', () => {
+  test('detects TypeScript language from .tsx extension', async () => {
     render(
-      <CodeEditor content="import const export function" currentLine={null} />
+      <CodeEditor content={sampleCode} currentLine={null} fileName="App.tsx" />
     )
 
-    const codeLine = screen.getByTestId('code-line-1')
+    await waitFor(() => {
+      expect(shikiService.detectLanguage).toHaveBeenCalledWith('App.tsx')
+    })
+  })
 
-    expect(codeLine).toBeInTheDocument()
-    expect(codeLine.textContent).toBe('import const export function')
+  test('detects JavaScript language from .js extension', async () => {
+    render(
+      <CodeEditor content={sampleCode} currentLine={null} fileName="app.js" />
+    )
+
+    await waitFor(() => {
+      expect(shikiService.detectLanguage).toHaveBeenCalledWith('app.js')
+    })
   })
 
   test('handles empty content', () => {
-    render(<CodeEditor content="" currentLine={null} />)
+    render(<CodeEditor content="" currentLine={null} fileName="empty.txt" />)
 
     const container = screen.getByTestId('code-editor')
 
@@ -81,10 +149,39 @@ export default App`
   })
 
   test('handles single line content', () => {
-    render(<CodeEditor content="const x = 1" currentLine={1} />)
+    render(
+      <CodeEditor content="const x = 1" currentLine={1} fileName="test.ts" />
+    )
 
     const lines = screen.getAllByTestId(/^code-line-/)
 
     expect(lines).toHaveLength(1)
+  })
+
+  test('calls highlightCode with correct arguments', async () => {
+    render(
+      <CodeEditor content={sampleCode} currentLine={null} fileName="App.tsx" />
+    )
+
+    await waitFor(() => {
+      expect(shikiService.highlightCode).toHaveBeenCalledWith(
+        sampleCode,
+        'typescript'
+      )
+    })
+  })
+
+  test('non-current lines do not have highlight styling', async () => {
+    render(
+      <CodeEditor content={sampleCode} currentLine={3} fileName="App.tsx" />
+    )
+
+    await waitFor(() => {
+      const lines = screen.getAllByTestId(/^code-line-/)
+      const nonCurrentLine = lines[0] // Line 1 (not current)
+
+      expect(nonCurrentLine).not.toHaveClass('bg-primary/5')
+      expect(nonCurrentLine).not.toHaveClass('border-l-2')
+    })
   })
 })

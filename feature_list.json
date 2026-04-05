@@ -1,0 +1,446 @@
+[
+  {
+    "id": 1,
+    "phase": 1,
+    "category": "scaffold",
+    "description": "Add Shiki syntax highlighting dependencies",
+    "steps": [
+      "Install shiki package with wasm support",
+      "Verify package.json updated correctly"
+    ],
+    "passes": true,
+    "dependencies": []
+  },
+  {
+    "id": 2,
+    "phase": 1,
+    "category": "types",
+    "description": "Update editor types to match spec",
+    "steps": [
+      "Add 'COMMAND' to VimMode type",
+      "Add EditorTab interface",
+      "Add EditorStatusBarState interface",
+      "Add type guards: isEditorTab, isVimMode, isCursorPosition",
+      "Update tests for new types"
+    ],
+    "passes": true,
+    "dependencies": []
+  },
+  {
+    "id": 3,
+    "phase": 1,
+    "category": "types",
+    "description": "Add FileNode types from files feature",
+    "steps": [
+      "Copy FileNode, GitStatus, ContextMenuAction types to editor/types/",
+      "Add type guards for FileNode types",
+      "Add tests for type guards"
+    ],
+    "passes": true,
+    "dependencies": []
+  },
+  {
+    "id": 4,
+    "phase": 2,
+    "category": "service",
+    "description": "Create Vite file service plugin",
+    "steps": [
+      "Create vite-plugin-files.ts with validateRepoPath security",
+      "Implement GET /api/files/tree endpoint",
+      "Implement GET /api/files/content endpoint",
+      "Add path traversal prevention",
+      "Add 1MB file size limit",
+      "Add .git/, node_modules/ exclusion logic",
+      "Write tests for plugin"
+    ],
+    "passes": true,
+    "dependencies": [2, 3]
+  },
+  {
+    "id": 5,
+    "phase": 2,
+    "category": "service",
+    "description": "Create fileService.ts API client",
+    "steps": [
+      "Create services/fileService.ts",
+      "Implement fetchFileTree function",
+      "Implement fetchFileContent function",
+      "Add error handling",
+      "Write unit tests"
+    ],
+    "passes": true,
+    "dependencies": [4]
+  },
+  {
+    "id": 6,
+    "phase": 2,
+    "category": "hooks",
+    "description": "Create useFileTree hook",
+    "steps": [
+      "Create hooks/useFileTree.ts",
+      "Implement loading, error, and data states",
+      "Add fetch on mount logic",
+      "Write unit tests with mock service"
+    ],
+    "passes": true,
+    "dependencies": [5]
+  },
+  {
+    "id": 7,
+    "phase": 2,
+    "category": "hooks",
+    "description": "Create useFileContent hook",
+    "steps": [
+      "Create hooks/useFileContent.ts",
+      "Implement caching logic",
+      "Add loading, error, and content states",
+      "Write unit tests with mock service"
+    ],
+    "passes": true,
+    "dependencies": [5]
+  },
+  {
+    "id": 8,
+    "phase": 2,
+    "category": "config",
+    "description": "Update vite.config.ts with file plugin",
+    "steps": [
+      "Import fileApiPlugin from vite-plugin-files.ts",
+      "Add to plugins array",
+      "Verify dev server starts correctly"
+    ],
+    "passes": true,
+    "dependencies": [4]
+  },
+  {
+    "id": 9,
+    "phase": 3,
+    "category": "migration",
+    "description": "Move FileTree component to editor feature",
+    "steps": [
+      "Copy FileTree.tsx and test from files/ to editor/components/",
+      "Update imports to use editor types",
+      "Verify tests pass"
+    ],
+    "passes": true,
+    "dependencies": [3]
+  },
+  {
+    "id": 10,
+    "phase": 3,
+    "category": "migration",
+    "description": "Move FileTreeNode component to editor feature",
+    "steps": [
+      "Copy FileTreeNode.tsx and test from files/ to editor/components/",
+      "Update imports to use editor types",
+      "Verify tests pass"
+    ],
+    "passes": true,
+    "dependencies": [3]
+  },
+  {
+    "id": 11,
+    "phase": 3,
+    "category": "migration",
+    "description": "Move ContextMenu component to editor feature",
+    "steps": [
+      "Copy ContextMenu.tsx and test from files/ to editor/components/",
+      "Update imports to use editor types",
+      "Verify tests pass"
+    ],
+    "passes": true,
+    "dependencies": [3]
+  },
+  {
+    "id": 12,
+    "phase": 3,
+    "category": "cleanup",
+    "description": "Remove deprecated files feature components",
+    "steps": [
+      "Document removal plan for Breadcrumbs, DropZone, FileStatusBar",
+      "Keep components in files/ for now (removal after EditorView works)",
+      "Add migration notes to feature_list"
+    ],
+    "passes": true,
+    "dependencies": [9, 10, 11]
+  },
+  {
+    "id": 13,
+    "phase": 4,
+    "category": "component",
+    "description": "Create ExplorerPane component",
+    "steps": [
+      "Create components/ExplorerPane.tsx",
+      "Implement header with EXPLORER label and collapse button",
+      "Integrate FileTree component",
+      "Add collapsible behavior with transition",
+      "Write comprehensive tests",
+      "Verify a11y with getByRole queries"
+    ],
+    "passes": true,
+    "dependencies": [9, 10, 11]
+  },
+  {
+    "id": 14,
+    "phase": 4,
+    "category": "component",
+    "description": "Update FileTabs to match EditorTabs spec",
+    "steps": [
+      "Rename FileTabs to EditorTabs (keep old for compatibility)",
+      "Update styling to match spec exactly",
+      "Update active tab border: border-t-2 border-primary",
+      "Add empty fill element after tabs",
+      "Update tests",
+      "Verify visual match with design reference"
+    ],
+    "passes": true,
+    "dependencies": [2]
+  },
+  {
+    "id": 15,
+    "phase": 4,
+    "category": "component",
+    "description": "Update VimStatusBar to EditorStatusBar spec",
+    "steps": [
+      "Add gitBranch prop",
+      "Add syncStatus prop (behind/ahead counts)",
+      "Update layout to match spec exactly",
+      "Add dynamic right positioning based on ContextPanel state",
+      "Update tests with new props",
+      "Verify all segments display correctly"
+    ],
+    "passes": true,
+    "dependencies": [2]
+  },
+  {
+    "id": 16,
+    "phase": 4,
+    "category": "component",
+    "description": "Integrate Shiki into CodeEditor",
+    "steps": [
+      "Import shiki/wasm and catppuccin-mocha theme",
+      "Add language detection from file extension",
+      "Implement syntax highlighting with custom rendering",
+      "Add current line highlighting",
+      "Update tests to mock Shiki",
+      "Verify highlighting works for multiple languages"
+    ],
+    "passes": true,
+    "dependencies": [1, 7]
+  },
+  {
+    "id": 17,
+    "phase": 4,
+    "category": "data",
+    "description": "Create mockEditorData.ts",
+    "steps": [
+      "Consolidate mockFiles.ts and mockEditorState.ts",
+      "Add mock FileNode tree structure",
+      "Add mock EditorTab data",
+      "Add mock EditorStatusBarState",
+      "Write tests for mock data",
+      "Verify type compliance"
+    ],
+    "passes": false,
+    "dependencies": [2, 3]
+  },
+  {
+    "id": 18,
+    "phase": 5,
+    "category": "view",
+    "description": "Create EditorView component",
+    "steps": [
+      "Create EditorView.tsx with layout shell",
+      "Integrate IconRail, Sidebar, TopTabBar from layout/",
+      "Add ExplorerPane + code area layout",
+      "Integrate EditorTabs, CodeEditor, EditorStatusBar",
+      "Add ContextPanel with collapsible state",
+      "Add dynamic margin transitions",
+      "Write comprehensive tests"
+    ],
+    "passes": false,
+    "dependencies": [13, 14, 15, 16, 17]
+  },
+  {
+    "id": 19,
+    "phase": 5,
+    "category": "types",
+    "description": "Update TopTabBar to remove 'Files' tab",
+    "steps": [
+      "Update TabName type: remove 'Files', keep 'Chat' | 'Editor' | 'Diff'",
+      "Update TopTabBar component if needed",
+      "Update tests",
+      "Verify type errors are resolved"
+    ],
+    "passes": false,
+    "dependencies": []
+  },
+  {
+    "id": 20,
+    "phase": 5,
+    "category": "integration",
+    "description": "Update App.tsx for EditorView integration",
+    "steps": [
+      "Lift isContextPanelOpen state to App.tsx",
+      "Add onToggleContextPanel handler",
+      "Replace FilesView with EditorView",
+      "Pass ContextPanel props to all views",
+      "Update tests",
+      "Verify tab switching works"
+    ],
+    "passes": false,
+    "dependencies": [18, 19]
+  },
+  {
+    "id": 21,
+    "phase": 5,
+    "category": "integration",
+    "description": "Update ChatView for ContextPanel state",
+    "steps": [
+      "Add isContextPanelOpen and onToggleContextPanel props to ChatView",
+      "Add dynamic right margin based on panel state",
+      "Update tests",
+      "Verify margin transitions work"
+    ],
+    "passes": false,
+    "dependencies": [20]
+  },
+  {
+    "id": 22,
+    "phase": 6,
+    "category": "component",
+    "description": "Add ContextPanel collapsible behavior",
+    "steps": [
+      "Add isOpen and onToggle props to ContextPanel",
+      "Implement translate-x-full when collapsed",
+      "Add transition-all duration-300",
+      "Update tests",
+      "Verify toggle animation works"
+    ],
+    "passes": false,
+    "dependencies": [20]
+  },
+  {
+    "id": 23,
+    "phase": 6,
+    "category": "component",
+    "description": "Redesign ContextPanel layout per spec",
+    "steps": [
+      "Update header: psychology icon + AGENT STATUS + dock_to_right toggle",
+      "Add token usage section with progress bar",
+      "Add navigation items (Model Info, Context, Activity)",
+      "Add Live Insights card with APPLY FIX button",
+      "Add footer with Collapse Panel button",
+      "Update tests",
+      "Verify layout matches screenshot"
+    ],
+    "passes": false,
+    "dependencies": [22]
+  },
+  {
+    "id": 24,
+    "phase": 7,
+    "category": "testing",
+    "description": "Integration test: File tree loading",
+    "steps": [
+      "Test useFileTree hook with real file service",
+      "Test ExplorerPane renders file tree",
+      "Test folder expand/collapse",
+      "Test file selection",
+      "Verify loading and error states"
+    ],
+    "passes": false,
+    "dependencies": [6, 13]
+  },
+  {
+    "id": 25,
+    "phase": 7,
+    "category": "testing",
+    "description": "Integration test: File content loading",
+    "steps": [
+      "Test useFileContent hook with real file service",
+      "Test CodeEditor renders file content",
+      "Test syntax highlighting applies",
+      "Verify loading and error states",
+      "Test content caching"
+    ],
+    "passes": false,
+    "dependencies": [7, 16]
+  },
+  {
+    "id": 26,
+    "phase": 7,
+    "category": "testing",
+    "description": "Integration test: Tab management",
+    "steps": [
+      "Test clicking file in explorer creates tab",
+      "Test clicking tab switches active file",
+      "Test closing tab switches to adjacent tab",
+      "Test closing last tab behavior",
+      "Verify EditorStatusBar updates with active file"
+    ],
+    "passes": false,
+    "dependencies": [18]
+  },
+  {
+    "id": 27,
+    "phase": 7,
+    "category": "testing",
+    "description": "Integration test: Panel collapse behavior",
+    "steps": [
+      "Test ExplorerPane collapse/expand toggle",
+      "Test ContextPanel collapse/expand toggle",
+      "Test main content margin transitions",
+      "Test EditorStatusBar positioning updates",
+      "Verify transitions are smooth (300ms)"
+    ],
+    "passes": false,
+    "dependencies": [18, 23]
+  },
+  {
+    "id": 28,
+    "phase": 7,
+    "category": "verification",
+    "description": "Verify all linting and type-checking passes",
+    "steps": [
+      "Run npm run lint and fix any errors",
+      "Run npm run type-check and fix any errors",
+      "Run npm run format:check and fix formatting",
+      "Verify no console.log statements remain",
+      "Verify all tests use test() not it()"
+    ],
+    "passes": false,
+    "dependencies": [26, 27]
+  },
+  {
+    "id": 29,
+    "phase": 7,
+    "category": "verification",
+    "description": "Verify test coverage meets 80% minimum",
+    "steps": [
+      "Run vitest with coverage report",
+      "Identify any gaps below 80%",
+      "Add tests for uncovered code paths",
+      "Re-run coverage verification",
+      "Document final coverage percentage"
+    ],
+    "passes": false,
+    "dependencies": [28]
+  },
+  {
+    "id": 30,
+    "phase": 7,
+    "category": "verification",
+    "description": "Visual verification against design reference",
+    "steps": [
+      "Compare EditorView with docs/design/files_and_editor/screen.png",
+      "Verify color tokens match Catppuccin Mocha palette",
+      "Verify fonts: Manrope (headlines), Inter (body), JetBrains Mono (code)",
+      "Verify no 1px borders, only ghost borders and tonal depth",
+      "Verify glassmorphism on floating elements",
+      "Document any intentional deviations"
+    ],
+    "passes": false,
+    "dependencies": [28]
+  }
+]
