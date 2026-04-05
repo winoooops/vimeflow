@@ -42,7 +42,7 @@ Or use Claude Code's built-in: `EnterWorktree` (creates under `.claude/worktrees
 
 Agent works normally — edit, commit, push, create PR. The worktree is a fully independent working directory.
 
-**Once a PR is created, the agent stays in the worktree/branch until the PR is resolved.** Do not switch back to `main` between creating the PR and the PR being merged or closed. This ensures review-fix cycles (`/review-fix`) happen in the correct working directory without branch switching.
+**Once a PR is created, the agent stays in the worktree/branch until the PR is resolved.** Do not switch back to `main` between creating the PR and the PR being merged or closed. This ensures review-fix cycles (`/harness-plugin:github-review`) happen in the correct working directory without branch switching.
 
 The PR lifecycle within a worktree:
 
@@ -145,10 +145,10 @@ git branch --merged main | grep -v '^\*\|main' | xargs -r git branch -d
 
 Two hooks support the worktree workflow:
 
-| Hook               | Type        | Script                               | Purpose                                                             |
-| ------------------ | ----------- | ------------------------------------ | ------------------------------------------------------------------- |
-| Block main commits | PreToolUse  | `scripts/hooks/block-main-commit.sh` | Prevents `git commit`/`git push` on the main worktree               |
-| Post-push review   | PostToolUse | `scripts/hooks/post-push-review.sh`  | After `git push`, reminds agent to wait ~90s then run `/review-fix` |
+| Hook               | Type        | Script                               | Purpose                                                                      |
+| ------------------ | ----------- | ------------------------------------ | ---------------------------------------------------------------------------- |
+| Block main commits | PreToolUse  | `scripts/hooks/block-main-commit.sh` | Prevents `git commit`/`git push` on the main worktree                        |
+| Post-push review   | PostToolUse | `scripts/hooks/post-push-review.sh`  | After `git push` or `gh pr create`, triggers `/harness-plugin:github-review` |
 
 To register both hooks, add to `.claude/settings.local.json`:
 
