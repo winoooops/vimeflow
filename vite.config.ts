@@ -224,29 +224,39 @@ function gitApiPlugin(): Plugin {
               return
             }
 
+            const safePath = validateRepoPath(file)
+
+            if (!safePath) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Invalid file path' }))
+
+              return
+            }
+
             if (hunkIndex !== undefined) {
               // Stage a specific hunk by extracting the patch and applying it
-              const fullDiff = await git.diff(['--', file])
+              const fullDiff = await git.diff(['--', safePath])
 
               if (fullDiff) {
                 const hunks = fullDiff.split(/(?=^@@\s)/m)
-                const header = hunks.shift() ?? '' // diff header lines
+                const header = hunks.shift() ?? ''
 
                 if (hunkIndex < hunks.length) {
                   const patch = header + hunks[hunkIndex]
-                  const { execSync } = await import('child_process')
-                  execSync('git apply --cached -', {
+                  const { spawnSync } = await import('child_process')
+
+                  spawnSync('git', ['apply', '--cached', '-'], {
                     input: patch,
-                    cwd: process.cwd(),
+                    cwd: repoRoot,
                   })
                 } else {
-                  await git.add(file)
+                  await git.add(safePath)
                 }
               } else {
-                await git.add(file)
+                await git.add(safePath)
               }
             } else {
-              await git.add(file)
+              await git.add(safePath)
             }
 
             res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -267,7 +277,16 @@ function gitApiPlugin(): Plugin {
               return
             }
 
-            await git.reset(['HEAD', '--', file])
+            const safePath = validateRepoPath(file)
+
+            if (!safePath) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Invalid file path' }))
+
+              return
+            }
+
+            await git.reset(['HEAD', '--', safePath])
 
             res.writeHead(200, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ ok: true }))
@@ -287,23 +306,32 @@ function gitApiPlugin(): Plugin {
               return
             }
 
+            const safePath = validateRepoPath(file)
+
+            if (!safePath) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Invalid file path' }))
+
+              return
+            }
+
             // Check if file is untracked or newly added
             const status = await git.status()
-            const fileStatus = status.files.find((f) => f.path === file)
+            const fileStatus = status.files.find((f) => f.path === safePath)
 
             if (
               fileStatus &&
               (fileStatus.index === '?' || fileStatus.working_dir === '?')
             ) {
               // Untracked file — remove from disk
-              await git.clean('f', ['--', file])
+              await git.clean('f', ['--', safePath])
             } else if (fileStatus && fileStatus.index === 'A') {
               // Staged new file — unstage then remove
-              await git.reset(['HEAD', '--', file])
-              await git.clean('f', ['--', file])
+              await git.reset(['HEAD', '--', safePath])
+              await git.clean('f', ['--', safePath])
             } else if (hunkIndex !== undefined) {
               // Discard a specific hunk via reverse patch
-              const fullDiff = await git.diff(['--', file])
+              const fullDiff = await git.diff(['--', safePath])
 
               if (fullDiff) {
                 const hunks = fullDiff.split(/(?=^@@\s)/m)
@@ -311,20 +339,21 @@ function gitApiPlugin(): Plugin {
 
                 if (hunkIndex < hunks.length) {
                   const patch = header + hunks[hunkIndex]
-                  const { execSync } = await import('child_process')
-                  execSync('git apply -R -', {
+                  const { spawnSync } = await import('child_process')
+
+                  spawnSync('git', ['apply', '-R', '-'], {
                     input: patch,
-                    cwd: process.cwd(),
+                    cwd: repoRoot,
                   })
                 } else {
-                  await git.checkout(['--', file])
+                  await git.checkout(['--', safePath])
                 }
               } else {
-                await git.checkout(['--', file])
+                await git.checkout(['--', safePath])
               }
             } else {
               // Full file discard — restore from HEAD
-              await git.checkout(['--', file])
+              await git.checkout(['--', safePath])
             }
 
             res.writeHead(200, { 'Content-Type': 'application/json' })
