@@ -8,11 +8,11 @@ tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion, Skill, Agent
 
 The harness namespace provides three commands for the VIBM development cycle:
 
-| Command | Purpose | When to Use |
-|---------|---------|-------------|
-| `/harness:loop` | Launch the autonomous coder agent loop | Building new features from a spec |
-| `/harness:review` | Run local Codex code review | Before creating a PR, quick feedback |
-| `/harness:github-review` | Fix cloud Codex PR review findings | After pushing / creating a PR |
+| Command                  | Purpose                                | When to Use                          |
+| ------------------------ | -------------------------------------- | ------------------------------------ |
+| `/harness:loop`          | Launch the autonomous coder agent loop | Building new features from a spec    |
+| `/harness:review`        | Run local Codex code review            | Before creating a PR, quick feedback |
+| `/harness:github-review` | Fix cloud Codex PR review findings     | After pushing / creating a PR        |
 
 ## Quick Reference
 
