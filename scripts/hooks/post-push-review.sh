@@ -9,8 +9,9 @@
 
 set -euo pipefail
 
-# Extract the bash command from the tool input (portable — no GNU grep -P)
-command=$(jq -r '.command // empty' 2>/dev/null || echo "")
+# Extract the bash command from the tool input.
+# Claude Code passes the full hook context with tool params nested under tool_input.
+command=$(jq -r '.tool_input.command // .command // empty' 2>/dev/null || echo "")
 if [ -z "$command" ]; then
   exit 0
 fi
