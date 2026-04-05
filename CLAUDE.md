@@ -101,3 +101,34 @@ The harness skills (`/harness-plugin:loop`, `/harness-plugin:review`, `/harness-
 ```
 
 The marketplace definition lives at `.claude-plugin/marketplace.json` and the plugin source is at `plugins/harness/`. After installation, the skills are cached at `~/.claude/plugins/cache/harness/` and persist across sessions.
+
+### Autocomplete Workaround
+
+Plugin skills don't appear in `/` autocomplete due to a [known Claude Code bug](https://github.com/anthropics/claude-code/issues/18949). To enable autocomplete, create thin command wrappers in `~/.claude/commands/`:
+
+```bash
+mkdir -p ~/.claude/commands
+
+cat > ~/.claude/commands/harness-loop.md << 'EOF'
+---
+description: Launch the VIBM autonomous development harness
+---
+Use the Skill tool to invoke `harness-plugin:loop`.
+EOF
+
+cat > ~/.claude/commands/harness-review.md << 'EOF'
+---
+description: Run local Codex code review and fix issues
+---
+Use the Skill tool to invoke `harness-plugin:review`.
+EOF
+
+cat > ~/.claude/commands/harness-github-review.md << 'EOF'
+---
+description: Fetch and fix Codex review findings from current PR
+---
+Use the Skill tool to invoke `harness-plugin:github-review`.
+EOF
+```
+
+After running `/reload-plugins`, `/harness-loop`, `/harness-review`, and `/harness-github-review` will appear in autocomplete. The plugin skills (`/harness-plugin:*`) continue to work when typed directly.
