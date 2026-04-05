@@ -272,7 +272,7 @@
       "Update tests",
       "Verify type errors are resolved"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": []
   },
   {

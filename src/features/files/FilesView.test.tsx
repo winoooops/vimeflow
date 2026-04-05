@@ -25,12 +25,12 @@ describe('FilesView', () => {
     expect(filesArea).toBeInTheDocument()
   })
 
-  test('renders TopTabBar with Files tab active', () => {
+  test('renders TopTabBar with default tab (FilesView is deprecated, Files tab removed)', () => {
     render(<FilesView />)
 
-    const filesTab = screen.getByRole('button', { name: 'Files' })
-    expect(filesTab).toHaveAttribute('aria-current', 'page')
-    expect(filesTab).toHaveClass('text-[#e2c7ff]')
+    const chatTab = screen.getByRole('button', { name: 'Chat' })
+    expect(chatTab).toHaveAttribute('aria-current', 'page')
+    expect(chatTab).toHaveClass('text-[#e2c7ff]')
   })
 
   test('renders Breadcrumbs', () => {

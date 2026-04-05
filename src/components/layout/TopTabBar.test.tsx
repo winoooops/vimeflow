@@ -60,18 +60,6 @@ describe('TopTabBar', () => {
     expect(chatTab).toHaveClass('font-semibold')
   })
 
-  test('renders Files tab as inactive with hover state', () => {
-    render(<TopTabBar />)
-    const filesTab = screen.getByRole('button', { name: 'Files' })
-    expect(filesTab).toBeInTheDocument()
-    expect(filesTab).toHaveClass('text-on-surface-variant')
-    expect(filesTab).toHaveClass('hover:text-on-surface')
-    expect(filesTab).toHaveClass('hover:bg-[#1e1e2e]')
-    expect(filesTab).toHaveClass('h-[calc(100%-16px)]')
-    expect(filesTab).toHaveClass('my-2')
-    expect(filesTab).toHaveClass('rounded-lg')
-  })
-
   test('renders Editor tab as inactive', () => {
     render(<TopTabBar />)
     const editorTab = screen.getByRole('button', { name: 'Editor' })
@@ -127,25 +115,6 @@ describe('TopTabBar', () => {
     expect(chatTab).toHaveAttribute('aria-current', 'page')
   })
 
-  test('renders Files tab as active when activeTab="Files"', () => {
-    render(<TopTabBar activeTab="Files" />)
-    const filesTab = screen.getByRole('button', { name: 'Files' })
-    expect(filesTab).toHaveClass(
-      'text-[#e2c7ff]',
-      'border-b-2',
-      'border-[#cba6f7]'
-    )
-    expect(filesTab).toHaveAttribute('aria-current', 'page')
-  })
-
-  test('renders Chat tab as inactive when activeTab="Files"', () => {
-    render(<TopTabBar activeTab="Files" />)
-    const chatTab = screen.getByRole('button', { name: 'Chat' })
-    expect(chatTab).toHaveClass('text-on-surface-variant')
-    expect(chatTab).not.toHaveClass('text-[#e2c7ff]')
-    expect(chatTab).not.toHaveAttribute('aria-current')
-  })
-
   test('renders Editor tab as active when activeTab="Editor"', () => {
     render(<TopTabBar activeTab="Editor" />)
     const editorTab = screen.getByRole('button', { name: 'Editor' })
@@ -165,8 +134,8 @@ describe('TopTabBar', () => {
     const user = userEvent.setup()
     render(<TopTabBar onTabChange={handleTabChange} />)
 
-    await user.click(screen.getByRole('button', { name: 'Files' }))
-    expect(handleTabChange).toHaveBeenCalledWith('Files')
+    await user.click(screen.getByRole('button', { name: 'Editor' }))
+    expect(handleTabChange).toHaveBeenCalledWith('Editor')
   })
 
   test('calls onTabChange with correct tab name for each tab', async () => {
@@ -185,8 +154,8 @@ describe('TopTabBar', () => {
     const user = userEvent.setup()
     render(<TopTabBar />)
 
-    await user.click(screen.getByRole('button', { name: 'Files' }))
+    await user.click(screen.getByRole('button', { name: 'Editor' }))
     // No error thrown
-    expect(screen.getByRole('button', { name: 'Files' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument()
   })
 })

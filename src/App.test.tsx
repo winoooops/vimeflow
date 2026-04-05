@@ -24,44 +24,24 @@ describe('App', () => {
     expect(screen.getByTestId('context-panel')).toBeInTheDocument()
   })
 
-  test('switches to FilesView when Files tab is clicked', async () => {
+  test('switches back to ChatView when Chat tab is clicked from Diff', async () => {
     const user = userEvent.setup()
     render(<App />)
 
-    const filesTab = screen.getByRole('button', { name: 'Files' })
-    await user.click(filesTab)
-
-    expect(screen.getByTestId('files-view')).toBeInTheDocument()
-    expect(screen.queryByTestId('chat-view')).not.toBeInTheDocument()
-  })
-
-  test('switches back to ChatView when Chat tab is clicked', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-
-    // Go to Files
-    await user.click(screen.getByRole('button', { name: 'Files' }))
-    expect(screen.getByTestId('files-view')).toBeInTheDocument()
+    // Go to Diff
+    await user.click(screen.getByRole('button', { name: 'Diff' }))
+    expect(screen.getByTestId('diff-view')).toBeInTheDocument()
 
     // Go back to Chat
     await user.click(screen.getByRole('button', { name: 'Chat' }))
     expect(screen.getByTestId('chat-view')).toBeInTheDocument()
-    expect(screen.queryByTestId('files-view')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('diff-view')).not.toBeInTheDocument()
   })
 
   test('Chat tab is active by default', () => {
     render(<App />)
     const chatTab = screen.getByRole('button', { name: 'Chat' })
     expect(chatTab).toHaveAttribute('aria-current', 'page')
-  })
-
-  test('Files tab becomes active after clicking it', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-
-    await user.click(screen.getByRole('button', { name: 'Files' }))
-    const filesTab = screen.getByRole('button', { name: 'Files' })
-    expect(filesTab).toHaveAttribute('aria-current', 'page')
   })
 
   test('is an arrow-function component', () => {

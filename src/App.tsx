@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react'
 import type { ReactElement } from 'react'
 import type { TabName } from './components/layout/TopTabBar'
 import ChatView from './features/chat/ChatView'
-import FilesView from './features/files/FilesView'
 import { DiffView } from './features/diff/DiffView'
 import { CommandPalette } from './features/command-palette/CommandPalette'
 
@@ -14,10 +13,11 @@ const App = (): ReactElement => {
     setActiveTab(tab)
   }
 
-  const handleFileDiffRequest = useCallback((filePath: string): void => {
-    setSelectedDiffFile(filePath)
-    setActiveTab('Diff')
-  }, [])
+  // TODO: Re-add handleFileDiffRequest in Feature #20 when EditorView is integrated
+  // const handleFileDiffRequest = useCallback((filePath: string): void => {
+  //   setSelectedDiffFile(filePath)
+  //   setActiveTab('Diff')
+  // }, [])
 
   const handleClearSelectedDiffFile = useCallback((): void => {
     setSelectedDiffFile(null)
@@ -25,13 +25,6 @@ const App = (): ReactElement => {
 
   const renderActiveTab = (): ReactElement => {
     switch (activeTab) {
-      case 'Files':
-        return (
-          <FilesView
-            onTabChange={handleTabChange}
-            onFileDiffRequest={handleFileDiffRequest}
-          />
-        )
       case 'Diff':
         return (
           <DiffView
@@ -40,6 +33,9 @@ const App = (): ReactElement => {
             onClearSelectedFile={handleClearSelectedDiffFile}
           />
         )
+      case 'Editor':
+        // TODO: Add EditorView in Feature #20
+        return <ChatView onTabChange={handleTabChange} />
       case 'Chat':
       default:
         return <ChatView onTabChange={handleTabChange} />

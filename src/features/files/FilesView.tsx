@@ -63,8 +63,8 @@ const FilesView = ({
         className="ml-[308px] mr-[280px] flex-1 flex flex-col"
         data-testid="main-content"
       >
-        {/* Top navigation bar with Files tab active */}
-        <TopTabBar activeTab="Files" onTabChange={onTabChange} />
+        {/* Top navigation bar - FilesView is deprecated, tab removed in Feature #19 */}
+        <TopTabBar onTabChange={onTabChange} />
 
         {/* File explorer content area */}
         <div
