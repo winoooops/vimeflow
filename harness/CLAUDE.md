@@ -28,6 +28,58 @@ set -a && source .env && set +a
 
 **Additional requirement:** `gh` CLI must be authenticated (`gh auth login`) for Phase 3 cloud operations.
 
+## Worktree Requirement (MANDATORY)
+
+**The harness MUST run inside a git worktree, never on `main`.** This is enforced by [rules/common/worktrees.md](../rules/common/worktrees.md):
+
+> _"Main worktree is sacred — it stays on `main`, always clean, never committed to directly."_
+> _"Harness always uses a worktree — autonomous loops must be fully isolated."_
+
+### Before Launching the Harness
+
+Create a worktree and switch into it **before** running any harness command:
+
+```bash
+# From the main worktree (project root)
+git worktree add .claude/worktrees/feat-<feature-name> -b feat/<feature-name>
+cd .claude/worktrees/feat-<feature-name>
+npm install
+
+# Source env vars
+set -a && source /path/to/project/.env && set +a
+
+# Now launch the harness (--project-dir points to the worktree, which is cwd)
+cd harness && python3 autonomous_agent_demo.py --clean --max-iterations 10
+```
+
+Or use Claude Code's built-in `EnterWorktree` tool, which creates the worktree under `.claude/worktrees/` automatically.
+
+### Why This Matters
+
+- The harness creates commits during Phase 2 (feature loop) and pushes in Phase 3 (cloud review)
+- Running on `main` would commit directly to the main branch, violating the project's branch protection policy
+- A worktree isolates all harness work on a feature branch, ready for PR and squash-merge
+- The `block-main-commit.sh` PreToolUse hook will reject commits on `main` if configured
+
+### After the Harness Completes
+
+From the worktree, create a PR and stay on the branch for review-fix cycles:
+
+```bash
+gh pr create --title "feat: <description>" --body "..." --squash
+# Stay here — run /harness:github-review for code review cycles
+# Only the user merges the PR
+```
+
+Cleanup (after PR is merged, from the main worktree):
+
+```bash
+cd /path/to/project  # back to main worktree
+git worktree remove .claude/worktrees/feat-<feature-name>
+git branch -d feat/<feature-name>
+git worktree prune
+```
+
 ## Running
 
 ```bash
@@ -130,7 +182,7 @@ The Codex GitHub Action (`.github/workflows/codex-review.yml`) runs `openai/code
 
 ### Interactive Fix Loop
 
-`npm run review:fix` or the `/review-fix` skill in Claude Code provides a self-driving fix loop: fetch Codex review → fix findings → push → poll for next review → repeat until clean (max 10 rounds).
+`npm run review:fix` or the `/harness:github-review` skill in Claude Code provides a self-driving fix loop: fetch Codex review → fix findings → push → poll for next review → repeat until clean (max 10 rounds).
 
 ### Project Context
 

@@ -1,10 +1,10 @@
 ---
-name: review-fix
+name: harness:github-review
 description: Fetch Codex review findings from the current PR and fix them. Polls gh for the latest Codex comment, parses findings, fixes each issue, runs tests, commits, and pushes. Automatically loops — polls for the next review after each push.
 tools: Read, Write, Edit, Bash, Grep, Glob
 ---
 
-# /review-fix — Fix Codex PR Review Findings (Self-Driving Loop)
+# /harness:github-review — Fix Codex PR Review Findings (Self-Driving Loop)
 
 Fetch the latest Codex code review from the current branch's PR, fix every finding, push, then poll for the next review and repeat — until the review comes back clean or the loop hits the max rounds limit.
 
@@ -28,6 +28,29 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 ```
 
 If no PR exists, tell the user and stop.
+
+## Step 1.5: Check CI Status
+
+Before looking at Codex review comments, check if the PR's CI checks are passing:
+
+```bash
+gh pr checks $PR_NUMBER
+```
+
+If any checks **other than Codex Code Review** are failing (e.g., Code Quality Check, Unit Tests):
+
+1. Read the failing check's log: `gh run view <run_id> --log-failed`
+2. Fix the issue (formatting, lint, type errors, test failures)
+3. Commit and push the fix
+4. Re-run this step until CI is green
+
+Common CI failures:
+
+- **Code Quality Check (Prettier)**: run `npx prettier --write <file>` on the flagged files
+- **Code Quality Check (ESLint)**: run `npm run lint:fix`
+- **Unit Tests**: run `npm run test` to reproduce, then fix
+
+Only proceed to Step 2 once all non-Codex checks are passing.
 
 ## Step 2: Fetch Latest Codex Review
 
@@ -113,7 +136,7 @@ gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
 ```
 
 - If a new comment appears (different ID): go back to **Step 3**
-- If no new comment after 10 minutes: tell the user the poll timed out, they can re-run `/review-fix` later
+- If no new comment after 10 minutes: tell the user the poll timed out, they can re-run `/harness:github-review` later
 - If max rounds (10) reached: tell the user the loop hit its cap
 
 ## Exit Conditions

@@ -1,19 +1,28 @@
 #!/usr/bin/env bash
-# PostToolUse hook: after git push, remind the agent to run /review-fix.
+# PostToolUse hook: after git push or gh pr create, trigger /harness:github-review.
 #
-# Detects git push commands and outputs a directive that the agent
-# sees in its context, prompting it to wait and then run /review-fix.
+# Detects git push and gh pr create commands and outputs a directive
+# that the agent sees in its context, prompting it to invoke the
+# /harness:github-review skill automatically.
 #
 # Exit 0 always — PostToolUse hooks should never block.
 
 set -euo pipefail
 
-# Extract the bash command from the tool input (portable — no GNU grep -P)
-command=$(jq -r '.command // empty' 2>/dev/null || echo "")
+# Extract the bash command from the tool input.
+# Claude Code passes the full hook context with tool params nested under tool_input.
+command=$(jq -r '.tool_input.command // .command // empty' 2>/dev/null || echo "")
 if [ -z "$command" ]; then
   exit 0
 fi
 
+# Check for gh pr create
+if echo "$command" | grep -qE '^\s*gh\s+pr\s+create'; then
+  echo "ACTION REQUIRED: A pull request was just created. Wait ~90 seconds for the Codex GitHub Action to post its review, then invoke /harness:github-review to fetch and address any code review findings."
+  exit 0
+fi
+
+# Check for git push
 # Extract the git subcommand, skipping flags and their values.
 # Handles: git -C /path push, git -c key=val push, git --git-dir=/x push, etc.
 subcmd=""
@@ -45,6 +54,6 @@ if [ "$subcmd" != "push" ]; then
   exit 0
 fi
 
-echo "ACTION REQUIRED: Code was just pushed. Wait ~90 seconds for Codex review to post findings, then run /review-fix to fetch and address any code review comments."
+echo "ACTION REQUIRED: Code was just pushed. Wait ~90 seconds for the Codex GitHub Action to post its review, then invoke /harness:github-review to fetch and address any code review findings."
 
 exit 0
