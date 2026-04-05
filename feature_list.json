@@ -364,7 +364,7 @@
       "Verify loading and error states",
       "Test content caching"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [7, 16]
   },
   {
