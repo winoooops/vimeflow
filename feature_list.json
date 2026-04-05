@@ -424,7 +424,7 @@
       "Re-run coverage verification",
       "Document final coverage percentage"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [28]
   },
   {

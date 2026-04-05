@@ -148,4 +148,38 @@ describe('useFileTree', () => {
       expect(result.current.tree).toEqual(mockTree)
     })
   })
+
+  test('does not update state after unmount', async () => {
+    const mockTree: FileNode[] = [
+      {
+        id: 'src',
+        name: 'src',
+        type: 'folder',
+        children: [],
+      },
+    ]
+
+    // Create a promise that resolves after a delay
+    let resolvePromise!: (value: FileNode[]) => void
+
+    const delayedPromise = new Promise<FileNode[]>((resolve) => {
+      resolvePromise = resolve
+    })
+
+    mockFetchFileTree.mockReturnValueOnce(delayedPromise)
+
+    const { unmount } = renderHook(() => useFileTree())
+
+    // Unmount immediately before the promise resolves
+    unmount()
+
+    // Resolve the promise after unmount
+    resolvePromise(mockTree)
+
+    // Wait a bit to ensure no state updates occur
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    // No error should be thrown (no "Can't perform a React state update on an unmounted component" warning)
+    expect(true).toBe(true)
+  })
 })

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { fetchFileTree } from '../services/fileService'
 import type { FileNode } from '../types'
 
@@ -17,25 +17,44 @@ export function useFileTree(root?: string): UseFileTreeResult {
   const [tree, setTree] = useState<FileNode[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
+  const isMountedRef = useRef<boolean>(true)
 
   const loadTree = async (): Promise<void> => {
+    if (!isMountedRef.current) {
+      return
+    }
+
     setLoading(true)
     setError(null)
 
     try {
       const data = await fetchFileTree(root)
-      setTree(data)
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (isMountedRef.current) {
+        setTree(data)
+      }
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to load file tree'
-      setError(message)
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (isMountedRef.current) {
+        const message =
+          err instanceof Error ? err.message : 'Failed to load file tree'
+        setError(message)
+      }
     } finally {
-      setLoading(false)
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (isMountedRef.current) {
+        setLoading(false)
+      }
     }
   }
 
-  useEffect(() => {
+  useEffect((): (() => void) => {
+    isMountedRef.current = true
     void loadTree()
+
+    return (): void => {
+      isMountedRef.current = false
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root])
 

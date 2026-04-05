@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import {
   fetchFileContent,
   type FileContentResponse,
@@ -21,6 +21,15 @@ export function useFileContent(): UseFileContentResult {
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [cache] = useState<Map<string, FileContentResponse>>(new Map())
+  const isMountedRef = useRef<boolean>(true)
+
+  useEffect((): (() => void) => {
+    isMountedRef.current = true
+
+    return (): void => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   const loadFile = useCallback(
     async (filePath: string): Promise<void> => {
@@ -28,32 +37,43 @@ export function useFileContent(): UseFileContentResult {
       const cached = cache.get(filePath)
 
       if (cached) {
-        setContent(cached.content)
-        setLanguage(cached.language)
-        setLoading(false)
-        setError(null)
+        if (isMountedRef.current) {
+          setContent(cached.content)
+          setLanguage(cached.language)
+          setLoading(false)
+          setError(null)
+        }
 
         return
       }
 
-      setLoading(true)
-      setError(null)
+      if (isMountedRef.current) {
+        setLoading(true)
+        setError(null)
+      }
 
       try {
         const data = await fetchFileContent(filePath)
-        setContent(data.content)
-        setLanguage(data.language)
 
-        // Cache the result
-        cache.set(filePath, data)
+        if (isMountedRef.current) {
+          setContent(data.content)
+          setLanguage(data.language)
+
+          // Cache the result
+          cache.set(filePath, data)
+        }
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : 'Failed to load file content'
-        setError(message)
-        setContent(null)
-        setLanguage(null)
+        if (isMountedRef.current) {
+          const message =
+            err instanceof Error ? err.message : 'Failed to load file content'
+          setError(message)
+          setContent(null)
+          setLanguage(null)
+        }
       } finally {
-        setLoading(false)
+        if (isMountedRef.current) {
+          setLoading(false)
+        }
       }
     },
     [cache]

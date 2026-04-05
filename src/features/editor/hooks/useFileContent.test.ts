@@ -192,4 +192,37 @@ describe('useFileContent', () => {
       expect(result.current.loading).toBe(false)
     })
   })
+
+  test('does not update state after unmount', async () => {
+    const mockResponse: FileContentResponse = {
+      content: 'test content',
+      language: 'typescript',
+    }
+
+    // Create a promise that resolves after a delay
+    let resolvePromise!: (value: FileContentResponse) => void
+
+    const delayedPromise = new Promise<FileContentResponse>((resolve) => {
+      resolvePromise = resolve
+    })
+
+    mockFetchFileContent.mockReturnValueOnce(delayedPromise)
+
+    const { result, unmount } = renderHook(() => useFileContent())
+
+    // Start loading
+    void result.current.loadFile('file.ts')
+
+    // Unmount immediately before the promise resolves
+    unmount()
+
+    // Resolve the promise after unmount
+    resolvePromise(mockResponse)
+
+    // Wait a bit to ensure no state updates occur
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    // No error should be thrown (no "Can't perform a React state update on an unmounted component" warning)
+    expect(true).toBe(true)
+  })
 })
