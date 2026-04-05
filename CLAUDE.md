@@ -26,6 +26,7 @@ npm run format          # Prettier write
 npm run type-check      # tsc -b
 npm run review          # Local Codex code review (saves to .codex-reviews/)
 npm run review:fix      # Interactive review-fix loop (fetch → fix → push → poll)
+# Skills: /harness:review (local), /harness:github-review (cloud PR), /harness:loop (agent loop)
 ```
 
 Node >= 24 (see `.nvmrc`). ESM-only (`"type": "module"`).
