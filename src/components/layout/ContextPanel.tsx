@@ -11,11 +11,16 @@ interface ContextPanelProps {
 
 /**
  * ContextPanel - Right sidebar (280px) showing agent status, model info,
- * recent actions timeline, AI strategy, and system health.
+ * navigation, live insights, and collapse controls.
  *
- * Design reference: docs/design/chat_or_main/code.html lines 293-376
+ * Design reference: Feature 23 - Redesigned layout per app_spec.md
  */
-const ContextPanel = ({ isOpen = true }: ContextPanelProps): ReactElement => {
+const ContextPanel = ({
+  isOpen = true,
+  onToggle = (): void => {
+    // Default no-op handler
+  },
+}: ContextPanelProps): ReactElement => {
   const getStatusDotColor = (
     status: 'success' | 'pending' | 'error'
   ): string => {
@@ -40,16 +45,76 @@ const ContextPanel = ({ isOpen = true }: ContextPanelProps): ReactElement => {
       }`}
       data-testid="context-panel"
     >
-      {/* Header */}
-      <div className="h-14 flex items-center px-6">
-        <h2 className="font-headline text-xs font-bold tracking-widest text-on-surface-variant uppercase">
-          Agent Status
-        </h2>
+      {/* Header with psychology icon and toggle button */}
+      <div className="h-14 flex items-center justify-between px-6">
+        <div className="flex items-center gap-2">
+          <span
+            className="material-symbols-outlined text-primary-container text-sm"
+            aria-hidden="true"
+          >
+            psychology
+          </span>
+          <h2 className="font-headline text-xs font-bold tracking-widest text-on-surface-variant uppercase">
+            Agent Status
+          </h2>
+        </div>
+        <button
+          onClick={onToggle}
+          aria-label="Toggle panel"
+          className="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors cursor-pointer text-lg"
+        >
+          dock_to_right
+        </button>
+      </div>
+
+      {/* Token Usage Section */}
+      <div className="px-6 py-4 space-y-2">
+        <div className="flex justify-between text-[10px] font-label text-on-surface-variant">
+          <span>Token Usage</span>
+          <span>{mockAgentStatus.progress}%</span>
+        </div>
+        <div className="h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-secondary to-secondary-container rounded-full"
+            style={{ width: `${mockAgentStatus.progress}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Navigation Items */}
+      <div className="px-4 space-y-1">
+        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg bg-primary/10 text-on-surface text-xs font-medium hover:bg-primary/15 transition-colors">
+          <span
+            className="material-symbols-outlined text-sm"
+            aria-hidden="true"
+          >
+            info
+          </span>
+          Model Info
+        </button>
+        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant text-xs font-medium hover:bg-surface-variant/30 transition-colors">
+          <span
+            className="material-symbols-outlined text-sm"
+            aria-hidden="true"
+          >
+            list
+          </span>
+          Context
+        </button>
+        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant text-xs font-medium hover:bg-surface-variant/30 transition-colors">
+          <span
+            className="material-symbols-outlined text-sm"
+            aria-hidden="true"
+          >
+            activity_zone
+          </span>
+          Activity
+        </button>
       </div>
 
       {/* Scrollable content */}
-      <div className="p-6 space-y-8 overflow-y-auto no-scrollbar">
-        {/* Model Info Card */}
+      <div className="p-6 space-y-6 overflow-y-auto no-scrollbar flex-1">
+        {/* Model Info Card (moved content from above) */}
         <div className="bg-surface-container p-4 rounded-xl space-y-4 border border-outline-variant/5">
           {/* Model name with badge */}
           <div className="flex items-center justify-between">
@@ -59,20 +124,6 @@ const ContextPanel = ({ isOpen = true }: ContextPanelProps): ReactElement => {
             <span className="bg-secondary/10 text-secondary text-[10px] font-bold px-2 py-0.5 rounded">
               {mockAgentStatus.modelName}
             </span>
-          </div>
-
-          {/* Progress bar */}
-          <div className="space-y-2">
-            <div className="flex justify-between text-[10px] font-label text-on-surface-variant">
-              <span>Context Usage</span>
-              <span>{mockAgentStatus.progress}%</span>
-            </div>
-            <div className="h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-secondary to-secondary-container rounded-full"
-                style={{ width: `${mockAgentStatus.progress}%` }}
-              />
-            </div>
           </div>
 
           {/* Stats grid: Latency and Tokens */}
@@ -97,6 +148,26 @@ const ContextPanel = ({ isOpen = true }: ContextPanelProps): ReactElement => {
               </dd>
             </div>
           </dl>
+        </div>
+
+        {/* Live Insights Card */}
+        <div className="bg-primary-container/5 p-4 rounded-xl border border-primary-container/10 space-y-3">
+          <h3 className="text-[10px] font-bold text-primary-container uppercase tracking-wide flex items-center gap-2">
+            <span
+              className="material-symbols-outlined text-sm"
+              aria-hidden="true"
+            >
+              lightbulb
+            </span>
+            Live Insights
+          </h3>
+          <p className="text-[11px] leading-relaxed text-on-surface-variant">
+            Type mismatch detected in user authentication module. Consider using
+            stricter TypeScript types.
+          </p>
+          <button className="w-full bg-primary/10 hover:bg-primary/15 text-primary text-[10px] font-bold uppercase tracking-wide py-2 px-4 rounded-lg transition-colors">
+            Apply Fix
+          </button>
         </div>
 
         {/* Recent Actions */}
@@ -146,41 +217,22 @@ const ContextPanel = ({ isOpen = true }: ContextPanelProps): ReactElement => {
             ))}
           </div>
         </div>
-
-        {/* AI Strategy Card */}
-        <div className="bg-primary-container/5 p-4 rounded-xl border border-primary-container/10">
-          <div className="flex items-center gap-2 mb-3">
-            <span
-              className="material-symbols-outlined text-primary-container text-sm"
-              aria-hidden="true"
-            >
-              psychology_alt
-            </span>
-            <h3 className="m-0 text-[10px] font-bold text-primary-container uppercase tracking-wide">
-              AI Strategy
-            </h3>
-          </div>
-          <p className="text-[11px] leading-relaxed text-on-surface-variant">
-            Current priority:{' '}
-            <span className="text-[#e3e0f7] font-medium">Code Quality</span>.
-            The agent is prioritizing test coverage and type safety in the
-            implementation.
-          </p>
-        </div>
       </div>
 
-      {/* System Health Footer */}
+      {/* Collapse Panel Footer */}
       <div className="mt-auto p-4 bg-surface-container-lowest/50 border-t border-outline-variant/10">
-        <div
-          role="status"
-          className="flex items-center justify-between text-[10px] font-label"
+        <button
+          onClick={onToggle}
+          className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase tracking-wide text-on-surface-variant hover:text-primary transition-colors"
         >
-          <div className="flex items-center gap-1.5 text-secondary">
-            <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
-            <span>System Online</span>
-          </div>
-          <span className="text-on-surface-variant/40">v0.1.0-alpha</span>
-        </div>
+          <span
+            className="material-symbols-outlined text-sm"
+            aria-hidden="true"
+          >
+            chevron_right
+          </span>
+          Collapse Panel
+        </button>
       </div>
     </aside>
   )

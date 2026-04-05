@@ -1,5 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import ContextPanel from './ContextPanel'
 
 describe('ContextPanel', () => {
@@ -44,9 +44,9 @@ describe('ContextPanel', () => {
     expect(screen.getByText(/claude 3\.5 sonnet/i)).toBeInTheDocument()
   })
 
-  test('renders context usage progress bar with percentage', () => {
+  test('renders token usage progress bar with percentage', () => {
     render(<ContextPanel />)
-    expect(screen.getByText(/context usage/i)).toBeInTheDocument()
+    expect(screen.getByText(/token usage/i)).toBeInTheDocument()
     expect(screen.getByText(/67%/)).toBeInTheDocument()
   })
 
@@ -80,29 +80,6 @@ describe('ContextPanel', () => {
     expect(screen.getByText(/type checking/i)).toBeInTheDocument()
     expect(screen.getByText(/file analysis/i)).toBeInTheDocument()
     expect(screen.getByText(/syntax validation/i)).toBeInTheDocument()
-  })
-
-  test('renders AI Strategy section with heading', () => {
-    render(<ContextPanel />)
-
-    const heading = screen.getByRole('heading', { name: /ai strategy/i })
-    expect(heading).toBeInTheDocument()
-    expect(screen.getByText(/current priority/i)).toBeInTheDocument()
-    expect(screen.getByText(/code quality/i)).toBeInTheDocument()
-  })
-
-  test('renders system health footer with online status', () => {
-    render(<ContextPanel />)
-    const status = screen.getByRole('status')
-    expect(status).toHaveTextContent(/system online/i)
-  })
-
-  test('renders system health with online status and version', () => {
-    render(<ContextPanel />)
-
-    const status = screen.getByRole('status')
-    expect(status).toHaveTextContent(/system online/i)
-    expect(status).toHaveTextContent(/v0\.1\.0-alpha/i)
   })
 
   test('renders with proper flex layout', () => {
@@ -149,5 +126,95 @@ describe('ContextPanel', () => {
     expect(() => {
       render(<ContextPanel onToggle={handleToggle} />)
     }).not.toThrow()
+  })
+
+  // Feature 23: Redesigned layout tests
+
+  test('renders psychology icon in header', () => {
+    render(<ContextPanel />)
+
+    const icon = screen.getByText('psychology')
+
+    expect(icon).toBeInTheDocument()
+    expect(icon).toHaveClass('material-symbols-outlined')
+  })
+
+  test('renders dock_to_right toggle button in header', () => {
+    render(<ContextPanel />)
+
+    const toggleButton = screen.getByRole('button', {
+      name: /toggle panel/i,
+    })
+
+    expect(toggleButton).toBeInTheDocument()
+    expect(within(toggleButton).getByText('dock_to_right')).toBeInTheDocument()
+  })
+
+  test('calls onToggle when dock_to_right button is clicked', () => {
+    const handleToggle = vi.fn()
+
+    render(<ContextPanel onToggle={handleToggle} />)
+
+    const toggleButton = screen.getByRole('button', {
+      name: /toggle panel/i,
+    })
+    toggleButton.click()
+
+    expect(handleToggle).toHaveBeenCalledTimes(1)
+  })
+
+  test('renders navigation items: Model Info, Context, Activity', () => {
+    render(<ContextPanel />)
+
+    expect(
+      screen.getByRole('button', { name: /model info/i })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /context/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /activity/i })
+    ).toBeInTheDocument()
+  })
+
+  test('Model Info navigation item is active by default', () => {
+    render(<ContextPanel />)
+    const modelInfoButton = screen.getByRole('button', { name: /model info/i })
+
+    expect(modelInfoButton).toHaveClass('bg-primary/10')
+  })
+
+  test('renders Live Insights card', () => {
+    render(<ContextPanel />)
+
+    expect(
+      screen.getByRole('heading', { name: /live insights/i })
+    ).toBeInTheDocument()
+  })
+
+  test('renders APPLY FIX button in Live Insights card', () => {
+    render(<ContextPanel />)
+
+    const applyFixButton = screen.getByRole('button', { name: /apply fix/i })
+    expect(applyFixButton).toBeInTheDocument()
+  })
+
+  test('renders Collapse Panel footer button', () => {
+    render(<ContextPanel />)
+
+    const collapseButton = screen.getByRole('button', {
+      name: /collapse panel/i,
+    })
+    expect(collapseButton).toBeInTheDocument()
+  })
+
+  test('calls onToggle when Collapse Panel button is clicked', () => {
+    const handleToggle = vi.fn()
+    render(<ContextPanel onToggle={handleToggle} />)
+
+    const collapseButton = screen.getByRole('button', {
+      name: /collapse panel/i,
+    })
+    collapseButton.click()
+
+    expect(handleToggle).toHaveBeenCalledTimes(1)
   })
 })

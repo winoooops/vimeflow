@@ -334,7 +334,7 @@
       "Update tests",
       "Verify layout matches screenshot"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [22]
   },
   {
