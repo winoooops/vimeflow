@@ -143,7 +143,7 @@ describe('ContextPanel', () => {
     render(<ContextPanel />)
 
     const toggleButton = screen.getByRole('button', {
-      name: /toggle panel/i,
+      name: /dock to right/i,
     })
 
     expect(toggleButton).toBeInTheDocument()
@@ -156,7 +156,7 @@ describe('ContextPanel', () => {
     render(<ContextPanel onToggle={handleToggle} />)
 
     const toggleButton = screen.getByRole('button', {
-      name: /toggle panel/i,
+      name: /dock to right/i,
     })
     toggleButton.click()
 

@@ -35,7 +35,7 @@ describe('EditorView', () => {
   test('renders main content area with correct margins', () => {
     render(<EditorView />)
 
-    const mainContent = screen.getByTestId('main-content')
+    const mainContent = screen.getByTestId('editor-main-content')
     expect(mainContent).toHaveClass('ml-[308px]')
     expect(mainContent).toHaveClass('flex-1')
     expect(mainContent).toHaveClass('flex')
@@ -133,14 +133,14 @@ describe('EditorView', () => {
   test('applies dynamic right margin when ContextPanel is open', () => {
     render(<EditorView />)
 
-    const mainContent = screen.getByTestId('main-content')
+    const mainContent = screen.getByTestId('editor-main-content')
     expect(mainContent).toHaveClass('mr-[280px]')
   })
 
   test('applies transition classes for smooth animations', () => {
     render(<EditorView />)
 
-    const mainContent = screen.getByTestId('main-content')
+    const mainContent = screen.getByTestId('editor-main-content')
     expect(mainContent).toHaveClass('transition-all')
     expect(mainContent).toHaveClass('duration-300')
   })
