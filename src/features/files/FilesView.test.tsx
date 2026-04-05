@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import FilesView from './FilesView'
 
 describe('FilesView', () => {
@@ -194,5 +194,73 @@ describe('FilesView', () => {
     })
     expect(breadcrumbNav).toHaveTextContent('vibm-project')
     expect(breadcrumbNav).toHaveTextContent('README.md')
+  })
+
+  test('calls onFileDiffRequest when clicking a file with git status', async () => {
+    const user = userEvent.setup()
+    const onFileDiffRequest = vi.fn()
+    render(<FilesView onFileDiffRequest={onFileDiffRequest} />)
+
+    // Click on NavBar.tsx (has gitStatus: 'M')
+    const navBarNode = screen.getByText('NavBar.tsx')
+    await user.click(navBarNode)
+
+    // Should call onFileDiffRequest with the full file path
+    expect(onFileDiffRequest).toHaveBeenCalledTimes(1)
+    expect(onFileDiffRequest).toHaveBeenCalledWith('src/components/NavBar.tsx')
+  })
+
+  test('does not call onFileDiffRequest when clicking a file without git status', async () => {
+    const user = userEvent.setup()
+    const onFileDiffRequest = vi.fn()
+    render(<FilesView onFileDiffRequest={onFileDiffRequest} />)
+
+    // Click on FileTree.tsx (no gitStatus)
+    const fileTreeNode = screen.getByText('FileTree.tsx')
+    await user.click(fileTreeNode)
+
+    // Should NOT call onFileDiffRequest
+    expect(onFileDiffRequest).not.toHaveBeenCalled()
+  })
+
+  test('does not call onFileDiffRequest when clicking a folder', async () => {
+    const user = userEvent.setup()
+    const onFileDiffRequest = vi.fn()
+    render(<FilesView onFileDiffRequest={onFileDiffRequest} />)
+
+    // Click on utils folder text in the tree
+    const allUtils = screen.getAllByText('utils')
+    await user.click(allUtils[0])
+
+    // Should NOT call onFileDiffRequest (even if folder had gitStatus)
+    expect(onFileDiffRequest).not.toHaveBeenCalled()
+  })
+
+  test('calls onFileDiffRequest with correct path for nested files', async () => {
+    const user = userEvent.setup()
+    const onFileDiffRequest = vi.fn()
+    render(<FilesView onFileDiffRequest={onFileDiffRequest} />)
+
+    // Click on api-helper.rs (has gitStatus: 'A', nested in src/utils/)
+    const apiHelperNode = screen.getByText('api-helper.rs')
+    await user.click(apiHelperNode)
+
+    // Should call onFileDiffRequest with full path
+    expect(onFileDiffRequest).toHaveBeenCalledTimes(1)
+    expect(onFileDiffRequest).toHaveBeenCalledWith('src/utils/api-helper.rs')
+  })
+
+  test('calls onFileDiffRequest with correct path for root-level files', async () => {
+    const user = userEvent.setup()
+    const onFileDiffRequest = vi.fn()
+    render(<FilesView onFileDiffRequest={onFileDiffRequest} />)
+
+    // Click on tsconfig.json (has gitStatus: 'D', root level)
+    const tsconfigNode = screen.getByText('tsconfig.json')
+    await user.click(tsconfigNode)
+
+    // Should call onFileDiffRequest with file name only (no parent path)
+    expect(onFileDiffRequest).toHaveBeenCalledTimes(1)
+    expect(onFileDiffRequest).toHaveBeenCalledWith('tsconfig.json')
   })
 })
