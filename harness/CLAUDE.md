@@ -184,6 +184,28 @@ The Codex GitHub Action (`.github/workflows/codex-review.yml`) runs `openai/code
 
 `npm run review:fix` or the `/harness-plugin:github-review` skill in Claude Code provides a self-driving fix loop: fetch Codex review → fix findings → push → poll for next review → repeat until clean (max 10 rounds).
 
+### Deferring Findings to Follow-Up Issues
+
+Not every Codex finding should be fixed in the current PR. When a finding is valid but represents a **design trade-off, architectural limitation, or scope expansion** rather than a bug in the current change, defer it:
+
+1. **Create a GitHub issue** (`gh issue create`) with the finding details, impact, and proposed fix options
+2. **Reply to the Codex comment on the PR** acknowledging the finding and linking the issue
+3. **Move on** — don't loop endlessly on findings that require a different approach or separate PR
+
+**When to defer** (vs fix in the current PR):
+
+- The finding requires a different architectural approach (e.g., changing what data the UI displays)
+- Fixing it would significantly expand the PR scope beyond the original feature
+- The same finding keeps recurring across review rounds because the fix conflicts with the current design
+- The finding is about a limitation documented in the design spec
+
+**When NOT to defer** (must fix now):
+
+- CRITICAL security vulnerabilities (command injection, path traversal, etc.)
+- Data loss bugs that affect the happy path
+- Regressions in existing functionality
+- Findings fixable in <10 lines without design changes
+
 ### Project Context
 
 Codex reads `AGENTS.md` at the repo root for project-specific review guidelines during both local and cloud reviews.
