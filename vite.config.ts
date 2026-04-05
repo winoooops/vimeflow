@@ -3,6 +3,7 @@ import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import simpleGit from 'simple-git'
 import { parse as parseDiffText } from 'diff2html'
+import { fileApiPlugin } from './vite-plugin-files'
 import type {
   ChangedFile,
   FileDiff,
@@ -465,5 +466,5 @@ function readBody(
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), gitApiPlugin()],
+  plugins: [react(), gitApiPlugin(), fileApiPlugin()],
 })
