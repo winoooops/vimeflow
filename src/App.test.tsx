@@ -68,4 +68,24 @@ describe('App', () => {
     expect(typeof App).toBe('function')
     expect(App.prototype).toBeUndefined()
   })
+
+  test('switches to DiffView when Diff tab is clicked', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const diffTab = screen.getByRole('button', { name: 'Diff' })
+    await user.click(diffTab)
+
+    expect(screen.getByTestId('diff-view')).toBeInTheDocument()
+    expect(screen.queryByTestId('chat-view')).not.toBeInTheDocument()
+  })
+
+  test('Diff tab becomes active after clicking it', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Diff' }))
+    const diffTab = screen.getByRole('button', { name: 'Diff' })
+    expect(diffTab).toHaveAttribute('aria-current', 'page')
+  })
 })

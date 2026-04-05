@@ -1,4 +1,7 @@
 import { type ReactElement, useState, useEffect, useCallback } from 'react'
+import IconRail from '../../components/layout/IconRail'
+import type { TabName } from '../../components/layout/TopTabBar'
+import { TopTabBar } from '../../components/layout/TopTabBar'
 import { ChangedFilesList } from './components/ChangedFilesList'
 import DiffToolbar from './components/DiffToolbar'
 import { DiffViewer } from './components/DiffViewer'
@@ -13,16 +16,19 @@ import { createGitService } from './services/gitService'
 export interface DiffViewProps {
   selectedDiffFile?: string | null
   onClearSelectedFile?: () => void
+  onTabChange?: (tab: TabName) => void
 }
 
 const defaultProps = {
   selectedDiffFile: null,
   onClearSelectedFile: undefined,
+  onTabChange: undefined,
 }
 
 export const DiffView = ({
   selectedDiffFile = defaultProps.selectedDiffFile,
   onClearSelectedFile = defaultProps.onClearSelectedFile,
+  onTabChange = defaultProps.onTabChange,
 }: DiffViewProps): ReactElement => {
   const gitService = createGitService()
 
@@ -135,77 +141,84 @@ export const DiffView = ({
     onSetFocusTarget: setFocusTarget,
   })
 
-  // Loading state
-  if (filesLoading || diffLoading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-on-surface-variant">Loading...</div>
-      </div>
-    )
-  }
-
   return (
-    <div className="flex h-full flex-col">
-      {/* Toolbar */}
-      <DiffToolbar
-        viewMode={viewMode}
-        onViewModeChange={handleViewModeChange}
-        currentHunkIndex={focusedHunkIndex}
-        totalHunks={diff?.hunks.length ?? 0}
-        onPreviousHunk={handlePrevHunk}
-        onNextHunk={handleNextHunk}
-        onStageHunk={() => void handleStageHunk()}
-        onDiscard={() => void handleDiscardHunk()}
-      />
+    <div
+      className="h-screen overflow-hidden flex bg-background text-on-surface font-body selection:bg-primary-container/30"
+      data-testid="diff-view"
+    >
+      {/* Fixed left sidebar components */}
+      <IconRail />
 
-      {/* Main content area */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar: Changed Files List */}
-        <div className="w-64 border-r border-outline-variant/10 bg-surface-container-low">
-          <ChangedFilesList
-            files={changedFiles}
-            selectedPath={currentFile}
-            onSelectFile={(file) => {
-              const index = changedFiles.findIndex((f) => f.path === file)
+      {/* Custom sidebar for changed files list - replaces standard Sidebar */}
+      <aside className="w-[260px] h-screen fixed left-[48px] top-0 bg-[#1a1a2a] border-r border-[#4a444f]/15 flex flex-col z-40">
+        <ChangedFilesList
+          files={changedFiles}
+          selectedPath={currentFile}
+          onSelectFile={(file) => {
+            const index = changedFiles.findIndex((f) => f.path === file)
 
-              if (index !== -1) {
-                handleSelectFile(index)
-              }
-            }}
+            if (index !== -1) {
+              handleSelectFile(index)
+            }
+          }}
+        />
+      </aside>
+
+      {/* Main content area with margins to account for fixed sidebars */}
+      <main className="ml-[308px] mr-[320px] flex-1 flex flex-col">
+        {/* Top navigation bar */}
+        <TopTabBar activeTab="Diff" onTabChange={onTabChange} />
+
+        {/* Diff content area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Toolbar */}
+          <DiffToolbar
+            viewMode={viewMode}
+            onViewModeChange={handleViewModeChange}
+            currentHunkIndex={focusedHunkIndex}
+            totalHunks={diff?.hunks.length ?? 0}
+            onPreviousHunk={handlePrevHunk}
+            onNextHunk={handleNextHunk}
+            onStageHunk={() => void handleStageHunk()}
+            onDiscard={() => void handleDiscardHunk()}
           />
-        </div>
 
-        {/* Diff viewer */}
-        <div className="flex-1 overflow-auto">
-          {diff ? (
-            <DiffViewer
-              fileDiff={diff}
-              viewMode={viewMode}
-              focusedHunkIndex={focusedHunkIndex}
-              focusedLineIndex={focusedLineIndex}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center">
-              <div className="text-on-surface-variant">No diff available</div>
-            </div>
-          )}
+          {/* Diff viewer */}
+          <div className="flex-1 overflow-auto">
+            {filesLoading || diffLoading ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="text-on-surface-variant">Loading...</div>
+              </div>
+            ) : diff ? (
+              <DiffViewer
+                fileDiff={diff}
+                viewMode={viewMode}
+                focusedHunkIndex={focusedHunkIndex}
+                focusedLineIndex={focusedLineIndex}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <div className="text-on-surface-variant">No diff available</div>
+              </div>
+            )}
+          </div>
         </div>
+      </main>
 
-        {/* Context Panel: Commit Info */}
-        <div className="w-80 border-l border-outline-variant/10 bg-surface-container-low">
-          <CommitInfoPanel
-            commitHash="abc123d"
-            commitMessage="feat: add dark mode toggle to settings"
-            authorName="Claude"
-            timestamp={new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()}
-            contextMemoryPercent={65}
-            tokensProcessedPercent={42}
-            onSubmitReview={() => {
-              // TODO: Implement review submission
-            }}
-          />
-        </div>
-      </div>
+      {/* Fixed right panel with commit info - replaces standard ContextPanel */}
+      <aside className="w-[320px] h-screen fixed right-0 top-0 bg-[#1a1a2a] border-l border-[#4a444f]/15 z-40 overflow-y-auto">
+        <CommitInfoPanel
+          commitHash="abc123d"
+          commitMessage="feat: add dark mode toggle to settings"
+          authorName="Claude"
+          timestamp={new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()}
+          contextMemoryPercent={65}
+          tokensProcessedPercent={42}
+          onSubmitReview={() => {
+            // TODO: Implement review submission
+          }}
+        />
+      </aside>
 
       {/* Floating Legend */}
       <DiffLegend />

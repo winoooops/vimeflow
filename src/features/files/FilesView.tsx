@@ -23,12 +23,17 @@ const PROJECT_ROOT = 'vibm-project'
 
 interface FilesViewProps {
   onTabChange?: (tab: TabName) => void
+  onFileDiffRequest?: (filePath: string) => void
 }
 
 const FilesView = ({
   onTabChange = undefined,
+  onFileDiffRequest = undefined,
 }: FilesViewProps): ReactElement => {
   const [breadcrumbs, setBreadcrumbs] = useState<string[]>(mockBreadcrumbs)
+
+  // TODO: Wire up onFileDiffRequest in Feature 22
+  void onFileDiffRequest
 
   const handleNodeSelect = useCallback((node: FileNode): void => {
     const path = getNodePath(mockFileTree, node.id)
