@@ -258,7 +258,7 @@
       "Add dynamic margin transitions",
       "Write comprehensive tests"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [13, 14, 15, 16, 17]
   },
   {

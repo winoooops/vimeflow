@@ -4,6 +4,7 @@ import type {
   EditorStatusBarState,
   EditorFile,
   EditorState,
+  ContextMenuAction,
 } from '../types'
 
 /**
@@ -187,6 +188,18 @@ export const mockEditorStatusBarState: EditorStatusBarState = {
     column: 23,
   },
 }
+
+/**
+ * Mock context menu actions for file explorer.
+ */
+export const mockContextMenuActions: ContextMenuAction[] = [
+  { label: 'Rename', icon: 'edit' },
+  { label: 'Delete', icon: 'delete', variant: 'danger' },
+  { label: '', icon: '', separator: true },
+  { label: 'Copy Path', icon: 'content_copy' },
+  { label: 'Open in Editor', icon: 'open_in_new' },
+  { label: 'View Diff', icon: 'difference' },
+]
 
 /**
  * Mock editor files with content (legacy compatibility).
