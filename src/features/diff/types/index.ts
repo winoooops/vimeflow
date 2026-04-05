@@ -1,5 +1,8 @@
 import type { GitStatus } from '../../files/types'
 
+// Re-export GitStatus for convenience
+export type { GitStatus }
+
 /** A file with git changes, used in the changed files sidebar */
 export interface ChangedFile {
   path: string // e.g. 'src/components/NavBar.tsx'
