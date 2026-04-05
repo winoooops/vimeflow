@@ -129,21 +129,39 @@ function gitApiPlugin(): Plugin {
               return
             }
 
-            // Try multiple diff strategies:
-            // 1. Unstaged working tree changes (git diff -- file)
-            // 2. Staged changes (git diff --cached -- file)
-            // 3. Branch diff vs main (git diff main -- file)
+            // Always diff against the base branch to show all changes
             let diff = ''
 
             if (staged) {
               diff = await git.diff(['--cached', '--', file])
             } else {
-              // First try working tree changes
-              diff = await git.diff(['--', file])
+              // Diff against main to capture all committed + working tree changes
+              diff = await git.diff(['main', '--', file])
+            }
 
-              // If no working tree changes, try diff against main branch
-              if (!diff) {
-                diff = await git.diff(['main', '--', file])
+            // Handle untracked files — git diff won't show them
+            if (!diff) {
+              const status = await git.status()
+              const fileStatus = status.files.find((f) => f.path === file)
+
+              if (
+                fileStatus &&
+                (fileStatus.index === '?' || fileStatus.working_dir === '?')
+              ) {
+                // Generate diff for untracked file using --no-index
+                const { execSync } = await import('child_process')
+
+                try {
+                  diff = execSync(`git diff --no-index -- /dev/null ${file}`, {
+                    cwd: process.cwd(),
+                    encoding: 'utf-8',
+                  })
+                } catch (err: unknown) {
+                  // git diff --no-index exits with 1 when files differ (expected)
+                  if (err && typeof err === 'object' && 'stdout' in err) {
+                    diff = (err as { stdout: string }).stdout
+                  }
+                }
               }
             }
 
