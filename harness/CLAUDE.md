@@ -224,6 +224,20 @@ async def my_hook(input_data, tool_use_id=None, context=None):
     command = tool_input.get("command", "")
 ```
 
+## Plugin Installation
+
+The harness skills are distributed as a Claude Code plugin. If `/harness:loop`, `/harness:review`, and `/harness:github-review` are not available, install the plugin:
+
+```bash
+# 1. Add the project's local marketplace (one-time)
+/plugin marketplace add .
+
+# 2. Install the harness plugin
+/plugin install harness-plugin@harness
+```
+
+The marketplace definition is at `.claude-plugin/marketplace.json` (project root) and the plugin source is at `plugins/harness/`.
+
 ## Troubleshooting
 
 | Symptom                                        | Cause                                                                               | Fix                                                                                                                                     |

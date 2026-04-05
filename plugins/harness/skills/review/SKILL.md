@@ -1,5 +1,5 @@
 ---
-name: harness:review
+name: review
 description: Run local Codex code review via npm run review, parse findings from .codex-reviews/latest.md, and fix issues. Single pass — no polling loop.
 tools: Read, Write, Edit, Bash, Grep, Glob
 ---

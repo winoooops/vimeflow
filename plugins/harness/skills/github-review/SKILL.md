@@ -1,5 +1,5 @@
 ---
-name: harness:github-review
+name: github-review
 description: Fetch Codex review findings from the current PR and fix them. Polls gh for the latest Codex comment, parses findings, fixes each issue, runs tests, commits, and pushes. Automatically loops — polls for the next review after each push.
 tools: Read, Write, Edit, Bash, Grep, Glob
 ---

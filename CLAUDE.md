@@ -26,7 +26,7 @@ npm run format          # Prettier write
 npm run type-check      # tsc -b
 npm run review          # Local Codex code review (saves to .codex-reviews/)
 npm run review:fix      # Interactive review-fix loop (fetch → fix → push → poll)
-# Skills: /harness:review (local), /harness:github-review (cloud PR), /harness:loop (agent loop)
+# Plugin skills: /harness:review (local), /harness:github-review (cloud PR), /harness:loop (agent loop)
 ```
 
 Node >= 24 (see `.nvmrc`). ESM-only (`"type": "module"`).
@@ -82,7 +82,22 @@ This file covers what you need to start working. For deeper topics, read the lin
 | AI agent specs (planner, tdd-guide, code-reviewer, etc.) | `agents/CLAUDE.md`                                                |
 | Development standards (coding style, testing, security)  | `rules/CLAUDE.md`                                                 |
 | Autonomous development loop (harness + Codex review)     | `harness/CLAUDE.md`                                               |
+| Harness plugin (skills for agent loop, review, PR fix)   | `plugins/harness/` — see [Plugin Setup](#harness-plugin-setup)    |
 | Architecture specs, exploration notes                    | `docs/CLAUDE.md`                                                  |
 | Codex code review (project context for Codex)            | `AGENTS.md`                                                       |
 | Codex review design spec                                 | `docs/superpowers/specs/2026-04-02-codex-code-review-design.md`   |
 | Codex feedback loop design spec                          | `docs/superpowers/specs/2026-04-03-codex-feedback-loop-design.md` |
+
+## Harness Plugin Setup
+
+The harness skills (`/harness:loop`, `/harness:review`, `/harness:github-review`) are distributed as a local plugin marketplace. If they are not available in your session, install them:
+
+```bash
+# 1. Add the project's local marketplace (one-time)
+/plugin marketplace add .
+
+# 2. Install the harness plugin
+/plugin install harness-plugin@harness
+```
+
+The marketplace definition lives at `.claude-plugin/marketplace.json` and the plugin source is at `plugins/harness/`. After installation, the skills are cached at `~/.claude/plugins/cache/harness/` and persist across sessions.
