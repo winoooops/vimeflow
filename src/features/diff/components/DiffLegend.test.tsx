@@ -15,10 +15,10 @@ describe('DiffLegend', () => {
     expect(screen.getByText('REMOVED')).toBeInTheDocument()
   })
 
-  test('renders right-click instruction text', () => {
+  test('renders keyboard hint text', () => {
     render(<DiffLegend />)
 
-    expect(screen.getByText('Right-click line to stage')).toBeInTheDocument()
+    expect(screen.getByText('Space to stage hunk')).toBeInTheDocument()
   })
 
   test('has fixed positioning at bottom center', () => {

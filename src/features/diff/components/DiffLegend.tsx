@@ -39,13 +39,13 @@ const DiffLegend = (): ReactElement => (
       className="h-4 w-px bg-outline-variant/30"
     />
 
-    {/* Interaction hint */}
+    {/* Keyboard hint */}
     <div className="flex items-center gap-2">
       <span className="material-symbols-outlined text-[1rem] text-on-surface-variant">
-        mouse
+        keyboard
       </span>
       <span className="text-[0.7rem] font-bold uppercase tracking-wider text-on-surface-variant">
-        Right-click line to stage
+        Space to stage hunk
       </span>
     </div>
   </div>

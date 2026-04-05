@@ -176,9 +176,26 @@ function gitApiPlugin(): Plugin {
             }
 
             if (hunkIndex !== undefined) {
-              // Stage specific hunk using git add --patch
-              // This is complex, for MVP we'll stage the entire file
-              await git.add(file)
+              // Stage a specific hunk by extracting the patch and applying it
+              const fullDiff = await git.diff(['--', file])
+
+              if (fullDiff) {
+                const hunks = fullDiff.split(/(?=^@@\s)/m)
+                const header = hunks.shift() ?? '' // diff header lines
+
+                if (hunkIndex < hunks.length) {
+                  const patch = header + hunks[hunkIndex]
+                  const { execSync } = await import('child_process')
+                  execSync('git apply --cached -', {
+                    input: patch,
+                    cwd: process.cwd(),
+                  })
+                } else {
+                  await git.add(file)
+                }
+              } else {
+                await git.add(file)
+              }
             } else {
               await git.add(file)
             }
@@ -221,7 +238,24 @@ function gitApiPlugin(): Plugin {
               return
             }
 
-            await git.checkout(['--', file])
+            // Check if file is untracked or newly added
+            const status = await git.status()
+            const fileStatus = status.files.find((f) => f.path === file)
+
+            if (
+              fileStatus &&
+              (fileStatus.index === '?' || fileStatus.working_dir === '?')
+            ) {
+              // Untracked file — remove from disk
+              await git.clean('f', ['--', file])
+            } else if (fileStatus && fileStatus.index === 'A') {
+              // Staged new file — unstage then remove
+              await git.reset(['HEAD', '--', file])
+              await git.clean('f', ['--', file])
+            } else {
+              // Tracked file — restore from HEAD
+              await git.checkout(['--', file])
+            }
 
             res.writeHead(200, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ ok: true }))
