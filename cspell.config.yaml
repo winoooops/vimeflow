@@ -34,10 +34,10 @@ words:
   - tanstack
   - conv
   - framer
+  - contenteditable
 
   # Design / UI
   - glassmorphism
-  - contenteditable
 
   # Tools
   - cspell

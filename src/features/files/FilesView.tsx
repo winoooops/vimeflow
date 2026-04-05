@@ -23,19 +23,31 @@ const PROJECT_ROOT = 'vibm-project'
 
 interface FilesViewProps {
   onTabChange?: (tab: TabName) => void
+  onFileDiffRequest?: (filePath: string) => void
 }
 
 const FilesView = ({
   onTabChange = undefined,
+  onFileDiffRequest = undefined,
 }: FilesViewProps): ReactElement => {
   const [breadcrumbs, setBreadcrumbs] = useState<string[]>(mockBreadcrumbs)
 
-  const handleNodeSelect = useCallback((node: FileNode): void => {
-    const path = getNodePath(mockFileTree, node.id)
-    if (path.length > 0) {
-      setBreadcrumbs([PROJECT_ROOT, ...path])
-    }
-  }, [])
+  const handleNodeSelect = useCallback(
+    (node: FileNode): void => {
+      const path = getNodePath(mockFileTree, node.id)
+
+      if (path.length > 0) {
+        setBreadcrumbs([PROJECT_ROOT, ...path])
+      }
+
+      // Feature 22: Trigger diff navigation for files with git status
+      if (node.type === 'file' && node.gitStatus && onFileDiffRequest) {
+        const filePath = path.join('/')
+        onFileDiffRequest(filePath)
+      }
+    },
+    [onFileDiffRequest]
+  )
 
   return (
     <div
