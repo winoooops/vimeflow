@@ -1,3 +1,4 @@
+import path from 'path'
 import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import simpleGit from 'simple-git'
@@ -10,6 +11,27 @@ import type {
 } from './src/features/diff/types'
 
 const git = simpleGit()
+const repoRoot = process.cwd()
+
+/**
+ * Validate that a file path is repo-relative and doesn't escape the repo.
+ * Rejects absolute paths, path traversal, and symlinks outside the repo.
+ */
+function validateRepoPath(filePath: string): string | null {
+  if (path.isAbsolute(filePath)) {
+    return null
+  }
+
+  const resolved = path.resolve(repoRoot, filePath)
+  const relative = path.relative(repoRoot, resolved)
+
+  // Reject paths that escape the repo (start with '..')
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    return null
+  }
+
+  return relative
+}
 
 /**
  * Vite plugin providing git operations via HTTP API during development
@@ -129,34 +151,42 @@ function gitApiPlugin(): Plugin {
               return
             }
 
+            // Validate path is repo-relative (prevent reading arbitrary files)
+            const safePath = validateRepoPath(file)
+
+            if (!safePath) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Invalid file path' }))
+
+              return
+            }
+
             // Always diff against the base branch to show all changes
             let diff = ''
 
             if (staged) {
-              diff = await git.diff(['--cached', '--', file])
+              diff = await git.diff(['--cached', '--', safePath])
             } else {
               // Diff against main to capture all committed + working tree changes
-              diff = await git.diff(['main', '--', file])
+              diff = await git.diff(['main', '--', safePath])
             }
 
             // Handle untracked files — git diff won't show them
             if (!diff) {
               const status = await git.status()
-              const fileStatus = status.files.find((f) => f.path === file)
+              const fileStatus = status.files.find((f) => f.path === safePath)
 
               if (
                 fileStatus &&
                 (fileStatus.index === '?' || fileStatus.working_dir === '?')
               ) {
                 // Generate diff for untracked file using --no-index
-                // Use spawnSync with args array to prevent command injection
                 const { spawnSync } = await import('child_process')
-                const safeFile = file.replace(/\.\./g, '') // reject path traversal
 
                 const result = spawnSync(
                   'git',
-                  ['diff', '--no-index', '--', '/dev/null', safeFile],
-                  { cwd: process.cwd(), encoding: 'utf-8' }
+                  ['diff', '--no-index', '--', '/dev/null', safePath],
+                  { cwd: repoRoot, encoding: 'utf-8' }
                 )
 
                 // git diff --no-index exits with 1 when files differ (expected)
@@ -196,7 +226,7 @@ function gitApiPlugin(): Plugin {
 
             if (hunkIndex !== undefined) {
               // Stage a specific hunk by extracting the patch and applying it
-              const fullDiff = await git.diff(['main', '--', file])
+              const fullDiff = await git.diff(['--', file])
 
               if (fullDiff) {
                 const hunks = fullDiff.split(/(?=^@@\s)/m)
@@ -273,7 +303,7 @@ function gitApiPlugin(): Plugin {
               await git.clean('f', ['--', file])
             } else if (hunkIndex !== undefined) {
               // Discard a specific hunk via reverse patch
-              const fullDiff = await git.diff(['main', '--', file])
+              const fullDiff = await git.diff(['--', file])
 
               if (fullDiff) {
                 const hunks = fullDiff.split(/(?=^@@\s)/m)
