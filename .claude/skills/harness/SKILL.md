@@ -20,15 +20,15 @@ The harness namespace provides three commands for the VIBM development cycle:
 - **Want a local review before PR?** → `/harness:review`
 - **PR has Codex review comments?** → `/harness:github-review`
 
-## Sub-Skill Files
+## Plugin
 
-Each command's full instructions live in a dedicated file in this directory:
+Sub-skills are provided by the `harness` plugin at `.claude/plugins/harness/`. Load with:
 
-- `loop.md` — Gathers requirements, brainstorms spec, generates `app_spec.md`, launches the agent loop
-- `review.md` — Runs `npm run review` locally, parses findings, fixes issues
-- `github-review.md` — Fetches cloud Codex review from PR, fixes findings, pushes, polls for next review
+```bash
+claude --plugin-dir .claude/plugins/harness
+```
 
-When the user invokes a sub-command (e.g., `/harness:loop`), read the corresponding file and follow its instructions.
+Or register in `~/.claude/plugins/installed_plugins.json` for persistent access.
 
 ## Worktree Requirement
 
