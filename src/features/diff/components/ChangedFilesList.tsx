@@ -63,14 +63,15 @@ export const ChangedFilesList = ({
   const sortedFiles = sortFilesByStatus(files)
 
   return (
-    <div className="flex h-full flex-col gap-3 p-4">
-      {/* Header */}
-      <h2 className="font-label text-[0.7rem] font-bold uppercase tracking-wider text-primary-container">
-        CHANGED FILES
+    <div className="flex h-full flex-col p-4">
+      {/* Header — stays fixed */}
+      <h2 className="mb-3 shrink-0 font-label text-[0.7rem] font-bold uppercase tracking-wider text-primary-container">
+        Changed Files
+        <span className="ml-2 text-on-surface-variant">{files.length}</span>
       </h2>
 
-      {/* File List */}
-      <div className="flex flex-col gap-1">
+      {/* File List — scrollable with thin scrollbar */}
+      <div className="thin-scrollbar flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
         {sortedFiles.map((file) => {
           const isActive = file.path === selectedPath
           const fileName = file.path.split('/').pop() ?? file.path

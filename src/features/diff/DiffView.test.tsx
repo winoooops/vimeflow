@@ -43,7 +43,7 @@ describe('DiffView', () => {
 
     // Wait for changed files to load
     await waitFor(() => {
-      expect(screen.getByText('CHANGED FILES')).toBeInTheDocument()
+      expect(screen.getByText(/Changed Files/i)).toBeInTheDocument()
     })
 
     // Check for DiffToolbar
@@ -219,7 +219,7 @@ describe('DiffView', () => {
 
     // This is a smoke test - keyboard handler is tested in useDiffKeyboard.test.ts
     // Just verify no errors occur
-    expect(screen.getByText('CHANGED FILES')).toBeInTheDocument()
+    expect(screen.getByText(/Changed Files/i)).toBeInTheDocument()
   })
 
   test('displays CommitInfoPanel in ContextPanel', async () => {
@@ -258,7 +258,7 @@ describe('DiffView', () => {
 
     // Wait for load
     await waitFor(() => {
-      expect(screen.getByText('CHANGED FILES')).toBeInTheDocument()
+      expect(screen.getByText(/Changed Files/i)).toBeInTheDocument()
     })
 
     // No files should be listed

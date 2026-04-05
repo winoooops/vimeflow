@@ -63,7 +63,7 @@ const SplitDiffView = ({
         <div
           ref={leftPaneRef}
           data-testid="before-pane"
-          className="overflow-y-auto flex-1 font-code text-xs"
+          className="thin-scrollbar overflow-y-auto flex-1 font-code text-xs"
         >
           {diff.hunks.map((hunk, hunkIndex) => {
             let lineIndex = 0
@@ -116,7 +116,7 @@ const SplitDiffView = ({
         <div
           ref={rightPaneRef}
           data-testid="after-pane"
-          className="overflow-y-auto flex-1 font-code text-xs"
+          className="thin-scrollbar overflow-y-auto flex-1 font-code text-xs"
         >
           {diff.hunks.map((hunk, hunkIndex) => {
             let lineIndex = 0

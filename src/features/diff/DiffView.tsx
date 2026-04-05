@@ -54,24 +54,21 @@ export const DiffView = ({
   // Fetch diff for current file
   const { diff, loading: diffLoading } = useFileDiff(currentFile, false)
 
-  // Clear selectedDiffFile prop after initial render
+  // Sync selectedFileIndex when changedFiles loads, then clear the prop
   useEffect(() => {
-    if (selectedDiffFile && onClearSelectedFile) {
-      onClearSelectedFile()
+    if (!selectedDiffFile || changedFiles.length === 0) {
+      return
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
-  // Update selectedFileIndex when selectedDiffFile prop changes
-  useEffect(() => {
-    if (selectedDiffFile) {
-      const index = changedFiles.findIndex((f) => f.path === selectedDiffFile)
+    const index = changedFiles.findIndex((f) => f.path === selectedDiffFile)
 
-      if (index !== -1) {
-        setSelectedFileIndex(index)
-      }
+    if (index !== -1) {
+      setSelectedFileIndex(index)
     }
-  }, [selectedDiffFile, changedFiles])
+
+    // Clear prop only after index is synced so selection is preserved
+    onClearSelectedFile?.()
+  }, [selectedDiffFile, changedFiles, onClearSelectedFile])
 
   // Handlers
   const handleSelectFile = useCallback((index: number): void => {
@@ -184,7 +181,7 @@ export const DiffView = ({
           />
 
           {/* Diff viewer */}
-          <div className="flex-1 overflow-auto">
+          <div className="thin-scrollbar flex-1 overflow-auto">
             {filesLoading || diffLoading ? (
               <div className="flex h-full items-center justify-center">
                 <div className="text-on-surface-variant">Loading...</div>
@@ -206,7 +203,7 @@ export const DiffView = ({
       </main>
 
       {/* Fixed right panel with commit info - replaces standard ContextPanel */}
-      <aside className="w-[320px] h-screen fixed right-0 top-0 bg-[#1a1a2a] border-l border-[#4a444f]/15 z-40 overflow-y-auto">
+      <aside className="thin-scrollbar w-[320px] h-screen fixed right-0 top-0 bg-[#1a1a2a] border-l border-[#4a444f]/15 z-40 overflow-y-auto">
         <CommitInfoPanel
           commitHash="abc123d"
           commitMessage="feat: add dark mode toggle to settings"

@@ -19,7 +19,7 @@ const UnifiedDiffView = ({
   <div className="flex flex-col h-full overflow-hidden">
     <div
       data-testid="unified-pane"
-      className="overflow-y-auto flex-1 font-code text-xs"
+      className="thin-scrollbar overflow-y-auto flex-1 font-code text-xs"
     >
       {diff.hunks.map((hunk, hunkIndex) => {
         let lineIndex = 0

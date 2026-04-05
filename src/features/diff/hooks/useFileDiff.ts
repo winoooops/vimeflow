@@ -30,6 +30,8 @@ export const useFileDiff = (
       return
     }
 
+    let cancelled = false
+
     const fetchDiff = async (): Promise<void> => {
       try {
         setLoading(true)
@@ -38,20 +40,30 @@ export const useFileDiff = (
         const service = createGitService()
         const fileDiff = await service.getDiff(filePath, staged)
 
-        setDiff(fileDiff)
+        if (!cancelled) {
+          setDiff(fileDiff)
+        }
       } catch (err) {
-        setError(
-          err instanceof Error
-            ? err
-            : new Error(`Failed to fetch diff for ${filePath}`)
-        )
-        setDiff(null)
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err
+              : new Error(`Failed to fetch diff for ${filePath}`)
+          )
+          setDiff(null)
+        }
       } finally {
-        setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
 
     void fetchDiff()
+
+    return (): void => {
+      cancelled = true
+    }
   }, [filePath, staged])
 
   return {

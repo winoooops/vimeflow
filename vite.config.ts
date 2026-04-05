@@ -1,7 +1,7 @@
 import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import simpleGit from 'simple-git'
-import { Diff2Html } from 'diff2html'
+import { parse as parseDiffText } from 'diff2html'
 import type {
   ChangedFile,
   FileDiff,
@@ -31,50 +31,83 @@ function gitApiPlugin(): Plugin {
 
           // GET /api/git/status
           if (pathname === '/api/git/status' && req.method === 'GET') {
-            const status = await git.status()
+            // Determine base branch to diff against
+            const baseBranch = url.searchParams.get('base') ?? 'main'
             const changedFiles: ChangedFile[] = []
 
-            // Process modified, added, deleted files
-            for (const file of status.files) {
-              let gitStatus: 'M' | 'A' | 'D' | 'U'
-              let staged = false
+            // Get all files changed on this branch vs base (committed changes)
+            const branchDiffSummary = await git.diffSummary([baseBranch])
 
-              // Map git status to our status codes
-              if (file.index === 'D' || file.working_dir === 'D') {
-                gitStatus = 'D'
-                staged = file.index === 'D'
-              } else if (
-                file.index === 'A' ||
-                file.working_dir === 'A' ||
-                file.index === '?'
+            for (const file of branchDiffSummary.files) {
+              // Determine status from diff
+              let gitStatus: 'M' | 'A' | 'D' | 'U'
+
+              if (
+                file.insertions > 0 &&
+                file.deletions === 0 &&
+                file.changes === file.insertions
               ) {
                 gitStatus = 'A'
-                staged = file.index === 'A'
-              } else if (file.index === 'M' || file.working_dir === 'M') {
-                gitStatus = 'M'
-                staged = file.index === 'M'
+              } else if (
+                file.deletions > 0 &&
+                file.insertions === 0 &&
+                file.changes === file.deletions
+              ) {
+                gitStatus = 'D'
               } else {
-                gitStatus = 'U' // Unmerged/conflict
-                staged = false
+                gitStatus = 'M'
               }
 
-              // Get insertion/deletion counts from diff
-              const diffSummary = await git.diffSummary([
-                staged ? '--cached' : 'HEAD',
-                '--',
-                file.path,
-              ])
+              changedFiles.push({
+                path: file.file,
+                status: gitStatus,
+                insertions: file.insertions,
+                deletions: file.deletions,
+                staged: true,
+              })
+            }
 
-              const fileDiff = diffSummary.files.find(
-                (f) => f.file === file.path
-              )
+            // Also include uncommitted working tree changes
+            const status = await git.status()
+
+            for (const file of status.files) {
+              // Skip if already in branch diff (avoid duplicates)
+              const existing = changedFiles.find((f) => f.path === file.path)
+
+              if (existing) {
+                // Mark as unstaged if it has working tree changes
+                if (file.working_dir !== ' ' && file.working_dir !== '?') {
+                  existing.staged = false
+                }
+
+                continue
+              }
+
+              let gitStatus: 'M' | 'A' | 'D' | 'U'
+
+              if (file.index === 'D' || file.working_dir === 'D') {
+                gitStatus = 'D'
+              } else if (
+                file.index === '?' ||
+                file.index === 'A' ||
+                file.working_dir === 'A'
+              ) {
+                gitStatus = 'A'
+              } else if (file.index === 'M' || file.working_dir === 'M') {
+                gitStatus = 'M'
+              } else {
+                gitStatus = 'U'
+              }
+
+              const wdSummary = await git.diffSummary(['--', file.path])
+              const wdFile = wdSummary.files.find((f) => f.file === file.path)
 
               changedFiles.push({
                 path: file.path,
                 status: gitStatus,
-                insertions: fileDiff?.insertions ?? 0,
-                deletions: fileDiff?.deletions ?? 0,
-                staged,
+                insertions: wdFile?.insertions ?? 0,
+                deletions: wdFile?.deletions ?? 0,
+                staged: file.index !== ' ' && file.index !== '?',
               })
             }
 
@@ -96,11 +129,23 @@ function gitApiPlugin(): Plugin {
               return
             }
 
-            // Get unified diff from git
-            const diffArgs = staged
-              ? ['--cached', '--', file]
-              : ['HEAD', '--', file]
-            const diff = await git.diff(diffArgs)
+            // Try multiple diff strategies:
+            // 1. Unstaged working tree changes (git diff -- file)
+            // 2. Staged changes (git diff --cached -- file)
+            // 3. Branch diff vs main (git diff main -- file)
+            let diff = ''
+
+            if (staged) {
+              diff = await git.diff(['--cached', '--', file])
+            } else {
+              // First try working tree changes
+              diff = await git.diff(['--', file])
+
+              // If no working tree changes, try diff against main branch
+              if (!diff) {
+                diff = await git.diff(['main', '--', file])
+              }
+            }
 
             if (!diff) {
               res.writeHead(404, { 'Content-Type': 'application/json' })
@@ -203,7 +248,7 @@ function gitApiPlugin(): Plugin {
  */
 function parseDiff(diffText: string, filePath: string): FileDiff {
   // Use diff2html to parse the diff
-  const parsed = Diff2Html.parse(diffText)
+  const parsed = parseDiffText(diffText)
 
   if (parsed.length === 0) {
     throw new Error('Failed to parse diff')
@@ -241,13 +286,20 @@ function parseDiff(diffText: string, filePath: string): FileDiff {
       })
     }
 
+    // Parse line counts from hunk header: @@ -oldStart,oldCount +newStart,newCount @@
+    const headerMatch = block.header.match(
+      /@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
+    )
+    const oldLineCount = headerMatch ? parseInt(headerMatch[2] ?? '1', 10) : 0
+    const newLineCount = headerMatch ? parseInt(headerMatch[4] ?? '1', 10) : 0
+
     hunks.push({
       id: `hunk-${i}`,
       header: block.header,
       oldStart: block.oldStartLine,
-      oldLines: block.oldStartLine2 - block.oldStartLine,
+      oldLines: oldLineCount,
       newStart: block.newStartLine,
-      newLines: block.newStartLine2 - block.newStartLine,
+      newLines: newLineCount,
       lines,
     })
   }

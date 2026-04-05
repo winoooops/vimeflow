@@ -38,7 +38,7 @@ describe('ChangedFilesList', () => {
       />
     )
 
-    const header = screen.getByText('CHANGED FILES')
+    const header = screen.getByText(/Changed Files/i)
 
     expect(header).toBeInTheDocument()
     expect(header).toHaveClass('text-primary-container')
@@ -209,7 +209,7 @@ describe('ChangedFilesList', () => {
       <ChangedFilesList files={[]} selectedPath={null} onSelectFile={vi.fn()} />
     )
 
-    const header = screen.getByText('CHANGED FILES')
+    const header = screen.getByText(/Changed Files/i)
 
     expect(header).toBeInTheDocument()
 

@@ -35,6 +35,25 @@
   }
 }
 
+@utility thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #333344 transparent;
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: #333344;
+    border-radius: 10px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: #4a444f;
+  }
+}
+
 /* Diff viewer styling */
 .diff-added {
   background-color: rgba(166, 227, 161, 0.15);
