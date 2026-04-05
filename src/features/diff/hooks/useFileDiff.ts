@@ -15,7 +15,8 @@ interface UseFileDiffReturn {
  */
 export const useFileDiff = (
   filePath: string | null,
-  staged = false
+  staged = false,
+  _version = 0
 ): UseFileDiffReturn => {
   const [diff, setDiff] = useState<FileDiff | null>(null)
   const [loading, setLoading] = useState(false)
@@ -64,7 +65,7 @@ export const useFileDiff = (
     return (): void => {
       cancelled = true
     }
-  }, [filePath, staged])
+  }, [filePath, staged, _version])
 
   return {
     diff,

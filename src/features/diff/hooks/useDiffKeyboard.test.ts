@@ -239,22 +239,12 @@ describe('useDiffKeyboard', () => {
   })
 
   describe('Global Behaviors', () => {
-    test('toggles staged filter with Tab key (file list mode)', () => {
+    test('does not trap Tab key (allows native focus navigation)', () => {
       renderHook(() => useDiffKeyboard(mockHandlers))
 
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
 
-      expect(mockHandlers.onToggleStagedFilter).toHaveBeenCalled()
-    })
-
-    test('toggles staged filter with Tab key (diff viewer mode)', () => {
-      mockHandlers.focusTarget = 'diffViewer'
-
-      renderHook(() => useDiffKeyboard(mockHandlers))
-
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
-
-      expect(mockHandlers.onToggleStagedFilter).toHaveBeenCalled()
+      expect(mockHandlers.onToggleStagedFilter).not.toHaveBeenCalled()
     })
 
     test('ignores keyboard events in input elements', () => {

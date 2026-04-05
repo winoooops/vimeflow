@@ -33,7 +33,11 @@ export const DiffView = ({
   const gitService = createGitService()
 
   // Fetch changed files
-  const { files: changedFiles, loading: filesLoading } = useGitStatus()
+  const {
+    files: changedFiles,
+    loading: filesLoading,
+    refresh: refreshStatus,
+  } = useGitStatus()
 
   // State management
   const [selectedFileIndex, setSelectedFileIndex] = useState(0)
@@ -41,6 +45,7 @@ export const DiffView = ({
   const [focusTarget, setFocusTarget] = useState<DiffFocusTarget>('diffViewer')
   const [focusedHunkIndex, setFocusedHunkIndex] = useState(0)
   const [focusedLineIndex, setFocusedLineIndex] = useState(0)
+  const [diffVersion, setDiffVersion] = useState(0)
 
   // Determine which file to show
   let currentFile: string | null = null
@@ -51,8 +56,12 @@ export const DiffView = ({
     currentFile = changedFiles[selectedFileIndex].path
   }
 
-  // Fetch diff for current file
-  const { diff, loading: diffLoading } = useFileDiff(currentFile, false)
+  // Fetch diff for current file (diffVersion triggers re-fetch after mutations)
+  const { diff, loading: diffLoading } = useFileDiff(
+    currentFile,
+    false,
+    diffVersion
+  )
 
   // Sync selectedFileIndex when changedFiles loads, then clear the prop
   useEffect(() => {
@@ -88,7 +97,9 @@ export const DiffView = ({
     }
 
     await gitService.stageFile(currentFile, focusedHunkIndex)
-  }, [currentFile, focusedHunkIndex, gitService])
+    setDiffVersion((v) => v + 1)
+    await refreshStatus()
+  }, [currentFile, focusedHunkIndex, gitService, refreshStatus])
 
   const handleDiscardHunk = useCallback(async (): Promise<void> => {
     if (!currentFile) {
@@ -96,7 +107,9 @@ export const DiffView = ({
     }
 
     await gitService.discardChanges(currentFile, focusedHunkIndex)
-  }, [currentFile, focusedHunkIndex, gitService])
+    setDiffVersion((v) => v + 1)
+    await refreshStatus()
+  }, [currentFile, focusedHunkIndex, gitService, refreshStatus])
 
   const handleToggleStagedFilter = useCallback((): void => {
     // TODO: Implement staged/unstaged filter toggle

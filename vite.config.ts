@@ -229,7 +229,7 @@ function gitApiPlugin(): Plugin {
           // POST /api/git/discard
           if (pathname === '/api/git/discard' && req.method === 'POST') {
             const body = await readBody(req)
-            const { file } = JSON.parse(body)
+            const { file, hunkIndex } = JSON.parse(body)
 
             if (!file) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -252,8 +252,29 @@ function gitApiPlugin(): Plugin {
               // Staged new file — unstage then remove
               await git.reset(['HEAD', '--', file])
               await git.clean('f', ['--', file])
+            } else if (hunkIndex !== undefined) {
+              // Discard a specific hunk via reverse patch
+              const fullDiff = await git.diff(['--', file])
+
+              if (fullDiff) {
+                const hunks = fullDiff.split(/(?=^@@\s)/m)
+                const header = hunks.shift() ?? ''
+
+                if (hunkIndex < hunks.length) {
+                  const patch = header + hunks[hunkIndex]
+                  const { execSync } = await import('child_process')
+                  execSync('git apply -R -', {
+                    input: patch,
+                    cwd: process.cwd(),
+                  })
+                } else {
+                  await git.checkout(['--', file])
+                }
+              } else {
+                await git.checkout(['--', file])
+              }
             } else {
-              // Tracked file — restore from HEAD
+              // Full file discard — restore from HEAD
               await git.checkout(['--', file])
             }
 

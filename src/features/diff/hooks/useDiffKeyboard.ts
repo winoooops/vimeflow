@@ -56,14 +56,6 @@ export const useDiffKeyboard = (options: UseDiffKeyboardOptions): void => {
 
       const key = event.key
 
-      // Tab - toggle staged/unstaged filter (works in both focus modes)
-      if (key === 'Tab') {
-        event.preventDefault()
-        onToggleStagedFilter()
-
-        return
-      }
-
       // File list focus mode
       if (focusTarget === 'fileList') {
         if (key === 'j' || key === 'ArrowDown') {
