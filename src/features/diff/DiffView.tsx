@@ -109,7 +109,9 @@ export const DiffView = ({
   const handleNextHunk = useCallback((): void => {
     const totalHunks = diff?.hunks.length ?? 0
 
-    setFocusedHunkIndex((prev) => Math.min(totalHunks - 1, prev + 1))
+    if (totalHunks > 0) {
+      setFocusedHunkIndex((prev) => Math.min(totalHunks - 1, prev + 1))
+    }
   }, [diff])
 
   const handleViewModeChange = useCallback((mode: DiffViewMode): void => {

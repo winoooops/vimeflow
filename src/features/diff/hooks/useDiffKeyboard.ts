@@ -68,16 +68,22 @@ export const useDiffKeyboard = (options: UseDiffKeyboardOptions): void => {
       if (focusTarget === 'fileList') {
         if (key === 'j' || key === 'ArrowDown') {
           event.preventDefault()
-          const nextIndex = Math.min(selectedFileIndex + 1, filesCount - 1)
-          onSelectFile(nextIndex)
+          if (filesCount > 0) {
+            const nextIndex = Math.min(selectedFileIndex + 1, filesCount - 1)
+            onSelectFile(nextIndex)
+          }
         } else if (key === 'k' || key === 'ArrowUp') {
           event.preventDefault()
-          const prevIndex = Math.max(selectedFileIndex - 1, 0)
-          onSelectFile(prevIndex)
+          if (filesCount > 0) {
+            const prevIndex = Math.max(selectedFileIndex - 1, 0)
+            onSelectFile(prevIndex)
+          }
         } else if (key === 'Enter') {
           event.preventDefault()
-          onOpenFile(selectedFileIndex)
-          onSetFocusTarget('diffViewer')
+          if (filesCount > 0) {
+            onOpenFile(selectedFileIndex)
+            onSetFocusTarget('diffViewer')
+          }
         } else if (key === ' ') {
           event.preventDefault()
           onStage()
@@ -89,21 +95,31 @@ export const useDiffKeyboard = (options: UseDiffKeyboardOptions): void => {
         // Diff viewer focus mode
         if (key === 'j' || key === 'ArrowDown') {
           event.preventDefault()
-
-          const nextLine = Math.min(focusedLineIndex + 1, totalLinesInHunk - 1)
-          onFocusLine(nextLine)
+          if (totalLinesInHunk > 0) {
+            const nextLine = Math.min(
+              focusedLineIndex + 1,
+              totalLinesInHunk - 1
+            )
+            onFocusLine(nextLine)
+          }
         } else if (key === 'k' || key === 'ArrowUp') {
           event.preventDefault()
-          const prevLine = Math.max(focusedLineIndex - 1, 0)
-          onFocusLine(prevLine)
+          if (totalLinesInHunk > 0) {
+            const prevLine = Math.max(focusedLineIndex - 1, 0)
+            onFocusLine(prevLine)
+          }
         } else if (key === 'ArrowLeft') {
           event.preventDefault()
-          const prevHunk = Math.max(focusedHunkIndex - 1, 0)
-          onFocusHunk(prevHunk)
+          if (totalHunks > 0) {
+            const prevHunk = Math.max(focusedHunkIndex - 1, 0)
+            onFocusHunk(prevHunk)
+          }
         } else if (key === 'ArrowRight') {
           event.preventDefault()
-          const nextHunk = Math.min(focusedHunkIndex + 1, totalHunks - 1)
-          onFocusHunk(nextHunk)
+          if (totalHunks > 0) {
+            const nextHunk = Math.min(focusedHunkIndex + 1, totalHunks - 1)
+            onFocusHunk(nextHunk)
+          }
         } else if (key === ' ') {
           event.preventDefault()
           onStage()
