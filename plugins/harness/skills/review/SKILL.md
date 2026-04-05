@@ -4,7 +4,7 @@ description: Run local Codex code review via npm run review, parse findings from
 tools: Read, Write, Edit, Bash, Grep, Glob
 ---
 
-# /harness:review — Local Codex Code Review
+# /harness-plugin:review — Local Codex Code Review
 
 Run a local Codex code review against the current branch's diff from `main`, parse the findings, and fix each issue. This is a single-pass review — no PR required, no polling loop.
 
@@ -12,7 +12,7 @@ Run a local Codex code review against the current branch's diff from `main`, par
 
 - Before creating a PR — get quick feedback locally
 - After writing code — catch issues before pushing
-- As a lighter alternative to `/harness:github-review` when you don't need cloud review
+- As a lighter alternative to `/harness-plugin:github-review` when you don't need cloud review
 
 ## Step 1: Run the Review
 

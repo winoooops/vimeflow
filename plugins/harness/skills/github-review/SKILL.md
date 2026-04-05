@@ -4,7 +4,7 @@ description: Fetch Codex review findings from the current PR and fix them. Polls
 tools: Read, Write, Edit, Bash, Grep, Glob
 ---
 
-# /harness:github-review — Fix Codex PR Review Findings (Self-Driving Loop)
+# /harness-plugin:github-review — Fix Codex PR Review Findings (Self-Driving Loop)
 
 Fetch the latest Codex code review from the current branch's PR, fix every finding, push, then poll for the next review and repeat — until the review comes back clean or the loop hits the max rounds limit.
 
@@ -136,7 +136,7 @@ gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
 ```
 
 - If a new comment appears (different ID): go back to **Step 3**
-- If no new comment after 10 minutes: tell the user the poll timed out, they can re-run `/harness:github-review` later
+- If no new comment after 10 minutes: tell the user the poll timed out, they can re-run `/harness-plugin:github-review` later
 - If max rounds (10) reached: tell the user the loop hit its cap
 
 ## Exit Conditions

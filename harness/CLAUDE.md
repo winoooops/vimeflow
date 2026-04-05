@@ -67,7 +67,7 @@ From the worktree, create a PR and stay on the branch for review-fix cycles:
 
 ```bash
 gh pr create --title "feat: <description>" --body "..." --squash
-# Stay here — run /harness:github-review for code review cycles
+# Stay here — run /harness-plugin:github-review for code review cycles
 # Only the user merges the PR
 ```
 
@@ -182,7 +182,7 @@ The Codex GitHub Action (`.github/workflows/codex-review.yml`) runs `openai/code
 
 ### Interactive Fix Loop
 
-`npm run review:fix` or the `/harness:github-review` skill in Claude Code provides a self-driving fix loop: fetch Codex review → fix findings → push → poll for next review → repeat until clean (max 10 rounds).
+`npm run review:fix` or the `/harness-plugin:github-review` skill in Claude Code provides a self-driving fix loop: fetch Codex review → fix findings → push → poll for next review → repeat until clean (max 10 rounds).
 
 ### Project Context
 
@@ -226,7 +226,7 @@ async def my_hook(input_data, tool_use_id=None, context=None):
 
 ## Plugin Installation
 
-The harness skills are distributed as a Claude Code plugin. If `/harness:loop`, `/harness:review`, and `/harness:github-review` are not available, install the plugin:
+The harness skills are distributed as a Claude Code plugin. If `/harness-plugin:loop`, `/harness-plugin:review`, and `/harness-plugin:github-review` are not available, install the plugin:
 
 ```bash
 # 1. Add the project's local marketplace (one-time)

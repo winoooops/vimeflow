@@ -26,7 +26,7 @@ npm run format          # Prettier write
 npm run type-check      # tsc -b
 npm run review          # Local Codex code review (saves to .codex-reviews/)
 npm run review:fix      # Interactive review-fix loop (fetch → fix → push → poll)
-# Plugin skills: /harness:review (local), /harness:github-review (cloud PR), /harness:loop (agent loop)
+# Plugin skills: /harness-plugin:review (local), /harness-plugin:github-review (cloud PR), /harness-plugin:loop (agent loop)
 ```
 
 Node >= 24 (see `.nvmrc`). ESM-only (`"type": "module"`).
@@ -90,7 +90,7 @@ This file covers what you need to start working. For deeper topics, read the lin
 
 ## Harness Plugin Setup
 
-The harness skills (`/harness:loop`, `/harness:review`, `/harness:github-review`) are distributed as a local plugin marketplace. If they are not available in your session, install them:
+The harness skills (`/harness-plugin:loop`, `/harness-plugin:review`, `/harness-plugin:github-review`) are distributed as a local plugin marketplace. If they are not available in your session, install them:
 
 ```bash
 # 1. Add the project's local marketplace (one-time)

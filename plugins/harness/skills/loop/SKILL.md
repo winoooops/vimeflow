@@ -4,7 +4,7 @@ description: Launch the VIBM autonomous development harness — gathers requirem
 tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion, Skill, Agent
 ---
 
-# /harness:loop — Autonomous Development Harness
+# /harness-plugin:loop — Autonomous Development Harness
 
 Launch the VIBM autonomous development harness. Gathers feature requirements, brainstorms the spec, generates `app_spec.md`, and starts the agent loop.
 
