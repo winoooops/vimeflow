@@ -317,7 +317,7 @@
       "Update tests",
       "Verify toggle animation works"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [20]
   },
   {

@@ -111,4 +111,43 @@ describe('ContextPanel', () => {
 
     expect(aside).toHaveClass('flex', 'flex-col')
   })
+
+  test('renders visible (no translate) when isOpen is true', () => {
+    render(<ContextPanel isOpen />)
+    const aside = screen.getByRole('complementary')
+
+    expect(aside).not.toHaveClass('translate-x-full')
+  })
+
+  test('renders visible (no translate) when isOpen is undefined (default)', () => {
+    render(<ContextPanel />)
+    const aside = screen.getByRole('complementary')
+
+    expect(aside).not.toHaveClass('translate-x-full')
+  })
+
+  test('renders off-screen (translate-x-full) when isOpen is false', () => {
+    // eslint-disable-next-line react/jsx-boolean-value
+    render(<ContextPanel isOpen={false} />)
+    const aside = screen.getByRole('complementary')
+
+    expect(aside).toHaveClass('translate-x-full')
+  })
+
+  test('renders with transition classes for smooth animation', () => {
+    render(<ContextPanel />)
+    const aside = screen.getByRole('complementary')
+
+    expect(aside).toHaveClass('transition-all', 'duration-300')
+  })
+
+  test('accepts onToggle prop without error', () => {
+    const handleToggle = (): void => {
+      // Mock toggle handler
+    }
+
+    expect(() => {
+      render(<ContextPanel onToggle={handleToggle} />)
+    }).not.toThrow()
+  })
 })

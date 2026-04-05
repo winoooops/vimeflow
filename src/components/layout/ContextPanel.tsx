@@ -4,13 +4,18 @@ import {
   mockRecentActions,
 } from '../../features/chat/data/mockMessages'
 
+interface ContextPanelProps {
+  isOpen?: boolean
+  onToggle?: () => void
+}
+
 /**
  * ContextPanel - Right sidebar (280px) showing agent status, model info,
  * recent actions timeline, AI strategy, and system health.
  *
  * Design reference: docs/design/chat_or_main/code.html lines 293-376
  */
-const ContextPanel = (): ReactElement => {
+const ContextPanel = ({ isOpen = true }: ContextPanelProps): ReactElement => {
   const getStatusDotColor = (
     status: 'success' | 'pending' | 'error'
   ): string => {
@@ -30,7 +35,9 @@ const ContextPanel = (): ReactElement => {
     <aside
       role="complementary"
       aria-label="Agent status panel"
-      className="w-[280px] h-screen fixed right-0 top-0 bg-[#1a1a2a] border-l border-[#4a444f]/15 z-40 flex flex-col overflow-hidden"
+      className={`w-[280px] h-screen fixed right-0 top-0 bg-[#1a1a2a] border-l border-[#4a444f]/15 z-40 flex flex-col overflow-hidden transition-all duration-300 ${
+        isOpen ? '' : 'translate-x-full'
+      }`}
       data-testid="context-panel"
     >
       {/* Header */}
