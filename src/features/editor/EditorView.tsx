@@ -11,13 +11,13 @@ import { CodeEditor } from './components/CodeEditor'
 import { EditorStatusBar } from './components/EditorStatusBar'
 import { mockConversations } from '../chat/data/mockMessages'
 import {
-  mockFileTree,
   mockEditorTabs,
   mockEditorStatusBarState,
   mockContextMenuActions,
   mockEditorFiles,
 } from './data/mockEditorData'
 import type { FileNode } from './types'
+import { useFileTree } from './hooks/useFileTree'
 
 interface EditorViewProps {
   onTabChange?: (tab: TabName) => void
@@ -36,6 +36,9 @@ export const EditorView = ({
 }: EditorViewProps): ReactElement => {
   const [isExplorerOpen, setIsExplorerOpen] = useState<boolean>(true)
   const [tabs, setTabs] = useState(mockEditorTabs)
+
+  // Use real file tree from API
+  const { tree: fileTree } = useFileTree()
 
   const handleExplorerToggle = useCallback((): void => {
     setIsExplorerOpen((prev) => !prev)
@@ -120,7 +123,7 @@ export const EditorView = ({
         <div className="flex-1 flex overflow-hidden">
           {/* Left: Explorer Pane */}
           <ExplorerPane
-            fileTree={mockFileTree}
+            fileTree={fileTree}
             contextMenuActions={mockContextMenuActions}
             isOpen={isExplorerOpen}
             onToggle={handleExplorerToggle}

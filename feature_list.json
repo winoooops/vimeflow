@@ -349,7 +349,7 @@
       "Test file selection",
       "Verify loading and error states"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [6, 13]
   },
   {
