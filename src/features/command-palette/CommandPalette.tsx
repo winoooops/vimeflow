@@ -6,7 +6,7 @@ import { CommandResults } from './components/CommandResults'
 import { CommandFooter } from './components/CommandFooter'
 
 export const CommandPalette = (): ReactElement | null => {
-  const { state, setQuery, selectIndex } = useCommandPalette()
+  const { state, close, setQuery, selectIndex } = useCommandPalette()
 
   return (
     <AnimatePresence>
@@ -24,9 +24,7 @@ export const CommandPalette = (): ReactElement | null => {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             className="absolute inset-0 backdrop-blur-sm bg-black/40"
-            onClick={() => {
-              /* Close on backdrop click handled by hook */
-            }}
+            onClick={close}
           />
 
           {/* Panel */}

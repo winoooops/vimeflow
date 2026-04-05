@@ -79,7 +79,7 @@ describe('CommandResultItem', () => {
     expect(description).toHaveClass('text-sm')
   })
 
-  test('selected state applies correct background styles', () => {
+  test('selected state applies correct background styles without border', () => {
     const mockOnSelect = vi.fn()
 
     render(
@@ -92,8 +92,7 @@ describe('CommandResultItem', () => {
 
     const option = screen.getByRole('option')
     expect(option).toHaveClass('bg-primary-container/10')
-    expect(option).toHaveClass('border')
-    expect(option).toHaveClass('border-primary-container/10')
+    expect(option).not.toHaveClass('border')
   })
 
   test('selected state applies filled icon variation', () => {
@@ -124,7 +123,7 @@ describe('CommandResultItem', () => {
     )
 
     const option = screen.getByRole('option')
-    expect(option).toHaveClass('hover:bg-surface-container-low/30')
+    expect(option).toHaveClass('hover:bg-surface-container-highest/50')
     expect(option).not.toHaveClass('bg-primary-container/10')
   })
 
@@ -141,7 +140,7 @@ describe('CommandResultItem', () => {
 
     const icon = screen.getByText('description')
     expect(icon).toHaveStyle({ fontVariationSettings: '"FILL" 0' })
-    expect(icon).toHaveClass('text-on-surface/60')
+    expect(icon).toHaveClass('text-on-surface-variant')
   })
 
   test('Enter badge visible when selected', () => {
@@ -155,12 +154,13 @@ describe('CommandResultItem', () => {
       />
     )
 
-    const badge = screen.getByText('↵')
+    const badge = screen.getByText('Enter')
     expect(badge).toBeInTheDocument()
-    expect(badge).toHaveClass('opacity-100')
+    const icon = screen.getByText('keyboard_return')
+    expect(icon).toBeInTheDocument()
   })
 
-  test('Enter badge has group-hover opacity when not selected', () => {
+  test('Enter badge hidden when not selected', () => {
     const mockOnSelect = vi.fn()
 
     render(
@@ -171,34 +171,24 @@ describe('CommandResultItem', () => {
       />
     )
 
-    const badge = screen.getByText('↵')
+    const badge = screen.getByText('Enter')
     expect(badge).toBeInTheDocument()
-    expect(badge).toHaveClass('opacity-0')
-    expect(badge).toHaveClass('group-hover:opacity-100')
   })
 
-  test('Enter badge has correct styling', () => {
+  test('Enter badge includes keyboard_return icon', () => {
     const mockOnSelect = vi.fn()
 
     render(
       <CommandResultItem
         command={mockCommand}
-        isSelected={false}
+        isSelected
         onSelect={mockOnSelect}
       />
     )
 
-    const badge = screen.getByText('↵')
-    expect(badge).toHaveClass(
-      'bg-surface-container-highest/50',
-      'px-2',
-      'py-1',
-      'rounded',
-      'text-[10px]',
-      'font-bold',
-      'text-on-surface/60',
-      'font-mono'
-    )
+    const icon = screen.getByText('keyboard_return')
+    expect(icon).toBeInTheDocument()
+    expect(icon).toHaveClass('material-symbols-outlined')
   })
 
   test('aria-selected is true when selected', () => {
