@@ -17,8 +17,7 @@ interface ChatViewProps {
 const ChatView = ({
   onTabChange = undefined,
   isContextPanelOpen = true,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onToggleContextPanel: _onToggleContextPanel = undefined,
+  onToggleContextPanel = undefined,
 }: ChatViewProps): ReactElement => (
   <div
     className="h-screen overflow-hidden flex bg-background text-on-surface font-body selection:bg-primary-container/30"
@@ -44,7 +43,7 @@ const ChatView = ({
     </main>
 
     {/* Fixed right panel */}
-    <ContextPanel />
+    <ContextPanel isOpen={isContextPanelOpen} onToggle={onToggleContextPanel} />
   </div>
 )
 

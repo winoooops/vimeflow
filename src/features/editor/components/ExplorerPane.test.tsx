@@ -253,4 +253,138 @@ describe('ExplorerPane', () => {
     const scrollableDiv = container.querySelector('.overflow-y-auto')
     expect(scrollableDiv).toHaveClass('thin-scrollbar')
   })
+
+  test('renders reopen button that is hidden when pane is open', () => {
+    render(
+      <ExplorerPane
+        fileTree={mockFileTree}
+        contextMenuActions={mockContextMenuActions}
+        isOpen
+        onToggle={vi.fn()}
+      />
+    )
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open explorer panel/i,
+    })
+    expect(reopenButton).toBeInTheDocument()
+    expect(reopenButton).toHaveClass('opacity-0')
+    expect(reopenButton).toHaveClass('pointer-events-none')
+  })
+
+  test('reopen button is visible when pane is collapsed', () => {
+    render(
+      <ExplorerPane
+        fileTree={mockFileTree}
+        contextMenuActions={mockContextMenuActions}
+        // eslint-disable-next-line react/jsx-boolean-value
+        isOpen={false}
+        onToggle={vi.fn()}
+      />
+    )
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open explorer panel/i,
+    })
+    expect(reopenButton).toBeInTheDocument()
+    expect(reopenButton).toHaveClass('opacity-100')
+  })
+
+  test('reopen button has correct position styling', () => {
+    render(
+      <ExplorerPane
+        fileTree={mockFileTree}
+        contextMenuActions={mockContextMenuActions}
+        // eslint-disable-next-line react/jsx-boolean-value
+        isOpen={false}
+        onToggle={vi.fn()}
+      />
+    )
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open explorer panel/i,
+    })
+    expect(reopenButton).toHaveClass('fixed')
+    expect(reopenButton).toHaveClass('left-[308px]')
+    expect(reopenButton).toHaveClass('top-14')
+    expect(reopenButton).toHaveClass('z-30')
+  })
+
+  test('reopen button has correct size and border styling', () => {
+    render(
+      <ExplorerPane
+        fileTree={mockFileTree}
+        contextMenuActions={mockContextMenuActions}
+        // eslint-disable-next-line react/jsx-boolean-value
+        isOpen={false}
+        onToggle={vi.fn()}
+      />
+    )
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open explorer panel/i,
+    })
+    expect(reopenButton).toHaveClass('w-6')
+    expect(reopenButton).toHaveClass('h-10')
+    expect(reopenButton).toHaveClass('rounded-r-lg')
+    expect(reopenButton).toHaveClass('border-r')
+    expect(reopenButton).toHaveClass('border-y')
+  })
+
+  test('reopen button has chevron_right icon', () => {
+    render(
+      <ExplorerPane
+        fileTree={mockFileTree}
+        contextMenuActions={mockContextMenuActions}
+        // eslint-disable-next-line react/jsx-boolean-value
+        isOpen={false}
+        onToggle={vi.fn()}
+      />
+    )
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open explorer panel/i,
+    })
+    expect(reopenButton).toHaveTextContent('chevron_right')
+  })
+
+  test('clicking reopen button calls onToggle', async () => {
+    const user = userEvent.setup()
+    const onToggle = vi.fn()
+
+    render(
+      <ExplorerPane
+        fileTree={mockFileTree}
+        contextMenuActions={mockContextMenuActions}
+        // eslint-disable-next-line react/jsx-boolean-value
+        isOpen={false}
+        onToggle={onToggle}
+      />
+    )
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open explorer panel/i,
+    })
+    await user.click(reopenButton)
+
+    expect(onToggle).toHaveBeenCalledTimes(1)
+  })
+
+  test('reopen button has smooth transition animation', () => {
+    render(
+      <ExplorerPane
+        fileTree={mockFileTree}
+        contextMenuActions={mockContextMenuActions}
+        // eslint-disable-next-line react/jsx-boolean-value
+        isOpen={false}
+        onToggle={vi.fn()}
+      />
+    )
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open explorer panel/i,
+    })
+    expect(reopenButton).toHaveClass('transition-all')
+    expect(reopenButton).toHaveClass('duration-300')
+  })
 })
