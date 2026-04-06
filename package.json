@@ -11,6 +11,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "prepare": "husky",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

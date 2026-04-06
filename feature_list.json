@@ -2,14 +2,12 @@
   {
     "id": 1,
     "phase": 1,
-    "category": "critical-fix",
-    "description": "Fix race condition in handleNodeSelect (Issue 1)",
+    "category": "scaffold",
+    "description": "Initialize Tauri project structure with src-tauri/ directory",
     "steps": [
-      "Read EditorView.tsx lines 84-96",
-      "Combine setTabs calls into single atomic update",
-      "Create new tab with isActive: true and deactivate others in one call",
-      "Remove separate handleTabClick call",
-      "Verify clicking file in explorer opens AND activates tab on first click"
+      "Run `npx tauri init` to scaffold src-tauri/",
+      "Verify generation of tauri.conf.json, Cargo.toml, src/main.rs, src/lib.rs",
+      "Ensure Tauri v2 patterns are used (not v1)"
     ],
     "passes": true,
     "dependencies": []
@@ -17,156 +15,126 @@
   {
     "id": 2,
     "phase": 1,
-    "category": "critical-fix",
-    "description": "Fix stale closure over tabs in handleNodeSelect (Issue 2)",
+    "category": "scaffold",
+    "description": "Configure tauri.conf.json for Vite integration",
     "steps": [
-      "Read EditorView.tsx handleNodeSelect implementation",
-      "Add tabsRef = useRef(tabs) and tabsRef.current = tabs",
-      "Replace tabs.find() with tabsRef.current.find()",
-      "Verify rapid clicking creates correct tabs without duplicates",
-      "Ensure no stale state issues during fast interaction"
+      "Set devUrl to http://localhost:5173",
+      "Set frontendDist to ../dist",
+      "Configure app identifier and window settings",
+      "Verify configuration matches existing Vite setup"
     ],
     "passes": true,
     "dependencies": [1]
   },
   {
     "id": 3,
-    "phase": 2,
-    "category": "code-quality",
-    "description": "Replace useState with useRef for cache in useFileContent (Issue 3)",
+    "phase": 1,
+    "category": "scaffold",
+    "description": "Add Tauri npm scripts without breaking existing workflow",
     "steps": [
-      "Read useFileContent.ts line 22",
-      "Replace useState<Map> with useRef<Map>",
-      "Update all cache references to cacheRef.current",
-      "Remove destructured [cache] pattern",
-      "Verify file content caching still works",
-      "Run tests to ensure no regression"
+      "Add 'tauri:dev' script to package.json",
+      "Add 'tauri:build' script to package.json",
+      "Verify existing 'dev' and 'build' scripts remain unchanged",
+      "Test that 'npm run dev' still works as standalone Vite server"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [1, 2]
   },
   {
     "id": 4,
-    "phase": 2,
-    "category": "code-quality",
-    "description": "Remove eslint-disable suppressions in useFileTree (Issue 6)",
+    "phase": 1,
+    "category": "scaffold",
+    "description": "Create environment detection utility for Tauri/browser modes",
     "steps": [
-      "Read useFileTree.ts lines 32, 37, 44",
-      "Restructure async logic to match useFileContent pattern",
-      "Remove all inline eslint-disable-next-line comments",
-      "Verify mounted-ref safety still works",
-      "Run tests to ensure all pass"
+      "Create src/lib/environment.ts",
+      "Implement isTauri() function checking window.__TAURI_INTERNALS__",
+      "Add TypeScript type definitions for Tauri globals",
+      "Write unit tests for environment detection"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [1]
   },
   {
     "id": 5,
-    "phase": 2,
-    "category": "code-quality",
-    "description": "Remove unused onFileDiffRequest prop (Issue 7)",
+    "phase": 1,
+    "category": "ci",
+    "description": "Update CI workflow for Tauri builds",
     "steps": [
-      "Read EditorView.tsx lines 34-35",
-      "Remove onFileDiffRequest from EditorViewProps interface",
-      "Remove from destructured props",
-      "Check for callers passing this prop and remove if found",
-      "Verify no eslint warnings remain"
+      "Add src/** trigger to .github/workflows/tauri-build.yml",
+      "Add Rust caching configuration",
+      "Configure matrix builds for macOS, Windows, Linux",
+      "Ensure all existing CI checks still run"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [1, 2]
   },
   {
     "id": 6,
-    "phase": 3,
-    "category": "missing-feature",
-    "description": "Add line number gutter to CodeEditor (Issue 4)",
+    "phase": 1,
+    "category": "scaffold",
+    "description": "Update .gitignore for Tauri build artifacts",
     "steps": [
-      "Read CodeEditor.tsx current structure",
-      "Import LineNumbers component",
-      "Wrap code in flex container with LineNumbers + code content",
-      "Verify line numbers appear in gutter with correct styling",
-      "Verify current line number highlighted with text-primary/60",
-      "Verify gutter scrolls in sync with code",
-      "Update CodeEditor tests to verify LineNumbers rendering"
+      "Add src-tauri/target/ to .gitignore",
+      "Add src-tauri/gen/ to .gitignore",
+      "Verify no other Tauri artifacts need exclusion"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [1]
   },
   {
     "id": 7,
-    "phase": 4,
-    "category": "design-compliance",
-    "description": "Fix EditorStatusBar styling to match spec (Issue 5)",
+    "phase": 1,
+    "category": "testing",
+    "description": "Verify Tauri dev mode launches native window",
     "steps": [
-      "Read EditorStatusBar.tsx current implementation",
-      "Update Vim mode to display '-- NORMAL --' format",
-      "Add 'account_tree' icon before git branch",
-      "Add 'sync' icon before sync status",
-      "Add hover:bg-[#333344] transition-colors cursor-pointer to all segments",
-      "Add border-r/border-l dividers between segments",
-      "Verify all styling matches design spec exactly",
-      "Update EditorStatusBar tests for new icons and formatting"
+      "Run 'npm run tauri:dev'",
+      "Confirm native window opens",
+      "Verify existing React app renders correctly in window",
+      "Test hot reload functionality"
     ],
-    "passes": true,
-    "dependencies": []
+    "passes": false,
+    "dependencies": [1, 2, 3, 4]
   },
   {
     "id": 8,
-    "phase": 5,
-    "category": "bonus-fix",
-    "description": "Replace Date.now() with crypto.randomUUID() for tab IDs",
+    "phase": 1,
+    "category": "testing",
+    "description": "Verify standalone Vite dev server still works",
     "steps": [
-      "Find tab ID generation in EditorView.tsx line 86",
-      "Replace tab-${Date.now()} with tab-${crypto.randomUUID()}",
-      "Verify no tab ID collisions during rapid clicks"
+      "Run 'npm run dev'",
+      "Confirm browser opens at http://localhost:5173",
+      "Verify all existing features work in browser mode",
+      "Confirm no Tauri-related errors in console"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [3, 4]
   },
   {
     "id": 9,
-    "phase": 5,
-    "category": "bonus-fix",
-    "description": "Add harness/.venv/ to .gitignore",
+    "phase": 1,
+    "category": "testing",
+    "description": "Verify all existing tests pass",
     "steps": [
-      "Read .gitignore file",
-      "Add harness/.venv/ entry if not already present",
-      "Verify git status shows .venv is ignored"
+      "Run 'npm run test'",
+      "Confirm all 73 existing test files pass",
+      "Verify no test failures introduced by Tauri scaffold",
+      "Check test coverage remains at target levels"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [1, 2, 3, 4, 6]
   },
   {
     "id": 10,
-    "phase": 6,
+    "phase": 1,
     "category": "testing",
-    "description": "Update tests for all modified components",
+    "description": "Verify CI builds pass on all platforms",
     "steps": [
-      "Update EditorView tests for race condition fix",
-      "Update CodeEditor tests for line numbers",
-      "Update EditorStatusBar tests for new icons/formatting",
-      "Update useFileContent tests for useRef change",
-      "Update useFileTree tests for eslint fix",
-      "Verify all tests pass with npm run test",
-      "Verify coverage >= 80%"
+      "Push changes to trigger CI",
+      "Confirm macOS build succeeds",
+      "Confirm Windows build succeeds",
+      "Confirm Linux build succeeds"
     ],
-    "passes": true,
-    "dependencies": [1, 2, 3, 4, 5, 6, 7]
-  },
-  {
-    "id": 11,
-    "phase": 6,
-    "category": "verification",
-    "description": "Run all verification checks",
-    "steps": [
-      "Run npm run lint - verify zero errors",
-      "Verify zero eslint-disable comments in hooks",
-      "Run npm run type-check - verify zero errors",
-      "Run npm run format:check - verify passes",
-      "Run npm run test - verify all tests pass",
-      "Run npm run build - verify production build succeeds"
-    ],
-    "passes": true,
-    "dependencies": [10]
+    "passes": false,
+    "dependencies": [1, 2, 3, 4, 5, 6]
   }
 ]
