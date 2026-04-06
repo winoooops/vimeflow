@@ -9,6 +9,9 @@ import { ExplorerPane } from './components/ExplorerPane'
 import { EditorTabs } from './components/EditorTabs'
 import { CodeEditor } from './components/CodeEditor'
 import { EditorStatusBar } from './components/EditorStatusBar'
+import { EmptyState } from './components/EmptyState'
+import { LoadingState } from './components/LoadingState'
+import { ErrorState } from './components/ErrorState'
 import { mockConversations } from '../chat/data/mockMessages'
 import {
   mockEditorTabs,
@@ -105,19 +108,39 @@ export const EditorView = ({
     }
   }, [activeTab?.filePath, loadFile])
 
-  // Determine what content to display
-  const displayContent = (): string => {
-    if (!activeTab) {
-      return '// No file selected'
-    }
-    if (loading) {
-      return '// Loading...'
-    }
-    if (error) {
-      return `// Error loading file: ${error}`
+  // Determine what to render based on state
+  const renderCodeArea = (): ReactElement => {
+    // Empty state: no tabs open
+    if (!activeTab && tabs.length === 0) {
+      return <EmptyState />
     }
 
-    return content ?? '// No file selected'
+    // No active tab but tabs exist
+    if (!activeTab) {
+      return <EmptyState />
+    }
+
+    // Loading state: file is being fetched (only show if no fallback content)
+    if (loading && !activeTab.content) {
+      return <LoadingState />
+    }
+
+    // Error state: file loading failed (only show if no fallback content)
+    if (error && !activeTab.content) {
+      return <ErrorState message={error} />
+    }
+
+    // Normal state: show code editor with content
+    // Priority: API content > tab.content > empty message
+    const displayContent = content ?? activeTab.content ?? '// No file selected'
+
+    return (
+      <CodeEditor
+        content={displayContent}
+        currentLine={mockEditorStatusBarState.cursor.line}
+        fileName={activeTab.fileName}
+      />
+    )
   }
 
   return (
@@ -158,12 +181,8 @@ export const EditorView = ({
               onTabClose={handleTabClose}
             />
 
-            {/* Code Editor */}
-            <CodeEditor
-              content={displayContent()}
-              currentLine={mockEditorStatusBarState.cursor.line}
-              fileName={activeTab?.fileName ?? 'untitled.txt'}
-            />
+            {/* Code Editor or State Components */}
+            {renderCodeArea()}
           </div>
         </div>
       </main>

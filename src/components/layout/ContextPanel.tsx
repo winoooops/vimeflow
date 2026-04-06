@@ -42,13 +42,15 @@ const ContextPanel = ({
       <button
         onClick={onToggle}
         aria-label="Open context panel"
-        className={`fixed right-4 top-1/2 -translate-y-1/2 z-30 p-2 bg-surface-container hover:bg-surface-container-high rounded-lg border border-outline-variant/10 transition-all duration-300 ${
-          isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
+        className={`fixed right-0 top-14 z-30 w-8 h-12 bg-surface-container hover:bg-surface-container-high rounded-l-lg border-l border-y border-outline-variant/10 transition-all duration-300 flex items-center justify-center ${
+          isOpen
+            ? 'opacity-0 pointer-events-none translate-x-full'
+            : 'opacity-100 translate-x-0'
         }`}
         type="button"
       >
         <span className="material-symbols-outlined text-on-surface-variant text-lg">
-          dock_to_left
+          chevron_left
         </span>
       </button>
 

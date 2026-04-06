@@ -302,10 +302,11 @@ describe('TabManagement Integration Tests', () => {
 
     expect(finalTabs.length).toBe(0)
 
-    // Editor should show placeholder or empty message
-    const codeEditor = screen.getByTestId('code-editor')
+    // Editor should show empty state component
+    const emptyState = screen.getByTestId('empty-state')
 
-    expect(codeEditor).toBeInTheDocument()
+    expect(emptyState).toBeInTheDocument()
+    expect(screen.getByText('No file open')).toBeInTheDocument()
   })
 
   test('EditorStatusBar updates with active file information', async () => {

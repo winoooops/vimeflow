@@ -2,214 +2,231 @@
   {
     "id": 1,
     "phase": 1,
-    "category": "analysis",
-    "description": "Read and analyze existing Editor view components",
+    "category": "ui-component",
+    "description": "Create EmptyState component for CodeEditor",
     "steps": [
-      "Read EditorView.tsx to understand component structure and data flow",
-      "Read ExplorerPane.tsx to understand file tree rendering",
-      "Read CodeEditor.tsx to understand code display logic",
-      "Read ContextPanel.tsx to understand panel collapse behavior",
-      "Review design reference files (screen.png, code.html, DESIGN.md)"
+      "Create src/features/editor/components/EmptyState.tsx with icon + text layout",
+      "Use Material Symbol 'code_off' or 'description', text-on-surface-variant/20, size ~64px",
+      "Add heading 'No file open' in text-on-surface-variant/40 text-sm font-medium",
+      "Add hint 'Select a file from the explorer to start editing' in text-on-surface-variant/20 text-xs",
+      "Center layout with flex/grid, match dark atmospheric design system",
+      "Write test file EmptyState.test.tsx with coverage >= 80%"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": []
   },
   {
     "id": 2,
     "phase": 1,
-    "category": "analysis",
-    "description": "Verify file service and hooks infrastructure",
+    "category": "ui-component",
+    "description": "Create LoadingState component for CodeEditor",
     "steps": [
-      "Check services/fileService.ts implementation",
-      "Check hooks/useFileContent.ts if it exists",
-      "Verify vite-plugin-files.ts configuration",
-      "Confirm mock data structure in data/ directory"
+      "Create src/features/editor/components/LoadingState.tsx with subtle animation",
+      "Show centered 'Loading...' text or pulsing animation",
+      "Match dark atmospheric design system",
+      "Write test file LoadingState.test.tsx with coverage >= 80%"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": []
   },
   {
     "id": 3,
-    "phase": 2,
-    "category": "bugfix",
-    "description": "Bug 1: Fix native scrollbars in ExplorerPane and CodeEditor",
+    "phase": 1,
+    "category": "ui-component",
+    "description": "Create ErrorState component for CodeEditor",
     "steps": [
-      "Add thin-scrollbar class to ExplorerPane scrollable container (line 57)",
-      "Add thin-scrollbar class to CodeEditor scrollable container (line 37)",
-      "Audit all other scrollable containers in editor feature",
-      "Verify ContextPanel still uses no-scrollbar correctly",
-      "Test scrolling behavior in all areas"
+      "Create src/features/editor/components/ErrorState.tsx with error icon + message",
+      "Use Material Symbol 'error_outline', same centered layout as EmptyState",
+      "Accept error message as prop",
+      "Match dark atmospheric design system",
+      "Write test file ErrorState.test.tsx with coverage >= 80%"
     ],
-    "passes": true,
-    "dependencies": [1]
+    "passes": false,
+    "dependencies": []
   },
   {
     "id": 4,
     "phase": 2,
-    "category": "bugfix",
-    "description": "Bug 2: Fix CodeEditor showing 'No file selected' when tab is open",
+    "category": "integration",
+    "description": "Refactor EditorView to use state components instead of strings",
     "steps": [
-      "Trace data flow from tab creation (EditorView.tsx line 81-91)",
-      "Check mockEditorFiles structure vs file tree node names",
-      "Implement useFileContent hook integration in EditorView",
-      "Update activeFile lookup to use file service instead of static mock",
-      "Ensure file content loads when tab becomes active",
-      "Test tab switching shows correct content"
+      "Import EmptyState, LoadingState, ErrorState components",
+      "Replace displayContent() string logic with conditional component rendering",
+      "When !activeTab && tabs.length === 0, render EmptyState instead of CodeEditor",
+      "When loading, render LoadingState instead of CodeEditor",
+      "When error, render ErrorState instead of CodeEditor",
+      "Ensure CodeEditor only renders when content is available",
+      "Update EditorView.test.tsx to test new rendering logic"
     ],
-    "passes": true,
-    "dependencies": [1, 2]
+    "passes": false,
+    "dependencies": [1, 2, 3]
   },
   {
     "id": 5,
-    "phase": 2,
-    "category": "bugfix",
-    "description": "Bug 3: Add selected file highlighting and scroll-into-view in Explorer",
+    "phase": 3,
+    "category": "data",
+    "description": "Add content field to mockEditorTabs in mockEditorData.ts",
     "steps": [
-      "Add selectedFileId prop to ExplorerPane component",
-      "Pass selectedFileId from EditorView to ExplorerPane to FileTree",
-      "Add selectedFileId prop to FileTreeNode component",
-      "Apply bg-primary/10 text-on-surface styling when node is selected",
-      "Add useEffect with scrollIntoView in FileTreeNode when selected",
-      "Prevent duplicate tab creation when clicking already-open file",
-      "Test highlight moves with active tab changes"
+      "Add optional 'content?: string' field to EditorTab type in src/features/editor/types/index.ts",
+      "Update mockEditorTabs in mockEditorData.ts to include content from mockEditorFiles",
+      "Map tab-1 (UserCard.tsx) to mockEditorFiles[0].content",
+      "Map tab-2 (useDebounce.ts) to mockEditorFiles[1].content",
+      "Map tab-3 (formatters.ts) to mockEditorFiles[2].content"
     ],
-    "passes": true,
-    "dependencies": [1]
+    "passes": false,
+    "dependencies": []
   },
   {
     "id": 6,
-    "phase": 2,
-    "category": "bugfix",
-    "description": "Bug 4: Add reopen button for collapsed ContextPanel",
+    "phase": 3,
+    "category": "integration",
+    "description": "Update useFileContent hook to support fallback content from tabs",
     "steps": [
-      "Create floating toggle button component outside ContextPanel",
-      "Position button at fixed right edge with proper z-index",
-      "Use dock_to_left or chevron_left Material Symbol icon",
-      "Apply design system styles: bg-surface-container with hover state",
-      "Add smooth fade-in transition when panel collapses",
-      "Add smooth fade-out transition when panel opens",
-      "Add aria-label for accessibility",
-      "Test button appears/disappears correctly on panel state change"
+      "Modify EditorView to pass activeTab.content as fallback to displayContent logic",
+      "When file service fails/returns null, use tab.content if available",
+      "Preserve existing file service loading for explorer-opened files",
+      "Update tests to verify fallback content works for default tabs"
     ],
-    "passes": true,
-    "dependencies": [1]
+    "passes": false,
+    "dependencies": [5]
   },
   {
     "id": 7,
-    "phase": 3,
-    "category": "testing",
-    "description": "Update tests for Bug 1: Scrollbar classes",
+    "phase": 4,
+    "category": "ui-fix",
+    "description": "Reposition ContextPanel reopen button to top-right edge",
     "steps": [
-      "Update ExplorerPane.test.tsx to verify thin-scrollbar class presence",
-      "Update CodeEditor.test.tsx to verify thin-scrollbar class presence",
-      "Add test for ContextPanel no-scrollbar class",
-      "Run specific test files to verify changes"
+      "Update button position from 'right-4 top-1/2 -translate-y-1/2' to 'right-0 top-14'",
+      "Change width to 'w-6' or 'w-8', height to 'h-10' or 'h-12'",
+      "Add 'rounded-l-lg' (flush right edge)",
+      "Update background to 'bg-surface-container hover:bg-surface-container-high'",
+      "Add ghost border: 'border-l border-y border-outline-variant/10'",
+      "Change icon to 'chevron_left' pointing left",
+      "Add slide-in transition when panel closes",
+      "Verify aria-label='Open context panel' exists",
+      "Update ContextPanel.test.tsx to verify new button position and styles"
     ],
-    "passes": true,
-    "dependencies": [3]
+    "passes": false,
+    "dependencies": []
   },
   {
     "id": 8,
-    "phase": 3,
+    "phase": 5,
     "category": "testing",
-    "description": "Update tests for Bug 2: File content display",
+    "description": "Add integration test for empty state rendering",
     "steps": [
-      "Update EditorView.test.tsx to test file content loading",
-      "Update or extend FileContentLoading.integration.test.tsx",
-      "Add test case for 'No file selected' only shown when no tabs open",
-      "Add test case for tab switching shows correct content",
-      "Mock useFileContent hook appropriately"
+      "Create or update EditorView.test.tsx",
+      "Add test: 'renders EmptyState when no tabs are open'",
+      "Verify EmptyState icon and text are visible",
+      "Verify CodeEditor is not rendered",
+      "Verify line numbers/gutter are not shown"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [4]
   },
   {
     "id": 9,
-    "phase": 3,
+    "phase": 5,
     "category": "testing",
-    "description": "Update tests for Bug 3: File selection highlighting",
+    "description": "Add integration test for loading state rendering",
     "steps": [
-      "Update FileTreeNode.test.tsx to test selected state styling",
-      "Mock scrollIntoView and verify it's called when node becomes selected",
-      "Update EditorView.integration.test.tsx to test highlight follows active tab",
-      "Add test for preventing duplicate tab creation",
-      "Verify bg-primary/10 class applied when selected"
+      "Create or update EditorView.test.tsx",
+      "Add test: 'renders LoadingState while file is loading'",
+      "Mock useFileContent to return loading=true",
+      "Verify LoadingState is visible",
+      "Verify CodeEditor is not rendered"
     ],
-    "passes": true,
-    "dependencies": [5]
+    "passes": false,
+    "dependencies": [4]
   },
   {
     "id": 10,
-    "phase": 3,
+    "phase": 5,
     "category": "testing",
-    "description": "Update tests for Bug 4: ContextPanel reopen button",
+    "description": "Add integration test for error state rendering",
     "steps": [
-      "Update ContextPanel.test.tsx to test reopen button visibility",
-      "Add test for button click handler reopens panel",
-      "Update PanelCollapse.integration.test.tsx for button behavior",
-      "Verify aria-label presence for accessibility",
-      "Test button transitions (fade in/out)"
+      "Create or update EditorView.test.tsx",
+      "Add test: 'renders ErrorState when file loading fails'",
+      "Mock useFileContent to return error message",
+      "Verify ErrorState with error message is visible",
+      "Verify CodeEditor is not rendered"
     ],
-    "passes": true,
-    "dependencies": [6]
+    "passes": false,
+    "dependencies": [4]
   },
   {
     "id": 11,
-    "phase": 4,
-    "category": "verification",
-    "description": "Run all linting and type-checking",
+    "phase": 5,
+    "category": "testing",
+    "description": "Add integration test for default tabs showing content",
     "steps": [
-      "Run npm run lint and fix any errors",
-      "Run npm run type-check and fix any TypeScript errors",
-      "Run npm run format:check and fix formatting if needed",
-      "Verify zero errors in all checks"
+      "Create or update EditorView.test.tsx",
+      "Add test: 'default tabs show content on initial load'",
+      "Verify first active tab displays content from tab.content field",
+      "Verify switching between default tabs shows their respective content",
+      "Verify no 'No file selected' message appears for default tabs"
     ],
-    "passes": true,
-    "dependencies": [3, 4, 5, 6, 7, 8, 9, 10]
+    "passes": false,
+    "dependencies": [6]
   },
   {
     "id": 12,
-    "phase": 4,
+    "phase": 6,
     "category": "verification",
-    "description": "Run all tests and verify coverage",
+    "description": "Run all linting and type-checking",
     "steps": [
-      "Run npm run test and ensure all tests pass",
-      "Check test coverage is >= 80%",
-      "Fix any failing tests",
-      "Document any coverage gaps"
+      "Run 'npm run lint' and ensure zero errors",
+      "Run 'npm run type-check' and ensure zero errors",
+      "Run 'npm run format:check' and ensure it passes",
+      "Fix any linting or type errors that appear"
     ],
-    "passes": true,
-    "dependencies": [11]
+    "passes": false,
+    "dependencies": [4, 6, 7]
   },
   {
     "id": 13,
-    "phase": 4,
+    "phase": 6,
     "category": "verification",
-    "description": "Verify production build succeeds",
+    "description": "Verify all tests pass with coverage >= 80%",
     "steps": [
-      "Run npm run build",
-      "Verify build completes without errors",
-      "Check dist/ output is generated correctly"
+      "Run 'npm run test' and ensure all tests pass",
+      "Check coverage report, ensure >= 80% coverage",
+      "Add tests for any uncovered code paths",
+      "Re-run tests to confirm"
     ],
-    "passes": true,
-    "dependencies": [12]
+    "passes": false,
+    "dependencies": [8, 9, 10, 11]
   },
   {
     "id": 14,
-    "phase": 4,
+    "phase": 6,
     "category": "verification",
+    "description": "Verify production build succeeds",
+    "steps": [
+      "Run 'npm run build' and ensure it completes without errors",
+      "Check dist/ output exists and is valid",
+      "Fix any build errors that appear"
+    ],
+    "passes": false,
+    "dependencies": [12, 13]
+  },
+  {
+    "id": 15,
+    "phase": 7,
+    "category": "polish",
     "description": "Visual verification against design reference",
     "steps": [
-      "Start dev server and open Editor view",
-      "Verify scrollbars match design system (thin, dark)",
-      "Verify file content displays when tab is open",
-      "Verify selected file is highlighted in explorer with bg-primary/10",
-      "Verify selected file scrolls into view when off-screen",
-      "Verify ContextPanel reopen button appears when collapsed",
-      "Compare against docs/design/files_and_editor/screen.png",
-      "Document any visual discrepancies"
+      "Start dev server with 'npm run dev'",
+      "Compare empty state against docs/design/files_and_editor/screen.png",
+      "Compare ContextPanel button against design reference",
+      "Verify all 3 bugs are resolved:",
+      "  1. Empty state shows polished icon+text (not code text)",
+      "  2. Default tabs show file content on load",
+      "  3. Reopen button is at top-right edge (not center)",
+      "Test loading and error states visually",
+      "Verify dark atmospheric style matches design system"
     ],
-    "passes": true,
-    "dependencies": [13]
+    "passes": false,
+    "dependencies": [14]
   }
 ]

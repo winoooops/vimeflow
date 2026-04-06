@@ -49,6 +49,7 @@ export interface EditorTab {
   icon: string
   isActive: boolean
   isDirty: boolean
+  content?: string
 }
 
 /**

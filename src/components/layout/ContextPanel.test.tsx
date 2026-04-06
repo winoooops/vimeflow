@@ -261,18 +261,21 @@ describe('ContextPanel', () => {
     const reopenButton = screen.getByRole('button', {
       name: /open context panel/i,
     })
-    expect(reopenButton).toHaveClass('fixed', 'right-4', 'z-30')
+    expect(reopenButton).toHaveClass('fixed', 'right-0', 'top-14', 'z-30')
+    expect(reopenButton).toHaveClass('w-8', 'h-12')
     expect(reopenButton).toHaveClass('bg-surface-container')
+    expect(reopenButton).toHaveClass('rounded-l-lg')
+    expect(reopenButton).toHaveClass('border-l', 'border-y')
   })
 
-  test('reopen button displays dock_to_left icon', () => {
+  test('reopen button displays chevron_left icon', () => {
     // eslint-disable-next-line react/jsx-boolean-value
     render(<ContextPanel isOpen={false} />)
 
     const reopenButton = screen.getByRole('button', {
       name: /open context panel/i,
     })
-    expect(within(reopenButton).getByText('dock_to_left')).toBeInTheDocument()
+    expect(within(reopenButton).getByText('chevron_left')).toBeInTheDocument()
   })
 
   test('calls onToggle when reopen button is clicked', () => {
