@@ -61,8 +61,8 @@ describe('EditorStatusBar', () => {
   test('displays sync status with ahead and behind counts', () => {
     render(<EditorStatusBar state={mockState} isContextPanelOpen />)
 
-    expect(screen.getByText(/↓2/)).toBeInTheDocument()
-    expect(screen.getByText(/↑3/)).toBeInTheDocument()
+    // New format: "2 ↓ 3 ↑"
+    expect(screen.getByText(/2 ↓ 3 ↑/)).toBeInTheDocument()
   })
 
   test('displays file name', () => {
@@ -132,8 +132,7 @@ describe('EditorStatusBar', () => {
     // Left section: vim mode, git branch, sync status
     expect(screen.getByText(/NORMAL/i)).toBeVisible()
     expect(screen.getByText('feat-editor-view')).toBeVisible()
-    expect(screen.getByText(/↓2/)).toBeVisible()
-    expect(screen.getByText(/↑3/)).toBeVisible()
+    expect(screen.getByText(/2 ↓ 3 ↑/)).toBeVisible()
 
     // Right section: filename, encoding, language, cursor
     expect(screen.getByText('App.tsx')).toBeVisible()
@@ -159,13 +158,35 @@ describe('EditorStatusBar', () => {
 
     render(<EditorStatusBar state={stateWithNoSync} isContextPanelOpen />)
 
-    expect(screen.getByText(/↓0/)).toBeInTheDocument()
-    expect(screen.getByText(/↑0/)).toBeInTheDocument()
+    // New format: "0 ↓ 0 ↑"
+    expect(screen.getByText(/0 ↓ 0 ↑/)).toBeInTheDocument()
   })
 
   test('uses semantic role for accessibility', () => {
     render(<EditorStatusBar state={mockState} isContextPanelOpen />)
 
     expect(screen.getByRole('status')).toBeInTheDocument()
+  })
+
+  test('displays git branch icon', () => {
+    render(<EditorStatusBar state={mockState} isContextPanelOpen />)
+
+    const icon = screen.getByText('account_tree')
+    expect(icon).toBeInTheDocument()
+    expect(icon).toHaveClass('material-symbols-outlined')
+  })
+
+  test('displays sync icon', () => {
+    render(<EditorStatusBar state={mockState} isContextPanelOpen />)
+
+    const icon = screen.getByText('sync')
+    expect(icon).toBeInTheDocument()
+    expect(icon).toHaveClass('material-symbols-outlined')
+  })
+
+  test('vim mode displays with dashes format', () => {
+    render(<EditorStatusBar state={mockState} isContextPanelOpen />)
+
+    expect(screen.getByText(/-- NORMAL --/)).toBeInTheDocument()
   })
 })
