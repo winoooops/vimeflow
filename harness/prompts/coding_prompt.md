@@ -94,6 +94,8 @@ Update `claude-progress.txt` with:
 - What to work on next
 - Current status (e.g., "12/50 features passing")
 
+**Do NOT create extra files in the repo root.** No `SESSION_*_SUMMARY.md`, `NEXT_COMMIT.txt`, `BUG_FIX_VERIFICATION.md`, `COMPLETION_SUMMARY.md`, `COVERAGE.md`, `VISUAL_VERIFICATION.md`, or any other scratch/summary files. All progress goes in `claude-progress.txt` only.
+
 ### STEP 9: END CLEANLY
 
 Before context fills up:

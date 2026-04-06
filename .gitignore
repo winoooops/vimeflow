@@ -63,6 +63,14 @@ claude-progress.txt
 harness/prompts/app_spec.md
 harness/.env
 
+# Harness agent artifacts (session summaries, scratch files)
+SESSION_*_SUMMARY.md
+NEXT_COMMIT.txt
+BUG_FIX_VERIFICATION.md
+COMPLETION_SUMMARY.md
+COVERAGE.md
+VISUAL_VERIFICATION.md
+
 # Codex review output (local only)
 .codex-reviews/
 
