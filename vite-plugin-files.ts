@@ -54,6 +54,11 @@ async function validateRealPath(filePath: string): Promise<string | null> {
     return null
   }
 
+  // Reject paths that contain excluded segments (e.g., .git, node_modules, .env)
+  if (containsExcludedSegment(relative)) {
+    return null
+  }
+
   try {
     const fullPath = path.resolve(repoRoot, relative)
     const realPath = await fs.realpath(fullPath)
@@ -65,6 +70,11 @@ async function validateRealPath(filePath: string): Promise<string | null> {
       return null
     }
 
+    // Also check resolved path for excluded segments
+    if (containsExcludedSegment(realRelative)) {
+      return null
+    }
+
     return realRelative
   } catch {
     // Path doesn't exist or can't be resolved
@@ -73,12 +83,22 @@ async function validateRealPath(filePath: string): Promise<string | null> {
 }
 
 /**
- * Check if a path should be excluded from the file tree
+ * Check if a name should be excluded from the file tree
  */
 function shouldExclude(name: string): boolean {
   return EXCLUDED_PATTERNS.some(
     (pattern) => name === pattern || name.startsWith(`${pattern}/`)
   )
+}
+
+/**
+ * Check if any segment of a file path matches an excluded pattern.
+ * Prevents direct access to excluded files/directories via API params.
+ */
+function containsExcludedSegment(filePath: string): boolean {
+  const segments = filePath.split(path.sep)
+
+  return segments.some((segment) => shouldExclude(segment))
 }
 
 /**

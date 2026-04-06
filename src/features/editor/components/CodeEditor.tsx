@@ -21,13 +21,22 @@ export const CodeEditor = ({
   const [highlightedLines, setHighlightedLines] = useState<LineTokens[]>([])
 
   useEffect(() => {
+    let cancelled = false
+
     const highlight = async (): Promise<void> => {
       const language = detectLanguage(fileName)
       const lines = await highlightCode(content, language)
-      setHighlightedLines(lines)
+
+      if (!cancelled) {
+        setHighlightedLines(lines)
+      }
     }
 
     void highlight()
+
+    return (): void => {
+      cancelled = true
+    }
   }, [content, fileName])
 
   const plainLines = content.split('\n')
