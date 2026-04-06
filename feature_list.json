@@ -12,7 +12,7 @@
       "Center layout with flex/grid, match dark atmospheric design system",
       "Write test file EmptyState.test.tsx with coverage >= 80%"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": []
   },
   {
@@ -26,7 +26,7 @@
       "Match dark atmospheric design system",
       "Write test file LoadingState.test.tsx with coverage >= 80%"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": []
   },
   {
@@ -41,7 +41,7 @@
       "Match dark atmospheric design system",
       "Write test file ErrorState.test.tsx with coverage >= 80%"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": []
   },
   {
@@ -58,7 +58,7 @@
       "Ensure CodeEditor only renders when content is available",
       "Update EditorView.test.tsx to test new rendering logic"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [1, 2, 3]
   },
   {
@@ -73,7 +73,7 @@
       "Map tab-2 (useDebounce.ts) to mockEditorFiles[1].content",
       "Map tab-3 (formatters.ts) to mockEditorFiles[2].content"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": []
   },
   {
@@ -87,7 +87,7 @@
       "Preserve existing file service loading for explorer-opened files",
       "Update tests to verify fallback content works for default tabs"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [5]
   },
   {
@@ -106,7 +106,7 @@
       "Verify aria-label='Open context panel' exists",
       "Update ContextPanel.test.tsx to verify new button position and styles"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": []
   },
   {
@@ -121,7 +121,7 @@
       "Verify CodeEditor is not rendered",
       "Verify line numbers/gutter are not shown"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [4]
   },
   {
@@ -136,7 +136,7 @@
       "Verify LoadingState is visible",
       "Verify CodeEditor is not rendered"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [4]
   },
   {
@@ -151,7 +151,7 @@
       "Verify ErrorState with error message is visible",
       "Verify CodeEditor is not rendered"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [4]
   },
   {
@@ -166,7 +166,7 @@
       "Verify switching between default tabs shows their respective content",
       "Verify no 'No file selected' message appears for default tabs"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [6]
   },
   {
@@ -180,7 +180,7 @@
       "Run 'npm run format:check' and ensure it passes",
       "Fix any linting or type errors that appear"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [4, 6, 7]
   },
   {
@@ -194,7 +194,7 @@
       "Add tests for any uncovered code paths",
       "Re-run tests to confirm"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [8, 9, 10, 11]
   },
   {
@@ -207,7 +207,7 @@
       "Check dist/ output exists and is valid",
       "Fix any build errors that appear"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [12, 13]
   },
   {
