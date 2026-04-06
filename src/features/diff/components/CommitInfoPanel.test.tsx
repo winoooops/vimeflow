@@ -161,4 +161,82 @@ describe('CommitInfoPanel', () => {
       screen.getByRole('button', { name: /submit review/i })
     ).toBeInTheDocument()
   })
+
+  test('accepts isOpen prop and applies translate-x-full when closed', () => {
+    const propsWithToggle = {
+      ...mockProps,
+      isOpen: false,
+      onToggle: vi.fn(),
+    }
+    render(<CommitInfoPanel {...propsWithToggle} />)
+
+    const panel = screen.getByRole('complementary', {
+      name: /commit info panel/i,
+    })
+    expect(panel).toHaveClass('translate-x-full')
+  })
+
+  test('does not apply translate-x-full when panel is open', () => {
+    const propsWithToggle = {
+      ...mockProps,
+      isOpen: true,
+      onToggle: vi.fn(),
+    }
+    render(<CommitInfoPanel {...propsWithToggle} />)
+
+    const panel = screen.getByRole('complementary', {
+      name: /commit info panel/i,
+    })
+    expect(panel).not.toHaveClass('translate-x-full')
+  })
+
+  test('renders reopen button that is visible when panel is closed', () => {
+    const propsWithToggle = {
+      ...mockProps,
+      isOpen: false,
+      onToggle: vi.fn(),
+    }
+    render(<CommitInfoPanel {...propsWithToggle} />)
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open commit info panel/i,
+    })
+    expect(reopenButton).toBeInTheDocument()
+    expect(reopenButton).toHaveClass('opacity-100')
+  })
+
+  test('reopen button is hidden when panel is open', () => {
+    const propsWithToggle = {
+      ...mockProps,
+      isOpen: true,
+      onToggle: vi.fn(),
+    }
+    render(<CommitInfoPanel {...propsWithToggle} />)
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open commit info panel/i,
+    })
+    expect(reopenButton).toBeInTheDocument()
+    expect(reopenButton).toHaveClass('opacity-0')
+    expect(reopenButton).toHaveClass('pointer-events-none')
+  })
+
+  test('clicking reopen button calls onToggle', async () => {
+    const user = userEvent.setup()
+    const mockToggle = vi.fn()
+
+    const propsWithToggle = {
+      ...mockProps,
+      isOpen: false,
+      onToggle: mockToggle,
+    }
+    render(<CommitInfoPanel {...propsWithToggle} />)
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open commit info panel/i,
+    })
+    await user.click(reopenButton)
+
+    expect(mockToggle).toHaveBeenCalledOnce()
+  })
 })

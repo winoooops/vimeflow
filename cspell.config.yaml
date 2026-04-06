@@ -38,6 +38,12 @@ words:
 
   # Design / UI
   - glassmorphism
+  - catppuccin
+  - Catppuccin
+
+  # Syntax Highlighting
+  - shiki
+  - Shiki
 
   # Tools
   - cspell

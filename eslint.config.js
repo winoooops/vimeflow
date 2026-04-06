@@ -23,6 +23,7 @@ export default defineConfig([
       'coverage',
       '**/*.d.ts',
       'playwright-report',
+      'vite-plugin-*.ts',
     ],
   },
   {

@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 
-export type TabName = 'Chat' | 'Files' | 'Editor' | 'Diff'
+export type TabName = 'Chat' | 'Editor' | 'Diff'
 
 interface TopTabBarProps {
   activeTab?: TabName
@@ -11,7 +11,7 @@ export const TopTabBar = ({
   activeTab = 'Chat',
   onTabChange = undefined,
 }: TopTabBarProps): ReactElement => {
-  const tabs: TabName[] = ['Chat', 'Files', 'Editor', 'Diff']
+  const tabs: TabName[] = ['Chat', 'Editor', 'Diff']
 
   const getTabClassName = (tab: TabName): string => {
     if (tab === activeTab) {

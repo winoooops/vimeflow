@@ -23,18 +23,24 @@ export interface DiffViewProps {
   selectedDiffFile?: string | null
   onClearSelectedFile?: () => void
   onTabChange?: (tab: TabName) => void
+  isContextPanelOpen?: boolean
+  onToggleContextPanel?: () => void
 }
 
 const defaultProps = {
   selectedDiffFile: null,
   onClearSelectedFile: undefined,
   onTabChange: undefined,
+  isContextPanelOpen: true,
+  onToggleContextPanel: undefined,
 }
 
 export const DiffView = ({
   selectedDiffFile = defaultProps.selectedDiffFile,
   onClearSelectedFile = defaultProps.onClearSelectedFile,
   onTabChange = defaultProps.onTabChange,
+  isContextPanelOpen = defaultProps.isContextPanelOpen,
+  onToggleContextPanel = defaultProps.onToggleContextPanel,
 }: DiffViewProps): ReactElement => {
   const gitService = createGitService()
 
@@ -204,7 +210,9 @@ export const DiffView = ({
       </aside>
 
       {/* Main content area with margins to account for fixed sidebars */}
-      <main className="ml-[308px] mr-[320px] flex-1 flex flex-col">
+      <main
+        className={`ml-[308px] ${isContextPanelOpen ? 'mr-[320px]' : 'mr-0'} flex-1 flex flex-col transition-all duration-300`}
+      >
         {/* Top navigation bar */}
         <TopTabBar activeTab="Diff" onTabChange={onTabChange} />
 
@@ -245,19 +253,19 @@ export const DiffView = ({
       </main>
 
       {/* Fixed right panel with commit info - replaces standard ContextPanel */}
-      <aside className="thin-scrollbar w-[320px] h-screen fixed right-0 top-0 bg-[#1a1a2a] border-l border-[#4a444f]/15 z-40 overflow-y-auto">
-        <CommitInfoPanel
-          commitHash="abc123d"
-          commitMessage="feat: add dark mode toggle to settings"
-          authorName="Claude"
-          timestamp={new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()}
-          contextMemoryPercent={65}
-          tokensProcessedPercent={42}
-          onSubmitReview={() => {
-            // TODO: Implement review submission
-          }}
-        />
-      </aside>
+      <CommitInfoPanel
+        commitHash="abc123d"
+        commitMessage="feat: add dark mode toggle to settings"
+        authorName="Claude"
+        timestamp={new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()}
+        contextMemoryPercent={65}
+        tokensProcessedPercent={42}
+        onSubmitReview={() => {
+          // TODO: Implement review submission
+        }}
+        isOpen={isContextPanelOpen}
+        onToggle={onToggleContextPanel}
+      />
 
       {/* Floating Legend */}
       <DiffLegend />

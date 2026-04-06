@@ -1,0 +1,437 @@
+import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, test, expect, vi } from 'vitest'
+import { FileTreeNode } from './FileTreeNode'
+import type { FileNode } from '../types'
+
+describe('FileTreeNode', () => {
+  const mockOnContextMenu = vi.fn()
+
+  test('renders file node', () => {
+    const fileNode: FileNode = {
+      id: '1',
+      name: 'test.ts',
+      type: 'file',
+    }
+
+    render(<FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />)
+
+    expect(screen.getByText('test.ts')).toBeInTheDocument()
+  })
+
+  test('renders folder node', () => {
+    const folderNode: FileNode = {
+      id: '1',
+      name: 'src',
+      type: 'folder',
+    }
+
+    render(<FileTreeNode node={folderNode} onContextMenu={mockOnContextMenu} />)
+
+    expect(screen.getByText('src')).toBeInTheDocument()
+  })
+
+  test('folder shows chevron icon', () => {
+    const folderNode: FileNode = {
+      id: '1',
+      name: 'src',
+      type: 'folder',
+    }
+
+    const { container } = render(
+      <FileTreeNode node={folderNode} onContextMenu={mockOnContextMenu} />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const chevron = container.querySelector('.material-symbols-outlined')
+    expect(chevron).toHaveTextContent('chevron_right')
+  })
+
+  test('file does not show chevron icon', () => {
+    const fileNode: FileNode = {
+      id: '1',
+      name: 'test.ts',
+      type: 'file',
+    }
+
+    const { container } = render(
+      <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const icons = container.querySelectorAll('.material-symbols-outlined')
+
+    const chevron = Array.from(icons).find((icon) =>
+      icon.textContent?.includes('chevron_right')
+    )
+    expect(chevron).toBeUndefined()
+  })
+
+  test('folder expands and collapses on click', () => {
+    const folderNode: FileNode = {
+      id: '1',
+      name: 'src',
+      type: 'folder',
+      children: [
+        {
+          id: '2',
+          name: 'test.ts',
+          type: 'file',
+        },
+      ],
+    }
+
+    render(<FileTreeNode node={folderNode} onContextMenu={mockOnContextMenu} />)
+
+    // Initially collapsed
+    expect(screen.queryByText('test.ts')).not.toBeInTheDocument()
+
+    // Click to expand
+    fireEvent.click(screen.getByText('src'))
+    expect(screen.getByText('test.ts')).toBeInTheDocument()
+
+    // Click to collapse
+    fireEvent.click(screen.getByText('src'))
+    expect(screen.queryByText('test.ts')).not.toBeInTheDocument()
+  })
+
+  test('folder respects defaultExpanded prop', () => {
+    const folderNode: FileNode = {
+      id: '1',
+      name: 'src',
+      type: 'folder',
+      defaultExpanded: true,
+      children: [
+        {
+          id: '2',
+          name: 'test.ts',
+          type: 'file',
+        },
+      ],
+    }
+
+    render(<FileTreeNode node={folderNode} onContextMenu={mockOnContextMenu} />)
+
+    // Should be expanded by default
+    expect(screen.getByText('test.ts')).toBeInTheDocument()
+  })
+
+  test('displays git status badge for modified file', () => {
+    const fileNode: FileNode = {
+      id: '1',
+      name: 'test.ts',
+      type: 'file',
+      gitStatus: 'M',
+    }
+
+    render(<FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />)
+
+    expect(screen.getByLabelText(/git status: m/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/git status: m/i)).toHaveTextContent('M')
+  })
+
+  test('displays git status badge for added file', () => {
+    const fileNode: FileNode = {
+      id: '1',
+      name: 'test.ts',
+      type: 'file',
+      gitStatus: 'A',
+    }
+
+    render(<FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />)
+
+    expect(screen.getByLabelText(/git status: a/i)).toHaveTextContent('A')
+  })
+
+  test('displays git status badge for deleted file', () => {
+    const fileNode: FileNode = {
+      id: '1',
+      name: 'test.ts',
+      type: 'file',
+      gitStatus: 'D',
+    }
+
+    render(<FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />)
+
+    expect(screen.getByLabelText(/git status: d/i)).toHaveTextContent('D')
+  })
+
+  test('calls onContextMenu when right-clicked', () => {
+    const fileNode: FileNode = {
+      id: '1',
+      name: 'test.ts',
+      type: 'file',
+    }
+
+    render(<FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />)
+
+    fireEvent.contextMenu(screen.getByText('test.ts'))
+
+    expect(mockOnContextMenu).toHaveBeenCalledTimes(1)
+    expect(mockOnContextMenu).toHaveBeenCalledWith(expect.any(Object), fileNode)
+  })
+
+  test('renders TypeScript file with code icon', () => {
+    const fileNode: FileNode = {
+      id: '1',
+      name: 'test.ts',
+      type: 'file',
+    }
+
+    const { container } = render(
+      <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const icons = container.querySelectorAll('.material-symbols-outlined')
+
+    const fileIcon = Array.from(icons).find((icon) =>
+      icon.textContent?.includes('code')
+    )
+    expect(fileIcon).toBeDefined()
+  })
+
+  test('renders JSON file with data_object icon', () => {
+    const fileNode: FileNode = {
+      id: '1',
+      name: 'package.json',
+      type: 'file',
+    }
+
+    const { container } = render(
+      <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const icons = container.querySelectorAll('.material-symbols-outlined')
+
+    const fileIcon = Array.from(icons).find((icon) =>
+      icon.textContent?.includes('data_object')
+    )
+    expect(fileIcon).toBeDefined()
+  })
+
+  test('renders Rust file with code_blocks icon', () => {
+    const fileNode: FileNode = {
+      id: '1',
+      name: 'main.rs',
+      type: 'file',
+    }
+
+    const { container } = render(
+      <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const icons = container.querySelectorAll('.material-symbols-outlined')
+
+    const fileIcon = Array.from(icons).find((icon) =>
+      icon.textContent?.includes('code_blocks')
+    )
+    expect(fileIcon).toBeDefined()
+  })
+
+  test('renders nested children recursively', () => {
+    const folderNode: FileNode = {
+      id: '1',
+      name: 'src',
+      type: 'folder',
+      defaultExpanded: true,
+      children: [
+        {
+          id: '2',
+          name: 'components',
+          type: 'folder',
+          defaultExpanded: true,
+          children: [
+            {
+              id: '3',
+              name: 'Button.tsx',
+              type: 'file',
+            },
+          ],
+        },
+      ],
+    }
+
+    render(<FileTreeNode node={folderNode} onContextMenu={mockOnContextMenu} />)
+
+    expect(screen.getByText('src')).toBeInTheDocument()
+    expect(screen.getByText('components')).toBeInTheDocument()
+    expect(screen.getByText('Button.tsx')).toBeInTheDocument()
+  })
+
+  test('uses custom icon when provided', () => {
+    const fileNode: FileNode = {
+      id: '1',
+      name: 'custom.file',
+      type: 'file',
+      icon: 'star',
+    }
+
+    const { container } = render(
+      <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const icons = container.querySelectorAll('.material-symbols-outlined')
+
+    const fileIcon = Array.from(icons).find((icon) =>
+      icon.textContent?.includes('star')
+    )
+    expect(fileIcon).toBeDefined()
+  })
+
+  test('has treeitem role', () => {
+    const fileNode: FileNode = {
+      id: '1',
+      name: 'test.ts',
+      type: 'file',
+    }
+
+    render(<FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />)
+
+    expect(screen.getByRole('treeitem')).toBeInTheDocument()
+  })
+
+  test('folder has aria-expanded attribute', () => {
+    const folderNode: FileNode = {
+      id: '1',
+      name: 'src',
+      type: 'folder',
+    }
+
+    render(<FileTreeNode node={folderNode} onContextMenu={mockOnContextMenu} />)
+
+    const treeitem = screen.getByRole('treeitem')
+    expect(treeitem).toHaveAttribute('aria-expanded', 'false')
+
+    // Expand folder
+    fireEvent.click(screen.getByText('src'))
+    expect(treeitem).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  // Bug 3: File selection highlighting tests
+
+  test('applies selected styling when selectedFileId matches file node id', () => {
+    const fileNode: FileNode = {
+      id: 'src/test.ts',
+      name: 'test.ts',
+      type: 'file',
+    }
+
+    const { container } = render(
+      <FileTreeNode
+        node={fileNode}
+        onContextMenu={mockOnContextMenu}
+        selectedFileId="src/test.ts"
+      />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const nodeDiv = container.querySelector('.bg-primary\\/10')
+    expect(nodeDiv).toBeInTheDocument()
+    expect(nodeDiv).toHaveClass('text-on-surface')
+  })
+
+  test('does not apply selected styling when selectedFileId does not match', () => {
+    const fileNode: FileNode = {
+      id: 'src/test.ts',
+      name: 'test.ts',
+      type: 'file',
+    }
+
+    const { container } = render(
+      <FileTreeNode
+        node={fileNode}
+        onContextMenu={mockOnContextMenu}
+        selectedFileId="src/other.ts"
+      />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const nodeDiv = container.querySelector('.bg-primary\\/10')
+    expect(nodeDiv).not.toBeInTheDocument()
+  })
+
+  test('does not apply selected styling to folder nodes', () => {
+    const folderNode: FileNode = {
+      id: 'src',
+      name: 'src',
+      type: 'folder',
+    }
+
+    const { container } = render(
+      <FileTreeNode
+        node={folderNode}
+        onContextMenu={mockOnContextMenu}
+        selectedFileId="src"
+      />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const nodeDiv = container.querySelector('.bg-primary\\/10')
+    expect(nodeDiv).not.toBeInTheDocument()
+  })
+
+  test('calls scrollIntoView when node becomes selected', () => {
+    const fileNode: FileNode = {
+      id: 'src/test.ts',
+      name: 'test.ts',
+      type: 'file',
+    }
+
+    const scrollIntoViewMock = vi.fn()
+
+    HTMLElement.prototype.scrollIntoView = scrollIntoViewMock
+
+    const { rerender } = render(
+      <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
+    )
+
+    // Initially not selected
+    expect(scrollIntoViewMock).not.toHaveBeenCalled()
+
+    // Become selected
+    rerender(
+      <FileTreeNode
+        node={fileNode}
+        onContextMenu={mockOnContextMenu}
+        selectedFileId="src/test.ts"
+      />
+    )
+
+    expect(scrollIntoViewMock).toHaveBeenCalledWith({
+      block: 'nearest',
+      behavior: 'smooth',
+    })
+  })
+
+  test('passes selectedFileId to child nodes', () => {
+    const folderNode: FileNode = {
+      id: '1',
+      name: 'src',
+      type: 'folder',
+      defaultExpanded: true,
+      children: [
+        {
+          id: 'src/test.ts',
+          name: 'test.ts',
+          type: 'file',
+        },
+      ],
+    }
+
+    const { container } = render(
+      <FileTreeNode
+        node={folderNode}
+        onContextMenu={mockOnContextMenu}
+        selectedFileId="src/test.ts"
+      />
+    )
+
+    // Child should be highlighted
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const selectedNode = container.querySelector('.bg-primary\\/10')
+    expect(selectedNode).toBeInTheDocument()
+  })
+})
