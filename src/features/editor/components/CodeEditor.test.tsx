@@ -74,22 +74,32 @@ export default App`
 
     const container = screen.getByTestId('code-editor')
 
+    // Outer container has flex layout for line numbers + code
+    expect(container).toHaveClass('flex')
     expect(container).toHaveClass('flex-1')
-    expect(container).toHaveClass('bg-surface')
-    expect(container).toHaveClass('font-mono')
     expect(container).toHaveClass('overflow-auto')
     expect(container).toHaveClass('thin-scrollbar')
   })
 
-  test('uses correct font size and line height', () => {
+  test('renders code lines with proper structure', async () => {
     render(
       <CodeEditor content={sampleCode} currentLine={null} fileName="App.tsx" />
     )
 
-    const container = screen.getByTestId('code-editor')
+    // Verify code lines are rendered
+    await waitFor(() => {
+      expect(screen.getByTestId('code-line-1')).toBeInTheDocument()
+      expect(screen.getByTestId('code-line-7')).toBeInTheDocument()
+    })
+  })
 
-    expect(container).toHaveClass('text-[0.875rem]')
-    expect(container).toHaveClass('leading-6')
+  test('renders line numbers gutter', () => {
+    render(
+      <CodeEditor content={sampleCode} currentLine={3} fileName="App.tsx" />
+    )
+
+    const lineNumbersGutter = screen.getByTestId('line-numbers-gutter')
+    expect(lineNumbersGutter).toBeInTheDocument()
   })
 
   test('highlights current line with bg-primary/5 and border', async () => {
