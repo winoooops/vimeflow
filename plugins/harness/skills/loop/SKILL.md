@@ -8,6 +8,53 @@ tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion, Skill, Agent
 
 Launch the VIBM autonomous development harness. Gathers feature requirements, brainstorms the spec, generates `app_spec.md`, and starts the agent loop.
 
+## Step 0: Worktree & Environment (MANDATORY — do this FIRST)
+
+The harness creates commits and pushes code. It **MUST** run inside a git worktree, never on `main`.
+
+### 0a. Create or enter a worktree
+
+Check the current branch:
+
+```bash
+git branch --show-current
+```
+
+If it says `main`, you MUST create a worktree before proceeding. Use the `EnterWorktree` tool:
+
+```
+EnterWorktree(name="harness-<feature-name>")
+```
+
+Or create one manually:
+
+```bash
+git worktree add .claude/worktrees/harness-<feature-name> -b feat/<feature-name>
+cd .claude/worktrees/harness-<feature-name>
+npm install
+```
+
+**DO NOT skip this step.** If you are already in a non-main branch/worktree, you may proceed.
+
+### 0b. Source `.env` from the source repo
+
+Git worktrees do NOT include untracked files like `.env`. The API keys live in the **original project root**, not in the worktree. Find the source repo root and source from there:
+
+```bash
+SOURCE_ROOT=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')
+set -a && source "$SOURCE_ROOT/.env" && set +a
+```
+
+Verify the key is set:
+
+```bash
+echo "ANTHROPIC_API_KEY is ${ANTHROPIC_API_KEY:+set}"
+```
+
+If it prints "set", proceed. If not, STOP — the harness will fail without API keys.
+
+**Why this matters:** Without this step, the harness dry-run hangs, the pre-bash hook blocks on missing `ANTHROPIC_API_KEY`, and agents waste iterations regenerating `app_spec.md` from scratch.
+
 ## Step 1: Gather Requirements
 
 Use the `AskUserQuestion` tool to ask the user TWO questions:
@@ -94,6 +141,8 @@ Structure the file as:
 
 ## Step 4: Launch the Harness
 
+**Pre-flight check:** Confirm you are NOT on `main` and that `ANTHROPIC_API_KEY` is set (both from Step 0). If either is missing, go back to Step 0.
+
 Run the harness using Bash:
 
 ```bash
@@ -101,6 +150,11 @@ cd harness && pip install -r requirements.txt 2>/dev/null && python autonomous_a
 ```
 
 Where `<N>` is the iteration count from Step 1. If "Unlimited", omit the `--max-iterations` flag entirely.
+
+Notes:
+
+- On **WSL2 only**, add `--no-sandbox` (the OS-level sandbox is unreliable on WSL2). On macOS/Linux, omit it to keep sandbox isolation enabled.
+- The env vars from Step 0b are inherited by the subprocess automatically
 
 **IMPORTANT:** This command will run for a long time. Use `run_in_background: true` on the Bash tool so the user isn't blocked. Tell the user the harness is running and they can check progress with:
 

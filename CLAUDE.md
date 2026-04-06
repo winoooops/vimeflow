@@ -82,6 +82,7 @@ This file covers what you need to start working. For deeper topics, read the lin
 | AI agent specs (planner, tdd-guide, code-reviewer, etc.) | `agents/CLAUDE.md`                                                |
 | Development standards (coding style, testing, security)  | `rules/CLAUDE.md`                                                 |
 | Autonomous development loop (harness + Codex review)     | `harness/CLAUDE.md`                                               |
+| Harness pre-launch safety hooks (hookify rules)          | `harness/CLAUDE.md` → "Hookify Pre-Launch Rules"                  |
 | Harness plugin (skills for agent loop, review, PR fix)   | `plugins/harness/` — see [Plugin Setup](#harness-plugin-setup)    |
 | Architecture specs, exploration notes                    | `docs/CLAUDE.md`                                                  |
 | Codex code review (project context for Codex)            | `AGENTS.md`                                                       |

@@ -142,6 +142,30 @@ Python hooks (`security.py`, `hooks.py`) fire regardless of sandbox or permissio
 
 **WSL2 users:** The sandbox may be unreliable or a no-op on WSL2. If you encounter Bash commands being blocked unexpectedly, re-run with `--no-sandbox`. You accept the risk of running without OS-level isolation — Python hooks still validate every command.
 
+### Hookify Pre-Launch Rules
+
+In addition to the runtime safety layers above, the project uses [hookify](https://github.com/anthropics/claude-code/tree/main/plugins/hookify) rules to catch common mistakes **before** the harness is launched. These rules live in `.claude/hookify.*.local.md` and are evaluated automatically by the hookify plugin on every tool call.
+
+| Rule                        | Event | Action | What it catches                                                                                                                                           |
+| --------------------------- | ----- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `block-harness-on-main`     | bash  | warn   | Running `autonomous_agent_demo.py` — reminds to check branch and use a worktree. The harness creates commits and must not run on `main`.                  |
+| `block-harness-no-api-key`  | bash  | warn   | Running the harness — reminds to verify `ANTHROPIC_API_KEY` is set. In worktrees, `.env` is absent (gitignored) and must be sourced from the source repo. |
+| `warn-worktree-npm-install` | bash  | warn   | Running `git worktree add` without a reminder to `npm install` afterward. `node_modules/` is gitignored and missing in fresh worktrees.                   |
+| `warn-harness-dry-run`      | bash  | warn   | Running the harness with `--max-iterations` > 1 without having done a single-iteration dry-run first. Catches env/hook/permission issues early.           |
+
+**How they work:** Hookify rules are markdown files with YAML frontmatter that define a regex pattern, an event type (bash/file/stop), and an action (block/warn). The hookify plugin evaluates all enabled rules on every matching hook event. All four rules use `warn` — they show guidance but don't hard-block, since hookify pattern matching alone cannot inspect git state or environment variables at runtime.
+
+**Why two rules share a pattern:** Both `block-harness-on-main` and `block-harness-no-api-key` trigger on the same command (`python3? ... autonomous_agent_demo.py`). When both fire, the hookify engine concatenates their messages — the agent sees both the worktree and API key reminders in a single response.
+
+**Pre-launch checklist (enforced by these rules):**
+
+1. **Worktree** — `git branch --show-current` must NOT return `main`. Use `EnterWorktree` or `git worktree add`.
+2. **Environment** — find the source repo root with `SOURCE_ROOT=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')`, then `set -a && source "$SOURCE_ROOT/.env" && set +a`.
+3. **Dependencies** — `npm install` in the worktree (node_modules is gitignored).
+4. **Dry-run** — `python autonomous_agent_demo.py --max-iterations 1` to verify the environment before scaling up. Add `--no-sandbox` only on WSL2.
+
+**Editing rules:** Rules take effect immediately on the next tool call — no restart needed. To disable a rule, set `enabled: false` in its frontmatter. To inspect all active rules at runtime, use the `/hookify:list` skill.
+
 ## File Roles
 
 | File                            | Role                                                                                |
