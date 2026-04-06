@@ -136,8 +136,12 @@ export const EditorView = ({
     }
 
     // Normal state: show code editor with content
-    // Priority: API content > tab.content > empty message
-    const displayContent = content ?? activeTab.content ?? '// No file selected'
+    // While loading, prefer tab.content as fallback to avoid stale API content
+    // Priority when loading: tab.content > empty message
+    // Priority when loaded: API content > tab.content > empty message
+    const displayContent = loading
+      ? (activeTab.content ?? '// Loading...')
+      : (content ?? activeTab.content ?? '// No file selected')
 
     return (
       <CodeEditor

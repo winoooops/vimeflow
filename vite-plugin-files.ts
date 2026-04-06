@@ -44,6 +44,35 @@ function validateRepoPath(filePath: string): string | null {
 }
 
 /**
+ * Validate the real path (resolving symlinks) is within the repo root.
+ * Prevents symlink-based path traversal attacks.
+ */
+async function validateRealPath(filePath: string): Promise<string | null> {
+  const relative = validateRepoPath(filePath)
+
+  if (relative === null) {
+    return null
+  }
+
+  try {
+    const fullPath = path.resolve(repoRoot, relative)
+    const realPath = await fs.realpath(fullPath)
+    const realRepoRoot = await fs.realpath(repoRoot)
+    const realRelative = path.relative(realRepoRoot, realPath)
+
+    // Reject if real path escapes the repo
+    if (realRelative.startsWith('..') || path.isAbsolute(realRelative)) {
+      return null
+    }
+
+    return realRelative
+  } catch {
+    // Path doesn't exist or can't be resolved
+    return null
+  }
+}
+
+/**
  * Check if a path should be excluded from the file tree
  */
 function shouldExclude(name: string): boolean {
@@ -180,18 +209,22 @@ export function fileApiPlugin(): Plugin {
               ? path.join(repoRoot, rootParam)
               : repoRoot
 
-            // Validate root path
-            const safePath = validateRepoPath(rootParam)
+            // Validate root path (including symlink resolution)
+            const safePath = rootParam ? await validateRealPath(rootParam) : ''
 
-            if (rootParam && !safePath) {
+            if (rootParam && safePath === null) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
               res.end(JSON.stringify({ error: 'Invalid root path' }))
 
               return
             }
 
+            const safeRootPath = safePath
+              ? path.join(repoRoot, safePath)
+              : repoRoot
+
             // Build file tree
-            const tree = await buildFileTree(rootPath, rootParam)
+            const tree = await buildFileTree(safeRootPath, safePath || '')
 
             res.writeHead(200, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify(tree))
@@ -210,8 +243,8 @@ export function fileApiPlugin(): Plugin {
               return
             }
 
-            // Validate path
-            const safePath = validateRepoPath(filePath)
+            // Validate path (including symlink resolution)
+            const safePath = await validateRealPath(filePath)
 
             if (!safePath) {
               res.writeHead(400, { 'Content-Type': 'application/json' })

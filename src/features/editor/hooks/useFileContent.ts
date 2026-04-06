@@ -22,6 +22,7 @@ export function useFileContent(): UseFileContentResult {
   const [error, setError] = useState<string | null>(null)
   const cacheRef = useRef<Map<string, FileContentResponse>>(new Map())
   const isMountedRef = useRef<boolean>(true)
+  const currentPathRef = useRef<string | null>(null)
 
   useEffect((): (() => void) => {
     isMountedRef.current = true
@@ -32,6 +33,9 @@ export function useFileContent(): UseFileContentResult {
   }, [])
 
   const loadFile = useCallback(async (filePath: string): Promise<void> => {
+    // Track the current request to ignore stale responses
+    currentPathRef.current = filePath
+
     // Check cache first
     const cached = cacheRef.current.get(filePath)
 
@@ -49,12 +53,16 @@ export function useFileContent(): UseFileContentResult {
     if (isMountedRef.current) {
       setLoading(true)
       setError(null)
+      // Clear previous content to prevent stale display
+      setContent(null)
+      setLanguage(null)
     }
 
     try {
       const data = await fetchFileContent(filePath)
 
-      if (isMountedRef.current) {
+      // Ignore response if a newer request has been made
+      if (isMountedRef.current && currentPathRef.current === filePath) {
         setContent(data.content)
         setLanguage(data.language)
 
@@ -62,7 +70,8 @@ export function useFileContent(): UseFileContentResult {
         cacheRef.current.set(filePath, data)
       }
     } catch (err) {
-      if (isMountedRef.current) {
+      // Ignore error if a newer request has been made
+      if (isMountedRef.current && currentPathRef.current === filePath) {
         const message =
           err instanceof Error ? err.message : 'Failed to load file content'
         setError(message)
@@ -70,7 +79,7 @@ export function useFileContent(): UseFileContentResult {
         setLanguage(null)
       }
     } finally {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && currentPathRef.current === filePath) {
         setLoading(false)
       }
     }
