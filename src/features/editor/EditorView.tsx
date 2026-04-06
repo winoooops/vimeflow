@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import type { ReactElement } from 'react'
 import IconRail from '../../components/layout/IconRail'
 import { Sidebar } from '../../components/layout/Sidebar'
@@ -24,20 +24,21 @@ import { useFileContent } from './hooks/useFileContent'
 
 interface EditorViewProps {
   onTabChange?: (tab: TabName) => void
-  onFileDiffRequest?: (filePath: string) => void
   isContextPanelOpen?: boolean
   onToggleContextPanel?: () => void
 }
 
 export const EditorView = ({
   onTabChange = undefined,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onFileDiffRequest: _onFileDiffRequest = undefined,
   isContextPanelOpen = true,
   onToggleContextPanel = undefined,
 }: EditorViewProps): ReactElement => {
   const [isExplorerOpen, setIsExplorerOpen] = useState<boolean>(true)
   const [tabs, setTabs] = useState(mockEditorTabs)
+
+  // Ref to always access latest tabs value (prevents stale closure)
+  const tabsRef = useRef(tabs)
+  tabsRef.current = tabs
 
   // Use real file tree and file content from API
   const { tree: fileTree } = useFileTree()
@@ -75,28 +76,32 @@ export const EditorView = ({
     (node: FileNode): void => {
       // If it's a file, open it in a tab
       if (node.type === 'file') {
-        const existingTab = tabs.find((tab) => tab.filePath === node.id)
+        const existingTab = tabsRef.current.find(
+          (tab) => tab.filePath === node.id
+        )
 
         if (existingTab !== undefined) {
           // Tab already exists, just activate it
           handleTabClick(existingTab.id)
         } else {
-          // Create new tab - use node.id as filePath (it's the full path)
+          // Create new tab with isActive: true and deactivate others in one atomic update
           const newTab = {
-            id: `tab-${Date.now()}`,
+            id: `tab-${crypto.randomUUID()}`,
             fileName: node.name,
             filePath: node.id,
             icon: node.icon ?? 'description',
-            isActive: false,
+            isActive: true,
             isDirty: false,
           }
 
-          setTabs((prevTabs) => [...prevTabs, newTab])
-          handleTabClick(newTab.id)
+          setTabs((prevTabs) => [
+            ...prevTabs.map((t) => ({ ...t, isActive: false })),
+            newTab,
+          ])
         }
       }
     },
-    [tabs, handleTabClick]
+    [handleTabClick]
   )
 
   const activeTab = tabs.find((tab) => tab.isActive)

@@ -19,11 +19,6 @@ const App = (): ReactElement => {
     setIsContextPanelOpen((prev) => !prev)
   }, [])
 
-  const handleFileDiffRequest = useCallback((filePath: string): void => {
-    setSelectedDiffFile(filePath)
-    setActiveTab('Diff')
-  }, [])
-
   const handleClearSelectedDiffFile = useCallback((): void => {
     setSelectedDiffFile(null)
   }, [])
@@ -44,7 +39,6 @@ const App = (): ReactElement => {
         return (
           <EditorView
             onTabChange={handleTabChange}
-            onFileDiffRequest={handleFileDiffRequest}
             isContextPanelOpen={isContextPanelOpen}
             onToggleContextPanel={handleToggleContextPanel}
           />
