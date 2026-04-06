@@ -38,10 +38,11 @@ npm install
 
 ### 0b. Source `.env` from the source repo
 
-Git worktrees do NOT include untracked files like `.env`. The API keys live in the **original project root**, not in the worktree. Source them explicitly using the absolute path:
+Git worktrees do NOT include untracked files like `.env`. The API keys live in the **original project root**, not in the worktree. Find the source repo root and source from there:
 
 ```bash
-set -a && source /home/claw/projects/Vimeflow/.env && set +a
+SOURCE_ROOT=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')
+set -a && source "$SOURCE_ROOT/.env" && set +a
 ```
 
 Verify the key is set:
@@ -145,14 +146,14 @@ Structure the file as:
 Run the harness using Bash:
 
 ```bash
-cd harness && pip install -r requirements.txt 2>/dev/null && python autonomous_agent_demo.py --no-sandbox --max-iterations <N>
+cd harness && pip install -r requirements.txt 2>/dev/null && python autonomous_agent_demo.py --max-iterations <N>
 ```
 
 Where `<N>` is the iteration count from Step 1. If "Unlimited", omit the `--max-iterations` flag entirely.
 
 Notes:
 
-- `--no-sandbox` is required on WSL2 (the sandbox is unreliable there)
+- On **WSL2 only**, add `--no-sandbox` (the OS-level sandbox is unreliable on WSL2). On macOS/Linux, omit it to keep sandbox isolation enabled.
 - The env vars from Step 0b are inherited by the subprocess automatically
 
 **IMPORTANT:** This command will run for a long time. Use `run_in_background: true` on the Bash tool so the user isn't blocked. Tell the user the harness is running and they can check progress with:

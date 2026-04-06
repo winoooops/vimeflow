@@ -16,8 +16,9 @@ npm install
 
 Without this, any `npm run` commands, test runs, or build steps will fail with missing dependencies.
 
-Also remember to source `.env` from the source repo:
+Also remember to source `.env` from the source repo root:
 
 ```bash
-set -a && source /home/claw/projects/Vimeflow/.env && set +a
+SOURCE_ROOT=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')
+set -a && source "$SOURCE_ROOT/.env" && set +a
 ```

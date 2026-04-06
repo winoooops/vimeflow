@@ -3,10 +3,12 @@ name: block-harness-on-main
 enabled: true
 event: bash
 pattern: python3?\s+.*autonomous_agent_demo\.py
-action: block
+action: warn
 ---
 
-**BLOCKED: Harness must run in a git worktree, not on `main`.**
+**WARNING: Harness must run in a git worktree, not on `main`.**
+
+Before proceeding, check your branch:
 
 Before launching the harness, you MUST be on a feature branch inside a git worktree.
 

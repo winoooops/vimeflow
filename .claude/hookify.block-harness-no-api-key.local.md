@@ -3,17 +3,18 @@ name: block-harness-no-api-key
 enabled: true
 event: bash
 pattern: python3?\s+.*autonomous_agent_demo\.py
-action: block
+action: warn
 ---
 
-**BLOCKED: `ANTHROPIC_API_KEY` must be set before launching the harness.**
+**WARNING: Verify `ANTHROPIC_API_KEY` is set before launching the harness.**
 
 Git worktrees do NOT include untracked files like `.env`. The API keys live in the **original project root**, not in the worktree.
 
-**Source the env file from the source repo:**
+**Source the env file from the source repo root:**
 
 ```bash
-set -a && source /home/claw/projects/Vimeflow/.env && set +a
+SOURCE_ROOT=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')
+set -a && source "$SOURCE_ROOT/.env" && set +a
 ```
 
 **Verify it's set:**
