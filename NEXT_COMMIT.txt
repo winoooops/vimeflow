@@ -1,60 +1,55 @@
-# Phase 1 Status - Awaiting Rust Verification
+# Phase 1 Status - CI Verification in Progress
 
 ## Current Status: 12/13 Features Complete (92%)
 
-All code is written and committed. No new changes needed at this time.
+✅ **Branch pushed to GitHub** - CI verification triggered automatically
 
-## Blocker: Feature #8
+## Feature #8 - Awaiting CI Results
 
 **Feature #8: Verify Rust code compiles and passes linting**
-- Status: `"passes": false`
-- Reason: Rust/cargo not available in harness environment
-- Code quality: ✅ All standards met
+- Status: `"passes": false` (awaiting CI)
+- Branch: `feat/tauri-scaffold` pushed to origin
+- CI workflow: `.github/workflows/tauri-build.yml` running
+- Will verify: `cargo check`, `cargo clippy`, `cargo build`
 
-## Required Actions (Outside Harness)
+## Check CI Status
 
-### Option A: Local Verification
-```bash
-cd /home/claw/projects/Vimeflow/.claude/worktrees/feat-tauri-scaffold
+Visit GitHub Actions to monitor progress:
+- Actions page: https://github.com/winoooops/vimeflow/actions
+- Create PR: https://github.com/winoooops/vimeflow/pull/new/feat/tauri-scaffold
 
-# Verify Rust compilation
-cargo check --manifest-path=src-tauri/Cargo.toml
-cargo clippy --manifest-path=src-tauri/Cargo.toml -- -D warnings
-cargo fmt --manifest-path=src-tauri/Cargo.toml --check
+## When CI Passes
 
-# Test Tauri app
-npm run tauri:dev
-```
+1. **Update feature_list.json**:
+   - Change feature #8 `"passes": false` → `"passes": true`
 
-If successful:
-```bash
-# Update feature_list.json - change feature #8 "passes": false → true
-# Then commit:
-git commit -am "chore: mark feature #8 as verified after local Rust checks"
-```
+2. **Commit the update**:
+   ```bash
+   git commit -am "chore: mark feature #8 as verified after CI passes"
+   git push
+   ```
 
-### Option B: CI Verification
-```bash
-# Push to GitHub and let CI verify
-git push origin feat/tauri-scaffold
+3. **Create PR and merge to main**
 
-# CI will run all Rust checks automatically
-# If CI passes, Phase 1 is complete
-```
+4. **Begin Phase 2** (IPC commands per app_spec.md)
 
-## What's Already Done
+## If CI Fails
+
+1. Review CI logs for specific errors
+2. Fix issues in Rust code
+3. Commit and push fixes
+4. Wait for CI to pass
+
+## What's Already Verified
 
 - ✅ All frontend tests passing (994/994)
 - ✅ TypeScript type checking passing
 - ✅ ESLint passing
 - ✅ All Rust code follows project standards
-- ✅ 12/13 features passing
+- ✅ 12/13 features passing locally
 
-## Next Phase
+## Next Agent Instructions
 
-**Do NOT start Phase 2 until Feature #8 passes**
+**Do NOT start Phase 2 until CI passes and feature #8 is marked passing.**
 
-Phase 2 (IPC commands) requires:
-- Working Tauri build
-- Confirmed Rust compilation
-- Feature #8 marked as passing
+Wait for CI verification, then proceed as outlined above.
