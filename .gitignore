@@ -51,6 +51,7 @@ Thumbs.db
 # Python (for harness)
 harness/__pycache__/
 harness/*.pyc
+harness/.venv/
 *.py[cod]
 __pycache__/
 
