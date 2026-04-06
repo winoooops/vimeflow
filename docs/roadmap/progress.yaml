@@ -1,0 +1,422 @@
+---
+# Vimeflow Tauri Migration — Machine-Readable Progress Tracker
+# Source: docs/roadmap/tauri-migration-roadmap.md
+# Schema: phase → steps → dod (definition of done)
+# Status values: pending | in_progress | done | blocked
+# All items start as pending; commit/pr fields populated as work lands.
+
+version: 1
+updated: '2026-04-06'
+roadmap: docs/roadmap/tauri-migration-roadmap.md
+
+phases:
+  - id: phase-1
+    name: 'Tauri Scaffold + CI Green'
+    status: pending
+    blocked_by: []
+    specs: []
+    steps:
+      - id: p1-s1
+        name: 'Run `npx tauri init` to scaffold `src-tauri/` (tauri.conf.json, Cargo.toml, src/main.rs, src/lib.rs)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p1-s2
+        name: 'Configure tauri.conf.json: devUrl → http://localhost:5173, frontendDist → ../dist'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p1-s3
+        name: 'Add `tauri:dev` and `tauri:build` npm scripts (keep existing dev/build unchanged)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p1-s4
+        name: 'Create src/lib/environment.ts — isTauri() detection via window.__TAURI_INTERNALS__'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p1-s5
+        name: 'Update CI tauri-build.yml — add src/** trigger, Rust caching'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p1-s6
+        name: 'Add .gitignore entries for src-tauri/target/, src-tauri/gen/'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+    dod:
+      - id: p1-d1
+        check: '`npm run tauri:dev` opens a native window showing the existing React app'
+        status: pending
+        commit: null
+        pr: null
+      - id: p1-d2
+        check: '`npm run dev` still works as standalone Vite dev server (no regression)'
+        status: pending
+        commit: null
+        pr: null
+      - id: p1-d3
+        check: 'CI tauri-build.yml passes on macOS, Windows, Linux'
+        status: pending
+        commit: null
+        pr: null
+      - id: p1-d4
+        check: 'All existing test files still pass'
+        status: pending
+        commit: null
+        pr: null
+
+  - id: phase-2
+    name: 'IPC Layer + Service Abstraction'
+    status: pending
+    blocked_by:
+      - phase-1
+    specs:
+      - docs/superpowers/specs/2026-04-04-files-explorer-ui-design.md
+    steps:
+      - id: p2-s1
+        name: 'Define shared IPC type contracts (src/shared/ipc-types.ts)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p2-s2
+        name: 'Implement Rust git commands using git2 crate (git_status, git_diff, git_stage, git_unstage, git_discard)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p2-s3
+        name: 'Implement Rust file commands using walkdir + tokio::fs (file_tree, file_content)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p2-s4
+        name: 'Register all commands in src-tauri/src/lib.rs'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p2-s5
+        name: 'Refactor file service to interface/factory pattern (match git service)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p2-s6
+        name: 'Create TauriGitService using @tauri-apps/api/core invoke()'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p2-s7
+        name: 'Create TauriFileService using invoke()'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p2-s8
+        name: 'Update factories: test → mock, tauri → IPC, fallback → HTTP'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+    dod:
+      - id: p2-d1
+        check: 'Diff + Editor views work identically in browser and Tauri'
+        status: pending
+        commit: null
+        pr: null
+      - id: p2-d2
+        check: 'All Rust commands validate inputs (path traversal prevention)'
+        status: pending
+        commit: null
+        pr: null
+      - id: p2-d3
+        check: 'Rust commands have unit tests'
+        status: pending
+        commit: null
+        pr: null
+      - id: p2-d4
+        check: 'Vite API plugins remain functional (dev fallback)'
+        status: pending
+        commit: null
+        pr: null
+
+  - id: phase-3
+    name: 'Global State Management'
+    status: pending
+    blocked_by:
+      - phase-2
+    specs: []
+    steps:
+      - id: p3-s1
+        name: 'Install Zustand, create store architecture doc'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p3-s2
+        name: 'Create appStore — migrate state from App.tsx (activeTab, contextPanelOpen, commandPaletteOpen)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p3-s3
+        name: 'Create diffStore — migrate from DiffView local state (changedFiles, selectedFile, currentDiff)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p3-s4
+        name: 'Create editorStore — migrate from EditorView local state (fileTree, openTabs, activeTab, cursorPosition)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p3-s5
+        name: 'Create chatStore — prepare shape for Phase 4 (conversations, activeConversation, messages, streamingMessage)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p3-s6
+        name: 'Refactor views to use stores (one view at a time)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p3-s7
+        name: 'Update tests for store-based components'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+    dod:
+      - id: p3-d1
+        check: 'Zero prop drilling from App.tsx to views'
+        status: pending
+        commit: null
+        pr: null
+      - id: p3-d2
+        check: "Cross-feature navigation works (e.g., 'open in diff' from editor)"
+        status: pending
+        commit: null
+        pr: null
+      - id: p3-d3
+        check: 'All existing tests pass'
+        status: pending
+        commit: null
+        pr: null
+
+  - id: phase-4
+    name: 'Chat Backend + AI Integration'
+    status: pending
+    blocked_by:
+      - phase-2
+      - phase-3
+    specs:
+      - docs/superpowers/specs/2026-03-31-chat-view-ui-design.md
+    steps:
+      - id: p4-s1
+        name: 'Design AI backend architecture (docs/architecture/ai-backend.md)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p4-s2
+        name: 'Implement Rust chat commands: create_conversation, send_message, get_conversations'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p4-s3
+        name: 'Implement conversation persistence (SQLite: conversations + messages tables)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p4-s4
+        name: 'Create ChatService interface + TauriChatService + MockChatService'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p4-s5
+        name: 'Build streaming message UI component'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p4-s6
+        name: 'Implement Anthropic provider (reqwest + SSE → Tauri events)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p4-s7
+        name: 'Add settings system (API keys via keychain, model selection, provider choice)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+    dod:
+      - id: p4-d1
+        check: 'User sends message → streaming AI response → persists across restarts'
+        status: pending
+        commit: null
+        pr: null
+      - id: p4-d2
+        check: 'API keys stored in OS keychain (not plaintext)'
+        status: pending
+        commit: null
+        pr: null
+      - id: p4-d3
+        check: 'Mock mode works for development without API keys'
+        status: pending
+        commit: null
+        pr: null
+      - id: p4-d4
+        check: 'Error states handled (network failure, rate limit, invalid key)'
+        status: pending
+        commit: null
+        pr: null
+
+  - id: phase-5
+    name: 'Desktop Polish'
+    status: pending
+    blocked_by:
+      - phase-4
+    specs: []
+    steps:
+      - id: p5-s1
+        name: 'Window state persistence (tauri-plugin-window-state)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p5-s2
+        name: 'Native menu bar (platform-specific conventions)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p5-s3
+        name: 'System tray with show/hide and quit'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p5-s4
+        name: 'Global keyboard shortcuts (tauri-plugin-global-shortcut)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p5-s5
+        name: 'Auto-updater (tauri-plugin-updater + GitHub releases)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p5-s6
+        name: 'Platform-specific title bar (macOS traffic lights, Windows controls)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p5-s7
+        name: 'Bundle fonts (Manrope, Inter, JetBrains Mono) — no CDN dependency'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+    dod:
+      - id: p5-d1
+        check: 'Window position and size persists across restarts'
+        status: pending
+        commit: null
+        pr: null
+      - id: p5-d2
+        check: 'System tray works on all platforms (macOS, Windows, Linux)'
+        status: pending
+        commit: null
+        pr: null
+      - id: p5-d3
+        check: 'Auto-updater checks GitHub releases and prompts user when update is available'
+        status: pending
+        commit: null
+        pr: null
+      - id: p5-d4
+        check: 'App renders correctly with no network connection (bundled fonts, no CDN dependency)'
+        status: pending
+        commit: null
+        pr: null
+
+  - id: phase-6
+    name: 'Advanced Features'
+    status: pending
+    blocked_by:
+      - phase-4
+    specs: []
+    steps:
+      - id: p6-s1
+        name: 'Multi-provider support (OpenAI)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p6-s2
+        name: 'Agent process management (spawn/monitor Claude Code, Codex CLI)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p6-s3
+        name: 'Conversation branching/forking'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p6-s4
+        name: 'Workspace/project model (associate conversations with directories)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p6-s5
+        name: 'Export/import conversations'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+    dod:
+      - id: p6-d1
+        check: 'At least two AI providers (Anthropic and OpenAI) work end-to-end with streaming'
+        status: pending
+        commit: null
+        pr: null
+      - id: p6-d2
+        check: 'Agent processes (Claude Code, Codex CLI) can be spawned and monitored from the UI'
+        status: pending
+        commit: null
+        pr: null
+      - id: p6-d3
+        check: 'Conversations can be branched at any message and diverge independently'
+        status: pending
+        commit: null
+        pr: null
+      - id: p6-d4
+        check: 'Conversations can be exported to JSON and re-imported without data loss'
+        status: pending
+        commit: null
+        pr: null
