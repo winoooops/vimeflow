@@ -34,7 +34,7 @@ export const CodeEditor = ({
   return (
     <div
       data-testid="code-editor"
-      className="flex-1 bg-surface font-mono text-[0.875rem] leading-6 pt-4 px-4 overflow-auto"
+      className="flex-1 bg-surface font-mono text-[0.875rem] leading-6 pt-4 px-4 overflow-auto thin-scrollbar"
     >
       {highlightedLines.length > 0
         ? highlightedLines.map((line, index) => {

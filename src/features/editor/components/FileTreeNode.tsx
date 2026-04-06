@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { ReactElement, MouseEvent } from 'react'
 import type { FileNode, GitStatus } from '../types'
 
@@ -6,6 +6,7 @@ interface FileTreeNodeProps {
   node: FileNode
   onContextMenu: (event: MouseEvent, node: FileNode) => void
   onNodeSelect?: (node: FileNode) => void
+  selectedFileId?: string
 }
 
 /**
@@ -61,8 +62,18 @@ export const FileTreeNode = ({
   node,
   onContextMenu,
   onNodeSelect = undefined,
+  selectedFileId = undefined,
 }: FileTreeNodeProps): ReactElement => {
   const [isExpanded, setIsExpanded] = useState(node.defaultExpanded ?? false)
+  const nodeRef = useRef<HTMLDivElement>(null)
+  const isSelected = node.type === 'file' && node.id === selectedFileId
+
+  // Scroll into view when this node becomes selected
+  useEffect(() => {
+    if (isSelected && nodeRef.current) {
+      nodeRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }
+  }, [isSelected])
 
   const handleClick = (): void => {
     if (node.type === 'folder') {
@@ -76,16 +87,18 @@ export const FileTreeNode = ({
     onContextMenu(event, node)
   }
 
-  const rowClasses =
-    'flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-surface-bright cursor-pointer transition-all duration-300'
-
   const isFolder = node.type === 'folder'
   const folderIcon = isExpanded ? 'folder_open' : 'folder'
   const fileIcon = getFileIcon(node.name, node.icon)
 
+  const rowClasses = `flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer transition-all duration-300 ${
+    isSelected ? 'bg-primary/10 text-on-surface' : 'hover:bg-surface-bright'
+  }`
+
   return (
     <div role="treeitem" aria-expanded={isFolder ? isExpanded : undefined}>
       <div
+        ref={nodeRef}
         className={rowClasses}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
@@ -144,6 +157,7 @@ export const FileTreeNode = ({
               node={child}
               onContextMenu={onContextMenu}
               onNodeSelect={onNodeSelect}
+              selectedFileId={selectedFileId}
             />
           ))}
         </div>

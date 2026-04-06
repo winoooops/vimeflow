@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import type { ReactElement } from 'react'
 import IconRail from '../../components/layout/IconRail'
 import { Sidebar } from '../../components/layout/Sidebar'
@@ -14,10 +14,10 @@ import {
   mockEditorTabs,
   mockEditorStatusBarState,
   mockContextMenuActions,
-  mockEditorFiles,
 } from './data/mockEditorData'
 import type { FileNode } from './types'
 import { useFileTree } from './hooks/useFileTree'
+import { useFileContent } from './hooks/useFileContent'
 
 interface EditorViewProps {
   onTabChange?: (tab: TabName) => void
@@ -36,8 +36,9 @@ export const EditorView = ({
   const [isExplorerOpen, setIsExplorerOpen] = useState<boolean>(true)
   const [tabs, setTabs] = useState(mockEditorTabs)
 
-  // Use real file tree from API
+  // Use real file tree and file content from API
   const { tree: fileTree } = useFileTree()
+  const { content, loading, error, loadFile } = useFileContent()
 
   const handleExplorerToggle = useCallback((): void => {
     setIsExplorerOpen((prev) => !prev)
@@ -71,17 +72,17 @@ export const EditorView = ({
     (node: FileNode): void => {
       // If it's a file, open it in a tab
       if (node.type === 'file') {
-        const existingTab = tabs.find((tab) => tab.fileName === node.name)
+        const existingTab = tabs.find((tab) => tab.filePath === node.id)
 
         if (existingTab !== undefined) {
           // Tab already exists, just activate it
           handleTabClick(existingTab.id)
         } else {
-          // Create new tab
+          // Create new tab - use node.id as filePath (it's the full path)
           const newTab = {
             id: `tab-${Date.now()}`,
             fileName: node.name,
-            filePath: `${node.name}`, // Simplified path
+            filePath: node.id,
             icon: node.icon ?? 'description',
             isActive: false,
             isDirty: false,
@@ -97,9 +98,27 @@ export const EditorView = ({
 
   const activeTab = tabs.find((tab) => tab.isActive)
 
-  const activeFile = mockEditorFiles.find(
-    (file) => file.name === activeTab?.fileName
-  )
+  // Load file content when active tab changes
+  useEffect(() => {
+    if (activeTab?.filePath) {
+      void loadFile(activeTab.filePath)
+    }
+  }, [activeTab?.filePath, loadFile])
+
+  // Determine what content to display
+  const displayContent = (): string => {
+    if (!activeTab) {
+      return '// No file selected'
+    }
+    if (loading) {
+      return '// Loading...'
+    }
+    if (error) {
+      return `// Error loading file: ${error}`
+    }
+
+    return content ?? '// No file selected'
+  }
 
   return (
     <div
@@ -127,6 +146,7 @@ export const EditorView = ({
             isOpen={isExplorerOpen}
             onToggle={handleExplorerToggle}
             onNodeSelect={handleNodeSelect}
+            selectedFileId={activeTab?.filePath}
           />
 
           {/* Right: Code Area */}
@@ -140,7 +160,7 @@ export const EditorView = ({
 
             {/* Code Editor */}
             <CodeEditor
-              content={activeFile?.content ?? '// No file selected'}
+              content={displayContent()}
               currentLine={mockEditorStatusBarState.cursor.line}
               fileName={activeTab?.fileName ?? 'untitled.txt'}
             />

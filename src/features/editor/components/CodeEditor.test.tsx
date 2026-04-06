@@ -78,6 +78,7 @@ export default App`
     expect(container).toHaveClass('bg-surface')
     expect(container).toHaveClass('font-mono')
     expect(container).toHaveClass('overflow-auto')
+    expect(container).toHaveClass('thin-scrollbar')
   })
 
   test('uses correct font size and line height', () => {

@@ -329,7 +329,8 @@ describe('EditorView Integration Tests - File Tree Loading', () => {
 
     // But file tree data should still be available (even if hidden)
     // This tests that collapsing doesn't clear the loaded data
-    expect(global.fetch).toHaveBeenCalledTimes(1) // Still only called once
+    // Note: Fetch is called twice - once for file tree, once for active file content
+    expect(global.fetch).toHaveBeenCalledTimes(2)
   })
 
   test('multiple folder expansions work correctly', async () => {

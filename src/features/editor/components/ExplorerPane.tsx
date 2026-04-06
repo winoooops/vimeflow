@@ -8,6 +8,7 @@ interface ExplorerPaneProps {
   isOpen: boolean
   onToggle: () => void
   onNodeSelect?: (node: FileNode) => void
+  selectedFileId?: string
 }
 
 /**
@@ -19,6 +20,7 @@ export const ExplorerPane = ({
   isOpen,
   onToggle,
   onNodeSelect = undefined,
+  selectedFileId = undefined,
 }: ExplorerPaneProps): ReactElement => (
   <nav
     className={`
@@ -54,11 +56,12 @@ export const ExplorerPane = ({
     </div>
 
     {/* File tree content */}
-    <div className="flex-1 overflow-y-auto px-2 font-label text-[13px]">
+    <div className="flex-1 overflow-y-auto thin-scrollbar px-2 font-label text-[13px]">
       <FileTree
         nodes={fileTree}
         contextMenuActions={contextMenuActions}
         onNodeSelect={onNodeSelect}
+        selectedFileId={selectedFileId}
       />
     </div>
   </nav>

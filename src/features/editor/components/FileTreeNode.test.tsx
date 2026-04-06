@@ -309,4 +309,129 @@ describe('FileTreeNode', () => {
     fireEvent.click(screen.getByText('src'))
     expect(treeitem).toHaveAttribute('aria-expanded', 'true')
   })
+
+  // Bug 3: File selection highlighting tests
+
+  test('applies selected styling when selectedFileId matches file node id', () => {
+    const fileNode: FileNode = {
+      id: 'src/test.ts',
+      name: 'test.ts',
+      type: 'file',
+    }
+
+    const { container } = render(
+      <FileTreeNode
+        node={fileNode}
+        onContextMenu={mockOnContextMenu}
+        selectedFileId="src/test.ts"
+      />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const nodeDiv = container.querySelector('.bg-primary\\/10')
+    expect(nodeDiv).toBeInTheDocument()
+    expect(nodeDiv).toHaveClass('text-on-surface')
+  })
+
+  test('does not apply selected styling when selectedFileId does not match', () => {
+    const fileNode: FileNode = {
+      id: 'src/test.ts',
+      name: 'test.ts',
+      type: 'file',
+    }
+
+    const { container } = render(
+      <FileTreeNode
+        node={fileNode}
+        onContextMenu={mockOnContextMenu}
+        selectedFileId="src/other.ts"
+      />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const nodeDiv = container.querySelector('.bg-primary\\/10')
+    expect(nodeDiv).not.toBeInTheDocument()
+  })
+
+  test('does not apply selected styling to folder nodes', () => {
+    const folderNode: FileNode = {
+      id: 'src',
+      name: 'src',
+      type: 'folder',
+    }
+
+    const { container } = render(
+      <FileTreeNode
+        node={folderNode}
+        onContextMenu={mockOnContextMenu}
+        selectedFileId="src"
+      />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const nodeDiv = container.querySelector('.bg-primary\\/10')
+    expect(nodeDiv).not.toBeInTheDocument()
+  })
+
+  test('calls scrollIntoView when node becomes selected', () => {
+    const fileNode: FileNode = {
+      id: 'src/test.ts',
+      name: 'test.ts',
+      type: 'file',
+    }
+
+    const scrollIntoViewMock = vi.fn()
+
+    HTMLElement.prototype.scrollIntoView = scrollIntoViewMock
+
+    const { rerender } = render(
+      <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
+    )
+
+    // Initially not selected
+    expect(scrollIntoViewMock).not.toHaveBeenCalled()
+
+    // Become selected
+    rerender(
+      <FileTreeNode
+        node={fileNode}
+        onContextMenu={mockOnContextMenu}
+        selectedFileId="src/test.ts"
+      />
+    )
+
+    expect(scrollIntoViewMock).toHaveBeenCalledWith({
+      block: 'nearest',
+      behavior: 'smooth',
+    })
+  })
+
+  test('passes selectedFileId to child nodes', () => {
+    const folderNode: FileNode = {
+      id: '1',
+      name: 'src',
+      type: 'folder',
+      defaultExpanded: true,
+      children: [
+        {
+          id: 'src/test.ts',
+          name: 'test.ts',
+          type: 'file',
+        },
+      ],
+    }
+
+    const { container } = render(
+      <FileTreeNode
+        node={folderNode}
+        onContextMenu={mockOnContextMenu}
+        selectedFileId="src/test.ts"
+      />
+    )
+
+    // Child should be highlighted
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const selectedNode = container.querySelector('.bg-primary\\/10')
+    expect(selectedNode).toBeInTheDocument()
+  })
 })

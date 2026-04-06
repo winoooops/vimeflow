@@ -8,6 +8,7 @@ interface FileTreeProps {
   nodes: FileNode[]
   contextMenuActions: ContextMenuAction[]
   onNodeSelect?: (node: FileNode) => void
+  selectedFileId?: string
 }
 
 /**
@@ -17,6 +18,7 @@ export const FileTree = ({
   nodes,
   contextMenuActions,
   onNodeSelect = undefined,
+  selectedFileId = undefined,
 }: FileTreeProps): ReactElement => {
   const [contextMenuState, setContextMenuState] = useState<ContextMenuState>({
     visible: false,
@@ -56,6 +58,7 @@ export const FileTree = ({
             node={node}
             onContextMenu={handleContextMenu}
             onNodeSelect={onNodeSelect}
+            selectedFileId={selectedFileId}
           />
         ))}
       </div>

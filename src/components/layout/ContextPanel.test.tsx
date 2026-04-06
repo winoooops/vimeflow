@@ -169,7 +169,11 @@ describe('ContextPanel', () => {
     expect(
       screen.getByRole('button', { name: /model info/i })
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /context/i })).toBeInTheDocument()
+
+    expect(
+      screen.getAllByRole('button', { name: /context/i }).length
+    ).toBeGreaterThan(0)
+
     expect(
       screen.getByRole('button', { name: /activity/i })
     ).toBeInTheDocument()
@@ -216,5 +220,81 @@ describe('ContextPanel', () => {
     collapseButton.click()
 
     expect(handleToggle).toHaveBeenCalledTimes(1)
+  })
+
+  test('scrollable content has no-scrollbar class', () => {
+    const { container } = render(<ContextPanel />)
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const scrollableDiv = container.querySelector('.overflow-y-auto')
+    expect(scrollableDiv).toHaveClass('no-scrollbar')
+  })
+
+  // Bug 4: Reopen button tests
+
+  test('renders reopen button when panel is collapsed', () => {
+    // eslint-disable-next-line react/jsx-boolean-value
+    render(<ContextPanel isOpen={false} />)
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open context panel/i,
+    })
+    expect(reopenButton).toBeInTheDocument()
+    expect(reopenButton).toHaveClass('opacity-100')
+    expect(reopenButton).not.toHaveClass('pointer-events-none')
+  })
+
+  test('hides reopen button when panel is open', () => {
+    render(<ContextPanel isOpen />)
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open context panel/i,
+    })
+    expect(reopenButton).toHaveClass('opacity-0')
+    expect(reopenButton).toHaveClass('pointer-events-none')
+  })
+
+  test('reopen button has correct positioning and styling', () => {
+    // eslint-disable-next-line react/jsx-boolean-value
+    render(<ContextPanel isOpen={false} />)
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open context panel/i,
+    })
+    expect(reopenButton).toHaveClass('fixed', 'right-4', 'z-30')
+    expect(reopenButton).toHaveClass('bg-surface-container')
+  })
+
+  test('reopen button displays dock_to_left icon', () => {
+    // eslint-disable-next-line react/jsx-boolean-value
+    render(<ContextPanel isOpen={false} />)
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open context panel/i,
+    })
+    expect(within(reopenButton).getByText('dock_to_left')).toBeInTheDocument()
+  })
+
+  test('calls onToggle when reopen button is clicked', () => {
+    const handleToggle = vi.fn()
+    // eslint-disable-next-line react/jsx-boolean-value
+    render(<ContextPanel isOpen={false} onToggle={handleToggle} />)
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open context panel/i,
+    })
+    reopenButton.click()
+
+    expect(handleToggle).toHaveBeenCalledTimes(1)
+  })
+
+  test('reopen button has smooth transition classes', () => {
+    // eslint-disable-next-line react/jsx-boolean-value
+    render(<ContextPanel isOpen={false} />)
+
+    const reopenButton = screen.getByRole('button', {
+      name: /open context panel/i,
+    })
+    expect(reopenButton).toHaveClass('transition-all', 'duration-300')
   })
 })
