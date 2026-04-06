@@ -21,6 +21,13 @@ const EXCLUDED_PATTERNS = [
   'coverage',
   '.DS_Store',
   'Thumbs.db',
+  '.env',
+  '.env.local',
+  '.env.development',
+  '.env.production',
+  '.env.test',
+  '.npmrc',
+  '.claude',
 ]
 
 /**
@@ -87,7 +94,11 @@ async function validateRealPath(filePath: string): Promise<string | null> {
  */
 function shouldExclude(name: string): boolean {
   return EXCLUDED_PATTERNS.some(
-    (pattern) => name === pattern || name.startsWith(`${pattern}/`)
+    (pattern) =>
+      name === pattern ||
+      name.startsWith(`${pattern}/`) ||
+      // Match .env.* variants (e.g., .env.staging, .env.local.backup)
+      (pattern === '.env' && name.startsWith('.env.'))
   )
 }
 
