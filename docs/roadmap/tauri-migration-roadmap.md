@@ -24,7 +24,7 @@ This roadmap transforms Vimeflow from a pure React web app (with Vite API plugin
 
 - **Service factory pattern** already exists for git: `GitService` interface with `MockGitService` / `HttpGitService` + factory `createGitService()` switching on `import.meta.env.MODE`
 - **File service** uses bare functions (no interface/factory) — needs refactoring to match git pattern
-- **148 test files** with Vitest + Testing Library
+- **73 test files** with Vitest + Testing Library
 
 ---
 
@@ -50,7 +50,7 @@ Bootstrap `src-tauri/` so the app runs as a Tauri window while the existing Vite
 - [ ] `npm run tauri:dev` opens a native window showing the existing React app
 - [ ] `npm run dev` still works as standalone Vite dev server (no regression)
 - [ ] CI `tauri-build.yml` passes on macOS, Windows, Linux
-- [ ] All 148 existing test files still pass
+- [ ] All existing test files still pass
 
 ### Risks
 
@@ -290,7 +290,7 @@ Phase 5  Phase 6   (parallel)
 
 | Severity | Issue                                                    | Action                                                    |
 | -------- | -------------------------------------------------------- | --------------------------------------------------------- |
-| CRITICAL | `.env` `ANTHROPIC_BASE_URL` uses plain HTTP              | Rotate keys, switch to `https://`                         |
+| MEDIUM   | If local `.env` uses plain HTTP for `ANTHROPIC_BASE_URL` | Rotate keys, switch to `https://` (verify in your `.env`) |
 | HIGH     | `baseBranch` param unvalidated in `vite.config.ts:62`    | Add `[a-zA-Z0-9/_.\-]+` allowlist, reject leading `-`     |
 | HIGH     | `hunkIndex` not type-checked in `vite.config.ts:219,301` | Rust `usize` in serde struct eliminates this structurally |
 
