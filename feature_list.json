@@ -2,12 +2,14 @@
   {
     "id": 1,
     "phase": 1,
-    "category": "bugfix",
-    "description": "Fix ChatView ContextPanel collapse/reopen - pass isOpen and onToggle props",
+    "category": "critical-fix",
+    "description": "Fix race condition in handleNodeSelect (Issue 1)",
     "steps": [
-      "Update ChatView.tsx line 47 to pass isOpen={isContextPanelOpen} and onToggle={onToggleContextPanel} to ContextPanel",
-      "Make ChatView main content margin dynamic: ${isContextPanelOpen ? 'mr-[280px]' : 'mr-0'} transition-all duration-300",
-      "Update ChatView tests to verify ContextPanel receives correct props"
+      "Read EditorView.tsx lines 84-96",
+      "Combine setTabs calls into single atomic update",
+      "Create new tab with isActive: true and deactivate others in one call",
+      "Remove separate handleTabClick call",
+      "Verify clicking file in explorer opens AND activates tab on first click"
     ],
     "passes": true,
     "dependencies": []
@@ -15,30 +17,30 @@
   {
     "id": 2,
     "phase": 1,
-    "category": "bugfix",
-    "description": "Fix DiffView CommitInfoPanel collapse/reopen - wire up existing props",
+    "category": "critical-fix",
+    "description": "Fix stale closure over tabs in handleNodeSelect (Issue 2)",
     "steps": [
-      "Remove eslint-disable comments for isContextPanelOpen and onToggleContextPanel props",
-      "Apply collapsible pattern to CommitInfoPanel: translate-x-full when closed, floating reopen button",
-      "Make DiffView main content margin dynamic based on isContextPanelOpen",
-      "Update DiffView tests to verify CommitInfoPanel collapses/reopens correctly"
+      "Read EditorView.tsx handleNodeSelect implementation",
+      "Add tabsRef = useRef(tabs) and tabsRef.current = tabs",
+      "Replace tabs.find() with tabsRef.current.find()",
+      "Verify rapid clicking creates correct tabs without duplicates",
+      "Ensure no stale state issues during fast interaction"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [1]
   },
   {
     "id": 3,
-    "phase": 1,
-    "category": "bugfix",
-    "description": "Add ExplorerPane reopen button for when pane is collapsed",
+    "phase": 2,
+    "category": "code-quality",
+    "description": "Replace useState with useRef for cache in useFileContent (Issue 3)",
     "steps": [
-      "Add floating reopen button OUTSIDE collapsible <nav> in ExplorerPane.tsx",
-      "Position at fixed left-[308px] top-14 z-30, w-6 h-10 rounded-r-lg",
-      "Style: bg-surface-container hover:bg-surface-container-high, border-r border-y border-outline-variant/10",
-      "Icon: chevron_right, aria-label='Open explorer panel'",
-      "Visibility: opacity-0 pointer-events-none when open, opacity-100 when collapsed",
-      "Add smooth transition: transition-all duration-300",
-      "Add ExplorerPane tests for reopen button behavior"
+      "Read useFileContent.ts line 22",
+      "Replace useState<Map> with useRef<Map>",
+      "Update all cache references to cacheRef.current",
+      "Remove destructured [cache] pattern",
+      "Verify file content caching still works",
+      "Run tests to ensure no regression"
     ],
     "passes": true,
     "dependencies": []
@@ -46,29 +48,125 @@
   {
     "id": 4,
     "phase": 2,
-    "category": "verification",
-    "description": "Run all verification checks",
+    "category": "code-quality",
+    "description": "Remove eslint-disable suppressions in useFileTree (Issue 6)",
     "steps": [
-      "npm run lint - verify zero errors",
-      "npm run type-check - verify zero errors",
-      "npm run format:check - verify passes",
-      "npm run test - verify all tests pass",
-      "npm run build - verify production build succeeds"
+      "Read useFileTree.ts lines 32, 37, 44",
+      "Restructure async logic to match useFileContent pattern",
+      "Remove all inline eslint-disable-next-line comments",
+      "Verify mounted-ref safety still works",
+      "Run tests to ensure all pass"
     ],
     "passes": true,
-    "dependencies": [1, 2, 3]
+    "dependencies": []
   },
   {
     "id": 5,
     "phase": 2,
-    "category": "verification",
-    "description": "Verify test coverage remains >= 80%",
+    "category": "code-quality",
+    "description": "Remove unused onFileDiffRequest prop (Issue 7)",
     "steps": [
-      "Run npm run test -- --coverage",
-      "Verify coverage meets 80% threshold",
-      "Document coverage metrics"
+      "Read EditorView.tsx lines 34-35",
+      "Remove onFileDiffRequest from EditorViewProps interface",
+      "Remove from destructured props",
+      "Check for callers passing this prop and remove if found",
+      "Verify no eslint warnings remain"
     ],
     "passes": true,
-    "dependencies": [1, 2, 3]
+    "dependencies": []
+  },
+  {
+    "id": 6,
+    "phase": 3,
+    "category": "missing-feature",
+    "description": "Add line number gutter to CodeEditor (Issue 4)",
+    "steps": [
+      "Read CodeEditor.tsx current structure",
+      "Import LineNumbers component",
+      "Wrap code in flex container with LineNumbers + code content",
+      "Verify line numbers appear in gutter with correct styling",
+      "Verify current line number highlighted with text-primary/60",
+      "Verify gutter scrolls in sync with code",
+      "Update CodeEditor tests to verify LineNumbers rendering"
+    ],
+    "passes": true,
+    "dependencies": []
+  },
+  {
+    "id": 7,
+    "phase": 4,
+    "category": "design-compliance",
+    "description": "Fix EditorStatusBar styling to match spec (Issue 5)",
+    "steps": [
+      "Read EditorStatusBar.tsx current implementation",
+      "Update Vim mode to display '-- NORMAL --' format",
+      "Add 'account_tree' icon before git branch",
+      "Add 'sync' icon before sync status",
+      "Add hover:bg-[#333344] transition-colors cursor-pointer to all segments",
+      "Add border-r/border-l dividers between segments",
+      "Verify all styling matches design spec exactly",
+      "Update EditorStatusBar tests for new icons and formatting"
+    ],
+    "passes": true,
+    "dependencies": []
+  },
+  {
+    "id": 8,
+    "phase": 5,
+    "category": "bonus-fix",
+    "description": "Replace Date.now() with crypto.randomUUID() for tab IDs",
+    "steps": [
+      "Find tab ID generation in EditorView.tsx line 86",
+      "Replace tab-${Date.now()} with tab-${crypto.randomUUID()}",
+      "Verify no tab ID collisions during rapid clicks"
+    ],
+    "passes": true,
+    "dependencies": []
+  },
+  {
+    "id": 9,
+    "phase": 5,
+    "category": "bonus-fix",
+    "description": "Add harness/.venv/ to .gitignore",
+    "steps": [
+      "Read .gitignore file",
+      "Add harness/.venv/ entry if not already present",
+      "Verify git status shows .venv is ignored"
+    ],
+    "passes": true,
+    "dependencies": []
+  },
+  {
+    "id": 10,
+    "phase": 6,
+    "category": "testing",
+    "description": "Update tests for all modified components",
+    "steps": [
+      "Update EditorView tests for race condition fix",
+      "Update CodeEditor tests for line numbers",
+      "Update EditorStatusBar tests for new icons/formatting",
+      "Update useFileContent tests for useRef change",
+      "Update useFileTree tests for eslint fix",
+      "Verify all tests pass with npm run test",
+      "Verify coverage >= 80%"
+    ],
+    "passes": true,
+    "dependencies": [1, 2, 3, 4, 5, 6, 7]
+  },
+  {
+    "id": 11,
+    "phase": 6,
+    "category": "verification",
+    "description": "Run all verification checks",
+    "steps": [
+      "Run npm run lint - verify zero errors",
+      "Verify zero eslint-disable comments in hooks",
+      "Run npm run type-check - verify zero errors",
+      "Run npm run format:check - verify passes",
+      "Run npm run test - verify all tests pass",
+      "Run npm run build - verify production build succeeds"
+    ],
+    "passes": true,
+    "dependencies": [10]
   }
 ]
