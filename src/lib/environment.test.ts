@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
-import { isTauri, isBrowser, getEnvironment } from './environment'
+import { isTauri, isBrowser, getEnvironment, isTest } from './environment'
 
 describe('environment detection', () => {
   let originalTauriInternals: typeof window.__TAURI_INTERNALS__
@@ -69,6 +69,13 @@ describe('environment detection', () => {
       delete (window as Window).__TAURI_INTERNALS__
 
       expect(getEnvironment()).toBe('browser')
+    })
+  })
+
+  describe('isTest', () => {
+    test('returns true when running in test mode', () => {
+      // In vitest, import.meta.env.MODE is 'test' by default
+      expect(isTest()).toBe(true)
     })
   })
 })

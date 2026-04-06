@@ -44,3 +44,10 @@ export const isBrowser = (): boolean => !isTauri()
  */
 export const getEnvironment = (): 'tauri' | 'browser' =>
   isTauri() ? 'tauri' : 'browser'
+
+/**
+ * Check if the application is running in test mode
+ *
+ * @returns true if running in test mode, false otherwise
+ */
+export const isTest = (): boolean => import.meta.env.MODE === 'test'
