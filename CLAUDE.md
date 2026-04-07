@@ -8,9 +8,9 @@ This file is intentionally minimal — it is an **index, not a reference**. Each
 
 ## What This Project Is
 
-Vimeflow is a **coding agent conversation manager** — a Tauri desktop application (Rust backend + React/TypeScript frontend) for managing conversations with AI coding agents.
+Vimeflow is a **CLI coding agent control plane** — a Tauri desktop application (Rust backend + React/TypeScript frontend) that unifies terminal sessions (AI coding agents like Claude Code), file explorer, code editor, and git diff into one window.
 
-**Phase: Early implementation** — CI/CD tooling, design system, and layout shell are established. Chat UI with mock data is functional. No Tauri/Rust backend yet (`src-tauri/` does not exist).
+**Phase: Early implementation** — CI/CD tooling, design system, and layout shell are established. Pivoting from chat-based UI to terminal-first agent workspace. No Tauri/Rust backend yet (`src-tauri/` does not exist).
 
 ## Commands
 
@@ -63,7 +63,7 @@ src/
 
 ## Design System: "The Obsidian Lens"
 
-Dark atmospheric UI built on Catppuccin Mocha palette. Colors defined as semantic tokens in `tailwind.config.js` (e.g. `bg-surface-container`, `text-on-surface`, `text-primary`). Fonts: Manrope (headlines), Inter (body/labels), JetBrains Mono (code). No visible borders — use tonal depth and glassmorphism. See `DESIGN.md` and `docs/design/` for full specs.
+Dark atmospheric UI built on Catppuccin Mocha palette. Colors defined as semantic tokens in `tailwind.config.js` (e.g. `bg-surface-container`, `text-on-surface`, `text-primary`). Fonts: Manrope (headlines), Inter (body/labels), JetBrains Mono (code). No visible borders — use tonal depth and glassmorphism. See `docs/design/DESIGN.md` for the full spec (single source of truth).
 
 ## Git Hooks (Husky)
 
@@ -78,7 +78,7 @@ This file covers what you need to start working. For deeper topics, read the lin
 | Topic                                                    | Where                                                             |
 | -------------------------------------------------------- | ----------------------------------------------------------------- |
 | Architecture decisions, Tauri IPC patterns               | `ARCHITECT.md`                                                    |
-| UI design system, screens, components                    | `DESIGN.md` → `docs/design/`                                      |
+| UI design system, screens, components                    | `docs/design/DESIGN.md` (single source of truth)                   |
 | AI agent specs (planner, tdd-guide, code-reviewer, etc.) | `agents/CLAUDE.md`                                                |
 | Development standards (coding style, testing, security)  | `rules/CLAUDE.md`                                                 |
 | Autonomous development loop (harness + Codex review)     | `harness/CLAUDE.md`                                               |
