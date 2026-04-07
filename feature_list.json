@@ -191,7 +191,7 @@
       "Apply muted text styling (#4a444f)",
       "Write ActivityFooter.test.tsx"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [3]
   },
   {
