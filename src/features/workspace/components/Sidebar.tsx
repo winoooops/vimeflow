@@ -1,10 +1,13 @@
 import type { ReactElement } from 'react'
-import type { Session, SessionStatus } from '../types'
+import type { Session, SessionStatus, ContextPanelType } from '../types'
+import { ContextSwitcher } from './ContextSwitcher'
 
 export interface SidebarProps {
   sessions: Session[]
   activeSessionId: string | null
   onSessionClick: (sessionId: string) => void
+  activeContextTab: ContextPanelType
+  onContextTabChange: (tab: ContextPanelType) => void
 }
 
 function getStatusBadgeClasses(status: SessionStatus): string {
@@ -45,6 +48,8 @@ export const Sidebar = ({
   sessions,
   activeSessionId,
   onSessionClick,
+  activeContextTab,
+  onContextTabChange,
 }: SidebarProps): ReactElement => (
   <div
     className="flex h-full w-[260px] flex-col bg-surface-container-low"
@@ -58,7 +63,10 @@ export const Sidebar = ({
     </div>
 
     {/* Session list */}
-    <div className="flex flex-col gap-1 px-2" data-testid="session-list">
+    <div
+      className="flex flex-1 flex-col gap-1 overflow-y-auto px-2"
+      data-testid="session-list"
+    >
       {sessions.length === 0 ? (
         <div className="px-3 py-4 text-center text-sm text-on-surface/50">
           No sessions
@@ -71,7 +79,9 @@ export const Sidebar = ({
             <button
               key={session.id}
               type="button"
-              onClick={() => onSessionClick(session.id)}
+              onClick={() => {
+                onSessionClick(session.id)
+              }}
               className={`
                 flex flex-col gap-1 rounded-lg border-l-4 p-3
                 text-left transition-colors
@@ -111,5 +121,11 @@ export const Sidebar = ({
         })
       )}
     </div>
+
+    {/* Context Switcher at bottom */}
+    <ContextSwitcher
+      activeTab={activeContextTab}
+      onTabChange={onContextTabChange}
+    />
   </div>
 )

@@ -86,7 +86,7 @@
       "Write ContextSwitcher.test.tsx",
       "Integrate into Sidebar component"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [5]
   },
   {

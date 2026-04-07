@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { Sidebar } from './Sidebar'
@@ -86,12 +86,22 @@ const mockSessions: Session[] = [
 ]
 
 describe('Sidebar', () => {
+  const mockOnSessionClick = vi.fn()
+  const mockOnContextTabChange = vi.fn()
+
+  beforeEach(() => {
+    mockOnSessionClick.mockClear()
+    mockOnContextTabChange.mockClear()
+  })
+
   test('renders with correct width', () => {
     render(
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
-        onSessionClick={vi.fn()}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -106,7 +116,9 @@ describe('Sidebar', () => {
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
-        onSessionClick={vi.fn()}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -120,7 +132,9 @@ describe('Sidebar', () => {
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
-        onSessionClick={vi.fn()}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -139,7 +153,9 @@ describe('Sidebar', () => {
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
-        onSessionClick={vi.fn()}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -156,7 +172,9 @@ describe('Sidebar', () => {
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
-        onSessionClick={vi.fn()}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -170,13 +188,14 @@ describe('Sidebar', () => {
 
   test('calls onSessionClick with session id when session is clicked', async () => {
     const user = userEvent.setup()
-    const onSessionClick = vi.fn()
 
     render(
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
-        onSessionClick={onSessionClick}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -184,7 +203,7 @@ describe('Sidebar', () => {
 
     await user.click(session)
 
-    expect(onSessionClick).toHaveBeenCalledWith('sess-2')
+    expect(mockOnSessionClick).toHaveBeenCalledWith('sess-2')
   })
 
   test('displays timestamps for sessions', () => {
@@ -192,7 +211,9 @@ describe('Sidebar', () => {
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
-        onSessionClick={vi.fn()}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -209,7 +230,9 @@ describe('Sidebar', () => {
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
-        onSessionClick={vi.fn()}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -220,10 +243,75 @@ describe('Sidebar', () => {
 
   test('renders empty state when no sessions', () => {
     render(
-      <Sidebar sessions={[]} activeSessionId={null} onSessionClick={vi.fn()} />
+      <Sidebar
+        sessions={[]}
+        activeSessionId={null}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
+      />
     )
 
     expect(screen.getByText('No sessions')).toBeInTheDocument()
+  })
+
+  test('renders ContextSwitcher at the bottom', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
+      />
+    )
+
+    // Check that ContextSwitcher is rendered
+    expect(screen.getByTestId('context-switcher')).toBeInTheDocument()
+
+    // Check that all tabs are present
+    expect(screen.getByRole('button', { name: /files/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /diff/i })).toBeInTheDocument()
+  })
+
+  test('ContextSwitcher receives correct activeTab prop', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="editor"
+        onContextTabChange={mockOnContextTabChange}
+      />
+    )
+
+    const editorTab = screen.getByRole('button', { name: /editor/i })
+
+    // Active tab should have purple styling
+    expect(editorTab).toHaveClass('text-primary')
+    expect(editorTab).toHaveClass('border-b-primary')
+  })
+
+  test('ContextSwitcher calls onContextTabChange when tab is clicked', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
+      />
+    )
+
+    const editorTab = screen.getByRole('button', { name: /editor/i })
+
+    await user.click(editorTab)
+
+    expect(mockOnContextTabChange).toHaveBeenCalledWith('editor')
+    expect(mockOnContextTabChange).toHaveBeenCalledTimes(1)
   })
 
   test('session cards have hover state', () => {
@@ -231,7 +319,9 @@ describe('Sidebar', () => {
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
-        onSessionClick={vi.fn()}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -245,7 +335,9 @@ describe('Sidebar', () => {
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
-        onSessionClick={vi.fn()}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -268,7 +360,9 @@ describe('Sidebar', () => {
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
-        onSessionClick={vi.fn()}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -284,7 +378,9 @@ describe('Sidebar', () => {
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
-        onSessionClick={vi.fn()}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -296,7 +392,9 @@ describe('Sidebar', () => {
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
-        onSessionClick={vi.fn()}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -316,7 +414,9 @@ describe('Sidebar', () => {
       <Sidebar
         sessions={[longNameSession]}
         activeSessionId="sess-1"
-        onSessionClick={vi.fn()}
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
       />
     )
 
