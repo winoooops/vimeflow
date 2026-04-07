@@ -47,61 +47,61 @@ Floating elements (Modals, Tooltips, Command Palette) must utilize **Glassmorphi
 
 Beyond the core surface hierarchy, the system includes these semantic tokens:
 
-| Token | Hex | Usage |
-|-------|-----|-------|
-| `surface-tint` | `#e2c7ff` | Tinted overlays and focus rings |
-| `primary-dim` | `#d3b9f0` | Subdued icon states, inactive accents |
-| `secondary-dim` | `#c39eee` | Dimmed accent states |
-| `tertiary` | `#ff94a5` | Warning accents, attention states |
-| `tertiary-container` | `#fd7e94` | Warning badge backgrounds |
-| `error-dim` | `#d73357` | Error backgrounds, dimmed error |
-| `success` | `#50fa7b` | Agent running status, live indicators |
-| `success-muted` | `#7defa1` | Diff added lines, softer success text |
+| Token                | Hex       | Usage                                 |
+| -------------------- | --------- | ------------------------------------- |
+| `surface-tint`       | `#e2c7ff` | Tinted overlays and focus rings       |
+| `primary-dim`        | `#d3b9f0` | Subdued icon states, inactive accents |
+| `secondary-dim`      | `#c39eee` | Dimmed accent states                  |
+| `tertiary`           | `#ff94a5` | Warning accents, attention states     |
+| `tertiary-container` | `#fd7e94` | Warning badge backgrounds             |
+| `error-dim`          | `#d73357` | Error backgrounds, dimmed error       |
+| `success`            | `#50fa7b` | Agent running status, live indicators |
+| `success-muted`      | `#7defa1` | Diff added lines, softer success text |
 
 ### Complete Token Reference
 
 #### Core Surface Hierarchy
 
-| Token                       | Hex       | Usage                                          |
-| --------------------------- | --------- | ---------------------------------------------- |
-| `surface` / `background`    | `#121221` | Level 0 — base, infinite depth                 |
-| `surface-container-lowest`  | `#0d0d1c` | Deepest recessed areas                         |
-| `surface-container-low`     | `#1a1a2a` | Level 1 — sidebar, icon rail, activity panel   |
-| `surface-container`         | `#1e1e2e` | Level 2 — cards, main content areas            |
-| `surface-container-high`    | `#292839` | Elevated cards, glassmorphism fills            |
-| `surface-container-highest` | `#333344` | Level 3 — popovers, modals, inputs             |
-| `surface-bright`            | `#383849` | Hover states                                   |
-| `surface-tint`              | `#e2c7ff` | Tinted overlays and focus rings                |
+| Token                       | Hex       | Usage                                        |
+| --------------------------- | --------- | -------------------------------------------- |
+| `surface` / `background`    | `#121221` | Level 0 — base, infinite depth               |
+| `surface-container-lowest`  | `#0d0d1c` | Deepest recessed areas                       |
+| `surface-container-low`     | `#1a1a2a` | Level 1 — sidebar, icon rail, activity panel |
+| `surface-container`         | `#1e1e2e` | Level 2 — cards, main content areas          |
+| `surface-container-high`    | `#292839` | Elevated cards, glassmorphism fills          |
+| `surface-container-highest` | `#333344` | Level 3 — popovers, modals, inputs           |
+| `surface-bright`            | `#383849` | Hover states                                 |
+| `surface-tint`              | `#e2c7ff` | Tinted overlays and focus rings              |
 
 #### Primary & Secondary
 
-| Token                       | Hex       | Usage                                          |
-| --------------------------- | --------- | ---------------------------------------------- |
-| `primary`                   | `#e2c7ff` | Primary text accent                            |
-| `primary-container`         | `#cba6f7` | Active indicators, CTA gradients, brand        |
-| `primary-dim`               | `#d3b9f0` | Subdued icon states, inactive accents          |
-| `secondary`                 | `#a8c8ff` | Info accents, progress bars, status            |
-| `secondary-container`       | `#57377f` | Contained accent backgrounds                   |
-| `secondary-dim`             | `#c39eee` | Dimmed accent states                           |
+| Token                 | Hex       | Usage                                   |
+| --------------------- | --------- | --------------------------------------- |
+| `primary`             | `#e2c7ff` | Primary text accent                     |
+| `primary-container`   | `#cba6f7` | Active indicators, CTA gradients, brand |
+| `primary-dim`         | `#d3b9f0` | Subdued icon states, inactive accents   |
+| `secondary`           | `#a8c8ff` | Info accents, progress bars, status     |
+| `secondary-container` | `#57377f` | Contained accent backgrounds            |
+| `secondary-dim`       | `#c39eee` | Dimmed accent states                    |
 
 #### Semantic & Feedback
 
-| Token                       | Hex       | Usage                                          |
-| --------------------------- | --------- | ---------------------------------------------- |
-| `tertiary`                  | `#ff94a5` | Warning accents, attention states              |
-| `tertiary-container`        | `#fd7e94` | Warning badge backgrounds                      |
-| `error`                     | `#ffb4ab` | Error states, destructive actions              |
-| `error-dim`                 | `#d73357` | Error backgrounds, dimmed error indicators     |
-| `success`                   | `#50fa7b` | Agent running status, live indicators          |
-| `success-muted`             | `#7defa1` | Diff added lines, softer success text          |
+| Token                | Hex       | Usage                                      |
+| -------------------- | --------- | ------------------------------------------ |
+| `tertiary`           | `#ff94a5` | Warning accents, attention states          |
+| `tertiary-container` | `#fd7e94` | Warning badge backgrounds                  |
+| `error`              | `#ffb4ab` | Error states, destructive actions          |
+| `error-dim`          | `#d73357` | Error backgrounds, dimmed error indicators |
+| `success`            | `#50fa7b` | Agent running status, live indicators      |
+| `success-muted`      | `#7defa1` | Diff added lines, softer success text      |
 
 #### Text & Borders
 
-| Token                       | Hex       | Usage                                          |
-| --------------------------- | --------- | ---------------------------------------------- |
-| `on-surface`                | `#e3e0f7` | Titles, active text                            |
-| `on-surface-variant`        | `#cdc3d1` | Body text, secondary text (reduced eye strain) |
-| `outline-variant`           | `#4a444f` | Ghost borders (15% opacity only)               |
+| Token                | Hex       | Usage                                          |
+| -------------------- | --------- | ---------------------------------------------- |
+| `on-surface`         | `#e3e0f7` | Titles, active text                            |
+| `on-surface-variant` | `#cdc3d1` | Body text, secondary text (reduced eye strain) |
+| `outline-variant`    | `#4a444f` | Ghost borders (15% opacity only)               |
 
 ---
 
@@ -109,13 +109,13 @@ Beyond the core surface hierarchy, the system includes these semantic tokens:
 
 We pair the structural clarity of **Inter** with the geometric elegance of **Manrope** for high-level displays, creating a hierarchy that feels authoritative yet warm. **JetBrains Mono** creates a clear mental shift between "The System" (Inter/Manrope) and "The Work" (terminal/code).
 
-| Role            | Font Family    | Size     | Color              | Intent                                        |
-| :-------------- | :------------- | :------- | :----------------- | :-------------------------------------------- |
-| **Display-LG**  | Manrope 700/800 | 3.5rem  | `on-surface`       | Hero moments and empty-state headlines        |
-| **Headline-SM** | Manrope 700    | 1.5rem   | `on-surface`       | Section headers and panel titles              |
-| **Title-MD**    | Inter 500/600  | 1.125rem | `on-surface`       | Modal titles and card headers                 |
-| **Body-MD**     | Inter 400      | 0.875rem | `on-surface-variant` | Standard UI text and descriptions           |
-| **Label-MD**    | JetBrains Mono 400 | 0.75rem | `on-surface-variant` | Code, metadata, technical labels, terminal |
+| Role            | Font Family        | Size     | Color                | Intent                                     |
+| :-------------- | :----------------- | :------- | :------------------- | :----------------------------------------- |
+| **Display-LG**  | Manrope 700/800    | 3.5rem   | `on-surface`         | Hero moments and empty-state headlines     |
+| **Headline-SM** | Manrope 700        | 1.5rem   | `on-surface`         | Section headers and panel titles           |
+| **Title-MD**    | Inter 500/600      | 1.125rem | `on-surface`         | Modal titles and card headers              |
+| **Body-MD**     | Inter 400          | 0.875rem | `on-surface-variant` | Standard UI text and descriptions          |
+| **Label-MD**    | JetBrains Mono 400 | 0.75rem  | `on-surface-variant` | Code, metadata, technical labels, terminal |
 
 **The Hierarchy Rule:** Use `on-surface-variant` (#cdc3d1) for body text to reduce eye strain, reserving `on-surface` (#e3e0f7) for titles and active states.
 
@@ -206,6 +206,7 @@ When a modal or "Lens" view is triggered (Command Palette, full-width editor ove
 ### Status Indicators
 
 Agent session status uses animated indicators:
+
 - **Running:** `success` (#50fa7b) dot with `animate-pulse` and `shadow-[0_0_8px]` glow.
 - **Paused:** `secondary` (#a8c8ff) static dot.
 - **Completed:** `on-surface-variant` (#cdc3d1) hollow circle.
@@ -214,6 +215,7 @@ Agent session status uses animated indicators:
 ### Context Window Smiley
 
 The context window indicator uses emoji that degrades as context fills:
+
 - 😊 Fresh (<50%)
 - 😐 Moderate (50-75%)
 - 😟 High (75-90%)

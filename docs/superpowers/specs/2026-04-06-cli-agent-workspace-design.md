@@ -11,7 +11,9 @@ Vimeflow pivots from a chatbot conversation manager to a **CLI coding agent cont
 ## Core Concepts
 
 ### Agent Session
+
 A single instance of a CLI coding agent (Claude Code at launch, extensible to Codex, Aider, etc.) running in a PTY. Each session has:
+
 - A name (user-assigned or derived from the initial prompt)
 - A working directory (project root)
 - A status: `running`, `paused`, `completed`, `errored`
@@ -19,9 +21,11 @@ A single instance of a CLI coding agent (Claude Code at launch, extensible to Co
 - Associated context: file changes, tool calls, test results
 
 ### Project
+
 A grouping of agent sessions tied to a directory. Represented as an avatar in the icon rail. Analogous to a Discord server — click to see its sessions.
 
 ### Context Panels
+
 Companion views (Files Explorer, Code Editor, Git Diff) that surround the terminal and react to the active agent session. They are scoped to the session's working directory and update as the agent makes changes.
 
 ## Layout Architecture
@@ -48,10 +52,10 @@ Companion views (Files Explorer, Code Editor, Git Diff) that surround the termin
 
 **Purpose**: Project selector + global actions.
 
-| Section | Content |
-|---------|---------|
-| Top | Project avatars (2-letter abbreviation, e.g., "My", "Vf"). Active project highlighted with `primary-container/20` pill backlight. |
-| Bottom | `+` New project button, `⚙` Settings |
+| Section | Content                                                                                                                           |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Top     | Project avatars (2-letter abbreviation, e.g., "My", "Vf"). Active project highlighted with `primary-container/20` pill backlight. |
+| Bottom  | `+` New project button, `⚙` Settings                                                                                              |
 
 Clicking a project avatar switches the sidebar to show that project's sessions and context.
 
@@ -62,12 +66,14 @@ Clicking a project avatar switches the sidebar to show that project's sessions a
 Two stacked sections:
 
 **Top — Session List**:
+
 - Lists all agent sessions for the active project
 - Each item shows: session name, status badge (`● running` / `⏸ paused` / `○ completed`), relative timestamp
 - Active session highlighted with left accent border (`primary`) and `surface-container` background
 - Click to switch the terminal zone and agent activity panel to that session
 
 **Bottom — Context Switcher**:
+
 - Tab row: `📁 Files` | `📝 Editor` | `± Diff`
 - Content below renders the selected context panel, scoped to the active session's working directory
 - Files Explorer: file tree with git status badges (M/A/D), click to open in Editor
@@ -90,64 +96,73 @@ The sidebar collapses to give the terminal more room. When collapsed, the icon r
 **Purpose**: Real-time dashboard for the active agent session.
 
 Data sources:
+
 - **File watcher** (Rust `notify` crate → Tauri events): Monitors the session's working directory for filesystem changes. Agent-agnostic.
 - **Terminal output parser**: Parses Claude Code's stdout to extract structured info (tool calls, test results, status). Agent-specific, extensible via adapters.
 
 #### Always-Visible (Pinned)
 
 **Status Card**:
+
 - Agent name and type (e.g., "Claude Code")
 - State badge: `● running` (green), `⏸ paused` (blue), `○ completed` (muted), `✗ errored` (red)
 - Current action description (parsed from terminal, e.g., "Creating auth middleware...")
 
 **Context Window**:
+
 - Smiley face indicator matching Claude Code's UX: `😊` (fresh) → `😐` (moderate) → `😟` (high) → `🥵` (near limit)
 - Displayed as icon + label (e.g., `😊 Context`)
 
 **5-Hour Usage**:
+
 - Message or token count for the current 5-hour billing window
 - Shows used / limit (e.g., `142 / 200 messages`)
 
 #### Collapsible Sections
 
 **Files Changed** (auto-expanded):
+
 - Live list from file watcher
 - Each entry: filename, change type badge (`new` / `modified` / `deleted`), line diff summary (`+5 -1`)
 - Click a file → opens in Editor or Diff context panel
 
 **Tool Calls** (collapsed by default, auto-expands on activity):
+
 - Parsed from terminal output
 - Each entry: status icon (`✓` done / `⟳` running / `✗` failed), tool name + argument summary
 - Scrollable, newest at bottom
 
 **Tests** (collapsed by default, auto-expands when tests run):
+
 - Parsed from terminal output (vitest, jest, pytest patterns)
 - Summary: passed / failed / total count
 - Failed test details: file:line, assertion message
 
 **Usage Details** (collapsed by default):
+
 - Weekly usage: messages, tokens, cost
 - Monthly usage: messages, tokens, cost
 - Cost breakdown by model
 - Mirrors metrics from the Claude Code billing page
 
 **Footer** (always visible):
+
 - Session duration
 - Turn count
 - Lines added / removed summary
 
 ## What Changes from Current Design
 
-| Aspect | Before (Chat Manager) | After (CLI Agent Workspace) |
-|--------|----------------------|----------------------------|
-| Primary view | Chat message thread | Terminal pane (xterm.js) |
-| Icon Rail | Tab switcher (Chat/Files/Editor/Diff) | Project selector (Discord pattern) |
-| Sidebar | Conversation list + categories | Agent session list + context switcher |
-| Right panel | Context Panel (model info, recent actions) | Agent Activity (files, tools, tests, usage) |
-| Chat view | Core feature | Dropped entirely |
-| Chat types/data | `Message`, `Conversation`, mock data | Removed |
-| Terminal | Not present | Core feature (PTY + xterm.js) |
-| Agent awareness | None (generic AI chat) | First-class (status, tool calls, context window) |
+| Aspect          | Before (Chat Manager)                      | After (CLI Agent Workspace)                      |
+| --------------- | ------------------------------------------ | ------------------------------------------------ |
+| Primary view    | Chat message thread                        | Terminal pane (xterm.js)                         |
+| Icon Rail       | Tab switcher (Chat/Files/Editor/Diff)      | Project selector (Discord pattern)               |
+| Sidebar         | Conversation list + categories             | Agent session list + context switcher            |
+| Right panel     | Context Panel (model info, recent actions) | Agent Activity (files, tools, tests, usage)      |
+| Chat view       | Core feature                               | Dropped entirely                                 |
+| Chat types/data | `Message`, `Conversation`, mock data       | Removed                                          |
+| Terminal        | Not present                                | Core feature (PTY + xterm.js)                    |
+| Agent awareness | None (generic AI chat)                     | First-class (status, tool calls, context window) |
 
 ## What Stays the Same
 
@@ -162,17 +177,17 @@ Data sources:
 
 ## Tech Stack
 
-| Component | Technology | Notes |
-|-----------|-----------|-------|
-| Runtime | Tauri v2 | Rust backend for PTY, file watching, system ops |
-| Frontend | React 19 + TypeScript | Existing stack |
-| Bundler | Vite | Existing |
-| Terminal | xterm.js | De facto standard for web-based terminals |
-| PTY | portable-pty (Rust) | Cross-platform PTY spawning |
-| File watching | notify (Rust crate) | FS events → Tauri events → frontend |
-| Editor | CodeMirror 6 | Already designed, matches Termio's choice |
-| State | Zustand | Replaces prop drilling |
-| Styling | Tailwind CSS | Existing, with semantic tokens |
+| Component     | Technology            | Notes                                           |
+| ------------- | --------------------- | ----------------------------------------------- |
+| Runtime       | Tauri v2              | Rust backend for PTY, file watching, system ops |
+| Frontend      | React 19 + TypeScript | Existing stack                                  |
+| Bundler       | Vite                  | Existing                                        |
+| Terminal      | xterm.js              | De facto standard for web-based terminals       |
+| PTY           | portable-pty (Rust)   | Cross-platform PTY spawning                     |
+| File watching | notify (Rust crate)   | FS events → Tauri events → frontend             |
+| Editor        | CodeMirror 6          | Already designed, matches Termio's choice       |
+| State         | Zustand               | Replaces prop drilling                          |
+| Styling       | Tailwind CSS          | Existing, with semantic tokens                  |
 
 ## Agent Support Strategy
 
@@ -261,16 +276,16 @@ Below the tabs: a file tree showing folders and files with indentation, matching
 
 The old 6-phase Tauri migration roadmap is replaced. New phases:
 
-| Phase | Focus | Key Deliverables |
-|-------|-------|-----------------|
-| 1 | Tauri Scaffold | `src-tauri/` bootstrap, native window, CI green |
-| 2 | Terminal Core | xterm.js + portable-pty integration, single terminal pane |
-| 3 | Session Management | Project/session data model, Zustand stores, sidebar session list |
-| 4 | File Watcher + Agent Activity | Rust `notify` → Tauri events, Agent Activity sidebar, file change tracking |
-| 5 | Terminal Parser + Agent Adapters | Claude Code output parsing, tool call extraction, test result detection |
-| 6 | Context Panel Integration | Wire Files/Editor/Diff to react to active session, scoped to working directory |
-| 7 | Usage Metrics | Context window indicator, 5-hour usage, weekly/monthly usage panels |
-| 8 | Desktop Polish | Window state persistence, native menus, system tray, auto-updater |
+| Phase | Focus                            | Key Deliverables                                                               |
+| ----- | -------------------------------- | ------------------------------------------------------------------------------ |
+| 1     | Tauri Scaffold                   | `src-tauri/` bootstrap, native window, CI green                                |
+| 2     | Terminal Core                    | xterm.js + portable-pty integration, single terminal pane                      |
+| 3     | Session Management               | Project/session data model, Zustand stores, sidebar session list               |
+| 4     | File Watcher + Agent Activity    | Rust `notify` → Tauri events, Agent Activity sidebar, file change tracking     |
+| 5     | Terminal Parser + Agent Adapters | Claude Code output parsing, tool call extraction, test result detection        |
+| 6     | Context Panel Integration        | Wire Files/Editor/Diff to react to active session, scoped to working directory |
+| 7     | Usage Metrics                    | Context window indicator, 5-hour usage, weekly/monthly usage panels            |
+| 8     | Desktop Polish                   | Window state persistence, native menus, system tray, auto-updater              |
 
 Detailed roadmap with timelines, dependencies, and risks to be written separately.
 

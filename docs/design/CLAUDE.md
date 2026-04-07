@@ -14,13 +14,13 @@ Complete design system specification: color theory, surface hierarchy, typograph
 
 Each subdirectory contains a reference screenshot and the HTML implementation produced by Google Stitch:
 
-| Directory          | Screen             | What It Shows                                                                                                                                                          |
-| ------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent_workspace/` | Agent Workspace    | Primary application view — terminal pane with agent output, session list in sidebar, context switcher (Files/Editor/Diff), agent activity panel with status and usage   |
-| `code_editor/`     | Code Editor        | Tabbed file editor, syntax-highlighted code, line number gutter, minimap, vim status bar, file tree in sidebar                                                         |
-| `files_explorer/`  | Files Explorer     | File tree with breadcrumbs, folder expand/collapse, git status badges (M/A/D), drag-and-drop with drop zones, glassmorphism context menu                               |
-| `git_diff/`        | Git Diff Viewer    | Side-by-side diff with added/removed highlighting, hunk navigation, Stage Hunk/Discard actions, changed files sidebar, floating glassmorphism legend                   |
-| `command_palette/` | Command Palette    | Centered overlay modal, search with `:command` syntax, filtered result list, keyboard navigation hints                                                                  |
+| Directory          | Screen          | What It Shows                                                                                                                                                         |
+| ------------------ | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent_workspace/` | Agent Workspace | Primary application view — terminal pane with agent output, session list in sidebar, context switcher (Files/Editor/Diff), agent activity panel with status and usage |
+| `code_editor/`     | Code Editor     | Tabbed file editor, syntax-highlighted code, line number gutter, minimap, vim status bar, file tree in sidebar                                                        |
+| `files_explorer/`  | Files Explorer  | File tree with breadcrumbs, folder expand/collapse, git status badges (M/A/D), drag-and-drop with drop zones, glassmorphism context menu                              |
+| `git_diff/`        | Git Diff Viewer | Side-by-side diff with added/removed highlighting, hunk navigation, Stage Hunk/Discard actions, changed files sidebar, floating glassmorphism legend                  |
+| `command_palette/` | Command Palette | Centered overlay modal, search with `:command` syntax, filtered result list, keyboard navigation hints                                                                |
 
 **Deprecated**: `chat_or_main/` — Chat view replaced by terminal-based agent interaction (see `agent_workspace/`). Kept for historical reference only.
 

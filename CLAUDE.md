@@ -78,7 +78,7 @@ This file covers what you need to start working. For deeper topics, read the lin
 | Topic                                                    | Where                                                             |
 | -------------------------------------------------------- | ----------------------------------------------------------------- |
 | Architecture decisions, Tauri IPC patterns               | `ARCHITECT.md`                                                    |
-| UI design system, screens, components                    | `docs/design/DESIGN.md` (single source of truth)                   |
+| UI design system, screens, components                    | `docs/design/DESIGN.md` (single source of truth)                  |
 | AI agent specs (planner, tdd-guide, code-reviewer, etc.) | `agents/CLAUDE.md`                                                |
 | Development standards (coding style, testing, security)  | `rules/CLAUDE.md`                                                 |
 | Autonomous development loop (harness + Codex review)     | `harness/CLAUDE.md`                                               |
