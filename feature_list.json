@@ -147,7 +147,7 @@
       "Handle expand/collapse state",
       "Write CollapsibleSection.test.tsx"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [3]
   },
   {
