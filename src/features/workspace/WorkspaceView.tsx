@@ -98,3 +98,5 @@ export const WorkspaceView = (): ReactElement => {
     </div>
   )
 }
+
+export default WorkspaceView

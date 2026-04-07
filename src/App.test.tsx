@@ -4,11 +4,16 @@ import { describe, test, expect, vi } from 'vitest'
 import App from './App'
 
 // Mock WorkspaceView to avoid rendering the full workspace in App tests
-vi.mock('./features/workspace/WorkspaceView', () => ({
-  WorkspaceView: (): ReactElement => (
+vi.mock('./features/workspace/WorkspaceView', () => {
+  const MockedWorkspaceView = (): ReactElement => (
     <div data-testid="workspace-view">Mocked WorkspaceView</div>
-  ),
-}))
+  )
+
+  return {
+    WorkspaceView: MockedWorkspaceView,
+    default: MockedWorkspaceView,
+  }
+})
 
 // Mock CommandPalette to keep tests focused on App composition
 vi.mock('./features/command-palette/CommandPalette', () => ({
