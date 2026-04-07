@@ -6,7 +6,10 @@ export interface IconRailProps {
   settingsItem: NavigationItem
 }
 
-export const IconRail = ({ items, settingsItem }: IconRailProps): ReactElement => {
+export const IconRail = ({
+  items,
+  settingsItem,
+}: IconRailProps): ReactElement => {
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
 
   return (

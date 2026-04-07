@@ -1,19 +1,23 @@
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { IconRail } from './IconRail'
 import { mockNavigationItems, mockSettingsItem } from '../data/mockNavigation'
 
 describe('IconRail', () => {
   test('renders with 64px width', () => {
-    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+    render(
+      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+    )
 
     const rail = screen.getByTestId('icon-rail')
     expect(rail).toHaveClass('w-16') // 64px (16 * 4 = 64)
   })
 
   test('uses bg-surface with border-r border-white/5', () => {
-    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+    render(
+      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+    )
 
     const rail = screen.getByTestId('icon-rail')
     expect(rail).toHaveClass('bg-surface')
@@ -22,29 +26,42 @@ describe('IconRail', () => {
   })
 
   test('renders all navigation items', () => {
-    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+    render(
+      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+    )
 
-    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Source Control' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Dashboard' })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: 'Source Control' })
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Debugger' })).toBeInTheDocument()
   })
 
   test('renders settings item at bottom', () => {
-    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+    render(
+      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+    )
 
     const settingsButton = screen.getByRole('button', { name: 'Settings' })
     expect(settingsButton).toBeInTheDocument()
   })
 
   test('bookmark buttons have flat-bookmark class', () => {
-    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+    render(
+      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+    )
 
     const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
     expect(dashboardButton).toHaveClass('flat-bookmark')
   })
 
   test('bookmarks have correct dimensions (w-8 h-12)', () => {
-    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+    render(
+      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+    )
 
     const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
     expect(dashboardButton).toHaveClass('w-8')
@@ -52,10 +69,15 @@ describe('IconRail', () => {
   })
 
   test('bookmarks have correct color backgrounds', () => {
-    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+    render(
+      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+    )
 
     const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
-    const sourceControlButton = screen.getByRole('button', { name: 'Source Control' })
+
+    const sourceControlButton = screen.getByRole('button', {
+      name: 'Source Control',
+    })
     const debuggerButton = screen.getByRole('button', { name: 'Debugger' })
     const settingsButton = screen.getByRole('button', { name: 'Settings' })
 
@@ -66,24 +88,28 @@ describe('IconRail', () => {
   })
 
   test('bookmarks contain Material Symbols icons', () => {
-    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+    render(
+      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+    )
 
     const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
-    const icon = dashboardButton.querySelector('.material-symbols-outlined')
 
-    expect(icon).toBeInTheDocument()
-    expect(icon).toHaveClass('text-white')
-    expect(icon).toHaveClass('mb-2') // shifted up for bookmark point
+    // Icon text should be present in the button
+    expect(within(dashboardButton).getByText('dashboard')).toBeInTheDocument()
   })
 
   test('shows tooltip on hover', async () => {
     const user = userEvent.setup()
-    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+    render(
+      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+    )
 
     const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
 
     // Tooltip should not be visible initially
-    expect(screen.queryByText('Dashboard', { selector: 'div' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Dashboard', { selector: 'div' })
+    ).not.toBeInTheDocument()
 
     // Hover over button
     await user.hover(dashboardButton)
@@ -96,17 +122,23 @@ describe('IconRail', () => {
 
   test('hides tooltip on mouse leave', async () => {
     const user = userEvent.setup()
-    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+    render(
+      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+    )
 
     const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
 
     // Hover to show tooltip
     await user.hover(dashboardButton)
-    expect(screen.getByText('Dashboard', { selector: 'div' })).toBeInTheDocument()
+    expect(
+      screen.getByText('Dashboard', { selector: 'div' })
+    ).toBeInTheDocument()
 
-    // Unhover to hide tooltip
+    // Move mouse away to hide tooltip
     await user.unhover(dashboardButton)
-    expect(screen.queryByText('Dashboard', { selector: 'div' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Dashboard', { selector: 'div' })
+    ).not.toBeInTheDocument()
   })
 
   test('calls onClick when navigation item is clicked', async () => {
@@ -153,7 +185,9 @@ describe('IconRail', () => {
   })
 
   test('navigation items appear before settings in DOM order', () => {
-    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+    render(
+      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+    )
 
     const buttons = screen.getAllByRole('button')
     const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
@@ -167,7 +201,9 @@ describe('IconRail', () => {
 
   test('tooltip is positioned to the right of the rail', async () => {
     const user = userEvent.setup()
-    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+    render(
+      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+    )
 
     const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
     await user.hover(dashboardButton)

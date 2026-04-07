@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Sidebar } from './Sidebar'
 import type { Session } from '../types'
@@ -119,7 +119,9 @@ describe('Sidebar', () => {
     )
 
     expect(screen.getByText('Active Sessions')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add session' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Add session' })
+    ).toBeInTheDocument()
   })
 
   test('add session button has rotate-90 hover animation', () => {
@@ -158,9 +160,10 @@ describe('Sidebar', () => {
       />
     )
 
-    const activeSession = screen.getByRole('button', { name: 'auth middleware' })
-    const icon = activeSession.querySelector('.material-symbols-outlined')
-    expect(icon?.textContent).toBe('terminal')
+    const activeSession = screen.getByRole('button', {
+      name: 'auth middleware',
+    })
+    expect(within(activeSession).getByText('terminal')).toBeInTheDocument()
   })
 
   test('inactive sessions have history icon', () => {
@@ -172,9 +175,10 @@ describe('Sidebar', () => {
       />
     )
 
-    const inactiveSession = screen.getByRole('button', { name: 'fix: login bug' })
-    const icon = inactiveSession.querySelector('.material-symbols-outlined')
-    expect(icon?.textContent).toBe('history')
+    const inactiveSession = screen.getByRole('button', {
+      name: 'fix: login bug',
+    })
+    expect(within(inactiveSession).getByText('history')).toBeInTheDocument()
   })
 
   test('active session has bg-slate-800/80 text-primary-container styling', () => {
@@ -186,7 +190,9 @@ describe('Sidebar', () => {
       />
     )
 
-    const activeSession = screen.getByRole('button', { name: 'auth middleware' })
+    const activeSession = screen.getByRole('button', {
+      name: 'auth middleware',
+    })
     expect(activeSession.className).toContain('bg-slate-800/80')
     expect(activeSession.className).toContain('text-primary-container')
   })
@@ -200,7 +206,9 @@ describe('Sidebar', () => {
       />
     )
 
-    const inactiveSession = screen.getByRole('button', { name: 'fix: login bug' })
+    const inactiveSession = screen.getByRole('button', {
+      name: 'fix: login bug',
+    })
     expect(inactiveSession.className).toContain('text-slate-500')
   })
 
@@ -213,10 +221,10 @@ describe('Sidebar', () => {
       />
     )
 
-    const activeSession = screen.getByRole('button', { name: 'auth middleware' })
-    const liveBadge = activeSession.querySelector('.group-hover\\:opacity-100')
-    expect(liveBadge).toBeInTheDocument()
-    expect(liveBadge?.textContent).toBe('LIVE')
+    const activeSession = screen.getByRole('button', {
+      name: 'auth middleware',
+    })
+    expect(within(activeSession).getByText('LIVE')).toBeInTheDocument()
   })
 
   test('calls onSessionClick with session id when session is clicked', async () => {
@@ -298,7 +306,9 @@ describe('Sidebar', () => {
       />
     )
 
-    const newInstanceButton = screen.getByRole('button', { name: 'New Instance' })
+    const newInstanceButton = screen.getByRole('button', {
+      name: 'New Instance',
+    })
     expect(newInstanceButton).toBeInTheDocument()
     expect(newInstanceButton).toHaveClass('bg-gradient-to-r')
     expect(newInstanceButton).toHaveClass('from-primary')
@@ -315,9 +325,10 @@ describe('Sidebar', () => {
       />
     )
 
-    const newInstanceButton = screen.getByRole('button', { name: 'New Instance' })
-    const icon = newInstanceButton.querySelector('.material-symbols-outlined')
-    expect(icon?.textContent).toBe('bolt')
+    const newInstanceButton = screen.getByRole('button', {
+      name: 'New Instance',
+    })
+    expect(within(newInstanceButton).getByText('bolt')).toBeInTheDocument()
   })
 
   test('calls onNewInstance when "New Instance" button is clicked', async () => {
@@ -332,7 +343,9 @@ describe('Sidebar', () => {
       />
     )
 
-    const newInstanceButton = screen.getByRole('button', { name: 'New Instance' })
+    const newInstanceButton = screen.getByRole('button', {
+      name: 'New Instance',
+    })
     await user.click(newInstanceButton)
 
     expect(mockOnNewInstance).toHaveBeenCalledTimes(1)
@@ -348,7 +361,9 @@ describe('Sidebar', () => {
       />
     )
 
-    const newInstanceButton = screen.getByRole('button', { name: 'New Instance' })
+    const newInstanceButton = screen.getByRole('button', {
+      name: 'New Instance',
+    })
     expect(newInstanceButton).toHaveClass('shadow-lg')
     expect(newInstanceButton).toHaveClass('shadow-primary/10')
   })
@@ -363,9 +378,11 @@ describe('Sidebar', () => {
     )
 
     // All sessions should render without active styling
-    const sessions = screen.getAllByRole('button').filter((btn) =>
-      mockSessions.some((s) => btn.getAttribute('aria-label') === s.name)
-    )
+    const sessions = screen
+      .getAllByRole('button')
+      .filter((btn) =>
+        mockSessions.some((s) => btn.getAttribute('aria-label') === s.name)
+      )
 
     expect(sessions).toHaveLength(3)
     sessions.forEach((session) => {

@@ -150,7 +150,7 @@
       "Inactive: text-slate-400 hover:text-primary",
       "Right side: file path + collapse toggle (keyboard_arrow_down icon)"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [1]
   },
   {
@@ -168,7 +168,7 @@
       "  - Comments: text-on-surface-variant",
       "Font: font-mono text-xs"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [10]
   },
   {
@@ -183,7 +183,7 @@
       "Show Diff content when 'diff' tab active",
       "Background: bg-black/30 for content area"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [11]
   },
   {
@@ -200,7 +200,7 @@
       "Test file path and collapse toggle render",
       "Use getByRole for accessibility queries"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [12]
   },
   {
