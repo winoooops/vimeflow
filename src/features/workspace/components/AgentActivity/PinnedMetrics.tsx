@@ -7,7 +7,12 @@ interface PinnedMetricsProps {
 
 const PinnedMetrics = ({ activity }: PinnedMetricsProps): ReactElement => {
   const { contextWindow, usage } = activity
-  const usagePercentage = (usage.messages.sent / usage.messages.limit) * 100
+
+  const rawPercentage =
+    usage.messages.limit > 0
+      ? (usage.messages.sent / usage.messages.limit) * 100
+      : 0
+  const usagePercentage = Math.min(rawPercentage, 100)
 
   return (
     <div

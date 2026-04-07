@@ -211,4 +211,52 @@ describe('PinnedMetrics', () => {
 
     expect(progressFill).toHaveStyle({ width: '100%' })
   })
+
+  test('clamps progress bar width to 100% when usage exceeds limit', () => {
+    const overLimitActivity: AgentActivity = {
+      ...mockActivity,
+      usage: {
+        ...mockActivity.usage,
+        messages: { sent: 250, limit: 200 },
+      },
+    }
+
+    render(<PinnedMetrics activity={overLimitActivity} />)
+
+    const progressFill = screen.getByTestId('usage-progress-fill')
+
+    expect(progressFill).toHaveStyle({ width: '100%' })
+  })
+
+  test('handles zero limit gracefully (shows 0% progress)', () => {
+    const zeroLimitActivity: AgentActivity = {
+      ...mockActivity,
+      usage: {
+        ...mockActivity.usage,
+        messages: { sent: 50, limit: 0 },
+      },
+    }
+
+    render(<PinnedMetrics activity={zeroLimitActivity} />)
+
+    const progressFill = screen.getByTestId('usage-progress-fill')
+
+    expect(progressFill).toHaveStyle({ width: '0%' })
+  })
+
+  test('handles excessive over-limit usage (2x limit)', () => {
+    const extremeActivity: AgentActivity = {
+      ...mockActivity,
+      usage: {
+        ...mockActivity.usage,
+        messages: { sent: 400, limit: 200 },
+      },
+    }
+
+    render(<PinnedMetrics activity={extremeActivity} />)
+
+    const progressFill = screen.getByTestId('usage-progress-fill')
+
+    expect(progressFill).toHaveStyle({ width: '100%' })
+  })
 })
