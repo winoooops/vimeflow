@@ -220,7 +220,7 @@
       "Test panel switching with mock data",
       "Verify all context panels render correctly in sidebar"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [6]
   },
   {

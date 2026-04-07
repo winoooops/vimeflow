@@ -1,6 +1,9 @@
 import type { ReactElement } from 'react'
 import type { Session, SessionStatus, ContextPanelType } from '../types'
 import { ContextSwitcher } from './ContextSwitcher'
+import { FilesPanel } from './panels/FilesPanel'
+import { EditorPanel } from './panels/EditorPanel'
+import { DiffPanel } from './panels/DiffPanel'
 
 export interface SidebarProps {
   sessions: Session[]
@@ -121,6 +124,11 @@ export const Sidebar = ({
         })
       )}
     </div>
+
+    {/* Context Panel - renders based on activeContextTab */}
+    {activeContextTab === 'files' && <FilesPanel />}
+    {activeContextTab === 'editor' && <EditorPanel />}
+    {activeContextTab === 'diff' && <DiffPanel />}
 
     {/* Context Switcher at bottom */}
     <ContextSwitcher

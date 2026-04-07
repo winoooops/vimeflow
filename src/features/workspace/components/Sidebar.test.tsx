@@ -425,4 +425,121 @@ describe('Sidebar', () => {
     // Should have text truncation class
     expect(sessionName).toHaveClass('truncate')
   })
+
+  // Feature 15: Context Panel Integration Tests
+  test('renders FilesPanel when activeContextTab is files', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
+      />
+    )
+
+    // FilesPanel should be visible
+    expect(screen.getByTestId('files-panel')).toBeInTheDocument()
+
+    // Other panels should not be visible
+    expect(screen.queryByTestId('editor-panel')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('diff-panel')).not.toBeInTheDocument()
+  })
+
+  test('renders EditorPanel when activeContextTab is editor', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="editor"
+        onContextTabChange={mockOnContextTabChange}
+      />
+    )
+
+    // EditorPanel should be visible
+    expect(screen.getByTestId('editor-panel')).toBeInTheDocument()
+
+    // Other panels should not be visible
+    expect(screen.queryByTestId('files-panel')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('diff-panel')).not.toBeInTheDocument()
+  })
+
+  test('renders DiffPanel when activeContextTab is diff', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="diff"
+        onContextTabChange={mockOnContextTabChange}
+      />
+    )
+
+    // DiffPanel should be visible
+    expect(screen.getByTestId('diff-panel')).toBeInTheDocument()
+
+    // Other panels should not be visible
+    expect(screen.queryByTestId('files-panel')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('editor-panel')).not.toBeInTheDocument()
+  })
+
+  test('context panel content area has correct layout', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
+      />
+    )
+
+    const filesPanel = screen.getByTestId('files-panel')
+
+    // Panel should fit within 260px sidebar width
+    expect(filesPanel).toBeInTheDocument()
+
+    // Panel should be scrollable (flex-1 with overflow)
+    const sidebar = screen.getByTestId('sidebar')
+
+    expect(sidebar).toHaveClass('flex-col')
+  })
+
+  test('switching tabs changes visible panel', async () => {
+    const user = userEvent.setup()
+
+    const { rerender } = render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="files"
+        onContextTabChange={mockOnContextTabChange}
+      />
+    )
+
+    // Initially shows FilesPanel
+    expect(screen.getByTestId('files-panel')).toBeInTheDocument()
+
+    // Click Editor tab
+    const editorTab = screen.getByRole('button', { name: /editor/i })
+
+    await user.click(editorTab)
+
+    // Simulate parent component updating activeContextTab prop
+    rerender(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        activeContextTab="editor"
+        onContextTabChange={mockOnContextTabChange}
+      />
+    )
+
+    // Now shows EditorPanel
+    expect(screen.getByTestId('editor-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('files-panel')).not.toBeInTheDocument()
+  })
 })
