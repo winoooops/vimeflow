@@ -15,7 +15,7 @@ function getStatusBadgeClasses(status: SessionStatus): string {
     case 'running':
       return 'bg-primary-container text-primary'
     case 'paused':
-      return 'bg-warning/20 text-warning'
+      return 'bg-secondary-container/20 text-secondary'
     case 'completed':
       return 'bg-surface-container text-on-surface'
     case 'errored':

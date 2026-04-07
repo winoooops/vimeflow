@@ -348,8 +348,8 @@ describe('Sidebar', () => {
     // Running: green/primary
     expect(runningBadge).toHaveClass('bg-primary-container')
 
-    // Paused: yellow/warning
-    expect(pausedBadge).toHaveClass('bg-warning/20')
+    // Paused: blue/secondary
+    expect(pausedBadge).toHaveClass('bg-secondary-container/20')
 
     // Completed: neutral
     expect(completedBadge).toHaveClass('bg-surface-container')
