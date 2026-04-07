@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Obsidian Terminal | Workspace</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error-container": "#ffb2b9",
+                        "secondary-dim": "#c39eee",
+                        "background": "#0d0d1b",
+                        "surface-container": "#18182a",
+                        "error-dim": "#d73357",
+                        "secondary-fixed": "#e2c7ff",
+                        "inverse-on-surface": "#545365",
+                        "on-surface": "#e6e3f9",
+                        "surface-container-low": "#121222",
+                        "secondary-container": "#57377f",
+                        "outline-variant": "#474658",
+                        "on-background": "#e6e3f9",
+                        "primary-fixed": "#e2c7ff",
+                        "on-secondary-fixed": "#44236a",
+                        "primary-container": "#af96cb",
+                        "tertiary": "#ff94a5",
+                        "surface-dim": "#0d0d1b",
+                        "inverse-surface": "#fcf8ff",
+                        "tertiary-dim": "#f3778c",
+                        "surface-container-lowest": "#000000",
+                        "on-tertiary": "#680826",
+                        "tertiary-fixed": "#ff90a1",
+                        "surface-container-high": "#1e1e32",
+                        "secondary": "#d1abfd",
+                        "primary": "#e2c7ff",
+                        "secondary-fixed-dim": "#d7b5ff",
+                        "error": "#ff6e84",
+                        "on-secondary-container": "#e1c5ff",
+                        "on-tertiary-fixed": "#390010",
+                        "on-error": "#490013",
+                        "tertiary-container": "#fd7e94",
+                        "on-primary-container": "#2d1945",
+                        "inverse-primary": "#6b5586",
+                        "tertiary-fixed-dim": "#fa7c92",
+                        "surface-container-highest": "#242439",
+                        "outline": "#757487",
+                        "on-primary": "#533e6c",
+                        "surface-bright": "#2a2a41",
+                        "primary-fixed-dim": "#d3b9f0",
+                        "on-primary-fixed": "#3f2b58",
+                        "surface-variant": "#242439",
+                        "on-secondary": "#48286f",
+                        "surface": "#0d0d1b",
+                        "error-container": "#a70138",
+                        "on-tertiary-container": "#56001c",
+                        "on-surface-variant": "#aba9bd",
+                        "on-tertiary-fixed-variant": "#71112c",
+                        "on-primary-fixed-variant": "#5c4776",
+                        "primary-dim": "#d3b9f0",
+                        "surface-tint": "#e2c7ff",
+                        "on-secondary-fixed-variant": "#614189"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "mono": ["JetBrains Mono"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        body { font-family: 'Inter', sans-serif; background-color: #0d0d1b; color: #e6e3f9; overflow: hidden; }
+        .glass-card { background: rgba(30, 30, 50, 0.4); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="flex h-screen w-screen selection:bg-primary-container selection:text-on-primary-container">
+<!-- 1. Icon Rail (48px, left) -->
+<aside class="fixed left-0 top-0 h-full w-[48px] bg-[#121221] flex flex-col items-center py-4 z-50">
+<div class="flex flex-col gap-4 items-center w-full">
+<div class="relative group cursor-pointer">
+<div class="absolute inset-0 bg-[#cba6f7] opacity-20 blur-md rounded-full scale-150"></div>
+<div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-on-primary font-bold text-xs relative z-10">TS</div>
+</div>
+<div class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant font-bold text-xs hover:bg-surface-bright transition-colors cursor-pointer">RS</div>
+<div class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant font-bold text-xs hover:bg-surface-bright transition-colors cursor-pointer">DB</div>
+</div>
+<div class="mt-auto flex flex-col gap-4 items-center">
+<button class="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-primary transition-colors">
+<span class="material-symbols-outlined">add</span>
+</button>
+<button class="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-primary transition-colors">
+<span class="material-symbols-outlined">settings</span>
+</button>
+</div>
+</aside>
+<!-- Main Content Wrapper -->
+<main class="ml-[48px] flex-1 flex">
+<!-- 2. Sidebar (260px) -->
+<section class="w-[260px] h-full bg-[#1a1a2a] flex flex-col shrink-0">
+<!-- Sessions -->
+<div class="p-4">
+<div class="flex items-center justify-between mb-4">
+<h2 class="text-xs font-bold uppercase tracking-widest text-on-surface-variant font-headline">Sessions</h2>
+<span class="material-symbols-outlined text-sm text-slate-500">more_horiz</span>
+</div>
+<div class="space-y-2">
+<div class="bg-[#292839] border-l-2 border-primary p-3 rounded-r-lg group cursor-pointer transition-all">
+<div class="flex items-center justify-between mb-1">
+<span class="text-xs font-semibold text-on-surface">Fix Auth Bug</span>
+<span class="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-secondary-container/30 text-[10px] text-[#7defa1]">
+<span class="w-1.5 h-1.5 rounded-full bg-[#7defa1] animate-pulse"></span>
+                            running
+                        </span>
+</div>
+<p class="text-[11px] text-on-surface-variant truncate">Updating JWT validation...</p>
+</div>
+<div class="hover:bg-surface-container-high p-3 rounded-lg group cursor-pointer transition-all">
+<div class="flex items-center justify-between mb-1">
+<span class="text-xs font-semibold text-on-surface-variant">Update Docs</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Tab Row -->
+<div class="mt-4 flex border-b border-outline-variant/10">
+<button class="flex-1 py-2 text-[11px] font-bold text-primary border-b-2 border-primary">Files</button>
+<button class="flex-1 py-2 text-[11px] font-bold text-on-surface-variant hover:text-on-surface">Editor</button>
+<button class="flex-1 py-2 text-[11px] font-bold text-on-surface-variant hover:text-on-surface">Diff</button>
+</div>
+<!-- File Tree -->
+<div class="flex-1 overflow-y-auto p-4 no-scrollbar">
+<div class="space-y-1 font-mono text-[12px]">
+<div class="flex items-center gap-2 text-on-surface-variant py-1 hover:bg-surface-container-high px-2 rounded-md cursor-pointer">
+<span class="material-symbols-outlined text-sm">folder_open</span>
+<span>src</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface py-1 bg-surface-container-high px-2 rounded-md cursor-pointer ml-4">
+<span class="material-symbols-outlined text-sm text-primary">description</span>
+<span>auth.ts</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant py-1 hover:bg-surface-container-high px-2 rounded-md cursor-pointer ml-4">
+<span class="material-symbols-outlined text-sm">description</span>
+<span>middleware.ts</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant py-1 hover:bg-surface-container-high px-2 rounded-md cursor-pointer">
+<span class="material-symbols-outlined text-sm">folder</span>
+<span>utils</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant py-1 hover:bg-surface-container-high px-2 rounded-md cursor-pointer">
+<span class="material-symbols-outlined text-sm">settings</span>
+<span>tsconfig.json</span>
+</div>
+</div>
+</div>
+</section>
+<!-- 3. Terminal Zone (flexible, center) -->
+<section class="flex-1 h-full bg-[#121221] flex flex-col min-w-0">
+<!-- Tab Bar -->
+<div class="h-10 flex items-center px-4 bg-surface-container-lowest/20">
+<div class="flex h-full items-end gap-1">
+<div class="px-4 py-2 bg-surface-container-low text-xs font-mono text-primary flex items-center gap-2 border-b-2 border-primary cursor-pointer">
+<span class="material-symbols-outlined text-[14px]">smart_toy</span>
+<span>auth middleware</span>
+</div>
+<div class="px-4 py-2 text-xs font-mono text-on-surface-variant flex items-center gap-2 hover:bg-surface-container-low cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-[14px]">terminal</span>
+<span>shell</span>
+</div>
+</div>
+<div class="ml-auto flex items-center gap-3">
+<span class="material-symbols-outlined text-sm text-slate-500 hover:text-on-surface cursor-pointer">add</span>
+<span class="material-symbols-outlined text-sm text-slate-500 hover:text-on-surface cursor-pointer">grid_view</span>
+</div>
+</div>
+<!-- Terminal View -->
+<div class="flex-1 p-6 font-mono text-[13px] leading-relaxed overflow-y-auto no-scrollbar">
+<div class="flex gap-2 mb-2">
+<span class="text-[#7defa1] tracking-tighter">obsidian-cli</span>
+<span class="text-on-surface-variant">~/workspace/project-ts</span>
+<span class="text-secondary tracking-tighter">main*</span>
+</div>
+<div class="text-[#cdc3d1] mb-1">
+<span class="text-tertiary">#</span> Analyzing src/auth.ts for redundant logic...
+            </div>
+<div class="text-[#cdc3d1] mb-1">
+<span class="text-primary-container">&gt;&gt;</span> Identified 2 bottlenecks in JWT validation chain.
+            </div>
+<div class="text-[#cdc3d1] mb-4">
+<span class="text-primary-container">&gt;&gt;</span> Applying suggested fixes to <span class="underline underline-offset-4 decoration-primary-container">auth.ts</span>
+</div>
+<div class="bg-surface-container-low/50 p-4 rounded-xl mb-4 text-xs">
+<div class="flex items-center justify-between mb-2">
+<span class="text-[10px] uppercase font-bold text-slate-500">Suggested Change</span>
+<span class="text-primary-container text-[10px]">L14 - L18</span>
+</div>
+<pre class="text-[#cdc3d1]"><span class="text-error-dim">- if (token === null || token === undefined)</span>
+<span class="text-[#7defa1]">+ if (!token)</span>
+<span class="text-error-dim">-   throw new Error("Unauthorized");</span>
+<span class="text-[#7defa1]">+   return next(new AuthError("TokenMissing"));</span></pre>
+</div>
+<div class="flex items-center gap-1">
+<span class="text-[#7defa1]">$</span>
+<span class="text-[#cdc3d1]">claude-code apply --patch=L14</span>
+<span class="w-2 h-5 bg-[#cba6f7] opacity-80 inline-block align-middle ml-1"></span>
+</div>
+</div>
+</section>
+<!-- 4. Agent Activity (280px, right) -->
+<section class="w-[280px] h-full bg-[#1a1a2a] flex flex-col shrink-0 overflow-y-auto no-scrollbar">
+<!-- Pinned Section -->
+<div class="p-4 space-y-4 bg-surface-container-high/50">
+<!-- Status Card -->
+<div class="bg-[#292839] p-3 rounded-lg flex flex-col gap-1 shadow-sm border border-outline-variant/10">
+<div class="flex items-center justify-between">
+<span class="font-headline text-sm font-bold text-on-surface tracking-tight">Claude Code</span>
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-[#50fa7b] shadow-[0_0_8px_#50fa7b]"></span>
+<span class="text-[10px] font-bold text-[#50fa7b] uppercase tracking-widest">running</span>
+</div>
+</div>
+<span class="font-mono text-[11px] text-on-surface-variant leading-tight">Creating auth middleware...</span>
+</div>
+<!-- Context Indicator & Usage -->
+<div class="space-y-3">
+<div class="flex items-center justify-between group cursor-pointer">
+<div class="flex items-center gap-2">
+<span class="text-sm">😟</span>
+<span class="font-label text-xs font-semibold text-on-surface opacity-80">Context</span>
+</div>
+<div class="flex items-center gap-1 bg-surface-container-lowest/30 px-2 py-0.5 rounded-full border border-outline-variant/10">
+<span class="font-mono text-[11px] text-error font-bold">82%</span>
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">expand_more</span>
+</div>
+</div>
+<!-- Usage Bar -->
+<div class="space-y-1.5">
+<div class="flex justify-between items-baseline">
+<span class="font-label text-[10px] uppercase tracking-wider text-on-surface-variant font-bold">5-hour Usage</span>
+<span class="font-mono text-[11px] text-on-surface">142 <span class="opacity-40">/ 200</span></span>
+</div>
+<div class="h-[3px] w-full bg-[#1e1e2e] rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-[#e2c7ff] to-[#cba6f7]" style="width: 71%"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Collapsible Sections Wrapper -->
+<div class="flex-1 overflow-y-auto no-scrollbar px-3 py-4 space-y-1.5">
+<!-- Files Changed (Expanded) -->
+<div class="rounded-lg overflow-hidden transition-all duration-200">
+<button class="w-full flex items-center justify-between p-2 hover:bg-surface-container-high rounded-lg transition-colors">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">keyboard_arrow_down</span>
+<span class="font-headline text-xs font-bold tracking-tight text-on-surface">Files Changed</span>
+</div>
+<span class="bg-primary-container/20 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded">3</span>
+</button>
+<div class="mt-1 space-y-0.5 pl-7">
+<!-- File Item -->
+<div class="flex items-center justify-between p-1.5 rounded hover:bg-surface-container-highest group transition-colors cursor-pointer">
+<div class="flex items-center gap-2">
+<span class="text-[#50fa7b] font-mono text-xs">+</span>
+<span class="font-mono text-[11px] text-on-surface opacity-90">auth.ts</span>
+</div>
+<span class="font-mono text-[9px] text-[#50fa7b] opacity-0 group-hover:opacity-100 transition-opacity">(+12 -2)</span>
+</div>
+<!-- File Item -->
+<div class="flex items-center justify-between p-1.5 rounded hover:bg-surface-container-highest group transition-colors cursor-pointer">
+<div class="flex items-center gap-2">
+<span class="text-secondary font-mono text-xs">~</span>
+<span class="font-mono text-[11px] text-on-surface opacity-90">middleware.ts</span>
+</div>
+<span class="font-mono text-[9px] text-secondary opacity-0 group-hover:opacity-100 transition-opacity">(+5 -1)</span>
+</div>
+<!-- File Item -->
+<div class="flex items-center justify-between p-1.5 rounded hover:bg-surface-container-highest group transition-colors cursor-pointer">
+<div class="flex items-center gap-2">
+<span class="text-error font-mono text-xs">-</span>
+<span class="font-mono text-[11px] text-on-surface opacity-90">old_utils.ts</span>
+</div>
+<span class="font-mono text-[9px] text-error opacity-0 group-hover:opacity-100 transition-opacity">deleted</span>
+</div>
+</div>
+</div>
+<!-- Tool Calls (Collapsed) -->
+<button class="w-full flex items-center justify-between p-2 hover:bg-surface-container-high rounded-lg transition-colors group">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-on-surface transition-colors text-[18px]">keyboard_arrow_right</span>
+<span class="font-headline text-xs font-bold tracking-tight text-on-surface opacity-70 group-hover:opacity-100">Tool Calls</span>
+</div>
+<span class="bg-surface-container-highest text-on-surface-variant text-[10px] font-bold px-1.5 py-0.5 rounded">4</span>
+</button>
+<!-- Tests (Collapsed) -->
+<button class="w-full flex items-center justify-between p-2 hover:bg-surface-container-high rounded-lg transition-colors group">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-on-surface transition-colors text-[18px]">keyboard_arrow_right</span>
+<span class="font-headline text-xs font-bold tracking-tight text-on-surface opacity-70 group-hover:opacity-100">Tests</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-[#50fa7b]"></span>
+<span class="text-[#50fa7b] text-[10px] font-bold">4/5</span>
+</div>
+</button>
+<!-- Usage Details (Collapsed) -->
+<button class="w-full flex items-center justify-between p-2 hover:bg-surface-container-high rounded-lg transition-colors group">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-on-surface transition-colors text-[18px]">keyboard_arrow_right</span>
+<span class="font-headline text-xs font-bold tracking-tight text-on-surface opacity-70 group-hover:opacity-100">Usage Details</span>
+</div>
+</button>
+</div>
+<!-- Footer -->
+<footer class="p-5 border-t border-outline-variant/10 mt-auto bg-surface-container-low/30">
+<div class="flex items-center justify-between text-[#4a444f] font-mono text-[10px] tracking-tight mb-3">
+<div class="flex flex-col">
+<span class="text-slate-500 uppercase tracking-tighter">SESSION TIME</span>
+<span class="text-on-surface">02:34:00</span>
+</div>
+<div class="flex flex-col text-right">
+<span class="text-slate-500 uppercase tracking-tighter">TURNS</span>
+<span class="text-on-surface">12</span>
+</div>
+</div>
+<div class="flex justify-between items-center text-[10px] font-mono mb-3">
+<span class="text-on-surface-variant/50">CHANGESET</span>
+<span class="text-on-surface-variant/50">+48 -3</span>
+</div>
+<!-- Decorative Shell Prompt -->
+<div class="bg-surface-container-lowest p-2 rounded border border-outline-variant/10 flex items-center gap-2">
+<span class="text-secondary font-bold text-[10px]">$</span>
+<div class="h-3 w-[2px] bg-primary/40 animate-pulse"></div>
+<span class="text-on-surface-variant font-mono text-[10px]">waiting for command...</span>
+</div>
+</footer>
+</section>
+</main>
+</body></html>
