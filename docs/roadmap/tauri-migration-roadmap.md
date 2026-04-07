@@ -14,56 +14,71 @@ Replaces the previous 6-phase chat-based roadmap. The core change: the primary w
 
 | Component           | Status                                                           |
 | ------------------- | ---------------------------------------------------------------- |
+| Tauri scaffold      | **Done** — `src-tauri/` bootstrapped, CI green (PR #27)          |
 | Chat view           | UI shell + mock data — **deprecated, to be removed**             |
 | Diff view           | Wired — real git ops via Vite API plugin (`/api/git/*`)          |
 | Editor view         | Wired — file tree + content via Vite API plugin (`/api/files/*`) |
 | Command Palette     | UI shell + mock commands                                         |
-| Agent Workspace     | Design spec complete, Stitch mockup approved                     |
-| Tauri backend       | Does not exist (`src-tauri/` missing)                            |
+| Agent Workspace     | Design spec complete, Stitch mockup approved (PR #29)            |
 | Terminal (xterm.js) | Not yet implemented                                              |
 | State management    | None — prop drilling + `useState` in `App.tsx`                   |
-| CI                  | `tauri-build.yml` exists but blocked (no `src-tauri/`)           |
 
 ---
 
-## Phase 1: Tauri Scaffold + CI Green
+## Phase 1: Tauri Scaffold + CI Green ✅
 
-**Scope: Medium | Est: 3–5 days**
+**Status: Done** — PR #27, commit `9ce4d61`
+
+Bootstrapped `src-tauri/` with Tauri v2 configuration, npm scripts, environment detection, and CI pipeline.
+
+---
+
+## Phase 2: Workspace Layout Shell
+
+**Scope: Medium | Est: 4–6 days | Blocked by: Phase 1 ✅**
 
 ### Goal
 
-Bootstrap `src-tauri/` so the app runs as a Tauri window. No IPC commands yet — just the shell.
+Implement the 4-zone workspace layout from the Stitch mockup as a static frontend shell. Replace the chat-based layout with the new Discord-pattern architecture. Uses mock/placeholder data — no PTY or backend wiring yet.
 
 ### Steps
 
-1. Run `npx tauri init` to scaffold `src-tauri/`
-2. Configure `tauri.conf.json`: `devUrl` → `http://localhost:5173`, `frontendDist` → `../dist`
-3. Add `tauri:dev` and `tauri:build` npm scripts
-4. Create `src/lib/environment.ts` — `isTauri()` detection
-5. Update CI `tauri-build.yml` — add Rust caching
-6. Add `.gitignore` entries for `src-tauri/target/`, `src-tauri/gen/`
+1. Remove chat-related code: `ChatView`, `features/chat/`, chat types, mock messages
+2. Refactor `App.tsx` from chat-first to workspace layout (4-zone grid)
+3. Build new Icon Rail component — project avatars, `+` new project, `⚙` settings
+4. Build new Sidebar component — session list (mock data) + context switcher tabs (Files/Editor/Diff)
+5. Build Terminal Zone placeholder — tab bar + mock terminal content area
+6. Build Agent Activity panel — status card, context smiley, 5-hour usage bar, collapsible sections (all mock data)
+7. Wire context switcher tabs to show existing Files Explorer / Editor / Diff in sidebar
+8. Apply Obsidian Lens design tokens — match Stitch `code.html` reference (with authoritative color overrides)
+9. Update Tailwind config with new semantic tokens (`success`, `tertiary`, `primary-dim`, etc.)
+10. Update tests for new layout components
 
 ### Definition of Done
 
-- [ ] `npm run tauri:dev` opens a native window showing the React app
-- [ ] `npm run dev` still works as standalone Vite dev server
-- [ ] CI passes on macOS, Windows, Linux
-- [ ] All existing tests still pass
+- [ ] 4-zone layout renders: icon rail, sidebar, terminal zone, agent activity
+- [ ] Icon rail shows project avatars with active highlight
+- [ ] Sidebar shows mock session list with status badges
+- [ ] Context switcher tabs (Files/Editor/Diff) work in sidebar
+- [ ] Agent Activity panel shows all sections (mock data)
+- [ ] Chat view and all chat code removed
+- [ ] All new components match Stitch mockup (`docs/design/agent_workspace/screen.png`)
+- [ ] All tests pass, Prettier + ESLint clean
 
 ### Risks
 
-- WSL2: No native window — need WSLg or Windows-side cargo
-- Tauri 2 config: Use only official v2 docs
+- Large layout refactor touches many files — migrate incrementally, one zone at a time
+- Existing Files/Editor/Diff components may need width adaptations for 260px sidebar
 
 ---
 
-## Phase 2: Terminal Core
+## Phase 3: Terminal Core
 
-**Scope: Large | Est: 5–8 days | Blocked by: Phase 1**
+**Scope: Large | Est: 5–8 days | Blocked by: Phase 2**
 
 ### Goal
 
-Integrate xterm.js with a Rust-side PTY via Tauri. Render a working terminal pane that can run shell commands and Claude Code.
+Integrate xterm.js with a Rust-side PTY via Tauri. Replace the terminal zone placeholder with a real working terminal.
 
 ### Steps
 
@@ -73,7 +88,7 @@ Integrate xterm.js with a Rust-side PTY via Tauri. Render a working terminal pan
 4. Wire frontend keyboard input → Tauri invoke → PTY stdin
 5. Add `xterm.js` + `@xterm/addon-fit` + `@xterm/addon-webgl` to frontend
 6. Create `TerminalPane` React component rendering xterm.js
-7. Add terminal tab bar (agent tab + shell tabs + `+` button)
+7. Replace terminal zone placeholder with real `TerminalPane`
 8. Configure Catppuccin Mocha theme for xterm.js
 
 ### Definition of Done
@@ -91,13 +106,13 @@ Integrate xterm.js with a Rust-side PTY via Tauri. Render a working terminal pan
 
 ---
 
-## Phase 3: Session Management + State
+## Phase 4: Session Management + State
 
-**Scope: Medium | Est: 5–7 days | Blocked by: Phase 2**
+**Scope: Medium | Est: 5–7 days | Blocked by: Phase 3**
 
 ### Goal
 
-Introduce Zustand for global state. Build the project/session data model and sidebar session list.
+Introduce Zustand for global state. Wire the session list from Phase 2 to real data. Connect session switching to terminal panes.
 
 ### Store Structure
 
@@ -115,41 +130,39 @@ src/stores/
 2. Create `appStore` — migrate global state from `App.tsx`
 3. Create `sessionStore` — project/session data model, CRUD operations
 4. Create `terminalStore` — manage PTY instances per session
-5. Build sidebar session list component (Discord pattern from design spec)
-6. Build icon rail with project avatars
-7. Wire session switching: click session → update terminal zone + activity panel
-8. Remove chat-related code: `ChatView`, `features/chat/`, chat types, mock messages
+5. Wire sidebar session list to `sessionStore` (replace mock data)
+6. Wire icon rail project avatars to real project data
+7. Wire session switching: click session → update terminal + activity panel
+8. Persist sessions across app restarts (SQLite or JSON in app data dir)
 
 ### Definition of Done
 
-- [ ] Projects appear as avatars in icon rail
-- [ ] Sessions listed in sidebar with name, status badge, timestamp
+- [ ] Sessions backed by Zustand store, not mock data
 - [ ] Clicking a session switches the terminal and activity panel
 - [ ] New session can be created (spawns Claude Code in a PTY)
-- [ ] Chat view and all chat-related code removed
+- [ ] Session state persists across app restarts
 - [ ] All tests pass, zero prop drilling
 
 ---
 
-## Phase 4: File Watcher + Agent Activity Panel
+## Phase 5: File Watcher + Agent Activity Panel
 
-**Scope: Medium | Est: 5–7 days | Blocked by: Phase 3**
+**Scope: Medium | Est: 5–7 days | Blocked by: Phase 4**
 
 ### Goal
 
-Implement the Agent Activity sidebar with real-time file change tracking via Rust `notify` crate, and the always-visible usage metrics.
+Wire the Agent Activity sidebar (built as static shell in Phase 2) to real data via Rust `notify` file watcher.
 
 ### Steps
 
 1. Add `notify` Rust crate for filesystem watching
-2. Implement Rust command: `watch_directory` (starts watcher), `unwatch_directory`
+2. Implement Rust commands: `watch_directory`, `unwatch_directory`
 3. Emit file change events (created/modified/deleted) via Tauri events
 4. Create `activityStore` — aggregate file changes per session
-5. Build Agent Activity panel component with collapsible sections
-6. Implement "Files Changed" section (live from file watcher)
-7. Implement always-pinned section: status card, context window smiley, 5-hour usage bar
-8. Implement collapsible "Tool Calls", "Tests", "Usage Details" sections (placeholder data for now)
-9. Wire git diff integration: click a changed file → opens in Diff context panel
+5. Wire "Files Changed" section to live file watcher data
+6. Wire pinned section to real session data (status, context estimate, usage)
+7. Wire git diff integration: click a changed file → opens in Diff context panel
+8. Keep "Tool Calls", "Tests", "Usage Details" sections with placeholder data (wired in Phase 6)
 
 ### Definition of Done
 
@@ -162,9 +175,9 @@ Implement the Agent Activity sidebar with real-time file change tracking via Rus
 
 ---
 
-## Phase 5: Terminal Parser + Agent Adapters
+## Phase 6: Terminal Parser + Agent Adapters
 
-**Scope: Medium | Est: 4–6 days | Blocked by: Phase 4**
+**Scope: Medium | Est: 4–6 days | Blocked by: Phase 5**
 
 ### Goal
 
@@ -194,24 +207,23 @@ Parse Claude Code's terminal output to extract structured data: tool calls, test
 
 ---
 
-## Phase 6: Context Panel Integration
+## Phase 7: Context Panel Integration
 
-**Scope: Medium | Est: 4–6 days | Blocked by: Phase 3, builds on Phase 4**
+**Scope: Medium | Est: 4–6 days | Blocked by: Phase 4, builds on Phase 5**
 
 ### Goal
 
-Wire the existing Files Explorer, Code Editor, and Git Diff views to work as context panels in the sidebar, scoped to the active session's working directory.
+Wire the existing Files Explorer, Code Editor, and Git Diff views to Tauri IPC, scoped to the active session's working directory.
 
 ### Steps
 
-1. Refactor IPC layer: Rust git/file commands (reuse from old Phase 2 plan)
+1. Implement Rust git/file IPC commands (git2, walkdir, tokio::fs)
 2. Create `TauriGitService` and `TauriFileService` (service factory pattern)
 3. Adapt Files Explorer to render in 260px sidebar width
 4. Adapt Code Editor for sidebar (compact mode) + full-width overlay
 5. Adapt Git Diff for sidebar (unified only) + full-width overlay (side-by-side)
-6. Build context switcher tab row (Files/Editor/Diff) in sidebar
-7. Scope all context panels to active session's working directory
-8. Cross-panel navigation: click file in Files → opens in Editor; click modified file → opens Diff
+6. Scope all context panels to active session's working directory
+7. Cross-panel navigation: click file in Files → opens in Editor; click modified file → opens Diff
 
 ### Definition of Done
 
@@ -223,9 +235,9 @@ Wire the existing Files Explorer, Code Editor, and Git Diff views to work as con
 
 ---
 
-## Phase 7: Usage Metrics
+## Phase 8: Usage Metrics
 
-**Scope: Small | Est: 2–3 days | Blocked by: Phase 5**
+**Scope: Small | Est: 2–3 days | Blocked by: Phase 6**
 
 ### Goal
 
@@ -248,9 +260,9 @@ Wire real usage data into the Agent Activity panel.
 
 ---
 
-## Phase 8: Desktop Polish
+## Phase 9: Desktop Polish
 
-**Scope: Medium | Est: 4–6 days | Parallel with Phase 7**
+**Scope: Medium | Est: 4–6 days | Parallel with Phase 8**
 
 - Window state persistence (`tauri-plugin-window-state`)
 - Native menu bar (platform-specific)
@@ -265,23 +277,26 @@ Wire real usage data into the Agent Activity panel.
 ## Dependency Graph
 
 ```
-Phase 1: Tauri Scaffold
+Phase 1: Tauri Scaffold ✅
     │
     ▼
-Phase 2: Terminal Core
+Phase 2: Workspace Layout Shell ← NEXT
     │
     ▼
-Phase 3: Session Management + State ───────┐
+Phase 3: Terminal Core
+    │
+    ▼
+Phase 4: Session Management + State ───────┐
     │                                       │
     ▼                                       ▼
-Phase 4: File Watcher + Activity    Phase 6: Context Panels
+Phase 5: File Watcher + Activity    Phase 7: Context Panels
     │
     ▼
-Phase 5: Terminal Parser
+Phase 6: Terminal Parser
     │
     ├────────┬──────────┐
     ▼        ▼          ▼
-Phase 7  Phase 8    (parallel)
+Phase 8  Phase 9    (parallel)
 ```
 
 ---
@@ -290,9 +305,10 @@ Phase 7  Phase 8    (parallel)
 
 | Decision        | Recommendation                          | Rationale                                                       |
 | --------------- | --------------------------------------- | --------------------------------------------------------------- |
+| Layout first    | Static shell before backend wiring      | Validate design, get visual feedback early, unblock parallel UI |
 | Terminal        | xterm.js + portable-pty                 | De facto standard; matches Termio's stack                       |
 | PTY management  | One PTY per terminal tab                | Simple lifecycle; Rust owns spawn/kill                          |
-| State mgmt      | Zustand in Phase 3                      | After terminal works but before complex UI                      |
+| State mgmt      | Zustand in Phase 4                      | After terminal works but before complex UI                      |
 | Agent parsing   | Adapter pattern per agent CLI           | Claude Code first; extensible to Codex, Aider                   |
 | File watching   | Rust `notify` → Tauri events            | Agent-agnostic; works regardless of which process changes files |
 | Context panels  | Sidebar (260px) + full-width overlay    | Compact view in sidebar; expand for detailed work               |
@@ -316,15 +332,16 @@ Phase 7  Phase 8    (parallel)
 
 ## Timeline Summary
 
-| Phase                         | Scope  | Est. Days | Key Deliverable                       |
-| ----------------------------- | ------ | --------- | ------------------------------------- |
-| 1. Tauri Scaffold             | Medium | 3–5       | Native window + CI green              |
-| 2. Terminal Core              | Large  | 5–8       | xterm.js + PTY working                |
-| 3. Session Management + State | Medium | 5–7       | Projects, sessions, sidebar, Zustand  |
-| 4. File Watcher + Activity    | Medium | 5–7       | Agent Activity panel, real-time files |
-| 5. Terminal Parser            | Medium | 4–6       | Claude Code output → structured data  |
-| 6. Context Panels             | Medium | 4–6       | Files/Editor/Diff wired to sessions   |
-| 7. Usage Metrics              | Small  | 2–3       | Context window, billing data          |
-| 8. Desktop Polish             | Medium | 4–6       | Tray, menus, auto-update, fonts       |
+| Phase                         | Scope  | Est. Days | Status   | Key Deliverable                       |
+| ----------------------------- | ------ | --------- | -------- | ------------------------------------- |
+| 1. Tauri Scaffold             | Medium | 3–5       | **Done** | Native window + CI green              |
+| 2. Workspace Layout Shell     | Medium | 4–6       | Next     | 4-zone layout, mock data              |
+| 3. Terminal Core              | Large  | 5–8       | Pending  | xterm.js + PTY working                |
+| 4. Session Management + State | Medium | 5–7       | Pending  | Projects, sessions, Zustand           |
+| 5. File Watcher + Activity    | Medium | 5–7       | Pending  | Agent Activity panel, real-time files |
+| 6. Terminal Parser            | Medium | 4–6       | Pending  | Claude Code output → structured data  |
+| 7. Context Panels             | Medium | 4–6       | Pending  | Files/Editor/Diff wired to sessions   |
+| 8. Usage Metrics              | Small  | 2–3       | Pending  | Context window, billing data          |
+| 9. Desktop Polish             | Medium | 4–6       | Pending  | Tray, menus, auto-update, fonts       |
 
-**Total: ~32–48 days** (critical path ~24–34 days with Phase 6–8 parallel work)
+**Total: ~36–54 days** (critical path ~28–40 days with Phase 7–9 parallel work)
