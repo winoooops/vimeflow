@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react'
 import type { Project } from '../types'
 
 export interface IconRailProps {
@@ -14,7 +15,7 @@ export const IconRail = ({
   onProjectClick,
   onNewProject,
   onSettings,
-}: IconRailProps): React.ReactElement => (
+}: IconRailProps): ReactElement => (
   <div
     className="flex h-full w-12 flex-col items-center justify-between bg-surface-container-low py-3"
     data-testid="icon-rail"
