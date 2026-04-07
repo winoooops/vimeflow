@@ -265,7 +265,7 @@
       "Add surface-dim and surface-bright tokens",
       "Verify all new tokens match Obsidian Lens spec"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": []
   },
   {
