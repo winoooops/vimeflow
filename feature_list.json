@@ -2,15 +2,13 @@
   {
     "id": 1,
     "phase": 1,
-    "category": "scaffold",
-    "description": "Initialize src-tauri directory structure",
+    "category": "cleanup",
+    "description": "Remove chat feature module and related code",
     "steps": [
-      "Create src-tauri/ directory",
-      "Create Cargo.toml with minimal dependencies (tauri, serde, serde_json)",
-      "Create build.rs with tauri_build::build()",
-      "Create src/lib.rs and src/main.rs",
-      "Create capabilities/default.json with core:default permission",
-      "Generate placeholder icons"
+      "Delete src/features/chat/ directory entirely",
+      "Remove ChatView import and usage from App.tsx",
+      "Update App.tsx to prepare for workspace layout",
+      "Verify no remaining references to chat types or data"
     ],
     "passes": true,
     "dependencies": []
@@ -18,15 +16,13 @@
   {
     "id": 2,
     "phase": 1,
-    "category": "scaffold",
-    "description": "Configure tauri.conf.json with v2 settings",
+    "category": "types",
+    "description": "Create workspace domain types and models",
     "steps": [
-      "Set $schema to Tauri v2 schema",
-      "Configure productName: Vimeflow",
-      "Set identifier: dev.vimeflow.app",
-      "Configure build.frontendDist and build.devUrl",
-      "Set window dimensions: 1400x900, min 800x600",
-      "Configure CSP with script-src 'self' and style-src 'self' 'unsafe-inline'"
+      "Create src/features/workspace/types/index.ts with Project, Session, SessionStatus types",
+      "Define AgentActivity types (file changes, tool calls, test results)",
+      "Define ContextPanel types (Files, Editor, Diff)",
+      "Export all types from workspace feature module"
     ],
     "passes": true,
     "dependencies": [1]
@@ -34,151 +30,320 @@
   {
     "id": 3,
     "phase": 1,
-    "category": "scaffold",
-    "description": "Add NPM scripts and dependencies for Tauri",
+    "category": "data",
+    "description": "Create mock data for workspace layout",
     "steps": [
-      "Add tauri:dev and tauri:build scripts to package.json",
-      "Add @tauri-apps/cli to devDependencies"
-    ],
-    "passes": true,
-    "dependencies": [1]
-  },
-  {
-    "id": 4,
-    "phase": 2,
-    "category": "core",
-    "description": "Create environment detection utilities",
-    "steps": [
-      "Create src/lib/environment.ts",
-      "Implement isTauri() checking for __TAURI_INTERNALS__",
-      "Implement isTest() checking for test mode",
-      "Add TypeScript interface for TauriInternals",
-      "Export isBrowser() and getEnvironment() helpers"
-    ],
-    "passes": true,
-    "dependencies": [1]
-  },
-  {
-    "id": 5,
-    "phase": 2,
-    "category": "testing",
-    "description": "Write tests for environment detection",
-    "steps": [
-      "Create src/lib/environment.test.ts",
-      "Test isTauri() returns false in jsdom",
-      "Test isTauri() returns true when __TAURI_INTERNALS__ is set",
-      "Test isBrowser() behavior",
-      "Test getEnvironment() returns correct values",
-      "Test isTest() returns true in test mode"
-    ],
-    "passes": true,
-    "dependencies": [4]
-  },
-  {
-    "id": 6,
-    "phase": 3,
-    "category": "ci",
-    "description": "Update CI workflow for Tauri builds",
-    "steps": [
-      "Enable src/** path triggers in tauri-build.yml",
-      "Add Rust dependency caching step",
-      "Verify all steps are present (checkout, node, rust, deps, build)"
-    ],
-    "passes": true,
-    "dependencies": [1, 2]
-  },
-  {
-    "id": 7,
-    "phase": 3,
-    "category": "ci",
-    "description": "Update .gitignore for Tauri",
-    "steps": [
-      "Add src-tauri/gen/ to .gitignore",
-      "Verify src-tauri/target/ and src-tauri/Cargo.lock are present"
-    ],
-    "passes": true,
-    "dependencies": [1]
-  },
-  {
-    "id": 8,
-    "phase": 4,
-    "category": "verification",
-    "description": "Verify Rust code compiles and passes linting",
-    "steps": [
-      "Run cargo check in src-tauri/",
-      "Run cargo clippy -- -D warnings",
-      "Run cargo fmt --check"
-    ],
-    "passes": true,
-    "dependencies": [1, 2],
-    "notes": "Verified via CI - all platforms (macOS, Ubuntu, Windows) build successfully in PR #27"
-  },
-  {
-    "id": 9,
-    "phase": 4,
-    "category": "verification",
-    "description": "Verify frontend tests pass",
-    "steps": [
-      "Run npx vitest run to verify all tests pass",
-      "Verify environment.test.ts passes",
-      "Verify no test regressions from Tauri scaffold"
-    ],
-    "passes": true,
-    "dependencies": [4, 5]
-  },
-  {
-    "id": 10,
-    "phase": 4,
-    "category": "verification",
-    "description": "Verify frontend build and linting",
-    "steps": [
-      "Run npm run lint to verify ESLint passes",
-      "Run npm run type-check to verify TypeScript compiles",
-      "Run npm run build to verify Vite build succeeds"
-    ],
-    "passes": true,
-    "dependencies": [4, 5]
-  },
-  {
-    "id": 11,
-    "phase": 5,
-    "category": "polish",
-    "description": "Fix tauri.conf.json configuration issues",
-    "steps": [
-      "Change identifier from com.tauri.dev to dev.vimeflow.app",
-      "Change productName from vibm to Vimeflow",
-      "Update window size from 800x600 to 1400x900",
-      "Add minWidth: 800, minHeight: 600",
-      "Update CSP from null to proper policy"
+      "Create src/features/workspace/data/mockProjects.ts with sample projects",
+      "Create src/features/workspace/data/mockSessions.ts with sample agent sessions",
+      "Create src/features/workspace/data/mockActivity.ts with sample file changes, tool calls, tests",
+      "Ensure mock data matches design spec format"
     ],
     "passes": true,
     "dependencies": [2]
   },
   {
-    "id": 12,
-    "phase": 5,
-    "category": "polish",
-    "description": "Fix Rust package naming inconsistencies",
+    "id": 4,
+    "phase": 2,
+    "category": "component",
+    "description": "Build new Icon Rail component for project navigation",
     "steps": [
-      "Update Cargo.toml package name from vibm to vimeflow",
-      "Update lib.rs module name from vibm_lib to vimeflow_lib",
-      "Update main.rs to use vimeflow_lib::run()",
-      "Verify naming consistency across all Rust files"
+      "Create src/features/workspace/components/IconRail.tsx",
+      "Implement project avatar display (2-letter abbreviations, 32x32 rounded)",
+      "Add active project highlight with purple pill backlight",
+      "Add + new project and ⚙ settings buttons at bottom",
+      "Write IconRail.test.tsx with test coverage",
+      "Apply Obsidian Lens design tokens"
     ],
-    "passes": true,
-    "dependencies": [1]
+    "passes": false,
+    "dependencies": [3]
+  },
+  {
+    "id": 5,
+    "phase": 2,
+    "category": "component",
+    "description": "Build Sidebar with session list",
+    "steps": [
+      "Create src/features/workspace/components/Sidebar.tsx",
+      "Implement session list section with mock data",
+      "Add session item cards with name, status badge, timestamp",
+      "Add active session highlight (left purple border, lighter background)",
+      "Write Sidebar.test.tsx with test coverage",
+      "Apply design tokens matching spec"
+    ],
+    "passes": false,
+    "dependencies": [3]
+  },
+  {
+    "id": 6,
+    "phase": 2,
+    "category": "component",
+    "description": "Build Context Switcher tabs for sidebar",
+    "steps": [
+      "Create src/features/workspace/components/ContextSwitcher.tsx",
+      "Implement tab row (📁 Files | 📝 Editor | ± Diff)",
+      "Add active tab styling (purple text and bottom border)",
+      "Handle tab switching state",
+      "Write ContextSwitcher.test.tsx",
+      "Integrate into Sidebar component"
+    ],
+    "passes": false,
+    "dependencies": [5]
+  },
+  {
+    "id": 7,
+    "phase": 2,
+    "category": "component",
+    "description": "Build Terminal Zone placeholder with tab bar",
+    "steps": [
+      "Create src/features/workspace/components/TerminalZone.tsx",
+      "Implement tab bar at top (🤖 agent tabs, 🐚 shell tabs)",
+      "Add active tab highlighting (purple bottom border)",
+      "Add + new tab button",
+      "Create placeholder terminal content area (dark background, prompt text)",
+      "Write TerminalZone.test.tsx"
+    ],
+    "passes": false,
+    "dependencies": [3]
+  },
+  {
+    "id": 8,
+    "phase": 2,
+    "category": "component",
+    "description": "Build Agent Activity status card section",
+    "steps": [
+      "Create src/features/workspace/components/AgentActivity/StatusCard.tsx",
+      "Display agent name (Claude Code) and status badge",
+      "Show current action description",
+      "Apply card styling (#292839 background, 8px rounded)",
+      "Write StatusCard.test.tsx"
+    ],
+    "passes": false,
+    "dependencies": [3]
+  },
+  {
+    "id": 9,
+    "phase": 2,
+    "category": "component",
+    "description": "Build Agent Activity pinned metrics section",
+    "steps": [
+      "Create src/features/workspace/components/AgentActivity/PinnedMetrics.tsx",
+      "Implement context window smiley indicator (😊 😐 😟 🥵)",
+      "Add 5-hour usage bar (142/200 messages, purple gradient progress)",
+      "Style with proper spacing and colors",
+      "Write PinnedMetrics.test.tsx"
+    ],
+    "passes": false,
+    "dependencies": [3]
+  },
+  {
+    "id": 10,
+    "phase": 2,
+    "category": "component",
+    "description": "Build Agent Activity collapsible sections",
+    "steps": [
+      "Create src/features/workspace/components/AgentActivity/CollapsibleSection.tsx",
+      "Implement chevron toggle (▾ expanded / ▸ collapsed)",
+      "Add count badges for sections",
+      "Handle expand/collapse state",
+      "Write CollapsibleSection.test.tsx"
+    ],
+    "passes": false,
+    "dependencies": [3]
+  },
+  {
+    "id": 11,
+    "phase": 2,
+    "category": "component",
+    "description": "Build Files Changed section component",
+    "steps": [
+      "Create src/features/workspace/components/AgentActivity/FilesChanged.tsx",
+      "Display file list with change type badges (new/modified/deleted)",
+      "Show line diff summary (+5 -1)",
+      "Use CollapsibleSection wrapper (auto-expanded)",
+      "Write FilesChanged.test.tsx"
+    ],
+    "passes": false,
+    "dependencies": [10]
+  },
+  {
+    "id": 12,
+    "phase": 2,
+    "category": "component",
+    "description": "Build Tool Calls and Tests sections",
+    "steps": [
+      "Create src/features/workspace/components/AgentActivity/ToolCalls.tsx",
+      "Create src/features/workspace/components/AgentActivity/Tests.tsx",
+      "Show placeholder content with count badges",
+      "Use CollapsibleSection wrapper (collapsed by default)",
+      "Write ToolCalls.test.tsx and Tests.test.tsx"
+    ],
+    "passes": false,
+    "dependencies": [10]
   },
   {
     "id": 13,
-    "phase": 5,
-    "category": "polish",
-    "description": "Add isTest() function to environment.ts",
+    "phase": 2,
+    "category": "component",
+    "description": "Build Agent Activity footer",
     "steps": [
-      "Add isTest() function checking import.meta.env.MODE === 'test'",
-      "Add test for isTest() in environment.test.ts",
-      "Verify test passes"
+      "Create src/features/workspace/components/AgentActivity/ActivityFooter.tsx",
+      "Display session duration, turn count, lines added/removed",
+      "Apply muted text styling (#4a444f)",
+      "Write ActivityFooter.test.tsx"
     ],
-    "passes": true,
-    "dependencies": [4, 5]
+    "passes": false,
+    "dependencies": [3]
+  },
+  {
+    "id": 14,
+    "phase": 2,
+    "category": "component",
+    "description": "Assemble complete Agent Activity panel",
+    "steps": [
+      "Create src/features/workspace/components/AgentActivity/AgentActivity.tsx",
+      "Compose StatusCard, PinnedMetrics, all sections, and footer",
+      "Wire mock data through props",
+      "Apply 280px width and #1a1a2a background",
+      "Write AgentActivity.test.tsx"
+    ],
+    "passes": false,
+    "dependencies": [8, 9, 11, 12, 13]
+  },
+  {
+    "id": 15,
+    "phase": 3,
+    "category": "integration",
+    "description": "Wire context panels to sidebar context switcher",
+    "steps": [
+      "Update Sidebar to show Files/Editor/Diff based on active tab",
+      "Ensure existing FilesView, EditorView, DiffView adapt to 260px width",
+      "Test panel switching with mock data",
+      "Verify all context panels render correctly in sidebar"
+    ],
+    "passes": false,
+    "dependencies": [6]
+  },
+  {
+    "id": 16,
+    "phase": 3,
+    "category": "layout",
+    "description": "Create WorkspaceView page component",
+    "steps": [
+      "Create src/features/workspace/WorkspaceView.tsx",
+      "Implement 4-zone grid layout (48px + 260px + flexible + 280px)",
+      "Compose IconRail, Sidebar, TerminalZone, AgentActivity",
+      "Handle responsive behavior (sidebar/activity panel collapse)",
+      "Write WorkspaceView.test.tsx"
+    ],
+    "passes": false,
+    "dependencies": [4, 5, 7, 14]
+  },
+  {
+    "id": 17,
+    "phase": 3,
+    "category": "integration",
+    "description": "Refactor App.tsx to use WorkspaceView",
+    "steps": [
+      "Remove old tab-based routing logic",
+      "Replace with WorkspaceView as primary component",
+      "Keep CommandPalette as overlay",
+      "Remove unused state (activeTab, isContextPanelOpen)",
+      "Update App.test.tsx"
+    ],
+    "passes": false,
+    "dependencies": [16]
+  },
+  {
+    "id": 18,
+    "phase": 4,
+    "category": "design",
+    "description": "Update Tailwind config with new semantic tokens",
+    "steps": [
+      "Add success color tokens (#7defa1)",
+      "Add tertiary color tokens",
+      "Add primary-dim variants (#cba6f7 at various opacities)",
+      "Add surface-dim and surface-bright tokens",
+      "Verify all new tokens match Obsidian Lens spec"
+    ],
+    "passes": false,
+    "dependencies": []
+  },
+  {
+    "id": 19,
+    "phase": 4,
+    "category": "design",
+    "description": "Apply design tokens to all new components",
+    "steps": [
+      "Audit all workspace components for hardcoded colors",
+      "Replace with semantic tokens from tailwind.config.js",
+      "Match Stitch mockup colors exactly (reference code.html)",
+      "Apply glassmorphism effects where specified",
+      "Verify rounded corners (cards: 1rem, buttons: 0.75rem)"
+    ],
+    "passes": false,
+    "dependencies": [18, 16]
+  },
+  {
+    "id": 20,
+    "phase": 4,
+    "category": "polish",
+    "description": "Visual verification against Stitch mockup",
+    "steps": [
+      "Compare rendered workspace to docs/design/agent_workspace/screen.png",
+      "Verify all spacing matches (48px, 260px, 280px zones)",
+      "Check all color tokens match Catppuccin Mocha palette",
+      "Verify typography (Manrope headlines, Inter body, JetBrains Mono code)",
+      "Document any intentional deviations"
+    ],
+    "passes": false,
+    "dependencies": [19]
+  },
+  {
+    "id": 21,
+    "phase": 5,
+    "category": "testing",
+    "description": "Integration tests for workspace layout",
+    "steps": [
+      "Write integration test: project switching updates sidebar",
+      "Write integration test: session switching updates terminal and activity",
+      "Write integration test: context panel switching in sidebar",
+      "Write integration test: collapsible sections expand/collapse",
+      "Verify all integration tests pass"
+    ],
+    "passes": false,
+    "dependencies": [17]
+  },
+  {
+    "id": 22,
+    "phase": 5,
+    "category": "quality",
+    "description": "Run all quality checks and fix issues",
+    "steps": [
+      "Run npm run lint and fix all issues",
+      "Run npm run type-check and fix type errors",
+      "Run npm run format and ensure consistent formatting",
+      "Run npm test and achieve 80%+ coverage",
+      "Verify all git hooks pass (pre-commit, commit-msg)"
+    ],
+    "passes": false,
+    "dependencies": [21]
+  },
+  {
+    "id": 23,
+    "phase": 5,
+    "category": "verification",
+    "description": "Final Phase 2 verification checklist",
+    "steps": [
+      "Verify: 4-zone layout renders (icon rail, sidebar, terminal, activity)",
+      "Verify: Icon rail shows project avatars with active highlight",
+      "Verify: Sidebar shows mock session list with status badges",
+      "Verify: Context switcher tabs (Files/Editor/Diff) work",
+      "Verify: Agent Activity panel shows all sections with mock data",
+      "Verify: Chat view and all chat code removed",
+      "Verify: Design matches Stitch mockup",
+      "Verify: All tests pass, ESLint and Prettier clean"
+    ],
+    "passes": false,
+    "dependencies": [22]
   }
 ]

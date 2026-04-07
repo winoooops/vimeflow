@@ -1,113 +1,40 @@
-/**
- * Represents a code snippet within a message.
- */
-export interface CodeSnippet {
-  language: string
-  filename: string
-  code: string
-}
+// DEPRECATED: Chat feature removed in Phase 2
+// These types are stubs to prevent type errors in old layout components
+// that will be replaced with workspace components
 
-/**
- * Represents a message in a conversation.
- */
-export interface Message {
-  id: string
-  sender: 'user' | 'agent'
-  content: string
-  timestamp: string
-  codeSnippets?: CodeSnippet[]
-  status?: 'sent' | 'thinking' | 'completed' | 'error'
-}
-
-/**
- * Represents a conversation item in the sidebar.
- */
 export interface ConversationItem {
   id: string
   title: string
+  lastMessage: string
   timestamp: string
-  hasSubThreads: boolean
-  active: boolean
+  category?: string
+  pinned?: boolean
+  unread?: boolean
+  active?: boolean
+  hasSubThreads?: boolean
 }
 
-/**
- * Type guard to check if an unknown value is a valid CodeSnippet.
- */
-export const isCodeSnippet = (value: unknown): value is CodeSnippet => {
-  if (typeof value !== 'object' || value === null) {
-    return false
-  }
-
-  const obj = value as Record<string, unknown>
-
-  return (
-    typeof obj.language === 'string' &&
-    typeof obj.filename === 'string' &&
-    typeof obj.code === 'string'
-  )
+export interface Message {
+  id: string
+  content: string
+  sender: 'user' | 'agent'
+  timestamp: string
 }
 
-/**
- * Type guard to check if an unknown value is a valid Message.
- */
-export const isMessage = (value: unknown): value is Message => {
-  if (typeof value !== 'object' || value === null) {
-    return false
-  }
-
-  const obj = value as Record<string, unknown>
-
-  // Check required fields
-  if (
-    typeof obj.id !== 'string' ||
-    typeof obj.sender !== 'string' ||
-    typeof obj.content !== 'string' ||
-    typeof obj.timestamp !== 'string'
-  ) {
-    return false
-  }
-
-  // Validate optional codeSnippets array
-  if (obj.codeSnippets !== undefined) {
-    if (!Array.isArray(obj.codeSnippets)) {
-      return false
-    }
-    // All items must be valid CodeSnippets
-    if (!obj.codeSnippets.every(isCodeSnippet)) {
-      return false
-    }
-  }
-
-  // Validate optional status
-  if (obj.status !== undefined) {
-    if (
-      typeof obj.status !== 'string' ||
-      !['sent', 'thinking', 'completed', 'error'].includes(obj.status)
-    ) {
-      return false
-    }
-  }
-
-  return true
+export interface AgentStatus {
+  model: string
+  modelName?: string
+  status: 'idle' | 'thinking' | 'responding'
+  contextWindow: number
+  maxContextWindow: number
+  progress?: number
+  latency?: number
+  tokens?: number
 }
 
-/**
- * Type guard to check if an unknown value is a valid ConversationItem.
- */
-export const isConversationItem = (
-  value: unknown
-): value is ConversationItem => {
-  if (typeof value !== 'object' || value === null) {
-    return false
-  }
-
-  const obj = value as Record<string, unknown>
-
-  return (
-    typeof obj.id === 'string' &&
-    typeof obj.title === 'string' &&
-    typeof obj.timestamp === 'string' &&
-    typeof obj.hasSubThreads === 'boolean' &&
-    typeof obj.active === 'boolean'
-  )
+export interface RecentAction {
+  id: string
+  action: string
+  status: 'success' | 'pending' | 'error'
+  timestamp: string
 }
