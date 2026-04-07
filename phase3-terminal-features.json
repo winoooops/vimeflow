@@ -60,7 +60,7 @@
       "Clean up terminal instance on unmount",
       "Write TerminalPane.test.tsx"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [26]
   },
   {
