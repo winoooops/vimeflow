@@ -325,7 +325,7 @@
       "Run npm test and achieve 80%+ coverage",
       "Verify all git hooks pass (pre-commit, commit-msg)"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [21]
   },
   {
