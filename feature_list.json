@@ -177,7 +177,7 @@
       "Use CollapsibleSection wrapper (collapsed by default)",
       "Write ToolCalls.test.tsx and Tests.test.tsx"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [10]
   },
   {
