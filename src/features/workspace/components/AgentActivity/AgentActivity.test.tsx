@@ -345,4 +345,24 @@ describe('AgentActivity', () => {
       expect(panel).toHaveClass('overflow-y-auto')
     })
   })
+
+  describe('Empty State', () => {
+    test('renders empty state when no session is provided', () => {
+      render(<AgentActivity session={undefined} />)
+
+      const container = screen.getByTestId('agent-activity')
+
+      // Should show empty state message
+      expect(screen.getByText('No active session')).toBeInTheDocument()
+
+      // Should NOT render any activity components
+      expect(screen.queryByText('Files Changed')).not.toBeInTheDocument()
+      expect(screen.queryByText('Tool Calls')).not.toBeInTheDocument()
+      expect(screen.queryByText('Tests')).not.toBeInTheDocument()
+
+      // Container should have centered layout classes
+      expect(container.className).toContain('items-center')
+      expect(container.className).toContain('justify-center')
+    })
+  })
 })
