@@ -54,7 +54,7 @@
       "Write IconRail.test.tsx with test coverage",
       "Apply Obsidian Lens design tokens"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [3]
   },
   {
