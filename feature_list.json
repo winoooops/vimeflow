@@ -132,7 +132,7 @@
       "Style with proper spacing and colors",
       "Write PinnedMetrics.test.tsx"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [3]
   },
   {
