@@ -3,7 +3,7 @@ import type { Session } from '../types'
 
 export interface TerminalZoneProps {
   sessions: Session[]
-  activeSessionId: string
+  activeSessionId: string | null
   onSessionChange: (sessionId: string) => void
   onNewTab: () => void
 }
@@ -15,7 +15,7 @@ export const TerminalZone = ({
   onNewTab,
 }: TerminalZoneProps): ReactElement => {
   const handleTabClick = (sessionId: string): void => {
-    if (sessionId !== activeSessionId) {
+    if (activeSessionId === null || sessionId !== activeSessionId) {
       onSessionChange(sessionId)
     }
   }

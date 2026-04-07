@@ -295,7 +295,7 @@
       "Verify typography (Manrope headlines, Inter body, JetBrains Mono code)",
       "Document any intentional deviations"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [19]
   },
   {

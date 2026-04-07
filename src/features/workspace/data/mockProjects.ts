@@ -31,6 +31,15 @@ export const mockProjects: Project[] = [
     createdAt: '2026-02-20T09:15:00Z',
     lastAccessedAt: '2026-04-05T12:10:00Z',
   },
+  {
+    id: 'proj-4',
+    name: 'Empty Project',
+    abbreviation: 'Ep',
+    path: '/home/user/projects/empty-project',
+    sessions: mockSessions.filter((s) => s.projectId === 'proj-4'),
+    createdAt: '2026-04-01T08:00:00Z',
+    lastAccessedAt: '2026-04-01T08:00:00Z',
+  },
 ]
 
 export const getProjectById = (id: string): Project | undefined =>

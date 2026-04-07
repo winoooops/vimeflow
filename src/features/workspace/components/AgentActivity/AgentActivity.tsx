@@ -8,10 +8,22 @@ import Tests from './Tests'
 import ActivityFooter from './ActivityFooter'
 
 interface AgentActivityProps {
-  session: Session
+  session: Session | undefined
 }
 
 const AgentActivity = ({ session }: AgentActivityProps): ReactElement => {
+  // Render empty state when no session is active
+  if (!session) {
+    return (
+      <div
+        data-testid="agent-activity"
+        className="w-[280px] h-full bg-surface-container-low flex flex-col items-center justify-center p-4"
+      >
+        <p className="text-on-surface-variant text-sm">No active session</p>
+      </div>
+    )
+  }
+
   const { activity } = session
 
   return (

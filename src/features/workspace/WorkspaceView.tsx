@@ -13,7 +13,7 @@ export const WorkspaceView = (): ReactElement => {
     mockProjects[0].id
   )
 
-  const [activeSessionId, setActiveSessionId] = useState<string>(
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(
     mockSessions[0].id
   )
 
@@ -21,8 +21,9 @@ export const WorkspaceView = (): ReactElement => {
     useState<ContextPanelType>('files')
 
   // Get active session for AgentActivity panel
-  const activeSession =
-    mockSessions.find((s) => s.id === activeSessionId) ?? mockSessions[0]
+  const activeSession = activeSessionId
+    ? mockSessions.find((s) => s.id === activeSessionId)
+    : undefined
 
   // Filter sessions by active project
   const projectSessions = mockSessions.filter(
@@ -39,6 +40,9 @@ export const WorkspaceView = (): ReactElement => {
     )
     if (firstSessionOfProject) {
       setActiveSessionId(firstSessionOfProject.id)
+    } else {
+      // Clear active session when project has no sessions
+      setActiveSessionId(null)
     }
   }
 
