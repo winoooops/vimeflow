@@ -1,0 +1,267 @@
+[
+  {
+    "id": 24,
+    "phase": 3,
+    "category": "setup",
+    "description": "Install and configure xterm.js dependencies",
+    "steps": [
+      "Install xterm, @xterm/addon-fit, @xterm/addon-webgl packages",
+      "Install @types/node for Node.js type definitions",
+      "Configure TypeScript to include xterm types",
+      "Verify packages install cleanly with npm install"
+    ],
+    "passes": false,
+    "dependencies": [23]
+  },
+  {
+    "id": 25,
+    "phase": 3,
+    "category": "types",
+    "description": "Define TypeScript types for terminal domain",
+    "steps": [
+      "Create src/features/terminal/types/index.ts",
+      "Define TerminalSession type (id, name, pid, cwd, etc.)",
+      "Define TerminalTab type (sessionId, title, isActive)",
+      "Define PTYCommand types (spawn, write, resize, kill)",
+      "Define PTYEvent types (data, exit, error)",
+      "Write comprehensive type tests"
+    ],
+    "passes": false,
+    "dependencies": [24]
+  },
+  {
+    "id": 26,
+    "phase": 3,
+    "category": "service",
+    "description": "Create terminal service abstraction layer",
+    "steps": [
+      "Create src/features/terminal/services/terminalService.ts",
+      "Define ITerminalService interface (spawn, write, resize, kill methods)",
+      "Create MockTerminalService for testing",
+      "Create TauriTerminalService (invoke Tauri commands)",
+      "Implement service factory pattern (dev vs production)",
+      "Write service tests with mock implementation"
+    ],
+    "passes": false,
+    "dependencies": [25]
+  },
+  {
+    "id": 27,
+    "phase": 3,
+    "category": "component",
+    "description": "Build TerminalPane component with xterm.js",
+    "steps": [
+      "Create src/features/terminal/components/TerminalPane.tsx",
+      "Initialize xterm.js terminal instance in useEffect",
+      "Configure Catppuccin Mocha theme for xterm",
+      "Add fit addon for responsive sizing",
+      "Add WebGL addon for performance",
+      "Handle terminal resize on container size change",
+      "Clean up terminal instance on unmount",
+      "Write TerminalPane.test.tsx"
+    ],
+    "passes": false,
+    "dependencies": [26]
+  },
+  {
+    "id": 28,
+    "phase": 3,
+    "category": "hooks",
+    "description": "Create useTerminal hook for PTY lifecycle",
+    "steps": [
+      "Create src/features/terminal/hooks/useTerminal.ts",
+      "Spawn PTY on mount via terminalService.spawn()",
+      "Listen to PTY data events and write to xterm instance",
+      "Handle keyboard input: xterm onData → terminalService.write()",
+      "Handle PTY exit events and cleanup",
+      "Handle PTY error events with user-friendly messages",
+      "Return terminal instance and status to component",
+      "Write useTerminal.test.ts with mock service"
+    ],
+    "passes": false,
+    "dependencies": [27]
+  },
+  {
+    "id": 29,
+    "phase": 3,
+    "category": "integration",
+    "description": "Wire TerminalPane to terminal service",
+    "steps": [
+      "Update TerminalPane to use useTerminal hook",
+      "Pass sessionId and cwd props to TerminalPane",
+      "Connect xterm data events to PTY write",
+      "Connect PTY data events to xterm write",
+      "Handle terminal resize events (onResize → pty_resize)",
+      "Verify terminal renders and accepts input in dev mode",
+      "Write integration test: spawn → input → output"
+    ],
+    "passes": false,
+    "dependencies": [28]
+  },
+  {
+    "id": 30,
+    "phase": 3,
+    "category": "component",
+    "description": "Update TerminalZone to use real TerminalPane",
+    "steps": [
+      "Replace TerminalZone placeholder content with TerminalPane",
+      "Pass active session data to TerminalPane",
+      "Handle tab switching (unmount/mount TerminalPane instances)",
+      "Add + new tab button handler (create new terminal session)",
+      "Show loading state while PTY spawns",
+      "Show error state if PTY spawn fails",
+      "Write TerminalZone integration tests"
+    ],
+    "passes": false,
+    "dependencies": [29]
+  },
+  {
+    "id": 31,
+    "phase": 3,
+    "category": "backend",
+    "description": "Implement Rust PTY spawn command",
+    "steps": [
+      "Add portable-pty dependency to src-tauri/Cargo.toml",
+      "Create src-tauri/src/terminal/mod.rs module",
+      "Implement spawn_pty Tauri command (shell, cwd, env)",
+      "Return PtySession struct (id, pid)",
+      "Store active PTY sessions in Mutex<HashMap>",
+      "Handle spawn errors (invalid shell, permission denied)",
+      "Write Rust unit tests for spawn_pty"
+    ],
+    "passes": false,
+    "dependencies": [30],
+    "notes": "Requires Rust/Cargo environment"
+  },
+  {
+    "id": 32,
+    "phase": 3,
+    "category": "backend",
+    "description": "Implement Rust PTY write command",
+    "steps": [
+      "Implement write_pty Tauri command (session_id, data)",
+      "Lookup PTY session from state HashMap",
+      "Write bytes to PTY stdin",
+      "Handle write errors (session not found, PTY closed)",
+      "Write Rust unit tests for write_pty"
+    ],
+    "passes": false,
+    "dependencies": [31],
+    "notes": "Requires Rust/Cargo environment"
+  },
+  {
+    "id": 33,
+    "phase": 3,
+    "category": "backend",
+    "description": "Implement Rust PTY resize command",
+    "steps": [
+      "Implement resize_pty Tauri command (session_id, rows, cols)",
+      "Lookup PTY session from state HashMap",
+      "Call PTY resize method",
+      "Handle resize errors (session not found, PTY closed)",
+      "Write Rust unit tests for resize_pty"
+    ],
+    "passes": false,
+    "dependencies": [31],
+    "notes": "Requires Rust/Cargo environment"
+  },
+  {
+    "id": 34,
+    "phase": 3,
+    "category": "backend",
+    "description": "Implement Rust PTY kill command",
+    "steps": [
+      "Implement kill_pty Tauri command (session_id)",
+      "Lookup PTY session from state HashMap",
+      "Send SIGTERM to PTY process",
+      "Remove session from HashMap",
+      "Handle kill errors (session not found, already exited)",
+      "Write Rust unit tests for kill_pty"
+    ],
+    "passes": false,
+    "dependencies": [31],
+    "notes": "Requires Rust/Cargo environment"
+  },
+  {
+    "id": 35,
+    "phase": 3,
+    "category": "backend",
+    "description": "Implement PTY stdout event streaming",
+    "steps": [
+      "Spawn background task to read PTY stdout in loop",
+      "Emit pty-data Tauri event with session_id and output bytes",
+      "Emit pty-exit event when PTY process exits",
+      "Emit pty-error event on read errors",
+      "Handle backpressure (limit event queue size)",
+      "Write Rust integration tests for event streaming"
+    ],
+    "passes": false,
+    "dependencies": [31],
+    "notes": "Requires Rust/Cargo environment"
+  },
+  {
+    "id": 36,
+    "phase": 3,
+    "category": "integration",
+    "description": "End-to-end terminal integration test",
+    "steps": [
+      "Write integration test: spawn shell → echo hello → verify output",
+      "Test terminal resize works correctly",
+      "Test multiple terminal tabs (switch between them)",
+      "Test terminal cleanup on tab close",
+      "Test error handling (invalid shell, spawn failure)",
+      "Verify all PTY processes cleaned up after tests"
+    ],
+    "passes": false,
+    "dependencies": [30, 35]
+  },
+  {
+    "id": 37,
+    "phase": 3,
+    "category": "polish",
+    "description": "Apply Catppuccin Mocha theme to xterm.js",
+    "steps": [
+      "Create src/features/terminal/theme/catppuccin-mocha.ts",
+      "Define xterm theme with Catppuccin Mocha colors",
+      "Apply theme to xterm instance in TerminalPane",
+      "Verify terminal colors match design spec",
+      "Test theme in both light and dark system themes"
+    ],
+    "passes": false,
+    "dependencies": [27]
+  },
+  {
+    "id": 38,
+    "phase": 3,
+    "category": "quality",
+    "description": "Phase 3 quality checks and cleanup",
+    "steps": [
+      "Run npm run lint and fix all issues",
+      "Run npm run type-check and fix type errors",
+      "Run npm test and achieve 80%+ coverage",
+      "Run cargo clippy and fix all warnings",
+      "Run cargo test and ensure all Rust tests pass",
+      "Verify git hooks pass (pre-commit, commit-msg)"
+    ],
+    "passes": false,
+    "dependencies": [36, 37]
+  },
+  {
+    "id": 39,
+    "phase": 3,
+    "category": "verification",
+    "description": "Final Phase 3 verification checklist",
+    "steps": [
+      "Verify: Can spawn a shell and interact with it",
+      "Verify: Can run `claude` (Claude Code) in terminal",
+      "Verify: Terminal resizes correctly on window resize",
+      "Verify: Multiple terminal tabs work (switch between)",
+      "Verify: PTY processes cleaned up on tab close / app exit",
+      "Verify: Catppuccin Mocha theme applied correctly",
+      "Verify: All tests pass, ESLint and Prettier clean",
+      "Verify: No memory leaks (PTY cleanup on unmount)"
+    ],
+    "passes": false,
+    "dependencies": [38]
+  }
+]

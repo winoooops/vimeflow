@@ -9,12 +9,14 @@ import { mockSessions } from './data/mockSessions'
 
 export const WorkspaceView = (): ReactElement => {
   // State management
-  const [activeProjectId, setActiveProjectId] = useState<string>(
-    mockProjects[0].id
+  // P1 Fix: Guard against empty project/session lists on init
+  // Default to null if arrays are empty to prevent runtime crash
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(
+    mockProjects.length > 0 ? mockProjects[0].id : null
   )
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
-    mockSessions[0].id
+    mockSessions.length > 0 ? mockSessions[0].id : null
   )
 
   const [activeContextTab, setActiveContextTab] =
@@ -26,9 +28,10 @@ export const WorkspaceView = (): ReactElement => {
     : undefined
 
   // Filter sessions by active project
-  const projectSessions = mockSessions.filter(
-    (s) => s.projectId === activeProjectId
-  )
+  // Handle null activeProjectId gracefully
+  const projectSessions = activeProjectId
+    ? mockSessions.filter((s) => s.projectId === activeProjectId)
+    : []
 
   // Handlers
   const handleProjectClick = (projectId: string): void => {

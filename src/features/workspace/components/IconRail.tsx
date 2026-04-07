@@ -3,7 +3,7 @@ import type { Project } from '../types'
 
 export interface IconRailProps {
   projects: Project[]
-  activeProjectId: string
+  activeProjectId: string | null
   onProjectClick: (projectId: string) => void
   onNewProject: () => void
   onSettings: () => void

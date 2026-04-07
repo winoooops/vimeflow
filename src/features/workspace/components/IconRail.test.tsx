@@ -227,7 +227,7 @@ describe('IconRail', () => {
     render(
       <IconRail
         projects={[]}
-        activeProjectId=""
+        activeProjectId={null}
         onProjectClick={vi.fn()}
         onNewProject={vi.fn()}
         onSettings={vi.fn()}
@@ -242,6 +242,35 @@ describe('IconRail', () => {
     expect(
       screen.getByRole('button', { name: /settings/i })
     ).toBeInTheDocument()
+  })
+
+  test('handles null activeProjectId gracefully', () => {
+    // P1 Fix: Ensure component doesn't crash with null activeProjectId
+    render(
+      <IconRail
+        projects={mockProjects}
+        activeProjectId={null}
+        onProjectClick={vi.fn()}
+        onNewProject={vi.fn()}
+        onSettings={vi.fn()}
+      />
+    )
+
+    // Should render all projects
+    expect(screen.getByText('Vf')).toBeInTheDocument()
+    expect(screen.getByText('My')).toBeInTheDocument()
+    expect(screen.getByText('Ag')).toBeInTheDocument()
+
+    // No project should have active highlight when activeProjectId is null
+    const projectButtons = screen.getAllByRole('button').filter((button) => {
+      const text = button.textContent
+
+      return text === 'Vf' || text === 'My' || text === 'Ag' || text === 'Em'
+    })
+
+    projectButtons.forEach((button) => {
+      expect(button).not.toHaveClass('bg-primary-container/20')
+    })
   })
 
   test('applies hover styles to project avatars', () => {
