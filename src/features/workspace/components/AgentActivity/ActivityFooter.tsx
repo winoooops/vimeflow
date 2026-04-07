@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react'
 import type { AgentActivity } from '../../types'
 
 interface ActivityFooterProps {
@@ -31,9 +32,7 @@ const calculateTotalLines = (
     { added: 0, removed: 0 }
   )
 
-const ActivityFooter = ({
-  activity,
-}: ActivityFooterProps): React.ReactElement => {
+const ActivityFooter = ({ activity }: ActivityFooterProps): ReactElement => {
   const { usage, fileChanges } = activity
   const duration = formatDuration(usage.sessionDuration)
   const turns = usage.turnCount === 1 ? '1 turn' : `${usage.turnCount} turns`
