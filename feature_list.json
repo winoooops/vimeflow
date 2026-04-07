@@ -310,7 +310,7 @@
       "Write integration test: collapsible sections expand/collapse",
       "Verify all integration tests pass"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [17]
   },
   {
