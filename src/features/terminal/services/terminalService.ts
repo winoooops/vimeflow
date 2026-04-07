@@ -190,6 +190,30 @@ export class MockTerminalService implements ITerminalService {
     this.errorCallbacks.forEach((cb) => cb(sessionId, message, code))
   }
 
+  // Generic emit for testing - dispatches to specific emit methods
+  emit(
+    event: 'data' | 'exit' | 'error',
+    payload: {
+      sessionId: string
+      data?: string
+      code?: number
+      signal?: string
+      message?: string
+    }
+  ): void {
+    if (event === 'data' && payload.data !== undefined) {
+      this.emitData(payload.sessionId, payload.data)
+    } else if (event === 'exit' && payload.code !== undefined) {
+      this.emitExit(payload.sessionId, payload.code, payload.signal)
+    } else if (event === 'error' && payload.message !== undefined) {
+      this.emitError(
+        payload.sessionId,
+        payload.message,
+        payload.code?.toString()
+      )
+    }
+  }
+
   // Get active sessions for testing
   getActiveSessions(): string[] {
     return Array.from(this.sessions.keys())
