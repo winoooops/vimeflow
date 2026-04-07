@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { userEvent } from '@testing-library/user-event'
+import userEvent from '@testing-library/user-event'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import type { ContextPanelType } from '../types'
 import { ContextSwitcher } from './ContextSwitcher'
