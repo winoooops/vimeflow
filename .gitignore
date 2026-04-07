@@ -76,3 +76,7 @@ VISUAL_VERIFICATION.md
 
 # Git worktrees (local per-agent checkouts)
 .claude/worktrees/
+
+# Verification screenshots (testing artifacts)
+feedback*.png
+feedbacak*.png
