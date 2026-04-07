@@ -25,8 +25,7 @@ const Tests = ({ testResults }: TestsProps): ReactElement => {
     return `${passed}/${total}`
   }
 
-  const countDisplay =
-    testResults.length > 0 ? getCountBadge() : undefined
+  const countDisplay = testResults.length > 0 ? getCountBadge() : undefined
 
   return (
     <CollapsibleSection
@@ -63,9 +62,7 @@ const Tests = ({ testResults }: TestsProps): ReactElement => {
                       className="flex flex-col gap-0.5 text-sm"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="text-on-surface">
-                          {failure.name}
-                        </span>
+                        <span className="text-on-surface">{failure.name}</span>
                         <span className="text-on-surface/60">
                           {failure.file}:{failure.line}
                         </span>

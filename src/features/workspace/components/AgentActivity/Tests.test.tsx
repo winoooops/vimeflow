@@ -65,7 +65,9 @@ describe('Tests', () => {
         screen.queryByText('src/auth/middleware.test.ts')
       ).not.toBeInTheDocument()
 
-      expect(screen.queryByText('src/routes/auth.test.ts')).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('src/routes/auth.test.ts')
+      ).not.toBeInTheDocument()
     })
 
     test('renders empty state with no count badge', () => {
@@ -88,7 +90,9 @@ describe('Tests', () => {
 
       await user.click(sectionHeader)
 
-      expect(screen.getByText('src/auth/middleware.test.ts')).toBeInTheDocument()
+      expect(
+        screen.getByText('src/auth/middleware.test.ts')
+      ).toBeInTheDocument()
       expect(screen.getByText('src/routes/auth.test.ts')).toBeInTheDocument()
     })
 
@@ -103,8 +107,13 @@ describe('Tests', () => {
 
       await user.click(sectionHeader)
 
-      expect(screen.getByText('4 passed, 1 failed (5 total)')).toBeInTheDocument()
-      expect(screen.getByText('8 passed, 0 failed (8 total)')).toBeInTheDocument()
+      expect(
+        screen.getByText('4 passed, 1 failed (5 total)')
+      ).toBeInTheDocument()
+
+      expect(
+        screen.getByText('8 passed, 0 failed (8 total)')
+      ).toBeInTheDocument()
     })
 
     test('applies success color for all-passing test files', async () => {
@@ -162,11 +171,17 @@ describe('Tests', () => {
 
       await user.click(sectionHeader)
 
-      expect(screen.getByText('should reject invalid tokens')).toBeInTheDocument()
+      expect(
+        screen.getByText('should reject invalid tokens')
+      ).toBeInTheDocument()
+
       expect(
         screen.getByText('src/auth/middleware.test.ts:45')
       ).toBeInTheDocument()
-      expect(screen.getByText('Expected 401 but received 500')).toBeInTheDocument()
+
+      expect(
+        screen.getByText('Expected 401 but received 500')
+      ).toBeInTheDocument()
     })
 
     test('does not display failure details for passing tests', async () => {
@@ -221,7 +236,9 @@ describe('Tests', () => {
       await user.click(sectionHeader)
 
       expect(screen.getByText('▾')).toBeInTheDocument()
-      expect(screen.getByText('src/auth/middleware.test.ts')).toBeInTheDocument()
+      expect(
+        screen.getByText('src/auth/middleware.test.ts')
+      ).toBeInTheDocument()
     })
 
     test('collapses when clicking expanded section', async () => {
@@ -235,7 +252,9 @@ describe('Tests', () => {
 
       await user.click(sectionHeader)
       expect(screen.getByText('▾')).toBeInTheDocument()
-      expect(screen.getByText('src/auth/middleware.test.ts')).toBeInTheDocument()
+      expect(
+        screen.getByText('src/auth/middleware.test.ts')
+      ).toBeInTheDocument()
 
       await user.click(sectionHeader)
       expect(screen.getByText('▸')).toBeInTheDocument()

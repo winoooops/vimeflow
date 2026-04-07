@@ -141,7 +141,7 @@ describe('WorkspaceView Integration Tests', () => {
 
       // The active session tab should have visual indicator
       const sessionTabs = within(tabBar).getAllByRole('button', {
-        name: /^🤖/
+        name: /^🤖/,
       })
 
       // At least one tab should have the active styling
@@ -204,7 +204,7 @@ describe('WorkspaceView Integration Tests', () => {
       const tabBar = within(terminalZone).getByTestId('tab-bar')
 
       const sessionTabs = within(tabBar).getAllByRole('button', {
-        name: /^🤖/
+        name: /^🤖/,
       })
 
       // Terminal should have at least one session tab
@@ -251,7 +251,9 @@ describe('WorkspaceView Integration Tests', () => {
       expect(within(sidebar).getByTestId('editor-panel')).toBeInTheDocument()
 
       // FilesPanel should not be visible
-      expect(within(sidebar).queryByTestId('files-panel')).not.toBeInTheDocument()
+      expect(
+        within(sidebar).queryByTestId('files-panel')
+      ).not.toBeInTheDocument()
     })
 
     test('clicking Diff tab shows DiffPanel', async (): Promise<void> => {
@@ -269,12 +271,14 @@ describe('WorkspaceView Integration Tests', () => {
       expect(within(sidebar).getByTestId('diff-panel')).toBeInTheDocument()
 
       // Other panels should not be visible
-      expect(within(sidebar).queryByTestId('files-panel')).not.toBeInTheDocument()
+      expect(
+        within(sidebar).queryByTestId('files-panel')
+      ).not.toBeInTheDocument()
+
       expect(
         within(sidebar).queryByTestId('editor-panel')
       ).not.toBeInTheDocument()
     })
-
 
     test('context panel switches preserve session list visibility', async (): Promise<void> => {
       const user = userEvent.setup()
@@ -327,7 +331,7 @@ describe('WorkspaceView Integration Tests', () => {
 
       // Find Files Changed button
       const toggleButton = within(agentActivity).getByRole('button', {
-        name: /Files Changed/
+        name: /Files Changed/,
       })
 
       expect(toggleButton).toBeInTheDocument()
@@ -340,7 +344,8 @@ describe('WorkspaceView Integration Tests', () => {
       await user.click(toggleButton)
 
       // Content should toggle visibility
-      const afterClickFilesList = within(agentActivity).queryByTestId('files-list')
+      const afterClickFilesList =
+        within(agentActivity).queryByTestId('files-list')
       const isAfterClickExpanded = afterClickFilesList !== null
 
       expect(isAfterClickExpanded).toBe(!isInitiallyExpanded)
@@ -354,22 +359,22 @@ describe('WorkspaceView Integration Tests', () => {
 
       // Find Tool Calls button
       const toggleButton = within(agentActivity).getByRole('button', {
-        name: /Tool Calls/
+        name: /Tool Calls/,
       })
 
       expect(toggleButton).toBeInTheDocument()
 
       // Check initial state - should be collapsed (no tool-calls-list)
-      const initialContent = within(agentActivity).queryByTestId('tool-calls-list')
+      const initialContent =
+        within(agentActivity).queryByTestId('tool-calls-list')
       const isInitiallyExpanded = initialContent !== null
 
       // Click to expand/collapse
       await user.click(toggleButton)
 
       // Content should toggle
-      const afterClickContent = within(agentActivity).queryByTestId(
-        'tool-calls-list'
-      )
+      const afterClickContent =
+        within(agentActivity).queryByTestId('tool-calls-list')
       const isAfterClickExpanded = afterClickContent !== null
 
       expect(isAfterClickExpanded).toBe(!isInitiallyExpanded)
@@ -400,7 +405,8 @@ describe('WorkspaceView Integration Tests', () => {
       await user.click(toggleButton!)
 
       // Content should toggle
-      const afterClickContent = within(agentActivity).queryByTestId('tests-list')
+      const afterClickContent =
+        within(agentActivity).queryByTestId('tests-list')
       const isAfterClickExpanded = afterClickContent !== null
 
       expect(isAfterClickExpanded).toBe(!isInitiallyExpanded)
@@ -414,11 +420,11 @@ describe('WorkspaceView Integration Tests', () => {
 
       // Find Files Changed and Tool Calls buttons
       const filesToggle = within(agentActivity).getByRole('button', {
-        name: /Files Changed/
+        name: /Files Changed/,
       })
 
       const toolCallsToggle = within(agentActivity).getByRole('button', {
-        name: /Tool Calls/
+        name: /Tool Calls/,
       })
 
       // Collapse Files Changed (initially expanded)
@@ -431,7 +437,8 @@ describe('WorkspaceView Integration Tests', () => {
       const filesContent = within(agentActivity).queryByTestId('files-list')
 
       // Tool Calls should be expanded (tool-calls-list exists)
-      const toolCallsContent = within(agentActivity).queryByTestId('tool-calls-list')
+      const toolCallsContent =
+        within(agentActivity).queryByTestId('tool-calls-list')
 
       // They should have opposite states
       expect(filesContent).toBeNull()
@@ -446,7 +453,7 @@ describe('WorkspaceView Integration Tests', () => {
 
       // Find Files Changed button
       const toggleButton = within(agentActivity).getByRole('button', {
-        name: /Files Changed/
+        name: /Files Changed/,
       })
 
       // Get chevron element (first span in button)

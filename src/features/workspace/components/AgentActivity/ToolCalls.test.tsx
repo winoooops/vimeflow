@@ -152,7 +152,9 @@ describe('ToolCalls', () => {
       expect(screen.getByText('Read')).toBeInTheDocument()
       expect(screen.getByText('src/auth/types.ts')).toBeInTheDocument()
       expect(screen.getByText('Write')).toBeInTheDocument()
-      expect(screen.getByText('src/auth/middleware.ts (48 lines)')).toBeInTheDocument()
+      expect(
+        screen.getByText('src/auth/middleware.ts (48 lines)')
+      ).toBeInTheDocument()
       expect(screen.getByText('Bash')).toBeInTheDocument()
       expect(screen.getByText('npm test src/auth')).toBeInTheDocument()
     })
