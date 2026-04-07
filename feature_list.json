@@ -162,7 +162,7 @@
       "Use CollapsibleSection wrapper (auto-expanded)",
       "Write FilesChanged.test.tsx"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [10]
   },
   {
