@@ -1,0 +1,328 @@
+import { describe, test, expect, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { userEvent } from '@testing-library/user-event'
+import { Sidebar } from './Sidebar'
+import type { Session } from '../types'
+
+const mockSessions: Session[] = [
+  {
+    id: 'sess-1',
+    projectId: 'proj-1',
+    name: 'auth middleware',
+    status: 'running',
+    workingDirectory: '/home/user/projects/Vimeflow',
+    agentType: 'claude-code',
+    terminalPid: 12345,
+    createdAt: '2026-04-07T03:45:00Z',
+    lastActivityAt: '2026-04-07T03:47:34Z',
+    activity: {
+      fileChanges: [],
+      toolCalls: [],
+      testResults: [],
+      contextWindow: {
+        used: 5000,
+        total: 200000,
+        percentage: 2.5,
+        emoji: '😊',
+      },
+      usage: {
+        sessionDuration: 300,
+        turnCount: 5,
+        messages: { sent: 5, limit: 200 },
+        tokens: { input: 2000, output: 3000, total: 5000 },
+      },
+    },
+  },
+  {
+    id: 'sess-2',
+    projectId: 'proj-1',
+    name: 'fix: login bug',
+    status: 'paused',
+    workingDirectory: '/home/user/projects/Vimeflow',
+    agentType: 'claude-code',
+    terminalPid: 12346,
+    createdAt: '2026-04-07T03:30:00Z',
+    lastActivityAt: '2026-04-07T03:32:15Z',
+    activity: {
+      fileChanges: [],
+      toolCalls: [],
+      testResults: [],
+      contextWindow: { used: 10000, total: 200000, percentage: 5, emoji: '😊' },
+      usage: {
+        sessionDuration: 135,
+        turnCount: 3,
+        messages: { sent: 3, limit: 200 },
+        tokens: { input: 5000, output: 5000, total: 10000 },
+      },
+    },
+  },
+  {
+    id: 'sess-3',
+    projectId: 'proj-1',
+    name: 'refactor: api layer',
+    status: 'completed',
+    workingDirectory: '/home/user/projects/Vimeflow',
+    agentType: 'claude-code',
+    createdAt: '2026-04-07T02:00:00Z',
+    lastActivityAt: '2026-04-07T02:45:00Z',
+    activity: {
+      fileChanges: [],
+      toolCalls: [],
+      testResults: [],
+      contextWindow: {
+        used: 150000,
+        total: 200000,
+        percentage: 75,
+        emoji: '😟',
+      },
+      usage: {
+        sessionDuration: 2700,
+        turnCount: 20,
+        messages: { sent: 20, limit: 200 },
+        tokens: { input: 75000, output: 75000, total: 150000 },
+      },
+    },
+  },
+]
+
+describe('Sidebar', () => {
+  test('renders with correct width', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+      />
+    )
+
+    const sidebar = screen.getByTestId('sidebar')
+
+    expect(sidebar).toBeInTheDocument()
+    expect(sidebar).toHaveClass('w-[260px]')
+  })
+
+  test('renders all sessions', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('auth middleware')).toBeInTheDocument()
+    expect(screen.getByText('fix: login bug')).toBeInTheDocument()
+    expect(screen.getByText('refactor: api layer')).toBeInTheDocument()
+  })
+
+  test('displays status badge for each session', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+      />
+    )
+
+    // Status badges should be visible
+    const runningBadge = screen.getByText('running')
+    const pausedBadge = screen.getByText('paused')
+    const completedBadge = screen.getByText('completed')
+
+    expect(runningBadge).toBeInTheDocument()
+    expect(pausedBadge).toBeInTheDocument()
+    expect(completedBadge).toBeInTheDocument()
+  })
+
+  test('highlights active session with purple border and background', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+      />
+    )
+
+    const activeSession = screen.getByRole('button', {
+      name: /auth middleware/i,
+    })
+
+    expect(activeSession).toHaveClass('border-l-primary')
+    expect(activeSession).toHaveClass('bg-surface-container')
+  })
+
+  test('inactive sessions do not have active styling', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+      />
+    )
+
+    const inactiveSession = screen.getByRole('button', {
+      name: /fix: login bug/i,
+    })
+
+    expect(inactiveSession).not.toHaveClass('border-l-primary')
+    expect(inactiveSession).not.toHaveClass('bg-surface-container')
+  })
+
+  test('calls onSessionClick with session id when session is clicked', async () => {
+    const user = userEvent.setup()
+    const onSessionClick = vi.fn()
+
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={onSessionClick}
+      />
+    )
+
+    const session = screen.getByRole('button', { name: /fix: login bug/i })
+
+    await user.click(session)
+
+    expect(onSessionClick).toHaveBeenCalledWith('sess-2')
+  })
+
+  test('displays timestamps for sessions', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+      />
+    )
+
+    // Timestamps should be displayed (we'll format them as relative time)
+    // For now, just check that some time-related text appears
+    // The component will use a relative time formatter
+    const timestamps = screen.getAllByTestId('session-timestamp')
+
+    expect(timestamps).toHaveLength(3)
+  })
+
+  test('uses design tokens for colors and spacing', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+      />
+    )
+
+    const sidebar = screen.getByTestId('sidebar')
+
+    expect(sidebar).toHaveClass('bg-surface-container-low')
+  })
+
+  test('renders empty state when no sessions', () => {
+    render(
+      <Sidebar sessions={[]} activeSessionId={null} onSessionClick={vi.fn()} />
+    )
+
+    expect(screen.getByText('No sessions')).toBeInTheDocument()
+  })
+
+  test('session cards have hover state', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+      />
+    )
+
+    const session = screen.getByRole('button', { name: /fix: login bug/i })
+
+    expect(session).toHaveClass('hover:bg-surface-container/50')
+  })
+
+  test('status badges use appropriate colors', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+      />
+    )
+
+    const runningBadge = screen.getByText('running')
+    const pausedBadge = screen.getByText('paused')
+    const completedBadge = screen.getByText('completed')
+
+    // Running: green/primary
+    expect(runningBadge).toHaveClass('bg-primary-container')
+
+    // Paused: yellow/warning
+    expect(pausedBadge).toHaveClass('bg-warning/20')
+
+    // Completed: neutral
+    expect(completedBadge).toHaveClass('bg-surface-container')
+  })
+
+  test('session list section has correct layout', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+      />
+    )
+
+    const sidebar = screen.getByTestId('sidebar')
+
+    // Should be flex column
+    expect(sidebar).toHaveClass('flex')
+    expect(sidebar).toHaveClass('flex-col')
+  })
+
+  test('renders session section header', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Sessions')).toBeInTheDocument()
+  })
+
+  test('session items have consistent spacing', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+      />
+    )
+
+    const sessionList = screen.getByTestId('session-list')
+
+    // Gap between session items
+    expect(sessionList).toHaveClass('gap-1')
+  })
+
+  test('session name is truncated if too long', () => {
+    const longNameSession: Session = {
+      ...mockSessions[0],
+      name: 'This is a very long session name that should be truncated to fit within the sidebar width',
+    }
+
+    render(
+      <Sidebar
+        sessions={[longNameSession]}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+      />
+    )
+
+    const sessionName = screen.getByText(longNameSession.name)
+
+    // Should have text truncation class
+    expect(sessionName).toHaveClass('truncate')
+  })
+})

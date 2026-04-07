@@ -70,7 +70,7 @@
       "Write Sidebar.test.tsx with test coverage",
       "Apply design tokens matching spec"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [3]
   },
   {
