@@ -6,22 +6,23 @@ import userEvent from '@testing-library/user-event'
 import { WorkspaceView } from './WorkspaceView'
 
 describe('WorkspaceView', () => {
-  test('renders all four zones (icon rail, sidebar, terminal, agent activity)', () => {
+  test('renders all five zones (icon rail, sidebar, terminal, bottom drawer, agent activity)', () => {
     render(<WorkspaceView />)
 
     expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument() // BottomDrawer
     expect(screen.getByTestId('agent-activity')).toBeInTheDocument()
   })
 
-  test('applies correct grid layout with 4 columns', () => {
+  test('applies correct grid layout with 4 columns (updated dimensions)', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
 
     expect(container).toHaveClass('grid')
-    expect(container).toHaveClass('grid-cols-[48px_260px_1fr_280px]')
+    expect(container).toHaveClass('grid-cols-[64px_256px_1fr_320px]')
   })
 
   test('fills viewport height', () => {
@@ -75,51 +76,48 @@ describe('WorkspaceView', () => {
     expect(agentActivity).toBeInTheDocument()
   })
 
-  test('defaults to first project as active', () => {
+  test('renders navigation items in IconRail', () => {
     render(<WorkspaceView />)
 
-    const iconRail = screen.getByTestId('icon-rail')
+    // IconRail should render navigation items (Dashboard, Source Control, etc.)
+    expect(
+      screen.getByRole('button', { name: 'Dashboard' })
+    ).toBeInTheDocument()
 
-    const activeButton = iconRail.querySelector(
-      'button.bg-primary-container\\/20'
-    )
-
-    expect(activeButton).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Source Control' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
   })
 
   test('defaults to first session as active', () => {
     render(<WorkspaceView />)
 
-    const sidebar = screen.getByTestId('sidebar')
-    const activeSession = sidebar.querySelector('button.border-l-primary')
-
-    expect(activeSession).toBeInTheDocument()
+    // First session should have active styling (bg-slate-800/80)
+    const firstSession = screen.getByRole('button', { name: 'auth middleware' })
+    expect(firstSession).toHaveClass('bg-slate-800/80')
+    expect(firstSession).toHaveClass('text-primary-container')
   })
 
-  test('defaults to files tab in sidebar context switcher', () => {
+  test('renders FileExplorer in sidebar', () => {
     render(<WorkspaceView />)
 
     const sidebar = screen.getByTestId('sidebar')
 
-    // FilesPanel should be rendered by default
-    const filesPanel = sidebar.querySelector('[data-testid="files-panel"]')
-    expect(filesPanel).toBeInTheDocument()
+    // FileExplorer should be rendered (no more context switcher)
+    const fileExplorer = sidebar.querySelector('[data-testid="file-explorer"]')
+    expect(fileExplorer).toBeInTheDocument()
   })
 
-  test('handles project switch callback', () => {
+  test('handles navigation item clicks', () => {
     render(<WorkspaceView />)
 
-    const iconRail = screen.getByTestId('icon-rail')
-    const projectButtons = iconRail.querySelectorAll('button[aria-label]')
+    // Navigation items should be clickable
+    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
+    expect(dashboardButton).toBeInTheDocument()
 
-    // Click second project button if it exists
-    if (projectButtons.length > 1) {
-      const secondProject = projectButtons[1] as HTMLButtonElement
-      secondProject.click()
-
-      // State should update (we'll verify by checking if different project becomes active)
-      // This is tested indirectly through the component's internal state management
-    }
+    // Click should not crash (navigation items have onClick handlers)
+    dashboardButton.click()
   })
 
   test('handles session switch callback', () => {
@@ -137,18 +135,25 @@ describe('WorkspaceView', () => {
     }
   })
 
-  test('handles context tab switch callback', () => {
+  test('BottomDrawer is present below TerminalZone', () => {
     render(<WorkspaceView />)
 
-    const sidebar = screen.getByTestId('sidebar')
+    // BottomDrawer should render with Editor tab active
+    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /diff viewer/i })
+    ).toBeInTheDocument()
+  })
 
-    const contextSwitcher = sidebar.querySelector(
-      '[data-testid="context-switcher"]'
-    )
+  test('main workspace area uses flex-col layout', () => {
+    render(<WorkspaceView />)
 
-    // Should have 3 tabs: Files, Editor, Diff
-    const contextTabs = contextSwitcher?.querySelectorAll('button')
-    expect(contextTabs?.length).toBe(3)
+    const workspaceView = screen.getByTestId('workspace-view')
+
+    // Main workspace container (3rd child in grid) should use flex-col
+    const mainWorkspace = workspaceView.children[2] as HTMLElement
+    expect(mainWorkspace).toHaveClass('flex')
+    expect(mainWorkspace).toHaveClass('flex-col')
   })
 
   test('applies overflow-hidden to prevent scrollbars', () => {
@@ -159,73 +164,32 @@ describe('WorkspaceView', () => {
     expect(container).toHaveClass('overflow-hidden')
   })
 
-  test('clears active session when switching to a project with no sessions', async () => {
-    // This test verifies the fix for the review finding:
-    // "When a user switches to a project that has no sessions,
-    // handleProjectClick leaves activeSessionId unchanged and activeSession
-    // continues to be resolved from the global mockSessions list."
-
+  test('handles session switching', async () => {
+    // Test that clicking a different session updates the active session
     const user = userEvent.setup()
-    const { container } = render(<WorkspaceView />)
-
-    // Initially, we should have an active session from proj-1
-    const agentActivity = screen.getByTestId('agent-activity')
-    const initialSessionName = agentActivity.textContent
-
-    expect(initialSessionName).toContain('Claude Code') // StatusCard should show session
-
-    // Find the "Empty Project" (proj-4) button - it's the 4th project
-    const iconRail = screen.getByTestId('icon-rail')
-    const projectButtons = iconRail.querySelectorAll('button[aria-label]')
-    expect(projectButtons.length).toBeGreaterThanOrEqual(4)
-
-    // Click the empty project (index 3, since first button is at index 0)
-    const emptyProjectButton = projectButtons[3] as HTMLButtonElement
-
-    // Click the empty project button
-    await user.click(emptyProjectButton)
-
-    // After switching to empty project:
-    // 1. Sidebar should show "No sessions"
-    const sidebar = screen.getByTestId('sidebar')
-    expect(sidebar.textContent).toContain('No sessions')
-
-    // 2. Terminal zone should show empty state or handle no active session
-    const terminalZone = screen.getByTestId('terminal-zone')
-    const tabBar = terminalZone.querySelector('[data-testid="tab-bar"]')
-
-    // Tab bar should either be empty or show "No active session"
-    const sessionTabs = tabBar?.querySelectorAll('button[aria-label^="🤖"]')
-    expect(sessionTabs?.length).toBe(0)
-
-    // 3. Agent Activity should NOT show the previous project's session
-    // This is the key assertion - we should not see the old session data
-    const updatedAgentActivity = screen.getByTestId('agent-activity')
-    expect(updatedAgentActivity).toBeInTheDocument()
-
-    // The agent activity panel should be in an empty/placeholder state
-    // We can verify this by checking that the component received null/undefined session
-    // For now, we accept that it might show fallback content, but it should not
-    // show data from the previous project
-
-    // Additional verification: the component should render without errors
-    expect(container).toBeInTheDocument()
-  })
-
-  test('handles empty projects array gracefully without crashing', () => {
-    // P1 Fix: Guard against empty project/session lists on init
-    // This test ensures the component doesn't crash when mockProjects is empty
-    // We can't easily mock the import, but we can verify the component handles
-    // null/undefined activeProjectId correctly
-
-    // The component should render without throwing when projects list is empty
-    // We test this indirectly by ensuring the component handles null states
     render(<WorkspaceView />)
 
-    // Component should render all zones even with empty data
+    // Initially, first session is active
+    const firstSession = screen.getByRole('button', { name: 'auth middleware' })
+    expect(firstSession).toHaveClass('bg-slate-800/80')
+
+    // Click second session
+    const secondSession = screen.getByRole('button', { name: 'fix: login bug' })
+    await user.click(secondSession)
+
+    // Second session should now be active
+    expect(secondSession).toHaveClass('bg-slate-800/80')
+  })
+
+  test('handles empty sessions gracefully without crashing', () => {
+    // Component should render all zones even when there are no active sessions
+    render(<WorkspaceView />)
+
+    // All main zones should still render
     expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
     expect(screen.getByTestId('agent-activity')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
   })
 })

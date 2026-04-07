@@ -2,6 +2,7 @@ import { useState, type ReactElement } from 'react'
 import { IconRail } from './components/IconRail'
 import { Sidebar } from './components/Sidebar'
 import { TerminalZone } from './components/TerminalZone'
+import BottomDrawer from './components/BottomDrawer'
 import AgentActivity from './components/AgentActivity'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { mockSessions } from './data/mockSessions'
@@ -46,13 +47,19 @@ export const WorkspaceView = (): ReactElement => {
         onNewInstance={handleNewInstance}
       />
 
-      {/* Terminal Zone - flexible */}
-      <TerminalZone
-        sessions={mockSessions}
-        activeSessionId={activeSessionId}
-        onSessionChange={handleSessionClick}
-        onNewTab={handleNewTab}
-      />
+      {/* Main workspace area - TerminalZone + BottomDrawer */}
+      <div className="flex flex-col overflow-hidden">
+        {/* Terminal Zone - takes remaining space */}
+        <TerminalZone
+          sessions={mockSessions}
+          activeSessionId={activeSessionId}
+          onSessionChange={handleSessionClick}
+          onNewTab={handleNewTab}
+        />
+
+        {/* Bottom Drawer - Editor + Diff Viewer */}
+        <BottomDrawer />
+      </div>
 
       {/* Agent Activity - 320px */}
       <AgentActivity session={activeSession} />
