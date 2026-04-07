@@ -1,12 +1,13 @@
 ---
-# Vimeflow Tauri Migration — Machine-Readable Progress Tracker
+# Vimeflow CLI Agent Workspace — Machine-Readable Progress Tracker
 # Source: docs/roadmap/tauri-migration-roadmap.md
 # Schema: phase → steps → dod (definition of done)
 # Status values: pending | in_progress | done | blocked
 # All items start as pending; commit/pr fields populated as work lands.
+# Revised: 2026-04-07 — pivoted from chat manager to CLI agent workspace
 
-version: 1
-updated: '2026-04-06'
+version: 2
+updated: '2026-04-07'
 roadmap: docs/roadmap/tauri-migration-roadmap.md
 
 phases:
@@ -17,7 +18,7 @@ phases:
     specs: []
     steps:
       - id: p1-s1
-        name: 'Run `npx tauri init` to scaffold `src-tauri/` (tauri.conf.json, Cargo.toml, src/main.rs, src/lib.rs)'
+        name: 'Run `npx tauri init` to scaffold `src-tauri/`'
         status: pending
         commit: null
         pr: null
@@ -29,19 +30,19 @@ phases:
         pr: null
         notes: null
       - id: p1-s3
-        name: 'Add `tauri:dev` and `tauri:build` npm scripts (keep existing dev/build unchanged)'
+        name: 'Add `tauri:dev` and `tauri:build` npm scripts'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p1-s4
-        name: 'Create src/lib/environment.ts — isTauri() detection via window.__TAURI_INTERNALS__'
+        name: 'Create src/lib/environment.ts — isTauri() detection'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p1-s5
-        name: 'Update CI tauri-build.yml — add src/** trigger, Rust caching'
+        name: 'Update CI tauri-build.yml — add Rust caching'
         status: pending
         commit: null
         pr: null
@@ -54,369 +55,566 @@ phases:
         notes: null
     dod:
       - id: p1-d1
-        check: '`npm run tauri:dev` opens a native window showing the existing React app'
+        check: '`npm run tauri:dev` opens a native window showing the React app'
         status: pending
         commit: null
         pr: null
       - id: p1-d2
-        check: '`npm run dev` still works as standalone Vite dev server (no regression)'
+        check: '`npm run dev` still works as standalone Vite dev server'
         status: pending
         commit: null
         pr: null
       - id: p1-d3
-        check: 'CI tauri-build.yml passes on macOS, Windows, Linux'
+        check: 'CI passes on macOS, Windows, Linux'
         status: pending
         commit: null
         pr: null
       - id: p1-d4
-        check: 'All existing test files still pass'
+        check: 'All existing tests still pass'
         status: pending
         commit: null
         pr: null
 
   - id: phase-2
-    name: 'IPC Layer + Service Abstraction'
+    name: 'Terminal Core'
     status: pending
     blocked_by:
       - phase-1
     specs:
-      - docs/superpowers/specs/2026-04-04-files-explorer-ui-design.md
+      - docs/superpowers/specs/2026-04-06-cli-agent-workspace-design.md
     steps:
       - id: p2-s1
-        name: 'Define shared IPC type contracts (src/shared/ipc-types.ts)'
+        name: 'Add `portable-pty` Rust crate for cross-platform PTY spawning'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p2-s2
-        name: 'Implement Rust git commands using git2 crate (git_status, git_diff, git_stage, git_unstage, git_discard)'
+        name: 'Implement Rust commands: pty_spawn, pty_write, pty_resize, pty_kill'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p2-s3
-        name: 'Implement Rust file commands using walkdir + tokio::fs (file_tree, file_content)'
+        name: 'Wire PTY stdout → Tauri events → frontend'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p2-s4
-        name: 'Register all commands in src-tauri/src/lib.rs'
+        name: 'Wire frontend keyboard input → Tauri invoke → PTY stdin'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p2-s5
-        name: 'Refactor file service to interface/factory pattern (match git service)'
+        name: 'Add xterm.js + @xterm/addon-fit + @xterm/addon-webgl to frontend'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p2-s6
-        name: 'Create TauriGitService using @tauri-apps/api/core invoke()'
+        name: 'Create TerminalPane React component rendering xterm.js'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p2-s7
-        name: 'Create TauriFileService using invoke()'
+        name: 'Add terminal tab bar (agent tab + shell tabs + "+" button)'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p2-s8
-        name: 'Update factories: test → mock, tauri → IPC, fallback → HTTP'
+        name: 'Configure Catppuccin Mocha theme for xterm.js'
         status: pending
         commit: null
         pr: null
         notes: null
     dod:
       - id: p2-d1
-        check: 'Diff + Editor views work identically in browser and Tauri'
+        check: 'Can spawn a shell process and interact with it in the terminal pane'
         status: pending
         commit: null
         pr: null
       - id: p2-d2
-        check: 'All Rust commands validate inputs (path traversal prevention)'
+        check: 'Can run `claude` (Claude Code) in a terminal pane'
         status: pending
         commit: null
         pr: null
       - id: p2-d3
-        check: 'Rust commands have unit tests'
+        check: 'Terminal resizes correctly when window resizes'
         status: pending
         commit: null
         pr: null
       - id: p2-d4
-        check: 'Vite API plugins remain functional (dev fallback)'
+        check: 'Multiple terminal tabs work (switch between them)'
+        status: pending
+        commit: null
+        pr: null
+      - id: p2-d5
+        check: 'PTY processes are cleaned up on tab close / app exit'
         status: pending
         commit: null
         pr: null
 
   - id: phase-3
-    name: 'Global State Management'
+    name: 'Session Management + State'
     status: pending
     blocked_by:
       - phase-2
-    specs: []
+    specs:
+      - docs/superpowers/specs/2026-04-06-cli-agent-workspace-design.md
     steps:
       - id: p3-s1
-        name: 'Install Zustand, create store architecture doc'
+        name: 'Install Zustand, create store architecture'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p3-s2
-        name: 'Create appStore — migrate state from App.tsx (activeTab, contextPanelOpen, commandPaletteOpen)'
+        name: 'Create appStore — migrate global state from App.tsx'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p3-s3
-        name: 'Create diffStore — migrate from DiffView local state (changedFiles, selectedFile, currentDiff)'
+        name: 'Create sessionStore — project/session data model, CRUD operations'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p3-s4
-        name: 'Create editorStore — migrate from EditorView local state (fileTree, openTabs, activeTab, cursorPosition)'
+        name: 'Create terminalStore — manage PTY instances per session'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p3-s5
-        name: 'Create chatStore — prepare shape for Phase 4 (conversations, activeConversation, messages, streamingMessage)'
+        name: 'Build sidebar session list component (Discord pattern)'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p3-s6
-        name: 'Refactor views to use stores (one view at a time)'
+        name: 'Build icon rail with project avatars'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p3-s7
-        name: 'Update tests for store-based components'
+        name: 'Wire session switching: click session → update terminal + activity panel'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p3-s8
+        name: 'Remove chat-related code: ChatView, features/chat/, chat types, mock messages'
         status: pending
         commit: null
         pr: null
         notes: null
     dod:
       - id: p3-d1
-        check: 'Zero prop drilling from App.tsx to views'
+        check: 'Projects appear as avatars in icon rail'
         status: pending
         commit: null
         pr: null
       - id: p3-d2
-        check: "Cross-feature navigation works (e.g., 'open in diff' from editor)"
+        check: 'Sessions listed in sidebar with name, status badge, timestamp'
         status: pending
         commit: null
         pr: null
       - id: p3-d3
-        check: 'All existing tests pass'
+        check: 'Clicking a session switches the terminal and activity panel'
+        status: pending
+        commit: null
+        pr: null
+      - id: p3-d4
+        check: 'New session can be created (spawns Claude Code in a PTY)'
+        status: pending
+        commit: null
+        pr: null
+      - id: p3-d5
+        check: 'Chat view and all chat-related code removed'
+        status: pending
+        commit: null
+        pr: null
+      - id: p3-d6
+        check: 'All tests pass, zero prop drilling'
         status: pending
         commit: null
         pr: null
 
   - id: phase-4
-    name: 'Chat Backend + AI Integration'
+    name: 'File Watcher + Agent Activity Panel'
     status: pending
     blocked_by:
-      - phase-2
       - phase-3
     specs:
-      - docs/superpowers/specs/2026-03-31-chat-view-ui-design.md
+      - docs/superpowers/specs/2026-04-06-cli-agent-workspace-design.md
     steps:
       - id: p4-s1
-        name: 'Design AI backend architecture (docs/architecture/ai-backend.md)'
+        name: 'Add `notify` Rust crate for filesystem watching'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p4-s2
-        name: 'Implement Rust chat commands: create_conversation, send_message, get_conversations'
+        name: 'Implement Rust commands: watch_directory, unwatch_directory'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p4-s3
-        name: 'Implement conversation persistence (SQLite: conversations + messages tables)'
+        name: 'Emit file change events (created/modified/deleted) via Tauri events'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p4-s4
-        name: 'Create ChatService interface + TauriChatService + MockChatService'
+        name: 'Create activityStore — aggregate file changes per session'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p4-s5
-        name: 'Build streaming message UI component'
+        name: 'Build Agent Activity panel component with collapsible sections'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p4-s6
-        name: 'Implement Anthropic provider (reqwest + SSE → Tauri events)'
+        name: 'Implement "Files Changed" section (live from file watcher)'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p4-s7
-        name: 'Add settings system (API keys via keychain, model selection, provider choice)'
+        name: 'Implement pinned section: status card, context window smiley, 5-hour usage bar'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p4-s8
+        name: 'Implement collapsible sections: Tool Calls, Tests, Usage Details (placeholder data)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p4-s9
+        name: 'Wire git diff integration: click changed file → opens in Diff context panel'
         status: pending
         commit: null
         pr: null
         notes: null
     dod:
       - id: p4-d1
-        check: 'User sends message → streaming AI response → persists across restarts'
+        check: 'File changes appear in real-time as the agent modifies files'
         status: pending
         commit: null
         pr: null
       - id: p4-d2
-        check: 'API keys stored in OS keychain (not plaintext)'
+        check: 'Context window smiley indicator displays correctly'
         status: pending
         commit: null
         pr: null
       - id: p4-d3
-        check: 'Mock mode works for development without API keys'
+        check: '5-hour usage bar shows progress'
         status: pending
         commit: null
         pr: null
       - id: p4-d4
-        check: 'Error states handled (network failure, rate limit, invalid key)'
+        check: 'Collapsible sections expand/collapse with chevron toggle'
+        status: pending
+        commit: null
+        pr: null
+      - id: p4-d5
+        check: 'Clicking a file in "Files Changed" opens it in the sidebar Diff panel'
+        status: pending
+        commit: null
+        pr: null
+      - id: p4-d6
+        check: 'File watcher scoped to active session working directory'
         status: pending
         commit: null
         pr: null
 
   - id: phase-5
-    name: 'Desktop Polish'
+    name: 'Terminal Parser + Agent Adapters'
     status: pending
     blocked_by:
       - phase-4
     specs: []
     steps:
       - id: p5-s1
-        name: 'Window state persistence (tauri-plugin-window-state)'
+        name: 'Design AgentAdapter interface (parse terminal output → structured events)'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p5-s2
-        name: 'Native menu bar (platform-specific conventions)'
+        name: 'Implement ClaudeCodeAdapter — tool calls, test results, status changes'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p5-s3
-        name: 'System tray with show/hide and quit'
+        name: 'Implement GenericAdapter fallback (no parsing, file watcher only)'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p5-s4
-        name: 'Global keyboard shortcuts (tauri-plugin-global-shortcut)'
+        name: 'Wire adapter output to activityStore'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p5-s5
-        name: 'Auto-updater (tauri-plugin-updater + GitHub releases)'
+        name: 'Update Tool Calls and Tests sections with real parsed data'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p5-s6
-        name: 'Platform-specific title bar (macOS traffic lights, Windows controls)'
-        status: pending
-        commit: null
-        pr: null
-        notes: null
-      - id: p5-s7
-        name: 'Bundle fonts (Manrope, Inter, JetBrains Mono) — no CDN dependency'
+        name: 'Auto-expand sections on relevant events'
         status: pending
         commit: null
         pr: null
         notes: null
     dod:
       - id: p5-d1
-        check: 'Window position and size persists across restarts'
+        check: 'Tool calls appear in real-time as Claude Code executes them'
         status: pending
         commit: null
         pr: null
       - id: p5-d2
-        check: 'System tray works on all platforms (macOS, Windows, Linux)'
+        check: 'Test results appear when Claude Code runs tests'
         status: pending
         commit: null
         pr: null
       - id: p5-d3
-        check: 'Auto-updater checks GitHub releases and prompts user when update is available'
+        check: 'Agent status updates reflected in status card'
         status: pending
         commit: null
         pr: null
       - id: p5-d4
-        check: 'App renders correctly with no network connection (bundled fonts, no CDN dependency)'
+        check: 'Generic adapter works for non-Claude-Code processes'
         status: pending
         commit: null
         pr: null
 
   - id: phase-6
-    name: 'Advanced Features'
+    name: 'Context Panel Integration'
     status: pending
     blocked_by:
-      - phase-4
-    specs: []
+      - phase-3
+    specs:
+      - docs/superpowers/specs/2026-04-04-files-explorer-ui-design.md
+      - docs/superpowers/specs/2026-04-04-git-diff-viewer-design.md
     steps:
       - id: p6-s1
-        name: 'Multi-provider support (OpenAI)'
+        name: 'Implement Rust git/file IPC commands (git2, walkdir, tokio::fs)'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p6-s2
-        name: 'Agent process management (spawn/monitor Claude Code, Codex CLI)'
+        name: 'Create TauriGitService and TauriFileService (service factory pattern)'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p6-s3
-        name: 'Conversation branching/forking'
+        name: 'Adapt Files Explorer for 260px sidebar width'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p6-s4
-        name: 'Workspace/project model (associate conversations with directories)'
+        name: 'Adapt Code Editor for sidebar (compact) + full-width overlay'
         status: pending
         commit: null
         pr: null
         notes: null
       - id: p6-s5
-        name: 'Export/import conversations'
+        name: 'Adapt Git Diff for sidebar (unified) + full-width overlay (side-by-side)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p6-s6
+        name: 'Build context switcher tab row (Files/Editor/Diff) in sidebar'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p6-s7
+        name: 'Scope all context panels to active session working directory'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p6-s8
+        name: 'Cross-panel navigation: Files → Editor, modified file → Diff'
         status: pending
         commit: null
         pr: null
         notes: null
     dod:
       - id: p6-d1
-        check: 'At least two AI providers (Anthropic and OpenAI) work end-to-end with streaming'
+        check: 'Files/Editor/Diff panels render correctly in sidebar'
         status: pending
         commit: null
         pr: null
       - id: p6-d2
-        check: 'Agent processes (Claude Code, Codex CLI) can be spawned and monitored from the UI'
+        check: 'Panels scoped to active session working directory'
         status: pending
         commit: null
         pr: null
       - id: p6-d3
-        check: 'Conversations can be branched at any message and diverge independently'
+        check: 'Full-width overlay works for Editor and Diff'
         status: pending
         commit: null
         pr: null
       - id: p6-d4
-        check: 'Conversations can be exported to JSON and re-imported without data loss'
+        check: 'Cross-panel navigation works'
+        status: pending
+        commit: null
+        pr: null
+      - id: p6-d5
+        check: 'Vite API plugins remain functional as dev fallback'
+        status: pending
+        commit: null
+        pr: null
+
+  - id: phase-7
+    name: 'Usage Metrics'
+    status: pending
+    blocked_by:
+      - phase-5
+    specs: []
+    steps:
+      - id: p7-s1
+        name: 'Research Claude Code usage data exposure (billing API, local logs, terminal output)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p7-s2
+        name: 'Implement context window tracking (parse from terminal or estimate)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p7-s3
+        name: 'Implement 5-hour window usage counter'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p7-s4
+        name: 'Build Usage Details collapsible section: weekly, monthly, cost breakdown'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p7-s5
+        name: 'Persist usage data locally (SQLite or JSON in app data dir)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+    dod:
+      - id: p7-d1
+        check: 'Context window smiley reflects actual usage'
+        status: pending
+        commit: null
+        pr: null
+      - id: p7-d2
+        check: '5-hour usage counter updates in real-time'
+        status: pending
+        commit: null
+        pr: null
+      - id: p7-d3
+        check: 'Usage Details shows weekly/monthly breakdown'
+        status: pending
+        commit: null
+        pr: null
+      - id: p7-d4
+        check: 'Usage persists across app restarts'
+        status: pending
+        commit: null
+        pr: null
+
+  - id: phase-8
+    name: 'Desktop Polish'
+    status: pending
+    blocked_by:
+      - phase-5
+    specs: []
+    steps:
+      - id: p8-s1
+        name: 'Window state persistence (tauri-plugin-window-state)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p8-s2
+        name: 'Native menu bar (platform-specific)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p8-s3
+        name: 'System tray with show/hide and quit'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p8-s4
+        name: 'Global keyboard shortcuts (tauri-plugin-global-shortcut)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p8-s5
+        name: 'Auto-updater (tauri-plugin-updater + GitHub releases)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p8-s6
+        name: 'Platform-specific title bar (macOS traffic lights, Windows controls)'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+      - id: p8-s7
+        name: 'Bundle fonts (Manrope, Inter, JetBrains Mono) — no CDN dependency'
+        status: pending
+        commit: null
+        pr: null
+        notes: null
+    dod:
+      - id: p8-d1
+        check: 'Window position and size persists across restarts'
+        status: pending
+        commit: null
+        pr: null
+      - id: p8-d2
+        check: 'System tray works on all platforms'
+        status: pending
+        commit: null
+        pr: null
+      - id: p8-d3
+        check: 'Auto-updater checks GitHub releases and prompts user'
+        status: pending
+        commit: null
+        pr: null
+      - id: p8-d4
+        check: 'App renders correctly with no network connection (bundled fonts)'
         status: pending
         commit: null
         pr: null
