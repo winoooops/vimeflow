@@ -2,14 +2,15 @@
   {
     "id": 1,
     "phase": 1,
-    "category": "critical-fix",
-    "description": "Fix race condition in handleNodeSelect (Issue 1)",
+    "category": "scaffold",
+    "description": "Initialize src-tauri directory structure",
     "steps": [
-      "Read EditorView.tsx lines 84-96",
-      "Combine setTabs calls into single atomic update",
-      "Create new tab with isActive: true and deactivate others in one call",
-      "Remove separate handleTabClick call",
-      "Verify clicking file in explorer opens AND activates tab on first click"
+      "Create src-tauri/ directory",
+      "Create Cargo.toml with minimal dependencies (tauri, serde, serde_json)",
+      "Create build.rs with tauri_build::build()",
+      "Create src/lib.rs and src/main.rs",
+      "Create capabilities/default.json with core:default permission",
+      "Generate placeholder icons"
     ],
     "passes": true,
     "dependencies": []
@@ -17,156 +18,167 @@
   {
     "id": 2,
     "phase": 1,
-    "category": "critical-fix",
-    "description": "Fix stale closure over tabs in handleNodeSelect (Issue 2)",
+    "category": "scaffold",
+    "description": "Configure tauri.conf.json with v2 settings",
     "steps": [
-      "Read EditorView.tsx handleNodeSelect implementation",
-      "Add tabsRef = useRef(tabs) and tabsRef.current = tabs",
-      "Replace tabs.find() with tabsRef.current.find()",
-      "Verify rapid clicking creates correct tabs without duplicates",
-      "Ensure no stale state issues during fast interaction"
+      "Set $schema to Tauri v2 schema",
+      "Configure productName: Vimeflow",
+      "Set identifier: dev.vimeflow.app",
+      "Configure build.frontendDist and build.devUrl",
+      "Set window dimensions: 1400x900, min 800x600",
+      "Configure CSP with script-src 'self' and style-src 'self' 'unsafe-inline'"
     ],
     "passes": true,
     "dependencies": [1]
   },
   {
     "id": 3,
-    "phase": 2,
-    "category": "code-quality",
-    "description": "Replace useState with useRef for cache in useFileContent (Issue 3)",
+    "phase": 1,
+    "category": "scaffold",
+    "description": "Add NPM scripts and dependencies for Tauri",
     "steps": [
-      "Read useFileContent.ts line 22",
-      "Replace useState<Map> with useRef<Map>",
-      "Update all cache references to cacheRef.current",
-      "Remove destructured [cache] pattern",
-      "Verify file content caching still works",
-      "Run tests to ensure no regression"
+      "Add tauri:dev and tauri:build scripts to package.json",
+      "Add @tauri-apps/cli to devDependencies"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [1]
   },
   {
     "id": 4,
     "phase": 2,
-    "category": "code-quality",
-    "description": "Remove eslint-disable suppressions in useFileTree (Issue 6)",
+    "category": "core",
+    "description": "Create environment detection utilities",
     "steps": [
-      "Read useFileTree.ts lines 32, 37, 44",
-      "Restructure async logic to match useFileContent pattern",
-      "Remove all inline eslint-disable-next-line comments",
-      "Verify mounted-ref safety still works",
-      "Run tests to ensure all pass"
+      "Create src/lib/environment.ts",
+      "Implement isTauri() checking for __TAURI_INTERNALS__",
+      "Implement isTest() checking for test mode",
+      "Add TypeScript interface for TauriInternals",
+      "Export isBrowser() and getEnvironment() helpers"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [1]
   },
   {
     "id": 5,
     "phase": 2,
-    "category": "code-quality",
-    "description": "Remove unused onFileDiffRequest prop (Issue 7)",
+    "category": "testing",
+    "description": "Write tests for environment detection",
     "steps": [
-      "Read EditorView.tsx lines 34-35",
-      "Remove onFileDiffRequest from EditorViewProps interface",
-      "Remove from destructured props",
-      "Check for callers passing this prop and remove if found",
-      "Verify no eslint warnings remain"
+      "Create src/lib/environment.test.ts",
+      "Test isTauri() returns false in jsdom",
+      "Test isTauri() returns true when __TAURI_INTERNALS__ is set",
+      "Test isBrowser() behavior",
+      "Test getEnvironment() returns correct values",
+      "Test isTest() returns true in test mode"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [4]
   },
   {
     "id": 6,
     "phase": 3,
-    "category": "missing-feature",
-    "description": "Add line number gutter to CodeEditor (Issue 4)",
+    "category": "ci",
+    "description": "Update CI workflow for Tauri builds",
     "steps": [
-      "Read CodeEditor.tsx current structure",
-      "Import LineNumbers component",
-      "Wrap code in flex container with LineNumbers + code content",
-      "Verify line numbers appear in gutter with correct styling",
-      "Verify current line number highlighted with text-primary/60",
-      "Verify gutter scrolls in sync with code",
-      "Update CodeEditor tests to verify LineNumbers rendering"
+      "Enable src/** path triggers in tauri-build.yml",
+      "Add Rust dependency caching step",
+      "Verify all steps are present (checkout, node, rust, deps, build)"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [1, 2]
   },
   {
     "id": 7,
-    "phase": 4,
-    "category": "design-compliance",
-    "description": "Fix EditorStatusBar styling to match spec (Issue 5)",
+    "phase": 3,
+    "category": "ci",
+    "description": "Update .gitignore for Tauri",
     "steps": [
-      "Read EditorStatusBar.tsx current implementation",
-      "Update Vim mode to display '-- NORMAL --' format",
-      "Add 'account_tree' icon before git branch",
-      "Add 'sync' icon before sync status",
-      "Add hover:bg-[#333344] transition-colors cursor-pointer to all segments",
-      "Add border-r/border-l dividers between segments",
-      "Verify all styling matches design spec exactly",
-      "Update EditorStatusBar tests for new icons and formatting"
+      "Add src-tauri/gen/ to .gitignore",
+      "Verify src-tauri/target/ and src-tauri/Cargo.lock are present"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [1]
   },
   {
     "id": 8,
-    "phase": 5,
-    "category": "bonus-fix",
-    "description": "Replace Date.now() with crypto.randomUUID() for tab IDs",
+    "phase": 4,
+    "category": "verification",
+    "description": "Verify Rust code compiles and passes linting",
     "steps": [
-      "Find tab ID generation in EditorView.tsx line 86",
-      "Replace tab-${Date.now()} with tab-${crypto.randomUUID()}",
-      "Verify no tab ID collisions during rapid clicks"
+      "Run cargo check in src-tauri/",
+      "Run cargo clippy -- -D warnings",
+      "Run cargo fmt --check"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [1, 2],
+    "notes": "Verified via CI - all platforms (macOS, Ubuntu, Windows) build successfully in PR #27"
   },
   {
     "id": 9,
-    "phase": 5,
-    "category": "bonus-fix",
-    "description": "Add harness/.venv/ to .gitignore",
+    "phase": 4,
+    "category": "verification",
+    "description": "Verify frontend tests pass",
     "steps": [
-      "Read .gitignore file",
-      "Add harness/.venv/ entry if not already present",
-      "Verify git status shows .venv is ignored"
+      "Run npx vitest run to verify all tests pass",
+      "Verify environment.test.ts passes",
+      "Verify no test regressions from Tauri scaffold"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [4, 5]
   },
   {
     "id": 10,
-    "phase": 6,
-    "category": "testing",
-    "description": "Update tests for all modified components",
+    "phase": 4,
+    "category": "verification",
+    "description": "Verify frontend build and linting",
     "steps": [
-      "Update EditorView tests for race condition fix",
-      "Update CodeEditor tests for line numbers",
-      "Update EditorStatusBar tests for new icons/formatting",
-      "Update useFileContent tests for useRef change",
-      "Update useFileTree tests for eslint fix",
-      "Verify all tests pass with npm run test",
-      "Verify coverage >= 80%"
+      "Run npm run lint to verify ESLint passes",
+      "Run npm run type-check to verify TypeScript compiles",
+      "Run npm run build to verify Vite build succeeds"
     ],
     "passes": true,
-    "dependencies": [1, 2, 3, 4, 5, 6, 7]
+    "dependencies": [4, 5]
   },
   {
     "id": 11,
-    "phase": 6,
-    "category": "verification",
-    "description": "Run all verification checks",
+    "phase": 5,
+    "category": "polish",
+    "description": "Fix tauri.conf.json configuration issues",
     "steps": [
-      "Run npm run lint - verify zero errors",
-      "Verify zero eslint-disable comments in hooks",
-      "Run npm run type-check - verify zero errors",
-      "Run npm run format:check - verify passes",
-      "Run npm run test - verify all tests pass",
-      "Run npm run build - verify production build succeeds"
+      "Change identifier from com.tauri.dev to dev.vimeflow.app",
+      "Change productName from vibm to Vimeflow",
+      "Update window size from 800x600 to 1400x900",
+      "Add minWidth: 800, minHeight: 600",
+      "Update CSP from null to proper policy"
     ],
     "passes": true,
-    "dependencies": [10]
+    "dependencies": [2]
+  },
+  {
+    "id": 12,
+    "phase": 5,
+    "category": "polish",
+    "description": "Fix Rust package naming inconsistencies",
+    "steps": [
+      "Update Cargo.toml package name from vibm to vimeflow",
+      "Update lib.rs module name from vibm_lib to vimeflow_lib",
+      "Update main.rs to use vimeflow_lib::run()",
+      "Verify naming consistency across all Rust files"
+    ],
+    "passes": true,
+    "dependencies": [1]
+  },
+  {
+    "id": 13,
+    "phase": 5,
+    "category": "polish",
+    "description": "Add isTest() function to environment.ts",
+    "steps": [
+      "Add isTest() function checking import.meta.env.MODE === 'test'",
+      "Add test for isTest() in environment.test.ts",
+      "Verify test passes"
+    ],
+    "passes": true,
+    "dependencies": [4, 5]
   }
 ]

@@ -6,13 +6,17 @@ on:
       - main
     paths:
       - 'src-tauri/**'
-      # TODO: re-add 'src/**' once src-tauri/ is scaffolded
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
   pull_request:
     branches:
       - main
     paths:
       - 'src-tauri/**'
-      # TODO: re-add 'src/**' once src-tauri/ is scaffolded
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
 
 jobs:
   build:
@@ -41,6 +45,11 @@ jobs:
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
 
       - name: Install system dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu'
