@@ -77,7 +77,8 @@ phases:
   - id: phase-2
     name: 'Workspace Layout Shell'
     status: pending
-    blocked_by: []
+    blocked_by:
+      - phase-1
     specs:
       - docs/superpowers/specs/2026-04-06-cli-agent-workspace-design.md
       - docs/design/agent_workspace/code.html
