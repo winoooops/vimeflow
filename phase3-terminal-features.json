@@ -10,7 +10,7 @@
       "Configure TypeScript to include xterm types",
       "Verify packages install cleanly with npm install"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [23]
   },
   {
@@ -26,7 +26,7 @@
       "Define PTYEvent types (data, exit, error)",
       "Write comprehensive type tests"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [24]
   },
   {
@@ -42,7 +42,7 @@
       "Implement service factory pattern (dev vs production)",
       "Write service tests with mock implementation"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [25]
   },
   {
@@ -227,7 +227,7 @@
       "Verify terminal colors match design spec",
       "Test theme in both light and dark system themes"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [27]
   },
   {
