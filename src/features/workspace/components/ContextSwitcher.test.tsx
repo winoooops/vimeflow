@@ -152,7 +152,7 @@ describe('ContextSwitcher', () => {
     const tabRow = screen.getByTestId('context-switcher')
 
     expect(tabRow).toHaveClass('bg-surface-container-low')
-    expect(tabRow).toHaveClass('border-b')
+    // No border-b per "No-Line Rule" - structural boundaries via background color shifts
   })
 
   test('applies hover styles to inactive tabs', () => {

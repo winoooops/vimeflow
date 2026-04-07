@@ -25,7 +25,7 @@ export const TerminalZone = ({
       {/* Tab bar */}
       <div
         data-testid="tab-bar"
-        className="flex items-center gap-1 bg-surface-container-low px-2"
+        className="flex items-center gap-1 bg-surface-container-lowest px-2"
       >
         {/* Session tabs */}
         {sessions.map((session) => {

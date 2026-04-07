@@ -90,12 +90,16 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
   })
 
   describe('Border Radius Tokens', () => {
-    test('has xl radius for buttons (0.75rem)', () => {
-      expect(tailwindConfig.theme.extend.borderRadius.xl).toBe('0.75rem')
+    test('has md radius for buttons/inputs (0.75rem)', () => {
+      expect(tailwindConfig.theme.extend.borderRadius.md).toBe('0.75rem')
     })
 
-    test('has lg radius (0.5rem)', () => {
-      expect(tailwindConfig.theme.extend.borderRadius.lg).toBe('0.5rem')
+    test('has lg radius for cards (1rem)', () => {
+      expect(tailwindConfig.theme.extend.borderRadius.lg).toBe('1rem')
+    })
+
+    test('has xl radius for windows (1.5rem)', () => {
+      expect(tailwindConfig.theme.extend.borderRadius.xl).toBe('1.5rem')
     })
   })
 })

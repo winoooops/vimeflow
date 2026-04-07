@@ -75,8 +75,9 @@ export default {
       },
       borderRadius: {
         DEFAULT: '0.25rem',
-        lg: '0.5rem',
-        xl: '0.75rem',
+        md: '0.75rem', // Buttons/Inputs per design spec
+        lg: '1rem', // Cards/Secondary Panels per design spec
+        xl: '1.5rem', // Windows/Main Panels per design spec
         full: '9999px',
       },
     },

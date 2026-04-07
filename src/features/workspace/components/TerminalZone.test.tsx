@@ -130,8 +130,8 @@ describe('TerminalZone', () => {
 
     const tabBar = screen.getByTestId('tab-bar')
 
-    // Background color from design tokens
-    expect(tabBar).toHaveClass('bg-surface-container-low')
+    // Background color from design tokens - deepest recessed areas per spec
+    expect(tabBar).toHaveClass('bg-surface-container-lowest')
     // Proper spacing
     expect(tabBar).toHaveClass('px-2')
     expect(tabBar).toHaveClass('gap-1')

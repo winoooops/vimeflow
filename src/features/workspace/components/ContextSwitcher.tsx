@@ -22,10 +22,7 @@ export const ContextSwitcher = ({
   activeTab,
   onTabChange,
 }: ContextSwitcherProps): ReactElement => (
-  <div
-    className="flex border-b border-surface-container bg-surface-container-low"
-    data-testid="context-switcher"
-  >
+  <div className="flex bg-surface-container-low" data-testid="context-switcher">
     {tabs.map((tab) => {
       const isActive = tab.id === activeTab
 
