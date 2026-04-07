@@ -1,6 +1,18 @@
 // Workspace domain types for Phase 2 CLI agent workspace
 
 // ============================================================================
+// Navigation Types (Phase 2v2)
+// ============================================================================
+
+export interface NavigationItem {
+  id: string
+  name: string
+  icon: string // Material Symbols icon name
+  color: string // Tailwind color class (e.g., 'bg-emerald-500')
+  onClick: () => void
+}
+
+// ============================================================================
 // Project Types
 // ============================================================================
 

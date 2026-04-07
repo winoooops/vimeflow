@@ -23,8 +23,19 @@
 }
 
 @utility glass-panel {
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(24, 24, 42, 0.4);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+}
+
+@utility flat-bookmark {
+  clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 50% 85%, 0% 100%);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.flat-bookmark:hover {
+  height: 52px;
+  filter: brightness(1.1);
 }
 
 @utility no-scrollbar {

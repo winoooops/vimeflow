@@ -2,13 +2,13 @@
   {
     "id": 1,
     "phase": 1,
-    "category": "cleanup",
-    "description": "Remove chat feature module and related code",
+    "category": "data-models",
+    "description": "Update types for navigation items (Dashboard, Source Control, Debugger, Settings)",
     "steps": [
-      "Delete src/features/chat/ directory entirely",
-      "Remove ChatView import and usage from App.tsx",
-      "Update App.tsx to prepare for workspace layout",
-      "Verify no remaining references to chat types or data"
+      "Read src/features/workspace/types/index.ts",
+      "Update Project type to support navigation items with icon and color",
+      "Create NavigationItem type with id, label, icon, color, tooltip fields",
+      "Export new types"
     ],
     "passes": true,
     "dependencies": []
@@ -16,334 +16,298 @@
   {
     "id": 2,
     "phase": 1,
-    "category": "types",
-    "description": "Create workspace domain types and models",
+    "category": "data-models",
+    "description": "Update mock data for navigation items",
     "steps": [
-      "Create src/features/workspace/types/index.ts with Project, Session, SessionStatus types",
-      "Define AgentActivity types (file changes, tool calls, test results)",
-      "Define ContextPanel types (Files, Editor, Diff)",
-      "Export all types from workspace feature module"
+      "Read src/features/workspace/data/mockProjects.ts",
+      "Replace project abbreviations with navigation items",
+      "Add 4 items: Dashboard (emerald-500), Source Control (amber-500), Debugger (rose-500), Settings (indigo-500)",
+      "Use Material Symbols icon names: dashboard, account_tree, bug_report, settings"
     ],
     "passes": true,
     "dependencies": [1]
   },
   {
     "id": 3,
-    "phase": 1,
-    "category": "data",
-    "description": "Create mock data for workspace layout",
-    "steps": [
-      "Create src/features/workspace/data/mockProjects.ts with sample projects",
-      "Create src/features/workspace/data/mockSessions.ts with sample agent sessions",
-      "Create src/features/workspace/data/mockActivity.ts with sample file changes, tool calls, tests",
-      "Ensure mock data matches design spec format"
-    ],
-    "passes": true,
-    "dependencies": [2]
-  },
-  {
-    "id": 4,
     "phase": 2,
-    "category": "component",
-    "description": "Build new Icon Rail component for project navigation",
+    "category": "styling",
+    "description": "Add flat-bookmark CSS classes to index.css",
     "steps": [
-      "Create src/features/workspace/components/IconRail.tsx",
-      "Implement project avatar display (2-letter abbreviations, 32x32 rounded)",
-      "Add active project highlight with purple pill backlight",
-      "Add + new project and ⚙ settings buttons at bottom",
-      "Write IconRail.test.tsx with test coverage",
-      "Apply Obsidian Lens design tokens"
-    ],
-    "passes": true,
-    "dependencies": [3]
-  },
-  {
-    "id": 5,
-    "phase": 2,
-    "category": "component",
-    "description": "Build Sidebar with session list",
-    "steps": [
-      "Create src/features/workspace/components/Sidebar.tsx",
-      "Implement session list section with mock data",
-      "Add session item cards with name, status badge, timestamp",
-      "Add active session highlight (left purple border, lighter background)",
-      "Write Sidebar.test.tsx with test coverage",
-      "Apply design tokens matching spec"
-    ],
-    "passes": true,
-    "dependencies": [3]
-  },
-  {
-    "id": 6,
-    "phase": 2,
-    "category": "component",
-    "description": "Build Context Switcher tabs for sidebar",
-    "steps": [
-      "Create src/features/workspace/components/ContextSwitcher.tsx",
-      "Implement tab row (📁 Files | 📝 Editor | ± Diff)",
-      "Add active tab styling (purple text and bottom border)",
-      "Handle tab switching state",
-      "Write ContextSwitcher.test.tsx",
-      "Integrate into Sidebar component"
-    ],
-    "passes": true,
-    "dependencies": [5]
-  },
-  {
-    "id": 7,
-    "phase": 2,
-    "category": "component",
-    "description": "Build Terminal Zone placeholder with tab bar",
-    "steps": [
-      "Create src/features/workspace/components/TerminalZone.tsx",
-      "Implement tab bar at top (🤖 agent tabs, 🐚 shell tabs)",
-      "Add active tab highlighting (purple bottom border)",
-      "Add + new tab button",
-      "Create placeholder terminal content area (dark background, prompt text)",
-      "Write TerminalZone.test.tsx"
-    ],
-    "passes": true,
-    "dependencies": [3]
-  },
-  {
-    "id": 8,
-    "phase": 2,
-    "category": "component",
-    "description": "Build Agent Activity status card section",
-    "steps": [
-      "Create src/features/workspace/components/AgentActivity/StatusCard.tsx",
-      "Display agent name (Claude Code) and status badge",
-      "Show current action description",
-      "Apply card styling (#292839 background, 8px rounded)",
-      "Write StatusCard.test.tsx"
-    ],
-    "passes": true,
-    "dependencies": [3]
-  },
-  {
-    "id": 9,
-    "phase": 2,
-    "category": "component",
-    "description": "Build Agent Activity pinned metrics section",
-    "steps": [
-      "Create src/features/workspace/components/AgentActivity/PinnedMetrics.tsx",
-      "Implement context window smiley indicator (😊 😐 😟 🥵)",
-      "Add 5-hour usage bar (142/200 messages, purple gradient progress)",
-      "Style with proper spacing and colors",
-      "Write PinnedMetrics.test.tsx"
-    ],
-    "passes": true,
-    "dependencies": [3]
-  },
-  {
-    "id": 10,
-    "phase": 2,
-    "category": "component",
-    "description": "Build Agent Activity collapsible sections",
-    "steps": [
-      "Create src/features/workspace/components/AgentActivity/CollapsibleSection.tsx",
-      "Implement chevron toggle (▾ expanded / ▸ collapsed)",
-      "Add count badges for sections",
-      "Handle expand/collapse state",
-      "Write CollapsibleSection.test.tsx"
-    ],
-    "passes": true,
-    "dependencies": [3]
-  },
-  {
-    "id": 11,
-    "phase": 2,
-    "category": "component",
-    "description": "Build Files Changed section component",
-    "steps": [
-      "Create src/features/workspace/components/AgentActivity/FilesChanged.tsx",
-      "Display file list with change type badges (new/modified/deleted)",
-      "Show line diff summary (+5 -1)",
-      "Use CollapsibleSection wrapper (auto-expanded)",
-      "Write FilesChanged.test.tsx"
-    ],
-    "passes": true,
-    "dependencies": [10]
-  },
-  {
-    "id": 12,
-    "phase": 2,
-    "category": "component",
-    "description": "Build Tool Calls and Tests sections",
-    "steps": [
-      "Create src/features/workspace/components/AgentActivity/ToolCalls.tsx",
-      "Create src/features/workspace/components/AgentActivity/Tests.tsx",
-      "Show placeholder content with count badges",
-      "Use CollapsibleSection wrapper (collapsed by default)",
-      "Write ToolCalls.test.tsx and Tests.test.tsx"
-    ],
-    "passes": true,
-    "dependencies": [10]
-  },
-  {
-    "id": 13,
-    "phase": 2,
-    "category": "component",
-    "description": "Build Agent Activity footer",
-    "steps": [
-      "Create src/features/workspace/components/AgentActivity/ActivityFooter.tsx",
-      "Display session duration, turn count, lines added/removed",
-      "Apply muted text styling (#4a444f)",
-      "Write ActivityFooter.test.tsx"
-    ],
-    "passes": true,
-    "dependencies": [3]
-  },
-  {
-    "id": 14,
-    "phase": 2,
-    "category": "component",
-    "description": "Assemble complete Agent Activity panel",
-    "steps": [
-      "Create src/features/workspace/components/AgentActivity/AgentActivity.tsx",
-      "Compose StatusCard, PinnedMetrics, all sections, and footer",
-      "Wire mock data through props",
-      "Apply 280px width and #1a1a2a background",
-      "Write AgentActivity.test.tsx"
-    ],
-    "passes": true,
-    "dependencies": [8, 9, 11, 12, 13]
-  },
-  {
-    "id": 15,
-    "phase": 3,
-    "category": "integration",
-    "description": "Wire context panels to sidebar context switcher",
-    "steps": [
-      "Update Sidebar to show Files/Editor/Diff based on active tab",
-      "Ensure existing FilesView, EditorView, DiffView adapt to 260px width",
-      "Test panel switching with mock data",
-      "Verify all context panels render correctly in sidebar"
-    ],
-    "passes": true,
-    "dependencies": [6]
-  },
-  {
-    "id": 16,
-    "phase": 3,
-    "category": "layout",
-    "description": "Create WorkspaceView page component",
-    "steps": [
-      "Create src/features/workspace/WorkspaceView.tsx",
-      "Implement 4-zone grid layout (48px + 260px + flexible + 280px)",
-      "Compose IconRail, Sidebar, TerminalZone, AgentActivity",
-      "Handle responsive behavior (sidebar/activity panel collapse)",
-      "Write WorkspaceView.test.tsx"
-    ],
-    "passes": true,
-    "dependencies": [4, 5, 7, 14]
-  },
-  {
-    "id": 17,
-    "phase": 3,
-    "category": "integration",
-    "description": "Refactor App.tsx to use WorkspaceView",
-    "steps": [
-      "Remove old tab-based routing logic",
-      "Replace with WorkspaceView as primary component",
-      "Keep CommandPalette as overlay",
-      "Remove unused state (activeTab, isContextPanelOpen)",
-      "Update App.test.tsx"
-    ],
-    "passes": true,
-    "dependencies": [16]
-  },
-  {
-    "id": 18,
-    "phase": 4,
-    "category": "design",
-    "description": "Update Tailwind config with new semantic tokens",
-    "steps": [
-      "Add success color tokens (#7defa1)",
-      "Add tertiary color tokens",
-      "Add primary-dim variants (#cba6f7 at various opacities)",
-      "Add surface-dim and surface-bright tokens",
-      "Verify all new tokens match Obsidian Lens spec"
+      "Read src/index.css",
+      "Add .flat-bookmark class with clip-path polygon for bookmark shape",
+      "Add hover state with height increase and brightness filter",
+      "Verify glass-panel class exists (or add if missing)"
     ],
     "passes": true,
     "dependencies": []
   },
   {
-    "id": 19,
-    "phase": 4,
-    "category": "design",
-    "description": "Apply design tokens to all new components",
+    "id": 4,
+    "phase": 2,
+    "category": "icon-rail",
+    "description": "Update IconRail component with flat colorful bookmarks",
     "steps": [
-      "Audit all workspace components for hardcoded colors",
-      "Replace with semantic tokens from tailwind.config.js",
-      "Match Stitch mockup colors exactly (reference code.html)",
-      "Apply glassmorphism effects where specified",
-      "Verify rounded corners (cards: 1rem, buttons: 0.75rem)"
+      "Read current IconRail.tsx implementation",
+      "Change rail width from w-12 to w-16 (64px)",
+      "Replace text abbreviation buttons with bookmark-shaped divs",
+      "Add Material Symbols icons inside bookmarks",
+      "Implement tooltip on hover (absolute positioned, right of rail)",
+      "Use solid color backgrounds (bg-emerald-500, bg-amber-500, etc.)",
+      "Bottom bookmark (Settings) pushed with mt-auto mb-6"
     ],
     "passes": true,
-    "dependencies": [18, 16]
+    "dependencies": [2, 3]
+  },
+  {
+    "id": 5,
+    "phase": 2,
+    "category": "icon-rail",
+    "description": "Update IconRail tests for bookmark design",
+    "steps": [
+      "Read current IconRail.test.tsx",
+      "Update tests to check for bookmark-shaped elements",
+      "Test Material Symbols icons are rendered",
+      "Test tooltip appears on hover",
+      "Test colors are applied correctly",
+      "Verify accessibility (aria-label, titles)"
+    ],
+    "passes": true,
+    "dependencies": [4]
+  },
+  {
+    "id": 6,
+    "phase": 3,
+    "category": "sidebar",
+    "description": "Create FileExplorer component for sidebar",
+    "steps": [
+      "Create src/features/workspace/components/panels/FileExplorer.tsx",
+      "Implement folder tree with expand/collapse",
+      "Use Material Symbols: folder_open, expand_more, description icons",
+      "Highlight active file with text-primary-container bg-primary-container/10",
+      "Add indentation pl-6 per level",
+      "Wrap in glass-panel rounded-xl container"
+    ],
+    "passes": true,
+    "dependencies": [1]
+  },
+  {
+    "id": 7,
+    "phase": 3,
+    "category": "sidebar",
+    "description": "Update Sidebar component - remove ContextSwitcher, add FileExplorer",
+    "steps": [
+      "Read current Sidebar.tsx implementation",
+      "Remove ContextSwitcher import and component usage",
+      "Remove activeContextTab and onContextTabChange props",
+      "Add FileExplorer section in bottom half (h-1/2)",
+      "Add separator border-t border-white/5 pt-4",
+      "Header: folder_open icon + 'FILE EXPLORER' label"
+    ],
+    "passes": true,
+    "dependencies": [6]
+  },
+  {
+    "id": 8,
+    "phase": 3,
+    "category": "sidebar",
+    "description": "Add 'New Instance' gradient button to Sidebar",
+    "steps": [
+      "Add button at bottom of Sidebar component",
+      "Style: w-full bg-gradient-to-r from-primary to-secondary",
+      "Text: text-on-primary py-2.5 rounded-lg font-bold text-sm",
+      "Add shadow: shadow-lg shadow-primary/10",
+      "Icon: bolt + 'New Instance' text"
+    ],
+    "passes": true,
+    "dependencies": [7]
+  },
+  {
+    "id": 9,
+    "phase": 3,
+    "category": "sidebar",
+    "description": "Update Sidebar tests for FileExplorer design",
+    "steps": [
+      "Read current Sidebar.test.tsx",
+      "Remove ContextSwitcher tab switching tests",
+      "Add FileExplorer section tests",
+      "Test 'New Instance' button renders and is clickable",
+      "Test file tree rendering with proper indentation",
+      "Verify active file highlighting"
+    ],
+    "passes": true,
+    "dependencies": [8]
+  },
+  {
+    "id": 10,
+    "phase": 4,
+    "category": "bottom-drawer",
+    "description": "Create BottomDrawer component with Editor tab",
+    "steps": [
+      "Create src/features/workspace/components/BottomDrawer.tsx",
+      "Implement tab bar with Editor and Diff Viewer tabs",
+      "Use Material Symbols: code, difference icons",
+      "Active tab: text-primary border-b-2 border-primary",
+      "Inactive: text-slate-400 hover:text-primary",
+      "Right side: file path + collapse toggle (keyboard_arrow_down icon)"
+    ],
+    "passes": false,
+    "dependencies": [1]
+  },
+  {
+    "id": 11,
+    "phase": 4,
+    "category": "bottom-drawer",
+    "description": "Add Editor content with syntax highlighting to BottomDrawer",
+    "steps": [
+      "Add Editor content area with line numbers",
+      "Line number gutter: w-12 text-outline/40 text-right pr-4 select-none",
+      "Mock code with syntax highlighting colors:",
+      "  - Keywords: text-tertiary",
+      "  - Strings: text-emerald-400",
+      "  - Functions: text-primary-dim",
+      "  - Comments: text-on-surface-variant",
+      "Font: font-mono text-xs"
+    ],
+    "passes": false,
+    "dependencies": [10]
+  },
+  {
+    "id": 12,
+    "phase": 4,
+    "category": "bottom-drawer",
+    "description": "Add Diff Viewer tab content to BottomDrawer",
+    "steps": [
+      "Add Diff Viewer tab content (placeholder or mock diff)",
+      "Implement tab switching with useState",
+      "Show Editor content when 'editor' tab active",
+      "Show Diff content when 'diff' tab active",
+      "Background: bg-black/30 for content area"
+    ],
+    "passes": false,
+    "dependencies": [11]
+  },
+  {
+    "id": 13,
+    "phase": 4,
+    "category": "bottom-drawer",
+    "description": "Create BottomDrawer tests",
+    "steps": [
+      "Create src/features/workspace/components/BottomDrawer.test.tsx",
+      "Test component renders with Editor tab active by default",
+      "Test tab switching between Editor and Diff Viewer",
+      "Test Editor content displays with line numbers",
+      "Test Diff Viewer content displays when tab is clicked",
+      "Test file path and collapse toggle render",
+      "Use getByRole for accessibility queries"
+    ],
+    "passes": false,
+    "dependencies": [12]
+  },
+  {
+    "id": 14,
+    "phase": 5,
+    "category": "wiring",
+    "description": "Update WorkspaceView grid layout dimensions",
+    "steps": [
+      "Read current WorkspaceView.tsx",
+      "Change grid from grid-cols-[48px_260px_1fr_280px]",
+      "To grid-cols-[64px_256px_1fr_320px]",
+      "64px for IconRail (was 48px)",
+      "256px for Sidebar (was 260px)",
+      "320px for AgentActivity (was 280px)"
+    ],
+    "passes": false,
+    "dependencies": [4, 8]
+  },
+  {
+    "id": 15,
+    "phase": 5,
+    "category": "wiring",
+    "description": "Restructure main workspace area for TerminalZone + BottomDrawer",
+    "steps": [
+      "Wrap center column (TerminalZone + BottomDrawer) in flex-col container",
+      "TerminalZone takes flex-1 (remaining space)",
+      "BottomDrawer fixed at h-1/3",
+      "Add border-t border-white/5 between them"
+    ],
+    "passes": false,
+    "dependencies": [13, 14]
+  },
+  {
+    "id": 16,
+    "phase": 5,
+    "category": "wiring",
+    "description": "Integrate BottomDrawer into WorkspaceView",
+    "steps": [
+      "Import BottomDrawer component",
+      "Add BottomDrawer below TerminalZone in center column",
+      "Remove activeContextTab state from WorkspaceView",
+      "Remove handleContextTabChange handler",
+      "Remove activeContextTab/onContextTabChange props from Sidebar"
+    ],
+    "passes": false,
+    "dependencies": [15]
+  },
+  {
+    "id": 17,
+    "phase": 5,
+    "category": "wiring",
+    "description": "Update WorkspaceView tests for new layout",
+    "steps": [
+      "Read current WorkspaceView.test.tsx",
+      "Update grid dimension assertions",
+      "Test BottomDrawer is present",
+      "Test TerminalZone and BottomDrawer are stacked vertically",
+      "Remove context tab switching tests (moved to BottomDrawer)",
+      "Verify all 5 main sections render: IconRail, Sidebar, TerminalZone, BottomDrawer, AgentActivity"
+    ],
+    "passes": false,
+    "dependencies": [16]
+  },
+  {
+    "id": 18,
+    "phase": 6,
+    "category": "verification",
+    "description": "Run all linting and formatting checks",
+    "steps": [
+      "Run npm run lint",
+      "Run npm run format:check",
+      "Run npm run type-check",
+      "Fix any issues found",
+      "Verify all checks pass"
+    ],
+    "passes": false,
+    "dependencies": [5, 9, 13, 17]
+  },
+  {
+    "id": 19,
+    "phase": 6,
+    "category": "verification",
+    "description": "Run all unit and integration tests",
+    "steps": [
+      "Run npm test",
+      "Verify all tests pass",
+      "Check test coverage meets 80% minimum",
+      "Fix any failing tests",
+      "Re-run until all green"
+    ],
+    "passes": false,
+    "dependencies": [18]
   },
   {
     "id": 20,
-    "phase": 4,
-    "category": "polish",
-    "description": "Visual verification against Stitch mockup",
-    "steps": [
-      "Compare rendered workspace to docs/design/agent_workspace/screen.png",
-      "Verify all spacing matches (48px, 260px, 280px zones)",
-      "Check all color tokens match Catppuccin Mocha palette",
-      "Verify typography (Manrope headlines, Inter body, JetBrains Mono code)",
-      "Document any intentional deviations"
-    ],
-    "passes": true,
-    "dependencies": [19]
-  },
-  {
-    "id": 21,
-    "phase": 5,
-    "category": "testing",
-    "description": "Integration tests for workspace layout",
-    "steps": [
-      "Write integration test: project switching updates sidebar",
-      "Write integration test: session switching updates terminal and activity",
-      "Write integration test: context panel switching in sidebar",
-      "Write integration test: collapsible sections expand/collapse",
-      "Verify all integration tests pass"
-    ],
-    "passes": true,
-    "dependencies": [17]
-  },
-  {
-    "id": 22,
-    "phase": 5,
-    "category": "quality",
-    "description": "Run all quality checks and fix issues",
-    "steps": [
-      "Run npm run lint and fix all issues",
-      "Run npm run type-check and fix type errors",
-      "Run npm run format and ensure consistent formatting",
-      "Run npm test and achieve 80%+ coverage",
-      "Verify all git hooks pass (pre-commit, commit-msg)"
-    ],
-    "passes": true,
-    "dependencies": [21]
-  },
-  {
-    "id": 23,
-    "phase": 5,
+    "phase": 6,
     "category": "verification",
-    "description": "Final Phase 2 verification checklist",
+    "description": "Visual verification against v2 mockup",
     "steps": [
-      "Verify: 4-zone layout renders (icon rail, sidebar, terminal, activity)",
-      "Verify: Icon rail shows project avatars with active highlight",
-      "Verify: Sidebar shows mock session list with status badges",
-      "Verify: Context switcher tabs (Files/Editor/Diff) work",
-      "Verify: Agent Activity panel shows all sections with mock data",
-      "Verify: Chat view and all chat code removed",
-      "Verify: Design matches Stitch mockup",
-      "Verify: All tests pass, ESLint and Prettier clean"
+      "Compare implementation with docs/design/agent_workspace/v2/screen.png",
+      "Verify IconRail has 4 colorful bookmarks with icons",
+      "Verify Sidebar has Sessions + FileExplorer only",
+      "Verify BottomDrawer with Editor/Diff tabs below terminal",
+      "Verify grid dimensions: 64px, 256px, flex, 320px",
+      "Document any deviations in verification notes"
     ],
-    "passes": true,
-    "dependencies": [22]
+    "passes": false,
+    "dependencies": [19]
   }
 ]

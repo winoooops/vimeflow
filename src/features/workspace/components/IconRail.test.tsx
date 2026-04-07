@@ -2,306 +2,178 @@ import { describe, test, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { IconRail } from './IconRail'
-import { mockProjects } from '../data/mockProjects'
+import { mockNavigationItems, mockSettingsItem } from '../data/mockNavigation'
 
 describe('IconRail', () => {
-  test('renders all project avatars', () => {
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
+  test('renders with 64px width', () => {
+    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
 
-    // Should show all project abbreviations
-    expect(screen.getByText('Vf')).toBeInTheDocument()
-    expect(screen.getByText('My')).toBeInTheDocument()
-    expect(screen.getByText('Ag')).toBeInTheDocument()
+    const rail = screen.getByTestId('icon-rail')
+    expect(rail).toHaveClass('w-16') // 64px (16 * 4 = 64)
   })
 
-  test('displays project avatars with 32x32 rounded dimensions', () => {
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
+  test('uses bg-surface with border-r border-white/5', () => {
+    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
 
-    const avatar = screen.getByRole('button', { name: 'Vimeflow' })
-    expect(avatar).toHaveClass('w-8') // 32px
-    expect(avatar).toHaveClass('h-8') // 32px
-    expect(avatar).toHaveClass('rounded-lg') // rounded corners per design spec
+    const rail = screen.getByTestId('icon-rail')
+    expect(rail).toHaveClass('bg-surface')
+    expect(rail).toHaveClass('border-r')
+    expect(rail).toHaveClass('border-white/5')
   })
 
-  test('highlights active project with purple pill backlight', () => {
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
+  test('renders all navigation items', () => {
+    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
 
-    const activeAvatar = screen.getByRole('button', { name: 'Vimeflow' })
-    expect(activeAvatar).toHaveClass('bg-primary-container/20')
+    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Source Control' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Debugger' })).toBeInTheDocument()
   })
 
-  test('inactive projects have no backlight', () => {
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
+  test('renders settings item at bottom', () => {
+    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
 
-    const inactiveAvatar = screen.getByRole('button', { name: 'My Portfolio' })
-    expect(inactiveAvatar).not.toHaveClass('bg-primary-container/20')
+    const settingsButton = screen.getByRole('button', { name: 'Settings' })
+    expect(settingsButton).toBeInTheDocument()
   })
 
-  test('calls onProjectClick when project avatar is clicked', async () => {
+  test('bookmark buttons have flat-bookmark class', () => {
+    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+
+    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
+    expect(dashboardButton).toHaveClass('flat-bookmark')
+  })
+
+  test('bookmarks have correct dimensions (w-8 h-12)', () => {
+    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+
+    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
+    expect(dashboardButton).toHaveClass('w-8')
+    expect(dashboardButton).toHaveClass('h-12')
+  })
+
+  test('bookmarks have correct color backgrounds', () => {
+    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+
+    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
+    const sourceControlButton = screen.getByRole('button', { name: 'Source Control' })
+    const debuggerButton = screen.getByRole('button', { name: 'Debugger' })
+    const settingsButton = screen.getByRole('button', { name: 'Settings' })
+
+    expect(dashboardButton).toHaveClass('bg-emerald-500')
+    expect(sourceControlButton).toHaveClass('bg-amber-500')
+    expect(debuggerButton).toHaveClass('bg-rose-500')
+    expect(settingsButton).toHaveClass('bg-indigo-500')
+  })
+
+  test('bookmarks contain Material Symbols icons', () => {
+    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+
+    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
+    const icon = dashboardButton.querySelector('.material-symbols-outlined')
+
+    expect(icon).toBeInTheDocument()
+    expect(icon).toHaveClass('text-white')
+    expect(icon).toHaveClass('mb-2') // shifted up for bookmark point
+  })
+
+  test('shows tooltip on hover', async () => {
+    const user = userEvent.setup()
+    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+
+    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
+
+    // Tooltip should not be visible initially
+    expect(screen.queryByText('Dashboard', { selector: 'div' })).not.toBeInTheDocument()
+
+    // Hover over button
+    await user.hover(dashboardButton)
+
+    // Tooltip should appear
+    const tooltip = screen.getByText('Dashboard', { selector: 'div' })
+    expect(tooltip).toBeInTheDocument()
+    expect(tooltip).toHaveClass('bg-surface-container')
+  })
+
+  test('hides tooltip on mouse leave', async () => {
+    const user = userEvent.setup()
+    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
+
+    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
+
+    // Hover to show tooltip
+    await user.hover(dashboardButton)
+    expect(screen.getByText('Dashboard', { selector: 'div' })).toBeInTheDocument()
+
+    // Unhover to hide tooltip
+    await user.unhover(dashboardButton)
+    expect(screen.queryByText('Dashboard', { selector: 'div' })).not.toBeInTheDocument()
+  })
+
+  test('calls onClick when navigation item is clicked', async () => {
     const handleClick = vi.fn()
     const user = userEvent.setup()
 
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={handleClick}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
+    const items = [
+      {
+        ...mockNavigationItems[0],
+        onClick: handleClick,
+      },
+    ]
 
-    const projectAvatar = screen.getByRole('button', { name: 'My Portfolio' })
-    expect(projectAvatar).toBeInTheDocument()
+    render(<IconRail items={items} settingsItem={mockSettingsItem} />)
 
-    await user.click(projectAvatar)
-    expect(handleClick).toHaveBeenCalledWith('proj-2')
+    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
+    await user.click(dashboardButton)
+
+    expect(handleClick).toHaveBeenCalledTimes(1)
   })
 
-  test('renders new project button at bottom', () => {
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
-
-    const newProjectButton = screen.getByRole('button', {
-      name: /new project/i,
-    })
-    expect(newProjectButton).toBeInTheDocument()
-    expect(newProjectButton).toHaveTextContent('+')
-  })
-
-  test('renders settings button at bottom', () => {
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
-
-    const settingsButton = screen.getByRole('button', { name: /settings/i })
-    expect(settingsButton).toBeInTheDocument()
-    expect(settingsButton).toHaveTextContent('⚙')
-  })
-
-  test('calls onNewProject when new project button is clicked', async () => {
-    const handleNewProject = vi.fn()
+  test('calls onClick when settings item is clicked', async () => {
+    const handleClick = vi.fn()
     const user = userEvent.setup()
 
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={vi.fn()}
-        onNewProject={handleNewProject}
-        onSettings={vi.fn()}
-      />
-    )
+    const settingsItem = {
+      ...mockSettingsItem,
+      onClick: handleClick,
+    }
 
-    const newProjectButton = screen.getByRole('button', {
-      name: /new project/i,
-    })
-    await user.click(newProjectButton)
+    render(<IconRail items={mockNavigationItems} settingsItem={settingsItem} />)
 
-    expect(handleNewProject).toHaveBeenCalledTimes(1)
-  })
-
-  test('calls onSettings when settings button is clicked', async () => {
-    const handleSettings = vi.fn()
-    const user = userEvent.setup()
-
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={handleSettings}
-      />
-    )
-
-    const settingsButton = screen.getByRole('button', { name: /settings/i })
+    const settingsButton = screen.getByRole('button', { name: 'Settings' })
     await user.click(settingsButton)
 
-    expect(handleSettings).toHaveBeenCalledTimes(1)
+    expect(handleClick).toHaveBeenCalledTimes(1)
   })
 
-  test('uses 48px fixed width container', () => {
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
+  test('renders with empty items array', () => {
+    render(<IconRail items={[]} settingsItem={mockSettingsItem} />)
 
-    const rail = screen.getByTestId('icon-rail')
-    expect(rail).toHaveClass('w-12') // 48px (12 * 4 = 48)
+    // Should still render settings button
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
   })
 
-  test('uses surface-container-low background', () => {
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
+  test('navigation items appear before settings in DOM order', () => {
+    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
 
-    const rail = screen.getByTestId('icon-rail')
-    expect(rail).toHaveClass('bg-surface-container-low')
-  })
-
-  test('arranges projects at top and actions at bottom', () => {
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
-
-    const newProjectButton = screen.getByRole('button', {
-      name: /new project/i,
-    })
-    const settingsButton = screen.getByRole('button', { name: /settings/i })
-    const projectAvatar = screen.getByRole('button', { name: 'Vimeflow' })
-
-    // Projects should be before action buttons in DOM order
     const buttons = screen.getAllByRole('button')
-    const projectIndex = buttons.indexOf(projectAvatar)
-    const newProjectIndex = buttons.indexOf(newProjectButton)
+    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
+    const settingsButton = screen.getByRole('button', { name: 'Settings' })
+
+    const dashboardIndex = buttons.indexOf(dashboardButton)
     const settingsIndex = buttons.indexOf(settingsButton)
 
-    expect(projectIndex).toBeLessThan(newProjectIndex)
-    expect(newProjectIndex).toBeLessThan(settingsIndex)
+    expect(dashboardIndex).toBeLessThan(settingsIndex)
   })
 
-  test('renders with empty projects array', () => {
-    render(
-      <IconRail
-        projects={[]}
-        activeProjectId={null}
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
+  test('tooltip is positioned to the right of the rail', async () => {
+    const user = userEvent.setup()
+    render(<IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />)
 
-    // Should still render action buttons
-    expect(
-      screen.getByRole('button', { name: /new project/i })
-    ).toBeInTheDocument()
+    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
+    await user.hover(dashboardButton)
 
-    expect(
-      screen.getByRole('button', { name: /settings/i })
-    ).toBeInTheDocument()
-  })
-
-  test('handles null activeProjectId gracefully', () => {
-    // P1 Fix: Ensure component doesn't crash with null activeProjectId
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId={null}
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
-
-    // Should render all projects
-    expect(screen.getByText('Vf')).toBeInTheDocument()
-    expect(screen.getByText('My')).toBeInTheDocument()
-    expect(screen.getByText('Ag')).toBeInTheDocument()
-
-    // No project should have active highlight when activeProjectId is null
-    const projectButtons = screen.getAllByRole('button').filter((button) => {
-      const text = button.textContent
-
-      return text === 'Vf' || text === 'My' || text === 'Ag' || text === 'Em'
-    })
-
-    projectButtons.forEach((button) => {
-      expect(button).not.toHaveClass('bg-primary-container/20')
-    })
-  })
-
-  test('applies hover styles to project avatars', () => {
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
-
-    const avatar = screen.getByRole('button', { name: 'Vimeflow' })
-    expect(avatar).toHaveClass('hover:bg-surface-container')
-  })
-
-  test('applies hover styles to action buttons', () => {
-    render(
-      <IconRail
-        projects={mockProjects}
-        activeProjectId="proj-1"
-        onProjectClick={vi.fn()}
-        onNewProject={vi.fn()}
-        onSettings={vi.fn()}
-      />
-    )
-
-    const newProjectButton = screen.getByRole('button', {
-      name: /new project/i,
-    })
-    expect(newProjectButton).toHaveClass('hover:bg-surface-container')
+    const tooltip = screen.getByText('Dashboard', { selector: 'div' })
+    expect(tooltip).toHaveClass('left-full')
+    expect(tooltip).toHaveClass('ml-2')
   })
 })

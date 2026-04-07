@@ -14,7 +14,7 @@ const mockSessions: Session[] = [
     agentType: 'claude-code',
     terminalPid: 12345,
     createdAt: '2026-04-07T03:45:00Z',
-    lastActivityAt: '2026-04-07T03:47:34Z',
+    lastActivityAt: '2026-04-06T17:47:34Z', // 10h ago
     activity: {
       fileChanges: [],
       toolCalls: [],
@@ -42,7 +42,7 @@ const mockSessions: Session[] = [
     agentType: 'claude-code',
     terminalPid: 12346,
     createdAt: '2026-04-07T03:30:00Z',
-    lastActivityAt: '2026-04-07T03:32:15Z',
+    lastActivityAt: '2026-04-06T18:02:15Z', // 10h ago
     activity: {
       fileChanges: [],
       toolCalls: [],
@@ -64,7 +64,7 @@ const mockSessions: Session[] = [
     workingDirectory: '/home/user/projects/Vimeflow',
     agentType: 'claude-code',
     createdAt: '2026-04-07T02:00:00Z',
-    lastActivityAt: '2026-04-07T02:45:00Z',
+    lastActivityAt: '2026-04-06T12:45:00Z', // 16h ago
     activity: {
       fileChanges: [],
       toolCalls: [],
@@ -87,28 +87,52 @@ const mockSessions: Session[] = [
 
 describe('Sidebar', () => {
   const mockOnSessionClick = vi.fn()
-  const mockOnContextTabChange = vi.fn()
+  const mockOnNewInstance = vi.fn()
 
   beforeEach(() => {
     mockOnSessionClick.mockClear()
-    mockOnContextTabChange.mockClear()
+    mockOnNewInstance.mockClear()
   })
 
-  test('renders with correct width', () => {
+  test('renders with 256px width', () => {
     render(
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
+        onNewInstance={mockOnNewInstance}
       />
     )
 
     const sidebar = screen.getByTestId('sidebar')
-
     expect(sidebar).toBeInTheDocument()
-    expect(sidebar).toHaveClass('w-[260px]')
+    expect(sidebar).toHaveClass('w-64') // w-64 = 256px
+  })
+
+  test('renders "Active Sessions" header with add button', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+      />
+    )
+
+    expect(screen.getByText('Active Sessions')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add session' })).toBeInTheDocument()
+  })
+
+  test('add session button has rotate-90 hover animation', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+      />
+    )
+
+    const addButton = screen.getByRole('button', { name: 'Add session' })
+    expect(addButton).toHaveClass('hover:rotate-90')
   })
 
   test('renders all sessions', () => {
@@ -117,8 +141,6 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
       />
     )
 
@@ -127,63 +149,74 @@ describe('Sidebar', () => {
     expect(screen.getByText('refactor: api layer')).toBeInTheDocument()
   })
 
-  test('displays status badge for each session', () => {
+  test('active session has terminal icon', () => {
     render(
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
       />
     )
 
-    // Status badges should be visible
-    const runningBadge = screen.getByText('running')
-    const pausedBadge = screen.getByText('paused')
-    const completedBadge = screen.getByText('completed')
-
-    expect(runningBadge).toBeInTheDocument()
-    expect(pausedBadge).toBeInTheDocument()
-    expect(completedBadge).toBeInTheDocument()
+    const activeSession = screen.getByRole('button', { name: 'auth middleware' })
+    const icon = activeSession.querySelector('.material-symbols-outlined')
+    expect(icon?.textContent).toBe('terminal')
   })
 
-  test('highlights active session with purple border and background', () => {
+  test('inactive sessions have history icon', () => {
     render(
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
       />
     )
 
-    const activeSession = screen.getByRole('button', {
-      name: /auth middleware/i,
-    })
-
-    expect(activeSession).toHaveClass('border-l-primary')
-    expect(activeSession).toHaveClass('bg-surface-container')
+    const inactiveSession = screen.getByRole('button', { name: 'fix: login bug' })
+    const icon = inactiveSession.querySelector('.material-symbols-outlined')
+    expect(icon?.textContent).toBe('history')
   })
 
-  test('inactive sessions do not have active styling', () => {
+  test('active session has bg-slate-800/80 text-primary-container styling', () => {
     render(
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
       />
     )
 
-    const inactiveSession = screen.getByRole('button', {
-      name: /fix: login bug/i,
-    })
+    const activeSession = screen.getByRole('button', { name: 'auth middleware' })
+    expect(activeSession.className).toContain('bg-slate-800/80')
+    expect(activeSession.className).toContain('text-primary-container')
+  })
 
-    expect(inactiveSession).not.toHaveClass('border-l-primary')
-    expect(inactiveSession).not.toHaveClass('bg-surface-container')
+  test('inactive sessions have text-slate-500 styling', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+      />
+    )
+
+    const inactiveSession = screen.getByRole('button', { name: 'fix: login bug' })
+    expect(inactiveSession.className).toContain('text-slate-500')
+  })
+
+  test('active session has LIVE badge (hidden by default, visible on hover)', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+      />
+    )
+
+    const activeSession = screen.getByRole('button', { name: 'auth middleware' })
+    const liveBadge = activeSession.querySelector('.group-hover\\:opacity-100')
+    expect(liveBadge).toBeInTheDocument()
+    expect(liveBadge?.textContent).toBe('LIVE')
   })
 
   test('calls onSessionClick with session id when session is clicked', async () => {
@@ -194,13 +227,10 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
       />
     )
 
-    const session = screen.getByRole('button', { name: /fix: login bug/i })
-
+    const session = screen.getByRole('button', { name: 'fix: login bug' })
     await user.click(session)
 
     expect(mockOnSessionClick).toHaveBeenCalledWith('sess-2')
@@ -212,32 +242,24 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
       />
     )
 
-    // Timestamps should be displayed (we'll format them as relative time)
-    // For now, just check that some time-related text appears
-    // The component will use a relative time formatter
     const timestamps = screen.getAllByTestId('session-timestamp')
-
     expect(timestamps).toHaveLength(3)
+    expect(timestamps[0]).toHaveTextContent(/ago/)
   })
 
-  test('uses design tokens for colors and spacing', () => {
+  test('uses design tokens for colors', () => {
     render(
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
       />
     )
 
     const sidebar = screen.getByTestId('sidebar')
-
     expect(sidebar).toHaveClass('bg-surface-container-low')
   })
 
@@ -247,53 +269,58 @@ describe('Sidebar', () => {
         sessions={[]}
         activeSessionId={null}
         onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
       />
     )
 
     expect(screen.getByText('No sessions')).toBeInTheDocument()
   })
 
-  test('renders ContextSwitcher at the bottom', () => {
+  test('renders FileExplorer section', () => {
     render(
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
       />
     )
 
-    // Check that ContextSwitcher is rendered
-    expect(screen.getByTestId('context-switcher')).toBeInTheDocument()
-
-    // Check that all tabs are present
-    expect(screen.getByRole('button', { name: /files/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /diff/i })).toBeInTheDocument()
+    expect(screen.getByTestId('file-explorer')).toBeInTheDocument()
+    expect(screen.getByText('File Explorer')).toBeInTheDocument()
   })
 
-  test('ContextSwitcher receives correct activeTab prop', () => {
+  test('renders "New Instance" button at bottom', () => {
     render(
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        activeContextTab="editor"
-        onContextTabChange={mockOnContextTabChange}
+        onNewInstance={mockOnNewInstance}
       />
     )
 
-    const editorTab = screen.getByRole('button', { name: /editor/i })
-
-    // Active tab should have purple styling
-    expect(editorTab).toHaveClass('text-primary')
-    expect(editorTab).toHaveClass('border-b-primary')
+    const newInstanceButton = screen.getByRole('button', { name: 'New Instance' })
+    expect(newInstanceButton).toBeInTheDocument()
+    expect(newInstanceButton).toHaveClass('bg-gradient-to-r')
+    expect(newInstanceButton).toHaveClass('from-primary')
+    expect(newInstanceButton).toHaveClass('to-secondary')
   })
 
-  test('ContextSwitcher calls onContextTabChange when tab is clicked', async () => {
+  test('"New Instance" button has bolt icon', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        onNewInstance={mockOnNewInstance}
+      />
+    )
+
+    const newInstanceButton = screen.getByRole('button', { name: 'New Instance' })
+    const icon = newInstanceButton.querySelector('.material-symbols-outlined')
+    expect(icon?.textContent).toBe('bolt')
+  })
+
+  test('calls onNewInstance when "New Instance" button is clicked', async () => {
     const user = userEvent.setup()
 
     render(
@@ -301,245 +328,62 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
+        onNewInstance={mockOnNewInstance}
       />
     )
 
-    const editorTab = screen.getByRole('button', { name: /editor/i })
+    const newInstanceButton = screen.getByRole('button', { name: 'New Instance' })
+    await user.click(newInstanceButton)
 
-    await user.click(editorTab)
-
-    expect(mockOnContextTabChange).toHaveBeenCalledWith('editor')
-    expect(mockOnContextTabChange).toHaveBeenCalledTimes(1)
+    expect(mockOnNewInstance).toHaveBeenCalledTimes(1)
   })
 
-  test('session cards have hover state', () => {
+  test('"New Instance" button has shadow effects', () => {
     render(
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
+        onNewInstance={mockOnNewInstance}
       />
     )
 
-    const session = screen.getByRole('button', { name: /fix: login bug/i })
-
-    expect(session).toHaveClass('hover:bg-surface-container/50')
+    const newInstanceButton = screen.getByRole('button', { name: 'New Instance' })
+    expect(newInstanceButton).toHaveClass('shadow-lg')
+    expect(newInstanceButton).toHaveClass('shadow-primary/10')
   })
 
-  test('status badges use appropriate colors', () => {
+  test('handles null activeSessionId gracefully', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId={null}
+        onSessionClick={mockOnSessionClick}
+      />
+    )
+
+    // All sessions should render without active styling
+    const sessions = screen.getAllByRole('button').filter((btn) =>
+      mockSessions.some((s) => btn.getAttribute('aria-label') === s.name)
+    )
+
+    expect(sessions).toHaveLength(3)
+    sessions.forEach((session) => {
+      expect(session.className).not.toContain('bg-slate-800/80')
+      expect(session.className).not.toContain('text-primary-container')
+    })
+  })
+
+  test('session list is scrollable', () => {
     render(
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
-      />
-    )
-
-    const runningBadge = screen.getByText('running')
-    const pausedBadge = screen.getByText('paused')
-    const completedBadge = screen.getByText('completed')
-
-    // Running: green/primary
-    expect(runningBadge).toHaveClass('bg-primary-container')
-
-    // Paused: blue/secondary
-    expect(pausedBadge).toHaveClass('bg-secondary-container/20')
-
-    // Completed: neutral
-    expect(completedBadge).toHaveClass('bg-surface-container')
-  })
-
-  test('session list section has correct layout', () => {
-    render(
-      <Sidebar
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
-      />
-    )
-
-    const sidebar = screen.getByTestId('sidebar')
-
-    // Should be flex column
-    expect(sidebar).toHaveClass('flex')
-    expect(sidebar).toHaveClass('flex-col')
-  })
-
-  test('renders session section header', () => {
-    render(
-      <Sidebar
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
-      />
-    )
-
-    expect(screen.getByText('Sessions')).toBeInTheDocument()
-  })
-
-  test('session items have consistent spacing', () => {
-    render(
-      <Sidebar
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
       />
     )
 
     const sessionList = screen.getByTestId('session-list')
-
-    // Gap between session items
-    expect(sessionList).toHaveClass('gap-1')
-  })
-
-  test('session name is truncated if too long', () => {
-    const longNameSession: Session = {
-      ...mockSessions[0],
-      name: 'This is a very long session name that should be truncated to fit within the sidebar width',
-    }
-
-    render(
-      <Sidebar
-        sessions={[longNameSession]}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
-      />
-    )
-
-    const sessionName = screen.getByText(longNameSession.name)
-
-    // Should have text truncation class
-    expect(sessionName).toHaveClass('truncate')
-  })
-
-  // Feature 15: Context Panel Integration Tests
-  test('renders FilesPanel when activeContextTab is files', () => {
-    render(
-      <Sidebar
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
-      />
-    )
-
-    // FilesPanel should be visible
-    expect(screen.getByTestId('files-panel')).toBeInTheDocument()
-
-    // Other panels should not be visible
-    expect(screen.queryByTestId('editor-panel')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('diff-panel')).not.toBeInTheDocument()
-  })
-
-  test('renders EditorPanel when activeContextTab is editor', () => {
-    render(
-      <Sidebar
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-        activeContextTab="editor"
-        onContextTabChange={mockOnContextTabChange}
-      />
-    )
-
-    // EditorPanel should be visible
-    expect(screen.getByTestId('editor-panel')).toBeInTheDocument()
-
-    // Other panels should not be visible
-    expect(screen.queryByTestId('files-panel')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('diff-panel')).not.toBeInTheDocument()
-  })
-
-  test('renders DiffPanel when activeContextTab is diff', () => {
-    render(
-      <Sidebar
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-        activeContextTab="diff"
-        onContextTabChange={mockOnContextTabChange}
-      />
-    )
-
-    // DiffPanel should be visible
-    expect(screen.getByTestId('diff-panel')).toBeInTheDocument()
-
-    // Other panels should not be visible
-    expect(screen.queryByTestId('files-panel')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('editor-panel')).not.toBeInTheDocument()
-  })
-
-  test('context panel content area has correct layout', () => {
-    render(
-      <Sidebar
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
-      />
-    )
-
-    const filesPanel = screen.getByTestId('files-panel')
-
-    // Panel should fit within 260px sidebar width
-    expect(filesPanel).toBeInTheDocument()
-
-    // Panel should be scrollable (flex-1 with overflow)
-    const sidebar = screen.getByTestId('sidebar')
-
-    expect(sidebar).toHaveClass('flex-col')
-  })
-
-  test('switching tabs changes visible panel', async () => {
-    const user = userEvent.setup()
-
-    const { rerender } = render(
-      <Sidebar
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-        activeContextTab="files"
-        onContextTabChange={mockOnContextTabChange}
-      />
-    )
-
-    // Initially shows FilesPanel
-    expect(screen.getByTestId('files-panel')).toBeInTheDocument()
-
-    // Click Editor tab
-    const editorTab = screen.getByRole('button', { name: /editor/i })
-
-    await user.click(editorTab)
-
-    // Simulate parent component updating activeContextTab prop
-    rerender(
-      <Sidebar
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-        activeContextTab="editor"
-        onContextTabChange={mockOnContextTabChange}
-      />
-    )
-
-    // Now shows EditorPanel
-    expect(screen.getByTestId('editor-panel')).toBeInTheDocument()
-    expect(screen.queryByTestId('files-panel')).not.toBeInTheDocument()
+    expect(sessionList).toHaveClass('overflow-y-auto')
   })
 })

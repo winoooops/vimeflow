@@ -1,29 +1,12 @@
 import type { ReactElement } from 'react'
-import type { Session, SessionStatus, ContextPanelType } from '../types'
-import { ContextSwitcher } from './ContextSwitcher'
-import { FilesPanel } from './panels/FilesPanel'
-import { EditorPanel } from './panels/EditorPanel'
-import { DiffPanel } from './panels/DiffPanel'
+import type { Session } from '../types'
+import { FileExplorer } from './panels/FileExplorer'
 
 export interface SidebarProps {
   sessions: Session[]
   activeSessionId: string | null
   onSessionClick: (sessionId: string) => void
-  activeContextTab: ContextPanelType
-  onContextTabChange: (tab: ContextPanelType) => void
-}
-
-function getStatusBadgeClasses(status: SessionStatus): string {
-  switch (status) {
-    case 'running':
-      return 'bg-primary-container text-primary'
-    case 'paused':
-      return 'bg-secondary-container/20 text-secondary'
-    case 'completed':
-      return 'bg-surface-container text-on-surface'
-    case 'errored':
-      return 'bg-error-container text-error'
-  }
+  onNewInstance?: () => void
 }
 
 function formatRelativeTime(timestamp: string): string {
@@ -51,18 +34,25 @@ export const Sidebar = ({
   sessions,
   activeSessionId,
   onSessionClick,
-  activeContextTab,
-  onContextTabChange,
+  onNewInstance = undefined,
 }: SidebarProps): ReactElement => (
   <div
-    className="flex h-full w-[260px] flex-col bg-surface-container-low"
+    className="flex h-full w-64 flex-col bg-surface-container-low"
     data-testid="sidebar"
   >
     {/* Sessions section header */}
-    <div className="px-3 py-2">
+    <div className="flex items-center justify-between px-3 py-2">
       <h2 className="font-label text-sm font-semibold uppercase tracking-wider text-on-surface/70">
-        Sessions
+        Active Sessions
       </h2>
+      <button
+        type="button"
+        className="material-symbols-outlined text-lg text-primary transition-transform hover:rotate-90"
+        aria-label="Add session"
+        title="Add session"
+      >
+        add
+      </button>
     </div>
 
     {/* Session list */}
@@ -86,31 +76,32 @@ export const Sidebar = ({
                 onSessionClick(session.id)
               }}
               className={`
-                flex flex-col gap-1 rounded-lg border-l-4 p-3
-                text-left transition-colors
+                flex flex-col gap-1 rounded-lg p-3
+                text-left transition-colors relative group
                 ${
                   isActive
-                    ? 'border-l-primary bg-surface-container'
-                    : 'border-l-transparent hover:bg-surface-container/50'
+                    ? 'bg-slate-800/80 text-primary-container'
+                    : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
                 }
               `}
               aria-label={session.name}
             >
-              {/* Session name and status */}
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate font-label text-sm font-medium text-on-surface">
+              {/* Icon and session name */}
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-base">
+                  {isActive ? 'terminal' : 'history'}
+                </span>
+                <span className="truncate font-label text-sm font-medium">
                   {session.name}
                 </span>
-
-                <span
-                  className={`
-                    rounded-full px-2 py-0.5 font-label text-xs font-medium
-                    ${getStatusBadgeClasses(session.status)}
-                  `}
-                >
-                  {session.status}
-                </span>
               </div>
+
+              {/* LIVE badge on hover for active session */}
+              {isActive && (
+                <span className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 rounded-full bg-primary px-2 py-0.5 font-label text-xs font-bold text-on-primary transition-opacity">
+                  LIVE
+                </span>
+              )}
 
               {/* Timestamp */}
               <span
@@ -125,15 +116,20 @@ export const Sidebar = ({
       )}
     </div>
 
-    {/* Context Panel - renders based on activeContextTab */}
-    {activeContextTab === 'files' && <FilesPanel />}
-    {activeContextTab === 'editor' && <EditorPanel />}
-    {activeContextTab === 'diff' && <DiffPanel />}
+    {/* File Explorer section */}
+    <FileExplorer />
 
-    {/* Context Switcher at bottom */}
-    <ContextSwitcher
-      activeTab={activeContextTab}
-      onTabChange={onContextTabChange}
-    />
+    {/* New Instance button */}
+    <div className="p-3">
+      <button
+        type="button"
+        onClick={onNewInstance}
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-primary to-secondary py-2.5 font-label text-sm font-bold text-on-primary shadow-lg shadow-primary/10 transition-all hover:shadow-xl hover:shadow-primary/20"
+        aria-label="New Instance"
+      >
+        <span className="material-symbols-outlined text-lg">bolt</span>
+        <span>New Instance</span>
+      </button>
+    </div>
   </div>
 )
