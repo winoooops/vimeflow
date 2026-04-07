@@ -17,7 +17,7 @@ const AgentActivity = ({ session }: AgentActivityProps): ReactElement => {
   return (
     <div
       data-testid="agent-activity"
-      className="w-[280px] h-full bg-[#1a1a2a] flex flex-col gap-4 p-4 overflow-y-auto"
+      className="w-[280px] h-full bg-surface-container-low flex flex-col gap-4 p-4 overflow-y-auto"
     >
       <StatusCard session={session} />
       <PinnedMetrics activity={activity} />

@@ -280,7 +280,7 @@
       "Apply glassmorphism effects where specified",
       "Verify rounded corners (cards: 1rem, buttons: 0.75rem)"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [18, 16]
   },
   {

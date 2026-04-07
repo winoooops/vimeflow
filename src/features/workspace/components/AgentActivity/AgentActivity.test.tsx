@@ -137,12 +137,12 @@ describe('AgentActivity', () => {
       expect(panel).toHaveClass('w-[280px]')
     })
 
-    test('applies #1a1a2a background color', () => {
+    test('applies surface-container-low background color', () => {
       render(<AgentActivity session={mockSession} />)
       const panel = screen.getByTestId('agent-activity')
 
-      // Check for bg-[#1a1a2a] class
-      expect(panel).toHaveClass('bg-[#1a1a2a]')
+      // Check for bg-surface-container-low class (Level 1 - sidebar, activity panel)
+      expect(panel).toHaveClass('bg-surface-container-low')
     })
 
     test('applies flex column layout', () => {
@@ -316,11 +316,12 @@ describe('AgentActivity', () => {
   })
 
   describe('Design System Compliance', () => {
-    test('uses custom background color #1a1a2a', () => {
+    test('uses semantic token bg-surface-container-low', () => {
       render(<AgentActivity session={mockSession} />)
       const panel = screen.getByTestId('agent-activity')
 
-      expect(panel).toHaveClass('bg-[#1a1a2a]')
+      // Agent Activity panel should use Level 1 surface hierarchy
+      expect(panel).toHaveClass('bg-surface-container-low')
     })
 
     test('uses fixed width of 280px', () => {

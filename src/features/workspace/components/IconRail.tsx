@@ -32,7 +32,7 @@ export const IconRail = ({
             onClick={() => onProjectClick(project.id)}
             className={`
               flex h-8 w-8 items-center justify-center
-              rounded-xl font-label text-sm font-semibold
+              rounded-lg font-label text-sm font-semibold
               text-on-surface transition-colors
               hover:bg-surface-container
               ${isActive ? 'bg-primary-container/20' : ''}
@@ -51,7 +51,7 @@ export const IconRail = ({
       <button
         type="button"
         onClick={onNewProject}
-        className="flex h-8 w-8 items-center justify-center rounded-xl text-lg text-on-surface transition-colors hover:bg-surface-container"
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-lg text-on-surface transition-colors hover:bg-surface-container"
         aria-label="New project"
         title="New project"
       >
@@ -61,7 +61,7 @@ export const IconRail = ({
       <button
         type="button"
         onClick={onSettings}
-        className="flex h-8 w-8 items-center justify-center rounded-xl text-lg text-on-surface transition-colors hover:bg-surface-container"
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-lg text-on-surface transition-colors hover:bg-surface-container"
         aria-label="Settings"
         title="Settings"
       >

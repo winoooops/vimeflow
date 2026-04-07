@@ -36,7 +36,7 @@ describe('IconRail', () => {
     const avatar = screen.getByRole('button', { name: 'Vimeflow' })
     expect(avatar).toHaveClass('w-8') // 32px
     expect(avatar).toHaveClass('h-8') // 32px
-    expect(avatar).toHaveClass('rounded-xl') // rounded corners
+    expect(avatar).toHaveClass('rounded-lg') // rounded corners per design spec
   })
 
   test('highlights active project with purple pill backlight', () => {
