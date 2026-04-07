@@ -202,14 +202,14 @@ Parse Claude Code's terminal output to extract structured data: tool calls, test
 - [ ] Tool calls appear in real-time as Claude Code executes them
 - [ ] Test results appear when Claude Code runs tests
 - [ ] Agent status updates (running/thinking/waiting) reflected in status card
-- [ ] Sections auto-expand when relevant events occur
+- [ ] Collapsible sections auto-expand when relevant events occur (e.g., Tests expands on test run)
 - [ ] Generic adapter works for non-Claude-Code processes (just file watcher)
 
 ---
 
 ## Phase 7: Context Panel Integration
 
-**Scope: Medium | Est: 4–6 days | Blocked by: Phase 4, builds on Phase 5**
+**Scope: Medium | Est: 4–6 days | Blocked by: Phase 4**
 
 ### Goal
 

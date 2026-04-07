@@ -487,6 +487,11 @@ phases:
         commit: null
         pr: null
       - id: p6-d4
+        check: 'Collapsible sections auto-expand when relevant events occur'
+        status: pending
+        commit: null
+        pr: null
+      - id: p6-d5
         check: 'Generic adapter works for non-Claude-Code processes'
         status: pending
         commit: null
