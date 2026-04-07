@@ -117,7 +117,7 @@
       "Apply card styling (#292839 background, 8px rounded)",
       "Write StatusCard.test.tsx"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [3]
   },
   {

@@ -29,6 +29,7 @@ export interface Session {
   workingDirectory: string
   agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
   terminalPid?: number
+  currentAction?: string // current action description (e.g., "Creating auth middleware...")
   createdAt: string
   lastActivityAt: string
   activity: AgentActivity

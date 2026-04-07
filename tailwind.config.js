@@ -30,6 +30,7 @@ export default {
         outline: '#968e9a',
         'outline-variant': '#4a444f',
         error: '#ffb4ab',
+        success: '#7defa1',
         surface: '#121221',
         'on-secondary-container': '#8fbaff',
         'primary-fixed': '#eedbff',
