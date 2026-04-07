@@ -250,7 +250,7 @@
       "Remove unused state (activeTab, isContextPanelOpen)",
       "Update App.test.tsx"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [16]
   },
   {
