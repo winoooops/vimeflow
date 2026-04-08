@@ -248,10 +248,7 @@ describe('TerminalZone', () => {
       (pane) => pane.getAttribute('data-session-id') === 'sess-1'
     )
 
-    expect(activePane).toHaveAttribute(
-      'data-cwd',
-      '/home/user/projects/Vimeflow'
-    )
+    expect(activePane).toHaveAttribute('data-cwd', '~')
 
     // Mocked component should also receive it
     const mockPanes = screen.getAllByTestId('terminal-pane-mock')
@@ -259,10 +256,7 @@ describe('TerminalZone', () => {
     const activeMockPane = mockPanes.find(
       (pane) => pane.getAttribute('data-session-id') === 'sess-1'
     )
-    expect(activeMockPane).toHaveAttribute(
-      'data-cwd',
-      '/home/user/projects/Vimeflow'
-    )
+    expect(activeMockPane).toHaveAttribute('data-cwd', '~')
   })
 
   test('does not render TerminalPane when no sessions exist', () => {
@@ -310,10 +304,7 @@ describe('TerminalZone', () => {
       (pane) => pane.getAttribute('data-session-id') === 'sess-2'
     )
     expect(updatedSession2Pane).toHaveAttribute('data-session-id', 'sess-2')
-    expect(updatedSession2Pane).toHaveAttribute(
-      'data-cwd',
-      '/home/user/projects/Vimeflow'
-    )
+    expect(updatedSession2Pane).toHaveAttribute('data-cwd', '~')
   })
 
   // P2 Codex Finding: Keep terminal sessions alive when switching tabs

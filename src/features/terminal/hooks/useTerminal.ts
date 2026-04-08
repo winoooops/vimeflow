@@ -17,7 +17,7 @@ export interface UseTerminalOptions {
   /**
    * Current working directory for the shell
    */
-  cwd: string
+  cwd?: string
 
   /**
    * Optional shell path (defaults to system shell)
@@ -120,11 +120,13 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     const initializeSession = async (): Promise<void> => {
       // Spawn a new PTY process
       try {
+        const effectiveCwd = cwd ?? '~'
+
         const result = await service.spawn({
           shell:
             shell ??
             (typeof process !== 'undefined' ? process.env.SHELL : undefined),
-          cwd,
+          cwd: effectiveCwd,
           env: env ?? {},
         })
 
@@ -145,7 +147,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           id: result.sessionId,
           pid: result.pid,
           name: `Session ${result.sessionId}`,
-          cwd,
+          cwd: effectiveCwd,
           shell:
             shell ??
             (typeof process !== 'undefined' ? process.env.SHELL : undefined) ??
