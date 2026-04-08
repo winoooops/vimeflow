@@ -11,39 +11,49 @@ import fs from 'fs'
 import path from 'path'
 
 describe('Feature 23: Final Phase 2 Verification', () => {
-  describe('1. 4-zone layout renders', () => {
-    test('renders icon rail, sidebar, terminal, and activity zones', () => {
+  describe('1. 5-zone layout renders', () => {
+    test('renders icon rail, sidebar, terminal, bottom drawer, and activity zones', () => {
       render(<WorkspaceView />)
 
       expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
+      expect(screen.getByTestId('bottom-drawer')).toBeInTheDocument()
       expect(screen.getByTestId('agent-activity')).toBeInTheDocument()
     })
   })
 
-  describe('2. Icon rail shows project avatars with active highlight', () => {
-    test('displays project avatars', () => {
+  describe('2. Icon rail shows navigation items', () => {
+    test('displays navigation bookmarks', () => {
       render(<WorkspaceView />)
 
-      // Check for project buttons in icon rail
-      const vimeflowButton = screen.getByRole('button', {
-        name: 'Vimeflow',
+      // Check for navigation items in icon rail
+      const dashboardButton = screen.getByRole('button', {
+        name: 'Dashboard',
       })
 
-      expect(vimeflowButton).toBeInTheDocument()
-      expect(vimeflowButton).toHaveTextContent('Vf')
+      expect(dashboardButton).toBeInTheDocument()
     })
 
-    test('highlights active project', () => {
+    test('navigation items have colorful bookmarks', () => {
       render(<WorkspaceView />)
 
-      const vimeflowButton = screen.getByRole('button', {
-        name: 'Vimeflow',
-      })
+      // Should have Dashboard, Source Control, Debugger, Settings
+      expect(
+        screen.getByRole('button', { name: 'Dashboard' })
+      ).toBeInTheDocument()
 
-      // First project should be active by default (has bg-primary-container/20 class)
-      expect(vimeflowButton.className).toContain('bg-primary-container/20')
+      expect(
+        screen.getByRole('button', { name: 'Source Control' })
+      ).toBeInTheDocument()
+
+      expect(
+        screen.getByRole('button', { name: 'Debugger' })
+      ).toBeInTheDocument()
+
+      expect(
+        screen.getByRole('button', { name: 'Settings' })
+      ).toBeInTheDocument()
     })
   })
 
@@ -66,13 +76,23 @@ describe('Feature 23: Final Phase 2 Verification', () => {
     })
   })
 
-  describe('4. Context switcher tabs work', () => {
-    test('displays Files, Editor, Diff tabs', () => {
+  describe('4. Sidebar has file explorer and bottom drawer has Editor/Diff', () => {
+    test('sidebar displays file explorer', () => {
       render(<WorkspaceView />)
 
-      expect(screen.getByText('Files')).toBeInTheDocument()
+      // File explorer should be in sidebar
+      expect(screen.getByText('File Explorer')).toBeInTheDocument()
+    })
+
+    test('bottom drawer displays Editor and Diff Viewer tabs', () => {
+      render(<WorkspaceView />)
+
+      const bottomDrawer = screen.getByTestId('bottom-drawer')
+
+      expect(bottomDrawer).toBeInTheDocument()
+      // Editor and Diff tabs are in bottom drawer, not sidebar
       expect(screen.getByText('Editor')).toBeInTheDocument()
-      expect(screen.getByText('Diff')).toBeInTheDocument()
+      expect(screen.getByText('Diff Viewer')).toBeInTheDocument()
     })
   })
 
@@ -177,10 +197,11 @@ describe('Feature 23: Final Phase 2 Verification', () => {
     test('workspace view renders without errors', () => {
       render(<WorkspaceView />)
 
-      // Verify all 4 zones are present
+      // Verify all 5 zones are present
       expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
+      expect(screen.getByTestId('bottom-drawer')).toBeInTheDocument()
       expect(screen.getByTestId('agent-activity')).toBeInTheDocument()
     })
   })

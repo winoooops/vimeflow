@@ -15,7 +15,10 @@ const BottomDrawer = (): ReactElement => {
   const [activeTab, setActiveTab] = useState<TabType>('editor')
 
   return (
-    <section className="h-1/3 bg-slate-900/95 backdrop-blur-2xl border-t border-white/5 flex flex-col z-30">
+    <section
+      data-testid="bottom-drawer"
+      className="h-1/3 bg-slate-900/95 backdrop-blur-2xl border-t border-white/5 flex flex-col z-30"
+    >
       {/* Tab Bar */}
       <div className="flex items-center px-8 h-12 bg-surface-container justify-between">
         {/* Left: Tab Buttons */}
@@ -71,7 +74,15 @@ const BottomDrawer = (): ReactElement => {
 
       {/* Content Area */}
       <div className="flex-1 font-mono text-xs p-6 overflow-y-auto bg-black/30">
-        {activeTab === 'editor' ? <EditorContent /> : <DiffContent />}
+        {activeTab === 'editor' ? (
+          <div data-testid="editor-panel">
+            <EditorContent />
+          </div>
+        ) : (
+          <div data-testid="diff-panel">
+            <DiffContent />
+          </div>
+        )}
       </div>
     </section>
   )

@@ -276,7 +276,7 @@
       "Fix any issues found",
       "Verify all checks pass"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [5, 9, 13, 17]
   },
   {
@@ -291,7 +291,7 @@
       "Fix any failing tests",
       "Re-run until all green"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [18]
   },
   {
@@ -307,7 +307,7 @@
       "Verify grid dimensions: 64px, 256px, flex, 320px",
       "Document any deviations in verification notes"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [19]
   }
 ]

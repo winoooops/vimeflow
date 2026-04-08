@@ -3,121 +3,16 @@ import { describe, test, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceView } from './WorkspaceView'
-import { mockProjects } from './data/mockProjects'
-import { mockSessions } from './data/mockSessions'
 
 /**
  * Integration tests for WorkspaceView
  *
  * These tests verify full user workflows and interactions between components:
- * - Project switching updates sidebar sessions
  * - Session switching updates terminal and activity panels
- * - Context panel switching in sidebar
+ * - BottomDrawer tab switching (Editor/Diff)
  * - Collapsible sections expand/collapse in Agent Activity
  */
 describe('WorkspaceView Integration Tests', () => {
-  describe('Project switching updates sidebar', () => {
-    test('switching projects updates sidebar session list', async (): Promise<void> => {
-      const user = userEvent.setup()
-      render(<WorkspaceView />)
-
-      const iconRail = screen.getByTestId('icon-rail')
-      const sidebar = screen.getByTestId('sidebar')
-
-      // Get all project buttons (excluding settings/new project buttons)
-      // Match full project names: "Vimeflow", "My Portfolio", "API Gateway", "Empty Project"
-      const allButtons = within(iconRail).getAllByRole('button')
-
-      const projectButtons = allButtons.filter(
-        (btn) =>
-          !btn.getAttribute('aria-label')?.includes('New project') &&
-          !btn.getAttribute('aria-label')?.includes('Settings')
-      )
-
-      // Initially, should show sessions from first project (proj-1)
-      const proj1Sessions = mockSessions.filter((s) => s.projectId === 'proj-1')
-      const initialSessionList = within(sidebar).getByTestId('session-list')
-
-      // Verify initial project sessions are shown
-      proj1Sessions.forEach((session) => {
-        expect(
-          within(initialSessionList).getByText(session.name)
-        ).toBeInTheDocument()
-      })
-
-      // Click second project button (proj-2 "Agent Dashboard")
-      await user.click(projectButtons[1])
-
-      // After switching, sidebar should show different sessions
-      const proj2Sessions = mockSessions.filter((s) => s.projectId === 'proj-2')
-      const updatedSessionList = within(sidebar).getByTestId('session-list')
-
-      // Verify proj-2 sessions are now shown
-      proj2Sessions.forEach((session) => {
-        expect(
-          within(updatedSessionList).getByText(session.name)
-        ).toBeInTheDocument()
-      })
-
-      // Verify proj-1 sessions are no longer shown
-      const allSessionText = updatedSessionList.textContent || ''
-      proj1Sessions.forEach((session) => {
-        expect(allSessionText).not.toContain(session.name)
-      })
-    })
-
-    test('switching to empty project shows "No sessions" in sidebar', async (): Promise<void> => {
-      const user = userEvent.setup()
-      render(<WorkspaceView />)
-
-      const iconRail = screen.getByTestId('icon-rail')
-      const sidebar = screen.getByTestId('sidebar')
-
-      // Find project buttons
-      const projectButtons = within(iconRail).getAllByRole('button')
-
-      // Find the Empty Project button (proj-4)
-      const emptyProject = mockProjects.find((p) => p.name === 'Empty Project')
-      expect(emptyProject).toBeDefined()
-
-      // Click the 4th project (Empty Project at index 3)
-      await user.click(projectButtons[3])
-
-      // Sidebar should show "No sessions" message
-      expect(within(sidebar).getByText('No sessions')).toBeInTheDocument()
-    })
-
-    test('switching back to original project restores its sessions', async (): Promise<void> => {
-      const user = userEvent.setup()
-      render(<WorkspaceView />)
-
-      const iconRail = screen.getByTestId('icon-rail')
-      const sidebar = screen.getByTestId('sidebar')
-      const allButtons = within(iconRail).getAllByRole('button')
-
-      const projectButtons = allButtons.filter(
-        (btn) =>
-          !btn.getAttribute('aria-label')?.includes('New project') &&
-          !btn.getAttribute('aria-label')?.includes('Settings')
-      )
-
-      // Remember initial project sessions
-      const proj1Sessions = mockSessions.filter((s) => s.projectId === 'proj-1')
-
-      // Switch to second project
-      await user.click(projectButtons[1])
-
-      // Switch back to first project
-      await user.click(projectButtons[0])
-
-      // Original sessions should be restored
-      const sessionList = within(sidebar).getByTestId('session-list')
-      proj1Sessions.forEach((session) => {
-        expect(within(sessionList).getByText(session.name)).toBeInTheDocument()
-      })
-    })
-  })
-
   describe('Session switching updates terminal and activity', () => {
     test('clicking session updates terminal zone tabs', async (): Promise<void> => {
       const user = userEvent.setup()
@@ -158,10 +53,6 @@ describe('WorkspaceView Integration Tests', () => {
 
       const sidebar = screen.getByTestId('sidebar')
       const agentActivity = screen.getByTestId('agent-activity')
-
-      // Get first project's first session name
-      const firstSession = mockSessions.find((s) => s.projectId === 'proj-1')
-      expect(firstSession).toBeDefined()
 
       // Get all session buttons from session list
       const sessionList = within(sidebar).getByTestId('session-list')
@@ -216,109 +107,86 @@ describe('WorkspaceView Integration Tests', () => {
     })
   })
 
-  describe('Context panel switching in sidebar', () => {
-    test('clicking Files tab shows FilesPanel', async (): Promise<void> => {
+  describe('BottomDrawer tab switching', () => {
+    test('clicking Editor tab shows Editor panel', async (): Promise<void> => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      const sidebar = screen.getByTestId('sidebar')
-      const contextSwitcher = within(sidebar).getByTestId('context-switcher')
+      const bottomDrawer = screen.getByTestId('bottom-drawer')
 
-      // Files should be active by default
-      const filesPanel = within(sidebar).queryByTestId('files-panel')
-      expect(filesPanel).toBeInTheDocument()
+      // Editor should be active by default
+      const editorPanel = within(bottomDrawer).queryByTestId('editor-panel')
+      expect(editorPanel).toBeInTheDocument()
 
-      // Click Files tab explicitly to verify it works
-      const filesTab = within(contextSwitcher).getByText('Files')
-      await user.click(filesTab)
-
-      // FilesPanel should still be visible
-      expect(within(sidebar).getByTestId('files-panel')).toBeInTheDocument()
-    })
-
-    test('clicking Editor tab shows EditorPanel', async (): Promise<void> => {
-      const user = userEvent.setup()
-      render(<WorkspaceView />)
-
-      const sidebar = screen.getByTestId('sidebar')
-      const contextSwitcher = within(sidebar).getByTestId('context-switcher')
-
-      // Click Editor tab
-      const editorTab = within(contextSwitcher).getByText('Editor')
+      // Click Editor tab explicitly to verify it works
+      const editorTab = within(bottomDrawer).getByText('Editor')
       await user.click(editorTab)
 
-      // EditorPanel should be visible
-      expect(within(sidebar).getByTestId('editor-panel')).toBeInTheDocument()
-
-      // FilesPanel should not be visible
+      // EditorPanel should still be visible
       expect(
-        within(sidebar).queryByTestId('files-panel')
-      ).not.toBeInTheDocument()
+        within(bottomDrawer).getByTestId('editor-panel')
+      ).toBeInTheDocument()
     })
 
-    test('clicking Diff tab shows DiffPanel', async (): Promise<void> => {
+    test('clicking Diff Viewer tab shows Diff panel', async (): Promise<void> => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      const sidebar = screen.getByTestId('sidebar')
-      const contextSwitcher = within(sidebar).getByTestId('context-switcher')
+      const bottomDrawer = screen.getByTestId('bottom-drawer')
 
-      // Click Diff tab
-      const diffTab = within(contextSwitcher).getByText('Diff')
+      // Click Diff Viewer tab
+      const diffTab = within(bottomDrawer).getByText('Diff Viewer')
       await user.click(diffTab)
 
       // DiffPanel should be visible
-      expect(within(sidebar).getByTestId('diff-panel')).toBeInTheDocument()
+      expect(within(bottomDrawer).getByTestId('diff-panel')).toBeInTheDocument()
 
-      // Other panels should not be visible
+      // EditorPanel should not be visible
       expect(
-        within(sidebar).queryByTestId('files-panel')
-      ).not.toBeInTheDocument()
-
-      expect(
-        within(sidebar).queryByTestId('editor-panel')
+        within(bottomDrawer).queryByTestId('editor-panel')
       ).not.toBeInTheDocument()
     })
 
-    test('context panel switches preserve session list visibility', async (): Promise<void> => {
+    test('switching back to Editor tab hides Diff panel', async (): Promise<void> => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      const sidebar = screen.getByTestId('sidebar')
-      const contextSwitcher = within(sidebar).getByTestId('context-switcher')
+      const bottomDrawer = screen.getByTestId('bottom-drawer')
 
-      // Session list should always be visible regardless of context panel
-      const sessionList = within(sidebar).getByTestId('session-list')
-      expect(sessionList).toBeInTheDocument()
+      // Click Diff Viewer tab
+      await user.click(within(bottomDrawer).getByText('Diff Viewer'))
 
-      // Switch to Editor
-      await user.click(within(contextSwitcher).getByText('Editor'))
-      expect(within(sidebar).getByTestId('session-list')).toBeInTheDocument()
-
-      // Switch to Diff
-      await user.click(within(contextSwitcher).getByText('Diff'))
-      expect(within(sidebar).getByTestId('session-list')).toBeInTheDocument()
-
-      // Switch back to Files
-      await user.click(within(contextSwitcher).getByText('Files'))
-      expect(within(sidebar).getByTestId('session-list')).toBeInTheDocument()
-    })
-
-    test('active context tab has correct visual styling', async (): Promise<void> => {
-      const user = userEvent.setup()
-      render(<WorkspaceView />)
-
-      const sidebar = screen.getByTestId('sidebar')
-      const contextSwitcher = within(sidebar).getByTestId('context-switcher')
-
-      const editorTab = within(contextSwitcher).getByText('Editor')
+      // Verify Diff is shown
+      expect(within(bottomDrawer).getByTestId('diff-panel')).toBeInTheDocument()
 
       // Click Editor tab
-      await user.click(editorTab)
+      await user.click(within(bottomDrawer).getByText('Editor'))
 
-      // Editor tab should have active styling
-      const editorButton = editorTab.closest('button')
-      expect(editorButton).toHaveClass('text-primary')
+      // Editor should be shown, Diff should be hidden
+      expect(
+        within(bottomDrawer).getByTestId('editor-panel')
+      ).toBeInTheDocument()
+
+      expect(
+        within(bottomDrawer).queryByTestId('diff-panel')
+      ).not.toBeInTheDocument()
+    })
+
+    test('active tab has correct visual styling', async (): Promise<void> => {
+      const user = userEvent.setup()
+      render(<WorkspaceView />)
+
+      const bottomDrawer = screen.getByTestId('bottom-drawer')
+      const diffTab = within(bottomDrawer).getByText('Diff Viewer')
+
+      // Click Diff Viewer tab
+      await user.click(diffTab)
+
+      // Diff tab should have active styling
+      const diffButton = diffTab.closest('button')
+      expect(diffButton).toHaveClass('text-primary')
+      expect(diffButton).toHaveClass('border-b-2')
+      expect(diffButton).toHaveClass('border-primary')
     })
   })
 

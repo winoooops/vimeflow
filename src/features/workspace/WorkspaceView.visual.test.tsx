@@ -23,14 +23,14 @@ import tailwindConfig from '../../../tailwind.config'
  */
 
 describe('WorkspaceView - Visual Verification (Feature #20)', () => {
-  describe('Layout: 4-Zone Architecture', () => {
-    test('grid layout has correct zone widths (48px, 260px, 1fr, 280px)', () => {
+  describe('Layout: 5-Zone Architecture (v2)', () => {
+    test('grid layout has correct zone widths (64px, 256px, 1fr, 320px)', () => {
       render(<WorkspaceView />)
       const workspace = screen.getByTestId('workspace-view')
 
       const match = /grid-cols-\[(.*?)\]/.exec(workspace.className)
       expect(match).toBeTruthy()
-      expect(match?.[1]).toBe('48px_260px_1fr_280px')
+      expect(match?.[1]).toBe('64px_256px_1fr_320px')
     })
 
     test('workspace uses full screen height', () => {
@@ -148,11 +148,11 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   })
 
   describe('Surface Hierarchy: Component Backgrounds', () => {
-    test('Icon Rail uses Level 1 surface (surface-container-low)', () => {
+    test('Icon Rail uses Level 0 surface (bg-surface)', () => {
       render(<WorkspaceView />)
       const iconRail = screen.getByTestId('icon-rail')
 
-      expect(iconRail.className).toContain('bg-surface-container-low')
+      expect(iconRail.className).toContain('bg-surface')
     })
 
     test('Sidebar uses Level 1 surface (surface-container-low)', () => {
@@ -193,13 +193,13 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(workspace.className).not.toContain('border-')
     })
 
-    test('ContextSwitcher uses no visible borders (structural separation via background only)', () => {
+    test('BottomDrawer uses subtle border for separation', () => {
       render(<WorkspaceView />)
-      const contextSwitcher = screen.getByTestId('context-switcher')
+      const bottomDrawer = screen.getByTestId('bottom-drawer')
 
-      // Should NOT have border-b or border-t classes
-      expect(contextSwitcher.className).not.toContain('border-b ')
-      expect(contextSwitcher.className).not.toContain('border-t ')
+      // BottomDrawer has border-t border-white/5 for subtle separation
+      expect(bottomDrawer.className).toContain('border-t')
+      expect(bottomDrawer.className).toContain('border-white/5')
     })
 
     test('sidebar session cards have no visible borders', () => {
@@ -221,31 +221,37 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   })
 
   describe('Design System Compliance Checklist', () => {
-    test('all zones render with correct structure', () => {
+    test('all 5 zones render with correct structure (v2)', () => {
       render(<WorkspaceView />)
 
-      // Icon Rail
+      // Icon Rail (navigation bookmarks)
       expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
 
-      // Sidebar with sessions
+      // Sidebar with sessions and file explorer
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
-      // Text is "Sessions" but rendered uppercase via CSS
-      expect(screen.getByText('Sessions')).toBeInTheDocument()
+      // Text is "Active Sessions"
+      expect(screen.getByText('Active Sessions')).toBeInTheDocument()
 
       // Terminal Zone with tab bar
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
       expect(screen.getByTestId('tab-bar')).toBeInTheDocument()
 
+      // Bottom Drawer with Editor/Diff tabs
+      expect(screen.getByTestId('bottom-drawer')).toBeInTheDocument()
+
       // Agent Activity panel
       expect(screen.getByTestId('agent-activity')).toBeInTheDocument()
     })
 
-    test('context switcher tabs (Files/Editor/Diff) are present', () => {
+    test('bottom drawer has Editor/Diff tabs, sidebar has file explorer (v2)', () => {
       render(<WorkspaceView />)
 
-      expect(screen.getByText('Files')).toBeInTheDocument()
+      // Editor and Diff Viewer tabs are in bottom drawer
       expect(screen.getByText('Editor')).toBeInTheDocument()
-      expect(screen.getByText('Diff')).toBeInTheDocument()
+      expect(screen.getByText('Diff Viewer')).toBeInTheDocument()
+
+      // File Explorer is in sidebar
+      expect(screen.getByText('File Explorer')).toBeInTheDocument()
     })
 
     test('agent activity shows status card and metrics', () => {
