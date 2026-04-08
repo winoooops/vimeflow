@@ -188,7 +188,7 @@ describe('TerminalPane', () => {
 
     const container = screen.getByTestId('terminal-pane')
     expect(container).toHaveClass('w-full')
-    expect(container).toHaveClass('flex-1')
+    expect(container).toHaveClass('h-full')
   })
 
   describe('PTY Service Integration', () => {

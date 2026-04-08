@@ -216,19 +216,19 @@ export const TerminalPane = ({
   return (
     <div
       data-testid="terminal-pane-wrapper"
-      className="relative flex w-full h-full flex-col overflow-hidden"
+      className="relative w-full h-full overflow-hidden border-2 border-red-500"
     >
+      {/* DEBUG: status overlay */}
+      <div className="absolute bottom-0 left-0 z-50 bg-black/80 px-2 py-1 text-xs font-mono text-green-400">
+        env={isTauri() ? 'tauri' : 'browser'} | status={status} | debug=
+        {debugInfo}
+      </div>
       <div
         ref={containerRef}
         data-testid="terminal-pane"
         data-session-id={sessionId}
-        className="w-full flex-1 min-h-0"
+        className="w-full h-full"
       />
-      {/* DEBUG: status bar (bottom of terminal area) */}
-      <div className="shrink-0 bg-black/80 px-2 py-0.5 text-xs font-mono text-green-400 border-t border-green-900/40">
-        env={isTauri() ? 'tauri' : 'browser'} | status={status} | debug=
-        {debugInfo}
-      </div>
     </div>
   )
 }
