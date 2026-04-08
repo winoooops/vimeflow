@@ -130,6 +130,8 @@ describe('TerminalPane', () => {
     })
   })
 
+  // WebGL addon test removed — addon disabled due to broken WebGL2 in Tauri webview
+
   test('opens terminal in container', async () => {
     render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
 

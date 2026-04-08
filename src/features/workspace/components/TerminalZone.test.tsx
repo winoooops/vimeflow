@@ -201,7 +201,8 @@ describe('TerminalZone', () => {
 
     expect(rootElement).toHaveClass('flex')
     expect(rootElement).toHaveClass('flex-col')
-    expect(rootElement).toHaveClass('h-full')
+    expect(rootElement).toHaveClass('flex-1')
+    expect(rootElement).toHaveClass('min-h-0')
   })
 
   // TerminalPane integration tests (Feature #30)
