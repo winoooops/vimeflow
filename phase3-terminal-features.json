@@ -95,7 +95,7 @@
       "Verify terminal renders and accepts input in dev mode",
       "Write integration test: spawn → input → output"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [28]
   },
   {

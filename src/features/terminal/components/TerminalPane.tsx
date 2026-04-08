@@ -4,6 +4,11 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { catppuccinMocha, toXtermTheme } from '../theme/catppuccin-mocha'
+import { useTerminal } from '../hooks/useTerminal'
+import {
+  MockTerminalService,
+  type ITerminalService,
+} from '../services/terminalService'
 import '@xterm/xterm/css/xterm.css'
 
 export interface TerminalPaneProps {
@@ -11,23 +16,61 @@ export interface TerminalPaneProps {
    * Terminal session identifier
    */
   sessionId: string
+
+  /**
+   * Current working directory for the shell
+   */
+  cwd: string
+
+  /**
+   * Optional terminal service (defaults to MockTerminalService in dev)
+   */
+  service?: ITerminalService
+
+  /**
+   * Optional shell path (defaults to system shell)
+   * @default undefined
+   */
+  shell?: string
+
+  /**
+   * Optional environment variables
+   * @default undefined
+   */
+  env?: Record<string, string>
 }
 
 /**
- * TerminalPane component - renders an xterm.js terminal
+ * TerminalPane component - renders an xterm.js terminal with PTY integration
  *
  * Features:
  * - Catppuccin Mocha theme
  * - Responsive sizing with fit addon
  * - Hardware-accelerated rendering with WebGL addon
+ * - PTY process spawning and lifecycle management
+ * - Bidirectional data flow (xterm ↔ PTY)
  * - Automatic cleanup on unmount
  */
 export const TerminalPane = ({
   sessionId,
+  cwd,
+  service = new MockTerminalService(),
+  shell = undefined,
+  env = undefined,
 }: TerminalPaneProps): ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+
+  // Use terminal hook for PTY lifecycle management
+  const { resize } = useTerminal({
+    terminal: terminalRef.current,
+    service,
+    cwd,
+    shell,
+    env,
+    sessionId,
+  })
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -68,11 +111,13 @@ export const TerminalPane = ({
     // Fit terminal to container
     fitAddon.fit()
 
-    // Handle resize events
-    const resizeDisposable = terminal.onResize(() => {
-      // Resize handler - will be used for PTY resize in useTerminal hook
-      // For now, just ensure terminal is fitted
+    // Handle resize events - notify PTY of terminal size changes
+    const resizeDisposable = terminal.onResize(({ cols, rows }) => {
+      // Fit terminal to container
       fitAddon.fit()
+
+      // Notify PTY service of size change
+      resize(cols, rows)
     })
 
     // Store terminal reference
@@ -85,7 +130,7 @@ export const TerminalPane = ({
       terminalRef.current = null
       fitAddonRef.current = null
     }
-  }, [sessionId])
+  }, [sessionId, resize])
 
   return (
     <div
