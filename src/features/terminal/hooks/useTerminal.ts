@@ -99,7 +99,10 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     const spawnPty = async (): Promise<void> => {
       try {
         const result = await service.spawn({
-          shell: shell ?? process.env.SHELL ?? '/bin/bash',
+          shell:
+            shell ??
+            (typeof process !== 'undefined' ? process.env.SHELL : undefined) ??
+            '/bin/bash',
           cwd,
           env: env ?? {},
         })
@@ -117,7 +120,10 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           pid: result.pid,
           name: `Session ${result.sessionId}`,
           cwd,
-          shell: shell ?? process.env.SHELL ?? '/bin/bash',
+          shell:
+            shell ??
+            (typeof process !== 'undefined' ? process.env.SHELL : undefined) ??
+            '/bin/bash',
           status: 'running',
           createdAt: new Date(),
           env: {},
