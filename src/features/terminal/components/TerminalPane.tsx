@@ -8,6 +8,7 @@ import {
   createTerminalService,
   type ITerminalService,
 } from '../services/terminalService'
+import { isTauri } from '../../../lib/environment'
 import '@xterm/xterm/css/xterm.css'
 
 // P2 Fix: Global cache of terminal instances per sessionId
@@ -220,8 +221,8 @@ export const TerminalPane = ({
     >
       {/* DEBUG: status overlay */}
       <div className="absolute top-0 right-0 z-50 bg-black/80 px-2 py-1 text-xs font-mono text-green-400">
-        status={status} | terminal={terminal ? 'yes' : 'no'} | session=
-        {sessionId} | debug={debugInfo}
+        env={isTauri() ? 'tauri' : 'browser'} | status={status} | debug=
+        {debugInfo}
       </div>
       <div
         ref={containerRef}

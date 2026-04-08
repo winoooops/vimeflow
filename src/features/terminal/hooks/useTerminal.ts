@@ -161,15 +161,20 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         setStatus('running')
         setError(null)
         setDebugInfo(`running pid=${String(result.pid)}`)
-      } catch (err) {
+      } catch (err: unknown) {
         if (!isMountedRef.current) {
           setDebugInfo('error-unmounted')
 
           return
         }
 
+        // Tauri invoke() throws strings, not Error objects
         const errorMessage =
-          err instanceof Error ? err.message : 'Failed to spawn PTY'
+          err instanceof Error
+            ? err.message
+            : typeof err === 'string'
+              ? err
+              : 'Failed to spawn PTY'
         setStatus('error')
         setError(errorMessage)
         setDebugInfo(`error: ${errorMessage}`)
