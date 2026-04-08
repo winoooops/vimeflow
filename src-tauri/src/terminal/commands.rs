@@ -83,12 +83,14 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         old_session.child.wait().ok();
     }
 
-    // Store session
+    // Store session with generation counter
+    let generation = state.next_generation();
     let session = ManagedSession {
         master: pty_pair.master,
         writer,
         child,
         cwd: request.cwd.clone(),
+        generation,
     };
     state.insert(request.session_id.clone(), session);
 
@@ -97,7 +99,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
     let state_clone = state.inner().clone();
     std::thread::spawn(move || {
         let rt = tauri::async_runtime::handle();
-        if let Err(e) = rt.block_on(read_pty_output(app, state_clone, session_id)) {
+        if let Err(e) = rt.block_on(read_pty_output(app, state_clone, session_id, generation)) {
             log::error!("PTY output reader error: {}", e);
         }
     });
@@ -155,6 +157,7 @@ async fn read_pty_output<R: tauri::Runtime>(
     app: AppHandle<R>,
     state: PtyState,
     session_id: SessionId,
+    generation: u64,
 ) -> anyhow::Result<()> {
     log::info!("Starting PTY output reader for session: {}", session_id);
 
@@ -212,8 +215,9 @@ async fn read_pty_output<R: tauri::Runtime>(
         }
     }
 
-    // Clean up session
-    state.remove(&session_id);
+    // Clean up session only if this reader's generation still owns it.
+    // If the session was replaced (ID reuse), a newer generation owns the slot.
+    state.remove_if_generation(&session_id, generation);
 
     Ok(())
 }

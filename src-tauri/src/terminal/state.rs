@@ -2,9 +2,13 @@
 
 use portable_pty::{Child, MasterPty};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::types::SessionId;
+
+/// Global generation counter — monotonically increasing across all sessions
+static GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Managed PTY session with process handle and master PTY
 pub struct ManagedSession {
@@ -17,6 +21,8 @@ pub struct ManagedSession {
     /// Current working directory
     #[allow(dead_code)]
     pub cwd: String,
+    /// Generation counter — distinguishes old vs new session on ID reuse
+    pub generation: u64,
 }
 
 /// Thread-safe PTY session state
@@ -36,6 +42,11 @@ impl PtyState {
         }
     }
 
+    /// Allocate the next generation number
+    pub fn next_generation(&self) -> u64 {
+        GENERATION.fetch_add(1, Ordering::Relaxed)
+    }
+
     /// Insert a new PTY session
     pub fn insert(&self, session_id: SessionId, session: ManagedSession) {
         let mut sessions = self.sessions.lock().expect("failed to lock sessions");
@@ -46,6 +57,24 @@ impl PtyState {
     pub fn remove(&self, session_id: &SessionId) -> Option<ManagedSession> {
         let mut sessions = self.sessions.lock().expect("failed to lock sessions");
         sessions.remove(session_id)
+    }
+
+    /// Remove a PTY session only if its generation matches the expected value.
+    /// Prevents a stale reader thread from removing a replacement session.
+    pub fn remove_if_generation(
+        &self,
+        session_id: &SessionId,
+        expected_gen: u64,
+    ) -> Option<ManagedSession> {
+        let mut sessions = self.sessions.lock().expect("failed to lock sessions");
+        let matches = sessions
+            .get(session_id)
+            .is_some_and(|s| s.generation == expected_gen);
+        if matches {
+            sessions.remove(session_id)
+        } else {
+            None
+        }
     }
 
     /// Check if a session exists
