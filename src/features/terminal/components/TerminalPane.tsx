@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -54,7 +54,7 @@ export interface TerminalPaneProps {
 export const TerminalPane = ({
   sessionId,
   cwd,
-  service = new MockTerminalService(),
+  service = undefined,
   shell = undefined,
   env = undefined,
 }: TerminalPaneProps): ReactElement => {
@@ -62,14 +62,28 @@ export const TerminalPane = ({
   const [terminal, setTerminal] = useState<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
 
+  // P2 Fix: Memoize default service instance to prevent recreation on every render
+  const stableService = useMemo(
+    () => service ?? new MockTerminalService(),
+    [service]
+  )
+
   // Use terminal hook for PTY lifecycle management
   const { resize } = useTerminal({
     terminal,
-    service,
+    service: stableService,
     cwd,
     shell,
     env,
   })
+
+  // P1 Fix: Store resize callback in ref to avoid terminal recreation when it changes
+  const resizeRef = useRef(resize)
+
+  // Keep ref up to date
+  useEffect(() => {
+    resizeRef.current = resize
+  }, [resize])
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -115,8 +129,8 @@ export const TerminalPane = ({
       // Fit terminal to container
       fitAddon.fit()
 
-      // Notify PTY service of size change
-      resize(cols, rows)
+      // Notify PTY service of size change using ref (stable across renders)
+      resizeRef.current(cols, rows)
     })
 
     // Store terminal in state to trigger useTerminal hook
@@ -129,7 +143,7 @@ export const TerminalPane = ({
       setTerminal(null)
       fitAddonRef.current = null
     }
-  }, [sessionId, resize])
+  }, [sessionId])
 
   return (
     <div

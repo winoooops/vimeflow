@@ -264,4 +264,66 @@ describe('TerminalPane', () => {
       // Will simulate resize and verify service.resize called
     })
   })
+
+  describe('Stability and Performance (Codex Review Findings)', () => {
+    test('P2: keeps service instance stable across re-renders', async () => {
+      // Render component without explicit service prop (uses default)
+      const { rerender } = render(
+        <TerminalPane sessionId="test-session" cwd="/home/user" />
+      )
+
+      await waitFor(() => {
+        expect(useTerminal).toHaveBeenCalled()
+      })
+
+      const firstCallService =
+        vi.mocked(useTerminal).mock.calls[0]?.[0]?.service
+
+      // Clear mocks to count new calls
+      vi.mocked(useTerminal).mockClear()
+
+      // Trigger re-render with same props
+      rerender(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+
+      await waitFor(() => {
+        expect(useTerminal).toHaveBeenCalled()
+      })
+
+      const secondCallService =
+        vi.mocked(useTerminal).mock.calls[0]?.[0]?.service
+
+      // Service instance should be the same across re-renders
+      expect(firstCallService).toBe(secondCallService)
+    })
+
+    test('P1: does not recreate terminal when resize callback changes', async () => {
+      // Render component
+      const { rerender } = render(
+        <TerminalPane sessionId="test-session" cwd="/home/user" />
+      )
+
+      await waitFor(() => {
+        expect(Terminal).toHaveBeenCalledTimes(1)
+      })
+
+      // Update mockUseTerminal to return a new resize callback (simulating session change)
+      mockUseTerminal = {
+        ...mockUseTerminal,
+        resize: vi.fn(), // New function reference
+      }
+      vi.mocked(useTerminal).mockReturnValue(mockUseTerminal)
+
+      // Clear Terminal mock to count new calls
+      vi.mocked(Terminal).mockClear()
+
+      // Trigger re-render (this would happen when resize callback changes)
+      rerender(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+
+      // Wait a bit to ensure effect would run if it was going to
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      // Terminal should NOT be recreated
+      expect(Terminal).not.toHaveBeenCalled()
+    })
+  })
 })
