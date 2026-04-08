@@ -50,9 +50,24 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         })
         .map_err(|e| format!("failed to open PTY: {}", e))?;
 
+    // Expand ~ to home directory, then validate
+    let raw_cwd = if request.cwd == "~" || request.cwd.starts_with("~/") {
+        if let Some(home) = dirs::home_dir() {
+            if request.cwd == "~" {
+                home
+            } else {
+                home.join(&request.cwd[2..])
+            }
+        } else {
+            std::path::PathBuf::from(&request.cwd)
+        }
+    } else {
+        std::path::PathBuf::from(&request.cwd)
+    };
+
     // Validate cwd exists and is a directory (prevent path traversal)
-    let cwd = std::fs::canonicalize(&request.cwd)
-        .map_err(|e| format!("invalid cwd '{}': {}", request.cwd, e))?;
+    let cwd = std::fs::canonicalize(&raw_cwd)
+        .map_err(|e| format!("invalid cwd '{}': {}", raw_cwd.display(), e))?;
     if !cwd.is_dir() {
         return Err(format!("cwd is not a directory: {}", cwd.display()));
     }

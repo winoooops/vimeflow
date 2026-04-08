@@ -63,6 +63,14 @@ export const TerminalZone = ({
         </button>
       </div>
 
+      {/* DEBUG: zone info (dev only) */}
+      {import.meta.env.DEV && (
+        <div className="bg-yellow-900/50 px-2 py-0.5 text-xs font-mono text-yellow-300">
+          DEBUG TerminalZone: {sessions.length} sessions | active=
+          {activeSessionId ?? 'none'}
+        </div>
+      )}
+
       {/* Terminal content area — relative + absolute inner to give xterm explicit dimensions */}
       <div
         data-testid="terminal-content"

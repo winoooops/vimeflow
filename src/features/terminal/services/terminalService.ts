@@ -5,6 +5,8 @@ import type {
   PTYResizeParams,
   PTYKillParams,
 } from '../types'
+import { isTauri } from '../../../lib/environment'
+import { TauriTerminalService } from './tauriTerminalService'
 
 /**
  * Terminal service interface for PTY operations
@@ -277,11 +279,22 @@ export class MockTerminalService implements ITerminalService {
   }
 }
 
+// Singleton Tauri service — all panes share one set of global event listeners.
+// Without this, each TerminalPane mounts its own listeners and PTY events
+// are processed N times as panes accumulate.
+let tauriServiceInstance: TauriTerminalService | null = null
+
 /**
- * Service factory - returns appropriate service based on environment
+ * Service factory - returns appropriate service based on environment.
+ * TauriTerminalService is a singleton; MockTerminalService is per-call
+ * so each test/pane gets isolated mock state.
  */
 export function createTerminalService(): ITerminalService {
-  // For now, always return mock service
-  // TODO: Replace with TauriTerminalService when Tauri backend is ready
+  if (isTauri()) {
+    tauriServiceInstance ??= new TauriTerminalService()
+
+    return tauriServiceInstance
+  }
+
   return new MockTerminalService()
 }

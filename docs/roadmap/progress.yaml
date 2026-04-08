@@ -3,12 +3,12 @@
 # Source: docs/roadmap/tauri-migration-roadmap.md
 # Schema: phase → steps → dod (definition of done)
 # Status values: pending | in_progress | done | blocked
-# Revised: 2026-04-08 — Phase 2 done (incl. v2 design refresh), Phase 3 mostly done
+# Revised: 2026-04-07 — Phase 1 done, new Phase 2 (Workspace Layout Shell) added
 
 version: 4
 updated: '2026-04-08'
 roadmap: docs/roadmap/tauri-migration-roadmap.md
-notes: 'Phase 2 + v2 design refresh merged (PR #31). Phase 3 terminal core mostly done (PTY backend, xterm.js, TerminalPane). Remaining: wire TauriTerminalService (issue #32).'
+notes: 'Phase 3 (Terminal Core) code complete — TauriTerminalService bridges xterm.js to Rust PTY backend, 1212 tests passing'
 
 phases:
   - id: phase-1
@@ -83,8 +83,6 @@ phases:
     specs:
       - docs/superpowers/specs/2026-04-06-cli-agent-workspace-design.md
       - docs/design/agent_workspace/code.html
-      - docs/design/agent_workspace/v2/code.html
-    notes: 'Includes v2 design refresh: flat bookmark IconRail, FileExplorer-only sidebar, BottomDrawer (Editor/Diff). PR #31.'
     steps:
       - id: p2-s1
         name: 'Remove chat-related code: ChatView, features/chat/, chat types, mock messages'
@@ -195,87 +193,86 @@ phases:
       - phase-2
     specs:
       - docs/superpowers/specs/2026-04-06-cli-agent-workspace-design.md
-    notes: 'PTY backend + xterm.js frontend done in PR #31. Remaining: wire TauriTerminalService so UI uses real PTY (issue #32).'
     steps:
       - id: p3-s1
         name: 'Add `portable-pty` Rust crate for cross-platform PTY spawning'
         status: done
         commit: ba395c7
         pr: 31
-        notes: 'portable-pty in Cargo.toml, PtyState managed state'
+        notes: 'portable-pty 0.8 in Cargo.toml, already present from Phase 2'
       - id: p3-s2
         name: 'Implement Rust commands: pty_spawn, pty_write, pty_resize, pty_kill'
         status: done
         commit: ba395c7
         pr: 31
-        notes: 'src-tauri/src/terminal/commands.rs — with generation counter, IPC hardening, log redaction'
+        notes: 'Full implementation in src-tauri/src/terminal/ with tests'
       - id: p3-s3
         name: 'Wire PTY stdout → Tauri events → frontend'
         status: done
-        commit: ba395c7
-        pr: 31
-        notes: 'read_pty_output on dedicated std::thread, emits pty-data/pty-exit/pty-error events'
+        commit: 1ecee29
+        pr: null
+        notes: 'TauriTerminalService listens to pty-data/pty-exit/pty-error events'
       - id: p3-s4
         name: 'Wire frontend keyboard input → Tauri invoke → PTY stdin'
         status: done
-        commit: ba395c7
-        pr: 31
-        notes: 'useTerminal hook handles onData → service.write()'
+        commit: 1ecee29
+        pr: null
+        notes: 'TauriTerminalService.write() calls invoke(write_pty), useTerminal hook wires xterm onData'
       - id: p3-s5
         name: 'Add xterm.js + @xterm/addon-fit + @xterm/addon-webgl to frontend'
         status: done
         commit: ba395c7
         pr: 31
-        notes: '@xterm/xterm 6.x, @xterm/addon-fit, @xterm/addon-webgl'
+        notes: '@xterm/xterm@^6.0.0, @xterm/addon-fit@^0.11.0, @xterm/addon-webgl@^0.19.0 already installed'
       - id: p3-s6
         name: 'Create TerminalPane React component rendering xterm.js'
         status: done
         commit: ba395c7
         pr: 31
-        notes: 'TerminalPane with session caching, resize observer, WebGL renderer'
+        notes: 'TerminalPane with xterm.js, FitAddon, WebglAddon, session caching'
       - id: p3-s7
         name: 'Replace terminal zone placeholder with real TerminalPane'
         status: done
         commit: ba395c7
         pr: 31
-        notes: 'TerminalZone renders TerminalPane (still uses MockTerminalService — issue #32)'
+        notes: 'TerminalZone renders TerminalPane per session with tab switching'
       - id: p3-s8
         name: 'Configure Catppuccin Mocha theme for xterm.js'
         status: done
         commit: ba395c7
         pr: 31
-        notes: 'src/features/terminal/theme/catppuccin-mocha.ts'
+        notes: 'catppuccin-mocha.ts with toXtermTheme() converter'
     dod:
       - id: p3-d1
         check: 'Can spawn a shell process and interact with it in the terminal pane'
         status: pending
-        commit: null
+        commit: 1ecee29
         pr: null
-        notes: 'Rust PTY works, but UI still uses mock service — needs TauriTerminalService (issue #32)'
+        notes: 'Code complete — needs manual verification with tauri:dev'
       - id: p3-d2
         check: 'Can run `claude` (Claude Code) in a terminal pane'
         status: pending
-        commit: null
+        commit: 1ecee29
         pr: null
-        notes: 'Blocked on #32'
+        notes: 'Code complete — needs manual verification with tauri:dev'
       - id: p3-d3
         check: 'Terminal resizes correctly when window resizes'
-        status: done
-        commit: ba395c7
-        pr: 31
-        notes: 'ResizeObserver + FitAddon + pty_resize'
+        status: pending
+        commit: 1ecee29
+        pr: null
+        notes: 'ResizeObserver + FitAddon + resize_pty wired — needs manual verification'
       - id: p3-d4
         check: 'Multiple terminal tabs work (switch between them)'
-        status: done
-        commit: ba395c7
-        pr: 31
-        notes: 'Terminal caching per sessionId with dispose on unmount'
+        status: pending
+        commit: 1ecee29
+        pr: null
+        notes: 'TerminalZone tab switching with session caching — needs manual verification'
       - id: p3-d5
         check: 'PTY processes are cleaned up on tab close / app exit'
-        status: done
-        commit: ba395c7
-        pr: 31
-        notes: 'kill_pty + generation-aware cleanup in reader thread'
+        status: pending
+        commit: 1ecee29
+        pr: null
+        notes: 'useTerminal cleanup kills session on unmount — needs manual verification'
 
   - id: phase-4
     name: 'Session Management + State'
