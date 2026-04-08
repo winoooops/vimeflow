@@ -15,6 +15,13 @@ Element.prototype.scrollIntoView = (): void => {
   // No-op mock implementation
 }
 
+// Mock ResizeObserver for all tests (not available in jsdom)
+global.ResizeObserver = vi.fn().mockImplementation(() => ({
+  observe: vi.fn(),
+  unobserve: vi.fn(),
+  disconnect: vi.fn(),
+}))
+
 // Mock matchMedia for xterm.js (used for DPI detection and color scheme)
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

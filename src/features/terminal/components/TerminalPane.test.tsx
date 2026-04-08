@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
-import { TerminalPane } from './TerminalPane'
+import { TerminalPane, clearTerminalCache } from './TerminalPane'
 import { useTerminal, type UseTerminalReturn } from '../hooks/useTerminal'
 
 // Mock xterm modules
@@ -37,6 +37,13 @@ describe('TerminalPane', () => {
   let mockUseTerminal: UseTerminalReturn
 
   beforeEach(() => {
+    // Mock ResizeObserver
+    global.ResizeObserver = vi.fn().mockImplementation(() => ({
+      observe: vi.fn(),
+      unobserve: vi.fn(),
+      disconnect: vi.fn(),
+    }))
+
     // Mock terminal instance
     mockTerminal = {
       open: vi.fn(),
@@ -81,6 +88,8 @@ describe('TerminalPane', () => {
 
   afterEach(() => {
     vi.clearAllMocks()
+    // Clear terminal cache to ensure test isolation
+    clearTerminalCache()
   })
 
   test('renders terminal container', () => {
@@ -161,7 +170,7 @@ describe('TerminalPane', () => {
     })
   })
 
-  test('disposes terminal on unmount', async () => {
+  test('keeps terminal in cache on unmount (for session persistence)', async () => {
     const { unmount } = render(
       <TerminalPane sessionId="test-session" cwd="/home/user" />
     )
@@ -171,11 +180,22 @@ describe('TerminalPane', () => {
       expect(mockTerminal.open).toHaveBeenCalled()
     })
 
-    // Unmount component
+    const terminalInstance = mockTerminal
+
+    // Unmount component (simulating switching to another session)
     unmount()
 
-    // Verify cleanup
-    expect(mockTerminal.dispose).toHaveBeenCalled()
+    // P2 Fix: Terminal should NOT be disposed on unmount
+    // It should stay in cache for when we switch back to this session
+    expect(terminalInstance.dispose).not.toHaveBeenCalled()
+
+    // Verify we can reuse the terminal by mounting again
+    render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+
+    await waitFor(() => {
+      // The same terminal instance should be reused
+      expect(mockTerminal.open).toHaveBeenCalledTimes(2) // Called once on initial render, once on remount
+    })
   })
 
   test('passes sessionId prop correctly', () => {
@@ -262,6 +282,95 @@ describe('TerminalPane', () => {
       })
 
       // Will simulate resize and verify service.resize called
+    })
+  })
+
+  describe('Resize and Session Management (Codex Review Findings)', () => {
+    test('P2: handles container resize with ResizeObserver', async () => {
+      // Mock ResizeObserver
+      let resizeCallback: ResizeObserverCallback | undefined
+      const mockObserve = vi.fn()
+      const mockDisconnect = vi.fn()
+
+      global.ResizeObserver = vi
+        .fn()
+        .mockImplementation((callback: ResizeObserverCallback) => {
+          resizeCallback = callback
+
+          return {
+            observe: mockObserve,
+            unobserve: vi.fn(),
+            disconnect: mockDisconnect,
+          }
+        })
+
+      render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+
+      await waitFor(() => {
+        expect(global.ResizeObserver).toHaveBeenCalled()
+        expect(mockObserve).toHaveBeenCalled()
+      })
+
+      // Clear fit calls from initial render
+      mockFitAddon.fit.mockClear()
+
+      // Simulate container resize
+      const container = screen.getByTestId('terminal-pane')
+
+      const mockEntry = {
+        target: container,
+        contentRect: {
+          width: 800,
+          height: 600,
+          top: 0,
+          left: 0,
+          bottom: 600,
+          right: 800,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        },
+        borderBoxSize: [],
+        contentBoxSize: [],
+        devicePixelContentBoxSize: [],
+      } as unknown as ResizeObserverEntry
+
+      if (resizeCallback) {
+        resizeCallback([mockEntry], {} as ResizeObserver)
+      }
+
+      // fitAddon.fit() should be called when container resizes
+      await waitFor(() => {
+        expect(mockFitAddon.fit).toHaveBeenCalled()
+      })
+    })
+
+    test('P2: does not kill session when switching to different sessionId', async () => {
+      // Render with session A
+      const { rerender } = render(
+        <TerminalPane sessionId="session-a" cwd="/home/user" />
+      )
+
+      await waitFor(() => {
+        expect(mockTerminal.open).toHaveBeenCalled()
+      })
+
+      const firstTerminal = mockTerminal
+
+      // Clear mocks to detect new calls
+      vi.mocked(Terminal).mockClear()
+      vi.mocked(FitAddon).mockClear()
+
+      // Switch to session B (should NOT dispose first terminal)
+      rerender(<TerminalPane sessionId="session-b" cwd="/home/user" />)
+
+      // Wait for new terminal to be created
+      await waitFor(() => {
+        expect(Terminal).toHaveBeenCalled()
+      })
+
+      // First terminal should NOT be disposed (it should remain alive for session A)
+      expect(firstTerminal.dispose).not.toHaveBeenCalled()
     })
   })
 

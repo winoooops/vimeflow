@@ -2,7 +2,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { TerminalPane } from './components/TerminalPane'
+import { TerminalPane, clearTerminalCache } from './components/TerminalPane'
 import { MockTerminalService } from './services/terminalService'
 import type { ITerminalService } from './services/terminalService'
 
@@ -39,6 +39,9 @@ describe('Terminal Integration Tests', () => {
   })
 
   afterEach(async () => {
+    // P2 Fix: Clear terminal cache to prevent leaks across tests
+    clearTerminalCache()
+
     // Clean up any remaining sessions
     const activeSessions = mockServiceInstance.getActiveSessions()
     for (const sessionId of activeSessions) {

@@ -11,6 +11,20 @@ import {
 } from '../services/terminalService'
 import '@xterm/xterm/css/xterm.css'
 
+// P2 Fix: Global cache of terminal instances per sessionId
+// This allows terminals to persist when switching between sessions
+const terminalCache = new Map<
+  string,
+  { terminal: Terminal; fitAddon: FitAddon }
+>()
+
+/**
+ * Clear terminal cache (for testing only)
+ */
+export const clearTerminalCache = (): void => {
+  terminalCache.clear()
+}
+
 export interface TerminalPaneProps {
   /**
    * Terminal session identifier
@@ -95,44 +109,67 @@ export const TerminalPane = ({
     }
   }, [terminal, resize, status])
 
+  // P2 Fix: Terminal instance management with caching
+  // Terminals persist when switching sessions to avoid killing PTY processes
   useEffect(() => {
     if (!containerRef.current) {
       return
     }
 
-    // Create terminal instance
-    const newTerminal = new Terminal({
-      cursorBlink: true,
-      fontSize: 14,
-      fontFamily: '"JetBrains Mono", "Courier New", Courier, monospace',
-      theme: toXtermTheme(catppuccinMocha),
-      scrollback: 10000,
-      allowProposedApi: true,
-    })
+    // Check if we already have a terminal for this session
+    const cached = terminalCache.get(sessionId)
+    let newTerminal: Terminal
+    let fitAddon: FitAddon
 
-    // Create and load fit addon
-    const fitAddon = new FitAddon()
-    newTerminal.loadAddon(fitAddon)
-    fitAddonRef.current = fitAddon
+    if (cached) {
+      // Reuse existing terminal from cache
+      newTerminal = cached.terminal
+      fitAddon = cached.fitAddon
+      fitAddonRef.current = fitAddon
 
-    // Try to load WebGL addon (graceful degradation if not supported)
-    try {
-      const webglAddon = new WebglAddon()
-      newTerminal.loadAddon(webglAddon)
-      webglAddon.onContextLoss(() => {
-        webglAddon.dispose()
+      // Re-open terminal in the new container
+      newTerminal.open(containerRef.current)
+
+      // Re-fit to new container
+      fitAddon.fit()
+    } else {
+      // Create new terminal instance
+      newTerminal = new Terminal({
+        cursorBlink: true,
+        fontSize: 14,
+        fontFamily: '"JetBrains Mono", "Courier New", Courier, monospace',
+        theme: toXtermTheme(catppuccinMocha),
+        scrollback: 10000,
+        allowProposedApi: true,
       })
-    } catch (error) {
-      // WebGL not supported - continue with canvas renderer
-      // Error intentionally ignored for graceful degradation
-      void error
+
+      // Create and load fit addon
+      fitAddon = new FitAddon()
+      newTerminal.loadAddon(fitAddon)
+      fitAddonRef.current = fitAddon
+
+      // Try to load WebGL addon (graceful degradation if not supported)
+      try {
+        const webglAddon = new WebglAddon()
+        newTerminal.loadAddon(webglAddon)
+        webglAddon.onContextLoss(() => {
+          webglAddon.dispose()
+        })
+      } catch (error) {
+        // WebGL not supported - continue with canvas renderer
+        // Error intentionally ignored for graceful degradation
+        void error
+      }
+
+      // Open terminal in container
+      newTerminal.open(containerRef.current)
+
+      // Fit terminal to container
+      fitAddon.fit()
+
+      // Cache the terminal instance for this session
+      terminalCache.set(sessionId, { terminal: newTerminal, fitAddon })
     }
-
-    // Open terminal in container
-    newTerminal.open(containerRef.current)
-
-    // Fit terminal to container
-    fitAddon.fit()
 
     // Send initial terminal size to PTY (avoids default 80×24 when terminal is actually larger)
     // This will be a no-op on first render but ensures PTY gets correct size on subsequent recreations
@@ -147,13 +184,22 @@ export const TerminalPane = ({
       resizeRef.current(cols, rows)
     })
 
+    // P2 Fix: Add ResizeObserver to detect container size changes
+    // When the container resizes (e.g., window resize, panel collapse),
+    // fit the terminal which will trigger the onResize event above
+    const resizeObserver = new ResizeObserver(() => {
+      fitAddon.fit()
+    })
+    resizeObserver.observe(containerRef.current)
+
     // Store terminal in state to trigger useTerminal hook
     setTerminal(newTerminal)
 
-    // Cleanup on unmount
+    // Cleanup when switching sessions (but keep terminal in cache)
     return (): void => {
+      resizeObserver.disconnect()
       resizeDisposable.dispose()
-      newTerminal.dispose()
+      // Do NOT dispose terminal - keep it in cache for when we switch back
       setTerminal(null)
       fitAddonRef.current = null
     }
