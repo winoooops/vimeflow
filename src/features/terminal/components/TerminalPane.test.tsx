@@ -130,6 +130,11 @@ describe('TerminalPane', () => {
     })
   })
 
+<<<<<<< worktree-harness-terminal-core
+=======
+  // WebGL addon test removed — addon disabled due to broken WebGL2 in Tauri webview
+
+>>>>>>> main
   test('opens terminal in container', async () => {
     render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
 

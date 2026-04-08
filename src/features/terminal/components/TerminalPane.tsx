@@ -2,6 +2,12 @@ import type { ReactElement } from 'react'
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+<<<<<<< worktree-harness-terminal-core
+=======
+// WebGL addon disabled — causes blank terminal in Tauri's webview (WebView2/WebKit)
+// due to broken WebGL2 context. Canvas2D renderer works fine. Re-enable with feature flag
+// when WebGL support is confirmed on all target platforms.
+>>>>>>> main
 import { catppuccinMocha, toXtermTheme } from '../theme/catppuccin-mocha'
 import { useTerminal } from '../hooks/useTerminal'
 import {
@@ -73,7 +79,7 @@ export interface TerminalPaneProps {
  * Features:
  * - Catppuccin Mocha theme
  * - Responsive sizing with fit addon
- * - Hardware-accelerated rendering with WebGL addon
+ * - Canvas2D renderer (WebGL disabled — broken in Tauri webview)
  * - PTY process spawning and lifecycle management
  * - Bidirectional data flow (xterm ↔ PTY)
  * - Automatic cleanup on unmount
@@ -161,10 +167,13 @@ export const TerminalPane = ({
       newTerminal.loadAddon(fitAddon)
       fitAddonRef.current = fitAddon
 
+<<<<<<< worktree-harness-terminal-core
       // WebGL addon intentionally disabled — Tauri's webview (WebView2/WebKit)
       // has a silently broken WebGL2 context that causes a blank terminal.
       // Canvas2D fallback works correctly. See PR #33 for details.
 
+=======
+>>>>>>> main
       // Open terminal in container
       newTerminal.open(containerRef.current)
 
