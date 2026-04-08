@@ -47,6 +47,7 @@ export const Sidebar = ({
       </h2>
       <button
         type="button"
+        onClick={onNewInstance}
         className="material-symbols-outlined text-lg text-primary transition-transform hover:rotate-90"
         aria-label="Add session"
         title="Add session"

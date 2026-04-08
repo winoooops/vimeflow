@@ -96,7 +96,33 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
 
     let currentSession: TerminalSession | null = null
 
-    const spawnPty = async (): Promise<void> => {
+    const initializeSession = async (): Promise<void> => {
+      // If sessionId is provided, reconnect to existing session
+      if (sessionId) {
+        const reconnectedSession: TerminalSession = {
+          id: sessionId,
+          pid: -1, // Unknown PID for reconnected sessions
+          name: `Session ${sessionId}`,
+          cwd,
+          shell:
+            shell ??
+            (typeof process !== 'undefined' ? process.env.SHELL : undefined) ??
+            '/bin/bash',
+          status: 'running',
+          createdAt: new Date(),
+          env: {},
+          lastActivityAt: new Date(),
+        }
+
+        currentSession = reconnectedSession
+        setSession(reconnectedSession)
+        setStatus('running')
+        setError(null)
+
+        return
+      }
+
+      // Otherwise, spawn a new PTY
       try {
         const result = await service.spawn({
           shell:
@@ -146,7 +172,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       }
     }
 
-    void spawnPty()
+    void initializeSession()
 
     // Cleanup session when dependencies change or on unmount
     return (): void => {

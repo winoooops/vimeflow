@@ -80,6 +80,29 @@ describe('useTerminal', () => {
     })
   })
 
+  test('reconnects to existing session when sessionId is provided', async () => {
+    const existingSessionId = 'existing-session-123'
+
+    const { result } = renderHook(() =>
+      useTerminal({
+        terminal: mockTerminal,
+        service: mockService,
+        cwd: '/home/user',
+        sessionId: existingSessionId,
+      })
+    )
+
+    await waitFor(() => {
+      // Should NOT spawn a new PTY when reconnecting
+      expect(mockService.spawn).not.toHaveBeenCalled()
+
+      // Should create a session object with the provided ID
+      expect(result.current.session).toBeDefined()
+      expect(result.current.session?.id).toBe(existingSessionId)
+      expect(result.current.status).toBe('running')
+    })
+  })
+
   test('returns idle status initially', () => {
     const { result } = renderHook(() =>
       useTerminal({
@@ -303,30 +326,30 @@ describe('useTerminal', () => {
 
   test('updates session when sessionId changes', async () => {
     const { result, rerender } = renderHook(
-      ({ sessionId }: { sessionId: string }) =>
+      ({ sessionId }: { sessionId?: string }) =>
         useTerminal({
           terminal: mockTerminal,
           service: mockService,
           cwd: '/home/user',
           sessionId,
         }),
-      { initialProps: { sessionId: 'session-1' } }
+      { initialProps: { sessionId: undefined as string | undefined } }
     )
 
     await waitFor(() => {
       expect(result.current.status).toBe('running')
+      expect(mockService.spawn).toHaveBeenCalledOnce()
     })
 
     const firstSessionId = result.current.session!.id
 
-    // Kill the first session
-    await mockService.kill({ sessionId: firstSessionId })
-
-    // Change sessionId prop
-    rerender({ sessionId: 'session-2' })
+    // Change to reconnect to a different session
+    rerender({ sessionId: 'existing-session-123' })
 
     await waitFor(() => {
-      expect(mockService.spawn).toHaveBeenCalledTimes(2)
+      // Should reconnect without spawning again
+      expect(mockService.spawn).toHaveBeenCalledOnce()
+      expect(result.current.session!.id).toBe('existing-session-123')
       expect(result.current.session!.id).not.toBe(firstSessionId)
     })
   })

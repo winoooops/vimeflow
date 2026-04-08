@@ -137,6 +137,24 @@ describe('Sidebar', () => {
     expect(addButton).toHaveClass('hover:rotate-90')
   })
 
+  test('calls onNewInstance when add session button is clicked', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        onNewInstance={mockOnNewInstance}
+      />
+    )
+
+    const addButton = screen.getByRole('button', { name: 'Add session' })
+    await user.click(addButton)
+
+    expect(mockOnNewInstance).toHaveBeenCalledOnce()
+  })
+
   test('renders all sessions', () => {
     render(
       <Sidebar
