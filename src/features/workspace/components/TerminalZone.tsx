@@ -1,5 +1,4 @@
 import type { ReactElement } from 'react'
-import { useMemo } from 'react'
 import type { Session } from '../types'
 import { TerminalPane } from '../../terminal/components/TerminalPane'
 
@@ -21,12 +20,6 @@ export const TerminalZone = ({
       onSessionChange(sessionId)
     }
   }
-
-  // Find active session
-  const activeSession = useMemo(
-    () => sessions.find((s) => s.id === activeSessionId),
-    [sessions, activeSessionId]
-  )
 
   return (
     <div data-testid="terminal-zone" className="flex h-full flex-col">
@@ -72,22 +65,30 @@ export const TerminalZone = ({
 
       {/* Terminal content area */}
       <div data-testid="terminal-content" className="flex-1 bg-surface">
-        {activeSession ? (
-          <div
-            data-testid="terminal-pane"
-            data-session-id={activeSession.id}
-            data-cwd={activeSession.workingDirectory}
-            className="h-full"
-          >
-            <TerminalPane
-              sessionId={activeSession.id}
-              cwd={activeSession.workingDirectory}
-            />
-          </div>
-        ) : (
+        {sessions.length === 0 ? (
           <div className="flex h-full items-center justify-center font-mono text-on-surface/60">
             <p>No active session. Click + to create a new terminal.</p>
           </div>
+        ) : (
+          // Render all sessions but hide inactive ones to keep PTY sessions alive
+          sessions.map((session) => {
+            const isActive = session.id === activeSessionId
+
+            return (
+              <div
+                key={session.id}
+                data-testid="terminal-pane"
+                data-session-id={session.id}
+                data-cwd={session.workingDirectory}
+                className={`h-full ${isActive ? '' : 'hidden'}`}
+              >
+                <TerminalPane
+                  sessionId={session.id}
+                  cwd={session.workingDirectory}
+                />
+              </div>
+            )
+          })
         )}
       </div>
     </div>

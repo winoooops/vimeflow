@@ -121,8 +121,8 @@ describe('TerminalZone', () => {
     expect(terminalContent).toBeInTheDocument()
     // Dark background matching design spec (#121221)
     expect(terminalContent).toHaveClass('bg-surface')
-    // Should have TerminalPane (mocked)
-    expect(screen.getByTestId('terminal-pane-mock')).toBeInTheDocument()
+    // Should have TerminalPanes (mocked) - one for each session
+    expect(screen.getAllByTestId('terminal-pane-mock')).toHaveLength(2)
   })
 
   test('renders with empty sessions array', () => {
@@ -208,45 +208,69 @@ describe('TerminalZone', () => {
   test('renders TerminalPane when active session exists', () => {
     render(<TerminalZone {...defaultProps} />)
 
-    // TerminalPane wrapper should be rendered
-    const terminalPane = screen.getByTestId('terminal-pane')
-    expect(terminalPane).toBeInTheDocument()
+    // TerminalPane wrappers should be rendered for all sessions
+    const terminalPanes = screen.getAllByTestId('terminal-pane')
+    expect(terminalPanes).toHaveLength(2)
 
-    // Mocked TerminalPane component should be present
-    expect(screen.getByTestId('terminal-pane-mock')).toBeInTheDocument()
+    // Mocked TerminalPane components should be present
+    expect(screen.getAllByTestId('terminal-pane-mock')).toHaveLength(2)
   })
 
   test('passes active session id to TerminalPane', () => {
     render(<TerminalZone {...defaultProps} />)
 
-    const terminalPane = screen.getByTestId('terminal-pane')
-    // TerminalPane wrapper should have the sessionId
-    expect(terminalPane).toHaveAttribute('data-session-id', 'sess-1')
+    const terminalPanes = screen.getAllByTestId('terminal-pane')
 
-    // Mocked component should also receive it
-    const mockPane = screen.getByTestId('terminal-pane-mock')
-    expect(mockPane).toHaveAttribute('data-session-id', 'sess-1')
+    // Find the active session's pane
+    const activePane = terminalPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-1'
+    )
+
+    expect(activePane).toBeInTheDocument()
+    expect(activePane).toHaveAttribute('data-session-id', 'sess-1')
+
+    // Mocked component should also have the correct sessionId
+    const mockPanes = screen.getAllByTestId('terminal-pane-mock')
+
+    const activeMockPane = mockPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-1'
+    )
+    expect(activeMockPane).toHaveAttribute('data-session-id', 'sess-1')
   })
 
   test('passes active session working directory to TerminalPane', () => {
     render(<TerminalZone {...defaultProps} />)
 
-    const terminalPane = screen.getByTestId('terminal-pane')
-    // TerminalPane wrapper should have the cwd
-    expect(terminalPane).toHaveAttribute(
+    const terminalPanes = screen.getAllByTestId('terminal-pane')
+
+    // Find the active session's pane
+    const activePane = terminalPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-1'
+    )
+
+    expect(activePane).toHaveAttribute(
       'data-cwd',
       '/home/user/projects/Vimeflow'
     )
 
     // Mocked component should also receive it
-    const mockPane = screen.getByTestId('terminal-pane-mock')
-    expect(mockPane).toHaveAttribute('data-cwd', '/home/user/projects/Vimeflow')
+    const mockPanes = screen.getAllByTestId('terminal-pane-mock')
+
+    const activeMockPane = mockPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-1'
+    )
+    expect(activeMockPane).toHaveAttribute(
+      'data-cwd',
+      '/home/user/projects/Vimeflow'
+    )
   })
 
-  test('does not render TerminalPane when no active session', () => {
-    render(<TerminalZone {...defaultProps} activeSessionId={null} />)
+  test('does not render TerminalPane when no sessions exist', () => {
+    render(
+      <TerminalZone {...defaultProps} sessions={[]} activeSessionId={null} />
+    )
 
-    // TerminalPane should not be rendered
+    // TerminalPane should not be rendered when there are no sessions
     expect(screen.queryByTestId('terminal-pane')).not.toBeInTheDocument()
     expect(screen.queryByTestId('terminal-pane-mock')).not.toBeInTheDocument()
 
@@ -259,23 +283,80 @@ describe('TerminalZone', () => {
   test('updates TerminalPane when active session changes', () => {
     const { rerender } = render(<TerminalZone {...defaultProps} />)
 
-    // Initial session
-    let terminalPane = screen.getByTestId('terminal-pane')
-    let mockPane = screen.getByTestId('terminal-pane-mock')
-    expect(terminalPane).toHaveAttribute('data-session-id', 'sess-1')
-    expect(mockPane).toHaveAttribute('data-session-id', 'sess-1')
+    // Both sessions are rendered, but only sess-1 is visible initially
+    let terminalPanes = screen.getAllByTestId('terminal-pane')
+    expect(terminalPanes).toHaveLength(2)
+
+    const session1Pane = terminalPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-1'
+    )
+
+    const session2Pane = terminalPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-2'
+    )
+
+    expect(session1Pane).toHaveAttribute('data-session-id', 'sess-1')
+    expect(session2Pane).toHaveAttribute('data-session-id', 'sess-2')
 
     // Change to second session
     rerender(<TerminalZone {...defaultProps} activeSessionId="sess-2" />)
 
-    terminalPane = screen.getByTestId('terminal-pane')
-    mockPane = screen.getByTestId('terminal-pane-mock')
-    expect(terminalPane).toHaveAttribute('data-session-id', 'sess-2')
-    expect(mockPane).toHaveAttribute('data-session-id', 'sess-2')
-    expect(terminalPane).toHaveAttribute(
+    // Both should still be rendered
+    terminalPanes = screen.getAllByTestId('terminal-pane')
+    expect(terminalPanes).toHaveLength(2)
+
+    // Verify session 2 pane has correct attributes
+    const updatedSession2Pane = terminalPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-2'
+    )
+    expect(updatedSession2Pane).toHaveAttribute('data-session-id', 'sess-2')
+    expect(updatedSession2Pane).toHaveAttribute(
       'data-cwd',
       '/home/user/projects/Vimeflow'
     )
-    expect(mockPane).toHaveAttribute('data-cwd', '/home/user/projects/Vimeflow')
+  })
+
+  // P2 Codex Finding: Keep terminal sessions alive when switching tabs
+  test('keeps all terminal sessions mounted when switching tabs', () => {
+    const { rerender } = render(<TerminalZone {...defaultProps} />)
+
+    // Both sessions should have TerminalPanes rendered
+    const terminalPanes = screen.getAllByTestId('terminal-pane')
+    expect(terminalPanes).toHaveLength(2)
+
+    // First session should be visible (active)
+    const session1Pane = terminalPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-1'
+    )
+
+    const session2Pane = terminalPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-2'
+    )
+
+    expect(session1Pane).toBeInTheDocument()
+    expect(session2Pane).toBeInTheDocument()
+
+    // Active session should be visible, inactive should be hidden
+    expect(session1Pane).not.toHaveClass('hidden')
+    expect(session2Pane).toHaveClass('hidden')
+
+    // Switch to second session
+    rerender(<TerminalZone {...defaultProps} activeSessionId="sess-2" />)
+
+    // Both TerminalPanes should still be mounted (not unmounted)
+    const updatedPanes = screen.getAllByTestId('terminal-pane')
+    expect(updatedPanes).toHaveLength(2)
+
+    // Visibility should swap
+    const updatedSession1Pane = updatedPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-1'
+    )
+
+    const updatedSession2Pane = updatedPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-2'
+    )
+
+    expect(updatedSession1Pane).toHaveClass('hidden')
+    expect(updatedSession2Pane).not.toHaveClass('hidden')
   })
 })
