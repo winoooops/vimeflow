@@ -75,7 +75,7 @@ export interface TerminalPaneProps {
  * Features:
  * - Catppuccin Mocha theme
  * - Responsive sizing with fit addon
- * - Hardware-accelerated rendering with WebGL addon
+ * - Canvas2D renderer (WebGL disabled — broken in Tauri webview)
  * - PTY process spawning and lifecycle management
  * - Bidirectional data flow (xterm ↔ PTY)
  * - Automatic cleanup on unmount
