@@ -54,8 +54,8 @@ export interface TerminalTab {
  * PTY spawn command parameters
  */
 export interface PTYSpawnParams {
-  /** Shell to spawn (e.g., '/bin/bash', 'claude') */
-  shell: string
+  /** Shell to spawn (e.g., '/bin/bash', 'claude'). If undefined, backend chooses platform default. */
+  shell?: string
   /** Working directory */
   cwd: string
   /** Environment variables */

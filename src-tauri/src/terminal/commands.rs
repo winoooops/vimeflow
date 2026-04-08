@@ -67,9 +67,16 @@ pub async fn spawn_pty<R: tauri::Runtime>(
 
     log::info!("Spawned shell with PID: {}", pid);
 
+    // Get writer from master PTY (call take_writer once and store it)
+    let writer = pty_pair
+        .master
+        .take_writer()
+        .map_err(|e| format!("failed to get PTY writer: {}", e))?;
+
     // Store session
     let session = ManagedSession {
         master: pty_pair.master,
+        writer,
         child,
         cwd: request.cwd.clone(),
     };
@@ -308,6 +315,9 @@ mod tests {
             .await
             .expect("spawn should succeed");
 
+        // Give background reader task time to initialize session
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
         // Verify session exists
         assert!(state.contains(&"test-kill".to_string()));
 
@@ -322,6 +332,66 @@ mod tests {
         assert!(
             !state.contains(&"test-kill".to_string()),
             "session should be removed after kill"
+        );
+    }
+
+    #[tokio::test]
+    async fn write_pty_succeeds_multiple_times() {
+        let app = create_test_app();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+
+        // Spawn a session
+        let spawn_request = SpawnPtyRequest {
+            session_id: "test-multi-write".to_string(),
+            cwd: std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            shell: None,
+            env: None,
+        };
+
+        spawn_pty(handle.clone(), state.clone(), spawn_request)
+            .await
+            .expect("spawn should succeed");
+
+        // Write first command
+        let write1 = WritePtyRequest {
+            session_id: "test-multi-write".to_string(),
+            data: "echo hello\n".to_string(),
+        };
+
+        let result1 = write_pty(state.clone(), write1);
+        assert!(result1.is_ok(), "first write should succeed");
+
+        // Write second command - this exposes the bug
+        let write2 = WritePtyRequest {
+            session_id: "test-multi-write".to_string(),
+            data: "echo world\n".to_string(),
+        };
+
+        let result2 = write_pty(state.clone(), write2);
+        assert!(
+            result2.is_ok(),
+            "second write should succeed (bug: take_writer consumes writer)"
+        );
+
+        // Write third command
+        let write3 = WritePtyRequest {
+            session_id: "test-multi-write".to_string(),
+            data: "exit\n".to_string(),
+        };
+
+        let result3 = write_pty(state.clone(), write3);
+        assert!(result3.is_ok(), "third write should succeed");
+
+        // Cleanup
+        let _ = kill_pty(
+            state.clone(),
+            KillPtyRequest {
+                session_id: "test-multi-write".to_string(),
+            },
         );
     }
 }

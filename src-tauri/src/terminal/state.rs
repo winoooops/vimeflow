@@ -8,8 +8,10 @@ use super::types::SessionId;
 
 /// Managed PTY session with process handle and master PTY
 pub struct ManagedSession {
-    /// Master PTY (for writing input)
+    /// Master PTY (for resizing)
     pub master: Box<dyn MasterPty + Send>,
+    /// PTY writer (for sending input)
+    pub writer: Box<dyn std::io::Write + Send>,
     /// Child process handle
     pub child: Box<dyn Child + Send + Sync>,
     /// Current working directory
@@ -68,11 +70,8 @@ impl PtyState {
             .ok_or_else(|| anyhow::anyhow!("session not found: {}", session_id))?;
 
         use std::io::Write;
-        let mut writer = session.master.take_writer().map_err(|e| {
-            anyhow::anyhow!("failed to get PTY writer: {}", e)
-        })?;
-
-        writer
+        session
+            .writer
             .write_all(data)
             .map_err(|e| anyhow::anyhow!("failed to write to PTY: {}", e))?;
 

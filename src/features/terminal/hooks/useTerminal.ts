@@ -103,8 +103,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         const result = await service.spawn({
           shell:
             shell ??
-            (typeof process !== 'undefined' ? process.env.SHELL : undefined) ??
-            '/bin/bash',
+            (typeof process !== 'undefined' ? process.env.SHELL : undefined),
           cwd,
           env: env ?? {},
         })
@@ -127,7 +126,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           shell:
             shell ??
             (typeof process !== 'undefined' ? process.env.SHELL : undefined) ??
-            '/bin/bash',
+            'default',
           status: 'running',
           createdAt: new Date(),
           env: {},

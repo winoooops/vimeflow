@@ -71,7 +71,7 @@ describe('useTerminal', () => {
     await waitFor(() => {
       expect(mockService.spawn).toHaveBeenCalledOnce()
       expect(mockService.spawn).toHaveBeenCalledWith({
-        shell: expect.any(String),
+        shell: typeof process !== 'undefined' ? process.env.SHELL : undefined, // Uses process.env.SHELL if available, undefined otherwise
         cwd: '/home/user',
         env: expect.any(Object),
       })
@@ -273,6 +273,33 @@ describe('useTerminal', () => {
     expect(mockService.spawn).not.toHaveBeenCalled()
   })
 
+  test('passes undefined shell to let backend choose platform default', async () => {
+    // Save original process.env
+    const originalEnv = process.env
+
+    // Mock process.env.SHELL as undefined
+    delete (process.env as { SHELL?: string }).SHELL
+
+    renderHook(() =>
+      useTerminal({
+        terminal: mockTerminal,
+        service: mockService,
+        cwd: '/home/user',
+      })
+    )
+
+    await waitFor(() => {
+      expect(mockService.spawn).toHaveBeenCalledWith({
+        shell: undefined, // Should be undefined, not '/bin/bash'
+        cwd: '/home/user',
+        env: expect.any(Object),
+      })
+    })
+
+    // Restore original env
+    process.env = originalEnv
+  })
+
   test('handles custom shell', async () => {
     renderHook(() =>
       useTerminal({
@@ -306,7 +333,7 @@ describe('useTerminal', () => {
 
     await waitFor(() => {
       expect(mockService.spawn).toHaveBeenCalledWith({
-        shell: expect.any(String),
+        shell: typeof process !== 'undefined' ? process.env.SHELL : undefined, // Uses process.env.SHELL if available
         cwd: '/home/user',
         env: customEnv,
       })
