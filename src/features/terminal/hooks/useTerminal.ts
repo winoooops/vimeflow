@@ -53,6 +53,11 @@ export interface UseTerminalReturn {
    * Resize the PTY
    */
   resize: (cols: number, rows: number) => void
+
+  /**
+   * DEBUG: spawn lifecycle trace (remove before merge)
+   */
+  debugInfo: string
 }
 
 /**
@@ -75,6 +80,9 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   )
   const [error, setError] = useState<string | null>(null)
 
+  // DEBUG: trace spawn lifecycle
+  const [debugInfo, setDebugInfo] = useState('init')
+
   // Track if component is mounted to prevent state updates after unmount
   const isMountedRef = useRef(true)
 
@@ -91,9 +99,21 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
 
   // Spawn PTY on mount
   useEffect(() => {
+    // Reset mounted ref on each effect run (fixes StrictMode double-mount where
+    // the first fake unmount sets this to false and it never resets)
+    isMountedRef.current = true
+
     if (!terminal) {
+      setDebugInfo('no-terminal')
+
       return
     }
+
+    // Clear stale output from previous session (StrictMode cleanup writes
+    // "[Process exited]" to the cached terminal before the new session starts)
+    terminal.clear()
+
+    setDebugInfo('spawning...')
 
     let currentSession: TerminalSession | null = null
 
@@ -110,6 +130,9 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
 
         if (!isMountedRef.current) {
           // Component unmounted during spawn, kill the session
+          setDebugInfo(
+            `killed-unmounted (mounted=${String(isMountedRef.current)})`
+          )
           await service.kill({ sessionId: result.sessionId })
 
           return
@@ -137,8 +160,11 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         setSession(newSession)
         setStatus('running')
         setError(null)
+        setDebugInfo(`running pid=${String(result.pid)}`)
       } catch (err) {
         if (!isMountedRef.current) {
+          setDebugInfo('error-unmounted')
+
           return
         }
 
@@ -146,6 +172,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           err instanceof Error ? err.message : 'Failed to spawn PTY'
         setStatus('error')
         setError(errorMessage)
+        setDebugInfo(`error: ${errorMessage}`)
       }
     }
 
@@ -261,5 +288,6 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     status,
     error,
     resize,
+    debugInfo,
   }
 }

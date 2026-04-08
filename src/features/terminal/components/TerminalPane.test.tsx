@@ -70,6 +70,7 @@ describe('TerminalPane', () => {
       status: 'running',
       error: null,
       resize: vi.fn(),
+      debugInfo: 'test',
     }
 
     // Setup mocks

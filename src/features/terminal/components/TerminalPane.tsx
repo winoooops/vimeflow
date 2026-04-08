@@ -5,7 +5,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { catppuccinMocha, toXtermTheme } from '../theme/catppuccin-mocha'
 import { useTerminal } from '../hooks/useTerminal'
 import {
-  MockTerminalService,
+  createTerminalService,
   type ITerminalService,
 } from '../services/terminalService'
 import '@xterm/xterm/css/xterm.css'
@@ -88,14 +88,14 @@ export const TerminalPane = ({
   const [terminal, setTerminal] = useState<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
 
-  // P2 Fix: Memoize default service instance to prevent recreation on every render
+  // Memoize service: use injected service (tests) or factory (Tauri/browser auto-detect)
   const stableService = useMemo(
-    () => service ?? new MockTerminalService(),
+    () => service ?? createTerminalService(),
     [service]
   )
 
   // Use terminal hook for PTY lifecycle management
-  const { resize, status } = useTerminal({
+  const { resize, status, debugInfo } = useTerminal({
     terminal,
     service: stableService,
     cwd,
@@ -215,10 +215,20 @@ export const TerminalPane = ({
 
   return (
     <div
-      ref={containerRef}
-      data-testid="terminal-pane"
-      data-session-id={sessionId}
-      className="w-full h-full overflow-hidden"
-    />
+      data-testid="terminal-pane-wrapper"
+      className="relative w-full h-full overflow-hidden border-2 border-red-500"
+    >
+      {/* DEBUG: status overlay */}
+      <div className="absolute top-0 right-0 z-50 bg-black/80 px-2 py-1 text-xs font-mono text-green-400">
+        status={status} | terminal={terminal ? 'yes' : 'no'} | session=
+        {sessionId} | debug={debugInfo}
+      </div>
+      <div
+        ref={containerRef}
+        data-testid="terminal-pane"
+        data-session-id={sessionId}
+        className="w-full h-full"
+      />
+    </div>
   )
 }
