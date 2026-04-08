@@ -1,66 +1,12 @@
-import { useState, useCallback } from 'react'
 import type { ReactElement } from 'react'
-import type { TabName } from './components/layout/TopTabBar'
-import ChatView from './features/chat/ChatView'
-import { DiffView } from './features/diff/DiffView'
-import { EditorView } from './features/editor/EditorView'
 import { CommandPalette } from './features/command-palette/CommandPalette'
+import { WorkspaceView } from './features/workspace/WorkspaceView'
 
-const App = (): ReactElement => {
-  const [activeTab, setActiveTab] = useState<TabName>('Chat')
-  const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null)
-  const [isContextPanelOpen, setIsContextPanelOpen] = useState<boolean>(true)
-
-  const handleTabChange = (tab: TabName): void => {
-    setActiveTab(tab)
-  }
-
-  const handleToggleContextPanel = useCallback((): void => {
-    setIsContextPanelOpen((prev) => !prev)
-  }, [])
-
-  const handleClearSelectedDiffFile = useCallback((): void => {
-    setSelectedDiffFile(null)
-  }, [])
-
-  const renderActiveTab = (): ReactElement => {
-    switch (activeTab) {
-      case 'Diff':
-        return (
-          <DiffView
-            onTabChange={handleTabChange}
-            selectedDiffFile={selectedDiffFile}
-            onClearSelectedFile={handleClearSelectedDiffFile}
-            isContextPanelOpen={isContextPanelOpen}
-            onToggleContextPanel={handleToggleContextPanel}
-          />
-        )
-      case 'Editor':
-        return (
-          <EditorView
-            onTabChange={handleTabChange}
-            isContextPanelOpen={isContextPanelOpen}
-            onToggleContextPanel={handleToggleContextPanel}
-          />
-        )
-      case 'Chat':
-      default:
-        return (
-          <ChatView
-            onTabChange={handleTabChange}
-            isContextPanelOpen={isContextPanelOpen}
-            onToggleContextPanel={handleToggleContextPanel}
-          />
-        )
-    }
-  }
-
-  return (
-    <>
-      {renderActiveTab()}
-      <CommandPalette />
-    </>
-  )
-}
+const App = (): ReactElement => (
+  <>
+    <WorkspaceView />
+    <CommandPalette />
+  </>
+)
 
 export default App

@@ -1,7 +1,26 @@
+import type { ReactElement } from 'react'
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import App from './App'
+
+// Mock WorkspaceView to avoid rendering the full workspace in App tests
+vi.mock('./features/workspace/WorkspaceView', () => {
+  const MockedWorkspaceView = (): ReactElement => (
+    <div data-testid="workspace-view">Mocked WorkspaceView</div>
+  )
+
+  return {
+    WorkspaceView: MockedWorkspaceView,
+    default: MockedWorkspaceView,
+  }
+})
+
+// Mock CommandPalette to keep tests focused on App composition
+vi.mock('./features/command-palette/CommandPalette', () => ({
+  CommandPalette: (): ReactElement => (
+    <div data-testid="command-palette">Mocked CommandPalette</div>
+  ),
+}))
 
 describe('App', () => {
   test('renders without crashing', () => {
@@ -9,39 +28,14 @@ describe('App', () => {
     expect(document.body).toBeTruthy()
   })
 
-  test('renders ChatView by default', () => {
+  test('renders WorkspaceView as primary component', () => {
     render(<App />)
-    expect(screen.getByTestId('chat-view')).toBeInTheDocument()
-    expect(screen.getByTestId('message-thread')).toBeInTheDocument()
-    expect(screen.getByTestId('message-input')).toBeInTheDocument()
+    expect(screen.getByTestId('workspace-view')).toBeInTheDocument()
   })
 
-  test('renders shared layout components', () => {
+  test('renders CommandPalette as overlay', () => {
     render(<App />)
-    expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
-    expect(screen.getByTestId('sidebar')).toBeInTheDocument()
-    expect(screen.getByTestId('top-tab-bar')).toBeInTheDocument()
-    expect(screen.getByTestId('context-panel')).toBeInTheDocument()
-  })
-
-  test('switches back to ChatView when Chat tab is clicked from Diff', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-
-    // Go to Diff
-    await user.click(screen.getByRole('button', { name: 'Diff' }))
-    expect(screen.getByTestId('diff-view')).toBeInTheDocument()
-
-    // Go back to Chat
-    await user.click(screen.getByRole('button', { name: 'Chat' }))
-    expect(screen.getByTestId('chat-view')).toBeInTheDocument()
-    expect(screen.queryByTestId('diff-view')).not.toBeInTheDocument()
-  })
-
-  test('Chat tab is active by default', () => {
-    render(<App />)
-    const chatTab = screen.getByRole('button', { name: 'Chat' })
-    expect(chatTab).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByTestId('command-palette')).toBeInTheDocument()
   })
 
   test('is an arrow-function component', () => {
@@ -49,57 +43,14 @@ describe('App', () => {
     expect(App.prototype).toBeUndefined()
   })
 
-  test('switches to DiffView when Diff tab is clicked', async () => {
-    const user = userEvent.setup()
+  test('does not render placeholder content', () => {
     render(<App />)
+    expect(
+      screen.queryByText('Vimeflow Workspace (Phase 2)')
+    ).not.toBeInTheDocument()
 
-    const diffTab = screen.getByRole('button', { name: 'Diff' })
-    await user.click(diffTab)
-
-    expect(screen.getByTestId('diff-view')).toBeInTheDocument()
-    expect(screen.queryByTestId('chat-view')).not.toBeInTheDocument()
-  })
-
-  test('Diff tab becomes active after clicking it', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-
-    await user.click(screen.getByRole('button', { name: 'Diff' }))
-    const diffTab = screen.getByRole('button', { name: 'Diff' })
-    expect(diffTab).toHaveAttribute('aria-current', 'page')
-  })
-
-  test('switches to EditorView when Editor tab is clicked', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-
-    const editorTab = screen.getByRole('button', { name: 'Editor' })
-    await user.click(editorTab)
-
-    expect(screen.getByTestId('editor-view')).toBeInTheDocument()
-    expect(screen.queryByTestId('chat-view')).not.toBeInTheDocument()
-  })
-
-  test('Editor tab becomes active after clicking it', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-
-    await user.click(screen.getByRole('button', { name: 'Editor' }))
-    const editorTab = screen.getByRole('button', { name: 'Editor' })
-    expect(editorTab).toHaveAttribute('aria-current', 'page')
-  })
-
-  test('switches back to ChatView when Chat tab is clicked from Editor', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-
-    // Go to Editor
-    await user.click(screen.getByRole('button', { name: 'Editor' }))
-    expect(screen.getByTestId('editor-view')).toBeInTheDocument()
-
-    // Go back to Chat
-    await user.click(screen.getByRole('button', { name: 'Chat' }))
-    expect(screen.getByTestId('chat-view')).toBeInTheDocument()
-    expect(screen.queryByTestId('editor-view')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Workspace layout components will be added next')
+    ).not.toBeInTheDocument()
   })
 })

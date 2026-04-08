@@ -2,15 +2,13 @@
   {
     "id": 1,
     "phase": 1,
-    "category": "scaffold",
-    "description": "Initialize src-tauri directory structure",
+    "category": "data-models",
+    "description": "Update types for navigation items (Dashboard, Source Control, Debugger, Settings)",
     "steps": [
-      "Create src-tauri/ directory",
-      "Create Cargo.toml with minimal dependencies (tauri, serde, serde_json)",
-      "Create build.rs with tauri_build::build()",
-      "Create src/lib.rs and src/main.rs",
-      "Create capabilities/default.json with core:default permission",
-      "Generate placeholder icons"
+      "Read src/features/workspace/types/index.ts",
+      "Update Project type to support navigation items with icon and color",
+      "Create NavigationItem type with id, label, icon, color, tooltip fields",
+      "Export new types"
     ],
     "passes": true,
     "dependencies": []
@@ -18,58 +16,60 @@
   {
     "id": 2,
     "phase": 1,
-    "category": "scaffold",
-    "description": "Configure tauri.conf.json with v2 settings",
+    "category": "data-models",
+    "description": "Update mock data for navigation items",
     "steps": [
-      "Set $schema to Tauri v2 schema",
-      "Configure productName: Vimeflow",
-      "Set identifier: dev.vimeflow.app",
-      "Configure build.frontendDist and build.devUrl",
-      "Set window dimensions: 1400x900, min 800x600",
-      "Configure CSP with script-src 'self' and style-src 'self' 'unsafe-inline'"
+      "Read src/features/workspace/data/mockProjects.ts",
+      "Replace project abbreviations with navigation items",
+      "Add 4 items: Dashboard (emerald-500), Source Control (amber-500), Debugger (rose-500), Settings (indigo-500)",
+      "Use Material Symbols icon names: dashboard, account_tree, bug_report, settings"
     ],
     "passes": true,
     "dependencies": [1]
   },
   {
     "id": 3,
-    "phase": 1,
-    "category": "scaffold",
-    "description": "Add NPM scripts and dependencies for Tauri",
+    "phase": 2,
+    "category": "styling",
+    "description": "Add flat-bookmark CSS classes to index.css",
     "steps": [
-      "Add tauri:dev and tauri:build scripts to package.json",
-      "Add @tauri-apps/cli to devDependencies"
+      "Read src/index.css",
+      "Add .flat-bookmark class with clip-path polygon for bookmark shape",
+      "Add hover state with height increase and brightness filter",
+      "Verify glass-panel class exists (or add if missing)"
     ],
     "passes": true,
-    "dependencies": [1]
+    "dependencies": []
   },
   {
     "id": 4,
     "phase": 2,
-    "category": "core",
-    "description": "Create environment detection utilities",
+    "category": "icon-rail",
+    "description": "Update IconRail component with flat colorful bookmarks",
     "steps": [
-      "Create src/lib/environment.ts",
-      "Implement isTauri() checking for __TAURI_INTERNALS__",
-      "Implement isTest() checking for test mode",
-      "Add TypeScript interface for TauriInternals",
-      "Export isBrowser() and getEnvironment() helpers"
+      "Read current IconRail.tsx implementation",
+      "Change rail width from w-12 to w-16 (64px)",
+      "Replace text abbreviation buttons with bookmark-shaped divs",
+      "Add Material Symbols icons inside bookmarks",
+      "Implement tooltip on hover (absolute positioned, right of rail)",
+      "Use solid color backgrounds (bg-emerald-500, bg-amber-500, etc.)",
+      "Bottom bookmark (Settings) pushed with mt-auto mb-6"
     ],
     "passes": true,
-    "dependencies": [1]
+    "dependencies": [2, 3]
   },
   {
     "id": 5,
     "phase": 2,
-    "category": "testing",
-    "description": "Write tests for environment detection",
+    "category": "icon-rail",
+    "description": "Update IconRail tests for bookmark design",
     "steps": [
-      "Create src/lib/environment.test.ts",
-      "Test isTauri() returns false in jsdom",
-      "Test isTauri() returns true when __TAURI_INTERNALS__ is set",
-      "Test isBrowser() behavior",
-      "Test getEnvironment() returns correct values",
-      "Test isTest() returns true in test mode"
+      "Read current IconRail.test.tsx",
+      "Update tests to check for bookmark-shaped elements",
+      "Test Material Symbols icons are rendered",
+      "Test tooltip appears on hover",
+      "Test colors are applied correctly",
+      "Verify accessibility (aria-label, titles)"
     ],
     "passes": true,
     "dependencies": [4]
@@ -77,108 +77,237 @@
   {
     "id": 6,
     "phase": 3,
-    "category": "ci",
-    "description": "Update CI workflow for Tauri builds",
+    "category": "sidebar",
+    "description": "Create FileExplorer component for sidebar",
     "steps": [
-      "Enable src/** path triggers in tauri-build.yml",
-      "Add Rust dependency caching step",
-      "Verify all steps are present (checkout, node, rust, deps, build)"
+      "Create src/features/workspace/components/panels/FileExplorer.tsx",
+      "Implement folder tree with expand/collapse",
+      "Use Material Symbols: folder_open, expand_more, description icons",
+      "Highlight active file with text-primary-container bg-primary-container/10",
+      "Add indentation pl-6 per level",
+      "Wrap in glass-panel rounded-xl container"
     ],
     "passes": true,
-    "dependencies": [1, 2]
+    "dependencies": [1]
   },
   {
     "id": 7,
     "phase": 3,
-    "category": "ci",
-    "description": "Update .gitignore for Tauri",
+    "category": "sidebar",
+    "description": "Update Sidebar component - remove ContextSwitcher, add FileExplorer",
     "steps": [
-      "Add src-tauri/gen/ to .gitignore",
-      "Verify src-tauri/target/ and src-tauri/Cargo.lock are present"
+      "Read current Sidebar.tsx implementation",
+      "Remove ContextSwitcher import and component usage",
+      "Remove activeContextTab and onContextTabChange props",
+      "Add FileExplorer section in bottom half (h-1/2)",
+      "Add separator border-t border-white/5 pt-4",
+      "Header: folder_open icon + 'FILE EXPLORER' label"
     ],
     "passes": true,
-    "dependencies": [1]
+    "dependencies": [6]
   },
   {
     "id": 8,
-    "phase": 4,
-    "category": "verification",
-    "description": "Verify Rust code compiles and passes linting",
+    "phase": 3,
+    "category": "sidebar",
+    "description": "Add 'New Instance' gradient button to Sidebar",
     "steps": [
-      "Run cargo check in src-tauri/",
-      "Run cargo clippy -- -D warnings",
-      "Run cargo fmt --check"
+      "Add button at bottom of Sidebar component",
+      "Style: w-full bg-gradient-to-r from-primary to-secondary",
+      "Text: text-on-primary py-2.5 rounded-lg font-bold text-sm",
+      "Add shadow: shadow-lg shadow-primary/10",
+      "Icon: bolt + 'New Instance' text"
     ],
     "passes": true,
-    "dependencies": [1, 2],
-    "notes": "Verified via CI - all platforms (macOS, Ubuntu, Windows) build successfully in PR #27"
+    "dependencies": [7]
   },
   {
     "id": 9,
-    "phase": 4,
-    "category": "verification",
-    "description": "Verify frontend tests pass",
+    "phase": 3,
+    "category": "sidebar",
+    "description": "Update Sidebar tests for FileExplorer design",
     "steps": [
-      "Run npx vitest run to verify all tests pass",
-      "Verify environment.test.ts passes",
-      "Verify no test regressions from Tauri scaffold"
+      "Read current Sidebar.test.tsx",
+      "Remove ContextSwitcher tab switching tests",
+      "Add FileExplorer section tests",
+      "Test 'New Instance' button renders and is clickable",
+      "Test file tree rendering with proper indentation",
+      "Verify active file highlighting"
     ],
     "passes": true,
-    "dependencies": [4, 5]
+    "dependencies": [8]
   },
   {
     "id": 10,
     "phase": 4,
-    "category": "verification",
-    "description": "Verify frontend build and linting",
+    "category": "bottom-drawer",
+    "description": "Create BottomDrawer component with Editor tab",
     "steps": [
-      "Run npm run lint to verify ESLint passes",
-      "Run npm run type-check to verify TypeScript compiles",
-      "Run npm run build to verify Vite build succeeds"
-    ],
-    "passes": true,
-    "dependencies": [4, 5]
-  },
-  {
-    "id": 11,
-    "phase": 5,
-    "category": "polish",
-    "description": "Fix tauri.conf.json configuration issues",
-    "steps": [
-      "Change identifier from com.tauri.dev to dev.vimeflow.app",
-      "Change productName from vibm to Vimeflow",
-      "Update window size from 800x600 to 1400x900",
-      "Add minWidth: 800, minHeight: 600",
-      "Update CSP from null to proper policy"
-    ],
-    "passes": true,
-    "dependencies": [2]
-  },
-  {
-    "id": 12,
-    "phase": 5,
-    "category": "polish",
-    "description": "Fix Rust package naming inconsistencies",
-    "steps": [
-      "Update Cargo.toml package name from vibm to vimeflow",
-      "Update lib.rs module name from vibm_lib to vimeflow_lib",
-      "Update main.rs to use vimeflow_lib::run()",
-      "Verify naming consistency across all Rust files"
+      "Create src/features/workspace/components/BottomDrawer.tsx",
+      "Implement tab bar with Editor and Diff Viewer tabs",
+      "Use Material Symbols: code, difference icons",
+      "Active tab: text-primary border-b-2 border-primary",
+      "Inactive: text-slate-400 hover:text-primary",
+      "Right side: file path + collapse toggle (keyboard_arrow_down icon)"
     ],
     "passes": true,
     "dependencies": [1]
   },
   {
-    "id": 13,
-    "phase": 5,
-    "category": "polish",
-    "description": "Add isTest() function to environment.ts",
+    "id": 11,
+    "phase": 4,
+    "category": "bottom-drawer",
+    "description": "Add Editor content with syntax highlighting to BottomDrawer",
     "steps": [
-      "Add isTest() function checking import.meta.env.MODE === 'test'",
-      "Add test for isTest() in environment.test.ts",
-      "Verify test passes"
+      "Add Editor content area with line numbers",
+      "Line number gutter: w-12 text-outline/40 text-right pr-4 select-none",
+      "Mock code with syntax highlighting colors:",
+      "  - Keywords: text-tertiary",
+      "  - Strings: text-emerald-400",
+      "  - Functions: text-primary-dim",
+      "  - Comments: text-on-surface-variant",
+      "Font: font-mono text-xs"
     ],
     "passes": true,
-    "dependencies": [4, 5]
+    "dependencies": [10]
+  },
+  {
+    "id": 12,
+    "phase": 4,
+    "category": "bottom-drawer",
+    "description": "Add Diff Viewer tab content to BottomDrawer",
+    "steps": [
+      "Add Diff Viewer tab content (placeholder or mock diff)",
+      "Implement tab switching with useState",
+      "Show Editor content when 'editor' tab active",
+      "Show Diff content when 'diff' tab active",
+      "Background: bg-black/30 for content area"
+    ],
+    "passes": true,
+    "dependencies": [11]
+  },
+  {
+    "id": 13,
+    "phase": 4,
+    "category": "bottom-drawer",
+    "description": "Create BottomDrawer tests",
+    "steps": [
+      "Create src/features/workspace/components/BottomDrawer.test.tsx",
+      "Test component renders with Editor tab active by default",
+      "Test tab switching between Editor and Diff Viewer",
+      "Test Editor content displays with line numbers",
+      "Test Diff Viewer content displays when tab is clicked",
+      "Test file path and collapse toggle render",
+      "Use getByRole for accessibility queries"
+    ],
+    "passes": true,
+    "dependencies": [12]
+  },
+  {
+    "id": 14,
+    "phase": 5,
+    "category": "wiring",
+    "description": "Update WorkspaceView grid layout dimensions",
+    "steps": [
+      "Read current WorkspaceView.tsx",
+      "Change grid from grid-cols-[48px_260px_1fr_280px]",
+      "To grid-cols-[64px_256px_1fr_320px]",
+      "64px for IconRail (was 48px)",
+      "256px for Sidebar (was 260px)",
+      "320px for AgentActivity (was 280px)"
+    ],
+    "passes": true,
+    "dependencies": [4, 8]
+  },
+  {
+    "id": 15,
+    "phase": 5,
+    "category": "wiring",
+    "description": "Restructure main workspace area for TerminalZone + BottomDrawer",
+    "steps": [
+      "Wrap center column (TerminalZone + BottomDrawer) in flex-col container",
+      "TerminalZone takes flex-1 (remaining space)",
+      "BottomDrawer fixed at h-1/3",
+      "Add border-t border-white/5 between them"
+    ],
+    "passes": true,
+    "dependencies": [13, 14]
+  },
+  {
+    "id": 16,
+    "phase": 5,
+    "category": "wiring",
+    "description": "Integrate BottomDrawer into WorkspaceView",
+    "steps": [
+      "Import BottomDrawer component",
+      "Add BottomDrawer below TerminalZone in center column",
+      "Remove activeContextTab state from WorkspaceView",
+      "Remove handleContextTabChange handler",
+      "Remove activeContextTab/onContextTabChange props from Sidebar"
+    ],
+    "passes": true,
+    "dependencies": [15]
+  },
+  {
+    "id": 17,
+    "phase": 5,
+    "category": "wiring",
+    "description": "Update WorkspaceView tests for new layout",
+    "steps": [
+      "Read current WorkspaceView.test.tsx",
+      "Update grid dimension assertions",
+      "Test BottomDrawer is present",
+      "Test TerminalZone and BottomDrawer are stacked vertically",
+      "Remove context tab switching tests (moved to BottomDrawer)",
+      "Verify all 5 main sections render: IconRail, Sidebar, TerminalZone, BottomDrawer, AgentActivity"
+    ],
+    "passes": true,
+    "dependencies": [16]
+  },
+  {
+    "id": 18,
+    "phase": 6,
+    "category": "verification",
+    "description": "Run all linting and formatting checks",
+    "steps": [
+      "Run npm run lint",
+      "Run npm run format:check",
+      "Run npm run type-check",
+      "Fix any issues found",
+      "Verify all checks pass"
+    ],
+    "passes": true,
+    "dependencies": [5, 9, 13, 17]
+  },
+  {
+    "id": 19,
+    "phase": 6,
+    "category": "verification",
+    "description": "Run all unit and integration tests",
+    "steps": [
+      "Run npm test",
+      "Verify all tests pass",
+      "Check test coverage meets 80% minimum",
+      "Fix any failing tests",
+      "Re-run until all green"
+    ],
+    "passes": true,
+    "dependencies": [18]
+  },
+  {
+    "id": 20,
+    "phase": 6,
+    "category": "verification",
+    "description": "Visual verification against v2 mockup",
+    "steps": [
+      "Compare implementation with docs/design/agent_workspace/v2/screen.png",
+      "Verify IconRail has 4 colorful bookmarks with icons",
+      "Verify Sidebar has Sessions + FileExplorer only",
+      "Verify BottomDrawer with Editor/Diff tabs below terminal",
+      "Verify grid dimensions: 64px, 256px, flex, 320px",
+      "Document any deviations in verification notes"
+    ],
+    "passes": true,
+    "dependencies": [19]
   }
 ]

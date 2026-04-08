@@ -30,6 +30,7 @@ words:
   - jsx
   - unmount
   - unlisten
+  - unhover
   - zustand
   - tanstack
   - conv
@@ -40,6 +41,11 @@ words:
   - glassmorphism
   - catppuccin
   - Catppuccin
+
+  # Workspace domain abbreviations
+  - sess # session
+  - proj # project
+  - terminalPid # terminal process ID
 
   # Syntax Highlighting
   - shiki
