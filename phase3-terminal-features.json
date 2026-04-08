@@ -212,7 +212,7 @@
       "Test error handling (invalid shell, spawn failure)",
       "Verify all PTY processes cleaned up after tests"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [30, 35]
   },
   {
