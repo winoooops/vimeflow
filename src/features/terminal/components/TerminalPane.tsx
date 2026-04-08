@@ -22,7 +22,20 @@ const terminalCache = new Map<
  * Clear terminal cache (for testing only)
  */
 export const clearTerminalCache = (): void => {
+  terminalCache.forEach(({ terminal }) => terminal.dispose())
   terminalCache.clear()
+}
+
+/**
+ * Dispose and remove a single session's terminal from cache.
+ * Call when a session is permanently closed (not just hidden).
+ */
+export const disposeTerminalSession = (sessionId: string): void => {
+  const cached = terminalCache.get(sessionId)
+  if (cached) {
+    cached.terminal.dispose()
+    terminalCache.delete(sessionId)
+  }
 }
 
 export interface TerminalPaneProps {
@@ -195,11 +208,16 @@ export const TerminalPane = ({
     // Store terminal in state to trigger useTerminal hook
     setTerminal(newTerminal)
 
-    // Cleanup when switching sessions (but keep terminal in cache)
+    // Cleanup: disconnect observers and dispose terminal from cache
+    // When TerminalPane unmounts, the session is closed — free resources
     return (): void => {
       resizeObserver.disconnect()
       resizeDisposable.dispose()
-      // Do NOT dispose terminal - keep it in cache for when we switch back
+      const entry = terminalCache.get(sessionId)
+      if (entry) {
+        entry.terminal.dispose()
+        terminalCache.delete(sessionId)
+      }
       setTerminal(null)
       fitAddonRef.current = null
     }

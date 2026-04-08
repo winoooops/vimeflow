@@ -170,7 +170,7 @@ describe('TerminalPane', () => {
     })
   })
 
-  test('keeps terminal in cache on unmount (for session persistence)', async () => {
+  test('disposes terminal from cache on unmount to prevent memory leaks', async () => {
     const { unmount } = render(
       <TerminalPane sessionId="test-session" cwd="/home/user" />
     )
@@ -182,20 +182,11 @@ describe('TerminalPane', () => {
 
     const terminalInstance = mockTerminal
 
-    // Unmount component (simulating switching to another session)
+    // Unmount component (session is closed)
     unmount()
 
-    // P2 Fix: Terminal should NOT be disposed on unmount
-    // It should stay in cache for when we switch back to this session
-    expect(terminalInstance.dispose).not.toHaveBeenCalled()
-
-    // Verify we can reuse the terminal by mounting again
-    render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
-
-    await waitFor(() => {
-      // The same terminal instance should be reused
-      expect(mockTerminal.open).toHaveBeenCalledTimes(2) // Called once on initial render, once on remount
-    })
+    // Terminal should be disposed on unmount to prevent memory leaks
+    expect(terminalInstance.dispose).toHaveBeenCalled()
   })
 
   test('passes sessionId prop correctly', () => {
@@ -345,7 +336,7 @@ describe('TerminalPane', () => {
       })
     })
 
-    test('P2: does not kill session when switching to different sessionId', async () => {
+    test('P2: disposes old session terminal when switching to different sessionId', async () => {
       // Render with session A
       const { rerender } = render(
         <TerminalPane sessionId="session-a" cwd="/home/user" />
@@ -361,7 +352,7 @@ describe('TerminalPane', () => {
       vi.mocked(Terminal).mockClear()
       vi.mocked(FitAddon).mockClear()
 
-      // Switch to session B (should NOT dispose first terminal)
+      // Switch to session B (cleanup effect disposes session A terminal)
       rerender(<TerminalPane sessionId="session-b" cwd="/home/user" />)
 
       // Wait for new terminal to be created
@@ -369,8 +360,8 @@ describe('TerminalPane', () => {
         expect(Terminal).toHaveBeenCalled()
       })
 
-      // First terminal should NOT be disposed (it should remain alive for session A)
-      expect(firstTerminal.dispose).not.toHaveBeenCalled()
+      // First terminal should be disposed to prevent memory leaks
+      expect(firstTerminal.dispose).toHaveBeenCalled()
     })
   })
 
