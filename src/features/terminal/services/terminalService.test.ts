@@ -63,7 +63,7 @@ describe('MockTerminalService', () => {
   })
 
   describe('write', () => {
-    test('echoes input back', async () => {
+    test('echoes each character individually', async () => {
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
         cwd: '/home/user',
@@ -74,10 +74,14 @@ describe('MockTerminalService', () => {
 
       await service.write({ sessionId, data: 'hello' })
 
-      expect(onData).toHaveBeenCalledWith(sessionId, 'hello')
+      // Per-character processing: each char emitted separately
+      expect(onData).toHaveBeenCalledWith(sessionId, 'h')
+      expect(onData).toHaveBeenCalledWith(sessionId, 'e')
+      expect(onData).toHaveBeenCalledWith(sessionId, 'o')
+      expect(onData).toHaveBeenCalledTimes(5)
     })
 
-    test('simulates echo command output', async () => {
+    test('simulates echo command output on Enter', async () => {
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
         cwd: '/home/user',
@@ -86,15 +90,18 @@ describe('MockTerminalService', () => {
       const onData = vi.fn()
       service.onData(onData)
 
-      await service.write({ sessionId, data: 'echo hello' })
+      // Type characters then press Enter
+      for (const ch of 'echo hello') {
+        await service.write({ sessionId, data: ch })
+      }
 
+      await service.write({ sessionId, data: '\r' })
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, 'echo hello')
       expect(onData).toHaveBeenCalledWith(sessionId, 'hello\r\n$ ')
     })
 
-    test('simulates pwd command output', async () => {
+    test('simulates pwd command output on Enter', async () => {
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
         cwd: '/home/user',
@@ -103,12 +110,69 @@ describe('MockTerminalService', () => {
       const onData = vi.fn()
       service.onData(onData)
 
-      await service.write({ sessionId, data: 'pwd' })
+      for (const ch of 'pwd') {
+        await service.write({ sessionId, data: ch })
+      }
 
+      await service.write({ sessionId, data: '\r' })
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, 'pwd')
       expect(onData).toHaveBeenCalledWith(sessionId, '/home/user\r\n$ ')
+    })
+
+    test('handles backspace by removing last buffered character', async () => {
+      const { sessionId } = await service.spawn({
+        shell: '/bin/bash',
+        cwd: '/home/user',
+      })
+
+      const onData = vi.fn()
+      service.onData(onData)
+
+      // Type a character first so the buffer isn't empty
+      await service.write({ sessionId, data: 'a' })
+      onData.mockClear()
+
+      // Backspace should erase the character
+      await service.write({ sessionId, data: '\x7f' })
+
+      expect(onData).toHaveBeenCalledWith(sessionId, '\b \b')
+    })
+
+    test('ignores backspace on empty buffer', async () => {
+      const { sessionId } = await service.spawn({
+        shell: '/bin/bash',
+        cwd: '/home/user',
+      })
+
+      const onData = vi.fn()
+      service.onData(onData)
+
+      // Backspace on empty buffer should be a no-op
+      await service.write({ sessionId, data: '\x7f' })
+
+      expect(onData).not.toHaveBeenCalled()
+    })
+
+    test('CRLF input executes command only once', async () => {
+      const { sessionId } = await service.spawn({
+        shell: '/bin/bash',
+        cwd: '/home/user',
+      })
+
+      const onData = vi.fn()
+      service.onData(onData)
+
+      // Pasted text with CRLF should only trigger one command execution
+      await service.write({ sessionId, data: 'pwd\r\n' })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      // Count how many times the prompt '$ ' was emitted (should be exactly 1)
+      const promptCalls = onData.mock.calls.filter(
+        ([, d]) => d === '/home/user\r\n$ '
+      )
+
+      expect(promptCalls).toHaveLength(1)
     })
 
     test('throws error for non-existent session', async () => {

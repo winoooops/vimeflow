@@ -22,7 +22,7 @@ export const TerminalZone = ({
   }
 
   return (
-    <div data-testid="terminal-zone" className="flex h-full flex-col">
+    <div data-testid="terminal-zone" className="flex min-h-0 flex-1 flex-col">
       {/* Tab bar */}
       <div
         data-testid="tab-bar"
@@ -63,8 +63,11 @@ export const TerminalZone = ({
         </button>
       </div>
 
-      {/* Terminal content area */}
-      <div data-testid="terminal-content" className="flex-1 bg-surface">
+      {/* Terminal content area — relative + absolute inner to give xterm explicit dimensions */}
+      <div
+        data-testid="terminal-content"
+        className="relative min-h-0 flex-1 bg-surface"
+      >
         {sessions.length === 0 ? (
           <div className="flex h-full items-center justify-center font-mono text-on-surface/60">
             <p>No active session. Click + to create a new terminal.</p>
@@ -80,7 +83,7 @@ export const TerminalZone = ({
                 data-testid="terminal-pane"
                 data-session-id={session.id}
                 data-cwd={session.workingDirectory}
-                className={`h-full ${isActive ? '' : 'hidden'}`}
+                className={`absolute inset-0 ${isActive ? '' : 'hidden'}`}
               >
                 <TerminalPane
                   sessionId={session.id}

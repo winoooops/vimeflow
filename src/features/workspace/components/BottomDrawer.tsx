@@ -17,7 +17,7 @@ const BottomDrawer = (): ReactElement => {
   return (
     <section
       data-testid="bottom-drawer"
-      className="h-1/3 bg-slate-900/95 backdrop-blur-2xl border-t border-white/5 flex flex-col z-30"
+      className="h-1/3 shrink-0 bg-slate-900/95 backdrop-blur-2xl border-t border-white/5 flex flex-col z-30"
     >
       {/* Tab Bar */}
       <div className="flex items-center px-8 h-12 bg-surface-container justify-between">
