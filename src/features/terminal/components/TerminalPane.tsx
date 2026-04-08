@@ -69,7 +69,7 @@ export const TerminalPane = ({
   )
 
   // Use terminal hook for PTY lifecycle management
-  const { resize } = useTerminal({
+  const { resize, status } = useTerminal({
     terminal,
     service: stableService,
     cwd,
@@ -85,13 +85,15 @@ export const TerminalPane = ({
     resizeRef.current = resize
   }, [resize])
 
-  // Send initial resize once terminal is fitted and session is spawned
-  // This ensures the PTY starts with the correct dimensions even if the user never resizes
+  // P2 Fix: Send resize when terminal is created AND when session becomes running
+  // The initial resize effect runs immediately when terminal is created, but resize()
+  // is a no-op until the session is actually spawned and status becomes 'running'.
+  // By including status in dependencies, we re-trigger resize when the session transitions.
   useEffect(() => {
-    if (terminal) {
+    if (terminal && status === 'running') {
       resize(terminal.cols, terminal.rows)
     }
-  }, [terminal, resize])
+  }, [terminal, resize, status])
 
   useEffect(() => {
     if (!containerRef.current) {

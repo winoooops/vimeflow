@@ -39,7 +39,7 @@ export interface ITerminalService {
    * Subscribe to PTY exit events
    */
   onExit(
-    callback: (sessionId: string, code: number, signal?: string) => void
+    callback: (sessionId: string, code?: number, signal?: string) => void
   ): () => void
 
   /**
@@ -60,7 +60,7 @@ export class MockTerminalService implements ITerminalService {
   private dataCallbacks: ((sessionId: string, data: string) => void)[] = []
   private exitCallbacks: ((
     sessionId: string,
-    code: number,
+    code?: number,
     signal?: string
   ) => void)[] = []
   private errorCallbacks: ((
@@ -152,7 +152,7 @@ export class MockTerminalService implements ITerminalService {
   }
 
   onExit(
-    callback: (sessionId: string, code: number, signal?: string) => void
+    callback: (sessionId: string, code?: number, signal?: string) => void
   ): () => void {
     this.exitCallbacks.push(callback)
 
@@ -182,7 +182,7 @@ export class MockTerminalService implements ITerminalService {
     this.dataCallbacks.forEach((cb) => cb(sessionId, data))
   }
 
-  emitExit(sessionId: string, code: number, signal?: string): void {
+  emitExit(sessionId: string, code?: number, signal?: string): void {
     this.exitCallbacks.forEach((cb) => cb(sessionId, code, signal))
   }
 
@@ -203,7 +203,8 @@ export class MockTerminalService implements ITerminalService {
   ): void {
     if (event === 'data' && payload.data !== undefined) {
       this.emitData(payload.sessionId, payload.data)
-    } else if (event === 'exit' && payload.code !== undefined) {
+    } else if (event === 'exit') {
+      // Allow exit events even when code is undefined (EOF case)
       this.emitExit(payload.sessionId, payload.code, payload.signal)
     } else if (event === 'error' && payload.message !== undefined) {
       this.emitError(

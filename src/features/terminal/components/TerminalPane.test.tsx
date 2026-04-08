@@ -325,5 +325,43 @@ describe('TerminalPane', () => {
       // Terminal should NOT be recreated
       expect(Terminal).not.toHaveBeenCalled()
     })
+
+    test('P2: re-sends PTY resize after session becomes running', async () => {
+      // Start with idle status (session not yet spawned)
+      const initialMockUseTerminal: UseTerminalReturn = {
+        ...mockUseTerminal,
+        status: 'idle',
+        resize: vi.fn(),
+      }
+      vi.mocked(useTerminal).mockReturnValue(initialMockUseTerminal)
+
+      // Render component
+      const { rerender } = render(
+        <TerminalPane sessionId="test-session" cwd="/home/user" />
+      )
+
+      await waitFor(() => {
+        expect(mockTerminal.open).toHaveBeenCalled()
+      })
+
+      // Clear resize mock to count only subsequent calls
+      vi.mocked(initialMockUseTerminal.resize).mockClear()
+
+      // Simulate session becoming running (status transition)
+      const runningMockUseTerminal: UseTerminalReturn = {
+        ...mockUseTerminal,
+        status: 'running',
+        resize: initialMockUseTerminal.resize, // Same resize function
+      }
+      vi.mocked(useTerminal).mockReturnValue(runningMockUseTerminal)
+
+      // Trigger re-render (this simulates the status change)
+      rerender(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+
+      // Resize should be called when status becomes 'running'
+      await waitFor(() => {
+        expect(initialMockUseTerminal.resize).toHaveBeenCalled()
+      })
+    })
   })
 })

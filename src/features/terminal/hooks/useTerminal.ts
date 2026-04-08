@@ -179,10 +179,16 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       }
     }
 
-    const handleExit = (eventSessionId: string, code: number): void => {
+    const handleExit = (eventSessionId: string, code?: number): void => {
       if (eventSessionId === session.id && isMountedRef.current) {
         setStatus('exited')
-        terminal.write(`\r\n[Process exited with code ${code}]\r\n`)
+
+        // Handle optional exit code (backend may emit code: None on EOF)
+        const exitMessage =
+          code !== undefined
+            ? `\r\n[Process exited with code ${code}]\r\n`
+            : '\r\n[Process exited]\r\n'
+        terminal.write(exitMessage)
       }
     }
 

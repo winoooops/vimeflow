@@ -206,6 +206,40 @@ describe('useTerminal', () => {
     })
   })
 
+  test('handles PTY exit with missing exit code (EOF)', async () => {
+    const { result } = renderHook(() =>
+      useTerminal({
+        terminal: mockTerminal,
+        service: mockService,
+        cwd: '/home/user',
+      })
+    )
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('running')
+    })
+
+    const sessionId = result.current.session!.id
+
+    // Emit exit event without code (backend sends code: None on EOF)
+    mockService.emit('exit', {
+      sessionId,
+      code: undefined,
+    })
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('exited')
+      // Should handle missing code gracefully (not print "code undefined")
+      expect(mockTerminal.write).toHaveBeenCalledWith(
+        expect.stringContaining('[Process exited]')
+      )
+
+      expect(mockTerminal.write).not.toHaveBeenCalledWith(
+        expect.stringContaining('undefined')
+      )
+    })
+  })
+
   test('handles PTY error event', async () => {
     const { result } = renderHook(() =>
       useTerminal({
