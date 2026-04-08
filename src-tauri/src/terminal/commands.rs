@@ -20,14 +20,20 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         request.cwd
     );
 
-    // Determine shell path
-    let shell = request.shell.unwrap_or_else(|| {
-        if cfg!(target_os = "windows") {
-            "powershell.exe".to_string()
-        } else {
-            std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
-        }
-    });
+    // Determine shell path — ignore user-supplied shell for security;
+    // only allow the system default shell to prevent arbitrary binary execution.
+    let shell = if cfg!(target_os = "windows") {
+        "powershell.exe".to_string()
+    } else {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+    };
+
+    if request.shell.is_some() {
+        log::warn!(
+            "Ignoring user-supplied shell for session {} — only system shell is allowed",
+            request.session_id
+        );
+    }
 
     log::info!("Using shell: {}", shell);
 
@@ -44,15 +50,22 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         })
         .map_err(|e| format!("failed to open PTY: {}", e))?;
 
-    // Build command
-    let mut cmd = CommandBuilder::new(&shell);
-    cmd.cwd(&request.cwd);
+    // Validate cwd exists and is a directory (prevent path traversal)
+    let cwd = std::fs::canonicalize(&request.cwd)
+        .map_err(|e| format!("invalid cwd '{}': {}", request.cwd, e))?;
+    if !cwd.is_dir() {
+        return Err(format!("cwd is not a directory: {}", cwd.display()));
+    }
 
-    // Add environment variables
-    if let Some(env) = request.env {
-        for (key, value) in env {
-            cmd.env(key, value);
-        }
+    // Build command — env from IPC is ignored for security (prevents injection)
+    let mut cmd = CommandBuilder::new(&shell);
+    cmd.cwd(&cwd);
+
+    if request.env.is_some() {
+        log::warn!(
+            "Ignoring user-supplied env for session {} — IPC env injection not allowed",
+            request.session_id
+        );
     }
 
     // Spawn child process

@@ -46,10 +46,11 @@ Object.defineProperty(window, 'matchMedia', {
 })
 
 // Mock canvas.getContext for xterm.js rendering
-HTMLCanvasElement.prototype.getContext = function (
-  contextId: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): any {
+;(
+  HTMLCanvasElement.prototype as unknown as {
+    getContext: (contextId: string) => unknown
+  }
+).getContext = function (contextId: string): unknown {
   // Return a minimal mock context for testing
   if (contextId === '2d') {
     return {
