@@ -38,14 +38,14 @@ Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + Re
 
 ### 功能模块
 
-| 模块 | 描述 |
-|------|------|
-| **terminal** | xterm.js + Tauri PTY IPC 桥接，会话管理 |
-| **editor** | IDE 风格标签编辑器，Shiki 语法高亮，Vim 状态栏 |
-| **diff** | Lazygit 风格 Git Diff 查看器（并排 + 统一视图，hunk 导航，暂存/丢弃） |
-| **files** | 文件浏览树，面包屑导航，Git 状态徽章（M/A/D/U），拖放支持 |
-| **command-palette** | Vim 风格 `:command` 命令面板，模糊匹配，嵌套命令树 |
-| **workspace** | 组合以上所有区域的布局外壳 |
+| 模块                | 描述                                                                  |
+| ------------------- | --------------------------------------------------------------------- |
+| **terminal**        | xterm.js + Tauri PTY IPC 桥接，会话管理                               |
+| **editor**          | IDE 风格标签编辑器，Shiki 语法高亮，Vim 状态栏                        |
+| **diff**            | Lazygit 风格 Git Diff 查看器（并排 + 统一视图，hunk 导航，暂存/丢弃） |
+| **files**           | 文件浏览树，面包屑导航，Git 状态徽章（M/A/D/U），拖放支持             |
+| **command-palette** | Vim 风格 `:command` 命令面板，模糊匹配，嵌套命令树                    |
+| **workspace**       | 组合以上所有区域的布局外壳                                            |
 
 ### 质量保障
 
@@ -57,17 +57,17 @@ Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + Re
 
 ## 技术栈
 
-| 层级 | 技术 |
-|------|------|
-| **桌面** | Tauri 2、Rust、portable-pty、tokio |
-| **前端** | React 19、TypeScript 5（严格模式）、Vite |
-| **样式** | Tailwind CSS v4、Catppuccin Mocha 语义化 Token |
-| **终端** | xterm.js 6、WebGL addon、FitAddon |
-| **编辑器** | Shiki 4（语法高亮） |
-| **动画** | Framer Motion 12 |
-| **测试** | Vitest 3、Testing Library |
-| **质量** | ESLint 9（flat config）、Prettier 3、Husky、commitlint |
-| **Git** | simple-git 3、diff2html 3 |
+| 层级       | 技术                                                   |
+| ---------- | ------------------------------------------------------ |
+| **桌面**   | Tauri 2、Rust、portable-pty、tokio                     |
+| **前端**   | React 19、TypeScript 5（严格模式）、Vite               |
+| **样式**   | Tailwind CSS v4、Catppuccin Mocha 语义化 Token         |
+| **终端**   | xterm.js 6、WebGL addon、FitAddon                      |
+| **编辑器** | Shiki 4（语法高亮）                                    |
+| **动画**   | Framer Motion 12                                       |
+| **测试**   | Vitest 3、Testing Library                              |
+| **质量**   | ESLint 9（flat config）、Prettier 3、Husky、commitlint |
+| **Git**    | simple-git 3、diff2html 3                              |
 
 ## 设计系统："黑曜石之眼"
 
@@ -147,12 +147,12 @@ harness/                    # 自主开发循环（Claude Code SDK，Python）
 
 ## 路线图
 
-| 阶段 | 状态 | 描述 |
-|------|------|------|
-| 第 1 阶段 | 已完成 | Tauri 脚手架、Rust 编译、CI 通过 |
-| 第 2 阶段 | 已完成 | 工作空间布局外壳（4 区网格，所有组件） |
-| 第 3 阶段 | 已完成 | 终端核心（xterm.js + Tauri PTY IPC） |
-| 第 4 阶段 | 下一步 | 会话管理 + Zustand 状态 |
+| 阶段       | 状态   | 描述                                   |
+| ---------- | ------ | -------------------------------------- |
+| 第 1 阶段  | 已完成 | Tauri 脚手架、Rust 编译、CI 通过       |
+| 第 2 阶段  | 已完成 | 工作空间布局外壳（4 区网格，所有组件） |
+| 第 3 阶段  | 已完成 | 终端核心（xterm.js + Tauri PTY IPC）   |
+| 第 4 阶段  | 下一步 | 会话管理 + Zustand 状态                |
 | 第 5+ 阶段 | 计划中 | 真实 Git 操作、AI 代理输出流、拖放功能 |
 
 进度跟踪：[`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml)

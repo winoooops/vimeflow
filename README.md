@@ -38,14 +38,14 @@ A 4-zone grid layout inspired by IDE + terminal multiplexer patterns:
 
 ### Feature Modules
 
-| Module | Description |
-|--------|-------------|
-| **terminal** | xterm.js + Tauri PTY IPC bridge, session management |
-| **editor** | IDE-style tabbed editor with Shiki syntax highlighting, vim status bar |
-| **diff** | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard) |
-| **files** | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop |
-| **command-palette** | Vim-style `:command` palette with fuzzy matching and nested command tree |
-| **workspace** | Layout shell composing all zones above |
+| Module              | Description                                                                            |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| **terminal**        | xterm.js + Tauri PTY IPC bridge, session management                                    |
+| **editor**          | IDE-style tabbed editor with Shiki syntax highlighting, vim status bar                 |
+| **diff**            | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard) |
+| **files**           | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop        |
+| **command-palette** | Vim-style `:command` palette with fuzzy matching and nested command tree               |
+| **workspace**       | Layout shell composing all zones above                                                 |
 
 ### Quality
 
@@ -57,17 +57,17 @@ A 4-zone grid layout inspired by IDE + terminal multiplexer patterns:
 
 ## Tech Stack
 
-| Layer | Technologies |
-|-------|-------------|
-| **Desktop** | Tauri 2, Rust, portable-pty, tokio |
-| **Frontend** | React 19, TypeScript 5 (strict), Vite |
-| **Styling** | Tailwind CSS v4, Catppuccin Mocha semantic tokens |
-| **Terminal** | xterm.js 6, WebGL addon, FitAddon |
-| **Editor** | Shiki 4 (syntax highlighting) |
-| **Animation** | Framer Motion 12 |
-| **Testing** | Vitest 3, Testing Library |
-| **Quality** | ESLint 9 (flat config), Prettier 3, Husky, commitlint |
-| **Git** | simple-git 3, diff2html 3 |
+| Layer         | Technologies                                          |
+| ------------- | ----------------------------------------------------- |
+| **Desktop**   | Tauri 2, Rust, portable-pty, tokio                    |
+| **Frontend**  | React 19, TypeScript 5 (strict), Vite                 |
+| **Styling**   | Tailwind CSS v4, Catppuccin Mocha semantic tokens     |
+| **Terminal**  | xterm.js 6, WebGL addon, FitAddon                     |
+| **Editor**    | Shiki 4 (syntax highlighting)                         |
+| **Animation** | Framer Motion 12                                      |
+| **Testing**   | Vitest 3, Testing Library                             |
+| **Quality**   | ESLint 9 (flat config), Prettier 3, Husky, commitlint |
+| **Git**       | simple-git 3, diff2html 3                             |
 
 ## Design System: "The Obsidian Lens"
 
@@ -147,12 +147,12 @@ The harness (`harness/`) is a Python-based loop built on the Claude Code SDK. Se
 
 ## Roadmap
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| Phase 1 | Done | Tauri scaffold, Rust compilation, CI green |
-| Phase 2 | Done | Workspace layout shell (4-zone grid, all components) |
-| Phase 3 | Done | Terminal core (xterm.js + Tauri PTY IPC) |
-| Phase 4 | Next | Session management + Zustand state |
+| Phase    | Status  | Description                                            |
+| -------- | ------- | ------------------------------------------------------ |
+| Phase 1  | Done    | Tauri scaffold, Rust compilation, CI green             |
+| Phase 2  | Done    | Workspace layout shell (4-zone grid, all components)   |
+| Phase 3  | Done    | Terminal core (xterm.js + Tauri PTY IPC)               |
+| Phase 4  | Next    | Session management + Zustand state                     |
 | Phase 5+ | Planned | Real git ops, AI agent output streaming, drag-and-drop |
 
 Progress tracked in [`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml).
