@@ -44,6 +44,15 @@ describe('useTerminal', () => {
   beforeEach(() => {
     mockService = new MockTerminalService()
     mockTerminal = createMockTerminal()
+
+    // Spy on all mock service methods
+    vi.spyOn(mockService, 'spawn')
+    vi.spyOn(mockService, 'write')
+    vi.spyOn(mockService, 'resize')
+    vi.spyOn(mockService, 'kill')
+    vi.spyOn(mockService, 'onData')
+    vi.spyOn(mockService, 'onExit')
+    vi.spyOn(mockService, 'onError')
   })
 
   afterEach(() => {
@@ -66,10 +75,9 @@ describe('useTerminal', () => {
         cwd: '/home/user',
         env: expect.any(Object),
       })
+      expect(result.current.status).toBe('running')
+      expect(result.current.session).toBeDefined()
     })
-
-    expect(result.current.status).toBe('running')
-    expect(result.current.session).toBeDefined()
   })
 
   test('returns idle status initially', () => {
@@ -126,7 +134,10 @@ describe('useTerminal', () => {
     mockTerminal._mockTriggerData('ls\r')
 
     await waitFor(() => {
-      expect(mockService.write).toHaveBeenCalledWith(sessionId, 'ls\r')
+      expect(mockService.write).toHaveBeenCalledWith({
+        sessionId,
+        data: 'ls\r',
+      })
     })
   })
 
@@ -235,7 +246,7 @@ describe('useTerminal', () => {
 
     unmount()
 
-    expect(mockService.kill).toHaveBeenCalledWith(sessionId)
+    expect(mockService.kill).toHaveBeenCalledWith({ sessionId })
   })
 
   test('does not spawn if terminal is null', () => {
@@ -337,7 +348,11 @@ describe('useTerminal', () => {
 
     result.current.resize(80, 24)
 
-    expect(mockService.resize).toHaveBeenCalledWith(sessionId, 80, 24)
+    expect(mockService.resize).toHaveBeenCalledWith({
+      sessionId,
+      cols: 80,
+      rows: 24,
+    })
   })
 
   test('returns error message on spawn failure', async () => {

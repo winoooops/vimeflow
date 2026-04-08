@@ -80,6 +80,14 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   // Track if component is mounted to prevent state updates after unmount
   const isMountedRef = useRef(true)
 
+  // Track unmount only (not dependency changes)
+  useEffect(
+    () => (): void => {
+      isMountedRef.current = false
+    },
+    []
+  )
+
   // Spawn PTY on mount
   useEffect(() => {
     if (!terminal) {
@@ -134,10 +142,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
 
     void spawnPty()
 
-    // Cleanup on unmount
+    // Cleanup session when dependencies change or on unmount
     return (): void => {
-      isMountedRef.current = false
-
       const cleanupSession = async (): Promise<void> => {
         if (currentSession) {
           try {
