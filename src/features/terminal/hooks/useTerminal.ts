@@ -29,10 +29,8 @@ export interface UseTerminalOptions {
    */
   env?: Record<string, string>
 
-  /**
-   * Optional session ID (for reconnecting to existing session)
-   */
-  sessionId?: string
+  // sessionId removed - reconnection feature not fully implemented yet
+  // Will be added back when backend supports persistent sessions
 }
 
 export interface UseTerminalReturn {
@@ -68,7 +66,7 @@ export interface UseTerminalReturn {
  * - Cleans up on unmount
  */
 export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
-  const { terminal, service, cwd, shell, env, sessionId } = options
+  const { terminal, service, cwd, shell, env } = options
 
   const [session, setSession] = useState<TerminalSession | null>(null)
 
@@ -80,7 +78,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   // Track if component is mounted to prevent state updates after unmount
   const isMountedRef = useRef(true)
 
-  // Track whether this hook spawned the session (vs reconnecting to existing)
+  // Track whether this hook spawned the session
   const didSpawnSessionRef = useRef(false)
 
   // Track unmount only (not dependency changes)
@@ -100,34 +98,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     let currentSession: TerminalSession | null = null
 
     const initializeSession = async (): Promise<void> => {
-      // If sessionId is provided, reconnect to existing session
-      if (sessionId) {
-        didSpawnSessionRef.current = false // Reconnecting, not spawning
-
-        const reconnectedSession: TerminalSession = {
-          id: sessionId,
-          pid: -1, // Unknown PID for reconnected sessions
-          name: `Session ${sessionId}`,
-          cwd,
-          shell:
-            shell ??
-            (typeof process !== 'undefined' ? process.env.SHELL : undefined) ??
-            '/bin/bash',
-          status: 'running',
-          createdAt: new Date(),
-          env: {},
-          lastActivityAt: new Date(),
-        }
-
-        currentSession = reconnectedSession
-        setSession(reconnectedSession)
-        setStatus('running')
-        setError(null)
-
-        return
-      }
-
-      // Otherwise, spawn a new PTY
+      // Spawn a new PTY process
       try {
         const result = await service.spawn({
           shell:
@@ -195,7 +166,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       }
       void cleanupSession()
     }
-  }, [terminal, service, cwd, shell, env, sessionId])
+  }, [terminal, service, cwd, shell, env])
 
   // Listen to PTY data events
   useEffect(() => {

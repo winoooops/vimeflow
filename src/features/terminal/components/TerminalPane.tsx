@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -59,17 +59,16 @@ export const TerminalPane = ({
   env = undefined,
 }: TerminalPaneProps): ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
-  const terminalRef = useRef<Terminal | null>(null)
+  const [terminal, setTerminal] = useState<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
 
   // Use terminal hook for PTY lifecycle management
   const { resize } = useTerminal({
-    terminal: terminalRef.current,
+    terminal,
     service,
     cwd,
     shell,
     env,
-    sessionId,
   })
 
   useEffect(() => {
@@ -78,7 +77,7 @@ export const TerminalPane = ({
     }
 
     // Create terminal instance
-    const terminal = new Terminal({
+    const newTerminal = new Terminal({
       cursorBlink: true,
       fontSize: 14,
       fontFamily: '"JetBrains Mono", "Courier New", Courier, monospace',
@@ -89,13 +88,13 @@ export const TerminalPane = ({
 
     // Create and load fit addon
     const fitAddon = new FitAddon()
-    terminal.loadAddon(fitAddon)
+    newTerminal.loadAddon(fitAddon)
     fitAddonRef.current = fitAddon
 
     // Try to load WebGL addon (graceful degradation if not supported)
     try {
       const webglAddon = new WebglAddon()
-      terminal.loadAddon(webglAddon)
+      newTerminal.loadAddon(webglAddon)
       webglAddon.onContextLoss(() => {
         webglAddon.dispose()
       })
@@ -106,13 +105,13 @@ export const TerminalPane = ({
     }
 
     // Open terminal in container
-    terminal.open(containerRef.current)
+    newTerminal.open(containerRef.current)
 
     // Fit terminal to container
     fitAddon.fit()
 
     // Handle resize events - notify PTY of terminal size changes
-    const resizeDisposable = terminal.onResize(({ cols, rows }) => {
+    const resizeDisposable = newTerminal.onResize(({ cols, rows }) => {
       // Fit terminal to container
       fitAddon.fit()
 
@@ -120,14 +119,14 @@ export const TerminalPane = ({
       resize(cols, rows)
     })
 
-    // Store terminal reference
-    terminalRef.current = terminal
+    // Store terminal in state to trigger useTerminal hook
+    setTerminal(newTerminal)
 
     // Cleanup on unmount
     return (): void => {
       resizeDisposable.dispose()
-      terminal.dispose()
-      terminalRef.current = null
+      newTerminal.dispose()
+      setTerminal(null)
       fitAddonRef.current = null
     }
   }, [sessionId, resize])
