@@ -97,8 +97,11 @@ export class MockTerminalService implements ITerminalService {
       )
     }
 
+    // Normalize CRLF to LF to prevent double-execution on pasted text
+    const normalized = params.data.replace(/\r\n/g, '\n')
+
     // Process each character individually to handle pasted text and buffered input
-    for (const ch of params.data) {
+    for (const ch of normalized) {
       this.processChar(params.sessionId, session, ch)
     }
 

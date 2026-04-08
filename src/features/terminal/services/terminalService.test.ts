@@ -154,6 +154,27 @@ describe('MockTerminalService', () => {
       expect(onData).not.toHaveBeenCalled()
     })
 
+    test('CRLF input executes command only once', async () => {
+      const { sessionId } = await service.spawn({
+        shell: '/bin/bash',
+        cwd: '/home/user',
+      })
+
+      const onData = vi.fn()
+      service.onData(onData)
+
+      // Pasted text with CRLF should only trigger one command execution
+      await service.write({ sessionId, data: 'pwd\r\n' })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      // Count how many times the prompt '$ ' was emitted (should be exactly 1)
+      const promptCalls = onData.mock.calls.filter(
+        ([, d]) => d === '/home/user\r\n$ '
+      )
+
+      expect(promptCalls).toHaveLength(1)
+    })
+
     test('throws error for non-existent session', async () => {
       await expect(
         service.write({ sessionId: 'invalid', data: 'test' })
