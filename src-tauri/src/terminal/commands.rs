@@ -73,6 +73,16 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         .take_writer()
         .map_err(|e| format!("failed to get PTY writer: {}", e))?;
 
+    // Kill existing session if session_id is reused, to avoid orphaned processes
+    if let Some(mut old_session) = state.remove(&request.session_id) {
+        log::warn!(
+            "Session {} already exists — killing old PTY before replacing",
+            request.session_id
+        );
+        old_session.child.kill().ok();
+        old_session.child.wait().ok();
+    }
+
     // Store session
     let session = ManagedSession {
         master: pty_pair.master,
@@ -82,11 +92,12 @@ pub async fn spawn_pty<R: tauri::Runtime>(
     };
     state.insert(request.session_id.clone(), session);
 
-    // Spawn background task to read PTY output
+    // Spawn blocking thread for PTY read loop (avoids starving async runtime)
     let session_id = request.session_id.clone();
     let state_clone = state.inner().clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = read_pty_output(app, state_clone, session_id).await {
+    std::thread::spawn(move || {
+        let rt = tauri::async_runtime::handle();
+        if let Err(e) = rt.block_on(read_pty_output(app, state_clone, session_id)) {
             log::error!("PTY output reader error: {}", e);
         }
     });
