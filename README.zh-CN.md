@@ -2,15 +2,139 @@
 
 <div align="center">
 
+**终端优先时代的 CLI Agent 控制面板**
+
 [English](./README.md) | 简体中文
 
 </div>
 
-> 一个关于**工程化 AI 原生开发**的实验 — 自主代理循环从规格说明到实现，全程由分层规则和专业代理管控，构建整个应用程序。
+> 一个 Tauri 桌面应用，将终端会话、文件浏览器、代码编辑器和 Git Diff 统一到一个工作空间 — 专为 Claude Code 等 AI 编码代理打造。
 
-Vimeflow 是一个编码代理对话管理器，采用 Tauri 桌面应用（Rust + React/TypeScript）构建。但产品本身是次要的，真正的重点在于过程：这个仓库是一个试验场，探索当自主开发引擎拥有结构化规格说明、安全防护栏和渐进式文档时，能走多远。
+Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + React/TypeScript）构建。它在一个窗口内管理 AI 代理工作的终端会话、浏览文件、审查 Diff 和编辑代码 — 全部配备 Vim 风格快捷键和暗色氛围 UI。
 
-## 为什么说这是 AI 原生
+但产品只是故事的一半。这个仓库也是**工程化 AI 原生开发**的试验场：自主代理循环从规格说明构建功能，由分层规则和专业代理管控。
+
+## 已实现功能
+
+### 终端核心（第 3 阶段 — 最新）
+
+完整的 xterm.js 终端，集成 Tauri Rust PTY 后端：
+
+- **TauriTerminalService** — xterm.js 与 `portable-pty` 之间的单例 IPC 桥接
+- Rust PTY 命令：spawn、write、resize、kill — stdout 通过 Tauri 事件流式传输
+- 按标签页缓存会话，支持多标签终端
+- ResizeObserver + FitAddon 实现响应式终端尺寸
+- WebGL 渲染器 + Catppuccin Mocha 主题
+
+### 工作空间布局（第 2 阶段）
+
+借鉴 IDE + 终端复用器模式的 4 区网格布局：
+
+- **图标栏** — 项目头像和导航
+- **侧边栏** — 会话列表和状态指示器
+- **终端区** — 主工作区域（xterm.js 终端）
+- **代理活动面板** — 状态、指标、可折叠区域
+- **上下文切换器** — 文件 / 编辑器 / Diff 标签页
+
+### 功能模块
+
+| 模块 | 描述 |
+|------|------|
+| **terminal** | xterm.js + Tauri PTY IPC 桥接，会话管理 |
+| **editor** | IDE 风格标签编辑器，Shiki 语法高亮，Vim 状态栏 |
+| **diff** | Lazygit 风格 Git Diff 查看器（并排 + 统一视图，hunk 导航，暂存/丢弃） |
+| **files** | 文件浏览树，面包屑导航，Git 状态徽章（M/A/D/U），拖放支持 |
+| **command-palette** | Vim 风格 `:command` 命令面板，模糊匹配，嵌套命令树 |
+| **workspace** | 组合以上所有区域的布局外壳 |
+
+### 质量保障
+
+- **1125+ 测试**通过，**92%+ 覆盖率**
+- 无障碍优先的测试查询（`getByRole` 优于 `getByText`）
+- Pre-commit 钩子：对暂存文件运行 ESLint + Prettier
+- Commit-msg 钩子：commitlint 约定式提交
+- Pre-push 钩子：完整 Vitest 运行
+
+## 技术栈
+
+| 层级 | 技术 |
+|------|------|
+| **桌面** | Tauri 2、Rust、portable-pty、tokio |
+| **前端** | React 19、TypeScript 5（严格模式）、Vite |
+| **样式** | Tailwind CSS v4、Catppuccin Mocha 语义化 Token |
+| **终端** | xterm.js 6、WebGL addon、FitAddon |
+| **编辑器** | Shiki 4（语法高亮） |
+| **动画** | Framer Motion 12 |
+| **测试** | Vitest 3、Testing Library |
+| **质量** | ESLint 9（flat config）、Prettier 3、Husky、commitlint |
+| **Git** | simple-git 3、diff2html 3 |
+
+## 设计系统："黑曜石之眼"
+
+基于 Catppuccin Mocha 调色板的暗色氛围 UI — 将 UI 视为深邃虚空中的发光半透明层。
+
+- **无可见边框** — 使用色调深度和表面层级（8 级）
+- **玻璃态射** 用于浮动元素（60-80% 透明度，12-20px 模糊）
+- **字体**：Manrope（标题）、Inter（正文/标签）、JetBrains Mono（代码）
+- **语义化 Token**：`bg-surface-container`、`text-on-surface`、`text-primary` 等
+
+完整规格：[`docs/design/DESIGN.md`](docs/design/DESIGN.md)
+
+## 快速开始
+
+```bash
+# 前置条件：Node >= 24，Rust 工具链
+nvm use                          # 使用 .nvmrc
+
+# 仅前端（无 Tauri 后端）
+npm install
+npm run dev                      # Vite 开发服务器，localhost:1420
+
+# 完整桌面应用（需要 Rust）
+npm run tauri:dev                # Tauri + Rust 后端
+
+# 测试
+npm test                         # 1125+ 测试
+npx vitest run src/path/file.test.tsx  # 单文件测试
+
+# 质量检查
+npm run lint                     # ESLint（类型检查）
+npm run format:check             # Prettier 检查
+npm run type-check               # tsc -b
+```
+
+## 仓库结构
+
+```
+CLAUDE.md                   # AI 导航中心（代理从这里开始）
+ARCHITECT.md                # 架构决策、Tauri IPC 模式
+docs/design/DESIGN.md       # UI 设计系统（唯一真实来源）
+
+src/
+├── features/
+│   ├── terminal/           # xterm.js + TauriTerminalService IPC 桥接
+│   ├── editor/             # Shiki 标签式代码编辑器
+│   ├── diff/               # Lazygit 风格 Diff 查看器
+│   ├── files/              # 文件浏览树
+│   ├── command-palette/    # Vim 风格命令面板
+│   └── workspace/          # 4 区布局外壳
+├── components/layout/      # 共享布局（IconRail、Sidebar、TopTabBar、ContextPanel）
+└── test/                   # Vitest 配置
+
+src-tauri/
+├── src/
+│   ├── main.rs             # Tauri 入口
+│   ├── lib.rs              # 库配置
+│   └── terminal/           # PTY 命令、状态、类型
+├── Cargo.toml              # Rust 依赖
+└── tauri.conf.json         # Tauri 配置
+
+agents/                     # 10 个专业 AI 代理定义
+rules/                      # 分层开发标准（通用 + TS + Rust）
+harness/                    # 自主开发循环（Claude Code SDK，Python）
+```
+
+## AI 原生开发流程
 
 传统项目由人类编写代码，AI 辅助。Vimeflow 反转了这一模式：
 
@@ -19,48 +143,20 @@ Vimeflow 是一个编码代理对话管理器，采用 Tauri 桌面应用（Rust
 3. **专业代理审查工作** — 10 个 AI 代理分别负责规划、TDD、代码审查、安全和文档
 4. **规则管控一切** — 分层规则系统（通用层 + 语言特定层）确保一致性，无需人工逐次提交干预
 
-本仓库中的 CI/CD 基础设施、Linter 配置和 Git 钩子，全部由引擎根据 `app_spec.md` 规格说明自动构建。
+引擎（`harness/`）是基于 Claude Code SDK 构建的 Python 循环。详见 [`harness/CLAUDE.md`](harness/CLAUDE.md)。
 
-## 仓库结构
+## 路线图
 
-```
-CLAUDE.md           <- AI 导航中心（代理从这里开始）
-README.md           <- 你在这里（给人类阅读）
-DEVELOPMENT.md      <- 命令、技术栈、代码风格
-ARCHITECT.md        <- 架构决策、Tauri 模式
-DESIGN.md           <- UI 设计系统（Obsidian Lens / Catppuccin Mocha）
+| 阶段 | 状态 | 描述 |
+|------|------|------|
+| 第 1 阶段 | 已完成 | Tauri 脚手架、Rust 编译、CI 通过 |
+| 第 2 阶段 | 已完成 | 工作空间布局外壳（4 区网格，所有组件） |
+| 第 3 阶段 | 已完成 | 终端核心（xterm.js + Tauri PTY IPC） |
+| 第 4 阶段 | 下一步 | 会话管理 + Zustand 状态 |
+| 第 5+ 阶段 | 计划中 | 真实 Git 操作、AI 代理输出流、拖放功能 |
 
-agents/             <- 10 个专业 AI 代理定义
-rules/              <- 分层开发标准（通用 + TypeScript + Rust）
-harness/            <- 自主开发循环（Claude Code SDK，Python）
-docs/design/        <- 屏幕原型、Stitch HTML/CSS、设计规格
-```
+进度跟踪：[`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml)
 
-## 自主引擎
+## 许可证
 
-Harness Enginnering（`harness/`）是本实验的核心。它是基于 Claude Code SDK 构建的 Python 循环：
-
-- **初始化代理**读取 `app_spec.md`，将其分解为分阶段的 `feature_list.json`
-- **编码代理**选取下一个待完成功能，实现它，标记完成，并自动继续
-- **安全层**包括 Bash 命令白名单、沙盒执行和功能列表写保护
-
-```bash
-cd harness && pip install -r requirements.txt
-python autonomous_agent_demo.py                    # 无限迭代, 手动终止
-python autonomous_agent_demo.py --max-iterations 5 # 限制次数
-```
-
-详见 `harness/CLAUDE.md`。
-
-## 当前状态
-
-**阶段：基础 / 预实现**
-
-- 开发规则、代理规格和 CI/CD 工具链已建立
-- 设计系统（5 个屏幕）已通过 Google Stitch 指定
-- 应用代码（Tauri 脚手架、`src/`、`src-tauri/`）尚未创建
-- 下一步：引擎根据设计规格构建应用
-
-## 技术栈
-
-Tauri 2（Rust 后端 + Web 前端）| React 19 + TypeScript | Vitest + Playwright | ESLint + Prettier | Husky + commitlint | GitHub Actions CI/CD
+MIT
