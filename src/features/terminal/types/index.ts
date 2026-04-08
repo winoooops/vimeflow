@@ -121,8 +121,8 @@ export interface PTYDataEvent {
 export interface PTYExitEvent {
   /** Source session ID */
   sessionId: string
-  /** Exit code */
-  code: number
+  /** Exit code (null when process exits via EOF without explicit code) */
+  code: number | null
   /** Exit signal (if killed) */
   signal?: string
 }

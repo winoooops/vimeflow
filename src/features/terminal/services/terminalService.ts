@@ -5,6 +5,8 @@ import type {
   PTYResizeParams,
   PTYKillParams,
 } from '../types'
+import { isTauri } from '../../../lib/environment'
+import { TauriTerminalService } from './tauriTerminalService'
 
 /**
  * Terminal service interface for PTY operations
@@ -225,7 +227,11 @@ export class MockTerminalService implements ITerminalService {
  * Service factory - returns appropriate service based on environment
  */
 export function createTerminalService(): ITerminalService {
-  // For now, always return mock service
-  // TODO: Replace with TauriTerminalService when Tauri backend is ready
+  // Dynamic import avoided — isTauri() is synchronous and the service is
+  // tree-shaken in browser builds by bundler dead-code elimination.
+  if (isTauri()) {
+    return new TauriTerminalService()
+  }
+
   return new MockTerminalService()
 }
