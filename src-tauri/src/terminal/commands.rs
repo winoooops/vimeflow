@@ -127,7 +127,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
 /// Write data to a PTY session
 #[tauri::command]
 pub fn write_pty(state: State<'_, PtyState>, request: WritePtyRequest) -> Result<(), String> {
-    log::debug!("Writing to PTY {}: {:?}", request.session_id, request.data);
+    log::debug!("Writing to PTY {}: {} bytes", request.session_id, request.data.len());
 
     state
         .write(&request.session_id, request.data.as_bytes())
