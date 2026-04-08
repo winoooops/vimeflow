@@ -79,7 +79,7 @@ pub struct PtyExitEvent {
     /// Session ID
     pub session_id: SessionId,
     /// Exit code (if available)
-    pub exit_code: Option<i32>,
+    pub code: Option<i32>,
 }
 
 /// PTY error event payload (emitted on errors)
@@ -89,5 +89,5 @@ pub struct PtyErrorEvent {
     /// Session ID
     pub session_id: SessionId,
     /// Error message
-    pub error: String,
+    pub message: String,
 }

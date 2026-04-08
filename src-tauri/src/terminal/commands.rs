@@ -163,7 +163,7 @@ async fn read_pty_output<R: tauri::Runtime>(
                     "pty-exit",
                     PtyExitEvent {
                         session_id: session_id.clone(),
-                        exit_code: None,
+                        code: None,
                     },
                 )
                 .ok();
@@ -192,7 +192,7 @@ async fn read_pty_output<R: tauri::Runtime>(
                     "pty-error",
                     PtyErrorEvent {
                         session_id: session_id.clone(),
-                        error: e.to_string(),
+                        message: e.to_string(),
                     },
                 )
                 .ok();
