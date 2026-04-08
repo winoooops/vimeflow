@@ -212,8 +212,16 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     }
 
     const handleInput = (data: string): void => {
-      if (isMountedRef.current) {
-        void service.write({ sessionId: session.id, data })
+      // Guard writes after PTY exit to avoid rejected writes
+      if (isMountedRef.current && status === 'running') {
+        const writeAsync = async (): Promise<void> => {
+          try {
+            await service.write({ sessionId: session.id, data })
+          } catch {
+            // Ignore rejected writes (session may have exited between status check and write)
+          }
+        }
+        void writeAsync()
       }
     }
 
@@ -222,16 +230,24 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     return (): void => {
       disposable.dispose()
     }
-  }, [terminal, session, service])
+  }, [terminal, session, service, status])
 
   // Resize function
   const resize = useCallback(
     (cols: number, rows: number): void => {
-      if (session) {
-        void service.resize({ sessionId: session.id, cols, rows })
+      // Guard resize after PTY exit to avoid rejected calls
+      if (session && status === 'running') {
+        const resizeAsync = async (): Promise<void> => {
+          try {
+            await service.resize({ sessionId: session.id, cols, rows })
+          } catch {
+            // Ignore rejected resizes (session may have exited between status check and resize)
+          }
+        }
+        void resizeAsync()
       }
     },
-    [session, service]
+    [session, service, status]
   )
 
   return {

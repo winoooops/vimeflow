@@ -236,6 +236,76 @@ describe('useTerminal', () => {
     })
   })
 
+  test('guards input writes after PTY exit', async () => {
+    const { result } = renderHook(() =>
+      useTerminal({
+        terminal: mockTerminal,
+        service: mockService,
+        cwd: '/home/user',
+      })
+    )
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('running')
+    })
+
+    const sessionId = result.current.session!.id
+
+    // Emit exit event
+    mockService.emit('exit', {
+      sessionId,
+      code: 0,
+    })
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('exited')
+    })
+
+    // Clear write call count
+    vi.mocked(mockService.write).mockClear()
+
+    // Simulate user typing after exit
+    mockTerminal._mockTriggerData('echo hello\n')
+
+    // Write should NOT be called after exit
+    expect(mockService.write).not.toHaveBeenCalled()
+  })
+
+  test('guards resize calls after PTY exit', async () => {
+    const { result } = renderHook(() =>
+      useTerminal({
+        terminal: mockTerminal,
+        service: mockService,
+        cwd: '/home/user',
+      })
+    )
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('running')
+    })
+
+    const sessionId = result.current.session!.id
+
+    // Emit exit event
+    mockService.emit('exit', {
+      sessionId,
+      code: 0,
+    })
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('exited')
+    })
+
+    // Clear resize call count
+    vi.mocked(mockService.resize).mockClear()
+
+    // Try to resize after exit
+    result.current.resize(100, 30)
+
+    // Resize should NOT be called after exit
+    expect(mockService.resize).not.toHaveBeenCalled()
+  })
+
   test('cleans up on unmount', async () => {
     const { result, unmount } = renderHook(() =>
       useTerminal({
