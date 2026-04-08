@@ -114,6 +114,25 @@ impl PtyState {
 
         Ok(())
     }
+
+    /// Clone the PTY reader for a session while keeping the session in state
+    ///
+    /// This avoids the race condition where removing/reinserting the session
+    /// causes concurrent writes/resizes to fail with "session not found".
+    pub fn clone_reader(
+        &self,
+        session_id: &SessionId,
+    ) -> anyhow::Result<Box<dyn std::io::Read + Send>> {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| anyhow::anyhow!("session not found: {}", session_id))?;
+
+        session
+            .master
+            .try_clone_reader()
+            .map_err(|e| anyhow::anyhow!("failed to clone PTY reader: {}", e))
+    }
 }
 
 #[cfg(test)]

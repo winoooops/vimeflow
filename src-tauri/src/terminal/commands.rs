@@ -147,19 +147,10 @@ async fn read_pty_output<R: tauri::Runtime>(
 ) -> anyhow::Result<()> {
     log::info!("Starting PTY output reader for session: {}", session_id);
 
-    // Take the session out of state to get exclusive access to the reader
-    let session = state
-        .remove(&session_id)
-        .ok_or_else(|| anyhow::anyhow!("session not found"))?;
-
-    // Get reader from master PTY
-    let mut reader = session
-        .master
-        .try_clone_reader()
-        .map_err(|e| anyhow::anyhow!("failed to clone PTY reader: {}", e))?;
-
-    // Put the session back into state
-    state.insert(session_id.clone(), session);
+    // Clone the reader while keeping the session available in state
+    // This prevents race conditions where concurrent writes/resizes would fail
+    // with "session not found" if we removed the session temporarily
+    let mut reader = state.clone_reader(&session_id)?;
 
     // Read loop
     let mut buf = [0u8; 8192];
@@ -391,6 +382,65 @@ mod tests {
             state.clone(),
             KillPtyRequest {
                 session_id: "test-multi-write".to_string(),
+            },
+        );
+    }
+
+    #[tokio::test]
+    async fn session_remains_accessible_during_reader_startup() {
+        // This test verifies the fix for the race condition where session was
+        // temporarily removed from state during reader cloning, causing concurrent
+        // writes/resizes to fail with "session not found"
+        let app = create_test_app();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+
+        // Spawn a session (this starts the background reader task)
+        let spawn_request = SpawnPtyRequest {
+            session_id: "test-race".to_string(),
+            cwd: std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            shell: None,
+            env: None,
+        };
+
+        spawn_pty(handle.clone(), state.clone(), spawn_request)
+            .await
+            .expect("spawn should succeed");
+
+        // Immediately try to write (before reader task finishes initialization)
+        // This would fail with the old code that removed session from state
+        let write_request = WritePtyRequest {
+            session_id: "test-race".to_string(),
+            data: "echo test\n".to_string(),
+        };
+
+        let write_result = write_pty(state.clone(), write_request);
+        assert!(
+            write_result.is_ok(),
+            "write should succeed immediately after spawn (session must remain in state)"
+        );
+
+        // Also verify resize works
+        let resize_request = ResizePtyRequest {
+            session_id: "test-race".to_string(),
+            rows: 40,
+            cols: 120,
+        };
+
+        let resize_result = resize_pty(state.clone(), resize_request);
+        assert!(
+            resize_result.is_ok(),
+            "resize should succeed immediately after spawn (session must remain in state)"
+        );
+
+        // Cleanup
+        let _ = kill_pty(
+            state.clone(),
+            KillPtyRequest {
+                session_id: "test-race".to_string(),
             },
         );
     }
