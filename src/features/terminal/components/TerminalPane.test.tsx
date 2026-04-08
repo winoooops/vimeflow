@@ -2,7 +2,6 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { WebglAddon } from '@xterm/addon-webgl'
 import { TerminalPane, clearTerminalCache } from './TerminalPane'
 import { useTerminal, type UseTerminalReturn } from '../hooks/useTerminal'
 
@@ -15,9 +14,7 @@ vi.mock('@xterm/addon-fit', () => ({
   FitAddon: vi.fn(),
 }))
 
-vi.mock('@xterm/addon-webgl', () => ({
-  WebglAddon: vi.fn(),
-}))
+// WebGL addon intentionally not loaded — broken in Tauri webview (PR #33)
 
 // Mock useTerminal hook
 vi.mock('../hooks/useTerminal', () => ({
@@ -33,7 +30,6 @@ describe('TerminalPane', () => {
     options: Record<string, unknown>
   }
   let mockFitAddon: { fit: ReturnType<typeof vi.fn> }
-  let mockWebglAddon: object
   let mockUseTerminal: UseTerminalReturn
 
   beforeEach(() => {
@@ -58,9 +54,6 @@ describe('TerminalPane', () => {
       fit: vi.fn(),
     }
 
-    // Mock WebGL addon
-    mockWebglAddon = {}
-
     // Mock useTerminal hook return value
     mockUseTerminal = {
       session: {
@@ -82,7 +75,6 @@ describe('TerminalPane', () => {
     // Setup mocks
     vi.mocked(Terminal).mockImplementation(() => mockTerminal as never)
     vi.mocked(FitAddon).mockImplementation(() => mockFitAddon as never)
-    vi.mocked(WebglAddon).mockImplementation(() => mockWebglAddon as never)
     vi.mocked(useTerminal).mockReturnValue(mockUseTerminal)
   })
 
@@ -134,15 +126,6 @@ describe('TerminalPane', () => {
     await waitFor(() => {
       expect(FitAddon).toHaveBeenCalled()
       expect(mockTerminal.loadAddon).toHaveBeenCalledWith(mockFitAddon)
-    })
-  })
-
-  test('loads WebGL addon', async () => {
-    render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
-
-    await waitFor(() => {
-      expect(WebglAddon).toHaveBeenCalled()
-      expect(mockTerminal.loadAddon).toHaveBeenCalledWith(mockWebglAddon)
     })
   })
 
@@ -203,20 +186,6 @@ describe('TerminalPane', () => {
     const container = screen.getByTestId('terminal-pane')
     expect(container).toHaveClass('w-full')
     expect(container).toHaveClass('h-full')
-  })
-
-  test('handles missing WebGL gracefully', async () => {
-    // Mock WebGL addon to throw error
-    vi.mocked(WebglAddon).mockImplementation(() => {
-      throw new Error('WebGL not supported')
-    })
-
-    // Should not crash
-    render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
-
-    await waitFor(() => {
-      expect(mockTerminal.open).toHaveBeenCalled()
-    })
   })
 
   describe('PTY Service Integration', () => {

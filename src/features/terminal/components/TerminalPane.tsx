@@ -2,7 +2,6 @@ import type { ReactElement } from 'react'
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { WebglAddon } from '@xterm/addon-webgl'
 import { catppuccinMocha, toXtermTheme } from '../theme/catppuccin-mocha'
 import { useTerminal } from '../hooks/useTerminal'
 import {
@@ -161,18 +160,9 @@ export const TerminalPane = ({
       newTerminal.loadAddon(fitAddon)
       fitAddonRef.current = fitAddon
 
-      // Try to load WebGL addon (graceful degradation if not supported)
-      try {
-        const webglAddon = new WebglAddon()
-        newTerminal.loadAddon(webglAddon)
-        webglAddon.onContextLoss(() => {
-          webglAddon.dispose()
-        })
-      } catch (error) {
-        // WebGL not supported - continue with canvas renderer
-        // Error intentionally ignored for graceful degradation
-        void error
-      }
+      // WebGL addon intentionally disabled — Tauri's webview (WebView2/WebKit)
+      // has a silently broken WebGL2 context that causes a blank terminal.
+      // Canvas2D fallback works correctly. See PR #33 for details.
 
       // Open terminal in container
       newTerminal.open(containerRef.current)
