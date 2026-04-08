@@ -56,7 +56,10 @@ export interface ITerminalService {
 export class MockTerminalService implements ITerminalService {
   private nextPid = 1000
   private nextSessionId = 1
-  private sessions = new Map<string, { pid: number; running: boolean }>()
+  private sessions = new Map<
+    string,
+    { pid: number; running: boolean; inputBuffer: string }
+  >()
   private dataCallbacks: ((sessionId: string, data: string) => void)[] = []
   private exitCallbacks: ((
     sessionId: string,
@@ -76,7 +79,7 @@ export class MockTerminalService implements ITerminalService {
     const sessionId = `mock-session-${this.nextSessionId++}`
     const pid = this.nextPid++
 
-    this.sessions.set(sessionId, { pid, running: true })
+    this.sessions.set(sessionId, { pid, running: true, inputBuffer: '' })
 
     // Simulate initial prompt
     setTimeout(() => {
@@ -94,23 +97,60 @@ export class MockTerminalService implements ITerminalService {
       )
     }
 
-    // Echo input back
-    this.emitData(params.sessionId, params.data)
+    const { data } = params
 
-    // Simulate command output for common commands
-    if (params.data.trim() === 'echo hello') {
-      setTimeout(() => {
-        this.emitData(params.sessionId, 'hello\r\n$ ')
-      }, 50)
-    } else if (params.data.trim() === 'pwd') {
-      setTimeout(() => {
-        this.emitData(params.sessionId, '/home/user\r\n$ ')
-      }, 50)
-    } else if (params.data.includes('\r') || params.data.includes('\n')) {
-      setTimeout(() => {
-        this.emitData(params.sessionId, '$ ')
-      }, 50)
+    // Handle backspace/delete (real shells do this via line discipline)
+    if (data === '\x7f' || data === '\b') {
+      this.emitData(params.sessionId, '\b \b')
+
+      return Promise.resolve()
     }
+
+    // Handle Enter — execute "command" and show new prompt
+    if (data === '\r' || data === '\n') {
+      this.emitData(params.sessionId, '\r\n')
+
+      // Simulate command output for common commands
+      const cmd = session.inputBuffer.trim()
+      if (cmd === 'echo hello') {
+        setTimeout(() => {
+          this.emitData(params.sessionId, 'hello\r\n$ ')
+        }, 50)
+      } else if (cmd === 'pwd') {
+        setTimeout(() => {
+          this.emitData(params.sessionId, '/home/user\r\n$ ')
+        }, 50)
+      } else if (cmd === 'help') {
+        setTimeout(() => {
+          this.emitData(
+            params.sessionId,
+            'Mock terminal — commands: echo hello, pwd, help, clear\r\n$ '
+          )
+        }, 50)
+      } else if (cmd === 'clear') {
+        this.emitData(params.sessionId, '\x1b[2J\x1b[H$ ')
+      } else if (cmd.length > 0) {
+        setTimeout(() => {
+          this.emitData(
+            params.sessionId,
+            `mock: command not found: ${cmd}\r\n$ `
+          )
+        }, 50)
+      } else {
+        setTimeout(() => {
+          this.emitData(params.sessionId, '$ ')
+        }, 50)
+      }
+
+      // Reset input buffer
+      session.inputBuffer = ''
+
+      return Promise.resolve()
+    }
+
+    // Regular character — echo and buffer
+    session.inputBuffer = session.inputBuffer + data
+    this.emitData(params.sessionId, data)
 
     return Promise.resolve()
   }

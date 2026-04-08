@@ -77,7 +77,7 @@ describe('MockTerminalService', () => {
       expect(onData).toHaveBeenCalledWith(sessionId, 'hello')
     })
 
-    test('simulates echo command output', async () => {
+    test('simulates echo command output on Enter', async () => {
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
         cwd: '/home/user',
@@ -86,15 +86,18 @@ describe('MockTerminalService', () => {
       const onData = vi.fn()
       service.onData(onData)
 
-      await service.write({ sessionId, data: 'echo hello' })
+      // Type characters then press Enter
+      for (const ch of 'echo hello') {
+        await service.write({ sessionId, data: ch })
+      }
 
+      await service.write({ sessionId, data: '\r' })
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, 'echo hello')
       expect(onData).toHaveBeenCalledWith(sessionId, 'hello\r\n$ ')
     })
 
-    test('simulates pwd command output', async () => {
+    test('simulates pwd command output on Enter', async () => {
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
         cwd: '/home/user',
@@ -103,12 +106,28 @@ describe('MockTerminalService', () => {
       const onData = vi.fn()
       service.onData(onData)
 
-      await service.write({ sessionId, data: 'pwd' })
+      for (const ch of 'pwd') {
+        await service.write({ sessionId, data: ch })
+      }
 
+      await service.write({ sessionId, data: '\r' })
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, 'pwd')
       expect(onData).toHaveBeenCalledWith(sessionId, '/home/user\r\n$ ')
+    })
+
+    test('handles backspace', async () => {
+      const { sessionId } = await service.spawn({
+        shell: '/bin/bash',
+        cwd: '/home/user',
+      })
+
+      const onData = vi.fn()
+      service.onData(onData)
+
+      await service.write({ sessionId, data: '\x7f' })
+
+      expect(onData).toHaveBeenCalledWith(sessionId, '\b \b')
     })
 
     test('throws error for non-existent session', async () => {

@@ -137,14 +137,7 @@ describe('TerminalPane', () => {
     })
   })
 
-  test('loads WebGL addon', async () => {
-    render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
-
-    await waitFor(() => {
-      expect(WebglAddon).toHaveBeenCalled()
-      expect(mockTerminal.loadAddon).toHaveBeenCalledWith(mockWebglAddon)
-    })
-  })
+  // WebGL addon test removed — addon disabled due to broken WebGL2 in Tauri webview
 
   test('opens terminal in container', async () => {
     render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
