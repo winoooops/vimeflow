@@ -78,7 +78,7 @@
       "Return terminal instance and status to component",
       "Write useTerminal.test.ts with mock service"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [27]
   },
   {
@@ -112,7 +112,7 @@
       "Show error state if PTY spawn fails",
       "Write TerminalZone integration tests"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [29]
   },
   {

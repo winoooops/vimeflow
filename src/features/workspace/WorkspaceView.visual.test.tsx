@@ -1,11 +1,21 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable testing-library/no-node-access */
 
-import { describe, test, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import { WorkspaceView } from './WorkspaceView'
+import { describe, test, expect, vi } from 'vitest'
 // @ts-expect-error - tailwind.config.js has no type declarations
 import tailwindConfig from '../../../tailwind.config'
+
+// Mock TerminalPane to avoid xterm.js issues in tests
+vi.mock('../terminal/components/TerminalPane', () => ({
+  TerminalPane: vi.fn(() => (
+    <div data-testid="terminal-pane-mock">Mocked TerminalPane</div>
+  )),
+}))
+
+// eslint-disable-next-line import/first
+import { render, screen } from '@testing-library/react'
+// eslint-disable-next-line import/first
+import { WorkspaceView } from './WorkspaceView'
 
 /**
  * Visual Verification Test Suite for Feature #20

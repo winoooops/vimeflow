@@ -1,9 +1,16 @@
 /* eslint-disable testing-library/no-node-access */
 /* eslint-disable vitest/expect-expect */
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceView } from './WorkspaceView'
+
+// Mock TerminalPane to avoid xterm.js issues in tests
+vi.mock('../terminal/components/TerminalPane', () => ({
+  TerminalPane: vi.fn(() => (
+    <div data-testid="terminal-pane-mock">Mocked TerminalPane</div>
+  )),
+}))
 
 describe('WorkspaceView', () => {
   test('renders all five zones (icon rail, sidebar, terminal, bottom drawer, agent activity)', () => {

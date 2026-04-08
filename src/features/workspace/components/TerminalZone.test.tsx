@@ -4,6 +4,19 @@ import userEvent from '@testing-library/user-event'
 import { TerminalZone } from './TerminalZone'
 import { mockSessions } from '../data/mockSessions'
 
+// Mock TerminalPane to avoid xterm.js issues in tests
+vi.mock('../../terminal/components/TerminalPane', () => ({
+  TerminalPane: vi.fn(({ sessionId, cwd }) => (
+    <div
+      data-testid="terminal-pane-mock"
+      data-session-id={sessionId}
+      data-cwd={cwd}
+    >
+      Mocked TerminalPane
+    </div>
+  )),
+}))
+
 describe('TerminalZone', () => {
   const mockOnSessionChange = vi.fn()
   const mockOnNewTab = vi.fn()
@@ -100,7 +113,7 @@ describe('TerminalZone', () => {
     expect(mockOnNewTab).toHaveBeenCalledTimes(1)
   })
 
-  test('renders terminal placeholder content area', () => {
+  test('renders terminal content area with TerminalPane', () => {
     render(<TerminalZone {...defaultProps} />)
 
     const terminalContent = screen.getByTestId('terminal-content')
@@ -108,10 +121,8 @@ describe('TerminalZone', () => {
     expect(terminalContent).toBeInTheDocument()
     // Dark background matching design spec (#121221)
     expect(terminalContent).toHaveClass('bg-surface')
-    // Should have prompt text
-    expect(
-      screen.getByText(/Terminal output will appear here/i)
-    ).toBeInTheDocument()
+    // Should have TerminalPane (mocked)
+    expect(screen.getByTestId('terminal-pane-mock')).toBeInTheDocument()
   })
 
   test('renders with empty sessions array', () => {
@@ -191,5 +202,80 @@ describe('TerminalZone', () => {
     expect(rootElement).toHaveClass('flex')
     expect(rootElement).toHaveClass('flex-col')
     expect(rootElement).toHaveClass('h-full')
+  })
+
+  // TerminalPane integration tests (Feature #30)
+  test('renders TerminalPane when active session exists', () => {
+    render(<TerminalZone {...defaultProps} />)
+
+    // TerminalPane wrapper should be rendered
+    const terminalPane = screen.getByTestId('terminal-pane')
+    expect(terminalPane).toBeInTheDocument()
+
+    // Mocked TerminalPane component should be present
+    expect(screen.getByTestId('terminal-pane-mock')).toBeInTheDocument()
+  })
+
+  test('passes active session id to TerminalPane', () => {
+    render(<TerminalZone {...defaultProps} />)
+
+    const terminalPane = screen.getByTestId('terminal-pane')
+    // TerminalPane wrapper should have the sessionId
+    expect(terminalPane).toHaveAttribute('data-session-id', 'sess-1')
+
+    // Mocked component should also receive it
+    const mockPane = screen.getByTestId('terminal-pane-mock')
+    expect(mockPane).toHaveAttribute('data-session-id', 'sess-1')
+  })
+
+  test('passes active session working directory to TerminalPane', () => {
+    render(<TerminalZone {...defaultProps} />)
+
+    const terminalPane = screen.getByTestId('terminal-pane')
+    // TerminalPane wrapper should have the cwd
+    expect(terminalPane).toHaveAttribute(
+      'data-cwd',
+      '/home/user/projects/Vimeflow'
+    )
+
+    // Mocked component should also receive it
+    const mockPane = screen.getByTestId('terminal-pane-mock')
+    expect(mockPane).toHaveAttribute('data-cwd', '/home/user/projects/Vimeflow')
+  })
+
+  test('does not render TerminalPane when no active session', () => {
+    render(<TerminalZone {...defaultProps} activeSessionId={null} />)
+
+    // TerminalPane should not be rendered
+    expect(screen.queryByTestId('terminal-pane')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('terminal-pane-mock')).not.toBeInTheDocument()
+
+    // Should show placeholder instead
+    expect(
+      screen.getByText(/no active session.*click \+ to create a new terminal/i)
+    ).toBeInTheDocument()
+  })
+
+  test('updates TerminalPane when active session changes', () => {
+    const { rerender } = render(<TerminalZone {...defaultProps} />)
+
+    // Initial session
+    let terminalPane = screen.getByTestId('terminal-pane')
+    let mockPane = screen.getByTestId('terminal-pane-mock')
+    expect(terminalPane).toHaveAttribute('data-session-id', 'sess-1')
+    expect(mockPane).toHaveAttribute('data-session-id', 'sess-1')
+
+    // Change to second session
+    rerender(<TerminalZone {...defaultProps} activeSessionId="sess-2" />)
+
+    terminalPane = screen.getByTestId('terminal-pane')
+    mockPane = screen.getByTestId('terminal-pane-mock')
+    expect(terminalPane).toHaveAttribute('data-session-id', 'sess-2')
+    expect(mockPane).toHaveAttribute('data-session-id', 'sess-2')
+    expect(terminalPane).toHaveAttribute(
+      'data-cwd',
+      '/home/user/projects/Vimeflow'
+    )
+    expect(mockPane).toHaveAttribute('data-cwd', '/home/user/projects/Vimeflow')
   })
 })

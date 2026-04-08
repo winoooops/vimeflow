@@ -1,5 +1,7 @@
 import type { ReactElement } from 'react'
+import { useMemo } from 'react'
 import type { Session } from '../types'
+import { TerminalPane } from '../../terminal/components/TerminalPane'
 
 export interface TerminalZoneProps {
   sessions: Session[]
@@ -19,6 +21,12 @@ export const TerminalZone = ({
       onSessionChange(sessionId)
     }
   }
+
+  // Find active session
+  const activeSession = useMemo(
+    () => sessions.find((s) => s.id === activeSessionId),
+    [sessions, activeSessionId]
+  )
 
   return (
     <div data-testid="terminal-zone" className="flex h-full flex-col">
@@ -63,11 +71,24 @@ export const TerminalZone = ({
       </div>
 
       {/* Terminal content area */}
-      <div
-        data-testid="terminal-content"
-        className="flex flex-1 items-center justify-center bg-surface font-mono text-on-surface/60"
-      >
-        <p>Terminal output will appear here</p>
+      <div data-testid="terminal-content" className="flex-1 bg-surface">
+        {activeSession ? (
+          <div
+            data-testid="terminal-pane"
+            data-session-id={activeSession.id}
+            data-cwd={activeSession.workingDirectory}
+            className="h-full"
+          >
+            <TerminalPane
+              sessionId={activeSession.id}
+              cwd={activeSession.workingDirectory}
+            />
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center font-mono text-on-surface/60">
+            <p>No active session. Click + to create a new terminal.</p>
+          </div>
+        )}
       </div>
     </div>
   )

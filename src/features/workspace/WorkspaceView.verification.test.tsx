@@ -4,11 +4,21 @@
  * This test suite verifies all requirements from Feature 23 are met.
  */
 
-import { describe, test, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import { WorkspaceView } from './WorkspaceView'
+import { describe, test, expect, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
+
+// Mock TerminalPane to avoid xterm.js issues in tests
+vi.mock('../terminal/components/TerminalPane', () => ({
+  TerminalPane: vi.fn(() => (
+    <div data-testid="terminal-pane-mock">Mocked TerminalPane</div>
+  )),
+}))
+
+// eslint-disable-next-line import/first
+import { render, screen } from '@testing-library/react'
+// eslint-disable-next-line import/first
+import { WorkspaceView } from './WorkspaceView'
 
 describe('Feature 23: Final Phase 2 Verification', () => {
   describe('1. 5-zone layout renders', () => {
