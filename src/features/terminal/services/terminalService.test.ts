@@ -63,7 +63,7 @@ describe('MockTerminalService', () => {
   })
 
   describe('write', () => {
-    test('echoes input back', async () => {
+    test('echoes each character individually', async () => {
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
         cwd: '/home/user',
@@ -74,7 +74,11 @@ describe('MockTerminalService', () => {
 
       await service.write({ sessionId, data: 'hello' })
 
-      expect(onData).toHaveBeenCalledWith(sessionId, 'hello')
+      // Per-character processing: each char emitted separately
+      expect(onData).toHaveBeenCalledWith(sessionId, 'h')
+      expect(onData).toHaveBeenCalledWith(sessionId, 'e')
+      expect(onData).toHaveBeenCalledWith(sessionId, 'o')
+      expect(onData).toHaveBeenCalledTimes(5)
     })
 
     test('simulates echo command output on Enter', async () => {
@@ -116,7 +120,7 @@ describe('MockTerminalService', () => {
       expect(onData).toHaveBeenCalledWith(sessionId, '/home/user\r\n$ ')
     })
 
-    test('handles backspace', async () => {
+    test('handles backspace by removing last buffered character', async () => {
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
         cwd: '/home/user',
@@ -125,9 +129,29 @@ describe('MockTerminalService', () => {
       const onData = vi.fn()
       service.onData(onData)
 
+      // Type a character first so the buffer isn't empty
+      await service.write({ sessionId, data: 'a' })
+      onData.mockClear()
+
+      // Backspace should erase the character
       await service.write({ sessionId, data: '\x7f' })
 
       expect(onData).toHaveBeenCalledWith(sessionId, '\b \b')
+    })
+
+    test('ignores backspace on empty buffer', async () => {
+      const { sessionId } = await service.spawn({
+        shell: '/bin/bash',
+        cwd: '/home/user',
+      })
+
+      const onData = vi.fn()
+      service.onData(onData)
+
+      // Backspace on empty buffer should be a no-op
+      await service.write({ sessionId, data: '\x7f' })
+
+      expect(onData).not.toHaveBeenCalled()
     })
 
     test('throws error for non-existent session', async () => {
