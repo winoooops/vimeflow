@@ -80,6 +80,9 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   // Track if component is mounted to prevent state updates after unmount
   const isMountedRef = useRef(true)
 
+  // Track whether this hook spawned the session (vs reconnecting to existing)
+  const didSpawnSessionRef = useRef(false)
+
   // Track unmount only (not dependency changes)
   useEffect(
     () => (): void => {
@@ -99,6 +102,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     const initializeSession = async (): Promise<void> => {
       // If sessionId is provided, reconnect to existing session
       if (sessionId) {
+        didSpawnSessionRef.current = false // Reconnecting, not spawning
+
         const reconnectedSession: TerminalSession = {
           id: sessionId,
           pid: -1, // Unknown PID for reconnected sessions
@@ -140,6 +145,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           return
         }
 
+        didSpawnSessionRef.current = true // We spawned this session
+
         // Convert result to TerminalSession
         const newSession: TerminalSession = {
           id: result.sessionId,
@@ -177,7 +184,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // Cleanup session when dependencies change or on unmount
     return (): void => {
       const cleanupSession = async (): Promise<void> => {
-        if (currentSession) {
+        // Only kill sessions we spawned, not reconnected sessions
+        if (currentSession && didSpawnSessionRef.current) {
           try {
             await service.kill({ sessionId: currentSession.id })
           } catch {

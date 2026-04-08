@@ -272,6 +272,33 @@ describe('useTerminal', () => {
     expect(mockService.kill).toHaveBeenCalledWith({ sessionId })
   })
 
+  test('does NOT kill reconnected session on unmount', async () => {
+    const existingSessionId = 'existing-session-456'
+
+    const { result, unmount } = renderHook(() =>
+      useTerminal({
+        terminal: mockTerminal,
+        service: mockService,
+        cwd: '/home/user',
+        sessionId: existingSessionId,
+      })
+    )
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('running')
+      expect(result.current.session?.id).toBe(existingSessionId)
+    })
+
+    // Clear the spy to track calls after setup
+    vi.clearAllMocks()
+
+    // Unmount the component
+    unmount()
+
+    // Should NOT kill the session since we reconnected (didn't spawn it)
+    expect(mockService.kill).not.toHaveBeenCalled()
+  })
+
   test('does not spawn if terminal is null', () => {
     renderHook(() =>
       useTerminal({
