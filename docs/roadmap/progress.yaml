@@ -5,10 +5,10 @@
 # Status values: pending | in_progress | done | blocked
 # Revised: 2026-04-07 — Phase 1 done, new Phase 2 (Workspace Layout Shell) added
 
-version: 3
-updated: '2026-04-07'
+version: 4
+updated: '2026-04-08'
 roadmap: docs/roadmap/tauri-migration-roadmap.md
-notes: 'Phase 2 (Workspace Layout Shell) completed - all 23 features passing, 92.99% test coverage'
+notes: 'Phase 3 (Terminal Core) code complete — TauriTerminalService bridges xterm.js to Rust PTY backend, 1212 tests passing'
 
 phases:
   - id: phase-1
@@ -188,7 +188,7 @@ phases:
 
   - id: phase-3
     name: 'Terminal Core'
-    status: pending
+    status: in_progress
     blocked_by:
       - phase-2
     specs:
@@ -196,78 +196,83 @@ phases:
     steps:
       - id: p3-s1
         name: 'Add `portable-pty` Rust crate for cross-platform PTY spawning'
-        status: pending
-        commit: null
-        pr: null
-        notes: null
+        status: done
+        commit: ba395c7
+        pr: 31
+        notes: 'portable-pty 0.8 in Cargo.toml, already present from Phase 2'
       - id: p3-s2
         name: 'Implement Rust commands: pty_spawn, pty_write, pty_resize, pty_kill'
-        status: pending
-        commit: null
-        pr: null
-        notes: null
+        status: done
+        commit: ba395c7
+        pr: 31
+        notes: 'Full implementation in src-tauri/src/terminal/ with tests'
       - id: p3-s3
         name: 'Wire PTY stdout → Tauri events → frontend'
-        status: pending
-        commit: null
+        status: done
+        commit: 1ecee29
         pr: null
-        notes: null
+        notes: 'TauriTerminalService listens to pty-data/pty-exit/pty-error events'
       - id: p3-s4
         name: 'Wire frontend keyboard input → Tauri invoke → PTY stdin'
-        status: pending
-        commit: null
+        status: done
+        commit: 1ecee29
         pr: null
-        notes: null
+        notes: 'TauriTerminalService.write() calls invoke(write_pty), useTerminal hook wires xterm onData'
       - id: p3-s5
         name: 'Add xterm.js + @xterm/addon-fit + @xterm/addon-webgl to frontend'
-        status: pending
-        commit: null
-        pr: null
-        notes: null
+        status: done
+        commit: ba395c7
+        pr: 31
+        notes: '@xterm/xterm@^6.0.0, @xterm/addon-fit@^0.11.0, @xterm/addon-webgl@^0.19.0 already installed'
       - id: p3-s6
         name: 'Create TerminalPane React component rendering xterm.js'
-        status: pending
-        commit: null
-        pr: null
-        notes: null
+        status: done
+        commit: ba395c7
+        pr: 31
+        notes: 'TerminalPane with xterm.js, FitAddon, WebglAddon, session caching'
       - id: p3-s7
         name: 'Replace terminal zone placeholder with real TerminalPane'
-        status: pending
-        commit: null
-        pr: null
-        notes: null
+        status: done
+        commit: ba395c7
+        pr: 31
+        notes: 'TerminalZone renders TerminalPane per session with tab switching'
       - id: p3-s8
         name: 'Configure Catppuccin Mocha theme for xterm.js'
-        status: pending
-        commit: null
-        pr: null
-        notes: null
+        status: done
+        commit: ba395c7
+        pr: 31
+        notes: 'catppuccin-mocha.ts with toXtermTheme() converter'
     dod:
       - id: p3-d1
         check: 'Can spawn a shell process and interact with it in the terminal pane'
         status: pending
-        commit: null
+        commit: 1ecee29
         pr: null
+        notes: 'Code complete — needs manual verification with tauri:dev'
       - id: p3-d2
         check: 'Can run `claude` (Claude Code) in a terminal pane'
         status: pending
-        commit: null
+        commit: 1ecee29
         pr: null
+        notes: 'Code complete — needs manual verification with tauri:dev'
       - id: p3-d3
         check: 'Terminal resizes correctly when window resizes'
         status: pending
-        commit: null
+        commit: 1ecee29
         pr: null
+        notes: 'ResizeObserver + FitAddon + resize_pty wired — needs manual verification'
       - id: p3-d4
         check: 'Multiple terminal tabs work (switch between them)'
         status: pending
-        commit: null
+        commit: 1ecee29
         pr: null
+        notes: 'TerminalZone tab switching with session caching — needs manual verification'
       - id: p3-d5
         check: 'PTY processes are cleaned up on tab close / app exit'
         status: pending
-        commit: null
+        commit: 1ecee29
         pr: null
+        notes: 'useTerminal cleanup kills session on unmount — needs manual verification'
 
   - id: phase-4
     name: 'Session Management + State'
