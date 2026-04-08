@@ -129,7 +129,7 @@
       "Handle spawn errors (invalid shell, permission denied)",
       "Write Rust unit tests for spawn_pty"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [30],
     "notes": "Requires Rust/Cargo environment"
   },
@@ -145,7 +145,7 @@
       "Handle write errors (session not found, PTY closed)",
       "Write Rust unit tests for write_pty"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [31],
     "notes": "Requires Rust/Cargo environment"
   },
@@ -161,7 +161,7 @@
       "Handle resize errors (session not found, PTY closed)",
       "Write Rust unit tests for resize_pty"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [31],
     "notes": "Requires Rust/Cargo environment"
   },
@@ -178,7 +178,7 @@
       "Handle kill errors (session not found, already exited)",
       "Write Rust unit tests for kill_pty"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [31],
     "notes": "Requires Rust/Cargo environment"
   },
@@ -195,7 +195,7 @@
       "Handle backpressure (limit event queue size)",
       "Write Rust integration tests for event streaming"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [31],
     "notes": "Requires Rust/Cargo environment"
   },
