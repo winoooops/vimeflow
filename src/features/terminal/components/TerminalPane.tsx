@@ -85,6 +85,14 @@ export const TerminalPane = ({
     resizeRef.current = resize
   }, [resize])
 
+  // Send initial resize once terminal is fitted and session is spawned
+  // This ensures the PTY starts with the correct dimensions even if the user never resizes
+  useEffect(() => {
+    if (terminal) {
+      resize(terminal.cols, terminal.rows)
+    }
+  }, [terminal, resize])
+
   useEffect(() => {
     if (!containerRef.current) {
       return
@@ -123,6 +131,10 @@ export const TerminalPane = ({
 
     // Fit terminal to container
     fitAddon.fit()
+
+    // Send initial terminal size to PTY (avoids default 80×24 when terminal is actually larger)
+    // This will be a no-op on first render but ensures PTY gets correct size on subsequent recreations
+    resizeRef.current(newTerminal.cols, newTerminal.rows)
 
     // Handle resize events - notify PTY of terminal size changes
     const resizeDisposable = newTerminal.onResize(({ cols, rows }) => {
