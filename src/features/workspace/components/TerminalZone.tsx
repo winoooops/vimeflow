@@ -22,7 +22,7 @@ export const TerminalZone = ({
   }
 
   return (
-    <div data-testid="terminal-zone" className="flex h-full flex-col">
+    <div data-testid="terminal-zone" className="flex min-h-0 flex-1 flex-col">
       {/* Tab bar */}
       <div
         data-testid="tab-bar"
