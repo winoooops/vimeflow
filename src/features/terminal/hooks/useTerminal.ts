@@ -131,10 +131,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         })
 
         if (!isMountedRef.current) {
-          // Component unmounted during spawn, kill the session
-          setDebugInfo(
-            `killed-unmounted (mounted=${String(isMountedRef.current)})`
-          )
+          // Component unmounted during spawn — kill session, skip state updates
           await service.kill({ sessionId: result.sessionId })
 
           return
@@ -165,8 +162,6 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         setDebugInfo(`running pid=${String(result.pid)}`)
       } catch (err: unknown) {
         if (!isMountedRef.current) {
-          setDebugInfo('error-unmounted')
-
           return
         }
 

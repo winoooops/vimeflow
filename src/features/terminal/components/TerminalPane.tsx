@@ -216,13 +216,14 @@ export const TerminalPane = ({
   return (
     <div
       data-testid="terminal-pane-wrapper"
-      className="relative w-full h-full overflow-hidden border-2 border-red-500"
+      className={`relative w-full h-full overflow-hidden${import.meta.env.DEV ? ' border-2 border-red-500' : ''}`}
     >
-      {/* DEBUG: status overlay */}
-      <div className="absolute bottom-0 left-0 z-50 bg-black/80 px-2 py-1 text-xs font-mono text-green-400">
-        env={isTauri() ? 'tauri' : 'browser'} | status={status} | debug=
-        {debugInfo}
-      </div>
+      {import.meta.env.DEV && (
+        <div className="absolute bottom-0 left-0 z-50 bg-black/80 px-2 py-1 text-xs font-mono text-green-400">
+          env={isTauri() ? 'tauri' : 'browser'} | status={status} | debug=
+          {debugInfo}
+        </div>
+      )}
       <div
         ref={containerRef}
         data-testid="terminal-pane"
