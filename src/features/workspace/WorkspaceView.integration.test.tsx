@@ -46,9 +46,9 @@ describe('WorkspaceView Integration Tests', () => {
         name: /^🤖/,
       })
 
-      // At least one tab should have the active styling
+      // At least one tab wrapper should have the active styling (class is on parent div)
       const hasActiveTab = sessionTabs.some((tab) =>
-        tab.classList.contains('border-b-primary')
+        tab.parentElement?.classList.contains('border-b-primary')
       )
 
       expect(hasActiveTab).toBe(true)

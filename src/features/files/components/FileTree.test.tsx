@@ -122,17 +122,13 @@ describe('FileTree', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  test('has correct styling classes', () => {
+  test('tree container has no wrapper styling (inherits from parent)', () => {
     render(<FileTree nodes={mockNodes} contextMenuActions={mockActions} />)
 
     const tree = screen.getByRole('tree', { name: /file tree/i })
-    expect(tree).toHaveClass(
-      'bg-surface-container-low',
-      'rounded-xl',
-      'p-4',
-      'max-w-4xl',
-      'mx-auto'
-    )
+    // Minimal container — no background, padding, or rounding; parent controls those
+    expect(tree).not.toHaveClass('bg-surface-container-low')
+    expect(tree).not.toHaveClass('rounded-xl')
   })
 
   test('renders empty tree gracefully', () => {

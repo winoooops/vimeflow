@@ -47,7 +47,7 @@ export const IconRail = ({
         ))}
       </div>
 
-      {/* Settings item (bottom) */}
+      {/* Settings item (bottom) — plain gear icon */}
       <div
         className="relative flex w-full justify-center"
         onMouseEnter={() => setHoveredItem(settingsItem.id)}
@@ -56,10 +56,10 @@ export const IconRail = ({
         <button
           type="button"
           onClick={settingsItem.onClick}
-          className={`flat-bookmark flex h-12 w-8 items-center justify-center ${settingsItem.color}`}
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-on-surface/50 transition-colors hover:bg-surface-container hover:text-on-surface"
           aria-label={settingsItem.name}
         >
-          <span className="material-symbols-outlined mb-2 text-lg text-white">
+          <span className="material-symbols-outlined text-xl">
             {settingsItem.icon}
           </span>
         </button>

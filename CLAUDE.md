@@ -89,6 +89,7 @@ This file covers what you need to start working. For deeper topics, read the lin
 | Codex review design spec                                 | `docs/superpowers/specs/2026-04-02-codex-code-review-design.md`   |
 | Codex feedback loop design spec                          | `docs/superpowers/specs/2026-04-03-codex-feedback-loop-design.md` |
 | Progress tracking (roadmap status)                       | `docs/roadmap/progress.yaml`                                      |
+| Shell OSC 7 setup (file explorer cwd sync)               | `README.md` → "Shell Setup (OSC 7)"                              |
 
 ## Harness Plugin Setup
 

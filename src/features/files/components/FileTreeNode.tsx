@@ -4,12 +4,13 @@ import type { FileNode, GitStatus } from '../types'
 
 interface FileTreeNodeProps {
   node: FileNode
+  depth?: number
   onContextMenu: (event: MouseEvent, node: FileNode) => void
   onNodeSelect?: (node: FileNode) => void
 }
 
 /**
- * Get the appropriate icon for a file based on its extension.
+ * Get the appropriate Material Symbols icon for a file based on its extension.
  */
 const getFileIcon = (filename: string, customIcon?: string): string => {
   if (customIcon) {
@@ -23,9 +24,9 @@ const getFileIcon = (filename: string, customIcon?: string): string => {
     case 'ts':
     case 'jsx':
     case 'js':
-      return 'code'
+      return 'description'
     case 'json':
-      return 'data_object'
+      return 'settings'
     case 'rs':
       return 'code_blocks'
     case 'md':
@@ -39,33 +40,34 @@ const getFileIcon = (filename: string, customIcon?: string): string => {
 }
 
 /**
- * Get the badge color classes for a git status.
+ * Get the text color class for a git status indicator.
  */
 const getGitStatusColor = (status: GitStatus): string => {
   switch (status) {
     case 'M':
-      return 'bg-[#f9e2af] text-[#1e1e2e]' // Yellow for modified
+      return 'text-amber-400'
     case 'A':
-      return 'bg-[#a6e3a1] text-[#1e1e2e]' // Green for added
+      return 'text-emerald-400'
     case 'D':
-      return 'bg-[#f38ba8] text-[#1e1e2e]' // Red for deleted
+      return 'text-red-400'
     case 'U':
-      return 'bg-[#cba6f7] text-[#1e1e2e]' // Purple for untracked
+      return 'text-purple-400'
   }
 }
 
 /**
- * Recursive file tree node component.
+ * Recursive file tree node — minimal, compact design.
  */
 export const FileTreeNode = ({
   node,
+  depth = 0,
   onContextMenu,
   onNodeSelect = undefined,
 }: FileTreeNodeProps): ReactElement => {
   const [isExpanded, setIsExpanded] = useState(node.defaultExpanded ?? false)
 
   const handleClick = (): void => {
-    if (node.type === 'folder') {
+    if (node.type === 'folder' && node.children !== undefined) {
       setIsExpanded(!isExpanded)
     }
     onNodeSelect?.(node)
@@ -76,48 +78,42 @@ export const FileTreeNode = ({
     onContextMenu(event, node)
   }
 
-  // Build row classes based on drag states
-  let rowClasses =
-    'flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-surface-bright cursor-pointer transition-all duration-300'
-
-  if (node.isDragging) {
-    rowClasses +=
-      ' opacity-60 scale-95 shadow-lg border-dashed border border-outline-variant translate-x-4'
-  }
-
-  if (node.isDragTarget) {
-    rowClasses += ' bg-secondary-container/20 ring-1 ring-secondary/40'
-  }
-
   const isFolder = node.type === 'folder'
   const folderIcon = isExpanded ? 'folder_open' : 'folder'
   const fileIcon = getFileIcon(node.name, node.icon)
+  const indent = depth * 16
 
   return (
     <div role="treeitem" aria-expanded={isFolder ? isExpanded : undefined}>
       <div
-        className={rowClasses}
+        className="group flex h-7 cursor-pointer items-center gap-1.5 rounded px-1 text-on-surface/80 transition-colors hover:bg-white/5"
+        style={{ paddingLeft: `${indent + 4}px` }}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
       >
         {/* Chevron for folders */}
-        {isFolder && (
+        {isFolder ? (
           <span
-            className={`material-symbols-outlined text-base text-on-surface-variant transition-transform ${
+            className={`material-symbols-outlined text-sm text-on-surface/40 transition-transform ${
               isExpanded ? 'rotate-90' : ''
             }`}
             aria-hidden="true"
           >
             chevron_right
           </span>
+        ) : (
+          /* Spacer to align files with folder names */
+          <span className="w-[18px] shrink-0" />
         )}
 
-        {/* Folder or file icon */}
+        {/* Icon */}
         <span
-          className={`material-symbols-outlined text-base ${
-            isFolder && isExpanded
-              ? 'text-[#a8c8ff]'
-              : 'text-on-surface-variant'
+          className={`material-symbols-outlined text-sm ${
+            isFolder
+              ? isExpanded
+                ? 'text-sky-400'
+                : 'text-on-surface/50'
+              : 'text-on-surface/40'
           }`}
           style={
             isFolder && isExpanded
@@ -129,39 +125,28 @@ export const FileTreeNode = ({
           {isFolder ? folderIcon : fileIcon}
         </span>
 
-        {/* Node name */}
-        <span className="text-sm text-on-surface">{node.name}</span>
+        {/* Name */}
+        <span className="min-w-0 truncate font-mono text-xs">{node.name}</span>
 
-        {/* Git status badge */}
+        {/* Git status — subtle letter, no badge */}
         {node.gitStatus && (
           <span
-            className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${getGitStatusColor(
-              node.gitStatus
-            )}`}
+            className={`ml-auto shrink-0 font-mono text-[10px] font-bold ${getGitStatusColor(node.gitStatus)}`}
             aria-label={`Git status: ${node.gitStatus}`}
           >
             {node.gitStatus}
-          </span>
-        )}
-
-        {/* Drag target badge */}
-        {node.isDragTarget && (
-          <span
-            className="ml-auto text-[9px] px-2 py-0.5 rounded bg-secondary/40 text-secondary-on font-bold uppercase tracking-wider"
-            aria-label="Drop target"
-          >
-            DROP HERE
           </span>
         )}
       </div>
 
       {/* Children (recursive) */}
       {isFolder && isExpanded && node.children && node.children.length > 0 && (
-        <div className="pl-6 border-l border-[#4a444f]/20 ml-5">
+        <div role="group">
           {node.children.map((child) => (
             <FileTreeNode
               key={child.id}
               node={child}
+              depth={depth + 1}
               onContextMenu={onContextMenu}
               onNodeSelect={onNodeSelect}
             />

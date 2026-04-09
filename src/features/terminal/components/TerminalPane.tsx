@@ -67,6 +67,11 @@ export interface TerminalPaneProps {
    * @default undefined
    */
   env?: Record<string, string>
+
+  /**
+   * Called when the shell reports a working directory change (via OSC 7)
+   */
+  onCwdChange?: (cwd: string) => void
 }
 
 /**
@@ -86,6 +91,7 @@ export const TerminalPane = ({
   service = undefined,
   shell = undefined,
   env = undefined,
+  onCwdChange = undefined,
 }: TerminalPaneProps): ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [terminal, setTerminal] = useState<Terminal | null>(null)
@@ -105,6 +111,12 @@ export const TerminalPane = ({
     shell,
     env,
   })
+
+  // Store callbacks in refs to avoid terminal recreation when they change
+  const onCwdChangeRef = useRef(onCwdChange)
+  useEffect(() => {
+    onCwdChangeRef.current = onCwdChange
+  }, [onCwdChange])
 
   // P1 Fix: Store resize callback in ref to avoid terminal recreation when it changes
   const resizeRef = useRef(resize)
@@ -169,6 +181,30 @@ export const TerminalPane = ({
 
       // Fit terminal to container
       fitAddon.fit()
+
+      // Register OSC 7 handler for cwd tracking
+      // Shells emit: \e]7;file://hostname/path\a on every cd
+      newTerminal.parser.registerOscHandler(7, (data) => {
+        try {
+          const url = new URL(data)
+          let path = decodeURIComponent(url.pathname)
+          // Windows: new URL("file://host/C:/Users/...").pathname → "/C:/Users/..."
+          // Strip the leading slash before a drive letter so Rust canonicalize works
+          if (/^\/[A-Za-z]:/.test(path)) {
+            path = path.slice(1)
+          }
+          if (path) {
+            onCwdChangeRef.current?.(path)
+          }
+        } catch {
+          // Not a valid URL — some shells emit plain paths
+          if (data.startsWith('/')) {
+            onCwdChangeRef.current?.(data)
+          }
+        }
+
+        return true
+      })
 
       // Cache the terminal instance for this session
       terminalCache.set(sessionId, { terminal: newTerminal, fitAddon })

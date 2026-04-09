@@ -23,13 +23,14 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('agent-activity')).toBeInTheDocument()
   })
 
-  test('applies correct grid layout with 4 columns (updated dimensions)', () => {
+  test('applies correct grid layout with 4 columns (dynamic sidebar width)', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
 
     expect(container).toHaveClass('grid')
-    expect(container).toHaveClass('grid-cols-[64px_256px_1fr_320px]')
+    // Grid columns are now set via inline style for resizable sidebar
+    expect(container.style.gridTemplateColumns).toBe('64px 256px 1fr 320px')
   })
 
   test('fills viewport height', () => {
@@ -100,10 +101,11 @@ describe('WorkspaceView', () => {
   test('defaults to first session as active', () => {
     render(<WorkspaceView />)
 
-    // First session should have active styling (bg-slate-800/80)
-    const firstSession = screen.getByRole('button', { name: 'auth middleware' })
-    expect(firstSession).toHaveClass('bg-slate-800/80')
-    expect(firstSession).toHaveClass('text-primary-container')
+    // Default session should have active styling on the list item wrapper
+    const firstSession = screen.getByRole('button', { name: 'session 1' })
+    const listItem = firstSession.closest('li')!
+    expect(listItem.className).toContain('bg-surface-container-high')
+    expect(listItem.className).toContain('text-on-surface')
   })
 
   test('renders FileExplorer in sidebar', () => {
@@ -172,20 +174,31 @@ describe('WorkspaceView', () => {
   })
 
   test('handles session switching', async () => {
-    // Test that clicking a different session updates the active session
+    // Test that creating a second session and clicking it switches active
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    // Initially, first session is active
-    const firstSession = screen.getByRole('button', { name: 'auth middleware' })
-    expect(firstSession).toHaveClass('bg-slate-800/80')
+    // Initially, default session is active
+    const firstSession = screen.getByRole('button', { name: 'session 1' })
+    expect(firstSession.closest('li')!.className).toContain(
+      'bg-surface-container-high'
+    )
 
-    // Click second session
-    const secondSession = screen.getByRole('button', { name: 'fix: login bug' })
-    await user.click(secondSession)
+    // Create a second session via the New Instance button
+    const newInstanceButton = screen.getByRole('button', {
+      name: 'New Instance',
+    })
+    await user.click(newInstanceButton)
 
-    // Second session should now be active
-    expect(secondSession).toHaveClass('bg-slate-800/80')
+    // New session should now be active, first should not
+    const secondSession = screen.getByRole('button', { name: 'session 2' })
+    expect(secondSession.closest('li')!.className).toContain(
+      'bg-surface-container-high'
+    )
+
+    expect(firstSession.closest('li')!.className).not.toContain(
+      'bg-surface-container-high'
+    )
   })
 
   test('handles empty sessions gracefully without crashing', () => {
