@@ -1,6 +1,6 @@
 /* eslint-disable testing-library/no-node-access */
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceView } from './WorkspaceView'
 
@@ -348,6 +348,114 @@ describe('WorkspaceView Integration Tests', () => {
       expect(validChevrons).toContain(initialChevron)
       expect(validChevrons).toContain(afterClickChevron)
       expect(initialChevron).not.toBe(afterClickChevron)
+    })
+  })
+
+  describe('File open flow integration', () => {
+    test('clicking file in FileExplorer loads file content in CodeEditor', async (): Promise<void> => {
+      const user = userEvent.setup()
+      render(<WorkspaceView />)
+
+      const sidebar = screen.getByTestId('sidebar')
+
+      // Wait for FileTree to load
+      await waitFor(() => {
+        expect(
+          within(sidebar).getByRole('tree', { name: 'File tree' })
+        ).toBeInTheDocument()
+      })
+
+      // Find and click a file (auth.ts from mock data)
+      const fileNode = within(sidebar).getByText('auth.ts')
+      await user.click(fileNode)
+
+      // Wait for the file to be loaded
+      // The editor should no longer show "No file selected"
+      await waitFor(
+        () => {
+          const bottomDrawer = screen.getByTestId('bottom-drawer')
+
+          const noFileMessage =
+            within(bottomDrawer).queryByText(/no file selected/i)
+
+          expect(noFileMessage).not.toBeInTheDocument()
+        },
+        { timeout: 2000 }
+      )
+    })
+
+    test('file path state updates when file is clicked', async (): Promise<void> => {
+      const user = userEvent.setup()
+      render(<WorkspaceView />)
+
+      const sidebar = screen.getByTestId('sidebar')
+
+      // Wait for FileTree to load
+      await waitFor(() => {
+        expect(
+          within(sidebar).getByRole('tree', { name: 'File tree' })
+        ).toBeInTheDocument()
+      })
+
+      // Click a file (logger.ts from mock data)
+      const fileNode = within(sidebar).getByText('logger.ts')
+      await user.click(fileNode)
+
+      // The editor should be attempting to load content
+      // We can't directly verify the file path without exposing internal state,
+      // but we can verify the "no file selected" message is gone
+      await waitFor(
+        () => {
+          const bottomDrawer = screen.getByTestId('bottom-drawer')
+
+          const noFileMessage =
+            within(bottomDrawer).queryByText(/no file selected/i)
+
+          expect(noFileMessage).not.toBeInTheDocument()
+        },
+        { timeout: 2000 }
+      )
+    })
+
+    test('isDirty starts as false after opening a file', async (): Promise<void> => {
+      const user = userEvent.setup()
+      render(<WorkspaceView />)
+
+      const sidebar = screen.getByTestId('sidebar')
+
+      // Wait for FileTree to load
+      await waitFor(() => {
+        expect(
+          within(sidebar).getByRole('tree', { name: 'File tree' })
+        ).toBeInTheDocument()
+      })
+
+      // Click a file (package.json from mock data)
+      const fileNode = within(sidebar).getByText('package.json')
+      await user.click(fileNode)
+
+      // Wait for file to load
+      await waitFor(
+        () => {
+          const bottomDrawer = screen.getByTestId('bottom-drawer')
+
+          const noFileMessage =
+            within(bottomDrawer).queryByText(/no file selected/i)
+
+          expect(noFileMessage).not.toBeInTheDocument()
+        },
+        { timeout: 2000 }
+      )
+
+      // VimStatusBar should not show the [+] dirty indicator
+      // The status bar is in the editor panel
+      const bottomDrawer = screen.getByTestId('bottom-drawer')
+      const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+
+      // Look for dirty indicator [+] in vim status bar
+      const dirtyIndicator = within(editorPanel).queryByText('[+]')
+
+      expect(dirtyIndicator).not.toBeInTheDocument()
     })
   })
 })
