@@ -12,8 +12,9 @@ pattern or creating a new file. See the spec at
 `docs/superpowers/specs/2026-04-09-review-knowledge-base-design.md` for the
 ingestion protocol.
 
-| Pattern                                          | Category       | Findings | Refs | Last Updated |
-| ------------------------------------------------ | -------------- | -------- | ---- | ------------ |
-| [Filesystem Scope](patterns/filesystem-scope.md) | security       | 3        | 0    | 2026-04-09   |
-| [React Lifecycle](patterns/react-lifecycle.md)   | react-patterns | 2        | 0    | 2026-04-09   |
-| [Resource Cleanup](patterns/resource-cleanup.md) | react-patterns | 1        | 0    | 2026-04-09   |
+| Pattern                                                  | Category       | Findings | Refs | Last Updated |
+| -------------------------------------------------------- | -------------- | -------- | ---- | ------------ |
+| [Filesystem Scope](patterns/filesystem-scope.md)         | security       | 3        | 0    | 2026-04-09   |
+| [React Lifecycle](patterns/react-lifecycle.md)           | react-patterns | 2        | 0    | 2026-04-09   |
+| [Resource Cleanup](patterns/resource-cleanup.md)         | react-patterns | 1        | 0    | 2026-04-09   |
+| [Cross-Platform Paths](patterns/cross-platform-paths.md) | cross-platform | 1        | 0    | 2026-04-09   |
