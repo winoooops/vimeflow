@@ -295,7 +295,7 @@
       "Call onFileSelect(filePath) when file is clicked",
       "Update FileExplorer.test.tsx to verify callback"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": []
   },
   {

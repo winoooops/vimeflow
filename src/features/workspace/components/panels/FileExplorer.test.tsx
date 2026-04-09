@@ -37,14 +37,48 @@ describe('FileExplorer', () => {
     })
   })
 
-  test('calls onFileSelect when file is selected', async () => {
+  test('calls onFileSelect when file is clicked', async () => {
     const handleFileSelect = vi.fn()
     render(<FileExplorer onFileSelect={handleFileSelect} />)
 
+    // Wait for tree to load
     await waitFor(() => {
       expect(
         screen.getByRole('tree', { name: 'File tree' })
       ).toBeInTheDocument()
     })
+
+    // Click on a file node (auth.ts from mock data)
+    const fileNode = screen.getByText('auth.ts')
+    fileNode.click()
+
+    // Verify callback was called with file node
+    expect(handleFileSelect).toHaveBeenCalledTimes(1)
+    expect(handleFileSelect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'node-auth-ts',
+        name: 'auth.ts',
+        type: 'file',
+      })
+    )
+  })
+
+  test('does not call onFileSelect when folder is clicked', async () => {
+    const handleFileSelect = vi.fn()
+    render(<FileExplorer onFileSelect={handleFileSelect} />)
+
+    // Wait for tree to load
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tree', { name: 'File tree' })
+      ).toBeInTheDocument()
+    })
+
+    // Click on a folder node (src/)
+    const folderNode = screen.getByText('src/')
+    folderNode.click()
+
+    // Verify callback was NOT called (folders navigate, don't select)
+    expect(handleFileSelect).not.toHaveBeenCalled()
   })
 })
