@@ -1,7 +1,7 @@
 mod filesystem;
 mod terminal;
 
-use filesystem::list_dir;
+use filesystem::{list_dir, read_file, write_file};
 use terminal::{kill_pty, resize_pty, spawn_pty, write_pty, PtyState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -23,7 +23,9 @@ pub fn run() {
       write_pty,
       resize_pty,
       kill_pty,
-      list_dir
+      list_dir,
+      read_file,
+      write_file
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

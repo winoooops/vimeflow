@@ -22,3 +22,14 @@ pub enum EntryType {
     File,
     Folder,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct ReadFileRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WriteFileRequest {
+    pub path: String,
+    pub content: String,
+}

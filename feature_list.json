@@ -2,13 +2,13 @@
   {
     "id": 1,
     "phase": 1,
-    "category": "data-models",
-    "description": "Update types for navigation items (Dashboard, Source Control, Debugger, Settings)",
+    "category": "backend-types",
+    "description": "Add ReadFileRequest and WriteFileRequest types to Rust backend",
     "steps": [
-      "Read src/features/workspace/types/index.ts",
-      "Update Project type to support navigation items with icon and color",
-      "Create NavigationItem type with id, label, icon, color, tooltip fields",
-      "Export new types"
+      "Open src-tauri/src/filesystem/types.rs",
+      "Add ReadFileRequest struct with path: String field",
+      "Add WriteFileRequest struct with path and content: String fields",
+      "Derive Debug and Deserialize for both structs"
     ],
     "passes": true,
     "dependencies": []
@@ -16,298 +16,419 @@
   {
     "id": 2,
     "phase": 1,
-    "category": "data-models",
-    "description": "Update mock data for navigation items",
+    "category": "backend-tests",
+    "description": "Write failing tests for read_file command in Rust",
     "steps": [
-      "Read src/features/workspace/data/mockProjects.ts",
-      "Replace project abbreviations with navigation items",
-      "Add 4 items: Dashboard (emerald-500), Source Control (amber-500), Debugger (rose-500), Settings (indigo-500)",
-      "Use Material Symbols icon names: dashboard, account_tree, bug_report, settings"
+      "Open src-tauri/src/filesystem/commands.rs test module",
+      "Add test: read_file_returns_content (reads file from temp dir)",
+      "Add test: read_file_rejects_path_outside_home (security check)",
+      "Add test: read_file_rejects_directory (validates file type)",
+      "Run cargo test to verify failures"
     ],
     "passes": true,
     "dependencies": [1]
   },
   {
     "id": 3,
-    "phase": 2,
-    "category": "styling",
-    "description": "Add flat-bookmark CSS classes to index.css",
+    "phase": 1,
+    "category": "backend-implementation",
+    "description": "Implement read_file Tauri command with home-directory scoping",
     "steps": [
-      "Read src/index.css",
-      "Add .flat-bookmark class with clip-path polygon for bookmark shape",
-      "Add hover state with height increase and brightness filter",
-      "Verify glass-panel class exists (or add if missing)"
+      "Add read_file function to src-tauri/src/filesystem/commands.rs",
+      "Expand ~ to home directory using expand_home helper",
+      "Canonicalize path and verify it's within home directory",
+      "Verify path is a file (not directory)",
+      "Read file content as UTF-8 string",
+      "Run cargo test to verify all read_file tests pass"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [2]
   },
   {
     "id": 4,
-    "phase": 2,
-    "category": "icon-rail",
-    "description": "Update IconRail component with flat colorful bookmarks",
+    "phase": 1,
+    "category": "backend-tests",
+    "description": "Write failing tests for write_file command in Rust",
     "steps": [
-      "Read current IconRail.tsx implementation",
-      "Change rail width from w-12 to w-16 (64px)",
-      "Replace text abbreviation buttons with bookmark-shaped divs",
-      "Add Material Symbols icons inside bookmarks",
-      "Implement tooltip on hover (absolute positioned, right of rail)",
-      "Use solid color backgrounds (bg-emerald-500, bg-amber-500, etc.)",
-      "Bottom bookmark (Settings) pushed with mt-auto mb-6"
+      "Open src-tauri/src/filesystem/commands.rs test module",
+      "Add test: write_file_creates_file (writes content to new file)",
+      "Add test: write_file_creates_parent_dirs (creates missing directories)",
+      "Add test: write_file_rejects_path_outside_home (security check)",
+      "Add test: write_file_overwrites_existing (updates existing file)",
+      "Run cargo test to verify failures"
     ],
     "passes": true,
-    "dependencies": [2, 3]
+    "dependencies": [3]
   },
   {
     "id": 5,
-    "phase": 2,
-    "category": "icon-rail",
-    "description": "Update IconRail tests for bookmark design",
+    "phase": 1,
+    "category": "backend-implementation",
+    "description": "Implement write_file Tauri command with home-directory scoping",
     "steps": [
-      "Read current IconRail.test.tsx",
-      "Update tests to check for bookmark-shaped elements",
-      "Test Material Symbols icons are rendered",
-      "Test tooltip appears on hover",
-      "Test colors are applied correctly",
-      "Verify accessibility (aria-label, titles)"
+      "Add write_file function to src-tauri/src/filesystem/commands.rs",
+      "Expand ~ to home directory",
+      "Verify path is within home directory before write",
+      "Create parent directories if needed (fs::create_dir_all)",
+      "Write content to file (overwrites existing)",
+      "Run cargo test to verify all write_file tests pass"
     ],
     "passes": true,
     "dependencies": [4]
   },
   {
     "id": 6,
-    "phase": 3,
-    "category": "sidebar",
-    "description": "Create FileExplorer component for sidebar",
+    "phase": 1,
+    "category": "backend-registration",
+    "description": "Register read_file and write_file in Tauri invoke handler",
     "steps": [
-      "Create src/features/workspace/components/panels/FileExplorer.tsx",
-      "Implement folder tree with expand/collapse",
-      "Use Material Symbols: folder_open, expand_more, description icons",
-      "Highlight active file with text-primary-container bg-primary-container/10",
-      "Add indentation pl-6 per level",
-      "Wrap in glass-panel rounded-xl container"
+      "Export read_file and write_file from src-tauri/src/filesystem/mod.rs",
+      "Import in src-tauri/src/lib.rs (add to use filesystem:: statement)",
+      "Add read_file and write_file to invoke_handler! macro",
+      "Run cargo build to verify compilation",
+      "Run cargo clippy to ensure no warnings"
     ],
     "passes": true,
-    "dependencies": [1]
+    "dependencies": [5]
   },
   {
     "id": 7,
-    "phase": 3,
-    "category": "sidebar",
-    "description": "Update Sidebar component - remove ContextSwitcher, add FileExplorer",
+    "phase": 2,
+    "category": "packages",
+    "description": "Install CodeMirror 6 and vim extension packages",
     "steps": [
-      "Read current Sidebar.tsx implementation",
-      "Remove ContextSwitcher import and component usage",
-      "Remove activeContextTab and onContextTabChange props",
-      "Add FileExplorer section in bottom half (h-1/2)",
-      "Add separator border-t border-white/5 pt-4",
-      "Header: folder_open icon + 'FILE EXPLORER' label"
+      "Run npm install codemirror @codemirror/view @codemirror/state @codemirror/language",
+      "Run npm install @codemirror/lang-typescript @codemirror/lang-rust @codemirror/lang-json",
+      "Run npm install @codemirror/lang-css @codemirror/lang-html",
+      "Run npm install @replit/codemirror-vim",
+      "Verify package-lock.json updates",
+      "Run npm install to verify clean install"
     ],
-    "passes": true,
-    "dependencies": [6]
+    "passes": false,
+    "dependencies": []
   },
   {
     "id": 8,
-    "phase": 3,
-    "category": "sidebar",
-    "description": "Add 'New Instance' gradient button to Sidebar",
+    "phase": 2,
+    "category": "frontend-service",
+    "description": "Extend IFileSystemService with readFile and writeFile methods",
     "steps": [
-      "Add button at bottom of Sidebar component",
-      "Style: w-full bg-gradient-to-r from-primary to-secondary",
-      "Text: text-on-primary py-2.5 rounded-lg font-bold text-sm",
-      "Add shadow: shadow-lg shadow-primary/10",
-      "Icon: bolt + 'New Instance' text"
+      "Open src/features/files/services/fileSystemService.ts",
+      "Add readFile(path: string): Promise<string> to interface",
+      "Add writeFile(path: string, content: string): Promise<void> to interface",
+      "Implement readFile in TauriFileSystemService using invoke('read_file')",
+      "Implement writeFile in TauriFileSystemService using invoke('write_file')",
+      "Update MockFileSystemService with stub implementations",
+      "Write unit tests in fileSystemService.test.ts"
     ],
-    "passes": true,
-    "dependencies": [7]
+    "passes": false,
+    "dependencies": [6, 7]
   },
   {
     "id": 9,
-    "phase": 3,
-    "category": "sidebar",
-    "description": "Update Sidebar tests for FileExplorer design",
+    "phase": 2,
+    "category": "frontend-service",
+    "description": "Create language service for filename to CodeMirror language mapping",
     "steps": [
-      "Read current Sidebar.test.tsx",
-      "Remove ContextSwitcher tab switching tests",
-      "Add FileExplorer section tests",
-      "Test 'New Instance' button renders and is clickable",
-      "Test file tree rendering with proper indentation",
-      "Verify active file highlighting"
+      "Create src/features/editor/services/languageService.ts",
+      "Implement getLanguageExtension(filename: string) function",
+      "Map .ts/.tsx to typescript(), .rs to rust(), .json to json(), etc.",
+      "Default to null for unknown extensions",
+      "Create src/features/editor/services/languageService.test.ts",
+      "Write tests for each language mapping (.ts, .rs, .json, .css, .html)",
+      "Run npm test to verify"
     ],
-    "passes": true,
-    "dependencies": [8]
+    "passes": false,
+    "dependencies": [7]
   },
   {
     "id": 10,
-    "phase": 4,
-    "category": "bottom-drawer",
-    "description": "Create BottomDrawer component with Editor tab",
+    "phase": 2,
+    "category": "frontend-theme",
+    "description": "Create Catppuccin Mocha CodeMirror theme matching Obsidian Lens",
     "steps": [
-      "Create src/features/workspace/components/BottomDrawer.tsx",
-      "Implement tab bar with Editor and Diff Viewer tabs",
-      "Use Material Symbols: code, difference icons",
-      "Active tab: text-primary border-b-2 border-primary",
-      "Inactive: text-slate-400 hover:text-primary",
-      "Right side: file path + collapse toggle (keyboard_arrow_down icon)"
+      "Create src/features/editor/theme/catppuccin.ts",
+      "Define EditorView theme with Catppuccin Mocha colors",
+      "Map editor background to #121221 (surface)",
+      "Map gutter background to #1a1a2a (surface-container-low)",
+      "Map cursor to #e2c7ff (primary)",
+      "Define syntax highlighting: keywords mauve, strings green, functions blue",
+      "Create src/features/editor/theme/catppuccin.test.ts",
+      "Write structure validation tests"
     ],
-    "passes": true,
-    "dependencies": [1]
+    "passes": false,
+    "dependencies": [7]
   },
   {
     "id": 11,
-    "phase": 4,
-    "category": "bottom-drawer",
-    "description": "Add Editor content with syntax highlighting to BottomDrawer",
+    "phase": 3,
+    "category": "frontend-hooks",
+    "description": "Create useCodeMirror hook to manage EditorView instance",
     "steps": [
-      "Add Editor content area with line numbers",
-      "Line number gutter: w-12 text-outline/40 text-right pr-4 select-none",
-      "Mock code with syntax highlighting colors:",
-      "  - Keywords: text-tertiary",
-      "  - Strings: text-emerald-400",
-      "  - Functions: text-primary-dim",
-      "  - Comments: text-on-surface-variant",
-      "Font: font-mono text-xs"
+      "Create src/features/editor/hooks/useCodeMirror.ts",
+      "Accept containerRef, initialContent, language, onSave callback",
+      "Initialize EditorView with vim(), catppuccin theme, language extension",
+      "Configure vim :w command to call onSave callback",
+      "Return editorView instance and updateContent function",
+      "Clean up EditorView on unmount",
+      "Create src/features/editor/hooks/useCodeMirror.test.ts",
+      "Write tests for initialization, vim config, cleanup"
     ],
-    "passes": true,
-    "dependencies": [10]
+    "passes": false,
+    "dependencies": [9, 10]
   },
   {
     "id": 12,
-    "phase": 4,
-    "category": "bottom-drawer",
-    "description": "Add Diff Viewer tab content to BottomDrawer",
+    "phase": 3,
+    "category": "frontend-hooks",
+    "description": "Create useVimMode hook to track vim mode from CodeMirror",
     "steps": [
-      "Add Diff Viewer tab content (placeholder or mock diff)",
-      "Implement tab switching with useState",
-      "Show Editor content when 'editor' tab active",
-      "Show Diff content when 'diff' tab active",
-      "Background: bg-black/30 for content area"
+      "Create src/features/editor/hooks/useVimMode.ts",
+      "Accept editorView instance as parameter",
+      "Listen to vim mode change events from @replit/codemirror-vim",
+      "Track current mode: NORMAL, INSERT, VISUAL, COMMAND",
+      "Return current vim mode string",
+      "Create src/features/editor/hooks/useVimMode.test.ts",
+      "Write tests for mode tracking"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [11]
   },
   {
     "id": 13,
-    "phase": 4,
-    "category": "bottom-drawer",
-    "description": "Create BottomDrawer tests",
+    "phase": 3,
+    "category": "frontend-hooks",
+    "description": "Create useEditorBuffer hook for file state management",
     "steps": [
-      "Create src/features/workspace/components/BottomDrawer.test.tsx",
-      "Test component renders with Editor tab active by default",
-      "Test tab switching between Editor and Diff Viewer",
-      "Test Editor content displays with line numbers",
-      "Test Diff Viewer content displays when tab is clicked",
-      "Test file path and collapse toggle render",
-      "Use getByRole for accessibility queries"
+      "Create src/features/editor/hooks/useEditorBuffer.ts",
+      "Track filePath, originalContent, isDirty state",
+      "Implement openFile(path) function using fileSystemService.readFile",
+      "Implement saveFile() function using fileSystemService.writeFile",
+      "Implement dirty detection by comparing current vs original content",
+      "Return file state, openFile, saveFile, isDirty",
+      "Create src/features/editor/hooks/useEditorBuffer.test.ts",
+      "Write tests for open, save, dirty detection"
     ],
-    "passes": true,
-    "dependencies": [12]
+    "passes": false,
+    "dependencies": [8, 11]
   },
   {
     "id": 14,
-    "phase": 5,
-    "category": "wiring",
-    "description": "Update WorkspaceView grid layout dimensions",
+    "phase": 3,
+    "category": "frontend-component",
+    "description": "Replace Shiki with CodeMirror in CodeEditor component",
     "steps": [
-      "Read current WorkspaceView.tsx",
-      "Change grid from grid-cols-[48px_260px_1fr_280px]",
-      "To grid-cols-[64px_256px_1fr_320px]",
-      "64px for IconRail (was 48px)",
-      "256px for Sidebar (was 260px)",
-      "320px for AgentActivity (was 280px)"
+      "Open src/features/editor/components/CodeEditor.tsx",
+      "Remove Shiki HTML rendering and shikiService import",
+      "Add container div ref for CodeMirror mount",
+      "Use useCodeMirror hook with file content and language",
+      "Use useVimMode hook to get current mode",
+      "Use useEditorBuffer hook for file management",
+      "Wire vim :w command to save file via useEditorBuffer",
+      "Update src/features/editor/components/CodeEditor.test.tsx",
+      "Test CodeMirror renders, vim mode tracking, save functionality"
     ],
-    "passes": true,
-    "dependencies": [4, 8]
+    "passes": false,
+    "dependencies": [11, 12, 13]
   },
   {
     "id": 15,
-    "phase": 5,
-    "category": "wiring",
-    "description": "Restructure main workspace area for TerminalZone + BottomDrawer",
+    "phase": 3,
+    "category": "frontend-component",
+    "description": "Create UnsavedChangesDialog component with glassmorphism style",
     "steps": [
-      "Wrap center column (TerminalZone + BottomDrawer) in flex-col container",
-      "TerminalZone takes flex-1 (remaining space)",
-      "BottomDrawer fixed at h-1/3",
-      "Add border-t border-white/5 between them"
+      "Create src/features/editor/components/UnsavedChangesDialog.tsx",
+      "Accept isOpen, fileName, onSave, onDiscard, onCancel props",
+      "Render backdrop with backdrop-blur-sm bg-black/40",
+      "Render glassmorphism panel matching command palette style",
+      "Add three buttons: Save (primary), Discard (error), Cancel (neutral)",
+      "Use framer-motion for spring animation (stiffness 400, damping 30)",
+      "Handle Esc key to call onCancel",
+      "Create src/features/editor/components/UnsavedChangesDialog.test.tsx",
+      "Test render, button callbacks, keyboard handling"
     ],
-    "passes": true,
-    "dependencies": [13, 14]
+    "passes": false,
+    "dependencies": [7]
   },
   {
     "id": 16,
-    "phase": 5,
-    "category": "wiring",
-    "description": "Integrate BottomDrawer into WorkspaceView",
+    "phase": 3,
+    "category": "frontend-component",
+    "description": "Wire VimStatusBar to real CodeMirror vim state",
     "steps": [
-      "Import BottomDrawer component",
-      "Add BottomDrawer below TerminalZone in center column",
-      "Remove activeContextTab state from WorkspaceView",
-      "Remove handleContextTabChange handler",
-      "Remove activeContextTab/onContextTabChange props from Sidebar"
+      "Open src/features/editor/components/VimStatusBar.tsx",
+      "Accept vimMode and isDirty props",
+      "Display vimMode (NORMAL/INSERT/VISUAL/COMMAND)",
+      "Display [+] indicator when isDirty is true",
+      "Update layout to match design spec",
+      "Update src/features/editor/components/VimStatusBar.test.tsx",
+      "Test mode display and dirty indicator"
     ],
-    "passes": true,
-    "dependencies": [15]
+    "passes": false,
+    "dependencies": [12, 13]
   },
   {
     "id": 17,
-    "phase": 5,
-    "category": "wiring",
-    "description": "Update WorkspaceView tests for new layout",
+    "phase": 4,
+    "category": "integration",
+    "description": "Update BottomDrawer to be resizable and receive file selection",
     "steps": [
-      "Read current WorkspaceView.test.tsx",
-      "Update grid dimension assertions",
-      "Test BottomDrawer is present",
-      "Test TerminalZone and BottomDrawer are stacked vertically",
-      "Remove context tab switching tests (moved to BottomDrawer)",
-      "Verify all 5 main sections render: IconRail, Sidebar, TerminalZone, BottomDrawer, AgentActivity"
+      "Open src/features/workspace/components/BottomDrawer.tsx",
+      "Add useResizable hook with vertical axis",
+      "Set default height to 50% of parent",
+      "Set min height 150px, max 80%",
+      "Add drag handle at top edge",
+      "Accept selectedFilePath prop and pass to CodeEditor",
+      "Update BottomDrawer.test.tsx for resize functionality"
     ],
-    "passes": true,
-    "dependencies": [16]
+    "passes": false,
+    "dependencies": [14]
   },
   {
     "id": 18,
-    "phase": 6,
-    "category": "verification",
-    "description": "Run all linting and formatting checks",
+    "phase": 4,
+    "category": "integration",
+    "description": "Wire FileExplorer onFileSelect to parent WorkspaceView",
     "steps": [
-      "Run npm run lint",
-      "Run npm run format:check",
-      "Run npm run type-check",
-      "Fix any issues found",
-      "Verify all checks pass"
+      "Open src/features/workspace/components/panels/FileExplorer.tsx",
+      "Add onFileSelect callback prop",
+      "Call onFileSelect(filePath) when file is clicked",
+      "Update FileExplorer.test.tsx to verify callback"
     ],
-    "passes": true,
-    "dependencies": [5, 9, 13, 17]
+    "passes": false,
+    "dependencies": []
   },
   {
     "id": 19,
-    "phase": 6,
-    "category": "verification",
-    "description": "Run all unit and integration tests",
+    "phase": 4,
+    "category": "integration",
+    "description": "Update WorkspaceView with file selection state and unsaved changes flow",
     "steps": [
-      "Run npm test",
-      "Verify all tests pass",
-      "Check test coverage meets 80% minimum",
-      "Fix any failing tests",
-      "Re-run until all green"
+      "Open src/features/workspace/WorkspaceView.tsx",
+      "Add selectedFilePath state",
+      "Add showUnsavedDialog state",
+      "Implement handleFileSelect: check isDirty, show dialog if needed",
+      "Pass selectedFilePath to BottomDrawer",
+      "Render UnsavedChangesDialog with save/discard/cancel handlers",
+      "Update grid template columns (sidebar 340px, activity 360px)",
+      "Update WorkspaceView.test.tsx for file selection flow"
     ],
-    "passes": true,
-    "dependencies": [18]
+    "passes": false,
+    "dependencies": [15, 17, 18]
   },
   {
     "id": 20,
-    "phase": 6,
-    "category": "verification",
-    "description": "Visual verification against v2 mockup",
+    "phase": 4,
+    "category": "integration",
+    "description": "Update Sidebar default sizes for better visibility",
     "steps": [
-      "Compare implementation with docs/design/agent_workspace/v2/screen.png",
-      "Verify IconRail has 4 colorful bookmarks with icons",
-      "Verify Sidebar has Sessions + FileExplorer only",
-      "Verify BottomDrawer with Editor/Diff tabs below terminal",
-      "Verify grid dimensions: 64px, 256px, flex, 320px",
-      "Document any deviations in verification notes"
+      "Open src/features/workspace/components/Sidebar.tsx",
+      "Update default width from 256px to 340px",
+      "Update max width from 480px to 560px",
+      "Update FileExplorer default height from 240px to 320px",
+      "Verify resize handles still work correctly",
+      "Update Sidebar.test.tsx if needed"
     ],
-    "passes": true,
+    "passes": false,
+    "dependencies": []
+  },
+  {
+    "id": 21,
+    "phase": 5,
+    "category": "testing",
+    "description": "Write integration test for file open flow",
+    "steps": [
+      "Create integration test file or add to existing suite",
+      "Test: FileExplorer click → read_file → CodeMirror content update",
+      "Verify file path state updates",
+      "Verify editor content matches file content",
+      "Verify isDirty starts as false",
+      "Run npm test to verify"
+    ],
+    "passes": false,
     "dependencies": [19]
+  },
+  {
+    "id": 22,
+    "phase": 5,
+    "category": "testing",
+    "description": "Write integration test for unsaved changes flow",
+    "steps": [
+      "Test: Open file → edit content → isDirty becomes true",
+      "Test: Click different file → UnsavedChangesDialog shows",
+      "Test: Click Save → write_file called → new file opens",
+      "Test: Click Discard → new file opens without saving",
+      "Test: Click Cancel → stays on current file",
+      "Run npm test to verify"
+    ],
+    "passes": false,
+    "dependencies": [19]
+  },
+  {
+    "id": 23,
+    "phase": 5,
+    "category": "testing",
+    "description": "Write integration test for vim save command",
+    "steps": [
+      "Test: Open file → edit content → type :w in vim",
+      "Verify write_file Tauri command is invoked",
+      "Verify isDirty becomes false after save",
+      "Verify VimStatusBar removes [+] indicator",
+      "Run npm test to verify"
+    ],
+    "passes": false,
+    "dependencies": [19]
+  },
+  {
+    "id": 24,
+    "phase": 5,
+    "category": "cleanup",
+    "description": "Remove Shiki-related files and dependencies",
+    "steps": [
+      "Remove src/features/editor/services/shikiService.ts",
+      "Remove src/features/editor/services/shikiService.test.ts",
+      "Remove src/features/editor/components/LineNumbers.tsx (if exists)",
+      "Remove shiki from package.json dependencies",
+      "Run npm install to clean lock file",
+      "Search codebase for remaining shiki imports"
+    ],
+    "passes": false,
+    "dependencies": [14]
+  },
+  {
+    "id": 25,
+    "phase": 5,
+    "category": "quality",
+    "description": "Run all quality checks and fix issues",
+    "steps": [
+      "Run npm run lint and fix all ESLint issues",
+      "Run npm run type-check and fix TypeScript errors",
+      "Run npm test and achieve 80%+ coverage",
+      "Run cd src-tauri && cargo clippy and fix warnings",
+      "Run cd src-tauri && cargo test and verify all pass",
+      "Run npm run format to apply Prettier"
+    ],
+    "passes": false,
+    "dependencies": [21, 22, 23, 24]
+  },
+  {
+    "id": 26,
+    "phase": 5,
+    "category": "verification",
+    "description": "Manual verification checklist for CodeMirror editor",
+    "steps": [
+      "Verify: Can click file in explorer and see content in editor",
+      "Verify: Vim motions work (hjkl, w, b, $, 0, gg, G)",
+      "Verify: Vim modes work (i for INSERT, v for VISUAL, : for COMMAND, Esc for NORMAL)",
+      "Verify: Can edit content and see [+] in status bar",
+      "Verify: :w command saves file and removes [+]",
+      "Verify: Switching files when dirty shows unsaved changes dialog",
+      "Verify: Save/Discard/Cancel buttons work correctly",
+      "Verify: BottomDrawer is resizable with drag handle",
+      "Verify: Catppuccin Mocha theme matches design spec",
+      "Verify: Syntax highlighting works for .ts, .rs, .json files"
+    ],
+    "passes": false,
+    "dependencies": [25]
   }
 ]

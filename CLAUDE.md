@@ -10,7 +10,7 @@ This file is intentionally minimal — it is an **index, not a reference**. Each
 
 Vimeflow is a **CLI coding agent control plane** — a Tauri desktop application (Rust backend + React/TypeScript frontend) that unifies terminal sessions (AI coding agents like Claude Code), file explorer, code editor, and git diff into one window.
 
-**Phase: Early implementation** — CI/CD tooling, design system, and layout shell are established. Pivoting from chat-based UI to terminal-first agent workspace. No Tauri/Rust backend yet (`src-tauri/` does not exist).
+**Phase: Early implementation** — CI/CD tooling, design system, and layout shell are established. Pivoting from chat-based UI to terminal-first agent workspace. Tauri/Rust backend exists (`src-tauri/`) with terminal PTY and filesystem commands.
 
 ## Commands
 

@@ -82,6 +82,72 @@ pub fn list_dir(request: ListDirRequest) -> Result<Vec<FileEntry>, String> {
     Ok(folders)
 }
 
+/// Read file contents as UTF-8 string.
+/// Restricted to the user's home directory.
+#[tauri::command]
+pub fn read_file(request: ReadFileRequest) -> Result<String, String> {
+    let raw = expand_home(&request.path);
+    let canonical =
+        fs::canonicalize(&raw).map_err(|e| format!("invalid path '{}': {}", request.path, e))?;
+
+    let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
+    let home_canonical =
+        fs::canonicalize(&home).map_err(|e| format!("cannot resolve home dir: {}", e))?;
+    if !canonical.starts_with(&home_canonical) {
+        return Err(format!(
+            "access denied: path is outside home directory: {}",
+            canonical.display()
+        ));
+    }
+
+    if !canonical.is_file() {
+        return Err(format!("not a file: {}", canonical.display()));
+    }
+
+    log::info!("Reading file: {}", canonical.display());
+
+    fs::read_to_string(&canonical)
+        .map_err(|e| format!("failed to read file '{}': {}", canonical.display(), e))
+}
+
+/// Write content to a file.
+/// Restricted to the user's home directory. Creates parent directories if needed.
+#[tauri::command]
+pub fn write_file(request: WriteFileRequest) -> Result<(), String> {
+    let raw = expand_home(&request.path);
+
+    // For new files that don't exist yet, verify the parent directory is within home
+    let parent = raw
+        .parent()
+        .ok_or_else(|| "invalid path: no parent directory".to_string())?;
+
+    // Create parent directories if they don't exist
+    if !parent.exists() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create parent directories: {}", e))?;
+    }
+
+    // Canonicalize parent (since file might not exist yet)
+    let parent_canonical = fs::canonicalize(parent)
+        .map_err(|e| format!("invalid parent path '{}': {}", request.path, e))?;
+
+    let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
+    let home_canonical =
+        fs::canonicalize(&home).map_err(|e| format!("cannot resolve home dir: {}", e))?;
+
+    if !parent_canonical.starts_with(&home_canonical) {
+        return Err(format!(
+            "access denied: path is outside home directory: {}",
+            parent_canonical.display()
+        ));
+    }
+
+    log::info!("Writing file: {}", raw.display());
+
+    fs::write(&raw, &request.content)
+        .map_err(|e| format!("failed to write file '{}': {}", raw.display(), e))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,5 +217,117 @@ mod tests {
             path: "/nonexistent/path/abc123".to_string(),
         });
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn read_file_returns_content() {
+        let dir = home_test_dir("read_file");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("hello.txt"), "hello world").unwrap();
+
+        let result = read_file(ReadFileRequest {
+            path: dir.join("hello.txt").to_string_lossy().to_string(),
+        });
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "hello world");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_file_rejects_path_outside_home() {
+        let result = read_file(ReadFileRequest {
+            path: "/etc/passwd".to_string(),
+        });
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("access denied"));
+    }
+
+    #[test]
+    fn read_file_rejects_directory() {
+        let dir = home_test_dir("read_file_dir");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let result = read_file(ReadFileRequest {
+            path: dir.to_string_lossy().to_string(),
+        });
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not a file"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_file_creates_file() {
+        let dir = home_test_dir("write_file");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let file_path = dir.join("new_file.txt");
+        let result = write_file(WriteFileRequest {
+            path: file_path.to_string_lossy().to_string(),
+            content: "test content".to_string(),
+        });
+
+        assert!(result.is_ok());
+        assert!(file_path.exists());
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "test content");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_file_creates_parent_dirs() {
+        let dir = home_test_dir("write_file_nested");
+        let _ = fs::remove_dir_all(&dir);
+
+        let file_path = dir.join("subdir").join("nested").join("file.txt");
+        let result = write_file(WriteFileRequest {
+            path: file_path.to_string_lossy().to_string(),
+            content: "nested content".to_string(),
+        });
+
+        assert!(result.is_ok());
+        assert!(file_path.exists());
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "nested content");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_file_rejects_path_outside_home() {
+        let result = write_file(WriteFileRequest {
+            path: "/etc/test_forbidden.txt".to_string(),
+            content: "forbidden".to_string(),
+        });
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("access denied"));
+    }
+
+    #[test]
+    fn write_file_overwrites_existing() {
+        let dir = home_test_dir("write_file_overwrite");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let file_path = dir.join("overwrite.txt");
+        fs::write(&file_path, "original").unwrap();
+
+        let result = write_file(WriteFileRequest {
+            path: file_path.to_string_lossy().to_string(),
+            content: "updated".to_string(),
+        });
+
+        assert!(result.is_ok());
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "updated");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }
