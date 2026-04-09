@@ -428,7 +428,7 @@
       "Verify: Catppuccin Mocha theme matches design spec",
       "Verify: Syntax highlighting works for .ts, .rs, .json files"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [25]
   }
 ]
