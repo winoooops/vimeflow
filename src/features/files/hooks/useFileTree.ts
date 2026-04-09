@@ -12,8 +12,36 @@ export interface UseFileTreeResult {
   navigateUp: () => void
 }
 
+/** Detect the home directory prefix from common absolute paths */
+const detectHomePath = (): string | null => {
+  // In browser, we can't detect home — return null
+  if (typeof process === 'undefined') {
+    return null
+  }
+
+  // Node/Tauri environment
+  return process.env.HOME ?? process.env.USERPROFILE ?? null
+}
+
+const homePath = detectHomePath()
+
+/** Normalize an absolute path: replace home prefix with ~ */
+const normalizeToTilde = (path: string): string => {
+  if (!homePath) {
+    return path
+  }
+  if (path === homePath) {
+    return '~'
+  }
+  if (path.startsWith(`${homePath}/`)) {
+    return `~${path.slice(homePath.length)}`
+  }
+
+  return path
+}
+
 export const useFileTree = (externalCwd: string): UseFileTreeResult => {
-  const [currentPath, setCurrentPath] = useState(externalCwd)
+  const [currentPath, setCurrentPath] = useState(normalizeToTilde(externalCwd))
   const [nodes, setNodes] = useState<FileNode[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -22,8 +50,9 @@ export const useFileTree = (externalCwd: string): UseFileTreeResult => {
   const generation = useRef(0)
 
   // Sync with external cwd changes (session switch, OSC 7)
+  // Normalize absolute home paths to ~ so navigation stays within bounds
   useEffect(() => {
-    setCurrentPath(externalCwd)
+    setCurrentPath(normalizeToTilde(externalCwd))
   }, [externalCwd])
 
   const load = useCallback(
