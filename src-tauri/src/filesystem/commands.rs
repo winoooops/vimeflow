@@ -16,7 +16,8 @@ fn expand_home(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-/// List directory contents (single level, sorted: folders first then files)
+/// List directory contents (single level, sorted: folders first then files).
+/// Restricted to the user's home directory to prevent arbitrary filesystem enumeration.
 #[tauri::command]
 pub fn list_dir(request: ListDirRequest) -> Result<Vec<FileEntry>, String> {
     let raw = expand_home(&request.path);
@@ -25,6 +26,17 @@ pub fn list_dir(request: ListDirRequest) -> Result<Vec<FileEntry>, String> {
 
     if !canonical.is_dir() {
         return Err(format!("not a directory: {}", canonical.display()));
+    }
+
+    // Enforce scope: only allow paths under the user's home directory
+    let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
+    let home_canonical =
+        fs::canonicalize(&home).map_err(|e| format!("cannot resolve home dir: {}", e))?;
+    if !canonical.starts_with(&home_canonical) {
+        return Err(format!(
+            "access denied: path is outside home directory: {}",
+            canonical.display()
+        ));
     }
 
     log::info!("Listing directory: {}", canonical.display());

@@ -121,7 +121,7 @@ The sidebar file explorer auto-syncs with the terminal's working directory. This
 Or add manually to `~/.bashrc`:
 
 ```bash
-PROMPT_COMMAND='${PROMPT_COMMAND:+$PROMPT_COMMAND;}'printf '"\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'
+PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND;}"'printf "\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'
 ```
 
 ## Repository Structure

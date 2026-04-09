@@ -76,8 +76,17 @@ export const useFileTree = (externalCwd: string): UseFileTreeResult => {
 
         return parent || '~'
       }
+      // Handle Windows drive roots (e.g. C:/ or C:\)
+      if (/^[A-Za-z]:[/\\]?$/.test(prev)) {
+        return prev
+      }
       // Handle absolute paths
       const parent = prev.replace(/\/[^/]+\/?$/, '')
+
+      // Ensure Windows drive paths keep trailing slash (C:/ not C:)
+      if (/^[A-Za-z]:$/.test(parent)) {
+        return `${parent}/`
+      }
 
       return parent || '/'
     })

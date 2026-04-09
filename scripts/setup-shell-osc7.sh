@@ -24,11 +24,11 @@ setup_bash() {
     return
   fi
 
-  cat >> "$rc" << EOF
+  cat >> "$rc" << 'BASHRC'
 
-$MARKER
-PROMPT_COMMAND='\${PROMPT_COMMAND:+\$PROMPT_COMMAND;}'$OSC7_SNIPPET
-EOF
+# Vimeflow OSC 7 — file explorer cwd sync
+PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND;}"'printf "\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'
+BASHRC
 
   echo "bash: Added OSC 7 PROMPT_COMMAND to $rc"
   echo "      Run 'source ~/.bashrc' or open a new terminal to activate."
