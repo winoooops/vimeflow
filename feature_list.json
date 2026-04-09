@@ -138,7 +138,7 @@
       "Write tests for each language mapping (.ts, .rs, .json, .css, .html)",
       "Run npm test to verify"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [7]
   },
   {
@@ -156,7 +156,7 @@
       "Create src/features/editor/theme/catppuccin.test.ts",
       "Write structure validation tests"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [7]
   },
   {
