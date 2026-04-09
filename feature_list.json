@@ -247,7 +247,7 @@
       "Create src/features/editor/components/UnsavedChangesDialog.test.tsx",
       "Test render, button callbacks, keyboard handling"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [7]
   },
   {
