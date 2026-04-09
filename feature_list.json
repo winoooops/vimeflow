@@ -191,7 +191,7 @@
       "Create src/features/editor/hooks/useVimMode.test.ts",
       "Write tests for mode tracking"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [11]
   },
   {
