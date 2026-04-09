@@ -45,15 +45,12 @@ export const FileTree = ({
 
   return (
     <>
-      <div
-        className="bg-surface-container-low rounded-xl p-4 max-w-4xl mx-auto"
-        role="tree"
-        aria-label="File tree"
-      >
+      <div role="tree" aria-label="File tree">
         {nodes.map((node) => (
           <FileTreeNode
             key={node.id}
             node={node}
+            depth={0}
             onContextMenu={handleContextMenu}
             onNodeSelect={onNodeSelect}
           />

@@ -7,6 +7,8 @@ export interface TerminalZoneProps {
   activeSessionId: string | null
   onSessionChange: (sessionId: string) => void
   onNewTab: () => void
+  onCloseTab?: (sessionId: string) => void
+  onSessionCwdChange?: (sessionId: string, cwd: string) => void
 }
 
 export const TerminalZone = ({
@@ -14,6 +16,8 @@ export const TerminalZone = ({
   activeSessionId,
   onSessionChange,
   onNewTab,
+  onCloseTab = undefined,
+  onSessionCwdChange = undefined,
 }: TerminalZoneProps): ReactElement => {
   const handleTabClick = (sessionId: string): void => {
     if (activeSessionId === null || sessionId !== activeSessionId) {
@@ -33,13 +37,10 @@ export const TerminalZone = ({
           const isActive = session.id === activeSessionId
 
           return (
-            <button
+            <div
               key={session.id}
-              type="button"
-              aria-label={`🤖 ${session.name}`}
-              onClick={() => handleTabClick(session.id)}
               className={`
-                border-b-2 px-3 py-2 font-label text-sm transition-colors
+                group flex items-center border-b-2 transition-colors
                 ${
                   isActive
                     ? 'border-b-primary text-primary'
@@ -47,8 +48,26 @@ export const TerminalZone = ({
                 }
               `}
             >
-              🤖 {session.name}
-            </button>
+              <button
+                type="button"
+                aria-label={`🤖 ${session.name}`}
+                onClick={() => handleTabClick(session.id)}
+                className="px-3 py-2 font-label text-sm"
+              >
+                🤖 {session.name}
+              </button>
+              <button
+                type="button"
+                aria-label={`Close ${session.name}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onCloseTab?.(session.id)
+                }}
+                className="mr-1 rounded p-0.5 opacity-0 transition-opacity hover:bg-surface-container group-hover:opacity-100"
+              >
+                <span className="material-symbols-outlined text-xs">close</span>
+              </button>
+            </div>
           )
         })}
 
@@ -96,6 +115,7 @@ export const TerminalZone = ({
                 <TerminalPane
                   sessionId={session.id}
                   cwd={session.workingDirectory}
+                  onCwdChange={(cwd) => onSessionCwdChange?.(session.id, cwd)}
                 />
               </div>
             )

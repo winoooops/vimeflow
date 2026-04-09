@@ -15,11 +15,9 @@ describe('mockFileTree', () => {
   })
 
   test('has expected root nodes', () => {
-    expect(mockFileTree).toHaveLength(4)
-    expect(mockFileTree[0].name).toBe('src')
+    expect(mockFileTree).toHaveLength(2)
+    expect(mockFileTree[0].name).toBe('src/')
     expect(mockFileTree[1].name).toBe('package.json')
-    expect(mockFileTree[2].name).toBe('tsconfig.json')
-    expect(mockFileTree[3].name).toBe('README.md')
   })
 
   test('src folder is expanded by default', () => {
@@ -28,65 +26,29 @@ describe('mockFileTree', () => {
     expect(srcNode.defaultExpanded).toBe(true)
   })
 
-  test('components folder has isDragTarget flag', () => {
+  test('middleware folder has correct children', () => {
     const srcNode = mockFileTree[0]
 
-    const componentsNode = srcNode.children?.find(
-      (n) => n.name === 'components'
+    const middlewareNode = srcNode.children?.find(
+      (n) => n.name === 'middleware/'
     )
-    expect(componentsNode?.isDragTarget).toBe(true)
+    expect(middlewareNode).toBeDefined()
+    expect(middlewareNode?.defaultExpanded).toBe(true)
+    expect(middlewareNode?.children).toHaveLength(2)
+    expect(middlewareNode?.children?.[0].name).toBe('auth.ts')
+    expect(middlewareNode?.children?.[1].name).toBe('logger.ts')
   })
 
-  test('TerminalPanel.tsx has isDragging flag', () => {
+  test('routes folder is collapsed by default', () => {
     const srcNode = mockFileTree[0]
-
-    const componentsNode = srcNode.children?.find(
-      (n) => n.name === 'components'
-    )
-
-    const terminalNode = componentsNode?.children?.find(
-      (n) => n.name === 'TerminalPanel.tsx'
-    )
-    expect(terminalNode?.isDragging).toBe(true)
-    expect(terminalNode?.gitStatus).toBe('M')
-  })
-
-  test('git status badges are present on specific files', () => {
-    const srcNode = mockFileTree[0]
-
-    // NavBar.tsx has M status
-    const componentsNode = srcNode.children?.find(
-      (n) => n.name === 'components'
-    )
-
-    const navBarNode = componentsNode?.children?.find(
-      (n) => n.name === 'NavBar.tsx'
-    )
-    expect(navBarNode?.gitStatus).toBe('M')
-
-    // api-helper.rs has A status
-    const utilsNode = srcNode.children?.find((n) => n.name === 'utils')
-
-    const apiHelperNode = utilsNode?.children?.find(
-      (n) => n.name === 'api-helper.rs'
-    )
-    expect(apiHelperNode?.gitStatus).toBe('A')
-
-    // tsconfig.json has D status
-    const tsconfigNode = mockFileTree[2]
-    expect(tsconfigNode.gitStatus).toBe('D')
-  })
-
-  test('tests folder is collapsed by default', () => {
-    const srcNode = mockFileTree[0]
-    const testsNode = srcNode.children?.find((n) => n.name === 'tests')
-    expect(testsNode?.defaultExpanded).toBe(false)
+    const routesNode = srcNode.children?.find((n) => n.name === 'routes/')
+    expect(routesNode?.defaultExpanded).toBe(false)
   })
 })
 
 describe('mockBreadcrumbs', () => {
   test('has expected segments', () => {
-    expect(mockBreadcrumbs).toEqual(['vibm-project', 'src', 'components'])
+    expect(mockBreadcrumbs).toEqual(['vibm-project', 'src', 'middleware'])
   })
 })
 

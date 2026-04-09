@@ -103,6 +103,27 @@ npm run format:check             # Prettier check
 npm run type-check               # tsc -b
 ```
 
+### Shell Setup (OSC 7)
+
+The sidebar file explorer auto-syncs with the terminal's working directory. This relies on your shell emitting [OSC 7](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Operating-System-Commands) escape sequences when `cd` is used.
+
+| Shell    | Status                                            |
+| -------- | ------------------------------------------------- |
+| **zsh**  | Works out of the box                              |
+| **fish** | Works out of the box                              |
+| **bash** | Requires a one-time setup (adds `PROMPT_COMMAND`) |
+
+```bash
+# Automatic setup (idempotent — safe to run multiple times)
+./scripts/setup-shell-osc7.sh
+```
+
+Or add manually to `~/.bashrc`:
+
+```bash
+PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND;}"'printf "\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'
+```
+
 ## Repository Structure
 
 ```

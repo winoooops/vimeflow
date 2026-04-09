@@ -1,3 +1,4 @@
+/* eslint-disable testing-library/no-node-access */
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -61,15 +62,19 @@ describe('TerminalZone', () => {
       name: /🤖 fix: login bug/i,
     })
 
+    // Styling classes are on the parent div wrapper
+    const activeWrapper = activeTab.parentElement!
+    const inactiveWrapper = inactiveTab.parentElement!
+
     // Active tab should have primary text color
-    expect(activeTab).toHaveClass('text-primary')
+    expect(activeWrapper).toHaveClass('text-primary')
     // Active tab should have purple bottom border
-    expect(activeTab).toHaveClass('border-b-primary')
+    expect(activeWrapper).toHaveClass('border-b-primary')
 
     // Inactive tab should have muted text
-    expect(inactiveTab).toHaveClass('text-on-surface/60')
+    expect(inactiveWrapper).toHaveClass('text-on-surface/60')
     // Inactive tab should have transparent border
-    expect(inactiveTab).toHaveClass('border-b-transparent')
+    expect(inactiveWrapper).toHaveClass('border-b-transparent')
   })
 
   test('calls onSessionChange when clicking inactive tab', async () => {
@@ -155,8 +160,10 @@ describe('TerminalZone', () => {
       name: /🤖 fix: login bug/i,
     })
 
-    expect(inactiveTab).toHaveClass('hover:bg-surface-container/50')
-    expect(inactiveTab).toHaveClass('hover:text-on-surface')
+    // Hover classes are on the parent div wrapper
+    const wrapper = inactiveTab.parentElement!
+    expect(wrapper).toHaveClass('hover:bg-surface-container/50')
+    expect(wrapper).toHaveClass('hover:text-on-surface')
   })
 
   test('renders flex-1 for terminal content to fill available space', () => {

@@ -89,6 +89,12 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   // Track whether this hook spawned the session
   const didSpawnSessionRef = useRef(false)
 
+  // Store cwd in a ref — used only at spawn time, not as an effect dependency.
+  // OSC 7 updates session.workingDirectory which flows here as `cwd`, but we
+  // must NOT respawn the PTY when the shell changes directory.
+  const cwdRef = useRef(cwd)
+  cwdRef.current = cwd
+
   // Track unmount only (not dependency changes)
   useEffect(
     () => (): void => {
@@ -120,7 +126,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     const initializeSession = async (): Promise<void> => {
       // Spawn a new PTY process
       try {
-        const effectiveCwd = cwd ?? '~'
+        const effectiveCwd = cwdRef.current ?? '~'
 
         const result = await service.spawn({
           shell:
@@ -194,7 +200,9 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       }
       void cleanupSession()
     }
-  }, [terminal, service, cwd, shell, env])
+    // cwd intentionally excluded — it's read from cwdRef at spawn time.
+    // OSC 7 updates cwd continuously; including it here would kill the PTY on every cd.
+  }, [terminal, service, shell, env])
 
   // Listen to PTY data events
   useEffect(() => {

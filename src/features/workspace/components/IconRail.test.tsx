@@ -84,7 +84,8 @@ describe('IconRail', () => {
     expect(dashboardButton).toHaveClass('bg-emerald-500')
     expect(sourceControlButton).toHaveClass('bg-amber-500')
     expect(debuggerButton).toHaveClass('bg-rose-500')
-    expect(settingsButton).toHaveClass('bg-indigo-500')
+    // Settings uses a plain icon style, not a colored bookmark
+    expect(settingsButton).toBeInTheDocument()
   })
 
   test('bookmarks contain Material Symbols icons', () => {

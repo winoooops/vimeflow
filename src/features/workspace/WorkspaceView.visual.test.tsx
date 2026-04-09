@@ -38,9 +38,8 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       render(<WorkspaceView />)
       const workspace = screen.getByTestId('workspace-view')
 
-      const match = /grid-cols-\[(.*?)\]/.exec(workspace.className)
-      expect(match).toBeTruthy()
-      expect(match?.[1]).toBe('64px_256px_1fr_320px')
+      // Grid columns are now set via inline style for resizable sidebar
+      expect(workspace.style.gridTemplateColumns).toBe('64px 256px 1fr 320px')
     })
 
     test('workspace uses full screen height', () => {

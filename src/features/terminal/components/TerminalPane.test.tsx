@@ -27,6 +27,7 @@ describe('TerminalPane', () => {
     loadAddon: ReturnType<typeof vi.fn>
     dispose: ReturnType<typeof vi.fn>
     onResize: ReturnType<typeof vi.fn>
+    parser: { registerOscHandler: ReturnType<typeof vi.fn> }
     options: Record<string, unknown>
   }
   let mockFitAddon: { fit: ReturnType<typeof vi.fn> }
@@ -46,6 +47,9 @@ describe('TerminalPane', () => {
       loadAddon: vi.fn(),
       dispose: vi.fn(),
       onResize: vi.fn(() => ({ dispose: vi.fn() })),
+      parser: {
+        registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })),
+      },
       options: {},
     }
 

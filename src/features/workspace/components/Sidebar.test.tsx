@@ -1,3 +1,4 @@
+/* eslint-disable testing-library/no-node-access */
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -94,7 +95,7 @@ describe('Sidebar', () => {
     mockOnNewInstance.mockClear()
   })
 
-  test('renders with 256px width', () => {
+  test('renders with full width (sized by parent grid)', () => {
     render(
       <Sidebar
         sessions={mockSessions}
@@ -106,7 +107,20 @@ describe('Sidebar', () => {
 
     const sidebar = screen.getByTestId('sidebar')
     expect(sidebar).toBeInTheDocument()
-    expect(sidebar).toHaveClass('w-64') // w-64 = 256px
+    expect(sidebar).toHaveClass('w-full')
+  })
+
+  test('renders agent header with name and status', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+      />
+    )
+
+    expect(screen.getByText('Agent Alpha')).toBeInTheDocument()
+    expect(screen.getByText('System Idle')).toBeInTheDocument()
   })
 
   test('renders "Active Sessions" header with add button', () => {
@@ -124,7 +138,7 @@ describe('Sidebar', () => {
     ).toBeInTheDocument()
   })
 
-  test('add session button has rotate-90 hover animation', () => {
+  test('add session button changes color on hover', () => {
     render(
       <Sidebar
         sessions={mockSessions}
@@ -134,7 +148,7 @@ describe('Sidebar', () => {
     )
 
     const addButton = screen.getByRole('button', { name: 'Add session' })
-    expect(addButton).toHaveClass('hover:rotate-90')
+    expect(addButton).toHaveClass('hover:text-primary')
   })
 
   test('calls onNewInstance when add session button is clicked', async () => {
@@ -169,7 +183,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('refactor: api layer')).toBeInTheDocument()
   })
 
-  test('active session has terminal icon', () => {
+  test('active session has smart_toy icon', () => {
     render(
       <Sidebar
         sessions={mockSessions}
@@ -181,10 +195,10 @@ describe('Sidebar', () => {
     const activeSession = screen.getByRole('button', {
       name: 'auth middleware',
     })
-    expect(within(activeSession).getByText('terminal')).toBeInTheDocument()
+    expect(within(activeSession).getByText('smart_toy')).toBeInTheDocument()
   })
 
-  test('inactive sessions have history icon', () => {
+  test('inactive sessions have schedule icon', () => {
     render(
       <Sidebar
         sessions={mockSessions}
@@ -196,10 +210,10 @@ describe('Sidebar', () => {
     const inactiveSession = screen.getByRole('button', {
       name: 'fix: login bug',
     })
-    expect(within(inactiveSession).getByText('history')).toBeInTheDocument()
+    expect(within(inactiveSession).getByText('schedule')).toBeInTheDocument()
   })
 
-  test('active session has bg-slate-800/80 text-primary-container styling', () => {
+  test('active session item has surface-container-high styling', () => {
     render(
       <Sidebar
         sessions={mockSessions}
@@ -208,14 +222,15 @@ describe('Sidebar', () => {
       />
     )
 
-    const activeSession = screen.getByRole('button', {
+    const activeButton = screen.getByRole('button', {
       name: 'auth middleware',
     })
-    expect(activeSession.className).toContain('bg-slate-800/80')
-    expect(activeSession.className).toContain('text-primary-container')
+    const listItem = activeButton.closest('li')!
+    expect(listItem.className).toContain('bg-surface-container-high')
+    expect(listItem.className).toContain('text-on-surface')
   })
 
-  test('inactive sessions have text-slate-500 styling', () => {
+  test('inactive session items have on-surface-variant styling', () => {
     render(
       <Sidebar
         sessions={mockSessions}
@@ -224,25 +239,11 @@ describe('Sidebar', () => {
       />
     )
 
-    const inactiveSession = screen.getByRole('button', {
+    const inactiveButton = screen.getByRole('button', {
       name: 'fix: login bug',
     })
-    expect(inactiveSession.className).toContain('text-slate-500')
-  })
-
-  test('active session has LIVE badge (hidden by default, visible on hover)', () => {
-    render(
-      <Sidebar
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-      />
-    )
-
-    const activeSession = screen.getByRole('button', {
-      name: 'auth middleware',
-    })
-    expect(within(activeSession).getByText('LIVE')).toBeInTheDocument()
+    const listItem = inactiveButton.closest('li')!
+    expect(listItem.className).toContain('text-on-surface-variant')
   })
 
   test('calls onSessionClick with session id when session is clicked', async () => {
@@ -260,20 +261,6 @@ describe('Sidebar', () => {
     await user.click(session)
 
     expect(mockOnSessionClick).toHaveBeenCalledWith('sess-2')
-  })
-
-  test('displays timestamps for sessions', () => {
-    render(
-      <Sidebar
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-      />
-    )
-
-    const timestamps = screen.getAllByTestId('session-timestamp')
-    expect(timestamps).toHaveLength(3)
-    expect(timestamps[0]).toHaveTextContent(/ago/)
   })
 
   test('uses design tokens for colors', () => {
@@ -395,17 +382,16 @@ describe('Sidebar', () => {
       />
     )
 
-    // All sessions should render without active styling
-    const sessions = screen
+    const sessionButtons = screen
       .getAllByRole('button')
       .filter((btn) =>
         mockSessions.some((s) => btn.getAttribute('aria-label') === s.name)
       )
 
-    expect(sessions).toHaveLength(3)
-    sessions.forEach((session) => {
-      expect(session.className).not.toContain('bg-slate-800/80')
-      expect(session.className).not.toContain('text-primary-container')
+    expect(sessionButtons).toHaveLength(3)
+    sessionButtons.forEach((btn) => {
+      const listItem = btn.closest('li')!
+      expect(listItem.className).not.toContain('bg-surface-container-high')
     })
   })
 

@@ -155,7 +155,7 @@ describe('FileTreeNode', () => {
     expect(screen.getByLabelText(/git status: d/i)).toHaveTextContent('D')
   })
 
-  test('displays drag target badge when isDragTarget is true', () => {
+  test('renders without drag-related visual noise', () => {
     const folderNode: FileNode = {
       id: '1',
       name: 'src',
@@ -165,26 +165,8 @@ describe('FileTreeNode', () => {
 
     render(<FileTreeNode node={folderNode} onContextMenu={mockOnContextMenu} />)
 
-    expect(screen.getByLabelText(/drop target/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/drop target/i)).toHaveTextContent('DROP HERE')
-  })
-
-  test('applies drag styling when isDragging is true', () => {
-    const fileNode: FileNode = {
-      id: '1',
-      name: 'test.ts',
-      type: 'file',
-      isDragging: true,
-    }
-
-    const { container } = render(
-      <FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />
-    )
-
-    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const row = container.querySelector('.opacity-60')
-    expect(row).toBeInTheDocument()
-    expect(row).toHaveClass('scale-95', 'translate-x-4')
+    // Drag badges are no longer rendered in the minimal design
+    expect(screen.queryByLabelText(/drop target/i)).not.toBeInTheDocument()
   })
 
   test('calls onContextMenu when right-clicked', () => {
@@ -202,7 +184,7 @@ describe('FileTreeNode', () => {
     expect(mockOnContextMenu).toHaveBeenCalledWith(expect.any(Object), fileNode)
   })
 
-  test('renders TypeScript file with code icon', () => {
+  test('renders TypeScript file with description icon', () => {
     const fileNode: FileNode = {
       id: '1',
       name: 'test.ts',
@@ -217,12 +199,12 @@ describe('FileTreeNode', () => {
     const icons = container.querySelectorAll('.material-symbols-outlined')
 
     const fileIcon = Array.from(icons).find((icon) =>
-      icon.textContent?.includes('code')
+      icon.textContent?.includes('description')
     )
     expect(fileIcon).toBeDefined()
   })
 
-  test('renders JSON file with data_object icon', () => {
+  test('renders JSON file with settings icon', () => {
     const fileNode: FileNode = {
       id: '1',
       name: 'package.json',
@@ -237,7 +219,7 @@ describe('FileTreeNode', () => {
     const icons = container.querySelectorAll('.material-symbols-outlined')
 
     const fileIcon = Array.from(icons).find((icon) =>
-      icon.textContent?.includes('data_object')
+      icon.textContent?.includes('settings')
     )
     expect(fileIcon).toBeDefined()
   })
@@ -330,6 +312,7 @@ describe('FileTreeNode', () => {
       id: '1',
       name: 'src',
       type: 'folder',
+      children: [],
     }
 
     render(<FileTreeNode node={folderNode} onContextMenu={mockOnContextMenu} />)

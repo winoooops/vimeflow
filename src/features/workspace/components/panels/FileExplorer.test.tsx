@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { FileExplorer } from './FileExplorer'
 
 describe('FileExplorer', () => {
@@ -8,45 +8,43 @@ describe('FileExplorer', () => {
     expect(screen.getByTestId('file-explorer')).toBeInTheDocument()
   })
 
-  test('takes h-1/2 of sidebar height', () => {
+  test('fills parent height (sized by sidebar resize)', () => {
     render(<FileExplorer />)
     const explorer = screen.getByTestId('file-explorer')
-    expect(explorer).toHaveClass('h-1/2')
-  })
-
-  test('has border-t separator', () => {
-    render(<FileExplorer />)
-    const explorer = screen.getByTestId('file-explorer')
-    expect(explorer).toHaveClass('border-t')
-    expect(explorer).toHaveClass('border-white/5')
+    expect(explorer).toHaveClass('h-full')
   })
 
   test('renders FILE EXPLORER header with folder_open icon', () => {
     render(<FileExplorer />)
-    const header = screen.getByText('File Explorer')
-    expect(header).toBeInTheDocument()
-
-    // Icon appears multiple times (header + file tree), check that at least one exists
+    expect(screen.getByText('File Explorer')).toBeInTheDocument()
     expect(screen.getAllByText('folder_open').length).toBeGreaterThan(0)
   })
 
-  test('wraps file tree in container', () => {
+  test('renders refresh button', () => {
     render(<FileExplorer />)
-    // Verify the file tree is present (implementation detail of glass-panel tested via visual)
-    expect(screen.getByRole('tree', { name: 'File tree' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Refresh file tree' })
+    ).toBeInTheDocument()
   })
 
-  test('renders FileTree component', () => {
+  test('renders FileTree after loading', async () => {
     render(<FileExplorer />)
-    // FileTree should render with role="tree"
-    expect(screen.getByRole('tree', { name: 'File tree' })).toBeInTheDocument()
+    // Service is async — wait for tree to appear
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tree', { name: 'File tree' })
+      ).toBeInTheDocument()
+    })
   })
 
-  test('calls onFileSelect when file is selected', () => {
+  test('calls onFileSelect when file is selected', async () => {
     const handleFileSelect = vi.fn()
     render(<FileExplorer onFileSelect={handleFileSelect} />)
 
-    // FileTree is tested separately, just verify prop is passed
-    expect(screen.getByRole('tree', { name: 'File tree' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tree', { name: 'File tree' })
+      ).toBeInTheDocument()
+    })
   })
 })

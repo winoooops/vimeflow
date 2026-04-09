@@ -1,60 +1,94 @@
-import { useState, type ReactElement } from 'react'
+import type { ReactElement } from 'react'
 import { IconRail } from './components/IconRail'
 import { Sidebar } from './components/Sidebar'
 import { TerminalZone } from './components/TerminalZone'
 import BottomDrawer from './components/BottomDrawer'
 import AgentActivity from './components/AgentActivity'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
-import { mockSessions } from './data/mockSessions'
+import { useSessionManager } from './hooks/useSessionManager'
+import { useResizable } from './hooks/useResizable'
+
+const SIDEBAR_MIN = 180
+const SIDEBAR_MAX = 480
+const SIDEBAR_DEFAULT = 256
 
 export const WorkspaceView = (): ReactElement => {
-  // State management
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(
-    mockSessions.length > 0 ? mockSessions[0].id : null
-  )
+  const {
+    sessions,
+    activeSessionId,
+    setActiveSessionId,
+    createSession,
+    removeSession,
+    renameSession,
+    reorderSessions,
+    updateSessionCwd,
+  } = useSessionManager()
 
-  // Get active session for AgentActivity panel
+  const {
+    size: sidebarWidth,
+    isDragging,
+    handleMouseDown,
+  } = useResizable({
+    initial: SIDEBAR_DEFAULT,
+    min: SIDEBAR_MIN,
+    max: SIDEBAR_MAX,
+  })
+
   const activeSession = activeSessionId
-    ? mockSessions.find((s) => s.id === activeSessionId)
+    ? sessions.find((s) => s.id === activeSessionId)
     : undefined
-
-  // Handlers
-  const handleSessionClick = (sessionId: string): void => {
-    setActiveSessionId(sessionId)
-  }
-
-  const handleNewInstance = (): void => {
-    // Placeholder for new instance creation
-  }
-
-  const handleNewTab = (): void => {
-    // Placeholder for new tab creation
-  }
 
   return (
     <div
       data-testid="workspace-view"
-      className="grid h-screen grid-cols-[64px_256px_1fr_320px] overflow-hidden"
+      className="grid h-screen overflow-hidden"
+      style={{
+        gridTemplateColumns: `64px ${sidebarWidth}px 1fr 320px`,
+      }}
     >
       {/* Icon Rail - 64px */}
       <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
 
-      {/* Sidebar - 256px */}
-      <Sidebar
-        sessions={mockSessions}
-        activeSessionId={activeSessionId}
-        onSessionClick={handleSessionClick}
-        onNewInstance={handleNewInstance}
-      />
+      {/* Sidebar - resizable */}
+      <div className="relative flex h-full">
+        <Sidebar
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          activeCwd={activeSession?.workingDirectory ?? '~'}
+          onSessionClick={setActiveSessionId}
+          onNewInstance={createSession}
+          onRemoveSession={removeSession}
+          onRenameSession={renameSession}
+          onReorderSessions={reorderSessions}
+        />
+
+        {/* Resize handle */}
+        <div
+          data-testid="sidebar-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuenow={sidebarWidth}
+          aria-valuemin={SIDEBAR_MIN}
+          aria-valuemax={SIDEBAR_MAX}
+          onMouseDown={handleMouseDown}
+          className={`
+            absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize
+            transition-colors hover:bg-primary/50
+            ${isDragging ? 'bg-primary/70' : 'bg-transparent'}
+          `}
+        />
+      </div>
 
       {/* Main workspace area - TerminalZone + BottomDrawer */}
       <div className="flex flex-col overflow-hidden">
         {/* Terminal Zone - takes remaining space */}
         <TerminalZone
-          sessions={mockSessions}
+          sessions={sessions}
           activeSessionId={activeSessionId}
-          onSessionChange={handleSessionClick}
-          onNewTab={handleNewTab}
+          onSessionChange={setActiveSessionId}
+          onNewTab={createSession}
+          onCloseTab={removeSession}
+          onSessionCwdChange={updateSessionCwd}
         />
 
         {/* Bottom Drawer - Editor + Diff Viewer */}
@@ -63,6 +97,9 @@ export const WorkspaceView = (): ReactElement => {
 
       {/* Agent Activity - 320px */}
       <AgentActivity session={activeSession} />
+
+      {/* Drag overlay — prevents iframes/xterm from stealing mouse events */}
+      {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
     </div>
   )
 }
