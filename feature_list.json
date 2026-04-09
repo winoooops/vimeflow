@@ -281,7 +281,7 @@
       "Accept selectedFilePath prop and pass to CodeEditor",
       "Update BottomDrawer.test.tsx for resize functionality"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [14]
   },
   {

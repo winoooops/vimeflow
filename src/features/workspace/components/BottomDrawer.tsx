@@ -1,24 +1,58 @@
 import { type ReactElement, useState } from 'react'
+import type { IFileSystemService } from '../../files/services/fileSystemService'
+import { CodeEditor } from '../../editor/components/CodeEditor'
+import { useResizable } from '../hooks/useResizable'
 
 type TabType = 'editor' | 'diff'
+
+interface BottomDrawerProps {
+  selectedFilePath: string | null
+  fileSystemService: IFileSystemService
+}
 
 /**
  * BottomDrawer - Editor and Diff Viewer panel below terminal
  *
  * Features:
  * - Tab switching between Editor and Diff Viewer
- * - Syntax-highlighted code editor with line numbers
+ * - Resizable height with drag handle
+ * - CodeMirror editor with vim mode
  * - File path display and collapse toggle
- * - Takes h-1/3 of workspace height
  */
-const BottomDrawer = (): ReactElement => {
+const BottomDrawer = ({
+  selectedFilePath,
+  fileSystemService,
+}: BottomDrawerProps): ReactElement => {
   const [activeTab, setActiveTab] = useState<TabType>('editor')
+
+  // Resizable hook - default 400px (50% of 800px), min 150px, max 640px (80% of 800px)
+  const {
+    size: height,
+    isDragging,
+    handleMouseDown,
+  } = useResizable({
+    initial: 400,
+    min: 150,
+    max: 640,
+    direction: 'vertical',
+  })
 
   return (
     <section
       data-testid="bottom-drawer"
-      className="h-1/3 shrink-0 bg-slate-900/95 backdrop-blur-2xl border-t border-white/5 flex flex-col z-30"
+      style={{ height: `${height}px` }}
+      className="shrink-0 bg-slate-900/95 backdrop-blur-2xl border-t border-white/5 flex flex-col z-30 relative"
     >
+      {/* Resize Handle - Top Edge */}
+      <div
+        data-testid="resize-handle"
+        onMouseDown={handleMouseDown}
+        className={`absolute top-0 left-0 right-0 h-1 cursor-ns-resize hover:bg-primary/20 transition-colors ${
+          isDragging ? 'bg-primary/30' : ''
+        }`}
+        aria-label="Resize drawer"
+      />
+
       {/* Tab Bar */}
       <div className="flex items-center px-8 h-12 bg-surface-container justify-between">
         {/* Left: Tab Buttons */}
@@ -73,13 +107,16 @@ const BottomDrawer = (): ReactElement => {
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 font-mono text-xs p-6 overflow-y-auto bg-black/30">
+      <div className="flex-1 flex overflow-hidden">
         {activeTab === 'editor' ? (
-          <div data-testid="editor-panel">
-            <EditorContent />
+          <div data-testid="editor-panel" className="flex-1 flex">
+            <CodeEditor
+              filePath={selectedFilePath}
+              fileSystemService={fileSystemService}
+            />
           </div>
         ) : (
-          <div data-testid="diff-panel">
+          <div data-testid="diff-panel" className="flex-1 flex">
             <DiffContent />
           </div>
         )}
@@ -87,75 +124,6 @@ const BottomDrawer = (): ReactElement => {
     </section>
   )
 }
-
-/**
- * EditorContent - Mock syntax-highlighted code with line numbers
- */
-const EditorContent = (): ReactElement => (
-  <div className="flex">
-    {/* Line Number Gutter */}
-    <div className="w-12 text-outline/40 text-right pr-4 select-none">
-      1<br />
-      2<br />
-      3<br />
-      4<br />
-      5<br />
-      6<br />
-      7<br />
-      8<br />
-      9<br />
-      10
-    </div>
-
-    {/* Code Content */}
-    <div className="flex-1 space-y-1">
-      <p>
-        <span className="text-tertiary">import</span>
-        {' { jose } '}
-        <span className="text-tertiary">from</span>{' '}
-        <span className="text-emerald-400">&apos;jose&apos;</span>;
-      </p>
-      <p>
-        <span className="text-tertiary">import</span>
-        {' type { NextRequest } '}
-        <span className="text-tertiary">from</span>{' '}
-        <span className="text-emerald-400">&apos;next/server&apos;</span>;
-      </p>
-      <p>&nbsp;</p>
-      <p>
-        <span className="text-tertiary">export async function</span>{' '}
-        <span className="text-primary-dim">middleware</span>(req: NextRequest){' '}
-        {'{'}
-      </p>
-      <p className="pl-4">
-        <span className="text-on-surface-variant">
-          {/* Refactored token validation */}
-        </span>
-      </p>
-      <p className="pl-4">
-        <span className="text-tertiary">const</span> token = req.headers.get(
-        <span className="text-emerald-400">&apos;authorization&apos;</span>);
-      </p>
-      <p className="pl-4">
-        <span className="text-tertiary">if</span> (!token){' '}
-        <span className="text-tertiary">return</span> Response.json({'{ '}
-        error:{' '}
-        <span className="text-emerald-400">&apos;Unauthorized&apos;</span>
-        {' }'}, {'{ '}status: 401 {'}'});
-      </p>
-      <p className="pl-4">&nbsp;</p>
-      <p className="pl-4">
-        <span className="text-tertiary">try</span> {'{'}
-      </p>
-      <p className="pl-8">
-        <span className="text-tertiary">const</span> {'{ '}payload {'} ='}{' '}
-        <span className="text-tertiary">await</span> jose.jwtVerify(token,{' '}
-        <span className="text-tertiary">new</span>{' '}
-        TextEncoder().encode(process.env.JWT_SECRET));
-      </p>
-    </div>
-  </div>
-)
 
 /**
  * DiffContent - Placeholder for diff viewer

@@ -7,6 +7,7 @@ import AgentActivity from './components/AgentActivity'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { useSessionManager } from './hooks/useSessionManager'
 import { useResizable } from './hooks/useResizable'
+import { createFileSystemService } from '../files/services/fileSystemService'
 
 const SIDEBAR_MIN = 180
 const SIDEBAR_MAX = 480
@@ -92,7 +93,10 @@ export const WorkspaceView = (): ReactElement => {
         />
 
         {/* Bottom Drawer - Editor + Diff Viewer */}
-        <BottomDrawer />
+        <BottomDrawer
+          selectedFilePath={null}
+          fileSystemService={createFileSystemService()}
+        />
       </div>
 
       {/* Agent Activity - 320px */}
