@@ -16,3 +16,4 @@ ingestion protocol.
 | ------------------------------------------------ | -------------- | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md) | security       | 3        | 0    | 2026-04-09   |
 | [React Lifecycle](patterns/react-lifecycle.md)   | react-patterns | 2        | 0    | 2026-04-09   |
+| [Resource Cleanup](patterns/resource-cleanup.md) | react-patterns | 1        | 0    | 2026-04-09   |
