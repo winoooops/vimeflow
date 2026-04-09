@@ -27,3 +27,4 @@ ingestion protocol.
 | [Command Injection](patterns/command-injection.md)             | security       | 4        | 0    | 2026-04-09   |
 | [CSP Configuration](patterns/csp-configuration.md)             | security       | 2        | 0    | 2026-04-09   |
 | [PTY Session Management](patterns/pty-session-management.md)   | backend        | 5        | 0    | 2026-04-09   |
+| [Git Operations](patterns/git-operations.md)                   | correctness    | 5        | 0    | 2026-04-09   |
