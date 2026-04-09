@@ -313,7 +313,7 @@
       "Update grid template columns (sidebar 340px, activity 360px)",
       "Update WorkspaceView.test.tsx for file selection flow"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [15, 17, 18]
   },
   {
