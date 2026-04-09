@@ -1,109 +1,94 @@
 import type { ReactElement } from 'react'
-import { useEffect, useState } from 'react'
-import {
-  highlightCode,
-  detectLanguage,
-  type LineTokens,
-} from '../services/shikiService'
-import { LineNumbers } from './LineNumbers'
+import { useEffect, useRef, useState } from 'react'
+import type { IFileSystemService } from '../../files/services/fileSystemService'
+import { useCodeMirror } from '../hooks/useCodeMirror'
+import { useVimMode } from '../hooks/useVimMode'
+import { getLanguageExtension } from '../services/languageService'
 
 interface CodeEditorProps {
-  content: string
-  currentLine: number | null
-  fileName: string
+  filePath: string | null
+  fileSystemService: IFileSystemService
 }
 
 export const CodeEditor = ({
-  content,
-  currentLine,
-  fileName,
+  filePath,
+  fileSystemService,
 }: CodeEditorProps): ReactElement => {
-  const [highlightedLines, setHighlightedLines] = useState<LineTokens[]>([])
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [fileContent, setFileContent] = useState<string>('')
+  const [loadedFilePath, setLoadedFilePath] = useState<string | null>(null)
 
+  // Load file when filePath changes
   useEffect(() => {
-    let cancelled = false
+    if (!filePath) {
+      setFileContent('')
+      setLoadedFilePath(null)
 
-    const highlight = async (): Promise<void> => {
-      const language = detectLanguage(fileName)
-      const lines = await highlightCode(content, language)
+      return
+    }
 
-      if (!cancelled) {
-        setHighlightedLines(lines)
+    const loadFile = async (): Promise<void> => {
+      try {
+        const content = await fileSystemService.readFile(filePath)
+        setFileContent(content)
+        setLoadedFilePath(filePath)
+      } catch (error: unknown) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to load file:', error)
       }
     }
 
-    void highlight()
+    void loadFile()
+  }, [filePath, fileSystemService])
 
-    return (): void => {
-      cancelled = true
+  // Get language extension from filename
+  const fileName = filePath ? (filePath.split('/').pop() ?? '') : ''
+  const language = fileName ? getLanguageExtension(fileName) : null
+
+  // Setup CodeMirror with vim mode
+  const { editorView, updateContent } = useCodeMirror({
+    containerRef: containerRef as React.RefObject<HTMLDivElement>,
+    initialContent: fileContent,
+    language,
+    onSave: () => {
+      if (!loadedFilePath || !editorView) {
+        return
+      }
+
+      const currentContent = editorView.state.doc.toString()
+
+      void fileSystemService.writeFile(loadedFilePath, currentContent)
+    },
+  })
+
+  // Track vim mode
+  useVimMode(editorView)
+
+  // Update editor content when file content changes
+  useEffect(() => {
+    if (!editorView || !fileContent) {
+      return
     }
-  }, [content, fileName])
 
-  const plainLines = content.split('\n')
+    updateContent(fileContent)
+  }, [editorView, fileContent, updateContent])
 
-  const lineCount =
-    highlightedLines.length > 0 ? highlightedLines.length : plainLines.length
+  if (!filePath) {
+    return (
+      <div
+        className="flex flex-1 items-center justify-center text-on-surface-variant"
+        data-testid="no-file-selected"
+      >
+        No file selected
+      </div>
+    )
+  }
 
   return (
     <div
-      data-testid="code-editor"
-      className="flex flex-1 overflow-auto thin-scrollbar"
-    >
-      <LineNumbers lineCount={lineCount} currentLine={currentLine} />
-      <div className="flex-1 bg-surface font-mono text-[0.875rem] leading-6 pt-4 pl-6 pr-4">
-        {highlightedLines.length > 0
-          ? highlightedLines.map((line, index) => {
-              const lineNumber = index + 1
-              const isCurrentLine = currentLine === lineNumber
-
-              return (
-                <div
-                  key={lineNumber}
-                  data-testid={`code-line-${lineNumber}`}
-                  className={`whitespace-pre ${
-                    isCurrentLine
-                      ? 'bg-primary/5 rounded border-l-2 border-primary'
-                      : ''
-                  }`}
-                >
-                  {line.tokens.map((token, tokenIndex) => (
-                    <span
-                      key={tokenIndex}
-                      style={{
-                        color: token.color,
-                        fontStyle:
-                          token.fontStyle === 1
-                            ? 'italic'
-                            : token.fontStyle === 2
-                              ? 'bold'
-                              : 'normal',
-                      }}
-                    >
-                      {token.content}
-                    </span>
-                  ))}
-                </div>
-              )
-            })
-          : plainLines.map((line, index) => {
-              const lineNumber = index + 1
-              const isCurrentLine = currentLine === lineNumber
-
-              return (
-                <div
-                  key={lineNumber}
-                  data-testid={`code-line-${lineNumber}`}
-                  className={`whitespace-pre ${
-                    isCurrentLine
-                      ? 'bg-primary/5 rounded border-l-2 border-primary'
-                      : ''
-                  }`}
-                >
-                  {line || ' '}
-                </div>
-              )
-            })}
-      </div>
-    </div>
+      ref={containerRef}
+      data-testid="codemirror-container"
+      className="flex-1 overflow-hidden"
+    />
   )
 }

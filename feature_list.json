@@ -228,7 +228,7 @@
       "Update src/features/editor/components/CodeEditor.test.tsx",
       "Test CodeMirror renders, vim mode tracking, save functionality"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [11, 12, 13]
   },
   {
