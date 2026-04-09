@@ -160,6 +160,32 @@ the knowledge base isn't being consulted and you can adjust the approach.
 | `docs/CLAUDE.md`         | Edit — add `reviews/` subsection              |
 | `AGENTS.md`              | Edit — add reference to review knowledge base |
 
+## Seed from History
+
+PRs #33, #34, and #36 have structured Codex review comments with consistent format
+(severity badge, file path, confidence, description). As part of implementation,
+retrospectively parse these comments and populate the initial pattern collection.
+
+**Source PRs:**
+
+| PR  | Title                                                  | Findings |
+| --- | ------------------------------------------------------ | -------- |
+| #36 | feat: interactive sidebar sessions, resizable panels   | ~5       |
+| #34 | feat: Phase 3 Terminal Core - TauriTerminalService IPC | ~3       |
+| #33 | fix: terminal rendering, WebGL, backspace              | ~3       |
+
+**Process:**
+
+1. Fetch review comments via `gh api repos/{owner}/{repo}/issues/{pr}/comments`
+2. Filter for `github-actions[bot]` comments containing findings (skip "No issues found")
+3. Parse each finding: severity, file path, description
+4. Trace fix commits via `git log --oneline` on the PR's merge commit range
+5. Group findings by pattern (agent classifies based on description similarity)
+6. Write pattern files and index
+
+If any PR's data is too noisy or the fix commits can't be traced cleanly, skip that
+PR and move on. The goal is to seed useful patterns, not achieve completeness.
+
 ## Out of Scope (Future Iterations)
 
 1. **Automated ingestion hook** — PostToolUse hook or harness plugin that auto-triggers
