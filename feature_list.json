@@ -376,7 +376,7 @@
       "Verify VimStatusBar removes [+] indicator",
       "Run npm test to verify"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [19]
   },
   {

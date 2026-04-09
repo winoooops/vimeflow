@@ -159,6 +159,7 @@ export const WorkspaceView = (): ReactElement => {
           selectedFilePath={editorBuffer.filePath}
           fileSystemService={fileSystemService}
           onContentChange={editorBuffer.updateContent}
+          onSave={() => void editorBuffer.saveFile()}
           isDirty={editorBuffer.isDirty}
         />
       </div>

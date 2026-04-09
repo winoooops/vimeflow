@@ -1,6 +1,6 @@
 /* eslint-disable testing-library/no-node-access */
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within, waitFor } from '@testing-library/react'
+import { render, screen, within, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceView } from './WorkspaceView'
 import * as useCodeMirrorModule from '../editor/hooks/useCodeMirror'
@@ -15,6 +15,7 @@ vi.mock('../terminal/components/TerminalPane', () => ({
 
 // Mock CodeMirror hooks for unsaved changes tests
 let mockOnChange: ((content: string) => void) | undefined
+let mockOnSave: (() => void) | undefined
 
 const mockEditorView = {
   destroy: vi.fn(),
@@ -24,8 +25,9 @@ const mockEditorView = {
 const createMockUseCodeMirror =
   (): typeof useCodeMirrorModule.useCodeMirror =>
   (options): ReturnType<typeof useCodeMirrorModule.useCodeMirror> => {
-    // Store the onChange callback so tests can trigger it
+    // Store the onChange and onSave callbacks so tests can trigger them
     mockOnChange = options.onChange
+    mockOnSave = options.onSave
 
     return {
       editorView: mockEditorView as never,
@@ -535,9 +537,11 @@ describe('WorkspaceView Integration Tests', () => {
 
       // Simulate content change by calling the onChange callback
       // that was passed to useCodeMirror
-      if (mockOnChange) {
-        mockOnChange('modified content')
-      }
+      act(() => {
+        if (mockOnChange) {
+          mockOnChange('modified content')
+        }
+      })
 
       // Wait for the dirty indicator to appear
       await waitFor(() => {
@@ -574,9 +578,11 @@ describe('WorkspaceView Integration Tests', () => {
       )
 
       // Simulate editing content to make isDirty true
-      if (mockOnChange) {
-        mockOnChange('modified content')
-      }
+      act(() => {
+        if (mockOnChange) {
+          mockOnChange('modified content')
+        }
+      })
 
       // Wait for dirty state to update
       await waitFor(() => {
@@ -622,9 +628,11 @@ describe('WorkspaceView Integration Tests', () => {
       )
 
       // Simulate editing to make isDirty true
-      if (mockOnChange) {
-        mockOnChange('modified content')
-      }
+      act(() => {
+        if (mockOnChange) {
+          mockOnChange('modified content')
+        }
+      })
 
       await waitFor(() => {
         const bottomDrawer = screen.getByTestId('bottom-drawer')
@@ -686,9 +694,11 @@ describe('WorkspaceView Integration Tests', () => {
       )
 
       // Simulate editing
-      if (mockOnChange) {
-        mockOnChange('modified content')
-      }
+      act(() => {
+        if (mockOnChange) {
+          mockOnChange('modified content')
+        }
+      })
 
       await waitFor(() => {
         const bottomDrawer = screen.getByTestId('bottom-drawer')
@@ -749,9 +759,11 @@ describe('WorkspaceView Integration Tests', () => {
       )
 
       // Simulate editing
-      if (mockOnChange) {
-        mockOnChange('modified content')
-      }
+      act(() => {
+        if (mockOnChange) {
+          mockOnChange('modified content')
+        }
+      })
 
       await waitFor(() => {
         const bottomDrawer = screen.getByTestId('bottom-drawer')
@@ -782,6 +794,185 @@ describe('WorkspaceView Integration Tests', () => {
       const bottomDrawer = screen.getByTestId('bottom-drawer')
       const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
       expect(within(editorPanel).getByText('[+]')).toBeInTheDocument()
+    })
+  })
+
+  describe('Vim save command integration', () => {
+    beforeEach(() => {
+      // Mock CodeMirror hooks to control onChange and onSave callbacks
+      vi.spyOn(useCodeMirrorModule, 'useCodeMirror').mockImplementation(
+        createMockUseCodeMirror()
+      )
+
+      vi.spyOn(useVimModeModule, 'useVimMode').mockImplementation(
+        createMockUseVimMode()
+      )
+    })
+
+    test('vim :w command saves file and clears dirty state', async (): Promise<void> => {
+      const user = userEvent.setup()
+      render(<WorkspaceView />)
+
+      const sidebar = screen.getByTestId('sidebar')
+
+      // Wait for FileTree to load
+      await waitFor(() => {
+        expect(
+          within(sidebar).getByRole('tree', { name: 'File tree' })
+        ).toBeInTheDocument()
+      })
+
+      // Click a file to open it
+      const fileNode = within(sidebar).getByText('auth.ts')
+      await user.click(fileNode)
+
+      // Wait for file to load
+      await waitFor(
+        () => {
+          const bottomDrawer = screen.getByTestId('bottom-drawer')
+
+          const noFileMessage =
+            within(bottomDrawer).queryByText(/no file selected/i)
+          expect(noFileMessage).not.toBeInTheDocument()
+        },
+        { timeout: 2000 }
+      )
+
+      const bottomDrawer = screen.getByTestId('bottom-drawer')
+      const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+
+      // Initially no dirty indicator
+      expect(within(editorPanel).queryByText('[+]')).not.toBeInTheDocument()
+
+      // Simulate content change by calling the onChange callback
+      act(() => {
+        if (mockOnChange) {
+          mockOnChange('modified content for auth.ts')
+        }
+      })
+
+      // Wait for the dirty indicator to appear
+      await waitFor(() => {
+        const dirtyIndicator = within(editorPanel).queryByText('[+]')
+        expect(dirtyIndicator).toBeInTheDocument()
+      })
+
+      // Simulate vim :w command by calling the onSave callback
+      act(() => {
+        if (mockOnSave) {
+          mockOnSave()
+        }
+      })
+
+      // Wait for the dirty indicator to be removed
+      await waitFor(() => {
+        const dirtyIndicator = within(editorPanel).queryByText('[+]')
+        expect(dirtyIndicator).not.toBeInTheDocument()
+      })
+    })
+
+    test('vim :w command after editing updates dirty state correctly', async (): Promise<void> => {
+      const user = userEvent.setup()
+      render(<WorkspaceView />)
+
+      const sidebar = screen.getByTestId('sidebar')
+
+      // Wait for FileTree to load
+      await waitFor(() => {
+        expect(
+          within(sidebar).getByRole('tree', { name: 'File tree' })
+        ).toBeInTheDocument()
+      })
+
+      // Click a file to open it
+      const fileNode = within(sidebar).getByText('logger.ts')
+      await user.click(fileNode)
+
+      // Wait for file to load
+      await waitFor(
+        () => {
+          const bottomDrawer = screen.getByTestId('bottom-drawer')
+          expect(
+            within(bottomDrawer).queryByText(/no file selected/i)
+          ).not.toBeInTheDocument()
+        },
+        { timeout: 2000 }
+      )
+
+      const bottomDrawer = screen.getByTestId('bottom-drawer')
+      const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+
+      // Initially no dirty indicator
+      expect(within(editorPanel).queryByText('[+]')).not.toBeInTheDocument()
+
+      // Simulate content change to make dirty
+      act(() => {
+        if (mockOnChange) {
+          mockOnChange('// Modified logger implementation')
+        }
+      })
+
+      // Wait for dirty state
+      await waitFor(() => {
+        expect(within(editorPanel).getByText('[+]')).toBeInTheDocument()
+      })
+
+      // Simulate vim :w command
+      act(() => {
+        if (mockOnSave) {
+          mockOnSave()
+        }
+      })
+
+      // Verify dirty indicator is removed after save
+      await waitFor(() => {
+        expect(within(editorPanel).queryByText('[+]')).not.toBeInTheDocument()
+      })
+    })
+
+    test('vim :w command on unmodified file does not change dirty state', async (): Promise<void> => {
+      const user = userEvent.setup()
+      render(<WorkspaceView />)
+
+      const sidebar = screen.getByTestId('sidebar')
+
+      // Wait for FileTree to load
+      await waitFor(() => {
+        expect(
+          within(sidebar).getByRole('tree', { name: 'File tree' })
+        ).toBeInTheDocument()
+      })
+
+      // Click a file to open it
+      const fileNode = within(sidebar).getByText('package.json')
+      await user.click(fileNode)
+
+      // Wait for file to load
+      await waitFor(
+        () => {
+          const bottomDrawer = screen.getByTestId('bottom-drawer')
+          expect(
+            within(bottomDrawer).queryByText(/no file selected/i)
+          ).not.toBeInTheDocument()
+        },
+        { timeout: 2000 }
+      )
+
+      const bottomDrawer = screen.getByTestId('bottom-drawer')
+      const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+
+      // Initially no dirty indicator (file is unmodified)
+      expect(within(editorPanel).queryByText('[+]')).not.toBeInTheDocument()
+
+      // Simulate vim :w command on unmodified file
+      act(() => {
+        if (mockOnSave) {
+          mockOnSave()
+        }
+      })
+
+      // Dirty indicator should still not be present
+      expect(within(editorPanel).queryByText('[+]')).not.toBeInTheDocument()
     })
   })
 })

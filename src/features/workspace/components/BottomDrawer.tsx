@@ -9,6 +9,7 @@ interface BottomDrawerProps {
   selectedFilePath: string | null
   fileSystemService: IFileSystemService
   onContentChange?: (content: string) => void
+  onSave?: () => void
   isDirty?: boolean
 }
 
@@ -25,6 +26,7 @@ const BottomDrawer = ({
   selectedFilePath,
   fileSystemService,
   onContentChange = undefined,
+  onSave = undefined,
   isDirty = false,
 }: BottomDrawerProps): ReactElement => {
   const [activeTab, setActiveTab] = useState<TabType>('editor')
@@ -118,6 +120,7 @@ const BottomDrawer = ({
               filePath={selectedFilePath}
               fileSystemService={fileSystemService}
               onContentChange={onContentChange}
+              onSave={onSave}
               isDirty={isDirty}
             />
           </div>

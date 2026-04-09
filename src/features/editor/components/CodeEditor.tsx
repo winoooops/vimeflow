@@ -10,6 +10,7 @@ interface CodeEditorProps {
   filePath: string | null
   fileSystemService: IFileSystemService
   onContentChange?: (content: string) => void
+  onSave?: () => void
   isDirty?: boolean
 }
 
@@ -17,6 +18,7 @@ export const CodeEditor = ({
   filePath,
   fileSystemService,
   onContentChange = undefined,
+  onSave = undefined,
   isDirty = false,
 }: CodeEditorProps): ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -56,13 +58,14 @@ export const CodeEditor = ({
     initialContent: fileContent,
     language,
     onSave: () => {
-      if (!loadedFilePath || !editorView) {
-        return
+      // If parent provides onSave callback, use it (for integration with editorBuffer)
+      // Otherwise, fall back to direct fileSystemService.writeFile
+      if (onSave) {
+        onSave()
+      } else if (loadedFilePath && editorView) {
+        const currentContent = editorView.state.doc.toString()
+        void fileSystemService.writeFile(loadedFilePath, currentContent)
       }
-
-      const currentContent = editorView.state.doc.toString()
-
-      void fileSystemService.writeFile(loadedFilePath, currentContent)
     },
     onChange: onContentChange,
   })
