@@ -23,3 +23,4 @@ ingestion protocol.
 | [Terminal Input Handling](patterns/terminal-input-handling.md) | terminal       | 3        | 0    | 2026-04-09   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)   | code-quality   | 2        | 0    | 2026-04-09   |
 | [Accessibility](patterns/accessibility.md)                     | a11y           | 4        | 0    | 2026-04-09   |
+| [Async Race Conditions](patterns/async-race-conditions.md)     | react-patterns | 3        | 0    | 2026-04-09   |
