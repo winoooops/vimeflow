@@ -25,3 +25,4 @@ ingestion protocol.
 | [Accessibility](patterns/accessibility.md)                     | a11y           | 4        | 0    | 2026-04-09   |
 | [Async Race Conditions](patterns/async-race-conditions.md)     | react-patterns | 3        | 0    | 2026-04-09   |
 | [Command Injection](patterns/command-injection.md)             | security       | 4        | 0    | 2026-04-09   |
+| [CSP Configuration](patterns/csp-configuration.md)             | security       | 2        | 0    | 2026-04-09   |
