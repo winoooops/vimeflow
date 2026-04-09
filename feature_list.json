@@ -174,7 +174,7 @@
       "Create src/features/editor/hooks/useCodeMirror.test.ts",
       "Write tests for initialization, vim config, cleanup"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [9, 10]
   },
   {
