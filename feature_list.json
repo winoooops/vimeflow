@@ -98,13 +98,13 @@
     "description": "Install CodeMirror 6 and vim extension packages",
     "steps": [
       "Run npm install codemirror @codemirror/view @codemirror/state @codemirror/language",
-      "Run npm install @codemirror/lang-typescript @codemirror/lang-rust @codemirror/lang-json",
+      "Run npm install @codemirror/lang-javascript @codemirror/lang-rust @codemirror/lang-json",
       "Run npm install @codemirror/lang-css @codemirror/lang-html",
       "Run npm install @replit/codemirror-vim",
       "Verify package-lock.json updates",
       "Run npm install to verify clean install"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": []
   },
   {
@@ -121,7 +121,7 @@
       "Update MockFileSystemService with stub implementations",
       "Write unit tests in fileSystemService.test.ts"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [6, 7]
   },
   {

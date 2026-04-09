@@ -43,4 +43,34 @@ describe('fileSystemService', () => {
 
     expect(nodes.length).toBeGreaterThan(0)
   })
+
+  test('service has readFile method', () => {
+    const service = createFileSystemService()
+
+    expect(service).toBeDefined()
+    expect(typeof service.readFile).toBe('function')
+  })
+
+  test('mock service readFile returns mock content', async () => {
+    const service = createFileSystemService()
+    const content = await service.readFile('~/src/App.tsx')
+
+    expect(typeof content).toBe('string')
+    expect(content).toContain('Mock')
+  })
+
+  test('service has writeFile method', () => {
+    const service = createFileSystemService()
+
+    expect(service).toBeDefined()
+    expect(typeof service.writeFile).toBe('function')
+  })
+
+  test('mock service writeFile resolves without error', async () => {
+    const service = createFileSystemService()
+
+    await expect(
+      service.writeFile('~/test.txt', 'content')
+    ).resolves.toBeUndefined()
+  })
 })

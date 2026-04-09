@@ -4,6 +4,8 @@ import { mockFileTree } from '../data/mockFileTree'
 
 export interface IFileSystemService {
   listDir(path: string): Promise<FileNode[]>
+  readFile(path: string): Promise<string>
+  writeFile(path: string, content: string): Promise<void>
 }
 
 interface TauriFileEntry {
@@ -31,6 +33,22 @@ class TauriFileSystemService implements IFileSystemService {
 
     return entries.map(toFileNode)
   }
+
+  async readFile(path: string): Promise<string> {
+    const { invoke } = await import('@tauri-apps/api/core')
+
+    return await invoke<string>('read_file', {
+      request: { path },
+    })
+  }
+
+  async writeFile(path: string, content: string): Promise<void> {
+    const { invoke } = await import('@tauri-apps/api/core')
+
+    await invoke<void>('write_file', {
+      request: { path, content },
+    })
+  }
 }
 
 /** Walk mock tree to find children matching a path like "~/src" */
@@ -57,6 +75,18 @@ class MockFileSystemService implements IFileSystemService {
     const segments = normalized ? normalized.split('/') : []
 
     return Promise.resolve(resolveMockPath(mockFileTree, segments))
+  }
+
+  readFile(): Promise<string> {
+    // Mock implementation - returns empty content
+    // This service is only used in browser mode (not Tauri)
+    return Promise.resolve('// Mock file content')
+  }
+
+  writeFile(): Promise<void> {
+    // Mock implementation - no-op
+    // This service is only used in browser mode (not Tauri)
+    return Promise.resolve()
   }
 }
 
