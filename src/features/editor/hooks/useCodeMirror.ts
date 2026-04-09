@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { EditorView } from '@codemirror/view'
+import { EditorView, ViewUpdate } from '@codemirror/view'
 import { EditorState, type Extension } from '@codemirror/state'
 import { vim } from '@replit/codemirror-vim'
 import { catppuccinMocha } from '../theme/catppuccin'
@@ -10,6 +10,7 @@ export interface UseCodeMirrorOptions {
   initialContent: string
   language: Extension | null
   onSave: () => void
+  onChange?: (content: string) => void
 }
 
 export interface UseCodeMirrorReturn {
@@ -26,14 +27,20 @@ export interface UseCodeMirrorReturn {
 export function useCodeMirror(
   options: UseCodeMirrorOptions
 ): UseCodeMirrorReturn {
-  const { containerRef, initialContent, language, onSave } = options
+  const { containerRef, initialContent, language, onSave, onChange } = options
   const [editorView, setEditorView] = useState<EditorView | null>(null)
   const onSaveRef = useRef(onSave)
+  const onChangeRef = useRef(onChange)
 
   // Keep onSave callback ref up to date
   useEffect(() => {
     onSaveRef.current = onSave
   }, [onSave])
+
+  // Keep onChange callback ref up to date
+  useEffect(() => {
+    onChangeRef.current = onChange
+  }, [onChange])
 
   useEffect(() => {
     const container = containerRef.current
@@ -51,6 +58,18 @@ export function useCodeMirror(
     // Add language extension if provided
     if (language) {
       extensions.push(language)
+    }
+
+    // Add onChange listener if provided
+    if (onChangeRef.current) {
+      extensions.push(
+        EditorView.updateListener.of((update: ViewUpdate) => {
+          if (update.docChanged && onChangeRef.current) {
+            const content = update.state.doc.toString()
+            onChangeRef.current(content)
+          }
+        })
+      )
     }
 
     // Create editor state

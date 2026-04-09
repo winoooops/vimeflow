@@ -3,16 +3,21 @@ import { useEffect, useRef, useState } from 'react'
 import type { IFileSystemService } from '../../files/services/fileSystemService'
 import { useCodeMirror } from '../hooks/useCodeMirror'
 import { useVimMode } from '../hooks/useVimMode'
+import { VimStatusBar } from './VimStatusBar'
 import { getLanguageExtension } from '../services/languageService'
 
 interface CodeEditorProps {
   filePath: string | null
   fileSystemService: IFileSystemService
+  onContentChange?: (content: string) => void
+  isDirty?: boolean
 }
 
 export const CodeEditor = ({
   filePath,
   fileSystemService,
+  onContentChange = undefined,
+  isDirty = false,
 }: CodeEditorProps): ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [fileContent, setFileContent] = useState<string>('')
@@ -59,10 +64,11 @@ export const CodeEditor = ({
 
       void fileSystemService.writeFile(loadedFilePath, currentContent)
     },
+    onChange: onContentChange,
   })
 
   // Track vim mode
-  useVimMode(editorView)
+  const vimMode = useVimMode(editorView)
 
   // Update editor content when file content changes
   useEffect(() => {
@@ -85,10 +91,13 @@ export const CodeEditor = ({
   }
 
   return (
-    <div
-      ref={containerRef}
-      data-testid="codemirror-container"
-      className="flex-1 overflow-hidden"
-    />
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <div
+        ref={containerRef}
+        data-testid="codemirror-container"
+        className="flex-1 overflow-hidden"
+      />
+      <VimStatusBar vimMode={vimMode} isDirty={isDirty} />
+    </div>
   )
 }

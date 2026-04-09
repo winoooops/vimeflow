@@ -158,6 +158,8 @@ export const WorkspaceView = (): ReactElement => {
         <BottomDrawer
           selectedFilePath={editorBuffer.filePath}
           fileSystemService={fileSystemService}
+          onContentChange={editorBuffer.updateContent}
+          isDirty={editorBuffer.isDirty}
         />
       </div>
 

@@ -147,4 +147,50 @@ describe('useCodeMirror', () => {
 
     expect(result.current.editorView).toBeInstanceOf(EditorView)
   })
+
+  test('calls onChange when editor content changes', () => {
+    const onChange = vi.fn()
+
+    const { result } = renderHook(() =>
+      useCodeMirror({
+        containerRef,
+        initialContent: 'initial',
+        language: null,
+        onSave: vi.fn(),
+        onChange,
+      })
+    )
+
+    // Manually dispatch a change to the editor
+    const view = result.current.editorView
+
+    if (view) {
+      const transaction = view.state.update({
+        changes: {
+          from: 0,
+          to: view.state.doc.length,
+          insert: 'modified content',
+        },
+      })
+
+      view.dispatch(transaction)
+    }
+
+    // onChange should be called with the new content
+    expect(onChange).toHaveBeenCalledWith('modified content')
+  })
+
+  test('onChange is optional', () => {
+    const { result } = renderHook(() =>
+      useCodeMirror({
+        containerRef,
+        initialContent: 'test',
+        language: null,
+        onSave: vi.fn(),
+        // onChange not provided
+      })
+    )
+
+    expect(result.current.editorView).toBeInstanceOf(EditorView)
+  })
 })

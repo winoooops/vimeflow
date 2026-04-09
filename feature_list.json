@@ -361,7 +361,7 @@
       "Test: Click Cancel → stays on current file",
       "Run npm test to verify"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [19]
   },
   {

@@ -8,6 +8,8 @@ type TabType = 'editor' | 'diff'
 interface BottomDrawerProps {
   selectedFilePath: string | null
   fileSystemService: IFileSystemService
+  onContentChange?: (content: string) => void
+  isDirty?: boolean
 }
 
 /**
@@ -22,6 +24,8 @@ interface BottomDrawerProps {
 const BottomDrawer = ({
   selectedFilePath,
   fileSystemService,
+  onContentChange = undefined,
+  isDirty = false,
 }: BottomDrawerProps): ReactElement => {
   const [activeTab, setActiveTab] = useState<TabType>('editor')
 
@@ -109,10 +113,12 @@ const BottomDrawer = ({
       {/* Content Area */}
       <div className="flex-1 flex overflow-hidden">
         {activeTab === 'editor' ? (
-          <div data-testid="editor-panel" className="flex-1 flex">
+          <div data-testid="editor-panel" className="flex flex-1">
             <CodeEditor
               filePath={selectedFilePath}
               fileSystemService={fileSystemService}
+              onContentChange={onContentChange}
+              isDirty={isDirty}
             />
           </div>
         ) : (
