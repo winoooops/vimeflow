@@ -19,3 +19,4 @@ ingestion protocol.
 | [Resource Cleanup](patterns/resource-cleanup.md)         | react-patterns | 1        | 0    | 2026-04-09   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md) | cross-platform | 1        | 0    | 2026-04-09   |
 | [Debug Artifacts](patterns/debug-artifacts.md)           | code-quality   | 2        | 0    | 2026-04-09   |
+| [Testing Gaps](patterns/testing-gaps.md)                 | testing        | 1        | 0    | 2026-04-09   |
