@@ -34,3 +34,12 @@ statements must not ship to production. Gate debug visuals behind
 - **Finding:** `border-2 border-red-500` wrapper and debug overlay shipped in production build
 - **Fix:** Removed debug styling
 - **Commit:** `2fc3fa2 feat: Xterm Terminal Core - TauriTerminalService IPC bridge (#34)`
+
+### 3. Console logging shipped in default command stubs
+
+- **Source:** github-codex | PR #14 | 2026-04-01
+- **Severity:** LOW
+- **File:** `src/features/command-palette/data/defaultCommands.ts`
+- **Finding:** Command stubs use `console.info` with ESLint `no-console` disabled — debug logging ships to production
+- **Fix:** Removed console.info calls and eslint-disable comments
+- **Commit:** `e05cd3d feat: assemble complete Agent Activity panel (#14)`
