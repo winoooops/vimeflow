@@ -13,3 +13,7 @@ Additional design material: https://aistudio.google.com/apps/71779b0a-a865-421d-
 Architecture design documents and exploration notes. Contains dated spec files (e.g., `2026-03-29-cicd-infrastructure-design.md`) capturing design decisions made during planning phases.
 
 Note: `.superpowers/` at the repo root is a separate working directory used by the superpowers plugin — it is not documentation.
+
+### `reviews/`
+
+Review knowledge base — patterns learned from local Codex and GitHub Codex code reviews. Each pattern file in `patterns/` collects related findings with their fixes and commit links. Agents may consult relevant patterns before implementing to avoid repeating past mistakes. See `reviews/CLAUDE.md` for the index.
