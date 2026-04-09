@@ -21,3 +21,4 @@ ingestion protocol.
 | [Debug Artifacts](patterns/debug-artifacts.md)                 | code-quality   | 2        | 0    | 2026-04-09   |
 | [Testing Gaps](patterns/testing-gaps.md)                       | testing        | 1        | 0    | 2026-04-09   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md) | terminal       | 3        | 0    | 2026-04-09   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)   | code-quality   | 2        | 0    | 2026-04-09   |
