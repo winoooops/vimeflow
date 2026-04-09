@@ -1,4 +1,10 @@
-import { useState, useRef, useEffect, useCallback, type ReactElement } from 'react'
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  type ReactElement,
+} from 'react'
 import { Reorder } from 'framer-motion'
 import type { Session } from '../types'
 import { FileExplorer } from './panels/FileExplorer'
@@ -91,7 +97,9 @@ const SessionItem = ({
             onChange={(e) => setEditValue(e.target.value)}
             onBlur={commitRename}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {commitRename()}
+              if (e.key === 'Enter') {
+                commitRename()
+              }
               if (e.key === 'Escape') {
                 setEditValue(session.name)
                 setIsEditing(false)
@@ -173,7 +181,9 @@ export const Sidebar = ({
   )
 
   useEffect(() => {
-    if (!isDraggingSplit) {return}
+    if (!isDraggingSplit) {
+      return
+    }
 
     const handleMouseMove = (e: MouseEvent): void => {
       // Dragging up (negative delta) should increase explorer height

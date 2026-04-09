@@ -99,9 +99,7 @@ export const WorkspaceView = (): ReactElement => {
       <AgentActivity session={activeSession} />
 
       {/* Drag overlay — prevents iframes/xterm from stealing mouse events */}
-      {isDragging && (
-        <div className="fixed inset-0 z-50 cursor-col-resize" />
-      )}
+      {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
     </div>
   )
 }

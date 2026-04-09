@@ -34,10 +34,14 @@ export const useFileTree = (externalCwd: string): UseFileTreeResult => {
       try {
         const entries = await service.listDir(path)
         // Only apply if this is still the latest request
-        if (thisGen !== generation.current) {return}
+        if (thisGen !== generation.current) {
+          return
+        }
         setNodes(entries)
       } catch (e: unknown) {
-        if (thisGen !== generation.current) {return}
+        if (thisGen !== generation.current) {
+          return
+        }
         const msg = e instanceof Error ? e.message : 'Failed to list directory'
         setError(msg)
       } finally {
@@ -64,7 +68,9 @@ export const useFileTree = (externalCwd: string): UseFileTreeResult => {
   const navigateUp = useCallback((): void => {
     setCurrentPath((prev) => {
       // Handle ~ paths
-      if (prev === '~' || prev === '/') {return prev}
+      if (prev === '~' || prev === '/') {
+        return prev
+      }
       if (prev.startsWith('~/')) {
         const parent = prev.replace(/\/[^/]+\/?$/, '')
 

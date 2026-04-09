@@ -91,32 +91,26 @@ export const useSessionManager = (): SessionManager => {
     [activeSessionId]
   )
 
-  const renameSession = useCallback(
-    (id: string, name: string): void => {
-      const trimmed = name.trim()
-      if (trimmed.length === 0) {return}
+  const renameSession = useCallback((id: string, name: string): void => {
+    const trimmed = name.trim()
+    if (trimmed.length === 0) {
+      return
+    }
 
-      setSessions((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, name: trimmed } : s))
-      )
-    },
-    []
-  )
+    setSessions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, name: trimmed } : s))
+    )
+  }, [])
 
   const reorderSessions = useCallback((reordered: Session[]): void => {
     setSessions(reordered)
   }, [])
 
-  const updateSessionCwd = useCallback(
-    (id: string, cwd: string): void => {
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === id ? { ...s, workingDirectory: cwd } : s
-        )
-      )
-    },
-    []
-  )
+  const updateSessionCwd = useCallback((id: string, cwd: string): void => {
+    setSessions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, workingDirectory: cwd } : s))
+    )
+  }, [])
 
   return {
     sessions,

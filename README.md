@@ -107,8 +107,8 @@ npm run type-check               # tsc -b
 
 The sidebar file explorer auto-syncs with the terminal's working directory. This relies on your shell emitting [OSC 7](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Operating-System-Commands) escape sequences when `cd` is used.
 
-| Shell  | Status                                              |
-| ------ | --------------------------------------------------- |
+| Shell    | Status                                            |
+| -------- | ------------------------------------------------- |
 | **zsh**  | Works out of the box                              |
 | **fish** | Works out of the box                              |
 | **bash** | Requires a one-time setup (adds `PROMPT_COMMAND`) |

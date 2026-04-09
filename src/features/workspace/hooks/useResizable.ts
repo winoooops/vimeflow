@@ -35,11 +35,12 @@ export const useResizable = ({
   )
 
   useEffect(() => {
-    if (!isDragging) {return}
+    if (!isDragging) {
+      return
+    }
 
     const handleMouseMove = (e: MouseEvent): void => {
-      const currentPos =
-        direction === 'horizontal' ? e.clientX : e.clientY
+      const currentPos = direction === 'horizontal' ? e.clientX : e.clientY
       const delta = currentPos - startPos.current
 
       const newSize = Math.round(

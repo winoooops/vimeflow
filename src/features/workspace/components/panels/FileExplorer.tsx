@@ -18,8 +18,15 @@ export const FileExplorer = ({
   cwd = '~',
   onFileSelect = undefined,
 }: FileExplorerProps): ReactElement => {
-  const { nodes, currentPath, isLoading, error, refresh, navigateTo, navigateUp } =
-    useFileTree(cwd)
+  const {
+    nodes,
+    currentPath,
+    isLoading,
+    error,
+    refresh,
+    navigateTo,
+    navigateUp,
+  } = useFileTree(cwd)
 
   const handleNodeSelect = (node: FileNode): void => {
     if (node.type === 'folder') {
@@ -36,15 +43,12 @@ export const FileExplorer = ({
   const pathLabel =
     currentPath === '~'
       ? '~'
-      : currentPath.split('/').filter(Boolean).pop() ?? currentPath
+      : (currentPath.split('/').filter(Boolean).pop() ?? currentPath)
 
   const isRoot = currentPath === '~' || currentPath === '/'
 
   return (
-    <div
-      className="flex h-full flex-col px-4 pt-3"
-      data-testid="file-explorer"
-    >
+    <div className="flex h-full flex-col px-4 pt-3" data-testid="file-explorer">
       {/* Header */}
       <div className="mb-1 flex items-center gap-2">
         <span className="material-symbols-outlined text-base text-on-surface/50">

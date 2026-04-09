@@ -1,8 +1,6 @@
 import type { FileNode } from '../types'
 import { isTauri } from '../../../lib/environment'
-import {
-  mockFileTree,
-} from '../data/mockFileTree'
+import { mockFileTree } from '../data/mockFileTree'
 
 export interface IFileSystemService {
   listDir(path: string): Promise<FileNode[]>
@@ -36,17 +34,18 @@ class TauriFileSystemService implements IFileSystemService {
 }
 
 /** Walk mock tree to find children matching a path like "~/src" */
-const resolveMockPath = (
-  nodes: FileNode[],
-  segments: string[]
-): FileNode[] => {
-  if (segments.length === 0) {return nodes}
+const resolveMockPath = (nodes: FileNode[], segments: string[]): FileNode[] => {
+  if (segments.length === 0) {
+    return nodes
+  }
   const [head, ...rest] = segments
 
   const match = nodes.find(
     (n) => n.type === 'folder' && n.name.replace(/\/$/, '') === head
   )
-  if (!match?.children) {return []}
+  if (!match?.children) {
+    return []
+  }
 
   return resolveMockPath(match.children, rest)
 }

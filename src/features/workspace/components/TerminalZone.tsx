@@ -65,9 +65,7 @@ export const TerminalZone = ({
                 }}
                 className="mr-1 rounded p-0.5 opacity-0 transition-opacity hover:bg-surface-container group-hover:opacity-100"
               >
-                <span className="material-symbols-outlined text-xs">
-                  close
-                </span>
+                <span className="material-symbols-outlined text-xs">close</span>
               </button>
             </div>
           )
@@ -117,9 +115,7 @@ export const TerminalZone = ({
                 <TerminalPane
                   sessionId={session.id}
                   cwd={session.workingDirectory}
-                  onCwdChange={(cwd) =>
-                    onSessionCwdChange?.(session.id, cwd)
-                  }
+                  onCwdChange={(cwd) => onSessionCwdChange?.(session.id, cwd)}
                 />
               </div>
             )
