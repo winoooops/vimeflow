@@ -264,7 +264,7 @@
       "Update src/features/editor/components/VimStatusBar.test.tsx",
       "Test mode display and dirty indicator"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [12, 13]
   },
   {
