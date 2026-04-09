@@ -29,8 +29,8 @@ describe('WorkspaceView', () => {
     const container = screen.getByTestId('workspace-view')
 
     expect(container).toHaveClass('grid')
-    // Grid columns: 64px icon rail + dynamic sidebar + 1fr main + 360px activity (updated in Feature 19)
-    expect(container.style.gridTemplateColumns).toBe('64px 256px 1fr 360px')
+    // Grid columns: 64px icon rail + dynamic sidebar + 1fr main + 360px activity (updated in Feature 20)
+    expect(container.style.gridTemplateColumns).toBe('64px 340px 1fr 360px')
   })
 
   test('fills viewport height', () => {

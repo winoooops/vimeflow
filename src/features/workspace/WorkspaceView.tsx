@@ -13,8 +13,8 @@ import { createFileSystemService } from '../files/services/fileSystemService'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 
 const SIDEBAR_MIN = 180
-const SIDEBAR_MAX = 480
-const SIDEBAR_DEFAULT = 256
+const SIDEBAR_MAX = 560
+const SIDEBAR_DEFAULT = 340
 
 export const WorkspaceView = (): ReactElement => {
   const {

@@ -329,7 +329,7 @@
       "Verify resize handles still work correctly",
       "Update Sidebar.test.tsx if needed"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": []
   },
   {

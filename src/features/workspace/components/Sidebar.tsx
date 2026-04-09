@@ -24,7 +24,7 @@ export interface SidebarProps {
 
 const FILE_EXPLORER_MIN = 100
 const FILE_EXPLORER_MAX = 500
-const FILE_EXPLORER_DEFAULT = 240
+const FILE_EXPLORER_DEFAULT = 320
 
 interface SessionItemProps {
   session: Session
