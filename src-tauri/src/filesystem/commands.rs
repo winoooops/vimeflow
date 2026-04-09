@@ -87,9 +87,16 @@ mod tests {
     use super::*;
     use std::fs;
 
+    /// Create a temp dir under $HOME so it passes the home-directory scope check
+    fn home_test_dir(name: &str) -> std::path::PathBuf {
+        dirs::home_dir()
+            .expect("HOME must be set for tests")
+            .join(format!(".vimeflow_test_{}", name))
+    }
+
     #[test]
     fn list_dir_returns_sorted_entries() {
-        let dir = std::env::temp_dir().join("vimeflow_test_list_dir");
+        let dir = home_test_dir("list_dir");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::create_dir(dir.join("beta")).unwrap();
@@ -120,7 +127,7 @@ mod tests {
 
     #[test]
     fn list_dir_skips_hidden_files() {
-        let dir = std::env::temp_dir().join("vimeflow_test_hidden");
+        let dir = home_test_dir("hidden");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join(".hidden"), "").unwrap();
