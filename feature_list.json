@@ -408,7 +408,7 @@
       "Run cd src-tauri && cargo test and verify all pass",
       "Run npm run format to apply Prettier"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [21, 22, 23, 24]
   },
   {
