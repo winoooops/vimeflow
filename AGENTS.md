@@ -78,3 +78,7 @@ Follow the review process and checklist defined in `agents/code-reviewer.md`. Ke
 - Severity levels: CRITICAL (security/data loss), HIGH (bugs), MEDIUM (maintainability), LOW (style)
 - Flag any hardcoded secrets, `console.log` statements, or `any` types
 - Approval: no CRITICAL/HIGH = approve; HIGH only = warn; CRITICAL = block
+
+## Review Knowledge Base
+
+Past review findings are collected in `docs/reviews/CLAUDE.md`, grouped by recurring pattern. When reviewing, check if a finding matches an existing pattern — if so, note it. When fixing findings, record the fix in the appropriate pattern file per the ingestion protocol in the design spec.
