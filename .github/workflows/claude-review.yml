@@ -13,6 +13,8 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+    outputs:
+      structured_output: ${{ steps.claude.outputs.structured_output }}
     steps:
       - name: Checkout PR merge commit
         uses: actions/checkout@v5
@@ -28,12 +30,17 @@ jobs:
             "$PR_BASE_REF" \
             "+refs/pull/$PR_NUMBER/head"
 
+      - name: Load output schema
+        id: schema
+        run: |
+          SCHEMA=$(jq -c . .github/codex/codex-output-schema.json)
+          echo "json=$SCHEMA" >> "$GITHUB_OUTPUT"
+
       - name: Run Claude review
+        id: claude
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          track_progress: 'true'
-          use_sticky_comment: 'true'
           prompt: |
             This is PR #${{ github.event.pull_request.number }} for ${{ github.repository }}.
 
@@ -52,15 +59,73 @@ jobs:
             - If a bug class appears in multiple places (e.g. missing error handling in both skip_review and review paths), report them together in one finding rather than separately.
 
             Apply confidence-based filtering: only report issues you are >80% confident about.
-            Use severity levels: CRITICAL, HIGH, MEDIUM, LOW. Prefix each finding title with the severity in brackets, e.g. "[HIGH] Missing null check in …".
+            Use severity levels: CRITICAL, HIGH, MEDIUM, LOW.
             Focus on issues introduced by this PR — do not flag pre-existing problems.
 
-            Format the final comment as:
-            ## Claude Code Review
-
-            Then one section per finding, followed by an "Overall" verdict line and a one-paragraph summary.
+            Return your review as structured JSON matching the provided schema. Do not post any comments directly — the workflow will format and post the findings.
 
             Pull request title and body:
             ----
             ${{ github.event.pull_request.title }}
             ${{ github.event.pull_request.body }}
+          claude_args: |
+            --json-schema '${{ steps.schema.outputs.json }}'
+
+  post-feedback:
+    name: Post Review Comment
+    runs-on: ubuntu-latest
+    needs: claude-review
+    if: needs.claude-review.outputs.structured_output != ''
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Format and post Claude review
+        uses: actions/github-script@v7
+        env:
+          CLAUDE_STRUCTURED_OUTPUT: ${{ needs.claude-review.outputs.structured_output }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const raw = process.env.CLAUDE_STRUCTURED_OUTPUT
+            let body
+
+            try {
+              const review = JSON.parse(raw)
+              const lines = ['## Claude Code Review', '']
+
+              if (review.findings && review.findings.length > 0) {
+                const icon = { CRITICAL: '🔴', HIGH: '🟠', MEDIUM: '🟡', LOW: '🔵' }
+                for (const f of review.findings) {
+                  const sev = icon[f.severity] || '⚪'
+                  lines.push(`### ${sev} [${f.severity}] ${f.title}`)
+                  lines.push('')
+                  lines.push(`📍 \`${f.code_location.absolute_file_path}\` L${f.code_location.line_range.start}-${f.code_location.line_range.end}`)
+                  lines.push(`🎯 Confidence: ${(f.confidence_score * 100).toFixed(0)}%`)
+                  lines.push('')
+                  lines.push(f.body)
+                  lines.push('')
+                  lines.push('---')
+                  lines.push('')
+                }
+              } else {
+                lines.push('✅ No issues found.')
+                lines.push('')
+              }
+
+              const verdict = review.overall_correctness === 'patch is correct' ? '✅' : '⚠️'
+              lines.push(`**Overall: ${verdict} ${review.overall_correctness}** (confidence: ${(review.overall_confidence_score * 100).toFixed(0)}%)`)
+              lines.push('')
+              lines.push(`> ${review.overall_explanation}`)
+
+              body = lines.join('\n')
+            } catch {
+              body = `## Claude Code Review\n\n${raw}`
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            })
