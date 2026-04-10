@@ -24,7 +24,13 @@ export const CodeEditor = ({
   const [fileContent, setFileContent] = useState<string>('')
   const [loadedFilePath, setLoadedFilePath] = useState<string | null>(null)
 
-  // Load file when filePath changes
+  // Load file when filePath changes.
+  //
+  // A `cancelled` flag guards against out-of-order async responses: if the
+  // user clicks file A and then quickly clicks file B, a slow A read that
+  // resolves *after* B would otherwise overwrite B's content and cause
+  // subsequent edits to apply to the wrong file. The cleanup function sets
+  // the flag so stale completions become no-ops.
   useEffect(() => {
     if (!filePath) {
       setFileContent('')
@@ -33,18 +39,30 @@ export const CodeEditor = ({
       return
     }
 
+    let cancelled = false
+
     const loadFile = async (): Promise<void> => {
       try {
         const content = await fileSystemService.readFile(filePath)
+        if (cancelled) {
+          return
+        }
         setFileContent(content)
         setLoadedFilePath(filePath)
       } catch (error: unknown) {
+        if (cancelled) {
+          return
+        }
         // eslint-disable-next-line no-console
         console.error('Failed to load file:', error)
       }
     }
 
     void loadFile()
+
+    return (): void => {
+      cancelled = true
+    }
   }, [filePath, fileSystemService])
 
   // Get language extension from filename

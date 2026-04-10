@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { IconRail } from './components/IconRail'
 import { Sidebar } from './components/Sidebar'
 import { TerminalZone } from './components/TerminalZone'
@@ -42,8 +42,14 @@ export const WorkspaceView = (): ReactElement => {
     ? sessions.find((s) => s.id === activeSessionId)
     : undefined
 
-  // File selection state
-  const fileSystemService = createFileSystemService()
+  // File selection state.
+  //
+  // The service is created once per WorkspaceView instance via useMemo so it
+  // has a stable reference across renders. Without this, CodeEditor's
+  // file-loading effect (which depends on the service) re-fires on every
+  // WorkspaceView re-render — including each keystroke in the editor — and
+  // reloads the file from disk, overwriting in-progress edits.
+  const fileSystemService = useMemo(() => createFileSystemService(), [])
   const editorBuffer = useEditorBuffer(fileSystemService)
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null)
