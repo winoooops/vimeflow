@@ -84,6 +84,13 @@ pub fn list_dir(request: ListDirRequest) -> Result<Vec<FileEntry>, String> {
 
 /// Read file contents as UTF-8 string.
 /// Restricted to the user's home directory.
+///
+/// Uses O_NOFOLLOW (Unix) / FILE_FLAG_OPEN_REPARSE_POINT (Windows) to
+/// close the TOCTOU window between the canonical scope check and the
+/// actual open, mirroring the hardening applied in `write_file`. Without
+/// this a concurrent unlink+symlink race could swap the validated file
+/// for a symlink pointing outside home, and `fs::read_to_string` would
+/// happily follow it and leak the contents back to the webview.
 #[tauri::command]
 pub fn read_file(request: ReadFileRequest) -> Result<String, String> {
     let raw = expand_home(&request.path);
@@ -106,8 +113,52 @@ pub fn read_file(request: ReadFileRequest) -> Result<String, String> {
 
     log::info!("Reading file: {}", canonical.display());
 
-    fs::read_to_string(&canonical)
-        .map_err(|e| format!("failed to read file '{}': {}", canonical.display(), e))
+    use std::io::Read;
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // O_NOFOLLOW: refuse to follow a symlink at the final path component.
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // FILE_FLAG_OPEN_REPARSE_POINT: open the reparse point itself
+        // rather than following it. Subsequent metadata check rejects
+        // if we landed on one.
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x00200000;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+
+    let mut file = options
+        .open(&canonical)
+        .map_err(|e| format!("failed to open '{}' for reading: {}", canonical.display(), e))?;
+
+    // On Windows, opening a reparse point with FILE_FLAG_OPEN_REPARSE_POINT
+    // gives us a handle to the reparse data itself. Reject before the
+    // subsequent read would leak the symlink's metadata back to the webview.
+    #[cfg(windows)]
+    {
+        let metadata = file
+            .metadata()
+            .map_err(|e| format!("failed to stat '{}': {}", canonical.display(), e))?;
+        if metadata.file_type().is_symlink() {
+            return Err(format!(
+                "access denied: refusing to read through symlink: {}",
+                canonical.display()
+            ));
+        }
+    }
+
+    let mut content = String::new();
+    file.read_to_string(&mut content)
+        .map_err(|e| format!("failed to read file '{}': {}", canonical.display(), e))?;
+
+    Ok(content)
 }
 
 /// Write content to a file.
@@ -296,9 +347,31 @@ pub fn write_file(request: WriteFileRequest) -> Result<(), String> {
         options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
     }
 
-    let mut file = options
+    let file = options
         .open(&target)
         .map_err(|e| format!("failed to open '{}' for writing: {}", target.display(), e))?;
+
+    // On Windows, FILE_FLAG_OPEN_REPARSE_POINT opens the reparse point
+    // *itself* rather than following it — which means if a race swapped
+    // the target for a symlink between our pre-open check and the open
+    // call, the write_all below would silently corrupt the reparse data
+    // buffer rather than failing. Explicitly query the handle's metadata
+    // and reject if we landed on a symlink. Unix is already protected by
+    // O_NOFOLLOW returning ELOOP at open time.
+    #[cfg(windows)]
+    {
+        let metadata = file
+            .metadata()
+            .map_err(|e| format!("failed to stat '{}': {}", target.display(), e))?;
+        if metadata.file_type().is_symlink() {
+            return Err(format!(
+                "access denied: refusing to write through symlink: {}",
+                target.display()
+            ));
+        }
+    }
+
+    let mut file = file;
     file.write_all(request.content.as_bytes())
         .map_err(|e| format!("failed to write file '{}': {}", target.display(), e))?;
 
@@ -497,6 +570,48 @@ mod tests {
             "traversal fix must not create directories outside home: {}",
             marker.display()
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_file_refuses_to_follow_symlink_escaping_home() {
+        // Mirror of the write_file symlink regression test. If a symlink
+        // inside home points outside home and `read_file` follows it,
+        // the webview would receive sandbox-escaped contents.
+        use std::os::unix::fs::symlink;
+
+        let dir = home_test_dir("read_file_symlink_escape");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // Point the symlink at a real file outside home so canonicalize() resolves
+        // and the scope check would otherwise accept it if not for O_NOFOLLOW.
+        let outside_target = std::env::temp_dir().join(
+            ".vimeflow_read_file_symlink_secret.txt",
+        );
+        fs::write(&outside_target, "SECRET").unwrap();
+
+        let link = dir.join("innocent_name.txt");
+        symlink(&outside_target, &link).unwrap();
+
+        // The expand_home+canonicalize path will resolve the symlink and
+        // realize it's outside home, so the scope check rejects it here.
+        // (The O_NOFOLLOW guard is defense-in-depth for the TOCTOU race
+        // where the symlink is introduced between canonicalize and open.)
+        let result = read_file(ReadFileRequest {
+            path: link.to_string_lossy().to_string(),
+        });
+
+        assert!(result.is_err(), "symlink-escape read must be rejected");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("access denied") || err.contains("invalid path"),
+            "expected scope rejection, got: {}",
+            err
+        );
+
+        let _ = fs::remove_file(&outside_target);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[cfg(unix)]

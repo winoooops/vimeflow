@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import type { ReactElement } from 'react'
-import { useEffect } from 'react'
+import { useEffect, useId, useRef } from 'react'
 
 export interface UnsavedChangesDialogProps {
   isOpen: boolean
@@ -20,12 +20,62 @@ export const UnsavedChangesDialog = ({
   onDiscard,
   onCancel,
 }: UnsavedChangesDialogProps): ReactElement | null => {
-  // Handle Escape key
+  const descriptionId = useId()
+  const saveButtonRef = useRef<HTMLButtonElement | null>(null)
+  const discardButtonRef = useRef<HTMLButtonElement | null>(null)
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null)
+
+  // Auto-focus Save when the dialog opens so Enter is the primary action
+  // and keyboard users have a well-defined initial focus target.
   useEffect(() => {
+    if (isOpen) {
+      saveButtonRef.current?.focus()
+    }
+  }, [isOpen])
+
+  // Handle Escape key + focus trap. `aria-modal` is a hint to assistive
+  // tech, not a browser-enforced constraint — without a JS trap, Tab
+  // would cycle into the background workspace (terminal, sidebar,
+  // editor), letting a keyboard user trigger a conflicting file switch
+  // while the dialog is still open and holding `pendingFilePath`.
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined
+    }
+
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && isOpen) {
+      if (event.key === 'Escape') {
         onCancel()
+
+        return
       }
+
+      if (event.key !== 'Tab') {
+        return
+      }
+
+      const buttons = [
+        saveButtonRef.current,
+        discardButtonRef.current,
+        cancelButtonRef.current,
+      ].filter((b): b is HTMLButtonElement => b !== null)
+
+      if (buttons.length === 0) {
+        return
+      }
+
+      const currentIndex = buttons.indexOf(
+        document.activeElement as HTMLButtonElement
+      )
+      const delta = event.shiftKey ? -1 : 1
+
+      const nextIndex =
+        currentIndex === -1
+          ? 0
+          : (currentIndex + delta + buttons.length) % buttons.length
+
+      event.preventDefault()
+      buttons[nextIndex]?.focus()
     }
 
     document.addEventListener('keydown', handleKeyDown)
@@ -42,6 +92,7 @@ export const UnsavedChangesDialog = ({
           role="dialog"
           aria-modal="true"
           aria-label="Unsaved changes dialog"
+          aria-describedby={descriptionId}
           className="fixed inset-0 z-[100] flex items-center justify-center"
         >
           {/* Backdrop */}
@@ -75,7 +126,10 @@ export const UnsavedChangesDialog = ({
 
             {/* Content */}
             <div className="px-6 py-5">
-              <p className="text-sm text-on-surface/80 font-inter leading-relaxed">
+              <p
+                id={descriptionId}
+                className="text-sm text-on-surface/80 font-inter leading-relaxed"
+              >
                 <span className="font-medium text-on-surface">{fileName}</span>{' '}
                 has unsaved changes. Do you want to save them before switching
                 files?
@@ -94,6 +148,7 @@ export const UnsavedChangesDialog = ({
             <div className="px-6 py-4 border-t border-surface-container-low/30 flex gap-3 justify-end">
               {/* Save button (primary) */}
               <button
+                ref={saveButtonRef}
                 type="button"
                 onClick={onSave}
                 className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-on-primary font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-[#1e1e2e]"
@@ -103,6 +158,7 @@ export const UnsavedChangesDialog = ({
 
               {/* Discard button (error) */}
               <button
+                ref={discardButtonRef}
                 type="button"
                 onClick={onDiscard}
                 className="px-4 py-2 rounded-lg bg-error hover:bg-error/90 text-on-error font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-error focus:ring-offset-2 focus:ring-offset-[#1e1e2e]"
@@ -112,6 +168,7 @@ export const UnsavedChangesDialog = ({
 
               {/* Cancel button (neutral) */}
               <button
+                ref={cancelButtonRef}
                 type="button"
                 onClick={onCancel}
                 className="px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-[#1e1e2e]"
