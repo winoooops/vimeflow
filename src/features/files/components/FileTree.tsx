@@ -7,7 +7,13 @@ import { ContextMenu } from './ContextMenu'
 interface FileTreeProps {
   nodes: FileNode[]
   contextMenuActions: ContextMenuAction[]
-  /** Path of the directory these root nodes belong to (e.g. `~` or `~/src`). */
+  /**
+   * Path of the directory these root nodes belong to (e.g. `~` or `~/src`).
+   * Defaults to `~` so a caller that forgets to pass it still emits
+   * canonical `~`-relative paths to `onNodeSelect` instead of silently
+   * dropping the root and producing bare filenames (which the Tauri
+   * `read_file` / `write_file` commands reject as non-absolute).
+   */
   rootPath?: string
   onNodeSelect?: (node: FileNode, fullPath: string) => void
 }
@@ -18,7 +24,7 @@ interface FileTreeProps {
 export const FileTree = ({
   nodes,
   contextMenuActions,
-  rootPath = '',
+  rootPath = '~',
   onNodeSelect = undefined,
 }: FileTreeProps): ReactElement => {
   const [contextMenuState, setContextMenuState] = useState<ContextMenuState>({

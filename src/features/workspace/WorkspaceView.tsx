@@ -109,25 +109,41 @@ export const WorkspaceView = (): ReactElement => {
 
   // Save current file and open pending file.
   //
-  // Errors from saveFile/openFile were previously swallowed via `void
-  // handleSave()`, leaving the dialog stuck open with no user feedback on
-  // Tauri IPC failures (disk full, permission denied, file missing). Wrap
-  // the async work in try/catch, surface the error via `saveError`, and
-  // keep the dialog open so the user can retry or cancel.
+  // Use TWO separate try/catch blocks so save-failure and open-failure
+  // emit accurate messages. Previously a single try/catch reported a
+  // successful save followed by a failed pending-file open as
+  // "Failed to save: ...", misleading the user into thinking their
+  // edits were lost when they were actually on disk.
   const handleSave = async (): Promise<void> => {
     try {
       await editorBuffer.saveFile()
-
-      if (pendingFilePath) {
-        await editorBuffer.openFile(pendingFilePath)
-      }
-
-      setShowUnsavedDialog(false)
-      setPendingFilePath(null)
-      setSaveError(null)
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
       setSaveError(`Failed to save: ${message}`)
+
+      // Keep the dialog open so the user can retry or cancel — the file
+      // is still dirty and we haven't switched away.
+      return
+    }
+
+    // At this point the current buffer is clean on disk. The dialog's
+    // job of guarding the switch is done — surface any pending-open
+    // failure via the workspace-level banner instead of leaving the
+    // dialog stuck with a misleading "Failed to save" message.
+    setShowUnsavedDialog(false)
+    setPendingFilePath(null)
+    setSaveError(null)
+
+    if (pendingFilePath) {
+      try {
+        await editorBuffer.openFile(pendingFilePath)
+        setFileError(null)
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        setFileError(
+          `Saved current file. Could not open ${pendingFilePath}: ${message}`
+        )
+      }
     }
   }
 

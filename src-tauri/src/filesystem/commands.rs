@@ -260,11 +260,16 @@ pub fn write_file(request: WriteFileRequest) -> Result<(), String> {
 
     log::info!("Writing file: {}", target.display());
 
-    // Atomic write via OpenOptions — on Unix we also pass O_NOFOLLOW so
-    // the kernel refuses to follow a symlink at `target`, closing the
-    // TOCTOU window between our `symlink_metadata` check above and the
-    // actual write. A concurrent `unlink`+`symlink` race would cause
-    // `open` to return ELOOP rather than escaping the sandbox.
+    // Atomic write via OpenOptions. On Unix we pass O_NOFOLLOW so the
+    // kernel refuses to follow a symlink at `target`, closing the TOCTOU
+    // window between our `symlink_metadata` check above and the actual
+    // write. A concurrent `unlink`+`symlink` race would cause `open` to
+    // return ELOOP rather than escaping the sandbox.
+    //
+    // On Windows we set FILE_FLAG_OPEN_REPARSE_POINT via the `windows`
+    // OpenOptionsExt, which tells CreateFileW to open the reparse point
+    // itself instead of following it. This is the Windows equivalent of
+    // O_NOFOLLOW and closes the same race for reparse-point symlinks.
     use std::io::Write;
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
@@ -274,6 +279,21 @@ pub fn write_file(request: WriteFileRequest) -> Result<(), String> {
         use std::os::unix::fs::OpenOptionsExt;
         // O_NOFOLLOW: if the final path component is a symlink, fail with ELOOP.
         options.custom_flags(libc::O_NOFOLLOW);
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000. When combined with
+        // CreateFileW (which stdlib uses under the hood), this opens the
+        // reparse point itself rather than following it — so a racing
+        // symlink swap causes the subsequent write_all to hit a reparse
+        // point, not the target the symlink points to. This is strictly
+        // an additional hardening layer on top of the symlink_metadata
+        // check above; if the target is a non-reparse-point regular
+        // file (the common case), this flag has no effect.
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x00200000;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
     }
 
     let mut file = options
