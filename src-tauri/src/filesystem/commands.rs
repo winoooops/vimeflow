@@ -363,69 +363,111 @@ pub fn write_file(request: WriteFileRequest) -> Result<(), String> {
 
     log::info!("Writing file: {}", target.display());
 
-    // Atomic write via OpenOptions. On Unix we pass O_NOFOLLOW so the
-    // kernel refuses to follow a symlink at `target`, closing the TOCTOU
-    // window between our `symlink_metadata` check above and the actual
-    // write. A concurrent `unlink`+`symlink` race would cause `open` to
-    // return ELOOP rather than escaping the sandbox.
+    // Atomic write: write to a sibling temp file, then `fs::rename` over
+    // the target. `rename(2)` is atomic on POSIX (within the same
+    // filesystem) — the target either points at the old bytes or the
+    // new bytes, never at a partially-written or zero-length file.
     //
-    // On Windows we set FILE_FLAG_OPEN_REPARSE_POINT via the `windows`
-    // OpenOptionsExt, which tells CreateFileW to open the reparse point
-    // itself instead of following it. This is the Windows equivalent of
-    // O_NOFOLLOW and closes the same race for reparse-point symlinks.
+    // Why not write directly to the target? `OpenOptions::truncate(true)`
+    // zeroes the target the moment `open()` returns, BEFORE any bytes
+    // are written. If `write_all` then fails (disk full, I/O error,
+    // signal), the original file content is gone and the new content
+    // was never committed — silent data loss. The atomic rename pattern
+    // avoids this by keeping the target untouched until the temp file
+    // is fully written and synced.
+    //
+    // The temp file is created with O_NOFOLLOW (Unix) /
+    // FILE_FLAG_OPEN_REPARSE_POINT (Windows) and O_EXCL / create_new
+    // so a racing symlink at the temp path is refused rather than
+    // followed. The subsequent `rename` replaces the target atomically;
+    // since we already rejected target symlinks in the pre-check above
+    // and `resolved_parent` is a canonical in-home path, `rename` is
+    // bounded to the home sandbox.
     use std::io::Write;
+
+    let tmp_name = format!(".{}.vimeflow.tmp.{}", {
+        // Use the target file name as the temp-file prefix so it lands in
+        // the same directory (required for rename atomicity on POSIX).
+        file_name.to_string_lossy()
+    }, std::process::id());
+    let tmp_path = resolved_parent.join(&tmp_name);
+
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        // O_NOFOLLOW: if the final path component is a symlink, fail with ELOOP.
         options.custom_flags(libc::O_NOFOLLOW);
     }
 
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
-        // FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000. When combined with
-        // CreateFileW (which stdlib uses under the hood), this opens the
-        // reparse point itself rather than following it — so a racing
-        // symlink swap causes the subsequent write_all to hit a reparse
-        // point, not the target the symlink points to. This is strictly
-        // an additional hardening layer on top of the symlink_metadata
-        // check above; if the target is a non-reparse-point regular
-        // file (the common case), this flag has no effect.
         const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x00200000;
         options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
     }
 
-    let file = options
-        .open(&target)
-        .map_err(|e| format!("failed to open '{}' for writing: {}", target.display(), e))?;
+    let write_to_temp = || -> Result<(), String> {
+        let mut tmp_file = options.open(&tmp_path).map_err(|e| {
+            format!(
+                "failed to open temp file '{}' for writing: {}",
+                tmp_path.display(),
+                e
+            )
+        })?;
 
-    // On Windows, FILE_FLAG_OPEN_REPARSE_POINT opens the reparse point
-    // *itself* rather than following it — which means if a race swapped
-    // the target for a symlink between our pre-open check and the open
-    // call, the write_all below would silently corrupt the reparse data
-    // buffer rather than failing. Explicitly query the handle's metadata
-    // and reject if we landed on a symlink. Unix is already protected by
-    // O_NOFOLLOW returning ELOOP at open time.
-    #[cfg(windows)]
-    {
-        let metadata = file
-            .metadata()
-            .map_err(|e| format!("failed to stat '{}': {}", target.display(), e))?;
-        if metadata.file_type().is_symlink() {
-            return Err(format!(
-                "access denied: refusing to write through symlink: {}",
-                target.display()
-            ));
+        // Windows post-open symlink check (Unix is already covered by O_NOFOLLOW).
+        #[cfg(windows)]
+        {
+            let metadata = tmp_file.metadata().map_err(|e| {
+                format!("failed to stat temp file '{}': {}", tmp_path.display(), e)
+            })?;
+            if metadata.file_type().is_symlink() {
+                return Err(format!(
+                    "access denied: refusing to write through symlink: {}",
+                    tmp_path.display()
+                ));
+            }
         }
+
+        tmp_file
+            .write_all(request.content.as_bytes())
+            .map_err(|e| {
+                format!(
+                    "failed to write temp file '{}': {}",
+                    tmp_path.display(),
+                    e
+                )
+            })?;
+
+        // `sync_all` before rename so the replacement file is durable on
+        // disk even if the machine crashes immediately after rename.
+        // Without this a post-crash state could show the rename landed
+        // but the contents are zero-length.
+        tmp_file.sync_all().map_err(|e| {
+            format!("failed to sync temp file '{}': {}", tmp_path.display(), e)
+        })?;
+
+        Ok(())
+    };
+
+    if let Err(e) = write_to_temp() {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(e);
     }
 
-    let mut file = file;
-    file.write_all(request.content.as_bytes())
-        .map_err(|e| format!("failed to write file '{}': {}", target.display(), e))?;
+    // Atomic rename onto the target. On failure, clean up the temp file
+    // so we don't leave droppings in the user's directory.
+    if let Err(e) = fs::rename(&tmp_path, &target) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(format!(
+            "failed to rename '{}' -> '{}': {}",
+            tmp_path.display(),
+            target.display(),
+            e
+        ));
+    }
 
     Ok(())
 }

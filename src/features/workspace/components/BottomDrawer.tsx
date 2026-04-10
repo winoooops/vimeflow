@@ -126,6 +126,7 @@ const BottomDrawer = ({
         <div className="flex space-x-6">
           {/* Editor Tab */}
           <button
+            type="button"
             onClick={() => {
               setActiveTab('editor')
             }}
@@ -142,6 +143,7 @@ const BottomDrawer = ({
 
           {/* Diff Viewer Tab */}
           <button
+            type="button"
             onClick={() => {
               setActiveTab('diff')
             }}

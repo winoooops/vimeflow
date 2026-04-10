@@ -57,15 +57,25 @@ export const WorkspaceView = (): ReactElement => {
 
   // Live mirror of `pendingFilePath`. `handleSave` reads this AFTER its
   // saveFile() await so a Cancel/backdrop click during the in-flight
-  // save is honoured — the ref will have been cleared to null by
-  // `handleCancel`, and handleSave bails instead of opening the pending
-  // file against the user's explicit cancellation. Using the state
-  // value directly (either via closure capture or `useCallback` deps)
-  // would read a stale snapshot taken before the await.
+  // save is honoured — handleSave bails instead of opening the pending
+  // file against the user's explicit cancellation.
+  //
+  // CRITICAL: handlers that clear pendingFilePath MUST also write the
+  // ref synchronously (via `setPendingFilePathSynced`). The useEffect
+  // mirror below is a safety net for initial-value sync, but useEffect
+  // runs as a PAINT-time callback — it fires *after* the microtask
+  // queue drains. When handleSave's save IPC resolves as a microtask
+  // and resumes, the effect hasn't run yet, so a stale ref would be
+  // read and the handler would open the cancelled pending file.
   const pendingFilePathRef = useRef<string | null>(null)
   useEffect(() => {
     pendingFilePathRef.current = pendingFilePath
   }, [pendingFilePath])
+
+  const setPendingFilePathSynced = useCallback((value: string | null): void => {
+    pendingFilePathRef.current = value
+    setPendingFilePath(value)
+  }, [])
   // General-purpose error banner for non-dialog file ops (direct file open,
   // async load failure inside CodeEditor, vim :w save failure).
   const [fileError, setFileError] = useState<string | null>(null)
@@ -115,7 +125,7 @@ export const WorkspaceView = (): ReactElement => {
 
       // If current file has unsaved changes, show dialog
       if (editorBuffer.isDirty) {
-        setPendingFilePath(filePath)
+        setPendingFilePathSynced(filePath)
         setShowUnsavedDialog(true)
 
         return
@@ -123,7 +133,7 @@ export const WorkspaceView = (): ReactElement => {
 
       void openFileSafely(filePath)
     },
-    [editorBuffer.isDirty, openFileSafely]
+    [editorBuffer.isDirty, openFileSafely, setPendingFilePathSynced]
   )
 
   // Save current file and open pending file.
@@ -164,7 +174,7 @@ export const WorkspaceView = (): ReactElement => {
     // workspace-level banner instead of leaving the dialog stuck
     // with a misleading "Failed to save" message.
     setShowUnsavedDialog(false)
-    setPendingFilePath(null)
+    setPendingFilePathSynced(null)
     setSaveError(null)
 
     if (currentPendingPath) {
@@ -178,7 +188,7 @@ export const WorkspaceView = (): ReactElement => {
         )
       }
     }
-  }, [editorBuffer])
+  }, [editorBuffer, setPendingFilePathSynced])
 
   // Discard changes and open pending file.
   //
@@ -191,9 +201,9 @@ export const WorkspaceView = (): ReactElement => {
   // wrong and could trick the user into a confirmation action on
   // the wrong file. Closing the dialog up front removes the window.
   const handleDiscard = useCallback(async (): Promise<void> => {
-    const target = pendingFilePath
+    const target = pendingFilePathRef.current
     setShowUnsavedDialog(false)
-    setPendingFilePath(null)
+    setPendingFilePathSynced(null)
     setSaveError(null)
 
     if (!target) {
@@ -207,14 +217,21 @@ export const WorkspaceView = (): ReactElement => {
       const message = error instanceof Error ? error.message : String(error)
       setFileError(`Failed to open file: ${message}`)
     }
-  }, [editorBuffer, pendingFilePath])
+  }, [editorBuffer, setPendingFilePathSynced])
 
-  // Cancel and stay on current file
+  // Cancel and stay on current file.
+  //
+  // CRITICAL: writes `pendingFilePathRef.current = null` synchronously
+  // via `setPendingFilePathSynced` so a concurrently-running `handleSave`
+  // awaiting saveFile() sees the cleared ref as soon as its microtask
+  // resumes. Without this, the useEffect-based ref mirror would only
+  // update on the next paint — after handleSave had already read the
+  // stale non-null value and opened the cancelled pending file.
   const handleCancel = useCallback((): void => {
     setShowUnsavedDialog(false)
-    setPendingFilePath(null)
+    setPendingFilePathSynced(null)
     setSaveError(null)
-  }, [])
+  }, [setPendingFilePathSynced])
 
   return (
     <div
