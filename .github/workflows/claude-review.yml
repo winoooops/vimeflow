@@ -1,0 +1,65 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  claude-review:
+    name: Claude Code Review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout PR merge commit
+        uses: actions/checkout@v5
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+
+      - name: Pre-fetch base and head refs
+        env:
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git fetch --no-tags origin \
+            "$PR_BASE_REF" \
+            "+refs/pull/$PR_NUMBER/head"
+
+      - name: Run Claude review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          track_progress: "true"
+          use_sticky_comment: "true"
+          prompt: |
+            This is PR #${{ github.event.pull_request.number }} for ${{ github.repository }}.
+
+            Review ONLY the changes introduced by the PR. Consider:
+               git log --oneline ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}
+
+            Read AGENTS.md and CLAUDE.md at the repo root for project context and review standards.
+            Read agents/code-reviewer.md for the full review checklist and methodology.
+            Read agents/security-reviewer.md for security review patterns.
+
+            REVIEW QUALITY REQUIREMENTS:
+            - For each finding, specify the EXACT file path and narrowest possible line range (start-end). Read the actual lines and pinpoint where the issue is. Never use L1-1 as a placeholder.
+            - When reporting control flow bugs (loops, branches, error handling), trace ALL code paths through the construct and report the complete issue in ONE finding. Do not split related paths across multiple findings.
+            - Report ALL issues you find in this single review. Assume this is your ONLY chance to review — do not hold back findings for later rounds.
+            - For each finding, explain: (1) what the current code does wrong, (2) the concrete impact, and (3) what the fix should be.
+            - If a bug class appears in multiple places (e.g. missing error handling in both skip_review and review paths), report them together in one finding rather than separately.
+
+            Apply confidence-based filtering: only report issues you are >80% confident about.
+            Use severity levels: CRITICAL, HIGH, MEDIUM, LOW. Prefix each finding title with the severity in brackets, e.g. "[HIGH] Missing null check in …".
+            Focus on issues introduced by this PR — do not flag pre-existing problems.
+
+            Format the final comment as:
+            ## Claude Code Review
+
+            Then one section per finding, followed by an "Overall" verdict line and a one-paragraph summary.
+
+            Pull request title and body:
+            ----
+            ${{ github.event.pull_request.title }}
+            ${{ github.event.pull_request.body }}
