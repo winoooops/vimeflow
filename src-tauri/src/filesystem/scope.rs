@@ -106,6 +106,16 @@ pub(super) fn ensure_within_home(canonical: &Path, home_canonical: &Path) -> Res
 /// swallow it and let the subsequent canonicalize + scope check verify
 /// the final state is still inside home. Any OTHER error is fatal.
 /// Do not "clean up" this match arm into a `?` operator.
+///
+/// # Caller invariant
+///
+/// **Callers must call `reject_parent_refs` on `parent` before invoking
+/// this function.** `canonicalize_within_home` does not re-check for
+/// `..` components and relies on the upstream rejection to ensure that
+/// lexical joins with the canonical ancestor cannot escape `home_canonical`.
+/// Without the upstream check, a path containing `..` segments can trigger
+/// surprising `strip_prefix` behavior and potentially skip the
+/// `ensure_within_home` scope check on intermediate segments.
 pub(super) fn canonicalize_within_home(
     parent: &Path,
     home_canonical: &Path,
