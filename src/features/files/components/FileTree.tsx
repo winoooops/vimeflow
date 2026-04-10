@@ -7,7 +7,9 @@ import { ContextMenu } from './ContextMenu'
 interface FileTreeProps {
   nodes: FileNode[]
   contextMenuActions: ContextMenuAction[]
-  onNodeSelect?: (node: FileNode) => void
+  /** Path of the directory these root nodes belong to (e.g. `~` or `~/src`). */
+  rootPath?: string
+  onNodeSelect?: (node: FileNode, fullPath: string) => void
 }
 
 /**
@@ -16,6 +18,7 @@ interface FileTreeProps {
 export const FileTree = ({
   nodes,
   contextMenuActions,
+  rootPath = '',
   onNodeSelect = undefined,
 }: FileTreeProps): ReactElement => {
   const [contextMenuState, setContextMenuState] = useState<ContextMenuState>({
@@ -51,6 +54,7 @@ export const FileTree = ({
             key={node.id}
             node={node}
             depth={0}
+            parentPath={rootPath}
             onContextMenu={handleContextMenu}
             onNodeSelect={onNodeSelect}
           />

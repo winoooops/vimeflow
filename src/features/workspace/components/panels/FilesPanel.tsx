@@ -24,7 +24,7 @@ export const FilesPanel = ({
     <FileTree
       nodes={mockFileTree}
       contextMenuActions={contextMenuActions}
-      onNodeSelect={onFileSelect}
+      onNodeSelect={(node) => onFileSelect?.(node)}
     />
   </div>
 )

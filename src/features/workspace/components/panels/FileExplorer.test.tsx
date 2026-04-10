@@ -37,7 +37,7 @@ describe('FileExplorer', () => {
     })
   })
 
-  test('calls onFileSelect when file is clicked', async () => {
+  test('calls onFileSelect with canonical full path for nested files', async () => {
     const handleFileSelect = vi.fn()
     render(<FileExplorer onFileSelect={handleFileSelect} />)
 
@@ -48,16 +48,40 @@ describe('FileExplorer', () => {
       ).toBeInTheDocument()
     })
 
-    // Click on a file node (auth.ts from mock data)
+    // Click a file nested under src/middleware/ — the mock tree auto-expands it.
     const fileNode = screen.getByText('auth.ts')
     fileNode.click()
 
-    // Verify callback was called with file node
+    // The full ancestry must be preserved so the editor reads/saves the right file.
     expect(handleFileSelect).toHaveBeenCalledTimes(1)
     expect(handleFileSelect).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'node-auth-ts',
+        id: '~/src/middleware/auth.ts',
         name: 'auth.ts',
+        type: 'file',
+      })
+    )
+  })
+
+  test('calls onFileSelect with root-level path for top-level files', async () => {
+    const handleFileSelect = vi.fn()
+    render(<FileExplorer onFileSelect={handleFileSelect} />)
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tree', { name: 'File tree' })
+      ).toBeInTheDocument()
+    })
+
+    // package.json sits at the tree root under cwd `~`
+    const fileNode = screen.getByText('package.json')
+    fileNode.click()
+
+    expect(handleFileSelect).toHaveBeenCalledTimes(1)
+    expect(handleFileSelect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: '~/package.json',
+        name: 'package.json',
         type: 'file',
       })
     )
