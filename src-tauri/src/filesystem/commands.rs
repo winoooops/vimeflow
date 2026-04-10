@@ -244,20 +244,44 @@ pub fn write_file(request: WriteFileRequest) -> Result<(), String> {
             existing_ancestor.display()
         )
     })?;
-    let resolved_parent = ancestor_canonical.join(relative_tail);
+    let lexical_parent = ancestor_canonical.join(relative_tail);
 
-    if !resolved_parent.starts_with(&home_canonical) {
+    if !lexical_parent.starts_with(&home_canonical) {
         return Err(format!(
             "access denied: path is outside home directory: {}",
-            resolved_parent.display()
+            lexical_parent.display()
         ));
     }
 
-    // Safe to create any missing directories now — every segment is known to
-    // land inside the home-canonical root.
-    if !resolved_parent.exists() {
-        fs::create_dir_all(&resolved_parent)
+    // Create any missing directory segments. We've verified the LEXICAL
+    // parent is under home, but that check doesn't protect against a
+    // concurrent process creating a symlink at one of the intermediate
+    // not-yet-existing components between now and the open() below.
+    // `O_NOFOLLOW` only guards the *final* path component — a symlink at
+    // an intermediate segment (e.g. `~/real_dir/raced_sub -> /tmp`) would
+    // be traversed at open time and escape the home sandbox.
+    if !lexical_parent.exists() {
+        fs::create_dir_all(&lexical_parent)
             .map_err(|e| format!("failed to create parent directories: {}", e))?;
+    }
+
+    // Re-canonicalize the parent now that every segment exists on disk.
+    // Canonicalize resolves all symlinks (including any that a racing
+    // process may have slipped in between validation and create_dir_all),
+    // so the subsequent starts_with check catches them.
+    let resolved_parent = fs::canonicalize(&lexical_parent).map_err(|e| {
+        format!(
+            "failed to canonicalize parent '{}': {}",
+            lexical_parent.display(),
+            e
+        )
+    })?;
+
+    if !resolved_parent.starts_with(&home_canonical) {
+        return Err(format!(
+            "access denied: parent resolves outside home directory: {}",
+            resolved_parent.display()
+        ));
     }
 
     let file_name = raw
@@ -652,6 +676,51 @@ mod tests {
             outside_target.display()
         );
 
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_file_refuses_intermediate_symlink_escape() {
+        // Cover the TOCTOU class where an INTERMEDIATE path component is
+        // swapped for a symlink pointing outside home. O_NOFOLLOW on the
+        // final open() only guards the last segment, so this must be
+        // caught by re-canonicalizing the parent after create_dir_all.
+        use std::os::unix::fs::symlink;
+
+        let dir = home_test_dir("write_file_intermediate_symlink");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // Pre-plant a symlink at an "intermediate" directory that points
+        // outside home. The target path uses this link as a parent.
+        let outside = std::env::temp_dir().join(".vimeflow_intermediate_escape");
+        let _ = fs::remove_dir_all(&outside);
+        fs::create_dir_all(&outside).unwrap();
+
+        let link = dir.join("escape_link");
+        symlink(&outside, &link).unwrap();
+
+        // raw path: dir/escape_link/file.txt
+        //   - walk-up check: dir/escape_link exists → canonicalize resolves
+        //     it to the outside path → starts_with(home) fails → rejected.
+        let evil = link.join("file.txt");
+
+        let result = write_file(WriteFileRequest {
+            path: evil.to_string_lossy().to_string(),
+            content: "should not escape".to_string(),
+        });
+
+        assert!(result.is_err(), "intermediate symlink write must be rejected");
+        assert!(result.unwrap_err().contains("access denied"));
+
+        // Confirm the attacker target is untouched.
+        assert!(
+            !outside.join("file.txt").exists(),
+            "intermediate symlink guard must not write outside home"
+        );
+
+        let _ = fs::remove_dir_all(&outside);
         let _ = fs::remove_dir_all(&dir);
     }
 

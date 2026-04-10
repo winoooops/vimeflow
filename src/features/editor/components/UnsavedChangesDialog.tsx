@@ -69,10 +69,16 @@ export const UnsavedChangesDialog = ({
       )
       const delta = event.shiftKey ? -1 : 1
 
-      const nextIndex =
-        currentIndex === -1
-          ? 0
-          : (currentIndex + delta + buttons.length) % buttons.length
+      // If focus is not currently on a dialog button (e.g. the user
+      // Tabbed from the backdrop or from outside), place focus on the
+      // LAST button for Shift+Tab and the FIRST button for plain Tab —
+      // matching the standard ARIA modal navigation convention.
+      let nextIndex: number
+      if (currentIndex === -1) {
+        nextIndex = event.shiftKey ? buttons.length - 1 : 0
+      } else {
+        nextIndex = (currentIndex + delta + buttons.length) % buttons.length
+      }
 
       event.preventDefault()
       buttons[nextIndex]?.focus()
