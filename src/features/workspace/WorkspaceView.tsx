@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { IconRail } from './components/IconRail'
 import { Sidebar } from './components/Sidebar'
 import { TerminalZone } from './components/TerminalZone'
@@ -61,20 +61,23 @@ export const WorkspaceView = (): ReactElement => {
   // Open a file directly (no unsaved-changes guard). Errors were previously
   // swallowed via `void editorBuffer.openFile(...)`, leaving the user with
   // stale content and no feedback on Tauri IPC failures.
-  const openFileSafely = async (filePath: string): Promise<void> => {
-    try {
-      await editorBuffer.openFile(filePath)
-      setFileError(null)
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error)
-      setFileError(`Failed to open ${filePath}: ${message}`)
-    }
-  }
+  const openFileSafely = useCallback(
+    async (filePath: string): Promise<void> => {
+      try {
+        await editorBuffer.openFile(filePath)
+        setFileError(null)
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        setFileError(`Failed to open ${filePath}: ${message}`)
+      }
+    },
+    [editorBuffer]
+  )
 
   // Save via vim :w or any direct editor save trigger. Same rationale as
   // openFileSafely — errors were previously swallowed and the user had no
   // indication that a disk-full / permission-denied error occurred.
-  const handleVimSave = async (): Promise<void> => {
+  const handleVimSave = useCallback(async (): Promise<void> => {
     try {
       await editorBuffer.saveFile()
       setFileError(null)
@@ -82,7 +85,7 @@ export const WorkspaceView = (): ReactElement => {
       const message = error instanceof Error ? error.message : String(error)
       setFileError(`Failed to save: ${message}`)
     }
-  }
+  }, [editorBuffer])
 
   // Handle file selection from FileExplorer
   const handleFileSelect = (node: {
@@ -114,7 +117,13 @@ export const WorkspaceView = (): ReactElement => {
   // successful save followed by a failed pending-file open as
   // "Failed to save: ...", misleading the user into thinking their
   // edits were lost when they were actually on disk.
-  const handleSave = async (): Promise<void> => {
+  //
+  // Memoized with useCallback so the dialog's focus-trap useEffect
+  // (which depends on onCancel) doesn't re-bind its keydown listener
+  // on every parent render while the dialog is open — re-binding
+  // briefly opens a window where an Escape or Tab keystroke could
+  // slip past the trap.
+  const handleSave = useCallback(async (): Promise<void> => {
     try {
       await editorBuffer.saveFile()
     } catch (error: unknown) {
@@ -145,7 +154,7 @@ export const WorkspaceView = (): ReactElement => {
         )
       }
     }
-  }
+  }, [editorBuffer, pendingFilePath])
 
   // Discard changes and open pending file.
   //
@@ -153,7 +162,7 @@ export const WorkspaceView = (): ReactElement => {
   // open failed (file deleted between selection and open), the error was
   // swallowed and the dialog closed while the editor silently showed stale
   // content. Now the dialog stays open on failure and reports the error.
-  const handleDiscard = async (): Promise<void> => {
+  const handleDiscard = useCallback(async (): Promise<void> => {
     try {
       if (pendingFilePath) {
         await editorBuffer.openFile(pendingFilePath)
@@ -166,14 +175,14 @@ export const WorkspaceView = (): ReactElement => {
       const message = error instanceof Error ? error.message : String(error)
       setSaveError(`Failed to open file: ${message}`)
     }
-  }
+  }, [editorBuffer, pendingFilePath])
 
   // Cancel and stay on current file
-  const handleCancel = (): void => {
+  const handleCancel = useCallback((): void => {
     setShowUnsavedDialog(false)
     setPendingFilePath(null)
     setSaveError(null)
-  }
+  }, [])
 
   return (
     <div
@@ -217,8 +226,11 @@ export const WorkspaceView = (): ReactElement => {
         />
       </div>
 
-      {/* Main workspace area - TerminalZone + BottomDrawer */}
-      <div className="flex flex-col overflow-hidden">
+      {/* Main workspace area - TerminalZone + BottomDrawer.
+          `relative` establishes a containing block so the fileError
+          banner's `absolute` positioning is scoped to this column
+          rather than climbing to the viewport. */}
+      <div className="relative flex flex-col overflow-hidden">
         {/* Terminal Zone - takes remaining space */}
         <TerminalZone
           sessions={sessions}

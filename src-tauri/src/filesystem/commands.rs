@@ -253,30 +253,44 @@ pub fn write_file(request: WriteFileRequest) -> Result<(), String> {
         ));
     }
 
-    // Create any missing directory segments. We've verified the LEXICAL
-    // parent is under home, but that check doesn't protect against a
-    // concurrent process creating a symlink at one of the intermediate
-    // not-yet-existing components between now and the open() below.
-    // `O_NOFOLLOW` only guards the *final* path component — a symlink at
-    // an intermediate segment (e.g. `~/real_dir/raced_sub -> /tmp`) would
-    // be traversed at open time and escape the home sandbox.
-    if !lexical_parent.exists() {
-        fs::create_dir_all(&lexical_parent)
-            .map_err(|e| format!("failed to create parent directories: {}", e))?;
+    // Create missing directory segments ONE AT A TIME, canonicalizing
+    // after each step. `create_dir_all` in a single shot would leave a
+    // TOCTOU window where a concurrent process creates a symlink at an
+    // intermediate not-yet-existing component and redirects subsequent
+    // segments outside home. Even if the eventual write is blocked by
+    // the final scope re-check plus `O_NOFOLLOW`, `create_dir_all`
+    // itself would have already created empty directories outside the
+    // sandbox along the way.
+    //
+    // Walking the segments one at a time and canonicalizing after each
+    // `create_dir` means the first out-of-scope segment is detected
+    // immediately, before any further creations happen — at worst one
+    // stray empty dir can be created per call. Full mitigation would
+    // need `openat(2)` with `O_NOFOLLOW` per component, but that is a
+    // larger refactor; this approach closes the practical window for
+    // the single-user desktop threat model.
+    let mut resolved_parent = ancestor_canonical.clone();
+    for segment in relative_tail.components() {
+        let next = resolved_parent.join(segment);
+        if !next.exists() {
+            fs::create_dir(&next).map_err(|e| {
+                format!("failed to create directory '{}': {}", next.display(), e)
+            })?;
+        }
+        let next_canonical = fs::canonicalize(&next).map_err(|e| {
+            format!("failed to canonicalize '{}': {}", next.display(), e)
+        })?;
+        if !next_canonical.starts_with(&home_canonical) {
+            return Err(format!(
+                "access denied: path segment resolves outside home directory: {}",
+                next_canonical.display()
+            ));
+        }
+        resolved_parent = next_canonical;
     }
 
-    // Re-canonicalize the parent now that every segment exists on disk.
-    // Canonicalize resolves all symlinks (including any that a racing
-    // process may have slipped in between validation and create_dir_all),
-    // so the subsequent starts_with check catches them.
-    let resolved_parent = fs::canonicalize(&lexical_parent).map_err(|e| {
-        format!(
-            "failed to canonicalize parent '{}': {}",
-            lexical_parent.display(),
-            e
-        )
-    })?;
-
+    // Final check in case the loop didn't run (no tail segments) and
+    // the ancestor has somehow ceased to be under home (belt and braces).
     if !resolved_parent.starts_with(&home_canonical) {
         return Err(format!(
             "access denied: parent resolves outside home directory: {}",

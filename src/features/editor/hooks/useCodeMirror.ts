@@ -129,8 +129,14 @@ export function useCodeMirror(
     viewRef.current = view
     setEditorView(view)
 
-    // Ensure proper layout measurement and focus after mount
+    // Ensure proper layout measurement and focus after mount.
+    // Guard against the view being destroyed before the frame fires
+    // (hot reload, Strict Mode double-invoke, rapid tab switch) by
+    // confirming `viewRef.current` is still this same view.
     requestAnimationFrame(() => {
+      if (viewRef.current !== view) {
+        return
+      }
       view.requestMeasure()
       view.focus()
     })

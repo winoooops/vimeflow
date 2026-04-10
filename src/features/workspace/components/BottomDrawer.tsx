@@ -30,6 +30,8 @@ const BottomDrawer = ({
   isDirty = false,
 }: BottomDrawerProps): ReactElement => {
   const [activeTab, setActiveTab] = useState<TabType>('editor')
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const COLLAPSED_HEIGHT = 48 // Just the tab bar
 
   // Resizable hook - default 400px (50% of 800px), min 150px, max 640px (80% of 800px)
   const {
@@ -48,10 +50,12 @@ const BottomDrawer = ({
     invert: true,
   })
 
+  const effectiveHeight = isCollapsed ? COLLAPSED_HEIGHT : height
+
   return (
     <section
       data-testid="bottom-drawer"
-      style={{ height: `${height}px` }}
+      style={{ height: `${effectiveHeight}px` }}
       className="shrink-0 bg-slate-900/95 backdrop-blur-2xl border-t border-white/5 flex flex-col z-30 relative"
     >
       {/* Resize Handle - Top Edge */}
@@ -114,10 +118,15 @@ const BottomDrawer = ({
               : 'No file'}
           </span>
           <button
-            aria-label="Collapse drawer"
+            type="button"
+            aria-label={isCollapsed ? 'Expand drawer' : 'Collapse drawer'}
+            aria-expanded={!isCollapsed}
+            onClick={() => {
+              setIsCollapsed((v) => !v)
+            }}
             className="material-symbols-outlined text-sm text-outline hover:text-on-surface cursor-pointer transition-colors"
           >
-            keyboard_arrow_down
+            {isCollapsed ? 'keyboard_arrow_up' : 'keyboard_arrow_down'}
           </button>
         </div>
       </div>
