@@ -67,7 +67,14 @@ const BottomDrawer = ({
           exposes the handle to assistive tech as a sizing widget.
           tabIndex=0 + ArrowUp/ArrowDown keyboard handlers give
           keyboard-only and switch-access users a way to adjust the
-          drawer height in 20px steps (WCAG 2.5.1). */}
+          drawer height in 20px steps (WCAG 2.5.1).
+
+          When collapsed, the handle is disabled entirely: no
+          onMouseDown, no onKeyDown, removed from tab order, and
+          aria-disabled. Otherwise the handle would silently mutate
+          the expanded-height state while the drawer is visually
+          pinned at COLLAPSED_HEIGHT, clobbering the user's chosen
+          expanded size once they expand the drawer again. */}
       <div
         data-testid="resize-handle"
         role="separator"
@@ -76,27 +83,34 @@ const BottomDrawer = ({
         aria-valuenow={height}
         aria-valuemin={DRAWER_MIN}
         aria-valuemax={DRAWER_MAX}
-        tabIndex={0}
-        onMouseDown={handleMouseDown}
-        onKeyDown={(e) => {
-          const step = e.shiftKey ? 100 : 20
-          if (e.key === 'ArrowUp') {
-            e.preventDefault()
-            adjustBy(step) // drag UP grows (matches `invert: true`)
-          } else if (e.key === 'ArrowDown') {
-            e.preventDefault()
-            adjustBy(-step)
-          } else if (e.key === 'Home') {
-            e.preventDefault()
-            adjustBy(DRAWER_MIN - height)
-          } else if (e.key === 'End') {
-            e.preventDefault()
-            adjustBy(DRAWER_MAX - height)
-          }
-        }}
-        className={`absolute top-0 left-0 right-0 h-1 cursor-ns-resize hover:bg-primary/20 focus:bg-primary/40 focus:outline-none transition-colors ${
-          isDragging ? 'bg-primary/30' : ''
-        }`}
+        aria-disabled={isCollapsed || undefined}
+        tabIndex={isCollapsed ? -1 : 0}
+        onMouseDown={isCollapsed ? undefined : handleMouseDown}
+        onKeyDown={
+          isCollapsed
+            ? undefined
+            : (e): void => {
+                const step = e.shiftKey ? 100 : 20
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  adjustBy(step) // drag UP grows (matches `invert: true`)
+                } else if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  adjustBy(-step)
+                } else if (e.key === 'Home') {
+                  e.preventDefault()
+                  adjustBy(DRAWER_MIN - height)
+                } else if (e.key === 'End') {
+                  e.preventDefault()
+                  adjustBy(DRAWER_MAX - height)
+                }
+              }
+        }
+        className={`absolute top-0 left-0 right-0 h-1 transition-colors ${
+          isCollapsed
+            ? 'pointer-events-none'
+            : 'cursor-ns-resize hover:bg-primary/20 focus:bg-primary/40 focus:outline-none'
+        } ${isDragging ? 'bg-primary/30' : ''}`}
       />
 
       {/* Tab Bar */}

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import type { IFileSystemService } from '../../files/services/fileSystemService'
 
 export interface EditorBuffer {
@@ -20,9 +20,31 @@ export const useEditorBuffer = (
 
   const isDirty = currentContent !== originalContent
 
+  // Monotonically-increasing counter for last-write-wins semantics on
+  // concurrent openFile calls. Each invocation captures its own id at
+  // the start and checks it against the ref AFTER the await. If another
+  // openFile was kicked off in the meantime, the stale response is
+  // silently discarded so filePath/originalContent/currentContent
+  // stay in sync with whichever file the user clicked most recently.
+  //
+  // Without this guard, two rapid clicks within the IPC round-trip
+  // window could leave the editor showing file A's content while
+  // filePath is file B — a subsequent :w would then overwrite B's
+  // on-disk contents with A's buffer (silent data corruption).
+  const openRequestIdRef = useRef(0)
+
   const openFile = useCallback(
     async (path: string): Promise<void> => {
+      const requestId = openRequestIdRef.current + 1
+      openRequestIdRef.current = requestId
+
       const content = await fileSystemService.readFile(path)
+
+      // Last-write-wins: ignore stale responses.
+      if (requestId !== openRequestIdRef.current) {
+        return
+      }
+
       setFilePath(path)
       setOriginalContent(content)
       setCurrentContent(content)

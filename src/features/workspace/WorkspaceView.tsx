@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IconRail } from './components/IconRail'
 import { Sidebar } from './components/Sidebar'
 import { TerminalZone } from './components/TerminalZone'
@@ -54,6 +54,18 @@ export const WorkspaceView = (): ReactElement => {
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Live mirror of `pendingFilePath`. `handleSave` reads this AFTER its
+  // saveFile() await so a Cancel/backdrop click during the in-flight
+  // save is honoured — the ref will have been cleared to null by
+  // `handleCancel`, and handleSave bails instead of opening the pending
+  // file against the user's explicit cancellation. Using the state
+  // value directly (either via closure capture or `useCallback` deps)
+  // would read a stale snapshot taken before the await.
+  const pendingFilePathRef = useRef<string | null>(null)
+  useEffect(() => {
+    pendingFilePathRef.current = pendingFilePath
+  }, [pendingFilePath])
   // General-purpose error banner for non-dialog file ops (direct file open,
   // async load failure inside CodeEditor, vim :w save failure).
   const [fileError, setFileError] = useState<string | null>(null)
@@ -124,14 +136,6 @@ export const WorkspaceView = (): ReactElement => {
   // briefly opens a window where an Escape or Tab keystroke could
   // slip past the trap.
   const handleSave = useCallback(async (): Promise<void> => {
-    // Capture `pendingFilePath` synchronously BEFORE the first await.
-    // If the user clicks the backdrop (handleCancel) while saveFile is
-    // in flight, the state is cleared to null — but this handler's
-    // stale closure would still read the old value and open the
-    // pending file anyway, contradicting the cancellation. Mirror
-    // handleDiscard's capture-before-await pattern.
-    const pendingPath = pendingFilePath
-
     try {
       await editorBuffer.saveFile()
     } catch (error: unknown) {
@@ -143,26 +147,34 @@ export const WorkspaceView = (): ReactElement => {
       return
     }
 
-    // At this point the current buffer is clean on disk. The dialog's
-    // job of guarding the switch is done — surface any pending-open
-    // failure via the workspace-level banner instead of leaving the
-    // dialog stuck with a misleading "Failed to save" message.
+    // Read the pending-file path FROM THE REF after the save completes.
+    // If the user clicked the backdrop or pressed Escape during the
+    // save IPC, `handleCancel` cleared `pendingFilePath` to null and
+    // the ref reflects that. Reading the closure variable (or a
+    // capture-before-await constant) would see the stale snapshot and
+    // open the cancelled pending file anyway.
+    const currentPendingPath = pendingFilePathRef.current
+
+    // Current buffer is clean on disk. The dialog's job of guarding
+    // the switch is done — surface any pending-open failure via the
+    // workspace-level banner instead of leaving the dialog stuck
+    // with a misleading "Failed to save" message.
     setShowUnsavedDialog(false)
     setPendingFilePath(null)
     setSaveError(null)
 
-    if (pendingPath) {
+    if (currentPendingPath) {
       try {
-        await editorBuffer.openFile(pendingPath)
+        await editorBuffer.openFile(currentPendingPath)
         setFileError(null)
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error)
         setFileError(
-          `Saved current file. Could not open ${pendingPath}: ${message}`
+          `Saved current file. Could not open ${currentPendingPath}: ${message}`
         )
       }
     }
-  }, [editorBuffer, pendingFilePath])
+  }, [editorBuffer])
 
   // Discard changes and open pending file.
   //
