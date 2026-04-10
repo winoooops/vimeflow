@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { IFileSystemService } from '../../files/services/fileSystemService'
 import { useCodeMirror } from '../hooks/useCodeMirror'
 import { useVimMode } from '../hooks/useVimMode'
@@ -21,7 +21,6 @@ export const CodeEditor = ({
   onSave = undefined,
   isDirty = false,
 }: CodeEditorProps): ReactElement => {
-  const containerRef = useRef<HTMLDivElement>(null)
   const [fileContent, setFileContent] = useState<string>('')
   const [loadedFilePath, setLoadedFilePath] = useState<string | null>(null)
 
@@ -53,13 +52,10 @@ export const CodeEditor = ({
   const language = fileName ? getLanguageExtension(fileName) : null
 
   // Setup CodeMirror with vim mode
-  const { editorView, updateContent } = useCodeMirror({
-    containerRef: containerRef as React.RefObject<HTMLDivElement>,
+  const { editorView, updateContent, setContainer } = useCodeMirror({
     initialContent: fileContent,
     language,
     onSave: () => {
-      // If parent provides onSave callback, use it (for integration with editorBuffer)
-      // Otherwise, fall back to direct fileSystemService.writeFile
       if (onSave) {
         onSave()
       } else if (loadedFilePath && editorView) {
@@ -73,14 +69,17 @@ export const CodeEditor = ({
   // Track vim mode
   const vimMode = useVimMode(editorView)
 
-  // Update editor content when file content changes
+  // Update editor content when file content changes.
+  // Gate on `loadedFilePath` (not content truthiness) so zero-byte files
+  // correctly clear the buffer — otherwise the editor would show the previous
+  // file's content and a subsequent save would overwrite the wrong file.
   useEffect(() => {
-    if (!editorView || !fileContent) {
+    if (loadedFilePath === null) {
       return
     }
 
     updateContent(fileContent)
-  }, [editorView, fileContent, updateContent])
+  }, [fileContent, loadedFilePath, updateContent])
 
   if (!filePath) {
     return (
@@ -96,7 +95,7 @@ export const CodeEditor = ({
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div
-        ref={containerRef}
+        ref={setContainer}
         data-testid="codemirror-container"
         className="flex-1 overflow-hidden"
       />

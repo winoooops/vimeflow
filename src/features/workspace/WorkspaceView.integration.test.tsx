@@ -32,6 +32,7 @@ const createMockUseCodeMirror =
     return {
       editorView: mockEditorView as never,
       updateContent: vi.fn(),
+      setContainer: vi.fn(),
     }
   }
 

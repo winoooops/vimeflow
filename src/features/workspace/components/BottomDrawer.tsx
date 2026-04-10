@@ -100,8 +100,13 @@ const BottomDrawer = ({
 
         {/* Right: File Path + Collapse Toggle */}
         <div className="flex items-center space-x-4">
-          <span className="text-[10px] text-outline font-mono">
-            src/middleware/auth.ts
+          <span
+            className="text-[10px] text-outline font-mono"
+            title={selectedFilePath ?? ''}
+          >
+            {selectedFilePath
+              ? selectedFilePath.replace(/^~\//, '')
+              : 'No file'}
           </span>
           <button
             aria-label="Collapse drawer"

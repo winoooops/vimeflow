@@ -48,10 +48,10 @@ const theme = EditorView.theme(
       borderLeftColor: colors.primary,
     },
     '&.cm-focused .cm-selectionBackground, ::selection': {
-      backgroundColor: `${colors.surfaceHigh}99`, // 60% opacity
+      backgroundColor: `${colors.primary}40`, // primary at 25% — visible in visual mode
     },
     '.cm-selectionBackground': {
-      backgroundColor: `${colors.surfaceHigh}66`, // 40% opacity
+      backgroundColor: `${colors.primary}30`, // primary at 19% — unfocused
     },
     '.cm-activeLine': {
       backgroundColor: colors.base,

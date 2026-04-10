@@ -35,6 +35,7 @@ describe('CodeEditor', () => {
     mockUseCodeMirror.mockReturnValue({
       editorView: mockEditorView,
       updateContent: vi.fn(),
+      setContainer: vi.fn(),
     })
 
     mockUseVimMode.mockReturnValue('NORMAL')
@@ -296,7 +297,7 @@ describe('CodeEditor', () => {
     })
   })
 
-  test('passes containerRef to useCodeMirror', async () => {
+  test('passes options to useCodeMirror', async () => {
     render(
       <CodeEditor
         filePath="/home/user/test.ts"
@@ -307,9 +308,8 @@ describe('CodeEditor', () => {
     await waitFor(() => {
       expect(mockUseCodeMirror).toHaveBeenCalledWith(
         expect.objectContaining({
-          containerRef: expect.objectContaining({
-            current: expect.any(Object),
-          }),
+          initialContent: expect.any(String),
+          onSave: expect.any(Function),
         })
       )
     })

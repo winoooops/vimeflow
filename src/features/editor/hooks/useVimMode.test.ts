@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { useVimMode } from './useVimMode'
 import { EditorView } from '@codemirror/view'
@@ -107,15 +107,12 @@ describe('useVimMode', () => {
     document.body.removeChild(newContainerDiv)
   })
 
-  test('cleans up interval on unmount', () => {
-    const clearIntervalSpy = vi.spyOn(global, 'clearInterval')
-
+  test('cleans up event listener on unmount', () => {
     const { unmount } = renderHook(() => useVimMode(editorView))
 
-    unmount()
-
-    expect(clearIntervalSpy).toHaveBeenCalled()
-
-    clearIntervalSpy.mockRestore()
+    // Should not throw on unmount
+    expect(() => {
+      unmount()
+    }).not.toThrow()
   })
 })

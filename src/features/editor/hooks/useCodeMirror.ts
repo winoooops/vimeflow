@@ -1,12 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
-import { EditorView, ViewUpdate } from '@codemirror/view'
-import { EditorState, type Extension } from '@codemirror/state'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { EditorView, ViewUpdate, drawSelection } from '@codemirror/view'
+import { EditorState, type Extension, Compartment } from '@codemirror/state'
 import { vim } from '@replit/codemirror-vim'
 import { catppuccinMocha } from '../theme/catppuccin'
-import type { RefObject } from 'react'
 
 export interface UseCodeMirrorOptions {
-  containerRef: RefObject<HTMLDivElement>
   initialContent: string
   language: Extension | null
   onSave: () => void
@@ -16,72 +14,74 @@ export interface UseCodeMirrorOptions {
 export interface UseCodeMirrorReturn {
   editorView: EditorView | null
   updateContent: (content: string) => void
+  /** Callback ref — attach to the container div */
+  setContainer: (node: HTMLDivElement | null) => void
 }
 
 /**
- * Hook to manage CodeMirror 6 EditorView instance with vim mode
- *
- * @param options - Configuration for the editor
- * @returns Editor view instance and content update function
+ * Hook to manage CodeMirror 6 EditorView instance with vim mode.
+ * Returns a callback ref (`setContainer`) to attach to the editor container div.
+ * The EditorView is created when the container mounts and destroyed when it unmounts.
  */
 export function useCodeMirror(
   options: UseCodeMirrorOptions
 ): UseCodeMirrorReturn {
-  const { containerRef, initialContent, language, onSave, onChange } = options
+  const { initialContent, language, onSave, onChange } = options
   const [editorView, setEditorView] = useState<EditorView | null>(null)
   const onSaveRef = useRef(onSave)
   const onChangeRef = useRef(onChange)
+  const initialContentRef = useRef(initialContent)
 
-  // Keep onSave callback ref up to date
+  // Keep refs up to date
   useEffect(() => {
     onSaveRef.current = onSave
   }, [onSave])
 
-  // Keep onChange callback ref up to date
   useEffect(() => {
     onChangeRef.current = onChange
   }, [onChange])
 
   useEffect(() => {
-    const container = containerRef.current
+    initialContentRef.current = initialContent
+  }, [initialContent])
 
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (!container) {
+  const languageCompartment = useRef(new Compartment())
+  const viewRef = useRef<EditorView | null>(null)
+
+  // Callback ref — triggers when the container div mounts/unmounts
+  const setContainer = useCallback((node: HTMLDivElement | null) => {
+    // Destroy existing view if container changes
+    if (viewRef.current) {
+      viewRef.current.destroy()
+      viewRef.current = null
       setEditorView(null)
+    }
 
+    if (!node) {
       return
     }
 
-    // Build extensions array
-    const extensions: Extension[] = [vim(), catppuccinMocha]
+    const extensions: Extension[] = [
+      vim(),
+      drawSelection(),
+      catppuccinMocha,
+      languageCompartment.current.of([]),
+      EditorView.updateListener.of((update: ViewUpdate) => {
+        if (update.docChanged && onChangeRef.current) {
+          const content = update.state.doc.toString()
+          onChangeRef.current(content)
+        }
+      }),
+    ]
 
-    // Add language extension if provided
-    if (language) {
-      extensions.push(language)
-    }
-
-    // Add onChange listener if provided
-    if (onChangeRef.current) {
-      extensions.push(
-        EditorView.updateListener.of((update: ViewUpdate) => {
-          if (update.docChanged && onChangeRef.current) {
-            const content = update.state.doc.toString()
-            onChangeRef.current(content)
-          }
-        })
-      )
-    }
-
-    // Create editor state
     const state = EditorState.create({
-      doc: initialContent,
+      doc: initialContentRef.current,
       extensions,
     })
 
-    // Create editor view
     const view = new EditorView({
       state,
-      parent: container,
+      parent: node,
     })
 
     // Configure vim :w command to call onSave
@@ -96,36 +96,69 @@ export function useCodeMirror(
       })
     }
 
+    viewRef.current = view
     setEditorView(view)
 
-    // Cleanup on unmount
-    return (): void => {
-      view.destroy()
-      setEditorView(null)
-    }
-  }, [containerRef, initialContent, language])
+    // Ensure proper layout measurement and focus after mount
+    requestAnimationFrame(() => {
+      view.requestMeasure()
+      view.focus()
+    })
+  }, [])
 
-  /**
-   * Update the editor content programmatically
-   */
-  const updateContent = (content: string): void => {
-    if (!editorView) {
+  // Clean up on unmount
+  useEffect(
+    () => (): void => {
+      if (viewRef.current) {
+        viewRef.current.destroy()
+        viewRef.current = null
+      }
+    },
+    []
+  )
+
+  // Update language when it changes (without recreating the editor)
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) {
       return
     }
 
-    const transaction = editorView.state.update({
+    view.dispatch({
+      effects: languageCompartment.current.reconfigure(language ?? []),
+    })
+  }, [language])
+
+  /**
+   * Update the editor content programmatically.
+   * Also focuses the editor after content update.
+   */
+  const updateContent = useCallback((content: string): void => {
+    const view = viewRef.current
+    if (!view) {
+      return
+    }
+
+    const currentContent = view.state.doc.toString()
+    if (currentContent === content) {
+      return
+    }
+
+    view.dispatch({
       changes: {
         from: 0,
-        to: editorView.state.doc.length,
+        to: view.state.doc.length,
         insert: content,
       },
     })
 
-    editorView.dispatch(transaction)
-  }
+    // Focus editor after content load
+    view.focus()
+  }, [])
 
   return {
     editorView,
     updateContent,
+    setContainer,
   }
 }
