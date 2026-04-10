@@ -273,9 +273,23 @@ pub fn write_file(request: WriteFileRequest) -> Result<(), String> {
     for segment in relative_tail.components() {
         let next = resolved_parent.join(segment);
         if !next.exists() {
-            fs::create_dir(&next).map_err(|e| {
-                format!("failed to create directory '{}': {}", next.display(), e)
-            })?;
+            // `exists()` + `create_dir` is not atomic: a concurrent
+            // process could create the same directory in the gap. The
+            // `AlreadyExists` case is benign — the directory we wanted
+            // to create is already there — so swallow it and let the
+            // subsequent canonicalize + scope check verify the final
+            // state is still inside home. Any OTHER error is fatal.
+            match fs::create_dir(&next) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => {
+                    return Err(format!(
+                        "failed to create directory '{}': {}",
+                        next.display(),
+                        e
+                    ));
+                }
+            }
         }
         let next_canonical = fs::canonicalize(&next).map_err(|e| {
             format!("failed to canonicalize '{}': {}", next.display(), e)

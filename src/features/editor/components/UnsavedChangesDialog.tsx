@@ -26,11 +26,23 @@ export const UnsavedChangesDialog = ({
   const discardButtonRef = useRef<HTMLButtonElement | null>(null)
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null)
 
-  // Auto-focus Save when the dialog opens so Enter is the primary action
-  // and keyboard users have a well-defined initial focus target.
+  // Capture whichever element held focus before the dialog opened so
+  // we can restore it on close. Without this, dismissing the dialog
+  // (especially Cancel, where the user intends to keep editing) leaves
+  // focus on document.body — vim shortcuts then silently no-op until
+  // the user clicks back into the editor, which looks like a freeze.
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+
   useEffect(() => {
     if (isOpen) {
+      previousFocusRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null
       saveButtonRef.current?.focus()
+    } else if (previousFocusRef.current) {
+      previousFocusRef.current.focus()
+      previousFocusRef.current = null
     }
   }, [isOpen])
 

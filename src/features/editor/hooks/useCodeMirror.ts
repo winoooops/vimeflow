@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { EditorView, ViewUpdate, drawSelection } from '@codemirror/view'
 import { EditorState, type Extension, Compartment } from '@codemirror/state'
+import { history } from '@codemirror/commands'
 import { vim, Vim } from '@replit/codemirror-vim'
 import { catppuccinMocha } from '../theme/catppuccin'
 
@@ -104,6 +105,13 @@ export function useCodeMirror(
 
     const extensions: Extension[] = [
       vim(),
+      // history() is NOT included by default in CodeMirror 6 — it must
+      // be explicitly added. The vim extension's `u` / `ctrl-r` handlers
+      // delegate to CodeMirror's `undo()` / `redo()` commands, which
+      // silently return `false` when no HistoryField exists in the
+      // state. Without this extension, vim undo in NORMAL mode is a
+      // silent no-op — every user discovers it on their first typo.
+      history(),
       drawSelection(),
       catppuccinMocha,
       languageCompartment.current.of([]),
