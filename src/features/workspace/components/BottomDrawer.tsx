@@ -1,30 +1,132 @@
 import { type ReactElement, useState } from 'react'
+import { CodeEditor } from '../../editor/components/CodeEditor'
+import { useResizable } from '../hooks/useResizable'
 
 type TabType = 'editor' | 'diff'
+
+interface BottomDrawerProps {
+  selectedFilePath: string | null
+  /** Current buffer content, owned by the parent `useEditorBuffer`. */
+  content: string
+  onContentChange?: (content: string) => void
+  onSave?: () => void
+  isDirty?: boolean
+  /** True while an async file read is in flight. */
+  isLoading?: boolean
+}
 
 /**
  * BottomDrawer - Editor and Diff Viewer panel below terminal
  *
  * Features:
  * - Tab switching between Editor and Diff Viewer
- * - Syntax-highlighted code editor with line numbers
+ * - Resizable height with drag handle
+ * - CodeMirror editor with vim mode
  * - File path display and collapse toggle
- * - Takes h-1/3 of workspace height
  */
-const BottomDrawer = (): ReactElement => {
+const BottomDrawer = ({
+  selectedFilePath,
+  content,
+  onContentChange = undefined,
+  onSave = undefined,
+  isDirty = false,
+  isLoading = false,
+}: BottomDrawerProps): ReactElement => {
   const [activeTab, setActiveTab] = useState<TabType>('editor')
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const COLLAPSED_HEIGHT = 48 // Just the tab bar
+
+  // Drawer sizing is in pixels, not viewport-relative. The 400/150/640
+  // constants were chosen to feel roughly right on an 800px workspace
+  // (50% default, 19% min, 80% cap) but they are HARD-CODED — resizing
+  // the window does not change the cap. Update these values directly
+  // if the layout targets a different default viewport.
+  const DRAWER_MIN = 150
+  const DRAWER_MAX = 640
+
+  const {
+    size: height,
+    isDragging,
+    handleMouseDown,
+    adjustBy,
+  } = useResizable({
+    initial: 400,
+    min: DRAWER_MIN,
+    max: DRAWER_MAX,
+    direction: 'vertical',
+    // BottomDrawer is bottom-anchored with its drag handle on the TOP edge,
+    // so dragging UP (clientY decreases) should GROW the panel, not shrink
+    // it. `invert: true` flips the delta sign so the behavior matches every
+    // IDE: up = expand, down = shrink.
+    invert: true,
+  })
+
+  const effectiveHeight = isCollapsed ? COLLAPSED_HEIGHT : height
 
   return (
     <section
       data-testid="bottom-drawer"
-      className="h-1/3 shrink-0 bg-slate-900/95 backdrop-blur-2xl border-t border-white/5 flex flex-col z-30"
+      style={{ height: `${effectiveHeight}px` }}
+      className="shrink-0 bg-slate-900/95 backdrop-blur-2xl border-t border-white/5 flex flex-col z-30 relative"
     >
+      {/* Resize Handle - Top Edge.
+          role="separator" + aria-orientation/valuenow/valuemin/valuemax
+          exposes the handle to assistive tech as a sizing widget.
+          tabIndex=0 + ArrowUp/ArrowDown keyboard handlers give
+          keyboard-only and switch-access users a way to adjust the
+          drawer height in 20px steps (WCAG 2.5.1).
+
+          When collapsed, the handle is disabled entirely: no
+          onMouseDown, no onKeyDown, removed from tab order, and
+          aria-disabled. Otherwise the handle would silently mutate
+          the expanded-height state while the drawer is visually
+          pinned at COLLAPSED_HEIGHT, clobbering the user's chosen
+          expanded size once they expand the drawer again. */}
+      <div
+        data-testid="resize-handle"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize drawer"
+        aria-valuenow={height}
+        aria-valuemin={DRAWER_MIN}
+        aria-valuemax={DRAWER_MAX}
+        aria-disabled={isCollapsed || undefined}
+        tabIndex={isCollapsed ? -1 : 0}
+        onMouseDown={isCollapsed ? undefined : handleMouseDown}
+        onKeyDown={
+          isCollapsed
+            ? undefined
+            : (e): void => {
+                const step = e.shiftKey ? 100 : 20
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  adjustBy(step) // drag UP grows (matches `invert: true`)
+                } else if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  adjustBy(-step)
+                } else if (e.key === 'Home') {
+                  e.preventDefault()
+                  adjustBy(DRAWER_MIN - height)
+                } else if (e.key === 'End') {
+                  e.preventDefault()
+                  adjustBy(DRAWER_MAX - height)
+                }
+              }
+        }
+        className={`absolute top-0 left-0 right-0 h-1 transition-colors ${
+          isCollapsed
+            ? 'pointer-events-none'
+            : 'cursor-ns-resize hover:bg-primary/20 focus:bg-primary/40 focus:outline-none'
+        } ${isDragging ? 'bg-primary/30' : ''}`}
+      />
+
       {/* Tab Bar */}
       <div className="flex items-center px-8 h-12 bg-surface-container justify-between">
         {/* Left: Tab Buttons */}
         <div className="flex space-x-6">
           {/* Editor Tab */}
           <button
+            type="button"
             onClick={() => {
               setActiveTab('editor')
             }}
@@ -41,6 +143,7 @@ const BottomDrawer = (): ReactElement => {
 
           {/* Diff Viewer Tab */}
           <button
+            type="button"
             onClick={() => {
               setActiveTab('diff')
             }}
@@ -60,26 +163,43 @@ const BottomDrawer = (): ReactElement => {
 
         {/* Right: File Path + Collapse Toggle */}
         <div className="flex items-center space-x-4">
-          <span className="text-[10px] text-outline font-mono">
-            src/middleware/auth.ts
+          <span
+            className="text-[10px] text-outline font-mono"
+            title={selectedFilePath ?? ''}
+          >
+            {selectedFilePath
+              ? selectedFilePath.replace(/^~\//, '')
+              : 'No file'}
           </span>
           <button
-            aria-label="Collapse drawer"
+            type="button"
+            aria-label={isCollapsed ? 'Expand drawer' : 'Collapse drawer'}
+            aria-expanded={!isCollapsed}
+            onClick={() => {
+              setIsCollapsed((v) => !v)
+            }}
             className="material-symbols-outlined text-sm text-outline hover:text-on-surface cursor-pointer transition-colors"
           >
-            keyboard_arrow_down
+            {isCollapsed ? 'keyboard_arrow_up' : 'keyboard_arrow_down'}
           </button>
         </div>
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 font-mono text-xs p-6 overflow-y-auto bg-black/30">
+      <div className="flex-1 flex overflow-hidden">
         {activeTab === 'editor' ? (
-          <div data-testid="editor-panel">
-            <EditorContent />
+          <div data-testid="editor-panel" className="flex flex-1">
+            <CodeEditor
+              filePath={selectedFilePath}
+              content={content}
+              onContentChange={onContentChange}
+              onSave={onSave}
+              isDirty={isDirty}
+              isLoading={isLoading}
+            />
           </div>
         ) : (
-          <div data-testid="diff-panel">
+          <div data-testid="diff-panel" className="flex-1 flex">
             <DiffContent />
           </div>
         )}
@@ -87,75 +207,6 @@ const BottomDrawer = (): ReactElement => {
     </section>
   )
 }
-
-/**
- * EditorContent - Mock syntax-highlighted code with line numbers
- */
-const EditorContent = (): ReactElement => (
-  <div className="flex">
-    {/* Line Number Gutter */}
-    <div className="w-12 text-outline/40 text-right pr-4 select-none">
-      1<br />
-      2<br />
-      3<br />
-      4<br />
-      5<br />
-      6<br />
-      7<br />
-      8<br />
-      9<br />
-      10
-    </div>
-
-    {/* Code Content */}
-    <div className="flex-1 space-y-1">
-      <p>
-        <span className="text-tertiary">import</span>
-        {' { jose } '}
-        <span className="text-tertiary">from</span>{' '}
-        <span className="text-emerald-400">&apos;jose&apos;</span>;
-      </p>
-      <p>
-        <span className="text-tertiary">import</span>
-        {' type { NextRequest } '}
-        <span className="text-tertiary">from</span>{' '}
-        <span className="text-emerald-400">&apos;next/server&apos;</span>;
-      </p>
-      <p>&nbsp;</p>
-      <p>
-        <span className="text-tertiary">export async function</span>{' '}
-        <span className="text-primary-dim">middleware</span>(req: NextRequest){' '}
-        {'{'}
-      </p>
-      <p className="pl-4">
-        <span className="text-on-surface-variant">
-          {/* Refactored token validation */}
-        </span>
-      </p>
-      <p className="pl-4">
-        <span className="text-tertiary">const</span> token = req.headers.get(
-        <span className="text-emerald-400">&apos;authorization&apos;</span>);
-      </p>
-      <p className="pl-4">
-        <span className="text-tertiary">if</span> (!token){' '}
-        <span className="text-tertiary">return</span> Response.json({'{ '}
-        error:{' '}
-        <span className="text-emerald-400">&apos;Unauthorized&apos;</span>
-        {' }'}, {'{ '}status: 401 {'}'});
-      </p>
-      <p className="pl-4">&nbsp;</p>
-      <p className="pl-4">
-        <span className="text-tertiary">try</span> {'{'}
-      </p>
-      <p className="pl-8">
-        <span className="text-tertiary">const</span> {'{ '}payload {'} ='}{' '}
-        <span className="text-tertiary">await</span> jose.jwtVerify(token,{' '}
-        <span className="text-tertiary">new</span>{' '}
-        TextEncoder().encode(process.env.JWT_SECRET));
-      </p>
-    </div>
-  </div>
-)
 
 /**
  * DiffContent - Placeholder for diff viewer

@@ -1,109 +1,118 @@
 import type { ReactElement } from 'react'
-import { useEffect, useState } from 'react'
-import {
-  highlightCode,
-  detectLanguage,
-  type LineTokens,
-} from '../services/shikiService'
-import { LineNumbers } from './LineNumbers'
+import { useEffect, useMemo } from 'react'
+import { useCodeMirror } from '../hooks/useCodeMirror'
+import { useVimMode } from '../hooks/useVimMode'
+import { VimStatusBar } from './VimStatusBar'
+import { getLanguageExtension } from '../services/languageService'
 
 interface CodeEditorProps {
+  filePath: string | null
+  /**
+   * Current file content. Sourced from the single owning buffer
+   * (`useEditorBuffer.currentContent` in `WorkspaceView`). CodeEditor is a
+   * presentational wrapper — it does NOT fetch files itself. This avoids
+   * the double-read race where CodeEditor and useEditorBuffer each called
+   * `fileSystemService.readFile` independently and occasionally disagreed,
+   * which manifested as spurious dirty state.
+   */
   content: string
-  currentLine: number | null
-  fileName: string
+  onContentChange?: (content: string) => void
+  onSave?: () => void
+  isDirty?: boolean
+  /** Render a loading overlay while an async file read is in flight. */
+  isLoading?: boolean
 }
 
 export const CodeEditor = ({
+  filePath,
   content,
-  currentLine,
-  fileName,
+  onContentChange = undefined,
+  onSave = undefined,
+  isDirty = false,
+  isLoading = false,
 }: CodeEditorProps): ReactElement => {
-  const [highlightedLines, setHighlightedLines] = useState<LineTokens[]>([])
+  // Language extension is driven off the filename only. Memoize on
+  // `fileName` so typing (which re-renders via onContentChange) does
+  // NOT rebuild the language extension every keystroke — an non-memoized
+  // call would hand a fresh Extension object to useCodeMirror's
+  // language-update effect on every render, triggering a full
+  // Compartment.reconfigure() per keypress and visibly flickering
+  // syntax highlighting as the parser restarted from scratch.
+  const fileName = filePath ? (filePath.split('/').pop() ?? '') : ''
 
+  const language = useMemo(
+    () => (fileName ? getLanguageExtension(fileName) : null),
+    [fileName]
+  )
+
+  // `onSave` is required for vim :w to work. CodeEditor used to fall back
+  // to writing via a stashed fileSystemService if the caller forgot to
+  // pass onSave, but that path silently swallowed write errors and
+  // bypassed the error-surfacing improvements in WorkspaceView. We now
+  // require the caller to own the save lifecycle.
+  const handleSave = (): void => {
+    onSave?.()
+  }
+
+  const { editorView, updateContent, setContainer } = useCodeMirror({
+    initialContent: content,
+    language,
+    onSave: handleSave,
+    onChange: onContentChange,
+  })
+
+  const vimMode = useVimMode(editorView)
+
+  // Push prop content into CodeMirror whenever the caller updates it
+  // (e.g. a new file is opened and `useEditorBuffer` swaps the buffer
+  // content). `updateContent` no-ops when the CodeMirror doc already
+  // matches, so echo-back from user edits (typing → onContentChange →
+  // buffer state → content prop → updateContent) does not loop.
   useEffect(() => {
-    let cancelled = false
-
-    const highlight = async (): Promise<void> => {
-      const language = detectLanguage(fileName)
-      const lines = await highlightCode(content, language)
-
-      if (!cancelled) {
-        setHighlightedLines(lines)
-      }
+    if (filePath === null) {
+      return
     }
 
-    void highlight()
+    updateContent(content)
+  }, [content, filePath, updateContent])
 
-    return (): void => {
-      cancelled = true
-    }
-  }, [content, fileName])
-
-  const plainLines = content.split('\n')
-
-  const lineCount =
-    highlightedLines.length > 0 ? highlightedLines.length : plainLines.length
+  if (!filePath) {
+    return (
+      <div
+        className="flex flex-1 items-center justify-center text-on-surface-variant"
+        data-testid="no-file-selected"
+      >
+        No file selected
+      </div>
+    )
+  }
 
   return (
-    <div
-      data-testid="code-editor"
-      className="flex flex-1 overflow-auto thin-scrollbar"
-    >
-      <LineNumbers lineCount={lineCount} currentLine={currentLine} />
-      <div className="flex-1 bg-surface font-mono text-[0.875rem] leading-6 pt-4 pl-6 pr-4">
-        {highlightedLines.length > 0
-          ? highlightedLines.map((line, index) => {
-              const lineNumber = index + 1
-              const isCurrentLine = currentLine === lineNumber
-
-              return (
-                <div
-                  key={lineNumber}
-                  data-testid={`code-line-${lineNumber}`}
-                  className={`whitespace-pre ${
-                    isCurrentLine
-                      ? 'bg-primary/5 rounded border-l-2 border-primary'
-                      : ''
-                  }`}
-                >
-                  {line.tokens.map((token, tokenIndex) => (
-                    <span
-                      key={tokenIndex}
-                      style={{
-                        color: token.color,
-                        fontStyle:
-                          token.fontStyle === 1
-                            ? 'italic'
-                            : token.fontStyle === 2
-                              ? 'bold'
-                              : 'normal',
-                      }}
-                    >
-                      {token.content}
-                    </span>
-                  ))}
-                </div>
-              )
-            })
-          : plainLines.map((line, index) => {
-              const lineNumber = index + 1
-              const isCurrentLine = currentLine === lineNumber
-
-              return (
-                <div
-                  key={lineNumber}
-                  data-testid={`code-line-${lineNumber}`}
-                  className={`whitespace-pre ${
-                    isCurrentLine
-                      ? 'bg-primary/5 rounded border-l-2 border-primary'
-                      : ''
-                  }`}
-                >
-                  {line || ' '}
-                </div>
-              )
-            })}
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="relative flex-1 overflow-hidden">
+        <div
+          ref={setContainer}
+          data-testid="codemirror-container"
+          className="h-full w-full"
+        />
+        {isLoading && (
+          <div
+            role="status"
+            aria-live="polite"
+            aria-label="Loading file"
+            data-testid="code-editor-loading"
+            className="absolute inset-0 flex items-center justify-center bg-surface/70 backdrop-blur-sm z-10"
+          >
+            <div className="flex items-center gap-2 text-sm text-on-surface-variant font-inter">
+              <span className="material-symbols-outlined animate-spin text-base">
+                progress_activity
+              </span>
+              <span>Loading…</span>
+            </div>
+          </div>
+        )}
       </div>
+      <VimStatusBar vimMode={vimMode} isDirty={isDirty} />
     </div>
   )
 }

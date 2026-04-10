@@ -34,12 +34,12 @@ import { WorkspaceView } from './WorkspaceView'
 
 describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   describe('Layout: 5-Zone Architecture (v2)', () => {
-    test('grid layout has correct zone widths (64px, 256px, 1fr, 320px)', () => {
+    test('grid layout has correct zone widths (64px, 340px, 1fr, 360px)', () => {
       render(<WorkspaceView />)
       const workspace = screen.getByTestId('workspace-view')
 
-      // Grid columns are now set via inline style for resizable sidebar
-      expect(workspace.style.gridTemplateColumns).toBe('64px 256px 1fr 320px')
+      // Grid columns: 64px icon rail + 340px sidebar + 1fr main + 360px activity (updated in Feature 20)
+      expect(workspace.style.gridTemplateColumns).toBe('64px 340px 1fr 360px')
     })
 
     test('workspace uses full screen height', () => {

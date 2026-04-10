@@ -4,132 +4,50 @@ import { VimStatusBar } from './VimStatusBar'
 
 describe('VimStatusBar', () => {
   test('displays vim mode correctly', () => {
-    render(
-      <VimStatusBar
-        vimMode="NORMAL"
-        fileName="App.tsx"
-        lineNumber={42}
-        columnNumber={12}
-        encoding="UTF-8"
-        language="TypeScript"
-      />
-    )
+    render(<VimStatusBar vimMode="NORMAL" />)
 
     expect(screen.getByText('-- NORMAL --')).toBeInTheDocument()
   })
 
   test('displays all vim modes correctly', () => {
-    const { rerender } = render(
-      <VimStatusBar
-        vimMode="NORMAL"
-        fileName="test.ts"
-        lineNumber={1}
-        columnNumber={1}
-        encoding="UTF-8"
-        language="TypeScript"
-      />
-    )
+    const { rerender } = render(<VimStatusBar vimMode="NORMAL" />)
 
     expect(screen.getByText('-- NORMAL --')).toBeInTheDocument()
 
-    rerender(
-      <VimStatusBar
-        vimMode="INSERT"
-        fileName="test.ts"
-        lineNumber={1}
-        columnNumber={1}
-        encoding="UTF-8"
-        language="TypeScript"
-      />
-    )
+    rerender(<VimStatusBar vimMode="INSERT" />)
 
     expect(screen.getByText('-- INSERT --')).toBeInTheDocument()
 
-    rerender(
-      <VimStatusBar
-        vimMode="VISUAL"
-        fileName="test.ts"
-        lineNumber={1}
-        columnNumber={1}
-        encoding="UTF-8"
-        language="TypeScript"
-      />
-    )
+    rerender(<VimStatusBar vimMode="VISUAL" />)
 
     expect(screen.getByText('-- VISUAL --')).toBeInTheDocument()
+
+    rerender(<VimStatusBar vimMode="COMMAND" />)
+
+    expect(screen.getByText('-- COMMAND --')).toBeInTheDocument()
   })
 
-  test('displays file name', () => {
-    render(
-      <VimStatusBar
-        vimMode="NORMAL"
-        fileName="App.tsx"
-        lineNumber={42}
-        columnNumber={12}
-        encoding="UTF-8"
-        language="TypeScript"
-      />
-    )
+  test('displays dirty indicator when isDirty is true', () => {
+    render(<VimStatusBar vimMode="NORMAL" isDirty />)
 
-    expect(screen.getByText('App.tsx')).toBeInTheDocument()
+    expect(screen.getByText('[+]')).toBeInTheDocument()
   })
 
-  test('displays cursor position', () => {
-    render(
-      <VimStatusBar
-        vimMode="NORMAL"
-        fileName="App.tsx"
-        lineNumber={42}
-        columnNumber={12}
-        encoding="UTF-8"
-        language="TypeScript"
-      />
-    )
+  test('does not display dirty indicator when isDirty is false', () => {
+    render(<VimStatusBar vimMode="NORMAL" />)
 
-    expect(screen.getByText('Ln 42, Col 12')).toBeInTheDocument()
+    expect(screen.queryByText('[+]')).not.toBeInTheDocument()
   })
 
-  test('displays file encoding', () => {
-    render(
-      <VimStatusBar
-        vimMode="NORMAL"
-        fileName="App.tsx"
-        lineNumber={42}
-        columnNumber={12}
-        encoding="UTF-8"
-        language="TypeScript"
-      />
-    )
+  test('handles null vim mode gracefully', () => {
+    render(<VimStatusBar vimMode={null} />)
 
-    expect(screen.getByText('UTF-8')).toBeInTheDocument()
-  })
-
-  test('displays language', () => {
-    render(
-      <VimStatusBar
-        vimMode="NORMAL"
-        fileName="App.tsx"
-        lineNumber={42}
-        columnNumber={12}
-        encoding="UTF-8"
-        language="TypeScript"
-      />
-    )
-
-    expect(screen.getByText('TypeScript')).toBeInTheDocument()
+    // Should still render without crashing
+    expect(screen.getByTestId('vim-status-bar')).toBeInTheDocument()
   })
 
   test('applies correct styling to container', () => {
-    render(
-      <VimStatusBar
-        vimMode="NORMAL"
-        fileName="App.tsx"
-        lineNumber={42}
-        columnNumber={12}
-        encoding="UTF-8"
-        language="TypeScript"
-      />
-    )
+    render(<VimStatusBar vimMode="NORMAL" />)
 
     const statusBar = screen.getByTestId('vim-status-bar')
 
@@ -139,20 +57,20 @@ describe('VimStatusBar', () => {
   })
 
   test('vim mode indicator has distinct styling', () => {
-    render(
-      <VimStatusBar
-        vimMode="NORMAL"
-        fileName="App.tsx"
-        lineNumber={42}
-        columnNumber={12}
-        encoding="UTF-8"
-        language="TypeScript"
-      />
-    )
+    render(<VimStatusBar vimMode="NORMAL" />)
 
     const modeIndicator = screen.getByText('-- NORMAL --')
 
     expect(modeIndicator).toHaveClass('bg-primary-container')
     expect(modeIndicator).toHaveClass('text-surface')
+  })
+
+  test('dirty indicator has correct styling', () => {
+    render(<VimStatusBar vimMode="NORMAL" isDirty />)
+
+    const dirtyIndicator = screen.getByText('[+]')
+
+    expect(dirtyIndicator).toHaveClass('text-primary')
+    expect(dirtyIndicator).toHaveClass('ml-2')
   })
 })

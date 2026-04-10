@@ -7,6 +7,7 @@ import {
 } from 'react'
 import { Reorder } from 'framer-motion'
 import type { Session } from '../types'
+import type { FileNode } from '../../files/types'
 import { FileExplorer } from './panels/FileExplorer'
 
 export interface SidebarProps {
@@ -18,11 +19,12 @@ export interface SidebarProps {
   onRemoveSession?: (sessionId: string) => void
   onRenameSession?: (sessionId: string, name: string) => void
   onReorderSessions?: (sessions: Session[]) => void
+  onFileSelect?: (node: FileNode) => void
 }
 
 const FILE_EXPLORER_MIN = 100
 const FILE_EXPLORER_MAX = 500
-const FILE_EXPLORER_DEFAULT = 240
+const FILE_EXPLORER_DEFAULT = 320
 
 interface SessionItemProps {
   session: Session
@@ -164,6 +166,7 @@ export const Sidebar = ({
   onRemoveSession = undefined,
   onRenameSession = undefined,
   onReorderSessions = undefined,
+  onFileSelect = undefined,
 }: SidebarProps): ReactElement => {
   const [explorerHeight, setExplorerHeight] = useState(FILE_EXPLORER_DEFAULT)
   const [isDraggingSplit, setIsDraggingSplit] = useState(false)
@@ -296,7 +299,7 @@ export const Sidebar = ({
 
       {/* File Explorer — resizable height */}
       <div style={{ height: explorerHeight }} className="shrink-0">
-        <FileExplorer cwd={activeCwd} />
+        <FileExplorer cwd={activeCwd} onFileSelect={onFileSelect} />
       </div>
 
       {/* New Instance button */}

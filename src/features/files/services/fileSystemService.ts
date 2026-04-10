@@ -4,6 +4,8 @@ import { mockFileTree } from '../data/mockFileTree'
 
 export interface IFileSystemService {
   listDir(path: string): Promise<FileNode[]>
+  readFile(path: string): Promise<string>
+  writeFile(path: string, content: string): Promise<void>
 }
 
 interface TauriFileEntry {
@@ -12,14 +14,35 @@ interface TauriFileEntry {
   children?: TauriFileEntry[]
 }
 
-let nextMockId = 0
+// Join a parent directory path and a child name. Matches the semantics
+// of joinPath() in FileTreeNode so identical paths produce identical
+// ids — critical because `id` is used as React's reconciler key.
+const joinPath = (parent: string, name: string): string => {
+  if (parent === '') {
+    return name
+  }
 
-const toFileNode = (entry: TauriFileEntry): FileNode => ({
-  id: `fs-${nextMockId++}`,
-  name: entry.type === 'folder' ? `${entry.name}/` : entry.name,
-  type: entry.type,
-  children: entry.children?.map(toFileNode),
-})
+  return parent.endsWith('/') ? `${parent}${name}` : `${parent}/${name}`
+}
+
+// Convert a Tauri filesystem entry to a FileNode, using the canonical
+// full path as the `id`. Previously the id was a module-level counter
+// (`fs-${nextMockId++}`) that incremented on every listDir call, so
+// the same entry received a different id each time the user navigated
+// back to a directory — React fully unmounted and remounted every
+// FileTreeNode, losing all local state (expand/collapse, rename input).
+// Using the full path gives stable, unique identity across navigation.
+const toFileNode = (entry: TauriFileEntry, parentPath: string): FileNode => {
+  const displayName = entry.type === 'folder' ? `${entry.name}/` : entry.name
+  const fullPath = joinPath(parentPath, entry.name)
+
+  return {
+    id: fullPath,
+    name: displayName,
+    type: entry.type,
+    children: entry.children?.map((child) => toFileNode(child, fullPath)),
+  }
+}
 
 class TauriFileSystemService implements IFileSystemService {
   async listDir(path: string): Promise<FileNode[]> {
@@ -29,7 +52,23 @@ class TauriFileSystemService implements IFileSystemService {
       request: { path },
     })
 
-    return entries.map(toFileNode)
+    return entries.map((entry) => toFileNode(entry, path))
+  }
+
+  async readFile(path: string): Promise<string> {
+    const { invoke } = await import('@tauri-apps/api/core')
+
+    return await invoke<string>('read_file', {
+      request: { path },
+    })
+  }
+
+  async writeFile(path: string, content: string): Promise<void> {
+    const { invoke } = await import('@tauri-apps/api/core')
+
+    await invoke<void>('write_file', {
+      request: { path, content },
+    })
   }
 }
 
@@ -57,6 +96,18 @@ class MockFileSystemService implements IFileSystemService {
     const segments = normalized ? normalized.split('/') : []
 
     return Promise.resolve(resolveMockPath(mockFileTree, segments))
+  }
+
+  readFile(): Promise<string> {
+    // Mock implementation — returns placeholder content for browser/test mode.
+    // This service is only used in browser mode (not Tauri).
+    return Promise.resolve('// Mock file content')
+  }
+
+  writeFile(): Promise<void> {
+    // Mock implementation - no-op
+    // This service is only used in browser mode (not Tauri)
+    return Promise.resolve()
   }
 }
 

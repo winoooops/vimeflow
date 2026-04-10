@@ -51,6 +51,12 @@ words:
   - shiki
   - Shiki
 
+  # Editor libraries
+  - replit
+  - Replit
+  - codemirror
+  - lezer
+
   # Tools
   - cspell
   - eslint

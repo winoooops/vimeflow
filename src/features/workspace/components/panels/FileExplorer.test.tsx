@@ -37,7 +37,33 @@ describe('FileExplorer', () => {
     })
   })
 
-  test('calls onFileSelect when file is selected', async () => {
+  test('calls onFileSelect with canonical full path for nested files', async () => {
+    const handleFileSelect = vi.fn()
+    render(<FileExplorer onFileSelect={handleFileSelect} />)
+
+    // Wait for tree to load
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tree', { name: 'File tree' })
+      ).toBeInTheDocument()
+    })
+
+    // Click a file nested under src/middleware/ — the mock tree auto-expands it.
+    const fileNode = screen.getByText('auth.ts')
+    fileNode.click()
+
+    // The full ancestry must be preserved so the editor reads/saves the right file.
+    expect(handleFileSelect).toHaveBeenCalledTimes(1)
+    expect(handleFileSelect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: '~/src/middleware/auth.ts',
+        name: 'auth.ts',
+        type: 'file',
+      })
+    )
+  })
+
+  test('calls onFileSelect with root-level path for top-level files', async () => {
     const handleFileSelect = vi.fn()
     render(<FileExplorer onFileSelect={handleFileSelect} />)
 
@@ -46,5 +72,37 @@ describe('FileExplorer', () => {
         screen.getByRole('tree', { name: 'File tree' })
       ).toBeInTheDocument()
     })
+
+    // package.json sits at the tree root under cwd `~`
+    const fileNode = screen.getByText('package.json')
+    fileNode.click()
+
+    expect(handleFileSelect).toHaveBeenCalledTimes(1)
+    expect(handleFileSelect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: '~/package.json',
+        name: 'package.json',
+        type: 'file',
+      })
+    )
+  })
+
+  test('does not call onFileSelect when folder is clicked', async () => {
+    const handleFileSelect = vi.fn()
+    render(<FileExplorer onFileSelect={handleFileSelect} />)
+
+    // Wait for tree to load
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tree', { name: 'File tree' })
+      ).toBeInTheDocument()
+    })
+
+    // Click on a folder node (src/)
+    const folderNode = screen.getByText('src/')
+    folderNode.click()
+
+    // Verify callback was NOT called (folders navigate, don't select)
+    expect(handleFileSelect).not.toHaveBeenCalled()
   })
 })

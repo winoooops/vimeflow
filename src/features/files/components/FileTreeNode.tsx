@@ -5,8 +5,24 @@ import type { FileNode, GitStatus } from '../types'
 interface FileTreeNodeProps {
   node: FileNode
   depth?: number
+  /** Path of the parent directory (e.g. `~/src/middleware`). Used to compute the full path on select. */
+  parentPath?: string
   onContextMenu: (event: MouseEvent, node: FileNode) => void
-  onNodeSelect?: (node: FileNode) => void
+  onNodeSelect?: (node: FileNode, fullPath: string) => void
+}
+
+/**
+ * Join a parent directory path and a child name into a single path.
+ * Handles the trailing `/` edge case and the root-only `~` case.
+ */
+const joinPath = (parent: string, name: string): string => {
+  const cleanName = name.replace(/\/$/, '')
+  if (parent === '') {
+    return cleanName
+  }
+  const sep = parent.endsWith('/') ? '' : '/'
+
+  return `${parent}${sep}${cleanName}`
 }
 
 /**
@@ -61,16 +77,19 @@ const getGitStatusColor = (status: GitStatus): string => {
 export const FileTreeNode = ({
   node,
   depth = 0,
+  parentPath = '',
   onContextMenu,
   onNodeSelect = undefined,
 }: FileTreeNodeProps): ReactElement => {
   const [isExpanded, setIsExpanded] = useState(node.defaultExpanded ?? false)
 
+  const fullPath = joinPath(parentPath, node.name)
+
   const handleClick = (): void => {
     if (node.type === 'folder' && node.children !== undefined) {
       setIsExpanded(!isExpanded)
     }
-    onNodeSelect?.(node)
+    onNodeSelect?.(node, fullPath)
   }
 
   const handleContextMenu = (event: React.MouseEvent): void => {
@@ -147,6 +166,7 @@ export const FileTreeNode = ({
               key={child.id}
               node={child}
               depth={depth + 1}
+              parentPath={fullPath}
               onContextMenu={onContextMenu}
               onNodeSelect={onNodeSelect}
             />

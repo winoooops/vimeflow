@@ -28,14 +28,13 @@ export const FileExplorer = ({
     navigateUp,
   } = useFileTree(cwd)
 
-  const handleNodeSelect = (node: FileNode): void => {
+  const handleNodeSelect = (node: FileNode, fullPath: string): void => {
     if (node.type === 'folder') {
-      // Navigate into the folder
-      const cleanName = node.name.replace(/\/$/, '')
-      const sep = currentPath.endsWith('/') ? '' : '/'
-      navigateTo(`${currentPath}${sep}${cleanName}`)
+      // Navigate into the folder — the `fullPath` already includes the ancestry.
+      navigateTo(fullPath)
     } else {
-      onFileSelect?.(node)
+      // File: emit with canonical full path as the id so consumers can read/save it.
+      onFileSelect?.({ ...node, id: fullPath })
     }
   }
 
@@ -108,6 +107,7 @@ export const FileExplorer = ({
           <FileTree
             nodes={nodes}
             contextMenuActions={contextMenuActions}
+            rootPath={currentPath}
             onNodeSelect={handleNodeSelect}
           />
         )}
