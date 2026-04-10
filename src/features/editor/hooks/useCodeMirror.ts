@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { EditorView, ViewUpdate, drawSelection } from '@codemirror/view'
 import { EditorState, type Extension, Compartment } from '@codemirror/state'
-import { vim } from '@replit/codemirror-vim'
+import { vim, Vim } from '@replit/codemirror-vim'
 import { catppuccinMocha } from '../theme/catppuccin'
 
 export interface UseCodeMirrorOptions {
@@ -84,17 +84,16 @@ export function useCodeMirror(
       parent: node,
     })
 
-    // Configure vim :w command to call onSave
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-    const cm = (view as any).cm
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    if (cm?.vim) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      cm.vim.defineEx('write', 'w', () => {
-        onSaveRef.current()
-      })
-    }
+    // Configure vim :w command to call onSave via the vim extension's public
+    // static API. `defineEx` is a static method on the `Vim` object exported
+    // from `@replit/codemirror-vim`, not an instance property of the internal
+    // cm5 wrapper — the old `(view as any).cm.vim.defineEx` path accessed a
+    // non-existent property and silently no-oped, meaning `:w` never fired
+    // the onSave callback. The handler closes over `onSaveRef` so the latest
+    // save callback is always invoked even after re-renders.
+    Vim.defineEx('write', 'w', () => {
+      onSaveRef.current()
+    })
 
     viewRef.current = view
     setEditorView(view)

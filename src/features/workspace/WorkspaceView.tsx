@@ -53,6 +53,7 @@ export const WorkspaceView = (): ReactElement => {
   const editorBuffer = useEditorBuffer(fileSystemService)
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // Handle file selection from FileExplorer
   const handleFileSelect = (node: {
@@ -78,32 +79,56 @@ export const WorkspaceView = (): ReactElement => {
     void editorBuffer.openFile(filePath)
   }
 
-  // Save current file and open pending file
+  // Save current file and open pending file.
+  //
+  // Errors from saveFile/openFile were previously swallowed via `void
+  // handleSave()`, leaving the dialog stuck open with no user feedback on
+  // Tauri IPC failures (disk full, permission denied, file missing). Wrap
+  // the async work in try/catch, surface the error via `saveError`, and
+  // keep the dialog open so the user can retry or cancel.
   const handleSave = async (): Promise<void> => {
-    await editorBuffer.saveFile()
+    try {
+      await editorBuffer.saveFile()
 
-    if (pendingFilePath) {
-      await editorBuffer.openFile(pendingFilePath)
+      if (pendingFilePath) {
+        await editorBuffer.openFile(pendingFilePath)
+      }
+
+      setShowUnsavedDialog(false)
+      setPendingFilePath(null)
+      setSaveError(null)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      setSaveError(`Failed to save: ${message}`)
     }
-
-    setShowUnsavedDialog(false)
-    setPendingFilePath(null)
   }
 
-  // Discard changes and open pending file
-  const handleDiscard = (): void => {
-    if (pendingFilePath) {
-      void editorBuffer.openFile(pendingFilePath)
-    }
+  // Discard changes and open pending file.
+  //
+  // Previously `void editorBuffer.openFile(...)` fired and forgot — if the
+  // open failed (file deleted between selection and open), the error was
+  // swallowed and the dialog closed while the editor silently showed stale
+  // content. Now the dialog stays open on failure and reports the error.
+  const handleDiscard = async (): Promise<void> => {
+    try {
+      if (pendingFilePath) {
+        await editorBuffer.openFile(pendingFilePath)
+      }
 
-    setShowUnsavedDialog(false)
-    setPendingFilePath(null)
+      setShowUnsavedDialog(false)
+      setPendingFilePath(null)
+      setSaveError(null)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      setSaveError(`Failed to open file: ${message}`)
+    }
   }
 
   // Cancel and stay on current file
   const handleCancel = (): void => {
     setShowUnsavedDialog(false)
     setPendingFilePath(null)
+    setSaveError(null)
   }
 
   return (
@@ -177,8 +202,13 @@ export const WorkspaceView = (): ReactElement => {
       <UnsavedChangesDialog
         isOpen={showUnsavedDialog}
         fileName={pendingFilePath ?? ''}
-        onSave={() => void handleSave()}
-        onDiscard={handleDiscard}
+        errorMessage={saveError}
+        onSave={() => {
+          void handleSave()
+        }}
+        onDiscard={() => {
+          void handleDiscard()
+        }}
         onCancel={handleCancel}
       />
 

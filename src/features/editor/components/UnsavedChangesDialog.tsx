@@ -5,6 +5,8 @@ import { useEffect } from 'react'
 export interface UnsavedChangesDialogProps {
   isOpen: boolean
   fileName: string
+  /** Optional error surfaced from a failed save/discard attempt. */
+  errorMessage?: string | null
   onSave: () => void
   onDiscard: () => void
   onCancel: () => void
@@ -13,6 +15,7 @@ export interface UnsavedChangesDialogProps {
 export const UnsavedChangesDialog = ({
   isOpen,
   fileName,
+  errorMessage = null,
   onSave,
   onDiscard,
   onCancel,
@@ -77,6 +80,14 @@ export const UnsavedChangesDialog = ({
                 has unsaved changes. Do you want to save them before switching
                 files?
               </p>
+              {errorMessage && (
+                <div
+                  role="alert"
+                  className="mt-4 px-3 py-2 rounded-md bg-error/10 border border-error/30 text-sm text-error font-inter"
+                >
+                  {errorMessage}
+                </div>
+              )}
             </div>
 
             {/* Actions */}

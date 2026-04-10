@@ -214,6 +214,50 @@ pub fn write_file(request: WriteFileRequest) -> Result<(), String> {
         .ok_or_else(|| format!("invalid path: no file name in '{}'", raw.display()))?;
     let target = resolved_parent.join(file_name);
 
+    // Final-path symlink guard. `fs::write` follows symlinks by default, so
+    // even with the parent directory validated, a symlink at the target
+    // position (e.g. `~/evil_link -> /etc/passwd`) would let the write
+    // escape the home sandbox. Reject any symlink at the target outright —
+    // regardless of where it points — to close the TOCTOU window.
+    //
+    // Using `symlink_metadata` means we don't follow the link; `metadata()`
+    // / `exists()` would return info about the link target, not the link.
+    match fs::symlink_metadata(&target) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() {
+                return Err(format!(
+                    "access denied: refusing to write through symlink: {}",
+                    target.display()
+                ));
+            }
+
+            // If the target exists as a regular file, canonicalize it (which
+            // resolves any symlinks in its full path — including the parent
+            // chain we already validated) and verify it's still inside home.
+            // This matches the pattern used by `read_file`.
+            let target_canonical = fs::canonicalize(&target).map_err(|e| {
+                format!("failed to canonicalize target '{}': {}", target.display(), e)
+            })?;
+            if !target_canonical.starts_with(&home_canonical) {
+                return Err(format!(
+                    "access denied: target resolves outside home directory: {}",
+                    target_canonical.display()
+                ));
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // New file — nothing to follow, parent directory is already
+            // validated against the canonical home root.
+        }
+        Err(e) => {
+            return Err(format!(
+                "failed to stat target '{}': {}",
+                target.display(),
+                e
+            ));
+        }
+    }
+
     log::info!("Writing file: {}", target.display());
 
     fs::write(&target, &request.content)
@@ -412,6 +456,79 @@ mod tests {
             "traversal fix must not create directories outside home: {}",
             marker.display()
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_file_refuses_to_follow_symlink_escaping_home() {
+        // A symlink inside home pointing outside home must not let `fs::write`
+        // escape the sandbox. The previous implementation only canonicalized
+        // the parent directory, so `fs::write` would follow the target
+        // symlink and mutate files anywhere on disk the process could reach.
+        use std::os::unix::fs::symlink;
+
+        let dir = home_test_dir("write_file_symlink_escape");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // The symlink target is a path outside home. We never want to touch it.
+        let outside_target = std::env::temp_dir().join(
+            ".vimeflow_write_file_symlink_escape_target.txt",
+        );
+        let _ = fs::remove_file(&outside_target);
+
+        let link = dir.join("evil_link");
+        // evil_link -> /tmp/.vimeflow_write_file_symlink_escape_target.txt
+        symlink(&outside_target, &link).unwrap();
+
+        let result = write_file(WriteFileRequest {
+            path: link.to_string_lossy().to_string(),
+            content: "should not escape".to_string(),
+        });
+
+        assert!(result.is_err(), "symlink write must be rejected");
+        assert!(result.unwrap_err().contains("access denied"));
+
+        // Crucial: verify nothing was written outside home.
+        assert!(
+            !outside_target.exists(),
+            "symlink guard must not write outside home: {}",
+            outside_target.display()
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_file_refuses_symlink_even_to_in_home_target() {
+        // Stricter: reject *any* symlink at the target position, even ones
+        // pointing inside home. This closes the TOCTOU window where a symlink
+        // could be swapped between our check and the write.
+        use std::os::unix::fs::symlink;
+
+        let dir = home_test_dir("write_file_symlink_inner");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let real_target = dir.join("real.txt");
+        fs::write(&real_target, "original").unwrap();
+
+        let link = dir.join("link.txt");
+        symlink(&real_target, &link).unwrap();
+
+        let result = write_file(WriteFileRequest {
+            path: link.to_string_lossy().to_string(),
+            content: "nope".to_string(),
+        });
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("symlink"));
+
+        // Real target should be untouched.
+        assert_eq!(fs::read_to_string(&real_target).unwrap(), "original");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

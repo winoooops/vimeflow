@@ -41,6 +41,11 @@ const BottomDrawer = ({
     min: 150,
     max: 640,
     direction: 'vertical',
+    // BottomDrawer is bottom-anchored with its drag handle on the TOP edge,
+    // so dragging UP (clientY decreases) should GROW the panel, not shrink
+    // it. `invert: true` flips the delta sign so the behavior matches every
+    // IDE: up = expand, down = shrink.
+    invert: true,
   })
 
   return (
