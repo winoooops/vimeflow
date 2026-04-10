@@ -31,7 +31,7 @@ This refactor splits the module along responsibility lines so each file has a si
 ### Out of scope (deferred with documented rationale in `SECURITY.md`)
 
 5. **Workspace crate extraction (`crates/vimeflow-fs/`)** — Deferred. Single consumer (`src-tauri`), ~500 LOC of production code, no release pressure. Workspace ceremony has no current payoff. Revisit triggers documented in `SECURITY.md` § Deferred Work.
-6. **`cargo fuzz` harness for the write path** — Deferred. Nightly-only tooling adds CI complexity; fuzz pays off *after* the module split (higher signal against `write.rs` in isolation than against an 864-line mixed file). Fuzz findings deserve their own PR narrative. Revisit triggers documented in `SECURITY.md` § Deferred Work.
+6. **`cargo fuzz` harness for the write path** — Deferred. Nightly-only tooling adds CI complexity; fuzz pays off _after_ the module split (higher signal against `write.rs` in isolation than against an 864-line mixed file). Fuzz findings deserve their own PR narrative. Revisit triggers documented in `SECURITY.md` § Deferred Work.
 
 ### Explicitly excluded
 
@@ -81,14 +81,14 @@ Going with **(b)** because the issue specifically calls out "~380 lines of tests
 
 ### File size estimates
 
-| File | Estimated lines |
-|---|---|
-| `mod.rs` | ~60 (re-exports + doc comment) |
-| `scope.rs` | ~180 (5 helpers + their tight invariants) |
-| `list.rs` | ~80 |
-| `read.rs` | ~100 |
-| `write.rs` | ~180 (atomic rename logic is the heaviest) |
-| Each test file | 60-120 |
+| File           | Estimated lines                            |
+| -------------- | ------------------------------------------ |
+| `mod.rs`       | ~60 (re-exports + doc comment)             |
+| `scope.rs`     | ~180 (5 helpers + their tight invariants)  |
+| `list.rs`      | ~80                                        |
+| `read.rs`      | ~100                                       |
+| `write.rs`     | ~180 (atomic rename logic is the heaviest) |
+| Each test file | 60-120                                     |
 
 All under the 800-line guideline; most comfortably under 200.
 
@@ -100,6 +100,7 @@ Full structure of `src-tauri/src/filesystem/SECURITY.md` (~120-150 lines total):
 # Vimeflow Filesystem Sandbox — Security Model
 
 ## Purpose
+
 One paragraph: this module is the sandbox boundary for all Tauri
 filesystem IPC. Any code that reads or writes user files MUST go
 through these commands. Reviewers touching this directory should read
@@ -108,6 +109,7 @@ this document first.
 ## Threat Model
 
 ### In scope
+
 - **Adversary:** a compromised sibling process in the same user
   session (e.g. a buggy coding agent, a malicious dependency loaded
   by the frontend, a script spawned by an agent).
@@ -118,6 +120,7 @@ this document first.
   Anything resolving outside that subtree is rejected.
 
 ### Out of scope
+
 - Multi-user hardening (single-user desktop app).
 - Confused-deputy attacks from a different OS user.
 - Kernel-level attacks, ptrace, or `/proc/<pid>/mem` tampering.
@@ -126,30 +129,30 @@ this document first.
 
 ## Enforcement Primitives
 
-| Primitive | Where | What it prevents |
-|---|---|---|
-| `reject_parent_refs` | `scope.rs` | Lexical `..` in user input |
-| `canonicalize_within_home` | `scope.rs` | Symlink escapes on existing path segments |
-| `ensure_within_home` | `scope.rs` | Final containment check after resolution |
-| `O_NOFOLLOW` / `FILE_FLAG_OPEN_REPARSE_POINT` | `scope::open_nofollow` | Symlink races on the leaf |
-| Per-segment canonicalization | `scope.rs` | Intermediate-segment symlink races during write |
-| Atomic temp-file + rename | `write.rs` | Partial writes, mid-write replacement |
-| Per-process `AtomicU64` counter | `write.rs` | Temp-file name collisions under concurrency |
+| Primitive                                     | Where                  | What it prevents                                |
+| --------------------------------------------- | ---------------------- | ----------------------------------------------- |
+| `reject_parent_refs`                          | `scope.rs`             | Lexical `..` in user input                      |
+| `canonicalize_within_home`                    | `scope.rs`             | Symlink escapes on existing path segments       |
+| `ensure_within_home`                          | `scope.rs`             | Final containment check after resolution        |
+| `O_NOFOLLOW` / `FILE_FLAG_OPEN_REPARSE_POINT` | `scope::open_nofollow` | Symlink races on the leaf                       |
+| Per-segment canonicalization                  | `scope.rs`             | Intermediate-segment symlink races during write |
+| Atomic temp-file + rename                     | `write.rs`             | Partial writes, mid-write replacement           |
+| Per-process `AtomicU64` counter               | `write.rs`             | Temp-file name collisions under concurrency     |
 
 ## Test Coverage Map
 
 Mapping each primitive above to the test file(s) that exercise it.
 Reviewers cross-reference before approving changes.
 
-| Primitive | Tests |
-|---|---|
-| `reject_parent_refs` | `scope_tests.rs::rejects_parent_refs_*` |
-| `canonicalize_within_home` | `scope_tests.rs::canonicalize_*`, `write_tests.rs::intermediate_symlink_*` |
-| `open_nofollow` | `scope_tests.rs::open_nofollow_*` (unix + windows) |
-| Per-segment mkdir | `scope_tests.rs::per_segment_mkdir_caps_blast_radius`, `mkdir_already_exists_is_benign` |
-| Atomic write | `write_tests.rs::partial_write_failure_preserves_old_bytes`, `concurrent_writes_dont_collide` |
-| `list_dir` scope | `list_tests.rs::rejects_outside_home_*` |
-| `read_file` scope + symlink guard | `read_tests.rs::rejects_symlink_target_*` |
+| Primitive                         | Tests                                                                                         |
+| --------------------------------- | --------------------------------------------------------------------------------------------- |
+| `reject_parent_refs`              | `scope_tests.rs::rejects_parent_refs_*`                                                       |
+| `canonicalize_within_home`        | `scope_tests.rs::canonicalize_*`, `write_tests.rs::intermediate_symlink_*`                    |
+| `open_nofollow`                   | `scope_tests.rs::open_nofollow_*` (unix + windows)                                            |
+| Per-segment mkdir                 | `scope_tests.rs::per_segment_mkdir_caps_blast_radius`, `mkdir_already_exists_is_benign`       |
+| Atomic write                      | `write_tests.rs::partial_write_failure_preserves_old_bytes`, `concurrent_writes_dont_collide` |
+| `list_dir` scope                  | `list_tests.rs::rejects_outside_home_*`                                                       |
+| `read_file` scope + symlink guard | `read_tests.rs::rejects_symlink_target_*`                                                     |
 
 ## Defense Layers
 
@@ -163,6 +166,7 @@ sufficient alone.
 ## Invariants
 
 The module guarantees to callers:
+
 1. No command opens, reads, or writes a path that resolves outside
    `$HOME`.
 2. Write commands are atomic at the filesystem level — readers see
@@ -173,6 +177,7 @@ The module guarantees to callers:
 ## Deferred Work
 
 ### Workspace crate extraction (issue #40, task #3)
+
 **Status:** Deferred.
 **Rationale:** Currently only `src-tauri` consumes this module.
 Workspace-crate ceremony (nested `Cargo.toml`, path deps,
@@ -180,6 +185,7 @@ workspace-level lints) has no payoff with a single consumer. The
 ~500 LOC of production code does not warrant a separate compile
 unit today.
 **Revisit when** any of the following becomes true:
+
 - A second binary (CLI, fuzz harness, test fixture) needs filesystem
   access.
 - The module grows beyond ~1500 LOC of production code.
@@ -187,10 +193,11 @@ unit today.
   naturally against a dedicated crate.
 
 ### Fuzz testing (issue #40, task #5)
+
 **Status:** Deferred.
 **Rationale:** `cargo fuzz` requires nightly Rust and adds CI
 complexity. Hand-written regression tests cover all currently-known
-attack classes. Fuzz pays off *after* the module split — fuzzing
+attack classes. Fuzz pays off _after_ the module split — fuzzing
 `write.rs` in isolation yields higher signal than fuzzing a 864-line
 mixed file. Fuzz findings deserve their own PR narrative.
 **Revisit when** a CVE or near-miss surfaces in the write path, OR
@@ -200,6 +207,7 @@ symlink creation).
 ## Review Checklist
 
 For reviewers touching this module:
+
 - [ ] Does the change introduce a new filesystem syscall? If so,
       which primitive enforces the sandbox boundary for it?
 - [ ] Is the change covered by a test in the matching `*_tests.rs`?
@@ -264,16 +272,16 @@ Pure documentation. Includes the deferred-work section with revisit triggers.
 
 ## Risk Register
 
-| Risk | Likelihood | Mitigation |
-|---|---|---|
-| Test extraction silently drops a test (wrong `mod` declaration, missing `use` import) | Medium | Run `cargo test 2>&1 \| grep "test result"` before AND after commit 1, compare counts. Document the count in the commit message. |
-| `pub(super)` visibility change breaks compilation | Low | Caught at compile time. Trivial fix. |
-| Tauri command registration missed during split (forgot to re-export from `mod.rs`) | Medium | Caught by `src-tauri/src/lib.rs` failing to compile against the `invoke_handler!` macro. Smoke-test by running `npm run dev` after commit 3. |
-| Subtle behavior change when extracting helpers (e.g. inline closure becomes a function with different lifetime semantics) | Low-Medium | The 15 existing regression tests are the safety net. They MUST pass after each commit. No exceptions. |
-| `cfg(unix)` / `cfg(windows)` paths get split across files awkwardly | Medium | Keep ALL `cfg` arms for a given primitive in `scope.rs`. The command files only call the primitive — they don't know which OS impl ran. |
-| Hidden coupling discovered mid-split (e.g. `read_file` and `write_file` share a private helper not yet noticed) | Medium | If found, that helper goes into `scope.rs` too. Don't fight it — the whole point of `scope.rs` is to be the shared layer. |
-| Per-segment canonicalization loop accidentally simplified to single `create_dir_all` | Low (if reviewer reads finding #11) | Preserve the explanatory comment block. The match arm swallowing `AlreadyExists` is load-bearing — do not "clean up" into a `?`. |
-| `TEMP_COUNTER` becomes function-local instead of module-level static | Low (covered by finding #14 test) | Doc comment on the static referencing finding #14 in the review knowledge base. |
+| Risk                                                                                                                      | Likelihood                          | Mitigation                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Test extraction silently drops a test (wrong `mod` declaration, missing `use` import)                                     | Medium                              | Run `cargo test 2>&1 \| grep "test result"` before AND after commit 1, compare counts. Document the count in the commit message.             |
+| `pub(super)` visibility change breaks compilation                                                                         | Low                                 | Caught at compile time. Trivial fix.                                                                                                         |
+| Tauri command registration missed during split (forgot to re-export from `mod.rs`)                                        | Medium                              | Caught by `src-tauri/src/lib.rs` failing to compile against the `invoke_handler!` macro. Smoke-test by running `npm run dev` after commit 3. |
+| Subtle behavior change when extracting helpers (e.g. inline closure becomes a function with different lifetime semantics) | Low-Medium                          | The 15 existing regression tests are the safety net. They MUST pass after each commit. No exceptions.                                        |
+| `cfg(unix)` / `cfg(windows)` paths get split across files awkwardly                                                       | Medium                              | Keep ALL `cfg` arms for a given primitive in `scope.rs`. The command files only call the primitive — they don't know which OS impl ran.      |
+| Hidden coupling discovered mid-split (e.g. `read_file` and `write_file` share a private helper not yet noticed)           | Medium                              | If found, that helper goes into `scope.rs` too. Don't fight it — the whole point of `scope.rs` is to be the shared layer.                    |
+| Per-segment canonicalization loop accidentally simplified to single `create_dir_all`                                      | Low (if reviewer reads finding #11) | Preserve the explanatory comment block. The match arm swallowing `AlreadyExists` is load-bearing — do not "clean up" into a `?`.             |
+| `TEMP_COUNTER` becomes function-local instead of module-level static                                                      | Low (covered by finding #14 test)   | Doc comment on the static referencing finding #14 in the review knowledge base.                                                              |
 
 ## Verification at Each Commit
 
@@ -292,22 +300,22 @@ Pure documentation. Includes the deferred-work section with revisit triggers.
 
 The 14 review findings in `docs/reviews/patterns/filesystem-scope.md` are the single most important constraint on this refactor. Each represents a subtle property that must not be silently lost during the split. Every finding gets a home in the new layout and a test that would catch its regression.
 
-| # | Finding (one-line) | Lives in (after split) | Guarded by test in |
-|---|---|---|---|
-| 1 | `list_dir` must validate path against home scope | `list.rs` (calls `scope::ensure_within_home`) | `list_tests.rs::rejects_outside_home_*` |
-| 2 | (Frontend `navigateUp` clamp — out of scope, lives in `useFileTree.ts`) | n/a (covered in `SECURITY.md` § Defense Layers) | n/a |
-| 3 | Tests must use temp dirs **inside** home (not `/tmp`) | All `*_tests.rs` files | Test helper `scope_tests.rs::tmp_in_home()` |
-| 4 | `write_file` must reject `..` BEFORE any FS mutation | `scope.rs::reject_parent_refs` (called first by `write.rs`) | `scope_tests.rs::rejects_parent_refs_*` + `write_tests.rs::rejects_traversal_before_mkdir` |
-| 5 | Final target path must be checked for symlink (no `fs::write` follow) | `write.rs` (uses `scope::open_nofollow`) | `write_tests.rs::rejects_symlink_at_target` |
-| 6 | `read_file` must use `O_NOFOLLOW` / `FILE_FLAG_OPEN_REPARSE_POINT` | `read.rs` (uses `scope::open_nofollow`) | `read_tests.rs::rejects_symlink_target_unix`, `..._windows` |
-| 7 | TOCTOU between `symlink_metadata` and `fs::write` — kernel-level refusal | `scope::open_nofollow` (single source for both `read.rs` and `write.rs`) | `scope_tests.rs::open_nofollow_*` |
-| 8 | Windows must set `FILE_FLAG_OPEN_REPARSE_POINT` | `scope::open_nofollow` (Windows arm) | `scope_tests.rs::open_nofollow_windows_*` |
-| 9 | Windows post-open metadata check (reject if landed on symlink) | `scope::open_nofollow` (post-open guard inside the helper) | `scope_tests.rs::open_nofollow_windows_post_check` |
-| 10 | After ancestor canon walk, `resolved_parent` must be re-canonicalized | `scope::canonicalize_within_home` (per-segment loop) | `scope_tests.rs::intermediate_symlink_race`, `write_tests.rs::intermediate_symlink_blocked` |
-| 11 | Per-segment `mkdir` loop with canon-after-each (cap blast radius) | `scope::canonicalize_within_home` | `scope_tests.rs::per_segment_mkdir_caps_blast_radius` |
-| 12 | `mkdir` per-segment must swallow `ErrorKind::AlreadyExists` | `scope::canonicalize_within_home` (the explicit `match` block) | `scope_tests.rs::mkdir_already_exists_is_benign` |
-| 13 | Atomic write pattern: temp file → `sync_all` → `rename` | `write.rs::atomic_write_via_temp` (private fn) | `write_tests.rs::partial_write_failure_preserves_old_bytes` |
-| 14 | Per-process `AtomicU64` counter for unique temp-file names | `write.rs` (module-level `static TEMP_COUNTER: AtomicU64`) | `write_tests.rs::concurrent_writes_dont_collide` |
+| #   | Finding (one-line)                                                       | Lives in (after split)                                                   | Guarded by test in                                                                          |
+| --- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| 1   | `list_dir` must validate path against home scope                         | `list.rs` (calls `scope::ensure_within_home`)                            | `list_tests.rs::rejects_outside_home_*`                                                     |
+| 2   | (Frontend `navigateUp` clamp — out of scope, lives in `useFileTree.ts`)  | n/a (covered in `SECURITY.md` § Defense Layers)                          | n/a                                                                                         |
+| 3   | Tests must use temp dirs **inside** home (not `/tmp`)                    | All `*_tests.rs` files                                                   | Test helper `scope_tests.rs::tmp_in_home()`                                                 |
+| 4   | `write_file` must reject `..` BEFORE any FS mutation                     | `scope.rs::reject_parent_refs` (called first by `write.rs`)              | `scope_tests.rs::rejects_parent_refs_*` + `write_tests.rs::rejects_traversal_before_mkdir`  |
+| 5   | Final target path must be checked for symlink (no `fs::write` follow)    | `write.rs` (uses `scope::open_nofollow`)                                 | `write_tests.rs::rejects_symlink_at_target`                                                 |
+| 6   | `read_file` must use `O_NOFOLLOW` / `FILE_FLAG_OPEN_REPARSE_POINT`       | `read.rs` (uses `scope::open_nofollow`)                                  | `read_tests.rs::rejects_symlink_target_unix`, `..._windows`                                 |
+| 7   | TOCTOU between `symlink_metadata` and `fs::write` — kernel-level refusal | `scope::open_nofollow` (single source for both `read.rs` and `write.rs`) | `scope_tests.rs::open_nofollow_*`                                                           |
+| 8   | Windows must set `FILE_FLAG_OPEN_REPARSE_POINT`                          | `scope::open_nofollow` (Windows arm)                                     | `scope_tests.rs::open_nofollow_windows_*`                                                   |
+| 9   | Windows post-open metadata check (reject if landed on symlink)           | `scope::open_nofollow` (post-open guard inside the helper)               | `scope_tests.rs::open_nofollow_windows_post_check`                                          |
+| 10  | After ancestor canon walk, `resolved_parent` must be re-canonicalized    | `scope::canonicalize_within_home` (per-segment loop)                     | `scope_tests.rs::intermediate_symlink_race`, `write_tests.rs::intermediate_symlink_blocked` |
+| 11  | Per-segment `mkdir` loop with canon-after-each (cap blast radius)        | `scope::canonicalize_within_home`                                        | `scope_tests.rs::per_segment_mkdir_caps_blast_radius`                                       |
+| 12  | `mkdir` per-segment must swallow `ErrorKind::AlreadyExists`              | `scope::canonicalize_within_home` (the explicit `match` block)           | `scope_tests.rs::mkdir_already_exists_is_benign`                                            |
+| 13  | Atomic write pattern: temp file → `sync_all` → `rename`                  | `write.rs::atomic_write_via_temp` (private fn)                           | `write_tests.rs::partial_write_failure_preserves_old_bytes`                                 |
+| 14  | Per-process `AtomicU64` counter for unique temp-file names               | `write.rs` (module-level `static TEMP_COUNTER: AtomicU64`)               | `write_tests.rs::concurrent_writes_dont_collide`                                            |
 
 ### Code quality protections from this map
 

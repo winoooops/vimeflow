@@ -72,6 +72,7 @@ git branch --show-current
 ```
 
 Expected:
+
 - `On branch refactor/filesystem-module-split`
 - Working tree clean (only the previously-committed spec file exists)
 
@@ -145,6 +146,7 @@ This import MUST continue to resolve after every commit. Breaking it means `mod.
 **Goal:** Move the 15 tests out of `commands.rs` into a `tests/` sub-module with one file per command. Production code in `commands.rs` is unchanged. After this task, `commands.rs` drops from 864 → ~489 lines.
 
 **Files:**
+
 - Create: `src-tauri/src/filesystem/tests/mod.rs`
 - Create: `src-tauri/src/filesystem/tests/list_tests.rs`
 - Create: `src-tauri/src/filesystem/tests/read_tests.rs`
@@ -725,6 +727,7 @@ git branch --show-current
 ```
 
 Expected:
+
 - Branch: `refactor/filesystem-module-split`
 - Latest commit: the one just created
 - Previous commit: `91365fa docs: filesystem module refactor design (#40)`
@@ -736,6 +739,7 @@ Expected:
 **Goal:** Pull the shared sandbox primitives (`expand_home`, `reject_parent_refs`, `canonicalize_within_home`, `ensure_within_home`, `open_nofollow`, plus a `home_canonical` helper) out of `commands.rs` into a new `scope.rs` file. `commands.rs` becomes a thin caller of these helpers. No behavior change. All 15 tests still pass. Also add 3 new unit tests for the scope helpers directly.
 
 **Files:**
+
 - Create: `src-tauri/src/filesystem/scope.rs`
 - Create: `src-tauri/src/filesystem/tests/scope_tests.rs`
 - Modify: `src-tauri/src/filesystem/mod.rs` (add `mod scope;`)
@@ -1476,6 +1480,7 @@ npm run dev
 ```
 
 In a second terminal (or Tauri devtools), manually verify:
+
 1. File explorer lists files from `$HOME`
 2. Clicking a file opens it in the editor (exercises `read_file`)
 3. Saving the editor writes it back (exercises `write_file`)
@@ -1528,6 +1533,7 @@ EOF
 **Goal:** Move each `#[tauri::command]` handler into its own file. `commands.rs` is deleted. `mod.rs` re-exports the same three public names, so `src-tauri/src/lib.rs` sees no change. All 18 tests still pass.
 
 **Files:**
+
 - Create: `src-tauri/src/filesystem/list.rs`
 - Create: `src-tauri/src/filesystem/read.rs`
 - Create: `src-tauri/src/filesystem/write.rs`
@@ -1904,6 +1910,7 @@ wc -l src-tauri/src/filesystem/list.rs \
 ```
 
 Expected:
+
 - `list.rs`: ~70 lines
 - `read.rs`: ~45 lines
 - `write.rs`: ~140 lines
@@ -1961,6 +1968,7 @@ EOF
 **Goal:** Document the threat model in `src-tauri/src/filesystem/SECURITY.md` and add a short `//!` pointer in `mod.rs`. Pure documentation — no Rust code changes beyond the doc comment.
 
 **Files:**
+
 - Create: `src-tauri/src/filesystem/SECURITY.md`
 - Modify: `src-tauri/src/filesystem/mod.rs` (add `//!` doc comment at top)
 
@@ -1970,7 +1978,7 @@ EOF
 
 Create the file with this exact content (long but all hand-written — no placeholders):
 
-````markdown
+```markdown
 # Vimeflow Filesystem Sandbox — Security Model
 
 > **Read this before modifying anything in `src-tauri/src/filesystem/`.**
@@ -2015,30 +2023,30 @@ inlined into `list.rs` / `read.rs` / `write.rs` the files will silently
 diverge on the next review round (see finding #9 in the review
 knowledge base for the exact way this already happened once).
 
-| Primitive | Where | What it prevents |
-|---|---|---|
-| `reject_parent_refs` | `scope.rs` | Lexical `..` in user input |
-| `home_canonical` | `scope.rs` | Stale `$HOME` resolution |
-| `ensure_within_home` | `scope.rs` | Containment check after canonicalization |
-| `canonicalize_within_home` | `scope.rs` | Walk-up + per-segment mkdir loop; symlink escapes on existing or racing segments |
-| `open_nofollow` | `scope.rs` | Symlink races on the leaf; Unix `O_NOFOLLOW` + Windows `FILE_FLAG_OPEN_REPARSE_POINT` + post-open metadata check |
-| Atomic temp-file + rename | `write.rs` | Partial writes, mid-write replacement |
-| `WRITE_FILE_TMP_COUNTER` (per-process `AtomicU64`) | `write.rs` | Temp-file name collisions under concurrency |
+| Primitive                                          | Where      | What it prevents                                                                                                 |
+| -------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------- |
+| `reject_parent_refs`                               | `scope.rs` | Lexical `..` in user input                                                                                       |
+| `home_canonical`                                   | `scope.rs` | Stale `$HOME` resolution                                                                                         |
+| `ensure_within_home`                               | `scope.rs` | Containment check after canonicalization                                                                         |
+| `canonicalize_within_home`                         | `scope.rs` | Walk-up + per-segment mkdir loop; symlink escapes on existing or racing segments                                 |
+| `open_nofollow`                                    | `scope.rs` | Symlink races on the leaf; Unix `O_NOFOLLOW` + Windows `FILE_FLAG_OPEN_REPARSE_POINT` + post-open metadata check |
+| Atomic temp-file + rename                          | `write.rs` | Partial writes, mid-write replacement                                                                            |
+| `WRITE_FILE_TMP_COUNTER` (per-process `AtomicU64`) | `write.rs` | Temp-file name collisions under concurrency                                                                      |
 
 ## Test Coverage Map
 
 Each primitive has a regression test. Reviewers cross-reference this
 map before approving changes to the module.
 
-| Primitive | Tests |
-|---|---|
-| `reject_parent_refs` | `scope_tests::rejects_parent_refs_basic`, `write_tests::write_file_rejects_traversal_into_sibling_of_home` |
-| `canonicalize_within_home` (happy path) | `scope_tests::canonicalize_within_home_resolves_nested_nonexistent`, `write_tests::write_file_creates_parent_dirs` |
-| `canonicalize_within_home` (rejection) | `scope_tests::canonicalize_within_home_rejects_escape`, `write_tests::write_file_rejects_path_outside_home`, `write_tests::write_file_refuses_intermediate_symlink_escape` |
-| `ensure_within_home` | `list_tests::list_dir_*`, `read_tests::read_file_rejects_path_outside_home` |
-| `open_nofollow` (Unix) | `read_tests::read_file_refuses_to_follow_symlink_escaping_home`, `write_tests::write_file_refuses_to_follow_symlink_escaping_home`, `write_tests::write_file_refuses_symlink_even_to_in_home_target` |
-| `open_nofollow` (Windows) | Currently uncovered — Windows CI is not yet running these tests. Tracked in follow-up (see Deferred Work below). |
-| Atomic write + counter | `write_tests::write_file_creates_file`, `write_tests::write_file_overwrites_existing` |
+| Primitive                               | Tests                                                                                                                                                                                                |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reject_parent_refs`                    | `scope_tests::rejects_parent_refs_basic`, `write_tests::write_file_rejects_traversal_into_sibling_of_home`                                                                                           |
+| `canonicalize_within_home` (happy path) | `scope_tests::canonicalize_within_home_resolves_nested_nonexistent`, `write_tests::write_file_creates_parent_dirs`                                                                                   |
+| `canonicalize_within_home` (rejection)  | `scope_tests::canonicalize_within_home_rejects_escape`, `write_tests::write_file_rejects_path_outside_home`, `write_tests::write_file_refuses_intermediate_symlink_escape`                           |
+| `ensure_within_home`                    | `list_tests::list_dir_*`, `read_tests::read_file_rejects_path_outside_home`                                                                                                                          |
+| `open_nofollow` (Unix)                  | `read_tests::read_file_refuses_to_follow_symlink_escaping_home`, `write_tests::write_file_refuses_to_follow_symlink_escaping_home`, `write_tests::write_file_refuses_symlink_even_to_in_home_target` |
+| `open_nofollow` (Windows)               | Currently uncovered — Windows CI is not yet running these tests. Tracked in follow-up (see Deferred Work below).                                                                                     |
+| Atomic write + counter                  | `write_tests::write_file_creates_file`, `write_tests::write_file_overwrites_existing`                                                                                                                |
 
 ### Findings map
 
@@ -2096,7 +2104,7 @@ compile unit today.
 
 **Rationale:** `cargo fuzz` requires nightly Rust and adds CI
 complexity. Hand-written regression tests cover all currently-known
-attack classes. Fuzz pays off *after* the module split — fuzzing
+attack classes. Fuzz pays off _after_ the module split — fuzzing
 `write.rs` in isolation yields higher signal than fuzzing a
 mixed-concerns file. Fuzz findings deserve their own PR narrative
 (one finding per commit) rather than being buried in a refactor.
@@ -2145,7 +2153,7 @@ For reviewers touching this module, run through each item:
 - PR #38 review history: the commits with messages starting
   `fix: address Claude review round N` are the raw audit trail this
   document crystallizes.
-````
+```
 
 ### Step 2: Update `mod.rs` with `//!` doc comment
 

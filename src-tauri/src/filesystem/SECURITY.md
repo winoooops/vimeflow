@@ -42,30 +42,30 @@ inlined into `list.rs` / `read.rs` / `write.rs` the files will silently
 diverge on the next review round (see finding #9 in the review
 knowledge base for the exact way this already happened once).
 
-| Primitive | Where | What it prevents |
-|---|---|---|
-| `reject_parent_refs` | `scope.rs` | Lexical `..` in user input |
-| `home_canonical` | `scope.rs` | Stale `$HOME` resolution |
-| `ensure_within_home` | `scope.rs` | Containment check after canonicalization |
-| `canonicalize_within_home` | `scope.rs` | Walk-up + per-segment mkdir loop; symlink escapes on existing or racing segments |
-| `open_nofollow` | `scope.rs` | Symlink races on the leaf; Unix `O_NOFOLLOW` + Windows `FILE_FLAG_OPEN_REPARSE_POINT` + post-open metadata check |
-| Atomic temp-file + rename | `write.rs` | Partial writes, mid-write replacement |
-| `WRITE_FILE_TMP_COUNTER` (per-process `AtomicU64`) | `write.rs` | Temp-file name collisions under concurrency |
+| Primitive                                          | Where      | What it prevents                                                                                                 |
+| -------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------- |
+| `reject_parent_refs`                               | `scope.rs` | Lexical `..` in user input                                                                                       |
+| `home_canonical`                                   | `scope.rs` | Stale `$HOME` resolution                                                                                         |
+| `ensure_within_home`                               | `scope.rs` | Containment check after canonicalization                                                                         |
+| `canonicalize_within_home`                         | `scope.rs` | Walk-up + per-segment mkdir loop; symlink escapes on existing or racing segments                                 |
+| `open_nofollow`                                    | `scope.rs` | Symlink races on the leaf; Unix `O_NOFOLLOW` + Windows `FILE_FLAG_OPEN_REPARSE_POINT` + post-open metadata check |
+| Atomic temp-file + rename                          | `write.rs` | Partial writes, mid-write replacement                                                                            |
+| `WRITE_FILE_TMP_COUNTER` (per-process `AtomicU64`) | `write.rs` | Temp-file name collisions under concurrency                                                                      |
 
 ## Test Coverage Map
 
 Each primitive has a regression test. Reviewers cross-reference this
 map before approving changes to the module.
 
-| Primitive | Tests |
-|---|---|
-| `reject_parent_refs` | `scope_tests::rejects_parent_refs_basic`, `write_tests::write_file_rejects_traversal_into_sibling_of_home` |
-| `canonicalize_within_home` (happy path) | `scope_tests::canonicalize_within_home_resolves_nested_nonexistent`, `write_tests::write_file_creates_parent_dirs` |
-| `canonicalize_within_home` (rejection) | `scope_tests::canonicalize_within_home_rejects_escape`, `write_tests::write_file_rejects_path_outside_home`, `write_tests::write_file_refuses_intermediate_symlink_escape` |
-| `ensure_within_home` | `list_tests::list_dir_*`, `read_tests::read_file_rejects_path_outside_home` |
-| `open_nofollow` (Unix) | `read_tests::read_file_refuses_to_follow_symlink_escaping_home`, `write_tests::write_file_refuses_to_follow_symlink_escaping_home`, `write_tests::write_file_refuses_symlink_even_to_in_home_target` |
-| `open_nofollow` (Windows) | Currently uncovered — Windows CI is not yet running these tests. Tracked in follow-up (see Deferred Work below). |
-| Atomic write + counter | `write_tests::write_file_creates_file`, `write_tests::write_file_overwrites_existing` |
+| Primitive                               | Tests                                                                                                                                                                                                |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reject_parent_refs`                    | `scope_tests::rejects_parent_refs_basic`, `write_tests::write_file_rejects_traversal_into_sibling_of_home`                                                                                           |
+| `canonicalize_within_home` (happy path) | `scope_tests::canonicalize_within_home_resolves_nested_nonexistent`, `write_tests::write_file_creates_parent_dirs`                                                                                   |
+| `canonicalize_within_home` (rejection)  | `scope_tests::canonicalize_within_home_rejects_escape`, `write_tests::write_file_rejects_path_outside_home`, `write_tests::write_file_refuses_intermediate_symlink_escape`                           |
+| `ensure_within_home`                    | `list_tests::list_dir_*`, `read_tests::read_file_rejects_path_outside_home`                                                                                                                          |
+| `open_nofollow` (Unix)                  | `read_tests::read_file_refuses_to_follow_symlink_escaping_home`, `write_tests::write_file_refuses_to_follow_symlink_escaping_home`, `write_tests::write_file_refuses_symlink_even_to_in_home_target` |
+| `open_nofollow` (Windows)               | Currently uncovered — Windows CI is not yet running these tests. Tracked in follow-up (see Deferred Work below).                                                                                     |
+| Atomic write + counter                  | `write_tests::write_file_creates_file`, `write_tests::write_file_overwrites_existing`                                                                                                                |
 
 ### Findings map
 
@@ -123,7 +123,7 @@ compile unit today.
 
 **Rationale:** `cargo fuzz` requires nightly Rust and adds CI
 complexity. Hand-written regression tests cover all currently-known
-attack classes. Fuzz pays off *after* the module split — fuzzing
+attack classes. Fuzz pays off _after_ the module split — fuzzing
 `write.rs` in isolation yields higher signal than fuzzing a
 mixed-concerns file. Fuzz findings deserve their own PR narrative
 (one finding per commit) rather than being buried in a refactor.
