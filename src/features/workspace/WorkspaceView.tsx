@@ -144,11 +144,16 @@ export const WorkspaceView = (): ReactElement => {
   // "Failed to save: ...", misleading the user into thinking their
   // edits were lost when they were actually on disk.
   //
-  // Memoized with useCallback so the dialog's focus-trap useEffect
-  // (which depends on onCancel) doesn't re-bind its keydown listener
-  // on every parent render while the dialog is open — re-binding
-  // briefly opens a window where an Escape or Tab keystroke could
-  // slip past the trap.
+  // Memoized with useCallback for consistency with the rest of the
+  // handler family. Note: `editorBuffer` is a plain object rebuilt on
+  // every `useEditorBuffer` render (which happens on every keystroke
+  // since `currentContent` is state), so this callback's identity IS
+  // unstable across keystrokes. That's currently harmless because the
+  // dialog captures focus while open — the user can't type in the
+  // editor to trigger a re-render of WorkspaceView. If `useEditorBuffer`
+  // is later refactored to return stable callbacks (e.g. via useMemo
+  // on the return object), destructure { saveFile, openFile } into the
+  // deps here to lock the handler identity.
   const handleSave = useCallback(async (): Promise<void> => {
     try {
       await editorBuffer.saveFile()

@@ -1,7 +1,13 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::types::*;
+
+/// Per-process monotonic counter for write_file temp-file names. Ensures
+/// concurrent saves to the same target don't collide on `create_new(true)`
+/// (which would fail with EEXIST even though both calls are legitimate).
+static WRITE_FILE_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Expand ~ to home directory
 fn expand_home(path: &str) -> PathBuf {
@@ -385,11 +391,20 @@ pub fn write_file(request: WriteFileRequest) -> Result<(), String> {
     // bounded to the home sandbox.
     use std::io::Write;
 
-    let tmp_name = format!(".{}.vimeflow.tmp.{}", {
-        // Use the target file name as the temp-file prefix so it lands in
-        // the same directory (required for rename atomicity on POSIX).
-        file_name.to_string_lossy()
-    }, std::process::id());
+    // Name the temp file with `<target>.vimeflow.tmp.<pid>.<counter>`.
+    // The per-process atomic counter makes the name unique even if two
+    // concurrent write_file IPC calls race to save the same target —
+    // without it, both would collide on `create_new(true)` and the
+    // second would surface a confusing `File exists` error even though
+    // the user's data is safe. (Rapid `:w :w` from vim is a common
+    // trigger since the callback fires on every keypress.)
+    let tmp_counter = WRITE_FILE_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp_name = format!(
+        ".{}.vimeflow.tmp.{}.{}",
+        file_name.to_string_lossy(),
+        std::process::id(),
+        tmp_counter
+    );
     let tmp_path = resolved_parent.join(&tmp_name);
 
     let mut options = std::fs::OpenOptions::new();
