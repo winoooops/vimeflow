@@ -20,6 +20,7 @@ export const UnsavedChangesDialog = ({
   onDiscard,
   onCancel,
 }: UnsavedChangesDialogProps): ReactElement | null => {
+  const labelId = useId()
   const descriptionId = useId()
   const saveButtonRef = useRef<HTMLButtonElement | null>(null)
   const discardButtonRef = useRef<HTMLButtonElement | null>(null)
@@ -97,7 +98,7 @@ export const UnsavedChangesDialog = ({
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Unsaved changes dialog"
+          aria-labelledby={labelId}
           aria-describedby={descriptionId}
           className="fixed inset-0 z-[100] flex items-center justify-center"
         >
@@ -125,7 +126,10 @@ export const UnsavedChangesDialog = ({
           >
             {/* Header */}
             <div className="px-6 py-4 border-b border-surface-container-low/30">
-              <h2 className="text-lg font-manrope font-semibold text-on-surface">
+              <h2
+                id={labelId}
+                className="text-lg font-manrope font-semibold text-on-surface"
+              >
                 Unsaved Changes
               </h2>
             </div>

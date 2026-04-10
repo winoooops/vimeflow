@@ -124,6 +124,14 @@ export const WorkspaceView = (): ReactElement => {
   // briefly opens a window where an Escape or Tab keystroke could
   // slip past the trap.
   const handleSave = useCallback(async (): Promise<void> => {
+    // Capture `pendingFilePath` synchronously BEFORE the first await.
+    // If the user clicks the backdrop (handleCancel) while saveFile is
+    // in flight, the state is cleared to null — but this handler's
+    // stale closure would still read the old value and open the
+    // pending file anyway, contradicting the cancellation. Mirror
+    // handleDiscard's capture-before-await pattern.
+    const pendingPath = pendingFilePath
+
     try {
       await editorBuffer.saveFile()
     } catch (error: unknown) {
@@ -143,14 +151,14 @@ export const WorkspaceView = (): ReactElement => {
     setPendingFilePath(null)
     setSaveError(null)
 
-    if (pendingFilePath) {
+    if (pendingPath) {
       try {
-        await editorBuffer.openFile(pendingFilePath)
+        await editorBuffer.openFile(pendingPath)
         setFileError(null)
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error)
         setFileError(
-          `Saved current file. Could not open ${pendingFilePath}: ${message}`
+          `Saved current file. Could not open ${pendingPath}: ${message}`
         )
       }
     }

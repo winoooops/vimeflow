@@ -138,11 +138,17 @@ describe('UnsavedChangesDialog', () => {
       />
     )
 
-    // Verify dialog is rendered with correct accessibility attributes
-    const dialog = screen.getByRole('dialog')
+    // The dialog advertises itself via aria-labelledby (pointing at
+    // the visible <h2>) and aria-describedby (pointing at the body
+    // paragraph). Using getByRole('dialog', { name, description })
+    // verifies the accessible name/description computation end-to-end
+    // without touching the DOM directly.
+    const dialog = screen.getByRole('dialog', {
+      name: 'Unsaved Changes',
+      description: /example\.ts/,
+    })
     expect(dialog).toBeInTheDocument()
     expect(dialog).toHaveAttribute('aria-modal', 'true')
-    expect(dialog).toHaveAttribute('aria-label', 'Unsaved changes dialog')
   })
 
   test('renders three buttons in correct order', () => {

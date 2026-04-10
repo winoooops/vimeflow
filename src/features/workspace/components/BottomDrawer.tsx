@@ -34,14 +34,18 @@ const BottomDrawer = ({
   const COLLAPSED_HEIGHT = 48 // Just the tab bar
 
   // Resizable hook - default 400px (50% of 800px), min 150px, max 640px (80% of 800px)
+  const DRAWER_MIN = 150
+  const DRAWER_MAX = 640
+
   const {
     size: height,
     isDragging,
     handleMouseDown,
+    adjustBy,
   } = useResizable({
     initial: 400,
-    min: 150,
-    max: 640,
+    min: DRAWER_MIN,
+    max: DRAWER_MAX,
     direction: 'vertical',
     // BottomDrawer is bottom-anchored with its drag handle on the TOP edge,
     // so dragging UP (clientY decreases) should GROW the panel, not shrink
@@ -58,14 +62,41 @@ const BottomDrawer = ({
       style={{ height: `${effectiveHeight}px` }}
       className="shrink-0 bg-slate-900/95 backdrop-blur-2xl border-t border-white/5 flex flex-col z-30 relative"
     >
-      {/* Resize Handle - Top Edge */}
+      {/* Resize Handle - Top Edge.
+          role="separator" + aria-orientation/valuenow/valuemin/valuemax
+          exposes the handle to assistive tech as a sizing widget.
+          tabIndex=0 + ArrowUp/ArrowDown keyboard handlers give
+          keyboard-only and switch-access users a way to adjust the
+          drawer height in 20px steps (WCAG 2.5.1). */}
       <div
         data-testid="resize-handle"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize drawer"
+        aria-valuenow={height}
+        aria-valuemin={DRAWER_MIN}
+        aria-valuemax={DRAWER_MAX}
+        tabIndex={0}
         onMouseDown={handleMouseDown}
-        className={`absolute top-0 left-0 right-0 h-1 cursor-ns-resize hover:bg-primary/20 transition-colors ${
+        onKeyDown={(e) => {
+          const step = e.shiftKey ? 100 : 20
+          if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            adjustBy(step) // drag UP grows (matches `invert: true`)
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            adjustBy(-step)
+          } else if (e.key === 'Home') {
+            e.preventDefault()
+            adjustBy(DRAWER_MIN - height)
+          } else if (e.key === 'End') {
+            e.preventDefault()
+            adjustBy(DRAWER_MAX - height)
+          }
+        }}
+        className={`absolute top-0 left-0 right-0 h-1 cursor-ns-resize hover:bg-primary/20 focus:bg-primary/40 focus:outline-none transition-colors ${
           isDragging ? 'bg-primary/30' : ''
         }`}
-        aria-label="Resize drawer"
       />
 
       {/* Tab Bar */}
