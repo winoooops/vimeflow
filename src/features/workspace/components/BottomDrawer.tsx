@@ -1,5 +1,4 @@
 import { type ReactElement, useState } from 'react'
-import type { IFileSystemService } from '../../files/services/fileSystemService'
 import { CodeEditor } from '../../editor/components/CodeEditor'
 import { useResizable } from '../hooks/useResizable'
 
@@ -7,11 +6,10 @@ type TabType = 'editor' | 'diff'
 
 interface BottomDrawerProps {
   selectedFilePath: string | null
-  fileSystemService: IFileSystemService
+  /** Current buffer content, owned by the parent `useEditorBuffer`. */
+  content: string
   onContentChange?: (content: string) => void
   onSave?: () => void
-  /** Surfaces a file-load error from CodeEditor to the workspace. */
-  onLoadError?: (message: string) => void
   isDirty?: boolean
 }
 
@@ -26,10 +24,9 @@ interface BottomDrawerProps {
  */
 const BottomDrawer = ({
   selectedFilePath,
-  fileSystemService,
+  content,
   onContentChange = undefined,
   onSave = undefined,
-  onLoadError = undefined,
   isDirty = false,
 }: BottomDrawerProps): ReactElement => {
   const [activeTab, setActiveTab] = useState<TabType>('editor')
@@ -131,10 +128,9 @@ const BottomDrawer = ({
           <div data-testid="editor-panel" className="flex flex-1">
             <CodeEditor
               filePath={selectedFilePath}
-              fileSystemService={fileSystemService}
+              content={content}
               onContentChange={onContentChange}
               onSave={onSave}
-              onLoadError={onLoadError}
               isDirty={isDirty}
             />
           </div>

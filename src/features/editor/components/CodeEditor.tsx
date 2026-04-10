@@ -1,6 +1,5 @@
 import type { ReactElement } from 'react'
-import { useEffect, useRef, useState } from 'react'
-import type { IFileSystemService } from '../../files/services/fileSystemService'
+import { useEffect } from 'react'
 import { useCodeMirror } from '../hooks/useCodeMirror'
 import { useVimMode } from '../hooks/useVimMode'
 import { VimStatusBar } from './VimStatusBar'
@@ -8,112 +7,61 @@ import { getLanguageExtension } from '../services/languageService'
 
 interface CodeEditorProps {
   filePath: string | null
-  fileSystemService: IFileSystemService
+  /**
+   * Current file content. Sourced from the single owning buffer
+   * (`useEditorBuffer.currentContent` in `WorkspaceView`). CodeEditor is a
+   * presentational wrapper — it does NOT fetch files itself. This avoids
+   * the double-read race where CodeEditor and useEditorBuffer each called
+   * `fileSystemService.readFile` independently and occasionally disagreed,
+   * which manifested as spurious dirty state.
+   */
+  content: string
   onContentChange?: (content: string) => void
   onSave?: () => void
-  /**
-   * Reports a file-load failure to the parent so it can surface it in the
-   * workspace UI. CodeEditor no longer logs to console — errors are routed
-   * through this callback (or swallowed silently if the callback is not
-   * provided) so the user always sees what went wrong.
-   */
-  onLoadError?: (message: string) => void
   isDirty?: boolean
 }
 
 export const CodeEditor = ({
   filePath,
-  fileSystemService,
+  content,
   onContentChange = undefined,
   onSave = undefined,
-  onLoadError = undefined,
   isDirty = false,
 }: CodeEditorProps): ReactElement => {
-  const [fileContent, setFileContent] = useState<string>('')
-  const [loadedFilePath, setLoadedFilePath] = useState<string | null>(null)
-
-  // Keep the latest onLoadError reference without including it in the load
-  // effect's deps (the callback identity changes on every parent render and
-  // would cause the file to reload on each keystroke otherwise).
-  const onLoadErrorRef = useRef(onLoadError)
-  useEffect(() => {
-    onLoadErrorRef.current = onLoadError
-  }, [onLoadError])
-
-  // Load file when filePath changes.
-  //
-  // A `cancelled` flag guards against out-of-order async responses: if the
-  // user clicks file A and then quickly clicks file B, a slow A read that
-  // resolves *after* B would otherwise overwrite B's content and cause
-  // subsequent edits to apply to the wrong file. The cleanup function sets
-  // the flag so stale completions become no-ops.
-  useEffect(() => {
-    if (!filePath) {
-      setFileContent('')
-      setLoadedFilePath(null)
-
-      return
-    }
-
-    let cancelled = false
-
-    const loadFile = async (): Promise<void> => {
-      try {
-        const content = await fileSystemService.readFile(filePath)
-        if (cancelled) {
-          return
-        }
-        setFileContent(content)
-        setLoadedFilePath(filePath)
-      } catch (error: unknown) {
-        if (cancelled) {
-          return
-        }
-        const message = error instanceof Error ? error.message : String(error)
-        onLoadErrorRef.current?.(`Failed to load ${filePath}: ${message}`)
-      }
-    }
-
-    void loadFile()
-
-    return (): void => {
-      cancelled = true
-    }
-  }, [filePath, fileSystemService])
-
-  // Get language extension from filename
+  // Language extension is driven off the filename only.
   const fileName = filePath ? (filePath.split('/').pop() ?? '') : ''
   const language = fileName ? getLanguageExtension(fileName) : null
 
-  // Setup CodeMirror with vim mode
+  // `onSave` is required for vim :w to work. CodeEditor used to fall back
+  // to writing via a stashed fileSystemService if the caller forgot to
+  // pass onSave, but that path silently swallowed write errors and
+  // bypassed the error-surfacing improvements in WorkspaceView. We now
+  // require the caller to own the save lifecycle.
+  const handleSave = (): void => {
+    onSave?.()
+  }
+
   const { editorView, updateContent, setContainer } = useCodeMirror({
-    initialContent: fileContent,
+    initialContent: content,
     language,
-    onSave: () => {
-      if (onSave) {
-        onSave()
-      } else if (loadedFilePath && editorView) {
-        const currentContent = editorView.state.doc.toString()
-        void fileSystemService.writeFile(loadedFilePath, currentContent)
-      }
-    },
+    onSave: handleSave,
     onChange: onContentChange,
   })
 
-  // Track vim mode
   const vimMode = useVimMode(editorView)
 
-  // Update editor content when file content changes.
-  // Gate on `loadedFilePath` (not content truthiness) so zero-byte files
-  // correctly clear the buffer — otherwise the editor would show the previous
-  // file's content and a subsequent save would overwrite the wrong file.
+  // Push prop content into CodeMirror whenever the caller updates it
+  // (e.g. a new file is opened and `useEditorBuffer` swaps the buffer
+  // content). `updateContent` no-ops when the CodeMirror doc already
+  // matches, so echo-back from user edits (typing → onContentChange →
+  // buffer state → content prop → updateContent) does not loop.
   useEffect(() => {
-    if (loadedFilePath === null) {
+    if (filePath === null) {
       return
     }
 
-    updateContent(fileContent)
-  }, [fileContent, loadedFilePath, updateContent])
+    updateContent(content)
+  }, [content, filePath, updateContent])
 
   if (!filePath) {
     return (

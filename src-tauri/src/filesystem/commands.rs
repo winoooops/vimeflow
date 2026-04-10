@@ -260,8 +260,29 @@ pub fn write_file(request: WriteFileRequest) -> Result<(), String> {
 
     log::info!("Writing file: {}", target.display());
 
-    fs::write(&target, &request.content)
-        .map_err(|e| format!("failed to write file '{}': {}", target.display(), e))
+    // Atomic write via OpenOptions — on Unix we also pass O_NOFOLLOW so
+    // the kernel refuses to follow a symlink at `target`, closing the
+    // TOCTOU window between our `symlink_metadata` check above and the
+    // actual write. A concurrent `unlink`+`symlink` race would cause
+    // `open` to return ELOOP rather than escaping the sandbox.
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // O_NOFOLLOW: if the final path component is a symlink, fail with ELOOP.
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+
+    let mut file = options
+        .open(&target)
+        .map_err(|e| format!("failed to open '{}' for writing: {}", target.display(), e))?;
+    file.write_all(request.content.as_bytes())
+        .map_err(|e| format!("failed to write file '{}': {}", target.display(), e))?;
+
+    Ok(())
 }
 
 #[cfg(test)]

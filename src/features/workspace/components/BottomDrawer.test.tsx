@@ -57,71 +57,41 @@ describe('BottomDrawer', () => {
   })
 
   test('accepts selectedFilePath prop', () => {
-    render(
-      <BottomDrawer
-        selectedFilePath="/home/user/test.ts"
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<BottomDrawer selectedFilePath="/home/user/test.ts" content="" />)
 
     expect(screen.getByTestId('bottom-drawer')).toBeInTheDocument()
   })
 
   test('passes selectedFilePath to CodeEditor', () => {
-    render(
-      <BottomDrawer
-        selectedFilePath="/home/user/test.ts"
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<BottomDrawer selectedFilePath="/home/user/test.ts" content="" />)
 
     // CodeEditor should be rendered (not "No file selected" message)
     expect(screen.queryByTestId('no-file-selected')).not.toBeInTheDocument()
   })
 
   test('shows CodeEditor when file is selected', () => {
-    render(
-      <BottomDrawer
-        selectedFilePath="/home/user/test.ts"
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<BottomDrawer selectedFilePath="/home/user/test.ts" content="" />)
 
     // Check that CodeMirror container is rendered
     expect(screen.getByTestId('codemirror-container')).toBeInTheDocument()
   })
 
   test('shows "No file selected" when selectedFilePath is null', () => {
-    render(
-      <BottomDrawer
-        selectedFilePath={null}
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<BottomDrawer selectedFilePath={null} content="" />)
 
     expect(screen.getByTestId('no-file-selected')).toBeInTheDocument()
     expect(screen.getByText(/No file selected/i)).toBeInTheDocument()
   })
 
   test('renders resize handle at top edge', () => {
-    render(
-      <BottomDrawer
-        selectedFilePath={null}
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<BottomDrawer selectedFilePath={null} content="" />)
 
     const resizeHandle = screen.getByTestId('resize-handle')
     expect(resizeHandle).toBeInTheDocument()
   })
 
   test('has dynamic height from useResizable hook', () => {
-    render(
-      <BottomDrawer
-        selectedFilePath={null}
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<BottomDrawer selectedFilePath={null} content="" />)
 
     const drawer = screen.getByTestId('bottom-drawer')
     // Should have inline style with height (default 400px)
@@ -129,12 +99,7 @@ describe('BottomDrawer', () => {
   })
 
   test('resize handle triggers mouse down handler', () => {
-    render(
-      <BottomDrawer
-        selectedFilePath={null}
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<BottomDrawer selectedFilePath={null} content="" />)
 
     const resizeHandle = screen.getByTestId('resize-handle')
     fireEvent.mouseDown(resizeHandle, { clientY: 100 })
@@ -144,12 +109,7 @@ describe('BottomDrawer', () => {
   })
 
   test('renders with Editor tab active by default', () => {
-    render(
-      <BottomDrawer
-        selectedFilePath={null}
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<BottomDrawer selectedFilePath={null} content="" />)
 
     // Editor tab should be active (has border-bottom and primary color)
     const editorTab = screen.getByRole('button', { name: /editor/i })
@@ -166,12 +126,7 @@ describe('BottomDrawer', () => {
 
   test('switches to Diff Viewer tab when clicked', async () => {
     const user = userEvent.setup()
-    render(
-      <BottomDrawer
-        selectedFilePath={null}
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<BottomDrawer selectedFilePath={null} content="" />)
 
     const diffTab = screen.getByRole('button', { name: /diff viewer/i })
     await user.click(diffTab)
@@ -188,12 +143,7 @@ describe('BottomDrawer', () => {
 
   test('displays Diff Viewer content when Diff tab is active', async () => {
     const user = userEvent.setup()
-    render(
-      <BottomDrawer
-        selectedFilePath={null}
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<BottomDrawer selectedFilePath={null} content="" />)
 
     // Switch to Diff tab
     const diffTab = screen.getByRole('button', { name: /diff viewer/i })
@@ -204,12 +154,7 @@ describe('BottomDrawer', () => {
   })
 
   test('renders collapse toggle button', () => {
-    render(
-      <BottomDrawer
-        selectedFilePath={null}
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<BottomDrawer selectedFilePath={null} content="" />)
 
     const collapseToggle = screen.getByRole('button', {
       name: /collapse|expand|keyboard_arrow/i,
@@ -218,12 +163,7 @@ describe('BottomDrawer', () => {
   })
 
   test('uses Material Symbols icons for tabs', () => {
-    render(
-      <BottomDrawer
-        selectedFilePath={null}
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<BottomDrawer selectedFilePath={null} content="" />)
 
     // Editor tab should have 'code' icon text
     const editorTab = screen.getByRole('button', { name: /editor/i })

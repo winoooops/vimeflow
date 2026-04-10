@@ -1,7 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { CodeEditor } from './CodeEditor'
-import type { IFileSystemService } from '../../files/services/fileSystemService'
 import * as useCodeMirrorModule from '../hooks/useCodeMirror'
 import * as useVimModeModule from '../hooks/useVimMode'
 import * as languageServiceModule from '../services/languageService'
@@ -12,18 +11,13 @@ vi.mock('../hooks/useCodeMirror')
 vi.mock('../hooks/useVimMode')
 vi.mock('../services/languageService')
 
-const mockFileSystemService: IFileSystemService = {
-  listDir: vi.fn(),
-  readFile: vi.fn(),
-  writeFile: vi.fn(),
-}
-
 describe('CodeEditor', () => {
   const mockEditorView = {
     destroy: vi.fn(),
     state: { doc: { toString: (): string => 'test content' } },
   }
 
+  const mockUpdateContent = vi.fn()
   const mockUseCodeMirror = vi.fn()
   const mockUseVimMode = vi.fn()
   const mockGetLanguageExtension = vi.fn()
@@ -31,10 +25,9 @@ describe('CodeEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
-    // Setup default mock implementations
     mockUseCodeMirror.mockReturnValue({
       editorView: mockEditorView,
-      updateContent: vi.fn(),
+      updateContent: mockUpdateContent,
       setContainer: vi.fn(),
     })
 
@@ -48,75 +41,33 @@ describe('CodeEditor', () => {
     vi.spyOn(languageServiceModule, 'getLanguageExtension').mockImplementation(
       mockGetLanguageExtension
     )
-
-    // Mock fileSystemService methods
-    vi.mocked(mockFileSystemService.readFile).mockResolvedValue(
-      'file content from service'
-    )
-    vi.mocked(mockFileSystemService.writeFile).mockResolvedValue()
   })
 
   test('renders empty state when no file is selected', () => {
-    render(
-      <CodeEditor filePath={null} fileSystemService={mockFileSystemService} />
-    )
+    render(<CodeEditor filePath={null} content="" />)
 
     expect(screen.getByText(/no file selected/i)).toBeInTheDocument()
   })
 
-  test('loads file content when filePath prop is provided', async () => {
-    render(
-      <CodeEditor
-        filePath="/home/user/test.ts"
-        fileSystemService={mockFileSystemService}
-      />
-    )
+  test('initializes CodeMirror with provided content and language', () => {
+    render(<CodeEditor filePath="/home/user/app.tsx" content="const x = 42" />)
 
-    await waitFor(() => {
-      expect(mockFileSystemService.readFile).toHaveBeenCalledWith(
-        '/home/user/test.ts'
-      )
-    })
+    expect(mockUseCodeMirror).toHaveBeenCalledWith(
+      expect.objectContaining({
+        initialContent: 'const x = 42',
+        language: expect.any(Object),
+      })
+    )
   })
 
-  test('initializes CodeMirror with file content and language', async () => {
-    render(
-      <CodeEditor
-        filePath="/home/user/app.tsx"
-        fileSystemService={mockFileSystemService}
-      />
-    )
+  test('detects language from filename', () => {
+    render(<CodeEditor filePath="/home/user/app.tsx" content="" />)
 
-    await waitFor(() => {
-      expect(mockUseCodeMirror).toHaveBeenCalledWith(
-        expect.objectContaining({
-          initialContent: 'file content from service',
-          language: expect.any(Object),
-        })
-      )
-    })
-  })
-
-  test('detects language from filename', async () => {
-    render(
-      <CodeEditor
-        filePath="/home/user/app.tsx"
-        fileSystemService={mockFileSystemService}
-      />
-    )
-
-    await waitFor(() => {
-      expect(mockGetLanguageExtension).toHaveBeenCalledWith('app.tsx')
-    })
+    expect(mockGetLanguageExtension).toHaveBeenCalledWith('app.tsx')
   })
 
   test('renders editor container div', () => {
-    render(
-      <CodeEditor
-        filePath="/home/user/test.ts"
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<CodeEditor filePath="/home/user/test.ts" content="" />)
 
     const container = screen.getByTestId('codemirror-container')
 
@@ -124,192 +75,129 @@ describe('CodeEditor', () => {
     expect(container).toHaveClass('flex-1')
   })
 
-  test('tracks vim mode using useVimMode hook', async () => {
+  test('tracks vim mode using useVimMode hook', () => {
     mockUseVimMode.mockReturnValue('INSERT')
 
+    render(<CodeEditor filePath="/home/user/test.ts" content="" />)
+
+    expect(mockUseVimMode).toHaveBeenCalledWith(mockEditorView)
+  })
+
+  test('passes onSave callback to useCodeMirror', () => {
+    const handleSave = vi.fn()
+
     render(
       <CodeEditor
         filePath="/home/user/test.ts"
-        fileSystemService={mockFileSystemService}
+        content=""
+        onSave={handleSave}
       />
     )
 
-    await waitFor(() => {
-      expect(mockUseVimMode).toHaveBeenCalledWith(mockEditorView)
-    })
-  })
-
-  test('passes onSave callback to useCodeMirror', async () => {
-    render(
-      <CodeEditor
-        filePath="/home/user/test.ts"
-        fileSystemService={mockFileSystemService}
-      />
+    expect(mockUseCodeMirror).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onSave: expect.any(Function),
+      })
     )
-
-    await waitFor(() => {
-      expect(mockUseCodeMirror).toHaveBeenCalledWith(
-        expect.objectContaining({
-          onSave: expect.any(Function),
-        })
-      )
-    })
   })
 
-  test('saves file when onSave is called', async () => {
-    let onSaveCallback: (() => void) | null = null
+  test('onSave prop is invoked when useCodeMirror triggers its save callback', () => {
+    const handleSave = vi.fn()
+    const captured: { onSave?: () => void } = {}
 
-    mockUseCodeMirror.mockImplementation(
-      (options: {
-        onSave: () => void
-      }): {
-        editorView: typeof mockEditorView
-        updateContent: ReturnType<typeof vi.fn>
-      } => {
-        onSaveCallback = options.onSave
+    mockUseCodeMirror.mockImplementation((options: { onSave: () => void }) => {
+      captured.onSave = options.onSave
 
-        return {
-          editorView: mockEditorView,
-          updateContent: vi.fn(),
-        }
+      return {
+        editorView: mockEditorView,
+        updateContent: mockUpdateContent,
+        setContainer: vi.fn(),
       }
-    )
+    })
 
     render(
       <CodeEditor
         filePath="/home/user/test.ts"
-        fileSystemService={mockFileSystemService}
+        content=""
+        onSave={handleSave}
       />
     )
 
-    await waitFor(() => {
-      expect(onSaveCallback).not.toBeNull()
-    })
+    // Simulate vim :w
+    captured.onSave?.()
 
-    // Call the save callback (simulates :w in vim)
-    onSaveCallback!()
-
-    await waitFor(() => {
-      expect(mockFileSystemService.writeFile).toHaveBeenCalledWith(
-        '/home/user/test.ts',
-        'test content'
-      )
-    })
+    expect(handleSave).toHaveBeenCalledTimes(1)
   })
 
-  test('reloads file when filePath prop changes', async () => {
+  test('no-ops the save callback when onSave prop is omitted', () => {
+    const captured: { onSave?: () => void } = {}
+
+    mockUseCodeMirror.mockImplementation((options: { onSave: () => void }) => {
+      captured.onSave = options.onSave
+
+      return {
+        editorView: mockEditorView,
+        updateContent: mockUpdateContent,
+        setContainer: vi.fn(),
+      }
+    })
+
+    render(<CodeEditor filePath="/home/user/test.ts" content="" />)
+
+    // Should not throw when no onSave is wired — the component must not
+    // fall back to an internal writeFile path (that path silently
+    // swallowed errors).
+    expect(() => captured.onSave?.()).not.toThrow()
+  })
+
+  test('pushes new content into CodeMirror when content prop changes', () => {
     const { rerender } = render(
-      <CodeEditor
-        filePath="/home/user/file1.ts"
-        fileSystemService={mockFileSystemService}
-      />
+      <CodeEditor filePath="/home/user/test.ts" content="hello" />
     )
 
-    await waitFor(() => {
-      expect(mockFileSystemService.readFile).toHaveBeenCalledWith(
-        '/home/user/file1.ts'
-      )
-    })
+    // The prop-sync effect should push the initial content.
+    expect(mockUpdateContent).toHaveBeenCalledWith('hello')
 
-    vi.mocked(mockFileSystemService.readFile).mockResolvedValue(
-      'content of file 2'
-    )
+    mockUpdateContent.mockClear()
 
-    rerender(
-      <CodeEditor
-        filePath="/home/user/file2.ts"
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    rerender(<CodeEditor filePath="/home/user/test.ts" content="world" />)
 
-    await waitFor(() => {
-      expect(mockFileSystemService.readFile).toHaveBeenCalledWith(
-        '/home/user/file2.ts'
-      )
-    })
+    expect(mockUpdateContent).toHaveBeenCalledWith('world')
   })
 
-  test('reports file read errors via onLoadError callback', async () => {
-    vi.mocked(mockFileSystemService.readFile).mockRejectedValue(
-      new Error('File not found')
-    )
+  test('does not push content updates when filePath is null', () => {
+    render(<CodeEditor filePath={null} content="should not push" />)
 
-    const handleLoadError = vi.fn()
-
-    render(
-      <CodeEditor
-        filePath="/home/user/missing.ts"
-        fileSystemService={mockFileSystemService}
-        onLoadError={handleLoadError}
-      />
-    )
-
-    await waitFor(() => {
-      expect(handleLoadError).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to load /home/user/missing.ts')
-      )
-    })
-
-    expect(handleLoadError).toHaveBeenCalledWith(
-      expect.stringContaining('File not found')
-    )
+    expect(mockUpdateContent).not.toHaveBeenCalled()
   })
 
-  test('does not reload when filePath changes to null', async () => {
-    const { rerender } = render(
-      <CodeEditor
-        filePath="/home/user/test.ts"
-        fileSystemService={mockFileSystemService}
-      />
-    )
-
-    await waitFor(() => {
-      expect(mockFileSystemService.readFile).toHaveBeenCalledTimes(1)
-    })
-
-    vi.clearAllMocks()
-
-    rerender(
-      <CodeEditor filePath={null} fileSystemService={mockFileSystemService} />
-    )
-
-    expect(mockFileSystemService.readFile).not.toHaveBeenCalled()
-  })
-
-  test('handles unknown file extensions', async () => {
+  test('handles unknown file extensions', () => {
     mockGetLanguageExtension.mockReturnValue(null)
 
-    render(
-      <CodeEditor
-        filePath="/home/user/file.xyz"
-        fileSystemService={mockFileSystemService}
-      />
-    )
+    render(<CodeEditor filePath="/home/user/file.xyz" content="" />)
 
-    await waitFor(() => {
-      expect(mockUseCodeMirror).toHaveBeenCalledWith(
-        expect.objectContaining({
-          language: null,
-        })
-      )
-    })
+    expect(mockUseCodeMirror).toHaveBeenCalledWith(
+      expect.objectContaining({
+        language: null,
+      })
+    )
   })
 
-  test('passes options to useCodeMirror', async () => {
+  test('passes onContentChange to useCodeMirror as onChange', () => {
+    const onContentChange = vi.fn()
+
     render(
       <CodeEditor
         filePath="/home/user/test.ts"
-        fileSystemService={mockFileSystemService}
+        content=""
+        onContentChange={onContentChange}
       />
     )
 
-    await waitFor(() => {
-      expect(mockUseCodeMirror).toHaveBeenCalledWith(
-        expect.objectContaining({
-          initialContent: expect.any(String),
-          onSave: expect.any(Function),
-        })
-      )
-    })
+    expect(mockUseCodeMirror).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onChange: onContentChange,
+      })
+    )
   })
 })

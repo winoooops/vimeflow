@@ -216,18 +216,17 @@ export const WorkspaceView = (): ReactElement => {
         {/* Bottom Drawer - Editor + Diff Viewer */}
         <BottomDrawer
           selectedFilePath={editorBuffer.filePath}
-          fileSystemService={fileSystemService}
+          content={editorBuffer.currentContent}
           onContentChange={editorBuffer.updateContent}
           onSave={() => {
             void handleVimSave()
           }}
-          onLoadError={setFileError}
           isDirty={editorBuffer.isDirty}
         />
 
-        {/* File error banner — surfaces failures from direct file open,
-            async load inside CodeEditor, and vim :w saves. Rendered at the
-            top of the main area so the user always sees what went wrong. */}
+        {/* File error banner — surfaces failures from direct file open
+            (openFileSafely) and vim :w saves (handleVimSave). Rendered at
+            the top of the main area so the user always sees what went wrong. */}
         {fileError && (
           <div
             role="alert"
@@ -251,10 +250,11 @@ export const WorkspaceView = (): ReactElement => {
       {/* Agent Activity - 360px */}
       <AgentActivity session={activeSession} />
 
-      {/* Unsaved Changes Dialog */}
+      {/* Unsaved Changes Dialog — shows the CURRENTLY dirty file, not the
+          destination the user is switching to. */}
       <UnsavedChangesDialog
         isOpen={showUnsavedDialog}
-        fileName={pendingFilePath ?? ''}
+        fileName={editorBuffer.filePath ?? ''}
         errorMessage={saveError}
         onSave={() => {
           void handleSave()
