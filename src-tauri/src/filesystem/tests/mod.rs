@@ -16,8 +16,10 @@
 use std::path::PathBuf;
 
 // Re-export command items under test
-pub(super) use super::commands::{list_dir, read_file, write_file};
+pub(super) use super::list::list_dir;
+pub(super) use super::read::read_file;
 pub(super) use super::types::{EntryType, ListDirRequest, ReadFileRequest, WriteFileRequest};
+pub(super) use super::write::write_file;
 
 // Re-export scope helpers for unit tests. Aliased with `scope_` prefix
 // so they don't collide with any command-level item also named the same.
