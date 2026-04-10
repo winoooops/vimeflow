@@ -19,6 +19,8 @@ interface CodeEditorProps {
   onContentChange?: (content: string) => void
   onSave?: () => void
   isDirty?: boolean
+  /** Render a loading overlay while an async file read is in flight. */
+  isLoading?: boolean
 }
 
 export const CodeEditor = ({
@@ -27,6 +29,7 @@ export const CodeEditor = ({
   onContentChange = undefined,
   onSave = undefined,
   isDirty = false,
+  isLoading = false,
 }: CodeEditorProps): ReactElement => {
   // Language extension is driven off the filename only. Memoize on
   // `fileName` so typing (which re-renders via onContentChange) does
@@ -86,11 +89,29 @@ export const CodeEditor = ({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div
-        ref={setContainer}
-        data-testid="codemirror-container"
-        className="flex-1 overflow-hidden"
-      />
+      <div className="relative flex-1 overflow-hidden">
+        <div
+          ref={setContainer}
+          data-testid="codemirror-container"
+          className="h-full w-full"
+        />
+        {isLoading && (
+          <div
+            role="status"
+            aria-live="polite"
+            aria-label="Loading file"
+            data-testid="code-editor-loading"
+            className="absolute inset-0 flex items-center justify-center bg-surface/70 backdrop-blur-sm z-10"
+          >
+            <div className="flex items-center gap-2 text-sm text-on-surface-variant font-inter">
+              <span className="material-symbols-outlined animate-spin text-base">
+                progress_activity
+              </span>
+              <span>Loading…</span>
+            </div>
+          </div>
+        )}
+      </div>
       <VimStatusBar vimMode={vimMode} isDirty={isDirty} />
     </div>
   )

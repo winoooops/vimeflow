@@ -72,7 +72,23 @@ describe('CodeEditor', () => {
     const container = screen.getByTestId('codemirror-container')
 
     expect(container).toBeInTheDocument()
-    expect(container).toHaveClass('flex-1')
+    // The container fills its wrapper (which is the flex-1 slot).
+    expect(container).toHaveClass('h-full')
+  })
+
+  test('renders loading overlay when isLoading is true', () => {
+    render(<CodeEditor filePath="/home/user/test.ts" content="" isLoading />)
+
+    expect(screen.getByTestId('code-editor-loading')).toBeInTheDocument()
+    expect(
+      screen.getByRole('status', { name: 'Loading file' })
+    ).toBeInTheDocument()
+  })
+
+  test('does not render loading overlay when isLoading is false', () => {
+    render(<CodeEditor filePath="/home/user/test.ts" content="" />)
+
+    expect(screen.queryByTestId('code-editor-loading')).not.toBeInTheDocument()
   })
 
   test('tracks vim mode using useVimMode hook', () => {

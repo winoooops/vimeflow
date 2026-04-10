@@ -6,6 +6,14 @@ export interface EditorBuffer {
   originalContent: string
   currentContent: string
   isDirty: boolean
+  /**
+   * True while an `openFile` IPC call is in flight. Parent components
+   * can render a loading overlay on top of the editor so users have
+   * feedback that their file click registered — the editor otherwise
+   * keeps showing the previous buffer during the round-trip, which is
+   * visually ambiguous on slow disks or permission-checked reads.
+   */
+  isLoading: boolean
   openFile: (path: string) => Promise<void>
   saveFile: () => Promise<void>
   updateContent: (content: string) => void
@@ -17,6 +25,7 @@ export const useEditorBuffer = (
   const [filePath, setFilePath] = useState<string | null>(null)
   const [originalContent, setOriginalContent] = useState<string>('')
   const [currentContent, setCurrentContent] = useState<string>('')
+  const [isLoading, setIsLoading] = useState<boolean>(false)
 
   const isDirty = currentContent !== originalContent
 
@@ -38,16 +47,26 @@ export const useEditorBuffer = (
       const requestId = openRequestIdRef.current + 1
       openRequestIdRef.current = requestId
 
-      const content = await fileSystemService.readFile(path)
+      setIsLoading(true)
+      try {
+        const content = await fileSystemService.readFile(path)
 
-      // Last-write-wins: ignore stale responses.
-      if (requestId !== openRequestIdRef.current) {
-        return
+        // Last-write-wins: ignore stale responses.
+        if (requestId !== openRequestIdRef.current) {
+          return
+        }
+
+        setFilePath(path)
+        setOriginalContent(content)
+        setCurrentContent(content)
+      } finally {
+        // Only the latest request clears the loading flag — stale
+        // responses from earlier calls must NOT flip it back to
+        // false while a newer read is still in flight.
+        if (requestId === openRequestIdRef.current) {
+          setIsLoading(false)
+        }
       }
-
-      setFilePath(path)
-      setOriginalContent(content)
-      setCurrentContent(content)
     },
     [fileSystemService]
   )
@@ -70,6 +89,7 @@ export const useEditorBuffer = (
     originalContent,
     currentContent,
     isDirty,
+    isLoading,
     openFile,
     saveFile,
     updateContent,

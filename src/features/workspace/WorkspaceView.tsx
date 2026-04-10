@@ -99,28 +99,32 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [editorBuffer])
 
-  // Handle file selection from FileExplorer
-  const handleFileSelect = (node: {
-    id: string
-    type: 'file' | 'folder'
-  }): void => {
-    // Only handle file nodes, not folders
-    if (node.type !== 'file') {
-      return
-    }
+  // Handle file selection from FileExplorer. Memoized so its identity
+  // is stable across the 4-level prop chain (WorkspaceView → Sidebar →
+  // FileExplorer → FileTree → FileTreeNode). Matches the useCallback
+  // pattern used by every other handler in this file and protects any
+  // future React.memo of the intermediate components from being
+  // invalidated on every keystroke.
+  const handleFileSelect = useCallback(
+    (node: { id: string; type: 'file' | 'folder' }): void => {
+      if (node.type !== 'file') {
+        return
+      }
 
-    const filePath = node.id
+      const filePath = node.id
 
-    // If current file has unsaved changes, show dialog
-    if (editorBuffer.isDirty) {
-      setPendingFilePath(filePath)
-      setShowUnsavedDialog(true)
+      // If current file has unsaved changes, show dialog
+      if (editorBuffer.isDirty) {
+        setPendingFilePath(filePath)
+        setShowUnsavedDialog(true)
 
-      return
-    }
+        return
+      }
 
-    void openFileSafely(filePath)
-  }
+      void openFileSafely(filePath)
+    },
+    [editorBuffer.isDirty, openFileSafely]
+  )
 
   // Save current file and open pending file.
   //
@@ -278,6 +282,7 @@ export const WorkspaceView = (): ReactElement => {
             void handleVimSave()
           }}
           isDirty={editorBuffer.isDirty}
+          isLoading={editorBuffer.isLoading}
         />
 
         {/* File error banner — surfaces failures from direct file open

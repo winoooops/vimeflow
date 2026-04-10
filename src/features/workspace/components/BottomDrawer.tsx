@@ -11,6 +11,8 @@ interface BottomDrawerProps {
   onContentChange?: (content: string) => void
   onSave?: () => void
   isDirty?: boolean
+  /** True while an async file read is in flight. */
+  isLoading?: boolean
 }
 
 /**
@@ -28,12 +30,17 @@ const BottomDrawer = ({
   onContentChange = undefined,
   onSave = undefined,
   isDirty = false,
+  isLoading = false,
 }: BottomDrawerProps): ReactElement => {
   const [activeTab, setActiveTab] = useState<TabType>('editor')
   const [isCollapsed, setIsCollapsed] = useState(false)
   const COLLAPSED_HEIGHT = 48 // Just the tab bar
 
-  // Resizable hook - default 400px (50% of 800px), min 150px, max 640px (80% of 800px)
+  // Drawer sizing is in pixels, not viewport-relative. The 400/150/640
+  // constants were chosen to feel roughly right on an 800px workspace
+  // (50% default, 19% min, 80% cap) but they are HARD-CODED — resizing
+  // the window does not change the cap. Update these values directly
+  // if the layout targets a different default viewport.
   const DRAWER_MIN = 150
   const DRAWER_MAX = 640
 
@@ -186,6 +193,7 @@ const BottomDrawer = ({
               onContentChange={onContentChange}
               onSave={onSave}
               isDirty={isDirty}
+              isLoading={isLoading}
             />
           </div>
         ) : (
