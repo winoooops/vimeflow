@@ -64,7 +64,19 @@ export function useCodeMirror(
   const onChangeRef = useRef(onChange)
   const initialContentRef = useRef(initialContent)
 
-  // Keep refs up to date
+  // Update `initialContentRef` synchronously during render (not via
+  // useEffect). `setContainer` runs during the commit phase when React
+  // attaches the newly rendered div — if we deferred the ref update
+  // until after commit, the first-file-open path would read the prior
+  // value (empty string) and create the EditorView with an empty doc
+  // for one frame before updateContent filled it in, producing a
+  // visible flash. Ref mutations during render are allowed for this
+  // "latest value" pattern — unlike setState, they don't trigger a
+  // re-render.
+  initialContentRef.current = initialContent
+
+  // onSave / onChange aren't read synchronously during render, so they
+  // can use the normal effect-based ref update pattern.
   useEffect(() => {
     onSaveRef.current = onSave
   }, [onSave])
@@ -72,10 +84,6 @@ export function useCodeMirror(
   useEffect(() => {
     onChangeRef.current = onChange
   }, [onChange])
-
-  useEffect(() => {
-    initialContentRef.current = initialContent
-  }, [initialContent])
 
   const languageCompartment = useRef(new Compartment())
   const viewRef = useRef<EditorView | null>(null)

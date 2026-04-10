@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useCodeMirror } from '../hooks/useCodeMirror'
 import { useVimMode } from '../hooks/useVimMode'
 import { VimStatusBar } from './VimStatusBar'
@@ -28,9 +28,19 @@ export const CodeEditor = ({
   onSave = undefined,
   isDirty = false,
 }: CodeEditorProps): ReactElement => {
-  // Language extension is driven off the filename only.
+  // Language extension is driven off the filename only. Memoize on
+  // `fileName` so typing (which re-renders via onContentChange) does
+  // NOT rebuild the language extension every keystroke — an non-memoized
+  // call would hand a fresh Extension object to useCodeMirror's
+  // language-update effect on every render, triggering a full
+  // Compartment.reconfigure() per keypress and visibly flickering
+  // syntax highlighting as the parser restarted from scratch.
   const fileName = filePath ? (filePath.split('/').pop() ?? '') : ''
-  const language = fileName ? getLanguageExtension(fileName) : null
+
+  const language = useMemo(
+    () => (fileName ? getLanguageExtension(fileName) : null),
+    [fileName]
+  )
 
   // `onSave` is required for vim :w to work. CodeEditor used to fall back
   // to writing via a stashed fileSystemService if the caller forgot to

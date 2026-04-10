@@ -78,8 +78,8 @@ class MockFileSystemService implements IFileSystemService {
   }
 
   readFile(): Promise<string> {
-    // Mock implementation - returns empty content
-    // This service is only used in browser mode (not Tauri)
+    // Mock implementation — returns placeholder content for browser/test mode.
+    // This service is only used in browser mode (not Tauri).
     return Promise.resolve('// Mock file content')
   }
 

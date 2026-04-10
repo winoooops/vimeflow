@@ -158,22 +158,30 @@ export const WorkspaceView = (): ReactElement => {
 
   // Discard changes and open pending file.
   //
-  // Previously `void editorBuffer.openFile(...)` fired and forgot — if the
-  // open failed (file deleted between selection and open), the error was
-  // swallowed and the dialog closed while the editor silently showed stale
-  // content. Now the dialog stays open on failure and reports the error.
+  // Close the dialog SYNCHRONOUSLY before the async openFile call.
+  // Previously we awaited openFile first and closed the dialog
+  // afterward, but React 18's scheduler can flush the setState calls
+  // inside openFile (setFilePath / setCurrentContent) as a separate
+  // render before the dialog-close batch — briefly rendering the
+  // dialog as "{newFile} has unsaved changes", which is factually
+  // wrong and could trick the user into a confirmation action on
+  // the wrong file. Closing the dialog up front removes the window.
   const handleDiscard = useCallback(async (): Promise<void> => {
-    try {
-      if (pendingFilePath) {
-        await editorBuffer.openFile(pendingFilePath)
-      }
+    const target = pendingFilePath
+    setShowUnsavedDialog(false)
+    setPendingFilePath(null)
+    setSaveError(null)
 
-      setShowUnsavedDialog(false)
-      setPendingFilePath(null)
-      setSaveError(null)
+    if (!target) {
+      return
+    }
+
+    try {
+      await editorBuffer.openFile(target)
+      setFileError(null)
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
-      setSaveError(`Failed to open file: ${message}`)
+      setFileError(`Failed to open file: ${message}`)
     }
   }, [editorBuffer, pendingFilePath])
 
