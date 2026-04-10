@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-04-09
+last_updated: 2026-04-10
 ref_count: 0
 ---
 
@@ -43,3 +43,57 @@ prevent showing previous data.
 - **Finding:** After staging/discarding, `refreshStatus()` shrinks `changedFiles` but index is never clamped
 - **Fix:** Clamped `selectedFileIndex` when `changedFiles` updates
 - **Commit:** `92eff2e feat: add lazygit-style git diff viewer (#21)`
+
+### 4. CodeEditor `loadFile` has no stale-response guard
+
+- **Source:** github-claude | PR #38 round 1 | 2026-04-10
+- **Severity:** HIGH
+- **File:** `src/features/editor/components/CodeEditor.tsx`
+- **Finding:** CodeEditor's `loadFile` effect awaits `fileSystemService.readFile(filePath)` with no cancellation. Rapid A→B file switches could race: if A's read resolved after B's, the effect would overwrite B's content with A's — displaying the wrong file and risking `:w` writes to the wrong path.
+- **Fix:** Add a `cancelled` flag guard in the effect. The cleanup function flips the flag so stale completions become no-ops.
+- **Commit:** `dd4fc02 fix: address Codex review round 1 findings`
+
+### 5. `useEditorBuffer.openFile` last-write-wins missing
+
+- **Source:** github-claude | PR #38 round 11 | 2026-04-10
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/hooks/useEditorBuffer.ts`
+- **Finding:** Two rapid file clicks within the IPC round-trip window could race: if file2's read resolved before file1's, state briefly showed file2, then file1's delayed response overwrote it — leaving the editor displaying file1 while filePath pointed at file2, causing `:w` to write one file's contents to another file's path.
+- **Fix:** Add a monotonically-increasing `openRequestIdRef` counter. Each invocation captures its own id before the await and compares it against the ref after — stale responses are silently discarded. Last call wins.
+- **Commit:** `6681af0 fix: address Claude review round 11 findings`
+
+### 6. Single try/catch conflates save-failure and open-failure messages
+
+- **Source:** github-claude | PR #38 round 5 | 2026-04-10
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `handleSave` wrapped both `saveFile()` and `openFile(pendingFile)` in a single try/catch. A successful save followed by a failed pending-open reported as "Failed to save: ..." — misleading users into thinking their edits were lost when the file was actually on disk. `isDirty` was simultaneously false (save succeeded) while the dialog showed a save error — a deceptive state.
+- **Fix:** Split into two phases. Save in its own try/catch — on failure, set saveError and keep the dialog open. After success, close the dialog and open the pending file in a second try/catch; surface open failures via the workspace-level fileError banner with an accurate message.
+- **Commit:** `28027a5 fix: address Claude review round 5 findings`
+
+### 7. `handleDiscard` React 18 scheduler race — wrong filename flashes in dialog
+
+- **Source:** github-claude | PR #38 round 9 | 2026-04-10
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `handleDiscard` awaited `openFile(pendingFilePath)` BEFORE calling `setShowUnsavedDialog(false)`. React 18's scheduler can flush `openFile`'s state updates (setFilePath / setCurrentContent) as a separate render before the dialog-close batch, briefly rendering the dialog as "{newFile} has unsaved changes" while the new file is already loaded. A user who hit Save in that flicker would overwrite the freshly-read disk content with content they just chose to discard.
+- **Fix:** Close the dialog synchronously at the top of the handler, then run the async open. Pending-file open errors surface via the workspace-level banner.
+- **Commit:** `3aa2c5d fix: address Claude review round 9 findings`
+
+### 8. `handleSave` reads stale `pendingFilePath` closure after await
+
+- **Source:** github-claude | PR #38 round 10 | 2026-04-10
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `handleSave` read `pendingFilePath` from its `useCallback` closure after `await editorBuffer.saveFile()`. If the user clicked the backdrop (handleCancel) while the save was in flight, `pendingFilePath` state was cleared to null, but the running handler's closure kept the old non-null value and opened the cancelled pending file.
+- **Fix (partial):** Round 10 captured `const pendingPath = pendingFilePath` at the top. Round 11 pointed out this was the same stale-closure pattern. Final fix: mirror `pendingFilePath` into `pendingFilePathRef` and read from the ref AFTER the save completes.
+- **Commit:** `4f6972f fix: address Claude review round 10 findings` then `6681af0 fix: address Claude review round 11 findings`
+
+### 9. `pendingFilePathRef` updated via useEffect — microtask race
+
+- **Source:** github-claude | PR #38 round 14 | 2026-04-10
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The `pendingFilePathRef` mirror was synced via `useEffect(() => { pendingFilePathRef.current = pendingFilePath }, [pendingFilePath])`. `useEffect` is a paint-time callback that runs AFTER the microtask queue drains. When `handleCancel` scheduled a state update and the save IPC promise resolved as a microtask, `handleSave` resumed BEFORE the useEffect ran — so the ref was still non-null and the cancelled pending file opened anyway.
+- **Fix:** Add `setPendingFilePathSynced(value)` helper that writes the ref directly AND calls setState. Use it from all handlers that clear `pendingFilePath`. The useEffect mirror stays as an initial-value safety net but is no longer load-bearing.
+- **Commit:** `fa933d6 fix: address Claude review round 14 findings`

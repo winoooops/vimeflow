@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-04-09
+last_updated: 2026-04-10
 ref_count: 0
 ---
 
@@ -60,3 +60,30 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** Phase dependencies inconsistent between roadmap narrative, dependency graph, and `progress.yaml`
 - **Fix:** Aligned all three sources for consistent dependency information
 - **Commit:** `6b80a60 docs: rewrite roadmap for CLI agent workspace pivot (#30)`
+
+### 6. `DRAWER_MAX` comment claims dynamic viewport ratio, but value is hardcoded
+
+- **Source:** github-claude | PR #38 round 2 | 2026-04-10
+- **Severity:** LOW
+- **File:** `src/features/workspace/components/BottomDrawer.tsx`
+- **Finding:** Comment read `// Resizable hook - default 400px (50% of 800px), min 150px, max 640px (80% of 800px)`. The `80% of 800px` phrasing implied a computed ratio of window height, but `DRAWER_MAX = 640` was an unconditional constant. On a 1080px display 80% would be 864px, not 640px.
+- **Fix:** Rewrite comment to clearly state the values are fixed pixels and explain how to adjust them.
+- **Commit:** `0c8f0ac fix: address Claude review round 12 findings`
+
+### 7. `MockFileSystemService.readFile` comment mismatches behavior
+
+- **Source:** github-claude | PR #38 round 3 | 2026-04-10
+- **Severity:** LOW
+- **File:** `src/features/files/services/fileSystemService.ts`
+- **Finding:** Comment said `// Mock implementation - returns empty content` but the method resolved with `'// Mock file content'`. Tests expecting an empty baseline would see unexpected dirty state.
+- **Fix:** Align comment with actual behavior: "returns placeholder content for browser/test mode".
+- **Commit:** `3aa2c5d fix: address Claude review round 9 findings`
+
+### 8. `handleSave` memoization comment creates false confidence
+
+- **Source:** github-claude | PR #38 round 3 | 2026-04-10
+- **Severity:** LOW
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** Comment claimed `useCallback` memoization prevents the dialog focus-trap from re-binding on each render. The reasoning was wrong: the focus-trap effect depends on `onCancel`, not `onSave`, and `editorBuffer` is a plain object rebuilt on every `useEditorBuffer` render (every keystroke) so `handleSave`'s identity is actually unstable. Harmless in practice (the dialog captures focus while open) but the comment created false confidence.
+- **Fix:** Replace with an accurate description of the current situation and a note for future refactors (destructure stable callbacks from `editorBuffer` if it's memoized later).
+- **Commit:** `38292c7 fix: address Claude review round 15 findings`
