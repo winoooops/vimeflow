@@ -229,32 +229,30 @@ describe('CodeEditor', () => {
     })
   })
 
-  test('handles file read errors gracefully', async () => {
-    const consoleError = vi
-      .spyOn(console, 'error')
-      .mockImplementation((): void => {
-        // Mock implementation - intentionally empty
-      })
-
+  test('reports file read errors via onLoadError callback', async () => {
     vi.mocked(mockFileSystemService.readFile).mockRejectedValue(
       new Error('File not found')
     )
+
+    const handleLoadError = vi.fn()
 
     render(
       <CodeEditor
         filePath="/home/user/missing.ts"
         fileSystemService={mockFileSystemService}
+        onLoadError={handleLoadError}
       />
     )
 
     await waitFor(() => {
-      expect(consoleError).toHaveBeenCalledWith(
-        'Failed to load file:',
-        expect.any(Error)
+      expect(handleLoadError).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to load /home/user/missing.ts')
       )
     })
 
-    consoleError.mockRestore()
+    expect(handleLoadError).toHaveBeenCalledWith(
+      expect.stringContaining('File not found')
+    )
   })
 
   test('does not reload when filePath changes to null', async () => {

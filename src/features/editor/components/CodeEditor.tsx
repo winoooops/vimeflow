@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { IFileSystemService } from '../../files/services/fileSystemService'
 import { useCodeMirror } from '../hooks/useCodeMirror'
 import { useVimMode } from '../hooks/useVimMode'
@@ -11,6 +11,13 @@ interface CodeEditorProps {
   fileSystemService: IFileSystemService
   onContentChange?: (content: string) => void
   onSave?: () => void
+  /**
+   * Reports a file-load failure to the parent so it can surface it in the
+   * workspace UI. CodeEditor no longer logs to console — errors are routed
+   * through this callback (or swallowed silently if the callback is not
+   * provided) so the user always sees what went wrong.
+   */
+  onLoadError?: (message: string) => void
   isDirty?: boolean
 }
 
@@ -19,10 +26,19 @@ export const CodeEditor = ({
   fileSystemService,
   onContentChange = undefined,
   onSave = undefined,
+  onLoadError = undefined,
   isDirty = false,
 }: CodeEditorProps): ReactElement => {
   const [fileContent, setFileContent] = useState<string>('')
   const [loadedFilePath, setLoadedFilePath] = useState<string | null>(null)
+
+  // Keep the latest onLoadError reference without including it in the load
+  // effect's deps (the callback identity changes on every parent render and
+  // would cause the file to reload on each keystroke otherwise).
+  const onLoadErrorRef = useRef(onLoadError)
+  useEffect(() => {
+    onLoadErrorRef.current = onLoadError
+  }, [onLoadError])
 
   // Load file when filePath changes.
   //
@@ -53,8 +69,8 @@ export const CodeEditor = ({
         if (cancelled) {
           return
         }
-        // eslint-disable-next-line no-console
-        console.error('Failed to load file:', error)
+        const message = error instanceof Error ? error.message : String(error)
+        onLoadErrorRef.current?.(`Failed to load ${filePath}: ${message}`)
       }
     }
 

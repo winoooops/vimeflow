@@ -54,6 +54,35 @@ export const WorkspaceView = (): ReactElement => {
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  // General-purpose error banner for non-dialog file ops (direct file open,
+  // async load failure inside CodeEditor, vim :w save failure).
+  const [fileError, setFileError] = useState<string | null>(null)
+
+  // Open a file directly (no unsaved-changes guard). Errors were previously
+  // swallowed via `void editorBuffer.openFile(...)`, leaving the user with
+  // stale content and no feedback on Tauri IPC failures.
+  const openFileSafely = async (filePath: string): Promise<void> => {
+    try {
+      await editorBuffer.openFile(filePath)
+      setFileError(null)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      setFileError(`Failed to open ${filePath}: ${message}`)
+    }
+  }
+
+  // Save via vim :w or any direct editor save trigger. Same rationale as
+  // openFileSafely — errors were previously swallowed and the user had no
+  // indication that a disk-full / permission-denied error occurred.
+  const handleVimSave = async (): Promise<void> => {
+    try {
+      await editorBuffer.saveFile()
+      setFileError(null)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      setFileError(`Failed to save: ${message}`)
+    }
+  }
 
   // Handle file selection from FileExplorer
   const handleFileSelect = (node: {
@@ -75,8 +104,7 @@ export const WorkspaceView = (): ReactElement => {
       return
     }
 
-    // Otherwise, open file directly
-    void editorBuffer.openFile(filePath)
+    void openFileSafely(filePath)
   }
 
   // Save current file and open pending file.
@@ -190,9 +218,34 @@ export const WorkspaceView = (): ReactElement => {
           selectedFilePath={editorBuffer.filePath}
           fileSystemService={fileSystemService}
           onContentChange={editorBuffer.updateContent}
-          onSave={() => void editorBuffer.saveFile()}
+          onSave={() => {
+            void handleVimSave()
+          }}
+          onLoadError={setFileError}
           isDirty={editorBuffer.isDirty}
         />
+
+        {/* File error banner — surfaces failures from direct file open,
+            async load inside CodeEditor, and vim :w saves. Rendered at the
+            top of the main area so the user always sees what went wrong. */}
+        {fileError && (
+          <div
+            role="alert"
+            className="absolute top-2 left-1/2 -translate-x-1/2 z-40 max-w-2xl px-4 py-2 rounded-lg bg-error/20 border border-error/40 text-sm text-error font-inter backdrop-blur-sm flex items-center gap-3 shadow-lg"
+          >
+            <span className="flex-1">{fileError}</span>
+            <button
+              type="button"
+              aria-label="Dismiss error"
+              onClick={() => {
+                setFileError(null)
+              }}
+              className="text-error hover:text-on-surface transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Agent Activity - 360px */}

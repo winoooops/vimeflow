@@ -4,6 +4,31 @@ import { EditorState, type Extension, Compartment } from '@codemirror/state'
 import { vim, Vim } from '@replit/codemirror-vim'
 import { catppuccinMocha } from '../theme/catppuccin'
 
+// `Vim.defineEx` writes into a GLOBAL registry shared across every
+// `@replit/codemirror-vim` instance in the process. If we called it once
+// per editor mount (as a previous iteration did), each mount would
+// overwrite the handler closure from the previous mount — with two
+// simultaneous `<CodeEditor>` instances, the first editor's `:w` would
+// silently route through the second editor's save callback.
+//
+// Fix: register the ex-command exactly once at module load and have the
+// handler dispatch through a module-level "active save" slot. The
+// `setContainer` callback below sets/clears that slot so the latest
+// mounted editor owns `:w`. For multi-editor support (split panes), this
+// can be extended to a per-view registry keyed by EditorView identity.
+let activeVimSave: (() => void) | null = null
+let vimWriteRegistered = false
+
+const registerVimWriteOnce = (): void => {
+  if (vimWriteRegistered) {
+    return
+  }
+  vimWriteRegistered = true
+  Vim.defineEx('write', 'w', () => {
+    activeVimSave?.()
+  })
+}
+
 export interface UseCodeMirrorOptions {
   initialContent: string
   language: Extension | null
@@ -47,6 +72,9 @@ export function useCodeMirror(
 
   const languageCompartment = useRef(new Compartment())
   const viewRef = useRef<EditorView | null>(null)
+  // Identity of the save callback this hook published into `activeVimSave`.
+  // Used on unmount to avoid clearing a slot another editor has since claimed.
+  const localVimSaveRef = useRef<(() => void) | null>(null)
 
   // Callback ref — triggers when the container div mounts/unmounts
   const setContainer = useCallback((node: HTMLDivElement | null) => {
@@ -55,6 +83,11 @@ export function useCodeMirror(
       viewRef.current.destroy()
       viewRef.current = null
       setEditorView(null)
+      // Release the global :w slot if this hook instance owns it. Another
+      // editor may have claimed it in the meantime; don't stomp on it.
+      if (activeVimSave === localVimSaveRef.current) {
+        activeVimSave = null
+      }
     }
 
     if (!node) {
@@ -84,16 +117,16 @@ export function useCodeMirror(
       parent: node,
     })
 
-    // Configure vim :w command to call onSave via the vim extension's public
-    // static API. `defineEx` is a static method on the `Vim` object exported
-    // from `@replit/codemirror-vim`, not an instance property of the internal
-    // cm5 wrapper — the old `(view as any).cm.vim.defineEx` path accessed a
-    // non-existent property and silently no-oped, meaning `:w` never fired
-    // the onSave callback. The handler closes over `onSaveRef` so the latest
-    // save callback is always invoked even after re-renders.
-    Vim.defineEx('write', 'w', () => {
+    // Wire vim :w to this editor's save callback. `Vim.defineEx` is
+    // registered once at module load; each mount just claims the global
+    // "active save" slot and releases it on unmount.
+    registerVimWriteOnce()
+
+    const localSave = (): void => {
       onSaveRef.current()
-    })
+    }
+    localVimSaveRef.current = localSave
+    activeVimSave = localSave
 
     viewRef.current = view
     setEditorView(view)
@@ -112,6 +145,11 @@ export function useCodeMirror(
         viewRef.current.destroy()
         viewRef.current = null
       }
+      // Release the global :w slot if we still own it.
+      if (activeVimSave === localVimSaveRef.current) {
+        activeVimSave = null
+      }
+      localVimSaveRef.current = null
     },
     []
   )

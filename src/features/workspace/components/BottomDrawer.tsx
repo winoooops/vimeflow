@@ -10,6 +10,8 @@ interface BottomDrawerProps {
   fileSystemService: IFileSystemService
   onContentChange?: (content: string) => void
   onSave?: () => void
+  /** Surfaces a file-load error from CodeEditor to the workspace. */
+  onLoadError?: (message: string) => void
   isDirty?: boolean
 }
 
@@ -27,6 +29,7 @@ const BottomDrawer = ({
   fileSystemService,
   onContentChange = undefined,
   onSave = undefined,
+  onLoadError = undefined,
   isDirty = false,
 }: BottomDrawerProps): ReactElement => {
   const [activeTab, setActiveTab] = useState<TabType>('editor')
@@ -131,6 +134,7 @@ const BottomDrawer = ({
               fileSystemService={fileSystemService}
               onContentChange={onContentChange}
               onSave={onSave}
+              onLoadError={onLoadError}
               isDirty={isDirty}
             />
           </div>
