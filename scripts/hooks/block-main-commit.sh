@@ -84,6 +84,13 @@ fi
 #      token), and block if it resolves to `main` or `refs/heads/main`.
 #      Catches `git push origin HEAD:main`, `git push origin feat/x:main`,
 #      `git push origin main`, etc.
+#
+# Known limitation: the loop does not distinguish the remote-name positional
+# (e.g. `origin` in `git push origin feat/x`) from actual refspec arguments.
+# A repository whose remote is literally named `main` (extremely unusual)
+# would therefore false-block every push to that remote. We accept this
+# trade-off to keep the parser simple — renaming such a remote is trivial
+# and this framework uses conventional remote names (`origin`, `upstream`).
 if [ "$subcmd" = "push" ]; then
   j=$((subcmd_idx + 1))
   while [ $j -lt ${#git_tokens[@]} ]; do
