@@ -77,9 +77,16 @@ export const CodeEditor = ({
   }, [content, filePath, updateContent])
 
   if (!filePath) {
+    // `min-h-0` matches the invariant the main return path establishes:
+    // every flex child in CodeEditor must be prevented from growing
+    // past its bounded parent. No visible bug today because the
+    // placeholder is trivially short, but keeping the invariant
+    // consistent across both branches means a future richer placeholder
+    // (file picker, tips widget, animated illustration) won't silently
+    // reintroduce the flex `min-height: auto` scroll bug.
     return (
       <div
-        className="flex flex-1 items-center justify-center text-on-surface-variant"
+        className="flex min-h-0 flex-1 items-center justify-center text-on-surface-variant"
         data-testid="no-file-selected"
       >
         No file selected

@@ -13,6 +13,18 @@ import { EditorState, StateEffect } from '@codemirror/state'
  * The type isn't exported, so we duck-type it: look for a `range.head`
  * field and return it. Returns `undefined` if the effect isn't a scroll
  * effect or the shape doesn't match.
+ *
+ * **Brittleness note:** the `.range.head` access is verified against
+ * `@codemirror/view` 6.41.0 (the version pinned in this repo). If a
+ * future CM6 bump renames or restructures `ScrollTarget`, this helper
+ * will silently return `undefined` and the regression-guard test below
+ * (`targets the NEW cursor head position, not the old one`) will fail
+ * with `expect(undefined).toBe(20)`. If you see that failure after a
+ * CodeMirror upgrade, the fix is to re-inspect the
+ * `@codemirror/view` source for the new `ScrollTarget` shape and
+ * update this helper accordingly — the extender itself is
+ * a one-liner using `tr.newSelection.main.head` so the production
+ * code almost certainly doesn't need to change.
  */
 const readScrollTargetPos = (
   effect: StateEffect<unknown>
