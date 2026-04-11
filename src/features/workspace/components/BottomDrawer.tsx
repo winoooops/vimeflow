@@ -186,9 +186,22 @@ const BottomDrawer = ({
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {activeTab === 'editor' ? (
-          <div data-testid="editor-panel" className="flex flex-1">
+          // `min-h-0` + `overflow-hidden` on the editor wrapper is load-
+          // bearing: without them this flex child defaults to
+          // `min-height: auto`, which grows to the full CodeMirror
+          // content height and defeats CodeMirror's internal
+          // `.cm-scroller`. The cursor moves with h/j/k/l but the
+          // editor never needs to scroll because its container is
+          // always big enough to show the entire file. Bounding the
+          // wrapper is what lets `h-full` on `codemirror-container`
+          // resolve to a real pixel height and enables internal scroll
+          // follow.
+          <div
+            data-testid="editor-panel"
+            className="flex min-h-0 flex-1 overflow-hidden"
+          >
             <CodeEditor
               filePath={selectedFilePath}
               content={content}

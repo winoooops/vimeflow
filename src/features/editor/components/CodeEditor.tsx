@@ -88,8 +88,8 @@ export const CodeEditor = ({
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="relative flex-1 overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         <div
           ref={setContainer}
           data-testid="codemirror-container"
