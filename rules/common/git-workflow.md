@@ -36,20 +36,26 @@ When creating PRs:
 6. Merge with `--squash` only
 7. **Stay on the branch** — do not switch back to `main` after creating the PR
 
+## Branching
+
+- **Never commit to `main`** — always work on a feature branch (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `perf/`, `ci/`).
+- The **interactive main agent** checks out a feature branch in the **primary checkout** (`git checkout -b feat/<name>`). It does not create a worktree for itself — the user's diff viewer depends on seeing live edits in the primary checkout.
+- **Subagents and the autonomous harness** (`/harness-plugin:loop`, dispatched parallel agents) must isolate themselves in a dedicated worktree under `.claude/worktrees/<branch>/`. See [worktrees.md](./worktrees.md).
+
 ## Post-PR Protocol
 
-After creating a PR, the agent remains on the feature branch/worktree until the PR is resolved:
+After creating a PR, the agent remains on the feature branch until the PR is resolved:
 
-1. **Stay**: remain in the worktree/branch — do not return to `main`
+1. **Stay**: remain on the feature branch (primary checkout for main agent, linked worktree for subagents) — do not return to `main`
 2. **Review-fix loop**: run `/harness-plugin:github-review` to fetch and address code review findings
 3. **Push fixes**: commit and push from the same branch
 4. **Repeat**: wait for next review cycle, fix, push
 5. **Done**: only the user merges or closes the PR
-6. **Cleanup**: after merge, return to main and clean up the worktree/branch (see [worktrees.md](./worktrees.md))
+6. **Cleanup**: after merge, return to `main` and delete the local branch (and remove the worktree if one was used — see [worktrees.md](./worktrees.md))
 
 > For the full development process (planning, TDD, code review) before git operations,
 > see [development-workflow.md](./development-workflow.md).
 
 ## Multi-Agent Workflows
 
-When multiple agents work simultaneously, each must use a dedicated git worktree. See [worktrees.md](./worktrees.md) for lifecycle, lock contention guardrails, and cleanup procedures.
+When multiple agents work simultaneously, each subagent must use a dedicated git worktree. The interactive main agent stays in the primary checkout. See [worktrees.md](./worktrees.md) for lifecycle, lock contention guardrails, and cleanup procedures.

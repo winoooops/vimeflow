@@ -2,47 +2,67 @@
 
 ## Principles
 
-1. **Main worktree is sacred** — it stays on `main`, always clean, never committed to directly. It is the launchpad from which agents create worktrees.
-2. **All code changes happen in worktrees** — any work that produces commits (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`) must use a dedicated worktree.
-3. **Read-only tasks skip worktrees** — research, exploration, and answering questions can use the main worktree.
-4. **Harness always uses a worktree** — autonomous loops (`/init`) must be fully isolated.
+1. **`main` branch is sacred** — never commit directly to `main`. The primary checkout is allowed (and expected) to be on a feature branch during active work.
+2. **Main agent works on a feature branch in the primary checkout** — the interactive Claude Code agent checks out `feat/<name>` (or `fix/`, `refactor/`, etc.) in the primary checkout and commits there. It does **not** create a worktree for itself.
+   - **Why:** the user runs the Vimeflow app from the primary checkout and watches the diff viewer live. Edits inside `.claude/worktrees/` are invisible to that view because the diff viewer only reflects its own cwd's working tree.
+3. **Subagents and harness always use a worktree** — any autonomous or parallel agent (`/harness-plugin:loop`, dispatched parallel agents) must be fully isolated under `.claude/worktrees/<branch>/` so it does not fight the user or the main agent for the working tree.
+4. **Read-only tasks skip branching** — research, exploration, and answering questions can happen on `main` in the primary checkout. No branch needed.
 5. **Git commands start with `git`** — always invoke git as the first token in the command (e.g., `git push`, not `ENV=val git push` or `cd repo && git push`). This ensures the PreToolUse hook can reliably detect and guard git operations. This framework is designed for agents, not humans — compound shell expressions are unnecessary.
+
+## Who Works Where
+
+| Actor                               | Location                      | Branch                        |
+| ----------------------------------- | ----------------------------- | ----------------------------- |
+| Interactive main agent              | Primary checkout (repo root)  | Feature branch (never `main`) |
+| `/harness-plugin:loop` (autonomous) | `.claude/worktrees/<branch>/` | Feature branch                |
+| Dispatched parallel subagents       | `.claude/worktrees/<branch>/` | Feature branch                |
+| Read-only research                  | Primary checkout              | `main` is fine                |
 
 ## Worktree Location
 
-All worktrees live under `.claude/worktrees/` (gitignored, local-only):
+All subagent/harness worktrees live under `.claude/worktrees/` (gitignored, local-only):
 
 ```
-Vimeflow/                          ← main worktree (stays on main)
+Vimeflow/                          ← primary checkout (main agent works here on feat/* branch)
 ├── .claude/
 │   ├── skills/                    ← tracked in git (pushed to repo)
 │   └── worktrees/                 ← gitignored (local-only)
-│       ├── feat-chat-history/     ← agent 1's full checkout
-│       └── fix-layout-bug/        ← agent 2's full checkout
+│       ├── feat-harness-retry/    ← harness loop's full checkout
+│       └── refactor-parallel-a/   ← dispatched subagent's full checkout
 ├── src/
 └── ...
 ```
 
-Each worktree is a complete working directory with its own `src/`, `node_modules/`, etc. They share only the `.git` object database with the main repo.
+Each worktree is a complete working directory with its own `src/`, `node_modules/`, etc. They share only the `.git` object database with the primary checkout.
 
 ## Lifecycle
 
-### CREATE
+### Main agent (interactive) — feature branch in primary checkout
 
 ```bash
-# From the main worktree (root project dir)
+# From the primary checkout, starting on main
+git checkout -b feat/<name>
+# edit, commit, push, create PR — all from the primary checkout
+```
+
+Do **not** run `EnterWorktree` reflexively at the start of an interactive task. Check out a feature branch instead so the user's diff viewer reflects your live edits.
+
+### Subagent / harness — dedicated worktree
+
+```bash
+# From the primary checkout
 git worktree add .claude/worktrees/<branch-name> -b <branch-name>
 cd .claude/worktrees/<branch-name>
 npm install
 ```
 
-Or use Claude Code's built-in: `EnterWorktree` (creates under `.claude/worktrees/` by default).
+Or use Claude Code's built-in: `EnterWorktree` (creates under `.claude/worktrees/` by default). This path applies to `/harness-plugin:loop` and any parallel dispatched agents.
 
 ### ACTIVE
 
-Agent works normally — edit, commit, push, create PR. The worktree is a fully independent working directory.
+Agent works normally — edit, commit, push, create PR. Whether this happens in the primary checkout (main agent) or a linked worktree (subagent), the PR lifecycle is the same.
 
-**Once a PR is created, the agent stays in the worktree/branch until the PR is resolved.** Do not switch back to `main` between creating the PR and the PR being merged or closed. This ensures review-fix cycles (`/harness-plugin:github-review`) happen in the correct working directory without branch switching.
+**Once a PR is created, the agent stays on that branch (or in that worktree) until the PR is resolved.** Do not switch back to `main` between creating the PR and the PR being merged or closed. This ensures review-fix cycles (`/harness-plugin:github-review`) happen in the correct working directory without branch switching.
 
 The PR lifecycle within a worktree:
 
@@ -56,8 +76,18 @@ Only the **user** decides when a PR is merged. Agents do not merge PRs unless ex
 
 After the user merges or closes the PR:
 
+**Main agent (feature branch in primary checkout):**
+
 ```bash
-# From the main worktree
+git checkout main
+git pull
+git branch -d <branch-name>       # delete local branch (use -D if abandoned)
+```
+
+**Subagent / harness (linked worktree):**
+
+```bash
+# From the primary checkout
 git worktree remove .claude/worktrees/<branch-name>
 git branch -d <branch-name>       # delete local branch (use -D if unmerged and abandoned)
 git worktree prune                 # clean up stale worktree metadata
@@ -145,10 +175,10 @@ git branch --merged main | grep -v '^\*\|main' | xargs -r git branch -d
 
 Two hooks support the worktree workflow:
 
-| Hook               | Type        | Script                               | Purpose                                                                      |
-| ------------------ | ----------- | ------------------------------------ | ---------------------------------------------------------------------------- |
-| Block main commits | PreToolUse  | `scripts/hooks/block-main-commit.sh` | Prevents `git commit`/`git push` on the main worktree                        |
-| Post-push review   | PostToolUse | `scripts/hooks/post-push-review.sh`  | After `git push` or `gh pr create`, triggers `/harness-plugin:github-review` |
+| Hook               | Type        | Script                               | Purpose                                                                               |
+| ------------------ | ----------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
+| Block main commits | PreToolUse  | `scripts/hooks/block-main-commit.sh` | Prevents `git commit`/`git push` when the `main` branch is checked out (any worktree) |
+| Post-push review   | PostToolUse | `scripts/hooks/post-push-review.sh`  | After `git push` or `gh pr create`, triggers `/harness-plugin:github-review`          |
 
 To register both hooks, add to `.claude/settings.local.json`:
 

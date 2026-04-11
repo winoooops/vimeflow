@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# PreToolUse hook: block git commit/push on the main worktree.
+# PreToolUse hook: block git commit/push when the main branch is checked out.
 #
-# Returns exit 2 (block) if the agent is trying to commit or push
-# from the main worktree, regardless of which branch is checked out.
-# Returns exit 0 (allow) otherwise.
+# Returns exit 2 (block) if the agent is trying to commit or push while
+# the current HEAD is on `main`, regardless of whether this is the primary
+# checkout or a linked worktree.
+# Returns exit 0 (allow) otherwise — feature branches are fine anywhere.
+#
+# Policy (see rules/common/worktrees.md):
+#   - Main agent works on a feature branch in the primary checkout.
+#   - Subagents / harness work on a feature branch in a linked worktree.
+#   - Nobody commits to `main`, ever.
 #
 # Hook input (JSON on stdin) contains the tool parameters.
 # We check the Bash command for git commit/push patterns.
@@ -69,37 +75,27 @@ if [ "$subcmd" != "commit" ] && [ "$subcmd" != "push" ]; then
   exit 0
 fi
 
-# Check if we're in the main worktree (not a linked worktree).
-# Block regardless of branch — the main worktree should never be committed to.
+# Check the currently checked-out branch. Block iff it is `main`.
 #
-# If -C or --git-dir was used, run the check from that directory instead
+# If -C or --work-tree was used, run the check against that directory instead
 # of the current working directory — this prevents false positives when
-# agents use git -C .claude/worktrees/<branch> commit from the main worktree.
-#
-# git rev-parse --git-common-dir returns the shared .git dir
-# git rev-parse --git-dir returns the per-worktree .git dir (or .git file for linked worktrees)
-# In the main worktree, both resolve to the same path.
-# In a linked worktree, --git-dir points to .git/worktrees/<name>.
+# agents use git -C .claude/worktrees/<branch> commit from the primary checkout.
 if [ -n "$git_target_dir" ]; then
-  git_dir=$(git -C "$git_target_dir" rev-parse --git-dir 2>/dev/null || echo "")
-  git_common_dir=$(git -C "$git_target_dir" rev-parse --git-common-dir 2>/dev/null || echo "")
+  current_branch=$(git -C "$git_target_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 else
-  git_dir=$(git rev-parse --git-dir 2>/dev/null || echo "")
-  git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
+  current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 fi
 
-# Guard against empty paths — if git rev-parse failed, allow the command
-if [ -z "$git_dir" ] || [ -z "$git_common_dir" ]; then
+# Guard against empty output — if git rev-parse failed, allow the command
+if [ -z "$current_branch" ]; then
   exit 0
 fi
 
-resolved_git_dir=$(cd "$git_dir" 2>/dev/null && pwd || echo "")
-resolved_common_dir=$(cd "$git_common_dir" 2>/dev/null && pwd || echo "")
-
-if [ "$resolved_git_dir" = "$resolved_common_dir" ]; then
-  echo "BLOCKED: Cannot commit/push from the main worktree. Create a worktree first: git worktree add .claude/worktrees/<branch-name> -b <branch-name>" >&2
+if [ "$current_branch" = "main" ]; then
+  echo "BLOCKED: Cannot commit/push while on 'main'. Check out a feature branch first: git checkout -b feat/<name>" >&2
+  echo "        (Subagents / harness should create a worktree: git worktree add .claude/worktrees/<branch> -b <branch>)" >&2
   exit 2
 fi
 
-# We're in a linked worktree — allow
+# On a feature branch — allow (in primary checkout or any linked worktree)
 exit 0
