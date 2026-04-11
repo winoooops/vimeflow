@@ -12,11 +12,12 @@ interface UseFileDiffReturn {
  * Hook to fetch diff for a specific file
  * @param filePath - Path to the file
  * @param staged - Whether to fetch staged or unstaged diff
+ * @param cwd - Working directory for git commands
  */
 export const useFileDiff = (
   filePath: string | null,
   staged = false,
-  _version = 0
+  cwd = '.'
 ): UseFileDiffReturn => {
   const [diff, setDiff] = useState<FileDiff | null>(null)
   const [loading, setLoading] = useState(false)
@@ -38,7 +39,7 @@ export const useFileDiff = (
         setLoading(true)
         setError(null)
 
-        const service = createGitService()
+        const service = createGitService(cwd)
         const fileDiff = await service.getDiff(filePath, staged)
 
         if (!cancelled) {
@@ -65,7 +66,7 @@ export const useFileDiff = (
     return (): void => {
       cancelled = true
     }
-  }, [filePath, staged, _version])
+  }, [filePath, staged, cwd])
 
   return {
     diff,

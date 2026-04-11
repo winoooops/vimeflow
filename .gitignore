@@ -81,3 +81,4 @@ VISUAL_VERIFICATION.md
 # Verification screenshots (testing artifacts)
 feedback*.png
 feedbacak*.png
+harness/.venv/
