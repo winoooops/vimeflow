@@ -142,7 +142,11 @@ pub async fn spawn_pty<R: tauri::Runtime>(
 /// Write data to a PTY session
 #[tauri::command]
 pub fn write_pty(state: State<'_, PtyState>, request: WritePtyRequest) -> Result<(), String> {
-    log::debug!("Writing to PTY {}: {} bytes", request.session_id, request.data.len());
+    log::debug!(
+        "Writing to PTY {}: {} bytes",
+        request.session_id,
+        request.data.len()
+    );
 
     state
         .write(&request.session_id, request.data.as_bytes())
@@ -170,9 +174,7 @@ pub fn kill_pty(state: State<'_, PtyState>, request: KillPtyRequest) -> Result<(
     log::info!("Killing PTY session: {}", request.session_id);
 
     // Kill the process
-    state
-        .kill(&request.session_id)
-        .map_err(|e| e.to_string())?;
+    state.kill(&request.session_id).map_err(|e| e.to_string())?;
 
     // Remove from state
     state.remove(&request.session_id);
@@ -309,7 +311,10 @@ mod tests {
 
         let result = write_pty(state.clone(), request);
 
-        assert!(result.is_err(), "write_pty should fail for nonexistent session");
+        assert!(
+            result.is_err(),
+            "write_pty should fail for nonexistent session"
+        );
     }
 
     #[tokio::test]
@@ -325,7 +330,10 @@ mod tests {
 
         let result = resize_pty(state.clone(), request);
 
-        assert!(result.is_err(), "resize_pty should fail for nonexistent session");
+        assert!(
+            result.is_err(),
+            "resize_pty should fail for nonexistent session"
+        );
     }
 
     #[tokio::test]

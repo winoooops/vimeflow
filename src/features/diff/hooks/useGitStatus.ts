@@ -10,7 +10,7 @@ interface UseGitStatusReturn {
 }
 
 /** Hook to fetch and manage git status (changed files) */
-export const useGitStatus = (): UseGitStatusReturn => {
+export const useGitStatus = (cwd = '.'): UseGitStatusReturn => {
   const [files, setFiles] = useState<ChangedFile[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -20,7 +20,7 @@ export const useGitStatus = (): UseGitStatusReturn => {
       setLoading(true)
       setError(null)
 
-      const service = createGitService()
+      const service = createGitService(cwd)
       const changedFiles = await service.getStatus()
 
       setFiles(changedFiles)
@@ -31,7 +31,7 @@ export const useGitStatus = (): UseGitStatusReturn => {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [cwd])
 
   useEffect(() => {
     void fetchStatus()

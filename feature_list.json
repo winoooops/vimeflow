@@ -2,13 +2,13 @@
   {
     "id": 1,
     "phase": 1,
-    "category": "backend-types",
-    "description": "Add ReadFileRequest and WriteFileRequest types to Rust backend",
+    "category": "backend",
+    "description": "Create Rust git module with data structures matching TypeScript types",
     "steps": [
-      "Open src-tauri/src/filesystem/types.rs",
-      "Add ReadFileRequest struct with path: String field",
-      "Add WriteFileRequest struct with path and content: String fields",
-      "Derive Debug and Deserialize for both structs"
+      "Create src-tauri/src/git/mod.rs (or src-tauri/src/commands/git.rs)",
+      "Define ChangedFileStatus, ChangedFile, DiffLineType, DiffLine, DiffHunk, FileDiff structs",
+      "Add serde derives with rename_all = camelCase/lowercase to match TS naming",
+      "Add git module to src-tauri/src/lib.rs imports"
     ],
     "passes": true,
     "dependencies": []
@@ -16,14 +16,16 @@
   {
     "id": 2,
     "phase": 1,
-    "category": "backend-tests",
-    "description": "Write failing tests for read_file command in Rust",
+    "category": "backend",
+    "description": "Implement git_status and get_git_diff Tauri commands",
     "steps": [
-      "Open src-tauri/src/filesystem/commands.rs test module",
-      "Add test: read_file_returns_content (reads file from temp dir)",
-      "Add test: read_file_rejects_path_outside_home (security check)",
-      "Add test: read_file_rejects_directory (validates file type)",
-      "Run cargo test to verify failures"
+      "Implement git_status command: run 'git status --porcelain=v1 -z', parse XY codes",
+      "Implement get_git_diff command: run 'git diff [--cached] -- <file>', parse unified diff",
+      "Map git status codes to ChangedFileStatus (M→Modified, A→Added, D→Deleted, R→Renamed, ??→Untracked)",
+      "Parse diff hunks with header regex (@@ -old_start,old_lines +new_start,new_lines @@)",
+      "Parse diff lines (+→Add, -→Remove, ' '→Context)",
+      "Return Result<T, String> with human-readable errors",
+      "Register commands in invoke_handler in src-tauri/src/lib.rs"
     ],
     "passes": true,
     "dependencies": [1]
@@ -31,404 +33,122 @@
   {
     "id": 3,
     "phase": 1,
-    "category": "backend-implementation",
-    "description": "Implement read_file Tauri command with home-directory scoping",
+    "category": "backend",
+    "description": "Add Rust unit tests for git parser",
     "steps": [
-      "Add read_file function to src-tauri/src/filesystem/commands.rs",
-      "Expand ~ to home directory using expand_home helper",
-      "Canonicalize path and verify it's within home directory",
-      "Verify path is a file (not directory)",
-      "Read file content as UTF-8 string",
-      "Run cargo test to verify all read_file tests pass"
+      "Add #[cfg(test)] mod tests to git module",
+      "Test git_status parser with sample porcelain output (modified, added, deleted, renamed, untracked)",
+      "Test get_git_diff parser with sample unified diff (single hunk, multiple hunks, empty diff)",
+      "Test edge case: renamed file, empty diff (hunks: [])",
+      "Run cargo test and verify all pass",
+      "Run cargo clippy -- -D warnings and fix any issues"
     ],
     "passes": true,
     "dependencies": [2]
   },
   {
     "id": 4,
-    "phase": 1,
-    "category": "backend-tests",
-    "description": "Write failing tests for write_file command in Rust",
+    "phase": 2,
+    "category": "frontend-service",
+    "description": "Create TauriGitService that implements GitService interface",
     "steps": [
-      "Open src-tauri/src/filesystem/commands.rs test module",
-      "Add test: write_file_creates_file (writes content to new file)",
-      "Add test: write_file_creates_parent_dirs (creates missing directories)",
-      "Add test: write_file_rejects_path_outside_home (security check)",
-      "Add test: write_file_overwrites_existing (updates existing file)",
-      "Run cargo test to verify failures"
+      "Add TauriGitService class in src/features/diff/services/gitService.ts",
+      "Implement getStatus(): call invoke('git_status', { cwd }), return ChangedFile[]",
+      "Implement getDiff(file, staged): call invoke('get_git_diff', { cwd, file, staged }), return FileDiff",
+      "Implement stageFile/unstageFile/discardChanges: throw new Error('not implemented')",
+      "Add cwd parameter to constructor (workspace path)",
+      "Import @tauri-apps/api/core for invoke()"
     ],
     "passes": true,
-    "dependencies": [3]
+    "dependencies": [2]
   },
   {
     "id": 5,
-    "phase": 1,
-    "category": "backend-implementation",
-    "description": "Implement write_file Tauri command with home-directory scoping",
+    "phase": 2,
+    "category": "frontend-service",
+    "description": "Update createGitService factory to select TauriGitService under Tauri",
     "steps": [
-      "Add write_file function to src-tauri/src/filesystem/commands.rs",
-      "Expand ~ to home directory",
-      "Verify path is within home directory before write",
-      "Create parent directories if needed (fs::create_dir_all)",
-      "Write content to file (overwrites existing)",
-      "Run cargo test to verify all write_file tests pass"
+      "Update createGitService() in src/features/diff/services/gitService.ts",
+      "Check if test mode: return MockGitService",
+      "Check if Tauri: '__TAURI_INTERNALS__' in window → return new TauriGitService(cwd)",
+      "Fallback: return new HttpGitService()",
+      "Accept optional cwd parameter (defaults to '.' or workspace root)",
+      "Update function signature to accept cwd parameter"
     ],
     "passes": true,
     "dependencies": [4]
   },
   {
     "id": 6,
-    "phase": 1,
-    "category": "backend-registration",
-    "description": "Register read_file and write_file in Tauri invoke handler",
+    "phase": 3,
+    "category": "frontend-ui",
+    "description": "Create DiffPanelContent component that uses existing diff components",
     "steps": [
-      "Export read_file and write_file from src-tauri/src/filesystem/mod.rs",
-      "Import in src-tauri/src/lib.rs (add to use filesystem:: statement)",
-      "Add read_file and write_file to invoke_handler! macro",
-      "Run cargo build to verify compilation",
-      "Run cargo clippy to ensure no warnings"
+      "Create src/features/diff/components/DiffPanelContent.tsx",
+      "Accept cwd prop from parent (workspace path)",
+      "Use useGitStatus() hook to fetch changed files",
+      "Use useFileDiff(selectedFile) hook to fetch diff for selected file",
+      "Render loading state: centered 'Loading diff…'",
+      "Render error state: centered error text with role='alert'",
+      "Render empty state: centered div with 'flex h-full w-full items-center justify-center' (FIX: add w-full)",
+      "Render populated state: horizontal split with ChangedFilesList (~240px) + DiffViewer (flex-1)",
+      "Add local state for selectedFile (first file auto-selected when status loads)",
+      "Reuse existing ChangedFilesList and DiffViewer components from src/features/diff/components/"
     ],
     "passes": true,
     "dependencies": [5]
   },
   {
     "id": 7,
-    "phase": 2,
-    "category": "packages",
-    "description": "Install CodeMirror 6 and vim extension packages",
+    "phase": 3,
+    "category": "frontend-ui",
+    "description": "Wire DiffPanelContent into BottomDrawer's Diff Viewer tab",
     "steps": [
-      "Run npm install codemirror @codemirror/view @codemirror/state @codemirror/language",
-      "Run npm install @codemirror/lang-javascript @codemirror/lang-rust @codemirror/lang-json",
-      "Run npm install @codemirror/lang-css @codemirror/lang-html",
-      "Run npm install @replit/codemirror-vim",
-      "Verify package-lock.json updates",
-      "Run npm install to verify clean install"
+      "Update src/features/workspace/components/BottomDrawer.tsx",
+      "Import DiffPanelContent from src/features/diff/components/DiffPanelContent",
+      "Replace DiffContent placeholder with <DiffPanelContent cwd={workspacePath} />",
+      "Pass cwd prop from WorkspaceView to BottomDrawer",
+      "Update WorkspaceView to pass workspace path as cwd prop",
+      "Remove old DiffContent component definition"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [6]
   },
   {
     "id": 8,
-    "phase": 2,
-    "category": "frontend-service",
-    "description": "Extend IFileSystemService with readFile and writeFile methods",
+    "phase": 4,
+    "category": "testing",
+    "description": "Add TypeScript tests for DiffPanelContent and TauriGitService",
     "steps": [
-      "Open src/features/files/services/fileSystemService.ts",
-      "Add readFile(path: string): Promise<string> to interface",
-      "Add writeFile(path: string, content: string): Promise<void> to interface",
-      "Implement readFile in TauriFileSystemService using invoke('read_file')",
-      "Implement writeFile in TauriFileSystemService using invoke('write_file')",
-      "Update MockFileSystemService with stub implementations",
-      "Write unit tests in fileSystemService.test.ts"
+      "Create src/features/diff/components/DiffPanelContent.test.tsx",
+      "Test: renders loading state while fetching",
+      "Test: renders empty state with centered wrapper (verify classes include w-full)",
+      "Test: renders ChangedFilesList + DiffViewer when changes exist",
+      "Test: auto-selects first file when status loads",
+      "Create src/features/diff/services/gitService.test.ts (extend existing)",
+      "Test: TauriGitService.getStatus() calls invoke with correct args",
+      "Test: TauriGitService.getDiff() calls invoke with correct args",
+      "Test: createGitService returns TauriGitService when __TAURI_INTERNALS__ exists",
+      "Run npm run test and verify all pass"
     ],
     "passes": true,
-    "dependencies": [6, 7]
+    "dependencies": [7]
   },
   {
     "id": 9,
-    "phase": 2,
-    "category": "frontend-service",
-    "description": "Create language service for filename to CodeMirror language mapping",
-    "steps": [
-      "Create src/features/editor/services/languageService.ts",
-      "Implement getLanguageExtension(filename: string) function",
-      "Map .ts/.tsx to typescript(), .rs to rust(), .json to json(), etc.",
-      "Default to null for unknown extensions",
-      "Create src/features/editor/services/languageService.test.ts",
-      "Write tests for each language mapping (.ts, .rs, .json, .css, .html)",
-      "Run npm test to verify"
-    ],
-    "passes": true,
-    "dependencies": [7]
-  },
-  {
-    "id": 10,
-    "phase": 2,
-    "category": "frontend-theme",
-    "description": "Create Catppuccin Mocha CodeMirror theme matching Obsidian Lens",
-    "steps": [
-      "Create src/features/editor/theme/catppuccin.ts",
-      "Define EditorView theme with Catppuccin Mocha colors",
-      "Map editor background to #121221 (surface)",
-      "Map gutter background to #1a1a2a (surface-container-low)",
-      "Map cursor to #e2c7ff (primary)",
-      "Define syntax highlighting: keywords mauve, strings green, functions blue",
-      "Create src/features/editor/theme/catppuccin.test.ts",
-      "Write structure validation tests"
-    ],
-    "passes": true,
-    "dependencies": [7]
-  },
-  {
-    "id": 11,
-    "phase": 3,
-    "category": "frontend-hooks",
-    "description": "Create useCodeMirror hook to manage EditorView instance",
-    "steps": [
-      "Create src/features/editor/hooks/useCodeMirror.ts",
-      "Accept containerRef, initialContent, language, onSave callback",
-      "Initialize EditorView with vim(), catppuccin theme, language extension",
-      "Configure vim :w command to call onSave callback",
-      "Return editorView instance and updateContent function",
-      "Clean up EditorView on unmount",
-      "Create src/features/editor/hooks/useCodeMirror.test.ts",
-      "Write tests for initialization, vim config, cleanup"
-    ],
-    "passes": true,
-    "dependencies": [9, 10]
-  },
-  {
-    "id": 12,
-    "phase": 3,
-    "category": "frontend-hooks",
-    "description": "Create useVimMode hook to track vim mode from CodeMirror",
-    "steps": [
-      "Create src/features/editor/hooks/useVimMode.ts",
-      "Accept editorView instance as parameter",
-      "Listen to vim mode change events from @replit/codemirror-vim",
-      "Track current mode: NORMAL, INSERT, VISUAL, COMMAND",
-      "Return current vim mode string",
-      "Create src/features/editor/hooks/useVimMode.test.ts",
-      "Write tests for mode tracking"
-    ],
-    "passes": true,
-    "dependencies": [11]
-  },
-  {
-    "id": 13,
-    "phase": 3,
-    "category": "frontend-hooks",
-    "description": "Create useEditorBuffer hook for file state management",
-    "steps": [
-      "Create src/features/editor/hooks/useEditorBuffer.ts",
-      "Track filePath, originalContent, isDirty state",
-      "Implement openFile(path) function using fileSystemService.readFile",
-      "Implement saveFile() function using fileSystemService.writeFile",
-      "Implement dirty detection by comparing current vs original content",
-      "Return file state, openFile, saveFile, isDirty",
-      "Create src/features/editor/hooks/useEditorBuffer.test.ts",
-      "Write tests for open, save, dirty detection"
-    ],
-    "passes": true,
-    "dependencies": [8, 11]
-  },
-  {
-    "id": 14,
-    "phase": 3,
-    "category": "frontend-component",
-    "description": "Replace Shiki with CodeMirror in CodeEditor component",
-    "steps": [
-      "Open src/features/editor/components/CodeEditor.tsx",
-      "Remove Shiki HTML rendering and shikiService import",
-      "Add container div ref for CodeMirror mount",
-      "Use useCodeMirror hook with file content and language",
-      "Use useVimMode hook to get current mode",
-      "Use useEditorBuffer hook for file management",
-      "Wire vim :w command to save file via useEditorBuffer",
-      "Update src/features/editor/components/CodeEditor.test.tsx",
-      "Test CodeMirror renders, vim mode tracking, save functionality"
-    ],
-    "passes": true,
-    "dependencies": [11, 12, 13]
-  },
-  {
-    "id": 15,
-    "phase": 3,
-    "category": "frontend-component",
-    "description": "Create UnsavedChangesDialog component with glassmorphism style",
-    "steps": [
-      "Create src/features/editor/components/UnsavedChangesDialog.tsx",
-      "Accept isOpen, fileName, onSave, onDiscard, onCancel props",
-      "Render backdrop with backdrop-blur-sm bg-black/40",
-      "Render glassmorphism panel matching command palette style",
-      "Add three buttons: Save (primary), Discard (error), Cancel (neutral)",
-      "Use framer-motion for spring animation (stiffness 400, damping 30)",
-      "Handle Esc key to call onCancel",
-      "Create src/features/editor/components/UnsavedChangesDialog.test.tsx",
-      "Test render, button callbacks, keyboard handling"
-    ],
-    "passes": true,
-    "dependencies": [7]
-  },
-  {
-    "id": 16,
-    "phase": 3,
-    "category": "frontend-component",
-    "description": "Wire VimStatusBar to real CodeMirror vim state",
-    "steps": [
-      "Open src/features/editor/components/VimStatusBar.tsx",
-      "Accept vimMode and isDirty props",
-      "Display vimMode (NORMAL/INSERT/VISUAL/COMMAND)",
-      "Display [+] indicator when isDirty is true",
-      "Update layout to match design spec",
-      "Update src/features/editor/components/VimStatusBar.test.tsx",
-      "Test mode display and dirty indicator"
-    ],
-    "passes": true,
-    "dependencies": [12, 13]
-  },
-  {
-    "id": 17,
     "phase": 4,
-    "category": "integration",
-    "description": "Update BottomDrawer to be resizable and receive file selection",
-    "steps": [
-      "Open src/features/workspace/components/BottomDrawer.tsx",
-      "Add useResizable hook with vertical axis",
-      "Set default height to 50% of parent",
-      "Set min height 150px, max 80%",
-      "Add drag handle at top edge",
-      "Accept selectedFilePath prop and pass to CodeEditor",
-      "Update BottomDrawer.test.tsx for resize functionality"
-    ],
-    "passes": true,
-    "dependencies": [14]
-  },
-  {
-    "id": 18,
-    "phase": 4,
-    "category": "integration",
-    "description": "Wire FileExplorer onFileSelect to parent WorkspaceView",
-    "steps": [
-      "Open src/features/workspace/components/panels/FileExplorer.tsx",
-      "Add onFileSelect callback prop",
-      "Call onFileSelect(filePath) when file is clicked",
-      "Update FileExplorer.test.tsx to verify callback"
-    ],
-    "passes": true,
-    "dependencies": []
-  },
-  {
-    "id": 19,
-    "phase": 4,
-    "category": "integration",
-    "description": "Update WorkspaceView with file selection state and unsaved changes flow",
-    "steps": [
-      "Open src/features/workspace/WorkspaceView.tsx",
-      "Add selectedFilePath state",
-      "Add showUnsavedDialog state",
-      "Implement handleFileSelect: check isDirty, show dialog if needed",
-      "Pass selectedFilePath to BottomDrawer",
-      "Render UnsavedChangesDialog with save/discard/cancel handlers",
-      "Update grid template columns (sidebar 340px, activity 360px)",
-      "Update WorkspaceView.test.tsx for file selection flow"
-    ],
-    "passes": true,
-    "dependencies": [15, 17, 18]
-  },
-  {
-    "id": 20,
-    "phase": 4,
-    "category": "integration",
-    "description": "Update Sidebar default sizes for better visibility",
-    "steps": [
-      "Open src/features/workspace/components/Sidebar.tsx",
-      "Update default width from 256px to 340px",
-      "Update max width from 480px to 560px",
-      "Update FileExplorer default height from 240px to 320px",
-      "Verify resize handles still work correctly",
-      "Update Sidebar.test.tsx if needed"
-    ],
-    "passes": true,
-    "dependencies": []
-  },
-  {
-    "id": 21,
-    "phase": 5,
-    "category": "testing",
-    "description": "Write integration test for file open flow",
-    "steps": [
-      "Create integration test file or add to existing suite",
-      "Test: FileExplorer click → read_file → CodeMirror content update",
-      "Verify file path state updates",
-      "Verify editor content matches file content",
-      "Verify isDirty starts as false",
-      "Run npm test to verify"
-    ],
-    "passes": true,
-    "dependencies": [19]
-  },
-  {
-    "id": 22,
-    "phase": 5,
-    "category": "testing",
-    "description": "Write integration test for unsaved changes flow",
-    "steps": [
-      "Test: Open file → edit content → isDirty becomes true",
-      "Test: Click different file → UnsavedChangesDialog shows",
-      "Test: Click Save → write_file called → new file opens",
-      "Test: Click Discard → new file opens without saving",
-      "Test: Click Cancel → stays on current file",
-      "Run npm test to verify"
-    ],
-    "passes": true,
-    "dependencies": [19]
-  },
-  {
-    "id": 23,
-    "phase": 5,
-    "category": "testing",
-    "description": "Write integration test for vim save command",
-    "steps": [
-      "Test: Open file → edit content → type :w in vim",
-      "Verify write_file Tauri command is invoked",
-      "Verify isDirty becomes false after save",
-      "Verify VimStatusBar removes [+] indicator",
-      "Run npm test to verify"
-    ],
-    "passes": true,
-    "dependencies": [19]
-  },
-  {
-    "id": 24,
-    "phase": 5,
-    "category": "cleanup",
-    "description": "Remove Shiki-related files and dependencies",
-    "steps": [
-      "Remove src/features/editor/services/shikiService.ts",
-      "Remove src/features/editor/services/shikiService.test.ts",
-      "Remove src/features/editor/components/LineNumbers.tsx (if exists)",
-      "Remove shiki from package.json dependencies",
-      "Run npm install to clean lock file",
-      "Search codebase for remaining shiki imports"
-    ],
-    "passes": true,
-    "dependencies": [14]
-  },
-  {
-    "id": 25,
-    "phase": 5,
-    "category": "quality",
-    "description": "Run all quality checks and fix issues",
-    "steps": [
-      "Run npm run lint and fix all ESLint issues",
-      "Run npm run type-check and fix TypeScript errors",
-      "Run npm test and achieve 80%+ coverage",
-      "Run cd src-tauri && cargo clippy and fix warnings",
-      "Run cd src-tauri && cargo test and verify all pass",
-      "Run npm run format to apply Prettier"
-    ],
-    "passes": true,
-    "dependencies": [21, 22, 23, 24]
-  },
-  {
-    "id": 26,
-    "phase": 5,
     "category": "verification",
-    "description": "Manual verification checklist for CodeMirror editor",
+    "description": "Run all linters and type checks to ensure quality",
     "steps": [
-      "Verify: Can click file in explorer and see content in editor",
-      "Verify: Vim motions work (hjkl, w, b, $, 0, gg, G)",
-      "Verify: Vim modes work (i for INSERT, v for VISUAL, : for COMMAND, Esc for NORMAL)",
-      "Verify: Can edit content and see [+] in status bar",
-      "Verify: :w command saves file and removes [+]",
-      "Verify: Switching files when dirty shows unsaved changes dialog",
-      "Verify: Save/Discard/Cancel buttons work correctly",
-      "Verify: BottomDrawer is resizable with drag handle",
-      "Verify: Catppuccin Mocha theme matches design spec",
-      "Verify: Syntax highlighting works for .ts, .rs, .json files"
+      "Run npm run lint and fix any issues",
+      "Run npm run type-check and fix any type errors",
+      "Run cargo fmt to format Rust code",
+      "Run cargo clippy -- -D warnings and fix all warnings",
+      "Run npm run test and verify 100% pass",
+      "Run cargo test and verify 100% pass",
+      "Verify no new Rust dependencies added (check Cargo.toml)"
     ],
     "passes": true,
-    "dependencies": [25]
+    "dependencies": [3, 8]
   }
 ]
