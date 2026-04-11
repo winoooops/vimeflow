@@ -30,13 +30,22 @@ import { EditorState, StateEffect } from '@codemirror/state'
  * a different `StateEffect` type whose `.value` also has a
  * `range.head: number` field, this helper will happily extract it and
  * the regression test would pass even on a different (wrong) effect.
- * The test's upstream assertion
- * (`effects[0] instanceof StateEffect`) is too weak to distinguish
- * effect types — `StateEffect` is the common base class of every CM6
- * effect. If you ever suspect this test is passing on the wrong
- * effect, strengthen it by matching the effect against
- * `EditorView.scrollIntoView` directly (it IS a `StateEffectType`
- * comparable via `effect.is(scrollIntoView)`).
+ * The upstream `instanceof StateEffect` check is too weak to catch
+ * this — `StateEffect` is the common base class of every CM6 effect.
+ *
+ * Strong-typing the comparison is awkward because CM6 does NOT
+ * publicly export the `StateEffectType` for scroll. `EditorView.
+ * scrollIntoView` itself is a factory function with signature
+ * `(pos, options?) => StateEffect<ScrollTarget>`, not a
+ * `StateEffectType`, so `effect.is(EditorView.scrollIntoView)` would
+ * fail to type-check. The only way to get the underlying type is to
+ * create a throwaway instance and read its `.type`
+ * (`EditorView.scrollIntoView(0).type`), which can then be compared
+ * via `effects[0].is(...)`. If this test ever starts producing
+ * suspicious false positives, that's the escape hatch — but the
+ * cleaner remediation is usually to update `readScrollTargetPos`'s
+ * duck-type to whatever new shape CM6 introduced, not to harden the
+ * type comparison.
  */
 const readScrollTargetPos = (
   effect: StateEffect<unknown>
