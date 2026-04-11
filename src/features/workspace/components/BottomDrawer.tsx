@@ -186,9 +186,22 @@ const BottomDrawer = ({
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {activeTab === 'editor' ? (
-          <div data-testid="editor-panel" className="flex flex-1">
+          // `min-h-0` + `overflow-hidden` on the editor wrapper is load-
+          // bearing: without them this flex child defaults to
+          // `min-height: auto`, which grows to the full CodeMirror
+          // content height and defeats CodeMirror's internal
+          // `.cm-scroller`. The cursor moves with h/j/k/l but the
+          // editor never needs to scroll because its container is
+          // always big enough to show the entire file. Bounding the
+          // wrapper is what lets `h-full` on `codemirror-container`
+          // resolve to a real pixel height and enables internal scroll
+          // follow.
+          <div
+            data-testid="editor-panel"
+            className="flex min-h-0 flex-1 overflow-hidden"
+          >
             <CodeEditor
               filePath={selectedFilePath}
               content={content}
@@ -199,7 +212,18 @@ const BottomDrawer = ({
             />
           </div>
         ) : (
-          <div data-testid="diff-panel" className="flex-1 flex">
+          // Same `min-h-0 overflow-hidden` treatment as the editor
+          // wrapper above. `DiffContent` is currently a static two-
+          // line placeholder, so nothing overflows today — but when
+          // it's replaced with a real diff viewer (CodeMirror merge
+          // view or similar), an unbounded `flex flex-1` wrapper
+          // would immediately re-trigger the same `min-height: auto`
+          // flex issue we're fixing here for the editor. Cheaper to
+          // apply symmetry now than to rediscover the bug later.
+          <div
+            data-testid="diff-panel"
+            className="flex min-h-0 flex-1 overflow-hidden"
+          >
             <DiffContent />
           </div>
         )}

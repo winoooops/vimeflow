@@ -1,9 +1,63 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { EditorView, ViewUpdate, drawSelection } from '@codemirror/view'
-import { EditorState, type Extension, Compartment } from '@codemirror/state'
+import {
+  EditorState,
+  type Extension,
+  type Transaction,
+  type TransactionSpec,
+  Compartment,
+} from '@codemirror/state'
 import { history } from '@codemirror/commands'
 import { vim, Vim } from '@replit/codemirror-vim'
 import { catppuccinMocha } from '../theme/catppuccin'
+
+/**
+ * Scroll the viewport to follow the cursor on any PURE-selection change
+ * (no doc mutation). This is what enables vim NORMAL-mode scroll-follow
+ * for `j/k/G/gg/Ctrl-d/etc.`, but it also fires for mouse clicks that
+ * move the cursor, arrow-key navigation, and programmatic selection
+ * changes from other extensions. That's deliberately inclusive — every
+ * such transaction is a cursor move that the user expects the viewport
+ * to follow, and CM6 has no general-purpose "vim-only" transaction
+ * marker we could gate on.
+ *
+ * Exported so it can be unit-tested in isolation without having to
+ * measure `scrollTop` inside jsdom (jsdom doesn't lay out the DOM, so
+ * DOM-level scroll position is unobservable in tests).
+ *
+ * Why transactionExtender instead of updateListener: the scroll effect
+ * rides on the SAME transaction as the selection change, so CodeMirror
+ * sees one atomic update (selection moved + scrollIntoView) and its
+ * measure pass always reflects the new cursor position. Dispatching
+ * from an update listener ran after CM had already measured with stale
+ * cursor coordinates, producing the "scrolls exactly one row then
+ * silently no-ops forever" bug that motivated this fix.
+ *
+ * Why `!tr.selection || tr.docChanged` guard: we only want to intercept
+ * pure-selection changes. Doc changes (insert-mode typing) already hit
+ * CodeMirror's built-in scroll path, and effect-only dispatches
+ * (language reconfiguration, scroll dispatches from elsewhere) aren't
+ * selection moves — skipping both keeps us from clobbering existing
+ * scroll behavior or double-scrolling.
+ *
+ * Why `y: 'nearest'`: matches native vim. Only scrolls when the cursor
+ * actually leaves the viewport, so short in-viewport motions don't
+ * recenter the buffer on every keystroke. Also harmless for mouse
+ * clicks and arrow-key moves that stay in view.
+ */
+export const scrollCursorOnSelectionChange = (
+  tr: Transaction
+): TransactionSpec | null => {
+  if (!tr.selection || tr.docChanged) {
+    return null
+  }
+
+  return {
+    effects: EditorView.scrollIntoView(tr.newSelection.main.head, {
+      y: 'nearest',
+    }),
+  }
+}
 
 // `Vim.defineEx` writes into a GLOBAL registry shared across every
 // `@replit/codemirror-vim` instance in the process. Register it exactly
@@ -121,6 +175,13 @@ export function useCodeMirror(
           onChangeRef.current(content)
         }
       }),
+      // Scroll the viewport to follow the cursor on any pure-selection
+      // transaction. This is what enables vim NORMAL-mode scroll-follow
+      // (j/k/G/gg/Ctrl-d/etc.) but also covers mouse clicks and arrow
+      // keys. See `scrollCursorOnSelectionChange` above for the full
+      // rationale (why transactionExtender vs updateListener, why
+      // `y: 'nearest'`, etc.).
+      EditorState.transactionExtender.of(scrollCursorOnSelectionChange),
     ]
 
     const state = EditorState.create({
