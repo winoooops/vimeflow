@@ -1,9 +1,54 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { EditorView, ViewUpdate, drawSelection } from '@codemirror/view'
-import { EditorState, type Extension, Compartment } from '@codemirror/state'
+import {
+  EditorState,
+  type Extension,
+  type Transaction,
+  type TransactionSpec,
+  Compartment,
+} from '@codemirror/state'
 import { history } from '@codemirror/commands'
 import { vim, Vim } from '@replit/codemirror-vim'
 import { catppuccinMocha } from '../theme/catppuccin'
+
+/**
+ * Scroll the viewport to follow the cursor during vim NORMAL-mode motions
+ * (j/k/G/gg/Ctrl-d/etc.). Exported so it can be unit-tested in isolation
+ * without having to measure `scrollTop` inside jsdom (jsdom doesn't lay
+ * out the DOM, so DOM-level scroll position is unobservable in tests).
+ *
+ * Why transactionExtender instead of updateListener: the scroll effect
+ * rides on the SAME transaction as the selection change, so CodeMirror
+ * sees one atomic update (selection moved + scrollIntoView) and its
+ * measure pass always reflects the new cursor position. Dispatching
+ * from an update listener ran after CM had already measured with stale
+ * cursor coordinates, producing the "scrolls exactly one row then
+ * silently no-ops forever" bug.
+ *
+ * Why `!tr.selection || tr.docChanged` guard: we only want to intercept
+ * PURE-selection changes (vim normal-mode motions). Doc changes (insert
+ * mode typing) already hit CodeMirror's built-in scroll path, and
+ * effect-only dispatches (language reconfiguration, scroll dispatches
+ * from elsewhere) aren't selection moves at all — skipping both keeps
+ * us from clobbering existing scroll behavior or double-scrolling.
+ *
+ * Why `y: 'nearest'`: matches native vim. Only scrolls when the cursor
+ * actually leaves the viewport, so short in-viewport motions don't
+ * recenter the buffer on every keystroke.
+ */
+export const scrollCursorOnVimMotion = (
+  tr: Transaction
+): TransactionSpec | null => {
+  if (!tr.selection || tr.docChanged) {
+    return null
+  }
+
+  return {
+    effects: EditorView.scrollIntoView(tr.newSelection.main.head, {
+      y: 'nearest',
+    }),
+  }
+}
 
 // `Vim.defineEx` writes into a GLOBAL registry shared across every
 // `@replit/codemirror-vim` instance in the process. Register it exactly
@@ -121,39 +166,10 @@ export function useCodeMirror(
           onChangeRef.current(content)
         }
       }),
-      // Scroll the viewport to follow the cursor during vim NORMAL-mode
-      // motions (j/k/G/gg/Ctrl-d/etc.). CodeMirror 6 auto-scrolls when a
-      // selection-changing transaction either carries a
-      // `scrollIntoView` effect or an `"select"` userEvent annotation,
-      // but @replit/codemirror-vim dispatches motion transactions with
-      // neither. The result is that INSERT-mode typing scrolls
-      // (because doc changes trigger the built-in scroll path) while
-      // NORMAL-mode motions silently park the cursor off-screen.
-      //
-      // We use `transactionExtender` (NOT an `updateListener`) so the
-      // scroll effect rides on the SAME transaction as the selection
-      // change. Dispatching from an update listener ran after CM's
-      // measure pass had already captured stale cursor coordinates,
-      // which caused the bug where j/k scrolled exactly one row and
-      // then silently no-oped forever after. Baking the effect into
-      // the original transaction means CM sees a single atomic update
-      // (selection moved + scrollIntoView) and its measurement always
-      // reflects the new cursor position.
-      //
-      // `y: 'nearest'` is deliberate: it only scrolls when the cursor
-      // leaves the viewport, matching native vim so short in-viewport
-      // motions don't recenter the buffer.
-      EditorState.transactionExtender.of((tr) => {
-        if (!tr.selection || tr.docChanged) {
-          return null
-        }
-
-        return {
-          effects: EditorView.scrollIntoView(tr.newSelection.main.head, {
-            y: 'nearest',
-          }),
-        }
-      }),
+      // Vim NORMAL-mode scroll-follow. See `scrollCursorOnVimMotion`
+      // above for the full rationale (why transactionExtender vs
+      // updateListener, why `y: 'nearest'`, etc.).
+      EditorState.transactionExtender.of(scrollCursorOnVimMotion),
     ]
 
     const state = EditorState.create({

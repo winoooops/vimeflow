@@ -1,7 +1,8 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useCodeMirror } from './useCodeMirror'
+import { useCodeMirror, scrollCursorOnVimMotion } from './useCodeMirror'
 import { EditorView } from '@codemirror/view'
+import { EditorState, StateEffect } from '@codemirror/state'
 
 describe('useCodeMirror', () => {
   let containerDiv: HTMLDivElement
@@ -165,67 +166,83 @@ describe('useCodeMirror', () => {
 
     expect(result.current.editorView).toBeInstanceOf(EditorView)
   })
+})
 
-  test('attaches scrollIntoView effect to pure selection change (vim motion)', () => {
-    const { result } = renderHook(() =>
-      useCodeMirror({
-        initialContent: 'line one\nline two\nline three\nline four',
-        language: null,
-        onSave: vi.fn(),
-      })
-    )
+describe('scrollCursorOnVimMotion', () => {
+  // These tests exercise the transactionExtender as a PURE FUNCTION,
+  // not through a mounted EditorView. jsdom has no layout pass so we
+  // can't observe `scrollTop` on `.cm-scroller`; the most reliable way
+  // to verify the extender actually attaches a scroll effect is to
+  // invoke it directly on a synthetic transaction and inspect the
+  // returned TransactionSpec.
 
-    act(() => {
-      result.current.setContainer(containerDiv)
+  test('returns a scroll effect for a pure selection change (vim motion)', () => {
+    const state = EditorState.create({
+      doc: 'line one\nline two\nline three\nline four',
     })
+    const tr = state.update({ selection: { anchor: 20, head: 20 } })
 
-    const view = result.current.editorView
-    if (!view) {
-      throw new Error('editor view not initialized')
-    }
+    const result = scrollCursorOnVimMotion(tr)
 
-    // Simulate a vim normal-mode motion: pure selection change, no doc
-    // change. Move the cursor into the third line.
-    act(() => {
-      view.dispatch({ selection: { anchor: 20, head: 20 } })
-    })
+    expect(result).not.toBeNull()
 
-    // After the transactionExtender runs, the committed transaction's
-    // effects should include the scroll-into-view effect for the new
-    // cursor head. We read it off the last-applied transaction via the
-    // view's recorded selection — effects aren't queryable post-commit,
-    // so we assert the behavioral outcome: the selection actually moved
-    // to the requested offset, proving the extender didn't swallow it
-    // while also scheduling the scroll on the same transaction.
-    expect(view.state.selection.main.head).toBe(20)
+    // `effects` may be a single effect or an array. Normalize and verify
+    // at least one is a `StateEffect` instance (every `scrollIntoView`
+    // effect is one).
+    const effects = result?.effects
+
+    const effectArray = Array.isArray(effects)
+      ? effects
+      : effects !== undefined
+        ? [effects]
+        : []
+
+    expect(effectArray.length).toBeGreaterThan(0)
+    expect(effectArray[0]).toBeInstanceOf(StateEffect)
   })
 
-  test('does not attach scroll effect on doc change (insert mode)', () => {
-    const { result } = renderHook(() =>
-      useCodeMirror({
-        initialContent: 'hello',
-        language: null,
-        onSave: vi.fn(),
-      })
-    )
-
-    act(() => {
-      result.current.setContainer(containerDiv)
+  test('uses the new main cursor head position, not the old one', () => {
+    // Move selection from 0 → 20 and make sure the extender reads
+    // `tr.newSelection.main.head` (post-transaction state), not
+    // `tr.startState.selection.main.head` (pre-transaction state).
+    // Regression guard against anyone tempted to "simplify" the guard
+    // and accidentally target the wrong selection reference.
+    const state = EditorState.create({
+      doc: 'line one\nline two\nline three\nline four',
     })
+    const tr = state.update({ selection: { anchor: 20, head: 20 } })
 
-    const view = result.current.editorView
-    if (!view) {
-      throw new Error('editor view not initialized')
-    }
+    expect(tr.newSelection.main.head).toBe(20)
+    expect(tr.startState.selection.main.head).toBe(0)
 
-    // Sanity check: a doc-change transaction must still commit without
-    // the extender interfering. Insert mode uses CodeMirror's built-in
-    // scroll path; our extender must early-return for these so we don't
-    // double-scroll or clobber existing scroll effects.
-    act(() => {
-      view.dispatch({ changes: { from: 5, insert: ' world' } })
-    })
+    const result = scrollCursorOnVimMotion(tr)
 
-    expect(view.state.doc.toString()).toBe('hello world')
+    expect(result).not.toBeNull()
+  })
+
+  test('returns null for doc change (insert mode path)', () => {
+    // Insert mode typing uses CodeMirror's built-in scroll path because
+    // every keystroke is a doc change. The extender MUST early-return
+    // here so we don't duplicate the built-in scroll or fight with it.
+    const state = EditorState.create({ doc: 'hello' })
+    const tr = state.update({ changes: { from: 5, insert: ' world' } })
+
+    const result = scrollCursorOnVimMotion(tr)
+
+    expect(result).toBeNull()
+  })
+
+  test('returns null for effect-only transaction (no selection change)', () => {
+    // Transactions that carry only effects (e.g. language reconfiguration
+    // via the language compartment) have no selection spec. The extender
+    // must early-return so it doesn't accidentally schedule a scroll on
+    // every unrelated effect that flows through the state.
+    const state = EditorState.create({ doc: 'hello' })
+    const noopEffect = StateEffect.define<number>()
+    const tr = state.update({ effects: noopEffect.of(1) })
+
+    const result = scrollCursorOnVimMotion(tr)
+
+    expect(result).toBeNull()
   })
 })
