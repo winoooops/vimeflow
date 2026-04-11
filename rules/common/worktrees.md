@@ -81,7 +81,7 @@ After the user merges or closes the PR:
 ```bash
 git checkout main
 git pull
-git branch -d <branch-name>       # delete local branch (use -D if abandoned)
+git branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
 ```
 
 **Subagent / harness (linked worktree):**
@@ -89,9 +89,11 @@ git branch -d <branch-name>       # delete local branch (use -D if abandoned)
 ```bash
 # From the primary checkout
 git worktree remove .claude/worktrees/<branch-name>
-git branch -d <branch-name>       # delete local branch (use -D if unmerged and abandoned)
+git branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
 git worktree prune                 # clean up stale worktree metadata
 ```
+
+> **Why `-D` not `-d`:** Because this repo mandates squash-and-merge, the feature branch's individual commits never become ancestors of `main` — only the single squash commit does. `git branch -d` refuses to delete a branch it considers "not fully merged" and will fail on every normal cleanup. Use `-D` unconditionally.
 
 ## Lock Contention Guardrails
 

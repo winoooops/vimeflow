@@ -13,7 +13,7 @@ export default defineConfig({
       '**/dist/**',
       '**/cypress/**',
       '**/.{idea,git,cache,output,temp}/**',
-      '**/{karma,rollup,webpack,vite,vitest,jest,ash,nyc,cypress,tsup,build,eslint,prettier}.config.*',
+      '**/{karma,rollup,webpack,vite,vitest,jest,ava,nyc,cypress,tsup,build,eslint,prettier}.config.*',
       '.claude/**',
     ],
     coverage: {
