@@ -121,6 +121,31 @@ export function useCodeMirror(
           onChangeRef.current(content)
         }
       }),
+      // Scroll the viewport to follow the cursor during vim NORMAL-mode
+      // motions (j/k/G/gg/Ctrl-d/etc.). CodeMirror 6 auto-scrolls when a
+      // selection-changing transaction either carries a
+      // `scrollIntoView` effect or an `"select"` userEvent annotation,
+      // but @replit/codemirror-vim dispatches motion transactions with
+      // neither. The result is that INSERT-mode typing scrolls
+      // (because doc changes trigger the built-in scroll path) while
+      // NORMAL-mode motions silently park the cursor off-screen.
+      //
+      // We catch any pure-selection change (no doc change) and
+      // re-dispatch a `scrollIntoView` effect for the main cursor head.
+      // `y: 'nearest'` is deliberate: it only scrolls when the cursor
+      // leaves the viewport, matching native vim behavior so small
+      // in-viewport motions don't repeatedly recenter the buffer.
+      EditorView.updateListener.of((update: ViewUpdate) => {
+        if (!update.selectionSet || update.docChanged) {
+          return
+        }
+
+        update.view.dispatch({
+          effects: EditorView.scrollIntoView(update.state.selection.main.head, {
+            y: 'nearest',
+          }),
+        })
+      }),
     ]
 
     const state = EditorState.create({

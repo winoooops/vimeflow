@@ -165,4 +165,76 @@ describe('useCodeMirror', () => {
 
     expect(result.current.editorView).toBeInstanceOf(EditorView)
   })
+
+  test('dispatches scrollIntoView effect on pure selection change (vim motion)', () => {
+    const { result } = renderHook(() =>
+      useCodeMirror({
+        initialContent: 'line one\nline two\nline three\nline four',
+        language: null,
+        onSave: vi.fn(),
+      })
+    )
+
+    act(() => {
+      result.current.setContainer(containerDiv)
+    })
+
+    const view = result.current.editorView
+    if (!view) {
+      throw new Error('editor view not initialized')
+    }
+
+    const dispatchSpy = vi.spyOn(view, 'dispatch')
+
+    // Simulate a vim normal-mode motion: pure selection change, no doc
+    // change. Move the cursor into the third line.
+    act(() => {
+      view.dispatch({ selection: { anchor: 20, head: 20 } })
+    })
+
+    // The listener should follow-up with a dispatch carrying the
+    // scrollIntoView effect for the new cursor head.
+    const scrollCall = dispatchSpy.mock.calls.find((call) => {
+      const tx = call[0] as { effects?: unknown }
+
+      return tx.effects !== undefined
+    })
+
+    expect(scrollCall).toBeDefined()
+  })
+
+  test('does not dispatch extra scroll transaction on doc change (insert mode)', () => {
+    const { result } = renderHook(() =>
+      useCodeMirror({
+        initialContent: 'hello',
+        language: null,
+        onSave: vi.fn(),
+      })
+    )
+
+    act(() => {
+      result.current.setContainer(containerDiv)
+    })
+
+    const view = result.current.editorView
+    if (!view) {
+      throw new Error('editor view not initialized')
+    }
+
+    const dispatchSpy = vi.spyOn(view, 'dispatch')
+
+    // Simulate insert-mode typing: docChanged, so CodeMirror's built-in
+    // scroll path already fires and our listener must not duplicate it.
+    act(() => {
+      view.dispatch({ changes: { from: 5, insert: ' world' } })
+    })
+
+    const scrollCall = dispatchSpy.mock.calls.find((call) => {
+      const tx = call[0] as { effects?: unknown }
+
+      return tx.effects !== undefined
+    })
+
+    expect(scrollCall).toBeUndefined()
+  })
 })
