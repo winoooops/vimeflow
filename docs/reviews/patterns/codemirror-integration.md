@@ -2,7 +2,7 @@
 id: codemirror-integration
 category: editor
 created: 2026-04-10
-last_updated: 2026-04-10
+last_updated: 2026-04-11
 ref_count: 0
 ---
 
@@ -112,3 +112,27 @@ affects event/command routing.
 - **Finding:** The content-sync effect bailed out via `if (!fileContent) return`, so opening a zero-byte file (or a file that became empty) never called `updateContent`. The editor kept showing the previous file's content, and subsequent `:w` could overwrite the wrong file contents.
 - **Fix:** Gate on `loadedFilePath === null` instead of content truthiness. Empty files still trigger an `updateContent('')` that correctly clears the buffer.
 - **Commit:** `cc17251 fix(editor): wire vim state, visual selection, and editor lifecycle`
+
+### 11. Three-layer scroll bug: flex chain + `.cm-editor` height + vim motions never scroll
+
+- **Source:** local-debugging | PR #43 | 2026-04-11
+- **Severity:** HIGH
+- **File:** `src/features/workspace/components/BottomDrawer.tsx`, `src/features/editor/components/CodeEditor.tsx`, `src/features/editor/theme/catppuccin.ts`, `src/features/editor/hooks/useCodeMirror.ts`
+- **Finding:** The CodeMirror viewport never scrolled. `.cm-scroller` showed no scrollbar, mouse wheel did nothing, and vim `j/k/G/Ctrl-d` moved the cursor off-screen without the viewport following. Three independent causes had to all be present to break scrolling, and all three had to be fixed together to restore it:
+  1. **Flex chain was unbounded.** Every wrapper between `<section style={{ height: drawerHeight }}>` and `<div ref={setContainer}>` was `flex-1` with no `min-h-0`. `min-height: auto` on each flex child grew the chain to the full CodeMirror content height, so even though the drawer had a fixed pixel height, `h-full` on the container resolved to an auto-sized parent and became content-sized by the time it reached CodeMirror.
+  2. **`.cm-editor` was not told to fill its container.** The Catppuccin theme set colors but never set `height: 100%` on `&` (the `.cm-editor` root). CM6 defaults `.cm-editor` to content-based sizing unless the theme overrides it, so even after the container div had a real pixel height, `.cm-editor` ignored it and `.cm-scroller` had no overflow to scroll against.
+  3. **Vim NORMAL-mode motions never dispatch `scrollIntoView`.** CM6 auto-scrolls when a selection-changing transaction carries a `scrollIntoView` effect or a `"select"` userEvent annotation. `@replit/codemirror-vim` dispatches motion transactions with neither — so insert-mode typing scrolled (doc changes take CM6's built-in scroll path) but normal-mode `j/k/G` silently parked the cursor off-screen.
+- **Fix:** Apply the three fixes in one PR because any one alone leaves the editor with at least one of: "no scrollbar", "scrollbar but content-sized container", or "working scrollbar that vim motions don't trigger":
+  1. `min-h-0 overflow-hidden` on every `flex-1` wrapper from `BottomDrawer` content area down through `editor-panel`, `diff-panel`, `CodeEditor` root, `CodeEditor` inner, AND the `!filePath` early-return branch. Symmetry matters: a future richer no-file placeholder would re-trigger the bug without the early-return fix.
+  2. `EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { overflow: 'auto' } })` merged into the Catppuccin theme. This is the canonical CM6 "fill container" recipe.
+  3. `EditorState.transactionExtender.of(scrollCursorOnSelectionChange)` where the extender attaches an `EditorView.scrollIntoView(tr.newSelection.main.head, { y: 'nearest' })` effect to any pure-selection transaction. **Crucially:** use `transactionExtender`, NOT `updateListener`. An update-listener approach dispatches a SECOND transaction after CM6 has already measured with stale cursor coordinates, producing a "scrolls exactly one row then silently no-ops forever" bug. The extender bakes the effect into the ORIGINAL transaction so CM6 measures the final state atomically. Guard on `!tr.selection || tr.docChanged` to skip effect-only transactions, insert-mode typing, and vim mutation commands (`dd`, `dw`, etc. that are both `docChanged` AND selection-setting) — those hit CM6's built-in scroll path.
+- **Commit:** `1f34032 fix(editor): fill cm-editor to container and enable cm-scroller overflow`
+
+### 12. Naming the extender "vim motion" oversold its scope
+
+- **Source:** github-claude | PR #43 round 2 | 2026-04-11
+- **Severity:** LOW
+- **File:** `src/features/editor/hooks/useCodeMirror.ts`
+- **Finding:** The scroll extender was originally named `scrollCursorOnVimMotion` and its JSDoc described it as catching vim normal-mode motions specifically. But the guard `!tr.selection || tr.docChanged` catches EVERY pure-selection transaction — mouse clicks that move the cursor, arrow-key navigation, find-replace jumps, programmatic selections from other extensions. CM6 has no general-purpose API to identify transaction origin, so narrowing to vim-only isn't actually possible without inspecting `Transaction.userEvent` and coupling to vim-extension internals.
+- **Fix:** Rename to `scrollCursorOnSelectionChange` and rewrite the JSDoc to describe the actual scope — the behavior is deliberately inclusive, every pure-selection transaction is a cursor move the user expects the viewport to follow. Behavior unchanged.
+- **Commit:** `3f8bf2c fix(editor): address Claude review round 2 — test guard, naming, symmetry`
