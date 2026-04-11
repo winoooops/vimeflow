@@ -2,54 +2,63 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useCodeMirror, scrollCursorOnSelectionChange } from './useCodeMirror'
 import { EditorView } from '@codemirror/view'
-import { EditorState, StateEffect } from '@codemirror/state'
+import {
+  EditorState,
+  StateEffect,
+  type StateEffectType,
+} from '@codemirror/state'
 
 /**
  * Read the target position out of an `EditorView.scrollIntoView` effect.
  *
+ * Gates on `effect.is(scrollIntoViewType)` so the duck-type access is
+ * ONLY applied when the input is genuinely a scrollIntoView effect —
+ * this rules out the false-positive failure mode where an unrelated
+ * `StateEffect` subclass happens to have a `range.head: number` field.
+ *
  * CodeMirror's `scrollIntoView` effect is a `StateEffect<ScrollTarget>`
  * where `ScrollTarget` is an internal class with shape
  * `{ range: SelectionRange, y, x, yMargin, xMargin, isSnapshot }`.
- * The type isn't exported, so we duck-type it: look for a `range.head`
- * field and return it. Returns `undefined` if the effect isn't a scroll
- * effect or the shape doesn't match.
+ * The type isn't exported, so we duck-type the `.range.head` field
+ * after the effect-type gate. Returns `undefined` if the effect isn't
+ * a scroll effect or its shape doesn't match.
  *
  * **Brittleness note:** the `.range.head` access is verified against
  * `@codemirror/view` 6.41.0 (the version pinned in this repo). If a
  * future CM6 bump renames or restructures `ScrollTarget`, this helper
- * will silently return `undefined` and the regression-guard test below
- * (`targets the NEW cursor head position, not the old one`) will fail
- * with `expect(undefined).toBe(20)`. If you see that failure after a
- * CodeMirror upgrade, the fix is to re-inspect the
- * `@codemirror/view` source for the new `ScrollTarget` shape and
- * update this helper accordingly — the extender itself is
- * a one-liner using `tr.newSelection.main.head` so the production
+ * will silently return `undefined` for real scroll effects and the
+ * regression-guard test below (`targets the NEW cursor head position,
+ * not the old one`) will fail with `expect(undefined).toBe(20)`. If
+ * you see that failure after a CodeMirror upgrade, the fix is to
+ * re-inspect the `@codemirror/view` source for the new `ScrollTarget`
+ * shape and update this helper accordingly — the extender itself is
+ * a one-liner using `tr.newSelection.main.head`, so the production
  * code almost certainly doesn't need to change.
- *
- * **False-positive failure mode:** if a future CM6 version introduces
- * a different `StateEffect` type whose `.value` also has a
- * `range.head: number` field, this helper will happily extract it and
- * the regression test would pass even on a different (wrong) effect.
- * The upstream `instanceof StateEffect` check is too weak to catch
- * this — `StateEffect` is the common base class of every CM6 effect.
- *
- * Strong-typing the comparison is awkward because CM6 does NOT
- * publicly export the `StateEffectType` for scroll. `EditorView.
- * scrollIntoView` itself is a factory function with signature
- * `(pos, options?) => StateEffect<ScrollTarget>`, not a
- * `StateEffectType`, so `effect.is(EditorView.scrollIntoView)` would
- * fail to type-check. The only way to get the underlying type is to
- * create a throwaway instance and read its `.type`
- * (`EditorView.scrollIntoView(0).type`), which can then be compared
- * via `effects[0].is(...)`. If this test ever starts producing
- * suspicious false positives, that's the escape hatch — but the
- * cleaner remediation is usually to update `readScrollTargetPos`'s
- * duck-type to whatever new shape CM6 introduced, not to harden the
- * type comparison.
  */
+// Strong type comparator for scrollIntoView effects. CM6 doesn't
+// publicly export the underlying `StateEffectType` for scroll, so we
+// construct a throwaway effect at module load and read its `.type`
+// field — that's the only way to get a reference to the type we can
+// pass to `effect.is(...)`. The `.type` property exists at runtime but
+// isn't in the public `@codemirror/state` type declarations, hence the
+// cast. Using this comparator lets `readScrollTargetPos` gate its
+// duck-type access on "is this actually a scroll effect" rather than
+// accepting any `StateEffect` that happens to have a
+// `range.head: number` field (the false-positive failure mode
+// documented below).
+const scrollIntoViewType = (
+  EditorView.scrollIntoView(0) as unknown as {
+    type: StateEffectType<unknown>
+  }
+).type
+
 const readScrollTargetPos = (
   effect: StateEffect<unknown>
 ): number | undefined => {
+  if (!effect.is(scrollIntoViewType)) {
+    return undefined
+  }
+
   const value = effect.value as
     | { range?: { head?: unknown } }
     | null
@@ -254,7 +263,15 @@ describe('scrollCursorOnSelectionChange', () => {
 
     expect(result).not.toBeNull()
     expect(effects.length).toBeGreaterThan(0)
-    expect(effects[0]).toBeInstanceOf(StateEffect)
+
+    // `readScrollTargetPos` gates on `effect.is(scrollIntoViewType)`
+    // — returning a number proves the effect is genuinely a CM6
+    // `scrollIntoView` effect, not just any `StateEffect` subclass.
+    // Using `toBeInstanceOf(StateEffect)` here would be too weak: it
+    // would pass for any effect type (compartment reconfiguration,
+    // etc.) and leave a refactor that swapped `scrollIntoView(...)`
+    // for a no-op effect undetected.
+    expect(readScrollTargetPos(effects[0])).toEqual(expect.any(Number))
   })
 
   test('targets the NEW cursor head position, not the old one', () => {
