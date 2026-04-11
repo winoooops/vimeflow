@@ -37,9 +37,23 @@ const colors = {
  */
 const theme = EditorView.theme(
   {
+    // `&` targets `.cm-editor`. `height: 100%` is load-bearing:
+    // without it, CodeMirror sizes `.cm-editor` to its content, which
+    // makes `.cm-scroller` the same height as the full document. The
+    // scroller then has no overflow, so no scrollbar appears, mouse
+    // wheel does nothing, and any `scrollIntoView` effect (including
+    // the one our transactionExtender dispatches for vim normal-mode
+    // motions) has no scrollable ancestor to act on. Pairing this
+    // with `.cm-scroller { overflow: auto }` is the canonical CM6
+    // "fill container" recipe, required for the surrounding flex
+    // chain's bounded height to actually reach the editor viewport.
     '&': {
       backgroundColor: colors.surface,
       color: colors.text,
+      height: '100%',
+    },
+    '.cm-scroller': {
+      overflow: 'auto',
     },
     '.cm-content': {
       caretColor: colors.primary,

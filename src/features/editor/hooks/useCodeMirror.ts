@@ -130,21 +130,29 @@ export function useCodeMirror(
       // (because doc changes trigger the built-in scroll path) while
       // NORMAL-mode motions silently park the cursor off-screen.
       //
-      // We catch any pure-selection change (no doc change) and
-      // re-dispatch a `scrollIntoView` effect for the main cursor head.
+      // We use `transactionExtender` (NOT an `updateListener`) so the
+      // scroll effect rides on the SAME transaction as the selection
+      // change. Dispatching from an update listener ran after CM's
+      // measure pass had already captured stale cursor coordinates,
+      // which caused the bug where j/k scrolled exactly one row and
+      // then silently no-oped forever after. Baking the effect into
+      // the original transaction means CM sees a single atomic update
+      // (selection moved + scrollIntoView) and its measurement always
+      // reflects the new cursor position.
+      //
       // `y: 'nearest'` is deliberate: it only scrolls when the cursor
-      // leaves the viewport, matching native vim behavior so small
-      // in-viewport motions don't repeatedly recenter the buffer.
-      EditorView.updateListener.of((update: ViewUpdate) => {
-        if (!update.selectionSet || update.docChanged) {
-          return
+      // leaves the viewport, matching native vim so short in-viewport
+      // motions don't recenter the buffer.
+      EditorState.transactionExtender.of((tr) => {
+        if (!tr.selection || tr.docChanged) {
+          return null
         }
 
-        update.view.dispatch({
-          effects: EditorView.scrollIntoView(update.state.selection.main.head, {
+        return {
+          effects: EditorView.scrollIntoView(tr.newSelection.main.head, {
             y: 'nearest',
           }),
-        })
+        }
       }),
     ]
 
