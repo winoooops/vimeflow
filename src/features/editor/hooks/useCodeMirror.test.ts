@@ -25,6 +25,18 @@ import { EditorState, StateEffect } from '@codemirror/state'
  * update this helper accordingly — the extender itself is
  * a one-liner using `tr.newSelection.main.head` so the production
  * code almost certainly doesn't need to change.
+ *
+ * **False-positive failure mode:** if a future CM6 version introduces
+ * a different `StateEffect` type whose `.value` also has a
+ * `range.head: number` field, this helper will happily extract it and
+ * the regression test would pass even on a different (wrong) effect.
+ * The test's upstream assertion
+ * (`effects[0] instanceof StateEffect`) is too weak to distinguish
+ * effect types — `StateEffect` is the common base class of every CM6
+ * effect. If you ever suspect this test is passing on the wrong
+ * effect, strengthen it by matching the effect against
+ * `EditorView.scrollIntoView` directly (it IS a `StateEffectType`
+ * comparable via `effect.is(scrollIntoView)`).
  */
 const readScrollTargetPos = (
   effect: StateEffect<unknown>
@@ -268,8 +280,46 @@ describe('scrollCursorOnSelectionChange', () => {
     // Insert mode typing uses CodeMirror's built-in scroll path because
     // every keystroke is a doc change. The extender MUST early-return
     // here so we don't duplicate the built-in scroll or fight with it.
+    //
+    // This transaction has `docChanged=true` AND `tr.selection ===
+    // undefined`, so the early return fires via the `!tr.selection`
+    // branch of the guard. Vim mutation commands (`dd`, `dw`, etc.)
+    // exercise the OTHER branch (`tr.docChanged` with a defined
+    // selection); see the test below.
     const state = EditorState.create({ doc: 'hello' })
     const tr = state.update({ changes: { from: 5, insert: ' world' } })
+
+    const result = scrollCursorOnSelectionChange(tr)
+
+    expect(result).toBeNull()
+  })
+
+  test('returns null for doc change that also sets selection (vim mutation path)', () => {
+    // Vim mutation commands like `dd`, `dw`, `cc`, `x`, `r` dispatch
+    // transactions that are BOTH a doc change AND an explicit
+    // selection change — the document mutates and the cursor lands on
+    // a new position in one atomic transaction. These have
+    // `docChanged=true` AND `tr.selection !== undefined`, so the
+    // guard's `|| tr.docChanged` branch is what early-returns them.
+    // Insert-mode typing (previous test) hits the `!tr.selection`
+    // branch instead.
+    //
+    // Without this test, a future refactor that flips the guard from
+    // `||` to `&&` would break silently: insert mode would still be
+    // skipped (via `!tr.selection`), but vim mutations would start
+    // firing the extender, double-scrolling on top of CM6's built-in
+    // doc-change scroll and causing jitter / fighting behavior.
+    const state = EditorState.create({
+      doc: 'line one\nline two\nline three',
+    })
+
+    const tr = state.update({
+      changes: { from: 0, to: 9 }, // delete first line ("line one\n")
+      selection: { anchor: 0, head: 0 }, // cursor lands on new first line
+    })
+
+    expect(tr.docChanged).toBe(true)
+    expect(tr.selection).toBeDefined()
 
     const result = scrollCursorOnSelectionChange(tr)
 
