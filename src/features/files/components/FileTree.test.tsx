@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import { FileTree } from './FileTree'
 import type { FileNode, ContextMenuAction } from '../types'
 
@@ -137,5 +137,143 @@ describe('FileTree', () => {
     const tree = screen.getByRole('tree', { name: /file tree/i })
     expect(tree).toBeInTheDocument()
     expect(tree).toBeEmptyDOMElement()
+  })
+
+  describe('keyboard navigation', () => {
+    // Selection state is stored as a data attribute on the row. Testing
+    // Library has no a11y query for "currently-selected custom treeitem",
+    // so fall back to a scoped attribute query within the tree container.
+    /* eslint-disable testing-library/no-node-access */
+    const getSelectedRow = (): HTMLElement | null => {
+      const tree = screen.getByRole('tree', { name: /file tree/i })
+
+      return tree.querySelector<HTMLElement>(
+        '[data-file-tree-row="true"][data-selected="true"]'
+      )
+    }
+    /* eslint-enable testing-library/no-node-access */
+
+    test('tree container is focusable', () => {
+      render(<FileTree nodes={mockNodes} contextMenuActions={mockActions} />)
+
+      const tree = screen.getByRole('tree', { name: /file tree/i })
+      expect(tree).toHaveAttribute('tabindex', '0')
+    })
+
+    test('first visible row is selected on mount', () => {
+      render(<FileTree nodes={mockNodes} contextMenuActions={mockActions} />)
+
+      const selected = getSelectedRow()
+      expect(selected).not.toBeNull()
+      expect(selected?.textContent).toContain('src')
+    })
+
+    test('j moves selection to next visible row', () => {
+      render(<FileTree nodes={mockNodes} contextMenuActions={mockActions} />)
+
+      const tree = screen.getByRole('tree', { name: /file tree/i })
+      fireEvent.keyDown(tree, { key: 'j' })
+
+      expect(getSelectedRow()?.textContent).toContain('test.ts')
+    })
+
+    test('k moves selection to previous visible row', () => {
+      render(<FileTree nodes={mockNodes} contextMenuActions={mockActions} />)
+
+      const tree = screen.getByRole('tree', { name: /file tree/i })
+      fireEvent.keyDown(tree, { key: 'j' })
+      fireEvent.keyDown(tree, { key: 'j' })
+      expect(getSelectedRow()?.textContent).toContain('README.md')
+
+      fireEvent.keyDown(tree, { key: 'k' })
+      expect(getSelectedRow()?.textContent).toContain('test.ts')
+    })
+
+    test('ArrowDown is treated as j', () => {
+      render(<FileTree nodes={mockNodes} contextMenuActions={mockActions} />)
+
+      const tree = screen.getByRole('tree', { name: /file tree/i })
+      fireEvent.keyDown(tree, { key: 'ArrowDown' })
+      expect(getSelectedRow()?.textContent).toContain('test.ts')
+    })
+
+    test('j stops at the last row', () => {
+      render(<FileTree nodes={mockNodes} contextMenuActions={mockActions} />)
+
+      const tree = screen.getByRole('tree', { name: /file tree/i })
+      for (let i = 0; i < 10; i += 1) {
+        fireEvent.keyDown(tree, { key: 'j' })
+      }
+      expect(getSelectedRow()?.textContent).toContain('README.md')
+    })
+
+    test('k stops at the first row', () => {
+      render(<FileTree nodes={mockNodes} contextMenuActions={mockActions} />)
+
+      const tree = screen.getByRole('tree', { name: /file tree/i })
+      fireEvent.keyDown(tree, { key: 'k' })
+      fireEvent.keyDown(tree, { key: 'k' })
+      expect(getSelectedRow()?.textContent).toContain('src')
+    })
+
+    test('l activates the selected file row', () => {
+      const onNodeSelect = vi.fn()
+      render(
+        <FileTree
+          nodes={mockNodes}
+          contextMenuActions={mockActions}
+          onNodeSelect={onNodeSelect}
+        />
+      )
+
+      const tree = screen.getByRole('tree', { name: /file tree/i })
+      fireEvent.keyDown(tree, { key: 'j' })
+      fireEvent.keyDown(tree, { key: 'l' })
+
+      expect(onNodeSelect).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'test.ts' }),
+        expect.any(String)
+      )
+    })
+
+    test('h collapses an expanded folder', () => {
+      render(<FileTree nodes={mockNodes} contextMenuActions={mockActions} />)
+
+      expect(screen.getByText('test.ts')).toBeInTheDocument()
+
+      const tree = screen.getByRole('tree', { name: /file tree/i })
+      fireEvent.keyDown(tree, { key: 'h' })
+
+      expect(screen.queryByText('test.ts')).not.toBeInTheDocument()
+    })
+
+    test('h jumps to parent row when on a non-expanded row', () => {
+      render(<FileTree nodes={mockNodes} contextMenuActions={mockActions} />)
+
+      const tree = screen.getByRole('tree', { name: /file tree/i })
+      fireEvent.keyDown(tree, { key: 'j' })
+      expect(getSelectedRow()?.textContent).toContain('test.ts')
+
+      fireEvent.keyDown(tree, { key: 'h' })
+      expect(getSelectedRow()?.textContent).toContain('src')
+    })
+
+    test('scrolls the selected row into view when navigating', () => {
+      const scrollSpy = vi.fn()
+      const original = HTMLElement.prototype.scrollIntoView
+      HTMLElement.prototype.scrollIntoView = scrollSpy
+
+      try {
+        render(<FileTree nodes={mockNodes} contextMenuActions={mockActions} />)
+
+        const tree = screen.getByRole('tree', { name: /file tree/i })
+        scrollSpy.mockClear()
+        fireEvent.keyDown(tree, { key: 'j' })
+
+        expect(scrollSpy).toHaveBeenCalledWith({ block: 'nearest' })
+      } finally {
+        HTMLElement.prototype.scrollIntoView = original
+      }
+    })
   })
 })

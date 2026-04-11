@@ -105,7 +105,13 @@ export const FileTreeNode = ({
   return (
     <div role="treeitem" aria-expanded={isFolder ? isExpanded : undefined}>
       <div
-        className="group flex h-7 cursor-pointer items-center gap-1.5 rounded px-1 text-on-surface/80 transition-colors hover:bg-white/5"
+        data-file-tree-row="true"
+        data-depth={depth}
+        data-is-folder={isFolder ? 'true' : 'false'}
+        data-is-expanded={
+          isFolder ? (isExpanded ? 'true' : 'false') : undefined
+        }
+        className="group flex h-7 cursor-pointer items-center gap-1.5 rounded px-1 text-on-surface/80 transition-colors hover:bg-white/5 data-[selected=true]:bg-primary/15 data-[selected=true]:text-on-surface"
         style={{ paddingLeft: `${indent + 4}px` }}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
