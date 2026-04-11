@@ -28,51 +28,79 @@ if [ -z "$command" ]; then
   exit 0
 fi
 
-# Extract the git subcommand and any -C/--work-tree target, skipping flags and their values.
+# Parse the git command into an array of tokens (everything after the leading "git").
+# Then locate the subcommand, any -C/--work-tree target, and keep the remaining
+# tokens so we can later inspect push refspecs.
+#
 # Known git flags that consume the next token as a value:
 #   -C, -c, --git-dir, --work-tree, --namespace, --super-prefix
+read -r -a git_tokens <<<"$(echo "$command" | sed -n 's/^\s*git\s\+//p')"
+
 subcmd=""
 git_target_dir=""
-next_is_target=false
-skip_next=false
-for token in $(echo "$command" | sed -n 's/^\s*git\s\+//p'); do
-  if $next_is_target; then
-    git_target_dir="$token"
-    next_is_target=false
-    continue
-  fi
-  if $skip_next; then
-    skip_next=false
-    continue
-  fi
+subcmd_idx=-1
+i=0
+while [ $i -lt ${#git_tokens[@]} ]; do
+  token="${git_tokens[$i]}"
   case "$token" in
     -C|--work-tree)
-      next_is_target=true
-      continue
+      i=$((i + 1))
+      git_target_dir="${git_tokens[$i]:-}"
       ;;
     --work-tree=*)
       git_target_dir="${token#*=}"
-      continue
       ;;
     -c|--git-dir|--namespace|--super-prefix)
-      skip_next=true
-      continue
+      i=$((i + 1))
       ;;
     --git-dir=*|--namespace=*|--super-prefix=*)
-      continue
       ;;
     -*)
-      continue
       ;;
     *)
       subcmd="$token"
+      subcmd_idx=$i
       break
       ;;
   esac
+  i=$((i + 1))
 done
 
 if [ "$subcmd" != "commit" ] && [ "$subcmd" != "push" ]; then
   exit 0
+fi
+
+# For `git push`, inspect every remaining token as a potential refspec and
+# block if any destination resolves to `main`. This catches bypass attempts
+# like `git push origin HEAD:main` or `git push origin feat/x:main` that would
+# otherwise slip through the branch check below.
+#
+# Refspec grammar: [+]<src>:<dst>, or [+]<ref> as shorthand for <ref>:<ref>.
+# We strip the optional leading '+' (force), take the destination (after the
+# last ':' if present, otherwise the whole token), and match against `main`
+# or `refs/heads/main`.
+if [ "$subcmd" = "push" ]; then
+  j=$((subcmd_idx + 1))
+  while [ $j -lt ${#git_tokens[@]} ]; do
+    arg="${git_tokens[$j]}"
+    j=$((j + 1))
+    # Skip option flags; we don't track which ones take values since any value
+    # that happens to equal `main` should fail closed anyway.
+    case "$arg" in
+      -*) continue ;;
+    esac
+    refspec="${arg#+}"
+    case "$refspec" in
+      *:*) dst="${refspec##*:}" ;;
+      *)   dst="$refspec" ;;
+    esac
+    case "$dst" in
+      main|refs/heads/main)
+        echo "BLOCKED: 'git push' targets 'main' (refspec '$arg'). Open a PR instead." >&2
+        exit 2
+        ;;
+    esac
+  done
 fi
 
 # Check the currently checked-out branch. Block iff it is `main`.
@@ -97,5 +125,5 @@ if [ "$current_branch" = "main" ]; then
   exit 2
 fi
 
-# On a feature branch — allow (in primary checkout or any linked worktree)
+# On a feature branch, with no push refspec targeting main — allow.
 exit 0
