@@ -64,7 +64,7 @@ Agent works normally — edit, commit, push, create PR. Whether this happens in 
 
 **Once a PR is created, the agent stays on that branch (or in that worktree) until the PR is resolved.** Do not switch back to `main` between creating the PR and the PR being merged or closed. This ensures review-fix cycles (`/harness-plugin:github-review`) happen in the correct working directory without branch switching.
 
-The PR lifecycle within a worktree:
+The PR lifecycle (primary checkout or linked worktree):
 
 ```
 create PR → wait for review → fix findings → push → wait for review → ... → merged/closed

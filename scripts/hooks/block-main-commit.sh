@@ -70,23 +70,30 @@ if [ "$subcmd" != "commit" ] && [ "$subcmd" != "push" ]; then
   exit 0
 fi
 
-# For `git push`, inspect every remaining token as a potential refspec and
-# block if any destination resolves to `main`. This catches bypass attempts
-# like `git push origin HEAD:main` or `git push origin feat/x:main` that would
-# otherwise slip through the branch check below.
+# For `git push`, block three bypass classes before falling through to the
+# branch check:
 #
-# Refspec grammar: [+]<src>:<dst>, or [+]<ref> as shorthand for <ref>:<ref>.
-# We strip the optional leading '+' (force), take the destination (after the
-# last ':' if present, otherwise the whole token), and match against `main`
-# or `refs/heads/main`.
+#   1. `--all` / `--mirror` push every local branch/ref to the remote. If
+#      the local `main` ever has commits ahead of origin, they land on
+#      `origin/main` without passing through the refspec loop (both flags
+#      start with '-' and would otherwise be skipped). Block unconditionally.
+#   2. Every remaining non-flag token is treated as a potential refspec.
+#      Refspec grammar: [+]<src>:<dst>, or [+]<ref> as shorthand for
+#      <ref>:<ref>. Strip the optional leading '+' (force), take the
+#      destination (after the last ':' if present, otherwise the whole
+#      token), and block if it resolves to `main` or `refs/heads/main`.
+#      Catches `git push origin HEAD:main`, `git push origin feat/x:main`,
+#      `git push origin main`, etc.
 if [ "$subcmd" = "push" ]; then
   j=$((subcmd_idx + 1))
   while [ $j -lt ${#git_tokens[@]} ]; do
     arg="${git_tokens[$j]}"
     j=$((j + 1))
-    # Skip option flags; we don't track which ones take values since any value
-    # that happens to equal `main` should fail closed anyway.
     case "$arg" in
+      --all|--mirror)
+        echo "BLOCKED: 'git push $arg' pushes every local branch/ref and may land commits on 'main'. Push a specific refspec instead." >&2
+        exit 2
+        ;;
       -*) continue ;;
     esac
     refspec="${arg#+}"
