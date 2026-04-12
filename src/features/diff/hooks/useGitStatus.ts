@@ -6,7 +6,7 @@ interface UseGitStatusReturn {
   files: ChangedFile[]
   loading: boolean
   error: Error | null
-  refresh: () => Promise<void>
+  refresh: () => void
 }
 
 /** Hook to fetch and manage git status (changed files) */
@@ -14,11 +14,12 @@ export const useGitStatus = (cwd = '.'): UseGitStatusReturn => {
   const [files, setFiles] = useState<ChangedFile[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  // Per-invocation cancelled flag (local variable, not useRef) —
-  // matches the pattern in useFileDiff. A shared useRef would be
-  // reset by the next effect cycle before the old async call
-  // completes, allowing stale results to leak through.
+  // Single fetch path with per-invocation cancellation flag.
+  // Both initial load and manual refresh go through this effect —
+  // refresh() bumps refreshKey which triggers a re-run with a
+  // fresh cancelled flag. No separate async path needed.
   useEffect(() => {
     let cancelled = false
 
@@ -50,22 +51,12 @@ export const useGitStatus = (cwd = '.'): UseGitStatusReturn => {
     return (): void => {
       cancelled = true
     }
-  }, [cwd])
+  }, [cwd, refreshKey])
 
-  const refresh = useCallback(async (): Promise<void> => {
-    try {
-      setLoading(true)
-      setError(null)
-      const changedFiles = await createGitService(cwd).getStatus()
-      setFiles(changedFiles)
-    } catch (err) {
-      setError(
-        err instanceof Error ? err : new Error('Failed to fetch git status')
-      )
-    } finally {
-      setLoading(false)
-    }
-  }, [cwd])
+  // Trigger a re-run of the cancellation-safe useEffect
+  const refresh = useCallback((): void => {
+    setRefreshKey((k) => k + 1)
+  }, [])
 
   return {
     files,
