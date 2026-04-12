@@ -32,7 +32,8 @@ async fn run_git_with_timeout(mut cmd: Command) -> Result<std::process::Output, 
         Ok(Ok(Err(e))) => Err(format!("Failed to run git: {}", e)),
         Ok(Err(e)) => Err(format!("git task failed: {}", e)),
         Err(_) => {
-            // Kill the orphaned process so it doesn't linger
+            // Kill the orphaned process so it doesn't linger and
+            // unblock the spawn_blocking thread holding wait_with_output.
             #[cfg(unix)]
             {
                 unsafe {
@@ -42,6 +43,13 @@ async fn run_git_with_timeout(mut cmd: Command) -> Result<std::process::Output, 
                     // by a blocking syscall on NFS).
                     libc::kill(child_id as i32, libc::SIGKILL);
                 }
+            }
+
+            #[cfg(windows)]
+            {
+                let _ = std::process::Command::new("taskkill")
+                    .args(["/F", "/PID", &child_id.to_string()])
+                    .status();
             }
 
             Err(format!(
@@ -350,7 +358,11 @@ pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git status failed: {}", stderr));
+        return Err(if stderr.trim().is_empty() {
+            format!("git status failed with exit code {}", output.status)
+        } else {
+            format!("git status failed: {}", stderr.trim())
+        });
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -380,7 +392,11 @@ pub async fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<Fil
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git diff failed: {}", stderr));
+        return Err(if stderr.trim().is_empty() {
+            format!("git diff failed with exit code {}", output.status)
+        } else {
+            format!("git diff failed: {}", stderr.trim())
+        });
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);

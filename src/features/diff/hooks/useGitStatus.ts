@@ -16,7 +16,7 @@ const isValidCwd = (cwd: string): boolean =>
 /** Hook to fetch and manage git status (changed files) */
 export const useGitStatus = (cwd = '.'): UseGitStatusReturn => {
   const [files, setFiles] = useState<ChangedFile[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => isValidCwd(cwd))
   const [error, setError] = useState<Error | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 

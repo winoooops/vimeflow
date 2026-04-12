@@ -36,6 +36,7 @@ export const useFileDiff = (
 
     const fetchDiff = async (): Promise<void> => {
       try {
+        setDiff(null)
         setLoading(true)
         setError(null)
 
