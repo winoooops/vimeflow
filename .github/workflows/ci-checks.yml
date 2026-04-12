@@ -119,7 +119,9 @@ jobs:
         run: npm ci
 
       - name: Generate bindings
-        run: npm run generate:bindings
+        run: |
+          find src/bindings -name '*.ts' ! -name 'index.ts' -delete
+          npm run generate:bindings
 
       - name: Verify bindings are up to date
         run: |
