@@ -17,7 +17,7 @@ describe('Mock Diff Data', () => {
       (f) => f.path === 'src/components/NavBar.tsx'
     )
     expect(navBar).toBeDefined()
-    expect(navBar?.status).toBe('M')
+    expect(navBar?.status).toBe('modified')
     expect(navBar?.insertions).toBe(12)
     expect(navBar?.deletions).toBe(3)
     expect(navBar?.staged).toBe(false)
@@ -28,7 +28,7 @@ describe('Mock Diff Data', () => {
       (f) => f.path === 'src/components/TerminalPanel.tsx'
     )
     expect(terminal).toBeDefined()
-    expect(terminal?.status).toBe('M')
+    expect(terminal?.status).toBe('modified')
     expect(terminal?.insertions).toBe(8)
     expect(terminal?.deletions).toBe(5)
     expect(terminal?.staged).toBe(false)
@@ -39,7 +39,7 @@ describe('Mock Diff Data', () => {
       (f) => f.path === 'src/utils/api-helper.rs'
     )
     expect(apiHelper).toBeDefined()
-    expect(apiHelper?.status).toBe('A')
+    expect(apiHelper?.status).toBe('added')
     expect(apiHelper?.insertions).toBe(45)
     expect(apiHelper?.deletions).toBe(0)
     expect(apiHelper?.staged).toBe(true)
@@ -48,7 +48,7 @@ describe('Mock Diff Data', () => {
   test('tsconfig.json has correct metadata (deleted file)', () => {
     const tsconfig = mockChangedFiles.find((f) => f.path === 'tsconfig.json')
     expect(tsconfig).toBeDefined()
-    expect(tsconfig?.status).toBe('D')
+    expect(tsconfig?.status).toBe('deleted')
     expect(tsconfig?.insertions).toBe(0)
     expect(tsconfig?.deletions).toBe(18)
     expect(tsconfig?.staged).toBe(false)

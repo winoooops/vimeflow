@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core'
 import type { ChangedFile, FileDiff } from '../types'
 import { mockChangedFiles, mockFileDiffs } from '../data/mockDiff'
 
@@ -110,11 +111,58 @@ export class HttpGitService implements GitService {
   }
 }
 
+/** Tauri implementation calling Rust backend via invoke() */
+export class TauriGitService implements GitService {
+  private readonly cwd: string
+
+  constructor(cwd = '.') {
+    this.cwd = cwd
+  }
+
+  async getStatus(): Promise<ChangedFile[]> {
+    try {
+      return await invoke<ChangedFile[]>('git_status', { cwd: this.cwd })
+    } catch (error) {
+      throw new Error(`Failed to get git status: ${String(error)}`)
+    }
+  }
+
+  async getDiff(file: string, staged = false): Promise<FileDiff> {
+    try {
+      return await invoke<FileDiff>('get_git_diff', {
+        cwd: this.cwd,
+        file,
+        staged,
+      })
+    } catch (error) {
+      throw new Error(`Failed to get diff for ${file}: ${String(error)}`)
+    }
+  }
+
+  stageFile(): Promise<void> {
+    return Promise.reject(new Error('stageFile not implemented'))
+  }
+
+  unstageFile(): Promise<void> {
+    return Promise.reject(new Error('unstageFile not implemented'))
+  }
+
+  discardChanges(): Promise<void> {
+    return Promise.reject(new Error('discardChanges not implemented'))
+  }
+}
+
 /** Factory function to create the appropriate GitService implementation */
-export const createGitService = (): GitService => {
+export const createGitService = (cwd = '.'): GitService => {
   if (import.meta.env.MODE === 'test') {
     return new MockGitService()
   }
 
+  // Check if running under Tauri
+  if ('__TAURI_INTERNALS__' in window) {
+    return new TauriGitService(cwd)
+  }
+
+  // Fallback to HTTP service (for Vite dev mode without Tauri)
   return new HttpGitService()
 }

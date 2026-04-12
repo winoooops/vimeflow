@@ -31,7 +31,7 @@ export const mockFileTree: FileNode[] = [
             name: 'UserCard.tsx',
             type: 'file',
             icon: 'description',
-            gitStatus: 'M',
+            gitStatus: 'modified',
           },
           {
             id: 'node-4',
@@ -59,7 +59,7 @@ export const mockFileTree: FileNode[] = [
             name: 'useDebounce.ts',
             type: 'file',
             icon: 'description',
-            gitStatus: 'M',
+            gitStatus: 'modified',
           },
           {
             id: 'node-8',
@@ -87,7 +87,7 @@ export const mockFileTree: FileNode[] = [
             name: 'validators.ts',
             type: 'file',
             icon: 'description',
-            gitStatus: 'A',
+            gitStatus: 'added',
           },
         ],
       },

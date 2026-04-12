@@ -120,13 +120,15 @@ describe('FileTreeNode', () => {
       id: '1',
       name: 'test.ts',
       type: 'file',
-      gitStatus: 'M',
+      gitStatus: 'modified',
     }
 
     render(<FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />)
 
-    expect(screen.getByLabelText(/git status: m/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/git status: m/i)).toHaveTextContent('M')
+    expect(screen.getByLabelText(/git status: modified/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/git status: modified/i)).toHaveTextContent(
+      'modified'
+    )
   })
 
   test('displays git status badge for added file', () => {
@@ -134,12 +136,14 @@ describe('FileTreeNode', () => {
       id: '1',
       name: 'test.ts',
       type: 'file',
-      gitStatus: 'A',
+      gitStatus: 'added',
     }
 
     render(<FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />)
 
-    expect(screen.getByLabelText(/git status: a/i)).toHaveTextContent('A')
+    expect(screen.getByLabelText(/git status: added/i)).toHaveTextContent(
+      'added'
+    )
   })
 
   test('displays git status badge for deleted file', () => {
@@ -147,12 +151,14 @@ describe('FileTreeNode', () => {
       id: '1',
       name: 'test.ts',
       type: 'file',
-      gitStatus: 'D',
+      gitStatus: 'deleted',
     }
 
     render(<FileTreeNode node={fileNode} onContextMenu={mockOnContextMenu} />)
 
-    expect(screen.getByLabelText(/git status: d/i)).toHaveTextContent('D')
+    expect(screen.getByLabelText(/git status: deleted/i)).toHaveTextContent(
+      'deleted'
+    )
   })
 
   test('calls onContextMenu when right-clicked', () => {

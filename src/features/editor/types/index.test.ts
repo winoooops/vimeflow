@@ -115,7 +115,7 @@ describe('Editor Types', () => {
   })
 
   test('GitStatus accepts valid values', () => {
-    const statuses: GitStatus[] = ['M', 'A', 'D', 'U']
+    const statuses: GitStatus[] = ['modified', 'added', 'deleted', 'untracked']
     expect(statuses).toHaveLength(4)
   })
 
@@ -124,11 +124,11 @@ describe('Editor Types', () => {
       id: 'node-1',
       name: 'App.tsx',
       type: 'file',
-      gitStatus: 'M',
+      gitStatus: 'modified',
       icon: 'description',
     }
     expect(node.type).toBe('file')
-    expect(node.gitStatus).toBe('M')
+    expect(node.gitStatus).toBe('modified')
   })
 
   test('FileNode with children structure', () => {
@@ -237,10 +237,10 @@ describe('Type Guards', () => {
 
   describe('isGitStatus', () => {
     test('returns true for valid GitStatus values', () => {
-      expect(isGitStatus('M')).toBe(true)
-      expect(isGitStatus('A')).toBe(true)
-      expect(isGitStatus('D')).toBe(true)
-      expect(isGitStatus('U')).toBe(true)
+      expect(isGitStatus('modified')).toBe(true)
+      expect(isGitStatus('added')).toBe(true)
+      expect(isGitStatus('deleted')).toBe(true)
+      expect(isGitStatus('untracked')).toBe(true)
     })
 
     test('returns false for invalid values', () => {

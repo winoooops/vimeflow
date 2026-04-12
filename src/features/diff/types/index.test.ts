@@ -13,14 +13,14 @@ describe('Diff Types', () => {
   test('ChangedFile type exports correctly', () => {
     const changedFile: ChangedFile = {
       path: 'src/test.ts',
-      status: 'M',
+      status: 'modified',
       insertions: 10,
       deletions: 5,
       staged: false,
     }
 
     expect(changedFile.path).toBe('src/test.ts')
-    expect(changedFile.status).toBe('M')
+    expect(changedFile.status).toBe('modified')
     expect(changedFile.insertions).toBe(10)
     expect(changedFile.deletions).toBe(5)
     expect(changedFile.staged).toBe(false)

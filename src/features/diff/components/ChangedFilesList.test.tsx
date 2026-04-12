@@ -8,21 +8,21 @@ describe('ChangedFilesList', () => {
   const mockFiles: ChangedFile[] = [
     {
       path: 'src/components/NavBar.tsx',
-      status: 'M',
+      status: 'modified',
       insertions: 12,
       deletions: 3,
       staged: false,
     },
     {
       path: 'src/utils/api-helper.rs',
-      status: 'A',
+      status: 'added',
       insertions: 45,
       deletions: 0,
       staged: true,
     },
     {
       path: 'tsconfig.json',
-      status: 'D',
+      status: 'deleted',
       insertions: 0,
       deletions: 18,
       staged: false,
@@ -124,21 +124,21 @@ describe('ChangedFilesList', () => {
     const orderedFiles: ChangedFile[] = [
       {
         path: 'modified.ts',
-        status: 'M',
+        status: 'modified',
         insertions: 10,
         deletions: 2,
         staged: false,
       },
       {
         path: 'added.rs',
-        status: 'A',
+        status: 'added',
         insertions: 20,
         deletions: 0,
         staged: false,
       },
       {
         path: 'deleted.txt',
-        status: 'D',
+        status: 'deleted',
         insertions: 0,
         deletions: 5,
         staged: false,
@@ -183,7 +183,7 @@ describe('ChangedFilesList', () => {
     const longPathFile: ChangedFile[] = [
       {
         path: 'src/features/diff/components/very/deep/nested/path/SomeComponent.tsx',
-        status: 'M',
+        status: 'modified',
         insertions: 5,
         deletions: 2,
         staged: false,

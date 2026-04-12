@@ -1,5 +1,6 @@
 import { type ReactElement, useState } from 'react'
 import { CodeEditor } from '../../editor/components/CodeEditor'
+import { DiffPanelContent } from '../../diff/components/DiffPanelContent'
 import { useResizable } from '../hooks/useResizable'
 
 type TabType = 'editor' | 'diff'
@@ -13,6 +14,8 @@ interface BottomDrawerProps {
   isDirty?: boolean
   /** True while an async file read is in flight. */
   isLoading?: boolean
+  /** Working directory for git commands (diff viewer) */
+  cwd?: string
 }
 
 /**
@@ -31,6 +34,7 @@ const BottomDrawer = ({
   onSave = undefined,
   isDirty = false,
   isLoading = false,
+  cwd = '.',
 }: BottomDrawerProps): ReactElement => {
   const [activeTab, setActiveTab] = useState<TabType>('editor')
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -224,24 +228,12 @@ const BottomDrawer = ({
             data-testid="diff-panel"
             className="flex min-h-0 flex-1 overflow-hidden"
           >
-            <DiffContent />
+            <DiffPanelContent cwd={cwd} />
           </div>
         )}
       </div>
     </section>
   )
 }
-
-/**
- * DiffContent - Placeholder for diff viewer
- */
-const DiffContent = (): ReactElement => (
-  <div className="flex items-center justify-center h-full text-on-surface-variant">
-    <div className="text-center space-y-2">
-      <p className="text-sm">No changes to review</p>
-      <p className="text-xs opacity-60">Modified files will appear here</p>
-    </div>
-  </div>
-)
 
 export default BottomDrawer

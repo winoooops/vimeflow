@@ -84,10 +84,10 @@ export const ChangedFilesList = ({
 
             {/* Insertion/Deletion Counts */}
             <div className="flex items-center gap-2 font-code text-xs">
-              {file.insertions > 0 && (
+              {(file.insertions ?? 0) > 0 && (
                 <span className="text-[#a6e3a1]">+{file.insertions}</span>
               )}
-              {file.deletions > 0 && (
+              {(file.deletions ?? 0) > 0 && (
                 <span className="text-[#f38ba8]">-{file.deletions}</span>
               )}
             </div>

@@ -6,17 +6,17 @@ export type { GitStatus }
 /** A file with git changes, used in the changed files sidebar */
 export interface ChangedFile {
   path: string // e.g. 'src/components/NavBar.tsx'
-  status: GitStatus // M | A | D | U (reused from files feature)
-  insertions: number // +12
-  deletions: number // -3
+  status: GitStatus // matches Rust ChangedFileStatus via serde lowercase
+  insertions?: number // +12 (absent when stat counts unavailable)
+  deletions?: number // -3 (absent when stat counts unavailable)
   staged: boolean // whether file is in the index
 }
 
 /** Parsed diff for a single file */
 export interface FileDiff {
   filePath: string
-  oldPath: string // for renames
-  newPath: string
+  oldPath?: string // for renames
+  newPath?: string // for renames
   hunks: DiffHunk[]
 }
 

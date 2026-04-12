@@ -305,6 +305,7 @@ export const WorkspaceView = (): ReactElement => {
           }}
           isDirty={editorBuffer.isDirty}
           isLoading={editorBuffer.isLoading}
+          cwd={activeSession?.workingDirectory ?? '.'}
         />
 
         {/* File error banner — surfaces failures from direct file open

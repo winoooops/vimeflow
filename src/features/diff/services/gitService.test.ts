@@ -2,10 +2,16 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   MockGitService,
   HttpGitService,
+  TauriGitService,
   createGitService,
   type GitService,
 } from './gitService'
 import { mockChangedFiles, mockFileDiffs } from '../data/mockDiff'
+
+// Mock @tauri-apps/api/core
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+}))
 
 describe('MockGitService', () => {
   let service: GitService
@@ -257,13 +263,133 @@ describe('HttpGitService', () => {
   })
 })
 
+describe('TauriGitService', () => {
+  let service: GitService
+  let invokeMock: ReturnType<typeof vi.fn>
+
+  beforeEach(async () => {
+    const { invoke } = await import('@tauri-apps/api/core')
+    invokeMock = vi.mocked(invoke)
+    invokeMock.mockClear()
+    service = new TauriGitService('/home/user/project')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  describe('getStatus', () => {
+    test('calls invoke with git_status command and correct args', async () => {
+      invokeMock.mockResolvedValueOnce(mockChangedFiles)
+
+      const files = await service.getStatus()
+
+      expect(invokeMock).toHaveBeenCalledWith('git_status', {
+        cwd: '/home/user/project',
+      })
+      expect(files).toEqual(mockChangedFiles)
+    })
+
+    test('throws error on invoke failure', async () => {
+      invokeMock.mockRejectedValueOnce(new Error('Git command failed'))
+
+      await expect(service.getStatus()).rejects.toThrow(
+        'Failed to get git status: Error: Git command failed'
+      )
+    })
+  })
+
+  describe('getDiff', () => {
+    test('calls invoke with get_git_diff command and correct args', async () => {
+      const mockDiff = mockFileDiffs['src/components/NavBar.tsx']
+      invokeMock.mockResolvedValueOnce(mockDiff)
+
+      const diff = await service.getDiff('src/components/NavBar.tsx', false)
+
+      expect(invokeMock).toHaveBeenCalledWith('get_git_diff', {
+        cwd: '/home/user/project',
+        file: 'src/components/NavBar.tsx',
+        staged: false,
+      })
+      expect(diff).toEqual(mockDiff)
+    })
+
+    test('calls invoke with staged=true when requested', async () => {
+      const mockDiff = mockFileDiffs['src/components/NavBar.tsx']
+      invokeMock.mockResolvedValueOnce(mockDiff)
+
+      await service.getDiff('src/components/NavBar.tsx', true)
+
+      expect(invokeMock).toHaveBeenCalledWith('get_git_diff', {
+        cwd: '/home/user/project',
+        file: 'src/components/NavBar.tsx',
+        staged: true,
+      })
+    })
+
+    test('throws error on invoke failure', async () => {
+      invokeMock.mockRejectedValueOnce(new Error('Diff failed'))
+
+      await expect(
+        service.getDiff('src/components/NavBar.tsx')
+      ).rejects.toThrow(
+        'Failed to get diff for src/components/NavBar.tsx: Error: Diff failed'
+      )
+    })
+  })
+
+  describe('stageFile', () => {
+    test('throws not implemented error', async () => {
+      await expect(service.stageFile('src/test.ts')).rejects.toThrow(
+        'stageFile not implemented'
+      )
+    })
+  })
+
+  describe('unstageFile', () => {
+    test('throws not implemented error', async () => {
+      await expect(service.unstageFile('src/test.ts')).rejects.toThrow(
+        'unstageFile not implemented'
+      )
+    })
+  })
+
+  describe('discardChanges', () => {
+    test('throws not implemented error', async () => {
+      await expect(service.discardChanges('src/test.ts')).rejects.toThrow(
+        'discardChanges not implemented'
+      )
+    })
+  })
+})
+
 describe('createGitService', () => {
   test('returns MockGitService in test mode', () => {
     const service = createGitService()
     expect(service).toBeInstanceOf(MockGitService)
   })
 
-  test('returns HttpGitService in development mode', () => {
+  test('returns TauriGitService when __TAURI_INTERNALS__ exists', () => {
+    const originalMode = import.meta.env.MODE
+
+    const tauriWindow = window as typeof window & {
+      __TAURI_INTERNALS__?: unknown
+    }
+
+    try {
+      import.meta.env.MODE = 'development'
+      tauriWindow.__TAURI_INTERNALS__ = {}
+
+      const service = createGitService('/test/path')
+
+      expect(service).toBeInstanceOf(TauriGitService)
+    } finally {
+      delete tauriWindow.__TAURI_INTERNALS__
+      import.meta.env.MODE = originalMode
+    }
+  })
+
+  test('returns HttpGitService in development mode without Tauri', () => {
     const originalMode = import.meta.env.MODE
     import.meta.env.MODE = 'development'
 

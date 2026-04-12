@@ -6,12 +6,17 @@ import type { IFileSystemService } from '../../files/services/fileSystemService'
 import * as useCodeMirrorModule from '../../editor/hooks/useCodeMirror'
 import * as useVimModeModule from '../../editor/hooks/useVimMode'
 import * as languageServiceModule from '../../editor/services/languageService'
+import * as useGitStatusModule from '../../diff/hooks/useGitStatus'
+import * as useFileDiffModule from '../../diff/hooks/useFileDiff'
 import { javascript } from '@codemirror/lang-javascript'
 
 // Mock CodeMirror hooks to prevent actual initialization
 vi.mock('../../editor/hooks/useCodeMirror')
 vi.mock('../../editor/hooks/useVimMode')
 vi.mock('../../editor/services/languageService')
+// Mock diff hooks to control diff viewer state
+vi.mock('../../diff/hooks/useGitStatus')
+vi.mock('../../diff/hooks/useFileDiff')
 
 const mockFileSystemService: IFileSystemService = {
   listDir: vi.fn(),
@@ -48,6 +53,20 @@ describe('BottomDrawer', () => {
     vi.spyOn(languageServiceModule, 'getLanguageExtension').mockImplementation(
       mockGetLanguageExtension
     )
+
+    // Mock diff hooks to return empty state by default
+    vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+      files: [],
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+    })
+
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+      diff: null,
+      loading: false,
+      error: null,
+    })
 
     // Mock fileSystemService methods
     vi.mocked(mockFileSystemService.readFile).mockResolvedValue(
