@@ -61,6 +61,13 @@ jobs:
             Apply confidence-based filtering: only report issues you are >80% confident about.
             Use severity levels: CRITICAL, HIGH, MEDIUM, LOW.
 
+            IDEA ANALYSIS (MANDATORY):
+            Include an "idea" object in your JSON output with these four fields:
+            - intent: Does the PR solve the real problem, not just the literal one?
+            - danger: What breaks? Edge cases, security, bad data?
+            - explain: Why this approach? What reasoning led here?
+            - alternatives: Is there a simpler way? Would a senior dev raise an eyebrow?
+
             Pull request title and body:
             ----
             ${{ github.event.pull_request.title }}
@@ -109,6 +116,21 @@ jobs:
                 }
               } else {
                 lines.push('✅ No issues found.');
+                lines.push('');
+              }
+
+              if (review.idea) {
+                lines.push('### 💡 IDEA Analysis');
+                lines.push('');
+                lines.push(`**I — Intent:** ${review.idea.intent}`);
+                lines.push('');
+                lines.push(`**D — Danger:** ${review.idea.danger}`);
+                lines.push('');
+                lines.push(`**E — Explain:** ${review.idea.explain}`);
+                lines.push('');
+                lines.push(`**A — Alternatives:** ${review.idea.alternatives}`);
+                lines.push('');
+                lines.push('---');
                 lines.push('');
               }
 
