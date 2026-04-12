@@ -72,3 +72,4 @@ ignorePaths:
   - '**/*.min.js'
   - '**/*.d.ts'
   - playwright-report
+  - src/bindings/*.ts
