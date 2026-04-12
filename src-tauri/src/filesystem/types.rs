@@ -33,6 +33,7 @@ pub enum EntryType {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
 pub struct ReadFileRequest {
     pub path: String,
 }
@@ -40,6 +41,7 @@ pub struct ReadFileRequest {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
 pub struct WriteFileRequest {
     pub path: String,
     pub content: String,
