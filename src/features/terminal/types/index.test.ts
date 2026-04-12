@@ -163,18 +163,15 @@ describe('Terminal Types', () => {
       }
 
       expect(event.code).toBe(0)
-      expect(event.signal).toBeUndefined()
     })
 
-    test('PTYExitEvent with signal', () => {
+    test('PTYExitEvent with null code', () => {
       const event: PTYExitEvent = {
         sessionId: 'session-1',
-        code: 1,
-        signal: 'SIGTERM',
+        code: null,
       }
 
-      expect(event.code).toBe(1)
-      expect(event.signal).toBe('SIGTERM')
+      expect(event.code).toBeNull()
     })
 
     test('PTYErrorEvent with message', () => {
@@ -184,17 +181,6 @@ describe('Terminal Types', () => {
       }
 
       expect(event.message).toBe('Failed to spawn shell')
-      expect(event.code).toBeUndefined()
-    })
-
-    test('PTYErrorEvent with code', () => {
-      const event: PTYErrorEvent = {
-        sessionId: 'session-1',
-        message: 'Permission denied',
-        code: 'EACCES',
-      }
-
-      expect(event.code).toBe('EACCES')
     })
   })
 

@@ -35,6 +35,7 @@ pub struct SpawnPtyRequest {
     pub shell: Option<String>,
     /// Optional environment variables
     #[cfg_attr(test, ts(optional))]
+    #[cfg_attr(test, ts(type = "Record<string, string>"))]
     pub env: Option<HashMap<String, String>>,
 }
 

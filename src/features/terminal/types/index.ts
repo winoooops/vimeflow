@@ -106,38 +106,13 @@ export interface PTYKillParams {
 }
 
 /**
- * PTY data event payload
+ * PTY event types — re-exported from generated bindings (Rust is source of truth)
  */
-export interface PTYDataEvent {
-  /** Source session ID */
-  sessionId: string
-  /** Output data */
-  data: string
-}
+export type { PtyDataEvent as PTYDataEvent } from '../../../bindings'
 
-/**
- * PTY exit event payload
- */
-export interface PTYExitEvent {
-  /** Source session ID */
-  sessionId: string
-  /** Exit code (null when process exits via EOF without explicit code) */
-  code: number | null
-  /** Exit signal (if killed) */
-  signal?: string
-}
+export type { PtyExitEvent as PTYExitEvent } from '../../../bindings'
 
-/**
- * PTY error event payload
- */
-export interface PTYErrorEvent {
-  /** Source session ID */
-  sessionId: string
-  /** Error message */
-  message: string
-  /** Error code */
-  code?: string
-}
+export type { PtyErrorEvent as PTYErrorEvent } from '../../../bindings'
 
 /**
  * Terminal theme color palette

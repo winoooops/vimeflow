@@ -19,5 +19,5 @@ export type SpawnPtyRequest = {
   /**
    * Optional environment variables
    */
-  env?: { [key in string]?: string }
+  env?: Record<string, string>
 }
