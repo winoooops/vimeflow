@@ -142,8 +142,13 @@ fn parse_git_status(output: &str) -> Vec<ChangedFile> {
             " D" => (ChangedFileStatus::Deleted, false),
             s if s.starts_with('R') => (ChangedFileStatus::Renamed, true), // renames are index ops
             s if s.starts_with('C') => (ChangedFileStatus::Renamed, true), // copies are index ops (no separate variant)
+            // Merge conflict codes — no dedicated variant yet, show as
+            // unstaged modified so the file at least appears in the list.
+            "UU" | "AA" | "DD" | "AU" | "UA" | "DU" | "UD" => {
+                (ChangedFileStatus::Modified, false)
+            }
             _ => {
-                // Default to modified unstaged for unknown codes
+                // Default to modified unstaged for truly unknown codes
                 (ChangedFileStatus::Modified, false)
             }
         };
