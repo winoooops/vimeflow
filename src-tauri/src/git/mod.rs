@@ -7,7 +7,7 @@ use crate::filesystem::scope::{ensure_within_home, expand_home, home_canonical, 
 
 /// Timeout for git subprocess calls. Prevents indefinite blocking on
 /// hung NFS mounts, slow hooks, or unresponsive credential helpers.
-const GIT_TIMEOUT: Duration = Duration::from_secs(30);
+const GIT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Run a git command with a timeout. Spawns the process first so the
 /// child handle is available for killing on timeout — prevents orphaned
