@@ -6,30 +6,15 @@ import type {
   PTYWriteParams,
   PTYResizeParams,
   PTYKillParams,
-  PTYDataEvent,
-  PTYExitEvent,
-  PTYErrorEvent,
 } from '../types'
+import type {
+  SpawnPtyRequest,
+  PtySession,
+  PtyDataEvent,
+  PtyExitEvent,
+  PtyErrorEvent,
+} from '../../../bindings'
 import type { ITerminalService } from './terminalService'
-
-/**
- * Request payload matching the Rust SpawnPtyRequest struct (camelCase via serde)
- */
-interface SpawnPtyIpcRequest {
-  sessionId: string
-  cwd: string
-  shell?: string
-  env?: Record<string, string>
-}
-
-/**
- * Response payload matching the Rust PtySession struct (camelCase via serde)
- */
-interface PtySessionIpcResponse {
-  id: string
-  pid: number
-  cwd: string
-}
 
 /**
  * Tauri terminal service — bridges ITerminalService to Tauri IPC commands and events.
@@ -39,16 +24,9 @@ interface PtySessionIpcResponse {
  */
 export class TauriTerminalService implements ITerminalService {
   private dataCallbacks: ((sessionId: string, data: string) => void)[] = []
-  private exitCallbacks: ((
-    sessionId: string,
-    code?: number,
-    signal?: string
-  ) => void)[] = []
-  private errorCallbacks: ((
-    sessionId: string,
-    message: string,
-    code?: string
-  ) => void)[] = []
+  private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
+    []
+  private errorCallbacks: ((sessionId: string, message: string) => void)[] = []
 
   private unlistenFns: UnlistenFn[] = []
   private initialized = false
@@ -63,17 +41,17 @@ export class TauriTerminalService implements ITerminalService {
     }
     this.initialized = true
 
-    const unlistenData = await listen<PTYDataEvent>('pty-data', (event) => {
+    const unlistenData = await listen<PtyDataEvent>('pty-data', (event) => {
       const { sessionId, data } = event.payload
       this.dataCallbacks.forEach((cb) => cb(sessionId, data))
     })
 
-    const unlistenExit = await listen<PTYExitEvent>('pty-exit', (event) => {
+    const unlistenExit = await listen<PtyExitEvent>('pty-exit', (event) => {
       const { sessionId, code } = event.payload
-      this.exitCallbacks.forEach((cb) => cb(sessionId, code ?? undefined))
+      this.exitCallbacks.forEach((cb) => cb(sessionId, code))
     })
 
-    const unlistenError = await listen<PTYErrorEvent>('pty-error', (event) => {
+    const unlistenError = await listen<PtyErrorEvent>('pty-error', (event) => {
       const { sessionId, message } = event.payload
       this.errorCallbacks.forEach((cb) => cb(sessionId, message))
     })
@@ -86,14 +64,14 @@ export class TauriTerminalService implements ITerminalService {
 
     const sessionId = crypto.randomUUID()
 
-    const request: SpawnPtyIpcRequest = {
+    const request: SpawnPtyRequest = {
       sessionId,
       cwd: params.cwd,
       shell: params.shell,
       env: params.env,
     }
 
-    const response = await invoke<PtySessionIpcResponse>('spawn_pty', {
+    const response = await invoke<PtySession>('spawn_pty', {
       request,
     })
 
@@ -143,7 +121,7 @@ export class TauriTerminalService implements ITerminalService {
   }
 
   onExit(
-    callback: (sessionId: string, code?: number, signal?: string) => void
+    callback: (sessionId: string, code: number | null) => void
   ): () => void {
     this.exitCallbacks.push(callback)
     void this.ensureListeners()
@@ -156,9 +134,7 @@ export class TauriTerminalService implements ITerminalService {
     }
   }
 
-  onError(
-    callback: (sessionId: string, message: string, code?: string) => void
-  ): () => void {
+  onError(callback: (sessionId: string, message: string) => void): () => void {
     this.errorCallbacks.push(callback)
     void this.ensureListeners()
 

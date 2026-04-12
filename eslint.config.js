@@ -26,6 +26,7 @@ export default defineConfig([
       'vite-plugin-*.ts',
       'src-tauri/target',
       '.claude/**',
+      'src/bindings/',
     ],
   },
   {

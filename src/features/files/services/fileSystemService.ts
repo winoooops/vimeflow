@@ -1,4 +1,5 @@
 import type { FileNode } from '../types'
+import type { FileEntry } from '../../../bindings'
 import { isTauri } from '../../../lib/environment'
 import { mockFileTree } from '../data/mockFileTree'
 
@@ -6,12 +7,6 @@ export interface IFileSystemService {
   listDir(path: string): Promise<FileNode[]>
   readFile(path: string): Promise<string>
   writeFile(path: string, content: string): Promise<void>
-}
-
-interface TauriFileEntry {
-  name: string
-  type: 'file' | 'folder'
-  children?: TauriFileEntry[]
 }
 
 // Join a parent directory path and a child name. Matches the semantics
@@ -32,7 +27,7 @@ const joinPath = (parent: string, name: string): string => {
 // back to a directory — React fully unmounted and remounted every
 // FileTreeNode, losing all local state (expand/collapse, rename input).
 // Using the full path gives stable, unique identity across navigation.
-const toFileNode = (entry: TauriFileEntry, parentPath: string): FileNode => {
+const toFileNode = (entry: FileEntry, parentPath: string): FileNode => {
   const displayName = entry.type === 'folder' ? `${entry.name}/` : entry.name
   const fullPath = joinPath(parentPath, entry.name)
 
@@ -48,7 +43,7 @@ class TauriFileSystemService implements IFileSystemService {
   async listDir(path: string): Promise<FileNode[]> {
     const { invoke } = await import('@tauri-apps/api/core')
 
-    const entries = await invoke<TauriFileEntry[]>('list_dir', {
+    const entries = await invoke<FileEntry[]>('list_dir', {
       request: { path },
     })
 

@@ -177,7 +177,7 @@ describe('TauriTerminalService', () => {
 
       emitTauriEvent('pty-exit', { sessionId: 'sess-1', code: null })
 
-      expect(callback).toHaveBeenCalledWith('sess-1', undefined)
+      expect(callback).toHaveBeenCalledWith('sess-1', null)
     })
 
     test('onError delivers pty-error events to callback', async () => {

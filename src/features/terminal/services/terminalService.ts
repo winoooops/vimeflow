@@ -40,16 +40,12 @@ export interface ITerminalService {
   /**
    * Subscribe to PTY exit events
    */
-  onExit(
-    callback: (sessionId: string, code?: number, signal?: string) => void
-  ): () => void
+  onExit(callback: (sessionId: string, code: number | null) => void): () => void
 
   /**
    * Subscribe to PTY error events
    */
-  onError(
-    callback: (sessionId: string, message: string, code?: string) => void
-  ): () => void
+  onError(callback: (sessionId: string, message: string) => void): () => void
 }
 
 /**
@@ -63,16 +59,9 @@ export class MockTerminalService implements ITerminalService {
     { pid: number; running: boolean; inputBuffer: string }
   >()
   private dataCallbacks: ((sessionId: string, data: string) => void)[] = []
-  private exitCallbacks: ((
-    sessionId: string,
-    code?: number,
-    signal?: string
-  ) => void)[] = []
-  private errorCallbacks: ((
-    sessionId: string,
-    message: string,
-    code?: string
-  ) => void)[] = []
+  private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
+    []
+  private errorCallbacks: ((sessionId: string, message: string) => void)[] = []
 
   spawn(params: PTYSpawnParams): Promise<PTYSpawnResult> {
     // Mock implementation - params unused in mock but required by interface
@@ -210,7 +199,7 @@ export class MockTerminalService implements ITerminalService {
   }
 
   onExit(
-    callback: (sessionId: string, code?: number, signal?: string) => void
+    callback: (sessionId: string, code: number | null) => void
   ): () => void {
     this.exitCallbacks.push(callback)
 
@@ -222,9 +211,7 @@ export class MockTerminalService implements ITerminalService {
     }
   }
 
-  onError(
-    callback: (sessionId: string, message: string, code?: string) => void
-  ): () => void {
+  onError(callback: (sessionId: string, message: string) => void): () => void {
     this.errorCallbacks.push(callback)
 
     return () => {
@@ -240,12 +227,12 @@ export class MockTerminalService implements ITerminalService {
     this.dataCallbacks.forEach((cb) => cb(sessionId, data))
   }
 
-  emitExit(sessionId: string, code?: number, signal?: string): void {
-    this.exitCallbacks.forEach((cb) => cb(sessionId, code, signal))
+  emitExit(sessionId: string, code: number | null): void {
+    this.exitCallbacks.forEach((cb) => cb(sessionId, code))
   }
 
-  emitError(sessionId: string, message: string, code?: string): void {
-    this.errorCallbacks.forEach((cb) => cb(sessionId, message, code))
+  emitError(sessionId: string, message: string): void {
+    this.errorCallbacks.forEach((cb) => cb(sessionId, message))
   }
 
   // Generic emit for testing - dispatches to specific emit methods
@@ -254,22 +241,16 @@ export class MockTerminalService implements ITerminalService {
     payload: {
       sessionId: string
       data?: string
-      code?: number
-      signal?: string
+      code?: number | null
       message?: string
     }
   ): void {
     if (event === 'data' && payload.data !== undefined) {
       this.emitData(payload.sessionId, payload.data)
     } else if (event === 'exit') {
-      // Allow exit events even when code is undefined (EOF case)
-      this.emitExit(payload.sessionId, payload.code, payload.signal)
+      this.emitExit(payload.sessionId, payload.code ?? null)
     } else if (event === 'error' && payload.message !== undefined) {
-      this.emitError(
-        payload.sessionId,
-        payload.message,
-        payload.code?.toString()
-      )
+      this.emitError(payload.sessionId, payload.message)
     }
   }
 

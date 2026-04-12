@@ -1,0 +1,3 @@
+# Mark ts-rs generated bindings as auto-generated (collapsed in PR diffs)
+src/bindings/*.ts linguist-generated=true
+src/bindings/index.ts linguist-generated=false
