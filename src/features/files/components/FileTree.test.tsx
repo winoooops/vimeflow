@@ -15,7 +15,7 @@ describe('FileTree', () => {
           id: '2',
           name: 'test.ts',
           type: 'file',
-          gitStatus: 'M',
+          gitStatus: 'modified',
         },
       ],
     },

@@ -4,28 +4,28 @@ import type { ChangedFile, FileDiff } from '../types'
 export const mockChangedFiles: ChangedFile[] = [
   {
     path: 'src/components/NavBar.tsx',
-    status: 'M',
+    status: 'modified',
     insertions: 12,
     deletions: 3,
     staged: false,
   },
   {
     path: 'src/components/TerminalPanel.tsx',
-    status: 'M',
+    status: 'modified',
     insertions: 8,
     deletions: 5,
     staged: false,
   },
   {
     path: 'src/utils/api-helper.rs',
-    status: 'A',
+    status: 'added',
     insertions: 45,
     deletions: 0,
     staged: true,
   },
   {
     path: 'tsconfig.json',
-    status: 'D',
+    status: 'deleted',
     insertions: 0,
     deletions: 18,
     staged: false,

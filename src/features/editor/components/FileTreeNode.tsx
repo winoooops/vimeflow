@@ -44,13 +44,15 @@ const getFileIcon = (filename: string, customIcon?: string): string => {
  */
 const getGitStatusColor = (status: GitStatus): string => {
   switch (status) {
-    case 'M':
+    case 'modified':
       return 'bg-[#f9e2af] text-[#1e1e2e]' // Yellow for modified
-    case 'A':
+    case 'added':
       return 'bg-[#a6e3a1] text-[#1e1e2e]' // Green for added
-    case 'D':
+    case 'deleted':
       return 'bg-[#f38ba8] text-[#1e1e2e]' // Red for deleted
-    case 'U':
+    case 'renamed':
+      return 'bg-[#89dceb] text-[#1e1e2e]' // Cyan for renamed
+    case 'untracked':
       return 'bg-[#cba6f7] text-[#1e1e2e]' // Purple for untracked
   }
 }

@@ -90,14 +90,14 @@ describe('DiffPanelContent', () => {
     const mockFiles: ChangedFile[] = [
       {
         path: 'src/App.tsx',
-        status: 'M',
+        status: 'modified',
         insertions: 5,
         deletions: 2,
         staged: false,
       },
       {
         path: 'src/lib.ts',
-        status: 'A',
+        status: 'added',
         insertions: 10,
         deletions: 0,
         staged: true,

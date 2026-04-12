@@ -1,7 +1,12 @@
 /**
  * Git status indicator for files.
  */
-export type GitStatus = 'M' | 'A' | 'D' | 'U'
+export type GitStatus =
+  | 'modified'
+  | 'added'
+  | 'deleted'
+  | 'renamed'
+  | 'untracked'
 
 /**
  * Represents a file or folder node in the file tree.
@@ -42,7 +47,8 @@ export interface ContextMenuState {
  * Type guard to check if a value is a valid GitStatus.
  */
 export const isGitStatus = (value: unknown): value is GitStatus =>
-  typeof value === 'string' && ['M', 'A', 'D', 'U'].includes(value)
+  typeof value === 'string' &&
+  ['modified', 'added', 'deleted', 'renamed', 'untracked'].includes(value)
 
 /**
  * Type guard to check if an unknown value is a valid FileNode.

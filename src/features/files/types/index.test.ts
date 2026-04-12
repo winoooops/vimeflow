@@ -9,20 +9,20 @@ import {
 } from './index'
 
 describe('GitStatus type guard', () => {
-  test('returns true for valid M status', () => {
-    expect(isGitStatus('M')).toBe(true)
+  test('returns true for valid modified status', () => {
+    expect(isGitStatus('modified')).toBe(true)
   })
 
-  test('returns true for valid A status', () => {
-    expect(isGitStatus('A')).toBe(true)
+  test('returns true for valid added status', () => {
+    expect(isGitStatus('added')).toBe(true)
   })
 
-  test('returns true for valid D status', () => {
-    expect(isGitStatus('D')).toBe(true)
+  test('returns true for valid deleted status', () => {
+    expect(isGitStatus('deleted')).toBe(true)
   })
 
-  test('returns true for valid U status', () => {
-    expect(isGitStatus('U')).toBe(true)
+  test('returns true for valid untracked status', () => {
+    expect(isGitStatus('untracked')).toBe(true)
   })
 
   test('returns false for invalid status', () => {
@@ -73,7 +73,7 @@ describe('FileNode type guard', () => {
         id: '1',
         name: 'test.ts',
         type: 'file',
-        gitStatus: 'M',
+        gitStatus: 'modified',
       })
     ).toBe(true)
   })
@@ -84,7 +84,7 @@ describe('FileNode type guard', () => {
         id: '1',
         name: 'test.ts',
         type: 'file',
-        gitStatus: 'A',
+        gitStatus: 'added',
         icon: 'code',
         isDragging: true,
         isDragTarget: false,

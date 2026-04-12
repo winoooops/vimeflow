@@ -47,12 +47,13 @@ pub struct ChangedFile {
     pub staged: bool,
 }
 
-/// Diff line type (add, remove, or context)
+/// Diff line type — variant names match TS `DiffLine.type` via
+/// `rename_all = "lowercase"`: `Added` → `"added"`, etc.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DiffLineType {
-    Add,
-    Remove,
+    Added,
+    Removed,
     Context,
 }
 
@@ -73,6 +74,7 @@ pub struct DiffLine {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiffHunk {
+    pub id: String,
     pub header: String,
     pub old_start: u32,
     pub old_lines: u32,
@@ -81,13 +83,14 @@ pub struct DiffHunk {
     pub lines: Vec<DiffLine>,
 }
 
-/// Parsed diff for a single file
+/// Parsed diff for a single file — field names match TS `FileDiff` via
+/// `rename_all = "camelCase"`: `file_path` → `"filePath"`, etc.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileDiff {
-    pub path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_path: String,
     pub old_path: Option<String>,
+    pub new_path: Option<String>,
     pub hunks: Vec<DiffHunk>,
 }
 
@@ -197,6 +200,7 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
             new_line_num = new_start;
 
             current_hunk = Some(DiffHunk {
+                id: format!("hunk-{}", hunks.len()),
                 header,
                 old_start,
                 old_lines,
@@ -207,9 +211,9 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
         } else if let Some(ref mut hunk) = current_hunk {
             // Parse diff line
             let (line_type, content) = if let Some(stripped) = line.strip_prefix('+') {
-                (DiffLineType::Add, stripped)
+                (DiffLineType::Added, stripped)
             } else if let Some(stripped) = line.strip_prefix('-') {
-                (DiffLineType::Remove, stripped)
+                (DiffLineType::Removed, stripped)
             } else if let Some(stripped) = line.strip_prefix(' ') {
                 (DiffLineType::Context, stripped)
             } else {
@@ -218,12 +222,12 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
             };
 
             let (old_line_number, new_line_number) = match line_type {
-                DiffLineType::Add => {
+                DiffLineType::Added => {
                     let num = new_line_num;
                     new_line_num += 1;
                     (None, Some(num))
                 }
-                DiffLineType::Remove => {
+                DiffLineType::Removed => {
                     let num = old_line_num;
                     old_line_num += 1;
                     (Some(num), None)
@@ -252,8 +256,9 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
     }
 
     FileDiff {
-        path: file_path.to_string(),
+        file_path: file_path.to_string(),
         old_path: None,
+        new_path: None,
         hunks,
     }
 }
@@ -432,7 +437,7 @@ mod tests {
 "#;
         let file_diff = parse_git_diff(diff, "src/main.rs");
 
-        assert_eq!(file_diff.path, "src/main.rs");
+        assert_eq!(file_diff.file_path, "src/main.rs");
         assert_eq!(file_diff.hunks.len(), 1);
 
         let hunk = &file_diff.hunks[0];
@@ -444,7 +449,7 @@ mod tests {
 
         // Check line types
         assert!(matches!(hunk.lines[0].line_type, DiffLineType::Context));
-        assert!(matches!(hunk.lines[1].line_type, DiffLineType::Add));
+        assert!(matches!(hunk.lines[1].line_type, DiffLineType::Added));
         assert!(matches!(hunk.lines[2].line_type, DiffLineType::Context));
         assert!(matches!(hunk.lines[3].line_type, DiffLineType::Context));
 
@@ -481,7 +486,7 @@ mod tests {
         let diff = "";
         let file_diff = parse_git_diff(diff, "unchanged.txt");
 
-        assert_eq!(file_diff.path, "unchanged.txt");
+        assert_eq!(file_diff.file_path, "unchanged.txt");
         assert_eq!(file_diff.hunks.len(), 0);
     }
 
@@ -498,7 +503,7 @@ mod tests {
 
         let hunk = &file_diff.hunks[0];
         assert_eq!(hunk.lines.len(), 3);
-        assert!(matches!(hunk.lines[1].line_type, DiffLineType::Remove));
+        assert!(matches!(hunk.lines[1].line_type, DiffLineType::Removed));
         assert_eq!(hunk.lines[1].content, "remove this");
     }
 
