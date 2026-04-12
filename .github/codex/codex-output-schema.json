@@ -59,6 +59,29 @@
         ]
       }
     },
+    "idea": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "intent": {
+          "type": "string",
+          "description": "Does the PR solve the real problem, not just the literal one?"
+        },
+        "danger": {
+          "type": "string",
+          "description": "What breaks? Edge cases, security, bad data?"
+        },
+        "explain": {
+          "type": "string",
+          "description": "Why this approach? What reasoning led here?"
+        },
+        "alternatives": {
+          "type": "string",
+          "description": "Is there a simpler way? Would a senior dev raise an eyebrow?"
+        }
+      },
+      "required": ["intent", "danger", "explain", "alternatives"]
+    },
     "overall_correctness": {
       "type": "string",
       "enum": ["patch is correct", "patch has issues"]
@@ -74,6 +97,7 @@
   },
   "required": [
     "findings",
+    "idea",
     "overall_correctness",
     "overall_explanation",
     "overall_confidence_score"

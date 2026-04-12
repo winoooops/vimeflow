@@ -233,6 +233,24 @@ End every review with:
 Verdict: WARNING — 2 HIGH issues should be resolved before merge.
 ```
 
+## IDEA Analysis (MANDATORY)
+
+Every review must include an IDEA section after the findings summary. This helps the PR author understand the review holistically, not just as a list of issues.
+
+- **I — Intent**: Does the PR solve the real problem, not just the literal one? Is the goal clear from the diff, or is there a mismatch between what was asked and what was built?
+- **D — Danger**: What breaks? Edge cases, security implications, bad data paths. Focus on risks _introduced by this diff_, not pre-existing ones.
+- **E — Explain**: Can you explain why this approach was chosen? What trade-offs did the author make? If the reasoning isn't obvious from the code, call that out.
+- **A — Alternatives**: Is there a simpler way? Would a senior dev raise an eyebrow at this approach? Suggest alternatives only if they're meaningfully better — not just different.
+
+```
+## 💡 IDEA Analysis
+
+**I — Intent:** [Does this solve the real problem?]
+**D — Danger:** [What could break?]
+**E — Explain:** [Why this approach?]
+**A — Alternatives:** [Simpler options?]
+```
+
 ## Approval Criteria
 
 - **Approve**: No CRITICAL or HIGH issues
