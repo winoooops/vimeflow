@@ -1,8 +1,32 @@
 use serde::Serialize;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 use crate::filesystem::scope::{ensure_within_home, expand_home, home_canonical, reject_parent_refs};
+
+/// Timeout for git subprocess calls. Prevents indefinite blocking on
+/// hung NFS mounts, slow hooks, or unresponsive credential helpers.
+const GIT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Run a git command with a timeout. Returns the output or an error
+/// if the command fails or exceeds the timeout.
+async fn run_git_with_timeout(mut cmd: Command) -> Result<std::process::Output, String> {
+    let result = tokio::time::timeout(GIT_TIMEOUT, tokio::task::spawn_blocking(move || {
+        cmd.output()
+    }))
+    .await;
+
+    match result {
+        Ok(Ok(Ok(output))) => Ok(output),
+        Ok(Ok(Err(e))) => Err(format!("Failed to run git: {}", e)),
+        Ok(Err(e)) => Err(format!("git task failed: {}", e)),
+        Err(_) => Err(format!(
+            "git command timed out after {}s",
+            GIT_TIMEOUT.as_secs()
+        )),
+    }
+}
 
 /// Validate that `cwd` resolves to a path inside the user's home directory.
 fn validate_cwd(cwd: &str) -> Result<std::path::PathBuf, String> {
@@ -285,19 +309,18 @@ fn parse_hunk_range(range: &str) -> (u32, u32) {
 
 /// Tauri command: Get all files with git changes
 #[tauri::command]
-pub fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
+pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
     let safe_cwd = validate_cwd(&cwd)?;
 
-    let output = Command::new("git")
-        .arg("-C")
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
         .arg(&safe_cwd)
         .arg("status")
         .arg("--porcelain=v1")
         .arg("-z")
-        // Prevent credential-helper hangs on network-mounted repos
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .output()
-        .map_err(|e| format!("Failed to run git status: {}", e))?;
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let output = run_git_with_timeout(cmd).await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -310,7 +333,7 @@ pub fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
 
 /// Tauri command: Get diff for a specific file
 #[tauri::command]
-pub fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<FileDiff, String> {
+pub async fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<FileDiff, String> {
     let safe_cwd = validate_cwd(&cwd)?;
     validate_file_path(&file)?;
 
@@ -319,7 +342,6 @@ pub fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<FileDiff,
         .arg(&safe_cwd)
         .arg("diff")
         .arg("--no-color")
-        // Prevent credential-helper hangs on network-mounted repos
         .env("GIT_TERMINAL_PROMPT", "0");
 
     if staged {
@@ -328,9 +350,7 @@ pub fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<FileDiff,
 
     cmd.arg("--").arg(&file);
 
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to run git diff: {}", e))?;
+    let output = run_git_with_timeout(cmd).await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
