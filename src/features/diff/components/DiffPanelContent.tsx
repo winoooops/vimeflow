@@ -31,11 +31,20 @@ export const DiffPanelContent = ({
 
   // Auto-select first file when status loads. Guarded by
   // !statusLoading so this doesn't fire on the stale files array
-  // during the loading window after a cwd change.
+  // during the loading window after a cwd change. Also re-selects
+  // when the current selection disappears from the list (e.g. file
+  // was committed or reverted).
   useEffect(() => {
-    if (!statusLoading && files.length > 0 && !selectedFile) {
+    if (statusLoading) {
+      return
+    }
+
+    const selectionValid =
+      selectedFile !== null && files.some((f) => f.path === selectedFile)
+
+    if (files.length > 0 && !selectionValid) {
       setSelectedFile(files[0].path)
-    } else if (!statusLoading && files.length === 0) {
+    } else if (files.length === 0) {
       setSelectedFile(null)
     }
   }, [files, selectedFile, statusLoading])

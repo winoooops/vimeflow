@@ -17,6 +17,9 @@ fn validate_cwd(cwd: &str) -> Result<std::path::PathBuf, String> {
 
 /// Validate that a file path is repo-relative (no absolute paths, no `..`).
 fn validate_file_path(file: &str) -> Result<(), String> {
+    if file.is_empty() {
+        return Err("access denied: file path must not be empty".to_string());
+    }
     let path = Path::new(file);
     if path.is_absolute() {
         return Err(format!(
@@ -138,6 +141,7 @@ fn parse_git_status(output: &str) -> Vec<ChangedFile> {
             "D " => (ChangedFileStatus::Deleted, true),
             " D" => (ChangedFileStatus::Deleted, false),
             s if s.starts_with('R') => (ChangedFileStatus::Renamed, true), // renames are index ops
+            s if s.starts_with('C') => (ChangedFileStatus::Renamed, true), // copies are index ops (no separate variant)
             _ => {
                 // Default to modified unstaged for unknown codes
                 (ChangedFileStatus::Modified, false)
@@ -405,6 +409,13 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert!(matches!(files[0].status, ChangedFileStatus::Modified));
         assert!(!files[0].staged, "MM should default to unstaged in v1");
+    }
+
+    #[test]
+    fn test_validate_file_path_rejects_empty() {
+        let result = validate_file_path("");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"));
     }
 
     #[test]
