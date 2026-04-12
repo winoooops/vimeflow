@@ -49,8 +49,9 @@ export const DiffPanelContent = ({
     }
   }, [files, selectedFile, statusLoading])
 
-  const selectedFileStaged =
-    files.find((f) => f.path === selectedFile)?.staged ?? false
+  const selectedFileEntry = files.find((f) => f.path === selectedFile)
+  const selectedFileStaged = selectedFileEntry?.staged ?? false
+  const selectedFileIsUntracked = selectedFileEntry?.status === 'untracked'
 
   const {
     diff,
@@ -120,7 +121,16 @@ export const DiffPanelContent = ({
 
       {/* Right: Diff viewer (fills remaining space) */}
       <div className="flex-1 min-w-0 overflow-hidden">
-        {diffError ? (
+        {selectedFileIsUntracked ? (
+          <div className="flex h-full items-center justify-center text-on-surface-variant">
+            <div className="text-center space-y-2">
+              <p className="text-sm">New file — not yet tracked</p>
+              <p className="text-xs opacity-60">
+                Stage with git add to see diff against index
+              </p>
+            </div>
+          </div>
+        ) : diffError ? (
           <div
             className="flex h-full items-center justify-center text-error"
             role="alert"

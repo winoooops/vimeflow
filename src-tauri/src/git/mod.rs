@@ -9,22 +9,46 @@ use crate::filesystem::scope::{ensure_within_home, expand_home, home_canonical, 
 /// hung NFS mounts, slow hooks, or unresponsive credential helpers.
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Run a git command with a timeout. Returns the output or an error
-/// if the command fails or exceeds the timeout.
+/// Run a git command with a timeout. Spawns the process first so the
+/// child handle is available for killing on timeout — prevents orphaned
+/// blocking threads in Tokio's thread pool.
 async fn run_git_with_timeout(mut cmd: Command) -> Result<std::process::Output, String> {
-    let result = tokio::time::timeout(GIT_TIMEOUT, tokio::task::spawn_blocking(move || {
-        cmd.output()
-    }))
+    let child = cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn git: {}", e))?;
+
+    let child_id = child.id();
+
+    let result = tokio::time::timeout(
+        GIT_TIMEOUT,
+        tokio::task::spawn_blocking(move || child.wait_with_output()),
+    )
     .await;
 
     match result {
         Ok(Ok(Ok(output))) => Ok(output),
         Ok(Ok(Err(e))) => Err(format!("Failed to run git: {}", e)),
         Ok(Err(e)) => Err(format!("git task failed: {}", e)),
-        Err(_) => Err(format!(
-            "git command timed out after {}s",
-            GIT_TIMEOUT.as_secs()
-        )),
+        Err(_) => {
+            // Kill the orphaned process so it doesn't linger
+            #[cfg(unix)]
+            {
+                unsafe {
+                    // SAFETY: child_id is a valid PID from a process we
+                    // just spawned. SIGKILL is the only reliable way to
+                    // terminate a hung git process (SIGTERM may be ignored
+                    // by a blocking syscall on NFS).
+                    libc::kill(child_id as i32, libc::SIGKILL);
+                }
+            }
+
+            Err(format!(
+                "git command timed out after {}s",
+                GIT_TIMEOUT.as_secs()
+            ))
+        }
     }
 }
 
@@ -161,7 +185,9 @@ fn parse_git_status(output: &str) -> Vec<ChangedFile> {
             "MM" => (ChangedFileStatus::Modified, false),
             "A " => (ChangedFileStatus::Added, true),
             " A" => (ChangedFileStatus::Added, false),
-            "AM" => (ChangedFileStatus::Added, true),
+            // AM = added in index, then modified in worktree. Same
+            // rationale as MM — default to unstaged to show unreviewed edits.
+            "AM" => (ChangedFileStatus::Added, false),
             "D " => (ChangedFileStatus::Deleted, true),
             " D" => (ChangedFileStatus::Deleted, false),
             s if s.starts_with('R') => (ChangedFileStatus::Renamed, true), // renames are index ops
