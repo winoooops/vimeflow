@@ -9,6 +9,10 @@ interface UseGitStatusReturn {
   refresh: () => void
 }
 
+/** True when cwd points to a real workspace directory, not a fallback. */
+const isValidCwd = (cwd: string): boolean =>
+  cwd !== '.' && cwd !== '~' && cwd.length > 0
+
 /** Hook to fetch and manage git status (changed files) */
 export const useGitStatus = (cwd = '.'): UseGitStatusReturn => {
   const [files, setFiles] = useState<ChangedFile[]>([])
@@ -20,7 +24,19 @@ export const useGitStatus = (cwd = '.'): UseGitStatusReturn => {
   // Both initial load and manual refresh go through this effect —
   // refresh() bumps refreshKey which triggers a re-run with a
   // fresh cancelled flag. No separate async path needed.
+  //
+  // Skips the fetch entirely when cwd is a fallback value ('.' or '~')
+  // to avoid firing IPC against the Tauri process's CWD, which is
+  // unlikely to be the user's project directory.
   useEffect(() => {
+    if (!isValidCwd(cwd)) {
+      setFiles([])
+      setLoading(false)
+      setError(null)
+
+      return
+    }
+
     let cancelled = false
 
     const fetchStatus = async (): Promise<void> => {

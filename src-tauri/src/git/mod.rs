@@ -294,6 +294,8 @@ pub fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
         .arg("status")
         .arg("--porcelain=v1")
         .arg("-z")
+        // Prevent credential-helper hangs on network-mounted repos
+        .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .map_err(|e| format!("Failed to run git status: {}", e))?;
 
@@ -316,7 +318,9 @@ pub fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<FileDiff,
     cmd.arg("-C")
         .arg(&safe_cwd)
         .arg("diff")
-        .arg("--no-color");
+        .arg("--no-color")
+        // Prevent credential-helper hangs on network-mounted repos
+        .env("GIT_TERMINAL_PROMPT", "0");
 
     if staged {
         cmd.arg("--cached");

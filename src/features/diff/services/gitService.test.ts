@@ -371,20 +371,22 @@ describe('createGitService', () => {
 
   test('returns TauriGitService when __TAURI_INTERNALS__ exists', () => {
     const originalMode = import.meta.env.MODE
-    import.meta.env.MODE = 'development'
 
-    // Mock Tauri internals
-    ;(
-      window as typeof window & { __TAURI_INTERNALS__?: unknown }
-    ).__TAURI_INTERNALS__ = {}
+    const tauriWindow = window as typeof window & {
+      __TAURI_INTERNALS__?: unknown
+    }
 
-    const service = createGitService('/test/path')
-    expect(service).toBeInstanceOf(TauriGitService)
+    try {
+      import.meta.env.MODE = 'development'
+      tauriWindow.__TAURI_INTERNALS__ = {}
 
-    // Cleanup
-    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown })
-      .__TAURI_INTERNALS__
-    import.meta.env.MODE = originalMode
+      const service = createGitService('/test/path')
+
+      expect(service).toBeInstanceOf(TauriGitService)
+    } finally {
+      delete tauriWindow.__TAURI_INTERNALS__
+      import.meta.env.MODE = originalMode
+    }
   })
 
   test('returns HttpGitService in development mode without Tauri', () => {

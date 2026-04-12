@@ -5,7 +5,7 @@ import { mockChangedFiles } from '../data/mockDiff'
 
 describe('useGitStatus', () => {
   test('fetches files on mount', async () => {
-    const { result } = renderHook(() => useGitStatus())
+    const { result } = renderHook(() => useGitStatus('/home/test/project'))
 
     // Initially loading
     expect(result.current.loading).toBe(true)
@@ -23,7 +23,7 @@ describe('useGitStatus', () => {
   })
 
   test('provides refresh function', async () => {
-    const { result } = renderHook(() => useGitStatus())
+    const { result } = renderHook(() => useGitStatus('/home/test/project'))
 
     // Wait for initial load
     await waitFor(() => {
@@ -32,8 +32,8 @@ describe('useGitStatus', () => {
 
     expect(result.current.files).toEqual(mockChangedFiles)
 
-    // Call refresh
-    await result.current.refresh()
+    // Call refresh (synchronous — bumps refreshKey counter)
+    result.current.refresh()
 
     // Should still have files
     expect(result.current.files).toEqual(mockChangedFiles)
@@ -43,7 +43,7 @@ describe('useGitStatus', () => {
   test('handles errors gracefully', async () => {
     // This test would need a way to inject a failing service
     // For now, just verify error state structure
-    const { result } = renderHook(() => useGitStatus())
+    const { result } = renderHook(() => useGitStatus('/home/test/project'))
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false)
@@ -54,7 +54,7 @@ describe('useGitStatus', () => {
   })
 
   test('returns correct structure', async () => {
-    const { result } = renderHook(() => useGitStatus())
+    const { result } = renderHook(() => useGitStatus('/home/test/project'))
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false)
