@@ -19,7 +19,7 @@ use std::path::{Component, Path, PathBuf};
 /// Returns the input unchanged if it does not start with `~`, or if the
 /// home directory cannot be determined (in which case downstream checks
 /// will reject the path anyway).
-pub(super) fn expand_home(path: &str) -> PathBuf {
+pub(crate) fn expand_home(path: &str) -> PathBuf {
     if path == "~" || path.starts_with("~/") {
         if let Some(home) = dirs::home_dir() {
             if path == "~" {
@@ -35,7 +35,7 @@ pub(super) fn expand_home(path: &str) -> PathBuf {
 ///
 /// Failure here means we cannot enforce the sandbox at all, so every
 /// caller treats it as a fatal `access denied`.
-pub(super) fn home_canonical() -> Result<PathBuf, String> {
+pub(crate) fn home_canonical() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
     fs::canonicalize(&home).map_err(|e| format!("cannot resolve home dir: {}", e))
 }
@@ -48,7 +48,7 @@ pub(super) fn home_canonical() -> Result<PathBuf, String> {
 /// the current working directory plus a basename, so `..` is always
 /// suspicious and blocking it sidesteps the subtle interaction between
 /// lexical `Path::parent()` walks and OS-level `..` resolution.
-pub(super) fn reject_parent_refs(path: &Path) -> Result<(), String> {
+pub(crate) fn reject_parent_refs(path: &Path) -> Result<(), String> {
     if path.components().any(|c| matches!(c, Component::ParentDir)) {
         return Err(format!(
             "access denied: path contains parent traversal segments: {}",
@@ -62,7 +62,7 @@ pub(super) fn reject_parent_refs(path: &Path) -> Result<(), String> {
 ///
 /// The caller is responsible for canonicalizing first; this helper only
 /// performs the `starts_with` check.
-pub(super) fn ensure_within_home(canonical: &Path, home_canonical: &Path) -> Result<(), String> {
+pub(crate) fn ensure_within_home(canonical: &Path, home_canonical: &Path) -> Result<(), String> {
     if !canonical.starts_with(home_canonical) {
         return Err(format!(
             "access denied: path is outside home directory: {}",

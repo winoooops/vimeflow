@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createGitService } from '../services/gitService'
 import type { ChangedFile } from '../types'
 
@@ -14,6 +14,7 @@ export const useGitStatus = (cwd = '.'): UseGitStatusReturn => {
   const [files, setFiles] = useState<ChangedFile[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
+  const cancelledRef = useRef(false)
 
   const fetchStatus = useCallback(async (): Promise<void> => {
     try {
@@ -23,18 +24,29 @@ export const useGitStatus = (cwd = '.'): UseGitStatusReturn => {
       const service = createGitService(cwd)
       const changedFiles = await service.getStatus()
 
-      setFiles(changedFiles)
+      if (!cancelledRef.current) {
+        setFiles(changedFiles)
+      }
     } catch (err) {
-      setError(
-        err instanceof Error ? err : new Error('Failed to fetch git status')
-      )
+      if (!cancelledRef.current) {
+        setError(
+          err instanceof Error ? err : new Error('Failed to fetch git status')
+        )
+      }
     } finally {
-      setLoading(false)
+      if (!cancelledRef.current) {
+        setLoading(false)
+      }
     }
   }, [cwd])
 
   useEffect(() => {
+    cancelledRef.current = false
     void fetchStatus()
+
+    return (): void => {
+      cancelledRef.current = true
+    }
   }, [fetchStatus])
 
   return {

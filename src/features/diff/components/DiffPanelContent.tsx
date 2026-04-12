@@ -24,6 +24,11 @@ export const DiffPanelContent = ({
   } = useGitStatus(cwd)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
 
+  // Reset selection when cwd changes (avoids stale path from old repo)
+  useEffect(() => {
+    setSelectedFile(null)
+  }, [cwd])
+
   // Auto-select first file when status loads
   useEffect(() => {
     if (files.length > 0 && !selectedFile) {
@@ -45,7 +50,11 @@ export const DiffPanelContent = ({
   // Loading state
   if (statusLoading) {
     return (
-      <div className="flex h-full w-full items-center justify-center text-on-surface-variant">
+      <div
+        className="flex h-full w-full items-center justify-center text-on-surface-variant"
+        role="status"
+        aria-live="polite"
+      >
         <div className="text-center space-y-2">
           <p className="text-sm">Loading diff…</p>
         </div>
@@ -111,7 +120,11 @@ export const DiffPanelContent = ({
             </div>
           </div>
         ) : diffLoading ? (
-          <div className="flex h-full items-center justify-center text-on-surface-variant">
+          <div
+            className="flex h-full items-center justify-center text-on-surface-variant"
+            role="status"
+            aria-live="polite"
+          >
             <p className="text-sm">Loading diff…</p>
           </div>
         ) : diff ? (

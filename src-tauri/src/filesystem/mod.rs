@@ -20,7 +20,7 @@
 
 mod list;
 mod read;
-mod scope;
+pub(crate) mod scope;
 mod types;
 mod write;
 

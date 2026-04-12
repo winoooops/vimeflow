@@ -1,5 +1,31 @@
 use serde::Serialize;
+use std::path::Path;
 use std::process::Command;
+
+use crate::filesystem::scope::{ensure_within_home, expand_home, home_canonical, reject_parent_refs};
+
+/// Validate that `cwd` resolves to a path inside the user's home directory.
+fn validate_cwd(cwd: &str) -> Result<std::path::PathBuf, String> {
+    let expanded = expand_home(cwd);
+    reject_parent_refs(&expanded)?;
+    let home = home_canonical()?;
+    let canonical = std::fs::canonicalize(&expanded)
+        .map_err(|e| format!("invalid cwd '{}': {}", cwd, e))?;
+    ensure_within_home(&canonical, &home)?;
+    Ok(canonical)
+}
+
+/// Validate that a file path is repo-relative (no absolute paths, no `..`).
+fn validate_file_path(file: &str) -> Result<(), String> {
+    let path = Path::new(file);
+    if path.is_absolute() {
+        return Err(format!(
+            "access denied: file path must be repo-relative, got: {}",
+            file
+        ));
+    }
+    reject_parent_refs(path)
+}
 
 /// Git file status matching TypeScript's ChangedFileStatus type
 #[derive(Debug, Clone, Serialize)]
@@ -66,44 +92,72 @@ pub struct FileDiff {
 }
 
 /// Parse git status --porcelain=v1 -z output into ChangedFile structs
+///
+/// Porcelain v1 with `-z` uses NUL as the record terminator. Rename and
+/// copy entries emit TWO NUL-separated paths: `XY dest\0src\0`. We
+/// consume the second path as the old name for the entry.
 fn parse_git_status(output: &str) -> Vec<ChangedFile> {
     let mut files = Vec::new();
+    let entries: Vec<&str> = output.split('\0').collect();
+    let mut i = 0;
 
-    // Porcelain v1 with -z uses NUL (\0) as delimiter
-    for entry in output.split('\0') {
+    while i < entries.len() {
+        let entry = entries[i];
         if entry.len() < 3 {
+            i += 1;
             continue;
         }
 
         let xy = &entry[0..2];
         let path = entry[3..].to_string();
 
+        // Detect rename/copy — first char of XY is R or C (may include
+        // a score like "R100" in some formats, but porcelain v1 uses
+        // two-char XY: "R " or "C ").
+        let is_rename_or_copy = xy.starts_with('R') || xy.starts_with('C');
+
         // Parse XY status codes
         // X = index status, Y = worktree status
-        // ' ' = unmodified, M = modified, A = added, D = deleted, R = renamed, C = copied, U = updated but unmerged, ? = untracked
         let (status, staged) = match xy {
             "??" => (ChangedFileStatus::Untracked, false),
             "M " => (ChangedFileStatus::Modified, true),
             " M" => (ChangedFileStatus::Modified, false),
-            "MM" => (ChangedFileStatus::Modified, false), // Modified in both index and worktree
+            // MM = modified in both index and worktree. A single boolean
+            // can't represent both states — see the dual-flag spec at
+            // docs/superpowers/specs/2026-04-11-mm-staged-unstaged-design.md
+            // For v1, default to unstaged (shows working-tree changes the
+            // user hasn't reviewed yet; staged changes were already reviewed
+            // when the user staged them).
+            "MM" => (ChangedFileStatus::Modified, false),
             "A " => (ChangedFileStatus::Added, true),
             " A" => (ChangedFileStatus::Added, false),
             "AM" => (ChangedFileStatus::Added, true),
             "D " => (ChangedFileStatus::Deleted, true),
             " D" => (ChangedFileStatus::Deleted, false),
-            "R " => (ChangedFileStatus::Renamed, true),
-            " R" => (ChangedFileStatus::Renamed, false),
+            s if s.starts_with('R') => (ChangedFileStatus::Renamed, true), // renames are index ops
             _ => {
                 // Default to modified unstaged for unknown codes
                 (ChangedFileStatus::Modified, false)
             }
         };
 
+        // For renames/copies, consume the next NUL-separated token as old path
+        let old_path = if is_rename_or_copy {
+            i += 1;
+            entries.get(i).map(|s| s.to_string())
+        } else {
+            None
+        };
+
+        let _ = old_path; // old_path not surfaced in ChangedFile yet — tracked in FileDiff
+
         files.push(ChangedFile {
             path,
             status,
             staged,
         });
+
+        i += 1;
     }
 
     files
@@ -218,9 +272,11 @@ fn parse_hunk_range(range: &str) -> (u32, u32) {
 /// Tauri command: Get all files with git changes
 #[tauri::command]
 pub fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
+    let safe_cwd = validate_cwd(&cwd)?;
+
     let output = Command::new("git")
         .arg("-C")
-        .arg(&cwd)
+        .arg(&safe_cwd)
         .arg("status")
         .arg("--porcelain=v1")
         .arg("-z")
@@ -239,8 +295,14 @@ pub fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
 /// Tauri command: Get diff for a specific file
 #[tauri::command]
 pub fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<FileDiff, String> {
+    let safe_cwd = validate_cwd(&cwd)?;
+    validate_file_path(&file)?;
+
     let mut cmd = Command::new("git");
-    cmd.arg("-C").arg(&cwd).arg("diff").arg("--no-color");
+    cmd.arg("-C")
+        .arg(&safe_cwd)
+        .arg("diff")
+        .arg("--no-color");
 
     if staged {
         cmd.arg("--cached");
@@ -317,12 +379,47 @@ mod tests {
 
     #[test]
     fn test_parse_git_status_renamed() {
-        let output = "R  old.txt\0";
+        // Porcelain -z rename: "R  new.txt\0old.txt\0"
+        let output = "R  new.txt\0old.txt\0";
         let files = parse_git_status(output);
 
         assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "new.txt");
         assert!(matches!(files[0].status, ChangedFileStatus::Renamed));
         assert!(files[0].staged);
+    }
+
+    #[test]
+    fn test_parse_git_status_mm_defaults_to_unstaged() {
+        // MM = modified in both index and worktree. v1 defaults to
+        // unstaged so the working-tree diff is shown. See the dual-flag
+        // spec for the v2 model that surfaces both states.
+        let output = "MM both_modified.rs\0";
+        let files = parse_git_status(output);
+
+        assert_eq!(files.len(), 1);
+        assert!(matches!(files[0].status, ChangedFileStatus::Modified));
+        assert!(!files[0].staged, "MM should default to unstaged in v1");
+    }
+
+    #[test]
+    fn test_validate_file_path_rejects_absolute() {
+        let result = validate_file_path("/etc/passwd");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("repo-relative"));
+    }
+
+    #[test]
+    fn test_validate_file_path_rejects_parent_traversal() {
+        let result = validate_file_path("../../etc/passwd");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("parent traversal"));
+    }
+
+    #[test]
+    fn test_validate_file_path_allows_normal_path() {
+        let result = validate_file_path("src/main.rs");
+        assert!(result.is_ok());
     }
 
     #[test]
