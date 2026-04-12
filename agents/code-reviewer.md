@@ -27,6 +27,20 @@ When invoked:
 - **Consolidate** similar issues (e.g., "5 functions missing error handling" not 5 separate findings)
 - **Prioritize** issues that could cause bugs, security vulnerabilities, or data loss
 
+## Scope Boundary (MANDATORY)
+
+Your review scope is the diff — nothing more.
+
+- **In scope**: Lines added or modified in the diff, and behavior changes directly caused by those lines
+- **Out of scope**: Pre-existing bugs in unchanged code, adjacent "improvements", cascading into related files, increasingly niche edge cases in working code
+
+**If you find a real issue in untouched code:**
+Do NOT report it as a finding with severity. Instead, add it to an **Out-of-Scope Observations** section at the end — framed as "Consider filing a follow-up for: [description]". Never block or warn based on out-of-scope observations.
+
+**Exception:** Actively exploitable CRITICAL security vulnerabilities may be flagged regardless of diff scope.
+
+**Anti-pattern to avoid:** Review rabbit-holes — where round N finds an issue, the fix in round N+1 triggers a new niche finding in the same area, spiraling into 5+ rounds on code that was already working. If the original PR goal is achieved and tests pass, stop.
+
 ## Review Checklist
 
 ### Security (CRITICAL)

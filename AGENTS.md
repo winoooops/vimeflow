@@ -74,7 +74,7 @@ Follow the review process and checklist defined in `agents/code-reviewer.md`. Ke
 
 ## Review Guidelines
 
-- Focus only on issues **introduced by the PR diff** — do not flag pre-existing problems
+- **Scope boundary (mandatory)**: Review ONLY the lines added or modified in the diff. Pre-existing bugs in unchanged code are out of scope — note them as follow-ups in a separate "Out-of-Scope Observations" section, never as findings with severity. Do not cascade into related files or chase increasingly niche edge cases in working code. Exception: actively exploitable CRITICAL security vulnerabilities.
 - Severity levels: CRITICAL (security/data loss), HIGH (bugs), MEDIUM (maintainability), LOW (style)
 - Flag any hardcoded secrets, `console.log` statements, or `any` types
 - Approval: no CRITICAL/HIGH = approve; HIGH only = warn; CRITICAL = block

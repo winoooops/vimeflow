@@ -31,3 +31,4 @@ ingestion protocol.
 | [CodeMirror Integration](patterns/codemirror-integration.md)   | editor         | 12       | 0    | 2026-04-11   |
 | [Error Surfacing](patterns/error-surfacing.md)                 | error-handling | 7        | 0    | 2026-04-10   |
 | [File Tree Paths](patterns/file-tree-paths.md)                 | files          | 4        | 0    | 2026-04-10   |
+| [Scope Boundary](patterns/scope-boundary.md)                   | review-process | 5        | 0    | 2026-04-12   |
