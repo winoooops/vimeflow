@@ -27,7 +27,7 @@ ingestion protocol.
 | [Command Injection](patterns/command-injection.md)             | security       | 4        | 0    | 2026-04-09   |
 | [CSP Configuration](patterns/csp-configuration.md)             | security       | 2        | 0    | 2026-04-09   |
 | [PTY Session Management](patterns/pty-session-management.md)   | backend        | 5        | 0    | 2026-04-09   |
-| [Git Operations](patterns/git-operations.md)                   | correctness    | 5        | 0    | 2026-04-09   |
+| [Git Operations](patterns/git-operations.md)                   | correctness    | 10       | 1    | 2026-04-12   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)   | editor         | 12       | 0    | 2026-04-11   |
 | [Error Surfacing](patterns/error-surfacing.md)                 | error-handling | 7        | 0    | 2026-04-10   |
 | [File Tree Paths](patterns/file-tree-paths.md)                 | files          | 4        | 0    | 2026-04-10   |
