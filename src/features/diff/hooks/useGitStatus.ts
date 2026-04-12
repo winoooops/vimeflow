@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createGitService } from '../services/gitService'
 import type { ChangedFile } from '../types'
 
@@ -14,45 +14,63 @@ export const useGitStatus = (cwd = '.'): UseGitStatusReturn => {
   const [files, setFiles] = useState<ChangedFile[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
-  const cancelledRef = useRef(false)
 
-  const fetchStatus = useCallback(async (): Promise<void> => {
-    try {
-      setLoading(true)
-      setError(null)
+  // Per-invocation cancelled flag (local variable, not useRef) —
+  // matches the pattern in useFileDiff. A shared useRef would be
+  // reset by the next effect cycle before the old async call
+  // completes, allowing stale results to leak through.
+  useEffect(() => {
+    let cancelled = false
 
-      const service = createGitService(cwd)
-      const changedFiles = await service.getStatus()
+    const fetchStatus = async (): Promise<void> => {
+      try {
+        setLoading(true)
+        setError(null)
 
-      if (!cancelledRef.current) {
-        setFiles(changedFiles)
-      }
-    } catch (err) {
-      if (!cancelledRef.current) {
-        setError(
-          err instanceof Error ? err : new Error('Failed to fetch git status')
-        )
-      }
-    } finally {
-      if (!cancelledRef.current) {
-        setLoading(false)
+        const changedFiles = await createGitService(cwd).getStatus()
+
+        if (!cancelled) {
+          setFiles(changedFiles)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error ? err : new Error('Failed to fetch git status')
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
-  }, [cwd])
 
-  useEffect(() => {
-    cancelledRef.current = false
     void fetchStatus()
 
     return (): void => {
-      cancelledRef.current = true
+      cancelled = true
     }
-  }, [fetchStatus])
+  }, [cwd])
+
+  const refresh = useCallback(async (): Promise<void> => {
+    try {
+      setLoading(true)
+      setError(null)
+      const changedFiles = await createGitService(cwd).getStatus()
+      setFiles(changedFiles)
+    } catch (err) {
+      setError(
+        err instanceof Error ? err : new Error('Failed to fetch git status')
+      )
+    } finally {
+      setLoading(false)
+    }
+  }, [cwd])
 
   return {
     files,
     loading,
     error,
-    refresh: fetchStatus,
+    refresh,
   }
 }
