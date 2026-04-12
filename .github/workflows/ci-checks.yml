@@ -85,6 +85,7 @@ jobs:
 
   bindings-check:
     name: Verify TypeScript Bindings
+    needs: [rust-test]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

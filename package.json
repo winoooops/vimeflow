@@ -23,7 +23,7 @@
     "test:coverage": "vitest run --coverage",
     "review": "bash scripts/review.sh",
     "review:fix": "bash scripts/review-fix.sh",
-    "generate:bindings": "cd src-tauri && cargo test && cd .. && prettier --write src/bindings/"
+    "generate:bindings": "cd src-tauri && cargo test export_bindings && cd .. && prettier --write src/bindings/"
   },
   "keywords": [
     "tauri",

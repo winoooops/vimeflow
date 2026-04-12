@@ -235,7 +235,7 @@ describe('MockTerminalService', () => {
 
       await service.kill({ sessionId })
 
-      expect(onExit).toHaveBeenCalledWith(sessionId, 0, undefined)
+      expect(onExit).toHaveBeenCalledWith(sessionId, 0)
     })
 
     test('removes session from active sessions', async () => {
@@ -302,12 +302,12 @@ describe('MockTerminalService', () => {
 
       service.emitExit(sessionId, 0)
 
-      expect(callback).toHaveBeenCalledWith(sessionId, 0, undefined)
+      expect(callback).toHaveBeenCalledWith(sessionId, 0)
 
       unsubscribe()
     })
 
-    test('onExit with signal', async () => {
+    test('onExit with null code', async () => {
       const callback = vi.fn()
       service.onExit(callback)
 
@@ -316,9 +316,9 @@ describe('MockTerminalService', () => {
         cwd: '/home/user',
       })
 
-      service.emitExit(sessionId, 1, 'SIGTERM')
+      service.emitExit(sessionId, null)
 
-      expect(callback).toHaveBeenCalledWith(sessionId, 1, 'SIGTERM')
+      expect(callback).toHaveBeenCalledWith(sessionId, null)
     })
 
     test('onError registers callback', async () => {
@@ -332,27 +332,9 @@ describe('MockTerminalService', () => {
 
       service.emitError(sessionId, 'Test error')
 
-      expect(callback).toHaveBeenCalledWith(sessionId, 'Test error', undefined)
+      expect(callback).toHaveBeenCalledWith(sessionId, 'Test error')
 
       unsubscribe()
-    })
-
-    test('onError with code', async () => {
-      const callback = vi.fn()
-      service.onError(callback)
-
-      const { sessionId } = await service.spawn({
-        shell: '/bin/bash',
-        cwd: '/home/user',
-      })
-
-      service.emitError(sessionId, 'Permission denied', 'EACCES')
-
-      expect(callback).toHaveBeenCalledWith(
-        sessionId,
-        'Permission denied',
-        'EACCES'
-      )
     })
   })
 

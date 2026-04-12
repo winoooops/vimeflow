@@ -24,16 +24,9 @@ import type { ITerminalService } from './terminalService'
  */
 export class TauriTerminalService implements ITerminalService {
   private dataCallbacks: ((sessionId: string, data: string) => void)[] = []
-  private exitCallbacks: ((
-    sessionId: string,
-    code?: number,
-    signal?: string
-  ) => void)[] = []
-  private errorCallbacks: ((
-    sessionId: string,
-    message: string,
-    code?: string
-  ) => void)[] = []
+  private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
+    []
+  private errorCallbacks: ((sessionId: string, message: string) => void)[] = []
 
   private unlistenFns: UnlistenFn[] = []
   private initialized = false
@@ -55,7 +48,7 @@ export class TauriTerminalService implements ITerminalService {
 
     const unlistenExit = await listen<PtyExitEvent>('pty-exit', (event) => {
       const { sessionId, code } = event.payload
-      this.exitCallbacks.forEach((cb) => cb(sessionId, code ?? undefined))
+      this.exitCallbacks.forEach((cb) => cb(sessionId, code))
     })
 
     const unlistenError = await listen<PtyErrorEvent>('pty-error', (event) => {
@@ -128,7 +121,7 @@ export class TauriTerminalService implements ITerminalService {
   }
 
   onExit(
-    callback: (sessionId: string, code?: number, signal?: string) => void
+    callback: (sessionId: string, code: number | null) => void
   ): () => void {
     this.exitCallbacks.push(callback)
     void this.ensureListeners()
@@ -141,9 +134,7 @@ export class TauriTerminalService implements ITerminalService {
     }
   }
 
-  onError(
-    callback: (sessionId: string, message: string, code?: string) => void
-  ): () => void {
+  onError(callback: (sessionId: string, message: string) => void): () => void {
     this.errorCallbacks.push(callback)
     void this.ensureListeners()
 

@@ -399,7 +399,7 @@ describe('Terminal Integration Tests', () => {
       )
 
       // Emit error event
-      mockServiceInstance.emitError(sessionId, 'PTY read error', 'EIO')
+      mockServiceInstance.emitError(sessionId, 'PTY read error')
 
       // Wait for error to be handled
       await new Promise((resolve) => setTimeout(resolve, 200))
