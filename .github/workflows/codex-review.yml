@@ -49,9 +49,17 @@ jobs:
             - For each finding, explain: (1) what the current code does wrong, (2) the concrete impact, and (3) what the fix should be.
             - If a bug class appears in multiple places (e.g. missing error handling in both skip_review and review paths), report them together in one finding rather than separately.
 
+            SCOPE BOUNDARY RULE (MANDATORY):
+            Your review scope is ONLY the lines added or modified in the PR diff.
+            - Do NOT flag pre-existing bugs in unchanged code.
+            - Do NOT suggest improvements to adjacent untouched code.
+            - Do NOT cascade into related files that weren't part of the diff.
+            - If you notice a real issue in untouched code, put it in a separate "Out-of-Scope Observations" section — NOT as a finding with severity.
+            - Never block or warn based on out-of-scope observations.
+            - Exception: actively exploitable CRITICAL security vulnerabilities.
+
             Apply confidence-based filtering: only report issues you are >80% confident about.
             Use severity levels: CRITICAL, HIGH, MEDIUM, LOW.
-            Focus on issues introduced by this PR — do not flag pre-existing problems.
 
             Pull request title and body:
             ----
@@ -105,6 +113,7 @@ jobs:
               }
 
               const verdict = review.overall_correctness === 'patch is correct' ? '✅' : '⚠️';
+              lines.push('');
               lines.push(`**Overall: ${verdict} ${review.overall_correctness}** (confidence: ${(review.overall_confidence_score * 100).toFixed(0)}%)`);
               lines.push('');
               lines.push(`> ${review.overall_explanation}`);
