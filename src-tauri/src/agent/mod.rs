@@ -6,6 +6,7 @@
 
 pub mod commands;
 pub mod detector;
+pub mod transcript;
 pub mod types;
 
 // Re-export commonly used types for external modules and frontend
@@ -14,3 +15,4 @@ pub use types::{AgentDetectedEvent, AgentDisconnectedEvent, AgentType};
 
 // Re-export Tauri commands
 pub use commands::detect_agent_in_session;
+pub use transcript::{start_transcript_watcher, stop_transcript_watcher, TranscriptState};
