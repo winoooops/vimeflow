@@ -10,6 +10,13 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(() => Promise.resolve(null)),
 }))
 
+vi.mock('../../terminal/ptySessionMap', () => ({
+  getPtySessionId: vi.fn((id: string) => `pty-${id}`),
+  getStatusFilePath: vi.fn(
+    (id: string) => `/project/.vimeflow/sessions/pty-${id}/status.json`
+  ),
+}))
+
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(
     (eventName: string, callback: EventCallback): Promise<() => void> => {
@@ -109,7 +116,7 @@ describe('useAgentStatus', () => {
 
     act(() => {
       emit('agent-detected', {
-        sessionId: 'session-1',
+        sessionId: 'pty-session-1',
         agentType: 'claudeCode',
         pid: 1234,
       })
@@ -146,7 +153,7 @@ describe('useAgentStatus', () => {
 
     act(() => {
       emit('agent-detected', {
-        sessionId: 'session-1',
+        sessionId: 'pty-session-1',
         agentType: 'claudeCode',
         pid: 1234,
       })
@@ -155,7 +162,7 @@ describe('useAgentStatus', () => {
     expect(result.current.isActive).toBe(true)
 
     act(() => {
-      emit('agent-disconnected', { sessionId: 'session-1' })
+      emit('agent-disconnected', { sessionId: 'pty-session-1' })
     })
 
     expect(result.current.isActive).toBe(false)
@@ -173,7 +180,7 @@ describe('useAgentStatus', () => {
 
     act(() => {
       emit('agent-detected', {
-        sessionId: 'session-1',
+        sessionId: 'pty-session-1',
         agentType: 'claudeCode',
         pid: 1234,
       })
@@ -197,7 +204,7 @@ describe('useAgentStatus', () => {
 
     act(() => {
       emit('agent-tool-call', {
-        sessionId: 'session-1',
+        sessionId: 'pty-session-1',
         tool: 'Read',
         args: '{}',
         status: 'done',
@@ -208,7 +215,7 @@ describe('useAgentStatus', () => {
 
     act(() => {
       emit('agent-tool-call', {
-        sessionId: 'session-1',
+        sessionId: 'pty-session-1',
         tool: 'Read',
         args: '{}',
         status: 'done',
@@ -219,7 +226,7 @@ describe('useAgentStatus', () => {
 
     act(() => {
       emit('agent-tool-call', {
-        sessionId: 'session-1',
+        sessionId: 'pty-session-1',
         tool: 'Edit',
         args: '{}',
         status: 'done',
@@ -243,7 +250,7 @@ describe('useAgentStatus', () => {
     for (let i = 0; i < 12; i++) {
       act(() => {
         emit('agent-tool-call', {
-          sessionId: 'session-1',
+          sessionId: 'pty-session-1',
           tool: 'Read',
           args: `{"i":${String(i)}}`,
           status: 'done',
@@ -267,7 +274,7 @@ describe('useAgentStatus', () => {
 
     act(() => {
       emit('agent-tool-call', {
-        sessionId: 'session-1',
+        sessionId: 'pty-session-1',
         tool: 'Bash',
         args: '{"command":"ls"}',
         status: 'running',
@@ -291,7 +298,7 @@ describe('useAgentStatus', () => {
 
     act(() => {
       emit('agent-tool-call', {
-        sessionId: 'session-1',
+        sessionId: 'pty-session-1',
         tool: 'Bash',
         args: '{"command":"ls"}',
         status: 'running',
@@ -304,7 +311,7 @@ describe('useAgentStatus', () => {
 
     act(() => {
       emit('agent-tool-call', {
-        sessionId: 'session-1',
+        sessionId: 'pty-session-1',
         tool: 'Bash',
         args: '{"command":"ls"}',
         status: 'done',
@@ -322,9 +329,10 @@ describe('useAgentStatus', () => {
     renderHook(() => useAgentStatus('session-1'))
 
     // Should have called invoke immediately for detection
+    // getPtySessionId mock maps 'session-1' → 'pty-session-1'
     await vi.waitFor(() => {
       expect(invoke).toHaveBeenCalledWith('detect_agent_in_session', {
-        sessionId: 'session-1',
+        sessionId: 'pty-session-1',
       })
     })
 
@@ -351,9 +359,10 @@ describe('useAgentStatus', () => {
     rerender({ id: 'session-2' })
 
     // Should have attempted to stop watchers for old session
+    // getPtySessionId mock maps 'session-1' → 'pty-session-1'
     await vi.waitFor(() => {
       expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
-        sessionId: 'session-1',
+        sessionId: 'pty-session-1',
       })
     })
   })
@@ -366,7 +375,7 @@ describe('useAgentStatus', () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === 'detect_agent_in_session') {
         return Promise.resolve({
-          sessionId: 'session-1',
+          sessionId: 'pty-session-1',
           agentType: 'claudeCode',
           pid: 123,
         })

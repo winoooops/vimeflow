@@ -148,9 +148,25 @@ fn parse_context_window(value: Option<&serde_json::Value>) -> ContextWindowStatu
         })
     });
 
+    // If used_percentage is null (before first API response), compute it
+    // from total_input_tokens / context_window_size. Claude Code doesn't
+    // emit used_percentage during the loading phase (skills, MCPs, CLAUDE.md)
+    // but it does report total_input_tokens which reflects system prompt size.
+    let computed_percentage = used_percentage.or_else(|| {
+        if context_window_size > 0 && total_input_tokens > 0 {
+            Some((total_input_tokens as f64 / context_window_size as f64) * 100.0)
+        } else {
+            None
+        }
+    });
+
+    let computed_remaining = computed_percentage
+        .map(|used| 100.0 - used)
+        .unwrap_or(remaining_percentage);
+
     ContextWindowStatus {
-        used_percentage,
-        remaining_percentage,
+        used_percentage: computed_percentage,
+        remaining_percentage: computed_remaining,
         context_window_size,
         total_input_tokens,
         total_output_tokens,

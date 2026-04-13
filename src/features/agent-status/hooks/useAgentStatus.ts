@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import {
+  getPtySessionId,
+  getStatusFilePath,
+} from '../../terminal/ptySessionMap'
 import type {
   AgentDetectedEvent,
   AgentDisconnectedEvent,
@@ -37,14 +41,15 @@ const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
 })
 
 /** Stop all agent watchers for a given session (best-effort, logs on failure) */
-const stopWatchers = async (sessionId: string): Promise<void> => {
+const stopWatchers = async (workspaceSessionId: string): Promise<void> => {
+  const ptyId = getPtySessionId(workspaceSessionId) ?? workspaceSessionId
   try {
-    await invoke('stop_agent_watcher', { sessionId })
+    await invoke('stop_agent_watcher', { sessionId: ptyId })
   } catch {
     // Watcher may not be running — ignore
   }
   try {
-    await invoke('stop_transcript_watcher', { sessionId })
+    await invoke('stop_transcript_watcher', { sessionId: ptyId })
   } catch {
     // Transcript watcher may not be running — ignore
   }
@@ -60,6 +65,10 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // don't start duplicate watchers on every poll hit.
   const watcherStartedRef = useRef(false)
 
+  // Track the collapse timeout so it can be cancelled if the agent
+  // reappears before the 5s hold expires (e.g., brief detection gap).
+  const collapseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // Reset state when sessionId changes
   useEffect(() => {
     if (prevSessionIdRef.current !== sessionId) {
@@ -71,6 +80,10 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
 
       prevSessionIdRef.current = sessionId
       watcherStartedRef.current = false
+      if (collapseTimeoutRef.current) {
+        clearTimeout(collapseTimeoutRef.current)
+        collapseTimeoutRef.current = null
+      }
       setStatus(createDefaultStatus(sessionId))
     }
   }, [sessionId])
@@ -80,16 +93,25 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // hold final state for 5s before collapsing.
   const handleDetection = useCallback(async (sid: string): Promise<void> => {
     try {
+      // Resolve workspace session ID → PTY session ID
+      const ptySessionId = getPtySessionId(sid)
+      if (!ptySessionId) {
+        return // PTY not spawned yet
+      }
+
       const result = await invoke<AgentDetectedEvent | null>(
         'detect_agent_in_session',
-        { sessionId: sid }
+        { sessionId: ptySessionId }
       )
 
-      if (result && !watcherStartedRef.current) {
-        watcherStartedRef.current = true
+      if (result) {
+        // Cancel any pending collapse timeout — agent is (still) running
+        if (collapseTimeoutRef.current) {
+          clearTimeout(collapseTimeoutRef.current)
+          collapseTimeoutRef.current = null
+        }
 
         const agentKey = result.agentType as keyof typeof AGENT_TYPE_MAP
-
         const mapped = AGENT_TYPE_MAP[agentKey] as AgentStatus['agentType']
 
         setStatus((prev) => ({
@@ -97,13 +119,38 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
           isActive: true,
           agentType: mapped,
         }))
-      } else if (!result && watcherStartedRef.current) {
-        // Agent exited — stop watchers
+
+        // Start the status-line file watcher (only once).
+        // Don't set watcherStartedRef until the watcher ACTUALLY starts,
+        // because getStatusFilePath may return undefined if the PTY
+        // session mapping hasn't been registered yet (race condition).
+        if (!watcherStartedRef.current) {
+          try {
+            const statusFilePath = getStatusFilePath(sid)
+            if (statusFilePath) {
+              await invoke('start_agent_watcher', {
+                sessionId: ptySessionId,
+                statusFilePath,
+              })
+              watcherStartedRef.current = true
+            }
+            // If statusFilePath is undefined, we'll retry on next poll
+          } catch {
+            // Watcher may fail if bridge files weren't generated — retry next poll
+          }
+        }
+      } else {
+        // Agent exited — stop watchers if they were running.
+        if (!watcherStartedRef.current) {
+          return
+        }
         watcherStartedRef.current = false
         void stopWatchers(sid)
 
-        // Hold final state for 5s, then collapse
-        setTimeout(() => {
+        // Hold final state for 5s, then collapse.
+        // Store the timeout ID so it can be cancelled if the agent restarts.
+        collapseTimeoutRef.current = setTimeout(() => {
+          collapseTimeoutRef.current = null
           setStatus((prev) =>
             prev.sessionId === sid ? { ...prev, isActive: false } : prev
           )
@@ -131,16 +178,14 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
     }
   }, [sessionId, handleDetection])
 
-  // Event subscriptions for status updates, tool calls, and disconnects
+  // Event subscriptions for status updates, tool calls, and disconnects.
+  // Events from Rust use the PTY session ID, so we need to resolve
+  // the workspace session ID → PTY session ID for filtering.
   useEffect(() => {
     if (!sessionId) {
       return
     }
 
-    // Track unlisten functions. Because listen() is async, cleanup may
-    // run before all promises resolve. We collect them in a ref-like
-    // mutable array and also track a `cancelled` flag so late-resolving
-    // subscriptions still get cleaned up immediately.
     const unlistenFns: (() => void)[] = []
     let cancelled = false
 
@@ -153,10 +198,15 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
     }
 
     const subscribe = async (): Promise<void> => {
+      // Resolve once — the PTY ID doesn't change during a session's lifetime.
+      // Called lazily inside each callback because the mapping may not exist
+      // yet when the effect first runs (PTY spawn is async).
+      const resolvePtyId = (): string | undefined => getPtySessionId(sessionId)
+
       const unlistenDetected = await listen<AgentDetectedEvent>(
         'agent-detected',
         (event) => {
-          if (event.payload.sessionId !== sessionId) {
+          if (event.payload.sessionId !== resolvePtyId()) {
             return
           }
 
@@ -173,7 +223,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       const unlistenStatus = await listen<AgentStatusEvent>(
         'agent-status',
         (event) => {
-          if (event.payload.sessionId !== sessionId) {
+          if (event.payload.sessionId !== resolvePtyId()) {
             return
           }
 
@@ -181,37 +231,45 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
 
           setStatus((prev) => ({
             ...prev,
-            modelId: p.modelId,
-            modelDisplayName: p.modelDisplayName,
-            version: p.version,
-            agentSessionId: p.agentSessionId,
-            contextWindow: {
-              usedPercentage: p.contextWindow.usedPercentage ?? 0,
-              contextWindowSize: Number(p.contextWindow.contextWindowSize),
-              totalInputTokens: Number(p.contextWindow.totalInputTokens),
-              totalOutputTokens: Number(p.contextWindow.totalOutputTokens),
-            },
-            cost: {
-              totalCostUsd: p.cost.totalCostUsd,
-              totalDurationMs: Number(p.cost.totalDurationMs),
-              totalApiDurationMs: Number(p.cost.totalApiDurationMs),
-              totalLinesAdded: Number(p.cost.totalLinesAdded),
-              totalLinesRemoved: Number(p.cost.totalLinesRemoved),
-            },
-            rateLimits: {
-              fiveHour: {
-                usedPercentage: p.rateLimits.fiveHour.usedPercentage,
-                resetsAt: Date.parse(p.rateLimits.fiveHour.resetsAt),
-              },
-              ...(p.rateLimits.sevenDay
-                ? {
-                    sevenDay: {
-                      usedPercentage: p.rateLimits.sevenDay.usedPercentage,
-                      resetsAt: Date.parse(p.rateLimits.sevenDay.resetsAt),
-                    },
-                  }
-                : {}),
-            },
+            modelId: p.modelId ?? prev.modelId,
+            modelDisplayName: p.modelDisplayName ?? prev.modelDisplayName,
+            version: p.version ?? prev.version,
+            agentSessionId: p.agentSessionId ?? prev.agentSessionId,
+            // All nested objects can be null (Option<T> in Rust) —
+            // guard every access to avoid silent TypeError crashes.
+            contextWindow: p.contextWindow
+              ? {
+                  usedPercentage: p.contextWindow.usedPercentage ?? 0,
+                  contextWindowSize: Number(p.contextWindow.contextWindowSize),
+                  totalInputTokens: Number(p.contextWindow.totalInputTokens),
+                  totalOutputTokens: Number(p.contextWindow.totalOutputTokens),
+                }
+              : prev.contextWindow,
+            cost: p.cost
+              ? {
+                  totalCostUsd: p.cost.totalCostUsd,
+                  totalDurationMs: Number(p.cost.totalDurationMs),
+                  totalApiDurationMs: Number(p.cost.totalApiDurationMs),
+                  totalLinesAdded: Number(p.cost.totalLinesAdded),
+                  totalLinesRemoved: Number(p.cost.totalLinesRemoved),
+                }
+              : prev.cost,
+            rateLimits: p.rateLimits?.fiveHour
+              ? {
+                  fiveHour: {
+                    usedPercentage: p.rateLimits.fiveHour.usedPercentage,
+                    resetsAt: Number(p.rateLimits.fiveHour.resetsAt),
+                  },
+                  ...(p.rateLimits.sevenDay
+                    ? {
+                        sevenDay: {
+                          usedPercentage: p.rateLimits.sevenDay.usedPercentage,
+                          resetsAt: Number(p.rateLimits.sevenDay.resetsAt),
+                        },
+                      }
+                    : {}),
+                }
+              : prev.rateLimits,
           }))
         }
       )
@@ -221,7 +279,8 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       const unlistenToolCall = await listen<AgentToolCallEvent>(
         'agent-tool-call',
         (event) => {
-          if (event.payload.sessionId !== sessionId) {
+          const ptyId = getPtySessionId(sessionId)
+          if (event.payload.sessionId !== ptyId) {
             return
           }
 
@@ -274,7 +333,8 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       const unlistenDisconnected = await listen<AgentDisconnectedEvent>(
         'agent-disconnected',
         (event) => {
-          if (event.payload.sessionId !== sessionId) {
+          const ptyId = getPtySessionId(sessionId)
+          if (event.payload.sessionId !== ptyId) {
             return
           }
 

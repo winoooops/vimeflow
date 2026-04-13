@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -14,10 +15,17 @@ use tauri::Emitter;
 
 use super::statusline::parse_statusline;
 
-/// Handle to a running watcher — dropping it stops the watcher
+/// Handle to a running watcher — dropping it stops the watcher and polling thread
 pub struct WatcherHandle {
-    /// The notify watcher (stops on drop)
     _watcher: RecommendedWatcher,
+    /// Signals the polling fallback thread to exit
+    stop_flag: Arc<AtomicBool>,
+}
+
+impl Drop for WatcherHandle {
+    fn drop(&mut self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Thread-safe state for managing active agent watchers per session
@@ -66,6 +74,8 @@ pub fn start_watching(
     let target_path = status_file_path.clone();
     let sid = session_id.clone();
     let last_processed = Arc::new(Mutex::new(Instant::now()));
+    let app_handle_for_poll = app_handle.clone();
+    let stop_flag = Arc::new(AtomicBool::new(false));
 
     // Debounce interval — ignore events within 100ms of the last processed one
     let debounce_ms = 100;
@@ -148,13 +158,85 @@ pub fn start_watching(
         .watch(parent_dir, RecursiveMode::NonRecursive)
         .map_err(|e| format!("failed to start watching: {}", e))?;
 
+    // Read the file immediately in case it was already written before
+    // the watcher started (common race: status.json written by statusline.sh
+    // before the frontend calls start_agent_watcher).
+    {
+        let initial_sid = session_id.clone();
+        let initial_path = status_file_path.clone();
+        let initial_app = app_handle_for_poll.clone();
+        if let Ok(contents) = std::fs::read_to_string(&initial_path) {
+            if !contents.trim().is_empty() {
+                if let Ok(parsed) = parse_statusline(&initial_sid, &contents) {
+                    let _ = initial_app.emit("agent-status", &parsed.event);
+                }
+            }
+        }
+    }
+
+    // Polling fallback — WSL2's inotify can miss events and Claude Code
+    // may use atomic writes (rename). The stop_flag is set when the
+    // WatcherHandle is dropped, causing the thread to exit cleanly.
+    {
+        let poll_sid = session_id.clone();
+        let poll_path = status_file_path.clone();
+        let poll_app = app_handle_for_poll;
+        let poll_last = Arc::new(Mutex::new(String::new()));
+        let poll_stop = stop_flag.clone();
+        std::thread::spawn(move || {
+            while !poll_stop.load(Ordering::Relaxed) {
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                if poll_stop.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                let contents = match std::fs::read_to_string(&poll_path) {
+                    Ok(c) if !c.trim().is_empty() => c,
+                    _ => continue,
+                };
+
+                {
+                    let mut last = poll_last.lock().expect("lock");
+                    if *last == contents {
+                        continue;
+                    }
+                    *last = contents.clone();
+                }
+
+                if let Ok(parsed) = parse_statusline(&poll_sid, &contents) {
+                    let _ = poll_app.emit("agent-status", &parsed.event);
+                }
+            }
+        });
+    }
+
     log::info!(
         "Started watching statusline for session {}: {}",
         session_id,
         status_file_path.display()
     );
 
-    Ok(WatcherHandle { _watcher: watcher })
+    Ok(WatcherHandle {
+        _watcher: watcher,
+        stop_flag,
+    })
+}
+
+/// Write a debug line to /tmp/vimeflow-debug.log
+fn debug_log(msg: &str) {
+    use std::io::Write;
+    use std::time::SystemTime;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/vimeflow-debug.log")
+    {
+        let secs = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(f, "[{secs}] [watcher] {msg}");
+    }
 }
 
 /// Start watching a statusline file (Tauri command)
@@ -165,14 +247,20 @@ pub async fn start_agent_watcher(
     session_id: String,
     status_file_path: String,
 ) -> Result<(), String> {
+    debug_log(&format!(
+        "start_agent_watcher called: session={}, path={}",
+        session_id, status_file_path
+    ));
+
     let path = PathBuf::from(&status_file_path);
 
     // Stop any existing watcher for this session
     state.remove(&session_id);
 
     let handle = start_watching(app_handle, session_id.clone(), path)?;
-    state.insert(session_id, handle);
+    state.insert(session_id.clone(), handle);
 
+    debug_log(&format!("Watcher started for session {}", session_id));
     Ok(())
 }
 

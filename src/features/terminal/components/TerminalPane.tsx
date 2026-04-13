@@ -10,6 +10,7 @@ import {
   createTerminalService,
   type ITerminalService,
 } from '../services/terminalService'
+import { registerPtySession, unregisterPtySession } from '../ptySessionMap'
 import { isTauri } from '../../../lib/environment'
 import '@xterm/xterm/css/xterm.css'
 
@@ -104,13 +105,31 @@ export const TerminalPane = ({
   )
 
   // Use terminal hook for PTY lifecycle management
-  const { resize, status, debugInfo } = useTerminal({
+  const {
+    session: ptySession,
+    resize,
+    status,
+    debugInfo,
+  } = useTerminal({
     terminal,
     service: stableService,
     cwd,
     shell,
     env,
   })
+
+  // Bridge workspace sessionId ↔ PTY sessionId for agent detection.
+  // Use the PTY session's resolved cwd (absolute path from Rust),
+  // not the prop cwd which may be "~".
+  useEffect(() => {
+    if (ptySession?.id) {
+      registerPtySession(sessionId, ptySession.id, ptySession.cwd)
+    }
+
+    return (): void => {
+      unregisterPtySession(sessionId)
+    }
+  }, [sessionId, ptySession?.id, ptySession?.cwd])
 
   // Store callbacks in refs to avoid terminal recreation when they change
   const onCwdChangeRef = useRef(onCwdChange)

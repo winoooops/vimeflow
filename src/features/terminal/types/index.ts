@@ -73,6 +73,8 @@ export interface PTYSpawnResult {
   sessionId: string
   /** Process ID */
   pid: number
+  /** Resolved working directory (absolute path from Rust) */
+  cwd?: string
 }
 
 /**

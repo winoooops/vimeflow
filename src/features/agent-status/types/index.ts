@@ -1,10 +1,28 @@
-// Re-export relevant bindings
+import type { ContextWindowStatus } from '../../../bindings/ContextWindowStatus'
+import type { CostMetrics } from '../../../bindings/CostMetrics'
+import type { RateLimits } from '../../../bindings/RateLimits'
+
+// Re-export bindings, but NOT AgentStatusEvent — we override it below
+// because ts-rs doesn't map Rust Option<T> to nullable TypeScript fields.
 export type {
-  AgentStatusEvent,
   AgentToolCallEvent,
   AgentDetectedEvent,
   AgentDisconnectedEvent,
 } from '../../../bindings'
+
+// Runtime-accurate override: Rust Option<T> serializes to null,
+// but ts-rs generates required fields. This type matches what
+// the Tauri event bus actually delivers.
+export interface AgentStatusEvent {
+  sessionId: string
+  agentSessionId: string | null
+  modelId: string | null
+  modelDisplayName: string | null
+  version: string | null
+  contextWindow: ContextWindowStatus | null
+  cost: CostMetrics | null
+  rateLimits: RateLimits | null
+}
 
 export interface AgentStatus {
   isActive: boolean

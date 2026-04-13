@@ -1,7 +1,7 @@
 # Agent Status Sidebar — Design Spec
 
 **Date:** 2026-04-12
-**Status:** Draft
+**Status:** Implemented (sub-specs 1–8 complete, integration WIP)
 **Scope:** Real-time agent status panel for the Vimeflow workspace right side
 
 ## Overview

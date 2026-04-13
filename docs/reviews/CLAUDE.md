@@ -18,12 +18,12 @@ ingestion protocol.
 | [React Lifecycle](patterns/react-lifecycle.md)                 | react-patterns | 6        | 0    | 2026-04-10   |
 | [Resource Cleanup](patterns/resource-cleanup.md)               | react-patterns | 1        | 0    | 2026-04-09   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)       | cross-platform | 2        | 0    | 2026-04-10   |
-| [Debug Artifacts](patterns/debug-artifacts.md)                 | code-quality   | 3        | 0    | 2026-04-09   |
+| [Debug Artifacts](patterns/debug-artifacts.md)                 | code-quality   | 4        | 0    | 2026-04-12   |
 | [Testing Gaps](patterns/testing-gaps.md)                       | testing        | 8        | 0    | 2026-04-11   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md) | terminal       | 3        | 0    | 2026-04-09   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)   | code-quality   | 9        | 0    | 2026-04-11   |
 | [Accessibility](patterns/accessibility.md)                     | a11y           | 11       | 0    | 2026-04-10   |
-| [Async Race Conditions](patterns/async-race-conditions.md)     | react-patterns | 9        | 0    | 2026-04-10   |
+| [Async Race Conditions](patterns/async-race-conditions.md)     | react-patterns | 10       | 0    | 2026-04-12   |
 | [Command Injection](patterns/command-injection.md)             | security       | 4        | 0    | 2026-04-09   |
 | [CSP Configuration](patterns/csp-configuration.md)             | security       | 2        | 0    | 2026-04-09   |
 | [PTY Session Management](patterns/pty-session-management.md)   | backend        | 5        | 0    | 2026-04-09   |

@@ -2,7 +2,7 @@
 id: debug-artifacts
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-04-09
+last_updated: 2026-04-12
 ref_count: 0
 ---
 
@@ -43,3 +43,12 @@ statements must not ship to production. Gate debug visuals behind
 - **Finding:** Command stubs use `console.info` with ESLint `no-console` disabled — debug logging ships to production
 - **Fix:** Removed console.info calls and eslint-disable comments
 - **Commit:** `e05cd3d feat: assemble complete Agent Activity panel (#14)`
+
+### 4. Debug `document.title` mutation on every agent-status event
+
+- **Source:** local-codex | feat/agent-status-sidebar | 2026-04-12
+- **Severity:** P3
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** `document.title` was set to debug data (`ctx:4 cost:0.25 model:Opus`) on every `agent-status` event callback. This overwrites the app window title with raw metrics and flickers with each statusline update — a visible regression for all users. Added during debugging to verify event delivery, but never removed.
+- **Fix:** Removed the `document.title = ...` line.
+- **Commit:** (pending — agent-status-sidebar PR)
