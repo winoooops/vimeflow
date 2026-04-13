@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import { useAgentStatus } from '../hooks/useAgentStatus'
+import { ContextBucket } from './ContextBucket'
 
 interface AgentStatusPanelProps {
   sessionId: string | null
@@ -22,7 +23,14 @@ export const AgentStatusPanel = ({
       }}
     >
       {/* StatusCard + BudgetMetrics — sub-spec 5 */}
-      {/* ContextBucket — sub-spec 6 */}
+      <div className="space-y-3 p-3">
+        <ContextBucket
+          usedPercentage={status.contextWindow?.usedPercentage ?? null}
+          contextWindowSize={status.contextWindow?.contextWindowSize ?? 200_000}
+          totalInputTokens={status.contextWindow?.totalInputTokens ?? 0}
+          totalOutputTokens={status.contextWindow?.totalOutputTokens ?? 0}
+        />
+      </div>
       {/* ToolCallSummary + sections — sub-spec 7 */}
     </div>
   )
