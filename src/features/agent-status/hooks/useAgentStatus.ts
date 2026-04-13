@@ -4,7 +4,6 @@ import { listen } from '@tauri-apps/api/event'
 import { getPtySessionId } from '../../terminal/ptySessionMap'
 import type {
   AgentDetectedEvent,
-  AgentDisconnectedEvent,
   AgentStatus,
   AgentStatusEvent,
   AgentToolCallEvent,
@@ -189,27 +188,11 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
     }
 
     const subscribe = async (): Promise<void> => {
-      // Resolve once — the PTY ID doesn't change during a session's lifetime.
-      // Called lazily inside each callback because the mapping may not exist
-      // yet when the effect first runs (PTY spawn is async).
       const resolvePtyId = (): string | undefined => getPtySessionId(sessionId)
 
-      const unlistenDetected = await listen<AgentDetectedEvent>(
-        'agent-detected',
-        (event) => {
-          if (event.payload.sessionId !== resolvePtyId()) {
-            return
-          }
-
-          setStatus((prev) => ({
-            ...prev,
-            isActive: true,
-            agentType: AGENT_TYPE_MAP[event.payload.agentType],
-          }))
-        }
-      )
-
-      addUnlisten(unlistenDetected)
+      // agent-detected and agent-disconnected are handled by polling in
+      // handleDetection — no Rust-side events are emitted for these.
+      // Only agent-status and agent-tool-call are event-driven.
 
       const unlistenStatus = await listen<AgentStatusEvent>(
         'agent-status',
@@ -322,23 +305,6 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       )
 
       addUnlisten(unlistenToolCall)
-
-      const unlistenDisconnected = await listen<AgentDisconnectedEvent>(
-        'agent-disconnected',
-        (event) => {
-          const ptyId = getPtySessionId(sessionId)
-          if (event.payload.sessionId !== ptyId) {
-            return
-          }
-
-          setStatus((prev) => ({
-            ...prev,
-            isActive: false,
-          }))
-        }
-      )
-
-      addUnlisten(unlistenDisconnected)
     }
 
     // After all listeners are active, trigger a detection poll to sync

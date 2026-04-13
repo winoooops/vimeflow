@@ -48,7 +48,7 @@ fn read_children(pid: u32) -> Option<Vec<u32>> {
     Some(children)
 }
 
-/// Recursively collect all descendant PIDs using BFS
+/// Collect all descendant PIDs using iterative DFS
 fn collect_descendants(root_pid: u32) -> Option<Vec<u32>> {
     let mut descendants = Vec::new();
     let mut visited = HashSet::new();

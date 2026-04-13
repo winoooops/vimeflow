@@ -70,22 +70,13 @@ describe('useAgentStatus', () => {
 
     renderHook(() => useAgentStatus('session-1'))
 
-    // Wait for async subscriptions
+    // Detection/disconnect is polling-only — only agent-status and
+    // agent-tool-call have event listeners.
     await vi.waitFor(() => {
-      expect(listen).toHaveBeenCalledWith(
-        'agent-detected',
-        expect.any(Function)
-      )
-
       expect(listen).toHaveBeenCalledWith('agent-status', expect.any(Function))
 
       expect(listen).toHaveBeenCalledWith(
         'agent-tool-call',
-        expect.any(Function)
-      )
-
-      expect(listen).toHaveBeenCalledWith(
-        'agent-disconnected',
         expect.any(Function)
       )
     })
@@ -94,78 +85,43 @@ describe('useAgentStatus', () => {
   test('unsubscribes from events on unmount', async () => {
     const { unmount } = renderHook(() => useAgentStatus('session-1'))
 
-    // Wait for ALL 4 subscriptions to complete
     await vi.waitFor(() => {
-      expect(eventListeners.get('agent-disconnected')?.length).toBe(1)
+      expect(eventListeners.get('agent-status')?.length).toBeGreaterThanOrEqual(
+        1
+      )
     })
 
     unmount()
 
-    expect(eventListeners.get('agent-detected')?.length).toBe(0)
-    expect(eventListeners.get('agent-status')?.length).toBe(0)
-    expect(eventListeners.get('agent-tool-call')?.length).toBe(0)
-    expect(eventListeners.get('agent-disconnected')?.length).toBe(0)
+    // After unmount, all listeners should be cleaned up
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(0)
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(0)
+    })
   })
 
-  test('handles agent-detected event', async () => {
+  test('filters status events by sessionId', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 
     await vi.waitFor(() => {
-      expect(eventListeners.get('agent-detected')?.length).toBe(1)
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
     })
 
+    // Event for a different session should be ignored
     act(() => {
-      emit('agent-detected', {
-        sessionId: 'pty-session-1',
-        agentType: 'claudeCode',
-        pid: 1234,
+      emit('agent-status', {
+        sessionId: 'other-pty-id',
+        modelId: 'opus',
+        modelDisplayName: 'Opus',
+        version: '1.0',
+        agentSessionId: null,
+        contextWindow: null,
+        cost: null,
+        rateLimits: null,
       })
     })
 
-    expect(result.current.isActive).toBe(true)
-    expect(result.current.agentType).toBe('claude-code')
-  })
-
-  test('filters events by sessionId', async () => {
-    const { result } = renderHook(() => useAgentStatus('session-1'))
-
-    await vi.waitFor(() => {
-      expect(eventListeners.get('agent-detected')?.length).toBe(1)
-    })
-
-    act(() => {
-      emit('agent-detected', {
-        sessionId: 'session-other',
-        agentType: 'claudeCode',
-        pid: 1234,
-      })
-    })
-
-    expect(result.current.isActive).toBe(false)
-  })
-
-  test('handles agent-disconnected event', async () => {
-    const { result } = renderHook(() => useAgentStatus('session-1'))
-
-    await vi.waitFor(() => {
-      expect(eventListeners.get('agent-disconnected')?.length).toBe(1)
-    })
-
-    act(() => {
-      emit('agent-detected', {
-        sessionId: 'pty-session-1',
-        agentType: 'claudeCode',
-        pid: 1234,
-      })
-    })
-
-    expect(result.current.isActive).toBe(true)
-
-    act(() => {
-      emit('agent-disconnected', { sessionId: 'pty-session-1' })
-    })
-
-    expect(result.current.isActive).toBe(false)
+    expect(result.current.modelId).toBeNull()
   })
 
   test('resets state when sessionId changes', async () => {
@@ -175,18 +131,8 @@ describe('useAgentStatus', () => {
     )
 
     await vi.waitFor(() => {
-      expect(eventListeners.get('agent-detected')?.length).toBe(1)
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
     })
-
-    act(() => {
-      emit('agent-detected', {
-        sessionId: 'pty-session-1',
-        agentType: 'claudeCode',
-        pid: 1234,
-      })
-    })
-
-    expect(result.current.isActive).toBe(true)
 
     rerender({ id: 'session-2' })
 
@@ -353,7 +299,9 @@ describe('useAgentStatus', () => {
     )
 
     await vi.waitFor(() => {
-      expect(eventListeners.get('agent-detected')?.length).toBe(1)
+      expect(eventListeners.get('agent-status')?.length).toBeGreaterThanOrEqual(
+        1
+      )
     })
 
     rerender({ id: 'session-2' })
