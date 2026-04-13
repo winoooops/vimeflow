@@ -303,7 +303,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
               tool: p.tool,
               args: p.args,
               status: p.status,
-              durationMs: Number(p.durationMs),
+              durationMs: Number(p.durationMs) || null,
               timestamp: p.timestamp,
             }
 
@@ -350,7 +350,17 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       addUnlisten(unlistenDisconnected)
     }
 
-    void subscribe()
+    // After all listeners are active, trigger a detection poll to sync
+    // any events that fired during the async setup window.
+    void (async (): Promise<void> => {
+      await subscribe()
+      // cancelled may have been set during the await — cleanup ran before
+      // subscribe resolved. The linter can't see cross-await mutation.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (!cancelled) {
+        void handleDetection(sessionId)
+      }
+    })()
 
     return (): void => {
       cancelled = true
@@ -359,7 +369,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         unlisten()
       }
     }
-  }, [sessionId])
+  }, [sessionId, handleDetection])
 
   // Cleanup watchers when the hook unmounts entirely
   useEffect(
