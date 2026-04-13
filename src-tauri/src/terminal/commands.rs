@@ -72,9 +72,88 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         return Err(format!("cwd is not a directory: {}", cwd.display()));
     }
 
+    // Allow-list session_id to safe characters only (UUID format).
+    // Block-lists miss edge cases like newlines which enable bash injection
+    // in generated bridge scripts.
+    if !request
+        .session_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(format!("invalid session_id: {}", request.session_id));
+    }
+
+    // Generate statusline bridge files.
+    let bridge_files = if request.enable_agent_bridge {
+        let dir = cwd
+            .join(".vimeflow")
+            .join("sessions")
+            .join(&request.session_id);
+        match super::bridge::generate_bridge_files(
+            &dir.to_string_lossy(),
+            &request.session_id,
+        ) {
+            Ok(files) => Some(files),
+            Err(e) => {
+                log::warn!(
+                    "Failed to generate statusline bridge for session {}: {}",
+                    request.session_id,
+                    e
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Build command — env from IPC is ignored for security (prevents injection)
     let mut cmd = CommandBuilder::new(&shell);
     cmd.cwd(&cwd);
+
+    // Inject a `claude` wrapper function into the interactive shell.
+    //
+    // We do NOT set CLAUDE_CONFIG_DIR — that would replace the user's
+    // entire config directory, breaking auth, plugins, and hooks.
+    // Instead, we set ENV/BASH_ENV (sourced by non-interactive shells)
+    // and use --rcfile (for interactive bash) to source both the user's
+    // rc file and our init script.
+    if let Some(ref files) = bridge_files {
+        // Pass paths via env vars — the scripts reference $VIMEFLOW_STATUS_FILE
+        // and $VIMEFLOW_CLAUDE_SETTINGS instead of embedding paths directly,
+        // which avoids injection from paths containing quotes or metacharacters.
+        cmd.env("BASH_ENV", files.shell_init_path.as_os_str());
+        cmd.env(
+            "VIMEFLOW_CLAUDE_SETTINGS",
+            files.settings_path.as_os_str(),
+        );
+        cmd.env(
+            "VIMEFLOW_STATUS_FILE",
+            files.status_file_path.as_os_str(),
+        );
+
+        // For interactive bash, generate a combined rcfile that sources
+        // both ~/.bashrc (user config) and our init script
+        let init_dir = files
+            .shell_init_path
+            .parent()
+            .ok_or_else(|| "shell init path has no parent directory".to_string())?;
+        let rcfile_path = init_dir.join("bashrc");
+        // Use $BASH_ENV (already set above) instead of embedding the path —
+        // handles CWDs with apostrophes that would break single-quoted paths.
+        let rcfile_content =
+            "[ -f ~/.bashrc ] && source ~/.bashrc\nsource \"$BASH_ENV\"\n".to_string();
+        if let Err(e) = std::fs::write(&rcfile_path, &rcfile_content) {
+            log::warn!("Failed to write combined bashrc: {}", e);
+        } else if shell.contains("bash") {
+            cmd.args(["--rcfile", &rcfile_path.to_string_lossy()]);
+        }
+
+        log::info!(
+            "Injected claude wrapper for session {}",
+            request.session_id
+        );
+    }
 
     if request.env.is_some() {
         log::warn!(
@@ -135,7 +214,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
     Ok(PtySession {
         id: request.session_id,
         pid,
-        cwd: request.cwd,
+        cwd: cwd.to_string_lossy().to_string(),
     })
 }
 
@@ -281,6 +360,7 @@ mod tests {
                 .to_string(),
             shell: None,
             env: None,
+            enable_agent_bridge: false,
         };
 
         let result = spawn_pty(handle.clone(), state.clone(), request).await;
@@ -351,6 +431,7 @@ mod tests {
                 .to_string(),
             shell: None,
             env: None,
+            enable_agent_bridge: false,
         };
 
         spawn_pty(handle.clone(), state.clone(), spawn_request)
@@ -392,6 +473,7 @@ mod tests {
                 .to_string(),
             shell: None,
             env: None,
+            enable_agent_bridge: false,
         };
 
         spawn_pty(handle.clone(), state.clone(), spawn_request)
@@ -455,6 +537,7 @@ mod tests {
                 .to_string(),
             shell: None,
             env: None,
+            enable_agent_bridge: false,
         };
 
         spawn_pty(handle.clone(), state.clone(), spawn_request)

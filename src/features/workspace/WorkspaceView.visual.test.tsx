@@ -12,6 +12,24 @@ vi.mock('../terminal/components/TerminalPane', () => ({
   )),
 }))
 
+// Mock useAgentStatus so AgentStatusPanel renders predictably
+vi.mock('../agent-status/hooks/useAgentStatus', () => ({
+  useAgentStatus: vi.fn(() => ({
+    isActive: true,
+    agentType: 'claude-code',
+    modelId: null,
+    modelDisplayName: null,
+    version: null,
+    sessionId: null,
+    agentSessionId: null,
+    contextWindow: null,
+    cost: null,
+    rateLimits: null,
+    toolCalls: { total: 0, byType: {}, active: null },
+    recentToolCalls: [],
+  })),
+}))
+
 // eslint-disable-next-line import/first
 import { render, screen } from '@testing-library/react'
 // eslint-disable-next-line import/first
@@ -34,12 +52,12 @@ import { WorkspaceView } from './WorkspaceView'
 
 describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   describe('Layout: 5-Zone Architecture (v2)', () => {
-    test('grid layout has correct zone widths (64px, 340px, 1fr, 360px)', () => {
+    test('grid layout has correct zone widths (64px, 340px, 1fr, auto)', () => {
       render(<WorkspaceView />)
       const workspace = screen.getByTestId('workspace-view')
 
-      // Grid columns: 64px icon rail + 340px sidebar + 1fr main + 360px activity (updated in Feature 20)
-      expect(workspace.style.gridTemplateColumns).toBe('64px 340px 1fr 360px')
+      // Grid columns: 64px icon rail + 340px sidebar + 1fr main + auto (panel self-manages width)
+      expect(workspace.style.gridTemplateColumns).toBe('64px 340px 1fr auto')
     })
 
     test('workspace uses full screen height', () => {
@@ -185,11 +203,11 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(tabBar.className).toContain('bg-surface-container-lowest')
     })
 
-    test('Agent Activity panel uses Level 1 surface (surface-container-low)', () => {
+    test('Agent Status Panel uses surface-container background', () => {
       render(<WorkspaceView />)
-      const activityPanel = screen.getByTestId('agent-activity')
+      const panel = screen.getByTestId('agent-status-panel')
 
-      expect(activityPanel.className).toContain('bg-surface-container-low')
+      expect(panel.className).toContain('bg-surface-container')
     })
   })
 
@@ -249,7 +267,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(screen.getByTestId('bottom-drawer')).toBeInTheDocument()
 
       // Agent Activity panel
-      expect(screen.getByTestId('agent-activity')).toBeInTheDocument()
+      expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
 
     test('bottom drawer has Editor/Diff tabs, sidebar has file explorer (v2)', () => {
@@ -263,30 +281,14 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(screen.getByText('File Explorer')).toBeInTheDocument()
     })
 
-    test('agent activity shows status card and metrics', () => {
+    test('agent status panel renders as shell', () => {
       render(<WorkspaceView />)
 
-      // Status card
-      expect(screen.getByText('Claude Code')).toBeInTheDocument()
+      const panel = screen.getByTestId('agent-status-panel')
 
-      // Status card should exist with testid
-      const statusCard = screen.getByTestId('status-card')
-      expect(statusCard).toBeInTheDocument()
-
-      // Status card should show a status (check for status symbol ● ⏸ ○ ✗)
-      expect(statusCard.textContent).toMatch(/[●⏸○✗]/)
-
-      // Context window smiley (rendered as text) - may appear multiple times
-      const contextSmileys = screen.queryAllByText(/[😊😐😟🥵]/)
-      expect(contextSmileys.length).toBeGreaterThan(0)
-    })
-
-    test('agent activity shows collapsible sections', () => {
-      render(<WorkspaceView />)
-
-      expect(screen.getByText('Files Changed')).toBeInTheDocument()
-      expect(screen.getByText('Tool Calls')).toBeInTheDocument()
-      expect(screen.getByText('Tests')).toBeInTheDocument()
+      expect(panel).toBeInTheDocument()
+      // Child sections (StatusCard, metrics, collapsible sections) will be
+      // added in sub-specs 5-7
     })
   })
 

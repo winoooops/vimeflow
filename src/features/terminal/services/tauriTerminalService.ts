@@ -69,6 +69,7 @@ export class TauriTerminalService implements ITerminalService {
       cwd: params.cwd,
       shell: params.shell,
       env: params.env,
+      enableAgentBridge: true,
     }
 
     const response = await invoke<PtySession>('spawn_pty', {
@@ -78,6 +79,7 @@ export class TauriTerminalService implements ITerminalService {
     return {
       sessionId: response.id,
       pid: response.pid,
+      cwd: response.cwd,
     }
   }
 

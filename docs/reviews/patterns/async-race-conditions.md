@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-04-10
+last_updated: 2026-04-12
 ref_count: 0
 ---
 
@@ -97,3 +97,12 @@ prevent showing previous data.
 - **Finding:** The `pendingFilePathRef` mirror was synced via `useEffect(() => { pendingFilePathRef.current = pendingFilePath }, [pendingFilePath])`. `useEffect` is a paint-time callback that runs AFTER the microtask queue drains. When `handleCancel` scheduled a state update and the save IPC promise resolved as a microtask, `handleSave` resumed BEFORE the useEffect ran — so the ref was still non-null and the cancelled pending file opened anyway.
 - **Fix:** Add `setPendingFilePathSynced(value)` helper that writes the ref directly AND calls setState. Use it from all handlers that clear `pendingFilePath`. The useEffect mirror stays as an initial-value safety net but is no longer load-bearing.
 - **Commit:** `fa933d6 fix: address Claude review round 14 findings`
+
+### 10. Uncancelled collapse timeout hides active agent panel
+
+- **Source:** local-codex | feat/agent-status-sidebar | 2026-04-12
+- **Severity:** P2
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** The `setTimeout` in the exit detection path schedules `isActive` to flip to false after 5s, but there is no cancellation when the agent is detected again in that window. If the detection poll briefly misses the agent or it restarts quickly, the pending timeout fires and collapses the panel while the agent is still running.
+- **Fix:** Store the timeout ID in `collapseTimeoutRef` and clear it on subsequent detections or session change.
+- **Commit:** (pending — agent-status-sidebar PR)

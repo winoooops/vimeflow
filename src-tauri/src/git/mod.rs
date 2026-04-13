@@ -3,7 +3,9 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-use crate::filesystem::scope::{ensure_within_home, expand_home, home_canonical, reject_parent_refs};
+use crate::filesystem::scope::{
+    ensure_within_home, expand_home, home_canonical, reject_parent_refs,
+};
 
 /// Timeout for git subprocess calls. Prevents indefinite blocking on
 /// hung NFS mounts, slow hooks, or unresponsive credential helpers.
@@ -65,8 +67,8 @@ fn validate_cwd(cwd: &str) -> Result<std::path::PathBuf, String> {
     let expanded = expand_home(cwd);
     reject_parent_refs(&expanded)?;
     let home = home_canonical()?;
-    let canonical = std::fs::canonicalize(&expanded)
-        .map_err(|e| format!("invalid cwd '{}': {}", cwd, e))?;
+    let canonical =
+        std::fs::canonicalize(&expanded).map_err(|e| format!("invalid cwd '{}': {}", cwd, e))?;
     ensure_within_home(&canonical, &home)?;
     Ok(canonical)
 }
@@ -202,9 +204,7 @@ fn parse_git_status(output: &str) -> Vec<ChangedFile> {
             s if s.starts_with('C') => (ChangedFileStatus::Renamed, true), // copies are index ops (no separate variant)
             // Merge conflict codes — no dedicated variant yet, show as
             // unstaged modified so the file at least appears in the list.
-            "UU" | "AA" | "DD" | "AU" | "UA" | "DU" | "UD" => {
-                (ChangedFileStatus::Modified, false)
-            }
+            "UU" | "AA" | "DD" | "AU" | "UA" | "DU" | "UD" => (ChangedFileStatus::Modified, false),
             _ => {
                 // Default to modified unstaged for truly unknown codes
                 (ChangedFileStatus::Modified, false)

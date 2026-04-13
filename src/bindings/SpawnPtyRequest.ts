@@ -20,4 +20,8 @@ export type SpawnPtyRequest = {
    * Optional environment variables
    */
   env?: Record<string, string>
+  /**
+   * Generate statusline bridge files for agent status tracking
+   */
+  enableAgentBridge: boolean
 }

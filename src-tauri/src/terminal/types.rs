@@ -37,6 +37,9 @@ pub struct SpawnPtyRequest {
     #[cfg_attr(test, ts(optional))]
     #[cfg_attr(test, ts(type = "Record<string, string>"))]
     pub env: Option<HashMap<String, String>>,
+    /// Generate statusline bridge files for agent status tracking
+    #[serde(default)]
+    pub enable_agent_bridge: bool,
 }
 
 /// Request payload for writing data to a PTY session

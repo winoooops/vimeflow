@@ -13,6 +13,24 @@ vi.mock('../terminal/components/TerminalPane', () => ({
   )),
 }))
 
+// Mock useAgentStatus so AgentStatusPanel renders predictably
+vi.mock('../agent-status/hooks/useAgentStatus', () => ({
+  useAgentStatus: vi.fn(() => ({
+    isActive: true,
+    agentType: 'claude-code',
+    modelId: null,
+    modelDisplayName: null,
+    version: null,
+    sessionId: null,
+    agentSessionId: null,
+    contextWindow: null,
+    cost: null,
+    rateLimits: null,
+    toolCalls: { total: 0, byType: {}, active: null },
+    recentToolCalls: [],
+  })),
+}))
+
 // Mock CodeMirror hooks for unsaved changes tests
 let mockOnChange: ((content: string) => void) | undefined
 let mockOnSave: (() => void) | undefined
@@ -84,12 +102,11 @@ describe('WorkspaceView Integration Tests', () => {
       expect(hasActiveTab).toBe(true)
     })
 
-    test('clicking session updates agent activity panel content', async (): Promise<void> => {
+    test('clicking session updates agent status panel', async (): Promise<void> => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
       const sidebar = screen.getByTestId('sidebar')
-      const agentActivity = screen.getByTestId('agent-activity')
 
       // Get all session buttons from session list
       const sessionList = within(sidebar).getByTestId('session-list')
@@ -100,27 +117,16 @@ describe('WorkspaceView Integration Tests', () => {
       // Click second session button
       await user.click(sessionButtons[1])
 
-      // Agent Activity should update to show new session data
-      // Verify StatusCard shows session name
-      const statusCard = within(agentActivity).getByTestId('status-card')
-      expect(statusCard).toBeInTheDocument()
-
-      // The status card should contain agent name "Claude Code"
-      expect(within(statusCard).getByText('Claude Code')).toBeInTheDocument()
-
-      // Verify PinnedMetrics are shown
-      expect(
-        within(agentActivity).getByTestId('pinned-metrics')
-      ).toBeInTheDocument()
+      // Agent Status Panel should be present (content comes in sub-specs 5-7)
+      expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
 
-    test('session switch synchronizes terminal and activity panel', async (): Promise<void> => {
+    test('session switch synchronizes terminal and status panel', async (): Promise<void> => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
       const sidebar = screen.getByTestId('sidebar')
       const terminalZone = screen.getByTestId('terminal-zone')
-      const agentActivity = screen.getByTestId('agent-activity')
 
       // Click a session
       const sessionList = within(sidebar).getByTestId('session-list')
@@ -128,19 +134,17 @@ describe('WorkspaceView Integration Tests', () => {
 
       await user.click(sessionButtons[0])
 
-      // Both terminal and activity should reference the same session
+      // Terminal should update
       const tabBar = within(terminalZone).getByTestId('tab-bar')
 
       const sessionTabs = within(tabBar).getAllByRole('button', {
         name: /^🤖/,
       })
 
-      // Terminal should have at least one session tab
       expect(sessionTabs.length).toBeGreaterThan(0)
 
-      // Agent Activity should have session data
-      const statusCard = within(agentActivity).getByTestId('status-card')
-      expect(statusCard).toBeInTheDocument()
+      // Agent Status Panel should be present
+      expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
   })
 
@@ -227,157 +231,14 @@ describe('WorkspaceView Integration Tests', () => {
     })
   })
 
-  describe('Collapsible sections expand/collapse in Agent Activity', () => {
-    test('clicking Files Changed header toggles section visibility', async (): Promise<void> => {
-      const user = userEvent.setup()
+  describe('Agent Status Panel shell', () => {
+    test('panel renders as empty shell (child sections in sub-specs 5-7)', () => {
       render(<WorkspaceView />)
 
-      const agentActivity = screen.getByTestId('agent-activity')
+      const panel = screen.getByTestId('agent-status-panel')
 
-      // Find Files Changed button
-      const toggleButton = within(agentActivity).getByRole('button', {
-        name: /Files Changed/,
-      })
-
-      expect(toggleButton).toBeInTheDocument()
-
-      // Files Changed should be expanded by default (showing files-list)
-      const initialFilesList = within(agentActivity).queryByTestId('files-list')
-      const isInitiallyExpanded = initialFilesList !== null
-
-      // Click to collapse
-      await user.click(toggleButton)
-
-      // Content should toggle visibility
-      const afterClickFilesList =
-        within(agentActivity).queryByTestId('files-list')
-      const isAfterClickExpanded = afterClickFilesList !== null
-
-      expect(isAfterClickExpanded).toBe(!isInitiallyExpanded)
-    })
-
-    test('clicking Tool Calls header toggles section visibility', async (): Promise<void> => {
-      const user = userEvent.setup()
-      render(<WorkspaceView />)
-
-      const agentActivity = screen.getByTestId('agent-activity')
-
-      // Find Tool Calls button
-      const toggleButton = within(agentActivity).getByRole('button', {
-        name: /Tool Calls/,
-      })
-
-      expect(toggleButton).toBeInTheDocument()
-
-      // Check initial state - should be collapsed (no tool-calls-list)
-      const initialContent =
-        within(agentActivity).queryByTestId('tool-calls-list')
-      const isInitiallyExpanded = initialContent !== null
-
-      // Click to expand/collapse
-      await user.click(toggleButton)
-
-      // Content should toggle
-      const afterClickContent =
-        within(agentActivity).queryByTestId('tool-calls-list')
-      const isAfterClickExpanded = afterClickContent !== null
-
-      expect(isAfterClickExpanded).toBe(!isInitiallyExpanded)
-    })
-
-    test('clicking Tests header toggles section visibility', async (): Promise<void> => {
-      const user = userEvent.setup()
-      render(<WorkspaceView />)
-
-      const agentActivity = screen.getByTestId('agent-activity')
-
-      // Find Tests button (not confused with Tool Calls)
-      const allButtons = within(agentActivity).getAllByRole('button')
-
-      const toggleButton = allButtons.find(
-        (btn) =>
-          btn.textContent?.includes('Tests') &&
-          !btn.textContent?.includes('Tool Calls')
-      )
-
-      expect(toggleButton).toBeDefined()
-
-      // Check initial state - should be collapsed (no tests-list)
-      const initialContent = within(agentActivity).queryByTestId('tests-list')
-      const isInitiallyExpanded = initialContent !== null
-
-      // Click to expand/collapse
-      await user.click(toggleButton!)
-
-      // Content should toggle
-      const afterClickContent =
-        within(agentActivity).queryByTestId('tests-list')
-      const isAfterClickExpanded = afterClickContent !== null
-
-      expect(isAfterClickExpanded).toBe(!isInitiallyExpanded)
-    })
-
-    test('collapsible sections work independently', async (): Promise<void> => {
-      const user = userEvent.setup()
-      render(<WorkspaceView />)
-
-      const agentActivity = screen.getByTestId('agent-activity')
-
-      // Find Files Changed and Tool Calls buttons
-      const filesToggle = within(agentActivity).getByRole('button', {
-        name: /Files Changed/,
-      })
-
-      const toolCallsToggle = within(agentActivity).getByRole('button', {
-        name: /Tool Calls/,
-      })
-
-      // Collapse Files Changed (initially expanded)
-      await user.click(filesToggle)
-
-      // Expand Tool Calls (initially collapsed)
-      await user.click(toolCallsToggle)
-
-      // Files Changed should now be collapsed (no files-list)
-      const filesContent = within(agentActivity).queryByTestId('files-list')
-
-      // Tool Calls should be expanded (tool-calls-list exists)
-      const toolCallsContent =
-        within(agentActivity).queryByTestId('tool-calls-list')
-
-      // They should have opposite states
-      expect(filesContent).toBeNull()
-      expect(toolCallsContent).not.toBeNull()
-    })
-
-    test('chevron icon rotates when section expands/collapses', async (): Promise<void> => {
-      const user = userEvent.setup()
-      render(<WorkspaceView />)
-
-      const agentActivity = screen.getByTestId('agent-activity')
-
-      // Find Files Changed button
-      const toggleButton = within(agentActivity).getByRole('button', {
-        name: /Files Changed/,
-      })
-
-      // Get chevron element (first span in button)
-      const chevron = toggleButton.querySelector('span')
-      expect(chevron).toBeInTheDocument()
-
-      const initialChevron = chevron?.textContent
-
-      // Click to toggle
-      await user.click(toggleButton)
-
-      // Chevron should change (▾ ↔ ▸)
-      const afterClickChevron = chevron?.textContent
-
-      // One should be ▾ and the other ▸
-      const validChevrons = ['▾', '▸']
-      expect(validChevrons).toContain(initialChevron)
-      expect(validChevrons).toContain(afterClickChevron)
-      expect(initialChevron).not.toBe(afterClickChevron)
+      expect(panel).toBeInTheDocument()
+      // Panel is a shell — collapsible sections will be added in sub-specs 5-7
     })
   })
 

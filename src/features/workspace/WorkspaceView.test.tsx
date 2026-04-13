@@ -12,15 +12,33 @@ vi.mock('../terminal/components/TerminalPane', () => ({
   )),
 }))
 
+// Mock useAgentStatus so AgentStatusPanel renders predictably
+vi.mock('../agent-status/hooks/useAgentStatus', () => ({
+  useAgentStatus: vi.fn(() => ({
+    isActive: true,
+    agentType: 'claude-code',
+    modelId: null,
+    modelDisplayName: null,
+    version: null,
+    sessionId: null,
+    agentSessionId: null,
+    contextWindow: null,
+    cost: null,
+    rateLimits: null,
+    toolCalls: { total: 0, byType: {}, active: null },
+    recentToolCalls: [],
+  })),
+}))
+
 describe('WorkspaceView', () => {
-  test('renders all five zones (icon rail, sidebar, terminal, bottom drawer, agent activity)', () => {
+  test('renders all five zones (icon rail, sidebar, terminal, bottom drawer, agent status panel)', () => {
     render(<WorkspaceView />)
 
     expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument() // BottomDrawer
-    expect(screen.getByTestId('agent-activity')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
   })
 
   test('applies correct grid layout with 4 columns (dynamic sidebar width)', () => {
@@ -29,8 +47,8 @@ describe('WorkspaceView', () => {
     const container = screen.getByTestId('workspace-view')
 
     expect(container).toHaveClass('grid')
-    // Grid columns: 64px icon rail + dynamic sidebar + 1fr main + 360px activity (updated in Feature 20)
-    expect(container.style.gridTemplateColumns).toBe('64px 340px 1fr 360px')
+    // Grid columns: 64px icon rail + dynamic sidebar + 1fr main + auto (panel self-manages width)
+    expect(container.style.gridTemplateColumns).toBe('64px 340px 1fr auto')
   })
 
   test('fills viewport height', () => {
@@ -75,13 +93,11 @@ describe('WorkspaceView', () => {
     expect(sessionTabs?.length).toBeGreaterThan(0)
   })
 
-  test('passes active session to AgentActivity', () => {
+  test('renders AgentStatusPanel', () => {
     render(<WorkspaceView />)
 
-    const agentActivity = screen.getByTestId('agent-activity')
-
-    // AgentActivity should render all sections
-    expect(agentActivity).toBeInTheDocument()
+    const panel = screen.getByTestId('agent-status-panel')
+    expect(panel).toBeInTheDocument()
   })
 
   test('renders navigation items in IconRail', () => {
@@ -209,11 +225,11 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-    expect(screen.getByTestId('agent-activity')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
   })
 
-  test('uses updated grid layout with sidebar 340px and activity 360px', () => {
+  test('uses updated grid layout with sidebar 340px and auto panel column', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')

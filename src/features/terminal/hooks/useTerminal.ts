@@ -146,11 +146,13 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         didSpawnSessionRef.current = true // We spawned this session
 
         // Convert result to TerminalSession
+        // Use the resolved cwd from Rust (absolute path) if available,
+        // otherwise fall back to the requested cwd.
         const newSession: TerminalSession = {
           id: result.sessionId,
           pid: result.pid,
           name: `Session ${result.sessionId}`,
-          cwd: effectiveCwd,
+          cwd: result.cwd ?? effectiveCwd,
           shell:
             shell ??
             (typeof process !== 'undefined' ? process.env.SHELL : undefined) ??

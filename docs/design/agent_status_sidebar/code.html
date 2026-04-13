@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Agent Status Sidebar | Vimeflow Design Reference</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script>
+    tailwind.config = {
+        darkMode: "class",
+        theme: {
+            extend: {
+                colors: {
+                    "surface": "#0d0d1b",
+                    "surface-dim": "#0d0d1b",
+                    "surface-container-lowest": "#000000",
+                    "surface-container-low": "#121222",
+                    "surface-container": "#18182a",
+                    "surface-container-high": "#242439",
+                    "surface-container-highest": "#333344",
+                    "surface-bright": "#2a2a41",
+                    "surface-variant": "#242439",
+                    "background": "#0d0d1b",
+                    "on-surface": "#e6e3f9",
+                    "on-surface-variant": "#aba9bd",
+                    "on-background": "#e6e3f9",
+                    "primary": "#e2c7ff",
+                    "primary-container": "#cba6f7",
+                    "primary-dim": "#d3b9f0",
+                    "on-primary": "#533e6c",
+                    "secondary": "#d1abfd",
+                    "tertiary": "#ff94a5",
+                    "error": "#ff6e84",
+                    "success": "#50fa7b",
+                    "outline": "#757487",
+                    "outline-variant": "#474658",
+                },
+                fontFamily: {
+                    headline: ["Manrope"],
+                    body: ["Inter"],
+                    label: ["Inter"],
+                    mono: ["JetBrains Mono"],
+                },
+            },
+        },
+    }
+</script>
+<style>
+    body { background-color: #0d0d1b; color: #e6e3f9; }
+    @keyframes pulse-glow {
+        0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(80,250,123,0.4); }
+        50% { opacity: 0.6; box-shadow: 0 0 4px rgba(80,250,123,0.2); }
+    }
+    .pulse-dot { animation: pulse-glow 1.5s infinite; }
+</style>
+</head>
+<body class="font-body">
+<div class="flex h-screen w-screen items-center justify-center">
+
+<!-- Agent Status Panel (280px right side) -->
+<aside class="w-[300px] h-full bg-surface-container flex flex-col overflow-y-auto">
+
+    <!-- Status Card with Budget -->
+    <div class="p-5 pb-0">
+        <div class="bg-surface-container-high rounded-2xl p-4">
+            <!-- Agent identity -->
+            <div class="flex items-center gap-3.5 mb-3.5">
+                <div class="w-11 h-11 rounded-xl bg-surface flex items-center justify-center">
+                    <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-container to-secondary opacity-80"></div>
+                </div>
+                <div>
+                    <h3 class="font-headline text-base font-extrabold text-on-surface">Claude Code</h3>
+                    <div class="flex items-center gap-1.5 mt-0.5">
+                        <div class="w-[7px] h-[7px] rounded-full bg-success pulse-dot"></div>
+                        <span class="text-[9px] font-bold text-success uppercase tracking-[0.15em]">running</span>
+                        <span class="text-[9px] text-outline ml-1">opus-4-6</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Budget grid (API key variant) -->
+            <div class="grid grid-cols-2 gap-1.5">
+                <div class="bg-surface-container rounded-lg px-2.5 py-2">
+                    <div class="text-[8px] font-bold text-outline uppercase tracking-[0.08em]">Cost</div>
+                    <div class="text-sm font-mono text-primary font-semibold mt-0.5">$0.42</div>
+                </div>
+                <div class="bg-surface-container rounded-lg px-2.5 py-2">
+                    <div class="text-[8px] font-bold text-outline uppercase tracking-[0.08em]">API Time</div>
+                    <div class="text-sm font-mono text-on-surface font-semibold mt-0.5">2.3s</div>
+                </div>
+                <div class="bg-surface-container rounded-lg px-2.5 py-2">
+                    <div class="text-[8px] font-bold text-outline uppercase tracking-[0.08em]">Tokens In</div>
+                    <div class="text-sm font-mono text-on-surface font-semibold mt-0.5">94.7k</div>
+                </div>
+                <div class="bg-surface-container rounded-lg px-2.5 py-2">
+                    <div class="text-[8px] font-bold text-outline uppercase tracking-[0.08em]">Tokens Out</div>
+                    <div class="text-sm font-mono text-on-surface font-semibold mt-0.5">12.3k</div>
+                </div>
+            </div>
+
+            <!-- Rate limit (conditional — Claude.ai subscribers only) -->
+            <div class="mt-2 px-2.5 py-1.5 bg-primary-container/[0.04] rounded-lg">
+                <div class="flex items-center justify-between text-[9px] mb-1">
+                    <span class="text-on-surface-variant">5h Limit</span>
+                    <span class="text-primary-container font-mono">23%</span>
+                </div>
+                <div class="w-full h-[3px] bg-surface rounded-full overflow-hidden">
+                    <div class="h-full w-[23%] bg-primary-container rounded-full"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Context Bucket -->
+    <div class="px-5 py-3.5">
+        <div class="bg-surface-container-high/50 rounded-2xl p-3.5" style="border: 1px solid rgba(203,166,247,0.08);">
+            <!-- Header -->
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-1.5">
+                    <span class="text-base">😊</span>
+                    <span class="text-[10px] font-extrabold text-on-surface uppercase">Current Context</span>
+                </div>
+                <span class="text-[10px] font-mono font-bold text-primary-container">74%</span>
+            </div>
+
+            <!-- Bucket gauge -->
+            <div class="flex items-end gap-2.5 h-[72px] px-1">
+                <!-- The bucket -->
+                <div class="flex-1 h-full bg-surface-container-low rounded-lg relative overflow-hidden flex flex-col justify-end">
+                    <!-- Grid dots -->
+                    <div class="absolute inset-0 opacity-[0.04]" style="background-image: radial-gradient(#cba6f7 0.5px, transparent 0.5px); background-size: 8px 8px;"></div>
+                    <!-- Fill level -->
+                    <div class="w-full rounded-t transition-all duration-500" style="height: 74%; background: linear-gradient(to top, rgba(203,166,247,0.5), #cba6f7); box-shadow: 0 -4px 12px rgba(203,166,247,0.25);"></div>
+                </div>
+                <!-- Scale -->
+                <div class="flex flex-col justify-between h-full py-0.5 font-mono text-[8px] text-outline">
+                    <span>128k</span>
+                    <span class="text-primary-container">74%</span>
+                    <span>0k</span>
+                </div>
+            </div>
+
+            <!-- Progress bar + token counts -->
+            <div class="mt-2">
+                <div class="w-full h-[5px] bg-surface rounded-full p-px">
+                    <div class="h-full w-[74%] bg-primary-container rounded-full" style="box-shadow: 0 0 8px rgba(203,166,247,0.4);"></div>
+                </div>
+                <div class="flex justify-between mt-1 font-mono text-[9px] text-on-surface-variant">
+                    <span>94,720 tokens</span>
+                    <span>128k max</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tool Calls Summary -->
+    <div class="px-5 pb-2.5">
+        <div class="flex items-center justify-between mb-2">
+            <span class="text-[10px] font-black text-outline uppercase tracking-[0.15em]">Tool Calls</span>
+            <span class="text-[10px] font-mono text-on-surface-variant">47</span>
+        </div>
+        <!-- Aggregated chips -->
+        <div class="flex flex-wrap gap-1.5">
+            <div class="bg-surface-container-high rounded-md px-2 py-1 flex items-center gap-1.5">
+                <span class="text-[9px] text-on-surface-variant">Read</span>
+                <span class="text-[9px] font-mono text-primary font-semibold">18</span>
+            </div>
+            <div class="bg-surface-container-high rounded-md px-2 py-1 flex items-center gap-1.5">
+                <span class="text-[9px] text-on-surface-variant">Edit</span>
+                <span class="text-[9px] font-mono text-primary font-semibold">12</span>
+            </div>
+            <div class="bg-surface-container-high rounded-md px-2 py-1 flex items-center gap-1.5">
+                <span class="text-[9px] text-on-surface-variant">Bash</span>
+                <span class="text-[9px] font-mono text-primary font-semibold">9</span>
+            </div>
+            <div class="bg-surface-container-high rounded-md px-2 py-1 flex items-center gap-1.5">
+                <span class="text-[9px] text-on-surface-variant">Grep</span>
+                <span class="text-[9px] font-mono text-primary font-semibold">5</span>
+            </div>
+            <div class="bg-surface-container-high rounded-md px-2 py-1 flex items-center gap-1.5">
+                <span class="text-[9px] text-on-surface-variant">Write</span>
+                <span class="text-[9px] font-mono text-primary font-semibold">3</span>
+            </div>
+        </div>
+        <!-- Active tool -->
+        <div class="mt-2 bg-success/[0.06] rounded-md px-2 py-1.5 border-l-2 border-success">
+            <div class="flex items-center gap-1.5">
+                <div class="w-[5px] h-[5px] rounded-full bg-success pulse-dot"></div>
+                <span class="text-[9px] font-semibold text-success">Running</span>
+                <span class="text-[9px] font-mono text-on-surface">Edit</span>
+            </div>
+            <div class="text-[8px] font-mono text-outline mt-0.5 truncate">src/features/auth/middleware.ts</div>
+        </div>
+    </div>
+
+    <!-- Recent Tool Calls (collapsed) -->
+    <div class="px-5 pb-2">
+        <div class="flex items-center justify-between cursor-pointer py-1.5 border-t border-outline-variant/[0.08]">
+            <span class="text-[10px] font-black text-outline uppercase tracking-[0.15em]">Recent (5)</span>
+            <span class="text-xs text-outline">&#9656;</span>
+        </div>
+    </div>
+
+    <!-- Files Changed (collapsed) -->
+    <div class="px-5 pb-2">
+        <div class="flex items-center justify-between py-1.5 border-t border-outline-variant/[0.08]">
+            <span class="text-[10px] font-black text-outline uppercase tracking-[0.15em]">Files Changed</span>
+            <span class="text-xs text-outline">&#9656;</span>
+        </div>
+    </div>
+
+    <!-- Tests -->
+    <div class="px-5 pb-2">
+        <div class="flex items-center justify-between py-1.5 border-t border-outline-variant/[0.08]">
+            <span class="text-[10px] font-black text-outline uppercase tracking-[0.15em]">Tests</span>
+            <span class="text-[10px] font-mono text-success font-bold">4/5</span>
+        </div>
+        <div class="flex gap-0.5 mt-1">
+            <div class="flex-1 h-[3px] rounded-full bg-success"></div>
+            <div class="flex-1 h-[3px] rounded-full bg-success"></div>
+            <div class="flex-1 h-[3px] rounded-full bg-success"></div>
+            <div class="flex-1 h-[3px] rounded-full bg-success"></div>
+            <div class="flex-1 h-[3px] rounded-full bg-error/40"></div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="mt-auto px-5 py-3 bg-surface-container-low/40">
+        <div class="flex justify-between font-mono text-[9px] text-outline">
+            <span>02h 45m</span>
+            <span>24 turns</span>
+            <span>+1,204 / -412 lines</span>
+        </div>
+    </div>
+
+</aside>
+
+</div>
+</body>
+</html>

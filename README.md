@@ -36,6 +36,18 @@ A 4-zone grid layout inspired by IDE + terminal multiplexer patterns:
 - **Agent Activity Panel** — status, metrics, collapsible sections
 - **Context Switcher** — Files / Editor / Diff tabs in a top tab bar
 
+### Agent Status Sidebar (Phase 4 — In Progress)
+
+Real-time agent observability panel that auto-detects running AI coding agents in terminal sessions:
+
+- **Rust backend** — `src-tauri/src/agent/` module with agent detector (process tree polling), statusline file watcher (`notify` crate), and transcript JSONL parser for tool call tracking
+- **Statusline bridge** — per-session shell script pipes Claude Code's statusline JSON to a watched file; Rust parses and emits Tauri events (`agent-detected`, `agent-status`, `agent-tool-call`, `agent-disconnected`)
+- **Frontend panel** — `src/features/agent-status/` with `useAgentStatus` hook subscribing to Tauri events, plus components: StatusCard (identity + model badge), BudgetMetrics (adaptive API key vs subscriber layout), ContextBucket (fill gauge + progress bar), ToolCallSummary (aggregated chips), RecentToolCalls, FilesChanged, TestResults, and ActivityFooter
+- **Auto-collapse** — panel is 0px when no agent detected, animates to 280px on detection, holds final state for 5s after disconnect
+- **ts-rs type codegen** — Rust types exported to `src/bindings/` for type-safe frontend consumption
+
+Design spec: [`docs/superpowers/specs/2026-04-12-agent-status-sidebar/`](docs/superpowers/specs/2026-04-12-agent-status-sidebar/CLAUDE.md)
+
 ### Feature Modules
 
 | Module              | Description                                                                            |
@@ -45,6 +57,7 @@ A 4-zone grid layout inspired by IDE + terminal multiplexer patterns:
 | **diff**            | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard) |
 | **files**           | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop        |
 | **command-palette** | Vim-style `:command` palette with fuzzy matching and nested command tree               |
+| **agent-status**    | Real-time agent observability panel (statusline bridge + transcript parsing)           |
 | **workspace**       | Layout shell composing all zones above                                                 |
 
 ### Quality
@@ -138,6 +151,7 @@ src/
 │   ├── diff/               # Lazygit-style diff viewer
 │   ├── files/              # File explorer tree
 │   ├── command-palette/    # Vim-style command palette
+│   ├── agent-status/       # Real-time agent observability panel
 │   └── workspace/          # 4-zone layout shell
 ├── components/layout/      # Shared layout (IconRail, Sidebar, TopTabBar, ContextPanel)
 └── test/                   # Vitest setup
@@ -146,7 +160,8 @@ src-tauri/
 ├── src/
 │   ├── main.rs             # Tauri entry point
 │   ├── lib.rs              # Library setup
-│   └── terminal/           # PTY commands, state, types
+│   ├── terminal/           # PTY commands, state, types
+│   └── agent/              # Agent detector, statusline watcher, transcript parser
 ├── Cargo.toml              # Rust dependencies
 └── tauri.conf.json         # Tauri configuration
 
@@ -168,13 +183,14 @@ The harness (`harness/`) is a Python-based loop built on the Claude Code SDK. Se
 
 ## Roadmap
 
-| Phase    | Status  | Description                                            |
-| -------- | ------- | ------------------------------------------------------ |
-| Phase 1  | Done    | Tauri scaffold, Rust compilation, CI green             |
-| Phase 2  | Done    | Workspace layout shell (4-zone grid, all components)   |
-| Phase 3  | Done    | Terminal core (xterm.js + Tauri PTY IPC)               |
-| Phase 4  | Next    | Session management + Zustand state                     |
-| Phase 5+ | Planned | Real git ops, AI agent output streaming, drag-and-drop |
+| Phase    | Status  | Description                                             |
+| -------- | ------- | ------------------------------------------------------- |
+| Phase 1  | Done    | Tauri scaffold, Rust compilation, CI green              |
+| Phase 2  | Done    | Workspace layout shell (4-zone grid, all components)    |
+| Phase 3  | Done    | Terminal core (xterm.js + Tauri PTY IPC)                |
+| Phase 4  | WIP     | Agent status sidebar (detection, statusline bridge, UI) |
+| Phase 5  | Next    | Session management + Zustand state                      |
+| Phase 6+ | Planned | Real git ops, AI agent output streaming, drag-and-drop  |
 
 Progress tracked in [`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml).
 

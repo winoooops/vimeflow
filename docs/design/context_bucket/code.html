@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Obsidian Terminal | VIBM Redesign</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-high": "#1e1e32",
+                        "primary": "#e2c7ff",
+                        "tertiary-container": "#fd7e94",
+                        "surface-variant": "#242439",
+                        "surface-container-lowest": "#000000",
+                        "background": "#0d0d1b",
+                        "surface-container": "#18182a",
+                        "error": "#ff6e84",
+                        "on-primary": "#533e6c",
+                        "on-error": "#490013",
+                        "primary-fixed": "#e2c7ff",
+                        "error-container": "#a70138",
+                        "primary-container": "#af96cb",
+                        "on-background": "#e6e3f9",
+                        "secondary-fixed": "#e2c7ff",
+                        "error-dim": "#d73357",
+                        "on-secondary-container": "#e1c5ff",
+                        "secondary-container": "#57377f",
+                        "on-tertiary": "#680826",
+                        "inverse-surface": "#fcf8ff",
+                        "tertiary-dim": "#f3778c",
+                        "on-surface": "#e6e3f9",
+                        "primary-dim": "#d3b9f0",
+                        "on-primary-fixed": "#3f2b58",
+                        "tertiary": "#ff94a5",
+                        "surface-dim": "#0d0d1b",
+                        "surface": "#0d0d1b",
+                        "secondary": "#d1abfd",
+                        "secondary-fixed-dim": "#d7b5ff",
+                        "inverse-primary": "#6b5586",
+                        "on-secondary-fixed": "#44236a",
+                        "on-primary-container": "#2d1945",
+                        "on-error-container": "#ffb2b9",
+                        "on-tertiary-fixed-variant": "#71112c",
+                        "on-tertiary-container": "#56001c",
+                        "surface-bright": "#2a2a41",
+                        "primary-fixed-dim": "#d3b9f0",
+                        "outline": "#757487",
+                        "secondary-dim": "#c39eee",
+                        "on-tertiary-fixed": "#390010",
+                        "on-primary-fixed-variant": "#5c4776",
+                        "surface-tint": "#e2c7ff",
+                        "inverse-on-surface": "#545365",
+                        "on-secondary": "#48286f",
+                        "tertiary-fixed-dim": "#fa7c92",
+                        "outline-variant": "#474658",
+                        "tertiary-fixed": "#ff90a1",
+                        "on-surface-variant": "#aba9bd",
+                        "surface-container-highest": "#242439",
+                        "on-secondary-fixed-variant": "#614189",
+                        "surface-container-low": "#121222"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "mono": ["JetBrains Mono"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body { background-color: #0d0d1b; color: #e6e3f9; }
+        .glass-panel {
+            background: rgba(42, 42, 65, 0.4);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+    </style>
+</head>
+<body class="font-body selection:bg-primary/30 selection:text-primary overflow-hidden">
+<div class="flex h-screen w-screen overflow-hidden">
+<!-- Zone 1: Icon Rail (48px) -->
+<aside class="w-[64px] h-full flex flex-col items-center py-4 bg-[#18182a] z-50">
+<div class="flex flex-col gap-4 items-center w-full">
+<!-- Active Project TS -->
+<div class="relative group cursor-pointer">
+<div class="absolute inset-0 bg-[#cba6f7]/20 rounded-xl shadow-[0_0_15px_rgba(203,166,247,0.3)] scale-110"></div>
+<div class="w-10 h-10 rounded-xl bg-surface-container-high flex items-center justify-center font-mono text-sm font-bold text-primary relative z-10">
+                    TS
+                </div>
+</div>
+<!-- Project RS -->
+<div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center font-mono text-sm font-bold text-outline-variant hover:text-on-surface transition-colors cursor-pointer group">
+                RS
+            </div>
+<!-- Project DB -->
+<div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center font-mono text-sm font-bold text-outline-variant hover:text-on-surface transition-colors cursor-pointer group">
+                DB
+            </div>
+</div>
+<div class="mt-auto flex flex-col gap-4 items-center">
+<button class="text-outline-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+<button class="text-outline-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+</div>
+</aside>
+<!-- Zone 2: Sidebar (260px) -->
+<aside class="w-[260px] h-full bg-[#18182a] flex flex-col">
+<!-- Sessions Header -->
+<div class="px-6 py-5">
+<h2 class="font-headline text-[10px] uppercase tracking-[0.2em] text-outline-variant font-bold">Sessions</h2>
+</div>
+<div class="px-3 flex-1 overflow-y-auto space-y-2">
+<!-- Active Session Card -->
+<div class="bg-[#242439] rounded-xl p-3 border-l-4 border-primary/60 relative group cursor-pointer transition-all">
+<div class="flex justify-between items-start mb-1">
+<span class="text-sm font-semibold text-on-surface truncate">Fix Auth Bug</span>
+<div class="flex items-center gap-1.5">
+<div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+<span class="text-[10px] text-emerald-400/80 font-mono">running</span>
+</div>
+</div>
+<p class="text-[11px] text-on-surface-variant font-mono">ID: session_882a</p>
+</div>
+<div class="bg-transparent hover:bg-surface-container-high/40 rounded-xl p-3 cursor-pointer transition-all group">
+<div class="flex justify-between items-start mb-1">
+<span class="text-sm font-medium text-on-surface-variant group-hover:text-on-surface truncate">API Integration</span>
+<span class="text-[10px] text-outline-variant font-mono italic">idle</span>
+</div>
+</div>
+</div>
+<!-- Tab Row -->
+<div class="mt-auto bg-surface-container-low">
+<div class="flex px-4 pt-4 border-b border-outline-variant/10">
+<button class="pb-2 px-2 text-xs font-bold text-primary border-b border-primary uppercase tracking-wider">Files</button>
+<button class="pb-2 px-2 text-xs font-bold text-outline-variant hover:text-on-surface uppercase tracking-wider">Editor</button>
+<button class="pb-2 px-2 text-xs font-bold text-outline-variant hover:text-on-surface uppercase tracking-wider">Diff</button>
+</div>
+<!-- File Tree -->
+<div class="p-4 space-y-3">
+<div class="flex items-center gap-2 group cursor-pointer">
+<span class="material-symbols-outlined text-sm text-outline-variant" data-icon="description">description</span>
+<span class="text-xs text-on-surface-variant group-hover:text-primary transition-colors font-mono">src/components/Button.tsx</span>
+</div>
+<div class="flex items-center gap-2 group cursor-pointer">
+<span class="material-symbols-outlined text-sm text-outline-variant" data-icon="description">description</span>
+<span class="text-xs text-on-surface-variant group-hover:text-primary transition-colors font-mono">utils/auth.ts</span>
+</div>
+<div class="flex items-center gap-2 group cursor-pointer opacity-50">
+<span class="material-symbols-outlined text-sm text-outline-variant" data-icon="folder">folder</span>
+<span class="text-xs text-on-surface-variant font-mono">public/</span>
+</div>
+</div>
+</div>
+</aside>
+<!-- Zone 3: Terminal Zone (Center) -->
+<main class="flex-1 h-full bg-[#121222] flex flex-col relative overflow-hidden">
+<!-- Terminal Header -->
+<nav class="w-full h-12 flex items-center px-4 bg-[#121222] border-b border-outline-variant/5">
+<div class="flex gap-1 h-full items-center">
+<div class="px-4 h-full flex items-center gap-2 border-b-2 border-primary bg-primary/5 cursor-pointer">
+<span class="text-lg">🤖</span>
+<span class="text-[11px] font-mono font-bold text-primary tracking-tight">auth middleware</span>
+</div>
+<div class="px-4 h-full flex items-center gap-2 text-outline-variant hover:bg-surface-container-high/20 transition-all cursor-pointer">
+<span class="material-symbols-outlined text-sm" data-icon="terminal">terminal</span>
+<span class="text-[11px] font-mono tracking-tight">npm run dev</span>
+</div>
+</div>
+<div class="ml-auto flex items-center gap-3">
+<span class="material-symbols-outlined text-outline-variant hover:text-on-surface cursor-pointer text-lg" data-icon="search">search</span>
+<span class="material-symbols-outlined text-outline-variant hover:text-on-surface cursor-pointer text-lg" data-icon="more_vert">more_vert</span>
+</div>
+</nav>
+<!-- Terminal Output Area -->
+<div class="flex-1 p-6 font-mono text-sm overflow-y-auto bg-[#121221]">
+<div class="space-y-1">
+<div class="text-outline-variant opacity-60">System initialized. Connected to v-core-1.0.2</div>
+<div class="flex gap-3">
+<span class="text-emerald-400 font-bold">➜</span>
+<span class="text-on-surface">claude-agent --fix-auth</span>
+</div>
+<div class="text-[#cdc3d1] mt-2 space-y-1">
+<div>Searching for auth-related vulnerabilities...</div>
+<div>Found 1 potential issue in <span class="text-secondary">utils/auth.ts</span> line 42.</div>
+<div class="flex items-center gap-2">
+<span class="bg-primary/20 text-primary px-2 py-0.5 rounded text-[10px] font-bold">ACTION</span>
+<span>Updating JWT verification logic...</span>
+</div>
+<div class="text-emerald-400/80">✔ File src/auth.ts created.</div>
+<div class="text-emerald-400/80">✔ File src/types.ts modified.</div>
+<div class="flex items-center gap-2 pt-2">
+<span class="text-emerald-400 font-bold">➜</span>
+<div class="w-2 h-5 bg-primary/80 animate-[pulse_1s_infinite]"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Floating Command Palette (Glassmorphism) -->
+<div class="absolute bottom-8 left-1/2 -translate-x-1/2 w-[500px] glass-panel border border-primary/10 rounded-2xl shadow-2xl p-3 flex items-center gap-4">
+<div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-xl" data-icon="bolt">bolt</span>
+</div>
+<input class="flex-1 bg-transparent border-none focus:ring-0 text-on-surface font-mono placeholder:text-outline-variant text-sm" placeholder="Ask the agent to build, refactor, or test..." type="text"/>
+<div class="flex items-center gap-2">
+<span class="text-[10px] text-outline-variant font-mono bg-surface-container px-2 py-1 rounded">⌘ K</span>
+</div>
+</div>
+</main>
+<!-- Zone 4: Agent Activity Panel (280px) -->
+<aside class="w-[300px] h-full bg-[#18182a] flex flex-col">
+<!-- Status Card -->
+<div class="p-6 space-y-6">
+<div class="bg-surface-container-high rounded-2xl p-4">
+<div class="flex items-center gap-4 mb-4">
+<div class="w-12 h-12 rounded-xl overflow-hidden bg-background flex items-center justify-center">
+<img alt="Claude AI Logo" class="w-8 h-8 object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuChM7RV_Ch0cC56E9-ZeWp_d07uoCkEwpKIZw0BTzHDrLFUIRwM9LbQhm9u3tV8Q8xMVJqxwN_gEOEPRU_dU5G_heSHJO7zslVF92hkwZ79KnKdZ0eWSFDC7Y2U2QEQiQLh7jUMFarIFjffMP5ZDzh3g_xrN7oruX0CJ-W4eUO1mRelv4C4-181syqFA6poWDYKVQ-wj8FCh2ZXq6rWq52U7QIkN4IRGec6FDT0cEbOFqAYNWrivszHt1-d-FSo3GBq227i_9RQKqo"/>
+</div>
+<div>
+<h3 class="font-headline text-lg font-extrabold text-on-surface">Claude Code</h3>
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+<span class="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">running</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between text-xs mb-2">
+<span class="text-on-surface-variant font-medium">Usage Limit</span>
+<span class="text-primary font-mono">142 / 200 msg</span>
+</div>
+<div class="w-full h-1.5 bg-background rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-primary to-secondary w-[71%] rounded-full shadow-[0_0_8px_rgba(226,199,255,0.4)]"></div>
+</div>
+</div>
+<!-- Current Context Detailed View -->
+<div class="bg-surface-container-high/40 rounded-2xl p-4 border border-primary/10">
+<div class="flex items-center justify-between mb-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-lg text-primary" data-icon="sentiment_satisfied">sentiment_satisfied</span>
+<span class="text-xs font-bold text-on-surface uppercase tracking-tighter">Current Context</span>
+</div>
+<span class="text-[11px] font-mono font-bold text-[#cba6f7]">74% USED</span>
+</div>
+<div class="space-y-4">
+<!-- Gauge/Bucket visual -->
+<div class="flex items-end gap-3 h-20 px-2">
+<div class="flex-1 bg-surface-container-low h-full rounded-lg relative overflow-hidden flex flex-col justify-end">
+<!-- Background Grid -->
+<div class="absolute inset-0 opacity-5 pointer-events-none" style="background-image: radial-gradient(#cba6f7 0.5px, transparent 0.5px); background-size: 8px 8px;"></div>
+<!-- Filling Level -->
+<div class="w-full bg-gradient-to-t from-[#cba6f7]/60 to-[#cba6f7] h-[74%] rounded-t-sm shadow-[0_-4px_12px_rgba(203,166,247,0.3)] transition-all duration-500"></div>
+</div>
+<div class="flex flex-col justify-between h-full py-1 text-[9px] font-mono text-outline-variant">
+<span>128k</span>
+<span>96k</span>
+<span class="text-[#cba6f7]">74%</span>
+<span>32k</span>
+<span>0k</span>
+</div>
+</div>
+<!-- Slider Progress Bar -->
+<div class="space-y-1.5">
+<div class="w-full h-2 bg-surface-container-lowest rounded-full p-[2px] border border-outline-variant/10">
+<div class="h-full bg-[#cba6f7] rounded-full w-[74%] shadow-[0_0_10px_rgba(203,166,247,0.5)]"></div>
+</div>
+<div class="flex justify-between items-center text-[10px] font-mono text-on-surface-variant">
+<span>94,720 tokens</span>
+<span>128k max</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Activity List -->
+<div class="space-y-4">
+<!-- Files Changed -->
+<div class="space-y-2">
+<div class="flex items-center justify-between group cursor-pointer">
+<span class="text-[11px] font-black text-outline-variant uppercase tracking-widest">Files Changed</span>
+<span class="material-symbols-outlined text-sm text-outline-variant group-hover:rotate-180 transition-transform" data-icon="expand_more">expand_more</span>
+</div>
+<div class="space-y-1.5 pl-1">
+<div class="flex items-center justify-between text-[11px] font-mono">
+<span class="text-emerald-400">+ src/auth.ts</span>
+<span class="text-outline-variant text-[10px]">NEW</span>
+</div>
+<div class="flex items-center justify-between text-[11px] font-mono">
+<span class="text-emerald-400">+ src/types.ts</span>
+<span class="text-outline-variant text-[10px]">EDIT</span>
+</div>
+</div>
+</div>
+<!-- Tool Calls -->
+<div class="py-2 border-y border-outline-variant/10">
+<div class="flex items-center justify-between group cursor-pointer">
+<span class="text-[11px] font-black text-outline-variant uppercase tracking-widest">Tool Calls (3)</span>
+<span class="material-symbols-outlined text-sm text-outline-variant" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+<!-- Tests -->
+<div class="space-y-2">
+<div class="flex items-center justify-between">
+<span class="text-[11px] font-black text-outline-variant uppercase tracking-widest">Tests</span>
+<span class="text-[11px] font-mono text-emerald-400 font-bold">4/5 PASSED</span>
+</div>
+<div class="flex gap-1">
+<div class="flex-1 h-1 rounded-full bg-emerald-400"></div>
+<div class="flex-1 h-1 rounded-full bg-emerald-400"></div>
+<div class="flex-1 h-1 rounded-full bg-emerald-400"></div>
+<div class="flex-1 h-1 rounded-full bg-emerald-400"></div>
+<div class="flex-1 h-1 rounded-full bg-error/40"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer -->
+<div class="mt-auto p-6 bg-surface-container-low/40">
+<div class="grid grid-cols-2 gap-4 mb-4">
+<div>
+<p class="text-[10px] text-outline-variant font-bold uppercase tracking-tighter">Session Time</p>
+<p class="text-sm font-mono text-on-surface">02h 45m</p>
+</div>
+<div>
+<p class="text-[10px] text-outline-variant font-bold uppercase tracking-tighter">Turn Count</p>
+<p class="text-sm font-mono text-on-surface">24 turns</p>
+</div>
+</div>
+<div class="flex justify-between items-center opacity-40 text-[10px] font-mono">
+<span>+1,204 lines</span>
+<span>-412 lines</span>
+</div>
+</div>
+</aside>
+</div>
+</body></html>

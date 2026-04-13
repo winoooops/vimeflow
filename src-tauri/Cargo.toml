@@ -27,6 +27,7 @@ portable-pty = "0.8"
 anyhow = "1.0"
 thiserror = "2.0"
 tokio = { version = "1", features = ["sync", "io-util", "time", "rt"] }
+notify = "6"
 dirs = "6"
 
 [target.'cfg(unix)'.dependencies]
@@ -36,3 +37,4 @@ libc = "0.2"
 tauri = { version = "2", features = ["test"] }
 tokio = { version = "1", features = ["macros", "rt"] }
 ts-rs = "10"
+tempfile = "3"

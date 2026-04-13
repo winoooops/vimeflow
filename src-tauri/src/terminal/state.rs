@@ -91,6 +91,12 @@ impl PtyState {
         sessions.get(session_id).and_then(|s| s.child.process_id())
     }
 
+    /// Get the resolved CWD for a session
+    pub fn get_cwd(&self, session_id: &SessionId) -> Option<String> {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        sessions.get(session_id).map(|s| s.cwd.clone())
+    }
+
     /// Write data to a PTY session
     pub fn write(&self, session_id: &SessionId, data: &[u8]) -> anyhow::Result<()> {
         let mut sessions = self.sessions.lock().expect("failed to lock sessions");
