@@ -7,6 +7,28 @@ use tauri::{AppHandle, Emitter, State};
 use super::state::{ManagedSession, PtyState};
 use super::types::*;
 
+/// Debug-only file logger. Compiles to no-op in release builds.
+/// Writes to /tmp/vimeflow-debug.log for diagnosing IPC and bridge issues.
+#[cfg(debug_assertions)]
+fn debug_log(tag: &str, msg: &str) {
+    use std::io::Write;
+    use std::time::SystemTime;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/vimeflow-debug.log")
+    {
+        let secs = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(f, "[{secs}] [{tag}] {msg}");
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn debug_log(_tag: &str, _msg: &str) {}
+
 /// Spawn a new PTY session with a shell
 #[tauri::command]
 pub async fn spawn_pty<R: tauri::Runtime>(
@@ -14,6 +36,13 @@ pub async fn spawn_pty<R: tauri::Runtime>(
     state: State<'_, PtyState>,
     request: SpawnPtyRequest,
 ) -> Result<PtySession, String> {
+    debug_log(
+        "pty",
+        &format!(
+            "spawn_pty: id={}, cwd={}, bridge={}",
+            request.session_id, request.cwd, request.enable_agent_bridge
+        ),
+    );
     log::info!(
         "Spawning PTY session: {} in {}",
         request.session_id,
@@ -93,7 +122,17 @@ pub async fn spawn_pty<R: tauri::Runtime>(
             &dir.to_string_lossy(),
             &request.session_id,
         ) {
-            Ok(files) => Some(files),
+            Ok(files) => {
+                debug_log(
+                    "bridge",
+                    &format!(
+                        "created: status={}, init={}",
+                        files.status_file_path.display(),
+                        files.shell_init_path.display()
+                    ),
+                );
+                Some(files)
+            }
             Err(e) => {
                 log::warn!(
                     "Failed to generate statusline bridge for session {}: {}",
@@ -196,10 +235,19 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         master: pty_pair.master,
         writer,
         child,
-        cwd: request.cwd.clone(),
+        cwd: cwd.to_string_lossy().to_string(),
         generation,
     };
     state.insert(request.session_id.clone(), session);
+    debug_log(
+        "pty",
+        &format!(
+            "session stored: id={}, cwd={}, pid={}",
+            request.session_id,
+            cwd.display(),
+            pid
+        ),
+    );
 
     // Spawn blocking thread for PTY read loop (avoids starving async runtime)
     let session_id = request.session_id.clone();

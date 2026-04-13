@@ -251,6 +251,31 @@ pub async fn start_agent_watcher(
         path.display()
     );
 
+    // Debug-only file log for diagnosing watcher startup
+    #[cfg(debug_assertions)]
+    {
+        use std::io::Write;
+        use std::time::SystemTime;
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/vimeflow-debug.log")
+        {
+            let secs = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let _ = writeln!(
+                f,
+                "[{}] [watcher] start: session={}, cwd={}, path={}",
+                secs,
+                session_id,
+                cwd,
+                path.display()
+            );
+        }
+    }
+
     // Stop any existing watcher for this session
     state.remove(&session_id);
 
