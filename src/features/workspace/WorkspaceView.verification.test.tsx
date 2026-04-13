@@ -1,3 +1,4 @@
+/* eslint-disable testing-library/no-node-access */
 /**
  * Feature 23: Final Phase 2 Verification Checklist
  *
@@ -15,6 +16,24 @@ vi.mock('../terminal/components/TerminalPane', () => ({
   )),
 }))
 
+// Mock useAgentStatus so AgentStatusPanel renders predictably
+vi.mock('../agent-status/hooks/useAgentStatus', () => ({
+  useAgentStatus: vi.fn(() => ({
+    isActive: true,
+    agentType: 'claude-code',
+    modelId: null,
+    modelDisplayName: null,
+    version: null,
+    sessionId: null,
+    agentSessionId: null,
+    contextWindow: null,
+    cost: null,
+    rateLimits: null,
+    toolCalls: { total: 0, byType: {}, active: null },
+    recentToolCalls: [],
+  })),
+}))
+
 // eslint-disable-next-line import/first
 import { render, screen } from '@testing-library/react'
 // eslint-disable-next-line import/first
@@ -29,7 +48,7 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
       expect(screen.getByTestId('bottom-drawer')).toBeInTheDocument()
-      expect(screen.getByTestId('agent-activity')).toBeInTheDocument()
+      expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
   })
 
@@ -79,10 +98,13 @@ describe('Feature 23: Final Phase 2 Verification', () => {
     test('shows session status badges', () => {
       render(<WorkspaceView />)
 
-      // Check for status badges (running, paused, completed, errored)
-      const badges = screen.getAllByText(/running|paused|completed|errored/i)
+      // Session list should render session buttons (status is conveyed via
+      // visual indicators, not text — text badges were removed when
+      // AgentActivity was replaced by the AgentStatusPanel shell)
+      const sessionList = screen.getByTestId('session-list')
+      const sessionButtons = sessionList.querySelectorAll('button[aria-label]')
 
-      expect(badges.length).toBeGreaterThan(0)
+      expect(sessionButtons.length).toBeGreaterThan(0)
     })
   })
 
@@ -106,43 +128,15 @@ describe('Feature 23: Final Phase 2 Verification', () => {
     })
   })
 
-  describe('5. Agent Activity panel shows all sections', () => {
-    test('displays status card', () => {
+  describe('5. Agent Status Panel renders', () => {
+    test('displays agent status panel shell', () => {
       render(<WorkspaceView />)
 
-      expect(screen.getByTestId('status-card')).toBeInTheDocument()
+      expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
 
-    test('displays pinned metrics', () => {
-      render(<WorkspaceView />)
-
-      expect(screen.getByTestId('pinned-metrics')).toBeInTheDocument()
-    })
-
-    test('displays files changed section', () => {
-      render(<WorkspaceView />)
-
-      expect(screen.getByText('Files Changed')).toBeInTheDocument()
-    })
-
-    test('displays tool calls section', () => {
-      render(<WorkspaceView />)
-
-      expect(screen.getByText('Tool Calls')).toBeInTheDocument()
-    })
-
-    test('displays tests section', () => {
-      render(<WorkspaceView />)
-
-      expect(screen.getByText('Tests')).toBeInTheDocument()
-    })
-
-    test('displays activity footer', () => {
-      render(<WorkspaceView />)
-
-      // Check for footer content (duration, turns, line changes)
-      expect(screen.getByRole('contentinfo')).toBeInTheDocument()
-    })
+    // Child sections (StatusCard, BudgetMetrics, ContextBucket, ToolCallSummary)
+    // will be tested in sub-specs 5-7
   })
 
   describe('6. Chat view and all chat code removed', () => {
@@ -212,7 +206,7 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
       expect(screen.getByTestId('bottom-drawer')).toBeInTheDocument()
-      expect(screen.getByTestId('agent-activity')).toBeInTheDocument()
+      expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
   })
 })
