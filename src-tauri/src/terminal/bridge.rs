@@ -5,6 +5,7 @@
 //! for Vimeflow's file watcher to pick up.
 
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -61,6 +62,8 @@ pub fn generate_bridge_files(agent_status_dir: &str, session_id: &str) -> Result
         .map_err(|e| format!("failed to write statusline script: {}", e))?;
 
     // Make script executable (rwxr-xr-x)
+    // Make script executable on Unix (no-op on Windows — scripts aren't used there)
+    #[cfg(unix)]
     fs::set_permissions(&script_path, fs::Permissions::from_mode(0o755))
         .map_err(|e| format!("failed to set script permissions: {}", e))?;
 
@@ -120,6 +123,7 @@ pub fn cleanup_bridge_files(agent_status_dir: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
@@ -134,8 +138,11 @@ mod tests {
 
         // Script should exist and be executable
         assert!(files.script_path.exists());
-        let meta = fs::metadata(&files.script_path).unwrap();
-        assert!(meta.permissions().mode() & 0o111 != 0, "script should be executable");
+        #[cfg(unix)]
+        {
+            let meta = fs::metadata(&files.script_path).unwrap();
+            assert!(meta.permissions().mode() & 0o111 != 0, "script should be executable");
+        }
 
         // Script content should reference the status file
         let script = fs::read_to_string(&files.script_path).unwrap();

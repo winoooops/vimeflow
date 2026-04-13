@@ -222,23 +222,6 @@ pub fn start_watching(
     })
 }
 
-/// Write a debug line to /tmp/vimeflow-debug.log
-fn debug_log(msg: &str) {
-    use std::io::Write;
-    use std::time::SystemTime;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("/tmp/vimeflow-debug.log")
-    {
-        let secs = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let _ = writeln!(f, "[{secs}] [watcher] {msg}");
-    }
-}
-
 /// Start watching a statusline file (Tauri command)
 #[tauri::command]
 pub async fn start_agent_watcher(
@@ -247,10 +230,11 @@ pub async fn start_agent_watcher(
     session_id: String,
     status_file_path: String,
 ) -> Result<(), String> {
-    debug_log(&format!(
-        "start_agent_watcher called: session={}, path={}",
-        session_id, status_file_path
-    ));
+    log::info!(
+        "Starting agent watcher: session={}, path={}",
+        session_id,
+        status_file_path
+    );
 
     let path = PathBuf::from(&status_file_path);
 
@@ -260,7 +244,6 @@ pub async fn start_agent_watcher(
     let handle = start_watching(app_handle, session_id.clone(), path)?;
     state.insert(session_id.clone(), handle);
 
-    debug_log(&format!("Watcher started for session {}", session_id));
     Ok(())
 }
 

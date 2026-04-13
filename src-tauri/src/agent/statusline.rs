@@ -216,7 +216,7 @@ fn parse_cost_metrics(value: Option<&serde_json::Value>) -> CostMetrics {
 fn parse_rate_limits(value: Option<&serde_json::Value>) -> RateLimits {
     let default_info = RateLimitInfo {
         used_percentage: 0.0,
-        resets_at: String::new(),
+        resets_at: 0,
     };
 
     let defaults = RateLimits {
@@ -238,13 +238,12 @@ fn parse_rate_limits(value: Option<&serde_json::Value>) -> RateLimits {
                 .unwrap_or(0.0),
             resets_at: fh
                 .get("resets_at")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
         })
         .unwrap_or(RateLimitInfo {
             used_percentage: 0.0,
-            resets_at: String::new(),
+            resets_at: 0,
         });
 
     let seven_day = rl.get("seven_day").and_then(|v| {
@@ -259,9 +258,8 @@ fn parse_rate_limits(value: Option<&serde_json::Value>) -> RateLimits {
                 .unwrap_or(0.0),
             resets_at: sd
                 .get("resets_at")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
         })
     });
 
@@ -307,11 +305,11 @@ mod tests {
             "rate_limits": {
                 "five_hour": {
                     "used_percentage": 15.3,
-                    "resets_at": "2026-04-12T10:00:00Z"
+                    "resets_at": 1776081600
                 },
                 "seven_day": {
                     "used_percentage": 5.0,
-                    "resets_at": "2026-04-15T00:00:00Z"
+                    "resets_at": 1776340800
                 }
             },
             "transcript_path": "/home/user/.claude/sessions/abc-123/transcript.jsonl"
@@ -354,10 +352,7 @@ mod tests {
 
         // Rate limits
         assert!((event.rate_limits.five_hour.used_percentage - 15.3).abs() < f64::EPSILON);
-        assert_eq!(
-            event.rate_limits.five_hour.resets_at,
-            "2026-04-12T10:00:00Z"
-        );
+        assert_eq!(event.rate_limits.five_hour.resets_at, 1776081600);
         let seven_day = event.rate_limits.seven_day.as_ref().unwrap();
         assert!((seven_day.used_percentage - 5.0).abs() < f64::EPSILON);
 
@@ -427,7 +422,7 @@ mod tests {
             "rate_limits": {
                 "five_hour": {
                     "used_percentage": 10.0,
-                    "resets_at": "2026-04-12T10:00:00Z"
+                    "resets_at": 1776081600
                 },
                 "seven_day": null
             }

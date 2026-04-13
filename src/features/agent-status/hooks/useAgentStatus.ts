@@ -258,13 +258,15 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
               ? {
                   fiveHour: {
                     usedPercentage: p.rateLimits.fiveHour.usedPercentage,
-                    resetsAt: Number(p.rateLimits.fiveHour.resetsAt),
+                    // resets_at is Unix epoch seconds (u64 from Rust → bigint in TS)
+                    resetsAt: Number(p.rateLimits.fiveHour.resetsAt) * 1000,
                   },
                   ...(p.rateLimits.sevenDay
                     ? {
                         sevenDay: {
                           usedPercentage: p.rateLimits.sevenDay.usedPercentage,
-                          resetsAt: Number(p.rateLimits.sevenDay.resetsAt),
+                          resetsAt:
+                            Number(p.rateLimits.sevenDay.resetsAt) * 1000,
                         },
                       }
                     : {}),

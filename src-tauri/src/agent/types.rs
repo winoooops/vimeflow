@@ -111,8 +111,8 @@ pub struct CostMetrics {
 pub struct RateLimitInfo {
     /// Percentage of rate limit used (0.0-100.0)
     pub used_percentage: f64,
-    /// ISO 8601 timestamp when rate limit resets
-    pub resets_at: String,
+    /// Unix epoch seconds when rate limit resets
+    pub resets_at: u64,
 }
 
 /// Rate limits for different time windows

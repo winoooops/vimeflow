@@ -9,7 +9,7 @@ export type RateLimitInfo = {
    */
   usedPercentage: number
   /**
-   * ISO 8601 timestamp when rate limit resets
+   * Unix epoch seconds when rate limit resets
    */
-  resetsAt: string
+  resetsAt: bigint
 }
