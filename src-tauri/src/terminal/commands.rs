@@ -129,10 +129,14 @@ pub async fn spawn_pty<R: tauri::Runtime>(
 
         // For interactive bash, generate a combined rcfile that sources
         // both ~/.bashrc (user config) and our init script
-        let rcfile_path = files.shell_init_path.parent().unwrap().join("bashrc");
+        let init_dir = files
+            .shell_init_path
+            .parent()
+            .ok_or_else(|| "shell init path has no parent directory".to_string())?;
+        let rcfile_path = init_dir.join("bashrc");
         let rcfile_content = format!(
             "[ -f ~/.bashrc ] && source ~/.bashrc\n\
-             source \"{}\"\n",
+             source '{}'\n",
             files.shell_init_path.display()
         );
         if let Err(e) = std::fs::write(&rcfile_path, &rcfile_content) {

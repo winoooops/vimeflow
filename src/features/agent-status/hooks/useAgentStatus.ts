@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import {
-  getPtySessionId,
-  getStatusFilePath,
-} from '../../terminal/ptySessionMap'
+import { getPtySessionId } from '../../terminal/ptySessionMap'
 import type {
   AgentDetectedEvent,
   AgentDisconnectedEvent,
@@ -121,20 +118,14 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         }))
 
         // Start the status-line file watcher (only once).
-        // Don't set watcherStartedRef until the watcher ACTUALLY starts,
-        // because getStatusFilePath may return undefined if the PTY
-        // session mapping hasn't been registered yet (race condition).
+        // The path is derived server-side from the PTY session's CWD —
+        // the frontend only sends the session ID (prevents path traversal).
         if (!watcherStartedRef.current) {
           try {
-            const statusFilePath = getStatusFilePath(sid)
-            if (statusFilePath) {
-              await invoke('start_agent_watcher', {
-                sessionId: ptySessionId,
-                statusFilePath,
-              })
-              watcherStartedRef.current = true
-            }
-            // If statusFilePath is undefined, we'll retry on next poll
+            await invoke('start_agent_watcher', {
+              sessionId: ptySessionId,
+            })
+            watcherStartedRef.current = true
           } catch {
             // Watcher may fail if bridge files weren't generated — retry next poll
           }

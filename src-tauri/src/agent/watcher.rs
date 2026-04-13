@@ -222,29 +222,34 @@ pub fn start_watching(
     })
 }
 
-/// Start watching a statusline file (Tauri command)
+/// Start watching a statusline file (Tauri command).
+///
+/// The status file path is derived server-side from the PTY session's
+/// known CWD — the frontend only provides the session ID. This prevents
+/// path traversal attacks from crafted IPC calls.
 #[tauri::command]
 pub async fn start_agent_watcher(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, AgentWatcherState>,
+    pty_state: tauri::State<'_, crate::terminal::PtyState>,
     session_id: String,
-    status_file_path: String,
 ) -> Result<(), String> {
+    // Derive the status file path from the PTY session's resolved CWD
+    let cwd = pty_state
+        .get_cwd(&session_id)
+        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
+
+    let path = PathBuf::from(&cwd)
+        .join(".vimeflow")
+        .join("sessions")
+        .join(&session_id)
+        .join("status.json");
+
     log::info!(
         "Starting agent watcher: session={}, path={}",
         session_id,
-        status_file_path
+        path.display()
     );
-
-    // Scope validation on the raw input — canonicalize fails for non-existent
-    // paths (the common case for new sessions), so validate lexically first.
-    if !status_file_path.contains(".vimeflow/sessions/")
-        && !status_file_path.contains(".vimeflow\\sessions\\")
-    {
-        return Err("status file path must be within .vimeflow/sessions/".to_string());
-    }
-
-    let path = PathBuf::from(&status_file_path);
 
     // Stop any existing watcher for this session
     state.remove(&session_id);
