@@ -78,6 +78,9 @@ VISUAL_VERIFICATION.md
 .claude/worktrees/
 .worktrees/
 
+# Vimeflow runtime data (statusline sessions, etc.)
+.vimeflow/
+
 # Verification screenshots (testing artifacts)
 feedback*.png
 feedbacak*.png
