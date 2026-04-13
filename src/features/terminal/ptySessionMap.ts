@@ -33,18 +33,6 @@ export const getPtySessionId = (
   workspaceSessionId: string
 ): string | undefined => ptySessionMap.get(workspaceSessionId)?.ptySessionId
 
-/** Look up the status file path for a workspace session */
-export const getStatusFilePath = (
-  workspaceSessionId: string
-): string | undefined => {
-  const info = ptySessionMap.get(workspaceSessionId)
-  if (!info) {
-    return undefined
-  }
-
-  return `${info.cwd}/.vimeflow/sessions/${info.ptySessionId}/status.json`
-}
-
 /** Clear all mappings (for testing) */
 export const clearPtySessionMap = (): void => {
   ptySessionMap.clear()

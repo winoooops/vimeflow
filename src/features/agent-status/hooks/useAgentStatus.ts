@@ -328,14 +328,16 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
     }
   }, [sessionId, handleDetection])
 
-  // Cleanup watchers when the hook unmounts entirely
+  // Cleanup watchers when the hook unmounts entirely.
+  // Read from prevSessionIdRef (not the closure's sessionId) so the
+  // cleanup sees the LATEST session, not the mount-time null.
   useEffect(
     () => (): void => {
-      if (sessionId) {
-        void stopWatchers(sessionId)
+      const sid = prevSessionIdRef.current
+      if (sid) {
+        void stopWatchers(sid)
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only run on unmount
     []
   )
 
