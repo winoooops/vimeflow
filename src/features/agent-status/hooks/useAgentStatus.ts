@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type {
   AgentDetectedEvent,
@@ -10,6 +11,8 @@ import type {
 } from '../types'
 
 const RECENT_TOOL_CALLS_LIMIT = 10
+const DETECTION_POLL_MS = 2000
+const EXIT_HOLD_MS = 5000
 
 const AGENT_TYPE_MAP = {
   claudeCode: 'claude-code',
@@ -33,20 +36,102 @@ const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
   recentToolCalls: [],
 })
 
+/** Stop all agent watchers for a given session (best-effort, logs on failure) */
+const stopWatchers = async (sessionId: string): Promise<void> => {
+  try {
+    await invoke('stop_agent_watcher', { sessionId })
+  } catch {
+    // Watcher may not be running — ignore
+  }
+  try {
+    await invoke('stop_transcript_watcher', { sessionId })
+  } catch {
+    // Transcript watcher may not be running — ignore
+  }
+}
+
 export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   const [status, setStatus] = useState<AgentStatus>(() =>
     createDefaultStatus(sessionId)
   )
   const prevSessionIdRef = useRef<string | null>(sessionId)
 
+  // Track whether the watcher has been started for this session so we
+  // don't start duplicate watchers on every poll hit.
+  const watcherStartedRef = useRef(false)
+
   // Reset state when sessionId changes
   useEffect(() => {
     if (prevSessionIdRef.current !== sessionId) {
+      // Clean up watchers for the old session
+      const oldId = prevSessionIdRef.current
+      if (oldId) {
+        void stopWatchers(oldId)
+      }
+
       prevSessionIdRef.current = sessionId
+      watcherStartedRef.current = false
       setStatus(createDefaultStatus(sessionId))
     }
   }, [sessionId])
 
+  // Detection polling: poll detect_agent_in_session every 2s.
+  // On detection, update state. On agent exit, stop watchers and
+  // hold final state for 5s before collapsing.
+  const handleDetection = useCallback(async (sid: string): Promise<void> => {
+    try {
+      const result = await invoke<AgentDetectedEvent | null>(
+        'detect_agent_in_session',
+        { sessionId: sid }
+      )
+
+      if (result && !watcherStartedRef.current) {
+        watcherStartedRef.current = true
+
+        const agentKey = result.agentType as keyof typeof AGENT_TYPE_MAP
+
+        const mapped = AGENT_TYPE_MAP[agentKey] as AgentStatus['agentType']
+
+        setStatus((prev) => ({
+          ...prev,
+          isActive: true,
+          agentType: mapped,
+        }))
+      } else if (!result && watcherStartedRef.current) {
+        // Agent exited — stop watchers
+        watcherStartedRef.current = false
+        void stopWatchers(sid)
+
+        // Hold final state for 5s, then collapse
+        setTimeout(() => {
+          setStatus((prev) =>
+            prev.sessionId === sid ? { ...prev, isActive: false } : prev
+          )
+        }, EXIT_HOLD_MS)
+      }
+    } catch {
+      // Session may not exist yet or IPC failed — ignore
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!sessionId) {
+      return
+    }
+
+    const interval = setInterval(() => {
+      void handleDetection(sessionId)
+    }, DETECTION_POLL_MS)
+
+    // Run immediately on mount
+    void handleDetection(sessionId)
+
+    return (): void => {
+      clearInterval(interval)
+    }
+  }, [sessionId, handleDetection])
+
+  // Event subscriptions for status updates, tool calls, and disconnects
   useEffect(() => {
     if (!sessionId) {
       return
@@ -213,6 +298,17 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       }
     }
   }, [sessionId])
+
+  // Cleanup watchers when the hook unmounts entirely
+  useEffect(
+    () => (): void => {
+      if (sessionId) {
+        void stopWatchers(sessionId)
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only run on unmount
+    []
+  )
 
   return status
 }

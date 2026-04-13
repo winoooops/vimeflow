@@ -37,3 +37,4 @@ libc = "0.2"
 tauri = { version = "2", features = ["test"] }
 tokio = { version = "1", features = ["macros", "rt"] }
 ts-rs = "10"
+tempfile = "3"

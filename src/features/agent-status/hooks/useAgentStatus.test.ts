@@ -1,10 +1,14 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { afterEach, describe, test, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useAgentStatus } from './useAgentStatus'
 
 type EventCallback<T = unknown> = (event: { payload: T }) => void
 
 const eventListeners = new Map<string, EventCallback[]>()
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(() => Promise.resolve(null)),
+}))
 
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(
@@ -38,6 +42,11 @@ describe('useAgentStatus', () => {
   beforeEach(() => {
     eventListeners.clear()
     vi.clearAllMocks()
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   test('returns default inactive status when sessionId is null', () => {
@@ -305,5 +314,81 @@ describe('useAgentStatus', () => {
     })
 
     expect(result.current.toolCalls.active).toBeNull()
+  })
+
+  test('polls detect_agent_in_session on interval', async () => {
+    const { invoke } = await import('@tauri-apps/api/core')
+
+    renderHook(() => useAgentStatus('session-1'))
+
+    // Should have called invoke immediately for detection
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('detect_agent_in_session', {
+        sessionId: 'session-1',
+      })
+    })
+
+    // Advance timer to trigger next poll
+    vi.advanceTimersByTime(2000)
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  test('stops watchers when sessionId changes', async () => {
+    const { invoke } = await import('@tauri-apps/api/core')
+
+    const { rerender } = renderHook(
+      ({ id }: { id: string | null }) => useAgentStatus(id),
+      { initialProps: { id: 'session-1' } }
+    )
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-detected')?.length).toBe(1)
+    })
+
+    rerender({ id: 'session-2' })
+
+    // Should have attempted to stop watchers for old session
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
+        sessionId: 'session-1',
+      })
+    })
+  })
+
+  test('does not start duplicate watchers on repeated detection', async () => {
+    const { invoke: mockInvoke } = await import('@tauri-apps/api/core')
+    const invokeMock = vi.mocked(mockInvoke)
+
+    // Return detected agent on every poll
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'detect_agent_in_session') {
+        return Promise.resolve({
+          sessionId: 'session-1',
+          agentType: 'claudeCode',
+          pid: 123,
+        })
+      }
+
+      return Promise.resolve(null)
+    })
+
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    // Wait for first detection
+    await vi.waitFor(() => {
+      expect(result.current.isActive).toBe(true)
+    })
+
+    // Advance a few more polls
+    act(() => {
+      vi.advanceTimersByTime(6000) // 3 more polls
+    })
+
+    // The hook should have set isActive once and not re-triggered
+    expect(result.current.isActive).toBe(true)
+    expect(result.current.agentType).toBe('claude-code')
   })
 })
