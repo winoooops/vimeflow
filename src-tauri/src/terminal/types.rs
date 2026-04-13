@@ -37,6 +37,10 @@ pub struct SpawnPtyRequest {
     #[cfg_attr(test, ts(optional))]
     #[cfg_attr(test, ts(type = "Record<string, string>"))]
     pub env: Option<HashMap<String, String>>,
+    /// If set, generate statusline bridge files in this directory
+    /// (typically `<project>/.vimeflow/sessions/<session-id>/`)
+    #[cfg_attr(test, ts(optional))]
+    pub agent_status_dir: Option<String>,
 }
 
 /// Request payload for writing data to a PTY session

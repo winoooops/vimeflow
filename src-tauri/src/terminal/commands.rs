@@ -72,9 +72,39 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         return Err(format!("cwd is not a directory: {}", cwd.display()));
     }
 
+    // Generate statusline bridge files if agent_status_dir is provided
+    let bridge_files = if let Some(ref agent_dir) = request.agent_status_dir {
+        match super::bridge::generate_bridge_files(agent_dir, &request.session_id) {
+            Ok(files) => Some(files),
+            Err(e) => {
+                log::warn!(
+                    "Failed to generate statusline bridge for session {}: {}",
+                    request.session_id,
+                    e
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Build command — env from IPC is ignored for security (prevents injection)
     let mut cmd = CommandBuilder::new(&shell);
     cmd.cwd(&cwd);
+
+    // Inject CLAUDE_CONFIG_DIR pointing to the bridge settings directory
+    // so Claude Code picks up the statusline configuration automatically
+    if let Some(ref files) = bridge_files {
+        if let Some(parent) = files.settings_path.parent() {
+            cmd.env("CLAUDE_CONFIG_DIR", parent.as_os_str());
+            log::info!(
+                "Injected CLAUDE_CONFIG_DIR={} for session {}",
+                parent.display(),
+                request.session_id
+            );
+        }
+    }
 
     if request.env.is_some() {
         log::warn!(
@@ -281,6 +311,7 @@ mod tests {
                 .to_string(),
             shell: None,
             env: None,
+            agent_status_dir: None,
         };
 
         let result = spawn_pty(handle.clone(), state.clone(), request).await;
@@ -351,6 +382,7 @@ mod tests {
                 .to_string(),
             shell: None,
             env: None,
+            agent_status_dir: None,
         };
 
         spawn_pty(handle.clone(), state.clone(), spawn_request)
@@ -392,6 +424,7 @@ mod tests {
                 .to_string(),
             shell: None,
             env: None,
+            agent_status_dir: None,
         };
 
         spawn_pty(handle.clone(), state.clone(), spawn_request)
@@ -455,6 +488,7 @@ mod tests {
                 .to_string(),
             shell: None,
             env: None,
+            agent_status_dir: None,
         };
 
         spawn_pty(handle.clone(), state.clone(), spawn_request)

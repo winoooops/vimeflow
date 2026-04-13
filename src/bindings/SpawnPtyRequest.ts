@@ -20,4 +20,9 @@ export type SpawnPtyRequest = {
    * Optional environment variables
    */
   env?: Record<string, string>
+  /**
+   * If set, generate statusline bridge files in this directory
+   * (typically `<project>/.vimeflow/sessions/<session-id>/`)
+   */
+  agentStatusDir?: string
 }

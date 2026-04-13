@@ -1,7 +1,12 @@
+mod agent;
 mod filesystem;
 mod git;
 mod terminal;
 
+use agent::{
+    detect_agent_in_session, start_agent_watcher, stop_agent_watcher, start_transcript_watcher,
+    stop_transcript_watcher, AgentWatcherState, TranscriptState,
+};
 use filesystem::{list_dir, read_file, write_file};
 use git::{get_git_diff, git_status};
 use terminal::{kill_pty, resize_pty, spawn_pty, write_pty, PtyState};
@@ -20,11 +25,18 @@ pub fn run() {
             Ok(())
         })
         .manage(PtyState::new())
+        .manage(AgentWatcherState::new())
+        .manage(TranscriptState::new())
         .invoke_handler(tauri::generate_handler![
             spawn_pty,
             write_pty,
             resize_pty,
             kill_pty,
+            detect_agent_in_session,
+            start_agent_watcher,
+            stop_agent_watcher,
+            start_transcript_watcher,
+            stop_transcript_watcher,
             list_dir,
             read_file,
             write_file,
