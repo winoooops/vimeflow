@@ -1,7 +1,9 @@
+mod agent;
 mod filesystem;
 mod git;
 mod terminal;
 
+use agent::detect_agent_in_session;
 use filesystem::{list_dir, read_file, write_file};
 use git::{get_git_diff, git_status};
 use terminal::{kill_pty, resize_pty, spawn_pty, write_pty, PtyState};
@@ -25,6 +27,7 @@ pub fn run() {
             write_pty,
             resize_pty,
             kill_pty,
+            detect_agent_in_session,
             list_dir,
             read_file,
             write_file,

@@ -2,433 +2,282 @@
   {
     "id": 1,
     "phase": 1,
-    "category": "backend-types",
-    "description": "Add ReadFileRequest and WriteFileRequest types to Rust backend",
+    "category": "scaffold",
+    "description": "Create agent module directory structure",
     "steps": [
-      "Open src-tauri/src/filesystem/types.rs",
-      "Add ReadFileRequest struct with path: String field",
-      "Add WriteFileRequest struct with path and content: String fields",
-      "Derive Debug and Deserialize for both structs"
+      "Create src-tauri/src/agent/ directory",
+      "Create src-tauri/src/agent/mod.rs with module exports",
+      "Verify directory structure matches terminal module pattern"
     ],
     "passes": true,
     "dependencies": []
   },
   {
     "id": 2,
-    "phase": 1,
-    "category": "backend-tests",
-    "description": "Write failing tests for read_file command in Rust",
+    "phase": 2,
+    "category": "types",
+    "description": "Define AgentType enum",
     "steps": [
-      "Open src-tauri/src/filesystem/commands.rs test module",
-      "Add test: read_file_returns_content (reads file from temp dir)",
-      "Add test: read_file_rejects_path_outside_home (security check)",
-      "Add test: read_file_rejects_directory (validates file type)",
-      "Run cargo test to verify failures"
+      "Create src-tauri/src/agent/types.rs",
+      "Define AgentType enum with ClaudeCode, Codex, Aider, Generic variants",
+      "Add Debug, Clone, Serialize, Deserialize derives",
+      "Add ts-rs derives with cfg(test) attribute",
+      "Verify matches terminal/types.rs pattern exactly"
     ],
     "passes": true,
     "dependencies": [1]
   },
   {
     "id": 3,
-    "phase": 1,
-    "category": "backend-implementation",
-    "description": "Implement read_file Tauri command with home-directory scoping",
+    "phase": 2,
+    "category": "types",
+    "description": "Define AgentDetectedEvent struct",
     "steps": [
-      "Add read_file function to src-tauri/src/filesystem/commands.rs",
-      "Expand ~ to home directory using expand_home helper",
-      "Canonicalize path and verify it's within home directory",
-      "Verify path is a file (not directory)",
-      "Read file content as UTF-8 string",
-      "Run cargo test to verify all read_file tests pass"
+      "Add AgentDetectedEvent struct with session_id, agent_type, pid fields",
+      "Apply camelCase serde rename_all",
+      "Add all required derives matching pattern",
+      "Export via ts-rs for TypeScript bindings"
     ],
     "passes": true,
     "dependencies": [2]
   },
   {
     "id": 4,
-    "phase": 1,
-    "category": "backend-tests",
-    "description": "Write failing tests for write_file command in Rust",
+    "phase": 2,
+    "category": "types",
+    "description": "Define AgentDisconnectedEvent struct",
     "steps": [
-      "Open src-tauri/src/filesystem/commands.rs test module",
-      "Add test: write_file_creates_file (writes content to new file)",
-      "Add test: write_file_creates_parent_dirs (creates missing directories)",
-      "Add test: write_file_rejects_path_outside_home (security check)",
-      "Add test: write_file_overwrites_existing (updates existing file)",
-      "Run cargo test to verify failures"
+      "Add AgentDisconnectedEvent struct with session_id field",
+      "Apply camelCase serde rename_all",
+      "Add all required derives matching pattern"
     ],
     "passes": true,
-    "dependencies": [3]
+    "dependencies": [2]
   },
   {
     "id": 5,
-    "phase": 1,
-    "category": "backend-implementation",
-    "description": "Implement write_file Tauri command with home-directory scoping",
+    "phase": 2,
+    "category": "types",
+    "description": "Define context window and usage types",
     "steps": [
-      "Add write_file function to src-tauri/src/filesystem/commands.rs",
-      "Expand ~ to home directory",
-      "Verify path is within home directory before write",
-      "Create parent directories if needed (fs::create_dir_all)",
-      "Write content to file (overwrites existing)",
-      "Run cargo test to verify all write_file tests pass"
+      "Add CurrentUsage struct with token fields",
+      "Add ContextWindowStatus struct with percentages and token counts",
+      "Apply camelCase serde rename_all to all fields",
+      "Use Option<T> for optional fields per spec"
     ],
     "passes": true,
-    "dependencies": [4]
+    "dependencies": [2]
   },
   {
     "id": 6,
-    "phase": 1,
-    "category": "backend-registration",
-    "description": "Register read_file and write_file in Tauri invoke handler",
+    "phase": 2,
+    "category": "types",
+    "description": "Define cost and rate limit types",
     "steps": [
-      "Export read_file and write_file from src-tauri/src/filesystem/mod.rs",
-      "Import in src-tauri/src/lib.rs (add to use filesystem:: statement)",
-      "Add read_file and write_file to invoke_handler! macro",
-      "Run cargo build to verify compilation",
-      "Run cargo clippy to ensure no warnings"
+      "Add CostMetrics struct with USD cost and duration fields",
+      "Add RateLimitInfo struct with used_percentage and resets_at",
+      "Add RateLimits struct with five_hour and optional seven_day",
+      "Apply camelCase serde rename_all to all"
     ],
     "passes": true,
-    "dependencies": [5]
+    "dependencies": [2]
   },
   {
     "id": 7,
     "phase": 2,
-    "category": "packages",
-    "description": "Install CodeMirror 6 and vim extension packages",
+    "category": "types",
+    "description": "Define AgentStatusEvent struct",
     "steps": [
-      "Run npm install codemirror @codemirror/view @codemirror/state @codemirror/language",
-      "Run npm install @codemirror/lang-javascript @codemirror/lang-rust @codemirror/lang-json",
-      "Run npm install @codemirror/lang-css @codemirror/lang-html",
-      "Run npm install @replit/codemirror-vim",
-      "Verify package-lock.json updates",
-      "Run npm install to verify clean install"
+      "Add AgentStatusEvent struct with session_id, model info, version fields",
+      "Include context_window, cost, rate_limits nested types",
+      "Apply camelCase serde rename_all",
+      "Verify all Option<T> fields match spec"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [5, 6]
   },
   {
     "id": 8,
     "phase": 2,
-    "category": "frontend-service",
-    "description": "Extend IFileSystemService with readFile and writeFile methods",
+    "category": "types",
+    "description": "Define tool call event types",
     "steps": [
-      "Open src/features/files/services/fileSystemService.ts",
-      "Add readFile(path: string): Promise<string> to interface",
-      "Add writeFile(path: string, content: string): Promise<void> to interface",
-      "Implement readFile in TauriFileSystemService using invoke('read_file')",
-      "Implement writeFile in TauriFileSystemService using invoke('write_file')",
-      "Update MockFileSystemService with stub implementations",
-      "Write unit tests in fileSystemService.test.ts"
+      "Add ToolCallStatus enum with Running, Done, Failed variants",
+      "Add AgentToolCallEvent struct with tool, args, status, timestamp, duration",
+      "Apply camelCase serde rename_all",
+      "Export all types via ts-rs"
     ],
     "passes": true,
-    "dependencies": [6, 7]
+    "dependencies": [2]
   },
   {
     "id": 9,
-    "phase": 2,
-    "category": "frontend-service",
-    "description": "Create language service for filename to CodeMirror language mapping",
+    "phase": 3,
+    "category": "detector",
+    "description": "Create agent detector module stub",
     "steps": [
-      "Create src/features/editor/services/languageService.ts",
-      "Implement getLanguageExtension(filename: string) function",
-      "Map .ts/.tsx to typescript(), .rs to rust(), .json to json(), etc.",
-      "Default to null for unknown extensions",
-      "Create src/features/editor/services/languageService.test.ts",
-      "Write tests for each language mapping (.ts, .rs, .json, .css, .html)",
-      "Run npm test to verify"
+      "Create src-tauri/src/agent/detector.rs",
+      "Add module doc comment",
+      "Import AgentType from types module",
+      "Create detect_agent function signature returning Option<(AgentType, u32)>"
     ],
     "passes": true,
-    "dependencies": [7]
+    "dependencies": [2]
   },
   {
     "id": 10,
-    "phase": 2,
-    "category": "frontend-theme",
-    "description": "Create Catppuccin Mocha CodeMirror theme matching Obsidian Lens",
+    "phase": 3,
+    "category": "detector",
+    "description": "Implement /proc filesystem helpers",
     "steps": [
-      "Create src/features/editor/theme/catppuccin.ts",
-      "Define EditorView theme with Catppuccin Mocha colors",
-      "Map editor background to #121221 (surface)",
-      "Map gutter background to #1a1a2a (surface-container-low)",
-      "Map cursor to #e2c7ff (primary)",
-      "Define syntax highlighting: keywords mauve, strings green, functions blue",
-      "Create src/features/editor/theme/catppuccin.test.ts",
-      "Write structure validation tests"
+      "Add helper to read /proc/<pid>/task/<pid>/children",
+      "Add helper to read /proc/<pid>/cmdline (null-separated)",
+      "Add helper to parse cmdline into Vec<String>",
+      "Handle missing /proc entries gracefully (process may exit)"
     ],
     "passes": true,
-    "dependencies": [7]
+    "dependencies": [9]
   },
   {
     "id": 11,
     "phase": 3,
-    "category": "frontend-hooks",
-    "description": "Create useCodeMirror hook to manage EditorView instance",
+    "category": "detector",
+    "description": "Implement recursive PID collection",
     "steps": [
-      "Create src/features/editor/hooks/useCodeMirror.ts",
-      "Accept containerRef, initialContent, language, onSave callback",
-      "Initialize EditorView with vim(), catppuccin theme, language extension",
-      "Configure vim :w command to call onSave callback",
-      "Return editorView instance and updateContent function",
-      "Clean up EditorView on unmount",
-      "Create src/features/editor/hooks/useCodeMirror.test.ts",
-      "Write tests for initialization, vim config, cleanup"
+      "Create function to recursively collect descendant PIDs",
+      "Use BFS or DFS traversal of process tree",
+      "Handle cycles and missing entries",
+      "Return Vec<u32> of all descendants"
     ],
     "passes": true,
-    "dependencies": [9, 10]
+    "dependencies": [10]
   },
   {
     "id": 12,
     "phase": 3,
-    "category": "frontend-hooks",
-    "description": "Create useVimMode hook to track vim mode from CodeMirror",
+    "category": "detector",
+    "description": "Implement agent binary detection",
     "steps": [
-      "Create src/features/editor/hooks/useVimMode.ts",
-      "Accept editorView instance as parameter",
-      "Listen to vim mode change events from @replit/codemirror-vim",
-      "Track current mode: NORMAL, INSERT, VISUAL, COMMAND",
-      "Return current vim mode string",
-      "Create src/features/editor/hooks/useVimMode.test.ts",
-      "Write tests for mode tracking"
+      "For each descendant PID, read cmdline",
+      "Extract binary name from argv[0]",
+      "Match 'claude' → ClaudeCode, 'codex' → Codex, 'aider' → Aider",
+      "Return first match with PID, or None if no agents found"
     ],
     "passes": true,
     "dependencies": [11]
   },
   {
     "id": 13,
-    "phase": 3,
-    "category": "frontend-hooks",
-    "description": "Create useEditorBuffer hook for file state management",
+    "phase": 4,
+    "category": "integration",
+    "description": "Create detect_agent_in_session Tauri command",
     "steps": [
-      "Create src/features/editor/hooks/useEditorBuffer.ts",
-      "Track filePath, originalContent, isDirty state",
-      "Implement openFile(path) function using fileSystemService.readFile",
-      "Implement saveFile() function using fileSystemService.writeFile",
-      "Implement dirty detection by comparing current vs original content",
-      "Return file state, openFile, saveFile, isDirty",
-      "Create src/features/editor/hooks/useEditorBuffer.test.ts",
-      "Write tests for open, save, dirty detection"
+      "Create src-tauri/src/agent/commands.rs",
+      "Add #[tauri::command] async fn detect_agent_in_session",
+      "Accept PtyState and session_id parameters",
+      "Call state.get_pid() to get child PID",
+      "Call detector::detect_agent() with PID",
+      "Return AgentDetectedEvent on success, None if no agent"
     ],
     "passes": true,
-    "dependencies": [8, 11]
+    "dependencies": [12, 3]
   },
   {
     "id": 14,
-    "phase": 3,
-    "category": "frontend-component",
-    "description": "Replace Shiki with CodeMirror in CodeEditor component",
+    "phase": 4,
+    "category": "integration",
+    "description": "Register agent module in lib.rs",
     "steps": [
-      "Open src/features/editor/components/CodeEditor.tsx",
-      "Remove Shiki HTML rendering and shikiService import",
-      "Add container div ref for CodeMirror mount",
-      "Use useCodeMirror hook with file content and language",
-      "Use useVimMode hook to get current mode",
-      "Use useEditorBuffer hook for file management",
-      "Wire vim :w command to save file via useEditorBuffer",
-      "Update src/features/editor/components/CodeEditor.test.tsx",
-      "Test CodeMirror renders, vim mode tracking, save functionality"
+      "Add 'mod agent;' to src-tauri/src/lib.rs",
+      "Import detect_agent_in_session command",
+      "Add to invoke_handler macro",
+      "Verify cargo build succeeds"
     ],
     "passes": true,
-    "dependencies": [11, 12, 13]
+    "dependencies": [13]
   },
   {
     "id": 15,
-    "phase": 3,
-    "category": "frontend-component",
-    "description": "Create UnsavedChangesDialog component with glassmorphism style",
+    "phase": 4,
+    "category": "integration",
+    "description": "Export types and detector from agent/mod.rs",
     "steps": [
-      "Create src/features/editor/components/UnsavedChangesDialog.tsx",
-      "Accept isOpen, fileName, onSave, onDiscard, onCancel props",
-      "Render backdrop with backdrop-blur-sm bg-black/40",
-      "Render glassmorphism panel matching command palette style",
-      "Add three buttons: Save (primary), Discard (error), Cancel (neutral)",
-      "Use framer-motion for spring animation (stiffness 400, damping 30)",
-      "Handle Esc key to call onCancel",
-      "Create src/features/editor/components/UnsavedChangesDialog.test.tsx",
-      "Test render, button callbacks, keyboard handling"
+      "Add pub mod types; pub mod detector; pub mod commands;",
+      "Re-export detect_agent_in_session as pub use",
+      "Verify all modules accessible from agent namespace"
     ],
     "passes": true,
-    "dependencies": [7]
+    "dependencies": [13]
   },
   {
     "id": 16,
-    "phase": 3,
-    "category": "frontend-component",
-    "description": "Wire VimStatusBar to real CodeMirror vim state",
+    "phase": 5,
+    "category": "testing",
+    "description": "Write unit tests for /proc helpers",
     "steps": [
-      "Open src/features/editor/components/VimStatusBar.tsx",
-      "Accept vimMode and isDirty props",
-      "Display vimMode (NORMAL/INSERT/VISUAL/COMMAND)",
-      "Display [+] indicator when isDirty is true",
-      "Update layout to match design spec",
-      "Update src/features/editor/components/VimStatusBar.test.tsx",
-      "Test mode display and dirty indicator"
+      "Add #[cfg(test)] mod tests to detector.rs",
+      "Test reading /proc/self/cmdline (always exists)",
+      "Test handling missing PID gracefully",
+      "Test cmdline parsing with null separators"
     ],
     "passes": true,
-    "dependencies": [12, 13]
+    "dependencies": [10]
   },
   {
     "id": 17,
-    "phase": 4,
-    "category": "integration",
-    "description": "Update BottomDrawer to be resizable and receive file selection",
+    "phase": 5,
+    "category": "testing",
+    "description": "Write unit tests for agent detection logic",
     "steps": [
-      "Open src/features/workspace/components/BottomDrawer.tsx",
-      "Add useResizable hook with vertical axis",
-      "Set default height to 50% of parent",
-      "Set min height 150px, max 80%",
-      "Add drag handle at top edge",
-      "Accept selectedFilePath prop and pass to CodeEditor",
-      "Update BottomDrawer.test.tsx for resize functionality"
+      "Create mock process tree scenarios",
+      "Test detecting claude binary in descendants",
+      "Test detecting codex and aider",
+      "Test returning None when no agent present",
+      "Test Generic fallback if needed"
     ],
     "passes": true,
-    "dependencies": [14]
+    "dependencies": [12, 16]
   },
   {
     "id": 18,
-    "phase": 4,
-    "category": "integration",
-    "description": "Wire FileExplorer onFileSelect to parent WorkspaceView",
+    "phase": 5,
+    "category": "testing",
+    "description": "Run cargo test and verify all tests pass",
     "steps": [
-      "Open src/features/workspace/components/panels/FileExplorer.tsx",
-      "Add onFileSelect callback prop",
-      "Call onFileSelect(filePath) when file is clicked",
-      "Update FileExplorer.test.tsx to verify callback"
+      "Run cargo test",
+      "Verify all unit tests pass",
+      "Run cargo clippy -- -D warnings",
+      "Run cargo fmt --check"
     ],
     "passes": true,
-    "dependencies": []
+    "dependencies": [17]
   },
   {
     "id": 19,
-    "phase": 4,
-    "category": "integration",
-    "description": "Update WorkspaceView with file selection state and unsaved changes flow",
+    "phase": 6,
+    "category": "bindings",
+    "description": "Verify ts-rs bindings generation",
     "steps": [
-      "Open src/features/workspace/WorkspaceView.tsx",
-      "Add selectedFilePath state",
-      "Add showUnsavedDialog state",
-      "Implement handleFileSelect: check isDirty, show dialog if needed",
-      "Pass selectedFilePath to BottomDrawer",
-      "Render UnsavedChangesDialog with save/discard/cancel handlers",
-      "Update grid template columns (sidebar 340px, activity 360px)",
-      "Update WorkspaceView.test.tsx for file selection flow"
+      "Run cargo test to trigger ts-rs binding generation",
+      "Verify new .ts files appear in src/bindings/",
+      "Check AgentType.ts, AgentDetectedEvent.ts, etc. exist",
+      "Verify camelCase field names in generated TypeScript"
     ],
     "passes": true,
-    "dependencies": [15, 17, 18]
+    "dependencies": [18]
   },
   {
     "id": 20,
-    "phase": 4,
-    "category": "integration",
-    "description": "Update Sidebar default sizes for better visibility",
+    "phase": 6,
+    "category": "bindings",
+    "description": "Update src/bindings/index.ts with new exports",
     "steps": [
-      "Open src/features/workspace/components/Sidebar.tsx",
-      "Update default width from 256px to 340px",
-      "Update max width from 480px to 560px",
-      "Update FileExplorer default height from 240px to 320px",
-      "Verify resize handles still work correctly",
-      "Update Sidebar.test.tsx if needed"
-    ],
-    "passes": true,
-    "dependencies": []
-  },
-  {
-    "id": 21,
-    "phase": 5,
-    "category": "testing",
-    "description": "Write integration test for file open flow",
-    "steps": [
-      "Create integration test file or add to existing suite",
-      "Test: FileExplorer click → read_file → CodeMirror content update",
-      "Verify file path state updates",
-      "Verify editor content matches file content",
-      "Verify isDirty starts as false",
-      "Run npm test to verify"
+      "Open src/bindings/index.ts",
+      "Add export * from './AgentType' and all other new types",
+      "Verify exports match naming convention",
+      "Run npm run type-check to verify TypeScript compiles"
     ],
     "passes": true,
     "dependencies": [19]
-  },
-  {
-    "id": 22,
-    "phase": 5,
-    "category": "testing",
-    "description": "Write integration test for unsaved changes flow",
-    "steps": [
-      "Test: Open file → edit content → isDirty becomes true",
-      "Test: Click different file → UnsavedChangesDialog shows",
-      "Test: Click Save → write_file called → new file opens",
-      "Test: Click Discard → new file opens without saving",
-      "Test: Click Cancel → stays on current file",
-      "Run npm test to verify"
-    ],
-    "passes": true,
-    "dependencies": [19]
-  },
-  {
-    "id": 23,
-    "phase": 5,
-    "category": "testing",
-    "description": "Write integration test for vim save command",
-    "steps": [
-      "Test: Open file → edit content → type :w in vim",
-      "Verify write_file Tauri command is invoked",
-      "Verify isDirty becomes false after save",
-      "Verify VimStatusBar removes [+] indicator",
-      "Run npm test to verify"
-    ],
-    "passes": true,
-    "dependencies": [19]
-  },
-  {
-    "id": 24,
-    "phase": 5,
-    "category": "cleanup",
-    "description": "Remove Shiki-related files and dependencies",
-    "steps": [
-      "Remove src/features/editor/services/shikiService.ts",
-      "Remove src/features/editor/services/shikiService.test.ts",
-      "Remove src/features/editor/components/LineNumbers.tsx (if exists)",
-      "Remove shiki from package.json dependencies",
-      "Run npm install to clean lock file",
-      "Search codebase for remaining shiki imports"
-    ],
-    "passes": true,
-    "dependencies": [14]
-  },
-  {
-    "id": 25,
-    "phase": 5,
-    "category": "quality",
-    "description": "Run all quality checks and fix issues",
-    "steps": [
-      "Run npm run lint and fix all ESLint issues",
-      "Run npm run type-check and fix TypeScript errors",
-      "Run npm test and achieve 80%+ coverage",
-      "Run cd src-tauri && cargo clippy and fix warnings",
-      "Run cd src-tauri && cargo test and verify all pass",
-      "Run npm run format to apply Prettier"
-    ],
-    "passes": true,
-    "dependencies": [21, 22, 23, 24]
-  },
-  {
-    "id": 26,
-    "phase": 5,
-    "category": "verification",
-    "description": "Manual verification checklist for CodeMirror editor",
-    "steps": [
-      "Verify: Can click file in explorer and see content in editor",
-      "Verify: Vim motions work (hjkl, w, b, $, 0, gg, G)",
-      "Verify: Vim modes work (i for INSERT, v for VISUAL, : for COMMAND, Esc for NORMAL)",
-      "Verify: Can edit content and see [+] in status bar",
-      "Verify: :w command saves file and removes [+]",
-      "Verify: Switching files when dirty shows unsaved changes dialog",
-      "Verify: Save/Discard/Cancel buttons work correctly",
-      "Verify: BottomDrawer is resizable with drag handle",
-      "Verify: Catppuccin Mocha theme matches design spec",
-      "Verify: Syntax highlighting works for .ts, .rs, .json files"
-    ],
-    "passes": true,
-    "dependencies": [25]
   }
 ]
