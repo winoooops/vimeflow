@@ -72,9 +72,18 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         return Err(format!("cwd is not a directory: {}", cwd.display()));
     }
 
+    // Validate session_id is a safe path component (prevent traversal via ../ or /)
+    if request.session_id.contains('/')
+        || request.session_id.contains('\\')
+        || request.session_id.starts_with('.')
+    {
+        return Err(format!(
+            "invalid session_id: {}",
+            request.session_id
+        ));
+    }
+
     // Generate statusline bridge files.
-    // Use the resolved (canonicalized) cwd to construct the path — the frontend
-    // may pass `~` which isn't expanded by Rust path APIs.
     let bridge_files = if request.enable_agent_bridge {
         let dir = cwd
             .join(".vimeflow")

@@ -238,6 +238,15 @@ pub async fn start_agent_watcher(
 
     let path = PathBuf::from(&status_file_path);
 
+    // Scope validation: only allow paths within .vimeflow/sessions/
+    if let Ok(canonical) = std::fs::canonicalize(path.parent().unwrap_or(&path)) {
+        if !canonical.to_string_lossy().contains(".vimeflow/sessions/")
+            && !canonical.to_string_lossy().contains(".vimeflow\\sessions\\")
+        {
+            return Err("status file path must be within .vimeflow/sessions/".to_string());
+        }
+    }
+
     // Stop any existing watcher for this session
     state.remove(&session_id);
 

@@ -314,12 +314,17 @@ fn summarize_input(input: Option<&Value>) -> String {
     truncate_string(&s, MAX_ARGS_LEN)
 }
 
-/// Truncate a string to max_len, appending "..." if truncated
+/// Truncate a string to max_len characters, appending "..." if truncated.
+/// Uses char boundaries to avoid panics on multi-byte UTF-8 (emoji, CJK).
 fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    if s.chars().count() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let end = s
+            .char_indices()
+            .nth(max_len.saturating_sub(3))
+            .map_or(s.len(), |(i, _)| i);
+        format!("{}...", &s[..end])
     }
 }
 

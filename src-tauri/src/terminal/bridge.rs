@@ -67,14 +67,20 @@ pub fn generate_bridge_files(agent_status_dir: &str, session_id: &str) -> Result
     fs::set_permissions(&script_path, fs::Permissions::from_mode(0o755))
         .map_err(|e| format!("failed to set script permissions: {}", e))?;
 
-    // Generate the settings.json overlay
-    let settings_content = format!(
-        "{{\n  \"statusLine\": {{\n    \"type\": \"command\",\n    \"command\": \"{script}\",\n    \"refreshInterval\": 5\n  }}\n}}\n",
-        script = script_path.display(),
-    );
-
-    fs::write(&settings_path, &settings_content)
-        .map_err(|e| format!("failed to write settings.json: {}", e))?;
+    // Generate the settings.json overlay using serde_json for proper escaping
+    let settings = serde_json::json!({
+        "statusLine": {
+            "type": "command",
+            "command": script_path.to_string_lossy(),
+            "refreshInterval": 5
+        }
+    });
+    fs::write(
+        &settings_path,
+        serde_json::to_string_pretty(&settings)
+            .map_err(|e| format!("failed to serialize settings: {}", e))?,
+    )
+    .map_err(|e| format!("failed to write settings.json: {}", e))?;
 
     // Generate shell init script that wraps `claude` with --settings.
     // Must unalias first — if the user has `alias claude='... claude ...'`,
