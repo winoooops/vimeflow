@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import { useAgentStatus } from '../hooks/useAgentStatus'
+import { StatusCard } from './StatusCard'
 
 interface AgentStatusPanelProps {
   sessionId: string | null
@@ -21,9 +22,22 @@ export const AgentStatusPanel = ({
           : 'width 200ms ease-out',
       }}
     >
-      {/* StatusCard + BudgetMetrics — sub-spec 5 */}
-      {/* ContextBucket — sub-spec 6 */}
-      {/* ToolCallSummary + sections — sub-spec 7 */}
+      {status.isActive && status.agentType ? (
+        <div className="flex flex-col gap-2 p-2">
+          <StatusCard
+            agentType={status.agentType}
+            modelId={status.modelId}
+            modelDisplayName={status.modelDisplayName}
+            status="running"
+            cost={status.cost}
+            rateLimits={status.rateLimits}
+            totalInputTokens={status.contextWindow?.totalInputTokens ?? 0}
+            totalOutputTokens={status.contextWindow?.totalOutputTokens ?? 0}
+          />
+          {/* ContextBucket — sub-spec 6 */}
+          {/* ToolCallSummary + sections — sub-spec 7 */}
+        </div>
+      ) : null}
     </div>
   )
 }
