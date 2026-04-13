@@ -7,6 +7,7 @@
 pub mod commands;
 pub mod detector;
 pub mod statusline;
+pub mod transcript;
 pub mod types;
 pub mod watcher;
 
@@ -17,3 +18,4 @@ pub use types::{AgentDetectedEvent, AgentDisconnectedEvent, AgentType};
 // Re-export Tauri commands
 pub use commands::detect_agent_in_session;
 pub use watcher::{start_agent_watcher, stop_agent_watcher, AgentWatcherState};
+pub use transcript::{start_transcript_watcher, stop_transcript_watcher, TranscriptState};
