@@ -14,7 +14,7 @@ Key deviations and additions from the original spec during implementation:
 - **Path derivation from PTY state**: `start_agent_watcher` derives the status file path server-side from the PTY session's resolved CWD (stored in `PtyState`), rather than accepting a path from the frontend IPC call. This prevents path traversal attacks from crafted IPC calls.
 - **Env vars for script paths**: `bridge.rs` uses `VIMEFLOW_STATUS_FILE` and `VIMEFLOW_CLAUDE_SETTINGS` env vars instead of embedding absolute paths in the generated shell scripts, avoiding issues with CWD paths that contain quotes or shell metacharacters.
 - **Shell init wrapping**: A `init.sh` script is generated that defines a `claude()` shell function wrapping `command claude --settings ...`, with `unalias claude` to prevent alias expansion errors during function definition.
-- **TOCTOU prevention in transcript**: `TranscriptState::start_if_not_exists` uses double-check locking — checks under lock, creates handle outside lock, then re-checks under lock before inserting to handle concurrent callers.
+- **TOCTOU prevention in transcript**: `TranscriptState::start_or_replace` uses double-check locking: it checks the active path under lock, creates the handle outside the lock, then re-checks under lock before inserting to handle concurrent callers.
 - **Civil calendar without chrono**: `transcript.rs` implements a hand-rolled `days_to_date()` using the civil calendar algorithm to produce ISO 8601 timestamps, avoiding a `chrono` dependency for a single formatting call.
 
 ## Overview

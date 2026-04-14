@@ -2,8 +2,8 @@
 id: filesystem-scope
 category: security
 created: 2026-04-09
-last_updated: 2026-04-10
-ref_count: 1
+last_updated: 2026-04-14
+ref_count: 2
 ---
 
 # Filesystem Scope
@@ -141,3 +141,13 @@ enumerate sensitive directories without scope restrictions.
 - **Finding:** Temp file named `.{file_name}.vimeflow.tmp.{pid}` — PID is constant for the process lifetime, so two concurrent `write_file` IPC calls targeting the same path collide on `create_new(true)` with `EEXIST`. Common trigger: `:w :w` in vim (the save callback fires on every keypress).
 - **Fix:** Add a per-process `AtomicU64` counter and append its value to the temp-file name, giving every invocation a unique path.
 - **Commit:** `38292c7 fix: address Claude review round 15 findings`
+
+### 15. Agent status transcript path not scoped before tailing
+
+- **Source:** github-claude | PR #63 round 1 | 2026-04-14
+- **Severity:** MEDIUM
+- **File:** `src-tauri/src/agent/watcher.rs`
+- **Finding:** `maybe_start_transcript` converted the `transcript_path` string from `status.json` directly into a `PathBuf` and passed it to the transcript tailer. A crafted or injected statusline could make Vimeflow open and tail an arbitrary local file.
+- **Fix:** Add a shared transcript-path validator that canonicalizes the file and requires it to resolve under the canonical `~/.claude` root before tailing. Use it from both `maybe_start_transcript` and the direct `start_transcript_watcher` IPC command.
+- **Verification:** Added `validate_transcript_path_rejects_path_outside_claude_root`; `cargo test --lib agent::transcript -j1`.
+- **Commit:** (pending — agent-status-sidebar PR)

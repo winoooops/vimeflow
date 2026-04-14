@@ -4,7 +4,7 @@
 //! Emits `agent-tool-call` Tauri events for each tool call start and completion.
 
 use std::collections::HashMap;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,6 +21,35 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Maximum length for the args summary string
 const MAX_ARGS_LEN: usize = 100;
+
+pub(crate) fn validate_transcript_path(transcript_path: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(transcript_path);
+    let canonical = fs::canonicalize(&path)
+        .map_err(|e| format!("invalid transcript path '{}': {}", transcript_path, e))?;
+
+    if !canonical.is_file() {
+        return Err(format!("not a transcript file: {}", canonical.display()));
+    }
+
+    let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
+    let claude_root = home.join(".claude");
+    let claude_root = fs::canonicalize(&claude_root).map_err(|e| {
+        format!(
+            "cannot resolve Claude transcript root '{}': {}",
+            claude_root.display(),
+            e
+        )
+    })?;
+
+    if !canonical.starts_with(&claude_root) {
+        return Err(format!(
+            "access denied: transcript path is outside Claude directory: {}",
+            canonical.display()
+        ));
+    }
+
+    Ok(canonical)
+}
 
 struct InFlightToolCall {
     started_at: Instant,
@@ -58,6 +87,12 @@ impl TranscriptHandle {
     }
 }
 
+impl Drop for TranscriptHandle {
+    fn drop(&mut self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+    }
+}
+
 /// State shared across transcript watchers, keyed by session ID
 #[derive(Default, Clone)]
 pub struct TranscriptState {
@@ -91,31 +126,61 @@ impl TranscriptState {
         session_id: String,
         transcript_path: PathBuf,
     ) -> Result<TranscriptStartStatus, String> {
-        let (old_handle, status) = {
-            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
-
+        {
+            let watchers = self.watchers.lock().expect("failed to lock watchers");
             if let Some(current) = watchers.get(&session_id) {
                 if current.transcript_path == transcript_path {
                     return Ok(TranscriptStartStatus::AlreadyRunning);
                 }
             }
+        }
 
-            let handle = start_tailing(app_handle, session_id.clone(), transcript_path.clone())?;
-            let old = watchers.insert(
-                session_id,
-                TranscriptWatcher {
-                    transcript_path,
-                    handle,
-                },
-            );
-            let status = if old.is_some() {
-                TranscriptStartStatus::Replaced
+        let mut new_handle = Some(start_tailing(
+            app_handle,
+            session_id.clone(),
+            transcript_path.clone(),
+        )?);
+
+        let (old_handle, status) = {
+            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+
+            if let Some(current) = watchers.get(&session_id) {
+                if current.transcript_path == transcript_path {
+                    (None, TranscriptStartStatus::AlreadyRunning)
+                } else {
+                    let old = watchers.insert(
+                        session_id,
+                        TranscriptWatcher {
+                            transcript_path,
+                            handle: new_handle
+                                .take()
+                                .expect("new transcript handle should be available"),
+                        },
+                    );
+
+                    (
+                        old.map(|watcher| watcher.handle),
+                        TranscriptStartStatus::Replaced,
+                    )
+                }
             } else {
-                TranscriptStartStatus::Started
-            };
+                watchers.insert(
+                    session_id,
+                    TranscriptWatcher {
+                        transcript_path,
+                        handle: new_handle
+                            .take()
+                            .expect("new transcript handle should be available"),
+                    },
+                );
 
-            (old.map(|watcher| watcher.handle), status)
+                (None, TranscriptStartStatus::Started)
+            }
         };
+
+        if let Some(handle) = new_handle {
+            handle.stop();
+        }
 
         if let Some(handle) = old_handle {
             handle.stop();
@@ -479,10 +544,7 @@ pub async fn start_transcript_watcher(
     session_id: String,
     transcript_path: String,
 ) -> Result<(), String> {
-    let path = PathBuf::from(&transcript_path);
-    if !path.exists() {
-        return Err(format!("Transcript file not found: {}", transcript_path));
-    }
+    let path = validate_transcript_path(&transcript_path)?;
     state.start(app_handle, session_id, path)
 }
 
@@ -535,6 +597,35 @@ mod tests {
         assert_eq!(replaced_status, TranscriptStartStatus::Replaced);
 
         state.stop(&session_id).expect("failed to stop watcher");
+    }
+
+    #[test]
+    fn transcript_handle_drop_sets_stop_flag() {
+        let stop_flag = Arc::new(AtomicBool::new(false));
+
+        {
+            let _handle = TranscriptHandle {
+                stop_flag: Arc::clone(&stop_flag),
+                join_handle: None,
+            };
+        }
+
+        assert!(stop_flag.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn validate_transcript_path_rejects_path_outside_claude_root() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let transcript_path = tmp.path().join("transcript.jsonl");
+        std::fs::write(&transcript_path, "").expect("failed to write transcript");
+
+        let result = validate_transcript_path(
+            transcript_path
+                .to_str()
+                .expect("temp transcript path should be UTF-8"),
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]

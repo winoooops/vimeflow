@@ -14,7 +14,7 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{Emitter, Manager};
 
 use super::statusline::parse_statusline;
-use super::transcript::{TranscriptStartStatus, TranscriptState};
+use super::transcript::{validate_transcript_path, TranscriptStartStatus, TranscriptState};
 
 /// Handle to a running watcher — dropping it stops the watcher and polling thread
 pub struct WatcherHandle {
@@ -65,24 +65,36 @@ impl AgentWatcherState {
 
 /// Try to start transcript tailing, switching files if Claude reports a new path.
 fn maybe_start_transcript(app_handle: &tauri::AppHandle, session_id: &str, transcript_path: &str) {
+    let transcript_path = match validate_transcript_path(transcript_path) {
+        Ok(path) => path,
+        Err(e) => {
+            log::warn!(
+                "Skipping transcript tailing for session {}: {}",
+                session_id,
+                e
+            );
+            return;
+        }
+    };
+
     let ts = app_handle.state::<TranscriptState>();
     match ts.start_or_replace(
         app_handle.clone(),
         session_id.to_string(),
-        PathBuf::from(transcript_path),
+        transcript_path.clone(),
     ) {
         Ok(TranscriptStartStatus::Started) => {
             log::info!(
                 "Started transcript tailing for session {}: {}",
                 session_id,
-                transcript_path
+                transcript_path.display()
             );
         }
         Ok(TranscriptStartStatus::Replaced) => {
             log::info!(
                 "Switched transcript tailing for session {}: {}",
                 session_id,
-                transcript_path
+                transcript_path.display()
             );
         }
         Ok(TranscriptStartStatus::AlreadyRunning) => {}

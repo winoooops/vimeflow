@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-04-11
-ref_count: 0
+last_updated: 2026-04-14
+ref_count: 1
 ---
 
 # Documentation Accuracy
@@ -96,3 +96,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** A JSDoc brittleness note on the `readScrollTargetPos` test helper advised future maintainers to harden the effect-type check by writing `effect.is(EditorView.scrollIntoView)`, stating it "IS a `StateEffectType` comparable via `effect.is(scrollIntoView)`". This is wrong on two counts: `EditorView.scrollIntoView` is a factory function with signature `(pos, options?) => StateEffect<ScrollTarget>`, not a `StateEffectType`, and `StateEffect.is()` accepts a `StateEffectType`, not a factory. A developer following the comment's guidance would hit a compile error, then waste time investigating why the "correct" fix doesn't work.
 - **Fix:** Rewrite the brittleness note to correctly describe `EditorView.scrollIntoView` as a factory, explain that CM6 does not publicly export the underlying `StateEffectType`, show the actual escape hatch (`EditorView.scrollIntoView(0).type` reads the underlying type off a throwaway instance), and recommend fixing the duck-type shape directly rather than hardening the type comparison in the common case.
 - **Commit:** `21d7c00 docs(editor): fix incorrect StateEffectType comment in round-4 brittleness note`
+
+### 10. Agent status spec names removed transcript function
+
+- **Source:** github-claude | PR #63 round 1 | 2026-04-14
+- **Severity:** LOW
+- **File:** `docs/superpowers/specs/2026-04-12-agent-status-sidebar/CLAUDE.md`
+- **Finding:** The implementation notes referenced `TranscriptState::start_if_not_exists`, but the implementation had moved to `start_or_replace`. The same note described a double-check locking algorithm that the code did not yet implement at the time of review.
+- **Fix:** Update the note to name `start_or_replace` and describe the current double-check flow after the transcript watcher locking fix.
+- **Commit:** (pending — agent-status-sidebar PR)
