@@ -236,10 +236,7 @@ fn parse_rate_limits(value: Option<&serde_json::Value>) -> RateLimits {
                 .get("used_percentage")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0),
-            resets_at: fh
-                .get("resets_at")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
+            resets_at: fh.get("resets_at").and_then(|v| v.as_u64()).unwrap_or(0),
         })
         .unwrap_or(RateLimitInfo {
             used_percentage: 0.0,
@@ -256,10 +253,7 @@ fn parse_rate_limits(value: Option<&serde_json::Value>) -> RateLimits {
                 .get("used_percentage")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0),
-            resets_at: sd
-                .get("resets_at")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
+            resets_at: sd.get("resets_at").and_then(|v| v.as_u64()).unwrap_or(0),
         })
     });
 

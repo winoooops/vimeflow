@@ -38,6 +38,13 @@ impl TranscriptHandle {
     }
 }
 
+impl Drop for TranscriptHandle {
+    fn drop(&mut self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+        // Don't join here — thread will exit on next POLL_INTERVAL tick.
+    }
+}
+
 /// State shared across transcript watchers, keyed by session ID
 #[derive(Default, Clone)]
 pub struct TranscriptState {
@@ -59,24 +66,67 @@ impl TranscriptState {
         session_id: String,
         transcript_path: PathBuf,
     ) -> Result<(), String> {
-        let mut watchers = self.watchers.lock().expect("failed to lock watchers");
-
-        // Stop existing watcher for this session if any
-        if let Some(old) = watchers.remove(&session_id) {
-            old.stop();
+        // Remove old handle under the lock, then join outside to avoid
+        // blocking other callers during the up-to-500ms thread join.
+        let old = {
+            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+            watchers.remove(&session_id)
+        };
+        if let Some(old_handle) = old {
+            old_handle.stop();
         }
 
         let handle = start_tailing(app_handle, session_id.clone(), transcript_path)?;
+        let mut watchers = self.watchers.lock().expect("failed to lock watchers");
         watchers.insert(session_id, handle);
         Ok(())
     }
 
+    /// Start tailing only if no watcher is active for this session.
+    /// Returns `true` if a new watcher was started, `false` if one already existed.
+    pub fn start_if_not_exists(
+        &self,
+        app_handle: tauri::AppHandle,
+        session_id: String,
+        transcript_path: PathBuf,
+    ) -> Result<bool, String> {
+        {
+            let watchers = self.watchers.lock().expect("failed to lock watchers");
+            if watchers.contains_key(&session_id) {
+                return Ok(false);
+            }
+        }
+
+        let handle = start_tailing(app_handle, session_id.clone(), transcript_path)?;
+        let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+        // Double-check: another caller may have inserted between our check and here
+        if watchers.contains_key(&session_id) {
+            // Someone else won the race — drop the handle we just created
+            drop(watchers);
+            handle.stop();
+            return Ok(false);
+        }
+        watchers.insert(session_id, handle);
+        Ok(true)
+    }
+
+    /// Check if a session already has an active transcript watcher
+    #[allow(dead_code)]
+    pub fn contains(&self, session_id: &str) -> bool {
+        let watchers = self.watchers.lock().expect("failed to lock watchers");
+        watchers.contains_key(session_id)
+    }
+
     /// Stop tailing for the given session.
     pub fn stop(&self, session_id: &str) -> Result<(), String> {
-        let mut watchers = self.watchers.lock().expect("failed to lock watchers");
-        match watchers.remove(session_id) {
-            Some(handle) => {
-                handle.stop();
+        // Remove under the lock, join outside to avoid blocking other callers.
+        let handle = {
+            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+            watchers.remove(session_id)
+        };
+        match handle {
+            Some(h) => {
+                h.stop();
                 Ok(())
             }
             None => Err(format!("No transcript watcher for session: {}", session_id)),
@@ -398,6 +448,12 @@ pub async fn stop_transcript_watcher(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transcript_state_contains_empty() {
+        let state = TranscriptState::new();
+        assert!(!state.contains("any-session"));
+    }
 
     #[test]
     fn parse_tool_use_from_assistant_line() {

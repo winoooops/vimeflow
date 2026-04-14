@@ -118,10 +118,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
             .join(".vimeflow")
             .join("sessions")
             .join(&request.session_id);
-        match super::bridge::generate_bridge_files(
-            &dir.to_string_lossy(),
-            &request.session_id,
-        ) {
+        match super::bridge::generate_bridge_files(&dir.to_string_lossy(), &request.session_id) {
             Ok(files) => {
                 debug_log(
                     "bridge",
@@ -162,14 +159,8 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         // and $VIMEFLOW_CLAUDE_SETTINGS instead of embedding paths directly,
         // which avoids injection from paths containing quotes or metacharacters.
         cmd.env("BASH_ENV", files.shell_init_path.as_os_str());
-        cmd.env(
-            "VIMEFLOW_CLAUDE_SETTINGS",
-            files.settings_path.as_os_str(),
-        );
-        cmd.env(
-            "VIMEFLOW_STATUS_FILE",
-            files.status_file_path.as_os_str(),
-        );
+        cmd.env("VIMEFLOW_CLAUDE_SETTINGS", files.settings_path.as_os_str());
+        cmd.env("VIMEFLOW_STATUS_FILE", files.status_file_path.as_os_str());
 
         // For interactive bash, generate a combined rcfile that sources
         // both ~/.bashrc (user config) and our init script
@@ -188,10 +179,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
             cmd.args(["--rcfile", &rcfile_path.to_string_lossy()]);
         }
 
-        log::info!(
-            "Injected claude wrapper for session {}",
-            request.session_id
-        );
+        log::info!("Injected claude wrapper for session {}", request.session_id);
     }
 
     if request.env.is_some() {

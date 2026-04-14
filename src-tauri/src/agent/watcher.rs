@@ -11,9 +11,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 use super::statusline::parse_statusline;
+use super::transcript::TranscriptState;
 
 /// Handle to a running watcher — dropping it stops the watcher and polling thread
 pub struct WatcherHandle {
@@ -59,6 +60,33 @@ impl AgentWatcherState {
     pub fn contains(&self, session_id: &str) -> bool {
         let watchers = self.watchers.lock().expect("failed to lock watchers");
         watchers.contains_key(session_id)
+    }
+}
+
+/// Try to start transcript tailing if a path is available and not already active.
+/// Uses `start_if_not_exists` for atomic check-and-start under one lock.
+fn maybe_start_transcript(app_handle: &tauri::AppHandle, session_id: &str, transcript_path: &str) {
+    let ts = app_handle.state::<TranscriptState>();
+    match ts.start_if_not_exists(
+        app_handle.clone(),
+        session_id.to_string(),
+        PathBuf::from(transcript_path),
+    ) {
+        Ok(true) => {
+            log::info!(
+                "Started transcript tailing for session {}: {}",
+                session_id,
+                transcript_path
+            );
+        }
+        Ok(false) => {} // Already active — nothing to do
+        Err(e) => {
+            log::warn!(
+                "Failed to start transcript tailing for session {}: {}",
+                session_id,
+                e
+            );
+        }
     }
 }
 
@@ -135,7 +163,7 @@ pub fn start_watching(
                 }
 
                 if let Some(ref path) = parsed.transcript_path {
-                    log::debug!("Transcript path for session {}: {}", sid, path);
+                    maybe_start_transcript(&app_handle, &sid, path);
                 }
             }
             Err(e) => {
@@ -169,6 +197,9 @@ pub fn start_watching(
             if !contents.trim().is_empty() {
                 if let Ok(parsed) = parse_statusline(&initial_sid, &contents) {
                     let _ = initial_app.emit("agent-status", &parsed.event);
+                    if let Some(ref path) = parsed.transcript_path {
+                        maybe_start_transcript(&initial_app, &initial_sid, path);
+                    }
                 }
             }
         }
@@ -205,6 +236,9 @@ pub fn start_watching(
 
                 if let Ok(parsed) = parse_statusline(&poll_sid, &contents) {
                     let _ = poll_app.emit("agent-status", &parsed.event);
+                    if let Some(ref path) = parsed.transcript_path {
+                        maybe_start_transcript(&poll_app, &poll_sid, path);
+                    }
                 }
             }
         });
@@ -288,9 +322,16 @@ pub async fn start_agent_watcher(
 /// Stop watching a statusline file (Tauri command)
 #[tauri::command]
 pub async fn stop_agent_watcher(
+    app_handle: tauri::AppHandle,
     state: tauri::State<'_, AgentWatcherState>,
     session_id: String,
 ) -> Result<(), String> {
+    // Stop transcript watcher (best-effort — may not be running)
+    let ts = app_handle.state::<TranscriptState>();
+    if let Err(e) = ts.stop(&session_id) {
+        log::debug!("Transcript watcher stop for {}: {}", session_id, e);
+    }
+
     if state.remove(&session_id) {
         log::info!("Stopped watching statusline for session {}", session_id);
         Ok(())
