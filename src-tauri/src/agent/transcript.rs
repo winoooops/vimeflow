@@ -4,8 +4,8 @@
 //! Emits `agent-tool-call` Tauri events for each tool call start and completion.
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -22,10 +22,59 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// Maximum length for the args summary string
 const MAX_ARGS_LEN: usize = 100;
 
+pub(crate) fn validate_transcript_path(transcript_path: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(transcript_path);
+    let canonical = fs::canonicalize(&path)
+        .map_err(|e| format!("invalid transcript path '{}': {}", transcript_path, e))?;
+
+    if !canonical.is_file() {
+        return Err(format!("not a transcript file: {}", canonical.display()));
+    }
+
+    let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
+    let claude_root = home.join(".claude");
+    let claude_root = fs::canonicalize(&claude_root).map_err(|e| {
+        format!(
+            "cannot resolve Claude transcript root '{}': {}",
+            claude_root.display(),
+            e
+        )
+    })?;
+
+    if !canonical.starts_with(&claude_root) {
+        return Err(format!(
+            "access denied: transcript path is outside Claude directory: {}",
+            canonical.display()
+        ));
+    }
+
+    Ok(canonical)
+}
+
+struct InFlightToolCall {
+    started_at: Instant,
+    tool: String,
+    args: String,
+}
+
+type InFlightToolCalls = HashMap<String, InFlightToolCall>;
+
 /// Handle returned by `start_tailing` to control the background watcher
 pub struct TranscriptHandle {
     stop_flag: Arc<AtomicBool>,
     join_handle: Option<std::thread::JoinHandle<()>>,
+}
+
+struct TranscriptWatcher {
+    transcript_path: PathBuf,
+    handle: TranscriptHandle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TranscriptStartStatus {
+    Started,
+    Replaced,
+    AlreadyRunning,
 }
 
 impl TranscriptHandle {
@@ -38,10 +87,16 @@ impl TranscriptHandle {
     }
 }
 
+impl Drop for TranscriptHandle {
+    fn drop(&mut self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+    }
+}
+
 /// State shared across transcript watchers, keyed by session ID
 #[derive(Default, Clone)]
 pub struct TranscriptState {
-    watchers: Arc<Mutex<HashMap<String, TranscriptHandle>>>,
+    watchers: Arc<Mutex<HashMap<String, TranscriptWatcher>>>,
 }
 
 impl TranscriptState {
@@ -52,31 +107,105 @@ impl TranscriptState {
     }
 
     /// Start tailing a transcript for the given session.
-    /// If a watcher already exists for this session, it is stopped first.
-    pub fn start(
+    /// If a watcher exists for a different path, replace it after the new
+    /// watcher starts successfully.
+    pub fn start<R: tauri::Runtime>(
         &self,
-        app_handle: tauri::AppHandle,
+        app_handle: tauri::AppHandle<R>,
         session_id: String,
         transcript_path: PathBuf,
     ) -> Result<(), String> {
-        let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+        let _ = self.start_or_replace(app_handle, session_id, transcript_path)?;
+        Ok(())
+    }
 
-        // Stop existing watcher for this session if any
-        if let Some(old) = watchers.remove(&session_id) {
-            old.stop();
+    /// Start tailing when none is active, or switch to a newer transcript path.
+    pub fn start_or_replace<R: tauri::Runtime>(
+        &self,
+        app_handle: tauri::AppHandle<R>,
+        session_id: String,
+        transcript_path: PathBuf,
+    ) -> Result<TranscriptStartStatus, String> {
+        {
+            let watchers = self.watchers.lock().expect("failed to lock watchers");
+            if let Some(current) = watchers.get(&session_id) {
+                if current.transcript_path == transcript_path {
+                    return Ok(TranscriptStartStatus::AlreadyRunning);
+                }
+            }
         }
 
-        let handle = start_tailing(app_handle, session_id.clone(), transcript_path)?;
-        watchers.insert(session_id, handle);
-        Ok(())
+        let mut new_handle = Some(start_tailing(
+            app_handle,
+            session_id.clone(),
+            transcript_path.clone(),
+        )?);
+
+        let (old_handle, status) = {
+            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+
+            if let Some(current) = watchers.get(&session_id) {
+                if current.transcript_path == transcript_path {
+                    (None, TranscriptStartStatus::AlreadyRunning)
+                } else {
+                    let old = watchers.insert(
+                        session_id,
+                        TranscriptWatcher {
+                            transcript_path,
+                            handle: new_handle
+                                .take()
+                                .expect("new transcript handle should be available"),
+                        },
+                    );
+
+                    (
+                        old.map(|watcher| watcher.handle),
+                        TranscriptStartStatus::Replaced,
+                    )
+                }
+            } else {
+                watchers.insert(
+                    session_id,
+                    TranscriptWatcher {
+                        transcript_path,
+                        handle: new_handle
+                            .take()
+                            .expect("new transcript handle should be available"),
+                    },
+                );
+
+                (None, TranscriptStartStatus::Started)
+            }
+        };
+
+        if let Some(handle) = new_handle {
+            handle.stop();
+        }
+
+        if let Some(handle) = old_handle {
+            handle.stop();
+        }
+
+        Ok(status)
+    }
+
+    /// Check if a session already has an active transcript watcher
+    #[allow(dead_code)]
+    pub fn contains(&self, session_id: &str) -> bool {
+        let watchers = self.watchers.lock().expect("failed to lock watchers");
+        watchers.contains_key(session_id)
     }
 
     /// Stop tailing for the given session.
     pub fn stop(&self, session_id: &str) -> Result<(), String> {
-        let mut watchers = self.watchers.lock().expect("failed to lock watchers");
-        match watchers.remove(session_id) {
-            Some(handle) => {
-                handle.stop();
+        // Remove under the lock, join outside to avoid blocking other callers.
+        let handle = {
+            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+            watchers.remove(session_id)
+        };
+        match handle {
+            Some(watcher) => {
+                watcher.handle.stop();
                 Ok(())
             }
             None => Err(format!("No transcript watcher for session: {}", session_id)),
@@ -85,10 +214,10 @@ impl TranscriptState {
 }
 
 /// Start tailing a transcript JSONL file.
-/// Seeks to end of file on start (don't replay history).
+/// Reads from the beginning to catch up on missed tool calls.
 /// Emits `agent-tool-call` Tauri events for each tool call detected.
-pub fn start_tailing(
-    app_handle: tauri::AppHandle,
+pub fn start_tailing<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
     session_id: String,
     transcript_path: PathBuf,
 ) -> Result<TranscriptHandle, String> {
@@ -114,22 +243,21 @@ pub fn start_tailing(
 }
 
 /// Background loop that tails the transcript file
-fn tail_loop(
-    app_handle: tauri::AppHandle,
+fn tail_loop<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
     session_id: String,
     file: File,
     stop_flag: Arc<AtomicBool>,
 ) {
     let mut reader = BufReader::new(file);
 
-    // Seek to end — don't replay old entries
-    if let Err(e) = reader.seek(SeekFrom::End(0)) {
-        log::error!("Failed to seek transcript to end: {}", e);
-        return;
-    }
+    // Read from the beginning — each Claude Code session gets a unique JSONL
+    // file, so all lines belong to the current session. Replay catches any
+    // tool calls written before tailing started (the transcript file is often
+    // created seconds after the statusline first reports its path).
 
-    // In-flight tool calls: tool_use_id -> (start_time, tool_name)
-    let mut in_flight: HashMap<String, (Instant, String)> = HashMap::new();
+    // In-flight tool calls: tool_use_id -> call details
+    let mut in_flight: InFlightToolCalls = HashMap::new();
 
     // Buffer for partial lines
     let mut line_buf = String::new();
@@ -160,8 +288,8 @@ fn tail_loop(
 fn process_line(
     line: &str,
     session_id: &str,
-    app_handle: &tauri::AppHandle,
-    in_flight: &mut HashMap<String, (Instant, String)>,
+    app_handle: &tauri::AppHandle<impl tauri::Runtime>,
+    in_flight: &mut InFlightToolCalls,
 ) {
     let value: Value = match serde_json::from_str(line) {
         Ok(v) => v,
@@ -177,6 +305,9 @@ fn process_line(
         "assistant" => {
             process_assistant_message(&value, session_id, app_handle, in_flight);
         }
+        "user" => {
+            process_user_message(&value, session_id, app_handle, in_flight);
+        }
         "tool_result" => {
             process_tool_result(&value, session_id, app_handle, in_flight);
         }
@@ -190,14 +321,10 @@ fn process_line(
 fn process_assistant_message(
     value: &Value,
     session_id: &str,
-    app_handle: &tauri::AppHandle,
-    in_flight: &mut HashMap<String, (Instant, String)>,
+    app_handle: &tauri::AppHandle<impl tauri::Runtime>,
+    in_flight: &mut InFlightToolCalls,
 ) {
-    let content = match value
-        .get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_array())
-    {
+    let content = match message_content_items(value) {
         Some(arr) => arr,
         None => return,
     };
@@ -222,7 +349,14 @@ fn process_assistant_message(
         let args = summarize_input(item.get("input"));
 
         let now = Instant::now();
-        in_flight.insert(id.clone(), (now, name.clone()));
+        in_flight.insert(
+            id,
+            InFlightToolCall {
+                started_at: now,
+                tool: name.clone(),
+                args: args.clone(),
+            },
+        );
 
         let event = AgentToolCallEvent {
             session_id: session_id.to_string(),
@@ -239,12 +373,31 @@ fn process_assistant_message(
     }
 }
 
+/// Extract tool_result entries from a user message.
+fn process_user_message(
+    value: &Value,
+    session_id: &str,
+    app_handle: &tauri::AppHandle<impl tauri::Runtime>,
+    in_flight: &mut InFlightToolCalls,
+) {
+    let content = match message_content_items(value) {
+        Some(arr) => arr,
+        None => return,
+    };
+
+    for item in content {
+        if is_tool_result_block(item) {
+            process_tool_result(item, session_id, app_handle, in_flight);
+        }
+    }
+}
+
 /// Process a tool_result line and emit Done/Failed event
 fn process_tool_result(
     value: &Value,
     session_id: &str,
-    app_handle: &tauri::AppHandle,
-    in_flight: &mut HashMap<String, (Instant, String)>,
+    app_handle: &tauri::AppHandle<impl tauri::Runtime>,
+    in_flight: &mut InFlightToolCalls,
 ) {
     let tool_use_id = match value.get("tool_use_id").and_then(|v| v.as_str()) {
         Some(id) => id.to_string(),
@@ -256,14 +409,14 @@ fn process_tool_result(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let (duration_ms, tool_name) = match in_flight.remove(&tool_use_id) {
-        Some((start, name)) => {
-            let dur = start.elapsed().as_millis() as u64;
-            (dur, name)
+    let (duration_ms, tool_name, args) = match in_flight.remove(&tool_use_id) {
+        Some(call) => {
+            let dur = call.started_at.elapsed().as_millis() as u64;
+            (dur, call.tool, call.args)
         }
         None => {
             // No matching in-flight call — emit with unknown tool name
-            (0, "unknown".to_string())
+            (0, "unknown".to_string(), String::new())
         }
     };
 
@@ -276,7 +429,7 @@ fn process_tool_result(
     let event = AgentToolCallEvent {
         session_id: session_id.to_string(),
         tool: tool_name,
-        args: String::new(),
+        args,
         status,
         timestamp: now_iso8601(),
         duration_ms,
@@ -285,6 +438,18 @@ fn process_tool_result(
     if let Err(e) = app_handle.emit("agent-tool-call", &event) {
         log::warn!("Failed to emit agent-tool-call event: {}", e);
     }
+}
+
+fn message_content_items(value: &Value) -> Option<&[Value]> {
+    value
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
+        .map(Vec::as_slice)
+}
+
+fn is_tool_result_block(value: &Value) -> bool {
+    value.get("type").and_then(|t| t.as_str()) == Some("tool_result")
 }
 
 /// Summarize a tool input Value into a short string (~100 chars max)
@@ -379,10 +544,7 @@ pub async fn start_transcript_watcher(
     session_id: String,
     transcript_path: String,
 ) -> Result<(), String> {
-    let path = PathBuf::from(&transcript_path);
-    if !path.exists() {
-        return Err(format!("Transcript file not found: {}", transcript_path));
-    }
+    let path = validate_transcript_path(&transcript_path)?;
     state.start(app_handle, session_id, path)
 }
 
@@ -398,6 +560,73 @@ pub async fn stop_transcript_watcher(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transcript_state_contains_empty() {
+        let state = TranscriptState::new();
+        assert!(!state.contains("any-session"));
+    }
+
+    #[test]
+    fn transcript_state_replaces_changed_path() {
+        let app = tauri::test::mock_builder()
+            .build(tauri::generate_context!())
+            .expect("failed to build test app");
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let first_path = tmp.path().join("first.jsonl");
+        let second_path = tmp.path().join("second.jsonl");
+        std::fs::write(&first_path, "").expect("failed to write first transcript");
+        std::fs::write(&second_path, "").expect("failed to write second transcript");
+
+        let state = TranscriptState::new();
+        let session_id = "session-1".to_string();
+
+        let first_status = state
+            .start_or_replace(app.handle().clone(), session_id.clone(), first_path.clone())
+            .expect("failed to start first transcript watcher");
+        assert_eq!(first_status, TranscriptStartStatus::Started);
+
+        let duplicate_status = state
+            .start_or_replace(app.handle().clone(), session_id.clone(), first_path)
+            .expect("failed to check duplicate transcript watcher");
+        assert_eq!(duplicate_status, TranscriptStartStatus::AlreadyRunning);
+
+        let replaced_status = state
+            .start_or_replace(app.handle().clone(), session_id.clone(), second_path)
+            .expect("failed to replace transcript watcher");
+        assert_eq!(replaced_status, TranscriptStartStatus::Replaced);
+
+        state.stop(&session_id).expect("failed to stop watcher");
+    }
+
+    #[test]
+    fn transcript_handle_drop_sets_stop_flag() {
+        let stop_flag = Arc::new(AtomicBool::new(false));
+
+        {
+            let _handle = TranscriptHandle {
+                stop_flag: Arc::clone(&stop_flag),
+                join_handle: None,
+            };
+        }
+
+        assert!(stop_flag.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn validate_transcript_path_rejects_path_outside_claude_root() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let transcript_path = tmp.path().join("transcript.jsonl");
+        std::fs::write(&transcript_path, "").expect("failed to write transcript");
+
+        let result = validate_transcript_path(
+            transcript_path
+                .to_str()
+                .expect("temp transcript path should be UTF-8"),
+        );
+
+        assert!(result.is_err());
+    }
 
     #[test]
     fn parse_tool_use_from_assistant_line() {
@@ -430,6 +659,22 @@ mod tests {
         let value: Value = serde_json::from_str(line).unwrap();
 
         assert!(value["is_error"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn parse_nested_tool_result_from_user_message() {
+        let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_abc","content":"file contents...","is_error":false}]}}"#;
+        let value: Value = serde_json::from_str(line).unwrap();
+
+        let content = message_content_items(&value).unwrap();
+        let result = content
+            .iter()
+            .find(|item| is_tool_result_block(item))
+            .unwrap();
+
+        assert_eq!(result["type"].as_str().unwrap(), "tool_result");
+        assert_eq!(result["tool_use_id"].as_str().unwrap(), "toolu_abc");
+        assert!(!result["is_error"].as_bool().unwrap());
     }
 
     #[test]
@@ -551,17 +796,25 @@ mod tests {
     #[test]
     fn in_flight_tracking() {
         // Simulate the in-flight map lifecycle
-        let mut in_flight: HashMap<String, (Instant, String)> = HashMap::new();
+        let mut in_flight: InFlightToolCalls = HashMap::new();
 
         // Tool call starts
         let start = Instant::now();
-        in_flight.insert("toolu_abc".to_string(), (start, "Read".to_string()));
+        in_flight.insert(
+            "toolu_abc".to_string(),
+            InFlightToolCall {
+                started_at: start,
+                tool: "Read".to_string(),
+                args: "/src/foo.ts".to_string(),
+            },
+        );
         assert!(in_flight.contains_key("toolu_abc"));
 
         // Tool result arrives
-        let (start_time, tool_name) = in_flight.remove("toolu_abc").unwrap();
-        let duration = start_time.elapsed().as_millis() as u64;
-        assert_eq!(tool_name, "Read");
+        let call = in_flight.remove("toolu_abc").unwrap();
+        let duration = call.started_at.elapsed().as_millis() as u64;
+        assert_eq!(call.tool, "Read");
+        assert_eq!(call.args, "/src/foo.ts");
         assert!(duration < 1000); // Should be near-instant in test
         assert!(in_flight.is_empty());
     }
@@ -569,17 +822,22 @@ mod tests {
     #[test]
     fn tool_result_without_matching_start() {
         // Should handle gracefully when there's no matching in-flight call
-        let mut in_flight: HashMap<String, (Instant, String)> = HashMap::new();
+        let mut in_flight: InFlightToolCalls = HashMap::new();
 
         let result = in_flight.remove("toolu_nonexistent");
         assert!(result.is_none());
 
         // The process_tool_result function handles this with defaults
-        let (duration_ms, tool_name) = match result {
-            Some((start, name)) => (start.elapsed().as_millis() as u64, name),
-            None => (0, "unknown".to_string()),
+        let (duration_ms, tool_name, args) = match result {
+            Some(call) => (
+                call.started_at.elapsed().as_millis() as u64,
+                call.tool,
+                call.args,
+            ),
+            None => (0, "unknown".to_string(), String::new()),
         };
         assert_eq!(duration_ms, 0);
         assert_eq!(tool_name, "unknown");
+        assert!(args.is_empty());
     }
 }

@@ -11,9 +11,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 use super::statusline::parse_statusline;
+use super::transcript::{validate_transcript_path, TranscriptStartStatus, TranscriptState};
 
 /// Handle to a running watcher — dropping it stops the watcher and polling thread
 pub struct WatcherHandle {
@@ -59,6 +60,51 @@ impl AgentWatcherState {
     pub fn contains(&self, session_id: &str) -> bool {
         let watchers = self.watchers.lock().expect("failed to lock watchers");
         watchers.contains_key(session_id)
+    }
+}
+
+/// Try to start transcript tailing, switching files if Claude reports a new path.
+fn maybe_start_transcript(app_handle: &tauri::AppHandle, session_id: &str, transcript_path: &str) {
+    let transcript_path = match validate_transcript_path(transcript_path) {
+        Ok(path) => path,
+        Err(e) => {
+            log::warn!(
+                "Skipping transcript tailing for session {}: {}",
+                session_id,
+                e
+            );
+            return;
+        }
+    };
+
+    let ts = app_handle.state::<TranscriptState>();
+    match ts.start_or_replace(
+        app_handle.clone(),
+        session_id.to_string(),
+        transcript_path.clone(),
+    ) {
+        Ok(TranscriptStartStatus::Started) => {
+            log::info!(
+                "Started transcript tailing for session {}: {}",
+                session_id,
+                transcript_path.display()
+            );
+        }
+        Ok(TranscriptStartStatus::Replaced) => {
+            log::info!(
+                "Switched transcript tailing for session {}: {}",
+                session_id,
+                transcript_path.display()
+            );
+        }
+        Ok(TranscriptStartStatus::AlreadyRunning) => {}
+        Err(e) => {
+            log::warn!(
+                "Failed to start transcript tailing for session {}: {}",
+                session_id,
+                e
+            );
+        }
     }
 }
 
@@ -136,6 +182,7 @@ pub fn start_watching(
 
                 if let Some(ref path) = parsed.transcript_path {
                     log::debug!("Transcript path for session {}: {}", sid, path);
+                    maybe_start_transcript(&app_handle, &sid, path);
                 }
             }
             Err(e) => {
@@ -169,6 +216,9 @@ pub fn start_watching(
             if !contents.trim().is_empty() {
                 if let Ok(parsed) = parse_statusline(&initial_sid, &contents) {
                     let _ = initial_app.emit("agent-status", &parsed.event);
+                    if let Some(ref path) = parsed.transcript_path {
+                        maybe_start_transcript(&initial_app, &initial_sid, path);
+                    }
                 }
             }
         }
@@ -205,6 +255,9 @@ pub fn start_watching(
 
                 if let Ok(parsed) = parse_statusline(&poll_sid, &contents) {
                     let _ = poll_app.emit("agent-status", &parsed.event);
+                    if let Some(ref path) = parsed.transcript_path {
+                        maybe_start_transcript(&poll_app, &poll_sid, path);
+                    }
                 }
             }
         });

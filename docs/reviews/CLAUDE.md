@@ -14,16 +14,17 @@ ingestion protocol.
 
 | Pattern                                                        | Category       | Findings | Refs | Last Updated |
 | -------------------------------------------------------------- | -------------- | -------- | ---- | ------------ |
-| [Filesystem Scope](patterns/filesystem-scope.md)               | security       | 14       | 0    | 2026-04-10   |
+| [Filesystem Scope](patterns/filesystem-scope.md)               | security       | 15       | 2    | 2026-04-14   |
 | [React Lifecycle](patterns/react-lifecycle.md)                 | react-patterns | 6        | 0    | 2026-04-10   |
-| [Resource Cleanup](patterns/resource-cleanup.md)               | react-patterns | 1        | 0    | 2026-04-09   |
+| [Resource Cleanup](patterns/resource-cleanup.md)               | react-patterns | 2        | 2    | 2026-04-14   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)       | cross-platform | 2        | 0    | 2026-04-10   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                 | code-quality   | 4        | 0    | 2026-04-12   |
+| [Generated Artifacts](patterns/generated-artifacts.md)         | code-quality   | 1        | 0    | 2026-04-14   |
 | [Testing Gaps](patterns/testing-gaps.md)                       | testing        | 8        | 0    | 2026-04-11   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md) | terminal       | 3        | 0    | 2026-04-09   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)   | code-quality   | 9        | 0    | 2026-04-11   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)   | code-quality   | 10       | 1    | 2026-04-14   |
 | [Accessibility](patterns/accessibility.md)                     | a11y           | 11       | 0    | 2026-04-10   |
-| [Async Race Conditions](patterns/async-race-conditions.md)     | react-patterns | 10       | 0    | 2026-04-12   |
+| [Async Race Conditions](patterns/async-race-conditions.md)     | react-patterns | 12       | 2    | 2026-04-14   |
 | [Command Injection](patterns/command-injection.md)             | security       | 4        | 0    | 2026-04-09   |
 | [CSP Configuration](patterns/csp-configuration.md)             | security       | 2        | 0    | 2026-04-09   |
 | [PTY Session Management](patterns/pty-session-management.md)   | backend        | 5        | 0    | 2026-04-09   |

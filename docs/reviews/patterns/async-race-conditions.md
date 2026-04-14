@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-04-12
-ref_count: 0
+last_updated: 2026-04-14
+ref_count: 2
 ---
 
 # Async Race Conditions
@@ -105,4 +105,25 @@ prevent showing previous data.
 - **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
 - **Finding:** The `setTimeout` in the exit detection path schedules `isActive` to flip to false after 5s, but there is no cancellation when the agent is detected again in that window. If the detection poll briefly misses the agent or it restarts quickly, the pending timeout fires and collapses the panel while the agent is still running.
 - **Fix:** Store the timeout ID in `collapseTimeoutRef` and clear it on subsequent detections or session change.
+- **Commit:** (pending — agent-status-sidebar PR)
+
+### 11. Transcript watcher ignores updated transcript paths
+
+- **Source:** local-codex | feat/agent-status-sidebar | 2026-04-14
+- **Severity:** HIGH
+- **File:** `src-tauri/src/agent/transcript.rs`
+- **Finding:** `TranscriptState` keyed active transcript tailers only by PTY session ID. Once a watcher started for a session, later statusline updates with a different `transcript_path` were ignored, leaving the backend tailing a stale Claude transcript while the active task wrote tool calls to a new JSONL file.
+- **Fix:** Track the active transcript path alongside each watcher. When statusline reports a different path for the same session, start tailing the new file and stop the old handle.
+- **Runtime evidence:** Active PTY session `bac78089-299d-431d-b0d0-89c2c19bc610` first tailed `f4c8dc90-0091-4943-8fca-5fc397fd59ef.jsonl`, but the current statusline later pointed at `13faa90a-65ec-4e5f-9bf2-481d9f0313a6.jsonl`, which contained the missing `Skill`, `Bash`, and long-running `Agent` tool calls.
+- **Verification:** Added `transcript_state_replaces_changed_path` regression coverage; manual retest confirmed tool calls reappeared after restarting the app.
+- **Commit:** (pending — agent-status-sidebar PR)
+
+### 12. Transcript watcher starts tailer while holding registry mutex
+
+- **Source:** github-claude | PR #63 round 2 | 2026-04-14
+- **Severity:** MEDIUM
+- **File:** `src-tauri/src/agent/transcript.rs`
+- **Finding:** `TranscriptState::start_or_replace` called `start_tailing` while holding the `watchers` mutex. Starting the tailer opens the transcript file and spawns a background thread, so concurrent statusline callbacks could block on unrelated filesystem or thread-creation work.
+- **Fix:** Use a double-check flow: check the active path under lock, start the tailer outside the lock, then re-acquire the lock before inserting. If a concurrent caller already registered the same path, stop the redundant new handle; if replacing an old path, stop the old handle outside the lock.
+- **Verification:** `cargo test --lib agent::transcript -j1`, `cargo test --lib agent:: -j1`, `cargo fmt --check`.
 - **Commit:** (pending — agent-status-sidebar PR)

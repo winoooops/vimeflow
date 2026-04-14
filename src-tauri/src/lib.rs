@@ -4,7 +4,7 @@ mod git;
 mod terminal;
 
 use agent::{
-    detect_agent_in_session, start_agent_watcher, stop_agent_watcher, start_transcript_watcher,
+    detect_agent_in_session, start_agent_watcher, start_transcript_watcher, stop_agent_watcher,
     stop_transcript_watcher, AgentWatcherState, TranscriptState,
 };
 use filesystem::{list_dir, read_file, write_file};

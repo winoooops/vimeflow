@@ -36,7 +36,10 @@ pub struct BridgeFiles {
 /// # Returns
 /// * `Ok(BridgeFiles)` with paths to generated files
 /// * `Err(String)` if directory creation or file writing fails
-pub fn generate_bridge_files(agent_status_dir: &str, session_id: &str) -> Result<BridgeFiles, String> {
+pub fn generate_bridge_files(
+    agent_status_dir: &str,
+    session_id: &str,
+) -> Result<BridgeFiles, String> {
     let dir = Path::new(agent_status_dir);
 
     // Create the session directory
@@ -121,8 +124,7 @@ pub fn generate_bridge_files(agent_status_dir: &str, session_id: &str) -> Result
 pub fn cleanup_bridge_files(agent_status_dir: &str) -> Result<(), String> {
     let dir = Path::new(agent_status_dir);
     if dir.exists() {
-        fs::remove_dir_all(dir)
-            .map_err(|e| format!("failed to clean up bridge files: {}", e))?;
+        fs::remove_dir_all(dir).map_err(|e| format!("failed to clean up bridge files: {}", e))?;
         log::info!("Cleaned up bridge files: {}", dir.display());
     }
     Ok(())
@@ -149,7 +151,10 @@ mod tests {
         #[cfg(unix)]
         {
             let meta = fs::metadata(&files.script_path).unwrap();
-            assert!(meta.permissions().mode() & 0o111 != 0, "script should be executable");
+            assert!(
+                meta.permissions().mode() & 0o111 != 0,
+                "script should be executable"
+            );
         }
 
         // Script content should reference env var for status file
@@ -190,6 +195,9 @@ mod tests {
     #[test]
     fn cleanup_handles_missing_directory() {
         let result = cleanup_bridge_files("/tmp/nonexistent-vimeflow-dir-12345");
-        assert!(result.is_ok(), "cleanup should succeed for missing directory");
+        assert!(
+            result.is_ok(),
+            "cleanup should succeed for missing directory"
+        );
     }
 }
