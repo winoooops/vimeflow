@@ -3,7 +3,7 @@ id: filesystem-scope
 category: security
 created: 2026-04-09
 last_updated: 2026-04-10
-ref_count: 0
+ref_count: 1
 ---
 
 # Filesystem Scope
