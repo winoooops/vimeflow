@@ -6,7 +6,7 @@
 
 ## Overview
 
-Vimeflow's unit test suite (1212 tests, ~93% coverage) catches logic errors but cannot reach the bugs that matter most: IPC race conditions, PTY lifecycle issues, cross-component flows, canvas-rendered terminal content, and agent detection pipelines. These bugs are documented extensively in `docs/reviews/patterns/` — async race conditions, stale response ordering, flex layout measurement failures, CodeMirror lifecycle issues — all discovered manually because jsdom has no layout engine, no real IPC round-trips, and no canvas.
+Vimeflow's unit test suite (1399 tests, ~93% coverage) catches logic errors but cannot reach the bugs that matter most: IPC race conditions, PTY lifecycle issues, cross-component flows, canvas-rendered terminal content, and agent detection pipelines. These bugs are documented extensively in `docs/reviews/patterns/` — async race conditions, stale response ordering, flex layout measurement failures, CodeMirror lifecycle issues — all discovered manually because jsdom has no layout engine, no real IPC round-trips, and no canvas.
 
 This spec defines a layered E2E testing infrastructure using tauri-driver + WebdriverIO for standard Tauri interactions, a dedicated terminal testing module for xterm.js (which renders to canvas and is opaque to WebDriver), an agent flow testing module for the detection-to-panel pipeline, and an interactive REPL harness that lets AI agents investigate bugs before formalizing them as regression tests.
 
@@ -125,12 +125,17 @@ Note: E2E tests use Mocha (`describe`/`it`) via WebdriverIO, while unit tests us
 ```typescript
 // tests/e2e/core/wdio.conf.ts
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { spawn, type ChildProcess } from 'node:child_process'
 
 let tauriDriver: ChildProcess
 
-// Resolve from repo root regardless of where WDIO is invoked
-const appPath = path.resolve(process.cwd(), 'src-tauri/target/debug/vimeflow')
+// Resolve relative to this config file's location — stable regardless of cwd
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const appPath = path.resolve(
+  __dirname,
+  '../../../src-tauri/target/debug/vimeflow'
+)
 
 export const config: WebdriverIO.Config = {
   runner: 'local',
@@ -141,6 +146,11 @@ export const config: WebdriverIO.Config = {
   beforeSession() {
     tauriDriver = spawn('tauri-driver', [], {
       stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    tauriDriver.on('error', (err) => {
+      throw new Error(
+        `tauri-driver failed to start: ${err.message}. Run: cargo install tauri-driver`
+      )
     })
   },
   afterSession() {
@@ -248,14 +258,25 @@ if (import.meta.env.VITE_E2E) {
 **Implementation tasks for the bridge**:
 
 1. Add `getAllPtySessionIds()` to `ptySessionMap.ts` — returns `Array.from(ptySessionMap.values()).map(v => v.ptySessionId)`. The map itself stays private.
-2. Import `e2e-bridge.ts` from `main.tsx` — gated so it's tree-shaken in production:
+2. Import `e2e-bridge.ts` from `main.tsx` — use a static import so the bridge's internal `if (import.meta.env.VITE_E2E)` guard handles the no-op case. Vite tree-shakes the module body when `VITE_E2E` is unset:
    ```typescript
    // src/main.tsx
-   if (import.meta.env.VITE_E2E) {
-     import('./lib/e2e-bridge')
-   }
+   import './lib/e2e-bridge'
    ```
-3. `getTerminalCursorPosition()` is **deferred to Phase 2**. The xterm `Terminal` instance is cached in module-private `terminalCache` (`TerminalPane.tsx:19`). Exposing it requires either an e2e-only accessor on the cache or a DOM-based cursor derivation. Not needed for Phase 1 smoke tests.
+3. Add TypeScript `Window` interface augmentation — required since the project enforces strict TypeScript (`tsc -b`):
+   ```typescript
+   // src/types/e2e.d.ts
+   declare global {
+     interface Window {
+       __VIMEFLOW_E2E__?: {
+         getTerminalBuffer(): string
+         getActiveSessionIds(): string[]
+       }
+     }
+   }
+   export {}
+   ```
+4. `getTerminalCursorPosition()` is **deferred to Phase 2**. The xterm `Terminal` instance is cached in module-private `terminalCache` (`TerminalPane.tsx:19`). Exposing it requires either an e2e-only accessor on the cache or a DOM-based cursor derivation. Not needed for Phase 1 smoke tests.
 
 **Phase 1a simplification**: For the single-terminal smoke tests, `getTerminalBuffer()` reads the one visible terminal pane's `.xterm-accessibility` DOM — no session ID parameter needed. The `data-e2e-session-id` attribute and multi-session support are deferred to Phase 1b/2 when multi-tab tests land.
 
@@ -385,8 +406,9 @@ hello
 $ _
 (5 rows, cursor at 2:2, session=a1b2c3d4)
 
-vimeflow-repl> execute window.__VIMEFLOW_E2E__.getTerminalBuffer('a1b2c3d4')
+vimeflow-repl> execute window.__VIMEFLOW_E2E__.getTerminalBuffer()
 "$ echo hello\nhello\n$ "
+# Phase 2: getTerminalBuffer('a1b2c3d4') — session ID support deferred
 
 vimeflow-repl> screenshot /tmp/debug-01.png
 OK: saved 1280x720 screenshot
@@ -478,6 +500,8 @@ This milestone validates: WebdriverIO + tauri-driver works, the Tauri binary lau
 - Add `list_active_pty_sessions` test command in `src-tauri/src/terminal/test_commands.rs`
 - Conditionally register test commands in `src-tauri/src/lib.rs`
 - Create `src/lib/e2e-bridge.ts` with `window.__VIMEFLOW_E2E__` (gated by `VITE_E2E`)
+- Create `src/types/e2e.d.ts` with `Window` interface augmentation (required for strict TypeScript)
+- Add static `import './lib/e2e-bridge'` to `src/main.tsx`
 - Add `getAllPtySessionIds()` export to `src/features/terminal/ptySessionMap.ts`
 - Add `tsx` to devDependencies (needed for REPL in Phase 1b)
 
