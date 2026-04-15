@@ -115,6 +115,7 @@ tests/
 | `@wdio/spec-reporter`   | Human-readable test output                                     |
 | `tauri-driver`          | WebDriver bridge to native webview (cargo install)             |
 | `tsx`                   | TypeScript execution for REPL server (devDependency, Phase 1b) |
+| `cross-env`             | Cross-platform env vars in npm scripts (devDependency)         |
 
 Note: E2E tests use Mocha (`describe`/`it`) via WebdriverIO, while unit tests use Vitest (`test()`). This is a deliberate boundary — different context, different conventions.
 
@@ -142,15 +143,20 @@ export const config: WebdriverIO.Config = {
   framework: 'mocha',
   reporters: ['spec'],
 
-  // Manual tauri-driver lifecycle (official Tauri docs pattern)
+  // Manual tauri-driver lifecycle — returns Promise so WDIO waits for ready
   beforeSession() {
-    tauriDriver = spawn('tauri-driver', [], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    tauriDriver.on('error', (err) => {
-      throw new Error(
-        `tauri-driver failed to start: ${err.message}. Run: cargo install tauri-driver`
+    return new Promise<void>((resolve, reject) => {
+      tauriDriver = spawn('tauri-driver', [], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      tauriDriver.once('error', (err) =>
+        reject(
+          new Error(
+            `tauri-driver failed: ${err.message}. Run: cargo install tauri-driver`
+          )
+        )
       )
+      tauriDriver.once('spawn', resolve)
     })
   },
   afterSession() {
@@ -195,15 +201,25 @@ Add to `src-tauri/Cargo.toml`:
 e2e-test = []
 ```
 
-Then in `src-tauri/src/lib.rs`, conditionally register test commands:
+Then in `src-tauri/src/lib.rs`, conditionally register test commands. Note: `#[cfg]` attributes cannot appear inside `generate_handler![]` (macro_rules `path` matcher rejects attribute syntax). Use two cfg-gated bindings instead:
 
 ```rust
-let mut builder = tauri::Builder::default()
-    .invoke_handler(tauri::generate_handler![
-        // ... production commands ...
-        #[cfg(feature = "e2e-test")]
-        terminal::test_commands::list_active_pty_sessions,
-    ]);
+#[cfg(not(feature = "e2e-test"))]
+let invoke_handler = tauri::generate_handler![
+    spawn_pty, write_pty, resize_pty, kill_pty,
+    // ... other production commands ...
+];
+
+#[cfg(feature = "e2e-test")]
+let invoke_handler = tauri::generate_handler![
+    spawn_pty, write_pty, resize_pty, kill_pty,
+    // ... other production commands ...
+    terminal::test_commands::list_active_pty_sessions,
+];
+
+tauri::Builder::default()
+    .invoke_handler(invoke_handler)
+    // ...
 ```
 
 ### Environment Requirements
@@ -217,7 +233,7 @@ let mut builder = tauri::Builder::default()
 
 ```json
 {
-  "test:e2e:build": "VITE_E2E=1 npm run build && cd src-tauri && cargo build --features e2e-test",
+  "test:e2e:build": "cross-env VITE_E2E=1 npm run build && cd src-tauri && cargo build --features e2e-test",
   "test:e2e": "wdio tests/e2e/core/wdio.conf.ts",
   "test:e2e:terminal": "wdio tests/e2e/terminal/wdio.conf.ts",
   "test:e2e:agent": "wdio tests/e2e/agent/wdio.conf.ts",
@@ -335,6 +351,13 @@ Tests must use these real selectors. If a stable selector doesn't exist for a te
 ```typescript
 // tests/e2e/terminal/specs/pty-spawn.spec.ts
 describe('PTY spawn', () => {
+  // Fail fast if the app was built without VITE_E2E=1
+  before(async () => {
+    const bridge = await browser.execute(() => window.__VIMEFLOW_E2E__)
+    if (!bridge)
+      throw new Error('E2E bridge not found — rebuild with VITE_E2E=1')
+  })
+
   it('renders terminal with non-empty accessible buffer', async () => {
     // useSessionManager starts with a default session, so a terminal pane
     // is already present on launch — no need to click "New tab"
@@ -603,13 +626,14 @@ Phase 1a is the risk gate. If tauri-driver + WebdriverIO + frontend bridge works
 
 Evaluated five options before settling on the hybrid approach:
 
-| Option                         | Verdict           | Reason                                                                   |
-| ------------------------------ | ----------------- | ------------------------------------------------------------------------ |
-| **tauri-driver + WebdriverIO** | Adopted (core)    | Official, documented, CI examples. Handles standard Tauri E2E.           |
-| **tauri-plugin-playwright**    | Watch list        | Best API but weeks old (March 2026), 0% docs. Re-evaluate in 2-3 months. |
-| **Cypress**                    | Rejected          | Cannot connect to Tauri webview. Fundamentally incompatible.             |
-| **tauri::test (Rust)**         | Adopted (backend) | Already configured. Excellent for IPC command testing. No frontend.      |
-| **Playwright against Vite**    | Skipped           | Frontend-only E2E is overkill when the app is IPC-dependent.             |
+| Option                         | Verdict             | Reason                                                                                                                   |
+| ------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **tauri-driver + WebdriverIO** | Adopted (core)      | Official, documented, CI examples. Handles standard Tauri E2E.                                                           |
+| **tauri-plugin-playwright**    | Watch list          | Best API but weeks old (March 2026), 0% docs. Re-evaluate in 2-3 months.                                                 |
+| **Cypress**                    | Rejected            | Cannot connect to Tauri webview. Fundamentally incompatible.                                                             |
+| **tauri::test (Rust)**         | Adopted (backend)   | Already configured. Excellent for IPC command testing. No frontend.                                                      |
+| **Playwright against Vite**    | Skipped             | Frontend-only E2E is overkill when the app is IPC-dependent.                                                             |
+| **tauri-pilot**                | Recommended (macOS) | Unix socket + WebKit JS eval. Best for macOS local dev. WSL2 blocked by WebKitGTK eval issue (#65). No WDIO integration. |
 
 ## Known Platform Issues
 
