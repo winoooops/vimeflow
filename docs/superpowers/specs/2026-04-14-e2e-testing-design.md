@@ -599,7 +599,7 @@ Spiked on 2026-04-14. Both `tauri-driver` (WebKitWebDriver) and `tauri-plugin-pi
 
 **Impact**: E2E tests cannot run locally on WSL2. Must use a real Linux environment (GitHub Actions, native Linux, or VM with GPU passthrough).
 
-**Tracked in**: See GitHub issue for investigation and workaround tracking.
+**Tracked in**: #65
 
 ### Windows: WebView2 viable but agent tests unsupported
 
