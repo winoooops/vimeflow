@@ -129,7 +129,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn, type ChildProcess } from 'node:child_process'
 
-let tauriDriver: ChildProcess
+let tauriDriver: ChildProcess | undefined
 
 // Resolve relative to this config file's location — stable regardless of cwd
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -160,7 +160,7 @@ export const config: WebdriverIO.Config = {
     })
   },
   afterSession() {
-    tauriDriver.kill()
+    tauriDriver?.kill()
   },
 
   capabilities: [
@@ -366,8 +366,8 @@ describe('PTY spawn', () => {
     // Wait for the PTY to produce output, then verify the a11y buffer is readable
     await browser.waitUntil(
       async () => {
-        const content = await browser.execute(() =>
-          window.__VIMEFLOW_E2E__.getTerminalBuffer()
+        const content = await browser.execute(
+          () => window.__VIMEFLOW_E2E__?.getTerminalBuffer() ?? ''
         )
         return content.trim().length > 0
       },
@@ -387,8 +387,8 @@ describe('PTY spawn', () => {
 
     const content = await browser.waitUntil(
       async () => {
-        const buf = await browser.execute(() =>
-          window.__VIMEFLOW_E2E__.getTerminalBuffer()
+        const buf = await browser.execute(
+          () => window.__VIMEFLOW_E2E__?.getTerminalBuffer() ?? ''
         )
         return buf.includes('__VIMEFLOW_E2E_READY__') ? buf : null
       },
@@ -429,7 +429,7 @@ hello
 $ _
 (5 rows, cursor at 2:2, session=a1b2c3d4)
 
-vimeflow-repl> execute window.__VIMEFLOW_E2E__.getTerminalBuffer()
+vimeflow-repl> execute window.__VIMEFLOW_E2E__?.getTerminalBuffer() ?? ''
 "$ echo hello\nhello\n$ "
 # Phase 2: getTerminalBuffer('a1b2c3d4') — session ID support deferred
 
@@ -509,11 +509,11 @@ Split into two milestones to reduce risk:
 
 **Phase 1a: Prove the pipeline (3 tests, no REPL)**
 
-| Module       | Test            | Verifies                                                                                                                                                                                |
-| ------------ | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| e2e-core     | `app-launch`    | Tauri app starts, `[data-testid="workspace-view"]` renders, icon rail visible                                                                                                           |
-| e2e-core     | `ipc-roundtrip` | Navigate to Files panel → `[data-testid="file-explorer"]` populates with entries (tests IPC via the real UI flow, not raw `invoke`)                                                     |
-| e2e-terminal | `pty-spawn`     | Default session's `[data-testid="terminal-pane"]` visible → `window.__VIMEFLOW_E2E__.getTerminalBuffer()` returns non-empty content (no click needed — default session already running) |
+| Module       | Test            | Verifies                                                                                                                                                                                       |
+| ------------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| e2e-core     | `app-launch`    | Tauri app starts, `[data-testid="workspace-view"]` renders, icon rail visible                                                                                                                  |
+| e2e-core     | `ipc-roundtrip` | Navigate to Files panel → `[data-testid="file-explorer"]` populates with entries (tests IPC via the real UI flow, not raw `invoke`)                                                            |
+| e2e-terminal | `pty-spawn`     | Default session's `[data-testid="terminal-pane"]` visible → `window.__VIMEFLOW_E2E__?.getTerminalBuffer() ?? ''` returns non-empty content (no click needed — default session already running) |
 
 This milestone validates: WebdriverIO + tauri-driver works, the Tauri binary launches, IPC works via a real UI flow, and the frontend bridge reads terminal content. Everything else builds on this foundation.
 
@@ -526,6 +526,11 @@ This milestone validates: WebdriverIO + tauri-driver works, the Tauri binary lau
 - Create `src/types/e2e.d.ts` with `Window` interface augmentation (required for strict TypeScript)
 - Add static `import './lib/e2e-bridge'` to `src/main.tsx`
 - Add `getAllPtySessionIds()` export to `src/features/terminal/ptySessionMap.ts`
+- Add ESLint override for `tests/e2e/` — disable `vitest/consistent-test-it` (E2E uses Mocha `it()`, not Vitest `test()`):
+  ```js
+  // eslint.config.js
+  { files: ['tests/e2e/**/*.spec.ts'], rules: { 'vitest/consistent-test-it': 'off' } }
+  ```
 - Add `tsx` to devDependencies (needed for REPL in Phase 1b)
 
 **Phase 1b: Expand smoke coverage + REPL (4 tests + REPL)**
