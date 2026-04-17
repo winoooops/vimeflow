@@ -90,6 +90,7 @@ This file covers what you need to start working. For deeper topics, read the lin
 | Codex feedback loop design spec                          | `docs/superpowers/specs/2026-04-03-codex-feedback-loop-design.md` |
 | Progress tracking (roadmap status)                       | `docs/roadmap/progress.yaml`                                      |
 | Shell OSC 7 setup (file explorer cwd sync)               | `README.md` → "Shell Setup (OSC 7)"                               |
+| Linux/Wayland WebKitGTK renderer flag (tauri:dev)        | `README.md` → "Linux / Wayland: WebKitGTK Renderer"               |
 | Review knowledge base (patterns from past reviews)       | `docs/reviews/CLAUDE.md`                                          |
 
 ## Harness Plugin Setup
