@@ -137,6 +137,12 @@ Or add manually to `~/.bashrc`:
 PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND;}"'printf "\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'
 ```
 
+### Linux / Wayland: WebKitGTK Renderer
+
+The `tauri:dev` script sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`. WebKitGTK's DMA-BUF renderer crashes on many Wayland compositor + driver combos with `Gdk-Message: Error 71 (Protocol error) dispatching to Wayland display`. Disabling DMA-BUF falls back to a renderer that works reliably across setups.
+
+The variable is harmless on macOS (no WebKitGTK) but the inline shell syntax does not work on Windows `cmd.exe`. If Windows support is needed, swap in [`cross-env`](https://www.npmjs.com/package/cross-env).
+
 ## Repository Structure
 
 ```
