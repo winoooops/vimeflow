@@ -36,20 +36,33 @@ Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + Re
 - **代理活动面板** — 状态、指标、可折叠区域
 - **上下文切换器** — 文件 / 编辑器 / Diff 标签页
 
+### 代理状态侧边栏（第 4 阶段 — 进行中）
+
+实时代理可观察性面板，自动检测终端会话中运行的 AI 编码代理：
+
+- **Rust 后端** — `src-tauri/src/agent/` 模块包含代理检测器（进程树轮询）、statusline 文件监听器（`notify` crate）和 JSONL transcript 解析器用于工具调用跟踪
+- **Statusline 桥接** — 每会话 shell 脚本将 Claude Code 的 statusline JSON 输出到被监听文件；Rust 解析并通过 Tauri 事件发送（`agent-detected`、`agent-status`、`agent-tool-call`、`agent-disconnected`）
+- **前端面板** — `src/features/agent-status/` 包含订阅 Tauri 事件的 `useAgentStatus` hook，以及组件：StatusCard（身份 + 模型徽章）、BudgetMetrics（自适应 API Key / 订阅者布局）、ContextBucket（填充仪表 + 进度条）、ToolCallSummary（聚合芯片）、RecentToolCalls、FilesChanged、TestResults 和 ActivityFooter
+- **自动折叠** — 未检测到代理时面板为 0px，检测到时动画展开到 280px，断开后保留最终状态 5 秒
+- **ts-rs 类型代码生成** — Rust 类型自动导出到 `src/bindings/`，前端可类型安全消费
+
+设计规格：[`docs/superpowers/specs/2026-04-12-agent-status-sidebar/`](docs/superpowers/specs/2026-04-12-agent-status-sidebar/CLAUDE.md)
+
 ### 功能模块
 
 | 模块                | 描述                                                                  |
 | ------------------- | --------------------------------------------------------------------- |
 | **terminal**        | xterm.js + Tauri PTY IPC 桥接，会话管理                               |
-| **editor**          | IDE 风格标签编辑器，Shiki 语法高亮，Vim 状态栏                        |
+| **editor**          | IDE 风格标签编辑器 — CodeMirror 6、Vim 模式、语言扩展、Vim 状态栏     |
 | **diff**            | Lazygit 风格 Git Diff 查看器（并排 + 统一视图，hunk 导航，暂存/丢弃） |
 | **files**           | 文件浏览树，面包屑导航，Git 状态徽章（M/A/D/U），拖放支持             |
 | **command-palette** | Vim 风格 `:command` 命令面板，模糊匹配，嵌套命令树                    |
+| **agent-status**    | 实时代理可观察性面板（statusline 桥接 + transcript 解析）             |
 | **workspace**       | 组合以上所有区域的布局外壳                                            |
 
 ### 质量保障
 
-- **1125+ 测试**通过，**92%+ 覆盖率**
+- **1399 测试**通过（另有 3 个跳过，共 1402）、**~91% 覆盖率**
 - 无障碍优先的测试查询（`getByRole` 优于 `getByText`）
 - Pre-commit 钩子：对暂存文件运行 ESLint + Prettier
 - Commit-msg 钩子：commitlint 约定式提交
@@ -63,7 +76,7 @@ Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + Re
 | **前端**   | React 19、TypeScript 5（严格模式）、Vite               |
 | **样式**   | Tailwind CSS v4、Catppuccin Mocha 语义化 Token         |
 | **终端**   | xterm.js 6、WebGL addon、FitAddon                      |
-| **编辑器** | Shiki 4（语法高亮）                                    |
+| **编辑器** | CodeMirror 6、@replit/codemirror-vim（Vim 模式）       |
 | **动画**   | Framer Motion 12                                       |
 | **测试**   | Vitest 3、Testing Library                              |
 | **质量**   | ESLint 9（flat config）、Prettier 3、Husky、commitlint |
@@ -94,7 +107,7 @@ npm run dev                      # Vite 开发服务器，localhost:1420
 npm run tauri:dev                # Tauri + Rust 后端
 
 # 测试
-npm test                         # 1125+ 测试
+npm test                         # 1399 测试（另有 3 个跳过）
 npx vitest run src/path/file.test.tsx  # 单文件测试
 
 # 质量检查
@@ -102,6 +115,25 @@ npm run lint                     # ESLint（类型检查）
 npm run format:check             # Prettier 检查
 npm run type-check               # tsc -b
 ```
+
+### Harness 插件安装
+
+自主开发引擎以本地 Claude Code 插件形式提供三个技能：`/harness-plugin:loop`（代理循环）、`/harness-plugin:review`（本地 Codex 审查）、`/harness-plugin:github-review`（PR 审查修复）。
+
+```bash
+# 1. 添加项目本地插件市场（一次性）
+/plugin marketplace add .
+
+# 2. 安装 harness 插件
+/plugin install harness-plugin@harness
+
+# 3. 重载激活
+/reload-plugins
+```
+
+插件市场定义在 `.claude-plugin/marketplace.json`，插件源码位于 `plugins/harness/`。安装后，技能缓存在 `~/.claude/plugins/cache/harness/`，跨会话持久化。
+
+> 由于[已知的 Claude Code 问题](https://github.com/anthropics/claude-code/issues/18949)，插件技能不会出现在 `/` 自动补全中。可选的自动补全变通方法见 [`CLAUDE.md`](CLAUDE.md#harness-plugin-setup)（在 `~/.claude/commands/` 中创建轻量命令包装器）。
 
 ## 仓库结构
 
@@ -113,10 +145,11 @@ docs/design/DESIGN.md       # UI 设计系统（唯一真实来源）
 src/
 ├── features/
 │   ├── terminal/           # xterm.js + TauriTerminalService IPC 桥接
-│   ├── editor/             # Shiki 标签式代码编辑器
+│   ├── editor/             # CodeMirror 标签式代码编辑器
 │   ├── diff/               # Lazygit 风格 Diff 查看器
 │   ├── files/              # 文件浏览树
 │   ├── command-palette/    # Vim 风格命令面板
+│   ├── agent-status/       # 实时代理可观察性面板
 │   └── workspace/          # 4 区布局外壳
 ├── components/layout/      # 共享布局（IconRail、Sidebar、TopTabBar、ContextPanel）
 └── test/                   # Vitest 配置
@@ -125,7 +158,10 @@ src-tauri/
 ├── src/
 │   ├── main.rs             # Tauri 入口
 │   ├── lib.rs              # 库配置
-│   └── terminal/           # PTY 命令、状态、类型
+│   ├── terminal/           # PTY 命令、状态、类型
+│   ├── filesystem/         # 列表/读/写命令，含 scope 验证
+│   ├── git/                # Git 状态、Diff、暂存/取消暂存
+│   └── agent/              # 代理检测器、statusline 监听器、transcript 解析器
 ├── Cargo.toml              # Rust 依赖
 └── tauri.conf.json         # Tauri 配置
 
@@ -147,13 +183,14 @@ harness/                    # 自主开发循环（Claude Code SDK，Python）
 
 ## 路线图
 
-| 阶段       | 状态   | 描述                                   |
-| ---------- | ------ | -------------------------------------- |
-| 第 1 阶段  | 已完成 | Tauri 脚手架、Rust 编译、CI 通过       |
-| 第 2 阶段  | 已完成 | 工作空间布局外壳（4 区网格，所有组件） |
-| 第 3 阶段  | 已完成 | 终端核心（xterm.js + Tauri PTY IPC）   |
-| 第 4 阶段  | 下一步 | 会话管理 + Zustand 状态                |
-| 第 5+ 阶段 | 计划中 | 真实 Git 操作、AI 代理输出流、拖放功能 |
+| 阶段       | 状态   | 描述                                        |
+| ---------- | ------ | ------------------------------------------- |
+| 第 1 阶段  | 已完成 | Tauri 脚手架、Rust 编译、CI 通过            |
+| 第 2 阶段  | 已完成 | 工作空间布局外壳（4 区网格，所有组件）      |
+| 第 3 阶段  | 已完成 | 终端核心（xterm.js + Tauri PTY IPC）        |
+| 第 4 阶段  | 进行中 | 代理状态侧边栏（检测、statusline 桥接、UI） |
+| 第 5 阶段  | 下一步 | 会话管理 + Zustand 状态                     |
+| 第 6+ 阶段 | 计划中 | 真实 Git 操作、AI 代理输出流、拖放功能      |
 
 进度跟踪：[`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml)
 

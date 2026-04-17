@@ -50,19 +50,19 @@ Design spec: [`docs/superpowers/specs/2026-04-12-agent-status-sidebar/`](docs/su
 
 ### Feature Modules
 
-| Module              | Description                                                                            |
-| ------------------- | -------------------------------------------------------------------------------------- |
-| **terminal**        | xterm.js + Tauri PTY IPC bridge, session management                                    |
-| **editor**          | IDE-style tabbed editor with Shiki syntax highlighting, vim status bar                 |
-| **diff**            | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard) |
-| **files**           | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop        |
-| **command-palette** | Vim-style `:command` palette with fuzzy matching and nested command tree               |
-| **agent-status**    | Real-time agent observability panel (statusline bridge + transcript parsing)           |
-| **workspace**       | Layout shell composing all zones above                                                 |
+| Module              | Description                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------- |
+| **terminal**        | xterm.js + Tauri PTY IPC bridge, session management                                       |
+| **editor**          | IDE-style tabbed editor — CodeMirror 6, vim mode (@replit/codemirror-vim), vim status bar |
+| **diff**            | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard)    |
+| **files**           | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop           |
+| **command-palette** | Vim-style `:command` palette with fuzzy matching and nested command tree                  |
+| **agent-status**    | Real-time agent observability panel (statusline bridge + transcript parsing)              |
+| **workspace**       | Layout shell composing all zones above                                                    |
 
 ### Quality
 
-- **1125+ tests** passing with **92%+ coverage**
+- **1399 tests** passing (plus 3 skipped, 1402 total) with **~91% coverage**
 - Accessibility-first test queries (`getByRole` over `getByText`)
 - Pre-commit hooks: ESLint + Prettier on staged files
 - Commit-msg hook: conventional commits via commitlint
@@ -76,7 +76,7 @@ Design spec: [`docs/superpowers/specs/2026-04-12-agent-status-sidebar/`](docs/su
 | **Frontend**  | React 19, TypeScript 5 (strict), Vite                 |
 | **Styling**   | Tailwind CSS v4, Catppuccin Mocha semantic tokens     |
 | **Terminal**  | xterm.js 6, WebGL addon, FitAddon                     |
-| **Editor**    | Shiki 4 (syntax highlighting)                         |
+| **Editor**    | CodeMirror 6, @replit/codemirror-vim (vim mode)       |
 | **Animation** | Framer Motion 12                                      |
 | **Testing**   | Vitest 3, Testing Library                             |
 | **Quality**   | ESLint 9 (flat config), Prettier 3, Husky, commitlint |
@@ -107,7 +107,7 @@ npm run dev                      # Vite dev server at localhost:1420
 npm run tauri:dev                # Tauri + Rust backend
 
 # Tests
-npm test                         # 1125+ tests
+npm test                         # 1399 tests (+3 skipped)
 npx vitest run src/path/file.test.tsx  # Single file
 
 # Quality
@@ -143,6 +143,25 @@ The `tauri:dev` script sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`. WebKitGTK's DMA-
 
 The variable is harmless on macOS (no WebKitGTK) but the inline shell syntax does not work on Windows `cmd.exe`. If Windows support is needed, swap in [`cross-env`](https://www.npmjs.com/package/cross-env).
 
+### Harness Plugin Setup
+
+The autonomous development harness is distributed as a local Claude Code plugin with three skills: `/harness-plugin:loop` (agent loop), `/harness-plugin:review` (local Codex review), and `/harness-plugin:github-review` (PR review fix).
+
+```bash
+# 1. Add the project's local marketplace (one-time)
+/plugin marketplace add .
+
+# 2. Install the harness plugin
+/plugin install harness-plugin@harness
+
+# 3. Reload to activate
+/reload-plugins
+```
+
+The marketplace is defined at `.claude-plugin/marketplace.json` and the plugin source lives at `plugins/harness/`. After installation, skills are cached at `~/.claude/plugins/cache/harness/` and persist across sessions.
+
+> Plugin skills don't appear in `/` autocomplete due to a [known Claude Code bug](https://github.com/anthropics/claude-code/issues/18949). See [`CLAUDE.md`](CLAUDE.md#harness-plugin-setup) for the optional autocomplete workaround (thin command wrappers in `~/.claude/commands/`).
+
 ## Repository Structure
 
 ```
@@ -153,7 +172,7 @@ docs/design/DESIGN.md       # UI design system (single source of truth)
 src/
 ├── features/
 │   ├── terminal/           # xterm.js + TauriTerminalService IPC bridge
-│   ├── editor/             # Tabbed code editor with Shiki
+│   ├── editor/             # Tabbed code editor with CodeMirror 6 + vim mode
 │   ├── diff/               # Lazygit-style diff viewer
 │   ├── files/              # File explorer tree
 │   ├── command-palette/    # Vim-style command palette
@@ -167,6 +186,8 @@ src-tauri/
 │   ├── main.rs             # Tauri entry point
 │   ├── lib.rs              # Library setup
 │   ├── terminal/           # PTY commands, state, types
+│   ├── filesystem/         # List/read/write commands with scope validation
+│   ├── git/                # Git status, diff, stage/unstage
 │   └── agent/              # Agent detector, statusline watcher, transcript parser
 ├── Cargo.toml              # Rust dependencies
 └── tauri.conf.json         # Tauri configuration
