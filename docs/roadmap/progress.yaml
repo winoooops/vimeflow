@@ -373,7 +373,7 @@ phases:
     name: 'Session Management + State'
     status: pending
     blocked_by:
-      - phase-4
+      - phase-3
     specs:
       - docs/superpowers/specs/2026-04-06-cli-agent-workspace-design.md
     steps:
@@ -461,11 +461,11 @@ phases:
       - docs/superpowers/specs/2026-04-06-cli-agent-workspace-design.md
     steps:
       - id: p6-s1
-        name: 'Add `notify` Rust crate for filesystem watching'
+        name: 'Configure `notify` crate for directory filesystem watching (crate already installed in phase-4 for statusline watcher)'
         status: pending
         commit: null
         pr: null
-        notes: null
+        notes: 'Reuse/extend the watcher infrastructure added in src-tauri/src/agent/watcher.rs rather than re-adding the dependency.'
       - id: p6-s2
         name: 'Implement Rust commands: watch_directory, unwatch_directory'
         status: pending
