@@ -1,0 +1,118 @@
+name: E2E Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src-tauri/**'
+      - 'src/**'
+      - 'tests/e2e/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/e2e.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src-tauri/**'
+      - 'src/**'
+      - 'tests/e2e/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/e2e.yml'
+
+# Cancel in-flight runs for the same ref — E2E is expensive enough that
+# superseding reruns is the right default.
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-linux:
+    name: E2E smoke suite (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # Key the cargo cache against the e2e-test feature so the shared
+          # cache with `tauri-build` (which doesn't enable e2e-test) doesn't
+          # mask recompiles triggered by this job.
+          shared-key: e2e-test
+
+      - name: Cache tauri-driver
+        id: tauri-driver-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/tauri-driver
+          key: tauri-driver-${{ runner.os }}-v1
+
+      - name: Install tauri-driver
+        if: steps.tauri-driver-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-driver
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            webkit2gtk-driver \
+            xvfb
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build frontend (VITE_E2E=1)
+        run: npm run build
+        env:
+          VITE_E2E: '1'
+
+      - name: Build Tauri debug binary with e2e-test feature
+        working-directory: src-tauri
+        run: cargo build --features e2e-test,tauri/custom-protocol
+
+      - name: Run core E2E suite
+        run: xvfb-run --auto-servernum npx wdio tests/e2e/core/wdio.conf.ts
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+
+      - name: Run terminal E2E suite
+        run: xvfb-run --auto-servernum npx wdio tests/e2e/terminal/wdio.conf.ts
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+
+      - name: Run agent E2E suite
+        run: xvfb-run --auto-servernum npx wdio tests/e2e/agent/wdio.conf.ts
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+
+      - name: Upload E2E diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-diagnostics-${{ github.run_id }}
+          path: |
+            src-tauri/target/debug/vimeflow
+            dist/
+          retention-days: 3
+          if-no-files-found: ignore

@@ -649,10 +649,18 @@ Phase 1a is the risk gate. If tauri-driver + WebdriverIO + frontend bridge works
 
 ### Phase 3: CI & Multi-Platform
 
-- GitHub Actions workflow (Linux runner + xvfb)
-- E2E build caching (cargo binary + node_modules)
-- Test result artifacts (screenshots, logs)
-- Multi-platform matrix: **Linux + Windows only**. macOS is not viable with `tauri-driver` — Tauri's WebDriver docs confirm no WKWebView driver exists. macOS E2E would require `tauri-plugin-playwright` (watch list) or the community `tauri-webdriver` project (young, unproven). Re-evaluate when those mature.
+**Landed 2026-04-19** (Linux runner only):
+
+- ✅ `.github/workflows/e2e.yml` — Ubuntu runner, installs `webkit2gtk-driver` + `xvfb` via apt, caches `tauri-driver` binary via `actions/cache`, shares Rust build cache via `Swatinem/rust-cache@v2` keyed on `e2e-test` feature so the `tauri-build` workflow's cache doesn't mask recompiles. Runs all three spec modules under `xvfb-run --auto-servernum`. Uploads diagnostics artifact on failure (binary + dist).
+- ✅ Build cache strategy: node_modules via `actions/setup-node@v4` cache, cargo deps via `Swatinem/rust-cache@v2`, tauri-driver binary via `actions/cache@v4`. First run pays the cold-install cost; subsequent runs skip.
+- ✅ Concurrency group cancels in-flight runs on the same ref — E2E is expensive enough that superseding reruns is the right default.
+
+**Deferred**:
+
+- Screenshot-on-failure — WebKitGTK WebDriver's `takeScreenshot` support needs verification; skipping until we hit a flaky failure that demands a screenshot.
+- Test result JSON (`wdio-junit-reporter`) — not wired; CI surfaces mocha's spec output on failure which has been sufficient for the 7 specs so far.
+- Windows runner: `e2e-core` and `e2e-terminal` should work on Windows (WebView2 is Chromium-based, driver pairs cleanly), but `e2e-agent` currently requires `/proc` + `exec -a` and won't run. Windows matrix entry pending a Windows process-enumeration path in the agent detector.
+- macOS: still not viable via `tauri-driver` (no WKWebView WebDriver). `tauri-plugin-playwright` remains on the watch list.
 
 ## Framework Evaluation Record
 
