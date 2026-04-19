@@ -24,6 +24,9 @@ export const config: WebdriverIO.Config = {
   port: TAURI_DRIVER_PORT,
 
   onPrepare: async () => {
+    // See tests/e2e/core/wdio.conf.ts — required on some Linux + GPU
+    // combos to prevent a silent DMA-BUF-renderer webview crash.
+    process.env.WEBKIT_DISABLE_DMABUF_RENDERER = '1'
     // Agent suite wants detection enabled — explicitly clear the env
     // var in case it leaks in from the shell or a prior WDIO run. The
     // spec itself has a skip-guard for pre-existing host claude
