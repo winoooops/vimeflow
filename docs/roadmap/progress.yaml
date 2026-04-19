@@ -364,10 +364,22 @@ phases:
         pr: 49
       - id: p4-d6
         check: 'Manual verification in tauri:dev with a real Claude Code session (end-to-end)'
-        status: pending
+        status: in-progress
         commit: null
         pr: null
-        notes: 'Outstanding — tracked by the E2E testing infrastructure spec (docs/superpowers/specs/2026-04-14-e2e-testing-design.md)'
+        notes: >-
+          Phase 1a/1b/2 landed 2026-04-19 on native Linux
+          (Fedora/Nobara): tauri-driver + WebdriverIO configs, frontend
+          E2E bridge (window.__VIMEFLOW_E2E__), Cargo e2e-test feature,
+          and 10 spec files (11 tests) all green locally covering app
+          launch, IPC round-trip, navigation, PTY spawn, terminal I/O,
+          session lifecycle, multi-tab isolation, terminal resize,
+          file→editor flow, and fake-claude agent detection. WSL2 (#65)
+          scoped down to "local env unsupported; use native Linux or
+          CI". Deferred: REPL, structured logging (#61), agent
+          transcript parsing, HMR orphan PTY harness (#55), Phase 3 CI.
+          Spec:
+          docs/superpowers/specs/2026-04-14-e2e-testing-design.md.
 
   - id: phase-5
     name: 'Session Management + State'

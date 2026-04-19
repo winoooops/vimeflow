@@ -1,0 +1,133 @@
+---
+id: e2e-testing
+category: e2e-testing
+created: 2026-04-19
+last_updated: 2026-04-19
+ref_count: 0
+---
+
+# E2E Testing (WDIO + tauri-driver + WebKitGTK)
+
+## Summary
+
+WebdriverIO + tauri-driver on Linux is a long chain of processes —
+WDIO launcher → workers → tauri-driver → WebKitWebDriver → the Tauri
+app — and each hop has sharp edges that produce identical-looking
+"invalid session id" / "Failed to match capabilities" / "unsupported
+operation" failures. Nine distinct causes encountered while landing
+the E2E infrastructure in PR #70; root-causing any one of them
+requires treating the session-lifecycle messages as generic symptoms
+and following the actual process chain.
+
+## Findings
+
+### 1. WebKit DMA-BUF renderer crash on Linux + AMD/Mesa — needs `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+
+- **Source:** debug session | PR #70 | 2026-04-19
+- **Severity:** HIGH
+- **File:** `tests/e2e/{core,terminal,agent}/wdio.conf.ts`
+- **Finding:** On Fedora 43 + webkit2gtk4.1 2.50.5 + AMD GPU, WebKitGTK's DMA-BUF renderer initialises, fails, and the webview silently dies during startup. WDIO sees `invalid session id when running "element"` on the first selector query because the WebDriver session was deleted the moment the app crashed. Masquerades as a spec/timing bug. `npm run tauri:dev` already sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` for the same reason; the WDIO path didn't.
+- **Fix:** `onPrepare` in each WDIO config sets `process.env.WEBKIT_DISABLE_DMABUF_RENDERER = '1'` before `startTauriDriver()`. Env propagates WDIO launcher → tauri-driver → WebKitWebDriver → app.
+- **Commit:** `947da57 fix(e2e): set WEBKIT_DISABLE_DMABUF_RENDERER in WDIO onPrepare`
+
+### 2. WDIO 9 injects `webSocketUrl: true` + non-W3C `unhandledPromptBehavior: "ignore"`
+
+- **Source:** debug session | PR #70 | 2026-04-19
+- **Severity:** HIGH
+- **File:** `tests/e2e/{core,terminal,agent}/wdio.conf.ts`
+- **Finding:** WDIO 9 auto-injects BiDi capabilities unless `wdio:enforceWebDriverClassic: true` is set. WebKitWebDriver rejects both with `session not created: Failed to match capabilities`. Request body capture via a local HTTP proxy confirmed WDIO was rewriting the capability block after the config was loaded.
+- **Fix:** Add `'wdio:enforceWebDriverClassic': true` to every capability block. Source: `node_modules/webdriver/build/node.js:1065-1072`.
+- **Commit:** `7f1c053 feat(e2e): land Phase 1a WebdriverIO smoke suite for Tauri`
+
+### 3. WebKitGTK WebDriver doesn't implement `element/click`
+
+- **Source:** debug session | PR #70 | 2026-04-19
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/shared/actions.ts`
+- **Finding:** `element.click()` via the W3C WebDriver Actions API returns `unsupported operation`. Happens for every native click in specs that interact with buttons/tabs.
+- **Fix:** `clickBySelector(sel)` uses `browser.execute((s) => document.querySelector(s)?.click())` to dispatch the DOM event directly. Same shape for `focusBySelector`.
+- **Commit:** `7185f09 feat(e2e): land Phase 1b specs (nav, terminal-io, lifecycle, agent)`
+
+### 4. xterm keystrokes can't be synthesised via Actions — target `.xterm-helper-textarea` directly
+
+- **Source:** debug session | PR #70 | 2026-04-19
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/shared/terminal.ts`
+- **Finding:** Related to (3). WebKit's Actions API is missing, so `browser.keys()` doesn't type into the focused xterm. xterm binds its input handler to a hidden `.xterm-helper-textarea`; dispatching synthetic `InputEvent` (per character, `inputType: 'insertText'`) + `KeyboardEvent('keydown', { key: 'Enter', keyCode: 13 })` routes keystrokes into the PTY writer path.
+- **Fix:** `typeInActiveTerminal(s)` / `pressEnterInActiveTerminal()` helpers in `tests/e2e/shared/terminal.ts`. Works for ASCII; non-BMP characters (surrogate pairs) would need widening.
+- **Commit:** `7185f09`
+
+### 5. `tput cols` returns empty under xvfb — read `$COLUMNS` instead
+
+- **Source:** debug session | PR #70 | 2026-04-19
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/terminal/specs/terminal-resize.spec.ts`
+- **Finding:** CI runs `xvfb-run` which spawns the PTY with empty `TERM`. `tput cols` emits nothing when `TERM` is missing, the shell substitution `echo TAG$(tput cols)END` collapses to `TAGEND`, and the regex `/TAG(\d+)END/` never matches. Passed locally where the user shell has `TERM` set; flaked on CI with `"never produced a value"` error, timing out after 15s.
+- **Fix:** Use `${COLUMNS}` — bash/zsh update it from SIGWINCH / TIOCGWINSZ and don't require `TERM`. Tagged echo pattern is otherwise the same.
+- **Commit:** `edadd2c fix(e2e): read COLUMNS instead of tput cols in resize spec for CI`
+
+### 6. `tauri-driver` binary path differs across install methods
+
+- **Source:** debug session | PR #70 | 2026-04-19
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/shared/tauri-driver.ts`
+- **Finding:** Hardcoded `~/.local/bin/tauri-driver` (correct on my workstation, where the rustup shim had no default toolchain so I installed via `cargo install --root ~/.local`) fails on GitHub Actions, which uses `$CARGO_HOME/bin = ~/.cargo/bin/tauri-driver` by default. Surfaces as `spawn .../tauri-driver ENOENT` and kills the WDIO session before it starts.
+- **Fix:** `resolveTauriDriver()` checks in order: `$TAURI_DRIVER_PATH` env override → `~/.cargo/bin/tauri-driver` → `~/.local/bin/tauri-driver` → bare `tauri-driver` on PATH. Also bumped `waitForPort` 5s → 15s to give cold CI runners slack, and attached an on-error handler so a missing binary surfaces a useful message instead of a raw ENOENT stack.
+- **Commit:** `b781cd7 fix(e2e): resolve tauri-driver across cargo and .local install roots`
+
+### 7. WebKitWebDriver on Linux allows one concurrent session — serialize workers
+
+- **Source:** debug session | PR #70 | 2026-04-19
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/{core,terminal,agent}/wdio.conf.ts`
+- **Finding:** Default WDIO config ran specs in parallel workers; second spec immediately got `Maximum number of active sessions` from WebKitWebDriver. Earlier still, using `beforeSession` / `afterSession` (per-worker lifecycle) to spawn tauri-driver raced the port bind and produced `ECONNREFUSED` on whichever worker lost.
+- **Fix:** Two required changes — (a) `maxInstances: 1, maxInstancesPerCapability: 1` so specs run sequentially; (b) driver lifecycle in `onPrepare` / `onComplete` (run once per invocation) instead of `beforeSession`. `waitForPort()` polls the TCP port until it actually accepts connections before WDIO proceeds, because the spawned child reports "ready" at fork time, not at bind time.
+- **Commit:** `7f1c053`
+
+### 8. `tauri::generate_context!()` embeds `frontendDist` at compile time
+
+- **Source:** debug session | PR #70 | 2026-04-19
+- **Severity:** HIGH
+- **File:** `src-tauri/src/lib.rs`, `package.json:test:e2e:build`
+- **Finding:** Every Vite rebuild needs a follow-up `cargo build` or the stale bundle stays baked into the binary via `generate_context!`. Observed an infuriating hour where an updated `e2e-bridge.ts` clearly existed in `dist/assets/...js` but the running app still served the old bridge shape. Cargo's change detection for the `include_dir!`-style macro is unreliable — sometimes a cargo rebuild picks up a dist change, sometimes not.
+- **Fix:** `test:e2e:build` npm script chains `vite build && cargo build --features e2e-test,tauri/custom-protocol` so both always run. Touching `src-tauri/src/lib.rs` before cargo forces re-embed if cargo's file-watching misses the dist change. Without `tauri/custom-protocol`, the binary loads `devUrl=http://localhost:5173/` instead of embedded assets and the webview is blank.
+- **Commit:** `7f1c053`
+
+### 9. Host-global `/proc` agent detector collides with real Claude Code processes
+
+- **Source:** debug session | PR #70 | 2026-04-19
+- **Severity:** HIGH
+- **File:** `src-tauri/src/agent/commands.rs`, `src-tauri/src/agent/detector.rs`
+- **Finding:** Detector scans `/proc/<pid>/cmdline` for any `argv[0] = "claude"` and attributes the first match to whatever PTY is polling. On a dev box running Claude Code sessions, the detector latches onto those and misattributes them to fresh Vimeflow PTYs. Breaks the `agent-detect-fake` E2E spec non-deterministically (real claude wins the race against the fixture) and produces false `AgentStatusPanel` renders in production.
+- **Fix (interim):** `VIMEFLOW_DISABLE_AGENT_DETECTION` env short-circuits `detect_agent_in_session` to `Ok(None)`. Set in core + terminal WDIO configs (which don't exercise the detector); cleared in agent config so the feature stays under test. Agent spec also gets a `pgrep -x claude` `before`-guard that skips when the host has unrelated claude processes.
+- **Fix (proper, tracked):** Detector should filter candidates by descent from the PTY's shell PID — walk `/proc/<pid>/stat`'s PPID chain. See [#71](https://github.com/winoooops/vimeflow/issues/71).
+- **Commit:** `055687c fix(e2e): env-gate agent detection so host claude procs don't crash suite` (interim); detector rewrite pending.
+
+## Diagnostic Patterns
+
+Several of the failures above looked identical in the WDIO output
+("invalid session id", "Failed to match capabilities"), but had
+completely different root causes. The generic fast-failure modes:
+
+| Symptom                                              | Usual root cause                                                                 |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `invalid session id` within ~800ms of session create | App crashed during startup (renderer, panic, misconfigured IPC) — not a spec bug |
+| `Failed to match capabilities`                       | WDIO-injected BiDi capabilities or W3C violations the driver rejects             |
+| `unsupported operation when running "element"`       | WebKit WebDriver missing an Actions API endpoint                                 |
+| `spawn <binary> ENOENT`                              | Binary path hardcoded / assumed install layout                                   |
+| `Maximum number of active sessions`                  | Parallel workers contending for WebKitWebDriver's single-session limit           |
+| `ECONNREFUSED` on port 4444                          | `spawn` fired but the child hasn't bound the port yet — need a readiness poll    |
+
+**Useful diagnostic techniques:**
+
+1. **Run a local HTTP proxy between WDIO and tauri-driver** to log actual request bodies — this is how (2) was found. `node:http`-based proxy on port 4444, with tauri-driver on 6666, inspecting the `POST /session` body that WDIO actually sends.
+2. **Strings-check the compiled binary** for known identifiers to verify it was actually rebuilt: `strings src-tauri/target/debug/vimeflow | grep -c VIMEFLOW_DISABLE_AGENT_DETECTION`. Returning 0 after a "successful" `cargo build` means cargo's change detection didn't trigger a re-embed — re-touch `src-tauri/src/lib.rs` and try again.
+3. **Temporary `/tmp` stamp files** from the Rust side are the fastest way to rule in/out whether a specific command was even hit before a crash. Revert before commit.
+4. **Compare `npx wdio` vs `npm run test:e2e`** — they differ in PATH prefixing and the full env surface. If one passes and the other doesn't, the difference is almost always in env vars the script assumes vs what `npm run` actually propagates.
+
+## Related
+
+- Spec: `docs/superpowers/specs/2026-04-14-e2e-testing-design.md`
+- PR: [#70](https://github.com/winoooops/vimeflow/pull/70)
+- WSL2-specific WebKitGTK issue: [#65](https://github.com/winoooops/vimeflow/issues/65)
+- Agent detector scope issue: [#71](https://github.com/winoooops/vimeflow/issues/71)

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# E2E fixture: a fake Claude Code agent.
+#
+# Writes a valid statusline JSON payload to VIMEFLOW_STATUS_FILE, then
+# re-execs into `sleep` with argv[0]="claude" so the polling detector
+# (reads /proc/<pid>/cmdline) picks it up as a real claude process.
+#
+# Intended to run inside a Vimeflow PTY, which exports VIMEFLOW_STATUS_FILE.
+set -euo pipefail
+
+: "${VIMEFLOW_STATUS_FILE:?VIMEFLOW_STATUS_FILE not set — must run inside a Vimeflow PTY}"
+
+mkdir -p "$(dirname "$VIMEFLOW_STATUS_FILE")"
+
+cat > "$VIMEFLOW_STATUS_FILE" <<'JSON'
+{
+  "session_id": "fake-agent-1",
+  "version": "e2e",
+  "model": {
+    "id": "claude-sonnet-4-20250514",
+    "display_name": "Claude Sonnet 4"
+  },
+  "context_window": {
+    "used_percentage": 12.5,
+    "context_window_size": 200000,
+    "total_input_tokens": 25000,
+    "total_output_tokens": 1000
+  }
+}
+JSON
+
+exec -a claude sleep "${VIMEFLOW_FAKE_AGENT_SLEEP_SECONDS:-300}"

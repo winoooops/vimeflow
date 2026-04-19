@@ -15,6 +15,7 @@ export default defineConfig({
       '**/.{idea,git,cache,output,temp}/**',
       '**/{karma,rollup,webpack,vite,vitest,jest,ava,nyc,cypress,tsup,build,eslint,prettier}.config.*',
       '.claude/**',
+      'tests/e2e/**',
     ],
     coverage: {
       provider: 'v8',

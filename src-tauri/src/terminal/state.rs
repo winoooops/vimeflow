@@ -97,6 +97,13 @@ impl PtyState {
         sessions.get(session_id).map(|s| s.cwd.clone())
     }
 
+    /// List all active PTY session IDs (E2E test-only)
+    #[cfg(feature = "e2e-test")]
+    pub fn active_ids(&self) -> Vec<SessionId> {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        sessions.keys().cloned().collect()
+    }
+
     /// Write data to a PTY session
     pub fn write(&self, session_id: &SessionId, data: &[u8]) -> anyhow::Result<()> {
         let mut sessions = self.sessions.lock().expect("failed to lock sessions");
