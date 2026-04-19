@@ -1,6 +1,6 @@
 # Agent Workspace — Screen Design Notes
 
-> This screen follows the unified design system in [docs/design/DESIGN.md](../DESIGN.md). This file documents screen-specific patterns and token reconciliation notes.
+> **STATUS: Superseded.** These Stitch-era notes are kept for historical context. The authoritative spec for this screen now lives in [docs/design/UNIFIED.md](../UNIFIED.md) (see §2 "The Five-Zone Layout" and §3.1 "Terminal"). Tokens come from [docs/design/tokens.css](../tokens.css) / [tokens.ts](../tokens.ts). If anything here conflicts with UNIFIED.md, UNIFIED wins.
 
 ## Overview
 

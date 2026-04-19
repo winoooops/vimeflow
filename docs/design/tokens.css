@@ -1,0 +1,154 @@
+/*
+ * Vimeflow -- Design Tokens (CSS custom properties)
+ *
+ * Import in your global stylesheet:
+ *   @import "./docs/design/tokens.css";
+ *
+ * Then use:  color: var(--on-surface); background: var(--surface);
+ *
+ * This file is the single source of truth for CSS. Values mirror tokens.ts.
+ * Do not hardcode hex values elsewhere.
+ */
+
+:root {
+  /* ── Surface hierarchy ── */
+  --surface: #121221;
+  --surface-container-lowest: #0d0d1c;
+  --surface-container-low: #1a1a2a;
+  --surface-container: #1e1e2e;
+  --surface-container-high: #292839;
+  --surface-container-highest: #333344;
+  --surface-bright: #383849;
+  --surface-tint: #e2c7ff;
+
+  /* ── Primary (lavender) ── */
+  --primary: #e2c7ff;
+  --primary-container: #cba6f7;
+  --primary-dim: #d3b9f0;
+  --on-primary: #2a1646;
+
+  /* ── Secondary (azure) ── */
+  --secondary: #a8c8ff;
+  --secondary-container: #57377f;
+  --secondary-dim: #c39eee;
+
+  /* ── Semantic ── */
+  --tertiary: #ff94a5; /* awaiting user, warn */
+  --tertiary-container: #fd7e94;
+  --error: #ffb4ab;
+  --error-dim: #d73357;
+  --success: #50fa7b; /* running, live */
+  --success-muted: #7defa1; /* completed, diff +, soft success */
+
+  /* ── Text ── */
+  --on-surface: #e3e0f7; /* titles, active */
+  --on-surface-variant: #cdc3d1; /* body (reduce eye strain) */
+  --on-surface-muted: #8a8299; /* meta, timestamps */
+  --outline-variant: #4a444f; /* ghost borders @ 15% alpha only */
+
+  /* ── Syntax ── */
+  --syn-keyword: #cba6f7;
+  --syn-string: #a6e3a1;
+  --syn-fn: #89b4fa;
+  --syn-variable: #f5e0dc;
+  --syn-comment: #6c7086;
+  --syn-type: #fab387;
+  --syn-tag: #f38ba8;
+
+  /* ── Type ── */
+  --font-display: 'Instrument Sans', 'Manrope', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --text-display-lg: 3.5rem;
+  --text-headline-sm: 1.5rem;
+  --text-title-md: 1.125rem;
+  --text-body-md: 0.875rem;
+  --text-label-md: 0.75rem;
+  --text-label-sm: 0.625rem;
+
+  /* ── Radius ── */
+  --radius-xl: 1.5rem; /* windows, main panels */
+  --radius-lg: 1rem; /* cards */
+  --radius-md: 0.75rem; /* buttons, inputs */
+  --radius-sm: 0.5rem; /* inline chips */
+  --radius-full: 9999px; /* pills, status dots */
+
+  /* ── Layout ── */
+  --rail-w: 48px;
+  --sidebar-w: 272px;
+  --sidebar-w-compact: 248px;
+  --activity-w: 320px;
+  --view-tabs-h: 40px;
+  --status-bar-h: 24px;
+
+  /* ── Motion ── */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-fast: 160ms;
+  --dur-base: 300ms;
+  --dur-entry: 220ms;
+  --dur-slow: 400ms;
+
+  /* ── Glass / elevation ── */
+  --glass-fill: rgba(30, 30, 46, 0.88);
+  --glass-blur: 20px;
+  --glass-saturate: 150%;
+  --shadow-ambient: 0 10px 40px rgba(0, 0, 0, 0.4);
+  --shadow-glow-primary: 0 0 24px rgba(203, 166, 247, 0.35);
+  --shadow-glow-success: 0 0 10px var(--success);
+
+  /* ── Focus ring (ghost, never a solid border) ── */
+  --ring-primary: 0 0 0 3px rgba(203, 166, 247, 0.28);
+}
+
+/* ── Global resets that match the system ── */
+html,
+body {
+  background: var(--surface-container-lowest);
+  color: var(--on-surface);
+  font-family: var(--font-body);
+  font-size: var(--text-body-md);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgba(203, 166, 247, 0.3);
+  color: var(--on-surface);
+}
+
+/* ── Animations referenced throughout ── */
+@keyframes vf-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.85);
+  }
+}
+@keyframes vf-cursor-blink {
+  0%,
+  48% {
+    opacity: 1;
+  }
+  50%,
+  98% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes vf-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

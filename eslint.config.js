@@ -27,6 +27,7 @@ export default defineConfig([
       'src-tauri/target',
       '.claude/**',
       'src/bindings/',
+      'docs/**',
     ],
   },
   {
