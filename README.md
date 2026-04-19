@@ -68,6 +68,10 @@ Design spec: [`docs/superpowers/specs/2026-04-12-agent-status-sidebar/`](docs/su
 - Commit-msg hook: conventional commits via commitlint
 - Pre-push hook: full Vitest run
 
+## Changelog
+
+See [`CHANGELOG.md`](./CHANGELOG.md) (English) or [`CHANGELOG.zh-CN.md`](./CHANGELOG.zh-CN.md) (简体中文) for the linear timeline of notable changes. Each entry may cross-link review patterns from [`docs/reviews/`](./docs/reviews/CLAUDE.md) that it applied, updated, or created — so the CHANGELOG is the _when_ and `docs/reviews/` is the _why_.
+
 ## Tech Stack
 
 | Layer         | Technologies                                          |

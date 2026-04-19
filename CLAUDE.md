@@ -91,6 +91,7 @@ This file covers what you need to start working. For deeper topics, read the lin
 | Codex review design spec                                 | `docs/superpowers/specs/2026-04-02-codex-code-review-design.md`                                                            |
 | Codex feedback loop design spec                          | `docs/superpowers/specs/2026-04-03-codex-feedback-loop-design.md`                                                          |
 | Progress tracking (roadmap status)                       | `docs/roadmap/progress.yaml`                                                                                               |
+| Linear change timeline (paired with reviews)             | `CHANGELOG.md` / `CHANGELOG.zh-CN.md`                                                                                      |
 | Shell OSC 7 setup (file explorer cwd sync)               | `README.md` → "Shell Setup (OSC 7)"                                                                                        |
 | Linux/Wayland WebKitGTK renderer flag (tauri:dev)        | `README.md` → "Linux / Wayland: WebKitGTK Renderer"                                                                        |
 | Review knowledge base (patterns from past reviews)       | `docs/reviews/CLAUDE.md`                                                                                                   |

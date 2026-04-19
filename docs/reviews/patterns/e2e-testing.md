@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-04-19
-ref_count: 0
+ref_count: 1
 ---
 
 # E2E Testing (WDIO + tauri-driver + WebKitGTK)

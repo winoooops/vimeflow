@@ -3,12 +3,15 @@
 # Source: docs/roadmap/tauri-migration-roadmap.md
 # Schema: phase → steps → dod (definition of done)
 # Status values: pending | in_progress | done | blocked
-# Revised: 2026-04-16 — Phase 3 marked done; new Phase 4 (Agent Status Sidebar) inserted; old Phases 4-9 renumbered to 5-10
+# Revised: 2026-04-19 — Phase 4 E2E infra (#70) recorded; bilingual CHANGELOG added as timeline companion.
 
-version: 5
-updated: '2026-04-16'
+version: 6
+updated: '2026-04-19'
 roadmap: docs/roadmap/tauri-migration-roadmap.md
-notes: 'Phase 3 (Terminal Core) done — PTY ↔ xterm.js IPC wired via TauriTerminalService. Phase 4 (Agent Status Sidebar) in_progress — detection, statusline bridge, and transcript parser merged (PRs #49, #57, #60, #63). 1399 tests passing, ~91% coverage.'
+changelog:
+  en: CHANGELOG.md
+  zh-CN: CHANGELOG.zh-CN.md
+notes: 'Phase 3 (Terminal Core) done. Phase 4 (Agent Status Sidebar) in_progress — detection, statusline bridge, transcript parser, and E2E infrastructure (WebdriverIO + tauri-driver, Linux) merged (PRs #49, #57, #60, #63, #70). Bilingual CHANGELOG.md / CHANGELOG.zh-CN.md added at repo root — linear timeline paired with docs/reviews/.'
 
 phases:
   - id: phase-1
