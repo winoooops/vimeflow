@@ -3,30 +3,41 @@ import {
   typeInActiveTerminal,
 } from '../../shared/terminal.js'
 
-const readColsWithTag = async (tag: string): Promise<number | null> => {
-  // `echo TAG$(tput cols)END`: only the evaluated line matches /TAG(\d+)END/;
-  // the typed-command echo keeps the literal `$(tput cols)` text and has no
-  // digits in that slot, so it is ignored by the regex.
-  await typeInActiveTerminal(`echo ${tag}$(tput cols)END`)
+const readColsWithTag = async (tag: string): Promise<number> => {
+  // Query COLUMNS directly (set by the shell from TIOCGWINSZ, matches what
+  // xterm has already negotiated with the PTY). `tput cols` works locally
+  // but on CI the TERM env can be empty inside xvfb-run's PTY, making tput
+  // emit nothing and collapsing the substitution to `echo TAGEND`.
+  // `echo TAG${COLUMNS}END`: only the evaluated line has digits; the
+  // typed-command echo keeps `${COLUMNS}` literal.
+  await typeInActiveTerminal(`echo ${tag}\${COLUMNS}END`)
   await pressEnterInActiveTerminal()
   let captured: number | null = null
+  let lastBuf = ''
   const pattern = new RegExp(`${tag}(\\d+)END`)
   await browser
     .waitUntil(
       async () => {
-        const buf = await browser.execute(
+        lastBuf = await browser.execute(
           () => window.__VIMEFLOW_E2E__?.getTerminalBuffer() ?? ''
         )
-        const match = pattern.exec(buf)
+        const match = pattern.exec(lastBuf)
         if (match?.[1]) {
           captured = Number(match[1])
           return true
         }
         return false
       },
-      { timeout: 15_000, timeoutMsg: `echo ${tag} never produced a value` }
+      { timeout: 30_000, interval: 500 }
     )
     .catch(() => undefined)
+  if (captured === null) {
+    const tail = lastBuf.slice(-600).replace(/\s+/g, ' ')
+    throw new Error(
+      `echo ${tag} never produced a numeric value. buffer tail: <${tail}>`
+    )
+  }
+
   return captured
 }
 
@@ -47,9 +58,6 @@ describe('Terminal resize', () => {
     )
 
     const baselineCols = await readColsWithTag('BASE')
-    if (baselineCols === null) {
-      throw new Error('failed to read baseline tput cols')
-    }
     expect(baselineCols).toBeGreaterThan(0)
 
     // Halve the terminal-content width. TerminalZone's content area holds
@@ -69,10 +77,6 @@ describe('Terminal resize', () => {
     await browser.pause(1500)
 
     const resizedCols = await readColsWithTag('POST')
-    if (resizedCols === null) {
-      throw new Error('failed to read tput cols after resize')
-    }
-
     expect(resizedCols).toBeLessThan(baselineCols)
 
     // Restore so subsequent specs aren't affected if module order changes.
