@@ -634,13 +634,18 @@ Phase 1a is the risk gate. If tauri-driver + WebdriverIO + frontend bridge works
 
 ### Phase 2: Logging & Expanded Coverage
 
-- REPL `logs` command + structured logging integration (#61)
-- Multi-tab terminal tests (spawn 2+, switch, verify isolation) with `data-e2e-session-id` attributes
-- Agent transcript parsing with real JSONL fixtures
-- Terminal resize tests
-- Cross-component flows (file explorer → editor → unsaved changes)
-- `read-agent-status`, `list-events` REPL commands
-- **Separate dev-mode harness** for HMR orphan PTY test (#55) — requires `tauri dev` with Vite HMR, cannot be tested with a built binary
+**Landed 2026-04-19** (all 3 specs green on native Linux):
+
+- ✅ Multi-tab terminal tests (`tests/e2e/terminal/specs/multi-tab-isolation.spec.ts`) — spawn 2 tabs, type distinct markers into each, verify cross-tab isolation via `getTerminalBufferForSession(sessionId)`. The `data-session-id` attribute already existed on the pane element; no new attribute needed, but bridge grew a session-scoped reader.
+- ✅ Terminal resize tests (`tests/e2e/terminal/specs/terminal-resize.spec.ts`) — shrink the terminal-content container via inline style → ResizeObserver → fitAddon → `invoke(resize_pty)` → `tput cols` drops. Uses a tagged-echo pattern (`echo BASE$(tput cols)END`) so the typed-command echo never matches the same regex as the shell output.
+- ✅ Cross-component flow (`tests/e2e/core/specs/files-to-editor.spec.ts`) — write `~/vimeflow-e2e-fixture.txt` before the test, click it in the file tree, verify the BottomDrawer header updates to the filename and CodeMirror renders the fixture's content. Covers `list_dir` → file-select event → `read_file` → editor buffer.
+
+**Still deferred**:
+
+- REPL harness + `logs` / `read-agent-status` / `list-events` commands — not needed yet; can be spun up as a separate tool when investigation workflows call for it.
+- Structured logging integration (#61) — tracked separately.
+- Agent transcript parsing with real JSONL fixtures — follow-up on top of the `agent-detect-fake` spec.
+- HMR orphan PTY test (#55) — requires a separate `tauri dev` harness that wraps Vite HMR; cannot be tested with the built `tauri://localhost/` binary used for everything above.
 
 ### Phase 3: CI & Multi-Platform
 
