@@ -37,3 +37,7 @@ export const getPtySessionId = (
 export const clearPtySessionMap = (): void => {
   ptySessionMap.clear()
 }
+
+/** List all registered PTY session IDs (E2E bridge only) */
+export const getAllPtySessionIds = (): string[] =>
+  Array.from(ptySessionMap.values()).map((v) => v.ptySessionId)

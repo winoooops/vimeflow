@@ -1,8 +1,9 @@
 # E2E Testing Infrastructure — Design Spec
 
 **Date**: 2026-04-14
-**Status**: Draft
-**Related issues**: #55 (HMR orphan PTY), #61 (centralized logging)
+**Last reconciled**: 2026-04-19 (Phase 1a proof on native Linux — see "Phase 1a Proof Notes" below)
+**Status**: Phase 1a scaffolding landed and 4 smoke specs green on Fedora/Nobara; Phase 1b pending
+**Related issues**: #55 (HMR orphan PTY), #61 (centralized logging), #65 (WSL2 WebKitGTK — re-scoped, see below)
 
 ## Overview
 
@@ -123,72 +124,83 @@ Note: E2E tests use Mocha (`describe`/`it`) via WebdriverIO, while unit tests us
 
 ### Base WebdriverIO Config
 
+Use `onPrepare` / `onComplete` (runs once per run), not `beforeSession` / `afterSession` (runs per worker and races the port bind + hits WebKitGTK's single-session limit when multiple workers contend).
+
 ```typescript
 // tests/e2e/core/wdio.conf.ts
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawn, type ChildProcess } from 'node:child_process'
+import {
+  appBinary,
+  startTauriDriver,
+  stopTauriDriver,
+  TAURI_DRIVER_PORT,
+} from '../shared/tauri-driver.js'
 
-let tauriDriver: ChildProcess | undefined
-
-// Resolve relative to this config file's location — stable regardless of cwd
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const appPath = path.resolve(
-  __dirname,
-  '../../../src-tauri/target/debug/vimeflow'
-)
 
 export const config: WebdriverIO.Config = {
   runner: 'local',
   framework: 'mocha',
   reporters: ['spec'],
 
-  // Manual tauri-driver lifecycle — returns Promise so WDIO waits for ready
-  beforeSession() {
-    return new Promise<void>((resolve, reject) => {
-      tauriDriver = spawn('tauri-driver', [], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-      tauriDriver.once('error', (err) =>
-        reject(
-          new Error(
-            `tauri-driver failed: ${err.message}. Run: cargo install tauri-driver`
-          )
-        )
-      )
-      tauriDriver.once('spawn', resolve)
-    })
+  specs: [path.resolve(__dirname, 'specs/**/*.spec.ts')],
+  maxInstances: 1,
+  maxInstancesPerCapability: 1, // WebKitWebDriver allows 1 concurrent session
+
+  tsConfigPath: path.resolve(__dirname, '../tsconfig.json'),
+
+  hostname: '127.0.0.1',
+  port: TAURI_DRIVER_PORT,
+
+  // Start once; wait until the HTTP port is actually listening before returning.
+  onPrepare: async () => {
+    await startTauriDriver()
   },
-  afterSession() {
-    tauriDriver?.kill()
+  onComplete: () => {
+    stopTauriDriver()
   },
 
   capabilities: [
     {
       browserName: 'wry',
+      // WDIO 9 defaults inject `webSocketUrl: true` (BiDi) and
+      // `unhandledPromptBehavior: "ignore"` (not in the W3C enum).
+      // WebKitWebDriver rejects both with "Failed to match capabilities".
+      'wdio:enforceWebDriverClassic': true,
       'tauri:options': {
-        application: appPath,
+        application: appBinary,
       },
     },
   ],
+
   waitforTimeout: 10_000,
-  mochaOpts: { timeout: 30_000 },
+  mochaOpts: { ui: 'bdd', timeout: 30_000 },
 }
 ```
 
+`shared/tauri-driver.ts` spawns the driver and polls the TCP port until connected (WDIO does not wait on stdout "ready" markers, so `spawn` alone races the port bind).
+
 Module-specific overrides:
 
-- **terminal**: longer `waitforTimeout` (PTY spawn on WSL2), `before` hook waits for terminal ready
+- **terminal**: longer `waitforTimeout` (PTY boot), same lifecycle as core
 - **agent**: `beforeEach` places fixture files, `afterEach` cleans up fake agent processes
 
-### Build Strategy: Debug, Not Release
+### Build Strategy: Debug + Custom Protocol
 
-E2E builds use **debug mode** (`cargo build`, not `cargo build --release`):
+E2E builds use **debug mode with the Tauri custom-protocol feature**:
+
+```bash
+cargo build --features e2e-test,tauri/custom-protocol
+```
 
 - `debug_assertions` stays enabled, so logging and diagnostic code is available
 - The `e2e-test` feature flag gates test-only IPC commands
+- `tauri/custom-protocol` makes the binary load embedded assets via `tauri://localhost/` instead of hitting `devUrl` (plain `cargo build` produces a dev-server-expecting binary and the webview loads `http://localhost:5173/` — blank when no Vite server is running)
 - Avoids release optimizations that mask timing-sensitive bugs
-- Faster iteration (debug builds compile faster than release)
+- Faster iteration than release
+
+**Compile-time asset embedding gotcha (verified on 2026-04-19):** `tauri::generate_context!()` embeds `frontendDist` at compile time. Every Vite rebuild must be followed by a `cargo build` or the stale bundle stays baked into the binary. Cargo's file-watching is not reliable here; force re-embed by touching `src-tauri/src/lib.rs` before building, or make `test:e2e:build` always run both steps in order (as done in the current script).
 
 The HMR orphan PTY issue (#55) cannot be tested with a built binary — it requires `tauri dev` with Vite HMR. This needs a separate dev-mode harness and is deferred to Phase 2.
 
@@ -224,16 +236,18 @@ tauri::Builder::default()
 
 ### Environment Requirements
 
-- `tauri-driver` via `cargo install tauri-driver`
-- `webkit2gtk-driver` package on Linux/WSL2
-- `xvfb` for headless on WSL2 (`xvfb-run` wrapper)
-- E2E app build: `VITE_E2E=1 npm run build && cd src-tauri && cargo build --features e2e-test`
+- `tauri-driver` via `cargo install tauri-driver` (if using rustup without a default toolchain, install with system cargo instead: `/usr/bin/cargo install tauri-driver --root ~/.local`)
+- A native `WebKitWebDriver` binary:
+  - **Debian/Ubuntu**: `webkit2gtk-driver` package (pairs with `webkit2gtk-4.1`)
+  - **Fedora/Nobara**: `webkitgtk6.0` package — ships `/usr/bin/WebKitWebDriver`. Note Fedora does not package a driver for the `webkit2gtk4.1` build Tauri uses; the GTK6-built driver nevertheless drives a `webkit2gtk4.1` Tauri webview fine (WebDriver is protocol-level).
+- `xvfb` for headless CI (`xvfb-run` wrapper). Not needed on a desktop session.
+- E2E app build: `VITE_E2E=1 npm run build && cd src-tauri && cargo build --features e2e-test,tauri/custom-protocol` (see the build-strategy section for why `tauri/custom-protocol` is load-bearing).
 
 ### npm Scripts
 
 ```json
 {
-  "test:e2e:build": "cross-env VITE_E2E=1 npm run build && cd src-tauri && cargo build --features e2e-test",
+  "test:e2e:build": "cross-env VITE_E2E=1 npm run build && cd src-tauri && cargo build --features e2e-test,tauri/custom-protocol",
   "test:e2e": "wdio tests/e2e/core/wdio.conf.ts",
   "test:e2e:terminal": "wdio tests/e2e/terminal/wdio.conf.ts",
   "test:e2e:agent": "wdio tests/e2e/agent/wdio.conf.ts",
@@ -241,6 +255,8 @@ tauri::Builder::default()
   "test:e2e:repl": "tsx tests/e2e/repl/repl-server.ts"
 }
 ```
+
+Also exclude `tests/e2e/**` from Vitest's `test.exclude` in `vitest.config.ts` — otherwise the unit runner picks up the Mocha specs and fails on `$` / `before` globals.
 
 ## Test Bridges
 
@@ -254,19 +270,25 @@ Terminal content lives in the xterm.js accessibility DOM (`.xterm-accessibility`
 // src/lib/e2e-bridge.ts — only loaded when import.meta.env.VITE_E2E is set
 import { getAllPtySessionIds } from '../features/terminal/ptySessionMap'
 
+// xterm's `.xterm-accessibility` only populates when screen-reader mode is on.
+// xterm's `terminal.buffer.active` comes back empty under the WebGL addon.
+// `.xterm-rows` is always populated by xterm's DOM mirror, even with WebGL
+// rendering on top — read from there.
+const readVisibleTerminalBuffer = (): string => {
+  const rowsEls = document.querySelectorAll<HTMLElement>(
+    '[data-testid="terminal-pane"] .xterm-rows'
+  )
+  for (const rows of Array.from(rowsEls)) {
+    const text = rows.textContent ?? ''
+    if (text.trim().length > 0) return text
+  }
+  return ''
+}
+
 if (import.meta.env.VITE_E2E) {
   window.__VIMEFLOW_E2E__ = {
-    getTerminalBuffer(): string {
-      // Read .xterm-accessibility rows from the active visible terminal pane
-      // Finds the visible [data-testid="terminal-pane"], reads its
-      // .xterm-accessibility child's row divs, joins as plain text
-      // Phase 1a: reads the single visible terminal (no session ID needed)
-      // Phase 2: accepts optional sessionId for multi-tab scenarios
-    },
-    getActiveSessionIds(): string[] {
-      // Delegates to getAllPtySessionIds() from ptySessionMap.ts
-      return getAllPtySessionIds()
-    },
+    getTerminalBuffer: readVisibleTerminalBuffer,
+    getActiveSessionIds: getAllPtySessionIds,
   }
 }
 ```
@@ -642,7 +664,18 @@ Evaluated five options before settling on the hybrid approach:
 
 ## Known Platform Issues
 
-### WSL2: WebKitGTK JS eval broken
+### Native Linux (Fedora / Nobara): viable, with caveats — verified 2026-04-19
+
+Phase 1a spike ran cleanly on Nobara/Fedora 43, kernel 6.19, webkit2gtk4.1 2.50.5. All four smoke specs (`app-launch`, `ipc-roundtrip`, `pty-spawn × 2`) pass. Gotchas worth documenting:
+
+1. **`WebKitWebDriver` package mismatch**: Fedora ships the driver binary only inside `webkitgtk6.0` (the GTK4 build). Tauri uses `webkit2gtk4.1` (GTK3). The GTK6-built driver still drives the GTK3 webview correctly via the W3C WebDriver HTTP protocol — no need to hunt for a matching package.
+2. **Must build with `tauri/custom-protocol`**: plain `cargo build` produces a binary that expects `tauri dev` (loads `devUrl=http://localhost:5173`). `--features tauri/custom-protocol` makes it load embedded `frontendDist` via `tauri://localhost/`.
+3. **`generate_context!` bakes assets at compile time**: every Vite rebuild requires a follow-up `cargo build` (touch `src-tauri/src/lib.rs` first to force re-embed if cargo's change-detection misses it).
+4. **WDIO 9 classic-mode flag**: set `'wdio:enforceWebDriverClassic': true` on the capability. Otherwise WDIO injects `webSocketUrl: true` (BiDi) and a non-W3C `unhandledPromptBehavior: "ignore"`, both of which WebKitWebDriver rejects with "Failed to match capabilities".
+5. **Terminal buffer reader**: use `.xterm-rows` DOM (always populated), not `.xterm-accessibility` (requires screen-reader mode) and not `terminal.buffer.active.translateToString()` (empty under the WebGL addon).
+6. **WDIO lifecycle**: use `onPrepare` / `onComplete` to launch tauri-driver once; `beforeSession` / `afterSession` fire per worker and contend for WebKitWebDriver's single-session limit. Also set `maxInstances: 1, maxInstancesPerCapability: 1`.
+
+### WSL2: WebKitGTK JS eval broken — still unsupported for local E2E
 
 Spiked on 2026-04-14. Both `tauri-driver` (WebKitWebDriver) and `tauri-plugin-pilot` (Unix socket + `webview.eval()`) fail on WSL2 + Ubuntu 24.04 + webkit2gtk 2.50.4. Symptoms:
 
@@ -650,9 +683,9 @@ Spiked on 2026-04-14. Both `tauri-driver` (WebKitWebDriver) and `tauri-plugin-pi
 - `tauri-pilot`: socket-level commands (`ping`, `windows`) work, ALL JS eval times out (even `1+1`)
 - Root cause: WebKitGTK's `evaluate_javascript` API does not return results. Likely related to EGL/GPU permission errors (`/dev/dri/renderD128: Permission denied`) forcing software rendering fallback, which breaks the JS evaluation callback.
 
-**Impact**: E2E tests cannot run locally on WSL2. Must use a real Linux environment (GitHub Actions, native Linux, or VM with GPU passthrough).
+**Impact**: This is a **local-environment limitation**, not a global blocker. E2E runs fine on native Linux (see above) and is expected to run in Linux CI (GitHub Actions + xvfb). Developers on WSL2 should skip local E2E and rely on CI — or use a native-Linux VM / container with GPU passthrough.
 
-**Tracked in**: #65
+**Tracked in**: #65 — scope reduced from "blocks E2E" to "WSL2 local E2E unsupported; use native Linux or CI".
 
 ### Windows: WebView2 viable but agent tests unsupported
 

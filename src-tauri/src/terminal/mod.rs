@@ -6,6 +6,8 @@
 pub mod bridge;
 pub mod commands;
 pub mod state;
+#[cfg(feature = "e2e-test")]
+pub mod test_commands;
 pub mod types;
 
 pub use commands::*;

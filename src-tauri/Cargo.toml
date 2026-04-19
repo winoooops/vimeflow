@@ -30,6 +30,9 @@ tokio = { version = "1", features = ["sync", "io-util", "time", "rt"] }
 notify = "6"
 dirs = "6"
 
+[features]
+e2e-test = []
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 

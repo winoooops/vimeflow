@@ -28,6 +28,7 @@ export default defineConfig([
       '.claude/**',
       'src/bindings/',
       'docs/**',
+      'tests/e2e/**',
     ],
   },
   {
