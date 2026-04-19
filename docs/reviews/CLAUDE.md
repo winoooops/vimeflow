@@ -33,3 +33,4 @@ ingestion protocol.
 | [Error Surfacing](patterns/error-surfacing.md)                 | error-handling | 7        | 0    | 2026-04-10   |
 | [File Tree Paths](patterns/file-tree-paths.md)                 | files          | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                   | review-process | 5        | 0    | 2026-04-12   |
+| [E2E Testing](patterns/e2e-testing.md)                         | e2e-testing    | 9        | 0    | 2026-04-19   |
