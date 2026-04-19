@@ -28,6 +28,13 @@ export default defineConfig([
       '.claude/**',
       'src/bindings/',
       'docs/**',
+      // E2E lives in a separate TS sub-project (tests/e2e/tsconfig.json)
+      // with its own globals (WDIO: $, browser, expect) and framework
+      // (Mocha describe/it/before/after). The main lint config's
+      // `projectService` + cspell + stylistic rules don't carry cleanly.
+      // Follow-up: add a dedicated E2E lint config that wires
+      // tests/e2e/tsconfig.json, WDIO globals, and domain terms
+      // (tput, xterm, wdio, pty, …) rather than extending the main one.
       'tests/e2e/**',
     ],
   },

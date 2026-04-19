@@ -63,6 +63,17 @@ words:
   - prettier
   - storybook
   - playwright
+  - wdio
+  - WDIO
+  - WebdriverIO
+  - webdriver
+
+  # Terminal / PTY
+  - tput
+  - xterm
+  - pty
+  - termios
+  - statusline
 
 ignorePaths:
   - node_modules

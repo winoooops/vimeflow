@@ -15,6 +15,9 @@ const findActivePane = (): HTMLElement | null => {
   return Array.from(panes).find(isVisible) ?? null
 }
 
+// `rows.textContent` is typed as `string` by this project's lib.dom
+// (see similar `const text = rows.textContent` pattern in this file);
+// `?? ''` is rejected by @typescript-eslint/no-unnecessary-condition.
 const readPaneBuffer = (pane: HTMLElement): string => {
   const rows = pane.querySelector<HTMLElement>('.xterm-rows')
   if (!rows) {
