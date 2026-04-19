@@ -27,7 +27,7 @@ If a value appears in both this file and a Stitch `code.html`, use the value her
 
 ## 2. The Five-Zone Layout
 
-The original `DESIGN.md` specified a 4-zone layout. Later Stitch screens added a top navigation bar, a bookmark rail, and a bottom drawer, producing three incompatible shells. **Resolution:** five zones, no top nav, no bottom drawer.
+The original `DESIGN.md` specified a 4-zone layout. Later Stitch screens added a top navigation bar, a bookmark rail, and a bottom drawer, producing three incompatible shells. **Resolution:** five peer zones (rail · sidebar · main canvas · activity panel · status bar), no top nav, no bottom drawer. View tabs are a sub-row _inside_ the main canvas -- they are not a peer zone.
 
 ```
 ┌──┬─────────┬────────────────────────────────────┬──────────┐
@@ -42,14 +42,13 @@ The original `DESIGN.md` specified a 4-zone layout. Later Stitch screens added a
 └──┴─────────┴────────────────────────────────────────────────┘
 ```
 
-| Zone               | Width                 | Surface                      | Purpose                                                                                                                                               |
-| ------------------ | --------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Icon rail**      | `48px`                | `--surface-container-lowest` | Brand mark (V) at top. Area switchers (Agent / Files / Editor / Diff / Context). Palette + settings + user at bottom.                                 |
-| **Sidebar**        | `272px` (248 compact) | `--surface-container-low`    | Three tabs: **Sessions**, **Files**, **Context**. Shows project switcher at top.                                                                      |
-| **View tabs**      | `40px tall`           | `--surface`                  | Inside main region only. Switches current view: terminal / editor / diff / files.                                                                     |
-| **Main canvas**    | flex                  | `--surface`                  | The current view.                                                                                                                                     |
-| **Activity panel** | `320px`               | `--surface-container-low`    | Status dot, meters (context, 5h usage, turns), current action, activity feed. Optional -- collapsible on narrow windows, but always visible >=1280px. |
-| **Status bar**     | `24px tall`           | `--surface-container-lowest` | Global: `obsidian-cli` - version - context smiley - turn count - `⌘K` hint.                                                                           |
+| Zone               | Width                 | Surface                      | Purpose                                                                                                                                                                         |
+| ------------------ | --------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Icon rail**      | `48px`                | `--surface-container-lowest` | Brand mark (V) at top. Area switchers (Agent / Files / Editor / Diff / Context). Palette + settings + user at bottom.                                                           |
+| **Sidebar**        | `272px` (248 compact) | `--surface-container-low`    | Three tabs: **Sessions**, **Files**, **Context**. Shows project switcher at top.                                                                                                |
+| **Main canvas**    | flex                  | `--surface`                  | Hosts the current view. A `40px` **view-tabs sub-row** sits at the top (`--surface`) for terminal / editor / diff / files switching -- sub-row of main canvas, not a peer zone. |
+| **Activity panel** | `320px`               | `--surface-container-low`    | Status dot, meters (context, 5h usage, turns), current action, activity feed. Optional -- collapsible on narrow windows, but always visible >=1280px.                           |
+| **Status bar**     | `24px tall`           | `--surface-container-lowest` | Global: `vimeflow` - version - context smiley - turn count - `⌘K` hint.                                                                                                         |
 
 ### Rules
 

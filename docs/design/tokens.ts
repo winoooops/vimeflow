@@ -104,7 +104,7 @@ export const glass = {
   saturate: '150%',
   shadowAmbient: '0 10px 40px rgba(0, 0, 0, 0.4)',
   shadowGlowPrimary: '0 0 24px rgba(203, 166, 247, 0.35)',
-  shadowGlowSuccess: `0 0 10px ${semantic.success}`,
+  shadowGlowSuccess: '0 0 10px var(--success)',
   ringPrimary: '0 0 0 3px rgba(203, 166, 247, 0.28)',
 } as const
 
@@ -170,17 +170,14 @@ export const stateToken: Record<SessionState, StateVisual> = {
 
 /* ------------------------------------------------------------------
  * Context smiley (§5.5) -- surfaces remaining-context pressure in the
- * status bar. Input is "percent full" (0-100).
- *
- * TODO: breakpoints below are a reasonable default but not confirmed
- * against the Handoff.html source. Verify and lock before first use
- * in the status bar.
+ * status bar. Input is "percent full" (0-100). Breakpoints mirror the
+ * ContextBucket emoji thresholds in src/features/agent-status.
  * ------------------------------------------------------------------ */
 
 export function contextSmiley(pct: number): string {
   if (pct >= 90) return '\u{1F975}' // hot-face: nearly full
-  if (pct >= 75) return '\u{1F61F}' // worried
-  if (pct >= 50) return '\u{1F610}' // neutral
+  if (pct >= 80) return '\u{1F61F}' // worried
+  if (pct >= 60) return '\u{1F610}' // neutral
   return '\u{1F60A}' // happy
 }
 
