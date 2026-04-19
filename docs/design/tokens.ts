@@ -1,8 +1,13 @@
 /*
  * Vimeflow -- Design Tokens (TypeScript export)
  *
- * Mirror of tokens.css. Use this file when you need values in JS/TS
- * (Tailwind config, component props, style-dictionary consumers, tests).
+ * Mirror of tokens.css. Intended for CSS-adjacent JS/TS consumers:
+ * Tailwind `theme.extend`, inline React `style` props, and CSS-in-JS.
+ * Some values (e.g. `glass.shadowGlowSuccess`) embed `var(--…)`
+ * references that only resolve when fed back to the browser's CSS
+ * engine -- they are not plain color strings and will not work with
+ * consumers that need raw values (style-dictionary transforms,
+ * programmatic color math, jest snapshots against literal hex).
  *
  * Values must stay in sync with tokens.css. When changing either,
  * update both in the same commit.
