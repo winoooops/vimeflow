@@ -63,7 +63,9 @@ src/
 
 ## Design System: "The Obsidian Lens"
 
-Dark atmospheric UI built on Catppuccin Mocha palette. Colors defined as semantic tokens in `tailwind.config.js` (e.g. `bg-surface-container`, `text-on-surface`, `text-primary`). Fonts: Manrope (headlines), Inter (body/labels), JetBrains Mono (code). No visible borders — use tonal depth and glassmorphism. See `docs/design/DESIGN.md` for the full spec (single source of truth).
+Dark atmospheric UI built on Catppuccin Mocha palette. Colors defined as semantic tokens in `tailwind.config.js` (e.g. `bg-surface-container`, `text-on-surface`, `text-primary`). Fonts: Manrope (headlines), Inter (body/labels), JetBrains Mono (code). No visible borders — use tonal depth and glassmorphism.
+
+**Read order:** `docs/design/UNIFIED.md` (authoritative — 5-zone layout, agent-state contract, component APIs), then `docs/design/DESIGN.md` (foundational tokens/typography), then `docs/design/tokens.css` / `tokens.ts` for copy-pasteable values. Stitch `code.html` files under `docs/design/<screen>/` are illustrative; when they conflict with `UNIFIED.md`, UNIFIED wins.
 
 ## Git Hooks (Husky)
 
@@ -75,23 +77,23 @@ Dark atmospheric UI built on Catppuccin Mocha palette. Colors defined as semanti
 
 This file covers what you need to start working. For deeper topics, read the linked doc — do NOT inline their content back here.
 
-| Topic                                                    | Where                                                             |
-| -------------------------------------------------------- | ----------------------------------------------------------------- |
-| Architecture decisions, Tauri IPC patterns               | `ARCHITECT.md`                                                    |
-| UI design system, screens, components                    | `docs/design/DESIGN.md` (single source of truth)                  |
-| AI agent specs (planner, tdd-guide, code-reviewer, etc.) | `agents/CLAUDE.md`                                                |
-| Development standards (coding style, testing, security)  | `rules/CLAUDE.md`                                                 |
-| Autonomous development loop (harness + Codex review)     | `harness/CLAUDE.md`                                               |
-| Harness pre-launch safety hooks (hookify rules)          | `harness/CLAUDE.md` → "Hookify Pre-Launch Rules"                  |
-| Harness plugin (skills for agent loop, review, PR fix)   | `plugins/harness/` — see [Plugin Setup](#harness-plugin-setup)    |
-| Architecture specs, exploration notes                    | `docs/CLAUDE.md`                                                  |
-| Codex code review (project context for Codex)            | `AGENTS.md`                                                       |
-| Codex review design spec                                 | `docs/superpowers/specs/2026-04-02-codex-code-review-design.md`   |
-| Codex feedback loop design spec                          | `docs/superpowers/specs/2026-04-03-codex-feedback-loop-design.md` |
-| Progress tracking (roadmap status)                       | `docs/roadmap/progress.yaml`                                      |
-| Shell OSC 7 setup (file explorer cwd sync)               | `README.md` → "Shell Setup (OSC 7)"                               |
-| Linux/Wayland WebKitGTK renderer flag (tauri:dev)        | `README.md` → "Linux / Wayland: WebKitGTK Renderer"               |
-| Review knowledge base (patterns from past reviews)       | `docs/reviews/CLAUDE.md`                                          |
+| Topic                                                    | Where                                                                                                                      |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Architecture decisions, Tauri IPC patterns               | `ARCHITECT.md`                                                                                                             |
+| UI design system, screens, components                    | `docs/design/UNIFIED.md` (authoritative) -> `docs/design/DESIGN.md` (foundation) -> `docs/design/tokens.css` / `tokens.ts` |
+| AI agent specs (planner, tdd-guide, code-reviewer, etc.) | `agents/CLAUDE.md`                                                                                                         |
+| Development standards (coding style, testing, security)  | `rules/CLAUDE.md`                                                                                                          |
+| Autonomous development loop (harness + Codex review)     | `harness/CLAUDE.md`                                                                                                        |
+| Harness pre-launch safety hooks (hookify rules)          | `harness/CLAUDE.md` → "Hookify Pre-Launch Rules"                                                                           |
+| Harness plugin (skills for agent loop, review, PR fix)   | `plugins/harness/` — see [Plugin Setup](#harness-plugin-setup)                                                             |
+| Architecture specs, exploration notes                    | `docs/CLAUDE.md`                                                                                                           |
+| Codex code review (project context for Codex)            | `AGENTS.md`                                                                                                                |
+| Codex review design spec                                 | `docs/superpowers/specs/2026-04-02-codex-code-review-design.md`                                                            |
+| Codex feedback loop design spec                          | `docs/superpowers/specs/2026-04-03-codex-feedback-loop-design.md`                                                          |
+| Progress tracking (roadmap status)                       | `docs/roadmap/progress.yaml`                                                                                               |
+| Shell OSC 7 setup (file explorer cwd sync)               | `README.md` → "Shell Setup (OSC 7)"                                                                                        |
+| Linux/Wayland WebKitGTK renderer flag (tauri:dev)        | `README.md` → "Linux / Wayland: WebKitGTK Renderer"                                                                        |
+| Review knowledge base (patterns from past reviews)       | `docs/reviews/CLAUDE.md`                                                                                                   |
 
 ## Harness Plugin Setup
 
