@@ -1,0 +1,46 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import {
+  appBinary,
+  startTauriDriver,
+  stopTauriDriver,
+  TAURI_DRIVER_PORT,
+} from '../shared/tauri-driver.js'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+export const config: WebdriverIO.Config = {
+  runner: 'local',
+  framework: 'mocha',
+  reporters: ['spec'],
+
+  specs: [path.resolve(__dirname, 'specs/**/*.spec.ts')],
+  maxInstances: 1,
+  maxInstancesPerCapability: 1,
+
+  tsConfigPath: path.resolve(__dirname, '../tsconfig.json'),
+
+  hostname: '127.0.0.1',
+  port: TAURI_DRIVER_PORT,
+
+  onPrepare: async () => {
+    await startTauriDriver()
+  },
+  onComplete: () => {
+    stopTauriDriver()
+  },
+
+  capabilities: [
+    {
+      browserName: 'wry',
+      'wdio:enforceWebDriverClassic': true,
+      'tauri:options': {
+        application: appBinary,
+      },
+    },
+  ],
+
+  // Agent detection polls every ~2s; give it room.
+  waitforTimeout: 30_000,
+  mochaOpts: { ui: 'bdd', timeout: 90_000 },
+}

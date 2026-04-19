@@ -27,7 +27,8 @@
     "test:e2e:build": "cross-env VITE_E2E=1 npm run build && cd src-tauri && cargo build --features e2e-test,tauri/custom-protocol",
     "test:e2e": "wdio tests/e2e/core/wdio.conf.ts",
     "test:e2e:terminal": "wdio tests/e2e/terminal/wdio.conf.ts",
-    "test:e2e:all": "npm run test:e2e && npm run test:e2e:terminal"
+    "test:e2e:agent": "wdio tests/e2e/agent/wdio.conf.ts",
+    "test:e2e:all": "npm run test:e2e && npm run test:e2e:terminal && npm run test:e2e:agent"
   },
   "keywords": [
     "tauri",

@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core'
 import { getAllPtySessionIds } from '../features/terminal/ptySessionMap'
 
 const readVisibleTerminalBuffer = (): string => {
@@ -18,5 +19,7 @@ if (import.meta.env.VITE_E2E) {
   window.__VIMEFLOW_E2E__ = {
     getTerminalBuffer: readVisibleTerminalBuffer,
     getActiveSessionIds: getAllPtySessionIds,
+    listActivePtySessions: async (): Promise<string[]> =>
+      invoke<string[]>('list_active_pty_sessions'),
   }
 }
