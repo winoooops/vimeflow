@@ -1,11 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import {
-  ContextBucket,
-  formatTokens,
-  formatTokensDetailed,
-  formatContextSize,
-} from './ContextBucket'
+import { ContextBucket, formatTokens, formatContextSize } from './ContextBucket'
 import type { ContextBucketProps } from './ContextBucket'
 
 const defaultProps: ContextBucketProps = {
@@ -27,10 +22,6 @@ describe('ContextBucket', () => {
 
     test('formatTokens formats small numbers as-is', () => {
       expect(formatTokens(500)).toBe('500')
-    })
-
-    test('formatTokensDetailed adds commas', () => {
-      expect(formatTokensDetailed(94_720)).toBe('94,720')
     })
 
     test('formatContextSize formats 200000 as 200k', () => {
@@ -182,7 +173,7 @@ describe('ContextBucket', () => {
       )
 
       const detail = screen.getByTestId('token-count-detail')
-      expect(detail.textContent).toBe('94,720 tokens')
+      expect(detail.textContent).toBe(`${(94_720).toLocaleString()} tokens`)
     })
 
     test('shows max context size', () => {

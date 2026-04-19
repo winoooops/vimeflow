@@ -167,4 +167,4 @@ export const ContextBucket = ({
   )
 }
 
-export { formatTokens, formatTokensDetailed, formatContextSize }
+export { formatTokens, formatContextSize }
