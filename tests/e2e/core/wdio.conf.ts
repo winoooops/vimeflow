@@ -24,6 +24,12 @@ export const config: WebdriverIO.Config = {
   port: TAURI_DRIVER_PORT,
 
   onPrepare: async () => {
+    // Silence the host-global agent detector for this suite. See #71:
+    // on a dev box with real Claude Code processes running, the
+    // detector latches onto them and can crash the webview during
+    // startup, producing "invalid session id" failures that look
+    // unrelated to this core spec's assertions.
+    process.env.VIMEFLOW_DISABLE_AGENT_DETECTION = '1'
     await startTauriDriver()
   },
   onComplete: () => {

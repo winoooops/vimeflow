@@ -24,6 +24,11 @@ export const config: WebdriverIO.Config = {
   port: TAURI_DRIVER_PORT,
 
   onPrepare: async () => {
+    // Agent suite wants detection enabled — explicitly clear the env
+    // var in case it leaks in from the shell or a prior WDIO run. The
+    // spec itself has a skip-guard for pre-existing host claude
+    // processes (see agent-detect-fake.spec.ts and #71).
+    delete process.env.VIMEFLOW_DISABLE_AGENT_DETECTION
     await startTauriDriver()
   },
   onComplete: () => {

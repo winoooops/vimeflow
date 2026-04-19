@@ -24,6 +24,10 @@ export const config: WebdriverIO.Config = {
   port: TAURI_DRIVER_PORT,
 
   onPrepare: async () => {
+    // Same reason as core/wdio.conf.ts — skip agent detection in this
+    // suite so real claude processes on the dev host don't destabilise
+    // unrelated terminal specs. See #71.
+    process.env.VIMEFLOW_DISABLE_AGENT_DETECTION = '1'
     await startTauriDriver()
   },
   onComplete: () => {
