@@ -36,7 +36,6 @@ def test_bash_hook_blocks_empty_command():
     assert "empty" in result.get("reason", "").lower()
 
 
-@pytest.mark.xfail(reason="policy judge not yet wired into security.py — see Task 5")
 def test_bash_hook_blocks_unknown_command_when_judge_disabled():
     result = run_hook(
         "bash",

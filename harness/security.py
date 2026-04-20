@@ -194,12 +194,20 @@ async def bash_security_hook(input_data, tool_use_id=None, context=None):
         if not commands:
             return {"decision": "block", "reason": "Could not parse command"}
 
-        for cmd in commands:
-            if cmd not in ALLOWED_COMMANDS:
+        # Allowlist check — escalate misses to the policy judge.
+        unknown = [cmd for cmd in commands if cmd not in ALLOWED_COMMANDS]
+        if unknown:
+            from policy_judge import decide as _judge_decide  # local import avoids cycles
+            decision = _judge_decide(command)
+            if not decision.allow:
                 return {
                     "decision": "block",
-                    "reason": f"Command '{cmd}' not in allowlist",
+                    "reason": (
+                        f"Command(s) {unknown} not in allowlist; "
+                        f"judge: {decision.reason}"
+                    ),
                 }
+            # Judge allowed — fall through to the sensitive-command validators.
 
         # Extra validation for sensitive commands
         for cmd in COMMANDS_NEEDING_EXTRA_VALIDATION:
