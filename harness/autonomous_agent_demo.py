@@ -94,6 +94,17 @@ def parse_args() -> argparse.Namespace:
         help="Skip Phase 3 cloud review entirely",
     )
 
+    parser.add_argument(
+        "--client",
+        choices=["sdk", "cli"],
+        default="cli",
+        help=(
+            "Claude client backend: 'cli' (claude -p subprocess, default, "
+            "uses user's Claude Code CLI auth) or 'sdk' (claude_code_sdk, "
+            "requires ANTHROPIC_API_KEY)."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -146,17 +157,23 @@ def clean_runtime_files(project_dir: Path) -> None:
     print()
 
 
-def preflight_checks() -> bool:
-    """Run preflight checks before starting the harness."""
+def preflight_checks(client_kind: str = "cli") -> bool:
+    """Run preflight checks before starting the harness.
+
+    ANTHROPIC_API_KEY is only required for the SDK backend. The CLI
+    backend (default) inherits auth from the user's `claude` CLI.
+    """
     ok = True
 
-    # Check API key
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    # Check API key (only required for the SDK path)
+    if client_kind == "sdk" and not os.environ.get("ANTHROPIC_API_KEY"):
         print("Error: ANTHROPIC_API_KEY environment variable not set")
         print("\nOption 1: export ANTHROPIC_API_KEY='your-key-here'")
         print("Option 2: add it to .env at the project root")
         print("   The harness does NOT auto-load .env; source it first:")
         print("   set -a && source .env && set +a")
+        print("Option 3: omit --client sdk to use the default CLI backend")
+        print("   (inherits auth from your `claude` CLI login)")
         return False
 
     # Check optional base URL
@@ -180,7 +197,7 @@ def preflight_checks() -> bool:
 def main() -> None:
     args = parse_args()
 
-    if not preflight_checks():
+    if not preflight_checks(client_kind=args.client):
         return
 
     if args.clean:
