@@ -10,6 +10,7 @@ The SDK fallback (`sdk_client.create_client`) mirrors it.
 """
 
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -86,6 +87,15 @@ def create_client(
 
     hook_runner = Path(__file__).resolve().parent / "hook_runner.py"
 
+    # Claude CLI executes hook commands via `sh -c`, so unquoted paths with
+    # spaces (e.g. Windows `C:\Program Files\...python.exe`, macOS `/Users/
+    # John Doe/.../hook_runner.py`) split at the space and the runner is
+    # never invoked. When the hook subprocess fails to emit a decision
+    # JSON, the CLI defaults to allow — silently disabling the allowlist.
+    # shlex.quote prevents the split on every platform.
+    py = shlex.quote(sys.executable)
+    runner = shlex.quote(str(hook_runner))
+
     settings = build_base_settings(sandbox=sandbox)
     # CLI-only: `claude -p` can't reach our in-process Python, so hooks
     # must be declared as subprocess commands in settings.json. The SDK
@@ -96,14 +106,14 @@ def create_client(
                 "matcher": "Bash",
                 "hooks": [{
                     "type": "command",
-                    "command": f"{sys.executable} {hook_runner} bash",
+                    "command": f"{py} {runner} bash",
                 }],
             },
             {
                 "matcher": "Write|Edit",
                 "hooks": [{
                     "type": "command",
-                    "command": f"{sys.executable} {hook_runner} feature_list",
+                    "command": f"{py} {runner} feature_list",
                 }],
             },
         ],

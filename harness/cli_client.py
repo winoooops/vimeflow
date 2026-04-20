@@ -11,8 +11,11 @@ Auth is inherited from the user's Claude Code CLI — no ANTHROPIC_API_KEY
 required on this path.
 """
 
+import asyncio
 import json
+import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional, Union
 
 
@@ -100,11 +103,6 @@ def parse_stream_event(line: str) -> Optional[Event]:
         )
 
     return None
-
-
-import asyncio
-import uuid
-from pathlib import Path
 
 
 class ClaudeCliSession:

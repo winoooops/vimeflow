@@ -144,7 +144,23 @@ def _base_command(command: str) -> str:
 
 
 def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:
-    """Call the LLM judge. If `advisory`, always DENY regardless of answer but keep the reason."""
+    """Call the LLM judge. If `advisory`, always DENY regardless of answer but keep the reason.
+
+    Granularity note: security.py calls decide(cmd_base) per base command
+    (e.g. "python3"), not per full invocation, so the cache key here is a
+    base command name. Once `python3` is judged ALLOW, every future
+    `python3 <any args>` is approved from cache without reconsulting the
+    LLM. This is intentional — re-querying for every argv variant would
+    blow up cost and latency — but operators running with
+    HARNESS_POLICY_JUDGE=ask should understand the approval granularity
+    is per-binary, not per-invocation. The sensitive-command validators
+    (security.validate_*_command) still inspect the full argv for
+    dangerous flag combinations on pkill/chmod/rm/gh.
+
+    The cache file is world-readable/writable under /tmp by default.
+    Users concerned about cache tampering should set HARNESS_POLICY_CACHE
+    to a path under their own umask.
+    """
     cache = _load_cache()
     if command in cache:
         entry = cache[command]

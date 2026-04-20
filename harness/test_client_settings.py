@@ -94,6 +94,33 @@ def test_create_client_hook_runner_path_is_absolute(tmp_path):
     bash_cmd = [
         h for h in data["hooks"]["PreToolUse"] if h["matcher"] == "Bash"
     ][0]["hooks"][0]["command"]
-    runner_path = bash_cmd.split()[1]
-    assert Path(runner_path).is_absolute()
-    assert Path(runner_path).exists()
+    # shlex.split must round-trip the quoted command correctly — it's what
+    # the Claude CLI's `sh -c` does internally before exec'ing the hook.
+    import shlex
+    parts = shlex.split(bash_cmd)
+    assert len(parts) == 3  # python, runner.py, kind
+    assert Path(parts[1]).is_absolute()
+    assert Path(parts[1]).exists()
+    assert parts[2] == "bash"
+
+
+def test_create_client_hook_command_survives_paths_with_spaces(tmp_path, monkeypatch):
+    """If the Python interpreter path has a space, the hook command must
+    still shlex.split back into 3 tokens. Pre-fix: sh -c would split on
+    the embedded space, drop the runner, and silently bypass hooks."""
+    import shlex
+    import sys as _sys
+
+    # Simulate a space in sys.executable (mirrors Windows "Program Files").
+    monkeypatch.setattr(_sys, "executable", "/usr/local/weird dir/python3")
+    session = create_client(
+        tmp_path, "claude-sonnet-4-5-20250929", role="coder", sandbox=False
+    )
+    data = json.loads(session.settings_path.read_text())
+    bash_cmd = [
+        h for h in data["hooks"]["PreToolUse"] if h["matcher"] == "Bash"
+    ][0]["hooks"][0]["command"]
+    parts = shlex.split(bash_cmd)
+    assert parts[0] == "/usr/local/weird dir/python3"
+    assert parts[-1] == "bash"
+    assert len(parts) == 3
