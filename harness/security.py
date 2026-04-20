@@ -204,7 +204,7 @@ async def bash_security_hook(input_data, tool_use_id=None, context=None):
         if unknown:
             from policy_judge import decide as _judge_decide  # local import avoids cycles
             for cmd_base in unknown:
-                decision = _judge_decide(cmd_base)
+                decision = await _judge_decide(cmd_base)
                 if not decision.allow:
                     return {
                         "decision": "block",

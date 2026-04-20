@@ -90,7 +90,6 @@ def test_hook_runner_fails_closed_when_hook_raises(tmp_path, monkeypatch, capsys
     module's import site with one that raises, and invoking main()
     directly so monkeypatch actually sticks.
     """
-    import importlib
     import hook_runner as hr
 
     async def exploding_hook(*args, **kwargs):
@@ -111,6 +110,4 @@ def test_hook_runner_fails_closed_when_hook_raises(tmp_path, monkeypatch, capsys
     assert "hook_runner" in reason
     assert "runtimeerror" in reason
     assert "simulated judge timeout" in reason
-
-    # Restore for subsequent tests — pytest handles this via monkeypatch.
-    importlib.reload(hr)
+    # No manual module reload: monkeypatch teardown restores attributes.

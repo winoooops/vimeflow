@@ -29,9 +29,9 @@ Env knobs:
   HARNESS_POLICY_CACHE   — override judge decision-cache path
 """
 
+import asyncio
 import json
 import os
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -74,13 +74,15 @@ class JudgeDecision:
 
 
 def _cache_path() -> Path:
+    """User-private default — `/tmp` is world-writable and lets any local
+    account pre-approve arbitrary commands via cache poisoning."""
     override = os.environ.get("HARNESS_POLICY_CACHE")
     if override:
         return Path(override)
     base = os.environ.get("CLAUDE_CONFIG_DIR")
     if base:
         return Path(base) / "policy_cache.json"
-    return Path("/tmp/harness_policy_cache.json")
+    return Path.home() / ".claude" / "harness_policy_cache.json"
 
 
 def _allow_file_path() -> Path:
@@ -122,17 +124,30 @@ def _save_cache(cache: dict) -> None:
     p.write_text(json.dumps(cache, indent=2))
 
 
-def _query_claude(prompt: str) -> str:
-    """One-shot `claude -p` call. Returns the final text response."""
-    proc = subprocess.run(
-        ["claude", prompt, "-p", "--output-format", "text"],
-        capture_output=True,
-        text=True,
-        timeout=60,
+async def _query_claude(prompt: str) -> str:
+    """One-shot `claude -p` call. Returns the final text response.
+
+    Async so the SDK backend (which runs `bash_security_hook` on the main
+    harness event loop) doesn't stall for up to 60 seconds while the judge
+    subprocess runs. The CLI backend doesn't care either way — its hooks
+    run in fresh `hook_runner.py` processes — but making this async keeps
+    one implementation.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "claude", prompt, "-p", "--output-format", "text",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise RuntimeError("policy judge claude -p timed out after 60s")
     if proc.returncode != 0:
-        raise RuntimeError(f"policy judge claude -p failed: {proc.stderr[:300]}")
-    return proc.stdout.strip()
+        err = stderr.decode("utf-8", errors="replace")[:300]
+        raise RuntimeError(f"policy judge claude -p failed: {err}")
+    return stdout.decode("utf-8", errors="replace").strip()
 
 
 def _base_command(command: str) -> str:
@@ -143,7 +158,7 @@ def _base_command(command: str) -> str:
     return tokens[0].rsplit("/", 1)[-1]
 
 
-def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:
+async def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:
     """Call the LLM judge. If `advisory`, always DENY regardless of answer but keep the reason.
 
     Granularity note: security.py calls decide(cmd_base) per base command
@@ -173,7 +188,11 @@ def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:
     # angle brackets are vanishingly rare, but defense-in-depth matters
     # for the one caller that someday passes a full invocation.
     sanitized = command.replace("<", "&lt;").replace(">", "&gt;")
-    raw_lines = _query_claude(JUDGE_PROMPT.format(command=sanitized)).splitlines()
+    # str.replace (not .format) — the command may contain `{` / `}` which
+    # .format would try to interpret as placeholder tokens and raise
+    # KeyError. The replace approach is immune to brace content.
+    prompt_text = JUDGE_PROMPT.replace("{command}", sanitized)
+    raw_lines = (await _query_claude(prompt_text)).splitlines()
     raw = raw_lines[0].strip() if raw_lines else ""
     if raw.upper().startswith("ALLOW"):
         judge_allow = True
@@ -188,10 +207,13 @@ def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:
     return JudgeDecision(allow=allow, reason=reason)
 
 
-def decide(command: str) -> JudgeDecision:
+async def decide(command: str) -> JudgeDecision:
     """Decide whether a command outside `ALLOWED_COMMANDS` is safe.
 
     Default: DENY. The LLM judge is opt-in via `HARNESS_POLICY_JUDGE=ask`.
+
+    Async because `_query_claude` is async — we don't want to stall the
+    SDK-backend harness event loop while the judge subprocess runs.
     """
     mode = os.environ.get("HARNESS_POLICY_JUDGE", "deny").strip().lower()
 
@@ -202,11 +224,11 @@ def decide(command: str) -> JudgeDecision:
 
     # Escape hatch #2: explicit LLM consultation.
     if mode == "ask":
-        return _consult_judge(command, advisory=False)
+        return await _consult_judge(command, advisory=False)
 
     # Escape hatch #3: advisory-only — judge may reason, never approves.
     if mode == "explain":
-        return _consult_judge(command, advisory=True)
+        return await _consult_judge(command, advisory=True)
 
     # Default / "deny" / anything else unrecognised → deny.
     return JudgeDecision(
