@@ -81,7 +81,10 @@ def create_client(
             hooks={
                 "PreToolUse": [
                     HookMatcher(matcher="Bash", hooks=[bash_security_hook]),
-                    HookMatcher(matcher="Write", hooks=[pre_write_feature_list_hook]),
+                    # `Write|Edit` — must match client.py. A prior version
+                    # only hooked `Write`, letting an agent bypass the
+                    # feature_list integrity check via the Edit tool.
+                    HookMatcher(matcher="Write|Edit", hooks=[pre_write_feature_list_hook]),
                 ],
             },
             max_turns=1000,
