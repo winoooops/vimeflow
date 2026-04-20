@@ -170,6 +170,25 @@ class ClaudeCliSession:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+
+        # Drain stderr concurrently. The OS pipe buffer is ~64 KB on Linux;
+        # if `claude -p` writes more (verbose stack traces, debug logs)
+        # while we're still blocked on stdout, the child eventually blocks
+        # on its stderr write and nothing ever unsticks. Always reading
+        # stderr in a side task prevents the deadlock and lets us surface
+        # the message on non-zero exit.
+        stderr_chunks: list[bytes] = []
+
+        async def _drain_stderr() -> None:
+            assert proc.stderr is not None
+            while True:
+                chunk = await proc.stderr.read(4096)
+                if not chunk:
+                    break
+                stderr_chunks.append(chunk)
+
+        stderr_task = asyncio.create_task(_drain_stderr())
+
         try:
             assert proc.stdout is not None
             async for raw_line in proc.stdout:
@@ -178,13 +197,19 @@ class ClaudeCliSession:
                 if event is not None:
                     yield event
             return_code = await proc.wait()
+            await stderr_task
             if return_code != 0:
-                err = await proc.stderr.read() if proc.stderr else b""
+                err = b"".join(stderr_chunks).decode("utf-8", errors="replace")
                 raise RuntimeError(
-                    f"claude -p exited {return_code}: "
-                    f"{err.decode('utf-8', errors='replace')[:500]}"
+                    f"claude -p exited {return_code}: {err[:500]}"
                 )
         finally:
             if proc.returncode is None:
                 proc.kill()
                 await proc.wait()
+            if not stderr_task.done():
+                stderr_task.cancel()
+                try:
+                    await stderr_task
+                except (asyncio.CancelledError, Exception):
+                    pass

@@ -142,6 +142,53 @@ def test_cli_session_resume_uses_prior_session_id(tmp_path):
     assert "--session-id" not in second
 
 
+def test_query_drains_stderr_without_deadlock(tmp_path, monkeypatch):
+    """A child that floods stderr beyond the pipe buffer must not hang the reader.
+
+    Pre-fix: query() only read stderr after proc.wait(), so a child writing
+    >64 KB to stderr blocked on its own write while we were stuck waiting
+    for stdout EOF. Post-fix: stderr is drained concurrently.
+
+    We stub _build_args to a Python one-liner that writes 200 KB to stderr,
+    emits one JSON result line on stdout, and exits 0 — large enough to
+    deadlock pre-fix on a standard 64 KB Linux pipe buffer.
+    """
+    import asyncio
+    import sys
+
+    settings = tmp_path / "settings.json"
+    settings.write_text("{}")
+    session = ClaudeCliSession(
+        role="stderr-drain",
+        project_dir=tmp_path,
+        model="claude-sonnet-4-5-20250929",
+        settings_path=settings,
+        allowed_tools=["Read"],
+    )
+
+    payload = (
+        "import sys; sys.stderr.write('X' * 200_000); "
+        "print('{\"type\":\"result\",\"subtype\":\"success\","
+        "\"session_id\":\"x\",\"is_error\":false}'); "
+        "sys.stderr.flush(); sys.exit(0)"
+    )
+    monkeypatch.setattr(
+        session, "_build_args", lambda prompt, resume: [sys.executable, "-c", payload]
+    )
+
+    async def run():
+        events = []
+        async for event in session.query("ignored"):
+            events.append(event)
+        return events
+
+    # asyncio.wait_for is the safety net — if the fix regresses, this
+    # times out instead of hanging the suite forever.
+    events = asyncio.run(asyncio.wait_for(run(), timeout=10))
+    result_events = [e for e in events if isinstance(e, ResultEvent)]
+    assert len(result_events) == 1 and not result_events[0].is_error
+
+
 @pytest.mark.skipif(
     not os.environ.get("HARNESS_CLI_LIVE_TEST"),
     reason="live test — set HARNESS_CLI_LIVE_TEST=1 and ensure `claude` CLI is authenticated",
