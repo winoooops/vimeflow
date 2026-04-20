@@ -86,3 +86,84 @@ def test_parse_full_fixture_produces_events():
     assert len(result_events) == 1
     assert result_events[0].session_id
     assert result_events[0].is_error is False
+
+
+import os
+import pytest
+from cli_client import ClaudeCliSession
+
+
+def test_cli_session_builds_new_session_args(tmp_path):
+    settings = tmp_path / "settings.json"
+    settings.write_text("{}")
+    session = ClaudeCliSession(
+        role="coder",
+        project_dir=tmp_path,
+        model="claude-sonnet-4-5-20250929",
+        settings_path=settings,
+        allowed_tools=["Read", "Write", "Bash"],
+    )
+    args = session._build_args(prompt="hello", resume=False)
+    assert args[0] == "claude"
+    # Prompt is the first positional AFTER `claude` — Claude CLI bails on --print otherwise
+    assert args[1] == "hello"
+    assert "-p" in args
+    assert "--output-format" in args and "stream-json" in args
+    assert "--verbose" in args
+    assert "--settings" in args and str(settings) in args
+    assert "--session-id" in args
+    uuid_idx = args.index("--session-id") + 1
+    import uuid as _uuid
+    _uuid.UUID(args[uuid_idx])
+    assert "--allowed-tools" in args
+    assert "--resume" not in args
+
+
+def test_cli_session_resume_uses_prior_session_id(tmp_path):
+    settings = tmp_path / "settings.json"
+    settings.write_text("{}")
+    session = ClaudeCliSession(
+        role="coder",
+        project_dir=tmp_path,
+        model="claude-sonnet-4-5-20250929",
+        settings_path=settings,
+        allowed_tools=["Read"],
+    )
+    first = session._build_args(prompt="p1", resume=False)
+    first_uuid = first[first.index("--session-id") + 1]
+    second = session._build_args(prompt="p2", resume=True)
+    assert "--resume" in second
+    assert second[second.index("--resume") + 1] == first_uuid
+    assert "--session-id" not in second
+
+
+@pytest.mark.skipif(
+    not os.environ.get("HARNESS_CLI_LIVE_TEST"),
+    reason="live test — set HARNESS_CLI_LIVE_TEST=1 and ensure `claude` CLI is authenticated",
+)
+def test_cli_session_live_query(tmp_path):
+    import asyncio
+    settings = tmp_path / "settings.json"
+    settings.write_text("{}")
+    session = ClaudeCliSession(
+        role="smoke",
+        project_dir=tmp_path,
+        model="claude-sonnet-4-5-20250929",
+        settings_path=settings,
+        allowed_tools=["Read"],
+    )
+
+    async def run():
+        events = []
+        async for event in session.query("Reply with exactly the single word: SMOKE_OK"):
+            events.append(event)
+        return events
+
+    events = asyncio.run(run())
+    assert any(
+        isinstance(e, AssistantMessage)
+        and any(isinstance(b, TextBlock) and "SMOKE_OK" in b.text for b in e.content)
+        for e in events
+    )
+    results = [e for e in events if isinstance(e, ResultEvent)]
+    assert len(results) == 1 and not results[0].is_error

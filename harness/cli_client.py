@@ -100,3 +100,84 @@ def parse_stream_event(line: str) -> Optional[Event]:
         )
 
     return None
+
+
+import asyncio
+import uuid
+from pathlib import Path
+
+
+class ClaudeCliSession:
+    """One harness role bound to one Claude conversation.
+
+    First `query()` call: `claude <prompt> -p --session-id <uuid> ...`.
+    Subsequent `query()` calls: `claude <prompt> -p --resume <uuid> ...`.
+
+    Note: the prompt is placed as the first positional argument (immediately
+    after `claude`) because `claude -p` otherwise sometimes treats a
+    subsequent flag's value as the prompt and errors with "Input must be
+    provided either through stdin or as a prompt argument".
+    """
+
+    def __init__(
+        self,
+        *,
+        role: str,
+        project_dir: Path,
+        model: str,
+        settings_path: Path,
+        allowed_tools: list[str],
+    ):
+        self.role = role
+        self.project_dir = project_dir
+        self.model = model
+        self.settings_path = settings_path
+        self.allowed_tools = allowed_tools
+        self.session_id = str(uuid.uuid4())
+        self._started = False
+
+    def _build_args(self, prompt: str, resume: bool) -> list[str]:
+        args = [
+            "claude",
+            prompt,
+            "-p",
+            "--output-format", "stream-json",
+            "--verbose",
+            "--model", self.model,
+            "--settings", str(self.settings_path),
+            "--allowed-tools", " ".join(self.allowed_tools),
+        ]
+        if resume:
+            args += ["--resume", self.session_id]
+        else:
+            args += ["--session-id", self.session_id]
+        return args
+
+    async def query(self, prompt: str):
+        """Spawn `claude -p` and yield parsed events as they arrive."""
+        args = self._build_args(prompt, resume=self._started)
+        self._started = True
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            cwd=str(self.project_dir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            assert proc.stdout is not None
+            async for raw_line in proc.stdout:
+                line = raw_line.decode("utf-8", errors="replace")
+                event = parse_stream_event(line)
+                if event is not None:
+                    yield event
+            return_code = await proc.wait()
+            if return_code != 0:
+                err = await proc.stderr.read() if proc.stderr else b""
+                raise RuntimeError(
+                    f"claude -p exited {return_code}: "
+                    f"{err.decode('utf-8', errors='replace')[:500]}"
+                )
+        finally:
+            if proc.returncode is None:
+                proc.kill()
+                await proc.wait()
