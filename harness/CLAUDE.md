@@ -1,6 +1,6 @@
 # Harness — Autonomous Development Loop
 
-The harness is the project's primary engineering cycle — it drove the CI/CD and linter infrastructure already in place. Built on the Claude Code SDK, adapted from [Anthropic's autonomous-coding demo](https://github.com/anthropics/claude-quickstarts/tree/main/autonomous-coding).
+The harness is the project's primary engineering cycle — it drove the CI/CD and linter infrastructure already in place. Default backend is `claude -p` subprocess per role (inherits the user's Claude Code CLI auth). The SDK path remains as an **opt-in fallback** via `--client sdk`. Adapted from [Anthropic's autonomous-coding demo](https://github.com/anthropics/claude-quickstarts/tree/main/autonomous-coding).
 
 ## Three-Phase Workflow
 
@@ -8,29 +8,33 @@ The harness is the project's primary engineering cycle — it drove the CI/CD an
 2. **Phase 2: Feature Loop** — for each pending feature, runs a Coder (Claude) + Reviewer (Codex CLI) inner loop. The Coder implements, Codex reviews locally, findings are fed back to the Coder. Repeats until clean or the per-feature iteration budget is exhausted.
 3. **Phase 3: Cloud Review** — the Coordinator pushes to GitHub, creates/finds a PR, polls for the cloud Codex review (via GitHub Action), and if issues are found, spawns a local Coder+Reviewer fix loop before pushing again. Up to `--max-relay-loops` cycles.
 
-Phases 1 and 2 create SDK sessions for Initializer/Coder work. Phase 3 uses SDK sessions only for fix loops — all git/GitHub operations (push, PR, poll) are handled directly via subprocess by the Coordinator (Python).
+Phases 1 and 2 spawn `claude -p` sessions for Initializer/Coder work. Phase 3 spawns more for fix loops — all git/GitHub operations (push, PR, poll) are handled directly via subprocess by the Coordinator (Python).
 
 ## Environment Variables
 
-Default path (`--client cli`) inherits the user's `claude` CLI auth — no
-`ANTHROPIC_API_KEY` or `ANTHROPIC_BASE_URL` is required.
+Normal operation needs **no `ANTHROPIC_API_KEY`**. The default `cli` backend inherits the user's `claude` CLI auth.
 
-| Variable                | Required | Description                                                                                                          |
-| ----------------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
-| `OPENAI_API_KEY`        | Yes\*    | Required for local Codex CLI review (Phase 2 + Phase 3)                                                              |
-| `HARNESS_POLICY_JUDGE`  | No       | Set to `deny` to disable the LLM policy judge (CI mode)                                                              |
-| `HARNESS_POLICY_CACHE`  | No       | Override the policy-judge cache path                                                                                 |
-| `HARNESS_CLI_LIVE_TEST` | No       | Set to `1` to enable `scripts/dry_run_parity.py` and the live `test_cli_client.py::test_cli_session_live_query` test |
-| `ANTHROPIC_API_KEY`     | SDK path | Only needed with `--client sdk` (legacy)                                                                             |
-| `ANTHROPIC_BASE_URL`    | SDK path | Only needed with `--client sdk` (legacy)                                                                             |
+| Variable                | Required | Description                                                                                                         |
+| ----------------------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`        | Yes\*    | Required for local Codex CLI review (Phase 2 + Phase 3)                                                             |
+| `HARNESS_POLICY_JUDGE`  | No       | Set to `deny` to disable the LLM policy judge (CI mode)                                                             |
+| `HARNESS_POLICY_CACHE`  | No       | Override the policy-judge cache path                                                                                |
+| `HARNESS_CLI_LIVE_TEST` | No       | Set to `1` to enable `scripts/dry_run_smoke.py` and the live `test_cli_client.py::test_cli_session_live_query` test |
 
 \*Not required if running with `--skip-review --skip-relay`.
 
-**Auth model:** The default `cli` backend shells out to `claude -p` per role,
-so the harness rides on whatever the `claude` binary is logged into (see
-`claude auth` / `claude /login`). The legacy `sdk` backend still talks
-directly to `api.anthropic.com` and needs the API key. To switch back for
-debugging:
+**Additional requirement:** `gh` CLI must be authenticated (`gh auth login`) for Phase 3 cloud operations.
+
+### Fallback: SDK backend (opt-in only)
+
+If the `claude` CLI is unavailable (not installed, auth broken, or you need a custom `ANTHROPIC_BASE_URL`), pass `--client sdk`. That path uses the `claude_code_sdk` Python package and talks directly to the Anthropic API.
+
+| Variable             | When                | Description                                |
+| -------------------- | ------------------- | ------------------------------------------ |
+| `ANTHROPIC_API_KEY`  | `--client sdk` only | API key for the SDK fallback               |
+| `ANTHROPIC_BASE_URL` | `--client sdk` only | Optional custom endpoint (proxy/self-host) |
+
+The API-key check fires inside `client_fallback.create_sdk_client_fallback` — it never blocks the default CLI path. To run with the fallback:
 
 ```bash
 set -a && source .env && set +a   # provides ANTHROPIC_API_KEY
@@ -38,10 +42,7 @@ python3 autonomous_agent_demo.py --client sdk --max-iterations 1 \
   --skip-review --skip-relay
 ```
 
-The harness does **not** auto-load `.env`. Source it manually when using
-`--client sdk` or when Codex review is enabled.
-
-**Additional requirement:** `gh` CLI must be authenticated (`gh auth login`) for Phase 3 cloud operations.
+The harness does **not** auto-load `.env`. Source it manually when using `--client sdk` or when Codex review is enabled.
 
 ## Worktree Requirement (MANDATORY)
 
@@ -119,18 +120,18 @@ Default model: `claude-sonnet-4-5-20250929`. Project dir defaults to repo root.
 
 ### CLI Flags
 
-| Flag                | Default                    | Description                                                             |
-| ------------------- | -------------------------- | ----------------------------------------------------------------------- |
-| `--max-iterations`  | unlimited                  | Per-feature iteration budget (Coder → Review → Fix cycles)              |
-| `--skip-review`     | false                      | Skip local Codex review in Phase 2 feature loop                         |
-| `--skip-relay`      | false                      | Skip Phase 3 cloud review entirely                                      |
-| `--review-timeout`  | 300 (5 min)                | Max seconds to wait for cloud Codex review comment                      |
-| `--max-relay-loops` | 2                          | Max cloud review-fix cycles in Phase 3                                  |
-| `--model`           | claude-sonnet-4-5-20250929 | Claude model for Coder sessions                                         |
-| `--project-dir`     | repo root                  | Target project directory                                                |
-| `--no-sandbox`      | false                      | Disable OS-level sandbox (WSL2 only)                                    |
-| `--clean`           | false                      | Wipe runtime files before starting                                      |
-| `--client`          | `cli`                      | Client backend: `cli` (claude -p subprocess, default) or `sdk` (legacy) |
+| Flag                | Default                    | Description                                                                                        |
+| ------------------- | -------------------------- | -------------------------------------------------------------------------------------------------- |
+| `--max-iterations`  | unlimited                  | Per-feature iteration budget (Coder → Review → Fix cycles)                                         |
+| `--skip-review`     | false                      | Skip local Codex review in Phase 2 feature loop                                                    |
+| `--skip-relay`      | false                      | Skip Phase 3 cloud review entirely                                                                 |
+| `--review-timeout`  | 300 (5 min)                | Max seconds to wait for cloud Codex review comment                                                 |
+| `--max-relay-loops` | 2                          | Max cloud review-fix cycles in Phase 3                                                             |
+| `--model`           | claude-sonnet-4-5-20250929 | Claude model for Coder sessions                                                                    |
+| `--project-dir`     | repo root                  | Target project directory                                                                           |
+| `--no-sandbox`      | false                      | Disable OS-level sandbox (WSL2 only)                                                               |
+| `--clean`           | false                      | Wipe runtime files before starting                                                                 |
+| `--client`          | `cli`                      | Backend: `cli` (claude -p subprocess, default) or `sdk` (opt-in fallback, needs ANTHROPIC_API_KEY) |
 
 **Note:** `--max-iterations` is a **per-feature** budget, not a global count. With `--max-iterations 5` and 10 features, each feature gets up to 5 rounds of (code → review → fix).
 
@@ -139,7 +140,7 @@ Default model: `claude-sonnet-4-5-20250929`. Project dir defaults to repo root.
 | Layer                       | File              | Purpose                                                                                                                                                                                                        |
 | --------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Settings isolation**      | `client.py`       | `CLAUDE_CONFIG_DIR` set to temp dir — prevents user-level hooks from interfering                                                                                                                               |
-| **Permissions**             | `client.py`       | `bypassPermissions` mode with file ops restricted to project dir                                                                                                                                               |
+| **Permissions**             | `client.py`       | `acceptEdits` (sandbox) or `bypassPermissions` (no-sandbox) with file ops restricted to project dir                                                                                                            |
 | **Bash allowlist**          | `security.py`     | Only whitelisted commands pass (`npm`, `cargo`, `git`, `gh`, `node`, etc.). Sensitive commands (`rm`, `pkill`, `chmod`, `gh`) get extra validation                                                             |
 | **gh subcommand validator** | `security.py`     | Allowlist-only for `gh`: only `pr create/view/list`, `repo view`, `api` (GET), `auth status`. Blocks write methods (`-X POST/DELETE/PUT/PATCH`) and data flags (`-f`, `-F`, `--field`) via token-based parsing |
 | **Feature list protection** | `hooks.py`        | PreToolUse hook on Write — features cannot be removed and descriptions cannot be edited; must remain valid JSON array. Note: Edit tool is not validated by this hook.                                          |
@@ -163,23 +164,19 @@ Python hooks (`security.py`, `hooks.py`) fire regardless of sandbox or permissio
 
 In addition to the runtime safety layers above, the project uses [hookify](https://github.com/anthropics/claude-code/tree/main/plugins/hookify) rules to catch common mistakes **before** the harness is launched. These rules live in `.claude/hookify.*.local.md` and are evaluated automatically by the hookify plugin on every tool call.
 
-| Rule                        | Event | Action | What it catches                                                                                                                                           |
-| --------------------------- | ----- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `block-harness-on-main`     | bash  | warn   | Running `autonomous_agent_demo.py` — reminds to check branch and use a worktree. The harness creates commits and must not run on `main`.                  |
-| `block-harness-no-api-key`  | bash  | warn   | Running the harness — reminds to verify `ANTHROPIC_API_KEY` is set. In worktrees, `.env` is absent (gitignored) and must be sourced from the source repo. |
-| `warn-worktree-npm-install` | bash  | warn   | Running `git worktree add` without a reminder to `npm install` afterward. `node_modules/` is gitignored and missing in fresh worktrees.                   |
-| `warn-harness-dry-run`      | bash  | warn   | Running the harness with `--max-iterations` > 1 without having done a single-iteration dry-run first. Catches env/hook/permission issues early.           |
+| Rule                        | Event | Action | What it catches                                                                                                                                 |
+| --------------------------- | ----- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `block-harness-on-main`     | bash  | warn   | Running `autonomous_agent_demo.py` — reminds to check branch and use a worktree. The harness creates commits and must not run on `main`.        |
+| `warn-worktree-npm-install` | bash  | warn   | Running `git worktree add` without a reminder to `npm install` afterward. `node_modules/` is gitignored and missing in fresh worktrees.         |
+| `warn-harness-dry-run`      | bash  | warn   | Running the harness with `--max-iterations` > 1 without having done a single-iteration dry-run first. Catches env/hook/permission issues early. |
 
-**How they work:** Hookify rules are markdown files with YAML frontmatter that define a regex pattern, an event type (bash/file/stop), and an action (block/warn). The hookify plugin evaluates all enabled rules on every matching hook event. All four rules use `warn` — they show guidance but don't hard-block, since hookify pattern matching alone cannot inspect git state or environment variables at runtime.
-
-**Why two rules share a pattern:** Both `block-harness-on-main` and `block-harness-no-api-key` trigger on the same command (`python3? ... autonomous_agent_demo.py`). When both fire, the hookify engine concatenates their messages — the agent sees both the worktree and API key reminders in a single response.
+**How they work:** Hookify rules are markdown files with YAML frontmatter that define a regex pattern, an event type (bash/file/stop), and an action (block/warn). The hookify plugin evaluates all enabled rules on every matching hook event. All three rules use `warn` — they show guidance but don't hard-block, since hookify pattern matching alone cannot inspect git state at runtime.
 
 **Pre-launch checklist (enforced by these rules):**
 
 1. **Worktree** — `git branch --show-current` must NOT return `main`. Use `EnterWorktree` or `git worktree add`.
-2. **Environment** — find the source repo root with `SOURCE_ROOT=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')`, then `set -a && source "$SOURCE_ROOT/.env" && set +a`.
-3. **Dependencies** — `npm install` in the worktree (node_modules is gitignored).
-4. **Dry-run** — `python autonomous_agent_demo.py --max-iterations 1` to verify the environment before scaling up. Add `--no-sandbox` only on WSL2.
+2. **Dependencies** — `npm install` in the worktree (node_modules is gitignored).
+3. **Dry-run** — `python autonomous_agent_demo.py --max-iterations 1` to verify the environment before scaling up. Add `--no-sandbox` only on WSL2.
 
 **Editing rules:** Rules take effect immediately on the next tool call — no restart needed. To disable a rule, set `enabled: false` in its frontmatter. To inspect all active rules at runtime, use the `/hookify:list` skill.
 
@@ -189,7 +186,11 @@ In addition to the runtime safety layers above, the project uses [hookify](https
 | ------------------------------- | ----------------------------------------------------------------------------------- |
 | `autonomous_agent_demo.py`      | CLI entry point (argparse, asyncio.run, Phase 1-2-3 orchestration)                  |
 | `agent.py`                      | Core loop — per-feature Coder+Reviewer iterations, cloud review relay loop          |
-| `client.py`                     | SDK client factory — security config, system prompt, hooks registration             |
+| `cli_client.py`                 | Default `claude -p` subprocess backend: session + resume, stream-JSON parser        |
+| `client.py`                     | CLI-backend settings writer (`build_settings_file`) + `BUILTIN_TOOLS`               |
+| `client_fallback.py`            | Opt-in SDK fallback (`--client sdk`) — only module that imports `claude_code_sdk`   |
+| `hook_runner.py`                | Bridge: Claude CLI's settings.json hooks → Python `security.py` / `hooks.py`        |
+| `policy_judge.py`               | LLM fallback for the bash allowlist; cached per-command                             |
 | `security.py`                   | Bash command allowlist + validators for `pkill`/`chmod`/`rm`/`gh`                   |
 | `hooks.py`                      | PreToolUse hook protecting `feature_list.json` integrity                            |
 | `review.py`                     | Local Codex CLI review, cloud review polling (gh api), PR creation, comment parsing |
@@ -303,16 +304,16 @@ The marketplace definition is at `.claude-plugin/marketplace.json` (project root
 
 ## Troubleshooting
 
-| Symptom                                        | Cause                                                                               | Fix                                                                                                                                     |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `python: command not found`                    | WSL2/Linux may only have `python3`                                                  | Use `python3` instead of `python`                                                                                                       |
-| All Bash commands blocked with "Empty command" | Hook reads `input_data["command"]` instead of `input_data["tool_input"]["command"]` | Already fixed in `security.py` and `hooks.py`                                                                                           |
-| `spawn rg EACCES` in Glob/Grep                 | Claude Code's vendored ripgrep binary lost +x permission                            | Preflight check auto-fixes this; or run `chmod +x ~/.npm-global/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg` |
-| User-level hooks interfere                     | SDK subprocess loads `~/.claude/settings.json`                                      | `client.py` sets `CLAUDE_CONFIG_DIR` to an isolated temp dir                                                                            |
-| `app_spec.md` empty at root                    | `prompts.py` skips copy if root file exists                                         | Write spec directly to root `app_spec.md`, not `prompts/app_spec.md`                                                                    |
-| `ANTHROPIC_API_KEY not set`                    | `.env` not sourced                                                                  | Run `set -a && source .env && set +a` before launching                                                                                  |
-| Codex review always errors                     | `OPENAI_API_KEY` not set or `codex` CLI not installed                               | `npm i -g @openai/codex` and set `OPENAI_API_KEY`, or run with `--skip-review`                                                          |
-| Cloud review times out                         | GitHub Action slow or `gh` not authenticated                                        | Run `gh auth login` and increase `--review-timeout`                                                                                     |
-| `gh api` blocked by harness                    | Command uses a blocked method or data flag                                          | Only GET requests allowed; check `security.py` `GH_BLOCKED_METHODS` and `GH_API_DATA_FLAGS`                                             |
-| `claude: command not found` on `--client cli`  | `claude` CLI not installed or not on PATH                                           | Install Claude Code CLI or pass `--client sdk` to use the API-key backend                                                               |
-| Policy judge keeps blocking a safe command     | Missing the command from the allowlist                                              | Add to `ALLOWED_COMMANDS` in `security.py`, or inspect/clear the cache at `$CLAUDE_CONFIG_DIR/policy_cache.json`                        |
+| Symptom                                           | Cause                                                                               | Fix                                                                                                                                     |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `python: command not found`                       | WSL2/Linux may only have `python3`                                                  | Use `python3` instead of `python`                                                                                                       |
+| All Bash commands blocked with "Empty command"    | Hook reads `input_data["command"]` instead of `input_data["tool_input"]["command"]` | Already fixed in `security.py` and `hooks.py`                                                                                           |
+| `spawn rg EACCES` in Glob/Grep                    | Claude Code's vendored ripgrep binary lost +x permission                            | Preflight check auto-fixes this; or run `chmod +x ~/.npm-global/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg` |
+| User-level hooks interfere                        | SDK subprocess loads `~/.claude/settings.json`                                      | `client.py` sets `CLAUDE_CONFIG_DIR` to an isolated temp dir                                                                            |
+| `app_spec.md` empty at root                       | `prompts.py` skips copy if root file exists                                         | Write spec directly to root `app_spec.md`, not `prompts/app_spec.md`                                                                    |
+| `ANTHROPIC_API_KEY not set` (with `--client sdk`) | `.env` not sourced while using the SDK fallback                                     | Run `set -a && source .env && set +a` before launching, or drop `--client sdk` to use the default CLI backend                           |
+| Codex review always errors                        | `OPENAI_API_KEY` not set or `codex` CLI not installed                               | `npm i -g @openai/codex` and set `OPENAI_API_KEY`, or run with `--skip-review`                                                          |
+| Cloud review times out                            | GitHub Action slow or `gh` not authenticated                                        | Run `gh auth login` and increase `--review-timeout`                                                                                     |
+| `gh api` blocked by harness                       | Command uses a blocked method or data flag                                          | Only GET requests allowed; check `security.py` `GH_BLOCKED_METHODS` and `GH_API_DATA_FLAGS`                                             |
+| `claude: command not found` on `--client cli`     | `claude` CLI not installed or not on PATH                                           | Install Claude Code CLI, or fall back with `--client sdk` (requires `ANTHROPIC_API_KEY`)                                                |
+| Policy judge keeps blocking a safe command        | Missing the command from the allowlist                                              | Add to `ALLOWED_COMMANDS` in `security.py`, or inspect/clear the cache at `$CLAUDE_CONFIG_DIR/policy_cache.json`                        |
