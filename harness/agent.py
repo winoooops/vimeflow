@@ -10,7 +10,16 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from client import create_client
+from client import create_client, build_settings_file, BUILTIN_TOOLS
+from cli_client import (
+    ClaudeCliSession,
+    AssistantMessage,
+    UserMessage,
+    TextBlock,
+    ToolUseBlock,
+    ToolResultBlock,
+    ResultEvent,
+)
 from progress import print_session_header, print_progress_summary
 from prompts import (
     get_initializer_prompt,
@@ -23,8 +32,20 @@ from review import run_local_review
 AUTO_CONTINUE_DELAY_SECONDS = 3
 
 
+async def _iter_events(client_or_session, prompt: str):
+    """Yield SDK-shaped events regardless of backend."""
+    if isinstance(client_or_session, ClaudeCliSession):
+        async for event in client_or_session.query(prompt):
+            yield event
+    else:
+        # Legacy SDK path
+        await client_or_session.query(prompt)
+        async for msg in client_or_session.receive_response():
+            yield msg
+
+
 async def run_agent_session(
-    client,
+    client_or_session,
     message: str,
     project_dir: Path,
 ) -> tuple[str, str]:
@@ -32,18 +53,16 @@ async def run_agent_session(
     Run a single agent session.
 
     Returns (status, response_text) where status is "continue" or "error".
+    Accepts either a ClaudeSDKClient (legacy) or a ClaudeCliSession (default).
     """
-    print("  Sending prompt to Claude Code SDK...\n")
-
+    print("  Sending prompt to Claude Code...\n")
     try:
-        await client.query(message)
-
         response_text = ""
-        async for msg in client.receive_response():
-            msg_type = type(msg).__name__
+        async for event in _iter_events(client_or_session, message):
+            msg_type = type(event).__name__
 
-            if msg_type == "AssistantMessage" and hasattr(msg, "content"):
-                for block in msg.content:
+            if msg_type == "AssistantMessage" and hasattr(event, "content"):
+                for block in event.content:
                     block_type = type(block).__name__
 
                     if block_type == "TextBlock" and hasattr(block, "text"):
@@ -58,8 +77,8 @@ async def run_agent_session(
                             else:
                                 print(f"    {input_str}", flush=True)
 
-            elif msg_type == "UserMessage" and hasattr(msg, "content"):
-                for block in msg.content:
+            elif msg_type == "UserMessage" and hasattr(event, "content"):
+                for block in event.content:
                     block_type = type(block).__name__
 
                     if block_type == "ToolResultBlock":
@@ -73,12 +92,37 @@ async def run_agent_session(
                         else:
                             print("    [Done]", flush=True)
 
+            elif msg_type == "ResultEvent":
+                if getattr(event, "is_error", False):
+                    print(f"\n  [result: error]", flush=True)
+
         print("\n" + "-" * 70 + "\n")
         return "continue", response_text
 
     except Exception as e:
         print(f"  Error during session: {e}")
         return "error", str(e)
+
+
+def _make_session(
+    client_kind: str,
+    *,
+    role: str,
+    project_dir: Path,
+    model: str,
+    sandbox: bool,
+):
+    """Return either a ClaudeCliSession (CLI) or a ClaudeSDKClient (SDK)."""
+    if client_kind == "cli":
+        settings_path = build_settings_file(project_dir, sandbox=sandbox)
+        return ClaudeCliSession(
+            role=role,
+            project_dir=project_dir,
+            model=model,
+            settings_path=settings_path,
+            allowed_tools=BUILTIN_TOOLS,
+        )
+    return create_client(project_dir, model, sandbox=sandbox)
 
 
 def get_pending_features(project_dir: Path) -> list[dict]:
@@ -116,6 +160,7 @@ async def run_feature_iteration(
     iteration: int,
     findings: str | None = None,
     prompt_override: str | None = None,
+    client_kind: str = "cli",
 ) -> tuple[str, str | None]:
     """
     Run one Coder->Reviewer iteration for a feature.
@@ -124,6 +169,7 @@ async def run_feature_iteration(
         prompt_override: If provided, use this prompt instead of the default
             coding prompt. Used by the cloud review fix loop to pass the
             reviewer prompt instead of the feature coding prompt.
+        client_kind: "cli" (default) or "sdk" — selects backend.
 
     Returns (status, findings_text):
       - ("passed", None) -- review clean, feature done
@@ -137,7 +183,10 @@ async def run_feature_iteration(
     print()
 
     # --- Coder phase ---
-    client = create_client(project_dir, model, sandbox=sandbox)
+    session = _make_session(
+        client_kind, role="coder",
+        project_dir=project_dir, model=model, sandbox=sandbox,
+    )
 
     if prompt_override:
         prompt = prompt_override
@@ -146,8 +195,11 @@ async def run_feature_iteration(
     else:
         prompt = get_coding_prompt()
 
-    async with client:
-        status, response = await run_agent_session(client, prompt, project_dir)
+    if isinstance(session, ClaudeCliSession):
+        status, response = await run_agent_session(session, prompt, project_dir)
+    else:
+        async with session:
+            status, response = await run_agent_session(session, prompt, project_dir)
 
     if status == "error":
         return "error", None
@@ -175,6 +227,7 @@ async def run_autonomous_agent(
     max_iterations: Optional[int] = None,
     sandbox: bool = True,
     skip_review: bool = False,
+    client_kind: str = "cli",
 ) -> None:
     """
     Run the autonomous agent loop.
@@ -204,11 +257,17 @@ async def run_autonomous_agent(
 
         print_session_header(1, is_initializer=True)
 
-        client = create_client(project_dir, model, sandbox=sandbox)
+        session = _make_session(
+            client_kind, role="initializer",
+            project_dir=project_dir, model=model, sandbox=sandbox,
+        )
         prompt = get_initializer_prompt()
 
-        async with client:
-            status, response = await run_agent_session(client, prompt, project_dir)
+        if isinstance(session, ClaudeCliSession):
+            status, response = await run_agent_session(session, prompt, project_dir)
+        else:
+            async with session:
+                status, response = await run_agent_session(session, prompt, project_dir)
 
         if status == "error":
             print("  Initializer failed. Check logs and retry.")
@@ -257,11 +316,17 @@ async def run_autonomous_agent(
 
             if skip_review:
                 # No review -- just run Coder, then check if feature passed
-                client = create_client(project_dir, model, sandbox=sandbox)
+                session = _make_session(
+                    client_kind, role="coder",
+                    project_dir=project_dir, model=model, sandbox=sandbox,
+                )
                 prompt = get_coding_prompt()
 
-                async with client:
-                    status, response = await run_agent_session(client, prompt, project_dir)
+                if isinstance(session, ClaudeCliSession):
+                    status, response = await run_agent_session(session, prompt, project_dir)
+                else:
+                    async with session:
+                        status, response = await run_agent_session(session, prompt, project_dir)
 
                 print_progress_summary(project_dir)
 
@@ -286,7 +351,8 @@ async def run_autonomous_agent(
                 continue
 
             status, new_findings = await run_feature_iteration(
-                project_dir, model, sandbox, feature, iteration, findings
+                project_dir, model, sandbox, feature, iteration, findings,
+                client_kind=client_kind,
             )
 
             print_progress_summary(project_dir)
@@ -329,6 +395,7 @@ async def run_cloud_review_loop(
     sandbox: bool,
     max_relay_loops: int = 2,
     review_timeout: int = 300,
+    client_kind: str = "cli",
 ) -> str:
     """
     Phase 3: Push, create PR, poll for cloud Codex review, fix if needed.
@@ -413,6 +480,7 @@ async def run_cloud_review_loop(
             fix_status, new_findings = await run_feature_iteration(
                 project_dir, model, sandbox, fix_feature, fix_iter, fix_findings,
                 prompt_override=reviewer_prompt,
+                client_kind=client_kind,
             )
             if fix_status == "passed":
                 print("  Local review clean after fix.")

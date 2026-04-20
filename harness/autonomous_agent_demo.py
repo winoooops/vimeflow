@@ -215,6 +215,7 @@ def main() -> None:
                 max_iterations=args.max_iterations,
                 sandbox=sandbox,
                 skip_review=args.skip_review,
+                client_kind=args.client,
             )
         )
 
@@ -227,6 +228,7 @@ def main() -> None:
                     sandbox=sandbox,
                     max_relay_loops=args.max_relay_loops,
                     review_timeout=args.review_timeout,
+                    client_kind=args.client,
                 )
             )
 
