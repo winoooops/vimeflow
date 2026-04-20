@@ -98,7 +98,7 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
 - 4-zone workspace grid: Icon Rail, Sidebar, Terminal Zone, Agent Activity
   panel. Context switcher tabs (Files / Editor / Diff) wired into the
   sidebar. All components use Obsidian Lens semantic tokens.
-  (commits `f6a8b3f` … `74dbb74`, pre-PR era) —
+  ([#31](https://github.com/winoooops/vimeflow/pull/31), `ba395c7`) —
   patterns: [React Lifecycle](docs/reviews/patterns/react-lifecycle.md),
   [Accessibility](docs/reviews/patterns/accessibility.md)
 
@@ -106,7 +106,7 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
 
 - Chat-first UI: `ChatView`, `features/chat/`, chat domain types, mock
   messages. Project pivoted from chat manager to CLI agent workspace.
-  (commit `f6a8b3f`)
+  ([#31](https://github.com/winoooops/vimeflow/pull/31), `ba395c7`)
 
 ### Phase 1 — Tauri Scaffold + CI Green
 
@@ -115,7 +115,8 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
 - Tauri v2 scaffold (`src-tauri/`), `tauri:dev` / `tauri:build` npm
   scripts, `src/lib/environment.ts` (`isTauri()` detection), CI pipeline
   across macOS/Windows/Linux with Rust caching.
-  ([#27](https://github.com/winoooops/vimeflow/pull/27), `9ce4d61`)
+  ([#27](https://github.com/winoooops/vimeflow/pull/27), `9ce4d61`) —
+  patterns: [CSP Configuration](docs/reviews/patterns/csp-configuration.md)
 
 ---
 

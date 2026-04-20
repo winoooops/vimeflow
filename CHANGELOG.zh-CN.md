@@ -93,7 +93,7 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
 - 4 区工作区网格：图标栏、侧边栏、终端区、代理活动面板。上下文切换标签
   （文件 / 编辑器 / Diff）接入侧边栏。所有组件采用 Obsidian Lens 语义
   tokens。
-  （提交 `f6a8b3f` … `74dbb74`，早于 PR 流程） —
+  ([#31](https://github.com/winoooops/vimeflow/pull/31), `ba395c7`) —
   patterns: [React Lifecycle](docs/reviews/patterns/react-lifecycle.md),
   [Accessibility](docs/reviews/patterns/accessibility.md)
 
@@ -101,7 +101,7 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
 
 - 基于聊天的 UI：`ChatView`、`features/chat/`、聊天领域类型、mock 消息。
   项目从聊天管理器转型为 CLI 代理工作区。
-  （提交 `f6a8b3f`）
+  ([#31](https://github.com/winoooops/vimeflow/pull/31), `ba395c7`)
 
 ### 第 1 阶段 — Tauri 脚手架 + CI 通过
 
@@ -110,7 +110,8 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
 - Tauri v2 脚手架（`src-tauri/`）、`tauri:dev` / `tauri:build` npm 脚本、
   `src/lib/environment.ts`（`isTauri()` 检测）、跨 macOS/Windows/Linux
   的 CI 流水线及 Rust 缓存。
-  ([#27](https://github.com/winoooops/vimeflow/pull/27), `9ce4d61`)
+  ([#27](https://github.com/winoooops/vimeflow/pull/27), `9ce4d61`) —
+  patterns: [CSP Configuration](docs/reviews/patterns/csp-configuration.md)
 
 ---
 

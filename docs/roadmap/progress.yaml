@@ -90,104 +90,104 @@ phases:
       - id: p2-s1
         name: 'Remove chat-related code: ChatView, features/chat/, chat types, mock messages'
         status: done
-        commit: f6a8b3f
-        pr: null
+        commit: ba395c7
+        pr: 31
         notes: 'Removed features/chat/ and all chat-related components'
       - id: p2-s2
         name: 'Refactor App.tsx from chat-first to workspace layout (4-zone grid)'
         status: done
-        commit: 5c742b1
-        pr: null
+        commit: ba395c7
+        pr: 31
         notes: 'App.tsx now renders WorkspaceView instead of ChatView'
       - id: p2-s3
         name: 'Build new Icon Rail component — project avatars, + new project, settings'
         status: done
-        commit: 478f4a3
-        pr: null
+        commit: ba395c7
+        pr: 31
         notes: 'IconRail with project avatars, active highlight, + and ⚙ buttons'
       - id: p2-s4
         name: 'Build new Sidebar component — session list (mock data) + context switcher tabs'
         status: done
-        commit: 22993e1
-        pr: null
+        commit: ba395c7
+        pr: 31
         notes: 'Sidebar with session list and ContextSwitcher tabs (Files/Editor/Diff)'
       - id: p2-s5
         name: 'Build Terminal Zone placeholder — tab bar + mock terminal content area'
         status: done
-        commit: 3c7c7d4
-        pr: null
+        commit: ba395c7
+        pr: 31
         notes: 'TerminalZone with tab bar (agent/shell tabs) and placeholder content'
       - id: p2-s6
         name: 'Build Agent Activity panel — status card, context smiley, usage bar, collapsible sections (mock data)'
         status: done
-        commit: e05cd3d
-        pr: null
+        commit: ba395c7
+        pr: 31
         notes: 'Complete AgentActivity panel with StatusCard, PinnedMetrics, collapsible sections, footer'
       - id: p2-s7
         name: 'Wire context switcher tabs to show existing Files Explorer / Editor / Diff in sidebar'
         status: done
-        commit: 02e9f93
-        pr: null
+        commit: ba395c7
+        pr: 31
         notes: 'Context panels integrated with sidebar context switcher'
       - id: p2-s8
         name: 'Apply Obsidian Lens design tokens — match Stitch code.html reference with authoritative overrides'
         status: done
-        commit: 7d2663d
-        pr: null
+        commit: ba395c7
+        pr: 31
         notes: 'All workspace components use semantic design tokens'
       - id: p2-s9
         name: 'Update Tailwind config with new semantic tokens (success, tertiary, primary-dim, etc.)'
         status: done
-        commit: 93dba04
-        pr: null
+        commit: ba395c7
+        pr: 31
         notes: 'Tailwind config updated with Obsidian Lens semantic tokens'
       - id: p2-s10
         name: 'Update tests for new layout components'
         status: done
-        commit: b6444a7
-        pr: null
+        commit: ba395c7
+        pr: 31
         notes: 'Integration tests added, 1074 tests passing, 92.99% coverage'
     dod:
       - id: p2-d1
         check: '4-zone layout renders: icon rail, sidebar, terminal zone, agent activity'
         status: done
-        commit: f6a8b3f
-        pr: null
+        commit: ba395c7
+        pr: 31
       - id: p2-d2
         check: 'Icon rail shows project avatars with active highlight'
         status: done
-        commit: f6a8b3f
-        pr: null
+        commit: ba395c7
+        pr: 31
       - id: p2-d3
         check: 'Sidebar shows mock session list with status badges'
         status: done
-        commit: f6a8b3f
-        pr: null
+        commit: ba395c7
+        pr: 31
       - id: p2-d4
         check: 'Context switcher tabs (Files/Editor/Diff) work in sidebar'
         status: done
-        commit: f6a8b3f
-        pr: null
+        commit: ba395c7
+        pr: 31
       - id: p2-d5
         check: 'Agent Activity panel shows all sections (mock data)'
         status: done
-        commit: f6a8b3f
-        pr: null
+        commit: ba395c7
+        pr: 31
       - id: p2-d6
         check: 'Chat view and all chat code removed'
         status: done
-        commit: f6a8b3f
-        pr: null
+        commit: ba395c7
+        pr: 31
       - id: p2-d7
         check: 'All new components match Stitch mockup (docs/design/agent_workspace/screen.png)'
         status: done
-        commit: f6a8b3f
-        pr: null
+        commit: ba395c7
+        pr: 31
       - id: p2-d8
         check: 'All tests pass, Prettier + ESLint clean'
         status: done
-        commit: 74dbb74
-        pr: null
+        commit: ba395c7
+        pr: 31
 
   - id: phase-3
     name: 'Terminal Core'

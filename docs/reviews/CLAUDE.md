@@ -31,7 +31,7 @@ ingestion protocol.
 | [Accessibility](patterns/accessibility.md)                     | a11y           | 11       | 1    | 2026-04-10   |
 | [Async Race Conditions](patterns/async-race-conditions.md)     | react-patterns | 12       | 3    | 2026-04-14   |
 | [Command Injection](patterns/command-injection.md)             | security       | 4        | 0    | 2026-04-09   |
-| [CSP Configuration](patterns/csp-configuration.md)             | security       | 2        | 0    | 2026-04-09   |
+| [CSP Configuration](patterns/csp-configuration.md)             | security       | 2        | 1    | 2026-04-09   |
 | [PTY Session Management](patterns/pty-session-management.md)   | backend        | 5        | 1    | 2026-04-09   |
 | [Git Operations](patterns/git-operations.md)                   | correctness    | 10       | 1    | 2026-04-12   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)   | editor         | 12       | 0    | 2026-04-11   |
