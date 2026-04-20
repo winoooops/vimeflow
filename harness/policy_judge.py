@@ -1,19 +1,32 @@
 """
-Policy Judge — LLM fallback for the Bash allowlist.
+Policy Judge — deny-by-default, LLM is opt-in advisor only.
 
 When `security.extract_commands(...)` returns a base command that is NOT in
-`ALLOWED_COMMANDS`, we ask a single-shot `claude -p` call to decide whether
-the command is safe in the harness context. Decisions are cached on disk
-(keyed by the exact command string) so a bounded stream of novel commands
-doesn't blow up the iteration budget.
+`ALLOWED_COMMANDS`, the default behaviour is to DENY. The LLM judge never
+rubber-stamps unknown commands silently — that would erode the allowlist's
+security boundary every time context is ambiguous.
+
+Three escape hatches, in priority order:
+
+  1. Local allowlist file — `harness/.policy_allow.local` (gitignored),
+     one command base per line. Deterministic, user-maintained. Commands
+     listed here bypass the judge entirely and are allowed (still subject
+     to the sensitive-command validators like pkill/chmod/rm/gh).
+
+  2. HARNESS_POLICY_JUDGE=ask — opt-in LLM consultation. A one-shot
+     `claude -p` call decides ALLOW/DENY. Allow decisions are cached on
+     disk so a novel command is only reviewed once. Logged loud.
+
+  3. HARNESS_POLICY_JUDGE=explain — advisory-only. Consult the judge to
+     get a reason, but ALWAYS deny. Useful for humans triaging why a
+     command is getting blocked without risking auto-approval.
+
+Default (unset, or =deny, or anything else unrecognised): block.
 
 Env knobs:
-  HARNESS_POLICY_JUDGE=deny   — short-circuit: deny anything outside the
-                                allowlist without asking the model. Used in
-                                CI and in deterministic tests.
-  HARNESS_POLICY_CACHE=<path> — JSON file to use for the decision cache
-                                (default: $CLAUDE_CONFIG_DIR/policy_cache.json,
-                                falling back to /tmp/harness_policy_cache.json)
+  HARNESS_POLICY_JUDGE   — "ask" | "explain" | "deny" | unset (default deny)
+  HARNESS_POLICY_ALLOW_FILE — override the local allowlist path
+  HARNESS_POLICY_CACHE   — override judge decision-cache path
 """
 
 import json
@@ -62,6 +75,29 @@ def _cache_path() -> Path:
     return Path("/tmp/harness_policy_cache.json")
 
 
+def _allow_file_path() -> Path:
+    override = os.environ.get("HARNESS_POLICY_ALLOW_FILE")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent / ".policy_allow.local"
+
+
+def _load_local_allowlist() -> set:
+    """Return the set of command bases allowed by the local file (one per line).
+
+    Lines starting with `#` or empty lines are ignored.
+    """
+    path = _allow_file_path()
+    if not path.exists():
+        return set()
+    allowed = set()
+    for raw in path.read_text().splitlines():
+        entry = raw.strip()
+        if entry and not entry.startswith("#"):
+            allowed.add(entry)
+    return allowed
+
+
 def _load_cache() -> dict:
     p = _cache_path()
     if not p.exists():
@@ -91,29 +127,62 @@ def _query_claude(prompt: str) -> str:
     return proc.stdout.strip()
 
 
-def decide(command: str) -> JudgeDecision:
-    """Ask the judge (or cache) whether a command outside the allowlist is safe."""
-    if os.environ.get("HARNESS_POLICY_JUDGE") == "deny":
-        first = command.split()[0] if command.split() else ""
-        return JudgeDecision(
-            allow=False,
-            reason=f"judge-disabled (HARNESS_POLICY_JUDGE=deny): '{first}' not in allowlist",
-        )
+def _base_command(command: str) -> str:
+    """Extract the first-token program name (best-effort, matches `security.extract_commands`)."""
+    tokens = command.strip().split()
+    if not tokens:
+        return ""
+    return tokens[0].rsplit("/", 1)[-1]
 
+
+def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:
+    """Call the LLM judge. If `advisory`, always DENY regardless of answer but keep the reason."""
     cache = _load_cache()
     if command in cache:
         entry = cache[command]
-        return JudgeDecision(allow=entry["allow"], reason=entry["reason"])
+        allow = entry["allow"] and not advisory
+        return JudgeDecision(allow=allow, reason=entry["reason"])
 
     raw_lines = _query_claude(JUDGE_PROMPT.format(command=command)).splitlines()
     raw = raw_lines[0].strip() if raw_lines else ""
     if raw.upper().startswith("ALLOW"):
-        allow = True
+        judge_allow = True
         reason = raw.split(":", 1)[1].strip() if ":" in raw else "judge allowed"
     else:
-        allow = False
+        judge_allow = False
         reason = raw.split(":", 1)[1].strip() if ":" in raw else "judge denied"
 
-    cache[command] = {"allow": allow, "reason": reason}
+    cache[command] = {"allow": judge_allow, "reason": reason}
     _save_cache(cache)
+    allow = judge_allow and not advisory
     return JudgeDecision(allow=allow, reason=reason)
+
+
+def decide(command: str) -> JudgeDecision:
+    """Decide whether a command outside `ALLOWED_COMMANDS` is safe.
+
+    Default: DENY. The LLM judge is opt-in via `HARNESS_POLICY_JUDGE=ask`.
+    """
+    mode = os.environ.get("HARNESS_POLICY_JUDGE", "deny").strip().lower()
+
+    # Escape hatch #1: local allowlist file (deterministic, user-managed).
+    base = _base_command(command)
+    if base and base in _load_local_allowlist():
+        return JudgeDecision(allow=True, reason=f"local allowlist file: '{base}'")
+
+    # Escape hatch #2: explicit LLM consultation.
+    if mode == "ask":
+        return _consult_judge(command, advisory=False)
+
+    # Escape hatch #3: advisory-only — judge may reason, never approves.
+    if mode == "explain":
+        return _consult_judge(command, advisory=True)
+
+    # Default / "deny" / anything else unrecognised → deny.
+    return JudgeDecision(
+        allow=False,
+        reason=(
+            f"'{base}' not in allowlist (policy default: deny). "
+            f"Add to harness/.policy_allow.local or set HARNESS_POLICY_JUDGE=ask to consult the LLM judge."
+        ),
+    )
