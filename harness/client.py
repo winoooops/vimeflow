@@ -10,17 +10,19 @@ The SDK fallback (`sdk_client.create_client`) mirrors it.
 """
 
 import json
-import os
 import sys
-import tempfile
 from pathlib import Path
 
-# Isolate both backends from user-level `~/.claude/settings.json`. The
-# `claude` CLI subprocess merges user + project settings, so user-level
-# hooks (e.g. block-no-verify) would fire inside harness agents.
-# Redirecting `CLAUDE_CONFIG_DIR` to an empty dir prevents this.
-_ISOLATED_CONFIG_DIR = tempfile.mkdtemp(prefix="harness_claude_config_")
-os.environ["CLAUDE_CONFIG_DIR"] = _ISOLATED_CONFIG_DIR
+# NOTE: we no longer override CLAUDE_CONFIG_DIR here. Redirecting it to a
+# fresh empty dir made `claude -p` lose the user's auth state (it would
+# print "Not logged in · Please run /login"). The CLI backend instead
+# relies on `--settings <project-scoped-file>` to layer harness-specific
+# permissions + hooks on top of the user config. Claude's settings
+# resolution merges, but the project file's matchers win when a PreToolUse
+# hook for "Bash" or "Write|Edit" is declared — our allowlist / feature_list
+# protections keep firing. If an individual user's global hook causes
+# friction with the harness, disable that hook locally rather than wiping
+# the whole config dir.
 
 
 BUILTIN_TOOLS = [

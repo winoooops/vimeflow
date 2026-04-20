@@ -64,7 +64,6 @@ def create_client(
     mode_label = "sandbox + acceptEdits" if sandbox else "bypassPermissions (no sandbox)"
     print(f"  [sdk] {mode_label}, fs restricted to {project_dir.resolve()}")
     print(f"  [sdk] Bash: allowlist-validated (see harness/security.py)")
-    print(f"  [sdk] Config: isolated from user settings (CLAUDE_CONFIG_DIR)")
     print()
 
     return ClaudeSDKClient(
