@@ -93,6 +93,17 @@ def create_client(
     hook_runner = Path(__file__).resolve().parent / "hook_runner.py"
 
     settings = build_base_settings(sandbox=sandbox)
+    # CLI-only wiring. `claude -p` is a subprocess — our Python process
+    # isn't there when it decides to run a tool, so the only handoff
+    # channel is settings.json on disk. Hooks declared here fire a
+    # subprocess per tool call; `hook_runner.py` reads the hook JSON
+    # from stdin and delegates to security.bash_security_hook /
+    # hooks.pre_write_feature_list_hook.
+    #
+    # The SDK backend (sdk_client.py) uses the same two Python callables
+    # but passes them directly via `HookMatcher(...)` on ClaudeCodeOptions
+    # — in-process, no subprocess round-trip — so its settings file
+    # intentionally omits this block.
     settings["hooks"] = {
         "PreToolUse": [
             {
