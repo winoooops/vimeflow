@@ -1,8 +1,13 @@
 """
-Claude SDK Client Configuration
+Claude CLI Client Configuration
 ================================
 
-Creates a Claude Code SDK client configured for VIBM development.
+Writes the `settings.json` file a `ClaudeCliSession` uses. The default
+harness workflow runs `claude -p` per role and inherits CLI auth — no
+`ANTHROPIC_API_KEY` is ever consulted on this path.
+
+The opt-in SDK fallback (`--client sdk`) lives in `client_fallback.py`; it
+is the only module that imports `claude_code_sdk` and enforces the API key.
 """
 
 import json
@@ -11,10 +16,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Isolate SDK sessions from user-level ~/.claude/settings.json.
-# The CLI subprocess merges user + project settings, so user-level
+# Isolate both backends from user-level `~/.claude/settings.json`. The
+# `claude` CLI subprocess merges user + project settings, so user-level
 # hooks (e.g. block-no-verify) would fire inside harness agents.
-# Redirecting CLAUDE_CONFIG_DIR to an empty dir prevents this.
+# Redirecting `CLAUDE_CONFIG_DIR` to an empty dir prevents this.
 _ISOLATED_CONFIG_DIR = tempfile.mkdtemp(prefix="harness_claude_config_")
 os.environ["CLAUDE_CONFIG_DIR"] = _ISOLATED_CONFIG_DIR
 
@@ -30,13 +35,13 @@ BUILTIN_TOOLS = [
 
 
 def build_settings_file(project_dir: Path, *, sandbox: bool = True) -> Path:
-    """Write settings.json for a ClaudeCliSession run.
+    """Write settings.json for a `ClaudeCliSession` run.
 
-    Mirrors the security config used by the SDK path (create_client) but
-    wires PreToolUse hooks through harness/hook_runner.py so the existing
-    Python allowlist + feature_list protections keep firing under the CLI.
+    Wires PreToolUse hooks through `harness/hook_runner.py` so the existing
+    Python allowlist (`security.py`) + feature_list protection (`hooks.py`)
+    keep firing under the CLI backend.
     """
-    hook_runner = (Path(__file__).resolve().parent / "hook_runner.py")
+    hook_runner = Path(__file__).resolve().parent / "hook_runner.py"
 
     settings: dict = {
         "permissions": {
@@ -75,96 +80,3 @@ def build_settings_file(project_dir: Path, *, sandbox: bool = True) -> Path:
     path = project_dir / ".claude_settings_cli.json"
     path.write_text(json.dumps(settings, indent=2))
     return path
-
-
-# NOTE: ANTHROPIC_API_KEY is only required on the SDK path below.
-# The CLI path (build_settings_file + cli_client.ClaudeCliSession) inherits
-# the user's `claude` CLI auth and does not use this env var.
-def create_client(
-    project_dir: Path, model: str, *, sandbox: bool = True
-):
-    """
-    Create a Claude Code SDK client with security layers.
-
-    Security:
-      1. Settings isolation — CLAUDE_CONFIG_DIR prevents user-level hooks
-      2. Sandbox (default on) — OS-level bash isolation via the CLI
-      3. Permissions — acceptEdits with sandbox, bypassPermissions without
-      4. Python hooks — bash allowlist (security.py) + feature_list protection (hooks.py)
-
-    Args:
-        project_dir: Root directory for the project
-        model: Claude model identifier
-        sandbox: Enable OS-level sandbox (default: True).
-                 Recommended on macOS/Linux. On Windows/WSL2 the sandbox
-                 may be unreliable — pass --no-sandbox to disable.
-    """
-    # Lazy SDK imports so build_settings_file + the CLI path remain usable
-    # without claude_code_sdk installed (the CLI path talks to the user's
-    # installed `claude` binary via subprocess instead).
-    from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
-    from claude_code_sdk.types import HookMatcher
-
-    from security import bash_security_hook
-    from hooks import pre_write_feature_list_hook
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY not set")
-
-    security_settings: dict = {
-        "permissions": {
-            "allow": [
-                "Read(.//**)",
-                "Write(.//**)",
-                "Edit(.//**)",
-                "Glob(.//**)",
-                "Grep(.//**)",
-                "Bash(*)",
-            ],
-        },
-    }
-
-    if sandbox:
-        security_settings["sandbox"] = {
-            "enabled": True,
-            "autoAllowBashIfSandboxed": True,
-        }
-        security_settings["permissions"]["defaultMode"] = "acceptEdits"
-        mode_label = "sandbox + acceptEdits"
-    else:
-        security_settings["permissions"]["defaultMode"] = "bypassPermissions"
-        mode_label = "bypassPermissions (no sandbox)"
-
-    project_dir.mkdir(parents=True, exist_ok=True)
-
-    settings_file = project_dir / ".claude_settings.json"
-    with open(settings_file, "w") as f:
-        json.dump(security_settings, f, indent=2)
-
-    print(f"  Security: {mode_label}, fs restricted to {project_dir.resolve()}")
-    print(f"  Bash: allowlist-validated (see harness/security.py)")
-    print(f"  Config: isolated from user settings (CLAUDE_CONFIG_DIR)")
-    print()
-
-    return ClaudeSDKClient(
-        options=ClaudeCodeOptions(
-            model=model,
-            system_prompt=(
-                "You are an expert Tauri/TypeScript/Rust developer building VIBM, "
-                "a desktop coding agent conversation manager. "
-                "Follow the project's CLAUDE.md, rules/, and agents/ specifications. "
-                "Use immutable patterns, explicit error handling, and write tests first."
-            ),
-            allowed_tools=BUILTIN_TOOLS,
-            hooks={
-                "PreToolUse": [
-                    HookMatcher(matcher="Bash", hooks=[bash_security_hook]),
-                    HookMatcher(matcher="Write", hooks=[pre_write_feature_list_hook]),
-                ],
-            },
-            max_turns=1000,
-            cwd=str(project_dir.resolve()),
-            settings=str(settings_file.resolve()),
-        )
-    )

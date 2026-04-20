@@ -96,12 +96,14 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--client",
-        choices=["sdk", "cli"],
+        choices=["cli", "sdk"],
         default="cli",
         help=(
-            "Claude client backend: 'cli' (claude -p subprocess, default, "
-            "uses user's Claude Code CLI auth) or 'sdk' (claude_code_sdk, "
-            "requires ANTHROPIC_API_KEY)."
+            "Claude client backend. Default 'cli' runs `claude -p` per role "
+            "and inherits the user's Claude Code CLI auth. 'sdk' is an "
+            "opt-in fallback that requires ANTHROPIC_API_KEY — use only "
+            "when the CLI path is unavailable (CLI not installed, auth "
+            "issue, custom ANTHROPIC_BASE_URL)."
         ),
     )
 
@@ -157,29 +159,15 @@ def clean_runtime_files(project_dir: Path) -> None:
     print()
 
 
-def preflight_checks(client_kind: str = "cli") -> bool:
+def preflight_checks() -> bool:
     """Run preflight checks before starting the harness.
 
-    ANTHROPIC_API_KEY is only required for the SDK backend. The CLI
-    backend (default) inherits auth from the user's `claude` CLI.
+    No auth check here — the default CLI backend inherits the user's
+    `claude` CLI login. The opt-in SDK fallback (`--client sdk`) enforces
+    its own ANTHROPIC_API_KEY requirement inside
+    `client_fallback.create_sdk_client_fallback`.
     """
     ok = True
-
-    # Check API key (only required for the SDK path)
-    if client_kind == "sdk" and not os.environ.get("ANTHROPIC_API_KEY"):
-        print("Error: ANTHROPIC_API_KEY environment variable not set")
-        print("\nOption 1: export ANTHROPIC_API_KEY='your-key-here'")
-        print("Option 2: add it to .env at the project root")
-        print("   The harness does NOT auto-load .env; source it first:")
-        print("   set -a && source .env && set +a")
-        print("Option 3: omit --client sdk to use the default CLI backend")
-        print("   (inherits auth from your `claude` CLI login)")
-        return False
-
-    # Check optional base URL
-    base_url = os.environ.get("ANTHROPIC_BASE_URL")
-    if base_url:
-        print(f"  API base URL: {base_url}")
 
     # Fix ripgrep permissions (Claude Code vendor binary)
     rg_paths = [
@@ -197,7 +185,7 @@ def preflight_checks(client_kind: str = "cli") -> bool:
 def main() -> None:
     args = parse_args()
 
-    if not preflight_checks(client_kind=args.client):
+    if not preflight_checks():
         return
 
     if args.clean:
