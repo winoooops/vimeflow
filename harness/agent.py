@@ -176,7 +176,7 @@ def _make_session(
         return create_cli_client(project_dir, model, role=role, sandbox=sandbox)
     # Opt-in fallback — requires ANTHROPIC_API_KEY (enforced inside).
     from sdk_client import create_client as create_sdk_client
-    return create_sdk_client(project_dir, model, sandbox=sandbox)
+    return create_sdk_client(project_dir, model, role=role, sandbox=sandbox)
 
 
 def get_pending_features(project_dir: Path) -> list[dict]:

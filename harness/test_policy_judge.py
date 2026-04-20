@@ -182,6 +182,30 @@ def test_ask_mode_parses_allow_even_with_preamble(tmp_path, monkeypatch):
     assert "safe read-only" in d.reason
 
 
+def test_ask_mode_echo_of_allow_guidance_does_not_count_as_approval(tmp_path, monkeypatch):
+    """The prompt mandates `ALLOW: <reason>` exactly. A preamble line like
+    `ALLOW common dev tools are usually safe` (echoing JUDGE_PROMPT's
+    guidance) must NOT be treated as the decision line. Only `ALLOW:` /
+    `DENY:` (colon-terminated) count. Without the colon requirement the
+    parser would pick up the echo and silently approve a DENY-intended
+    judgement."""
+    monkeypatch.setenv("HARNESS_POLICY_JUDGE", "ask")
+    monkeypatch.setenv("HARNESS_POLICY_CACHE", str(tmp_path / "cache.json"))
+    monkeypatch.setenv("HARNESS_POLICY_ALLOW_FILE", str(tmp_path / "allow.local"))
+
+    misleading = (
+        "Considering the guidance I was given:\n"
+        "ALLOW common dev tools that are usually safe.\n"
+        "However, this specific binary is an exfiltration risk.\n"
+        "DENY: curl is typically used for egress, not project-local work."
+    )
+    with patch("policy_judge._query_claude", new=AsyncMock(return_value=misleading)):
+        d = _run(decide("curl"))
+
+    assert d.allow is False
+    assert "exfiltration" in d.reason or "egress" in d.reason
+
+
 def test_ask_mode_deny_not_cached(tmp_path, monkeypatch):
     """A DENY must not be cached — a hallucinated or transient DENY would
     otherwise lock the command out permanently with no recovery UX."""

@@ -257,19 +257,22 @@ async def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:  # n
     prompt_text = JUDGE_PROMPT.replace("{command}", sanitized)
     raw_lines = (await _query_claude(prompt_text)).splitlines()
 
-    # Scan for the first ALLOW/DENY line rather than trusting raw_lines[0].
-    # LLMs frequently preface answers with "Sure, here's my decision:\n"
-    # or similar; with the old strict raw_lines[0] check that preamble
-    # would fail the ALLOW prefix test and silently become a DENY.
+    # Scan for the first ALLOW:/DENY: line rather than trusting
+    # raw_lines[0]. LLMs frequently preface answers with "Sure, here's
+    # my decision:\n"; the strict raw_lines[0] check would fail the
+    # ALLOW prefix test and silently become a DENY. We require the colon
+    # (matching the prompt's mandated format) so a preamble line like
+    # "ALLOW common dev tools are usually safe" — echoing the guidance
+    # in JUDGE_PROMPT — doesn't count as a bare "ALLOW" match.
     decision_line = ""
     for line in raw_lines:
         stripped = line.strip()
         upper = stripped.upper()
-        if upper.startswith("ALLOW") or upper.startswith("DENY"):
+        if upper.startswith("ALLOW:") or upper.startswith("DENY:"):
             decision_line = stripped
             break
 
-    if decision_line.upper().startswith("ALLOW"):
+    if decision_line.upper().startswith("ALLOW:"):
         judge_allow = True
         reason = (
             decision_line.split(":", 1)[1].strip()

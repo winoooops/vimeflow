@@ -21,13 +21,18 @@ from client import BUILTIN_TOOLS, build_base_settings, write_settings_file
 
 
 def create_client(
-    project_dir: Path, model: str, *, sandbox: bool = True
+    project_dir: Path, model: str, *, role: str = "default", sandbox: bool = True
 ):
     """Create a `claude_code_sdk.ClaudeSDKClient` with harness security layers.
 
     Fallback only — invoked via `--client sdk`. The default path is
-    `client.create_client`. Same permissions + sandbox block as the CLI
-    backend (via `build_base_settings`); the only divergence is hook wiring
+    `client.create_client`. `role` is accepted (unused today — SDK sessions
+    don't carry a role label) purely to keep the factory signature
+    interchangeable with the CLI factory, so `agent._make_session` can
+    swap them without caller changes.
+
+    Same permissions + sandbox block as the CLI backend (via
+    `build_base_settings`); the only divergence is hook wiring
     — SDK hooks run in-process via `HookMatcher` callables, whereas the CLI
     backend spawns `hook_runner.py` per tool call. Same security logic.
 
