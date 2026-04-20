@@ -34,7 +34,7 @@ If the `claude` CLI is unavailable (not installed, auth broken, or you need a cu
 | `ANTHROPIC_API_KEY`  | `--client sdk` only | API key for the SDK fallback               |
 | `ANTHROPIC_BASE_URL` | `--client sdk` only | Optional custom endpoint (proxy/self-host) |
 
-The API-key check fires inside `client_with_sdk.create_sdk_client_fallback` — it never blocks the default CLI path. To run with the fallback:
+The API-key check fires inside `sdk_client.create_client` — it never blocks the default CLI path. To run with the fallback:
 
 ```bash
 set -a && source .env && set +a   # provides ANTHROPIC_API_KEY
@@ -182,24 +182,24 @@ In addition to the runtime safety layers above, the project uses [hookify](https
 
 ## File Roles
 
-| File                            | Role                                                                                |
-| ------------------------------- | ----------------------------------------------------------------------------------- |
-| `autonomous_agent_demo.py`      | CLI entry point (argparse, asyncio.run, Phase 1-2-3 orchestration)                  |
-| `agent.py`                      | Core loop — per-feature Coder+Reviewer iterations, cloud review relay loop          |
-| `cli_client.py`                 | Default `claude -p` subprocess backend: session + resume, stream-JSON parser        |
-| `client.py`                     | CLI-backend settings writer (`build_settings_file`) + `BUILTIN_TOOLS`               |
-| `client_with_sdk.py`            | Opt-in SDK fallback (`--client sdk`) — only module that imports `claude_code_sdk`   |
-| `hook_runner.py`                | Bridge: Claude CLI's settings.json hooks → Python `security.py` / `hooks.py`        |
-| `policy_judge.py`               | LLM fallback for the bash allowlist; cached per-command                             |
-| `security.py`                   | Bash command allowlist + validators for `pkill`/`chmod`/`rm`/`gh`                   |
-| `hooks.py`                      | PreToolUse hook protecting `feature_list.json` integrity                            |
-| `review.py`                     | Local Codex CLI review, cloud review polling (gh api), PR creation, comment parsing |
-| `prompts.py`                    | Load prompt templates, inject review findings, copy `app_spec.md` on first run      |
-| `progress.py`                   | Read `feature_list.json`, render progress bar                                       |
-| `prompts/initializer_prompt.md` | Prompt for Phase 1 (decompose spec into features)                                   |
-| `prompts/coding_prompt.md`      | Prompt for Coder sessions (implement features)                                      |
-| `prompts/reviewer_prompt.md`    | Prompt for fix sessions (address cloud review findings)                             |
-| `prompts/app_spec.md`           | Default app specification template                                                  |
+| File                            | Role                                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------------------ |
+| `autonomous_agent_demo.py`      | CLI entry point (argparse, asyncio.run, Phase 1-2-3 orchestration)                         |
+| `agent.py`                      | Core loop — per-feature Coder+Reviewer iterations, cloud review relay loop                 |
+| `cli_client.py`                 | Default `claude -p` subprocess backend: session + resume, stream-JSON parser               |
+| `client.py`                     | Default CLI backend factory (`create_client`) + shared settings helpers                    |
+| `sdk_client.py`                 | Opt-in SDK fallback factory (`create_client`) — only module that imports `claude_code_sdk` |
+| `hook_runner.py`                | Bridge: Claude CLI's settings.json hooks → Python `security.py` / `hooks.py`               |
+| `policy_judge.py`               | LLM fallback for the bash allowlist; cached per-command                                    |
+| `security.py`                   | Bash command allowlist + validators for `pkill`/`chmod`/`rm`/`gh`                          |
+| `hooks.py`                      | PreToolUse hook protecting `feature_list.json` integrity                                   |
+| `review.py`                     | Local Codex CLI review, cloud review polling (gh api), PR creation, comment parsing        |
+| `prompts.py`                    | Load prompt templates, inject review findings, copy `app_spec.md` on first run             |
+| `progress.py`                   | Read `feature_list.json`, render progress bar                                              |
+| `prompts/initializer_prompt.md` | Prompt for Phase 1 (decompose spec into features)                                          |
+| `prompts/coding_prompt.md`      | Prompt for Coder sessions (implement features)                                             |
+| `prompts/reviewer_prompt.md`    | Prompt for fix sessions (address cloud review findings)                                    |
+| `prompts/app_spec.md`           | Default app specification template                                                         |
 
 ## Codex Code Review Integration
 

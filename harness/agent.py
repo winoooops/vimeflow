@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from client import build_settings_file, BUILTIN_TOOLS
+from client import create_client as create_cli_client
 from cli_client import (
     ClaudeCliSession,
     AssistantMessage,
@@ -114,21 +114,14 @@ def _make_session(
 ):
     """Return a `ClaudeCliSession` (default) or an SDK fallback client.
 
-    The SDK fallback is imported lazily so `claude_code_sdk` stays off the
+    The SDK factory is imported lazily so `claude_code_sdk` stays off the
     hot path. `--client sdk` is the only trigger; nothing else reaches it.
     """
     if client_kind == "cli":
-        settings_path = build_settings_file(project_dir, sandbox=sandbox)
-        return ClaudeCliSession(
-            role=role,
-            project_dir=project_dir,
-            model=model,
-            settings_path=settings_path,
-            allowed_tools=BUILTIN_TOOLS,
-        )
+        return create_cli_client(project_dir, model, role=role, sandbox=sandbox)
     # Opt-in fallback — requires ANTHROPIC_API_KEY (enforced inside).
-    from client_with_sdk import create_sdk_client_fallback
-    return create_sdk_client_fallback(project_dir, model, sandbox=sandbox)
+    from sdk_client import create_client as create_sdk_client
+    return create_sdk_client(project_dir, model, sandbox=sandbox)
 
 
 def get_pending_features(project_dir: Path) -> list[dict]:

@@ -1,13 +1,12 @@
 """
-Claude CLI Client Configuration
-================================
+Claude CLI Client
+=================
 
-Writes the `settings.json` file a `ClaudeCliSession` uses. The default
-harness workflow runs `claude -p` per role and inherits CLI auth — no
-`ANTHROPIC_API_KEY` is ever consulted on this path.
+Default backend. Runs `claude -p` per role and inherits the user's Claude
+Code CLI auth — no `ANTHROPIC_API_KEY` is ever consulted on this path.
 
-The opt-in SDK fallback (`--client sdk`) lives in `client_with_sdk.py`; it
-is the only module that imports `claude_code_sdk` and enforces the API key.
+`create_client(project_dir, model, role, sandbox)` is the public factory.
+The SDK fallback (`sdk_client.create_client`) mirrors it.
 """
 
 import json
@@ -75,13 +74,22 @@ def build_base_settings(*, sandbox: bool) -> dict:
     return settings
 
 
-def build_settings_file(project_dir: Path, *, sandbox: bool = True) -> Path:
-    """Write settings.json for a `ClaudeCliSession` run.
+def create_client(
+    project_dir: Path,
+    model: str,
+    *,
+    role: str,
+    sandbox: bool = True,
+):
+    """Create a `ClaudeCliSession` wired with the harness security layers.
 
-    Wires PreToolUse hooks through `harness/hook_runner.py` so the existing
-    Python allowlist (`security.py`) + feature_list protection (`hooks.py`)
-    keep firing under the CLI backend.
+    Writes a `.claude_settings_cli.json` under `project_dir` with PreToolUse
+    hooks pointing at `hook_runner.py` so the Python allowlist + feature_list
+    protection keep firing under the CLI backend. Returns a ready-to-use
+    session.
     """
+    from cli_client import ClaudeCliSession
+
     hook_runner = Path(__file__).resolve().parent / "hook_runner.py"
 
     settings = build_base_settings(sandbox=sandbox)
@@ -104,6 +112,19 @@ def build_settings_file(project_dir: Path, *, sandbox: bool = True) -> Path:
         ],
     }
 
-    return write_settings_file(
+    settings_path = write_settings_file(
         project_dir, settings, filename=".claude_settings_cli.json"
+    )
+
+    mode_label = "sandbox + acceptEdits" if sandbox else "bypassPermissions (no sandbox)"
+    print(f"  [cli] {mode_label}, fs restricted to {project_dir.resolve()}")
+    print(f"  [cli] Bash: allowlist-validated (see harness/security.py)")
+    print()
+
+    return ClaudeCliSession(
+        role=role,
+        project_dir=project_dir,
+        model=model,
+        settings_path=settings_path,
+        allowed_tools=BUILTIN_TOOLS,
     )
