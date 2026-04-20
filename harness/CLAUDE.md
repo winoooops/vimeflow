@@ -12,19 +12,34 @@ Phases 1 and 2 create SDK sessions for Initializer/Coder work. Phase 3 uses SDK 
 
 ## Environment Variables
 
-| Variable             | Required | Description                                              |
-| -------------------- | -------- | -------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`  | Yes      | API key from console.anthropic.com (or compatible proxy) |
-| `ANTHROPIC_BASE_URL` | No       | Override API endpoint (for proxies or self-hosted)       |
-| `OPENAI_API_KEY`     | Yes\*    | Required for local Codex CLI review (Phase 2 + Phase 3)  |
+Default path (`--client cli`) inherits the user's `claude` CLI auth — no
+`ANTHROPIC_API_KEY` or `ANTHROPIC_BASE_URL` is required.
+
+| Variable                | Required | Description                                                                                                          |
+| ----------------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`        | Yes\*    | Required for local Codex CLI review (Phase 2 + Phase 3)                                                              |
+| `HARNESS_POLICY_JUDGE`  | No       | Set to `deny` to disable the LLM policy judge (CI mode)                                                              |
+| `HARNESS_POLICY_CACHE`  | No       | Override the policy-judge cache path                                                                                 |
+| `HARNESS_CLI_LIVE_TEST` | No       | Set to `1` to enable `scripts/dry_run_parity.py` and the live `test_cli_client.py::test_cli_session_live_query` test |
+| `ANTHROPIC_API_KEY`     | SDK path | Only needed with `--client sdk` (legacy)                                                                             |
+| `ANTHROPIC_BASE_URL`    | SDK path | Only needed with `--client sdk` (legacy)                                                                             |
 
 \*Not required if running with `--skip-review --skip-relay`.
 
-The harness does **not** auto-load `.env`. Source it before running:
+**Auth model:** The default `cli` backend shells out to `claude -p` per role,
+so the harness rides on whatever the `claude` binary is logged into (see
+`claude auth` / `claude /login`). The legacy `sdk` backend still talks
+directly to `api.anthropic.com` and needs the API key. To switch back for
+debugging:
 
 ```bash
-set -a && source .env && set +a
+set -a && source .env && set +a   # provides ANTHROPIC_API_KEY
+python3 autonomous_agent_demo.py --client sdk --max-iterations 1 \
+  --skip-review --skip-relay
 ```
+
+The harness does **not** auto-load `.env`. Source it manually when using
+`--client sdk` or when Codex review is enabled.
 
 **Additional requirement:** `gh` CLI must be authenticated (`gh auth login`) for Phase 3 cloud operations.
 
@@ -104,30 +119,32 @@ Default model: `claude-sonnet-4-5-20250929`. Project dir defaults to repo root.
 
 ### CLI Flags
 
-| Flag                | Default                    | Description                                                |
-| ------------------- | -------------------------- | ---------------------------------------------------------- |
-| `--max-iterations`  | unlimited                  | Per-feature iteration budget (Coder → Review → Fix cycles) |
-| `--skip-review`     | false                      | Skip local Codex review in Phase 2 feature loop            |
-| `--skip-relay`      | false                      | Skip Phase 3 cloud review entirely                         |
-| `--review-timeout`  | 300 (5 min)                | Max seconds to wait for cloud Codex review comment         |
-| `--max-relay-loops` | 2                          | Max cloud review-fix cycles in Phase 3                     |
-| `--model`           | claude-sonnet-4-5-20250929 | Claude model for Coder sessions                            |
-| `--project-dir`     | repo root                  | Target project directory                                   |
-| `--no-sandbox`      | false                      | Disable OS-level sandbox (WSL2 only)                       |
-| `--clean`           | false                      | Wipe runtime files before starting                         |
+| Flag                | Default                    | Description                                                             |
+| ------------------- | -------------------------- | ----------------------------------------------------------------------- |
+| `--max-iterations`  | unlimited                  | Per-feature iteration budget (Coder → Review → Fix cycles)              |
+| `--skip-review`     | false                      | Skip local Codex review in Phase 2 feature loop                         |
+| `--skip-relay`      | false                      | Skip Phase 3 cloud review entirely                                      |
+| `--review-timeout`  | 300 (5 min)                | Max seconds to wait for cloud Codex review comment                      |
+| `--max-relay-loops` | 2                          | Max cloud review-fix cycles in Phase 3                                  |
+| `--model`           | claude-sonnet-4-5-20250929 | Claude model for Coder sessions                                         |
+| `--project-dir`     | repo root                  | Target project directory                                                |
+| `--no-sandbox`      | false                      | Disable OS-level sandbox (WSL2 only)                                    |
+| `--clean`           | false                      | Wipe runtime files before starting                                      |
+| `--client`          | `cli`                      | Client backend: `cli` (claude -p subprocess, default) or `sdk` (legacy) |
 
 **Note:** `--max-iterations` is a **per-feature** budget, not a global count. With `--max-iterations 5` and 10 features, each feature gets up to 5 rounds of (code → review → fix).
 
 ## Safety Layers
 
-| Layer                       | File          | Purpose                                                                                                                                                                                                        |
-| --------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Settings isolation**      | `client.py`   | `CLAUDE_CONFIG_DIR` set to temp dir — prevents user-level hooks from interfering                                                                                                                               |
-| **Permissions**             | `client.py`   | `bypassPermissions` mode with file ops restricted to project dir                                                                                                                                               |
-| **Bash allowlist**          | `security.py` | Only whitelisted commands pass (`npm`, `cargo`, `git`, `gh`, `node`, etc.). Sensitive commands (`rm`, `pkill`, `chmod`, `gh`) get extra validation                                                             |
-| **gh subcommand validator** | `security.py` | Allowlist-only for `gh`: only `pr create/view/list`, `repo view`, `api` (GET), `auth status`. Blocks write methods (`-X POST/DELETE/PUT/PATCH`) and data flags (`-f`, `-F`, `--field`) via token-based parsing |
-| **Feature list protection** | `hooks.py`    | PreToolUse hook on Write — features cannot be removed and descriptions cannot be edited; must remain valid JSON array. Note: Edit tool is not validated by this hook.                                          |
-| **Review comment auth**     | `review.py`   | Cloud review comments are only accepted from `github-actions[bot]` to prevent spoofing                                                                                                                         |
+| Layer                       | File              | Purpose                                                                                                                                                                                                        |
+| --------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Settings isolation**      | `client.py`       | `CLAUDE_CONFIG_DIR` set to temp dir — prevents user-level hooks from interfering                                                                                                                               |
+| **Permissions**             | `client.py`       | `bypassPermissions` mode with file ops restricted to project dir                                                                                                                                               |
+| **Bash allowlist**          | `security.py`     | Only whitelisted commands pass (`npm`, `cargo`, `git`, `gh`, `node`, etc.). Sensitive commands (`rm`, `pkill`, `chmod`, `gh`) get extra validation                                                             |
+| **gh subcommand validator** | `security.py`     | Allowlist-only for `gh`: only `pr create/view/list`, `repo view`, `api` (GET), `auth status`. Blocks write methods (`-X POST/DELETE/PUT/PATCH`) and data flags (`-f`, `-F`, `--field`) via token-based parsing |
+| **Feature list protection** | `hooks.py`        | PreToolUse hook on Write — features cannot be removed and descriptions cannot be edited; must remain valid JSON array. Note: Edit tool is not validated by this hook.                                          |
+| **Review comment auth**     | `review.py`       | Cloud review comments are only accepted from `github-actions[bot]` to prevent spoofing                                                                                                                         |
+| **Policy judge**            | `policy_judge.py` | LLM fallback when a bash command isn't in the allowlist. One-shot `claude -p` call, decisions cached at `$CLAUDE_CONFIG_DIR/policy_cache.json`. Disable with `HARNESS_POLICY_JUDGE=deny`.                      |
 
 ### Sandbox Configuration
 
@@ -297,3 +314,5 @@ The marketplace definition is at `.claude-plugin/marketplace.json` (project root
 | Codex review always errors                     | `OPENAI_API_KEY` not set or `codex` CLI not installed                               | `npm i -g @openai/codex` and set `OPENAI_API_KEY`, or run with `--skip-review`                                                          |
 | Cloud review times out                         | GitHub Action slow or `gh` not authenticated                                        | Run `gh auth login` and increase `--review-timeout`                                                                                     |
 | `gh api` blocked by harness                    | Command uses a blocked method or data flag                                          | Only GET requests allowed; check `security.py` `GH_BLOCKED_METHODS` and `GH_API_DATA_FLAGS`                                             |
+| `claude: command not found` on `--client cli`  | `claude` CLI not installed or not on PATH                                           | Install Claude Code CLI or pass `--client sdk` to use the API-key backend                                                               |
+| Policy judge keeps blocking a safe command     | Missing the command from the allowlist                                              | Add to `ALLOWED_COMMANDS` in `security.py`, or inspect/clear the cache at `$CLAUDE_CONFIG_DIR/policy_cache.json`                        |
