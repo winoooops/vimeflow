@@ -172,9 +172,10 @@ async def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:
     (security.validate_*_command) still inspect the full argv for
     dangerous flag combinations on pkill/chmod/rm/gh.
 
-    The cache file is world-readable/writable under /tmp by default.
-    Users concerned about cache tampering should set HARNESS_POLICY_CACHE
-    to a path under their own umask.
+    The cache defaults to `~/.claude/harness_policy_cache.json` (user-private
+    under the current user's home). Override via `HARNESS_POLICY_CACHE` if
+    you want the cache elsewhere — make sure whatever path you choose is
+    not world-writable, or a local attacker could pre-seed allow decisions.
     """
     cache = _load_cache()
     if command in cache:

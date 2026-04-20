@@ -180,10 +180,12 @@ class ClaudeCliSession:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        # Set _started AFTER a successful spawn. If create_subprocess_exec
-        # raises (e.g. `claude` not on PATH), the flag stays False so a
-        # subsequent query() call still uses --session-id (not --resume
-        # against a session that was never established).
+        # Set _started after a successful spawn. If create_subprocess_exec
+        # raises (e.g. `claude` not on PATH), the flag stays False and a
+        # retry correctly re-uses --session-id. If the process spawns but
+        # exits non-zero (auth expired mid-session), we reset the flag in
+        # the RuntimeError branch below so retries don't try --resume
+        # against a session that never got persisted.
         self._started = True
 
         # Drain stderr concurrently. The OS pipe buffer is ~64 KB on Linux;
@@ -214,6 +216,8 @@ class ClaudeCliSession:
             return_code = await proc.wait()
             await stderr_task
             if return_code != 0:
+                # Roll back so a retry uses --session-id not --resume.
+                self._started = False
                 err = b"".join(stderr_chunks).decode("utf-8", errors="replace")
                 raise RuntimeError(
                     f"claude -p exited {return_code}: {err[:500]}"

@@ -23,8 +23,20 @@ from pathlib import Path
 HARNESS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(HARNESS_DIR))
 
-from security import bash_security_hook  # noqa: E402
-from hooks import pre_write_feature_list_hook  # noqa: E402
+# Import-time fail-closed: if `security` or `hooks` fails to import
+# (bad syntax after a patch, missing transitive dep, corrupted .pyc),
+# main() would never run and Claude CLI — seeing no stdout — would
+# default to ALLOW. Emit an explicit block and exit 0 so the CLI
+# records the deny.
+try:
+    from security import bash_security_hook  # noqa: E402
+    from hooks import pre_write_feature_list_hook  # noqa: E402
+except Exception as _exc:  # noqa: BLE001 — last line of defense must be broad
+    print(json.dumps({
+        "decision": "block",
+        "reason": f"hook_runner: import failed ({type(_exc).__name__}: {_exc})",
+    }))
+    sys.exit(0)
 
 
 def main() -> int:

@@ -81,6 +81,37 @@ def test_hook_runner_bad_json_blocks():
     assert "json" in out.get("reason", "").lower()
 
 
+def test_hook_runner_fails_closed_on_import_error(tmp_path):
+    """If `security` or `hooks` fails to import at module-load time, the
+    runner must still emit a block decision. Pre-fix: the raw ImportError
+    would propagate, no stdout, Claude CLI defaults to allow.
+
+    We copy hook_runner.py into a fake harness dir with a broken
+    security.py and run it from there so that hook_runner's own
+    `sys.path.insert(0, HARNESS_DIR)` resolves to the broken copy.
+    """
+    fake = tmp_path / "fake_harness"
+    fake.mkdir()
+    (fake / "hook_runner.py").write_text(HOOK_RUNNER.read_text())
+    (fake / "security.py").write_text(
+        "raise ImportError('simulated — corrupted security.py')\n"
+    )
+    (fake / "hooks.py").write_text("# stub — unused because security imports first\n")
+
+    proc = subprocess.run(
+        [sys.executable, str(fake / "hook_runner.py"), "bash"],
+        input=json.dumps({"tool_input": {"command": "npm test"}}),
+        text=True, capture_output=True, timeout=15,
+    )
+    # Runner exits 0 so Claude CLI sees the decision.
+    assert proc.returncode == 0, f"exit {proc.returncode}: {proc.stderr[:200]}"
+    out = json.loads(proc.stdout)
+    assert out.get("decision") == "block", f"expected block, got {out}"
+    reason = out.get("reason", "").lower()
+    assert "import failed" in reason, reason
+    assert "simulated" in reason or "importerror" in reason, reason
+
+
 def test_hook_runner_fails_closed_when_hook_raises(tmp_path, monkeypatch, capsys):
     """If a hook function raises, hook_runner MUST emit a block decision.
 
