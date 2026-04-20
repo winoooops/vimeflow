@@ -17,3 +17,9 @@ Note: `.superpowers/` at the repo root is a separate working directory used by t
 ### `reviews/`
 
 Review knowledge base — patterns learned from local Codex and GitHub Codex code reviews. Each pattern file in `patterns/` collects related findings with their fixes and commit links. Agents may consult relevant patterns before implementing to avoid repeating past mistakes. See `reviews/CLAUDE.md` for the index.
+
+### `../CHANGELOG.md` and `../CHANGELOG.zh-CN.md` (at repo root)
+
+Linear timeline of notable changes, bilingual. Paired with `reviews/` —
+each entry may cross-link the review patterns it applied, updated, or
+created. The two files mirror each other; update both on every merge.

@@ -3,6 +3,7 @@
 > Created: 2026-04-06
 > Revised: 2026-04-07 — pivoted from chat manager to CLI agent workspace
 > Design spec: docs/superpowers/specs/2026-04-06-cli-agent-workspace-design.md
+> Change log: CHANGELOG.md / CHANGELOG.zh-CN.md (linear timeline, paired with docs/reviews/)
 
 ## Overview
 

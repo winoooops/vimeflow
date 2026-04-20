@@ -68,6 +68,10 @@ Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + Re
 - Commit-msg 钩子：commitlint 约定式提交
 - Pre-push 钩子：完整 Vitest 运行
 
+## 更新日志
+
+参见 [`CHANGELOG.zh-CN.md`](./CHANGELOG.zh-CN.md)（中文）或 [`CHANGELOG.md`](./CHANGELOG.md)（English）— 记录所有重要变更的线性时间线。每条记录可交叉链接 [`docs/reviews/`](./docs/reviews/CLAUDE.md) 中该变更应用、更新或新增的复盘模式 — CHANGELOG 记录"何时"，`docs/reviews/` 记录"为何"。
+
 ## 技术栈
 
 | 层级       | 技术                                                   |
