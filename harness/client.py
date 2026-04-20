@@ -7,14 +7,9 @@ Creates a Claude Code SDK client configured for VIBM development.
 
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
-
-from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
-from claude_code_sdk.types import HookMatcher
-
-from security import bash_security_hook
-from hooks import pre_write_feature_list_hook
 
 # Isolate SDK sessions from user-level ~/.claude/settings.json.
 # The CLI subprocess merges user + project settings, so user-level
@@ -34,9 +29,60 @@ BUILTIN_TOOLS = [
 ]
 
 
+def build_settings_file(project_dir: Path, *, sandbox: bool = True) -> Path:
+    """Write settings.json for a ClaudeCliSession run.
+
+    Mirrors the security config used by the SDK path (create_client) but
+    wires PreToolUse hooks through harness/hook_runner.py so the existing
+    Python allowlist + feature_list protections keep firing under the CLI.
+    """
+    hook_runner = (Path(__file__).resolve().parent / "hook_runner.py")
+
+    settings: dict = {
+        "permissions": {
+            "allow": [
+                "Read(.//**)", "Write(.//**)", "Edit(.//**)",
+                "Glob(.//**)", "Grep(.//**)", "Bash(*)",
+            ],
+        },
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [{
+                        "type": "command",
+                        "command": f"{sys.executable} {hook_runner} bash",
+                    }],
+                },
+                {
+                    "matcher": "Write|Edit",
+                    "hooks": [{
+                        "type": "command",
+                        "command": f"{sys.executable} {hook_runner} feature_list",
+                    }],
+                },
+            ],
+        },
+    }
+
+    if sandbox:
+        settings["sandbox"] = {"enabled": True, "autoAllowBashIfSandboxed": True}
+        settings["permissions"]["defaultMode"] = "acceptEdits"
+    else:
+        settings["permissions"]["defaultMode"] = "bypassPermissions"
+
+    project_dir.mkdir(parents=True, exist_ok=True)
+    path = project_dir / ".claude_settings_cli.json"
+    path.write_text(json.dumps(settings, indent=2))
+    return path
+
+
+# NOTE: ANTHROPIC_API_KEY is only required on the SDK path below.
+# The CLI path (build_settings_file + cli_client.ClaudeCliSession) inherits
+# the user's `claude` CLI auth and does not use this env var.
 def create_client(
     project_dir: Path, model: str, *, sandbox: bool = True
-) -> ClaudeSDKClient:
+):
     """
     Create a Claude Code SDK client with security layers.
 
@@ -53,6 +99,15 @@ def create_client(
                  Recommended on macOS/Linux. On Windows/WSL2 the sandbox
                  may be unreliable — pass --no-sandbox to disable.
     """
+    # Lazy SDK imports so build_settings_file + the CLI path remain usable
+    # without claude_code_sdk installed (the CLI path talks to the user's
+    # installed `claude` binary via subprocess instead).
+    from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
+    from claude_code_sdk.types import HookMatcher
+
+    from security import bash_security_hook
+    from hooks import pre_write_feature_list_hook
+
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY not set")
