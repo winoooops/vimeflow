@@ -249,11 +249,8 @@ async def run_feature_iteration(
     else:
         prompt = get_coding_prompt()
 
-    if isinstance(session, ClaudeCliSession):
+    async with session:
         status, response = await run_agent_session(session, prompt, project_dir)
-    else:
-        async with session:
-            status, response = await run_agent_session(session, prompt, project_dir)
 
     if status == "error":
         return "error", None
@@ -317,11 +314,8 @@ async def run_autonomous_agent(
         )
         prompt = get_initializer_prompt()
 
-        if isinstance(session, ClaudeCliSession):
+        async with session:
             status, response = await run_agent_session(session, prompt, project_dir)
-        else:
-            async with session:
-                status, response = await run_agent_session(session, prompt, project_dir)
 
         if status == "error":
             print("  Initializer failed. Check logs and retry.")
@@ -376,11 +370,8 @@ async def run_autonomous_agent(
                 )
                 prompt = get_coding_prompt()
 
-                if isinstance(session, ClaudeCliSession):
+                async with session:
                     status, response = await run_agent_session(session, prompt, project_dir)
-                else:
-                    async with session:
-                        status, response = await run_agent_session(session, prompt, project_dir)
 
                 print_progress_summary(project_dir)
 

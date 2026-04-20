@@ -115,7 +115,20 @@ class ClaudeCliSession:
     after `claude`) because `claude -p` otherwise sometimes treats a
     subsequent flag's value as the prompt and errors with "Input must be
     provided either through stdin or as a prompt argument".
+
+    Implements the async context-manager protocol as a no-op so callers
+    can treat CLI and SDK sessions uniformly (`async with session:`). The
+    SDK backend's `ClaudeSDKClient` actually needs the enter/exit for its
+    internal subprocess lifecycle; we don't, but offering the same surface
+    eliminates `isinstance(session, ClaudeCliSession)` branching in
+    agent.py.
     """
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
 
     def __init__(
         self,
