@@ -224,6 +224,15 @@ class ClaudeCliSession:
                 )
         finally:
             if proc.returncode is None:
+                # Process was still live when the generator exited —
+                # usually asyncio.CancelledError from an outer timeout.
+                # Kill it, and roll back _started: the session UUID we
+                # assigned was never persisted by the CLI, so a later
+                # query() call must create a fresh session rather than
+                # --resume into a ghost. Without this reset the first
+                # post-cancel retry wastes one round-trip discovering
+                # the session doesn't exist.
+                self._started = False
                 proc.kill()
                 await proc.wait()
             if not stderr_task.done():

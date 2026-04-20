@@ -66,6 +66,17 @@ def create_client(
     mode_label = "sandbox + acceptEdits" if sandbox else "bypassPermissions (no sandbox)"
     print(f"  [sdk] {mode_label}, fs restricted to {project_dir.resolve()}")
     print(f"  [sdk] Bash: allowlist-validated (see harness/security.py)")
+    if not sandbox:
+        # Visible runtime callout for the `--client sdk --no-sandbox`
+        # combination. allowed_tools is permissive, so any globally-
+        # configured MCP tool remains invokable and bypasses our hooks.
+        # Documented in the create_client docstring, but docs alone are
+        # easy to miss on a quick debug run.
+        print(
+            "  [sdk] WARNING: bypassPermissions + SDK allowed_tools is permissive — "
+            "globally-configured MCP tools bypass Bash/Write hooks. "
+            "Use --client cli for production runs."
+        )
     print()
 
     return ClaudeSDKClient(

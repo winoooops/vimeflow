@@ -30,10 +30,17 @@ Env knobs:
 """
 
 import asyncio
+import contextlib
 import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    import fcntl  # POSIX-only; harness targets macOS/Linux
+    _HAS_FCNTL = True
+except ImportError:  # pragma: no cover — Windows not supported
+    _HAS_FCNTL = False
 
 JUDGE_PROMPT = """You are the security policy judge for an autonomous coding harness.
 You receive ONLY a base binary name (e.g. "rg", "python3", "curl") — never
@@ -136,6 +143,34 @@ def _save_cache(cache: dict) -> None:
     os.replace(tmp, p)
 
 
+@contextlib.contextmanager
+def _cache_lock():
+    """Serialize load→mutate→save triples across concurrent hook_runner
+    processes. Without this, two parallel tool calls in ask mode both see
+    an empty cache, both query the LLM, and the second write clobbers the
+    first — causing already-judged commands to be re-consulted on every
+    session. Not a security bypass (denials can't become allows), but
+    breaks the "once approved, no re-judgment" latency contract.
+
+    Uses fcntl.flock with a sibling .lock file under the cache dir. On
+    systems without fcntl (Windows — unsupported anyway), degrades to a
+    no-op and the race remains theoretically possible.
+    """
+    if not _HAS_FCNTL:
+        yield
+        return
+
+    p = _cache_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = p.with_suffix(p.suffix + ".lock")
+    with open(lock_path, "w") as lock_fh:
+        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+
+
 async def _query_claude(prompt: str) -> str:
     """One-shot `claude -p` call. Returns the final text response.
 
@@ -170,7 +205,7 @@ def _base_command(command: str) -> str:
     return tokens[0].rsplit("/", 1)[-1]
 
 
-async def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:
+async def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:  # noqa: C901
     """Call the LLM judge. If `advisory`, always DENY regardless of answer but keep the reason.
 
     Granularity note: security.py calls decide(cmd_base) per base command
@@ -189,12 +224,18 @@ async def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:
     you want the cache elsewhere — make sure whatever path you choose is
     not world-writable, or a local attacker could pre-seed allow decisions.
     """
-    cache = _load_cache()
-    if command in cache:
-        entry = cache[command]
-        allow = entry["allow"] and not advisory
-        return JudgeDecision(allow=allow, reason=entry["reason"])
+    # Fast path: cache hit. Hold the lock briefly so a concurrent writer
+    # doesn't tear the read.
+    with _cache_lock():
+        cache = _load_cache()
+        if command in cache:
+            entry = cache[command]
+            allow = entry["allow"] and not advisory
+            return JudgeDecision(allow=allow, reason=entry["reason"])
 
+    # LLM call outside the lock — it can take up to 60s and holding the
+    # lock that long would serialize every ask-mode consultation.
+    #
     # Structurally prevent the command from closing the
     # <command_to_evaluate> wrapper tag and injecting ALLOW/DENY lines.
     # In practice `command` is a base command name (e.g. "python3"), so
@@ -214,8 +255,12 @@ async def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:
         judge_allow = False
         reason = raw.split(":", 1)[1].strip() if ":" in raw else "judge denied"
 
-    cache[command] = {"allow": judge_allow, "reason": reason}
-    _save_cache(cache)
+    # Re-acquire the lock to merge our new entry without clobbering any
+    # writes that landed while we were waiting on the LLM.
+    with _cache_lock():
+        cache = _load_cache()
+        cache[command] = {"allow": judge_allow, "reason": reason}
+        _save_cache(cache)
     allow = judge_allow and not advisory
     return JudgeDecision(allow=allow, reason=reason)
 
