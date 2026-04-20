@@ -13,16 +13,8 @@ import json
 import sys
 from pathlib import Path
 
-# NOTE: we no longer override CLAUDE_CONFIG_DIR here. Redirecting it to a
-# fresh empty dir made `claude -p` lose the user's auth state (it would
-# print "Not logged in · Please run /login"). The CLI backend instead
-# relies on `--settings <project-scoped-file>` to layer harness-specific
-# permissions + hooks on top of the user config. Claude's settings
-# resolution merges, but the project file's matchers win when a PreToolUse
-# hook for "Bash" or "Write|Edit" is declared — our allowlist / feature_list
-# protections keep firing. If an individual user's global hook causes
-# friction with the harness, disable that hook locally rather than wiping
-# the whole config dir.
+# Auth comes from the user's global `~/.claude` (whatever `claude /login`
+# set up). Isolation is per-invocation via `--settings <project file>`.
 
 
 BUILTIN_TOOLS = [
@@ -95,17 +87,9 @@ def create_client(
     hook_runner = Path(__file__).resolve().parent / "hook_runner.py"
 
     settings = build_base_settings(sandbox=sandbox)
-    # CLI-only wiring. `claude -p` is a subprocess — our Python process
-    # isn't there when it decides to run a tool, so the only handoff
-    # channel is settings.json on disk. Hooks declared here fire a
-    # subprocess per tool call; `hook_runner.py` reads the hook JSON
-    # from stdin and delegates to security.bash_security_hook /
-    # hooks.pre_write_feature_list_hook.
-    #
-    # The SDK backend (sdk_client.py) uses the same two Python callables
-    # but passes them directly via `HookMatcher(...)` on ClaudeCodeOptions
-    # — in-process, no subprocess round-trip — so its settings file
-    # intentionally omits this block.
+    # CLI-only: `claude -p` can't reach our in-process Python, so hooks
+    # must be declared as subprocess commands in settings.json. The SDK
+    # path uses HookMatcher callables instead and omits this block.
     settings["hooks"] = {
         "PreToolUse": [
             {

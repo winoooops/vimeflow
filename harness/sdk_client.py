@@ -2,21 +2,13 @@
 SDK Client (opt-in fallback)
 ============================
 
-Backup backend for when the default `claude -p` subprocess (see `client.py`
-/ `cli_client.py`) isn't available — e.g. the `claude` CLI isn't installed,
-auth is broken, or you need `ANTHROPIC_BASE_URL` to point at a proxy.
+Used when `--client sdk` is passed. Unlike the default CLI path (which
+inherits the user's global `~/.claude` auth), this backend talks directly
+to the Anthropic API and requires `ANTHROPIC_API_KEY`. The `claude_code_sdk`
+imports below carry `# type: ignore` because the package is only needed
+here and default environments don't install it.
 
-Normal workflow never touches this module. Only `agent._make_session`
-imports it, and only when `client_kind == "sdk"`. That keeps
-`claude_code_sdk` out of the default import graph and means a missing SDK
-install never breaks the CLI path — which is also why the `claude_code_sdk`
-imports below carry `# type: ignore` hints: editors inspecting a default-env
-interpreter will correctly not resolve them.
-
-Requires `ANTHROPIC_API_KEY` — the check lives inside `create_client` (not
-in preflight) so it only fires on explicit opt-in.
-
-Public factory mirrors `client.create_client` in shape so callers can alias:
+Public factory mirrors `client.create_client` in shape — import aliased:
 
     from client import create_client as create_cli_client
     from sdk_client import create_client as create_sdk_client
