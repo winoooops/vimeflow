@@ -79,3 +79,38 @@ def test_hook_runner_bad_json_blocks():
     out = json.loads(proc.stdout)
     assert out.get("decision") == "block"
     assert "json" in out.get("reason", "").lower()
+
+
+def test_hook_runner_fails_closed_when_hook_raises(tmp_path, monkeypatch, capsys):
+    """If a hook function raises, hook_runner MUST emit a block decision.
+
+    Claude CLI defaults to allow when a hook produces no decision JSON
+    (see client.py), so a raw crash would silently bypass security. We
+    verify the fix in-process by replacing `bash_security_hook` in the
+    module's import site with one that raises, and invoking main()
+    directly so monkeypatch actually sticks.
+    """
+    import importlib
+    import hook_runner as hr
+
+    async def exploding_hook(*args, **kwargs):
+        raise RuntimeError("simulated judge timeout")
+
+    monkeypatch.setattr(hr, "bash_security_hook", exploding_hook)
+    monkeypatch.setattr(sys, "argv", ["hook_runner.py", "bash"])
+    monkeypatch.setattr(sys, "stdin", __import__("io").StringIO(
+        json.dumps({"tool_input": {"command": "anything"}})
+    ))
+
+    rc = hr.main()
+    assert rc == 0
+    stdout = capsys.readouterr().out
+    out = json.loads(stdout)
+    assert out.get("decision") == "block"
+    reason = out.get("reason", "").lower()
+    assert "hook_runner" in reason
+    assert "runtimeerror" in reason
+    assert "simulated judge timeout" in reason
+
+    # Restore for subsequent tests — pytest handles this via monkeypatch.
+    importlib.reload(hr)

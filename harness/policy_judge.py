@@ -167,7 +167,13 @@ def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:
         allow = entry["allow"] and not advisory
         return JudgeDecision(allow=allow, reason=entry["reason"])
 
-    raw_lines = _query_claude(JUDGE_PROMPT.format(command=command)).splitlines()
+    # Structurally prevent the command from closing the
+    # <command_to_evaluate> wrapper tag and injecting ALLOW/DENY lines.
+    # In practice `command` is a base command name (e.g. "python3"), so
+    # angle brackets are vanishingly rare, but defense-in-depth matters
+    # for the one caller that someday passes a full invocation.
+    sanitized = command.replace("<", "&lt;").replace(">", "&gt;")
+    raw_lines = _query_claude(JUDGE_PROMPT.format(command=sanitized)).splitlines()
     raw = raw_lines[0].strip() if raw_lines else ""
     if raw.upper().startswith("ALLOW"):
         judge_allow = True

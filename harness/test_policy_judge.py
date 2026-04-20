@@ -131,15 +131,19 @@ def test_explain_mode_always_denies_but_preserves_reason(tmp_path, monkeypatch):
 
 
 def test_cache_persists_across_ask_calls(tmp_path, monkeypatch):
+    """Cache key is whatever was passed to decide(). Callers (security.py)
+    pass a base command name like "rg", not the full invocation, so the
+    approval granularity is per-binary. See policy_judge._consult_judge
+    docstring for the security implications."""
     cache_path = tmp_path / "cache.json"
     monkeypatch.setenv("HARNESS_POLICY_CACHE", str(cache_path))
     monkeypatch.setenv("HARNESS_POLICY_ALLOW_FILE", str(tmp_path / "allow.local"))
     monkeypatch.setenv("HARNESS_POLICY_JUDGE", "ask")
 
     with patch("policy_judge._query_claude", return_value="ALLOW: safe"):
-        decide("rg foo")
+        decide("rg")
 
     assert cache_path.exists()
     data = json.loads(cache_path.read_text())
-    assert "rg foo" in data
-    assert data["rg foo"]["allow"] is True
+    assert "rg" in data
+    assert data["rg"]["allow"] is True

@@ -31,6 +31,16 @@ def create_client(
     — SDK hooks run in-process via `HookMatcher` callables, whereas the CLI
     backend spawns `hook_runner.py` per tool call. Same security logic.
 
+    Tool-surface caveat: `ClaudeCodeOptions.allowed_tools` is *permissive*
+    — it marks the listed tools as allowed but does NOT remove MCP tools
+    or other built-ins from the session. The CLI backend uses
+    `claude -p --tools` which IS exclusive. Under `--no-sandbox`
+    (`bypassPermissions`) this means the SDK fallback has a wider tool
+    surface than the default CLI path: any globally-configured MCP tool
+    remains invokable and bypasses our Bash / Write hooks. Stay on the
+    CLI backend for production runs; use `--client sdk` only to debug
+    the legacy path or when the CLI isn't available.
+
     Raises:
         ValueError: if `ANTHROPIC_API_KEY` is not set. The CLI default path
             inherits the user's `claude` CLI auth and never triggers this.

@@ -174,13 +174,17 @@ class ClaudeCliSession:
     async def query(self, prompt: str):
         """Spawn `claude -p` and yield parsed events as they arrive."""
         args = self._build_args(prompt, resume=self._started)
-        self._started = True
         proc = await asyncio.create_subprocess_exec(
             *args,
             cwd=str(self.project_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        # Set _started AFTER a successful spawn. If create_subprocess_exec
+        # raises (e.g. `claude` not on PATH), the flag stays False so a
+        # subsequent query() call still uses --session-id (not --resume
+        # against a session that was never established).
+        self._started = True
 
         # Drain stderr concurrently. The OS pipe buffer is ~64 KB on Linux;
         # if `claude -p` writes more (verbose stack traces, debug logs)

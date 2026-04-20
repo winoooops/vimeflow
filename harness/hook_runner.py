@@ -48,8 +48,18 @@ def main() -> int:
         print(json.dumps({"decision": "block", "reason": f"hook_runner: unknown kind {kind}"}))
         return 0
 
-    result = asyncio.run(hook(payload))
-    print(json.dumps(result or {}))
+    # Fail CLOSED on any hook exception. Claude CLI defaults to allow
+    # when a hook subprocess produces no decision JSON (see client.py), so
+    # a raw crash here would silently bypass security. Catch everything,
+    # emit an explicit block, and surface the error so operators see it.
+    try:
+        result = asyncio.run(hook(payload))
+        print(json.dumps(result or {}))
+    except Exception as exc:  # noqa: BLE001 — last line of defense must be broad
+        print(json.dumps({
+            "decision": "block",
+            "reason": f"hook_runner: {kind} hook raised {type(exc).__name__}: {exc}",
+        }))
     return 0
 
 
