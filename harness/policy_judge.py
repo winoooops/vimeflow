@@ -31,6 +31,7 @@ Env knobs:
 
 import asyncio
 import contextlib
+import functools
 import json
 import os
 from dataclasses import dataclass
@@ -106,6 +107,19 @@ def _allow_file_path() -> Path:
     return Path(__file__).resolve().parent / ".policy_allow.local"
 
 
+@functools.lru_cache(maxsize=8)
+def _parse_allowlist_file(path_str: str, mtime_ns: int) -> frozenset:
+    """Parse the local allowlist file. Cached by (path, mtime) so the
+    short-lived hook_runner subprocess doesn't re-read the same file for
+    every unknown command. mtime_ns is part of the key so edits during
+    long-lived processes (e.g. pytest) pick up the new content."""
+    path = Path(path_str)
+    return frozenset(
+        line.strip() for line in path.read_text().splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    )
+
+
 def _load_local_allowlist() -> set:
     """Return the set of command bases allowed by the local file (one per line).
 
@@ -114,12 +128,7 @@ def _load_local_allowlist() -> set:
     path = _allow_file_path()
     if not path.exists():
         return set()
-    allowed = set()
-    for raw in path.read_text().splitlines():
-        entry = raw.strip()
-        if entry and not entry.startswith("#"):
-            allowed.add(entry)
-    return allowed
+    return set(_parse_allowlist_file(str(path), path.stat().st_mtime_ns))
 
 
 def _load_cache() -> dict:
@@ -247,20 +256,40 @@ async def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:  # n
     # KeyError. The replace approach is immune to brace content.
     prompt_text = JUDGE_PROMPT.replace("{command}", sanitized)
     raw_lines = (await _query_claude(prompt_text)).splitlines()
-    raw = raw_lines[0].strip() if raw_lines else ""
-    if raw.upper().startswith("ALLOW"):
+
+    # Scan for the first ALLOW/DENY line rather than trusting raw_lines[0].
+    # LLMs frequently preface answers with "Sure, here's my decision:\n"
+    # or similar; with the old strict raw_lines[0] check that preamble
+    # would fail the ALLOW prefix test and silently become a DENY.
+    decision_line = ""
+    for line in raw_lines:
+        stripped = line.strip()
+        upper = stripped.upper()
+        if upper.startswith("ALLOW") or upper.startswith("DENY"):
+            decision_line = stripped
+            break
+
+    if decision_line.upper().startswith("ALLOW"):
         judge_allow = True
-        reason = raw.split(":", 1)[1].strip() if ":" in raw else "judge allowed"
+        reason = (
+            decision_line.split(":", 1)[1].strip()
+            if ":" in decision_line else "judge allowed"
+        )
     else:
         judge_allow = False
-        reason = raw.split(":", 1)[1].strip() if ":" in raw else "judge denied"
+        reason = (
+            decision_line.split(":", 1)[1].strip()
+            if ":" in decision_line else "judge denied (no parseable line)"
+        )
 
-    # Re-acquire the lock to merge our new entry without clobbering any
-    # writes that landed while we were waiting on the LLM.
-    with _cache_lock():
-        cache = _load_cache()
-        cache[command] = {"allow": judge_allow, "reason": reason}
-        _save_cache(cache)
+    # Only persist ALLOW decisions. DENY is the safe fallback that needs
+    # no cache — and caching it would lock a hallucinated / transient
+    # DENY in permanently with no recovery UX.
+    if judge_allow:
+        with _cache_lock():
+            cache = _load_cache()
+            cache[command] = {"allow": True, "reason": reason}
+            _save_cache(cache)
     allow = judge_allow and not advisory
     return JudgeDecision(allow=allow, reason=reason)
 

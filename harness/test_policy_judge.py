@@ -162,6 +162,60 @@ def test_ask_mode_command_with_braces_does_not_raise(tmp_path, monkeypatch):
     assert d.allow is False
 
 
+# ---------- LLM response parsing ----------
+
+
+def test_ask_mode_parses_allow_even_with_preamble(tmp_path, monkeypatch):
+    """Pre-fix: the parser only looked at raw_lines[0]. An LLM preamble
+    like "Sure, here's my decision:" would fall through the ALLOW prefix
+    test and silently become a DENY. Post-fix: scan all lines for the
+    first ALLOW/DENY."""
+    monkeypatch.setenv("HARNESS_POLICY_JUDGE", "ask")
+    monkeypatch.setenv("HARNESS_POLICY_CACHE", str(tmp_path / "cache.json"))
+    monkeypatch.setenv("HARNESS_POLICY_ALLOW_FILE", str(tmp_path / "allow.local"))
+
+    verbose = "Sure, here's my decision:\n\nALLOW: safe read-only dev tool"
+    with patch("policy_judge._query_claude", new=AsyncMock(return_value=verbose)):
+        d = _run(decide("rg"))
+
+    assert d.allow is True
+    assert "safe read-only" in d.reason
+
+
+def test_ask_mode_deny_not_cached(tmp_path, monkeypatch):
+    """A DENY must not be cached — a hallucinated or transient DENY would
+    otherwise lock the command out permanently with no recovery UX."""
+    cache_path = tmp_path / "cache.json"
+    monkeypatch.setenv("HARNESS_POLICY_JUDGE", "ask")
+    monkeypatch.setenv("HARNESS_POLICY_CACHE", str(cache_path))
+    monkeypatch.setenv("HARNESS_POLICY_ALLOW_FILE", str(tmp_path / "allow.local"))
+
+    with patch("policy_judge._query_claude", new=AsyncMock(return_value="DENY: suspicious")):
+        d = _run(decide("weirdtool"))
+
+    assert d.allow is False
+    # Cache file may not exist at all, or exists with no entry for weirdtool
+    if cache_path.exists():
+        data = json.loads(cache_path.read_text())
+        assert "weirdtool" not in data
+
+
+def test_ask_mode_allow_is_cached(tmp_path, monkeypatch):
+    """Sanity: ALLOW decisions ARE still cached (the whole point of the
+    cache is to avoid re-consulting the LLM for known-safe binaries)."""
+    cache_path = tmp_path / "cache.json"
+    monkeypatch.setenv("HARNESS_POLICY_JUDGE", "ask")
+    monkeypatch.setenv("HARNESS_POLICY_CACHE", str(cache_path))
+    monkeypatch.setenv("HARNESS_POLICY_ALLOW_FILE", str(tmp_path / "allow.local"))
+
+    with patch("policy_judge._query_claude", new=AsyncMock(return_value="ALLOW: safe")):
+        _run(decide("rg"))
+
+    assert cache_path.exists()
+    data = json.loads(cache_path.read_text())
+    assert data.get("rg", {}).get("allow") is True
+
+
 # ---------- User-private cache default ----------
 
 
