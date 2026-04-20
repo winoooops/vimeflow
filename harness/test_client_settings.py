@@ -2,7 +2,22 @@ import json
 import sys
 from pathlib import Path
 
-from client import build_base_settings, build_settings_file
+from client import build_base_settings, build_settings_file, write_settings_file
+
+
+def test_write_settings_file_creates_missing_dir(tmp_path):
+    target_dir = tmp_path / "nested" / "dir"
+    assert not target_dir.exists()
+    path = write_settings_file(target_dir, {"k": 1}, filename="custom.json")
+    assert path == target_dir / "custom.json"
+    assert path.exists()
+    assert json.loads(path.read_text()) == {"k": 1}
+
+
+def test_write_settings_file_overwrites(tmp_path):
+    path = write_settings_file(tmp_path, {"a": 1}, filename="s.json")
+    write_settings_file(tmp_path, {"a": 2}, filename="s.json")
+    assert json.loads(path.read_text()) == {"a": 2}
 
 
 def test_build_base_settings_sandbox_on():

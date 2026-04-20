@@ -18,11 +18,10 @@ Requires `ANTHROPIC_API_KEY` — the check lives inside
 opt-in.
 """
 
-import json
 import os
 from pathlib import Path
 
-from client import BUILTIN_TOOLS, build_base_settings
+from client import BUILTIN_TOOLS, build_base_settings, write_settings_file
 
 
 def create_sdk_client_fallback(
@@ -65,9 +64,9 @@ def create_sdk_client_fallback(
         else "bypassPermissions (no sandbox)"
     )
 
-    project_dir.mkdir(parents=True, exist_ok=True)
-    settings_file = project_dir / ".claude_settings.json"
-    settings_file.write_text(json.dumps(settings, indent=2))
+    settings_file = write_settings_file(
+        project_dir, settings, filename=".claude_settings.json"
+    )
 
     print(f"  [fallback] SDK client: {mode_label}, fs restricted to {project_dir.resolve()}")
     print(f"  [fallback] Bash: allowlist-validated (see harness/security.py)")

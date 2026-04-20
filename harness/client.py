@@ -40,6 +40,21 @@ _PERMISSION_ALLOW = [
 ]
 
 
+def write_settings_file(
+    project_dir: Path, settings: dict, *, filename: str
+) -> Path:
+    """Write a settings dict as JSON under `project_dir`. Shared IO helper.
+
+    Creates `project_dir` if missing. Returns the absolute path. Both
+    backends call this so the two settings files keep a single point of
+    truth for mkdir / encoding / formatting.
+    """
+    project_dir.mkdir(parents=True, exist_ok=True)
+    path = project_dir / filename
+    path.write_text(json.dumps(settings, indent=2))
+    return path
+
+
 def build_base_settings(*, sandbox: bool) -> dict:
     """Return the permissions + (optional) sandbox block shared by both backends.
 
@@ -89,7 +104,6 @@ def build_settings_file(project_dir: Path, *, sandbox: bool = True) -> Path:
         ],
     }
 
-    project_dir.mkdir(parents=True, exist_ok=True)
-    path = project_dir / ".claude_settings_cli.json"
-    path.write_text(json.dumps(settings, indent=2))
-    return path
+    return write_settings_file(
+        project_dir, settings, filename=".claude_settings_cli.json"
+    )
