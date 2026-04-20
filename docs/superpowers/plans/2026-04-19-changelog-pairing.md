@@ -18,18 +18,18 @@
 
 Files created / modified / deleted:
 
-| Path                                              | Role                                                     |
-| ------------------------------------------------- | -------------------------------------------------------- |
-| `CHANGELOG.md` (new)                              | English timeline, phase-grouped, pattern-linked          |
-| `CHANGELOG.zh-CN.md` (new)                        | Simplified Chinese mirror                                |
-| `CHANGELOG.example.md` (deleted)                  | Pilot from prior iteration — superseded                  |
-| `CLAUDE.md`                                       | Add navigation row: `Linear change timeline → CHANGELOG.md` |
-| `docs/CLAUDE.md`                                  | Short blurb that CHANGELOG lives at repo root + pairing  |
-| `docs/reviews/CLAUDE.md`                          | Note that CHANGELOG is the timeline companion            |
-| `docs/roadmap/progress.yaml`                      | Add `changelog:` key + version bump                      |
-| `docs/roadmap/tauri-migration-roadmap.md`         | One-line reference to CHANGELOG                          |
-| `README.md`                                       | "Changelog" section pointing to `CHANGELOG.md`           |
-| `README.zh-CN.md`                                 | "更新日志" section pointing to `CHANGELOG.zh-CN.md`       |
+| Path                                      | Role                                                        |
+| ----------------------------------------- | ----------------------------------------------------------- |
+| `CHANGELOG.md` (new)                      | English timeline, phase-grouped, pattern-linked             |
+| `CHANGELOG.zh-CN.md` (new)                | Simplified Chinese mirror                                   |
+| `CHANGELOG.example.md` (deleted)          | Pilot from prior iteration — superseded                     |
+| `CLAUDE.md`                               | Add navigation row: `Linear change timeline → CHANGELOG.md` |
+| `docs/CLAUDE.md`                          | Short blurb that CHANGELOG lives at repo root + pairing     |
+| `docs/reviews/CLAUDE.md`                  | Note that CHANGELOG is the timeline companion               |
+| `docs/roadmap/progress.yaml`              | Add `changelog:` key + version bump                         |
+| `docs/roadmap/tauri-migration-roadmap.md` | One-line reference to CHANGELOG                             |
+| `README.md`                               | "Changelog" section pointing to `CHANGELOG.md`              |
+| `README.zh-CN.md`                         | "更新日志" section pointing to `CHANGELOG.zh-CN.md`         |
 
 Tasks 1–5 (doc wiring) can be done serially. Task 6 (README updates) dispatches **two parallel subagents**. Task 7 (EN backfill) and Task 8 (zh-CN mirror) are serial because translation needs the finished English prose. Tasks 9–10 (cleanup, commit) are serial.
 
@@ -38,6 +38,7 @@ Tasks 1–5 (doc wiring) can be done serially. Task 6 (README updates) dispatche
 ## Task 1: Add CHANGELOG row to root `CLAUDE.md` nav table
 
 **Files:**
+
 - Modify: `CLAUDE.md` (the navigation table under "Structure: Index-Only by Design", second occurrence)
 
 - [ ] **Step 1: Locate the Progress tracking row**
@@ -50,8 +51,8 @@ Expected: one line number pointing at the table row `| Progress tracking (roadma
 Using Edit, replace the Progress tracking row with itself + a new row beneath:
 
 ```markdown
-| Progress tracking (roadmap status)                       | `docs/roadmap/progress.yaml`                                                                                               |
-| Linear change timeline (paired with reviews)             | `CHANGELOG.md` / `CHANGELOG.zh-CN.md`                                                                                      |
+| Progress tracking (roadmap status) | `docs/roadmap/progress.yaml` |
+| Linear change timeline (paired with reviews) | `CHANGELOG.md` / `CHANGELOG.zh-CN.md` |
 ```
 
 - [ ] **Step 3: Verify rendering**
@@ -64,6 +65,7 @@ Expected: exactly one line in the navigation table mentioning both files.
 ## Task 2: Update `docs/CLAUDE.md`
 
 **Files:**
+
 - Modify: `docs/CLAUDE.md` (append a short subsection at EOF)
 
 - [ ] **Step 1: Append the CHANGELOG subsection**
@@ -71,7 +73,6 @@ Expected: exactly one line in the navigation table mentioning both files.
 Append at EOF:
 
 ```markdown
-
 ### `../CHANGELOG.md` and `../CHANGELOG.zh-CN.md` (at repo root)
 
 Linear timeline of notable changes, bilingual. Paired with `reviews/` —
@@ -89,6 +90,7 @@ Expected: the new subsection is the final block.
 ## Task 3: Update `docs/reviews/CLAUDE.md`
 
 **Files:**
+
 - Modify: `docs/reviews/CLAUDE.md`
 
 - [ ] **Step 1: Add a note after the intro paragraph**
@@ -96,7 +98,6 @@ Expected: the new subsection is the final block.
 Insert between the intro paragraph and the `**For agents:**` line (currently around line 5):
 
 ```markdown
-
 **Timeline companion.** The repo-root `CHANGELOG.md` (and its zh-CN mirror
 `CHANGELOG.zh-CN.md`) is the linear timeline; entries there may
 cross-link patterns defined here. Record new patterns here; append the
@@ -113,6 +114,7 @@ Expected: one match, located between the intro and the `**For agents:**` line.
 ## Task 4: Update `docs/roadmap/progress.yaml`
 
 **Files:**
+
 - Modify: `docs/roadmap/progress.yaml:1-12` (header block)
 
 - [ ] **Step 1: Bump version and add `changelog` key**
@@ -152,6 +154,7 @@ Expected: no output, exit 0.
 ## Task 5: Update `docs/roadmap/tauri-migration-roadmap.md`
 
 **Files:**
+
 - Modify: `docs/roadmap/tauri-migration-roadmap.md:1-6` (header block)
 
 - [ ] **Step 1: Add a CHANGELOG reference under the spec line**
@@ -172,6 +175,7 @@ Expected: the new line appears in the header block.
 ## Task 6: Update both READMEs in parallel (subagent dispatch)
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `README.zh-CN.md`
 
@@ -186,7 +190,7 @@ Prompt to subagent:
 > ```markdown
 > ## Changelog
 >
-> See [`CHANGELOG.md`](./CHANGELOG.md) (English) or [`CHANGELOG.zh-CN.md`](./CHANGELOG.zh-CN.md) (简体中文) for the linear timeline of notable changes. Each entry may cross-link review patterns from [`docs/reviews/`](./docs/reviews/CLAUDE.md) that it applied, updated, or created — so the CHANGELOG is the *when* and `docs/reviews/` is the *why*.
+> See [`CHANGELOG.md`](./CHANGELOG.md) (English) or [`CHANGELOG.zh-CN.md`](./CHANGELOG.zh-CN.md) (简体中文) for the linear timeline of notable changes. Each entry may cross-link review patterns from [`docs/reviews/`](./docs/reviews/CLAUDE.md) that it applied, updated, or created — so the CHANGELOG is the _when_ and `docs/reviews/` is the _why_.
 > ```
 >
 > Report the line numbers where the section was inserted. Do not change any other content.
@@ -208,9 +212,11 @@ Prompt to subagent:
 - [ ] **Step 3: Verify both insertions**
 
 Run:
+
 ```bash
 grep -n "^## Changelog\|^## 更新日志" README.md README.zh-CN.md
 ```
+
 Expected: one match per file.
 
 ---
@@ -218,11 +224,13 @@ Expected: one match per file.
 ## Task 7: Create `CHANGELOG.md` with backfill (English)
 
 **Files:**
+
 - Create: `CHANGELOG.md`
 
 - [ ] **Step 1: Gather raw source data**
 
 Run:
+
 ```bash
 git log --oneline -n 40
 gh pr list --state merged --limit 20 --json number,title,url,mergedAt
@@ -235,7 +243,7 @@ Cross-reference against `docs/roadmap/progress.yaml` so phase grouping matches `
 
 Exact content (adjust the `https://github.com/winoooops/vimeflow` prefix only if `gh repo view` reports a different owner):
 
-````markdown
+```markdown
 # Changelog
 
 🇺🇸 English | [🇨🇳 简体中文](./CHANGELOG.zh-CN.md)
@@ -274,10 +282,10 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
   ([#70](https://github.com/winoooops/vimeflow/pull/70), `e97c1e8`) —
   patterns: [E2E Testing](docs/reviews/patterns/e2e-testing.md),
   [Cross-Platform Paths](docs/reviews/patterns/cross-platform-paths.md)
-    - WSL2 scope (#65) deferred — "local env unsupported; use native Linux or CI".
-    - Deferred follow-ups: REPL, structured logging (#61), transcript parsing
-      in E2E, HMR orphan-PTY harness (#55), Phase 3 CI.
-    - Spec: `docs/superpowers/specs/2026-04-14-e2e-testing-design.md`.
+  - WSL2 scope (#65) deferred — "local env unsupported; use native Linux or CI".
+  - Deferred follow-ups: REPL, structured logging (#61), transcript parsing
+    in E2E, HMR orphan-PTY harness (#55), Phase 3 CI.
+  - Spec: `docs/superpowers/specs/2026-04-14-e2e-testing-design.md`.
 - UNIFIED design spec and canonical tokens (`docs/design/UNIFIED.md`,
   `tokens.css`, `tokens.ts`) — 5-zone layout contract, agent-state
   machine, component APIs.
@@ -364,7 +372,7 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
 - **Fixed** — bug fix (link a review pattern if one informed it).
 - **Removed** — deleted capability, file, or dependency.
 - **Security** — security-relevant fix (pattern link **required**).
-````
+```
 
 - [ ] **Step 3: Verify prettier passes**
 
@@ -376,6 +384,7 @@ Expected: PASS (or fix with `npx prettier --write CHANGELOG.md`).
 ## Task 8: Create `CHANGELOG.zh-CN.md` (Simplified Chinese mirror)
 
 **Files:**
+
 - Create: `CHANGELOG.zh-CN.md`
 
 The zh-CN file mirrors Task 7's structure. PR URLs, commit SHAs, pattern file paths, and category headings (`#### Added` etc.) remain in English for stable anchors and shared grep-ability across languages. Only the prose is translated.
@@ -384,7 +393,7 @@ The zh-CN file mirrors Task 7's structure. PR URLs, commit SHAs, pattern file pa
 
 Exact content:
 
-````markdown
+```markdown
 # 更新日志
 
 [🇺🇸 English](./CHANGELOG.md) | 🇨🇳 简体中文
@@ -421,10 +430,10 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
   ([#70](https://github.com/winoooops/vimeflow/pull/70), `e97c1e8`) —
   patterns: [E2E Testing](docs/reviews/patterns/e2e-testing.md),
   [Cross-Platform Paths](docs/reviews/patterns/cross-platform-paths.md)
-    - WSL2 范围（#65）延后 — "本地环境不支持；请使用原生 Linux 或 CI"。
-    - 延后跟进项：REPL、结构化日志（#61）、E2E 中的 transcript 解析、
-      HMR 孤儿 PTY 测试夹具（#55）、第 3 阶段 CI。
-    - 规格：`docs/superpowers/specs/2026-04-14-e2e-testing-design.md`。
+  - WSL2 范围（#65）延后 — "本地环境不支持；请使用原生 Linux 或 CI"。
+  - 延后跟进项：REPL、结构化日志（#61）、E2E 中的 transcript 解析、
+    HMR 孤儿 PTY 测试夹具（#55）、第 3 阶段 CI。
+  - 规格：`docs/superpowers/specs/2026-04-14-e2e-testing-design.md`。
 - UNIFIED 设计规格与规范 tokens（`docs/design/UNIFIED.md`、`tokens.css`、
   `tokens.ts`）— 5 区布局契约、代理状态机、组件 API。
   ([#68](https://github.com/winoooops/vimeflow/pull/68), `3d6bc9a`)
@@ -508,7 +517,7 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
 - **Fixed** — bug 修复（若有相应复盘模式，请加链接）。
 - **Removed** — 删除的能力、文件或依赖。
 - **Security** — 安全相关修复（**必须**链接模式）。
-````
+```
 
 - [ ] **Step 2: Verify prettier passes**
 
@@ -518,17 +527,21 @@ Expected: PASS (or fix with `npx prettier --write CHANGELOG.zh-CN.md`).
 - [ ] **Step 3: Spot-check structural parity with English**
 
 Run:
+
 ```bash
 grep -cE "^#### (Added|Changed|Fixed|Removed|Security)" CHANGELOG.md
 grep -cE "^#### (Added|Changed|Fixed|Removed|Security)" CHANGELOG.zh-CN.md
 ```
+
 Expected: identical counts.
 
 Run:
+
 ```bash
 grep -oE "#[0-9]+" CHANGELOG.md | sort -u
 grep -oE "#[0-9]+" CHANGELOG.zh-CN.md | sort -u
 ```
+
 Expected: identical PR-number sets.
 
 ---
@@ -536,6 +549,7 @@ Expected: identical PR-number sets.
 ## Task 9: Remove `CHANGELOG.example.md`
 
 **Files:**
+
 - Delete: `CHANGELOG.example.md`
 
 - [ ] **Step 1: Confirm the pilot is superseded**
@@ -559,6 +573,7 @@ Expected: `CHANGELOG.md` and `CHANGELOG.zh-CN.md` only.
 - [ ] **Step 1: Confirm every referenced path exists**
 
 Run:
+
 ```bash
 for p in docs/reviews/patterns/e2e-testing.md \
          docs/reviews/patterns/cross-platform-paths.md \
@@ -575,17 +590,20 @@ for p in docs/reviews/patterns/e2e-testing.md \
   test -f "$p" || echo "MISSING: $p"
 done
 ```
+
 Expected: no output.
 
 - [ ] **Step 2: Run repo formatter on touched files**
 
 Run:
+
 ```bash
 npx prettier --write CHANGELOG.md CHANGELOG.zh-CN.md \
   README.md README.zh-CN.md CLAUDE.md \
   docs/CLAUDE.md docs/reviews/CLAUDE.md \
   docs/roadmap/tauri-migration-roadmap.md
 ```
+
 Expected: each file printed once.
 
 - [ ] **Step 3: Bump `ref_count` for cited patterns**
@@ -603,6 +621,7 @@ Patterns to bump: `e2e-testing`, `cross-platform-paths`,
 - [ ] **Step 4: Stage and commit**
 
 Run:
+
 ```bash
 git status
 git add CHANGELOG.md CHANGELOG.zh-CN.md \
@@ -640,15 +659,15 @@ vitest on push; no code changed so every test should still pass.
 ## Self-Review Checklist (run before handoff)
 
 - [ ] Every spec decision has a task: location, format, entry shape,
-  expansion style (indented bullets), bilingual pair, backfill source,
-  pattern-linking rules, discovery touch-points.
+      expansion style (indented bullets), bilingual pair, backfill source,
+      pattern-linking rules, discovery touch-points.
 - [ ] No `TODO` / `TBD` / placeholder text in any step.
 - [ ] Every file path in the plan is relative-from-worktree-root and
-  exists (or is explicitly being created/deleted).
+      exists (or is explicitly being created/deleted).
 - [ ] PR numbers (#27, #31, #34, #49, #57, #60, #63, #66, #67, #68, #69,
-  #70) all reconciled against `progress.yaml` and/or `git log`.
+      #70) all reconciled against `progress.yaml` and/or `git log`.
 - [ ] Patterns cross-linked in CHANGELOG.md / CHANGELOG.zh-CN.md exist
-  under `docs/reviews/patterns/` (confirmed in Task 10 Step 1).
+      under `docs/reviews/patterns/` (confirmed in Task 10 Step 1).
 - [ ] English and Chinese files have matching section counts and identical
-  PR-number sets (Task 8 Step 3).
+      PR-number sets (Task 8 Step 3).
 - [ ] `CHANGELOG.example.md` is deleted by Task 9.

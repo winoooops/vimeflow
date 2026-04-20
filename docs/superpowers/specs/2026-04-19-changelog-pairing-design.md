@@ -5,8 +5,8 @@
 
 ## Problem
 
-Vimeflow tracks *what changed* (commits, PRs, `progress.yaml`) and *why it
-broke in review* (`docs/reviews/patterns/*.md`) in separate places. There is
+Vimeflow tracks _what changed_ (commits, PRs, `progress.yaml`) and _why it
+broke in review_ (`docs/reviews/patterns/*.md`) in separate places. There is
 no single linear timeline that answers "what shipped on date X, and which
 review-learning did that change apply or create?" Roadmap progress is a
 forward-looking plan, commit history is unbrowsable prose, and the reviews
@@ -23,19 +23,19 @@ thematic index. Together they form a retrospective archive.
 
 ## Decisions
 
-| Decision         | Choice                                                                      | Rationale                                                              |
-| ---------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Location         | `CHANGELOG.md` at repo root                                                 | Keep a Changelog convention; discoverable; GitHub renders on releases  |
-| Format           | Keep a Changelog 1.1.0                                                      | Wide recognition, clean Added/Changed/Fixed/Removed/Security sections  |
-| Scope prior to 1.0 | Single `[Unreleased]` block sub-grouped by roadmap phase                  | Project is pre-release; phase grouping maps entries to `progress.yaml` |
-| Entry shape      | `- <prose> ([#PR](url), <short-sha>) — patterns: [Name](path), [Name](path)` | Two click-throughs: change provenance + learning context               |
-| Expanded entries | Indented nested bullet (`    - …`) under the parent bullet                  | Plain markdown, grep-friendly, no HTML — renders consistently everywhere |
-| Bilingual pair   | `CHANGELOG.md` (English) + `CHANGELOG.zh-CN.md` (Simplified Chinese)        | Mirrors README.md / README.zh-CN.md pairing already in the repo        |
-| Authoring        | Hand-curated, appended on merge — both language files updated together      | ~5 min/merge buys the retrospective cross-links auto-tools cannot      |
-| Backfill source  | `docs/roadmap/progress.yaml` + `git log`                                    | progress.yaml is the authoritative milestone map; commits fill detail  |
-| Pattern linking  | Optional; required for Security and Fixed entries when a pattern exists    | Don't force noise on unrelated features; enforce the retrospective tie |
-| Link style       | Relative for in-repo (patterns, specs); absolute GitHub URLs for PRs        | Relative links survive repo renames; PR URLs are externally clickable  |
-| Discovery        | Linked from `README.md`, `README.zh-CN.md`, `docs/CLAUDE.md`, `docs/reviews/CLAUDE.md` | Agents and humans find it from any of the docs entry points            |
+| Decision           | Choice                                                                                 | Rationale                                                                |
+| ------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Location           | `CHANGELOG.md` at repo root                                                            | Keep a Changelog convention; discoverable; GitHub renders on releases    |
+| Format             | Keep a Changelog 1.1.0                                                                 | Wide recognition, clean Added/Changed/Fixed/Removed/Security sections    |
+| Scope prior to 1.0 | Single `[Unreleased]` block sub-grouped by roadmap phase                               | Project is pre-release; phase grouping maps entries to `progress.yaml`   |
+| Entry shape        | `- <prose> ([#PR](url), <short-sha>) — patterns: [Name](path), [Name](path)`           | Two click-throughs: change provenance + learning context                 |
+| Expanded entries   | Indented nested bullet (`    - …`) under the parent bullet                             | Plain markdown, grep-friendly, no HTML — renders consistently everywhere |
+| Bilingual pair     | `CHANGELOG.md` (English) + `CHANGELOG.zh-CN.md` (Simplified Chinese)                   | Mirrors README.md / README.zh-CN.md pairing already in the repo          |
+| Authoring          | Hand-curated, appended on merge — both language files updated together                 | ~5 min/merge buys the retrospective cross-links auto-tools cannot        |
+| Backfill source    | `docs/roadmap/progress.yaml` + `git log`                                               | progress.yaml is the authoritative milestone map; commits fill detail    |
+| Pattern linking    | Optional; required for Security and Fixed entries when a pattern exists                | Don't force noise on unrelated features; enforce the retrospective tie   |
+| Link style         | Relative for in-repo (patterns, specs); absolute GitHub URLs for PRs                   | Relative links survive repo renames; PR URLs are externally clickable    |
+| Discovery          | Linked from `README.md`, `README.zh-CN.md`, `docs/CLAUDE.md`, `docs/reviews/CLAUDE.md` | Agents and humans find it from any of the docs entry points              |
 
 ## CHANGELOG Structure
 
@@ -54,19 +54,23 @@ All notable changes to Vimeflow are recorded here. …pairing note…
 ### Phase 4 — Agent Status Sidebar (in progress)
 
 #### Added
+
 - <change> ([#PR](url), <sha>) — patterns: [Name](docs/reviews/patterns/x.md)
-    - Optional nested bullet for session-scope / deferred notes / spec links.
+  - Optional nested bullet for session-scope / deferred notes / spec links.
 - <another change> ([#PR](url), <sha>)
 
 #### Fixed
+
 - <change> ([#PR](url), <sha>) — patterns: [Name](docs/reviews/patterns/x.md)
 
 ### Phase 3 — Terminal Core
+
 …
 
 ---
 
 ## Legend
+
 - **Added** / **Changed** / **Fixed** / **Removed** / **Security**
 ```
 
@@ -75,14 +79,14 @@ Chinese prose; section anchors and pattern paths are shared between the two.
 
 ## Entry Categorization Rules
 
-| Keep a Changelog section | When to use                                                 |
-| ------------------------ | ----------------------------------------------------------- |
-| Added                    | New user-visible capability, file, command, or dependency   |
-| Changed                  | Behavioral/API update that is not a fix                     |
-| Deprecated               | Capability marked for future removal (none yet)             |
-| Removed                  | Deleted capability, file, or dependency                     |
-| Fixed                    | Bug fix (link a pattern if one informed or was created)     |
-| Security                 | Security-relevant fix — pattern link **required**           |
+| Keep a Changelog section | When to use                                               |
+| ------------------------ | --------------------------------------------------------- |
+| Added                    | New user-visible capability, file, command, or dependency |
+| Changed                  | Behavioral/API update that is not a fix                   |
+| Deprecated               | Capability marked for future removal (none yet)           |
+| Removed                  | Deleted capability, file, or dependency                   |
+| Fixed                    | Bug fix (link a pattern if one informed or was created)   |
+| Security                 | Security-relevant fix — pattern link **required**         |
 
 Phases come from `docs/roadmap/progress.yaml`. A change that spans phases is
 filed under the phase it completes, with a cross-reference in the prose.
@@ -100,8 +104,8 @@ On every merge to `main`:
 5. For last-session or otherwise noteworthy entries, add one or more
    indented nested bullets (`    - …`) beneath the parent bullet with scope
    notes, deferred follow-ups, or spec path.
-5a. Mirror the entry into `CHANGELOG.zh-CN.md` with translated prose;
-    PR URLs, commit SHAs, and pattern paths are identical across files.
+   5a. Mirror the entry into `CHANGELOG.zh-CN.md` with translated prose;
+   PR URLs, commit SHAs, and pattern paths are identical across files.
 6. Review the diff and confirm any new `docs/reviews/patterns/*.md` finding
    is linked; bump its `ref_count` per `docs/reviews/CLAUDE.md` protocol.
 
@@ -135,17 +139,17 @@ status is `done` or `in_progress`. For each phase:
 Every doc that currently describes "how the project is organized" needs a
 CHANGELOG reference. These edits are in-scope for this work:
 
-| File                              | Change                                                                                  |
-| --------------------------------- | --------------------------------------------------------------------------------------- |
-| `README.md`                       | Add short "Changelog" section pointing to `CHANGELOG.md` and explaining pairing         |
-| `README.zh-CN.md`                 | Add "更新日志" section pointing to `CHANGELOG.zh-CN.md`                                  |
-| `CHANGELOG.md`                    | New — English timeline                                                                   |
-| `CHANGELOG.zh-CN.md`              | New — Simplified Chinese mirror                                                          |
-| `CLAUDE.md` (root)                | Add one row to the navigation table: `Linear change timeline → CHANGELOG.md`            |
-| `docs/CLAUDE.md`                  | Add a short blurb noting CHANGELOG lives at repo root and pairs with `reviews/`         |
-| `docs/reviews/CLAUDE.md`          | Add a note that the CHANGELOG is the timeline companion; each merge appends a bullet    |
-| `docs/roadmap/progress.yaml`      | Add a `changelog: CHANGELOG.md` top-level key and a version bump with a note            |
-| `docs/roadmap/tauri-migration-roadmap.md` | Add one line referencing CHANGELOG for historical entries                      |
+| File                                      | Change                                                                               |
+| ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| `README.md`                               | Add short "Changelog" section pointing to `CHANGELOG.md` and explaining pairing      |
+| `README.zh-CN.md`                         | Add "更新日志" section pointing to `CHANGELOG.zh-CN.md`                              |
+| `CHANGELOG.md`                            | New — English timeline                                                               |
+| `CHANGELOG.zh-CN.md`                      | New — Simplified Chinese mirror                                                      |
+| `CLAUDE.md` (root)                        | Add one row to the navigation table: `Linear change timeline → CHANGELOG.md`         |
+| `docs/CLAUDE.md`                          | Add a short blurb noting CHANGELOG lives at repo root and pairs with `reviews/`      |
+| `docs/reviews/CLAUDE.md`                  | Add a note that the CHANGELOG is the timeline companion; each merge appends a bullet |
+| `docs/roadmap/progress.yaml`              | Add a `changelog: CHANGELOG.md` top-level key and a version bump with a note         |
+| `docs/roadmap/tauri-migration-roadmap.md` | Add one line referencing CHANGELOG for historical entries                            |
 
 ## Non-Goals
 
