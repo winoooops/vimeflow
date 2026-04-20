@@ -32,16 +32,80 @@ from review import run_local_review
 AUTO_CONTINUE_DELAY_SECONDS = 3
 
 
+# SDK event class names we translate to cli_client types. Anything else
+# is either ignored on purpose (system/result) or a signal that the SDK
+# renamed a type and the fallback path needs attention.
+_SDK_KNOWN_TYPES = {
+    "AssistantMessage", "UserMessage",          # translated
+    "SystemMessage", "ResultMessage",           # silently ignored
+}
+
+
+def _translate_sdk_event(msg):
+    """Normalize an SDK message into the canonical cli_client dataclasses.
+
+    Both backends have historically used the same class names (AssistantMessage,
+    UserMessage, TextBlock, ToolUseBlock, ToolResultBlock), but the SDK
+    contract is informal. If a future SDK version renames a type, we want a
+    loud log warning here rather than silently dropped events in the main
+    loop. Returns None for messages we don't surface (system / result) and
+    also None for unknown types — with a one-time warning logged so the
+    regression is visible instead of invisible.
+    """
+    msg_type = type(msg).__name__
+
+    if msg_type == "AssistantMessage":
+        blocks = []
+        for b in getattr(msg, "content", None) or []:
+            b_type = type(b).__name__
+            if b_type == "TextBlock":
+                blocks.append(TextBlock(text=getattr(b, "text", "")))
+            elif b_type == "ToolUseBlock":
+                blocks.append(ToolUseBlock(
+                    name=getattr(b, "name", ""),
+                    input=getattr(b, "input", {}) or {},
+                ))
+            # TextBlock / ToolUseBlock are the only ones we surface.
+        return AssistantMessage(content=blocks)
+
+    if msg_type == "UserMessage":
+        tool_results = []
+        for b in getattr(msg, "content", None) or []:
+            if type(b).__name__ == "ToolResultBlock":
+                tool_results.append(ToolResultBlock(
+                    content=getattr(b, "content", ""),
+                    is_error=bool(getattr(b, "is_error", False)),
+                ))
+        return UserMessage(content=tool_results)
+
+    if msg_type not in _SDK_KNOWN_TYPES:
+        # Visibility: the SDK may have renamed a type. Fail loud, not silent.
+        print(
+            f"  [warn] Unknown SDK event type '{msg_type}' — "
+            f"treated as ignorable. If this suppresses actual agent output, "
+            f"update harness/agent.py::_translate_sdk_event.",
+            flush=True,
+        )
+    return None
+
+
 async def _iter_events(client_or_session, prompt: str):
-    """Yield SDK-shaped events regardless of backend."""
+    """Yield canonical cli_client events regardless of backend.
+
+    CLI backend yields cli_client dataclasses directly. SDK backend events
+    are normalized into the same dataclasses, so `run_agent_session` only
+    needs isinstance checks against one set of types.
+    """
     if isinstance(client_or_session, ClaudeCliSession):
         async for event in client_or_session.query(prompt):
             yield event
     else:
-        # Legacy SDK path
+        # Legacy SDK path — translate into canonical cli_client events.
         await client_or_session.query(prompt)
         async for msg in client_or_session.receive_response():
-            yield msg
+            translated = _translate_sdk_event(msg)
+            if translated is not None:
+                yield translated
 
 
 async def run_agent_session(
@@ -59,41 +123,32 @@ async def run_agent_session(
     try:
         response_text = ""
         async for event in _iter_events(client_or_session, message):
-            msg_type = type(event).__name__
-
-            if msg_type == "AssistantMessage" and hasattr(event, "content"):
+            if isinstance(event, AssistantMessage):
                 for block in event.content:
-                    block_type = type(block).__name__
-
-                    if block_type == "TextBlock" and hasattr(block, "text"):
+                    if isinstance(block, TextBlock):
                         response_text += block.text
                         print(block.text, end="", flush=True)
-                    elif block_type == "ToolUseBlock" and hasattr(block, "name"):
+                    elif isinstance(block, ToolUseBlock):
                         print(f"\n  [Tool: {block.name}]", flush=True)
-                        if hasattr(block, "input"):
-                            input_str = str(block.input)
-                            if len(input_str) > 200:
-                                print(f"    {input_str[:200]}...", flush=True)
-                            else:
-                                print(f"    {input_str}", flush=True)
+                        input_str = str(block.input)
+                        if len(input_str) > 200:
+                            print(f"    {input_str[:200]}...", flush=True)
+                        else:
+                            print(f"    {input_str}", flush=True)
 
-            elif msg_type == "UserMessage" and hasattr(event, "content"):
+            elif isinstance(event, UserMessage):
                 for block in event.content:
-                    block_type = type(block).__name__
-
-                    if block_type == "ToolResultBlock":
-                        result_content = getattr(block, "content", "")
-                        is_error = getattr(block, "is_error", False)
-
+                    if isinstance(block, ToolResultBlock):
+                        result_content = block.content
                         if "blocked" in str(result_content).lower():
                             print(f"    [BLOCKED] {result_content}", flush=True)
-                        elif is_error:
+                        elif block.is_error:
                             print(f"    [Error] {str(result_content)[:500]}", flush=True)
                         else:
                             print("    [Done]", flush=True)
 
-            elif msg_type == "ResultEvent":
-                if getattr(event, "is_error", False):
+            elif isinstance(event, ResultEvent):
+                if event.is_error:
                     print(f"\n  [result: error]", flush=True)
 
         print("\n" + "-" * 70 + "\n")

@@ -219,3 +219,39 @@ def test_cli_session_live_query(tmp_path):
     )
     results = [e for e in events if isinstance(e, ResultEvent)]
     assert len(results) == 1 and not results[0].is_error
+
+
+# ---------- SDK translator (agent.py fallback) ----------
+
+
+class _FakeSDKTextBlock:
+    """Minimal duck-type stand-in — mimics the SDK's TextBlock shape by name."""
+    def __init__(self, text: str):
+        self.text = text
+
+
+class _FakeSDKAssistantMessage:
+    def __init__(self, content: list):
+        self.content = content
+
+
+def test_translate_sdk_event_assistant_text():
+    from agent import _translate_sdk_event, AssistantMessage, TextBlock
+    sdk_msg = _FakeSDKAssistantMessage(content=[_FakeSDKTextBlock("hi from SDK")])
+    # Rename so class-name lookup treats it as the known AssistantMessage type
+    _FakeSDKAssistantMessage.__name__ = "AssistantMessage"
+    _FakeSDKTextBlock.__name__ = "TextBlock"
+    out = _translate_sdk_event(sdk_msg)
+    assert isinstance(out, AssistantMessage)
+    assert isinstance(out.content[0], TextBlock)
+    assert out.content[0].text == "hi from SDK"
+
+
+def test_translate_sdk_event_unknown_type_warns_returns_none(capsys):
+    from agent import _translate_sdk_event
+    class AssistantTurn:  # hypothetical SDK rename
+        content: list = []
+    out = _translate_sdk_event(AssistantTurn())
+    assert out is None
+    captured = capsys.readouterr()
+    assert "Unknown SDK event type 'AssistantTurn'" in captured.out
