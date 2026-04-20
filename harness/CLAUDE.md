@@ -34,7 +34,7 @@ If the `claude` CLI is unavailable (not installed, auth broken, or you need a cu
 | `ANTHROPIC_API_KEY`  | `--client sdk` only | API key for the SDK fallback               |
 | `ANTHROPIC_BASE_URL` | `--client sdk` only | Optional custom endpoint (proxy/self-host) |
 
-The API-key check fires inside `client_fallback.create_sdk_client_fallback` — it never blocks the default CLI path. To run with the fallback:
+The API-key check fires inside `client_with_sdk.create_sdk_client_fallback` — it never blocks the default CLI path. To run with the fallback:
 
 ```bash
 set -a && source .env && set +a   # provides ANTHROPIC_API_KEY
@@ -188,7 +188,7 @@ In addition to the runtime safety layers above, the project uses [hookify](https
 | `agent.py`                      | Core loop — per-feature Coder+Reviewer iterations, cloud review relay loop          |
 | `cli_client.py`                 | Default `claude -p` subprocess backend: session + resume, stream-JSON parser        |
 | `client.py`                     | CLI-backend settings writer (`build_settings_file`) + `BUILTIN_TOOLS`               |
-| `client_fallback.py`            | Opt-in SDK fallback (`--client sdk`) — only module that imports `claude_code_sdk`   |
+| `client_with_sdk.py`            | Opt-in SDK fallback (`--client sdk`) — only module that imports `claude_code_sdk`   |
 | `hook_runner.py`                | Bridge: Claude CLI's settings.json hooks → Python `security.py` / `hooks.py`        |
 | `policy_judge.py`               | LLM fallback for the bash allowlist; cached per-command                             |
 | `security.py`                   | Bash command allowlist + validators for `pkill`/`chmod`/`rm`/`gh`                   |

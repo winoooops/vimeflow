@@ -2,7 +2,29 @@ import json
 import sys
 from pathlib import Path
 
-from client import build_settings_file
+from client import build_base_settings, build_settings_file
+
+
+def test_build_base_settings_sandbox_on():
+    s = build_base_settings(sandbox=True)
+    assert s["permissions"]["defaultMode"] == "acceptEdits"
+    assert s["sandbox"] == {"enabled": True, "autoAllowBashIfSandboxed": True}
+    assert "hooks" not in s  # hooks are wired by each caller
+    # Allow list is shared with the SDK fallback path
+    assert "Bash(*)" in s["permissions"]["allow"]
+
+
+def test_build_base_settings_sandbox_off():
+    s = build_base_settings(sandbox=False)
+    assert s["permissions"]["defaultMode"] == "bypassPermissions"
+    assert "sandbox" not in s
+
+
+def test_build_base_settings_returns_fresh_copy():
+    a = build_base_settings(sandbox=True)
+    a["permissions"]["allow"].append("mutation")
+    b = build_base_settings(sandbox=True)
+    assert "mutation" not in b["permissions"]["allow"]
 
 
 def test_build_settings_file_writes_hooks_with_sandbox(tmp_path):

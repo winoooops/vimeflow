@@ -165,7 +165,7 @@ def preflight_checks() -> bool:
     No auth check here — the default CLI backend inherits the user's
     `claude` CLI login. The opt-in SDK fallback (`--client sdk`) enforces
     its own ANTHROPIC_API_KEY requirement inside
-    `client_fallback.create_sdk_client_fallback`.
+    `client_with_sdk.create_sdk_client_fallback`.
     """
     ok = True
 

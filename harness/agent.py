@@ -127,7 +127,7 @@ def _make_session(
             allowed_tools=BUILTIN_TOOLS,
         )
     # Opt-in fallback — requires ANTHROPIC_API_KEY (enforced inside).
-    from client_fallback import create_sdk_client_fallback
+    from client_with_sdk import create_sdk_client_fallback
     return create_sdk_client_fallback(project_dir, model, sandbox=sandbox)
 
 
