@@ -115,7 +115,12 @@ def test_cli_session_builds_new_session_args(tmp_path):
     uuid_idx = args.index("--session-id") + 1
     import uuid as _uuid
     _uuid.UUID(args[uuid_idx])
-    assert "--allowed-tools" in args
+    # Exclusive tool surface — `--tools` (comma-separated), not
+    # `--allowed-tools` (space-separated, permissive). See _build_args.
+    assert "--tools" in args
+    tools_idx = args.index("--tools") + 1
+    assert args[tools_idx] == "Read,Write,Bash"
+    assert "--allowed-tools" not in args
     assert "--resume" not in args
 
 

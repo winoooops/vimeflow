@@ -137,6 +137,13 @@ class ClaudeCliSession:
         self._started = False
 
     def _build_args(self, prompt: str, resume: bool) -> list[str]:
+        # `--tools` (exclusive surface) vs `--allowed-tools` (permissive):
+        # `--allowed-tools` under `bypassPermissions` only marks the listed
+        # tools as allowed; it does NOT remove the rest of Claude Code's
+        # default tools or configured MCP tools from the session, which
+        # means an agent could invoke a tool our hooks never see. `--tools`
+        # restricts the session to exactly the listed built-ins (and is
+        # comma-separated, unlike `--allowed-tools`'s space-separated list).
         args = [
             "claude",
             prompt,
@@ -145,7 +152,7 @@ class ClaudeCliSession:
             "--verbose",
             "--model", self.model,
             "--settings", str(self.settings_path),
-            "--allowed-tools", " ".join(self.allowed_tools),
+            "--tools", ",".join(self.allowed_tools),
         ]
         if resume:
             args += ["--resume", self.session_id]
