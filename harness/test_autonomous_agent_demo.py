@@ -59,3 +59,74 @@ def test_clean_runtime_files_no_op_when_files_missing(tmp_path: Path) -> None:
     demo = _load_module()
 
     demo.clean_runtime_files(tmp_path)  # must not raise
+
+
+# --- should_run_phase_3 ---------------------------------------------------
+
+
+def test_phase_3_skip_mode_returns_false() -> None:
+    demo = _load_module()
+    assert demo.should_run_phase_3("skip") is False
+
+
+def test_phase_3_auto_mode_returns_true() -> None:
+    demo = _load_module()
+    assert demo.should_run_phase_3("auto") is True
+
+
+def test_phase_3_legacy_skip_relay_overrides_mode() -> None:
+    """--skip-relay wins over any --phase-3 value for back-compat."""
+    demo = _load_module()
+    assert demo.should_run_phase_3("auto", legacy_skip_relay=True) is False
+    assert demo.should_run_phase_3("confirm", legacy_skip_relay=True) is False
+
+
+def test_phase_3_confirm_non_tty_auto_skips() -> None:
+    """Backgrounded runs (no tty) must never push unattended."""
+    demo = _load_module()
+
+    def _should_not_be_called(_prompt: str) -> str:
+        raise AssertionError("prompt_fn should not run on non-tty")
+
+    result = demo.should_run_phase_3(
+        "confirm", stdin_isatty=False, prompt_fn=_should_not_be_called
+    )
+    assert result is False
+
+
+def test_phase_3_confirm_tty_accepts_yes() -> None:
+    demo = _load_module()
+    result = demo.should_run_phase_3(
+        "confirm",
+        stdin_isatty=True,
+        prompt_fn=lambda _prompt: "y",
+    )
+    assert result is True
+
+
+def test_phase_3_confirm_tty_accepts_full_yes() -> None:
+    demo = _load_module()
+    assert demo.should_run_phase_3(
+        "confirm",
+        stdin_isatty=True,
+        prompt_fn=lambda _prompt: "Yes",
+    ) is True
+
+
+def test_phase_3_confirm_tty_default_no() -> None:
+    """Empty answer == N, per standard [y/N] convention."""
+    demo = _load_module()
+    assert demo.should_run_phase_3(
+        "confirm",
+        stdin_isatty=True,
+        prompt_fn=lambda _prompt: "",
+    ) is False
+
+
+def test_phase_3_confirm_tty_rejects_no() -> None:
+    demo = _load_module()
+    assert demo.should_run_phase_3(
+        "confirm",
+        stdin_isatty=True,
+        prompt_fn=lambda _prompt: "n",
+    ) is False

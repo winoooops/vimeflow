@@ -20,6 +20,7 @@ import os
 import platform
 import shutil
 import stat
+import sys
 from pathlib import Path
 
 from agent import run_autonomous_agent, run_cloud_review_loop
@@ -92,7 +93,24 @@ def parse_args() -> argparse.Namespace:
         "--skip-relay",
         action="store_true",
         default=False,
-        help="Skip Phase 3 cloud review entirely",
+        help=(
+            "Skip Phase 3 cloud review entirely. Equivalent to "
+            "`--phase-3 skip`; kept for backwards compatibility."
+        ),
+    )
+
+    parser.add_argument(
+        "--phase-3",
+        choices=["auto", "confirm", "skip"],
+        default="confirm",
+        help=(
+            "How to handle Phase 3 (push branch, open PR, relay cloud "
+            "Codex review): 'auto' runs it without asking; 'confirm' "
+            "(default) prompts on a tty and auto-skips on a non-tty so "
+            "backgrounded runs never push unattended; 'skip' disables "
+            "Phase 3 entirely. Passing --skip-relay is equivalent to "
+            "--phase-3 skip."
+        ),
     )
 
     parser.add_argument(
@@ -160,6 +178,60 @@ RUNTIME_FILES = [
     "claude-progress.txt",
     ".feature_list_stamp.json",
 ]
+
+
+def should_run_phase_3(
+    mode: str,
+    legacy_skip_relay: bool = False,
+    *,
+    stdin_isatty: bool | None = None,
+    prompt_fn=input,
+) -> bool:
+    """Decide whether to run the Phase 3 cloud review relay.
+
+    ``mode`` is one of ``"auto"``, ``"confirm"``, ``"skip"`` from the
+    ``--phase-3`` argument. ``legacy_skip_relay`` is ``True`` when the
+    caller passed the older ``--skip-relay`` flag; it unconditionally
+    disables Phase 3 for back-compat.
+
+    ``stdin_isatty`` and ``prompt_fn`` are injected for testing; in
+    production they default to the real stdin state and :func:`input`.
+    A ``confirm`` run on a non-tty (e.g. Claude's background task
+    runner) auto-skips so backgrounded harness runs never push
+    unattended. A ``confirm`` run on a tty prompts the user.
+    """
+    if legacy_skip_relay or mode == "skip":
+        return False
+    if mode == "auto":
+        return True
+    # mode == "confirm"
+    if stdin_isatty is None:
+        stdin_isatty = sys.stdin.isatty()
+    if not stdin_isatty:
+        print(
+            "  Phase 3 is gated behind user confirmation (--phase-3 confirm, "
+            "the default), and this run is not attached to a tty. "
+            "Auto-skipping the cloud review relay. "
+            "Pass --phase-3 auto to opt in to non-interactive Phase 3, "
+            "or run /harness-plugin:loop's Phase 3 step manually after "
+            "reviewing the Phase 2 output."
+        )
+        return False
+    print()
+    print("  " + "=" * 60)
+    print("  PHASE 3 CONFIRMATION")
+    print("  " + "=" * 60)
+    print("  Phase 2 is complete. Phase 3 will:")
+    print("    - git push the current branch to origin")
+    print("    - gh pr create (or find an existing PR)")
+    print("    - poll for the cloud Codex review and spawn a fix loop")
+    print()
+    answer = prompt_fn("  Run Phase 3 now? [y/N]: ").strip().lower()
+    if answer in ("y", "yes"):
+        return True
+    print("  Skipping Phase 3. You can run it later manually or rerun "
+          "the harness with --phase-3 auto.")
+    return False
 
 
 def clean_runtime_files(project_dir: Path) -> None:
@@ -242,8 +314,8 @@ def main() -> None:
             )
         )
 
-        # Phase 3: Cloud review (if not skipped)
-        if not args.skip_relay:
+        # Phase 3: Cloud review — gated per --phase-3
+        if should_run_phase_3(args.phase_3, args.skip_relay):
             asyncio.run(
                 run_cloud_review_loop(
                     project_dir=args.project_dir,
