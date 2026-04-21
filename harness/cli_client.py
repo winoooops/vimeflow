@@ -130,6 +130,13 @@ class ClaudeCliSession:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
+    # Default per-query deadline. `claude -p` can stall indefinitely if the
+    # network goes away, auth expires mid-stream, or the CLI itself
+    # deadlocks. The SDK backend got implicit timeouts from httpx; the
+    # subprocess backend has none — without this the harness hangs forever
+    # rather than surfacing a RuntimeError the orchestrator can retry.
+    DEFAULT_QUERY_TIMEOUT_SECONDS = 600.0  # 10 minutes
+
     def __init__(
         self,
         *,
@@ -138,12 +145,14 @@ class ClaudeCliSession:
         model: str,
         settings_path: Path,
         allowed_tools: list[str],
+        timeout: float = DEFAULT_QUERY_TIMEOUT_SECONDS,
     ):
         self.role = role
         self.project_dir = project_dir
         self.model = model
         self.settings_path = settings_path
         self.allowed_tools = allowed_tools
+        self.timeout = timeout
         self.session_id = str(uuid.uuid4())
         self._started = False
 
@@ -171,8 +180,17 @@ class ClaudeCliSession:
             args += ["--session-id", self.session_id]
         return args
 
-    async def query(self, prompt: str):
-        """Spawn `claude -p` and yield parsed events as they arrive."""
+    async def query(self, prompt: str, *, timeout: Optional[float] = None):
+        """Spawn `claude -p` and yield parsed events as they arrive.
+
+        If the subprocess stalls (network failure, auth expiry mid-stream,
+        CLI deadlock), the whole read loop is cancelled after `timeout`
+        seconds (default: `self.timeout`) and the process is killed. The
+        generator raises `asyncio.TimeoutError` so the orchestrator can
+        decide whether to retry. Without this the SDK-era httpx-level
+        timeouts are lost and the harness hangs forever.
+        """
+        deadline = timeout if timeout is not None else self.timeout
         args = self._build_args(prompt, resume=self._started)
         proc = await asyncio.create_subprocess_exec(
             *args,
@@ -208,13 +226,17 @@ class ClaudeCliSession:
 
         try:
             assert proc.stdout is not None
-            async for raw_line in proc.stdout:
-                line = raw_line.decode("utf-8", errors="replace")
-                event = parse_stream_event(line)
-                if event is not None:
-                    yield event
-            return_code = await proc.wait()
-            await stderr_task
+            # asyncio.timeout() is the 3.11+ context-manager form; cancels
+            # every await inside and surfaces a clean TimeoutError. The
+            # finally block below kills the process and resets _started.
+            async with asyncio.timeout(deadline):
+                async for raw_line in proc.stdout:
+                    line = raw_line.decode("utf-8", errors="replace")
+                    event = parse_stream_event(line)
+                    if event is not None:
+                        yield event
+                return_code = await proc.wait()
+                await stderr_task
             if return_code != 0:
                 # Roll back so a retry uses --session-id not --resume.
                 self._started = False

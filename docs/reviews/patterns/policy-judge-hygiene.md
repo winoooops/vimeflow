@@ -208,3 +208,12 @@ Before implementing or modifying any LLM-as-judge code path:
    atomicity. `fcntl.flock` for concurrent writers.
 5. **Isolate the input.** Wrap in tags, sanitize structural characters,
    prefer `str.replace` over `.format()`.
+
+### 13. First-writer-wins semantics for concurrent ASK-mode caching
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (round 10)
+- **Severity:** LOW
+- **File:** `harness/policy_judge.py`
+- **Finding:** Finding 7's lock protected the load→save atomicity, but two concurrent ask-mode hook_runner processes could still both get ALLOW from the LLM (with slightly different reasons) and overwrite each other non-deterministically. More importantly, if LLM non-determinism gave process A an ALLOW and process B a DENY, B correctly skipped the cache write (per finding 11 — DENY not cached), but A's ALLOW then persisted — so a racing DENY verdict never got to influence the cache at all.
+- **Fix:** After re-acquiring the lock in the write phase, check `if command not in cache:` before writing. First process to land wins; subsequent writers keep the earlier entry. Combined with "only ALLOW is cached", this makes concurrent-ask semantics deterministic without adding a TTL.
+- **Commit:** (round 10)

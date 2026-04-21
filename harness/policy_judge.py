@@ -288,11 +288,20 @@ async def _consult_judge(command: str, *, advisory: bool) -> JudgeDecision:  # n
     # Only persist ALLOW decisions. DENY is the safe fallback that needs
     # no cache — and caching it would lock a hallucinated / transient
     # DENY in permanently with no recovery UX.
+    #
+    # First-writer-wins: if a sibling hook_runner judged the same binary
+    # concurrently and already wrote a decision, keep theirs. Otherwise
+    # two parallel ALLOWs with slightly different reasons would overwrite
+    # each other non-deterministically; more importantly, if one process
+    # got ALLOW and another got DENY (LLM non-determinism), the DENY
+    # process correctly no-ops here — we don't want this one to retry and
+    # smuggle in an ALLOW.
     if judge_allow:
         with _cache_lock():
             cache = _load_cache()
-            cache[command] = {"allow": True, "reason": reason}
-            _save_cache(cache)
+            if command not in cache:
+                cache[command] = {"allow": True, "reason": reason}
+                _save_cache(cache)
     allow = judge_allow and not advisory
     return JudgeDecision(allow=allow, reason=reason)
 

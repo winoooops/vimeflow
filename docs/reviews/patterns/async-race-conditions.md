@@ -154,3 +154,12 @@ prevent showing previous data.
 - **Finding:** `ClaudeCliSession.query()` set `self._started = True` before the subprocess's exit code was checked (and kept it True after `asyncio.CancelledError`). If the process spawned but exited non-zero — or was killed by an outer `asyncio.wait_for` — the flag stuck, and the next `query()` passed `--resume` against a session the CLI never persisted. Wasted one round-trip before self-healing via the non-zero-exit branch.
 - **Fix:** Set `_started = True` only after a successful `create_subprocess_exec`. Roll back to `False` in both the non-zero-exit branch and the `finally` block when `proc.returncode is None` (cancel / kill). Now multi-turn retries always pick `--session-id` for the next attempt when the previous session didn't get persisted.
 - **Commits:** `0f76df4` (move after spawn), `97454bb` (reset in finally)
+
+### 16. Subprocess stdout read with no deadline hangs forever on stall
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (round 10)
+- **Severity:** HIGH
+- **File:** `harness/cli_client.py`
+- **Finding:** `ClaudeCliSession.query()` read stdout with `async for raw_line in proc.stdout:` and no timeout. If `claude -p` stalls — network failure, auth expiry mid-stream, CLI internal deadlock — the harness blocks indefinitely. The SDK backend got implicit HTTP-level timeouts from httpx; the subprocess refactor lost them. The existing regression tests used `asyncio.wait_for(run(), timeout=10)` as a "safety net so the suite doesn't hang forever" — which was the clue that production code had no such net.
+- **Fix:** Added `timeout: float = 600.0` to `ClaudeCliSession.__init__` (stored as `self.timeout`) and a per-call override on `query(prompt, *, timeout=None)`. Wrap the stdout read + wait in `asyncio.timeout(deadline)` (Python 3.11+ context manager form). On timeout the existing `finally` block kills the process and resets `_started = False` so the orchestrator can retry with a fresh `--session-id`. Regression test stubs `_build_args` to a Python one-liner that prints one JSON line then `time.sleep(30)`, with a 2 s session timeout and a 10 s outer `asyncio.wait_for` safety net.
+- **Commit:** (round 10)

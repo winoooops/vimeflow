@@ -29,10 +29,11 @@ ingestion protocol.
 | [Terminal Input Handling](patterns/terminal-input-handling.md) | terminal       | 3        | 1    | 2026-04-09   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)   | code-quality   | 10       | 2    | 2026-04-14   |
 | [Accessibility](patterns/accessibility.md)                     | a11y           | 11       | 1    | 2026-04-10   |
-| [Async Race Conditions](patterns/async-race-conditions.md)     | react-patterns | 15       | 3    | 2026-04-20   |
+| [Async Race Conditions](patterns/async-race-conditions.md)     | react-patterns | 16       | 4    | 2026-04-20   |
 | [Command Injection](patterns/command-injection.md)             | security       | 5        | 1    | 2026-04-20   |
-| [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)       | security       | 12       | 0    | 2026-04-20   |
+| [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)       | security       | 13       | 1    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)             | security       | 2        | 0    | 2026-04-20   |
+| [Preflight Checks](patterns/preflight-checks.md)               | error-handling | 1        | 0    | 2026-04-20   |
 | [CSP Configuration](patterns/csp-configuration.md)             | security       | 2        | 1    | 2026-04-09   |
 | [PTY Session Management](patterns/pty-session-management.md)   | backend        | 5        | 1    | 2026-04-09   |
 | [Git Operations](patterns/git-operations.md)                   | correctness    | 10       | 1    | 2026-04-12   |
