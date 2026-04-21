@@ -57,10 +57,58 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
 
 #### Changed
 
+- Harness default backend swapped from `claude_code_sdk` to `claude -p`
+  subprocess per role. Inherits the user's `~/.claude` CLI auth; the
+  default path no longer requires `ANTHROPIC_API_KEY` or
+  `ANTHROPIC_BASE_URL`. SDK is preserved as an opt-in fallback via
+  `--client sdk` (still requires the API key when used).
+  ([#73](https://github.com/winoooops/vimeflow/pull/73), `93a5338`) —
+  patterns: [Policy Judge Hygiene](docs/reviews/patterns/policy-judge-hygiene.md),
+  [Fail-Closed Hooks](docs/reviews/patterns/fail-closed-hooks.md),
+  [Async Race Conditions](docs/reviews/patterns/async-race-conditions.md),
+  [Command Injection](docs/reviews/patterns/command-injection.md),
+  [Preflight Checks](docs/reviews/patterns/preflight-checks.md)
+  - New modules: `cli_client.py` (stream-JSON parser + `ClaudeCliSession`
+    with session resume / stderr drain / monotonic-budget timeout),
+    `hook_runner.py` (CLI → Python hook bridge, fail-closed on both
+    import-time and runtime errors), `policy_judge.py` (deny-by-default
+    with `HARNESS_POLICY_JUDGE=ask` / `=explain` opt-in and a
+    gitignored `.policy_allow.local` escape hatch), `sdk_client.py`
+    (lazy-imported fallback — only module that touches `claude_code_sdk`).
+  - Shared helpers in `client.py`: `build_base_settings`,
+    `write_settings_file`, `create_client` (CLI factory mirrored by
+    `sdk_client.create_client`).
+  - Removed the `CLAUDE_CONFIG_DIR` override that was silently hiding
+    the user's CLI auth. Swapped `--allowed-tools` (permissive) for
+    `--tools` (exclusive) so the CLI tool surface matches the SDK's.
+  - 12 rounds of cloud-review hardening: shell-quoted hook command
+    paths (`shlex.quote`), concurrent stderr drain against pipe-buffer
+    deadlock, atomic cache writes with `fcntl.flock`, user-private
+    cache at `~/.claude/harness_policy_cache.json`, async
+    `_query_claude` so SDK-path hooks don't stall the event loop,
+    Python 3.9+ compatible `asyncio.wait_for` timeouts,
+    `ResultEvent(is_error=True)` escalation to `"error"` status,
+    first-writer-wins cache semantics.
+  - Spec: `docs/superpowers/plans/2026-04-20-harness-claude-cli-subprocess.md`.
 - README (English + zh-CN) refreshed with Phase 3/4 scope; progress
   tracker rebaselined.
   ([#67](https://github.com/winoooops/vimeflow/pull/67), `f590c18`) —
   patterns: [Documentation Accuracy](docs/reviews/patterns/documentation-accuracy.md)
+
+#### Security
+
+- Harness policy judge is now deny-by-default rather than LLM
+  rubber-stamp. Unknown bash commands are blocked unless listed in
+  `harness/.policy_allow.local` (gitignored, user-managed) or the
+  operator sets `HARNESS_POLICY_JUDGE=ask` (LLM decides) /
+  `=explain` (LLM advises but still denies). `hook_runner.py` fails
+  CLOSED on every error path — import-time failures, hook exceptions,
+  and a 45 s outer deadline so Claude CLI's own hook timeout can't
+  SIGKILL us into a silent allow. Policy judge subprocess runs with
+  `--tools ""` so it can't invoke tools or trigger user-level hooks.
+  ([#73](https://github.com/winoooops/vimeflow/pull/73), `93a5338`) —
+  patterns: [Policy Judge Hygiene](docs/reviews/patterns/policy-judge-hygiene.md),
+  [Fail-Closed Hooks](docs/reviews/patterns/fail-closed-hooks.md)
 
 #### Fixed
 

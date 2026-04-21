@@ -198,7 +198,7 @@ src-tauri/
 
 agents/                     # 10 specialized AI agent definitions
 rules/                      # Hierarchical dev standards (common + TS + Rust)
-harness/                    # Autonomous dev loop (Claude Code SDK, Python)
+harness/                    # Autonomous dev loop (Python; spawns `claude -p` per role, SDK fallback)
 ```
 
 ## The AI-Native Development Process
@@ -210,7 +210,7 @@ Traditional projects have humans write code and AI assist. Vimeflow inverts this
 3. **Specialized agents review the work** — 10 AI agents handle planning, TDD, code review, security, and documentation
 4. **Rules govern everything** — a hierarchical rule system (common + language-specific) ensures consistency without human intervention per commit
 
-The harness (`harness/`) is a Python-based loop built on the Claude Code SDK. See [`harness/CLAUDE.md`](harness/CLAUDE.md) for details.
+The harness (`harness/`) is a Python loop that spawns `claude -p` per role — it inherits the user's Claude Code CLI auth (no `ANTHROPIC_API_KEY` required on the default path). The SDK is preserved as an opt-in fallback (`--client sdk`). See [`docs/harness/CLAUDE.md`](docs/harness/CLAUDE.md) for the bilingual overview and [`harness/CLAUDE.md`](harness/CLAUDE.md) for the full reference.
 
 ## Roadmap
 
