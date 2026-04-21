@@ -20,6 +20,7 @@ import os
 import platform
 import shutil
 import stat
+import sys
 from pathlib import Path
 
 from agent import run_autonomous_agent, run_cloud_review_loop
@@ -64,7 +65,7 @@ def parse_args() -> argparse.Namespace:
         "--clean",
         action="store_true",
         default=False,
-        help="Wipe runtime files (feature_list.json, claude-progress.txt, app_spec.md) before starting. Forces the initializer agent to run fresh.",
+        help="Wipe runtime files (feature_list.json, claude-progress.txt) before starting. Forces the initializer agent to run fresh. Preserves app_spec.md — delete that manually if you really want to reset the spec.",
     )
 
     parser.add_argument(
@@ -92,7 +93,37 @@ def parse_args() -> argparse.Namespace:
         "--skip-relay",
         action="store_true",
         default=False,
-        help="Skip Phase 3 cloud review entirely",
+        help=(
+            "Skip Phase 3 cloud review entirely. Equivalent to "
+            "`--phase-3 skip`; kept for backwards compatibility."
+        ),
+    )
+
+    parser.add_argument(
+        "--phase-3",
+        choices=["auto", "confirm", "skip"],
+        default="confirm",
+        help=(
+            "How to handle Phase 3 (push branch, open PR, relay cloud "
+            "Codex review): 'auto' runs it without asking; 'confirm' "
+            "(default) prompts on a tty and auto-skips on a non-tty so "
+            "backgrounded runs never push unattended; 'skip' disables "
+            "Phase 3 entirely. Passing --skip-relay is equivalent to "
+            "--phase-3 skip."
+        ),
+    )
+
+    parser.add_argument(
+        "--ignore-stale-list",
+        action="store_true",
+        default=False,
+        help=(
+            "Proceed even if .feature_list_stamp.json is missing or does "
+            "not match the current app_spec.md hash. Default behavior is "
+            "to refuse to run Phase 2 on a stale feature_list.json so the "
+            "harness never silently resumes a list that doesn't match the "
+            "spec it was generated from."
+        ),
     )
 
     parser.add_argument(
@@ -145,12 +176,74 @@ def resolve_sandbox(no_sandbox_flag: bool) -> bool:
 RUNTIME_FILES = [
     "feature_list.json",
     "claude-progress.txt",
-    "app_spec.md",
+    ".feature_list_stamp.json",
 ]
 
 
+def should_run_phase_3(
+    mode: str,
+    legacy_skip_relay: bool = False,
+    *,
+    stdin_isatty: bool | None = None,
+    prompt_fn=input,
+) -> bool:
+    """Decide whether to run the Phase 3 cloud review relay.
+
+    ``mode`` is one of ``"auto"``, ``"confirm"``, ``"skip"`` from the
+    ``--phase-3`` argument. ``legacy_skip_relay`` is ``True`` when the
+    caller passed the older ``--skip-relay`` flag; it unconditionally
+    disables Phase 3 for back-compat.
+
+    ``stdin_isatty`` and ``prompt_fn`` are injected for testing; in
+    production they default to the real stdin state and :func:`input`.
+    A ``confirm`` run on a non-tty (e.g. Claude's background task
+    runner) auto-skips so backgrounded harness runs never push
+    unattended. A ``confirm`` run on a tty prompts the user.
+    """
+    if legacy_skip_relay or mode == "skip":
+        return False
+    if mode == "auto":
+        return True
+    # mode == "confirm"
+    if stdin_isatty is None:
+        stdin_isatty = sys.stdin.isatty()
+    if not stdin_isatty:
+        print(
+            "  Phase 3 is gated behind user confirmation (--phase-3 confirm, "
+            "the default), and this run is not attached to a tty. "
+            "Auto-skipping the cloud review relay. "
+            "Pass --phase-3 auto to opt in to non-interactive Phase 3, "
+            "or run /harness-plugin:loop's Phase 3 step manually after "
+            "reviewing the Phase 2 output."
+        )
+        return False
+    print()
+    print("  " + "=" * 60)
+    print("  PHASE 3 CONFIRMATION")
+    print("  " + "=" * 60)
+    print("  Phase 2 is complete. Phase 3 will:")
+    print("    - git push the current branch to origin")
+    print("    - gh pr create (or find an existing PR)")
+    print("    - poll for the cloud Codex review and spawn a fix loop")
+    print()
+    answer = prompt_fn("  Run Phase 3 now? [y/N]: ").strip().lower()
+    if answer in ("y", "yes"):
+        return True
+    print("  Skipping Phase 3. You can run it later manually or rerun "
+          "the harness with --phase-3 auto.")
+    return False
+
+
 def clean_runtime_files(project_dir: Path) -> None:
-    """Remove harness runtime files to force a fresh initializer run."""
+    """Remove harness runtime files to force a fresh initializer run.
+
+    Preserves ``app_spec.md`` — that is the user's authored product
+    specification, not harness runtime state. Wiping it here used to
+    force the initializer to fall back to ``prompts/app_spec.md`` (the
+    default VIBM template), silently replacing the user's real spec.
+    If a user genuinely wants to wipe their spec they can delete it
+    manually; ``--clean`` only touches machine-generated artifacts.
+    """
     print("  Cleaning runtime files...")
     for name in RUNTIME_FILES:
         path = project_dir / name
@@ -209,7 +302,7 @@ def main() -> None:
     sandbox = resolve_sandbox(no_sandbox)
 
     try:
-        asyncio.run(
+        phase2_ok = asyncio.run(
             run_autonomous_agent(
                 project_dir=args.project_dir,
                 model=args.model,
@@ -217,11 +310,17 @@ def main() -> None:
                 sandbox=sandbox,
                 skip_review=args.skip_review,
                 client_kind=args.client,
+                ignore_stale_list=args.ignore_stale_list,
             )
         )
 
-        # Phase 3: Cloud review (if not skipped)
-        if not args.skip_relay:
+        # Phase 3 must NOT run if Phase 2 aborted early (stale-stamp guard,
+        # initializer failure) — the branch may contain no new work or an
+        # incomplete feature list, and --phase-3 auto would otherwise push
+        # that state and open a PR.
+        if not phase2_ok:
+            print("  Phase 2 did not complete normally — skipping Phase 3.")
+        elif should_run_phase_3(args.phase_3, args.skip_relay):
             asyncio.run(
                 run_cloud_review_loop(
                     project_dir=args.project_dir,

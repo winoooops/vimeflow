@@ -72,9 +72,9 @@ After creating `feature_list.json`, start implementing Phase 1 features. Follow 
 
 Before context fills up:
 
-1. Commit all work with descriptive messages
-2. Create `claude-progress.txt` summarizing what you accomplished
-3. Ensure feature_list.json is complete and saved
-4. Leave the environment in a clean, working state
+1. Commit all work with descriptive messages (git log IS the progress record — no separate progress files)
+2. Ensure `feature_list.json` is complete and saved
+3. Leave the environment in a clean, working state
+4. Do NOT create `claude-progress.txt` or other scratch/summary files in the repo root
 
-The next agent will continue with a fresh context window.
+The next agent will continue with a fresh context window and will read the git log to understand what has already been done.

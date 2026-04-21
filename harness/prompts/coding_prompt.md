@@ -10,10 +10,11 @@ ls -la
 cat CLAUDE.md
 cat app_spec.md
 cat feature_list.json | head -80
-cat claude-progress.txt
 git log --oneline -20
 cat feature_list.json | grep '"passes": false' | wc -l
 ```
+
+The git log is your progress record — read the last 10-20 commits to understand what has already been implemented and which features they covered. Do not look for a `claude-progress.txt` file; progress tracking lives entirely in git history and `feature_list.json` now.
 
 ### STEP 2: START DEV ENVIRONMENT
 
@@ -37,6 +38,26 @@ Before implementing anything new, verify existing work:
 - Run `npx eslint .` — No lint errors
 
 **If ANY check fails:** fix it BEFORE new work. Mark the broken feature as `"passes": false` in feature_list.json.
+
+### STEP 3.5: IF THIS IS A RETRY ITERATION
+
+If this is not your first iteration on the current feature (the git log shows your earlier commits for this feature), the previous iteration's tests or lint failed. Specifically:
+
+1. **Find the failure first.** Re-run just the failing file or test, not the whole suite:
+
+   ```bash
+   npx vitest run <path-to-failing-test.test.ts>
+   ```
+
+   Read the vitest output carefully. Note the exact line number, the `Expected` value, and the `Received` value.
+
+2. **Compare assertion against source.** Open the test AND the implementation together. Ask yourself:
+   - Does the assertion match what the code actually does?
+   - Does the test call the function / render the component with the exact args the assertion implies?
+   - If the test is new (added this session), is it correct, or is the test itself the bug?
+3. **Iteration ≥ 3 on the same failure:** STOP assuming the implementation is wrong. Read the test file line-by-line. If the test is passing a stale prop name, missing a required prop, or asserting behavior that contradicts the spec, **fix the test** rather than contort the implementation to match a broken test. Broken tests from a prior iteration are a real failure mode, not a theoretical one.
+
+If review findings from a reviewer are attached to this iteration (above), treat each finding as a specific, actionable bug to fix — not as suggestions. Cite the finding ID in the commit message.
 
 ### STEP 4: CHOOSE ONE FEATURE
 
@@ -75,36 +96,29 @@ After verification, change ONLY the `passes` field:
 
 ### STEP 7: COMMIT
 
-```bash
-git add .
-git commit -m "feat: implement [feature name]
+Make ONE commit per feature. Stage only the files your feature actually touches (plus the `feature_list.json` update) — do not `git add .` blindly.
 
-- [specific changes]
-- Tests: cargo test + vitest passing
-- feature_list.json: marked #X as passing"
+```bash
+git add src/... src-tauri/src/... tests/... feature_list.json
+git commit -m "feat: implement <feature name>
+
+- <specific changes>
+- Tests: <npx vitest run / cargo test> passing
+- feature_list.json: marked #<N> as passing"
 ```
 
-### STEP 8: UPDATE PROGRESS
+**Do NOT create a separate progress-update commit.** The `feature_list.json` change and a clean commit message is the progress record; git log IS the timeline. Avoid separate `docs: update progress...` commits — they add churn the reviewer then has to squash away.
 
-Update `claude-progress.txt` with:
+**Do NOT create extra files in the repo root.** No `SESSION_*_SUMMARY.md`, `NEXT_COMMIT.txt`, `BUG_FIX_VERIFICATION.md`, `COMPLETION_SUMMARY.md`, `COVERAGE.md`, `VISUAL_VERIFICATION.md`, `claude-progress.txt`, or any other scratch/summary files. They pollute the working tree.
 
-- What you accomplished
-- Which feature(s) completed
-- Issues found or fixed
-- What to work on next
-- Current status (e.g., "12/50 features passing")
-
-**Do NOT create extra files in the repo root.** No `SESSION_*_SUMMARY.md`, `NEXT_COMMIT.txt`, `BUG_FIX_VERIFICATION.md`, `COMPLETION_SUMMARY.md`, `COVERAGE.md`, `VISUAL_VERIFICATION.md`, or any other scratch/summary files. All progress goes in `claude-progress.txt` only.
-
-### STEP 9: END CLEANLY
+### STEP 8: END CLEANLY
 
 Before context fills up:
 
 1. Commit all working code
-2. Update claude-progress.txt
-3. Update feature_list.json
-4. Ensure `cargo check` and `npx tsc --noEmit` pass
-5. No uncommitted changes
+2. Update `feature_list.json`
+3. Ensure `cargo check`, `npx tsc --noEmit`, and `npx vitest run` all pass
+4. No uncommitted changes
 
 ---
 
@@ -119,6 +133,7 @@ Before context fills up:
 - No `console.log` — use structured logging
 - No `unwrap()` in Rust — use `?` or `expect("reason")`
 - Immutable patterns (spread in TS, default `let` in Rust)
+- **No phantom `Feature #N` references.** If a TODO or comment cites a feature number, that number MUST exist in `feature_list.json` AND the cited feature's title MUST match what your TODO is referring to. Do not invent numbers based on a mental model of the project.
 
 ---
 

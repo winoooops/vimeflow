@@ -358,3 +358,37 @@ def test_run_agent_session_returns_continue_on_clean_result(tmp_path):
     status, text = asyncio.run(run_agent_session(session, "go", tmp_path))
     assert status == "continue"
     assert "ok" in text
+
+
+def test_run_agent_session_error_label_includes_role(tmp_path, capsys):
+    """On is_error=True, the [role result: error] label must name the
+    actual role ('coder', 'initializer', ...) — not a generic default.
+    Regression guard for the retrospective §3 finding where users saw
+    'Initializer failed' during a Coder failure."""
+    import asyncio
+    from agent import run_agent_session
+
+    session = _FakeCliSession([
+        ResultEvent(session_id="z", is_error=True, subtype="error_max_turns"),
+    ])
+    status, _ = asyncio.run(
+        run_agent_session(session, "go", tmp_path, role="coder")
+    )
+    assert status == "error"
+    captured = capsys.readouterr()
+    assert "[coder result: error]" in captured.out
+
+
+def test_run_agent_session_role_defaults_to_agent(tmp_path, capsys):
+    """Back-compat: callers that don't pass role (tests, legacy code) see
+    the generic 'agent' label rather than a crash."""
+    import asyncio
+    from agent import run_agent_session
+
+    session = _FakeCliSession([
+        ResultEvent(session_id="w", is_error=True, subtype="error_max_turns"),
+    ])
+    status, _ = asyncio.run(run_agent_session(session, "go", tmp_path))
+    assert status == "error"
+    captured = capsys.readouterr()
+    assert "[agent result: error]" in captured.out

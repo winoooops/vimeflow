@@ -28,6 +28,7 @@ from prompts import (
     copy_spec_to_project,
 )
 from review import run_local_review
+from spec_stamp import check_stamp_fresh, write_stamp
 
 AUTO_CONTINUE_DELAY_SECONDS = 3
 
@@ -112,12 +113,18 @@ async def run_agent_session(
     client_or_session,
     message: str,
     project_dir: Path,
+    role: str = "agent",
 ) -> tuple[str, str]:
     """
     Run a single agent session.
 
     Returns (status, response_text) where status is "continue" or "error".
     Accepts either a ClaudeSDKClient (legacy) or a ClaudeCliSession (default).
+
+    ``role`` identifies which harness role is running this session
+    (``initializer`` / ``coder`` / ``reviewer`` / ``coordinator``) and is
+    used only in error-path log output so the user knows which phase
+    hit trouble. Defaults to ``"agent"`` for back-compat.
     """
     print("  Sending prompt to Claude Code...\n")
     try:
@@ -151,7 +158,7 @@ async def run_agent_session(
             elif isinstance(event, ResultEvent):
                 if event.is_error:
                     result_errored = True
-                    print(f"\n  [result: error]", flush=True)
+                    print(f"\n  [{role} result: error]", flush=True)
 
         print("\n" + "-" * 70 + "\n")
         # A clean subprocess exit (returncode 0) can still carry
@@ -166,7 +173,7 @@ async def run_agent_session(
         return "continue", response_text
 
     except Exception as e:
-        print(f"  Error during session: {e}")
+        print(f"  Error during {role} session: {e}")
         return "error", str(e)
 
 
@@ -261,7 +268,7 @@ async def run_feature_iteration(
         prompt = get_coding_prompt()
 
     async with session:
-        status, response = await run_agent_session(session, prompt, project_dir)
+        status, response = await run_agent_session(session, prompt, project_dir, role="coder")
 
     if status == "error":
         return "error", None
@@ -290,12 +297,26 @@ async def run_autonomous_agent(
     sandbox: bool = True,
     skip_review: bool = False,
     client_kind: str = "cli",
-) -> None:
+    ignore_stale_list: bool = False,
+) -> bool:
     """
     Run the autonomous agent loop.
 
     Phase 1: Initializer (if no feature_list.json)
     Phase 2: Feature loop with per-feature Coder->Reviewer iterations
+
+    When ``feature_list.json`` already exists, ``.feature_list_stamp.json``
+    is consulted to verify the list was generated against the current
+    ``app_spec.md``. A missing or mismatched stamp aborts the run with a
+    clear message unless ``ignore_stale_list`` is set.
+
+    Returns ``True`` when Phase 2 completed normally (feature loop exited
+    either because all features passed or because every remaining feature
+    exhausted its iteration budget). Returns ``False`` on an early abort
+    (Initializer failure, stale-stamp guard). The caller uses this to
+    decide whether Phase 3 should run — Phase 3 must not push+PR after
+    an abort, even in ``--phase-3 auto`` mode, because the branch may
+    contain no new work or an incomplete feature list.
     """
     print("\n" + "=" * 70)
     print("  VIBM AUTONOMOUS DEVELOPMENT HARNESS")
@@ -309,6 +330,7 @@ async def run_autonomous_agent(
     project_dir.mkdir(parents=True, exist_ok=True)
 
     tests_file = project_dir / "feature_list.json"
+    spec_path = project_dir / "app_spec.md"
     is_first_run = not tests_file.exists()
 
     # --- Phase 1: Initializer ---
@@ -326,14 +348,44 @@ async def run_autonomous_agent(
         prompt = get_initializer_prompt()
 
         async with session:
-            status, response = await run_agent_session(session, prompt, project_dir)
+            status, response = await run_agent_session(session, prompt, project_dir, role="initializer")
 
         if status == "error":
             print("  Initializer failed. Check logs and retry.")
-            return
+            return False
+
+        # Record what spec produced this feature_list.json so a later run
+        # with a changed spec can refuse rather than silently resume.
+        if tests_file.exists():
+            write_stamp(project_dir, spec_path)
 
         print_progress_summary(project_dir)
         await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
+    else:
+        # Resumption: verify the existing feature_list.json was generated
+        # from the current app_spec.md. The stale-list trap (§1 of the
+        # 2026-04-21 retrospective) silently aborted runs when a leftover
+        # feature_list.json marked every feature passes=true.
+        is_fresh, reason = check_stamp_fresh(project_dir, spec_path)
+        if not is_fresh and not ignore_stale_list:
+            print("  ERROR: feature_list.json may be stale.")
+            print(f"  {reason}")
+            print()
+            print("  Pass --ignore-stale-list to run anyway, or:")
+            print("    rm feature_list.json .feature_list_stamp.json")
+            print("    python3 autonomous_agent_demo.py …")
+            print("  to force a fresh Initializer run.")
+            return False
+        if not is_fresh and ignore_stale_list:
+            # Split on the first sentence boundary (". "), NOT on the
+            # first "." character — STAMP_FILENAME starts with a dot
+            # and the reason strings embed app_spec.md, so naive
+            # `reason.split(".")[0]` returns "" / "no " / "app_spec"
+            # for the corrupt / missing / mismatch cases respectively.
+            summary = reason.split(". ", 1)[0]
+            print(f"  WARNING: stale feature_list.json detected ({summary}).")
+            print("  Proceeding anyway because --ignore-stale-list was passed.")
+            print()
 
     # --- Phase 2: Feature loop ---
     print("\n  Mode: FEATURE LOOP (Coder + Reviewer per feature)")
@@ -382,7 +434,7 @@ async def run_autonomous_agent(
                 prompt = get_coding_prompt()
 
                 async with session:
-                    status, response = await run_agent_session(session, prompt, project_dir)
+                    status, response = await run_agent_session(session, prompt, project_dir, role="coder")
 
                 print_progress_summary(project_dir)
 
@@ -443,6 +495,8 @@ async def run_autonomous_agent(
     print("=" * 70)
     print(f"\n  Project: {project_dir.resolve()}")
     print_progress_summary(project_dir)
+
+    return True
 
 
 async def run_cloud_review_loop(
