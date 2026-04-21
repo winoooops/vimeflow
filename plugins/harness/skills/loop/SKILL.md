@@ -163,7 +163,7 @@ After Phase 2 completes, **pause and show the user**:
 - `git log --oneline <base>..HEAD` — the commits that landed.
 - Any uncommitted state from `git status --short`.
 
-Ask: _"Phase 2 complete — run Phase 3 (push branch + open PR + cloud Codex review) now?"_ If yes, relaunch the harness without `--skip-relay`, OR drive Phase 3 manually with `git push -u origin <branch>` + `gh pr create`.
+Ask: _"Phase 2 complete — run Phase 3 (push branch + open PR + cloud Codex review) now?"_ If yes, relaunch the harness with **`--phase-3 auto`** (NOT just "drop `--skip-relay`" — because `--phase-3` defaults to `confirm` and a `run_in_background: true` relaunch has no tty, so confirm-mode auto-skips Phase 3 and the user's "yes" is silently ignored). Alternative: drive Phase 3 manually with `git push -u origin <branch>` + `gh pr create`.
 
 **Never push without confirmation.** A push is user-visible, a PR open is user-visible, and both are cheap to regret.
 

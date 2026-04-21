@@ -120,18 +120,20 @@ Default model: `claude-sonnet-4-5-20250929`. Project dir defaults to repo root.
 
 ### CLI Flags
 
-| Flag                | Default                    | Description                                                                                        |
-| ------------------- | -------------------------- | -------------------------------------------------------------------------------------------------- |
-| `--max-iterations`  | unlimited                  | Per-feature iteration budget (Coder → Review → Fix cycles)                                         |
-| `--skip-review`     | false                      | Skip local Codex review in Phase 2 feature loop                                                    |
-| `--skip-relay`      | false                      | Skip Phase 3 cloud review entirely                                                                 |
-| `--review-timeout`  | 300 (5 min)                | Max seconds to wait for cloud Codex review comment                                                 |
-| `--max-relay-loops` | 2                          | Max cloud review-fix cycles in Phase 3                                                             |
-| `--model`           | claude-sonnet-4-5-20250929 | Claude model for Coder sessions                                                                    |
-| `--project-dir`     | repo root                  | Target project directory                                                                           |
-| `--no-sandbox`      | false                      | Disable OS-level sandbox (WSL2 only)                                                               |
-| `--clean`           | false                      | Wipe runtime files before starting                                                                 |
-| `--client`          | `cli`                      | Backend: `cli` (claude -p subprocess, default) or `sdk` (opt-in fallback, needs ANTHROPIC_API_KEY) |
+| Flag                  | Default                    | Description                                                                                         |
+| --------------------- | -------------------------- | --------------------------------------------------------------------------------------------------- |
+| `--max-iterations`    | unlimited                  | Per-feature iteration budget (Coder → Review → Fix cycles)                                          |
+| `--skip-review`       | false                      | Skip local Codex review in Phase 2 feature loop                                                     |
+| `--skip-relay`        | false                      | Skip Phase 3 cloud review entirely (alias for `--phase-3 skip`)                                     |
+| `--phase-3`           | `confirm`                  | How to handle Phase 3: `auto` (always run), `confirm` (prompt on tty, auto-skip on non-tty), `skip` |
+| `--ignore-stale-list` | false                      | Proceed even when `.feature_list_stamp.json` is missing or doesn't match `app_spec.md`'s hash       |
+| `--review-timeout`    | 300 (5 min)                | Max seconds to wait for cloud Codex review comment                                                  |
+| `--max-relay-loops`   | 2                          | Max cloud review-fix cycles in Phase 3                                                              |
+| `--model`             | claude-sonnet-4-5-20250929 | Claude model for Coder sessions                                                                     |
+| `--project-dir`       | repo root                  | Target project directory                                                                            |
+| `--no-sandbox`        | false                      | Disable OS-level sandbox (WSL2 only)                                                                |
+| `--clean`             | false                      | Wipe runtime files before starting                                                                  |
+| `--client`            | `cli`                      | Backend: `cli` (claude -p subprocess, default) or `sdk` (opt-in fallback, needs ANTHROPIC_API_KEY)  |
 
 **Note:** `--max-iterations` is a **per-feature** budget, not a global count. With `--max-iterations 5` and 10 features, each feature gets up to 5 rounds of (code → review → fix).
 

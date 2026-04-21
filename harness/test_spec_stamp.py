@@ -112,3 +112,41 @@ def test_check_fresh_missing_vs_corrupt_messages_differ(tmp_path: Path) -> None:
     assert missing_reason != corrupt_reason
     assert "no " in missing_reason.lower()
     assert "could not be parsed" in corrupt_reason
+
+
+def test_check_fresh_handles_unreadable_spec(tmp_path: Path, monkeypatch) -> None:
+    """If app_spec.md exists but is unreadable (permissions, I/O error),
+    check_stamp_fresh must return a readable (False, reason) pair
+    instead of letting the raw OSError propagate out of the orchestrator.
+    """
+    spec = tmp_path / "app_spec.md"
+    spec.write_text("content\n")
+    spec_stamp.write_stamp(tmp_path, spec)
+
+    def _raise_os_error(_path: Path) -> str:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(spec_stamp, "hash_spec", _raise_os_error)
+
+    is_fresh, reason = spec_stamp.check_stamp_fresh(tmp_path, spec)
+    assert is_fresh is False
+    assert "could not read" in reason
+    assert "app_spec.md" in reason
+
+
+def test_write_stamp_swallows_oserror(tmp_path: Path, monkeypatch) -> None:
+    """If the stamp cannot be written (disk full, permissions), we must
+    not crash the orchestrator — missing stamp is recoverable via
+    --ignore-stale-list, but an uncaught exception here would abort
+    Phase 2 altogether.
+    """
+    spec = tmp_path / "app_spec.md"
+    spec.write_text("content\n")
+
+    def _raise_os_error(*_args, **_kwargs) -> int:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Path, "write_text", _raise_os_error)
+
+    # Must not raise.
+    spec_stamp.write_stamp(tmp_path, spec)

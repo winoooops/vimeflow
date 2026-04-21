@@ -44,14 +44,22 @@ def write_stamp(project_dir: Path, spec_path: Path) -> None:
     if not spec_path.exists():
         return
 
-    stamp = {
-        "app_spec_hash": hash_spec(spec_path),
-        "app_spec_path": spec_path.name,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    (project_dir / STAMP_FILENAME).write_text(
-        json.dumps(stamp, indent=2) + "\n"
-    )
+    try:
+        stamp = {
+            "app_spec_hash": hash_spec(spec_path),
+            "app_spec_path": spec_path.name,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        (project_dir / STAMP_FILENAME).write_text(
+            json.dumps(stamp, indent=2) + "\n"
+        )
+    except OSError:
+        # Best-effort — a missing stamp is recoverable on the next run
+        # via ``--ignore-stale-list``. Raising here would leave the
+        # Initializer's feature_list.json in place without a stamp,
+        # but with an uncaught exception crashing the orchestrator,
+        # which is the worse outcome.
+        pass
 
 
 def read_stamp(project_dir: Path) -> dict | None:
@@ -103,7 +111,16 @@ def check_stamp_fresh(project_dir: Path, spec_path: Path) -> tuple[bool, str]:
             "Cannot verify the feature list against a missing spec."
         )
 
-    current_hash = hash_spec(spec_path)
+    try:
+        current_hash = hash_spec(spec_path)
+    except OSError as exc:
+        # File exists but isn't readable (permissions, I/O error, etc.).
+        # Surface the specific problem instead of letting the raw
+        # exception propagate out of run_autonomous_agent as a fatal.
+        return False, (
+            f"could not read {spec_path.name} to verify the stamp: {exc}. "
+            "Fix file permissions or pass --ignore-stale-list to proceed."
+        )
     stamped_hash = stamp.get("app_spec_hash", "")
     if current_hash != stamped_hash:
         return False, (
