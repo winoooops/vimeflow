@@ -8,11 +8,13 @@ tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion, Skill, Agent
 
 Launch the VIBM autonomous development harness. Gathers feature requirements, brainstorms the spec, generates `app_spec.md`, and starts the agent loop.
 
-## Step 0: Worktree & Environment (MANDATORY — do this FIRST)
+## Step 0: Branch & Environment (MANDATORY — do this FIRST)
 
-The harness creates commits and pushes code. It **MUST** run inside a git worktree, never on `main`.
+The harness creates commits on behalf of the user. It must never commit to `main`.
 
-### 0a. Create or enter a worktree
+### 0a. Put yourself on a feature branch in the primary checkout
+
+Per `rules/common/worktrees.md` §Principles, the **main agent works on a feature branch in the primary checkout** and **does not** enter a worktree. The user runs `npm run tauri:dev` and watches the diff viewer from the primary checkout — edits inside `.claude/worktrees/` are invisible to both.
 
 Check the current branch:
 
@@ -20,40 +22,32 @@ Check the current branch:
 git branch --show-current
 ```
 
-If it says `main`, you MUST create a worktree before proceeding. Use the `EnterWorktree` tool:
+- If it says `main`, create and check out a feature branch **in the primary checkout**:
+  ```bash
+  git checkout -b <branch-name>
+  ```
+- If you're already on a feature branch, stay put.
 
-```
-EnterWorktree(name="harness-<feature-name>")
-```
+**Do NOT call `EnterWorktree`.** The `EnterWorktree` instruction that appeared in earlier revisions of this skill is obsolete — it conflicts with `rules/common/worktrees.md`. Worktrees are only for the harness's per-feature Coder subprocesses (future architecture) and for dispatched parallel subagents, not for the main agent driving this skill.
 
-Or create one manually:
+The harness Python orchestrator itself runs in your primary checkout alongside you, commits land on your current branch, and the `block-main-commit.sh` PreToolUse hook enforces the "no commits on main" guard regardless.
 
-```bash
-git worktree add .claude/worktrees/harness-<feature-name> -b feat/<feature-name>
-cd .claude/worktrees/harness-<feature-name>
-npm install
-```
+### 0b. Environment sanity
 
-**DO NOT skip this step.** If you are already in a non-main branch/worktree, you may proceed.
+The default `cli` backend inherits your existing `claude` CLI auth, so **no `ANTHROPIC_API_KEY` is needed** for normal runs. Only verify:
 
-### 0b. Source `.env` from the source repo
+1. **Codex CLI authenticated** (required for Phase 2 local review and Phase 3 cloud review):
+   ```bash
+   test -f ~/.codex/auth.json && echo "codex authed" || echo "run: codex login"
+   ```
+2. **`gh` CLI authenticated** (required for Phase 3 push + PR):
+   ```bash
+   gh auth status 2>&1 | head -2
+   ```
 
-Git worktrees do NOT include untracked files like `.env`. The API keys live in the **original project root**, not in the worktree. Find the source repo root and source from there:
+If either is missing and the user wants the corresponding phase, stop and tell them what to run.
 
-```bash
-SOURCE_ROOT=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')
-set -a && source "$SOURCE_ROOT/.env" && set +a
-```
-
-Verify the key is set:
-
-```bash
-echo "ANTHROPIC_API_KEY is ${ANTHROPIC_API_KEY:+set}"
-```
-
-If it prints "set", proceed. If not, STOP — the harness will fail without API keys.
-
-**Why this matters:** Without this step, the harness dry-run hangs, the pre-bash hook blocks on missing `ANTHROPIC_API_KEY`, and agents waste iterations regenerating `app_spec.md` from scratch.
+**SDK fallback only:** if the user explicitly asked for `--client sdk` (e.g. custom `ANTHROPIC_BASE_URL`), they need `ANTHROPIC_API_KEY` set — in that case source `.env` from the project root first. Otherwise skip this.
 
 ## Step 1: Gather Requirements
 
@@ -141,23 +135,42 @@ Structure the file as:
 
 ## Step 4: Launch the Harness
 
-**Pre-flight check:** Confirm you are NOT on `main` and that `ANTHROPIC_API_KEY` is set (both from Step 0). If either is missing, go back to Step 0.
+**Pre-flight:** confirm current branch is NOT `main` (per Step 0a) and that Codex / `gh` are authenticated if the corresponding phase will run (per Step 0b). If anything is missing, go back to Step 0.
 
-Run the harness using Bash:
+### Launch command — use this exact shape
 
 ```bash
-cd harness && pip install -r requirements.txt 2>/dev/null && python autonomous_agent_demo.py --max-iterations <N>
+cd harness && exec python3 -u autonomous_agent_demo.py --max-iterations <N> --skip-relay
 ```
 
-Where `<N>` is the iteration count from Step 1. If "Unlimited", omit the `--max-iterations` flag entirely.
+- `exec` — replaces the shell wrapper with the Python process so Claude's task runner sees the real PID and output.
+- `-u` — unbuffered stdout so the log streams live instead of buffering inside Python.
+- `--max-iterations <N>` — the number from Step 1. Omit the flag entirely for "Unlimited".
+- `--skip-relay` — **default on**. Phase 3 (push + PR + cloud review) should only run after the user explicitly confirms the Phase 2 feature loop produced acceptable output. Drop the flag only if the user has asked for a fully-autonomous end-to-end run.
 
-Notes:
+Invoke this via the Bash tool with **`run_in_background: true`**. Do **not** wrap with `nohup`, `&`, or any other shell backgrounding — those detach the process from Claude's task runner and you lose the ability to monitor output, which will cost you a retry cycle when something hangs.
 
-- On **WSL2 only**, add `--no-sandbox` (the OS-level sandbox is unreliable on WSL2). On macOS/Linux, omit it to keep sandbox isolation enabled.
-- The env vars from Step 0b are inherited by the subprocess automatically
+### Platform flags
 
-**IMPORTANT:** This command will run for a long time. Use `run_in_background: true` on the Bash tool so the user isn't blocked. Tell the user the harness is running and they can check progress with:
+- **WSL2 only:** add `--no-sandbox` (OS-level sandbox is unreliable on WSL2). On macOS/Linux, leave it off.
+- **SDK fallback:** if the user asked for `--client sdk`, source `.env` first (see Step 0b) so `ANTHROPIC_API_KEY` is in the inherited environment. The default CLI backend doesn't need this.
 
-- `cat feature_list.json | grep '"passes": true' | wc -l` — count completed features
-- `cat claude-progress.txt` — read the latest progress notes
-- `git log --oneline -10` — see recent commits from the agent
+### Phase 3 (cloud review) — gated by user confirmation
+
+After Phase 2 completes, **pause and show the user**:
+
+- `jq '[.[] | {id, passes}]' feature_list.json` — feature pass state.
+- `git log --oneline <base>..HEAD` — the commits that landed.
+- Any uncommitted state from `git status --short`.
+
+Ask: _"Phase 2 complete — run Phase 3 (push branch + open PR + cloud Codex review) now?"_ If yes, relaunch the harness without `--skip-relay`, OR drive Phase 3 manually with `git push -u origin <branch>` + `gh pr create`.
+
+**Never push without confirmation.** A push is user-visible, a PR open is user-visible, and both are cheap to regret.
+
+### Monitoring while it runs
+
+Tell the user they can check progress with:
+
+- `jq '[.[] | {id, passes}] | .[0:5]' feature_list.json` — feature pass state
+- `tail -f harness-run.log` if the user redirected output to a file (with `run_in_background: true`, Claude has this automatically)
+- `git log --oneline -10` — commits the coder has made

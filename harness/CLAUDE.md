@@ -14,16 +14,17 @@ Phases 1 and 2 spawn `claude -p` sessions for Initializer/Coder work. Phase 3 sp
 
 Normal operation needs **no `ANTHROPIC_API_KEY`**. The default `cli` backend inherits the user's `claude` CLI auth.
 
-| Variable                | Required | Description                                                                                                         |
-| ----------------------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
-| `OPENAI_API_KEY`        | Yes\*    | Required for local Codex CLI review (Phase 2 + Phase 3)                                                             |
-| `HARNESS_POLICY_JUDGE`  | No       | Judge mode: `deny` (default — LLM not consulted), `ask` (LLM decides), `explain` (LLM advises, always deny)         |
-| `HARNESS_POLICY_CACHE`  | No       | Override the policy-judge cache path                                                                                |
-| `HARNESS_CLI_LIVE_TEST` | No       | Set to `1` to enable `scripts/dry_run_smoke.py` and the live `test_cli_client.py::test_cli_session_live_query` test |
+| Variable                | Required | Description                                                                                                                                                                                                                                                                                     |
+| ----------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`        | No       | Not required. Codex CLI 0.121+ authenticates via `~/.codex/auth.json` (set up once with `codex login`). The env var is only used by some older SDK-style workflows; harness code itself does not read it. If the Codex CLI reviewer errors, run `codex login`, not `export OPENAI_API_KEY=...`. |
+| `HARNESS_POLICY_JUDGE`  | No       | Judge mode: `deny` (default — LLM not consulted), `ask` (LLM decides), `explain` (LLM advises, always deny)                                                                                                                                                                                     |
+| `HARNESS_POLICY_CACHE`  | No       | Override the policy-judge cache path                                                                                                                                                                                                                                                            |
+| `HARNESS_CLI_LIVE_TEST` | No       | Set to `1` to enable `scripts/dry_run_smoke.py` and the live `test_cli_client.py::test_cli_session_live_query` test                                                                                                                                                                             |
 
-\*Not required if running with `--skip-review --skip-relay`.
+**Additional requirements:**
 
-**Additional requirement:** `gh` CLI must be authenticated (`gh auth login`) for Phase 3 cloud operations.
+- `gh` CLI authenticated (`gh auth login`) for Phase 3 cloud operations.
+- `codex` CLI authenticated (`codex login`) for Phase 2 local review and Phase 3 cloud review. Auth is stored in `~/.codex/auth.json`; the harness does **not** read `OPENAI_API_KEY`.
 
 ### Fallback: SDK backend (opt-in only)
 
@@ -44,56 +45,55 @@ python3 autonomous_agent_demo.py --client sdk --max-iterations 1 \
 
 The harness does **not** auto-load `.env`. Source it manually when using `--client sdk` or when Codex review is enabled.
 
-## Worktree Requirement (MANDATORY)
+## Branch Requirement (MANDATORY)
 
-**The harness MUST run inside a git worktree, never on `main`.** This is enforced by [rules/common/worktrees.md](../rules/common/worktrees.md):
+**The harness must run on a feature branch, never on `main`.** Per [`rules/common/worktrees.md`](../rules/common/worktrees.md) §Principles, the interactive main agent works on a feature branch in the **primary checkout** — it does **not** enter a worktree for itself. The harness Python orchestrator runs in that same primary checkout on the same feature branch.
 
-> _"Main worktree is sacred — it stays on `main`, always clean, never committed to directly."_
-> _"Harness always uses a worktree — autonomous loops must be fully isolated."_
+> _"Main agent works on a feature branch in the primary checkout — the interactive Claude Code agent checks out `feat/<name>` (or `fix/`, `refactor/`, etc.) in the primary checkout and commits there. It does not create a worktree for itself."_
+>
+> _"Subagents and harness always use a worktree"_ → this refers to **dispatched parallel subagents** and, as future work, per-feature Coder subprocesses isolated under `.claude/worktrees/<feature>/`. The current harness architecture does not yet implement per-feature worktrees; all Coder iterations happen in the same working tree as the orchestrator.
 
 ### Before Launching the Harness
 
-Create a worktree and switch into it **before** running any harness command:
+From the project root (primary checkout):
 
 ```bash
-# From the main worktree (project root)
-git worktree add .claude/worktrees/feat-<feature-name> -b feat/<feature-name>
-cd .claude/worktrees/feat-<feature-name>
-npm install
+# From main, create a feature branch
+git checkout main
+git checkout -b <branch-name>
+# OR: if you're already on a feature branch, stay put
 
-# Source env vars
-set -a && source /path/to/project/.env && set +a
+# (Optional) environment — only needed for --client sdk fallback:
+# set -a && source .env && set +a
 
-# Now launch the harness (--project-dir points to the worktree, which is cwd)
-cd harness && python3 autonomous_agent_demo.py --clean --max-iterations 10
+# Launch the harness (--project-dir defaults to the repo root)
+cd harness && python3 -u autonomous_agent_demo.py --max-iterations 10 --skip-relay
 ```
 
-Or use Claude Code's built-in `EnterWorktree` tool, which creates the worktree under `.claude/worktrees/` automatically.
+**Do NOT call `EnterWorktree`** — it puts the main agent into a worktree the user's dev server and diff viewer can't see. The `block-main-commit.sh` PreToolUse hook will reject commits on `main` regardless, so the primary-checkout feature branch is the correct and safe location.
 
 ### Why This Matters
 
-- The harness creates commits during Phase 2 (feature loop) and pushes in Phase 3 (cloud review)
-- Running on `main` would commit directly to the main branch, violating the project's branch protection policy
-- A worktree isolates all harness work on a feature branch, ready for PR and squash-merge
-- The `block-main-commit.sh` PreToolUse hook will reject commits on `main` if configured
+- The user runs `npm run tauri:dev` and watches the diff viewer from the primary checkout. Edits in `.claude/worktrees/` are invisible to that view. If the main agent works in a worktree, the user can't verify progress live.
+- Running on `main` would violate branch protection — the hook blocks commits.
+- A feature branch in the primary checkout is cheaply cleaned up once merged (see CLEANUP in `rules/common/worktrees.md`).
 
 ### After the Harness Completes
 
-From the worktree, create a PR and stay on the branch for review-fix cycles:
+Stay on the feature branch for review-fix cycles:
 
 ```bash
-gh pr create --title "feat: <description>" --body "..." --squash
+gh pr create --title "feat: <description>" --body "..."
 # Stay here — run /harness-plugin:github-review for code review cycles
 # Only the user merges the PR
 ```
 
-Cleanup (after PR is merged, from the main worktree):
+Cleanup (after the user merges or closes the PR):
 
 ```bash
-cd /path/to/project  # back to main worktree
-git worktree remove .claude/worktrees/feat-<feature-name>
-git branch -d feat/<feature-name>
-git worktree prune
+git checkout main
+git pull
+git branch -D <branch-name>   # -D because squash-merge leaves the branch "not fully merged"
 ```
 
 ## Running
@@ -164,19 +164,19 @@ Python hooks (`security.py`, `hooks.py`) fire regardless of sandbox or permissio
 
 In addition to the runtime safety layers above, the project uses [hookify](https://github.com/anthropics/claude-code/tree/main/plugins/hookify) rules to catch common mistakes **before** the harness is launched. These rules live in `.claude/hookify.*.local.md` and are evaluated automatically by the hookify plugin on every tool call.
 
-| Rule                        | Event | Action | What it catches                                                                                                                                 |
-| --------------------------- | ----- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `block-harness-on-main`     | bash  | warn   | Running `autonomous_agent_demo.py` — reminds to check branch and use a worktree. The harness creates commits and must not run on `main`.        |
-| `warn-worktree-npm-install` | bash  | warn   | Running `git worktree add` without a reminder to `npm install` afterward. `node_modules/` is gitignored and missing in fresh worktrees.         |
-| `warn-harness-dry-run`      | bash  | warn   | Running the harness with `--max-iterations` > 1 without having done a single-iteration dry-run first. Catches env/hook/permission issues early. |
+| Rule                        | Event | Action | What it catches                                                                                                                                                             |
+| --------------------------- | ----- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `block-harness-on-main`     | bash  | warn   | Running `autonomous_agent_demo.py` — reminds to check out a feature branch in the primary checkout first. The harness creates commits and must not run on `main`.           |
+| `warn-worktree-npm-install` | bash  | warn   | Running `git worktree add` (for dispatched parallel subagents) without a reminder to `npm install` afterward. `node_modules/` is gitignored and missing in fresh worktrees. |
+| `warn-harness-dry-run`      | bash  | warn   | Running the harness with `--max-iterations` > 1 without having done a single-iteration dry-run first. Catches env/hook/permission issues early.                             |
 
 **How they work:** Hookify rules are markdown files with YAML frontmatter that define a regex pattern, an event type (bash/file/stop), and an action (block/warn). The hookify plugin evaluates all enabled rules on every matching hook event. All three rules use `warn` — they show guidance but don't hard-block, since hookify pattern matching alone cannot inspect git state at runtime.
 
 **Pre-launch checklist (enforced by these rules):**
 
-1. **Worktree** — `git branch --show-current` must NOT return `main`. Use `EnterWorktree` or `git worktree add`.
-2. **Dependencies** — `npm install` in the worktree (node_modules is gitignored).
-3. **Dry-run** — `python autonomous_agent_demo.py --max-iterations 1` to verify the environment before scaling up. Add `--no-sandbox` only on WSL2.
+1. **Feature branch** — `git branch --show-current` must NOT return `main`. From the primary checkout, `git checkout -b <branch-name>`. Do NOT `EnterWorktree` for the main agent (per `rules/common/worktrees.md`).
+2. **Dependencies** — `npm install` current in the primary checkout (should already be there for active development).
+3. **Dry-run** — `python3 -u autonomous_agent_demo.py --max-iterations 1 --skip-relay` to verify the environment before scaling up. Add `--no-sandbox` only on WSL2.
 
 **Editing rules:** Rules take effect immediately on the next tool call — no restart needed. To disable a rule, set `enabled: false` in its frontmatter. To inspect all active rules at runtime, use the `/hookify:list` skill.
 
@@ -304,16 +304,16 @@ The marketplace definition is at `.claude-plugin/marketplace.json` (project root
 
 ## Troubleshooting
 
-| Symptom                                           | Cause                                                                               | Fix                                                                                                                                                                        |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `python: command not found`                       | WSL2/Linux may only have `python3`                                                  | Use `python3` instead of `python`                                                                                                                                          |
-| All Bash commands blocked with "Empty command"    | Hook reads `input_data["command"]` instead of `input_data["tool_input"]["command"]` | Already fixed in `security.py` and `hooks.py`                                                                                                                              |
-| `spawn rg EACCES` in Glob/Grep                    | Claude Code's vendored ripgrep binary lost +x permission                            | Preflight check auto-fixes this; or run `chmod +x ~/.npm-global/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg`                                    |
-| User-level hook interferes with a harness run     | `claude -p` merges user settings on top of the project settings file                | Disable the offending hook locally via `~/.claude/settings.json`; the harness deliberately does NOT wipe your config dir (that breaks CLI auth)                            |
-| `app_spec.md` empty at root                       | `prompts.py` skips copy if root file exists                                         | Write spec directly to root `app_spec.md`, not `prompts/app_spec.md`                                                                                                       |
-| `ANTHROPIC_API_KEY not set` (with `--client sdk`) | `.env` not sourced while using the SDK fallback                                     | Run `set -a && source .env && set +a` before launching, or drop `--client sdk` to use the default CLI backend                                                              |
-| Codex review always errors                        | `OPENAI_API_KEY` not set or `codex` CLI not installed                               | `npm i -g @openai/codex` and set `OPENAI_API_KEY`, or run with `--skip-review`                                                                                             |
-| Cloud review times out                            | GitHub Action slow or `gh` not authenticated                                        | Run `gh auth login` and increase `--review-timeout`                                                                                                                        |
-| `gh api` blocked by harness                       | Command uses a blocked method or data flag                                          | Only GET requests allowed; check `security.py` `GH_BLOCKED_METHODS` and `GH_API_DATA_FLAGS`                                                                                |
-| `claude: command not found` on `--client cli`     | `claude` CLI not installed or not on PATH                                           | Install Claude Code CLI, or fall back with `--client sdk` (requires `ANTHROPIC_API_KEY`)                                                                                   |
-| Policy judge keeps blocking a safe command        | Command isn't in the allowlist and the default policy is deny                       | Add the command base to `harness/.policy_allow.local` (one per line) — deterministic, user-local. Or add to `ALLOWED_COMMANDS` in `security.py` for a codebase-wide allow. |
+| Symptom                                           | Cause                                                                                      | Fix                                                                                                                                                                                                 |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `python: command not found`                       | WSL2/Linux may only have `python3`                                                         | Use `python3` instead of `python`                                                                                                                                                                   |
+| All Bash commands blocked with "Empty command"    | Hook reads `input_data["command"]` instead of `input_data["tool_input"]["command"]`        | Already fixed in `security.py` and `hooks.py`                                                                                                                                                       |
+| `spawn rg EACCES` in Glob/Grep                    | Claude Code's vendored ripgrep binary lost +x permission                                   | Preflight check auto-fixes this; or run `chmod +x ~/.npm-global/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg`                                                             |
+| User-level hook interferes with a harness run     | `claude -p` merges user settings on top of the project settings file                       | Disable the offending hook locally via `~/.claude/settings.json`; the harness deliberately does NOT wipe your config dir (that breaks CLI auth)                                                     |
+| `app_spec.md` empty at root                       | `prompts.py` skips copy if root file exists                                                | Write spec directly to root `app_spec.md`, not `prompts/app_spec.md`                                                                                                                                |
+| `ANTHROPIC_API_KEY not set` (with `--client sdk`) | `.env` not sourced while using the SDK fallback                                            | Run `set -a && source .env && set +a` before launching, or drop `--client sdk` to use the default CLI backend                                                                                       |
+| Codex review always errors                        | `codex` CLI not installed or not authenticated (auth file missing at `~/.codex/auth.json`) | `npm i -g @openai/codex` if missing, then `codex login` to authenticate. The harness does NOT use `OPENAI_API_KEY`. Temporary workaround: `--skip-review` on Phase 2, or `--skip-relay` on Phase 3. |
+| Cloud review times out                            | GitHub Action slow or `gh` not authenticated                                               | Run `gh auth login` and increase `--review-timeout`                                                                                                                                                 |
+| `gh api` blocked by harness                       | Command uses a blocked method or data flag                                                 | Only GET requests allowed; check `security.py` `GH_BLOCKED_METHODS` and `GH_API_DATA_FLAGS`                                                                                                         |
+| `claude: command not found` on `--client cli`     | `claude` CLI not installed or not on PATH                                                  | Install Claude Code CLI, or fall back with `--client sdk` (requires `ANTHROPIC_API_KEY`)                                                                                                            |
+| Policy judge keeps blocking a safe command        | Command isn't in the allowlist and the default policy is deny                              | Add the command base to `harness/.policy_allow.local` (one per line) — deterministic, user-local. Or add to `ALLOWED_COMMANDS` in `security.py` for a codebase-wide allow.                          |
