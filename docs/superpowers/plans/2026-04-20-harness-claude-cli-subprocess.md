@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Status: IMPLEMENTED in [PR #73](https://github.com/winoooops/vimeflow/pull/73) (merge commit `93a5338`).** Unchecked boxes below are a historical artifact of the pre-implementation spec — do NOT re-execute. The implementation diverged from this plan in two places:
+>
+> 1. `--tools` (exclusive) was used in `cli_client.py::_build_args` instead of `--allowed-tools` (permissive) — the latter didn't actually restrict the tool surface under `bypassPermissions`.
+> 2. The settings helper was split into `write_settings_file` + `build_base_settings` in `client.py` (both shared with `sdk_client.py`), not a single `build_settings_file`. The CLI-specific factory is `client.create_client`, mirrored by `sdk_client.create_client`.
+>
+> See `harness/cli_client.py`, `harness/client.py`, and `harness/sdk_client.py` for the authoritative API. The CHANGELOG at [`../../../CHANGELOG.md`](../../../CHANGELOG.md) records the full change list.
+
 **Goal:** Replace the harness's `claude_code_sdk` Python-package dependency with `claude -p` subprocess invocations, so the harness inherits the user's Claude Code CLI auth instead of requiring `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL` in `.env`.
 
 **Architecture:** Add a new `cli_client.py` that spawns `claude -p --output-format stream-json --verbose --settings <path> --allowed-tools ... [--session-id <uuid> | --resume <uuid>]` per harness role, parses the JSONL event stream, and yields SDK-shaped events so `agent.py`'s existing event loop is untouched. Each role (Initializer, Coder, fix) gets an independent process with its own UUID; subsequent iterations on the same feature `--resume` that UUID so conversation context persists. Python security hooks (`security.py`, `hooks.py`) are preserved by wiring them through a new `hook_runner.py` that Claude's CLI invokes via `settings.json` hook commands. The Bash allowlist gains an LLM-judge fallback: when no rule matches, a one-shot `claude -p` call acts as policy judge, with decisions cached on disk. A `--client {sdk,cli}` flag keeps the legacy SDK path available during the transition for parity testing, then is removed.
@@ -1366,7 +1373,7 @@ Should not be edited by the Coder — feature_list.json is pre-populated.
 - [ ] **Step 3: Run the dry-run (manual — requires claude CLI auth + optionally API key)**
 
 ```bash
-cd /home/will/projects/vimeflow
+cd "$REPO_ROOT"   # repo root — wherever you cloned vimeflow
 python3 harness/scripts/dry_run_parity.py
 # Expect: [cli] exit=0, [sdk] SKIPPED or exit=0, "OK"
 ```
@@ -1453,7 +1460,7 @@ Expected: all pass.
 - [ ] **Step 2: Run dry-run parity**
 
 ```bash
-cd /home/will/projects/vimeflow
+cd "$REPO_ROOT"   # repo root — wherever you cloned vimeflow
 python3 harness/scripts/dry_run_parity.py
 # Expect: "OK"
 ```

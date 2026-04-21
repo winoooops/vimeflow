@@ -15,9 +15,10 @@
 ## 快速开始
 
 ```bash
-# 一次性安装 Claude Code CLI 并登录
+# 一次性安装 Claude Code CLI 并登录。
+# 注意：`claude /login` 是 REPL 里的斜杠命令；从 shell 调用要用子命令形式：
 npm install -g @anthropic-ai/claude-code
-claude /login
+claude auth login
 
 # 创建 worktree（强制要求 —— harness 永远不在 main 上运行）
 git worktree add .claude/worktrees/feat-<name> -b feat/<name>

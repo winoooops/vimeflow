@@ -15,9 +15,11 @@ A short, bilingual landing page that points both humans and agents at the right 
 ## Quickstart
 
 ```bash
-# Install the Claude Code CLI (one time) and log in
+# Install the Claude Code CLI (one time) and log in.
+# `claude /login` is the in-REPL slash-command; from a shell, use the
+# subcommand form:
 npm install -g @anthropic-ai/claude-code
-claude /login
+claude auth login
 
 # Create a worktree (MANDATORY — harness never runs on main)
 git worktree add .claude/worktrees/feat-<name> -b feat/<name>
