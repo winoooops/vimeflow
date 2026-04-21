@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-04-14
+last_updated: 2026-04-20
 ref_count: 3
 ---
 
@@ -127,3 +127,49 @@ prevent showing previous data.
 - **Fix:** Use a double-check flow: check the active path under lock, start the tailer outside the lock, then re-acquire the lock before inserting. If a concurrent caller already registered the same path, stop the redundant new handle; if replacing an old path, stop the old handle outside the lock.
 - **Verification:** `cargo test --lib agent::transcript -j1`, `cargo test --lib agent:: -j1`, `cargo fmt --check`.
 - **Commit:** (pending — agent-status-sidebar PR)
+
+### 13. Subprocess stdout streaming deadlocks on full stderr pipe
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (round 1 P2)
+- **Severity:** MEDIUM
+- **File:** `harness/cli_client.py`
+- **Finding:** `ClaudeCliSession.query()` streamed stdout in the main loop and only read stderr after `proc.wait()`. On Linux the stderr pipe buffer is ~64 KB — a `claude -p` verbose stack trace overruns it and the child blocks on its own stderr write while the reader is blocked waiting for stdout EOF. The harness hangs forever instead of surfacing the CLI error.
+- **Fix:** Spawn an `asyncio.create_task` that drains stderr in 4 KB chunks into a list concurrently with the stdout iteration; join it after stdout EOF; on non-zero exit, collected stderr is decoded and surfaced in the RuntimeError. Regression test stubs `_build_args` to point at `python3 -c "sys.stderr.write('X'*200_000); …"` with a 10 s `asyncio.wait_for` safety net.
+- **Commit:** `e003e37 fix(harness): drain claude -p stderr concurrently to prevent deadlock`
+
+### 14. Synchronous subprocess.run blocked the async event loop
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (round 4)
+- **Severity:** MEDIUM
+- **File:** `harness/policy_judge.py`
+- **Finding:** `_query_claude` used `subprocess.run`. In the SDK backend, `bash_security_hook` is awaited on the main harness event loop — under `HARNESS_POLICY_JUDGE=ask` a judge call would stall all async I/O for up to 60 s. The CLI backend was unaffected (fresh `asyncio.run` loops per hook_runner subprocess).
+- **Fix:** Entire chain is async — `_query_claude` uses `asyncio.create_subprocess_exec` + `asyncio.wait_for`; `_consult_judge` and `decide` are `async def`; `security.py` awaits `_judge_decide`. The `subprocess.run` form stays banned from any code reachable from an `async def` security hook.
+- **Commit:** `545b0b5 fix(harness): round-4 review — async judge, user-private cache, brace-safe prompt`
+
+### 15. `_started` session flag survived cancellation / non-zero exit
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (rounds 3, 5, 7)
+- **Severity:** LOW
+- **File:** `harness/cli_client.py`
+- **Finding:** `ClaudeCliSession.query()` set `self._started = True` before the subprocess's exit code was checked (and kept it True after `asyncio.CancelledError`). If the process spawned but exited non-zero — or was killed by an outer `asyncio.wait_for` — the flag stuck, and the next `query()` passed `--resume` against a session the CLI never persisted. Wasted one round-trip before self-healing via the non-zero-exit branch.
+- **Fix:** Set `_started = True` only after a successful `create_subprocess_exec`. Roll back to `False` in both the non-zero-exit branch and the `finally` block when `proc.returncode is None` (cancel / kill). Now multi-turn retries always pick `--session-id` for the next attempt when the previous session didn't get persisted.
+- **Commits:** `0f76df4` (move after spawn), `97454bb` (reset in finally)
+
+### 16. Subprocess stdout read with no deadline hangs forever on stall
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (round 10)
+- **Severity:** HIGH
+- **File:** `harness/cli_client.py`
+- **Finding:** `ClaudeCliSession.query()` read stdout with `async for raw_line in proc.stdout:` and no timeout. If `claude -p` stalls — network failure, auth expiry mid-stream, CLI internal deadlock — the harness blocks indefinitely. The SDK backend got implicit HTTP-level timeouts from httpx; the subprocess refactor lost them. The existing regression tests used `asyncio.wait_for(run(), timeout=10)` as a "safety net so the suite doesn't hang forever" — which was the clue that production code had no such net.
+- **Fix:** Added `timeout: float = 600.0` to `ClaudeCliSession.__init__` (stored as `self.timeout`) and a per-call override on `query(prompt, *, timeout=None)`. Initial round-10 fix used `asyncio.timeout()` (3.11+ context manager), which the round-11 reviewer correctly flagged as silently breaking Python 3.10 — the harness has no version gate, and `AttributeError` on every query would cause every session to report `('error', ...)`. Round-11 fix replaces it with `asyncio.wait_for` + monotonic budget tracking (3.9+ compatible): each `readline()` + final `proc.wait()` gets `remaining = deadline - (time.monotonic() - start)` as its timeout. On timeout the existing `finally` block kills the process and resets `_started = False`.
+- **Lesson:** Every time you add a subprocess deadline or other asyncio construct, check the Python version requirement of the API. `asyncio.timeout()` is 3.11+; `asyncio.wait_for()` is 3.4+. Prefer the broader-compat form unless a concrete dep actually requires 3.11+.
+- **Commits:** (round 10 — asyncio.timeout attempt), (round 11 — wait_for rewrite)
+
+### 17. Clean subprocess exit + ResultEvent(is_error=True) silently reported as success
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (round 11)
+- **Severity:** MEDIUM
+- **File:** `harness/agent.py`
+- **Finding:** `run_agent_session` printed `[result: error]` when the terminal stream event carried `is_error=True` but still returned `('continue', response_text)`. Non-zero subprocess exit was already escalated via `RuntimeError`; clean-exit-but-session-errored (max-turns, rate-limit abort, transient tool failure) wasn't. Orchestrator would then run the reviewer against stalled output and burn a per-feature iteration.
+- **Fix:** Track `result_errored = False` before the event loop; set it True in the `isinstance(event, ResultEvent) and event.is_error` branch; return `('error' if result_errored else 'continue', response_text)`. Added two regression tests with a `_FakeCliSession` subclass that scripts events (one error, one success).
+- **Commit:** (round 11)

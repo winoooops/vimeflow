@@ -18,6 +18,7 @@ import argparse
 import asyncio
 import os
 import platform
+import shutil
 import stat
 from pathlib import Path
 
@@ -94,6 +95,19 @@ def parse_args() -> argparse.Namespace:
         help="Skip Phase 3 cloud review entirely",
     )
 
+    parser.add_argument(
+        "--client",
+        choices=["cli", "sdk"],
+        default="cli",
+        help=(
+            "Claude client backend. Default 'cli' runs `claude -p` per role "
+            "and inherits the user's Claude Code CLI auth. 'sdk' is an "
+            "opt-in fallback that requires ANTHROPIC_API_KEY — use only "
+            "when the CLI path is unavailable (CLI not installed, auth "
+            "issue, custom ANTHROPIC_BASE_URL)."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -146,23 +160,27 @@ def clean_runtime_files(project_dir: Path) -> None:
     print()
 
 
-def preflight_checks() -> bool:
-    """Run preflight checks before starting the harness."""
-    ok = True
+def preflight_checks(client_kind: str = "cli") -> bool:
+    """Run preflight checks before starting the harness.
 
-    # Check API key
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("Error: ANTHROPIC_API_KEY environment variable not set")
-        print("\nOption 1: export ANTHROPIC_API_KEY='your-key-here'")
-        print("Option 2: add it to .env at the project root")
-        print("   The harness does NOT auto-load .env; source it first:")
-        print("   set -a && source .env && set +a")
+    No auth check here — the default CLI backend inherits the user's
+    `claude` CLI login. The opt-in SDK fallback (`--client sdk`) enforces
+    its own ANTHROPIC_API_KEY requirement inside
+    `sdk_client.create_client`.
+
+    For `--client cli`, verify the `claude` binary is on PATH up front —
+    otherwise the first session spawn fails deep inside
+    `asyncio.create_subprocess_exec` with a cryptic FileNotFoundError,
+    well after the harness has printed startup banners.
+    """
+    if client_kind == "cli" and not shutil.which("claude"):
+        print("Error: 'claude' CLI not found on PATH.")
+        print("Install: npm install -g @anthropic-ai/claude-code")
+        print("Then run `claude /login` to authenticate.")
+        print("Or pass --client sdk to use the legacy SDK backend (requires ANTHROPIC_API_KEY).")
         return False
 
-    # Check optional base URL
-    base_url = os.environ.get("ANTHROPIC_BASE_URL")
-    if base_url:
-        print(f"  API base URL: {base_url}")
+    ok = True
 
     # Fix ripgrep permissions (Claude Code vendor binary)
     rg_paths = [
@@ -180,7 +198,7 @@ def preflight_checks() -> bool:
 def main() -> None:
     args = parse_args()
 
-    if not preflight_checks():
+    if not preflight_checks(client_kind=args.client):
         return
 
     if args.clean:
@@ -198,6 +216,7 @@ def main() -> None:
                 max_iterations=args.max_iterations,
                 sandbox=sandbox,
                 skip_review=args.skip_review,
+                client_kind=args.client,
             )
         )
 
@@ -210,6 +229,7 @@ def main() -> None:
                     sandbox=sandbox,
                     max_relay_loops=args.max_relay_loops,
                     review_timeout=args.review_timeout,
+                    client_kind=args.client,
                 )
             )
 

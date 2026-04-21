@@ -10,7 +10,16 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from client import create_client
+from client import create_client as create_cli_client
+from cli_client import (
+    ClaudeCliSession,
+    AssistantMessage,
+    UserMessage,
+    TextBlock,
+    ToolUseBlock,
+    ToolResultBlock,
+    ResultEvent,
+)
 from progress import print_session_header, print_progress_summary
 from prompts import (
     get_initializer_prompt,
@@ -23,8 +32,84 @@ from review import run_local_review
 AUTO_CONTINUE_DELAY_SECONDS = 3
 
 
+# SDK event class names we translate to cli_client types. Anything else
+# is either ignored on purpose (system/result) or a signal that the SDK
+# renamed a type and the fallback path needs attention.
+_SDK_KNOWN_TYPES = {
+    "AssistantMessage", "UserMessage",          # translated
+    "SystemMessage", "ResultMessage",           # silently ignored
+}
+
+
+def _translate_sdk_event(msg):
+    """Normalize an SDK message into the canonical cli_client dataclasses.
+
+    Both backends have historically used the same class names (AssistantMessage,
+    UserMessage, TextBlock, ToolUseBlock, ToolResultBlock), but the SDK
+    contract is informal. If a future SDK version renames a type, we want a
+    loud log warning here rather than silently dropped events in the main
+    loop. Returns None for messages we don't surface (system / result) and
+    also None for unknown types — with a one-time warning logged so the
+    regression is visible instead of invisible.
+    """
+    msg_type = type(msg).__name__
+
+    if msg_type == "AssistantMessage":
+        blocks = []
+        for b in getattr(msg, "content", None) or []:
+            b_type = type(b).__name__
+            if b_type == "TextBlock":
+                blocks.append(TextBlock(text=getattr(b, "text", "")))
+            elif b_type == "ToolUseBlock":
+                blocks.append(ToolUseBlock(
+                    name=getattr(b, "name", ""),
+                    input=getattr(b, "input", {}) or {},
+                ))
+            # TextBlock / ToolUseBlock are the only ones we surface.
+        return AssistantMessage(content=blocks)
+
+    if msg_type == "UserMessage":
+        tool_results = []
+        for b in getattr(msg, "content", None) or []:
+            if type(b).__name__ == "ToolResultBlock":
+                tool_results.append(ToolResultBlock(
+                    content=getattr(b, "content", ""),
+                    is_error=bool(getattr(b, "is_error", False)),
+                ))
+        return UserMessage(content=tool_results)
+
+    if msg_type not in _SDK_KNOWN_TYPES:
+        # Visibility: the SDK may have renamed a type. Fail loud, not silent.
+        print(
+            f"  [warn] Unknown SDK event type '{msg_type}' — "
+            f"treated as ignorable. If this suppresses actual agent output, "
+            f"update harness/agent.py::_translate_sdk_event.",
+            flush=True,
+        )
+    return None
+
+
+async def _iter_events(client_or_session, prompt: str):
+    """Yield canonical cli_client events regardless of backend.
+
+    CLI backend yields cli_client dataclasses directly. SDK backend events
+    are normalized into the same dataclasses, so `run_agent_session` only
+    needs isinstance checks against one set of types.
+    """
+    if isinstance(client_or_session, ClaudeCliSession):
+        async for event in client_or_session.query(prompt):
+            yield event
+    else:
+        # Legacy SDK path — translate into canonical cli_client events.
+        await client_or_session.query(prompt)
+        async for msg in client_or_session.receive_response():
+            translated = _translate_sdk_event(msg)
+            if translated is not None:
+                yield translated
+
+
 async def run_agent_session(
-    client,
+    client_or_session,
     message: str,
     project_dir: Path,
 ) -> tuple[str, str]:
@@ -32,53 +117,77 @@ async def run_agent_session(
     Run a single agent session.
 
     Returns (status, response_text) where status is "continue" or "error".
+    Accepts either a ClaudeSDKClient (legacy) or a ClaudeCliSession (default).
     """
-    print("  Sending prompt to Claude Code SDK...\n")
-
+    print("  Sending prompt to Claude Code...\n")
     try:
-        await client.query(message)
-
         response_text = ""
-        async for msg in client.receive_response():
-            msg_type = type(msg).__name__
-
-            if msg_type == "AssistantMessage" and hasattr(msg, "content"):
-                for block in msg.content:
-                    block_type = type(block).__name__
-
-                    if block_type == "TextBlock" and hasattr(block, "text"):
+        result_errored = False
+        async for event in _iter_events(client_or_session, message):
+            if isinstance(event, AssistantMessage):
+                for block in event.content:
+                    if isinstance(block, TextBlock):
                         response_text += block.text
                         print(block.text, end="", flush=True)
-                    elif block_type == "ToolUseBlock" and hasattr(block, "name"):
+                    elif isinstance(block, ToolUseBlock):
                         print(f"\n  [Tool: {block.name}]", flush=True)
-                        if hasattr(block, "input"):
-                            input_str = str(block.input)
-                            if len(input_str) > 200:
-                                print(f"    {input_str[:200]}...", flush=True)
-                            else:
-                                print(f"    {input_str}", flush=True)
+                        input_str = str(block.input)
+                        if len(input_str) > 200:
+                            print(f"    {input_str[:200]}...", flush=True)
+                        else:
+                            print(f"    {input_str}", flush=True)
 
-            elif msg_type == "UserMessage" and hasattr(msg, "content"):
-                for block in msg.content:
-                    block_type = type(block).__name__
-
-                    if block_type == "ToolResultBlock":
-                        result_content = getattr(block, "content", "")
-                        is_error = getattr(block, "is_error", False)
-
+            elif isinstance(event, UserMessage):
+                for block in event.content:
+                    if isinstance(block, ToolResultBlock):
+                        result_content = block.content
                         if "blocked" in str(result_content).lower():
                             print(f"    [BLOCKED] {result_content}", flush=True)
-                        elif is_error:
+                        elif block.is_error:
                             print(f"    [Error] {str(result_content)[:500]}", flush=True)
                         else:
                             print("    [Done]", flush=True)
 
+            elif isinstance(event, ResultEvent):
+                if event.is_error:
+                    result_errored = True
+                    print(f"\n  [result: error]", flush=True)
+
         print("\n" + "-" * 70 + "\n")
+        # A clean subprocess exit (returncode 0) can still carry
+        # `is_error=True` in the terminal ResultEvent — e.g. `claude -p`
+        # hit its max-turns cap, a rate-limit cleanly aborted the run,
+        # or a transient tool failure surfaced as a session-level error.
+        # The orchestrator must see this as an error so it doesn't run
+        # the reviewer against incomplete work and burn a per-feature
+        # iteration budget on a stalled session.
+        if result_errored:
+            return "error", response_text
         return "continue", response_text
 
     except Exception as e:
         print(f"  Error during session: {e}")
         return "error", str(e)
+
+
+def _make_session(
+    client_kind: str,
+    *,
+    role: str,
+    project_dir: Path,
+    model: str,
+    sandbox: bool,
+):
+    """Return a `ClaudeCliSession` (default) or an SDK fallback client.
+
+    The SDK factory is imported lazily so `claude_code_sdk` stays off the
+    hot path. `--client sdk` is the only trigger; nothing else reaches it.
+    """
+    if client_kind == "cli":
+        return create_cli_client(project_dir, model, role=role, sandbox=sandbox)
+    # Opt-in fallback — requires ANTHROPIC_API_KEY (enforced inside).
+    from sdk_client import create_client as create_sdk_client
+    return create_sdk_client(project_dir, model, role=role, sandbox=sandbox)
 
 
 def get_pending_features(project_dir: Path) -> list[dict]:
@@ -116,6 +225,7 @@ async def run_feature_iteration(
     iteration: int,
     findings: str | None = None,
     prompt_override: str | None = None,
+    client_kind: str = "cli",
 ) -> tuple[str, str | None]:
     """
     Run one Coder->Reviewer iteration for a feature.
@@ -124,6 +234,7 @@ async def run_feature_iteration(
         prompt_override: If provided, use this prompt instead of the default
             coding prompt. Used by the cloud review fix loop to pass the
             reviewer prompt instead of the feature coding prompt.
+        client_kind: "cli" (default) or "sdk" — selects backend.
 
     Returns (status, findings_text):
       - ("passed", None) -- review clean, feature done
@@ -137,7 +248,10 @@ async def run_feature_iteration(
     print()
 
     # --- Coder phase ---
-    client = create_client(project_dir, model, sandbox=sandbox)
+    session = _make_session(
+        client_kind, role="coder",
+        project_dir=project_dir, model=model, sandbox=sandbox,
+    )
 
     if prompt_override:
         prompt = prompt_override
@@ -146,8 +260,8 @@ async def run_feature_iteration(
     else:
         prompt = get_coding_prompt()
 
-    async with client:
-        status, response = await run_agent_session(client, prompt, project_dir)
+    async with session:
+        status, response = await run_agent_session(session, prompt, project_dir)
 
     if status == "error":
         return "error", None
@@ -175,6 +289,7 @@ async def run_autonomous_agent(
     max_iterations: Optional[int] = None,
     sandbox: bool = True,
     skip_review: bool = False,
+    client_kind: str = "cli",
 ) -> None:
     """
     Run the autonomous agent loop.
@@ -204,11 +319,14 @@ async def run_autonomous_agent(
 
         print_session_header(1, is_initializer=True)
 
-        client = create_client(project_dir, model, sandbox=sandbox)
+        session = _make_session(
+            client_kind, role="initializer",
+            project_dir=project_dir, model=model, sandbox=sandbox,
+        )
         prompt = get_initializer_prompt()
 
-        async with client:
-            status, response = await run_agent_session(client, prompt, project_dir)
+        async with session:
+            status, response = await run_agent_session(session, prompt, project_dir)
 
         if status == "error":
             print("  Initializer failed. Check logs and retry.")
@@ -257,11 +375,14 @@ async def run_autonomous_agent(
 
             if skip_review:
                 # No review -- just run Coder, then check if feature passed
-                client = create_client(project_dir, model, sandbox=sandbox)
+                session = _make_session(
+                    client_kind, role="coder",
+                    project_dir=project_dir, model=model, sandbox=sandbox,
+                )
                 prompt = get_coding_prompt()
 
-                async with client:
-                    status, response = await run_agent_session(client, prompt, project_dir)
+                async with session:
+                    status, response = await run_agent_session(session, prompt, project_dir)
 
                 print_progress_summary(project_dir)
 
@@ -286,7 +407,8 @@ async def run_autonomous_agent(
                 continue
 
             status, new_findings = await run_feature_iteration(
-                project_dir, model, sandbox, feature, iteration, findings
+                project_dir, model, sandbox, feature, iteration, findings,
+                client_kind=client_kind,
             )
 
             print_progress_summary(project_dir)
@@ -329,6 +451,7 @@ async def run_cloud_review_loop(
     sandbox: bool,
     max_relay_loops: int = 2,
     review_timeout: int = 300,
+    client_kind: str = "cli",
 ) -> str:
     """
     Phase 3: Push, create PR, poll for cloud Codex review, fix if needed.
@@ -413,6 +536,7 @@ async def run_cloud_review_loop(
             fix_status, new_findings = await run_feature_iteration(
                 project_dir, model, sandbox, fix_feature, fix_iter, fix_findings,
                 prompt_override=reviewer_prompt,
+                client_kind=client_kind,
             )
             if fix_status == "passed":
                 print("  Local review clean after fix.")

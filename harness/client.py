@@ -1,27 +1,21 @@
 """
-Claude SDK Client Configuration
-================================
+Claude CLI Client
+=================
 
-Creates a Claude Code SDK client configured for VIBM development.
+Default backend. Runs `claude -p` per role and inherits the user's Claude
+Code CLI auth — no `ANTHROPIC_API_KEY` is ever consulted on this path.
+
+`create_client(project_dir, model, role, sandbox)` is the public factory.
+The SDK fallback (`sdk_client.create_client`) mirrors it.
 """
 
 import json
-import os
-import tempfile
+import shlex
+import sys
 from pathlib import Path
 
-from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
-from claude_code_sdk.types import HookMatcher
-
-from security import bash_security_hook
-from hooks import pre_write_feature_list_hook
-
-# Isolate SDK sessions from user-level ~/.claude/settings.json.
-# The CLI subprocess merges user + project settings, so user-level
-# hooks (e.g. block-no-verify) would fire inside harness agents.
-# Redirecting CLAUDE_CONFIG_DIR to an empty dir prevents this.
-_ISOLATED_CONFIG_DIR = tempfile.mkdtemp(prefix="harness_claude_config_")
-os.environ["CLAUDE_CONFIG_DIR"] = _ISOLATED_CONFIG_DIR
+# Auth comes from the user's global `~/.claude` (whatever `claude /login`
+# set up). Isolation is per-invocation via `--settings <project file>`.
 
 
 BUILTIN_TOOLS = [
@@ -33,83 +27,111 @@ BUILTIN_TOOLS = [
     "Bash",
 ]
 
+# Project-scoped filesystem + bash allow rules. Shared by both backends.
+_PERMISSION_ALLOW = [
+    "Read(.//**)", "Write(.//**)", "Edit(.//**)",
+    "Glob(.//**)", "Grep(.//**)", "Bash(*)",
+]
+
+
+def write_settings_file(
+    project_dir: Path, settings: dict, *, filename: str
+) -> Path:
+    """Write a settings dict as JSON under `project_dir`. Shared IO helper.
+
+    Creates `project_dir` if missing. Returns the absolute path. Both
+    backends call this so the two settings files keep a single point of
+    truth for mkdir / encoding / formatting.
+    """
+    project_dir.mkdir(parents=True, exist_ok=True)
+    path = project_dir / filename
+    path.write_text(json.dumps(settings, indent=2))
+    return path
+
+
+def build_base_settings(*, sandbox: bool) -> dict:
+    """Return the permissions + (optional) sandbox block shared by both backends.
+
+    Callers append their own `hooks` wiring:
+      - CLI backend: subprocess commands pointing at `hook_runner.py`
+      - SDK fallback: in-process `HookMatcher` callables
+
+    The returned dict is a fresh copy per call — safe to mutate.
+    """
+    settings: dict = {
+        "permissions": {"allow": list(_PERMISSION_ALLOW)},
+    }
+    if sandbox:
+        settings["sandbox"] = {"enabled": True, "autoAllowBashIfSandboxed": True}
+        settings["permissions"]["defaultMode"] = "acceptEdits"
+    else:
+        settings["permissions"]["defaultMode"] = "bypassPermissions"
+    return settings
+
 
 def create_client(
-    project_dir: Path, model: str, *, sandbox: bool = True
-) -> ClaudeSDKClient:
+    project_dir: Path,
+    model: str,
+    *,
+    role: str,
+    sandbox: bool = True,
+):
+    """Create a `ClaudeCliSession` wired with the harness security layers.
+
+    Writes a `.claude_settings_cli.json` under `project_dir` with PreToolUse
+    hooks pointing at `hook_runner.py` so the Python allowlist + feature_list
+    protection keep firing under the CLI backend. Returns a ready-to-use
+    session.
     """
-    Create a Claude Code SDK client with security layers.
+    from cli_client import ClaudeCliSession
 
-    Security:
-      1. Settings isolation — CLAUDE_CONFIG_DIR prevents user-level hooks
-      2. Sandbox (default on) — OS-level bash isolation via the CLI
-      3. Permissions — acceptEdits with sandbox, bypassPermissions without
-      4. Python hooks — bash allowlist (security.py) + feature_list protection (hooks.py)
+    hook_runner = Path(__file__).resolve().parent / "hook_runner.py"
 
-    Args:
-        project_dir: Root directory for the project
-        model: Claude model identifier
-        sandbox: Enable OS-level sandbox (default: True).
-                 Recommended on macOS/Linux. On Windows/WSL2 the sandbox
-                 may be unreliable — pass --no-sandbox to disable.
-    """
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY not set")
+    # Claude CLI executes hook commands via `sh -c`, so unquoted paths with
+    # spaces (e.g. Windows `C:\Program Files\...python.exe`, macOS `/Users/
+    # John Doe/.../hook_runner.py`) split at the space and the runner is
+    # never invoked. When the hook subprocess fails to emit a decision
+    # JSON, the CLI defaults to allow — silently disabling the allowlist.
+    # shlex.quote prevents the split on every platform.
+    py = shlex.quote(sys.executable)
+    runner = shlex.quote(str(hook_runner))
 
-    security_settings: dict = {
-        "permissions": {
-            "allow": [
-                "Read(.//**)",
-                "Write(.//**)",
-                "Edit(.//**)",
-                "Glob(.//**)",
-                "Grep(.//**)",
-                "Bash(*)",
-            ],
-        },
+    settings = build_base_settings(sandbox=sandbox)
+    # CLI-only: `claude -p` can't reach our in-process Python, so hooks
+    # must be declared as subprocess commands in settings.json. The SDK
+    # path uses HookMatcher callables instead and omits this block.
+    settings["hooks"] = {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [{
+                    "type": "command",
+                    "command": f"{py} {runner} bash",
+                }],
+            },
+            {
+                "matcher": "Write|Edit",
+                "hooks": [{
+                    "type": "command",
+                    "command": f"{py} {runner} feature_list",
+                }],
+            },
+        ],
     }
 
-    if sandbox:
-        security_settings["sandbox"] = {
-            "enabled": True,
-            "autoAllowBashIfSandboxed": True,
-        }
-        security_settings["permissions"]["defaultMode"] = "acceptEdits"
-        mode_label = "sandbox + acceptEdits"
-    else:
-        security_settings["permissions"]["defaultMode"] = "bypassPermissions"
-        mode_label = "bypassPermissions (no sandbox)"
+    settings_path = write_settings_file(
+        project_dir, settings, filename=".claude_settings_cli.json"
+    )
 
-    project_dir.mkdir(parents=True, exist_ok=True)
-
-    settings_file = project_dir / ".claude_settings.json"
-    with open(settings_file, "w") as f:
-        json.dump(security_settings, f, indent=2)
-
-    print(f"  Security: {mode_label}, fs restricted to {project_dir.resolve()}")
-    print(f"  Bash: allowlist-validated (see harness/security.py)")
-    print(f"  Config: isolated from user settings (CLAUDE_CONFIG_DIR)")
+    mode_label = "sandbox + acceptEdits" if sandbox else "bypassPermissions (no sandbox)"
+    print(f"  [cli] {mode_label}, fs restricted to {project_dir.resolve()}")
+    print(f"  [cli] Bash: allowlist-validated (see harness/security.py)")
     print()
 
-    return ClaudeSDKClient(
-        options=ClaudeCodeOptions(
-            model=model,
-            system_prompt=(
-                "You are an expert Tauri/TypeScript/Rust developer building VIBM, "
-                "a desktop coding agent conversation manager. "
-                "Follow the project's CLAUDE.md, rules/, and agents/ specifications. "
-                "Use immutable patterns, explicit error handling, and write tests first."
-            ),
-            allowed_tools=BUILTIN_TOOLS,
-            hooks={
-                "PreToolUse": [
-                    HookMatcher(matcher="Bash", hooks=[bash_security_hook]),
-                    HookMatcher(matcher="Write", hooks=[pre_write_feature_list_hook]),
-                ],
-            },
-            max_turns=1000,
-            cwd=str(project_dir.resolve()),
-            settings=str(settings_file.resolve()),
-        )
+    return ClaudeCliSession(
+        role=role,
+        project_dir=project_dir,
+        model=model,
+        settings_path=settings_path,
+        allowed_tools=BUILTIN_TOOLS,
     )
