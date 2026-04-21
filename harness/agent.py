@@ -377,7 +377,13 @@ async def run_autonomous_agent(
             print("  to force a fresh Initializer run.")
             return False
         if not is_fresh and ignore_stale_list:
-            print(f"  WARNING: stale feature_list.json detected ({reason.split('.')[0]}).")
+            # Split on the first sentence boundary (". "), NOT on the
+            # first "." character — STAMP_FILENAME starts with a dot
+            # and the reason strings embed app_spec.md, so naive
+            # `reason.split(".")[0]` returns "" / "no " / "app_spec"
+            # for the corrupt / missing / mismatch cases respectively.
+            summary = reason.split(". ", 1)[0]
+            print(f"  WARNING: stale feature_list.json detected ({summary}).")
             print("  Proceeding anyway because --ignore-stale-list was passed.")
             print()
 
