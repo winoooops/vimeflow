@@ -37,11 +37,34 @@ For each finding you decided to FIX:
 
 ### STEP 4: REPORT
 
-Update `claude-progress.txt` with:
+Summarize your actions in the **commit message body** of the fix commit — no separate progress file. Structure:
 
-- Which findings were FIXED, SKIPPED, or ESCALATED
-- Reasoning for each SKIP
-- Any ESCALATED items that need human attention
+```
+fix(review): address N findings from <source>
+
+Fixed:
+  - [finding-id or location]: <one-line description of fix>
+  - ...
+
+Skipped:
+  - [finding]: <reason: false positive / out of scope / intentional>
+
+Escalated (need human attention):
+  - [finding]: <why this is too large for a targeted fix>
+
+Tests: npx vitest run + npx eslint . clean.
+```
+
+### STEP 5: PHANTOM REFERENCE CHECK
+
+Before finalizing: grep your diff for `Feature #N`, `feature #N`, or similar
+references. For each hit:
+
+```bash
+git diff --cached | grep -iE 'feature #[0-9]+'
+```
+
+Verify that each referenced feature number actually exists in `feature_list.json` AND that the cited feature's description matches the subject of your comment. If a reference points to a number that doesn't exist (or to a feature with an unrelated description), **rewrite the comment** to cite the correct number or remove the reference. Phantom refs mislead reviewers and rot the codebase.
 
 ### RULES
 
@@ -49,3 +72,4 @@ Update `claude-progress.txt` with:
 - Never introduce new issues while fixing existing ones
 - If unsure about a finding, SKIP it with explanation rather than guessing
 - Run `npm run lint && npm run test` after ALL fixes
+- Do NOT create `claude-progress.txt`, `SESSION_SUMMARY.md`, or any other scratch file — all reporting goes in the commit message body
