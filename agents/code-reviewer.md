@@ -204,16 +204,22 @@ const usersWithPosts = await db.query(`
 
 ## Review Output Format
 
-Organize findings by severity. For each issue:
+Organize findings by severity. Keep the body tight — state what's wrong, the concrete impact, and the fix in a few sentences. The paired IDEA block (below) carries the deeper reasoning, so do not repeat intent/alternatives/trade-offs in the body.
 
 ```
 [CRITICAL] Hardcoded API key in source
 File: src/api/client.ts:42
-Issue: API key "sk-abc..." exposed in source code. This will be committed to git history.
-Fix: Move to environment variable and add to .gitignore/.env.example
+Issue: API key "sk-abc..." is committed to source and will land in git history.
+Fix: Read it from process.env.API_KEY; add API_KEY to .env.example.
 
   const apiKey = "sk-abc123";           // BAD
   const apiKey = process.env.API_KEY;   // GOOD
+
+💡 IDEA
+- I — Intent: Author wanted a quick working client; hardcoding bypassed config wiring.
+- D — Danger: Key is now exposed in git history + any fork/clone; rotation is forced.
+- E — Explain: Likely a debugging shortcut that wasn't reverted before commit.
+- A — Alternatives: Use process.env with a validated config loader; fail fast on missing keys.
 ```
 
 ### Summary Format
@@ -233,23 +239,31 @@ End every review with:
 Verdict: WARNING — 2 HIGH issues should be resolved before merge.
 ```
 
-## IDEA Analysis (MANDATORY)
+## IDEA Analysis (MANDATORY — per finding)
 
-Every review must include an IDEA section after the findings summary. This helps the PR author understand the review holistically, not just as a list of issues.
+Pair **every finding** with its own IDEA block. IDEA is not a global summary anymore; it lives directly under each finding so the reader gets reasoning paired with the code location. Because IDEA carries the "why," the finding body above it can stay short.
 
-- **I — Intent**: Does the PR solve the real problem, not just the literal one? Is the goal clear from the diff, or is there a mismatch between what was asked and what was built?
-- **D — Danger**: What breaks? Edge cases, security implications, bad data paths. Focus on risks _introduced by this diff_, not pre-existing ones.
-- **E — Explain**: Can you explain why this approach was chosen? What trade-offs did the author make? If the reasoning isn't obvious from the code, call that out.
-- **A — Alternatives**: Is there a simpler way? Would a senior dev raise an eyebrow at this approach? Suggest alternatives only if they're meaningfully better — not just different.
+Scope each field to **this specific finding**, not the whole PR:
+
+- **I — Intent**: What was the author trying to do at this spot, and does the code match that intent?
+- **D — Danger**: What breaks or degrades if this ships — edge cases, security, bad data, UX — specifically because of this issue?
+- **E — Explain**: Why did the author likely write it this way? Trade-offs or reasoning behind this particular code.
+- **A — Alternatives**: Is there a simpler/safer approach for this specific issue? Would a senior dev push back? Only suggest alternatives when meaningfully better.
 
 ```
-## 💡 IDEA Analysis
+### [SEVERITY] Finding title
+📍 path/to/file.ts L12-18
 
-**I — Intent:** [Does this solve the real problem?]
-**D — Danger:** [What could break?]
-**E — Explain:** [Why this approach?]
-**A — Alternatives:** [Simpler options?]
+Short body: what's wrong, impact, fix. A few sentences max.
+
+💡 IDEA
+- I — Intent: ...
+- D — Danger: ...
+- E — Explain: ...
+- A — Alternatives: ...
 ```
+
+Do **not** produce a PR-level IDEA block at the end of the review.
 
 ## Approval Criteria
 
