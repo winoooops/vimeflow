@@ -172,5 +172,5 @@ Ask: _"Phase 2 complete — run Phase 3 (push branch + open PR + cloud Codex rev
 Tell the user they can check progress with:
 
 - `jq '[.[] | {id, passes}] | .[0:5]' feature_list.json` — feature pass state
-- `tail -f harness-run.log` if the user redirected output to a file (with `run_in_background: true`, Claude has this automatically)
+- `tail -f harness-run.log` — **only** if the user launched with explicit redirection (`… > harness-run.log 2>&1`). When launched via Claude's `run_in_background: true`, output goes to the task runner's internal buffer, not to a file; use the task runner's own monitoring instead (you'll see streamed output on each check-in).
 - `git log --oneline -10` — commits the coder has made

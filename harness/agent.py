@@ -28,6 +28,7 @@ from prompts import (
     copy_spec_to_project,
 )
 from review import run_local_review
+from spec_stamp import check_stamp_fresh, write_stamp
 
 AUTO_CONTINUE_DELAY_SECONDS = 3
 
@@ -309,8 +310,6 @@ async def run_autonomous_agent(
     ``app_spec.md``. A missing or mismatched stamp aborts the run with a
     clear message unless ``ignore_stale_list`` is set.
     """
-    from spec_stamp import write_stamp, check_stamp_fresh
-
     print("\n" + "=" * 70)
     print("  VIBM AUTONOMOUS DEVELOPMENT HARNESS")
     print("=" * 70)

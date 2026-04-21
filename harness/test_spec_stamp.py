@@ -78,11 +78,34 @@ def test_check_fresh_false_when_spec_missing(tmp_path: Path) -> None:
 
 
 def test_check_fresh_handles_corrupt_stamp(tmp_path: Path) -> None:
+    """Corrupt stamp (exists but unparseable) must produce a distinct
+    message from the "stamp missing" case — otherwise the user sees
+    "not found" for a file that's visibly present, which is confusing.
+    """
     spec = tmp_path / "app_spec.md"
     spec.write_text("content\n")
     (tmp_path / spec_stamp.STAMP_FILENAME).write_text("{not valid json")
 
     is_fresh, reason = spec_stamp.check_stamp_fresh(tmp_path, spec)
     assert is_fresh is False
-    # Corrupt stamp is treated as missing.
     assert spec_stamp.STAMP_FILENAME in reason
+    assert "could not be parsed" in reason
+    assert "no " not in reason.lower().split(".")[0], (
+        "corrupt-stamp message must not suggest the file is missing"
+    )
+
+
+def test_check_fresh_missing_vs_corrupt_messages_differ(tmp_path: Path) -> None:
+    """Regression guard: the two not-fresh failure modes must produce
+    visibly different messages so the user can tell them apart."""
+    spec = tmp_path / "app_spec.md"
+    spec.write_text("content\n")
+
+    _, missing_reason = spec_stamp.check_stamp_fresh(tmp_path, spec)
+
+    (tmp_path / spec_stamp.STAMP_FILENAME).write_text("not json")
+    _, corrupt_reason = spec_stamp.check_stamp_fresh(tmp_path, spec)
+
+    assert missing_reason != corrupt_reason
+    assert "no " in missing_reason.lower()
+    assert "could not be parsed" in corrupt_reason
