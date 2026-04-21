@@ -64,7 +64,7 @@ def parse_args() -> argparse.Namespace:
         "--clean",
         action="store_true",
         default=False,
-        help="Wipe runtime files (feature_list.json, claude-progress.txt, app_spec.md) before starting. Forces the initializer agent to run fresh.",
+        help="Wipe runtime files (feature_list.json, claude-progress.txt) before starting. Forces the initializer agent to run fresh. Preserves app_spec.md — delete that manually if you really want to reset the spec.",
     )
 
     parser.add_argument(
@@ -93,6 +93,19 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=False,
         help="Skip Phase 3 cloud review entirely",
+    )
+
+    parser.add_argument(
+        "--ignore-stale-list",
+        action="store_true",
+        default=False,
+        help=(
+            "Proceed even if .feature_list_stamp.json is missing or does "
+            "not match the current app_spec.md hash. Default behavior is "
+            "to refuse to run Phase 2 on a stale feature_list.json so the "
+            "harness never silently resumes a list that doesn't match the "
+            "spec it was generated from."
+        ),
     )
 
     parser.add_argument(
@@ -145,12 +158,20 @@ def resolve_sandbox(no_sandbox_flag: bool) -> bool:
 RUNTIME_FILES = [
     "feature_list.json",
     "claude-progress.txt",
-    "app_spec.md",
+    ".feature_list_stamp.json",
 ]
 
 
 def clean_runtime_files(project_dir: Path) -> None:
-    """Remove harness runtime files to force a fresh initializer run."""
+    """Remove harness runtime files to force a fresh initializer run.
+
+    Preserves ``app_spec.md`` — that is the user's authored product
+    specification, not harness runtime state. Wiping it here used to
+    force the initializer to fall back to ``prompts/app_spec.md`` (the
+    default VIBM template), silently replacing the user's real spec.
+    If a user genuinely wants to wipe their spec they can delete it
+    manually; ``--clean`` only touches machine-generated artifacts.
+    """
     print("  Cleaning runtime files...")
     for name in RUNTIME_FILES:
         path = project_dir / name
@@ -217,6 +238,7 @@ def main() -> None:
                 sandbox=sandbox,
                 skip_review=args.skip_review,
                 client_kind=args.client,
+                ignore_stale_list=args.ignore_stale_list,
             )
         )
 

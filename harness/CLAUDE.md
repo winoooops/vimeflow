@@ -272,7 +272,7 @@ The coder agent picks the next feature whose dependencies are all satisfied. Fea
    python3 autonomous_agent_demo.py --clean --max-iterations 10
    ```
 
-   `--clean` removes `feature_list.json`, `claude-progress.txt`, and `app_spec.md` from the project root before starting. The initializer then reads the spec from `prompts/app_spec.md` (copied to root) and generates a fresh feature list.
+   `--clean` removes `feature_list.json` and `claude-progress.txt` from the project root before starting. It **preserves `app_spec.md`** — that's your authored product spec, not harness runtime state. If the root has no `app_spec.md`, the initializer copies `prompts/app_spec.md` in as a one-time default; once you've authored your real spec at the root, `--clean` leaves it alone.
 
    Without `--clean`, the harness resumes from the existing `feature_list.json` — useful for continuing a previous run.
 
