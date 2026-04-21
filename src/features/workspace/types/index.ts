@@ -58,12 +58,29 @@ export interface Session {
 // Agent Activity Types
 // ============================================================================
 
+// ActivityEvent types per UNIFIED.md §5.2 - timeline event representation
+export type ActivityEventType = 'edit' | 'bash' | 'read' | 'think' | 'user'
+
+export interface ActivityEventBadge {
+  kind: 'live' | 'ok' | 'failed' | 'diff'
+  text: string // e.g. "LIVE", "OK", "FAILED 1/4", "+12 -2"
+}
+
+export interface ActivityEvent {
+  id: string
+  type: ActivityEventType
+  body: string
+  at: string // ISO timestamp; UI formats relatively
+  badge?: ActivityEventBadge
+}
+
 export interface AgentActivity {
   fileChanges: FileChange[]
   toolCalls: ToolCall[]
   testResults: TestResult[]
   contextWindow: ContextWindowStatus
   usage: UsageMetrics
+  events?: ActivityEvent[] // Timeline events for new ActivityFeed component
 }
 
 export interface FileChange {

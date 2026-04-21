@@ -3,6 +3,9 @@ import type {
   Project,
   Session,
   SessionStatus,
+  ActivityEventType,
+  ActivityEvent,
+  ActivityEventBadge,
   FileChange,
   ToolCall,
   TestResult,
@@ -71,6 +74,128 @@ describe('Workspace Types', () => {
       }
 
       expect(project.color).toBe('#e2c7ff')
+    })
+  })
+
+  describe('ActivityEventType', () => {
+    test('defines valid activity event types', () => {
+      const validTypes: ActivityEventType[] = [
+        'edit',
+        'bash',
+        'read',
+        'think',
+        'user',
+      ]
+
+      validTypes.forEach((type) => {
+        expect(type).toBeTruthy()
+      })
+    })
+
+    test('aligns with UNIFIED.md §5.2 event types', () => {
+      const expectedTypes: ActivityEventType[] = [
+        'edit',
+        'bash',
+        'read',
+        'think',
+        'user',
+      ]
+
+      expect(expectedTypes).toHaveLength(5)
+    })
+  })
+
+  describe('ActivityEventBadge', () => {
+    test('creates valid badge object', () => {
+      const badge: ActivityEventBadge = {
+        kind: 'live',
+        text: 'LIVE',
+      }
+
+      expect(badge.kind).toBe('live')
+      expect(badge.text).toBe('LIVE')
+    })
+
+    test('supports all four badge kinds', () => {
+      const badges: ActivityEventBadge[] = [
+        { kind: 'live', text: 'LIVE' },
+        { kind: 'ok', text: 'OK' },
+        { kind: 'failed', text: 'FAILED 1/4' },
+        { kind: 'diff', text: '+12 -2' },
+      ]
+
+      expect(badges).toHaveLength(4)
+      badges.forEach((badge) => {
+        expect(['live', 'ok', 'failed', 'diff']).toContain(badge.kind)
+      })
+    })
+  })
+
+  describe('ActivityEvent', () => {
+    test('creates valid activity event object', () => {
+      const event: ActivityEvent = {
+        id: 'evt-1',
+        type: 'edit',
+        body: 'src/features/workspace/types/index.ts',
+        at: '2026-04-21T01:20:00Z',
+        badge: {
+          kind: 'diff',
+          text: '+12 -2',
+        },
+      }
+
+      expect(event.id).toBe('evt-1')
+      expect(event.type).toBe('edit')
+      expect(event.body).toBeTruthy()
+      expect(event.at).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    })
+
+    test('badge field is optional', () => {
+      const eventWithoutBadge: ActivityEvent = {
+        id: 'evt-2',
+        type: 'read',
+        body: 'docs/design/UNIFIED.md',
+        at: '2026-04-21T01:10:00Z',
+      }
+
+      expect(eventWithoutBadge.badge).toBeUndefined()
+    })
+
+    test('supports all event types', () => {
+      const events: ActivityEvent[] = [
+        {
+          id: 'e1',
+          type: 'edit',
+          body: 'file.ts',
+          at: '2026-04-21T01:00:00Z',
+        },
+        {
+          id: 'e2',
+          type: 'bash',
+          body: 'npm test',
+          at: '2026-04-21T01:01:00Z',
+        },
+        {
+          id: 'e3',
+          type: 'read',
+          body: 'docs.md',
+          at: '2026-04-21T01:02:00Z',
+        },
+        {
+          id: 'e4',
+          type: 'think',
+          body: 'considering approach',
+          at: '2026-04-21T01:03:00Z',
+        },
+        {
+          id: 'e5',
+          type: 'user',
+          body: 'user message',
+          at: '2026-04-21T01:04:00Z',
+        },
+      ]
+
+      expect(events).toHaveLength(5)
     })
   })
 

@@ -13,7 +13,7 @@
       "Verify with npm run type-check",
       "Update co-located tests to cover all five states"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": []
   },
   {
