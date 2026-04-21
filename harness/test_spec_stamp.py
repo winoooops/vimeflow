@@ -90,9 +90,12 @@ def test_check_fresh_handles_corrupt_stamp(tmp_path: Path) -> None:
     assert is_fresh is False
     assert spec_stamp.STAMP_FILENAME in reason
     assert "could not be parsed" in reason
-    assert "no " not in reason.lower().split(".")[0], (
-        "corrupt-stamp message must not suggest the file is missing"
-    )
+    # Directly assert the missing-stamp wording is absent — the prior
+    # split-based check returned "" as its haystack because STAMP_FILENAME
+    # starts with "." so split(".")[0] yields the empty string, making
+    # the assertion trivially True and catching nothing.
+    assert f"no {spec_stamp.STAMP_FILENAME} found" not in reason
+    assert "exists at" in reason
 
 
 def test_check_fresh_missing_vs_corrupt_messages_differ(tmp_path: Path) -> None:

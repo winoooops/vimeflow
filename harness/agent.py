@@ -298,7 +298,7 @@ async def run_autonomous_agent(
     skip_review: bool = False,
     client_kind: str = "cli",
     ignore_stale_list: bool = False,
-) -> None:
+) -> bool:
     """
     Run the autonomous agent loop.
 
@@ -309,6 +309,14 @@ async def run_autonomous_agent(
     is consulted to verify the list was generated against the current
     ``app_spec.md``. A missing or mismatched stamp aborts the run with a
     clear message unless ``ignore_stale_list`` is set.
+
+    Returns ``True`` when Phase 2 completed normally (feature loop exited
+    either because all features passed or because every remaining feature
+    exhausted its iteration budget). Returns ``False`` on an early abort
+    (Initializer failure, stale-stamp guard). The caller uses this to
+    decide whether Phase 3 should run — Phase 3 must not push+PR after
+    an abort, even in ``--phase-3 auto`` mode, because the branch may
+    contain no new work or an incomplete feature list.
     """
     print("\n" + "=" * 70)
     print("  VIBM AUTONOMOUS DEVELOPMENT HARNESS")
@@ -344,7 +352,7 @@ async def run_autonomous_agent(
 
         if status == "error":
             print("  Initializer failed. Check logs and retry.")
-            return
+            return False
 
         # Record what spec produced this feature_list.json so a later run
         # with a changed spec can refuse rather than silently resume.
@@ -367,7 +375,7 @@ async def run_autonomous_agent(
             print("    rm feature_list.json .feature_list_stamp.json")
             print("    python3 autonomous_agent_demo.py …")
             print("  to force a fresh Initializer run.")
-            return
+            return False
         if not is_fresh and ignore_stale_list:
             print(f"  WARNING: stale feature_list.json detected ({reason.split('.')[0]}).")
             print("  Proceeding anyway because --ignore-stale-list was passed.")
@@ -481,6 +489,8 @@ async def run_autonomous_agent(
     print("=" * 70)
     print(f"\n  Project: {project_dir.resolve()}")
     print_progress_summary(project_dir)
+
+    return True
 
 
 async def run_cloud_review_loop(

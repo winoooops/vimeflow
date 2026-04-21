@@ -302,7 +302,7 @@ def main() -> None:
     sandbox = resolve_sandbox(no_sandbox)
 
     try:
-        asyncio.run(
+        phase2_ok = asyncio.run(
             run_autonomous_agent(
                 project_dir=args.project_dir,
                 model=args.model,
@@ -314,8 +314,13 @@ def main() -> None:
             )
         )
 
-        # Phase 3: Cloud review — gated per --phase-3
-        if should_run_phase_3(args.phase_3, args.skip_relay):
+        # Phase 3 must NOT run if Phase 2 aborted early (stale-stamp guard,
+        # initializer failure) — the branch may contain no new work or an
+        # incomplete feature list, and --phase-3 auto would otherwise push
+        # that state and open a PR.
+        if not phase2_ok:
+            print("  Phase 2 did not complete normally — skipping Phase 3.")
+        elif should_run_phase_3(args.phase_3, args.skip_relay):
             asyncio.run(
                 run_cloud_review_loop(
                     project_dir=args.project_dir,

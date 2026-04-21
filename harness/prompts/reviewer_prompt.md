@@ -57,14 +57,22 @@ Tests: npx vitest run + npx eslint . clean.
 
 ### STEP 5: PHANTOM REFERENCE CHECK
 
-Before finalizing: grep your diff for `Feature #N`, `feature #N`, or similar
-references. For each hit:
+After committing in Step 3, grep **the commit you just made** for `Feature #N`, `feature #N`, or similar references. The staging index is empty at this point (your changes already landed in the commit), so use `git show HEAD` — NOT `git diff --cached`, which would return nothing and make this check a silent no-op.
 
 ```bash
-git diff --cached | grep -iE 'feature #[0-9]+'
+git show HEAD | grep -iE 'feature #[0-9]+'
 ```
 
-Verify that each referenced feature number actually exists in `feature_list.json` AND that the cited feature's description matches the subject of your comment. If a reference points to a number that doesn't exist (or to a feature with an unrelated description), **rewrite the comment** to cite the correct number or remove the reference. Phantom refs mislead reviewers and rot the codebase.
+For each hit, verify that the referenced feature number actually exists in `feature_list.json` AND that the cited feature's description matches the subject of your comment. If a reference points to a number that doesn't exist (or to a feature with an unrelated description):
+
+1. Rewrite the comment to cite the correct number, or remove the reference.
+2. Amend the commit with your fix:
+   ```bash
+   git add <files you corrected>
+   git commit --amend --no-edit
+   ```
+
+Phantom refs mislead reviewers and rot the codebase.
 
 ### RULES
 
