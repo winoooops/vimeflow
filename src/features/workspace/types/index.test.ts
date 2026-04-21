@@ -17,14 +17,28 @@ describe('Workspace Types', () => {
     test('defines valid session status values', () => {
       const validStatuses: SessionStatus[] = [
         'running',
-        'paused',
+        'awaiting',
         'completed',
         'errored',
+        'idle',
       ]
 
       validStatuses.forEach((status) => {
         expect(status).toBeTruthy()
       })
+    })
+
+    test('aligns with UNIFIED.md five-state model', () => {
+      // Per UNIFIED.md §4.1, SessionStatus must support exactly these five states
+      const expectedStates: SessionStatus[] = [
+        'running',
+        'awaiting',
+        'completed',
+        'errored',
+        'idle',
+      ]
+
+      expect(expectedStates).toHaveLength(5)
     })
   })
 

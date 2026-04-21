@@ -26,11 +26,29 @@ describe('mockSessions', () => {
   })
 
   test('session statuses are valid', () => {
-    const validStatuses = ['running', 'paused', 'completed', 'errored']
+    const validStatuses = [
+      'running',
+      'awaiting',
+      'completed',
+      'errored',
+      'idle',
+    ]
 
     mockSessions.forEach((session) => {
       expect(validStatuses).toContain(session.status)
     })
+  })
+
+  test('all five session states are represented in mock data', () => {
+    const statuses = mockSessions.map((s) => s.status)
+    const uniqueStatuses = [...new Set(statuses)]
+
+    // Per UNIFIED.md §4.1, we should have examples of all five states
+    expect(uniqueStatuses).toContain('running')
+    expect(uniqueStatuses).toContain('awaiting')
+    expect(uniqueStatuses).toContain('completed')
+    expect(uniqueStatuses).toContain('errored')
+    expect(uniqueStatuses).toContain('idle')
   })
 
   test('getSessionById returns correct session', () => {

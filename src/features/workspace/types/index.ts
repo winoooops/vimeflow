@@ -31,7 +31,14 @@ export interface Project {
 // Session Types
 // ============================================================================
 
-export type SessionStatus = 'running' | 'paused' | 'completed' | 'errored'
+// SessionStatus aligns with docs/design/tokens.ts SessionState per UNIFIED.md §4.1
+// Five-state agent session model: running | awaiting | completed | errored | idle
+export type SessionStatus =
+  | 'running'
+  | 'awaiting'
+  | 'completed'
+  | 'errored'
+  | 'idle'
 
 export interface Session {
   id: string

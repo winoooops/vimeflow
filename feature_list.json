@@ -2,282 +2,216 @@
   {
     "id": 1,
     "phase": 1,
-    "category": "scaffold",
-    "description": "Create agent module directory structure",
+    "category": "types",
+    "description": "Extend SessionStatus to five-state model",
     "steps": [
-      "Create src-tauri/src/agent/ directory",
-      "Create src-tauri/src/agent/mod.rs with module exports",
-      "Verify directory structure matches terminal module pattern"
+      "Update SessionStatus type in src/features/workspace/types/index.ts from 'running' | 'paused' | 'completed' | 'errored' to 'running' | 'awaiting' | 'completed' | 'errored' | 'idle'",
+      "Add type alias: export type SessionStatus = SessionState (import from docs/design/tokens)",
+      "Update all Session interface usages and mock fixtures to use new states",
+      "Replace any 'paused' states with 'awaiting' or 'idle' as appropriate",
+      "Update all type guards and status checks in components",
+      "Verify with npm run type-check",
+      "Update co-located tests to cover all five states"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": []
   },
   {
     "id": 2,
-    "phase": 2,
+    "phase": 1,
     "category": "types",
-    "description": "Define AgentType enum",
+    "description": "Introduce ActivityEvent type and mock data",
     "steps": [
-      "Create src-tauri/src/agent/types.rs",
-      "Define AgentType enum with ClaudeCode, Codex, Aider, Generic variants",
-      "Add Debug, Clone, Serialize, Deserialize derives",
-      "Add ts-rs derives with cfg(test) attribute",
-      "Verify matches terminal/types.rs pattern exactly"
+      "Add ActivityEventType = 'edit' | 'bash' | 'read' | 'think' | 'user' to workspace types",
+      "Add ActivityEventBadge interface with kind: 'live' | 'ok' | 'failed' | 'diff' and text: string",
+      "Add ActivityEvent interface with id, type, body, at, badge? fields",
+      "Create mock data file with sample events covering all five event types",
+      "Create mock events covering all four badge kinds (live, ok, failed, diff)",
+      "Export types from workspace/types/index.ts",
+      "Add unit tests for type definitions and mock data structure"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [1]
   },
   {
     "id": 3,
     "phase": 2,
-    "category": "types",
-    "description": "Define AgentDetectedEvent struct",
+    "category": "component",
+    "description": "Implement StatusDot component per UNIFIED.md §5.3",
     "steps": [
-      "Add AgentDetectedEvent struct with session_id, agent_type, pid fields",
-      "Apply camelCase serde rename_all",
-      "Add all required derives matching pattern",
-      "Export via ts-rs for TypeScript bindings"
+      "Create src/features/workspace/components/AgentActivity/StatusDot.tsx",
+      "Add props interface: { state: SessionStatus; size?: number; glow?: boolean }",
+      "Implement conditional rendering: hollow ring for idle/completed, solid for running/awaiting/errored",
+      "Add 3-ring outer shadow glow at ~45% alpha using stateToken from docs/design/tokens.ts",
+      "Implement pulse animation: 2s for running, 1.4s for awaiting, none for others",
+      "Add explicit return type on component export",
+      "Create StatusDot.test.tsx with tests for all five states, size variants, and glow toggle",
+      "Verify visual appearance against UNIFIED.md §4.1 table"
     ],
-    "passes": true,
-    "dependencies": [2]
+    "passes": false,
+    "dependencies": [1]
   },
   {
     "id": 4,
     "phase": 2,
-    "category": "types",
-    "description": "Define AgentDisconnectedEvent struct",
+    "category": "component",
+    "description": "Rewrite StatusCard header to use StatusDot",
     "steps": [
-      "Add AgentDisconnectedEvent struct with session_id field",
-      "Apply camelCase serde rename_all",
-      "Add all required derives matching pattern"
+      "Update src/features/workspace/components/AgentActivity/StatusCard.tsx",
+      "Replace existing status symbol/label rendering with StatusDot component",
+      "Layout: StatusDot + bold title + 'agent · branch' subtitle + ⋯ menu",
+      "Remove ALL state-label text (no '● running', no 'Status: X') per UNIFIED.md §8 anti-pattern",
+      "Delete statusConfig.label and statusConfig.symbol code paths",
+      "Update StatusCard.test.tsx to verify no state text appears for any state",
+      "Test that StatusDot correctly reflects state changes",
+      "Verify with npm run test and visual check"
     ],
-    "passes": true,
-    "dependencies": [2]
+    "passes": false,
+    "dependencies": [3]
   },
   {
     "id": 5,
     "phase": 2,
-    "category": "types",
-    "description": "Define context window and usage types",
+    "category": "component",
+    "description": "Implement NowCard component for running state",
     "steps": [
-      "Add CurrentUsage struct with token fields",
-      "Add ContextWindowStatus struct with percentages and token counts",
-      "Apply camelCase serde rename_all to all fields",
-      "Use Option<T> for optional fields per spec"
+      "Create src/features/workspace/components/AgentActivity/NowCard.tsx",
+      "Add props interface: { event: ActivityEvent }",
+      "Implement bordered card with type icon (Material Symbols: edit_note/terminal/visibility/auto_awesome/person)",
+      "Add uppercase type label, relative timestamp, body text",
+      "Add inline LIVE badge with primary-container on glass styling",
+      "Apply proper spacing and surface-container-high background per design tokens",
+      "Create NowCard.test.tsx with tests for all event types and badge rendering",
+      "Verify matches UNIFIED.md §5.2 visual specification"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [2]
   },
   {
     "id": 6,
     "phase": 2,
-    "category": "types",
-    "description": "Define cost and rate limit types",
+    "category": "component",
+    "description": "Implement ApprovalCard for awaiting state",
     "steps": [
-      "Add CostMetrics struct with USD cost and duration fields",
-      "Add RateLimitInfo struct with used_percentage and resets_at",
-      "Add RateLimits struct with five_hour and optional seven_day",
-      "Apply camelCase serde rename_all to all"
+      "Create src/features/workspace/components/AgentActivity/ApprovalCard.tsx",
+      "Add props interface: { question?: string; onApprove(): void; onDeny(): void }",
+      "Implement 'AWAITING YOU' label in uppercase",
+      "Add primary-gradient Approve button",
+      "Add ghost Deny button",
+      "Apply proper component styling per UNIFIED.md",
+      "Create ApprovalCard.test.tsx with button click handler tests",
+      "Test optional question prop rendering"
     ],
-    "passes": true,
-    "dependencies": [2]
+    "passes": false,
+    "dependencies": [1]
   },
   {
     "id": 7,
     "phase": 2,
-    "category": "types",
-    "description": "Define AgentStatusEvent struct",
+    "category": "component",
+    "description": "Implement ErrorBlock for errored state",
     "steps": [
-      "Add AgentStatusEvent struct with session_id, model info, version fields",
-      "Include context_window, cost, rate_limits nested types",
-      "Apply camelCase serde rename_all",
-      "Verify all Option<T> fields match spec"
+      "Create src/features/workspace/components/AgentActivity/ErrorBlock.tsx",
+      "Add props interface: { message: string }",
+      "Implement 'ERROR' label in uppercase",
+      "Add bordered monospace red message block",
+      "Use error semantic color tokens from design system",
+      "Apply proper spacing and typography per UNIFIED.md",
+      "Create ErrorBlock.test.tsx with message rendering tests",
+      "Test long error message wrapping and overflow handling"
     ],
-    "passes": true,
-    "dependencies": [5, 6]
+    "passes": false,
+    "dependencies": [1]
   },
   {
     "id": 8,
     "phase": 2,
-    "category": "types",
-    "description": "Define tool call event types",
+    "category": "component",
+    "description": "Implement idle state meter placeholders",
     "steps": [
-      "Add ToolCallStatus enum with Running, Done, Failed variants",
-      "Add AgentToolCallEvent struct with tool, args, status, timestamp, duration",
-      "Apply camelCase serde rename_all",
-      "Export all types via ts-rs"
+      "Update PinnedMetrics.tsx to accept state prop",
+      "Add conditional rendering: show -- placeholders when state === 'idle'",
+      "Apply to CONTEXT and 5-HOUR USAGE meters per UNIFIED.md §4.4",
+      "Document divergence from Claude Design prototype in JSDoc comment",
+      "Update PinnedMetrics.test.tsx to verify -- rendering for idle state",
+      "Test live values still render correctly for other states",
+      "Verify TURNS meter remains unaffected (always shows live value)"
     ],
-    "passes": true,
-    "dependencies": [2]
+    "passes": false,
+    "dependencies": [1]
   },
   {
     "id": 9,
     "phase": 3,
-    "category": "detector",
-    "description": "Create agent detector module stub",
+    "category": "component",
+    "description": "Implement ActivityFeed timeline component",
     "steps": [
-      "Create src-tauri/src/agent/detector.rs",
-      "Add module doc comment",
-      "Import AgentType from types module",
-      "Create detect_agent function signature returning Option<(AgentType, u32)>"
+      "Create src/features/workspace/components/AgentActivity/ActivityFeed.tsx",
+      "Add props interface: { events: ActivityEvent[] }",
+      "Implement vertical timeline with 1px rail (rgba(74,68,79,0.4) per §5.2)",
+      "Add Material Symbols icons for each event type (edit_note/terminal/visibility/auto_awesome/person)",
+      "Render uppercase type label, right-aligned relative timestamp",
+      "Render body text below icon node",
+      "Implement inline badges (LIVE, OK green, FAILED N/M red, +N -N diff)",
+      "Style think event bodies in italic with wrapping curly quotes",
+      "Add absolute timestamp in title tooltip on hover per §4.2",
+      "Create ActivityFeed.test.tsx with tests for all event types and badge kinds",
+      "Test timeline rail rendering and icon alignment"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [2]
   },
   {
     "id": 10,
-    "phase": 3,
-    "category": "detector",
-    "description": "Implement /proc filesystem helpers",
+    "phase": 4,
+    "category": "integration",
+    "description": "Wire up conditional state card rendering in AgentActivity",
     "steps": [
-      "Add helper to read /proc/<pid>/task/<pid>/children",
-      "Add helper to read /proc/<pid>/cmdline (null-separated)",
-      "Add helper to parse cmdline into Vec<String>",
-      "Handle missing /proc entries gracefully (process may exit)"
+      "Update AgentActivity.tsx to import NowCard, ApprovalCard, ErrorBlock",
+      "Add conditional slot rendering above ActivityFeed based on session.state",
+      "running state: render NowCard with currentAction or events[0]",
+      "awaiting state: render ApprovalCard with onApprove/onDeny handlers",
+      "errored state: render ErrorBlock with error message",
+      "completed/idle states: render no state card",
+      "Update AgentActivity.test.tsx integration tests for all state transitions",
+      "Verify only one state card renders at a time"
     ],
-    "passes": true,
-    "dependencies": [9]
+    "passes": false,
+    "dependencies": [5, 6, 7, 8, 9]
   },
   {
     "id": 11,
-    "phase": 3,
-    "category": "detector",
-    "description": "Implement recursive PID collection",
+    "phase": 4,
+    "category": "integration",
+    "description": "Replace ToolCalls with ActivityFeed in AgentActivity",
     "steps": [
-      "Create function to recursively collect descendant PIDs",
-      "Use BFS or DFS traversal of process tree",
-      "Handle cycles and missing entries",
-      "Return Vec<u32> of all descendants"
+      "Update AgentActivity.tsx to replace ToolCalls component with ActivityFeed",
+      "Map existing toolCalls data to ActivityEvent format",
+      "Update panel layout: StatusCard -> Meters -> State Slot -> ActivityFeed",
+      "Verify 'ACTIVITY' section header renders above feed",
+      "Update AgentActivity integration tests to use ActivityEvent mocks",
+      "Remove ToolCalls.tsx and ToolCalls.test.tsx (or mark for deletion in next feature)",
+      "Verify layout matches UNIFIED.md §5.2 panel composition"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [10]
   },
   {
     "id": 12,
-    "phase": 3,
-    "category": "detector",
-    "description": "Implement agent binary detection",
+    "phase": 4,
+    "category": "cleanup",
+    "description": "Fold agent-status components into workspace and cleanup",
     "steps": [
-      "For each descendant PID, read cmdline",
-      "Extract binary name from argv[0]",
-      "Match 'claude' → ClaudeCode, 'codex' → Codex, 'aider' → Aider",
-      "Return first match with PID, or None if no agents found"
+      "Identify unique components in src/features/agent-status/components/ not duplicated in workspace/",
+      "Move or merge unique logic into workspace/components/AgentActivity/",
+      "Update all imports across codebase from agent-status to workspace paths",
+      "Run npm run type-check to catch any missing import updates",
+      "Delete src/features/agent-status/ directory entirely",
+      "Update any references in mock data or fixture files",
+      "Run npm run lint and npm run test to verify clean state",
+      "Commit with message: 'refactor: consolidate agent-status into workspace/AgentActivity'"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [11]
-  },
-  {
-    "id": 13,
-    "phase": 4,
-    "category": "integration",
-    "description": "Create detect_agent_in_session Tauri command",
-    "steps": [
-      "Create src-tauri/src/agent/commands.rs",
-      "Add #[tauri::command] async fn detect_agent_in_session",
-      "Accept PtyState and session_id parameters",
-      "Call state.get_pid() to get child PID",
-      "Call detector::detect_agent() with PID",
-      "Return AgentDetectedEvent on success, None if no agent"
-    ],
-    "passes": true,
-    "dependencies": [12, 3]
-  },
-  {
-    "id": 14,
-    "phase": 4,
-    "category": "integration",
-    "description": "Register agent module in lib.rs",
-    "steps": [
-      "Add 'mod agent;' to src-tauri/src/lib.rs",
-      "Import detect_agent_in_session command",
-      "Add to invoke_handler macro",
-      "Verify cargo build succeeds"
-    ],
-    "passes": true,
-    "dependencies": [13]
-  },
-  {
-    "id": 15,
-    "phase": 4,
-    "category": "integration",
-    "description": "Export types and detector from agent/mod.rs",
-    "steps": [
-      "Add pub mod types; pub mod detector; pub mod commands;",
-      "Re-export detect_agent_in_session as pub use",
-      "Verify all modules accessible from agent namespace"
-    ],
-    "passes": true,
-    "dependencies": [13]
-  },
-  {
-    "id": 16,
-    "phase": 5,
-    "category": "testing",
-    "description": "Write unit tests for /proc helpers",
-    "steps": [
-      "Add #[cfg(test)] mod tests to detector.rs",
-      "Test reading /proc/self/cmdline (always exists)",
-      "Test handling missing PID gracefully",
-      "Test cmdline parsing with null separators"
-    ],
-    "passes": true,
-    "dependencies": [10]
-  },
-  {
-    "id": 17,
-    "phase": 5,
-    "category": "testing",
-    "description": "Write unit tests for agent detection logic",
-    "steps": [
-      "Create mock process tree scenarios",
-      "Test detecting claude binary in descendants",
-      "Test detecting codex and aider",
-      "Test returning None when no agent present",
-      "Test Generic fallback if needed"
-    ],
-    "passes": true,
-    "dependencies": [12, 16]
-  },
-  {
-    "id": 18,
-    "phase": 5,
-    "category": "testing",
-    "description": "Run cargo test and verify all tests pass",
-    "steps": [
-      "Run cargo test",
-      "Verify all unit tests pass",
-      "Run cargo clippy -- -D warnings",
-      "Run cargo fmt --check"
-    ],
-    "passes": true,
-    "dependencies": [17]
-  },
-  {
-    "id": 19,
-    "phase": 6,
-    "category": "bindings",
-    "description": "Verify ts-rs bindings generation",
-    "steps": [
-      "Run cargo test to trigger ts-rs binding generation",
-      "Verify new .ts files appear in src/bindings/",
-      "Check AgentType.ts, AgentDetectedEvent.ts, etc. exist",
-      "Verify camelCase field names in generated TypeScript"
-    ],
-    "passes": true,
-    "dependencies": [18]
-  },
-  {
-    "id": 20,
-    "phase": 6,
-    "category": "bindings",
-    "description": "Update src/bindings/index.ts with new exports",
-    "steps": [
-      "Open src/bindings/index.ts",
-      "Add export * from './AgentType' and all other new types",
-      "Verify exports match naming convention",
-      "Run npm run type-check to verify TypeScript compiles"
-    ],
-    "passes": true,
-    "dependencies": [19]
   }
 ]

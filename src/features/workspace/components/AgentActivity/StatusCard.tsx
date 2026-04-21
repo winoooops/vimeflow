@@ -21,16 +21,19 @@ const getAgentName = (
 const getStatusConfig = (
   status: SessionStatus
 ): { symbol: string; color: string; label: string } => {
-  const configs = {
+  const configs: Record<
+    SessionStatus,
+    { symbol: string; color: string; label: string }
+  > = {
     running: {
       symbol: '●',
       color: 'text-success',
       label: 'running',
     },
-    paused: {
-      symbol: '⏸',
-      color: 'text-secondary',
-      label: 'paused',
+    awaiting: {
+      symbol: '◐',
+      color: 'text-tertiary',
+      label: 'awaiting',
     },
     completed: {
       symbol: '○',
@@ -41,6 +44,11 @@ const getStatusConfig = (
       symbol: '✗',
       color: 'text-error',
       label: 'errored',
+    },
+    idle: {
+      symbol: '○',
+      color: 'text-outline-variant',
+      label: 'idle',
     },
   }
 

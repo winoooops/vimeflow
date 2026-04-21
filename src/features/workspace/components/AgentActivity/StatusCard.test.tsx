@@ -51,15 +51,26 @@ describe('StatusCard', () => {
     expect(screen.getByText('Creating auth middleware...')).toBeInTheDocument()
   })
 
-  test('renders status badge for paused session', () => {
-    const pausedSession: Session = {
+  test('renders status badge for awaiting session', () => {
+    const awaitingSession: Session = {
       ...mockSession,
-      status: 'paused',
+      status: 'awaiting',
     }
 
-    render(<StatusCard session={pausedSession} />)
+    render(<StatusCard session={awaitingSession} />)
 
-    expect(screen.getByText('⏸ paused')).toBeInTheDocument()
+    expect(screen.getByText('◐ awaiting')).toBeInTheDocument()
+  })
+
+  test('renders status badge for idle session', () => {
+    const idleSession: Session = {
+      ...mockSession,
+      status: 'idle',
+    }
+
+    render(<StatusCard session={idleSession} />)
+
+    expect(screen.getByText('○ idle')).toBeInTheDocument()
   })
 
   test('renders status badge for completed session', () => {
@@ -160,17 +171,30 @@ describe('StatusCard', () => {
     expect(badge).toHaveClass('text-success')
   })
 
-  test('status badge uses correct color for paused status', () => {
-    const pausedSession: Session = {
+  test('status badge uses correct color for awaiting status', () => {
+    const awaitingSession: Session = {
       ...mockSession,
-      status: 'paused',
+      status: 'awaiting',
     }
 
-    render(<StatusCard session={pausedSession} />)
+    render(<StatusCard session={awaitingSession} />)
 
-    const badge = screen.getByText('⏸ paused')
+    const badge = screen.getByText('◐ awaiting')
 
-    expect(badge).toHaveClass('text-secondary')
+    expect(badge).toHaveClass('text-tertiary')
+  })
+
+  test('status badge uses correct color for idle status', () => {
+    const idleSession: Session = {
+      ...mockSession,
+      status: 'idle',
+    }
+
+    render(<StatusCard session={idleSession} />)
+
+    const badge = screen.getByText('○ idle')
+
+    expect(badge).toHaveClass('text-outline-variant')
   })
 
   test('status badge uses correct color for completed status', () => {

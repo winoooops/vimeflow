@@ -38,7 +38,7 @@ const mockSessions: Session[] = [
     id: 'sess-2',
     projectId: 'proj-1',
     name: 'fix: login bug',
-    status: 'paused',
+    status: 'awaiting',
     workingDirectory: '/home/user/projects/Vimeflow',
     agentType: 'claude-code',
     terminalPid: 12346,
