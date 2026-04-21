@@ -188,9 +188,18 @@ async def _query_claude(prompt: str) -> str:
     subprocess runs. The CLI backend doesn't care either way — its hooks
     run in fresh `hook_runner.py` processes — but making this async keeps
     one implementation.
+
+    Lock the subprocess's tool surface to the empty set via `--tools ""`.
+    The judge's job is a pure text decision — it must not use Read/Write/
+    Bash, and cannot trigger user-level PreToolUse hooks (which could
+    include another `hook_runner.py` invocation, producing a recursion
+    loop `_query_claude → judge → bash hook → hook_runner → decide →
+    _query_claude`). Empty tool surface = no PreToolUse events = safe.
     """
     proc = await asyncio.create_subprocess_exec(
-        "claude", prompt, "-p", "--output-format", "text",
+        "claude", prompt, "-p",
+        "--output-format", "text",
+        "--tools", "",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -321,13 +330,19 @@ async def decide(command: str) -> JudgeDecision:
     if base and base in _load_local_allowlist():
         return JudgeDecision(allow=True, reason=f"local allowlist file: '{base}'")
 
-    # Escape hatch #2: explicit LLM consultation.
+    # Escape hatch #2: explicit LLM consultation. Pass the BASE command
+    # to the judge — not the raw input — so the cache key (documented as
+    # per-binary) actually matches what the judge evaluates. Without this,
+    # a caller that accidentally passes a full invocation would bloat the
+    # cache with per-invocation entries and send argv-level text into a
+    # prompt that only evaluates binary class.
+    judge_input = base or command
     if mode == "ask":
-        return await _consult_judge(command, advisory=False)
+        return await _consult_judge(judge_input, advisory=False)
 
     # Escape hatch #3: advisory-only — judge may reason, never approves.
     if mode == "explain":
-        return await _consult_judge(command, advisory=True)
+        return await _consult_judge(judge_input, advisory=True)
 
     # Default / "deny" / anything else unrecognised → deny.
     return JudgeDecision(

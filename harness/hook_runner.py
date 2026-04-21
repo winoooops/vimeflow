@@ -64,9 +64,20 @@ def main() -> int:
     # when a hook subprocess produces no decision JSON (see client.py), so
     # a raw crash here would silently bypass security. Catch everything,
     # emit an explicit block, and surface the error so operators see it.
+    #
+    # Outer timeout: Claude CLI can SIGKILL a slow hook subprocess before
+    # the inner 60 s LLM-query deadline in policy_judge fires. A SIGKILL
+    # can't be caught, so the hook emits nothing and the CLI falls back
+    # to allow. Cap at 45 s (under the 60 s judge timeout) so we always
+    # have time to emit an explicit block before the CLI gives up.
     try:
-        result = asyncio.run(hook(payload))
+        result = asyncio.run(asyncio.wait_for(hook(payload), timeout=45.0))
         print(json.dumps(result or {}))
+    except asyncio.TimeoutError:
+        print(json.dumps({
+            "decision": "block",
+            "reason": f"hook_runner: {kind} hook exceeded 45s",
+        }))
     except Exception as exc:  # noqa: BLE001 — last line of defense must be broad
         print(json.dumps({
             "decision": "block",

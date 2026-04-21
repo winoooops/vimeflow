@@ -71,3 +71,13 @@ When building any subprocess-based security hook for a CLI tool that uses
    hook module itself fails to import. The import-failure test must cover
    the real `sys.path.insert(0, HARNESS_DIR)` code path (copy the runner to a
    scratch dir with a broken sibling module; don't rely on `PYTHONPATH`).
+
+### 3. No outer timeout on hook coroutine → CLI SIGKILL → silent allow
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (round 12)
+- **Severity:** LOW
+- **File:** `harness/hook_runner.py`
+- **Finding:** `asyncio.run(hook(payload))` had no outer deadline. The inner `_query_claude` timeout is 60 s, but the Claude CLI's own hook-subprocess limit may be shorter. If the CLI SIGKILLs the hook_runner before the inner timeout fires, no stdout is emitted and the CLI defaults to allow — bypassing security. SIGKILLs can't be caught.
+- **Fix:** Wrap the hook invocation in `asyncio.wait_for(hook(payload), timeout=45.0)` — kept under the 60 s inner LLM timeout so we emit an explicit block before the CLI gives up. Added an `asyncio.TimeoutError` arm to the outer try/except that emits a "hook exceeded 45s" block.
+- **Lesson:** Fail-closed hooks need DEFENSE-IN-DEPTH deadlines. The rule of thumb: outer wrapper timeout < inner call timeout < CLI's external kill deadline. Each layer has a chance to emit a clean block.
+- **Commit:** (round 12)

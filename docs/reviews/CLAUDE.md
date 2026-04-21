@@ -31,8 +31,8 @@ ingestion protocol.
 | [Accessibility](patterns/accessibility.md)                     | a11y           | 11       | 1    | 2026-04-10   |
 | [Async Race Conditions](patterns/async-race-conditions.md)     | react-patterns | 17       | 5    | 2026-04-20   |
 | [Command Injection](patterns/command-injection.md)             | security       | 5        | 1    | 2026-04-20   |
-| [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)       | security       | 13       | 1    | 2026-04-20   |
-| [Fail-Closed Hooks](patterns/fail-closed-hooks.md)             | security       | 2        | 0    | 2026-04-20   |
+| [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)       | security       | 15       | 2    | 2026-04-20   |
+| [Fail-Closed Hooks](patterns/fail-closed-hooks.md)             | security       | 3        | 1    | 2026-04-20   |
 | [Preflight Checks](patterns/preflight-checks.md)               | error-handling | 1        | 0    | 2026-04-20   |
 | [CSP Configuration](patterns/csp-configuration.md)             | security       | 2        | 1    | 2026-04-09   |
 | [PTY Session Management](patterns/pty-session-management.md)   | backend        | 5        | 1    | 2026-04-09   |

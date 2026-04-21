@@ -217,3 +217,22 @@ Before implementing or modifying any LLM-as-judge code path:
 - **Finding:** Finding 7's lock protected the load→save atomicity, but two concurrent ask-mode hook_runner processes could still both get ALLOW from the LLM (with slightly different reasons) and overwrite each other non-deterministically. More importantly, if LLM non-determinism gave process A an ALLOW and process B a DENY, B correctly skipped the cache write (per finding 11 — DENY not cached), but A's ALLOW then persisted — so a racing DENY verdict never got to influence the cache at all.
 - **Fix:** After re-acquiring the lock in the write phase, check `if command not in cache:` before writing. First process to land wins; subsequent writers keep the earlier entry. Combined with "only ALLOW is cached", this makes concurrent-ask semantics deterministic without adding a TTL.
 - **Commit:** (round 10)
+
+### 14. Judge subprocess had full tool surface + user-hook exposure
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (round 12)
+- **Severity:** MEDIUM
+- **File:** `harness/policy_judge.py`
+- **Finding:** `_query_claude` spawned `claude -p --output-format text` with no `--tools` flag. The judge subprocess inherited the default tool surface (Read, Write, Bash, any user MCP tools) AND fired the user's global `~/.claude/settings.json` PreToolUse hooks. A crafted command could instruct the judge to use Read/Bash; worse, if the user's Bash hook routed back through `hook_runner.py`, the chain `_query_claude → judge → bash hook → hook_runner → decide → _query_claude` became a recursion loop.
+- **Fix:** Add `"--tools", ""` to the subprocess args. Empty tool surface = no tools available = no PreToolUse events fire = no recursion, no accidental tool use. The judge's job is pure text ALLOW/DENY, which needs zero tools.
+- **Lesson:** Any LLM-as-judge subprocess should explicitly lock down its tool surface to exactly what the prompt needs. Default is "inherit everything", which is wrong for a confined decision.
+- **Commit:** (round 12)
+
+### 15. `decide()` passed raw command to `_consult_judge`, cache key inconsistent
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (round 12)
+- **Severity:** LOW
+- **File:** `harness/policy_judge.py`
+- **Finding:** The local-allowlist lookup in `decide()` used `base = _base_command(command)`, but the LLM path called `_consult_judge(command, ...)` with the raw string. Cache key doc promised "per-binary" granularity; a future caller passing a full invocation would have split cache entries for `"rg"` vs `"rg --files src/"`. The LLM also got a full invocation in `<binary_to_evaluate>` when the prompt only evaluates binary class.
+- **Fix:** Compute `judge_input = base or command` and pass that to both `_consult_judge` call sites. Cache key, LLM prompt, and docstring contract are now all aligned.
+- **Commit:** (round 12)
