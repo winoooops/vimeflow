@@ -171,7 +171,7 @@ src-tauri/
 
 agents/                     # 10 个专业 AI 代理定义
 rules/                      # 分层开发标准（通用 + TS + Rust）
-harness/                    # 自主开发循环（Claude Code SDK，Python）
+harness/                    # 自主开发循环（Python；默认按角色启动 `claude -p` 子进程，SDK 作为备用）
 ```
 
 ## AI 原生开发流程
@@ -183,7 +183,7 @@ harness/                    # 自主开发循环（Claude Code SDK，Python）
 3. **专业代理审查工作** — 10 个 AI 代理分别负责规划、TDD、代码审查、安全和文档
 4. **规则管控一切** — 分层规则系统（通用层 + 语言特定层）确保一致性，无需人工逐次提交干预
 
-引擎（`harness/`）是基于 Claude Code SDK 构建的 Python 循环。详见 [`harness/CLAUDE.md`](harness/CLAUDE.md)。
+引擎（`harness/`）是一个 Python 循环，按角色启动 `claude -p` 子进程 — 默认路径直接继承用户本地的 Claude Code CLI 登录状态，无需 `ANTHROPIC_API_KEY`。SDK 路径被保留为可选的备用后端（`--client sdk`）。双语概览见 [`docs/harness/CLAUDE.md`](docs/harness/CLAUDE.md)，完整参考见 [`harness/CLAUDE.md`](harness/CLAUDE.md)。
 
 ## 路线图
 

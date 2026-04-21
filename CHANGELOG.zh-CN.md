@@ -53,9 +53,55 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
 
 #### Changed
 
+- Harness 默认后端从 `claude_code_sdk` 改为按角色启动 `claude -p` 子进程。
+  直接继承用户本地 `~/.claude` 的 CLI 登录凭证；默认路径不再需要
+  `ANTHROPIC_API_KEY` 或 `ANTHROPIC_BASE_URL`。SDK 被保留为通过
+  `--client sdk` 显式开启的备用后端（使用时仍需 API key）。
+  ([#73](https://github.com/winoooops/vimeflow/pull/73), `93a5338`) —
+  patterns: [Policy Judge Hygiene](docs/reviews/patterns/policy-judge-hygiene.md),
+  [Fail-Closed Hooks](docs/reviews/patterns/fail-closed-hooks.md),
+  [Async Race Conditions](docs/reviews/patterns/async-race-conditions.md),
+  [Command Injection](docs/reviews/patterns/command-injection.md),
+  [Preflight Checks](docs/reviews/patterns/preflight-checks.md)
+  - 新增模块：`cli_client.py`（stream-JSON 解析器 + `ClaudeCliSession`
+    会话续传 / stderr 并发排空 / 基于单调时钟的超时预算），
+    `hook_runner.py`（CLI → Python 钩子桥，在导入期和运行期都
+    fail-closed），`policy_judge.py`（默认拒绝，可通过
+    `HARNESS_POLICY_JUDGE=ask` / `=explain` 显式启用 LLM 判定，
+    或在 gitignore 的 `.policy_allow.local` 中列出基础命令作为
+    确定性放行），`sdk_client.py`（懒加载的备用后端 —— 唯一引入
+    `claude_code_sdk` 的模块）。
+  - `client.py` 提供共享帮助器：`build_base_settings`、
+    `write_settings_file`、`create_client`（CLI 工厂，
+    `sdk_client.create_client` 使用同形签名）。
+  - 删除了会隐藏 CLI 登录态的 `CLAUDE_CONFIG_DIR` 覆盖。CLI 调用
+    使用 `--tools`（排他）替代 `--allowed-tools`（仅允许），与 SDK
+    的工具面保持一致。
+  - 12 轮云端评审硬化：`shlex.quote` 对钩子命令路径做 shell 转义、
+    stderr 并发排空避免管道缓冲区死锁、`fcntl.flock` + 原子写
+    保护缓存、用户私有缓存路径 `~/.claude/harness_policy_cache.json`、
+    异步化 `_query_claude` 让 SDK 路径的钩子不阻塞事件循环、
+    Python 3.9+ 兼容的 `asyncio.wait_for` 超时、
+    `ResultEvent(is_error=True)` 升级为 `"error"` 状态、
+    并发 ask 模式下的先到先得缓存语义。
+  - 规格：`docs/superpowers/plans/2026-04-20-harness-claude-cli-subprocess.md`。
 - 刷新 README（英文 + 中文），对齐第 3/4 阶段范围；重设进度跟踪器基线。
   ([#67](https://github.com/winoooops/vimeflow/pull/67), `f590c18`) —
   patterns: [Documentation Accuracy](docs/reviews/patterns/documentation-accuracy.md)
+
+#### Security
+
+- Harness policy judge 改为默认拒绝，不再是 LLM 盖章放行。未在白名单
+  中的 bash 命令默认被拒；操作者必须通过 `harness/.policy_allow.local`
+  （gitignored，本地手动维护）列出基础命令，或显式设置
+  `HARNESS_POLICY_JUDGE=ask`（让 LLM 判定）/ `=explain`（让 LLM 说明
+  理由但始终拒绝）。`hook_runner.py` 在全部错误路径都 fail-closed：
+  导入期异常、运行期异常，以及一个 45 秒的外层截止期 — 以防 Claude
+  CLI 自身的钩子超时先于我们 SIGKILL 进程，导致静默放行。Policy judge
+  子进程以 `--tools ""` 启动，无法调用任何工具，也不会触发用户级钩子。
+  ([#73](https://github.com/winoooops/vimeflow/pull/73), `93a5338`) —
+  patterns: [Policy Judge Hygiene](docs/reviews/patterns/policy-judge-hygiene.md),
+  [Fail-Closed Hooks](docs/reviews/patterns/fail-closed-hooks.md)
 
 #### Fixed
 
