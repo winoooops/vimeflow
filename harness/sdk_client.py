@@ -26,10 +26,9 @@ def create_client(
     """Create a `claude_code_sdk.ClaudeSDKClient` with harness security layers.
 
     Fallback only — invoked via `--client sdk`. The default path is
-    `client.create_client`. `role` is accepted (unused today — SDK sessions
-    don't carry a role label) purely to keep the factory signature
-    interchangeable with the CLI factory, so `agent._make_session` can
-    swap them without caller changes.
+    `client.create_client`. `role` is prepended to the system prompt so
+    transcripts are distinguishable per role (initializer / coder /
+    fixer), matching the CLI factory's per-role session labelling.
 
     Same permissions + sandbox block as the CLI backend (via
     `build_base_settings`); the only divergence is hook wiring
@@ -84,15 +83,21 @@ def create_client(
         )
     print()
 
+    # Propagate role into the system prompt so SDK-path sessions are
+    # distinguishable in transcript logs the same way CLI sessions are
+    # by their session_id + role attribute. Without this, every SDK
+    # session looked identical in saved transcripts.
+    system_prompt = (
+        f"[Harness role: {role}]\n\n"
+        "You are an expert Tauri/TypeScript/Rust developer building VIBM, "
+        "a desktop coding agent conversation manager. "
+        "Follow the project's CLAUDE.md, rules/, and agents/ specifications. "
+        "Use immutable patterns, explicit error handling, and write tests first."
+    )
     return ClaudeSDKClient(
         options=ClaudeCodeOptions(
             model=model,
-            system_prompt=(
-                "You are an expert Tauri/TypeScript/Rust developer building VIBM, "
-                "a desktop coding agent conversation manager. "
-                "Follow the project's CLAUDE.md, rules/, and agents/ specifications. "
-                "Use immutable patterns, explicit error handling, and write tests first."
-            ),
+            system_prompt=system_prompt,
             allowed_tools=BUILTIN_TOOLS,
             hooks={
                 "PreToolUse": [

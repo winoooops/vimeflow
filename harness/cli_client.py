@@ -13,6 +13,7 @@ required on this path.
 
 import asyncio
 import json
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -226,17 +227,35 @@ class ClaudeCliSession:
 
         try:
             assert proc.stdout is not None
-            # asyncio.timeout() is the 3.11+ context-manager form; cancels
-            # every await inside and surfaces a clean TimeoutError. The
-            # finally block below kills the process and resets _started.
-            async with asyncio.timeout(deadline):
-                async for raw_line in proc.stdout:
-                    line = raw_line.decode("utf-8", errors="replace")
-                    event = parse_stream_event(line)
-                    if event is not None:
-                        yield event
-                return_code = await proc.wait()
-                await stderr_task
+            # 3.9+ compatible deadline tracking: asyncio.timeout() is 3.11+,
+            # which would silently break CLI users on 3.10. Instead, track a
+            # monotonic budget and wrap each readline() + proc.wait() in
+            # asyncio.wait_for. Budget shrinks across calls; when exhausted,
+            # asyncio.TimeoutError propagates and the finally block kills
+            # the process + resets _started.
+            start = time.monotonic()
+            while True:
+                remaining = deadline - (time.monotonic() - start)
+                if remaining <= 0:
+                    raise asyncio.TimeoutError(
+                        f"claude -p exceeded {deadline}s query deadline"
+                    )
+                line_bytes = await asyncio.wait_for(
+                    proc.stdout.readline(), timeout=remaining
+                )
+                if not line_bytes:
+                    break  # EOF
+                line = line_bytes.decode("utf-8", errors="replace")
+                event = parse_stream_event(line)
+                if event is not None:
+                    yield event
+            remaining = deadline - (time.monotonic() - start)
+            if remaining <= 0:
+                raise asyncio.TimeoutError(
+                    f"claude -p exceeded {deadline}s query deadline (at wait)"
+                )
+            return_code = await asyncio.wait_for(proc.wait(), timeout=remaining)
+            await stderr_task
             if return_code != 0:
                 # Roll back so a retry uses --session-id not --resume.
                 self._started = False

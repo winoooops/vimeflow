@@ -17,7 +17,7 @@ Normal operation needs **no `ANTHROPIC_API_KEY`**. The default `cli` backend inh
 | Variable                | Required | Description                                                                                                         |
 | ----------------------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `OPENAI_API_KEY`        | Yes\*    | Required for local Codex CLI review (Phase 2 + Phase 3)                                                             |
-| `HARNESS_POLICY_JUDGE`  | No       | Set to `deny` to disable the LLM policy judge (CI mode)                                                             |
+| `HARNESS_POLICY_JUDGE`  | No       | Judge mode: `deny` (default — LLM not consulted), `ask` (LLM decides), `explain` (LLM advises, always deny)         |
 | `HARNESS_POLICY_CACHE`  | No       | Override the policy-judge cache path                                                                                |
 | `HARNESS_CLI_LIVE_TEST` | No       | Set to `1` to enable `scripts/dry_run_smoke.py` and the live `test_cli_client.py::test_cli_session_live_query` test |
 

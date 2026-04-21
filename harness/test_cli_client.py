@@ -1,5 +1,8 @@
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 from cli_client import (
     parse_stream_event,
@@ -9,6 +12,7 @@ from cli_client import (
     ToolUseBlock,
     ToolResultBlock,
     ResultEvent,
+    ClaudeCliSession,
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "stream_sample.jsonl"
@@ -88,9 +92,6 @@ def test_parse_full_fixture_produces_events():
     assert result_events[0].is_error is False
 
 
-import os
-import pytest
-from cli_client import ClaudeCliSession
 
 
 def test_cli_session_builds_new_session_args(tmp_path):
@@ -306,3 +307,54 @@ def test_translate_sdk_event_unknown_type_warns_returns_none(capsys):
     assert out is None
     captured = capsys.readouterr()
     assert "Unknown SDK event type 'AssistantTurn'" in captured.out
+
+
+# ---------- result_event error escalation (agent.run_agent_session) ----------
+
+
+class _FakeCliSession(ClaudeCliSession):
+    """Subclass so isinstance(..., ClaudeCliSession) passes in _iter_events.
+    Only overrides query() to yield a fixed event script."""
+
+    def __init__(self, events):
+        # Skip parent __init__ — we only need the class identity, not the
+        # real subprocess machinery.
+        self._scripted_events = events
+        self.role = "fake"
+        self._started = False
+
+    async def query(self, prompt, *, timeout=None):
+        for ev in self._scripted_events:
+            yield ev
+
+
+def test_run_agent_session_returns_error_on_result_is_error(tmp_path):
+    """ResultEvent(is_error=True) arriving at the end of a clean (rc=0)
+    subprocess run must escalate to ('error', ...) so the orchestrator
+    doesn't run the reviewer against stalled output and burn iteration
+    budget. Pre-fix: status was hard-coded 'continue' regardless."""
+    import asyncio
+    from agent import run_agent_session
+
+    session = _FakeCliSession([
+        AssistantMessage(content=[TextBlock(text="partial ")]),
+        ResultEvent(session_id="x", is_error=True, subtype="error_max_turns"),
+    ])
+    status, text = asyncio.run(run_agent_session(session, "go", tmp_path))
+    assert status == "error"
+    assert "partial" in text
+
+
+def test_run_agent_session_returns_continue_on_clean_result(tmp_path):
+    """Sanity inverse: a ResultEvent with is_error=False keeps the
+    legacy 'continue' status."""
+    import asyncio
+    from agent import run_agent_session
+
+    session = _FakeCliSession([
+        AssistantMessage(content=[TextBlock(text="ok ")]),
+        ResultEvent(session_id="y", is_error=False, subtype="success"),
+    ])
+    status, text = asyncio.run(run_agent_session(session, "go", tmp_path))
+    assert status == "continue"
+    assert "ok" in text

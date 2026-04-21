@@ -122,6 +122,7 @@ async def run_agent_session(
     print("  Sending prompt to Claude Code...\n")
     try:
         response_text = ""
+        result_errored = False
         async for event in _iter_events(client_or_session, message):
             if isinstance(event, AssistantMessage):
                 for block in event.content:
@@ -149,9 +150,19 @@ async def run_agent_session(
 
             elif isinstance(event, ResultEvent):
                 if event.is_error:
+                    result_errored = True
                     print(f"\n  [result: error]", flush=True)
 
         print("\n" + "-" * 70 + "\n")
+        # A clean subprocess exit (returncode 0) can still carry
+        # `is_error=True` in the terminal ResultEvent — e.g. `claude -p`
+        # hit its max-turns cap, a rate-limit cleanly aborted the run,
+        # or a transient tool failure surfaced as a session-level error.
+        # The orchestrator must see this as an error so it doesn't run
+        # the reviewer against incomplete work and burn a per-feature
+        # iteration budget on a stalled session.
+        if result_errored:
+            return "error", response_text
         return "continue", response_text
 
     except Exception as e:

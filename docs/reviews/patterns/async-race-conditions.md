@@ -161,5 +161,15 @@ prevent showing previous data.
 - **Severity:** HIGH
 - **File:** `harness/cli_client.py`
 - **Finding:** `ClaudeCliSession.query()` read stdout with `async for raw_line in proc.stdout:` and no timeout. If `claude -p` stalls — network failure, auth expiry mid-stream, CLI internal deadlock — the harness blocks indefinitely. The SDK backend got implicit HTTP-level timeouts from httpx; the subprocess refactor lost them. The existing regression tests used `asyncio.wait_for(run(), timeout=10)` as a "safety net so the suite doesn't hang forever" — which was the clue that production code had no such net.
-- **Fix:** Added `timeout: float = 600.0` to `ClaudeCliSession.__init__` (stored as `self.timeout`) and a per-call override on `query(prompt, *, timeout=None)`. Wrap the stdout read + wait in `asyncio.timeout(deadline)` (Python 3.11+ context manager form). On timeout the existing `finally` block kills the process and resets `_started = False` so the orchestrator can retry with a fresh `--session-id`. Regression test stubs `_build_args` to a Python one-liner that prints one JSON line then `time.sleep(30)`, with a 2 s session timeout and a 10 s outer `asyncio.wait_for` safety net.
-- **Commit:** (round 10)
+- **Fix:** Added `timeout: float = 600.0` to `ClaudeCliSession.__init__` (stored as `self.timeout`) and a per-call override on `query(prompt, *, timeout=None)`. Initial round-10 fix used `asyncio.timeout()` (3.11+ context manager), which the round-11 reviewer correctly flagged as silently breaking Python 3.10 — the harness has no version gate, and `AttributeError` on every query would cause every session to report `('error', ...)`. Round-11 fix replaces it with `asyncio.wait_for` + monotonic budget tracking (3.9+ compatible): each `readline()` + final `proc.wait()` gets `remaining = deadline - (time.monotonic() - start)` as its timeout. On timeout the existing `finally` block kills the process and resets `_started = False`.
+- **Lesson:** Every time you add a subprocess deadline or other asyncio construct, check the Python version requirement of the API. `asyncio.timeout()` is 3.11+; `asyncio.wait_for()` is 3.4+. Prefer the broader-compat form unless a concrete dep actually requires 3.11+.
+- **Commits:** (round 10 — asyncio.timeout attempt), (round 11 — wait_for rewrite)
+
+### 17. Clean subprocess exit + ResultEvent(is_error=True) silently reported as success
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (round 11)
+- **Severity:** MEDIUM
+- **File:** `harness/agent.py`
+- **Finding:** `run_agent_session` printed `[result: error]` when the terminal stream event carried `is_error=True` but still returned `('continue', response_text)`. Non-zero subprocess exit was already escalated via `RuntimeError`; clean-exit-but-session-errored (max-turns, rate-limit abort, transient tool failure) wasn't. Orchestrator would then run the reviewer against stalled output and burn a per-feature iteration.
+- **Fix:** Track `result_errored = False` before the event loop; set it True in the `isinstance(event, ResultEvent) and event.is_error` branch; return `('error' if result_errored else 'continue', response_text)`. Added two regression tests with a `_FakeCliSession` subclass that scripts events (one error, one success).
+- **Commit:** (round 11)
