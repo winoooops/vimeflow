@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-04-14
+last_updated: 2026-04-20
 ref_count: 3
 ---
 
@@ -127,3 +127,30 @@ prevent showing previous data.
 - **Fix:** Use a double-check flow: check the active path under lock, start the tailer outside the lock, then re-acquire the lock before inserting. If a concurrent caller already registered the same path, stop the redundant new handle; if replacing an old path, stop the old handle outside the lock.
 - **Verification:** `cargo test --lib agent::transcript -j1`, `cargo test --lib agent:: -j1`, `cargo fmt --check`.
 - **Commit:** (pending — agent-status-sidebar PR)
+
+### 13. Subprocess stdout streaming deadlocks on full stderr pipe
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (round 1 P2)
+- **Severity:** MEDIUM
+- **File:** `harness/cli_client.py`
+- **Finding:** `ClaudeCliSession.query()` streamed stdout in the main loop and only read stderr after `proc.wait()`. On Linux the stderr pipe buffer is ~64 KB — a `claude -p` verbose stack trace overruns it and the child blocks on its own stderr write while the reader is blocked waiting for stdout EOF. The harness hangs forever instead of surfacing the CLI error.
+- **Fix:** Spawn an `asyncio.create_task` that drains stderr in 4 KB chunks into a list concurrently with the stdout iteration; join it after stdout EOF; on non-zero exit, collected stderr is decoded and surfaced in the RuntimeError. Regression test stubs `_build_args` to point at `python3 -c "sys.stderr.write('X'*200_000); …"` with a 10 s `asyncio.wait_for` safety net.
+- **Commit:** `e003e37 fix(harness): drain claude -p stderr concurrently to prevent deadlock`
+
+### 14. Synchronous subprocess.run blocked the async event loop
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (round 4)
+- **Severity:** MEDIUM
+- **File:** `harness/policy_judge.py`
+- **Finding:** `_query_claude` used `subprocess.run`. In the SDK backend, `bash_security_hook` is awaited on the main harness event loop — under `HARNESS_POLICY_JUDGE=ask` a judge call would stall all async I/O for up to 60 s. The CLI backend was unaffected (fresh `asyncio.run` loops per hook_runner subprocess).
+- **Fix:** Entire chain is async — `_query_claude` uses `asyncio.create_subprocess_exec` + `asyncio.wait_for`; `_consult_judge` and `decide` are `async def`; `security.py` awaits `_judge_decide`. The `subprocess.run` form stays banned from any code reachable from an `async def` security hook.
+- **Commit:** `545b0b5 fix(harness): round-4 review — async judge, user-private cache, brace-safe prompt`
+
+### 15. `_started` session flag survived cancellation / non-zero exit
+
+- **Source:** claude-review | PR #73 | 2026-04-20 (rounds 3, 5, 7)
+- **Severity:** LOW
+- **File:** `harness/cli_client.py`
+- **Finding:** `ClaudeCliSession.query()` set `self._started = True` before the subprocess's exit code was checked (and kept it True after `asyncio.CancelledError`). If the process spawned but exited non-zero — or was killed by an outer `asyncio.wait_for` — the flag stuck, and the next `query()` passed `--resume` against a session the CLI never persisted. Wasted one round-trip before self-healing via the non-zero-exit branch.
+- **Fix:** Set `_started = True` only after a successful `create_subprocess_exec`. Roll back to `False` in both the non-zero-exit branch and the `finally` block when `proc.returncode is None` (cancel / kill). Now multi-turn retries always pick `--session-id` for the next attempt when the previous session didn't get persisted.
+- **Commits:** `0f76df4` (move after spawn), `97454bb` (reset in finally)
