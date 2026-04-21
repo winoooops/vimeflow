@@ -48,6 +48,30 @@
               }
             },
             "required": ["absolute_file_path", "line_range"]
+          },
+          "idea": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "IDEA analysis scoped to THIS finding (not the whole PR).",
+            "properties": {
+              "intent": {
+                "type": "string",
+                "description": "What was the author trying to do at this spot, and does the code match that intent?"
+              },
+              "danger": {
+                "type": "string",
+                "description": "What breaks if this ships? Edge cases, security, bad data, UX — specific to this finding."
+              },
+              "explain": {
+                "type": "string",
+                "description": "Why did the author likely write it this way? Trade-offs or reasoning behind this code."
+              },
+              "alternatives": {
+                "type": "string",
+                "description": "Is there a simpler/safer approach for this specific issue? Would a senior dev push back?"
+              }
+            },
+            "required": ["intent", "danger", "explain", "alternatives"]
           }
         },
         "required": [
@@ -55,32 +79,10 @@
           "body",
           "severity",
           "confidence_score",
-          "code_location"
+          "code_location",
+          "idea"
         ]
       }
-    },
-    "idea": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "intent": {
-          "type": "string",
-          "description": "Does the PR solve the real problem, not just the literal one?"
-        },
-        "danger": {
-          "type": "string",
-          "description": "What breaks? Edge cases, security, bad data?"
-        },
-        "explain": {
-          "type": "string",
-          "description": "Why this approach? What reasoning led here?"
-        },
-        "alternatives": {
-          "type": "string",
-          "description": "Is there a simpler way? Would a senior dev raise an eyebrow?"
-        }
-      },
-      "required": ["intent", "danger", "explain", "alternatives"]
     },
     "overall_correctness": {
       "type": "string",
@@ -97,7 +99,6 @@
   },
   "required": [
     "findings",
-    "idea",
     "overall_correctness",
     "overall_explanation",
     "overall_confidence_score"

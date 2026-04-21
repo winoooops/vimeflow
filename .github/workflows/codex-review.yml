@@ -46,7 +46,7 @@ jobs:
             - For each finding, specify the EXACT file path and narrowest possible line range (start-end). Read the actual lines and pinpoint where the issue is. Never use L1-1 as a placeholder.
             - When reporting control flow bugs (loops, branches, error handling), trace ALL code paths through the construct and report the complete issue in ONE finding. Do not split related paths across multiple findings.
             - Report ALL issues you find in this single review. Assume this is your ONLY chance to review — do not hold back findings for later rounds.
-            - For each finding, explain: (1) what the current code does wrong, (2) the concrete impact, and (3) what the fix should be.
+            - Keep the finding body tight: state what's wrong, the concrete impact, and the fix in a few sentences. Save deeper reasoning (intent, why-this-approach, alternatives) for the paired IDEA block — do not repeat it in the body.
             - If a bug class appears in multiple places (e.g. missing error handling in both skip_review and review paths), report them together in one finding rather than separately.
 
             SCOPE BOUNDARY RULE (MANDATORY):
@@ -61,12 +61,13 @@ jobs:
             Apply confidence-based filtering: only report issues you are >80% confident about.
             Use severity levels: CRITICAL, HIGH, MEDIUM, LOW.
 
-            IDEA ANALYSIS (MANDATORY):
-            Include an "idea" object in your JSON output with these four fields:
-            - intent: Does the PR solve the real problem, not just the literal one?
-            - danger: What breaks? Edge cases, security, bad data?
-            - explain: Why this approach? What reasoning led here?
-            - alternatives: Is there a simpler way? Would a senior dev raise an eyebrow?
+            IDEA ANALYSIS (MANDATORY — per finding):
+            Pair EVERY finding with its own "idea" object. The IDEA block is what makes the finding understandable — the body above should be terse, the IDEA below carries the reasoning.
+            - intent: What was the author trying to do at this specific spot, and does the code match that intent?
+            - danger: What breaks or degrades if this ships — edge cases, security, bad data, UX — scoped to THIS finding?
+            - explain: Why did the author likely write it this way? Trade-offs or reasoning behind this particular code.
+            - alternatives: Is there a simpler/safer approach for this specific issue? Would a senior dev push back?
+            Every IDEA field must be about THIS finding, not the whole PR. Do not produce a PR-level IDEA block.
 
             Pull request title and body:
             ----
@@ -110,27 +111,23 @@ jobs:
                   lines.push(`🎯 Confidence: ${(f.confidence_score * 100).toFixed(0)}%`);
                   lines.push('');
                   lines.push(f.body);
+                  if (f.idea) {
+                    lines.push('');
+                    lines.push('<details><summary>💡 IDEA</summary>');
+                    lines.push('');
+                    lines.push(`- **I — Intent:** ${f.idea.intent}`);
+                    lines.push(`- **D — Danger:** ${f.idea.danger}`);
+                    lines.push(`- **E — Explain:** ${f.idea.explain}`);
+                    lines.push(`- **A — Alternatives:** ${f.idea.alternatives}`);
+                    lines.push('');
+                    lines.push('</details>');
+                  }
                   lines.push('');
                   lines.push('---');
                   lines.push('');
                 }
               } else {
                 lines.push('✅ No issues found.');
-                lines.push('');
-              }
-
-              if (review.idea) {
-                lines.push('### 💡 IDEA Analysis');
-                lines.push('');
-                lines.push(`**I — Intent:** ${review.idea.intent}`);
-                lines.push('');
-                lines.push(`**D — Danger:** ${review.idea.danger}`);
-                lines.push('');
-                lines.push(`**E — Explain:** ${review.idea.explain}`);
-                lines.push('');
-                lines.push(`**A — Alternatives:** ${review.idea.alternatives}`);
-                lines.push('');
-                lines.push('---');
                 lines.push('');
               }
 
