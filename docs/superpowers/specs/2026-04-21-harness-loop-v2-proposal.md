@@ -1,7 +1,7 @@
 # Harness Loop v2 — Workflow Proposal
 
 **Date:** 2026-04-21
-**Status:** Proposal — informed by [2026-04-21 Activity Panel retrospective](../../reviews/retrospectives/2026-04-21-activity-panel-harness-session.md)
+**Status:** Tiers 1-4 shipped on branch `docs/harness-loop-improvements`; Tier 5 deferred to its own spec. Paired retrospective: [2026-04-21 Activity Panel session](../../reviews/retrospectives/2026-04-21-activity-panel-harness-session.md)
 **Scope:** Changes to `/harness-plugin:loop` skill, the harness Python (`harness/*.py`), the prompt templates (`harness/prompts/*.md`), and the runbook (`harness/CLAUDE.md`).
 
 ## 1. Problem summary
@@ -188,13 +188,13 @@ These are things I considered but rejected:
 
 Proposed sequencing (each shipping as its own PR):
 
-1. **Docs-only** — C1 (Codex auth), B5 + C2 (launch recipe), **B7 (worktree alignment)**. B7 unblocks a lot of downstream confusion, ship it first.
-2. **Safety fixes** — B1 (feature-list freshness), B3 (`--clean` spec preservation), B4 (error labels).
-3. **Gated Phase 3** — B2.
-4. **Prompt improvements** — A2 (prototype screenshots as input), A4 (iteration-aware failures), B6 (drop progress file), B8 (phantom feature refs).
-5. **Visual verification** — A1 + A3. This is the big one; likely multi-PR itself.
+1. ✅ **Docs-only** — C1 (Codex auth), B5 + C2 (launch recipe), **B7 (worktree alignment)**. _Shipped as commit `884d12b`._
+2. ✅ **Safety fixes** — B1 (feature-list freshness), B3 (`--clean` spec preservation), B4 (error labels). _Shipped as commit `404305e` with 19 new tests._
+3. ✅ **Gated Phase 3** — B2. _Shipped as commit `a002e43` with 7 new tests._
+4. ✅ **Prompt improvements** — A4 (iteration-aware failures), B6 (drop progress file), B8 (phantom feature refs). _Shipped as commit `31c2d14`. **A2 deferred** — prototype screenshots as Coder input makes more sense to land together with the visual reviewer in Tier 5, since both need `design_ref` schema in `feature_list.json`._
+5. ⏳ **Visual verification** — A1 + A2 + A3. Deferred to its own spec — new Visual Reviewer role, MCP orchestration, reference-screenshot storage, `design_ref` schema. Open questions in §A1.
 
-Tiers 1-4 are small and can land in parallel. Tier 5 is its own design effort with more open questions (see A1's "Open questions" list).
+Tiers 1-4 are shipped. Tier 5 is its own design effort; write a new spec before implementing.
 
 ## 7. Success criteria
 
