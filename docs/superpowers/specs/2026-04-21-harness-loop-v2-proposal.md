@@ -125,7 +125,25 @@ Two options, pick one:
 
 My recommendation: drop it. Less infrastructure, same outcome.
 
-### B7. Reject phantom feature references in TODO comments
+### B7. Align harness skill + runbook with `rules/common/worktrees.md`
+
+**Retro §13.** The `/harness-plugin:loop` skill instructs the main agent to call `EnterWorktree`, and `harness/CLAUDE.md` repeats the same directive ("The harness MUST run inside a git worktree"). Both contradict `rules/common/worktrees.md`, which mandates the main agent works on a feature branch in the **primary checkout** and never enters a worktree. The rule exists because the user runs the Vimeflow dev server and diff viewer from the primary checkout — edits inside `.claude/worktrees/` are invisible to both.
+
+This session tripped the conflict: I ran `EnterWorktree` because the skill told me to, and when the user ran `npm run tauri:dev` from the primary checkout to verify, they saw unchanged `main` — not the refactor. Only after they flagged _"only subagents work on git worktree, you will be merging them in the harness-activity-panel-refactor branch"_ did I realize the actual intended layout matches the project rule.
+
+Proposal — two docs changes, no Python:
+
+1. **Rewrite `/harness-plugin:loop` Step 0a** to check current branch and `git checkout -b <name>` if on `main`. **Explicitly forbid `EnterWorktree`** at this step, with a reference to `rules/common/worktrees.md` §Principles. Today's wording is the opposite — replace it wholesale.
+
+2. **Rewrite `harness/CLAUDE.md` §"Worktree Requirement"** — today's "The harness MUST run inside a git worktree" is wrong under the current rule. Replace with:
+   - _Main agent and the harness Python orchestrator run in the primary checkout on a feature branch._
+   - _Per-feature Coder subagents spawned by the harness should (future work) run in isolated worktrees; see §5 Out of scope._
+
+Effect: the main agent's commits land on a feature branch in the primary checkout where the user is already watching. No structural rule violation. No "you can't see my changes because I'm in a worktree" surprise. Today's `EnterWorktree` dance at session start simply goes away.
+
+This item is **docs + skill-prompt only** and should ship in Tier-1 of the rollout (before any behavioral changes to the harness Python).
+
+### B8. Reject phantom feature references in TODO comments
 
 **Retro §8.** Coder shipped `// TODO: ... (Feature #11)` where Feature #11 was something else entirely.
 
@@ -163,17 +181,17 @@ The current runbook in `harness/CLAUDE.md` describes `git worktree add` + `cd` +
 These are things I considered but rejected:
 
 - **Auto-detect proxy env and unset.** Clash interception hit me on `tauri:dev`, but the harness doesn't run the dev server — the user does. Skill can add a note; harness itself doesn't need to unset.
-- **Per-feature worktrees.** User mentioned subagents should work in their own worktrees and I should "merge them back". The harness architecture runs all features in one worktree with linear commits; re-architecting to per-feature worktrees is a much larger change than this proposal. Deferred to a separate spec.
+- **Per-feature worktrees for Coder subagents.** `rules/common/worktrees.md` says subagents belong in worktrees. B7 aligns the docs with that rule for the main-agent / harness-orchestrator layer. But the actual architectural change — each Coder subprocess the harness spawns running in its own isolated `.claude/worktrees/<feature>/` with its own branch, then the orchestrator merging them back into the main feature branch — is a much larger lift than this proposal covers. Deferred to a separate spec. Today after B7: main agent on feature branch in primary checkout, harness orchestrator in same checkout, Coder subprocesses all writing into that same working tree sequentially.
 - **Replace Codex reviewer entirely.** Codex worked well for code-level review; the gap is visual fidelity (addressed by A1). Don't throw out a working piece.
 
 ## 6. Rollout plan
 
 Proposed sequencing (each shipping as its own PR):
 
-1. **Docs-only** — C1 (Codex auth), B5 + C2 (launch recipe).
+1. **Docs-only** — C1 (Codex auth), B5 + C2 (launch recipe), **B7 (worktree alignment)**. B7 unblocks a lot of downstream confusion, ship it first.
 2. **Safety fixes** — B1 (feature-list freshness), B3 (`--clean` spec preservation), B4 (error labels).
 3. **Gated Phase 3** — B2.
-4. **Prompt improvements** — A2 (prototype screenshots as input), A4 (iteration-aware failures), B6 (drop progress file), B7 (phantom feature refs).
+4. **Prompt improvements** — A2 (prototype screenshots as input), A4 (iteration-aware failures), B6 (drop progress file), B8 (phantom feature refs).
 5. **Visual verification** — A1 + A3. This is the big one; likely multi-PR itself.
 
 Tiers 1-4 are small and can land in parallel. Tier 5 is its own design effort with more open questions (see A1's "Open questions" list).

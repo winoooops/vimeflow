@@ -89,6 +89,13 @@ This retrospective catalogs the hiccups so the follow-up proposal can address th
 - **Root cause:** no channel for visual ground-truth to reach the coder.
 - **Cost:** impossible to match visual fidelity when the visual reference isn't available to the implementer.
 
+### 13. Harness skill puts the main agent in a worktree — against project rules
+
+- **What happened:** `/harness-plugin:loop` Step 0a told me to call `EnterWorktree` before launching the harness, and I did. But `rules/common/worktrees.md` §Principles is explicit: _"Main agent works on a feature branch in the primary checkout — the interactive Claude Code agent checks out `feat/<name>` (or `fix/`, `refactor/`, etc.) in the primary checkout and commits there. It does **not** create a worktree for itself."_ Line 48 drives the point home: _"Do not run `EnterWorktree` reflexively at the start of an interactive task."_ The rule exists because the user runs the Vimeflow dev server from the primary checkout and watches the diff viewer live — edits inside `.claude/worktrees/` are invisible to that view.
+- **Impact in this session:** when the user ran `npm run tauri:dev` from the primary checkout (as they always do), they saw the unchanged `main` branch, not the refactor. They had to be redirected into the worktree to see what had actually been built. And as they later told me, the intended flow was _"only subagents work on git worktree, you will be merging them in the harness-activity-panel-refactor branch"_ — which is exactly what `rules/common/worktrees.md` already codifies.
+- **Root cause:** the `/harness-plugin:loop` skill predates or ignores `rules/common/worktrees.md`. The skill's Step 0a tells the main agent to enter a worktree; the project rule says the main agent must never enter one. The two are in direct conflict, and the skill silently wins because agents read the skill before reading the rules.
+- **Cost:** user confusion when verification didn't show the changes; structural rule violation that had to be recovered from during cleanup (`ExitWorktree` with `remove`).
+
 ## What went right
 
 Noting these so the proposal doesn't throw out working pieces.
