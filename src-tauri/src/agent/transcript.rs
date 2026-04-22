@@ -845,20 +845,20 @@ mod tests {
     }
 
     #[test]
-    fn tool_result_without_matching_start_is_dropped() {
-        // process_tool_result must silently skip a tool_result whose parent
-        // tool_use was never recorded in_flight. These orphans typically
-        // come from Claude Code transcript compaction — the earlier
-        // tool_use was trimmed out of the file but its tool_result remains.
-        // Emitting a synthetic "unknown" event for each one was surfacing
-        // misleading noise in the ToolCallSummary chip aggregation.
+    fn orphan_signal_is_missing_in_flight_entry() {
+        // process_tool_result keys its orphan-drop behavior off exactly
+        // this signal: in_flight.remove(id) returns None when the parent
+        // tool_use was never recorded (typically because Claude Code
+        // transcript compaction trimmed it). The test asserts the
+        // prerequisite, not the full emit-side path — a Tauri AppHandle
+        // cannot be cheaply constructed in unit tests, so we can't
+        // directly observe "no event was emitted" without refactoring
+        // process_tool_result to accept an injected channel.
         //
-        // We don't have an easy handle on the Tauri AppHandle inside unit
-        // tests (see the note at the top of these tests), so this
-        // assertion exercises the signal process_tool_result keys off —
-        // a missing entry in the in_flight map — rather than driving the
-        // full function. If the orphan-drop signal ever changes, this
-        // test and the impl should be updated together.
+        // If the orphan-drop signal ever changes (e.g. we switch to a
+        // different data structure), update this test and the `let Some
+        // (call) = in_flight.remove(...) else { return };` guard in
+        // process_tool_result together.
         let mut in_flight: InFlightToolCalls = HashMap::new();
         let result = in_flight.remove("toolu_nonexistent");
         assert!(result.is_none());

@@ -42,4 +42,22 @@ describe('formatDuration', () => {
   ])('%i ms → %s', (ms, expected) => {
     expect(formatDuration(ms)).toBe(expected)
   })
+
+  test('NaN input renders as "?"', () => {
+    expect(formatDuration(NaN)).toBe('?')
+  })
+})
+
+describe('formatRelativeTime — invalid input', () => {
+  // An unparseable ISO string makes new Date().getTime() return NaN;
+  // without a guard the function would render 'NaN d ago' in the feed.
+  test('returns "?" for a malformed ISO string', () => {
+    expect(formatRelativeTime('not-an-iso-string')).toBe('?')
+  })
+
+  test('returns "?" when the reference Date is Invalid Date', () => {
+    expect(
+      formatRelativeTime('2026-04-22T12:00:00Z', new Date('garbage'))
+    ).toBe('?')
+  })
 })

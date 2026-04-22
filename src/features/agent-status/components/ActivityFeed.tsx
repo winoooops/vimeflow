@@ -17,25 +17,32 @@ export const ActivityFeed = ({ events }: ActivityFeedProps): ReactElement => {
   const [now, setNow] = useState<Date>(() => new Date())
   const [showAll, setShowAll] = useState<boolean>(false)
 
-  // The 1s tick exists to drive the 'running Xs' live timestamp on an
-  // in-flight tool call. For completed-only feeds we'd burn a render per
-  // second with nothing visible changing (minute-granularity means the
-  // relative timestamps don't move for 60s anyway). Gate the interval
-  // on the presence of a running event.
+  // Two separate effects — combining them into one `[hasRunning, events]`
+  // dep list resets the interval on every event arrival, which stalls the
+  // live 'running Xs' counter when tools complete in quick succession
+  // (parallel Read/Grep finishes under 1s each, new events keep killing
+  // the prior setInterval before it ticks).
   //
-  // We still refresh `now` whenever the events array changes so a newly
-  // arrived completed event renders against the current clock instead
-  // of whatever `now` was captured before the panel sat idle.
+  // Effect 1: refresh `now` whenever the events array changes so a
+  // newly arrived completed event renders against the current clock
+  // instead of whatever `now` was captured before the panel sat idle.
   const hasRunning = events.some((e) => e.status === 'running')
   useEffect(() => {
     setNow(new Date())
+  }, [events])
+
+  // Effect 2: own the 1s tick's lifecycle — start it only while a
+  // running event is in view, tear it down when none remain. Completed-
+  // only and empty feeds don't re-render every second (minute-granularity
+  // means the relative timestamps don't move for 60s anyway).
+  useEffect(() => {
     if (!hasRunning) {
       return
     }
     const id = setInterval(() => setNow(new Date()), TICK_MS)
 
     return (): void => clearInterval(id)
-  }, [hasRunning, events])
+  }, [hasRunning])
 
   const overflow = events.length - VISIBLE_WHEN_COLLAPSED
   const visible = showAll ? events : events.slice(0, VISIBLE_WHEN_COLLAPSED)
