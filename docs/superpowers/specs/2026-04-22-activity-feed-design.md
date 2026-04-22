@@ -1,9 +1,11 @@
 # Activity Feed — Unified Tool-Call Timeline in Agent Status Panel
 
 **Date:** 2026-04-22
-**Status:** Proposed
+**Status:** Implemented (spec reconciled to shipped design 2026-04-22)
 **Branch:** `ref/toolcalling-ui`
 **Follows:** issue #76 (harness Tier 5 visual-verification) — this PR is the manual visual-fidelity pass that #76 would have caught automatically
+
+> **Amendments log.** The original spec proposed an additive feed that preserved `RecentToolCalls` and made no Rust changes. Mid-implementation the user asked for four structural changes; this document was rewritten to describe the shipped design. The "Amendments" subsection at the bottom lists each deviation and why.
 
 ## Problem
 
@@ -19,15 +21,19 @@ The prior activity-panel refactor session (see `docs/reviews/retrospectives/2026
 ## Goals
 
 - Introduce a single `ActivityFeed` component that renders a typed timeline of agent events inside `AgentStatusPanel`, matching the Claude Design prototype's `ACTIVITY` section.
-- Preserve `ToolCallSummary` and `RecentToolCalls` behavior unchanged — the feed is additive, not replacive.
+- Delete `RecentToolCalls` — the feed supersedes it. The raw-list view is redundant once every recent event renders as a typed feed entry with a relative timestamp and optional status chip.
+- Wrap both `ToolCallSummary` and `ActivityFeed` in `CollapsibleSection` (default expanded) so all four sections in the scrollable region (`Tool Calls`, `Activity`, `Files Changed`, `Tests`) share one header rhythm.
 - Ship a discriminated-union `ActivityEvent` type covering both the kinds we render today (tool calls) and the kinds we will render later (`think` / `user` / `meta`), so future work is a case-addition rather than a restructure.
 - Delete the orphaned `src/features/workspace/components/AgentActivity/` folder, which was superseded by `AgentStatusPanel` and is no longer mounted.
+- Preserve each tool call's real event time across the pipeline — assistant/user JSONL lines carry a `timestamp`; the Rust transcript parser forwards it instead of stamping every event with the parser-run time.
+- Paginate the feed at 10 entries by default, with a `+ N earlier events` / `Show less` toggle exposing the full 50-event backend buffer.
 
 ## Non-goals
 
 - Redesign of `StatusCard`, `ContextBucket`, `FilesChanged`, `TestResults`, or `ActivityFooter` — each is its own follow-up PR.
 - Claude Design's top-of-panel "session header + CONTEXT / 5-HOUR USAGE / TURNS bars" — separate PR.
-- Rust-side transcript parser changes. No new producer work. `diff` (from `git status` after edits) and `bashResult` (from a test-script watcher) land in future PRs.
+- Transcript parser **feature** work. `diff` (from `git status` after edits) and `bashResult` (from a test-script watcher) still land in future PRs; the fields are declared optionally today and populated later.
+- Persistent cross-session tool-call history. The 50-event buffer lives in memory per session; a sqlite/indexeddb store is its own project.
 - Pixel-level visual regression tests. Issue #76 Tier 5 is the correct vehicle for automated fidelity checks.
 - E2E (WebdriverIO) coverage for the new surface — unit tests cover the contract.
 
@@ -47,7 +53,11 @@ src/features/workspace/components/AgentActivity/          ← whole orphaned dir
   ├── ToolCalls.tsx / .test.tsx
   └── index.ts
 
-(Orphaned: no import outside the directory itself; a comment in
+src/features/agent-status/components/
+  ├── RecentToolCalls.tsx                                 ← superseded by ActivityFeed
+  └── RecentToolCalls.test.tsx
+
+(Orphaned folder: no import outside the directory itself; a comment in
  `WorkspaceView.verification.test.tsx` confirms AgentActivity was
  replaced by AgentStatusPanel.)
 ```
@@ -70,19 +80,31 @@ src/features/agent-status/
 ```
 src/features/agent-status/
   ├── types/index.ts                                      ← ActiveToolCall += startedAt: string
-  ├── hooks/useAgentStatus.ts                             ← store p.timestamp on running branch
-  ├── hooks/useAgentStatus.test.ts                        ← extend to assert startedAt
-  └── components/AgentStatusPanel.tsx                     ← mount ActivityFeed between
-                                                            ContextBucket and ToolCallSummary
+  ├── hooks/useAgentStatus.ts                             ← store p.timestamp on running branch;
+  │                                                         bump RECENT_TOOL_CALLS_LIMIT 10 → 50;
+  │                                                         clearTimeout on unmount cleanup
+  ├── hooks/useAgentStatus.test.ts                        ← assert startedAt; 50-event window
+  ├── components/ToolCallSummary.tsx                      ← wrap in CollapsibleSection
+  │                                                         (title="Tool Calls", defaultExpanded);
+  │                                                         tighten chip density (leading-none,
+  │                                                         gap-1.5, text-[10px], max-w truncate)
+  └── components/AgentStatusPanel.tsx                     ← mount ActivityFeed inside the
+                                                            scrollable region; drop RecentToolCalls
 
 src/features/agent-status/components/AgentStatusPanel.test.tsx
                                                           ← assert ActivityFeed renders
-                                                            alongside unchanged consumers
+                                                            alongside unchanged consumers;
+                                                            assert thin-scrollbar convention
+
+src-tauri/src/agent/transcript.rs                         ← new extract_timestamp helper;
+                                                            propagate transcript-line timestamp
+                                                            through assistant / user / tool_result
+                                                            emitters instead of now_iso8601()
 ```
 
 ### Files untouched (explicit)
 
-`StatusCard`, `ContextBucket`, `ToolCallSummary`, `RecentToolCalls`, `FilesChanged`, `TestResults`, `ActivityFooter`, and all tests for them — behavior is unchanged.
+`StatusCard`, `ContextBucket`, `FilesChanged`, `TestResults`, `ActivityFooter`, and all tests for them — behavior is unchanged.
 
 ## Architecture
 
@@ -92,15 +114,17 @@ src/features/agent-status/components/AgentStatusPanel.test.tsx
 AgentStatusPanel
 ├── StatusCard              (kept, untouched)
 ├── ContextBucket           (kept, untouched)
-├── ActivityFeed            ← NEW, always visible
-├── ToolCallSummary         (kept — always visible; chips + running indicator)
-├── RecentToolCalls         (kept — collapsed by default via CollapsibleSection)
-├── FilesChanged            (kept, untouched)
-├── TestResults             (kept, untouched)
+├── [scrollable region, thin-scrollbar]
+│   ├── ToolCallSummary     (wrapped in CollapsibleSection "Tool Calls", default expanded)
+│   ├── ActivityFeed        (wrapped in CollapsibleSection "Activity",   default expanded)
+│   ├── FilesChanged        (kept, untouched — CollapsibleSection, default collapsed)
+│   └── TestResults         (kept, untouched — CollapsibleSection, default collapsed)
 └── ActivityFooter          (kept, untouched)
 ```
 
-Tool calls appear in three lenses simultaneously by design — narrative (feed), analytics (chips), raw list (Recent). This is deliberate per the brainstorming session; no collapsing or hiding of existing consumers.
+Tool-call data now reaches the user through two lenses: the `ToolCallSummary` chip-and-running-indicator view (by-type analytics + current tool), and the `ActivityFeed` narrative view (per-event timeline with types, relative timestamps, status chips). `RecentToolCalls`, which showed a raw list of the last 10 calls, was removed — it duplicated what the feed already displays better.
+
+All four sections use `CollapsibleSection`, so their chevron + uppercase title + count share the same rhythm and vertical alignment.
 
 ### Component boundaries
 
@@ -307,11 +331,14 @@ return (
   <aside className="...">
     <StatusCard {...} />
     <ContextBucket {...} />
-    <ActivityFeed events={events} />                 {/* ← NEW */}
-    <ToolCallSummary {...status.toolCalls} />
-    <RecentToolCalls calls={status.recentToolCalls} />
-    <FilesChanged {...} />
-    <TestResults {...} />
+
+    <div className="thin-scrollbar flex-1 overflow-y-auto">
+      <ToolCallSummary {...status.toolCalls} />      {/* CollapsibleSection, default expanded */}
+      <ActivityFeed events={events} />               {/* CollapsibleSection, default expanded */}
+      <FilesChanged {...} />
+      <TestResults {...} />
+    </div>
+
     <ActivityFooter {...} />
   </aside>
 )
@@ -424,10 +451,10 @@ export const formatDuration = (ms: number): string => {
 
 ### Existing test edits
 
-| File                                   | Change                                                                                                                                                                                                                                      |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hooks/useAgentStatus.test.ts`         | Extend "running branch" test to assert `active.startedAt` equals the incoming `p.timestamp`.                                                                                                                                                |
-| `components/AgentStatusPanel.test.tsx` | Mount with mocked `useAgentStatus` returning a fixture with `active` + one recent. Assert: `ActivityFeed` renders; its DOM position is between `ContextBucket` and `ToolCallSummary`; `ToolCallSummary` and `RecentToolCalls` still render. |
+| File                                   | Change                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hooks/useAgentStatus.test.ts`         | Extend "running branch" test to assert `active.startedAt` equals the incoming `p.timestamp`.                                                                                                                                                                                                                                  |
+| `components/AgentStatusPanel.test.tsx` | Mount with mocked `useAgentStatus` returning a fixture with `active` + one recent. Assert: `ActivityFeed` renders inside the scrollable region alongside `ToolCallSummary`; scrollable container uses the project's `thin-scrollbar` convention; collapsible "Activity" and "Tool Calls" headers are both present as buttons. |
 
 ### Deleted tests
 
@@ -439,26 +466,41 @@ All `src/features/workspace/components/AgentActivity/**/*.test.tsx` — deleted 
 - Rust-side tests for `diff` / `bashResult` producers — no producer changes in this PR.
 - E2E — the feed is shallow enough that unit tests cover the contract.
 
-## Open questions
+## Decisions settled during implementation
 
-None. All design decisions settled during brainstorming:
+- `ActivityFeed` inside `CollapsibleSection` (default expanded), matching every other section in the panel — one header rhythm across the scrollable region.
+- `ToolCallSummary` wrapped in `CollapsibleSection` as well so all four headers visually align.
+- `RecentToolCalls` removed — the feed supersedes it; the raw list was redundant.
+- Pagination at 10 visible events with a `+ N earlier events` / `Show less` toggle; backend cap raised from 10 to 50.
+- Rust transcript parser forwards the per-line `timestamp` so the feed can sort chronologically and show real relative ages (not "everything just now" on batch catch-up).
+- Frontend `formatRelativeTime` skips seconds: `< 60s` → `now`, then straight to `Nm ago`.
+- Feed sorts its recent slice by `timestamp` desc; `active` stays pinned at the top.
+- 1-second interval in `ActivityFeed` only ticks while a running event is present; `now` is refreshed on events change so completed-only feeds don't show stale relative times after arrival.
+- `useAgentStatus` unmount cleanup clears the 5-second exit-hold timeout to avoid a closure leak.
+- `ActiveToolCall.startedAt` extension — chosen over "render active without timestamp" so the running row can compute a live `running Xs` duration.
+- Unknown tool names (`Task`, `WebFetch`, ...) map to the `meta` kind; escalate to named kinds when their visual contract is settled.
+- Derivation hook (`useActivityEvents`), not Context/store — revisit only if consumers appear outside `AgentStatusPanel`.
+- `diff` / `bashResult` declared optionally today, populated by future producer PRs — no consumer-side churn when data lands.
 
-- Additive (not replacive) integration with `ToolCallSummary` + `RecentToolCalls` — accepted three-lens redundancy.
-- Orphaned `AgentActivity/` folder deletion — unrelated cleanup bundled.
-- `ActiveToolCall.startedAt` extension — favored over "render active without timestamp".
-- Unknown tool names → `meta` kind — escalate to named kinds as needed.
-- Derivation hook, not Context/store — revisit only if consumers appear outside `AgentStatusPanel`.
-- Declare `diff` / `bashResult` optionally now, populate later — no consumer-side churn when data producers land.
+## Amendments (vs. initial spec)
+
+The original 2026-04-22 draft framed this PR as **additive** — keep `ToolCallSummary` + `RecentToolCalls`, add the feed alongside them, no Rust work. Four changes during implementation moved the shipped design away from that framing, each at the user's request:
+
+1. **`RecentToolCalls` removed.** The feed renders the same recent-tool-call data with better visual treatment. Keeping both was deliberate redundancy per the initial spec but became noise once the feed was mounted.
+2. **`ToolCallSummary` wrapped in `CollapsibleSection`.** Without this, the "Tool Calls" header lacked the chevron that `Activity`, `Files Changed`, and `Tests` carry, and the four sections looked visually mis-aligned.
+3. **Rust `transcript.rs` touched.** The "no Rust changes" non-goal was dropped when the feed collapsed to "everything happened 35s ago" on initial watch — the parser was stamping every event with the wall-clock at parse time rather than the transcript line's real timestamp. Fix is a small pure helper + plumbing, not a structural rewrite.
+4. **Pagination + 50-event backend buffer.** 10 events wasn't enough to "learn from the past"; the feed now caps the default visible at 10 but exposes the full 50-event buffer through a `+ N earlier events` toggle.
 
 ## Future work
 
 - Rust transcript parser: emit thinking events (enable `think` kind rendering).
 - Rust transcript parser: emit user message events (enable `user` kind rendering).
-- `git status` watcher: populate `diff` on `Edit` / `Write` completion.
+- `git diff --numstat` watcher: populate `diff` on `Edit` / `Write` completion.
 - Test-output parser/watcher: populate `bashResult` on `Bash` completion for common test runners.
 - Panel-wide redesigns that match the Claude Design's top header + metrics bars + footer — tracked as separate PRs.
-- Consolidate `formatRelativeTime` with the private one in `src/features/diff/components/CommitInfoPanel.tsx` into the new shared `utils/relativeTime.ts` — cleanup PR, not this one.
+- Consolidate `formatRelativeTime` with the private one in `src/features/diff/components/CommitInfoPanel.tsx` into the shared `utils/relativeTime.ts` — cleanup PR, not this one.
 - Inline terminal tool invocations (`⚒ tool-name(args) ● status · detail`) per UNIFIED §3.1 — independent feature.
+- Persistent cross-session tool-call history (sqlite / indexeddb) — unlocks history beyond the 50-event in-memory buffer.
 - When any consumer outside `AgentStatusPanel` needs the event stream, lift `useAgentStatus` into a Context provider; the hook signature already takes `sessionId` so the lift is mechanical.
 
 ## References
