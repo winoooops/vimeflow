@@ -7,6 +7,8 @@ import { RecentToolCalls } from './RecentToolCalls'
 import { FilesChanged } from './FilesChanged'
 import { TestResults } from './TestResults'
 import { ActivityFooter } from './ActivityFooter'
+import { ActivityFeed } from './ActivityFeed'
+import { useActivityEvents } from '../hooks/useActivityEvents'
 import type { FileChangeItem } from './FilesChanged'
 
 interface AgentStatusPanelProps {
@@ -21,6 +23,7 @@ export const AgentStatusPanel = ({
   sessionId,
 }: AgentStatusPanelProps): ReactElement => {
   const status = useAgentStatus(sessionId)
+  const events = useActivityEvents(status)
 
   return (
     <div
@@ -55,6 +58,8 @@ export const AgentStatusPanel = ({
               totalOutputTokens={status.contextWindow?.totalOutputTokens ?? 0}
             />
           </div>
+
+          <ActivityFeed events={events} />
 
           <div className="flex-1 overflow-y-auto">
             <ToolCallSummary
