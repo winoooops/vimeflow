@@ -59,12 +59,12 @@ export const AgentStatusPanel = ({
           </div>
 
           <div className="thin-scrollbar flex-1 overflow-y-auto">
-            <ActivityFeed events={events} />
             <ToolCallSummary
               total={status.toolCalls.total}
               byType={status.toolCalls.byType}
               active={status.toolCalls.active}
             />
+            <ActivityFeed events={events} />
             <FilesChanged files={placeholderFiles} />
             <TestResults
               passed={placeholderTests.passed}
@@ -72,7 +72,6 @@ export const AgentStatusPanel = ({
               total={placeholderTests.total}
             />
           </div>
-
           <ActivityFooter
             totalDurationMs={status.cost?.totalDurationMs ?? 0}
             turnCount={0}
