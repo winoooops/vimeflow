@@ -43,7 +43,11 @@ describe('ToolCallSummary', () => {
       <ToolCallSummary
         total={5}
         byType={{}}
-        active={{ tool: 'Read', args: 'src/index.ts' }}
+        active={{
+          tool: 'Read',
+          args: 'src/index.ts',
+          startedAt: '2026-04-22T10:00:00Z',
+        }}
       />
     )
 
