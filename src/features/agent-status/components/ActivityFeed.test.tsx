@@ -103,6 +103,54 @@ describe('ActivityFeed', () => {
     expect(screen.getByTestId('activity-feed-rail')).toBeInTheDocument()
   })
 
+  test('caps visible events at 10 by default when there are more', () => {
+    const events = Array.from({ length: 15 }, (_, i) =>
+      doneEvent(`e${i}`, `src/${i}.ts`)
+    )
+    render(<ActivityFeed events={events} />)
+
+    expect(screen.getAllByRole('article')).toHaveLength(10)
+    expect(
+      screen.getByRole('button', { name: /5 earlier events/i })
+    ).toBeInTheDocument()
+  })
+
+  test('does not render the show-more button when events fit under the cap', () => {
+    render(
+      <ActivityFeed
+        events={[doneEvent('a', 'src/a.ts'), doneEvent('b', 'src/b.ts')]}
+      />
+    )
+
+    expect(
+      screen.queryByRole('button', { name: /earlier events/i })
+    ).not.toBeInTheDocument()
+  })
+
+  test('clicking "show more" reveals the full list and the button flips to "Show less"', async () => {
+    vi.useRealTimers()
+    const user = userEvent.setup()
+
+    const events = Array.from({ length: 15 }, (_, i) =>
+      doneEvent(`e${i}`, `src/${i}.ts`)
+    )
+    render(<ActivityFeed events={events} />)
+
+    await user.click(screen.getByRole('button', { name: /5 earlier events/i }))
+
+    expect(screen.getAllByRole('article')).toHaveLength(15)
+    expect(
+      screen.getByRole('button', { name: /show less/i })
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /show less/i }))
+
+    expect(screen.getAllByRole('article')).toHaveLength(10)
+
+    vi.useFakeTimers()
+    vi.setSystemTime(fixedNow)
+  })
+
   test('running event duration advances as the timer ticks', () => {
     render(
       <ActivityFeed

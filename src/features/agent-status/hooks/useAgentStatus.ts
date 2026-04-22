@@ -10,7 +10,10 @@ import type {
   RecentToolCall,
 } from '../types'
 
-const RECENT_TOOL_CALLS_LIMIT = 10
+// Backend cap for the sliding window of completed tool calls. The
+// ActivityFeed paginates this with a 'show more' control so the whole
+// buffer is reachable without overloading the initial render.
+const RECENT_TOOL_CALLS_LIMIT = 50
 const DETECTION_POLL_MS = 2000
 const EXIT_HOLD_MS = 5000
 

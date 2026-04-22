@@ -185,30 +185,30 @@ describe('useAgentStatus', () => {
     expect(result.current.toolCalls.byType).toEqual({ Read: 2, Edit: 1 })
   })
 
-  test('manages recentToolCalls as sliding window of 10', async () => {
+  test('manages recentToolCalls as a sliding window capped at 50', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 
     await vi.waitFor(() => {
       expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
     })
 
-    // Emit 12 tool calls
-    for (let i = 0; i < 12; i++) {
+    // Emit 55 tool calls — oldest 5 should fall out of the window.
+    for (let i = 0; i < 55; i++) {
       act(() => {
         emit('agent-tool-call', {
           sessionId: 'pty-session-1',
           tool: 'Read',
           args: `{"i":${String(i)}}`,
           status: 'done',
-          timestamp: `2026-04-12T00:00:${String(i).padStart(2, '0')}Z`,
+          timestamp: `2026-04-12T00:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}Z`,
           durationMs: 100,
         })
       })
     }
 
-    expect(result.current.recentToolCalls).toHaveLength(10)
-    // Newest first
-    expect(result.current.recentToolCalls[0].args).toBe('{"i":11}')
+    expect(result.current.recentToolCalls).toHaveLength(50)
+    // Newest first — arrival order determines insertion, and #54 was last.
+    expect(result.current.recentToolCalls[0].args).toBe('{"i":54}')
   })
 
   test('sets active tool call on running status', async () => {
