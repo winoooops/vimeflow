@@ -23,12 +23,12 @@ export const ToolCallSummary = ({
             <span
               key={name}
               title={name}
-              className="inline-flex max-w-[10rem] items-center gap-1.5 rounded-md bg-surface-container-high px-2 py-0.5"
+              className="inline-flex max-w-[10rem] items-center gap-1.5 rounded-md bg-surface-container-high px-2 py-1"
             >
-              <span className="truncate text-[9px] leading-none text-on-surface-variant">
+              <span className="truncate text-[10px] leading-none text-on-surface-variant">
                 {name}
               </span>
-              <span className="shrink-0 font-mono text-[9px] font-semibold leading-none text-primary">
+              <span className="shrink-0 font-mono text-[10px] font-semibold leading-none text-primary">
                 {count}
               </span>
             </span>

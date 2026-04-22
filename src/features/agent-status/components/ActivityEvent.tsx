@@ -64,7 +64,7 @@ const StatusChips = ({ event }: StatusChipsProps): ReactElement | null => {
     }
 
     return (
-      <div className="mt-1 flex items-center gap-2">
+      <div className="mt-0.5 flex items-center gap-2">
         <span className="text-[9px] font-mono text-success">
           +{event.diff.added}
         </span>
@@ -91,7 +91,7 @@ const StatusChips = ({ event }: StatusChipsProps): ReactElement | null => {
       : verb
 
     return (
-      <div className="mt-1">
+      <div className="mt-0.5">
         <span
           className={`inline-block rounded-md px-2 py-0.5 text-[9px] font-bold uppercase ${palette}`}
         >
@@ -118,7 +118,7 @@ export const ActivityEvent = ({
     : formatRelativeTime(event.timestamp, now)
 
   return (
-    <article aria-label={label} className="flex items-start gap-2 py-1.5">
+    <article aria-label={label} className="flex items-start gap-2 py-1">
       <div className="relative">
         <span
           className={`material-symbols-outlined text-sm ${colorClass} w-6 h-6 rounded-md bg-surface-container-high flex items-center justify-center`}
