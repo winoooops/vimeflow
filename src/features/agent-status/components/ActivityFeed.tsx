@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { ActivityEvent } from './ActivityEvent'
+import { CollapsibleSection } from './CollapsibleSection'
 import type { ActivityEvent as ActivityEventType } from '../types/activityEvent'
 
 interface ActivityFeedProps {
@@ -18,13 +19,7 @@ export const ActivityFeed = ({ events }: ActivityFeedProps): ReactElement => {
   }, [])
 
   return (
-    <div className="border-t border-outline-variant/[0.08] px-5 py-3">
-      <div className="mb-2">
-        <span className="text-[10px] font-black uppercase tracking-[0.15em] text-outline">
-          ACTIVITY
-        </span>
-      </div>
-
+    <CollapsibleSection title="Activity" count={events.length} defaultExpanded>
       {events.length === 0 ? (
         <p className="text-xs text-on-surface-variant">No activity yet</p>
       ) : (
@@ -41,6 +36,6 @@ export const ActivityFeed = ({ events }: ActivityFeedProps): ReactElement => {
           </div>
         </div>
       )}
-    </div>
+    </CollapsibleSection>
   )
 }

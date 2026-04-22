@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { ActivityFeed } from './ActivityFeed'
 import type { ActivityEvent as ActivityEventType } from '../types/activityEvent'
 
@@ -25,16 +26,51 @@ const doneEvent = (id: string, body: string): ActivityEventType => ({
 })
 
 describe('ActivityFeed', () => {
-  test('renders the ACTIVITY section header', () => {
+  test('renders a collapsible Activity header that is expanded by default', () => {
     render(<ActivityFeed events={[]} />)
+    const toggle = screen.getByRole('button', { name: /activity/i })
 
-    expect(screen.getByText('ACTIVITY')).toBeInTheDocument()
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
   })
 
   test('renders "No activity yet" when events is empty', () => {
     render(<ActivityFeed events={[]} />)
 
     expect(screen.getByText('No activity yet')).toBeInTheDocument()
+  })
+
+  test('clicking the header collapses the feed body', async () => {
+    // Real timers for user-event; the timer-tick test later re-enables fakes.
+    vi.useRealTimers()
+    const user = userEvent.setup()
+    render(
+      <ActivityFeed
+        events={[doneEvent('a', 'src/a.ts'), doneEvent('b', 'src/b.ts')]}
+      />
+    )
+
+    expect(screen.getByText('src/a.ts')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /activity/i }))
+
+    expect(screen.queryByText('src/a.ts')).not.toBeInTheDocument()
+
+    // Restore fake timers for the remaining tests in the file (afterEach
+    // calls useRealTimers so order doesn't matter, but keep the pair tidy).
+    vi.useFakeTimers()
+    vi.setSystemTime(fixedNow)
+  })
+
+  test('shows the event count next to the Activity header', () => {
+    render(
+      <ActivityFeed
+        events={[doneEvent('a', 'src/a.ts'), doneEvent('b', 'src/b.ts')]}
+      />
+    )
+    const toggle = screen.getByRole('button', { name: /activity/i })
+
+    // CollapsibleSection renders `{count}` alongside the title.
+    expect(toggle).toHaveTextContent('2')
   })
 
   test('does NOT render the empty-state text when events has entries', () => {

@@ -124,11 +124,11 @@ describe('AgentStatusPanel', () => {
 
     render(<AgentStatusPanel sessionId="session-1" />)
 
-    const activityHeader = screen.getByText('ACTIVITY')
+    const activityHeader = screen.getByRole('button', { name: /activity/i })
     const toolCallsHeader = screen.getByText(/tool calls/i)
 
-    // ActivityFeed's ACTIVITY section header appears before the
-    // ToolCallSummary's "Tool Calls" header in DOM order.
+    // ActivityFeed's Activity header appears before the ToolCallSummary's
+    // "Tool Calls" header in DOM order.
     expect(activityHeader.compareDocumentPosition(toolCallsHeader)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING
     )
@@ -145,16 +145,16 @@ describe('AgentStatusPanel', () => {
 
     const { container } = render(<AgentStatusPanel sessionId="session-1" />)
 
-    // The scroll region wraps ActivityFeed + ToolCallSummary + RecentToolCalls +
-    // FilesChanged + TestResults so the lower sections remain reachable when
-    // the ActivityFeed grows. Must use thin-scrollbar per rules convention
-    // (see src/features/editor/components/ExplorerPane.tsx:74).
+    // The scroll region wraps ActivityFeed + ToolCallSummary + FilesChanged +
+    // TestResults so the lower sections remain reachable when the ActivityFeed
+    // grows. Must use thin-scrollbar per rules convention (see
+    // src/features/editor/components/ExplorerPane.tsx:74).
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     const scrollableDiv = container.querySelector('.overflow-y-auto')
     expect(scrollableDiv).toHaveClass('thin-scrollbar')
   })
 
-  test('keeps existing ToolCallSummary and RecentToolCalls consumers mounted', async () => {
+  test('keeps ToolCallSummary consumer mounted alongside the ActivityFeed', async () => {
     const { useAgentStatus } = await import('../hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue({
       ...defaultStatus,
@@ -182,7 +182,9 @@ describe('AgentStatusPanel', () => {
 
     // ToolCallSummary: renders the byType chip label "Edit".
     expect(screen.getAllByText('Edit').length).toBeGreaterThan(0)
-    // RecentToolCalls: collapsible section button with count.
-    expect(screen.getByRole('button', { name: /recent/i })).toBeInTheDocument()
+    // ActivityFeed: collapsible header exists.
+    expect(
+      screen.getByRole('button', { name: /activity/i })
+    ).toBeInTheDocument()
   })
 })

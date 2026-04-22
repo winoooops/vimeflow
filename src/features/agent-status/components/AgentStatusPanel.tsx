@@ -3,7 +3,6 @@ import { useAgentStatus } from '../hooks/useAgentStatus'
 import { StatusCard } from './StatusCard'
 import { ContextBucket } from './ContextBucket'
 import { ToolCallSummary } from './ToolCallSummary'
-import { RecentToolCalls } from './RecentToolCalls'
 import { FilesChanged } from './FilesChanged'
 import { TestResults } from './TestResults'
 import { ActivityFooter } from './ActivityFooter'
@@ -66,7 +65,6 @@ export const AgentStatusPanel = ({
               byType={status.toolCalls.byType}
               active={status.toolCalls.active}
             />
-            <RecentToolCalls calls={status.recentToolCalls} />
             <FilesChanged files={placeholderFiles} />
             <TestResults
               passed={placeholderTests.passed}
