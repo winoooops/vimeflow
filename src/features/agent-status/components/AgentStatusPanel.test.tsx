@@ -98,7 +98,7 @@ describe('AgentStatusPanel', () => {
     expect(useAgentStatus).toHaveBeenCalledWith('session-42')
   })
 
-  test('renders ActivityFeed between ContextBucket and ToolCallSummary', async () => {
+  test('renders ToolCallSummary and ActivityFeed inside the scrollable region', async () => {
     const { useAgentStatus } = await import('../hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue({
       ...defaultStatus,
@@ -124,12 +124,13 @@ describe('AgentStatusPanel', () => {
 
     render(<AgentStatusPanel sessionId="session-1" />)
 
+    const toolCallsHeader = screen.getByRole('button', { name: /tool calls/i })
     const activityHeader = screen.getByRole('button', { name: /activity/i })
-    const toolCallsHeader = screen.getByText(/tool calls/i)
 
-    // ActivityFeed's Activity header appears before the ToolCallSummary's
-    // "Tool Calls" header in DOM order.
-    expect(activityHeader.compareDocumentPosition(toolCallsHeader)).toBe(
+    // Current order: ToolCallSummary header appears before the ActivityFeed
+    // header. Both are now CollapsibleSection buttons so they share the same
+    // visual rhythm as FilesChanged and Tests below.
+    expect(toolCallsHeader.compareDocumentPosition(activityHeader)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING
     )
   })
