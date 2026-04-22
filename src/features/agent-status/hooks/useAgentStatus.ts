@@ -334,8 +334,18 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // Cleanup watchers when the hook unmounts entirely.
   // Read from prevSessionIdRef (not the closure's sessionId) so the
   // cleanup sees the LATEST session, not the mount-time null.
+  //
+  // Also clear the pending collapse timeout — if the hook unmounts
+  // during the 5s exit-hold window, the scheduled callback would
+  // otherwise fire setStatus against an unmounted component
+  // (no-op in React 18, but the closure retains a reference and
+  // leaks the state setter across multi-session navigation).
   useEffect(
     () => (): void => {
+      if (collapseTimeoutRef.current) {
+        clearTimeout(collapseTimeoutRef.current)
+        collapseTimeoutRef.current = null
+      }
       const sid = prevSessionIdRef.current
       if (sid) {
         void stopWatchers(sid)

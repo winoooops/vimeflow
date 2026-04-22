@@ -859,4 +859,56 @@ mod tests {
         assert_eq!(tool_name, "unknown");
         assert!(args.is_empty());
     }
+
+    // extract_timestamp drives the emitted AgentToolCallEvent.timestamp on
+    // every line we parse; before this helper existed, every event was
+    // stamped with now_iso8601() and the UI feed collapsed to "all happened
+    // just now" on initial watch / batch catch-up. These tests lock in the
+    // contract so future refactors can't silently regress it.
+    #[test]
+    fn extract_timestamp_uses_transcript_field_when_present() {
+        let line = r#"{"type":"assistant","timestamp":"2026-04-22T10:30:00Z","message":{"content":[]}}"#;
+        let value: Value = serde_json::from_str(line).unwrap();
+
+        assert_eq!(extract_timestamp(&value), "2026-04-22T10:30:00Z");
+    }
+
+    #[test]
+    fn extract_timestamp_falls_back_to_now_when_absent() {
+        let line = r#"{"type":"assistant","message":{"content":[]}}"#;
+        let value: Value = serde_json::from_str(line).unwrap();
+
+        let ts = extract_timestamp(&value);
+
+        // Shape check against now_iso8601 — same ISO-8601 UTC format
+        // (YYYY-MM-DDTHH:MM:SSZ). We can't compare exact values because
+        // the fallback calls now_iso8601() which reads the wall clock.
+        assert!(ts.ends_with('Z'));
+        assert_eq!(ts.len(), 20);
+        assert!(ts.starts_with("20"));
+    }
+
+    #[test]
+    fn extract_timestamp_ignores_non_string_field() {
+        // If a malformed line has a non-string timestamp (e.g. a number
+        // or null), we should fall back rather than coerce.
+        let line = r#"{"type":"assistant","timestamp":1234567890,"message":{"content":[]}}"#;
+        let value: Value = serde_json::from_str(line).unwrap();
+
+        let ts = extract_timestamp(&value);
+
+        // Falls back to now_iso8601 format (not the numeric literal).
+        assert!(ts.ends_with('Z'));
+        assert_eq!(ts.len(), 20);
+    }
+
+    #[test]
+    fn extract_timestamp_preserves_full_iso_string_exactly() {
+        // Sub-second precision and timezone offsets should pass through
+        // untouched — the frontend parses whatever we emit.
+        let line = r#"{"type":"user","timestamp":"2026-04-22T10:30:45.123Z","message":{"content":[]}}"#;
+        let value: Value = serde_json::from_str(line).unwrap();
+
+        assert_eq!(extract_timestamp(&value), "2026-04-22T10:30:45.123Z");
+    }
 }

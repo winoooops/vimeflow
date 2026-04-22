@@ -17,11 +17,25 @@ export const ActivityFeed = ({ events }: ActivityFeedProps): ReactElement => {
   const [now, setNow] = useState<Date>(() => new Date())
   const [showAll, setShowAll] = useState<boolean>(false)
 
+  // The 1s tick exists to drive the 'running Xs' live timestamp on an
+  // in-flight tool call. For completed-only feeds we'd burn a render per
+  // second with nothing visible changing (minute-granularity means the
+  // relative timestamps don't move for 60s anyway). Gate the interval
+  // on the presence of a running event.
+  //
+  // We still refresh `now` whenever the events array changes so a newly
+  // arrived completed event renders against the current clock instead
+  // of whatever `now` was captured before the panel sat idle.
+  const hasRunning = events.some((e) => e.status === 'running')
   useEffect(() => {
+    setNow(new Date())
+    if (!hasRunning) {
+      return
+    }
     const id = setInterval(() => setNow(new Date()), TICK_MS)
 
     return (): void => clearInterval(id)
-  }, [])
+  }, [hasRunning, events])
 
   const overflow = events.length - VISIBLE_WHEN_COLLAPSED
   const visible = showAll ? events : events.slice(0, VISIBLE_WHEN_COLLAPSED)
