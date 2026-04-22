@@ -36,23 +36,45 @@ describe('toolCallsToEvents', () => {
     })
   })
 
-  test('recent only → events in given order', () => {
+  test('recent events are sorted by timestamp descending regardless of input order', () => {
     const events = toolCallsToEvents(null, [
-      recent({ id: 'a', tool: 'Bash', args: 'ls' }),
-      recent({ id: 'b', tool: 'Read', args: 'x.ts' }),
+      recent({
+        id: 'old',
+        tool: 'Bash',
+        args: 'ls',
+        timestamp: '2026-04-22T10:00:00Z',
+      }),
+      recent({
+        id: 'newest',
+        tool: 'Read',
+        args: 'x.ts',
+        timestamp: '2026-04-22T12:00:00Z',
+      }),
+      recent({
+        id: 'middle',
+        tool: 'Edit',
+        args: 'y.ts',
+        timestamp: '2026-04-22T11:00:00Z',
+      }),
     ])
 
-    expect(events.map((e) => e.id)).toEqual(['a', 'b'])
+    expect(events.map((e) => e.id)).toEqual(['newest', 'middle', 'old'])
   })
 
-  test('active is prepended to recent', () => {
+  test('active is always first, even when a recent event has a newer timestamp', () => {
     const events = toolCallsToEvents(
       {
         tool: 'Edit',
         args: 'src/foo.ts',
-        startedAt: '2026-04-22T10:30:00Z',
+        // Deliberately older than the recent event below.
+        startedAt: '2026-04-22T10:00:00Z',
       },
-      [recent({ id: 'a' })]
+      [
+        recent({
+          id: 'a',
+          timestamp: '2026-04-22T11:00:00Z',
+        }),
+      ]
     )
 
     expect(events[0].status).toBe('running')
