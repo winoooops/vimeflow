@@ -366,7 +366,7 @@ fn process_assistant_message(
 
         let now = Instant::now();
         in_flight.insert(
-            id,
+            id.clone(),
             InFlightToolCall {
                 started_at: now,
                 tool: name.clone(),
@@ -376,6 +376,7 @@ fn process_assistant_message(
 
         let event = AgentToolCallEvent {
             session_id: session_id.to_string(),
+            tool_use_id: id,
             tool: name,
             args,
             status: ToolCallStatus::Running,
@@ -451,6 +452,7 @@ fn process_tool_result(
 
     let event = AgentToolCallEvent {
         session_id: session_id.to_string(),
+        tool_use_id,
         tool: tool_name,
         args,
         status,

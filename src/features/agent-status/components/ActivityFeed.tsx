@@ -65,7 +65,9 @@ export const ActivityFeed = ({ events }: ActivityFeedProps): ReactElement => {
               onClick={(): void => setShowAll((prev) => !prev)}
               className="mt-1 w-full rounded-md py-1 text-center text-[10px] font-semibold uppercase tracking-[0.1em] text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
             >
-              {showAll ? 'Show less' : `+ ${overflow} earlier events`}
+              {showAll
+                ? 'Show less'
+                : `+ ${overflow} earlier event${overflow === 1 ? '' : 's'}`}
             </button>
           )}
         </>

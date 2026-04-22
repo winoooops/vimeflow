@@ -115,6 +115,18 @@ describe('ActivityFeed', () => {
     ).toBeInTheDocument()
   })
 
+  test('show-more label uses singular "event" when exactly one is hidden', () => {
+    // 11 events → overflow = 1 → label reads "+ 1 earlier event" (no 's')
+    const events = Array.from({ length: 11 }, (_, i) =>
+      doneEvent(`e${i}`, `src/${i}.ts`)
+    )
+    render(<ActivityFeed events={events} />)
+
+    expect(
+      screen.getByRole('button', { name: /1 earlier event$/i })
+    ).toBeInTheDocument()
+  })
+
   test('does not render the show-more button when events fit under the cap', () => {
     render(
       <ActivityFeed

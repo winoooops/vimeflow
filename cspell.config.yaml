@@ -8,6 +8,9 @@ words:
   - notebookedit
   - multiedit
 
+  # Anthropic id prefixes appearing in code and test fixtures
+  - toolu
+
   # Project
   - vibm
   - Vimeflow

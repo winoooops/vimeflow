@@ -178,6 +178,10 @@ pub enum ToolCallStatus {
 pub struct AgentToolCallEvent {
     /// PTY session ID
     pub session_id: String,
+    /// Anthropic tool_use id (e.g., "toolu_01ABC..."). Stable per
+    /// tool call — used on the frontend as the React key so parallel
+    /// tool calls sharing a message-level timestamp don't collide.
+    pub tool_use_id: String,
     /// Tool name (e.g., "Read", "Write", "Bash")
     pub tool: String,
     /// Tool call arguments (JSON string)

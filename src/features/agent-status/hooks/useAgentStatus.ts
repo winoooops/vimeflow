@@ -275,8 +275,13 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
             }))
           } else {
             // done or failed
+            //
+            // Use the Anthropic tool_use id as the React key.
+            // `${p.tool}-${p.timestamp}` collides when parallel tool calls
+            // share a user-message timestamp (common with parallel Read/Grep);
+            // React silently drops the duplicate rows from the feed.
             const recentCall: RecentToolCall = {
-              id: `${p.tool}-${p.timestamp}`,
+              id: p.toolUseId,
               tool: p.tool,
               args: p.args,
               status: p.status,
