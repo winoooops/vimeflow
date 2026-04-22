@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { CollapsibleSection } from './CollapsibleSection'
 import type { ActiveToolCall } from '../types'
 
 interface ToolCallSummaryProps {
@@ -15,23 +16,19 @@ export const ToolCallSummary = ({
   const sortedChips = Object.entries(byType).sort(([, a], [, b]) => b - a)
 
   return (
-    <div className="border-t border-outline-variant/[0.08] px-5 py-3">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="text-[10px] font-black uppercase tracking-[0.15em] text-outline">
-          Tool Calls
-        </span>
-        <span className="font-mono text-[10px] text-outline">{total}</span>
-      </div>
-
+    <CollapsibleSection title="Tool Calls" count={total} defaultExpanded>
       {sortedChips.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1">
           {sortedChips.map(([name, count]) => (
             <span
               key={name}
-              className="rounded-md bg-surface-container-high px-2 py-1"
+              title={name}
+              className="inline-flex max-w-[10rem] items-center gap-1.5 rounded-md bg-surface-container-high px-2 py-1"
             >
-              <span className="text-[9px] text-on-surface-variant">{name}</span>{' '}
-              <span className="font-mono text-[9px] font-semibold text-primary">
+              <span className="truncate text-[10px] leading-none text-on-surface-variant">
+                {name}
+              </span>
+              <span className="shrink-0 font-mono text-[10px] font-semibold leading-none text-primary">
                 {count}
               </span>
             </span>
@@ -58,6 +55,6 @@ export const ToolCallSummary = ({
           )}
         </div>
       )}
-    </div>
+    </CollapsibleSection>
   )
 }

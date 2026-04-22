@@ -10,6 +10,12 @@ export type AgentToolCallEvent = {
    */
   sessionId: string
   /**
+   * Anthropic tool_use id (e.g., "toolu_01ABC..."). Stable per
+   * tool call — used on the frontend as the React key so parallel
+   * tool calls sharing a message-level timestamp don't collide.
+   */
+  toolUseId: string
+  /**
    * Tool name (e.g., "Read", "Write", "Bash")
    */
   tool: string

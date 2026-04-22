@@ -3,10 +3,11 @@ import { useAgentStatus } from '../hooks/useAgentStatus'
 import { StatusCard } from './StatusCard'
 import { ContextBucket } from './ContextBucket'
 import { ToolCallSummary } from './ToolCallSummary'
-import { RecentToolCalls } from './RecentToolCalls'
 import { FilesChanged } from './FilesChanged'
 import { TestResults } from './TestResults'
 import { ActivityFooter } from './ActivityFooter'
+import { ActivityFeed } from './ActivityFeed'
+import { useActivityEvents } from '../hooks/useActivityEvents'
 import type { FileChangeItem } from './FilesChanged'
 
 interface AgentStatusPanelProps {
@@ -21,6 +22,7 @@ export const AgentStatusPanel = ({
   sessionId,
 }: AgentStatusPanelProps): ReactElement => {
   const status = useAgentStatus(sessionId)
+  const events = useActivityEvents(status)
 
   return (
     <div
@@ -56,13 +58,13 @@ export const AgentStatusPanel = ({
             />
           </div>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="thin-scrollbar flex-1 overflow-y-auto">
             <ToolCallSummary
               total={status.toolCalls.total}
               byType={status.toolCalls.byType}
               active={status.toolCalls.active}
             />
-            <RecentToolCalls calls={status.recentToolCalls} />
+            <ActivityFeed events={events} />
             <FilesChanged files={placeholderFiles} />
             <TestResults
               passed={placeholderTests.passed}
@@ -70,7 +72,6 @@ export const AgentStatusPanel = ({
               total={placeholderTests.total}
             />
           </div>
-
           <ActivityFooter
             totalDurationMs={status.cost?.totalDurationMs ?? 0}
             turnCount={0}

@@ -97,4 +97,95 @@ describe('AgentStatusPanel', () => {
 
     expect(useAgentStatus).toHaveBeenCalledWith('session-42')
   })
+
+  test('renders ToolCallSummary and ActivityFeed inside the scrollable region', async () => {
+    const { useAgentStatus } = await import('../hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue({
+      ...defaultStatus,
+      isActive: true,
+      agentType: 'claude-code',
+      sessionId: 'session-1',
+      toolCalls: {
+        total: 1,
+        byType: { Edit: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'r-1',
+          tool: 'Edit',
+          args: 'src/foo.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:42Z',
+        },
+      ],
+    })
+
+    render(<AgentStatusPanel sessionId="session-1" />)
+
+    const toolCallsHeader = screen.getByRole('button', { name: /tool calls/i })
+    const activityHeader = screen.getByRole('button', { name: /activity/i })
+
+    // Current order: ToolCallSummary header appears before the ActivityFeed
+    // header. Both are now CollapsibleSection buttons so they share the same
+    // visual rhythm as FilesChanged and Tests below.
+    expect(toolCallsHeader.compareDocumentPosition(activityHeader)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    )
+  })
+
+  test('scrollable content area uses the thin-scrollbar convention', async () => {
+    const { useAgentStatus } = await import('../hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue({
+      ...defaultStatus,
+      isActive: true,
+      agentType: 'claude-code',
+      sessionId: 'session-1',
+    })
+
+    const { container } = render(<AgentStatusPanel sessionId="session-1" />)
+
+    // The scroll region wraps ActivityFeed + ToolCallSummary + FilesChanged +
+    // TestResults so the lower sections remain reachable when the ActivityFeed
+    // grows. Must use thin-scrollbar per rules convention (see
+    // src/features/editor/components/ExplorerPane.tsx:74).
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const scrollableDiv = container.querySelector('.overflow-y-auto')
+    expect(scrollableDiv).toHaveClass('thin-scrollbar')
+  })
+
+  test('keeps ToolCallSummary consumer mounted alongside the ActivityFeed', async () => {
+    const { useAgentStatus } = await import('../hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue({
+      ...defaultStatus,
+      isActive: true,
+      agentType: 'claude-code',
+      sessionId: 'session-1',
+      toolCalls: {
+        total: 1,
+        byType: { Edit: 1 },
+        active: null,
+      },
+      recentToolCalls: [
+        {
+          id: 'r-1',
+          tool: 'Edit',
+          args: 'src/foo.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:42Z',
+        },
+      ],
+    })
+
+    render(<AgentStatusPanel sessionId="session-1" />)
+
+    // ToolCallSummary: renders the byType chip label "Edit".
+    expect(screen.getAllByText('Edit').length).toBeGreaterThan(0)
+    // ActivityFeed: collapsible header exists.
+    expect(
+      screen.getByRole('button', { name: /activity/i })
+    ).toBeInTheDocument()
+  })
 })

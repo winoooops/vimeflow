@@ -151,6 +151,7 @@ describe('useAgentStatus', () => {
     act(() => {
       emit('agent-tool-call', {
         sessionId: 'pty-session-1',
+        toolUseId: 'toolu_001',
         tool: 'Read',
         args: '{}',
         status: 'done',
@@ -162,6 +163,7 @@ describe('useAgentStatus', () => {
     act(() => {
       emit('agent-tool-call', {
         sessionId: 'pty-session-1',
+        toolUseId: 'toolu_002',
         tool: 'Read',
         args: '{}',
         status: 'done',
@@ -173,6 +175,7 @@ describe('useAgentStatus', () => {
     act(() => {
       emit('agent-tool-call', {
         sessionId: 'pty-session-1',
+        toolUseId: 'toolu_003',
         tool: 'Edit',
         args: '{}',
         status: 'done',
@@ -185,30 +188,31 @@ describe('useAgentStatus', () => {
     expect(result.current.toolCalls.byType).toEqual({ Read: 2, Edit: 1 })
   })
 
-  test('manages recentToolCalls as sliding window of 10', async () => {
+  test('manages recentToolCalls as a sliding window capped at 50', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 
     await vi.waitFor(() => {
       expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
     })
 
-    // Emit 12 tool calls
-    for (let i = 0; i < 12; i++) {
+    // Emit 55 tool calls — oldest 5 should fall out of the window.
+    for (let i = 0; i < 55; i++) {
       act(() => {
         emit('agent-tool-call', {
           sessionId: 'pty-session-1',
+          toolUseId: `toolu_${String(i).padStart(3, '0')}`,
           tool: 'Read',
           args: `{"i":${String(i)}}`,
           status: 'done',
-          timestamp: `2026-04-12T00:00:${String(i).padStart(2, '0')}Z`,
+          timestamp: `2026-04-12T00:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}Z`,
           durationMs: 100,
         })
       })
     }
 
-    expect(result.current.recentToolCalls).toHaveLength(10)
-    // Newest first
-    expect(result.current.recentToolCalls[0].args).toBe('{"i":11}')
+    expect(result.current.recentToolCalls).toHaveLength(50)
+    // Newest first — arrival order determines insertion, and #54 was last.
+    expect(result.current.recentToolCalls[0].args).toBe('{"i":54}')
   })
 
   test('sets active tool call on running status', async () => {
@@ -221,6 +225,7 @@ describe('useAgentStatus', () => {
     act(() => {
       emit('agent-tool-call', {
         sessionId: 'pty-session-1',
+        toolUseId: 'toolu_bash1',
         tool: 'Bash',
         args: '{"command":"ls"}',
         status: 'running',
@@ -232,6 +237,8 @@ describe('useAgentStatus', () => {
     expect(result.current.toolCalls.active).toEqual({
       tool: 'Bash',
       args: '{"command":"ls"}',
+      startedAt: '2026-04-12T00:00:00Z',
+      toolUseId: 'toolu_bash1',
     })
   })
 
@@ -245,6 +252,7 @@ describe('useAgentStatus', () => {
     act(() => {
       emit('agent-tool-call', {
         sessionId: 'pty-session-1',
+        toolUseId: 'toolu_bash2',
         tool: 'Bash',
         args: '{"command":"ls"}',
         status: 'running',
@@ -258,6 +266,7 @@ describe('useAgentStatus', () => {
     act(() => {
       emit('agent-tool-call', {
         sessionId: 'pty-session-1',
+        toolUseId: 'toolu_bash2',
         tool: 'Bash',
         args: '{"command":"ls"}',
         status: 'done',
@@ -267,6 +276,37 @@ describe('useAgentStatus', () => {
     })
 
     expect(result.current.toolCalls.active).toBeNull()
+  })
+
+  test('parallel same-tool completions retain distinct ids via toolUseId', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+    })
+
+    // Simulate three parallel Read calls completing inside a single
+    // user message: the Rust parser emits the same message-level
+    // timestamp for each. Before the toolUseId fix, all three
+    // collapsed to the same key and React silently dropped rows.
+    const sharedTimestamp = '2026-04-22T10:30:45.123Z'
+    for (const id of ['toolu_A', 'toolu_B', 'toolu_C']) {
+      act(() => {
+        emit('agent-tool-call', {
+          sessionId: 'pty-session-1',
+          toolUseId: id,
+          tool: 'Read',
+          args: `{"file":"${id}"}`,
+          status: 'done',
+          timestamp: sharedTimestamp,
+          durationMs: 10,
+        })
+      })
+    }
+
+    const ids = result.current.recentToolCalls.map((c) => c.id)
+    expect(ids).toEqual(['toolu_C', 'toolu_B', 'toolu_A'])
+    expect(new Set(ids).size).toBe(3)
   })
 
   test('polls detect_agent_in_session on interval', async () => {

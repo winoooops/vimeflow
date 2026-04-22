@@ -2,6 +2,18 @@ version: '0.2'
 language: en
 
 words:
+  # Claude Code tool names (also used uppercased in UI labels)
+  - webfetch
+  - websearch
+  - notebookedit
+  - multiedit
+
+  # Anthropic id prefixes appearing in code and test fixtures
+  - toolu
+
+  # General vocabulary flagged by cspell's defaults
+  - unparseable
+
   # Project
   - vibm
   - Vimeflow

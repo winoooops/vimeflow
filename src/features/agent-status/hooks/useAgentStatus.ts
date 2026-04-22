@@ -10,7 +10,10 @@ import type {
   RecentToolCall,
 } from '../types'
 
-const RECENT_TOOL_CALLS_LIMIT = 10
+// Backend cap for the sliding window of completed tool calls. The
+// ActivityFeed paginates this with a 'show more' control so the whole
+// buffer is reachable without overloading the initial render.
+const RECENT_TOOL_CALLS_LIMIT = 50
 const DETECTION_POLL_MS = 2000
 const EXIT_HOLD_MS = 5000
 
@@ -267,13 +270,23 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
               ...prev,
               toolCalls: {
                 ...prev.toolCalls,
-                active: { tool: p.tool, args: p.args },
+                active: {
+                  tool: p.tool,
+                  args: p.args,
+                  startedAt: p.timestamp,
+                  toolUseId: p.toolUseId,
+                },
               },
             }))
           } else {
             // done or failed
+            //
+            // Use the Anthropic tool_use id as the React key.
+            // `${p.tool}-${p.timestamp}` collides when parallel tool calls
+            // share a user-message timestamp (common with parallel Read/Grep);
+            // React silently drops the duplicate rows from the feed.
             const recentCall: RecentToolCall = {
-              id: `${p.tool}-${p.timestamp}`,
+              id: p.toolUseId,
               tool: p.tool,
               args: p.args,
               status: p.status,
@@ -331,8 +344,18 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // Cleanup watchers when the hook unmounts entirely.
   // Read from prevSessionIdRef (not the closure's sessionId) so the
   // cleanup sees the LATEST session, not the mount-time null.
+  //
+  // Also clear the pending collapse timeout — if the hook unmounts
+  // during the 5s exit-hold window, the scheduled callback would
+  // otherwise fire setStatus against an unmounted component
+  // (no-op in React 18, but the closure retains a reference and
+  // leaks the state setter across multi-session navigation).
   useEffect(
     () => (): void => {
+      if (collapseTimeoutRef.current) {
+        clearTimeout(collapseTimeoutRef.current)
+        collapseTimeoutRef.current = null
+      }
       const sid = prevSessionIdRef.current
       if (sid) {
         void stopWatchers(sid)

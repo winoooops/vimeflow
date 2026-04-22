@@ -309,7 +309,8 @@ fn process_line(
             process_user_message(&value, session_id, app_handle, in_flight);
         }
         "tool_result" => {
-            process_tool_result(&value, session_id, app_handle, in_flight);
+            let timestamp = extract_timestamp(&value);
+            process_tool_result(&value, session_id, app_handle, in_flight, &timestamp);
         }
         _ => {
             // Other message types — ignore
@@ -318,6 +319,19 @@ fn process_line(
 }
 
 /// Extract tool_use entries from an assistant message
+/// Pull the top-level `timestamp` field off a transcript line, or fall back
+/// to the current clock. Claude Code JSONL lines carry the real event time —
+/// `now_iso8601()` would otherwise stamp every event parsed in a single tick
+/// (e.g. initial watch / batch catch-up) with the same "now", making the UI
+/// feed look as if everything happened at once.
+fn extract_timestamp(value: &Value) -> String {
+    value
+        .get("timestamp")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(now_iso8601)
+}
+
 fn process_assistant_message(
     value: &Value,
     session_id: &str,
@@ -328,6 +342,8 @@ fn process_assistant_message(
         Some(arr) => arr,
         None => return,
     };
+
+    let timestamp = extract_timestamp(value);
 
     for item in content {
         let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
@@ -350,7 +366,7 @@ fn process_assistant_message(
 
         let now = Instant::now();
         in_flight.insert(
-            id,
+            id.clone(),
             InFlightToolCall {
                 started_at: now,
                 tool: name.clone(),
@@ -360,10 +376,11 @@ fn process_assistant_message(
 
         let event = AgentToolCallEvent {
             session_id: session_id.to_string(),
+            tool_use_id: id,
             tool: name,
             args,
             status: ToolCallStatus::Running,
-            timestamp: now_iso8601(),
+            timestamp: timestamp.clone(),
             duration_ms: 0,
         };
 
@@ -385,9 +402,11 @@ fn process_user_message(
         None => return,
     };
 
+    let timestamp = extract_timestamp(value);
+
     for item in content {
         if is_tool_result_block(item) {
-            process_tool_result(item, session_id, app_handle, in_flight);
+            process_tool_result(item, session_id, app_handle, in_flight, &timestamp);
         }
     }
 }
@@ -398,6 +417,7 @@ fn process_tool_result(
     session_id: &str,
     app_handle: &tauri::AppHandle<impl tauri::Runtime>,
     in_flight: &mut InFlightToolCalls,
+    timestamp: &str,
 ) {
     let tool_use_id = match value.get("tool_use_id").and_then(|v| v.as_str()) {
         Some(id) => id.to_string(),
@@ -409,16 +429,20 @@ fn process_tool_result(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let (duration_ms, tool_name, args) = match in_flight.remove(&tool_use_id) {
-        Some(call) => {
-            let dur = call.started_at.elapsed().as_millis() as u64;
-            (dur, call.tool, call.args)
-        }
-        None => {
-            // No matching in-flight call — emit with unknown tool name
-            (0, "unknown".to_string(), String::new())
-        }
+    // An orphaned tool_result — a tool_result whose parent tool_use was
+    // never recorded in_flight — arrives most often when a Claude Code
+    // session auto-compacts: earlier assistant messages (containing the
+    // tool_use blocks) get trimmed from the transcript, but the later
+    // user messages carrying their tool_results stay. Emitting a placeholder
+    // 'unknown' event for each one surfaces misleading noise in the UI —
+    // the tool name is lost, args is empty, duration is zero, and the chip
+    // summary grows an 'unknown N' bucket users can't act on. Drop it.
+    let Some(call) = in_flight.remove(&tool_use_id) else {
+        return;
     };
+    let duration_ms = call.started_at.elapsed().as_millis() as u64;
+    let tool_name = call.tool;
+    let args = call.args;
 
     let status = if is_error {
         ToolCallStatus::Failed
@@ -428,10 +452,11 @@ fn process_tool_result(
 
     let event = AgentToolCallEvent {
         session_id: session_id.to_string(),
+        tool_use_id,
         tool: tool_name,
         args,
         status,
-        timestamp: now_iso8601(),
+        timestamp: timestamp.to_string(),
         duration_ms,
     };
 
@@ -820,24 +845,74 @@ mod tests {
     }
 
     #[test]
-    fn tool_result_without_matching_start() {
-        // Should handle gracefully when there's no matching in-flight call
+    fn orphan_signal_is_missing_in_flight_entry() {
+        // process_tool_result keys its orphan-drop behavior off exactly
+        // this signal: in_flight.remove(id) returns None when the parent
+        // tool_use was never recorded (typically because Claude Code
+        // transcript compaction trimmed it). The test asserts the
+        // prerequisite, not the full emit-side path — a Tauri AppHandle
+        // cannot be cheaply constructed in unit tests, so we can't
+        // directly observe "no event was emitted" without refactoring
+        // process_tool_result to accept an injected channel.
+        //
+        // If the orphan-drop signal ever changes (e.g. we switch to a
+        // different data structure), update this test and the `let Some
+        // (call) = in_flight.remove(...) else { return };` guard in
+        // process_tool_result together.
         let mut in_flight: InFlightToolCalls = HashMap::new();
-
         let result = in_flight.remove("toolu_nonexistent");
         assert!(result.is_none());
+    }
 
-        // The process_tool_result function handles this with defaults
-        let (duration_ms, tool_name, args) = match result {
-            Some(call) => (
-                call.started_at.elapsed().as_millis() as u64,
-                call.tool,
-                call.args,
-            ),
-            None => (0, "unknown".to_string(), String::new()),
-        };
-        assert_eq!(duration_ms, 0);
-        assert_eq!(tool_name, "unknown");
-        assert!(args.is_empty());
+    // extract_timestamp drives the emitted AgentToolCallEvent.timestamp on
+    // every line we parse; before this helper existed, every event was
+    // stamped with now_iso8601() and the UI feed collapsed to "all happened
+    // just now" on initial watch / batch catch-up. These tests lock in the
+    // contract so future refactors can't silently regress it.
+    #[test]
+    fn extract_timestamp_uses_transcript_field_when_present() {
+        let line = r#"{"type":"assistant","timestamp":"2026-04-22T10:30:00Z","message":{"content":[]}}"#;
+        let value: Value = serde_json::from_str(line).unwrap();
+
+        assert_eq!(extract_timestamp(&value), "2026-04-22T10:30:00Z");
+    }
+
+    #[test]
+    fn extract_timestamp_falls_back_to_now_when_absent() {
+        let line = r#"{"type":"assistant","message":{"content":[]}}"#;
+        let value: Value = serde_json::from_str(line).unwrap();
+
+        let ts = extract_timestamp(&value);
+
+        // Shape check against now_iso8601 — same ISO-8601 UTC format
+        // (YYYY-MM-DDTHH:MM:SSZ). We can't compare exact values because
+        // the fallback calls now_iso8601() which reads the wall clock.
+        assert!(ts.ends_with('Z'));
+        assert_eq!(ts.len(), 20);
+        assert!(ts.starts_with("20"));
+    }
+
+    #[test]
+    fn extract_timestamp_ignores_non_string_field() {
+        // If a malformed line has a non-string timestamp (e.g. a number
+        // or null), we should fall back rather than coerce.
+        let line = r#"{"type":"assistant","timestamp":1234567890,"message":{"content":[]}}"#;
+        let value: Value = serde_json::from_str(line).unwrap();
+
+        let ts = extract_timestamp(&value);
+
+        // Falls back to now_iso8601 format (not the numeric literal).
+        assert!(ts.ends_with('Z'));
+        assert_eq!(ts.len(), 20);
+    }
+
+    #[test]
+    fn extract_timestamp_preserves_full_iso_string_exactly() {
+        // Sub-second precision and timezone offsets should pass through
+        // untouched — the frontend parses whatever we emit.
+        let line = r#"{"type":"user","timestamp":"2026-04-22T10:30:45.123Z","message":{"content":[]}}"#;
+        let value: Value = serde_json::from_str(line).unwrap();
+
+        assert_eq!(extract_timestamp(&value), "2026-04-22T10:30:45.123Z");
     }
 }
