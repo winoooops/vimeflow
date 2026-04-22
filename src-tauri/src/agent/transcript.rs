@@ -428,16 +428,20 @@ fn process_tool_result(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let (duration_ms, tool_name, args) = match in_flight.remove(&tool_use_id) {
-        Some(call) => {
-            let dur = call.started_at.elapsed().as_millis() as u64;
-            (dur, call.tool, call.args)
-        }
-        None => {
-            // No matching in-flight call — emit with unknown tool name
-            (0, "unknown".to_string(), String::new())
-        }
+    // An orphaned tool_result — a tool_result whose parent tool_use was
+    // never recorded in_flight — arrives most often when a Claude Code
+    // session auto-compacts: earlier assistant messages (containing the
+    // tool_use blocks) get trimmed from the transcript, but the later
+    // user messages carrying their tool_results stay. Emitting a placeholder
+    // 'unknown' event for each one surfaces misleading noise in the UI —
+    // the tool name is lost, args is empty, duration is zero, and the chip
+    // summary grows an 'unknown N' bucket users can't act on. Drop it.
+    let Some(call) = in_flight.remove(&tool_use_id) else {
+        return;
     };
+    let duration_ms = call.started_at.elapsed().as_millis() as u64;
+    let tool_name = call.tool;
+    let args = call.args;
 
     let status = if is_error {
         ToolCallStatus::Failed
@@ -839,25 +843,23 @@ mod tests {
     }
 
     #[test]
-    fn tool_result_without_matching_start() {
-        // Should handle gracefully when there's no matching in-flight call
+    fn tool_result_without_matching_start_is_dropped() {
+        // process_tool_result must silently skip a tool_result whose parent
+        // tool_use was never recorded in_flight. These orphans typically
+        // come from Claude Code transcript compaction — the earlier
+        // tool_use was trimmed out of the file but its tool_result remains.
+        // Emitting a synthetic "unknown" event for each one was surfacing
+        // misleading noise in the ToolCallSummary chip aggregation.
+        //
+        // We don't have an easy handle on the Tauri AppHandle inside unit
+        // tests (see the note at the top of these tests), so this
+        // assertion exercises the signal process_tool_result keys off —
+        // a missing entry in the in_flight map — rather than driving the
+        // full function. If the orphan-drop signal ever changes, this
+        // test and the impl should be updated together.
         let mut in_flight: InFlightToolCalls = HashMap::new();
-
         let result = in_flight.remove("toolu_nonexistent");
         assert!(result.is_none());
-
-        // The process_tool_result function handles this with defaults
-        let (duration_ms, tool_name, args) = match result {
-            Some(call) => (
-                call.started_at.elapsed().as_millis() as u64,
-                call.tool,
-                call.args,
-            ),
-            None => (0, "unknown".to_string(), String::new()),
-        };
-        assert_eq!(duration_ms, 0);
-        assert_eq!(tool_name, "unknown");
-        assert!(args.is_empty());
     }
 
     // extract_timestamp drives the emitted AgentToolCallEvent.timestamp on
