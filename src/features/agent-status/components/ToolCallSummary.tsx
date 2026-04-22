@@ -28,10 +28,13 @@ export const ToolCallSummary = ({
           {sortedChips.map(([name, count]) => (
             <span
               key={name}
-              className="rounded-md bg-surface-container-high px-2 py-1"
+              title={name}
+              className="inline-flex max-w-[10rem] items-center gap-1.5 rounded-md bg-surface-container-high px-2 py-0.5"
             >
-              <span className="text-[9px] text-on-surface-variant">{name}</span>{' '}
-              <span className="font-mono text-[9px] font-semibold text-primary">
+              <span className="truncate text-[9px] leading-none text-on-surface-variant">
+                {name}
+              </span>
+              <span className="shrink-0 font-mono text-[9px] font-semibold leading-none text-primary">
                 {count}
               </span>
             </span>
