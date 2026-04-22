@@ -134,6 +134,26 @@ describe('AgentStatusPanel', () => {
     )
   })
 
+  test('scrollable content area uses the thin-scrollbar convention', async () => {
+    const { useAgentStatus } = await import('../hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue({
+      ...defaultStatus,
+      isActive: true,
+      agentType: 'claude-code',
+      sessionId: 'session-1',
+    })
+
+    const { container } = render(<AgentStatusPanel sessionId="session-1" />)
+
+    // The scroll region wraps ActivityFeed + ToolCallSummary + RecentToolCalls +
+    // FilesChanged + TestResults so the lower sections remain reachable when
+    // the ActivityFeed grows. Must use thin-scrollbar per rules convention
+    // (see src/features/editor/components/ExplorerPane.tsx:74).
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const scrollableDiv = container.querySelector('.overflow-y-auto')
+    expect(scrollableDiv).toHaveClass('thin-scrollbar')
+  })
+
   test('keeps existing ToolCallSummary and RecentToolCalls consumers mounted', async () => {
     const { useAgentStatus } = await import('../hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue({

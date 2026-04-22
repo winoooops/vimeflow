@@ -59,9 +59,8 @@ export const AgentStatusPanel = ({
             />
           </div>
 
-          <ActivityFeed events={events} />
-
-          <div className="flex-1 overflow-y-auto">
+          <div className="thin-scrollbar flex-1 overflow-y-auto">
+            <ActivityFeed events={events} />
             <ToolCallSummary
               total={status.toolCalls.total}
               byType={status.toolCalls.byType}
