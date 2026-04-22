@@ -332,4 +332,25 @@ describe('ActivityEvent — running state', () => {
       screen.queryByRole('status', { name: 'running' })
     ).not.toBeInTheDocument()
   })
+
+  test('running timestamp clamps a negative delta to 0s (clock-skew guard)', () => {
+    // Event timestamp is 500ms AFTER `now` — simulates the sub-ms clock
+    // skew case where the Rust event stamp beats the JS Date.now() snapshot.
+    render(
+      <ActivityEvent
+        event={{
+          id: 'active-Bash',
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'pnpm test',
+          timestamp: '2026-04-22T12:00:00.500Z',
+          status: 'running',
+          durationMs: null,
+        }}
+        now={now}
+      />
+    )
+
+    expect(screen.getByText('running 0s')).toBeInTheDocument()
+  })
 })

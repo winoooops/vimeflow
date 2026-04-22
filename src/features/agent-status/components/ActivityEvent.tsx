@@ -114,7 +114,10 @@ export const ActivityEvent = ({
   const isRunning = event.status === 'running'
 
   const timestampText = isRunning
-    ? `running ${formatDuration(now.getTime() - new Date(event.timestamp).getTime())}`
+    ? // Clamp negative deltas to zero so a tool whose emitted timestamp
+      // beats JS's Date.now() snapshot (sub-ms clock skew on fast machines,
+      // batch catch-up paths) doesn't read as 'running -1s' for a frame.
+      `running ${formatDuration(Math.max(0, now.getTime() - new Date(event.timestamp).getTime()))}`
     : formatRelativeTime(event.timestamp, now)
 
   return (
