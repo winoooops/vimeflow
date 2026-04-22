@@ -102,6 +102,19 @@ describe('toolCallsToEvents', () => {
     expect(events[0].kind).toBe(expectedKind)
   })
 
+  test('malformed timestamps sink to the bottom without scrambling the rest', () => {
+    // A stray unparseable timestamp shouldn't let Array.sort's NaN-comparator
+    // behavior scramble the whole feed. Other entries stay in timestamp-desc
+    // order; the malformed entry lands last.
+    const events = toolCallsToEvents(null, [
+      recent({ id: 'old', timestamp: '2026-04-22T10:00:00Z' }),
+      recent({ id: 'bad', timestamp: 'not-an-iso-string' }),
+      recent({ id: 'new', timestamp: '2026-04-22T12:00:00Z' }),
+    ])
+
+    expect(events.map((e) => e.id)).toEqual(['new', 'old', 'bad'])
+  })
+
   test('passes through status, duration, id, timestamp', () => {
     const events = toolCallsToEvents(null, [
       recent({

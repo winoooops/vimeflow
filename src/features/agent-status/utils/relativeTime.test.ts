@@ -46,6 +46,11 @@ describe('formatDuration', () => {
   test('NaN input renders as "?"', () => {
     expect(formatDuration(NaN)).toBe('?')
   })
+
+  test('negative input renders as "?" (mirrors formatRelativeTime)', () => {
+    expect(formatDuration(-1)).toBe('?')
+    expect(formatDuration(-1500)).toBe('?')
+  })
 })
 
 describe('formatRelativeTime — invalid input', () => {

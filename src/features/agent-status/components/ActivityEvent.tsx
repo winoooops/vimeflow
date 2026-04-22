@@ -35,7 +35,11 @@ const KIND_COLOR: Record<ActivityEventKind, string> = {
 }
 
 const getLabel = (event: ActivityEventType): string => {
-  if (event.kind === 'meta' && 'tool' in event) {
+  // The `kind === 'meta'` branch narrows `event` to ToolActivityEvent
+  // via the discriminated union — `tool` is always present. Drop the
+  // redundant `'tool' in event` guard that misled readers into thinking
+  // it could be absent.
+  if (event.kind === 'meta') {
     return event.tool.toUpperCase()
   }
 

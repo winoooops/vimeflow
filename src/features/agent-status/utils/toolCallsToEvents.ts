@@ -51,9 +51,26 @@ export const toolCallsToEvents = (
   // chronological (batch catch-up, transcript edits, clock skew can all
   // reorder). The feed's only meaningful order is by event time, so we
   // sort explicitly here rather than trust arrival order.
-  const sortedRecent = [...recent].sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  )
+  //
+  // Malformed timestamps (unparseable ISO strings slipping through the
+  // Rust boundary) make Date.getTime() return NaN. An NaN comparator
+  // result is implementation-defined — V8 produces platform-dependent
+  // ordering for every pair involving the bad entry. Sink malformed
+  // entries to the bottom with explicit NaN sentinels so the rest of
+  // the feed stays ordered. Matches the defensive posture in
+  // relativeTime.ts.
+  const sortedRecent = [...recent].sort((a, b) => {
+    const ta = new Date(a.timestamp).getTime()
+    const tb = new Date(b.timestamp).getTime()
+    if (Number.isNaN(ta)) {
+      return 1
+    }
+    if (Number.isNaN(tb)) {
+      return -1
+    }
+
+    return tb - ta
+  })
 
   for (const r of sortedRecent) {
     events.push({

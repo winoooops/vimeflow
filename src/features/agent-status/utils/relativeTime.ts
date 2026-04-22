@@ -39,6 +39,13 @@ export const formatDuration = (ms: number): string => {
   if (Number.isNaN(ms)) {
     return '?'
   }
+  // Negative durations are meaningless — the live-duration call site
+  // already clamps with Math.max(0, …), but guarding here makes the
+  // utility safe for any future caller that forgets the clamp. Mirrors
+  // the explicit < 0 branch in formatRelativeTime.
+  if (ms < 0) {
+    return '?'
+  }
   const s = Math.floor(ms / 1000)
   if (s < 60) {
     return `${s}s`
