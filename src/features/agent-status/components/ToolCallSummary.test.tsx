@@ -47,6 +47,7 @@ describe('ToolCallSummary', () => {
           tool: 'Read',
           args: 'src/index.ts',
           startedAt: '2026-04-22T10:00:00Z',
+          toolUseId: 'toolu_readA',
         }}
       />
     )

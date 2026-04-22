@@ -163,6 +163,43 @@ describe('ActivityFeed', () => {
     vi.setSystemTime(fixedNow)
   })
 
+  test('expanding then transitioning to empty resets the show-more toggle', async () => {
+    // Simulate an agent session: user expands the long feed, the session
+    // ends (events -> []), then a new session starts and fills the feed
+    // back past the cap. Without the reset effect, `Show less` would
+    // appear on the new session without the user ever clicking.
+    vi.useRealTimers()
+    const user = userEvent.setup()
+
+    const longFeed = Array.from({ length: 15 }, (_, i) =>
+      doneEvent(`e${i}`, `src/${i}.ts`)
+    )
+
+    const { rerender } = render(<ActivityFeed events={longFeed} />)
+
+    await user.click(screen.getByRole('button', { name: /5 earlier events/i }))
+
+    expect(
+      screen.getByRole('button', { name: /show less/i })
+    ).toBeInTheDocument()
+
+    // Session ends.
+    rerender(<ActivityFeed events={[]} />)
+    expect(screen.getByText('No activity yet')).toBeInTheDocument()
+
+    // New session fills up with 15 events — the expanded-state flag must
+    // have been reset so the default 10-visible + '+ 5 earlier events'
+    // button come back.
+    rerender(<ActivityFeed events={longFeed} />)
+    expect(screen.getAllByRole('article')).toHaveLength(10)
+    expect(
+      screen.getByRole('button', { name: /5 earlier events/i })
+    ).toBeInTheDocument()
+
+    vi.useFakeTimers()
+    vi.setSystemTime(fixedNow)
+  })
+
   test('running event duration advances as the timer ticks', () => {
     render(
       <ActivityFeed

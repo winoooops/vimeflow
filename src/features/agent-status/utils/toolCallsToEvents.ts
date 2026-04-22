@@ -30,7 +30,13 @@ export const toolCallsToEvents = (
 
   if (active) {
     events.push({
-      id: `active-${active.tool}`,
+      // Use the Anthropic tool_use_id so this entry's React key stays
+      // stable across the running → done transition. Otherwise React
+      // unmounts the synthetic `active-${tool}` row and mounts a fresh
+      // `toolu_XXX` row on completion — correct today (no local state),
+      // but it silently breaks any future CSS transition animation on
+      // the state change.
+      id: active.toolUseId,
       kind: toolToKind(active.tool),
       tool: active.tool,
       body: active.args,

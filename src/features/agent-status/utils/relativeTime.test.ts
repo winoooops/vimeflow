@@ -60,4 +60,13 @@ describe('formatRelativeTime — invalid input', () => {
       formatRelativeTime('2026-04-22T12:00:00Z', new Date('garbage'))
     ).toBe('?')
   })
+
+  test('future timestamps (negative delta from clock skew) read as "now"', () => {
+    // `now` 500ms before the event timestamp — simulates Rust event stamp
+    // landing a sub-second ahead of the JS clock.
+    const now = new Date('2026-04-22T12:00:00Z')
+    const futureIso = '2026-04-22T12:00:00.500Z'
+
+    expect(formatRelativeTime(futureIso, now)).toBe('now')
+  })
 })

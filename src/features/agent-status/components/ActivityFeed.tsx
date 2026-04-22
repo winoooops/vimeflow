@@ -26,9 +26,15 @@ export const ActivityFeed = ({ events }: ActivityFeedProps): ReactElement => {
   // Effect 1: refresh `now` whenever the events array changes so a
   // newly arrived completed event renders against the current clock
   // instead of whatever `now` was captured before the panel sat idle.
+  // Also resets `showAll` when the feed drops to empty — the component
+  // isn't remounted between agent sessions, so without this the next
+  // session's 10+ events would surface `Show less` on first render.
   const hasRunning = events.some((e) => e.status === 'running')
   useEffect(() => {
     setNow(new Date())
+    if (events.length === 0) {
+      setShowAll(false)
+    }
   }, [events])
 
   // Effect 2: own the 1s tick's lifecycle — start it only while a

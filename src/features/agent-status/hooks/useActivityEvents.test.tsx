@@ -72,6 +72,7 @@ describe('useActivityEvents', () => {
           tool: 'Edit',
           args: 'src/foo.ts',
           startedAt: '2026-04-22T10:00:00Z',
+          toolUseId: 'toolu_active',
         },
       },
     }

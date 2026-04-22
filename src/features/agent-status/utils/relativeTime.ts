@@ -11,6 +11,12 @@ export const formatRelativeTime = (
     return '?'
   }
   const s = Math.floor(deltaMs / 1000)
+  // Negative deltas (future timestamp from clock skew) read as 'now'
+  // too — written explicitly so the invariant holds if this function
+  // is later extended with 'in Xm' semantics for the positive branch.
+  if (s < 0) {
+    return 'now'
+  }
   // Minute-granularity: anything under a minute reads as 'now',
   // then we jump straight to Nm ago — we never display seconds.
   if (s < 60) {

@@ -17,16 +17,18 @@ describe('toolCallsToEvents', () => {
     expect(toolCallsToEvents(null, [])).toEqual([])
   })
 
-  test('active only → one running event with startedAt as timestamp', () => {
+  test('active only → one running event with startedAt as timestamp and toolUseId as id', () => {
     const active: ActiveToolCall = {
       tool: 'Edit',
       args: 'src/foo.ts',
       startedAt: '2026-04-22T10:30:00Z',
+      toolUseId: 'toolu_ACTIVE',
     }
     const events = toolCallsToEvents(active, [])
 
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({
+      id: 'toolu_ACTIVE',
       kind: 'edit',
       tool: 'Edit',
       body: 'src/foo.ts',
@@ -68,6 +70,7 @@ describe('toolCallsToEvents', () => {
         args: 'src/foo.ts',
         // Deliberately older than the recent event below.
         startedAt: '2026-04-22T10:00:00Z',
+        toolUseId: 'toolu_ACTIVE',
       },
       [
         recent({

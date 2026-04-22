@@ -238,6 +238,7 @@ describe('useAgentStatus', () => {
       tool: 'Bash',
       args: '{"command":"ls"}',
       startedAt: '2026-04-12T00:00:00Z',
+      toolUseId: 'toolu_bash1',
     })
   })
 

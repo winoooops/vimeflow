@@ -270,7 +270,12 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
               ...prev,
               toolCalls: {
                 ...prev.toolCalls,
-                active: { tool: p.tool, args: p.args, startedAt: p.timestamp },
+                active: {
+                  tool: p.tool,
+                  args: p.args,
+                  startedAt: p.timestamp,
+                  toolUseId: p.toolUseId,
+                },
               },
             }))
           } else {

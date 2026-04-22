@@ -73,6 +73,7 @@ export interface ActiveToolCall {
   tool: string
   args: string
   startedAt: string
+  toolUseId: string
 }
 
 export interface RecentToolCall {
