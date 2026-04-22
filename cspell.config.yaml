@@ -2,6 +2,12 @@ version: '0.2'
 language: en
 
 words:
+  # Claude Code tool names (also used uppercased in UI labels)
+  - webfetch
+  - websearch
+  - notebookedit
+  - multiedit
+
   # Project
   - vibm
   - Vimeflow

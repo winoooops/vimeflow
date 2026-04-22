@@ -1,0 +1,89 @@
+import type { ReactElement } from 'react'
+import { formatRelativeTime } from '../utils/relativeTime'
+import type {
+  ActivityEvent as ActivityEventType,
+  ActivityEventKind,
+} from '../types/activityEvent'
+
+interface ActivityEventProps {
+  event: ActivityEventType
+  now: Date
+}
+
+const KIND_ICON: Record<ActivityEventKind, string> = {
+  edit: 'edit',
+  write: 'edit_note',
+  read: 'visibility',
+  bash: 'terminal',
+  grep: 'search',
+  glob: 'find_in_page',
+  think: 'psychology',
+  user: 'person',
+  meta: 'tune',
+}
+
+const KIND_COLOR: Record<ActivityEventKind, string> = {
+  edit: 'text-primary-container',
+  write: 'text-primary-container',
+  read: 'text-on-surface-variant',
+  bash: 'text-secondary',
+  grep: 'text-on-surface-variant',
+  glob: 'text-on-surface-variant',
+  think: 'text-primary-container',
+  user: 'text-tertiary',
+  meta: 'text-outline',
+}
+
+const getLabel = (event: ActivityEventType): string => {
+  if (event.kind === 'meta' && 'tool' in event) {
+    return event.tool.toUpperCase()
+  }
+
+  return event.kind.toUpperCase()
+}
+
+const getBodyClass = (kind: ActivityEventKind): string => {
+  if (kind === 'think') {
+    return 'text-xs text-on-surface italic'
+  }
+  if (kind === 'user') {
+    return 'text-xs text-on-surface'
+  }
+
+  return 'text-xs text-on-surface font-mono'
+}
+
+export const ActivityEvent = ({
+  event,
+  now,
+}: ActivityEventProps): ReactElement => {
+  const symbol = KIND_ICON[event.kind]
+  const colorClass = KIND_COLOR[event.kind]
+  const label = getLabel(event)
+  const timestamp = formatRelativeTime(event.timestamp, now)
+
+  return (
+    <article aria-label={label} className="flex items-start gap-2 py-1.5">
+      <span
+        className={`material-symbols-outlined text-sm ${colorClass} w-6 h-6 rounded-md bg-surface-container-high flex items-center justify-center`}
+        aria-hidden="true"
+      >
+        {symbol}
+      </span>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <span
+            className={`text-[10px] font-bold uppercase tracking-[0.12em] ${colorClass}`}
+          >
+            {label}
+          </span>
+          <span className="text-[9px] font-mono text-outline">{timestamp}</span>
+        </div>
+        <div className={`mt-0.5 truncate ${getBodyClass(event.kind)}`}>
+          {event.body}
+        </div>
+      </div>
+    </article>
+  )
+}
