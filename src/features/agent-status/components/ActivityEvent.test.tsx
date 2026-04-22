@@ -136,3 +136,114 @@ describe('ActivityEvent — basic row', () => {
     expect(body).not.toHaveClass('font-mono')
   })
 })
+
+describe('ActivityEvent — diff chips (EDIT/WRITE)', () => {
+  test('renders +N and −M chips when diff is present', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'edit',
+          diff: { added: 12, removed: 2 },
+        })}
+        now={now}
+      />
+    )
+
+    expect(screen.getByText('+12')).toBeInTheDocument()
+    expect(screen.getByText('−2')).toBeInTheDocument()
+  })
+
+  test('does not render diff chips when diff is absent', () => {
+    render(<ActivityEvent event={toolEvent({ kind: 'edit' })} now={now} />)
+
+    expect(screen.queryByText(/^\+/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^−/)).not.toBeInTheDocument()
+  })
+
+  test('does not render diff chips for non-edit/write kinds even if diff is passed', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'read',
+          tool: 'Read',
+          diff: { added: 1, removed: 1 },
+        })}
+        now={now}
+      />
+    )
+
+    expect(screen.queryByText('+1')).not.toBeInTheDocument()
+  })
+})
+
+describe('ActivityEvent — bash status pill', () => {
+  test('status=done + bashResult → "OK {passed}/{total}" in success palette', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          status: 'done',
+          bashResult: { passed: 4, total: 4 },
+        })}
+        now={now}
+      />
+    )
+    const pill = screen.getByText('OK 4/4')
+
+    expect(pill).toHaveClass('text-success')
+  })
+
+  test('status=failed + bashResult → "FAILED {passed}/{total}" in error palette', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          status: 'failed',
+          bashResult: { passed: 1, total: 4 },
+        })}
+        now={now}
+      />
+    )
+    const pill = screen.getByText('FAILED 1/4')
+
+    expect(pill).toHaveClass('text-error')
+  })
+
+  test('status=done, no bashResult → "OK" in success palette', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'done' })}
+        now={now}
+      />
+    )
+    const pill = screen.getByText('OK')
+
+    expect(pill).toHaveClass('text-success')
+  })
+
+  test('status=failed, no bashResult → "FAILED" in error palette', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'failed' })}
+        now={now}
+      />
+    )
+    const pill = screen.getByText('FAILED')
+
+    expect(pill).toHaveClass('text-error')
+  })
+
+  test('non-bash kinds render no status pill', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({ kind: 'read', tool: 'Read', status: 'done' })}
+        now={now}
+      />
+    )
+
+    expect(screen.queryByText('OK')).not.toBeInTheDocument()
+    expect(screen.queryByText('FAILED')).not.toBeInTheDocument()
+  })
+})

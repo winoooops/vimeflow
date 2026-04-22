@@ -53,6 +53,57 @@ const getBodyClass = (kind: ActivityEventKind): string => {
   return 'text-xs text-on-surface font-mono'
 }
 
+interface StatusChipsProps {
+  event: ActivityEventType
+}
+
+const StatusChips = ({ event }: StatusChipsProps): ReactElement | null => {
+  if (event.kind === 'edit' || event.kind === 'write') {
+    if (!event.diff) {
+      return null
+    }
+
+    return (
+      <div className="mt-1 flex items-center gap-2">
+        <span className="text-[9px] font-mono text-success">
+          +{event.diff.added}
+        </span>
+        <span className="text-[9px] font-mono text-error">
+          −{event.diff.removed}
+        </span>
+      </div>
+    )
+  }
+
+  if (event.kind === 'bash') {
+    if (event.status === 'running') {
+      return null
+    }
+    const verb = event.status === 'done' ? 'OK' : 'FAILED'
+
+    const palette =
+      event.status === 'done'
+        ? 'bg-success/[0.12] text-success'
+        : 'bg-error/[0.12] text-error'
+
+    const text = event.bashResult
+      ? `${verb} ${event.bashResult.passed}/${event.bashResult.total}`
+      : verb
+
+    return (
+      <div className="mt-1">
+        <span
+          className={`inline-block rounded-md px-2 py-0.5 text-[9px] font-bold uppercase ${palette}`}
+        >
+          {text}
+        </span>
+      </div>
+    )
+  }
+
+  return null
+}
+
 export const ActivityEvent = ({
   event,
   now,
@@ -83,6 +134,7 @@ export const ActivityEvent = ({
         <div className={`mt-0.5 truncate ${getBodyClass(event.kind)}`}>
           {event.body}
         </div>
+        <StatusChips event={event} />
       </div>
     </article>
   )
