@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { formatRelativeTime } from '../utils/relativeTime'
+import { formatRelativeTime, formatDuration } from '../utils/relativeTime'
 import type {
   ActivityEvent as ActivityEventType,
   ActivityEventKind,
@@ -111,16 +111,29 @@ export const ActivityEvent = ({
   const symbol = KIND_ICON[event.kind]
   const colorClass = KIND_COLOR[event.kind]
   const label = getLabel(event)
-  const timestamp = formatRelativeTime(event.timestamp, now)
+  const isRunning = event.status === 'running'
+
+  const timestampText = isRunning
+    ? `running ${formatDuration(now.getTime() - new Date(event.timestamp).getTime())}`
+    : formatRelativeTime(event.timestamp, now)
 
   return (
     <article aria-label={label} className="flex items-start gap-2 py-1.5">
-      <span
-        className={`material-symbols-outlined text-sm ${colorClass} w-6 h-6 rounded-md bg-surface-container-high flex items-center justify-center`}
-        aria-hidden="true"
-      >
-        {symbol}
-      </span>
+      <div className="relative">
+        <span
+          className={`material-symbols-outlined text-sm ${colorClass} w-6 h-6 rounded-md bg-surface-container-high flex items-center justify-center`}
+          aria-hidden="true"
+        >
+          {symbol}
+        </span>
+        {isRunning && (
+          <span
+            role="status"
+            aria-label="running"
+            className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-success animate-pulse"
+          />
+        )}
+      </div>
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
@@ -129,7 +142,9 @@ export const ActivityEvent = ({
           >
             {label}
           </span>
-          <span className="text-[9px] font-mono text-outline">{timestamp}</span>
+          <span className="text-[9px] font-mono text-outline">
+            {timestampText}
+          </span>
         </div>
         <div className={`mt-0.5 truncate ${getBodyClass(event.kind)}`}>
           {event.body}

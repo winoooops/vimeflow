@@ -247,3 +247,73 @@ describe('ActivityEvent — bash status pill', () => {
     expect(screen.queryByText('FAILED')).not.toBeInTheDocument()
   })
 })
+
+describe('ActivityEvent — running state', () => {
+  test('renders animated dot with role="status" for running events', () => {
+    render(
+      <ActivityEvent
+        event={{
+          id: 'active-Edit',
+          kind: 'edit',
+          tool: 'Edit',
+          body: 'src/foo.ts',
+          timestamp: '2026-04-22T11:59:52Z', // 8s before now
+          status: 'running',
+          durationMs: null,
+        }}
+        now={now}
+      />
+    )
+    const dot = screen.getByRole('status', { name: 'running' })
+
+    expect(dot).toHaveClass('animate-pulse')
+    expect(dot).toHaveClass('bg-success')
+  })
+
+  test('running timestamp reads "running Xs" computed from startedAt', () => {
+    render(
+      <ActivityEvent
+        event={{
+          id: 'active-Bash',
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'pnpm test',
+          timestamp: '2026-04-22T11:59:52Z', // 8s before now
+          status: 'running',
+          durationMs: null,
+        }}
+        now={now}
+      />
+    )
+
+    expect(screen.getByText('running 8s')).toBeInTheDocument()
+  })
+
+  test('running events render no status pill', () => {
+    render(
+      <ActivityEvent
+        event={{
+          id: 'active-Bash',
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'pnpm test',
+          timestamp: '2026-04-22T11:59:52Z',
+          status: 'running',
+          durationMs: null,
+        }}
+        now={now}
+      />
+    )
+
+    expect(screen.queryByText('OK')).not.toBeInTheDocument()
+    expect(screen.queryByText('FAILED')).not.toBeInTheDocument()
+  })
+
+  test('non-running events do not render the animated dot', () => {
+    render(<ActivityEvent event={toolEvent({ status: 'done' })} now={now} />)
+
+    expect(
+      screen.queryByRole('status', { name: 'running' })
+    ).not.toBeInTheDocument()
+  })
+})
