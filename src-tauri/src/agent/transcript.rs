@@ -309,7 +309,8 @@ fn process_line(
             process_user_message(&value, session_id, app_handle, in_flight);
         }
         "tool_result" => {
-            process_tool_result(&value, session_id, app_handle, in_flight);
+            let timestamp = extract_timestamp(&value);
+            process_tool_result(&value, session_id, app_handle, in_flight, &timestamp);
         }
         _ => {
             // Other message types — ignore
@@ -318,6 +319,19 @@ fn process_line(
 }
 
 /// Extract tool_use entries from an assistant message
+/// Pull the top-level `timestamp` field off a transcript line, or fall back
+/// to the current clock. Claude Code JSONL lines carry the real event time —
+/// `now_iso8601()` would otherwise stamp every event parsed in a single tick
+/// (e.g. initial watch / batch catch-up) with the same "now", making the UI
+/// feed look as if everything happened at once.
+fn extract_timestamp(value: &Value) -> String {
+    value
+        .get("timestamp")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(now_iso8601)
+}
+
 fn process_assistant_message(
     value: &Value,
     session_id: &str,
@@ -328,6 +342,8 @@ fn process_assistant_message(
         Some(arr) => arr,
         None => return,
     };
+
+    let timestamp = extract_timestamp(value);
 
     for item in content {
         let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
@@ -363,7 +379,7 @@ fn process_assistant_message(
             tool: name,
             args,
             status: ToolCallStatus::Running,
-            timestamp: now_iso8601(),
+            timestamp: timestamp.clone(),
             duration_ms: 0,
         };
 
@@ -385,9 +401,11 @@ fn process_user_message(
         None => return,
     };
 
+    let timestamp = extract_timestamp(value);
+
     for item in content {
         if is_tool_result_block(item) {
-            process_tool_result(item, session_id, app_handle, in_flight);
+            process_tool_result(item, session_id, app_handle, in_flight, &timestamp);
         }
     }
 }
@@ -398,6 +416,7 @@ fn process_tool_result(
     session_id: &str,
     app_handle: &tauri::AppHandle<impl tauri::Runtime>,
     in_flight: &mut InFlightToolCalls,
+    timestamp: &str,
 ) {
     let tool_use_id = match value.get("tool_use_id").and_then(|v| v.as_str()) {
         Some(id) => id.to_string(),
@@ -431,7 +450,7 @@ fn process_tool_result(
         tool: tool_name,
         args,
         status,
-        timestamp: now_iso8601(),
+        timestamp: timestamp.to_string(),
         duration_ms,
     };
 

@@ -4,11 +4,10 @@ export const formatRelativeTime = (
 ): string => {
   const deltaMs = now.getTime() - new Date(iso).getTime()
   const s = Math.floor(deltaMs / 1000)
-  if (s < 5) {
-    return 'now'
-  }
+  // Minute-granularity: anything under a minute reads as 'now',
+  // then we jump straight to Nm ago — we never display seconds.
   if (s < 60) {
-    return `${s}s ago`
+    return 'now'
   }
   const m = Math.floor(s / 60)
   if (m < 60) {

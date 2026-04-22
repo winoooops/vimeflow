@@ -8,10 +8,12 @@ describe('formatRelativeTime', () => {
     new Date(now.getTime() - deltaSec * 1000).toISOString()
 
   test.each([
+    // Sub-minute always reads as "now" — we never display seconds.
     [0, 'now'],
     [4, 'now'],
-    [5, '5s ago'],
-    [59, '59s ago'],
+    [5, 'now'],
+    [35, 'now'],
+    [59, 'now'],
     [60, '1m ago'],
     [61, '1m ago'],
     [119, '1m ago'],

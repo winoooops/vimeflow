@@ -77,16 +77,32 @@ describe('ActivityEvent — basic row', () => {
     }
   )
 
-  test('renders relative timestamp for done events', () => {
+  test('renders relative timestamp for done events (minute granularity)', () => {
+    // toolEvent default timestamp is 18s before `now` → shows 'now'.
     render(<ActivityEvent event={toolEvent({ status: 'done' })} now={now} />)
 
-    expect(screen.getByText('18s ago')).toBeInTheDocument()
+    expect(screen.getByText('now')).toBeInTheDocument()
   })
 
-  test('renders relative timestamp for failed events', () => {
+  test('renders relative timestamp for failed events (minute granularity)', () => {
     render(<ActivityEvent event={toolEvent({ status: 'failed' })} now={now} />)
 
-    expect(screen.getByText('18s ago')).toBeInTheDocument()
+    expect(screen.getByText('now')).toBeInTheDocument()
+  })
+
+  test('renders Nm ago once the event is at least a minute old', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          status: 'done',
+          // 90s before `now` → 1m ago
+          timestamp: '2026-04-22T11:58:30Z',
+        })}
+        now={now}
+      />
+    )
+
+    expect(screen.getByText('1m ago')).toBeInTheDocument()
   })
 
   test('meta kind uses raw tool name as label', () => {
