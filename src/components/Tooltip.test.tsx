@@ -27,6 +27,30 @@ describe('Tooltip', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 
+  test('returns children unchanged when content is false (cond && text idiom)', () => {
+    const showTooltip = false
+
+    render(
+      <Tooltip content={showTooltip && 'hidden text'}>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    expect(screen.getByRole('button', { name: 'trigger' })).toBeInTheDocument()
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  test('returns children unchanged when content is an empty string', () => {
+    render(
+      <Tooltip content="">
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    expect(screen.getByRole('button', { name: 'trigger' })).toBeInTheDocument()
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
   test('opens on hover after delayMs and renders content', async () => {
     const user = userEvent.setup()
     render(

@@ -48,7 +48,11 @@ export const Tooltip = ({
   maxWidth = 320,
   className = '',
 }: TooltipProps): ReactElement => {
-  const enabled = !disabled && content != null && isValidElement(children)
+  // `content != null` would admit falsy ReactNodes (`false`, `''`) and render
+  // an empty floating box — these are common with the `cond && 'text'` idiom.
+  // `0` is still treated as content (it renders as a visible "0" tooltip).
+  const hasContent = content != null && content !== false && content !== ''
+  const enabled = !disabled && hasContent && isValidElement(children)
 
   const [open, setOpen] = useState(false)
 
@@ -97,10 +101,10 @@ export const Tooltip = ({
 
   return (
     <>
-      {cloneElement(children, {
+      {cloneElement(children as ReactElement<Record<string, unknown>>, {
         ref: mergedRef,
         ...getReferenceProps(children.props as Record<string, unknown>),
-      } as never)}
+      })}
       {open && (
         <FloatingPortal>
           <div
