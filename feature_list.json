@@ -2,282 +2,108 @@
   {
     "id": 1,
     "phase": 1,
-    "category": "scaffold",
-    "description": "Create agent module directory structure",
+    "category": "dependencies",
+    "description": "Add @floating-ui/react dependency",
     "steps": [
-      "Create src-tauri/src/agent/ directory",
-      "Create src-tauri/src/agent/mod.rs with module exports",
-      "Verify directory structure matches terminal module pattern"
+      "Run `npm install --save @floating-ui/react` (or `unproxy && npm install ...` if proxy error)",
+      "Verify install with `node -e \"console.log(require('@floating-ui/react/package.json').version)\"`",
+      "Verify package.json has @floating-ui/react entry",
+      "Commit package.json + package-lock.json"
     ],
     "passes": true,
     "dependencies": []
   },
   {
     "id": 2,
-    "phase": 2,
-    "category": "types",
-    "description": "Define AgentType enum",
+    "phase": 1,
+    "category": "scaffold",
+    "description": "Tooltip primitive scaffold with disabled/null short-circuit",
     "steps": [
-      "Create src-tauri/src/agent/types.rs",
-      "Define AgentType enum with ClaudeCode, Codex, Aider, Generic variants",
-      "Add Debug, Clone, Serialize, Deserialize derives",
-      "Add ts-rs derives with cfg(test) attribute",
-      "Verify matches terminal/types.rs pattern exactly"
+      "Create src/components/Tooltip.test.tsx with disabled and null-content tests",
+      "Run tests to verify they fail (module not found)",
+      "Create src/components/Tooltip.tsx with TooltipProps interface and short-circuit logic",
+      "Run tests to verify they pass",
+      "Commit both files"
     ],
     "passes": true,
     "dependencies": [1]
   },
   {
     "id": 3,
-    "phase": 2,
-    "category": "types",
-    "description": "Define AgentDetectedEvent struct",
+    "phase": 1,
+    "category": "implementation",
+    "description": "Wire Floating UI hooks (interactions + a11y)",
     "steps": [
-      "Add AgentDetectedEvent struct with session_id, agent_type, pid fields",
-      "Apply camelCase serde rename_all",
-      "Add all required derives matching pattern",
-      "Export via ts-rs for TypeScript bindings"
+      "Add 5 new tests to Tooltip.test.tsx: hover open, mouse-leave close, focus open, Escape close, accessible description",
+      "Add userEvent import",
+      "Run tests to verify they fail (tooltip never renders)",
+      "Replace Tooltip.tsx scaffold with real implementation: useFloating + useHover (safePolygon) + useFocus + useDismiss + useRole + useInteractions + useMergeRefs + FloatingPortal",
+      "Run tests to verify all 7 tests pass",
+      "Commit both files"
     ],
     "passes": true,
     "dependencies": [2]
   },
   {
     "id": 4,
-    "phase": 2,
-    "category": "types",
-    "description": "Define AgentDisconnectedEvent struct",
+    "phase": 1,
+    "category": "testing",
+    "description": "Configuration props tests (placement, maxWidth, ref preservation, className)",
     "steps": [
-      "Add AgentDisconnectedEvent struct with session_id field",
-      "Apply camelCase serde rename_all",
-      "Add all required derives matching pattern"
+      "Add 4 new tests to Tooltip.test.tsx: placement data-attribute, maxWidth style, ref preservation, className append",
+      "Add createRef import from React",
+      "Run tests to verify all 11 tests pass (implementation already plumbs these props from feature 3)",
+      "Commit test file"
     ],
-    "passes": true,
-    "dependencies": [2]
+    "passes": false,
+    "dependencies": [3]
   },
   {
     "id": 5,
-    "phase": 2,
-    "category": "types",
-    "description": "Define context window and usage types",
+    "phase": 1,
+    "category": "integration",
+    "description": "Migrate IconRail to the new Tooltip primitive",
     "steps": [
-      "Add CurrentUsage struct with token fields",
-      "Add ContextWindowStatus struct with percentages and token counts",
-      "Apply camelCase serde rename_all to all fields",
-      "Use Option<T> for optional fields per spec"
+      "Overwrite IconRail.tsx: add Tooltip import, remove useState hover state, remove relative wrappers, remove z-50 patch, wrap buttons in <Tooltip>",
+      "Replace IconRail.test.tsx tooltip tests with 2 integration-only assertions (content flows correctly)",
+      "Add userEvent import if missing",
+      "Run IconRail.test.tsx to verify all tests pass",
+      "Commit both files"
     ],
-    "passes": true,
-    "dependencies": [2]
+    "passes": false,
+    "dependencies": [4]
   },
   {
     "id": 6,
-    "phase": 2,
-    "category": "types",
-    "description": "Define cost and rate limit types",
+    "phase": 1,
+    "category": "integration",
+    "description": "Reveal full event body via Tooltip in ActivityEvent",
     "steps": [
-      "Add CostMetrics struct with USD cost and duration fields",
-      "Add RateLimitInfo struct with used_percentage and resets_at",
-      "Add RateLimits struct with five_hour and optional seven_day",
-      "Apply camelCase serde rename_all to all"
+      "Add Tooltip import to ActivityEvent.tsx",
+      "Replace body <div> at line 156 with <Tooltip><span tabIndex={0}></span></Tooltip> (focusable span with focus-visible ring)",
+      "Add 2 tests to ActivityEvent.test.tsx: tooltip on hover shows full body, body span has tabIndex 0",
+      "Add userEvent import if missing",
+      "Update existing tests if they assert div selector (change to span)",
+      "Run ActivityEvent.test.tsx to verify all tests pass",
+      "Commit both files"
     ],
-    "passes": true,
-    "dependencies": [2]
+    "passes": false,
+    "dependencies": [5]
   },
   {
     "id": 7,
-    "phase": 2,
-    "category": "types",
-    "description": "Define AgentStatusEvent struct",
+    "phase": 1,
+    "category": "verification",
+    "description": "Final verification (full test suite, type-check, lint, smoke-test)",
     "steps": [
-      "Add AgentStatusEvent struct with session_id, model info, version fields",
-      "Include context_window, cost, rate_limits nested types",
-      "Apply camelCase serde rename_all",
-      "Verify all Option<T> fields match spec"
+      "Run `npm run test` (all tests pass)",
+      "Run `npm run type-check` (clean exit)",
+      "Run `npm run lint` (clean exit)",
+      "Run `unproxy && npm run tauri:dev` and manually verify: rail tooltips portal over sidebar, Tab navigation works, activity tooltips reveal full body, focus rings visible, no console warnings",
+      "Confirm z-50 patch removed: `grep -n 'z-50' src/features/workspace/components/IconRail.tsx || echo 'patch removed'`",
+      "No commit needed unless follow-up fixes required"
     ],
-    "passes": true,
-    "dependencies": [5, 6]
-  },
-  {
-    "id": 8,
-    "phase": 2,
-    "category": "types",
-    "description": "Define tool call event types",
-    "steps": [
-      "Add ToolCallStatus enum with Running, Done, Failed variants",
-      "Add AgentToolCallEvent struct with tool, args, status, timestamp, duration",
-      "Apply camelCase serde rename_all",
-      "Export all types via ts-rs"
-    ],
-    "passes": true,
-    "dependencies": [2]
-  },
-  {
-    "id": 9,
-    "phase": 3,
-    "category": "detector",
-    "description": "Create agent detector module stub",
-    "steps": [
-      "Create src-tauri/src/agent/detector.rs",
-      "Add module doc comment",
-      "Import AgentType from types module",
-      "Create detect_agent function signature returning Option<(AgentType, u32)>"
-    ],
-    "passes": true,
-    "dependencies": [2]
-  },
-  {
-    "id": 10,
-    "phase": 3,
-    "category": "detector",
-    "description": "Implement /proc filesystem helpers",
-    "steps": [
-      "Add helper to read /proc/<pid>/task/<pid>/children",
-      "Add helper to read /proc/<pid>/cmdline (null-separated)",
-      "Add helper to parse cmdline into Vec<String>",
-      "Handle missing /proc entries gracefully (process may exit)"
-    ],
-    "passes": true,
-    "dependencies": [9]
-  },
-  {
-    "id": 11,
-    "phase": 3,
-    "category": "detector",
-    "description": "Implement recursive PID collection",
-    "steps": [
-      "Create function to recursively collect descendant PIDs",
-      "Use BFS or DFS traversal of process tree",
-      "Handle cycles and missing entries",
-      "Return Vec<u32> of all descendants"
-    ],
-    "passes": true,
-    "dependencies": [10]
-  },
-  {
-    "id": 12,
-    "phase": 3,
-    "category": "detector",
-    "description": "Implement agent binary detection",
-    "steps": [
-      "For each descendant PID, read cmdline",
-      "Extract binary name from argv[0]",
-      "Match 'claude' → ClaudeCode, 'codex' → Codex, 'aider' → Aider",
-      "Return first match with PID, or None if no agents found"
-    ],
-    "passes": true,
-    "dependencies": [11]
-  },
-  {
-    "id": 13,
-    "phase": 4,
-    "category": "integration",
-    "description": "Create detect_agent_in_session Tauri command",
-    "steps": [
-      "Create src-tauri/src/agent/commands.rs",
-      "Add #[tauri::command] async fn detect_agent_in_session",
-      "Accept PtyState and session_id parameters",
-      "Call state.get_pid() to get child PID",
-      "Call detector::detect_agent() with PID",
-      "Return AgentDetectedEvent on success, None if no agent"
-    ],
-    "passes": true,
-    "dependencies": [12, 3]
-  },
-  {
-    "id": 14,
-    "phase": 4,
-    "category": "integration",
-    "description": "Register agent module in lib.rs",
-    "steps": [
-      "Add 'mod agent;' to src-tauri/src/lib.rs",
-      "Import detect_agent_in_session command",
-      "Add to invoke_handler macro",
-      "Verify cargo build succeeds"
-    ],
-    "passes": true,
-    "dependencies": [13]
-  },
-  {
-    "id": 15,
-    "phase": 4,
-    "category": "integration",
-    "description": "Export types and detector from agent/mod.rs",
-    "steps": [
-      "Add pub mod types; pub mod detector; pub mod commands;",
-      "Re-export detect_agent_in_session as pub use",
-      "Verify all modules accessible from agent namespace"
-    ],
-    "passes": true,
-    "dependencies": [13]
-  },
-  {
-    "id": 16,
-    "phase": 5,
-    "category": "testing",
-    "description": "Write unit tests for /proc helpers",
-    "steps": [
-      "Add #[cfg(test)] mod tests to detector.rs",
-      "Test reading /proc/self/cmdline (always exists)",
-      "Test handling missing PID gracefully",
-      "Test cmdline parsing with null separators"
-    ],
-    "passes": true,
-    "dependencies": [10]
-  },
-  {
-    "id": 17,
-    "phase": 5,
-    "category": "testing",
-    "description": "Write unit tests for agent detection logic",
-    "steps": [
-      "Create mock process tree scenarios",
-      "Test detecting claude binary in descendants",
-      "Test detecting codex and aider",
-      "Test returning None when no agent present",
-      "Test Generic fallback if needed"
-    ],
-    "passes": true,
-    "dependencies": [12, 16]
-  },
-  {
-    "id": 18,
-    "phase": 5,
-    "category": "testing",
-    "description": "Run cargo test and verify all tests pass",
-    "steps": [
-      "Run cargo test",
-      "Verify all unit tests pass",
-      "Run cargo clippy -- -D warnings",
-      "Run cargo fmt --check"
-    ],
-    "passes": true,
-    "dependencies": [17]
-  },
-  {
-    "id": 19,
-    "phase": 6,
-    "category": "bindings",
-    "description": "Verify ts-rs bindings generation",
-    "steps": [
-      "Run cargo test to trigger ts-rs binding generation",
-      "Verify new .ts files appear in src/bindings/",
-      "Check AgentType.ts, AgentDetectedEvent.ts, etc. exist",
-      "Verify camelCase field names in generated TypeScript"
-    ],
-    "passes": true,
-    "dependencies": [18]
-  },
-  {
-    "id": 20,
-    "phase": 6,
-    "category": "bindings",
-    "description": "Update src/bindings/index.ts with new exports",
-    "steps": [
-      "Open src/bindings/index.ts",
-      "Add export * from './AgentType' and all other new types",
-      "Verify exports match naming convention",
-      "Run npm run type-check to verify TypeScript compiles"
-    ],
-    "passes": true,
-    "dependencies": [19]
+    "passes": false,
+    "dependencies": [6]
   }
 ]
