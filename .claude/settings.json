@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"MANDATORY: Before writing code or giving reviews, consult rules/CLAUDE.md for the hierarchical development standards (common defaults + language-specific overrides). Path-scoped rules auto-load for matching files (e.g. test files load rules/typescript/testing/*); for coding-style, patterns, security, and hooks, read the relevant rules file proactively.\"}}'"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"SubagentStart\",\"additionalContext\":\"MANDATORY: Before writing code or giving reviews, consult rules/CLAUDE.md for the hierarchical development standards (common defaults + language-specific overrides). Path-scoped rules auto-load for matching files (e.g. test files load rules/typescript/testing/*); for coding-style, patterns, security, and hooks, read the relevant rules file proactively.\"}}'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "EnterPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Before drafting the plan, consult docs/CLAUDE.md for architectural context (decisions, design, superpowers specs, roadmap) — follow links as needed.\"}}'"
+          }
+        ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.skill // \"\"' | grep -qE '^superpowers:(brainstorming|writing-plans|executing-plans)$' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Before brainstorming/planning/execution, consult docs/CLAUDE.md for architectural context (decisions, design, superpowers specs, roadmap) — follow links as needed.\"}}' || true"
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.skill // \"\"' | grep -qE '^harness-plugin:(loop|review|github-review)$' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Before running harness workflows, consult docs/harness/CLAUDE.md — the bilingual index that links to the authoritative runbook (harness/CLAUDE.md), review knowledge base (docs/reviews/CLAUDE.md), security model, and design spec.\"}}' || true"
+          }
+        ]
+      }
+    ]
+  }
+}

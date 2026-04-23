@@ -66,6 +66,7 @@ Follow the [Testing Library query priority](https://testing-library.com/docs/que
 
 For test query examples (buttons, headings, status, landmarks, articles, figures), see [a11y-queries.md](./a11y-queries.md).
 For component-side a11y patterns (which attributes to add), see [../coding-style/a11y-components.md](../coding-style/a11y-components.md).
+For rules on what to test at each layer (primitive vs consumer, library boundaries), see [test-boundaries.md](./test-boundaries.md).
 
 ## E2E Testing
 
