@@ -39,7 +39,7 @@ export const IconRail = ({
 
             {/* Tooltip on hover */}
             {hoveredItem === item.id && (
-              <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 whitespace-nowrap rounded bg-surface-container px-2 py-1 text-xs text-on-surface shadow-lg">
+              <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 whitespace-nowrap rounded bg-surface-container px-2 py-1 text-xs text-on-surface shadow-lg">
                 {item.name}
               </div>
             )}
@@ -66,7 +66,7 @@ export const IconRail = ({
 
         {/* Tooltip on hover */}
         {hoveredItem === settingsItem.id && (
-          <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 whitespace-nowrap rounded bg-surface-container px-2 py-1 text-xs text-on-surface shadow-lg">
+          <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 whitespace-nowrap rounded bg-surface-container px-2 py-1 text-xs text-on-surface shadow-lg">
             {settingsItem.name}
           </div>
         )}
