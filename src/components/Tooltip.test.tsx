@@ -154,4 +154,33 @@ describe('Tooltip', () => {
     expect(tip).toHaveClass('custom-extra')
     expect(tip).toHaveClass('backdrop-blur-md')
   })
+
+  test('clears stale open state when tooltip becomes disabled mid-flight', async () => {
+    const user = userEvent.setup()
+
+    const { rerender } = render(
+      <Tooltip content="hello" delayMs={0}>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+    expect(await screen.findByRole('tooltip')).toBeInTheDocument()
+
+    // Disable while open — tooltip should disappear immediately.
+    rerender(
+      <Tooltip content="hello" delayMs={0} disabled>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    // Re-enable — tooltip must NOT resurrect without fresh interaction.
+    rerender(
+      <Tooltip content="hello" delayMs={0}>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
 })

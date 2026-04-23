@@ -1,6 +1,7 @@
 import {
   cloneElement,
   isValidElement,
+  useEffect,
   useState,
   type ReactElement,
   type ReactNode,
@@ -50,6 +51,16 @@ export const Tooltip = ({
   const enabled = !disabled && content != null && isValidElement(children)
 
   const [open, setOpen] = useState(false)
+
+  // Reset stale open state when the tooltip becomes ineligible mid-flight
+  // (consumer toggles disabled, or content drops to null/undefined). Without
+  // this, re-enabling the same instance later would resurrect the tooltip
+  // with no fresh hover/focus event.
+  useEffect(() => {
+    if (!enabled) {
+      setOpen(false)
+    }
+  }, [enabled])
 
   const {
     refs,
