@@ -1,3 +1,4 @@
+import { createRef } from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test } from 'vitest'
@@ -96,5 +97,61 @@ describe('Tooltip', () => {
     // Wait for tooltip to open so the accessible description becomes available
     await screen.findByRole('tooltip')
     expect(btn).toHaveAccessibleDescription('hello')
+  })
+
+  test('respects placement prop via data-placement attribute', async () => {
+    const user = userEvent.setup()
+    render(
+      <Tooltip content="hello" delayMs={0} placement="bottom">
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+    expect(
+      (await screen.findByRole('tooltip')).getAttribute('data-placement')
+    ).toMatch(/^bottom/)
+  })
+
+  test('applies maxWidth to the floating element', async () => {
+    const user = userEvent.setup()
+    render(
+      <Tooltip content="hello" delayMs={0} maxWidth={200}>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+    expect(await screen.findByRole('tooltip')).toHaveStyle({
+      maxWidth: '200px',
+    })
+  })
+
+  test('preserves an existing ref on the trigger', () => {
+    const ref = createRef<HTMLButtonElement>()
+    render(
+      <Tooltip content="hello" delayMs={0}>
+        <button ref={ref} type="button">
+          trigger
+        </button>
+      </Tooltip>
+    )
+
+    expect(ref.current).toBeInstanceOf(HTMLButtonElement)
+    expect(ref.current?.textContent).toBe('trigger')
+  })
+
+  test('appends className to the baseline classes', async () => {
+    const user = userEvent.setup()
+    render(
+      <Tooltip content="hello" delayMs={0} className="custom-extra">
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveClass('custom-extra')
+    expect(tip).toHaveClass('backdrop-blur-md')
   })
 })

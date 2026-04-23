@@ -55,7 +55,7 @@
       "Run tests to verify all 11 tests pass (implementation already plumbs these props from feature 3)",
       "Commit test file"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [3]
   },
   {
