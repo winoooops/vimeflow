@@ -35,7 +35,7 @@ export interface TooltipProps {
 
 const TOOLTIP_CLASSES =
   'pointer-events-none z-50 rounded-lg shadow-lg px-3 py-2 ' +
-  'bg-surface-container-high/70 backdrop-blur-md backdrop-saturate-150 ' +
+  'bg-surface-container-high/90 backdrop-blur-md backdrop-saturate-150 ' +
   'text-xs text-on-surface'
 
 export const Tooltip = ({
