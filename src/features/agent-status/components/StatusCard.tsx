@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { Tooltip } from '../../../components/Tooltip'
 import type { CostState, RateLimitsState } from '../types'
 import { BudgetMetrics } from './BudgetMetrics'
 
@@ -84,9 +85,14 @@ export const StatusCard = ({
               {agentNames[agentType]}
             </span>
             {displayModel ? (
-              <span className="truncate font-mono text-[10px] text-outline">
-                {displayModel}
-              </span>
+              <Tooltip content={displayModel} placement="bottom">
+                <span
+                  tabIndex={0}
+                  className="truncate font-mono text-[10px] text-outline outline-none focus-visible:ring-1 focus-visible:ring-primary-container"
+                >
+                  {displayModel}
+                </span>
+              </Tooltip>
             ) : null}
           </div>
 

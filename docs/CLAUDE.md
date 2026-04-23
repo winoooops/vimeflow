@@ -18,6 +18,10 @@ Note: `.superpowers/` at the repo root is a separate working directory used by t
 
 Review knowledge base — patterns learned from local Codex and GitHub Codex code reviews. Each pattern file in `patterns/` collects related findings with their fixes and commit links. Agents may consult relevant patterns before implementing to avoid repeating past mistakes. See `reviews/CLAUDE.md` for the index.
 
+### `decisions/`
+
+Technical decision records — what we chose, what we rejected, and why. Each record is a dated, self-contained file (e.g. `2026-04-22-tooltip-library.md`). Read one when a topic touches a previously-decided trade-off so we don't re-litigate it. See `decisions/CLAUDE.md` for the index and format.
+
 ### `harness/`
 
 Bilingual (EN + zh-CN) landing page for the autonomous development loop under `harness/` at the repo root. Points agents and humans at the authoritative runbook (`harness/CLAUDE.md`), the relevant review patterns, and the design spec. See `harness/CLAUDE.md` (this subdir) for the English version or `CLAUDE.zh-CN.md` for the Chinese mirror.

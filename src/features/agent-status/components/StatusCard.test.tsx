@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { StatusCard } from './StatusCard'
 import type { StatusCardProps } from './StatusCard'
 
@@ -125,5 +126,31 @@ describe('StatusCard', () => {
     // Fallback variant renders token labels
     expect(screen.getByText('Tokens In')).toBeInTheDocument()
     expect(screen.getByText('Tokens Out')).toBeInTheDocument()
+  })
+
+  test('makes the model name span focusable with tabIndex 0', () => {
+    render(
+      <StatusCard {...defaultProps} modelDisplayName="Opus 4.7 (1M context)" />
+    )
+
+    expect(
+      screen.getByText('Opus 4.7 (1M context)', { selector: 'span' })
+    ).toHaveAttribute('tabindex', '0')
+  })
+
+  test('reveals full model name via tooltip on hover', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <StatusCard {...defaultProps} modelDisplayName="Opus 4.7 (1M context)" />
+    )
+
+    await user.hover(
+      screen.getByText('Opus 4.7 (1M context)', { selector: 'span' })
+    )
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Opus 4.7 (1M context)'
+    )
   })
 })
