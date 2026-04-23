@@ -87,7 +87,7 @@
       "Run ActivityEvent.test.tsx to verify all tests pass",
       "Commit both files"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [5]
   },
   {
@@ -103,7 +103,7 @@
       "Confirm z-50 patch removed: `grep -n 'z-50' src/features/workspace/components/IconRail.tsx || echo 'patch removed'`",
       "No commit needed unless follow-up fixes required"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [6]
   }
 ]
