@@ -1,5 +1,27 @@
-import { isValidElement, type ReactElement, type ReactNode } from 'react'
-import type { Placement } from '@floating-ui/react'
+import {
+  cloneElement,
+  isValidElement,
+  useState,
+  type ReactElement,
+  type ReactNode,
+  type Ref,
+} from 'react'
+import {
+  FloatingPortal,
+  autoUpdate,
+  flip,
+  offset,
+  safePolygon,
+  shift,
+  useDismiss,
+  useFloating,
+  useFocus,
+  useHover,
+  useInteractions,
+  useMergeRefs,
+  useRole,
+  type Placement,
+} from '@floating-ui/react'
 
 export interface TooltipProps {
   content: ReactNode
@@ -11,15 +33,78 @@ export interface TooltipProps {
   className?: string
 }
 
+const TOOLTIP_CLASSES =
+  'pointer-events-none z-50 rounded-lg shadow-lg px-3 py-2 ' +
+  'bg-surface-container-high/70 backdrop-blur-md backdrop-saturate-150 ' +
+  'text-xs text-on-surface'
+
 export const Tooltip = ({
   content,
   children,
+  placement = 'top',
+  delayMs = 250,
   disabled = false,
+  maxWidth = 320,
+  className = undefined,
 }: TooltipProps): ReactElement => {
-  if (disabled || content == null || !isValidElement(children)) {
+  const enabled = !disabled && content != null && isValidElement(children)
+
+  const [open, setOpen] = useState(false)
+
+  const {
+    refs,
+    floatingStyles,
+    context,
+    placement: resolvedPlacement,
+  } = useFloating({
+    open,
+    onOpenChange: setOpen,
+    placement,
+    whileElementsMounted: autoUpdate,
+    middleware: [offset(6), flip(), shift({ padding: 8 })],
+  })
+
+  const { getReferenceProps, getFloatingProps } = useInteractions([
+    useHover(context, {
+      enabled,
+      delay: { open: delayMs, close: 0 },
+      handleClose: safePolygon(),
+    }),
+    useFocus(context, { enabled }),
+    useDismiss(context, { enabled, escapeKey: true }),
+    useRole(context, { enabled, role: 'tooltip' }),
+  ])
+
+  const childRef = isValidElement(children)
+    ? (children.props as { ref?: Ref<unknown> }).ref
+    : undefined
+  const mergedRef = useMergeRefs([refs.setReference, childRef])
+
+  if (!enabled) {
     return children
   }
 
-  // Real implementation (hooks + portal) lands in Task 3.
-  return children
+  return (
+    <>
+      {cloneElement(children, {
+        ref: mergedRef,
+        ...getReferenceProps(children.props as Record<string, unknown>),
+      } as Record<string, unknown> & { ref: Ref<unknown> })}
+      {open && (
+        <FloatingPortal>
+          <div
+            ref={refs.setFloating}
+            data-placement={resolvedPlacement}
+            style={{ ...floatingStyles, maxWidth }}
+            className={
+              className ? `${TOOLTIP_CLASSES} ${className}` : TOOLTIP_CLASSES
+            }
+            {...getFloatingProps()}
+          >
+            {content}
+          </div>
+        </FloatingPortal>
+      )}
+    </>
+  )
 }
