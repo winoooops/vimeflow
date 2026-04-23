@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { TerminalPane, clearTerminalCache } from './TerminalPane'
+import { TerminalPane, clearTerminalCache, terminalCache } from './TerminalPane'
 import { useTerminal, type UseTerminalReturn } from '../hooks/useTerminal'
 
 // Mock xterm modules
@@ -372,6 +372,41 @@ describe('TerminalPane', () => {
 
       // fitAddon SHOULD fire now that the container has real dimensions
       expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+    })
+
+    test('regression #81: cached terminal reuse skips fit in zero-width container', async () => {
+      // Seed the module-level cache to force the reuse branch
+      const cachedFitAddon = { fit: vi.fn() }
+
+      const cachedTerminal = {
+        open: vi.fn(),
+        cols: 80,
+        rows: 24,
+        onResize: vi.fn(() => ({ dispose: vi.fn() })),
+        parser: { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) },
+      }
+
+      terminalCache.set('cached-session', {
+        terminal: cachedTerminal as unknown as Terminal,
+        fitAddon: cachedFitAddon as unknown as FitAddon,
+      })
+
+      // Simulate hidden container (display:none → offsetWidth = 0)
+      const offsetSpy = vi
+        .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+        .mockReturnValue(0)
+
+      render(<TerminalPane sessionId="cached-session" cwd="/home/user" />)
+
+      await waitFor(() => {
+        expect(cachedTerminal.open).toHaveBeenCalled()
+      })
+
+      // fitAddon.fit must be suppressed on the reuse path when width is 0
+      expect(cachedFitAddon.fit).not.toHaveBeenCalled()
+
+      offsetSpy.mockRestore()
+      terminalCache.delete('cached-session')
     })
 
     test('regression #81: onResize does not forward tiny dimensions to PTY when container is hidden', async () => {

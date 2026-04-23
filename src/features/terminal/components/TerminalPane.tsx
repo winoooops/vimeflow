@@ -16,7 +16,7 @@ import '@xterm/xterm/css/xterm.css'
 
 // P2 Fix: Global cache of terminal instances per sessionId
 // This allows terminals to persist when switching between sessions
-const terminalCache = new Map<
+export const terminalCache = new Map<
   string,
   { terminal: Terminal; fitAddon: FitAddon }
 >()
