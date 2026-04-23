@@ -176,8 +176,13 @@ export const TerminalPane = ({
       // Re-open terminal in the new container
       newTerminal.open(containerRef.current)
 
-      // Re-fit to new container
-      fitAddon.fit()
+      // Re-fit to new container — guard against hidden (display:none) containers
+      // where offsetWidth is 0. Fitting at zero width tells xterm cols≈1,
+      // which causes the PTY to re-wrap scrollback into a narrow column.
+      const width = containerRef.current.offsetWidth
+      if (width > 0) {
+        fitAddon.fit()
+      }
     } else {
       // Create new terminal instance
       newTerminal = new Terminal({
@@ -235,18 +240,28 @@ export const TerminalPane = ({
 
     // Handle resize events - notify PTY of terminal size changes
     const resizeDisposable = newTerminal.onResize(({ cols, rows }) => {
-      // Fit terminal to container
-      fitAddon.fit()
+      // Guard: don't forward resize when container is hidden (display:none).
+      // Otherwise the PTY receives cols≈1 and re-wraps scrollback.
+      const width = containerRef.current?.offsetWidth ?? 0
+      if (width > 0) {
+        // Fit terminal to container
+        fitAddon.fit()
 
-      // Notify PTY service of size change using ref (stable across renders)
-      resizeRef.current(cols, rows)
+        // Notify PTY service of size change using ref (stable across renders)
+        resizeRef.current(cols, rows)
+      }
     })
 
     // P2 Fix: Add ResizeObserver to detect container size changes
     // When the container resizes (e.g., window resize, panel collapse),
-    // fit the terminal which will trigger the onResize event above
+    // fit the terminal which will trigger the onResize event above.
+    // Guard: skip fit when container is hidden (display:none → width=0)
+    // to avoid PTY scrollback re-wrapping at a narrow column count.
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit()
+      const width = containerRef.current?.offsetWidth ?? 0
+      if (width > 0) {
+        fitAddon.fit()
+      }
     })
     resizeObserver.observe(containerRef.current)
 

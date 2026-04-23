@@ -284,6 +284,12 @@ describe('TerminalPane', () => {
       // Simulate container resize
       const container = screen.getByTestId('terminal-pane')
 
+      // Give container a real width so the guard passes
+      Object.defineProperty(container, 'offsetWidth', {
+        value: 800,
+        configurable: true,
+      })
+
       const mockEntry = {
         target: container,
         contentRect: {
@@ -310,6 +316,103 @@ describe('TerminalPane', () => {
       await waitFor(() => {
         expect(mockFitAddon.fit).toHaveBeenCalled()
       })
+    })
+
+    test('regression #81: ResizeObserver skips fit when container is hidden (width=0)', async () => {
+      let resizeCallback: ResizeObserverCallback | undefined
+      const mockObserve = vi.fn()
+      const mockDisconnect = vi.fn()
+
+      global.ResizeObserver = vi
+        .fn()
+        .mockImplementation((callback: ResizeObserverCallback) => {
+          resizeCallback = callback
+
+          return {
+            observe: mockObserve,
+            unobserve: vi.fn(),
+            disconnect: mockDisconnect,
+          }
+        })
+
+      render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+
+      await waitFor(() => {
+        expect(global.ResizeObserver).toHaveBeenCalled()
+        expect(mockObserve).toHaveBeenCalled()
+      })
+
+      // Clear fit calls from initial render
+      mockFitAddon.fit.mockClear()
+
+      const container = screen.getByTestId('terminal-pane')
+
+      // Simulate hidden tab: offsetWidth === 0 (display:none collapses container)
+      Object.defineProperty(container, 'offsetWidth', {
+        value: 0,
+        configurable: true,
+      })
+
+      if (resizeCallback) {
+        resizeCallback([], {} as ResizeObserver)
+      }
+
+      // fitAddon must NOT fire — this is the exact bug path that squashes scrollback
+      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+
+      // Simulate tab becoming visible again: offsetWidth > 0
+      Object.defineProperty(container, 'offsetWidth', {
+        value: 800,
+        configurable: true,
+      })
+
+      if (resizeCallback) {
+        resizeCallback([], {} as ResizeObserver)
+      }
+
+      // fitAddon SHOULD fire now that the container has real dimensions
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+    })
+
+    test('regression #81: onResize does not forward tiny dimensions to PTY when container is hidden', async () => {
+      render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+
+      await waitFor(() => {
+        expect(mockTerminal.onResize).toHaveBeenCalled()
+      })
+
+      // Clear mocks from initial render
+      mockFitAddon.fit.mockClear()
+      vi.mocked(mockUseTerminal.resize).mockClear()
+
+      const container = screen.getByTestId('terminal-pane')
+
+      const onResizeCallback = mockTerminal.onResize.mock
+        .calls[0][0] as (size: { cols: number; rows: number }) => void
+
+      // Hidden tab path: container width === 0
+      Object.defineProperty(container, 'offsetWidth', {
+        value: 0,
+        configurable: true,
+      })
+
+      onResizeCallback({ cols: 1, rows: 24 })
+
+      // Neither fit() nor PTY resize should run at zero width
+      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      expect(mockUseTerminal.resize).not.toHaveBeenCalled()
+
+      // Visible tab path: container width > 0
+      Object.defineProperty(container, 'offsetWidth', {
+        value: 800,
+        configurable: true,
+      })
+
+      onResizeCallback({ cols: 80, rows: 24 })
+
+      // Both should fire now
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockUseTerminal.resize).toHaveBeenCalledTimes(1)
     })
 
     test('P2: disposes old session terminal when switching to different sessionId', async () => {
