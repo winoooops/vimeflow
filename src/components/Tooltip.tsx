@@ -45,7 +45,7 @@ export const Tooltip = ({
   delayMs = 250,
   disabled = false,
   maxWidth = 320,
-  className = undefined,
+  className = '',
 }: TooltipProps): ReactElement => {
   const enabled = !disabled && content != null && isValidElement(children)
 
@@ -89,7 +89,7 @@ export const Tooltip = ({
       {cloneElement(children, {
         ref: mergedRef,
         ...getReferenceProps(children.props as Record<string, unknown>),
-      } as Record<string, unknown> & { ref: Ref<unknown> })}
+      } as never)}
       {open && (
         <FloatingPortal>
           <div
