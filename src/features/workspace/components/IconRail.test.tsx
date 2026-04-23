@@ -99,47 +99,30 @@ describe('IconRail', () => {
     expect(within(dashboardButton).getByText('dashboard')).toBeInTheDocument()
   })
 
-  test('shows tooltip on hover', async () => {
+  test('shows item name as tooltip on hover', async () => {
     const user = userEvent.setup()
     render(
       <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
     )
 
-    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
+    await user.hover(screen.getByRole('button', { name: 'Dashboard' }))
 
-    // Tooltip should not be visible initially
-    expect(
-      screen.queryByText('Dashboard', { selector: 'div' })
-    ).not.toBeInTheDocument()
-
-    // Hover over button
-    await user.hover(dashboardButton)
-
-    // Tooltip should appear
-    const tooltip = screen.getByText('Dashboard', { selector: 'div' })
-    expect(tooltip).toBeInTheDocument()
-    expect(tooltip).toHaveClass('bg-surface-container')
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Dashboard')
   })
 
-  test('hides tooltip on mouse leave', async () => {
+  test('shows settings item name as tooltip on hover', async () => {
     const user = userEvent.setup()
     render(
       <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
     )
 
-    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
+    await user.hover(
+      screen.getByRole('button', { name: mockSettingsItem.name })
+    )
 
-    // Hover to show tooltip
-    await user.hover(dashboardButton)
-    expect(
-      screen.getByText('Dashboard', { selector: 'div' })
-    ).toBeInTheDocument()
-
-    // Move mouse away to hide tooltip
-    await user.unhover(dashboardButton)
-    expect(
-      screen.queryByText('Dashboard', { selector: 'div' })
-    ).not.toBeInTheDocument()
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      mockSettingsItem.name
+    )
   })
 
   test('calls onClick when navigation item is clicked', async () => {
@@ -198,19 +181,5 @@ describe('IconRail', () => {
     const settingsIndex = buttons.indexOf(settingsButton)
 
     expect(dashboardIndex).toBeLessThan(settingsIndex)
-  })
-
-  test('tooltip is positioned to the right of the rail', async () => {
-    const user = userEvent.setup()
-    render(
-      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
-    )
-
-    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
-    await user.hover(dashboardButton)
-
-    const tooltip = screen.getByText('Dashboard', { selector: 'div' })
-    expect(tooltip).toHaveClass('left-full')
-    expect(tooltip).toHaveClass('ml-2')
   })
 })

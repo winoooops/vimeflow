@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { ActivityEvent } from './ActivityEvent'
 import type { ToolActivityEvent } from '../types/activityEvent'
 
@@ -352,5 +353,55 @@ describe('ActivityEvent — running state', () => {
     )
 
     expect(screen.getByText('running 0s')).toBeInTheDocument()
+  })
+})
+
+describe('ActivityEvent — tooltip integration', () => {
+  test('reveals full event body via tooltip on hover', async () => {
+    const user = userEvent.setup()
+    render(
+      <ActivityEvent
+        event={{
+          id: 'e1',
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'grep -rn "very long search term" /home/will/projects/vimeflow/src --include="*.tsx"',
+          timestamp: '2026-04-23T03:00:00Z',
+          status: 'done',
+          durationMs: 120,
+        }}
+        now={new Date('2026-04-23T03:01:00Z')}
+      />
+    )
+
+    await user.hover(
+      screen.getByText(/very long search term/, { selector: 'span' })
+    )
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'very long search term'
+    )
+  })
+
+  test('makes the body span focusable with tabIndex 0', () => {
+    render(
+      <ActivityEvent
+        event={{
+          id: 'e2',
+          kind: 'edit',
+          tool: 'Edit',
+          body: 'src/components/Tooltip.tsx',
+          timestamp: '2026-04-23T03:00:00Z',
+          status: 'done',
+          durationMs: 8,
+          diff: { added: 12, removed: 0 },
+        }}
+        now={new Date('2026-04-23T03:01:00Z')}
+      />
+    )
+
+    expect(
+      screen.getByText('src/components/Tooltip.tsx', { selector: 'span' })
+    ).toHaveAttribute('tabindex', '0')
   })
 })

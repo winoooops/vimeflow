@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { Tooltip } from '../../../components/Tooltip'
 import { formatRelativeTime, formatDuration } from '../utils/relativeTime'
 import type {
   ActivityEvent as ActivityEventType,
@@ -153,9 +154,14 @@ export const ActivityEvent = ({
             {timestampText}
           </span>
         </div>
-        <div className={`mt-0.5 truncate ${getBodyClass(event.kind)}`}>
-          {event.body}
-        </div>
+        <Tooltip content={event.body} placement="left" maxWidth={320}>
+          <span
+            tabIndex={0}
+            className={`mt-0.5 block truncate outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${getBodyClass(event.kind)}`}
+          >
+            {event.body}
+          </span>
+        </Tooltip>
         <StatusChips event={event} />
       </div>
     </article>
