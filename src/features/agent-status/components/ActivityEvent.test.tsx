@@ -1,5 +1,5 @@
-import { describe, test, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, test, expect, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ActivityEvent } from './ActivityEvent'
 import type { ToolActivityEvent } from '../types/activityEvent'
@@ -357,40 +357,29 @@ describe('ActivityEvent — running state', () => {
 })
 
 describe('ActivityEvent — tooltip integration', () => {
-  test('reveals full event body via tooltip on hover', async () => {
-    const user = userEvent.setup()
+  // Unique-to-this-consumer concern: the body span only becomes a keyboard
+  // focus stop and a tooltip trigger when the text actually overflows. The
+  // hover-reveals-tooltip behavior is covered by Tooltip.test.tsx.
+  // jsdom reports scrollWidth and clientWidth as 0 without real layout, so
+  // mock the getters for the truncated path and leave defaults for the
+  // fits-in-container path.
+
+  test('marks body span as focusable with tabIndex 0 when truncated', async () => {
+    const scrollWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+      .mockReturnValue(500)
+
+    const clientWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+      .mockReturnValue(100)
+
     render(
       <ActivityEvent
         event={{
           id: 'e1',
-          kind: 'bash',
-          tool: 'Bash',
-          body: 'grep -rn "very long search term" /home/will/projects/vimeflow/src --include="*.tsx"',
-          timestamp: '2026-04-23T03:00:00Z',
-          status: 'done',
-          durationMs: 120,
-        }}
-        now={new Date('2026-04-23T03:01:00Z')}
-      />
-    )
-
-    await user.hover(
-      screen.getByText(/very long search term/, { selector: 'span' })
-    )
-
-    expect(await screen.findByRole('tooltip')).toHaveTextContent(
-      'very long search term'
-    )
-  })
-
-  test('makes the body span focusable with tabIndex 0', () => {
-    render(
-      <ActivityEvent
-        event={{
-          id: 'e2',
           kind: 'edit',
           tool: 'Edit',
-          body: 'src/components/Tooltip.tsx',
+          body: 'src/components/Tooltip.tsx with a long trailing description',
           timestamp: '2026-04-23T03:00:00Z',
           status: 'done',
           durationMs: 8,
@@ -400,8 +389,40 @@ describe('ActivityEvent — tooltip integration', () => {
       />
     )
 
-    expect(
-      screen.getByText('src/components/Tooltip.tsx', { selector: 'span' })
-    ).toHaveAttribute('tabindex', '0')
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Tooltip\.tsx/, { selector: 'span' })
+      ).toHaveAttribute('tabindex', '0')
+    )
+
+    scrollWidthSpy.mockRestore()
+    clientWidthSpy.mockRestore()
+  })
+
+  test('omits tabIndex and keeps tooltip disabled when body fits container', async () => {
+    // Default jsdom layout: scrollWidth = clientWidth = 0, so !isTruncated.
+    const user = userEvent.setup()
+
+    render(
+      <ActivityEvent
+        event={{
+          id: 'e2',
+          kind: 'read',
+          tool: 'Read',
+          body: 'short.tsx',
+          timestamp: '2026-04-23T03:00:00Z',
+          status: 'done',
+          durationMs: 2,
+        }}
+        now={new Date('2026-04-23T03:01:00Z')}
+      />
+    )
+
+    const body = screen.getByText('short.tsx', { selector: 'span' })
+    expect(body).not.toHaveAttribute('tabindex')
+
+    await user.hover(body)
+    // With Tooltip disabled, no floating element ever mounts.
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 })

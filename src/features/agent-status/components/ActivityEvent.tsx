@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactElement } from 'react'
 import { Tooltip } from '../../../components/Tooltip'
 import { formatRelativeTime, formatDuration } from '../utils/relativeTime'
 import type {
@@ -118,6 +118,33 @@ export const ActivityEvent = ({
   const label = getLabel(event)
   const isRunning = event.status === 'running'
 
+  // Only surface the tooltip (and its keyboard focus stop) when the body
+  // actually overflows its container. Without this, a feed with many
+  // already-fitting rows adds redundant Tab stops proportional to event
+  // count and causes AT to double-announce content that's fully visible.
+  const bodyRef = useRef<HTMLSpanElement>(null)
+  const [isTruncated, setIsTruncated] = useState(false)
+
+  useLayoutEffect(() => {
+    const el = bodyRef.current
+    if (!el) {
+      return
+    }
+
+    const measure = (): void => {
+      setIsTruncated(el.scrollWidth > el.clientWidth)
+    }
+
+    measure()
+
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+
+    return (): void => {
+      observer.disconnect()
+    }
+  }, [event.body])
+
   const timestampText = isRunning
     ? // Clamp negative deltas to zero so a tool whose emitted timestamp
       // beats JS's Date.now() snapshot (sub-ms clock skew on fast machines,
@@ -154,9 +181,15 @@ export const ActivityEvent = ({
             {timestampText}
           </span>
         </div>
-        <Tooltip content={event.body} placement="left" maxWidth={320}>
+        <Tooltip
+          content={event.body}
+          placement="left"
+          maxWidth={320}
+          disabled={!isTruncated}
+        >
           <span
-            tabIndex={0}
+            ref={bodyRef}
+            tabIndex={isTruncated ? 0 : undefined}
             className={`mt-0.5 block truncate outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${getBodyClass(event.kind)}`}
           >
             {event.body}
