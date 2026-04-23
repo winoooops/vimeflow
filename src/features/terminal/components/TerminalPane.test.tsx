@@ -145,11 +145,17 @@ describe('TerminalPane', () => {
   })
 
   test('fits terminal to container after opening', async () => {
+    const offsetSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockReturnValue(800)
+
     render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
 
     await waitFor(() => {
       expect(mockFitAddon.fit).toHaveBeenCalled()
     })
+
+    offsetSpy.mockRestore()
   })
 
   test('handles terminal resize events', async () => {
@@ -380,6 +386,7 @@ describe('TerminalPane', () => {
 
       const cachedTerminal = {
         open: vi.fn(),
+        dispose: vi.fn(),
         cols: 80,
         rows: 24,
         onResize: vi.fn(() => ({ dispose: vi.fn() })),
@@ -396,17 +403,19 @@ describe('TerminalPane', () => {
         .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
         .mockReturnValue(0)
 
-      render(<TerminalPane sessionId="cached-session" cwd="/home/user" />)
+      try {
+        render(<TerminalPane sessionId="cached-session" cwd="/home/user" />)
 
-      await waitFor(() => {
-        expect(cachedTerminal.open).toHaveBeenCalled()
-      })
+        await waitFor(() => {
+          expect(cachedTerminal.open).toHaveBeenCalled()
+        })
 
-      // fitAddon.fit must be suppressed on the reuse path when width is 0
-      expect(cachedFitAddon.fit).not.toHaveBeenCalled()
-
-      offsetSpy.mockRestore()
-      terminalCache.delete('cached-session')
+        // fitAddon.fit must be suppressed on the reuse path when width is 0
+        expect(cachedFitAddon.fit).not.toHaveBeenCalled()
+      } finally {
+        offsetSpy.mockRestore()
+        terminalCache.delete('cached-session')
+      }
     })
 
     test('regression #81: onResize does not forward tiny dimensions to PTY when container is hidden', async () => {

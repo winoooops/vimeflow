@@ -203,8 +203,11 @@ export const TerminalPane = ({
       // Open terminal in container
       newTerminal.open(containerRef.current)
 
-      // Fit terminal to container
-      fitAddon.fit()
+      // Fit terminal to container — guard against hidden (display:none) containers
+      const width = containerRef.current.offsetWidth
+      if (width > 0) {
+        fitAddon.fit()
+      }
 
       // Register OSC 7 handler for cwd tracking
       // Shells emit: \e]7;file://hostname/path\a on every cd
