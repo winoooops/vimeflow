@@ -897,6 +897,23 @@ mod tests {
             .expect("failed to create temp dir under $HOME")
     }
 
+    /// Configure `user.email` and `user.name` on a fresh git repo so
+    /// `git commit` doesn't fail on CI runners without a global git
+    /// config. Call this after `git init`, before any `git commit`.
+    fn configure_test_git(repo_path: &std::path::Path) {
+        use std::process::Command;
+        for (key, val) in &[
+            ("user.email", "test@example.com"),
+            ("user.name", "Test User"),
+        ] {
+            Command::new("git")
+                .args(["config", key, val])
+                .current_dir(repo_path)
+                .output()
+                .expect("git config failed");
+        }
+    }
+
     // parse_numstat tests
 
     #[test]
@@ -1252,12 +1269,13 @@ mod tests {
         let tmp = home_tempdir();
         let repo_path = tmp.path();
 
-        // Initialize git repo
+        // Initialize git repo and configure so commits work on CI runners
         Command::new("git")
             .args(["init"])
             .current_dir(repo_path)
             .output()
             .expect("git init failed");
+        configure_test_git(repo_path);
 
         // Create and commit initial file
         let file = repo_path.join("test.txt");
@@ -1269,11 +1287,16 @@ mod tests {
             .output()
             .expect("git add failed");
 
-        Command::new("git")
+        let commit_out = Command::new("git")
             .args(["commit", "-m", "initial"])
             .current_dir(repo_path)
             .output()
             .expect("git commit failed");
+        assert!(
+            commit_out.status.success(),
+            "git commit must succeed: {}",
+            String::from_utf8_lossy(&commit_out.stderr)
+        );
 
         // Modify and stage (adds line 3)
         fs::write(&file, "line 1\nline 2\nline 3\n").expect("failed to write");
@@ -1357,6 +1380,8 @@ mod tests {
             .expect("git init failed");
 
         // Create subdirectory
+        configure_test_git(repo_path);
+
         let subdir = repo_path.join("sub");
         fs::create_dir(&subdir).expect("failed to create subdir");
 
@@ -1370,11 +1395,16 @@ mod tests {
             .output()
             .expect("git add failed");
 
-        Command::new("git")
+        let commit_out = Command::new("git")
             .args(["commit", "-m", "initial"])
             .current_dir(repo_path)
             .output()
             .expect("git commit failed");
+        assert!(
+            commit_out.status.success(),
+            "git commit must succeed: {}",
+            String::from_utf8_lossy(&commit_out.stderr)
+        );
 
         // Modify the file
         fs::write(&file_path, "line 1\nline 2\nline 3\n").expect("failed to write");
