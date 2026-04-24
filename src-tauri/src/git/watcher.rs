@@ -76,7 +76,17 @@ fn run_sync_with_timeout(
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
-            Err(e) => return Err(format!("try_wait failed: {}", e)),
+            Err(e) => {
+                // Mirror the timeout-arm cleanup: a `try_wait` error can
+                // leave the child running (EINTR) or as a zombie. Without
+                // this the subprocess + its piped stdout/stderr fds leak
+                // until process exit, which accumulates under rapid
+                // repo-switch workloads where the polling thread hits
+                // this path repeatedly.
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("try_wait failed: {}", e));
+            }
         }
     }
 }
