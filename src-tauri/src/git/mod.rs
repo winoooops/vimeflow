@@ -653,12 +653,16 @@ pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
     // badge reflects the file's actual line count. Skips binary files
     // (helper returns None) so they stay badge-less.
     //
-    // Parallelized via `tokio::task::JoinSet` — a repo with many untracked
-    // files (freshly scaffolded, post-`git stash pop`, etc.) would
-    // serialize as ~5-15 ms per subprocess, producing seconds of latency
-    // on every watcher-triggered refresh. JoinSet runs them concurrently
-    // with no explicit cap; Tokio's blocking pool and the OS's fork/spawn
-    // throughput naturally gate the concurrency.
+    // Parallelized via `tokio::task::JoinSet` with a Semaphore-bounded
+    // fan-out. `run_git_with_timeout` fork+execs synchronously on the
+    // task thread before its first await, so without the semaphore a
+    // repo with many untracked files (freshly scaffolded, post-`git
+    // stash pop`, pre-first-commit builds) would instantly fork N git
+    // processes — blowing out the process table and Tokio worker threads.
+    // A cap of 8 matches typical disk-I/O parallelism while preserving
+    // nearly all of the latency win over fully-serial execution.
+    const UNTRACKED_NUMSTAT_MAX_CONCURRENCY: usize = 8;
+
     let untracked_indices: Vec<(usize, String)> = files
         .iter()
         .enumerate()
@@ -667,10 +671,19 @@ pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
         .collect();
 
     if !untracked_indices.is_empty() {
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(
+            UNTRACKED_NUMSTAT_MAX_CONCURRENCY,
+        ));
         let mut set = tokio::task::JoinSet::new();
         for (idx, path) in untracked_indices {
             let toplevel = canonical_toplevel.clone();
+            let sem = sem.clone();
             set.spawn(async move {
+                // Acquire a permit BEFORE the blocking fork+exec in
+                // `run_git_with_timeout` (called inside the helper).
+                // `.expect` is safe: the Semaphore is owned by this
+                // function and never closed.
+                let _permit = sem.acquire_owned().await.expect("semaphore closed");
                 let counts = get_untracked_numstat(&toplevel, &path).await.ok().flatten();
                 (idx, counts)
             });
