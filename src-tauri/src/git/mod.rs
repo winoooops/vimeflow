@@ -178,7 +178,15 @@ fn parse_numstat(output: &[u8]) -> HashMap<String, (u32, u32)> {
                 }
             }
         } else {
-            // Non-rename: path is in the third field
+            // Non-rename: path is in the third field. Reject brace-compressed
+            // text form (like "src/{A.tsx => B.tsx}") which only appears in
+            // the non-`-z` output. `-z` uses NUL separators for renames —
+            // an inline " => " inside the path field means we're being fed
+            // text form, which would silently mismatch every ChangedFile.path.
+            if path_field.contains(" => ") {
+                i += 1;
+                continue;
+            }
             stats.insert(path_field.to_string(), (insertions, deletions));
         }
 
@@ -701,6 +709,20 @@ pub async fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<Fil
 mod tests {
     use super::*;
 
+    /// Create a tempdir inside `$HOME` so `validate_cwd`'s
+    /// `ensure_within_home` check passes. The default `tempfile::tempdir()`
+    /// lives in `/tmp` which is outside `$HOME` on every supported platform,
+    /// and the validation in production code would reject the path before
+    /// any git subprocess runs. Tests that exercise the `git_status` /
+    /// `get_git_diff` commands must use this helper instead.
+    fn home_tempdir() -> tempfile::TempDir {
+        let home = dirs::home_dir().expect("no home directory");
+        tempfile::Builder::new()
+            .prefix("vimeflow-git-test-")
+            .tempdir_in(&home)
+            .expect("failed to create temp dir under $HOME")
+    }
+
     // parse_numstat tests
 
     #[test]
@@ -995,7 +1017,7 @@ mod tests {
         use std::fs;
         use std::process::Command;
 
-        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let tmp = home_tempdir();
         let repo_path = tmp.path();
 
         // Initialize git repo
@@ -1036,7 +1058,7 @@ mod tests {
     async fn test_git_status_non_repo_returns_empty() {
         // Test that calling git_status from a non-repo directory returns
         // empty vec (not an error)
-        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let tmp = home_tempdir();
         let non_repo = tmp.path().to_string_lossy().to_string();
 
         let result = git_status(non_repo).await;
@@ -1053,7 +1075,7 @@ mod tests {
         use std::fs;
         use std::process::Command;
 
-        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let tmp = home_tempdir();
         let repo_path = tmp.path();
 
         // Initialize git repo
@@ -1150,7 +1172,7 @@ mod tests {
         use std::fs;
         use std::process::Command;
 
-        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let tmp = home_tempdir();
         let repo_path = tmp.path();
 
         // Initialize git repo
@@ -1209,7 +1231,7 @@ mod tests {
     async fn test_get_git_diff_non_repo_returns_empty_hunks() {
         // Test that calling get_git_diff from a non-repo directory returns
         // FileDiff with empty hunks (not an error)
-        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let tmp = home_tempdir();
         let non_repo = tmp.path().to_string_lossy().to_string();
 
         let result = get_git_diff(non_repo, "foo.txt".to_string(), false).await;
