@@ -32,6 +32,55 @@ const DEBOUNCE_MS: u64 = 300;
 /// Polling fallback interval — check for changes every 10 seconds
 const POLL_INTERVAL_SECS: u64 = 10;
 
+/// Timeout for sync git subprocesses called from the polling thread.
+/// Guards against hangs on NFS/FUSE, stale `.git/index.lock`, or corrupted
+/// packs. `Command::output()` without this would block the polling thread
+/// for the lifetime of the hung child; the stop_flag is only read at the
+/// loop head, so a thread parked inside `output()` never reaches it and
+/// leaks along with every `Arc` it holds.
+const SYNC_GIT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Run a `std::process::Command` synchronously with a deadline. On timeout,
+/// kill the child and return an error. Used from the polling thread (which
+/// lives in `std::thread::spawn`, NOT a tokio task, so `run_git_with_timeout`
+/// from `mod.rs` — which is async — isn't directly callable here without
+/// an owned runtime handle). The busy-wait loop polls every 50ms; at 10s
+/// timeout that's ~200 polls max, cheap compared to the subprocess itself.
+fn run_sync_with_timeout(
+    mut cmd: std::process::Command,
+    timeout: Duration,
+) -> Result<std::process::Output, String> {
+    use std::process::Stdio;
+
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("spawn failed: {}", e))?;
+
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                // Exited — drain stdio and return the full Output.
+                return child
+                    .wait_with_output()
+                    .map_err(|e| format!("wait_with_output failed: {}", e));
+            }
+            Ok(None) => {
+                if start.elapsed() > timeout {
+                    // Kill and reap so we don't leak a zombie.
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!("git command timed out after {:?}", timeout));
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => return Err(format!("try_wait failed: {}", e)),
+        }
+    }
+}
+
 /// Handle to a running watcher for a git repository
 struct RepoWatcher {
     /// Map from **input** cwd string (exactly what the frontend passed) to
@@ -119,16 +168,18 @@ struct GitStatusChangedPayload {
     cwds: Vec<String>,
 }
 
-/// Resolve the git toplevel for a given cwd
+/// Resolve the git toplevel for a given cwd. Uses `run_sync_with_timeout`
+/// so a hung `git rev-parse` (NFS stall, `.git/index.lock` held by a
+/// crashed process, etc.) can't park the polling thread forever.
 fn resolve_toplevel(cwd: &std::path::Path) -> Result<PathBuf, String> {
-    let output = std::process::Command::new("git")
-        .arg("-C")
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C")
         .arg(cwd)
         .arg("rev-parse")
         .arg("--show-toplevel")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let output = run_sync_with_timeout(cmd, SYNC_GIT_TIMEOUT)?;
 
     if !output.status.success() {
         return Err("Not a git repository".to_string());
@@ -148,15 +199,16 @@ fn resolve_toplevel(cwd: &std::path::Path) -> Result<PathBuf, String> {
 /// unstaging, editing tracked files, creating/deleting untracked files,
 /// etc. Returns the hash so the poller can cheaply detect "any change".
 fn hash_git_status(toplevel: &Path) -> Result<u64, String> {
-    let output = std::process::Command::new("git")
-        .arg("-C")
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C")
         .arg(toplevel)
         .arg("status")
         .arg("--porcelain=v1")
         .arg("-z")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .output()
-        .map_err(|e| format!("Failed to run git status: {}", e))?;
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    // Timed-out sync call — same reasoning as `resolve_toplevel`.
+    let output = run_sync_with_timeout(cmd, SYNC_GIT_TIMEOUT)?;
 
     if !output.status.success() {
         return Err("git status failed".to_string());
