@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
@@ -106,6 +107,83 @@ pub struct ChangedFile {
     pub path: String,
     pub status: ChangedFileStatus,
     pub staged: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub insertions: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deletions: Option<u32>,
+}
+
+/// Parse `git diff --numstat -z` output into a path → (added, removed) map.
+///
+/// Format (NUL-separated, LF-stripped inside records):
+///   non-rename: "<added>\t<deleted>\t<path>\0"
+///   rename:     "<added>\t<deleted>\t\0<src-path>\0<dst-path>\0"
+///
+/// Binary files report "-\t-\t..." and are omitted from the map.
+/// Renames are keyed on the **dst** path (matches ChangedFile.path, which
+/// porcelain -z also sets to the dst). The `-z` form is mandatory — the
+/// default text form uses brace-compressed renames like
+/// `src/{Foo.tsx => Bar.tsx}` that would not match ChangedFile.path and
+/// would drop +N/-N badges on every renamed row.
+fn parse_numstat(output: &[u8]) -> HashMap<String, (u32, u32)> {
+    let mut stats = HashMap::new();
+    let records: Vec<&[u8]> = output.split(|&b| b == b'\0').collect();
+    let mut i = 0;
+
+    while i < records.len() {
+        let record = records[i];
+
+        // Skip empty records (trailing NUL produces one)
+        if record.is_empty() {
+            i += 1;
+            continue;
+        }
+
+        // Parse the tab-separated fields
+        let parts: Vec<&[u8]> = record.split(|&b| b == b'\t').collect();
+
+        if parts.len() < 3 {
+            // Malformed record, skip
+            i += 1;
+            continue;
+        }
+
+        // Parse insertions and deletions
+        let insertions_str = String::from_utf8_lossy(parts[0]);
+        let deletions_str = String::from_utf8_lossy(parts[1]);
+
+        // Skip binary files (marked as "-\t-\t...")
+        if insertions_str == "-" || deletions_str == "-" {
+            i += 1;
+            continue;
+        }
+
+        let insertions = insertions_str.parse::<u32>().unwrap_or(0);
+        let deletions = deletions_str.parse::<u32>().unwrap_or(0);
+
+        // Check if this is a rename (third field is empty)
+        let path_field = String::from_utf8_lossy(parts[2]);
+
+        if path_field.is_empty() {
+            // Rename format: next two NUL-separated tokens are src and dst
+            i += 1;
+            let _src_path = records.get(i).map(|b| String::from_utf8_lossy(b));
+            i += 1;
+            if let Some(dst_bytes) = records.get(i) {
+                let dst_path = String::from_utf8_lossy(dst_bytes).to_string();
+                if !dst_path.is_empty() {
+                    stats.insert(dst_path, (insertions, deletions));
+                }
+            }
+        } else {
+            // Non-rename: path is in the third field
+            stats.insert(path_field.to_string(), (insertions, deletions));
+        }
+
+        i += 1;
+    }
+
+    stats
 }
 
 /// Diff line type — variant names match TS `DiffLine.type` via
@@ -182,50 +260,143 @@ fn parse_git_status(output: &str) -> Vec<ChangedFile> {
 
         // Parse XY status codes
         // X = index status, Y = worktree status
-        let (status, staged) = match xy {
-            "??" => (ChangedFileStatus::Untracked, false),
-            "M " => (ChangedFileStatus::Modified, true),
-            " M" => (ChangedFileStatus::Modified, false),
-            // MM = modified in both index and worktree. A single boolean
-            // can't represent both states — see the dual-flag spec at
-            // docs/superpowers/specs/2026-04-11-mm-staged-unstaged-design.md
-            // For v1, default to unstaged (shows working-tree changes the
-            // user hasn't reviewed yet; staged changes were already reviewed
-            // when the user staged them).
-            "MM" => (ChangedFileStatus::Modified, false),
-            "A " => (ChangedFileStatus::Added, true),
-            " A" => (ChangedFileStatus::Added, false),
-            // AM = added in index, then modified in worktree. Same
-            // rationale as MM — default to unstaged to show unreviewed edits.
-            "AM" => (ChangedFileStatus::Added, false),
-            "D " => (ChangedFileStatus::Deleted, true),
-            " D" => (ChangedFileStatus::Deleted, false),
-            s if s.starts_with('R') => (ChangedFileStatus::Renamed, true), // renames are index ops
-            s if s.starts_with('C') => (ChangedFileStatus::Renamed, true), // copies are index ops (no separate variant)
-            // Merge conflict codes — no dedicated variant yet, show as
-            // unstaged modified so the file at least appears in the list.
-            "UU" | "AA" | "DD" | "AU" | "UA" | "DU" | "UD" => (ChangedFileStatus::Modified, false),
-            _ => {
-                // Default to modified unstaged for truly unknown codes
-                (ChangedFileStatus::Modified, false)
+        // For MM and AM, emit TWO entries to represent both halves
+        match xy {
+            "??" => {
+                files.push(ChangedFile {
+                    path,
+                    status: ChangedFileStatus::Untracked,
+                    staged: false,
+                    insertions: None,
+                    deletions: None,
+                });
             }
-        };
+            "M " => {
+                files.push(ChangedFile {
+                    path,
+                    status: ChangedFileStatus::Modified,
+                    staged: true,
+                    insertions: None,
+                    deletions: None,
+                });
+            }
+            " M" => {
+                files.push(ChangedFile {
+                    path,
+                    status: ChangedFileStatus::Modified,
+                    staged: false,
+                    insertions: None,
+                    deletions: None,
+                });
+            }
+            "MM" => {
+                // Emit TWO entries: staged Modified + unstaged Modified
+                files.push(ChangedFile {
+                    path: path.clone(),
+                    status: ChangedFileStatus::Modified,
+                    staged: true,
+                    insertions: None,
+                    deletions: None,
+                });
+                files.push(ChangedFile {
+                    path,
+                    status: ChangedFileStatus::Modified,
+                    staged: false,
+                    insertions: None,
+                    deletions: None,
+                });
+            }
+            "A " => {
+                files.push(ChangedFile {
+                    path,
+                    status: ChangedFileStatus::Added,
+                    staged: true,
+                    insertions: None,
+                    deletions: None,
+                });
+            }
+            " A" => {
+                files.push(ChangedFile {
+                    path,
+                    status: ChangedFileStatus::Added,
+                    staged: false,
+                    insertions: None,
+                    deletions: None,
+                });
+            }
+            "AM" => {
+                // Emit TWO entries: staged Added + unstaged Modified
+                files.push(ChangedFile {
+                    path: path.clone(),
+                    status: ChangedFileStatus::Added,
+                    staged: true,
+                    insertions: None,
+                    deletions: None,
+                });
+                files.push(ChangedFile {
+                    path,
+                    status: ChangedFileStatus::Modified,
+                    staged: false,
+                    insertions: None,
+                    deletions: None,
+                });
+            }
+            "D " => {
+                files.push(ChangedFile {
+                    path,
+                    status: ChangedFileStatus::Deleted,
+                    staged: true,
+                    insertions: None,
+                    deletions: None,
+                });
+            }
+            " D" => {
+                files.push(ChangedFile {
+                    path,
+                    status: ChangedFileStatus::Deleted,
+                    staged: false,
+                    insertions: None,
+                    deletions: None,
+                });
+            }
+            s if s.starts_with('R') || s.starts_with('C') => {
+                // Renames and copies are index operations
+                files.push(ChangedFile {
+                    path,
+                    status: ChangedFileStatus::Renamed,
+                    staged: true,
+                    insertions: None,
+                    deletions: None,
+                });
+            }
+            "UU" | "AA" | "DD" | "AU" | "UA" | "DU" | "UD" => {
+                // Merge conflict codes — show as unstaged modified
+                files.push(ChangedFile {
+                    path,
+                    status: ChangedFileStatus::Modified,
+                    staged: false,
+                    insertions: None,
+                    deletions: None,
+                });
+            }
+            _ => {
+                // Default to modified unstaged for unknown codes
+                files.push(ChangedFile {
+                    path,
+                    status: ChangedFileStatus::Modified,
+                    staged: false,
+                    insertions: None,
+                    deletions: None,
+                });
+            }
+        }
 
         // For renames/copies, consume the next NUL-separated token as old path
-        let old_path = if is_rename_or_copy {
+        if is_rename_or_copy {
             i += 1;
-            entries.get(i).map(|s| s.to_string())
-        } else {
-            None
-        };
-
-        let _ = old_path; // old_path not surfaced in ChangedFile yet — tracked in FileDiff
-
-        files.push(ChangedFile {
-            path,
-            status,
-            staged,
-        });
+            let _old_path = entries.get(i).map(|s| s.to_string());
+            // old_path not surfaced in ChangedFile yet — tracked in FileDiff
+        }
 
         i += 1;
     }
@@ -407,6 +578,74 @@ pub async fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<Fil
 mod tests {
     use super::*;
 
+    // parse_numstat tests
+
+    #[test]
+    fn test_parse_numstat_non_rename() {
+        let output = b"5\t3\tsrc/main.rs\0";
+        let stats = parse_numstat(output);
+
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats.get("src/main.rs"), Some(&(5, 3)));
+    }
+
+    #[test]
+    fn test_parse_numstat_rename() {
+        // Rename format: <ins>\t<del>\t\0<src>\0<dst>\0
+        // Keyed on dst (destination path)
+        let output = b"10\t2\t\0old/path.rs\0new/path.rs\0";
+        let stats = parse_numstat(output);
+
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats.get("new/path.rs"), Some(&(10, 2)));
+        assert_eq!(stats.get("old/path.rs"), None);
+    }
+
+    #[test]
+    fn test_parse_numstat_binary_skipped() {
+        // Binary files report "-\t-\t..." and should be skipped
+        let output = b"-\t-\tbinary.png\05\t3\ttext.rs\0";
+        let stats = parse_numstat(output);
+
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats.get("text.rs"), Some(&(5, 3)));
+        assert_eq!(stats.get("binary.png"), None);
+    }
+
+    #[test]
+    fn test_parse_numstat_multiple_records() {
+        let output = b"5\t3\tsrc/main.rs\010\t0\tsrc/new.rs\00\t7\tsrc/deleted.rs\0";
+        let stats = parse_numstat(output);
+
+        assert_eq!(stats.len(), 3);
+        assert_eq!(stats.get("src/main.rs"), Some(&(5, 3)));
+        assert_eq!(stats.get("src/new.rs"), Some(&(10, 0)));
+        assert_eq!(stats.get("src/deleted.rs"), Some(&(0, 7)));
+    }
+
+    #[test]
+    fn test_parse_numstat_empty_input() {
+        let output = b"";
+        let stats = parse_numstat(output);
+
+        assert_eq!(stats.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_numstat_brace_format_regression() {
+        // Regression test: parser assumes -z input; plain text form uses
+        // brace-compressed renames like "src/{A.tsx => B.tsx}" which we
+        // must NOT silently match. The parser should either skip this or
+        // treat it as a malformed record (both are acceptable failure modes).
+        let output = b"5\t3\tsrc/{A.tsx => B.tsx}\0";
+        let stats = parse_numstat(output);
+
+        // Parser should NOT create an entry for the brace-compressed form
+        assert!(stats.get("src/{A.tsx => B.tsx}").is_none());
+        assert!(stats.get("src/A.tsx").is_none());
+        assert!(stats.get("src/B.tsx").is_none());
+    }
+
     #[test]
     fn test_parse_git_status_modified() {
         let output = "M  src/main.rs\0";
@@ -470,16 +709,43 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_git_status_mm_defaults_to_unstaged() {
-        // MM = modified in both index and worktree. v1 defaults to
-        // unstaged so the working-tree diff is shown. See the dual-flag
-        // spec for the v2 model that surfaces both states.
+    fn test_parse_git_status_mm_dual_entry() {
+        // MM = modified in both index and worktree.
+        // New behavior: emit TWO entries, one staged and one unstaged.
         let output = "MM both_modified.rs\0";
         let files = parse_git_status(output);
 
-        assert_eq!(files.len(), 1);
+        assert_eq!(files.len(), 2, "MM should produce two entries");
+
+        // First entry: staged half
+        assert_eq!(files[0].path, "both_modified.rs");
         assert!(matches!(files[0].status, ChangedFileStatus::Modified));
-        assert!(!files[0].staged, "MM should default to unstaged in v1");
+        assert!(files[0].staged, "First MM entry should be staged");
+
+        // Second entry: unstaged half
+        assert_eq!(files[1].path, "both_modified.rs");
+        assert!(matches!(files[1].status, ChangedFileStatus::Modified));
+        assert!(!files[1].staged, "Second MM entry should be unstaged");
+    }
+
+    #[test]
+    fn test_parse_git_status_am_dual_entry() {
+        // AM = added in index, modified in worktree.
+        // Emit TWO entries: staged Added, unstaged Modified.
+        let output = "AM new_file.rs\0";
+        let files = parse_git_status(output);
+
+        assert_eq!(files.len(), 2, "AM should produce two entries");
+
+        // First entry: staged (Added)
+        assert_eq!(files[0].path, "new_file.rs");
+        assert!(matches!(files[0].status, ChangedFileStatus::Added));
+        assert!(files[0].staged, "First AM entry should be staged");
+
+        // Second entry: unstaged (Modified)
+        assert_eq!(files[1].path, "new_file.rs");
+        assert!(matches!(files[1].status, ChangedFileStatus::Modified));
+        assert!(!files[1].staged, "Second AM entry should be unstaged");
     }
 
     #[test]
