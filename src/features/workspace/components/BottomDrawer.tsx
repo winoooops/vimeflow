@@ -6,7 +6,36 @@ import type { SelectedDiffFile } from '../../diff/types'
 
 type TabType = 'editor' | 'diff'
 
-interface BottomDrawerProps {
+/**
+ * Controlled/uncontrolled prop pairs for the three pieces of state this
+ * component can be driven by. Discriminated unions force callers to either
+ * pass BOTH `value` + `onChange` (controlled) or NEITHER (uncontrolled).
+ *
+ * Previously the two sides were independent optionals, so a caller could
+ * pass `activeTab='diff'` without `onTabChange` and get a silently-dead
+ * tab bar: clicks hit the `if (isTabControlled && onTabChange)` guard and
+ * fell through with no state update anywhere. The union removes that
+ * pitfall at compile time.
+ */
+type TabControl =
+  | { activeTab?: undefined; onTabChange?: undefined }
+  | { activeTab: TabType; onTabChange: (tab: TabType) => void }
+
+type CollapseControl =
+  | { isCollapsed?: undefined; onCollapsedChange?: undefined }
+  | {
+      isCollapsed: boolean
+      onCollapsedChange: (collapsed: boolean) => void
+    }
+
+type SelectedDiffControl =
+  | { selectedDiffFile?: undefined; onSelectedDiffFileChange?: undefined }
+  | {
+      selectedDiffFile: SelectedDiffFile | null
+      onSelectedDiffFileChange: (file: SelectedDiffFile | null) => void
+    }
+
+interface BottomDrawerBaseProps {
   selectedFilePath: string | null
   /** Current buffer content, owned by the parent `useEditorBuffer`. */
   content: string
@@ -17,19 +46,12 @@ interface BottomDrawerProps {
   isLoading?: boolean
   /** Working directory for git commands (diff viewer) */
   cwd?: string
-  /** Controlled active tab */
-  activeTab?: TabType
-  /** Tab change handler (controlled mode) */
-  onTabChange?: ((tab: TabType) => void) | null
-  /** Controlled collapsed state */
-  isCollapsed?: boolean
-  /** Collapse change handler (controlled mode) */
-  onCollapsedChange?: ((collapsed: boolean) => void) | null
-  /** Controlled selected diff file (forwarded to DiffPanelContent) */
-  selectedDiffFile?: SelectedDiffFile | null
-  /** Diff file selection handler (forwarded to DiffPanelContent) */
-  onSelectedDiffFileChange?: ((file: SelectedDiffFile | null) => void) | null
 }
+
+type BottomDrawerProps = BottomDrawerBaseProps &
+  TabControl &
+  CollapseControl &
+  SelectedDiffControl
 
 /**
  * BottomDrawer - Editor and Diff Viewer panel below terminal
@@ -48,12 +70,12 @@ const BottomDrawer = ({
   isDirty = false,
   isLoading = false,
   cwd = '.',
-  activeTab: controlledActiveTab = undefined,
-  onTabChange = null,
-  isCollapsed: controlledIsCollapsed = undefined,
-  onCollapsedChange = null,
-  selectedDiffFile = undefined,
-  onSelectedDiffFileChange = null,
+  activeTab: controlledActiveTab,
+  onTabChange,
+  isCollapsed: controlledIsCollapsed,
+  onCollapsedChange,
+  selectedDiffFile,
+  onSelectedDiffFileChange,
 }: BottomDrawerProps): ReactElement => {
   const [uncontrolledActiveTab, setUncontrolledActiveTab] =
     useState<TabType>('editor')
@@ -166,9 +188,12 @@ const BottomDrawer = ({
           <button
             type="button"
             onClick={() => {
-              if (isTabControlled && onTabChange) {
+              // Discriminated union guarantees onTabChange is defined
+              // whenever isTabControlled is true; no `&& onTabChange` guard
+              // needed at runtime.
+              if (isTabControlled) {
                 onTabChange('editor')
-              } else if (!isTabControlled) {
+              } else {
                 setUncontrolledActiveTab('editor')
               }
             }}
@@ -187,9 +212,9 @@ const BottomDrawer = ({
           <button
             type="button"
             onClick={() => {
-              if (isTabControlled && onTabChange) {
+              if (isTabControlled) {
                 onTabChange('diff')
-              } else if (!isTabControlled) {
+              } else {
                 setUncontrolledActiveTab('diff')
               }
             }}
@@ -222,9 +247,9 @@ const BottomDrawer = ({
             aria-label={isCollapsed ? 'Expand drawer' : 'Collapse drawer'}
             aria-expanded={!isCollapsed}
             onClick={() => {
-              if (isCollapseControlled && onCollapsedChange) {
+              if (isCollapseControlled) {
                 onCollapsedChange(!isCollapsed)
-              } else if (!isCollapseControlled) {
+              } else {
                 setUncontrolledIsCollapsed((v) => !v)
               }
             }}

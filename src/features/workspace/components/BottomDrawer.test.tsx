@@ -256,6 +256,7 @@ describe('BottomDrawer', () => {
           selectedFilePath={null}
           content=""
           activeTab="diff"
+          onTabChange={vi.fn()}
           selectedDiffFile={selectedDiffFile}
           onSelectedDiffFileChange={onSelectedDiffFileChange}
         />
@@ -312,6 +313,8 @@ describe('BottomDrawer', () => {
           content=""
           activeTab="diff"
           onTabChange={onTabChange}
+          /* eslint-disable-next-line react/jsx-boolean-value */
+          isCollapsed={false}
           onCollapsedChange={onCollapsedChange}
           selectedDiffFile={{ path: 'test.ts', staged: false, cwd: '/repo' }}
           onSelectedDiffFileChange={onSelectedDiffFileChange}
