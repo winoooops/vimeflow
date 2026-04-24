@@ -61,6 +61,7 @@ describe('BottomDrawer', () => {
       loading: false,
       error: null,
       refresh: vi.fn(),
+      idle: false,
     })
 
     vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({

@@ -28,7 +28,7 @@ export const AgentStatusPanel = ({
   const events = useActivityEvents(status)
 
   // Git status with file-system watcher
-  const { files, filesCwd, loading, error, refresh } = useGitStatus(cwd, {
+  const { files, filesCwd, loading, error, refresh, idle } = useGitStatus(cwd, {
     watch: true,
     enabled: status.isActive,
   })
@@ -37,7 +37,12 @@ export const AgentStatusPanel = ({
   const filesAreFresh = filesCwd === cwd
   const effectiveFiles = filesAreFresh ? files : []
 
-  const effectiveLoading = loading || (!filesAreFresh && error === null)
+  // Gate the transitional-loading arm on the hook actually running. When
+  // `idle` is true (hook short-circuited because enabled=false or cwd is
+  // a fallback), `filesCwd` stays null forever and `!filesAreFresh` would
+  // otherwise spin "Loading…" indefinitely. An idle hook never loads.
+  const effectiveLoading =
+    !idle && (loading || (!filesAreFresh && error === null))
 
   return (
     <div

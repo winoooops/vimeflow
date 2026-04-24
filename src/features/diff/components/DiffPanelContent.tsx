@@ -36,6 +36,7 @@ export const DiffPanelContent = ({
     filesCwd,
     loading: statusLoading,
     error: statusError,
+    idle,
   } = useGitStatus(cwd, { watch: true })
 
   const [uncontrolledSelectedFile, setUncontrolledSelectedFile] =
@@ -55,8 +56,12 @@ export const DiffPanelContent = ({
     [filesAreFresh, files]
   )
 
+  // Gate the transitional-loading arm on the hook actually running. When
+  // `idle` (hook short-circuited — `.`/`~` cwd, etc.), `filesCwd` never
+  // updates and `!filesAreFresh` would spin "Loading…" forever. An idle
+  // hook never loads, so skip the transitional arm entirely.
   const effectiveStatusLoading =
-    statusLoading || (!filesAreFresh && statusError === null)
+    !idle && (statusLoading || (!filesAreFresh && statusError === null))
 
   // Render-time cwd guard: reject selections from a different cwd
   const effectiveSelectedFile = rawSelection?.cwd === cwd ? rawSelection : null

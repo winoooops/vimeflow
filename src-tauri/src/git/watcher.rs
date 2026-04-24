@@ -197,11 +197,19 @@ pub async fn start_git_watcher(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, GitWatcherState>,
 ) -> Result<(), String> {
-    // The underlying watcher setup is entirely synchronous (notify + std::thread),
-    // so we delegate to a helper that works against the owned state. This also lets
-    // `upgrade_to_repo_watcher` call the same code path without fabricating a
-    // `tauri::State`, which cannot be constructed from an owned value.
-    start_git_watcher_inner(&cwd, app_handle, state.inner())
+    // The inner helper runs blocking `std::process::Command` calls
+    // (rev-parse, git status) and constructs `notify` watchers that do
+    // their own filesystem I/O. Running that work directly on the async
+    // runtime would tie up a Tokio worker thread for the full duration
+    // of the setup — harmful on the bounded Tauri IPC pool. Hop onto the
+    // blocking pool via `spawn_blocking` so the async thread returns
+    // immediately and the sync inner can take as long as it needs.
+    let owned_state = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        start_git_watcher_inner(&cwd, app_handle, &owned_state)
+    })
+    .await
+    .map_err(|e| format!("start_git_watcher task panicked: {}", e))?
 }
 
 /// Synchronous core of `start_git_watcher`. Called by both the Tauri command and
@@ -571,6 +579,18 @@ pub async fn stop_git_watcher(
     cwd: String,
     state: tauri::State<'_, GitWatcherState>,
 ) -> Result<(), String> {
+    // Same rationale as `start_git_watcher`: `validate_cwd` and
+    // `resolve_toplevel` both spawn sync subprocess calls; hop to the
+    // blocking pool so the async runtime isn't pinned while they run.
+    let owned_state = state.inner().clone();
+    tokio::task::spawn_blocking(move || stop_git_watcher_inner(cwd, owned_state))
+        .await
+        .map_err(|e| format!("stop_git_watcher task panicked: {}", e))?
+}
+
+/// Synchronous core of `stop_git_watcher`. Owns its state clone so it can
+/// be called from the blocking pool.
+fn stop_git_watcher_inner(cwd: String, state: GitWatcherState) -> Result<(), String> {
     let safe_cwd = validate_cwd(&cwd)?;
 
     // Try repo watchers first

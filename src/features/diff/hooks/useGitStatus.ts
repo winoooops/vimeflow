@@ -23,6 +23,20 @@ interface UseGitStatusReturn {
   loading: boolean
   error: Error | null
   refresh: () => void
+  /**
+   * True when the hook is **deliberately short-circuited** — either `enabled`
+   * is false (caller disabled the hook, e.g. the agent isn't active) or the
+   * `cwd` is a fallback value that would fire IPC against the Tauri process's
+   * own cwd. In either case NO fetch runs and the empty state is permanent
+   * until the conditions change.
+   *
+   * Consumers should use `idle` to gate transitional-loading formulas like
+   * `loading || (!filesAreFresh && error === null)` — without this gate, the
+   * formula fires `true` forever on an idle hook (because `filesCwd` stays
+   * null and `filesCwd === cwd` is false), producing a perpetual loading
+   * spinner when the panel should show "no uncommitted changes".
+   */
+  idle: boolean
 }
 
 /** True when cwd points to a real workspace directory, not a fallback. */
@@ -157,18 +171,31 @@ export const useGitStatus = (
       }
     }
 
-    void setupWatch()
+    // Capture the setup promise so cleanup can await its completion before
+    // attempting to stop the watcher. Without this, cleanup firing between
+    // "listener attached" and "invoke('start_git_watcher') resolved" would
+    // unlisten early and skip the stop call (watcherStarted still false),
+    // leaking an orphan backend subscription once the in-flight invoke
+    // eventually completes.
+    const setupPromise = setupWatch()
 
     return (): void => {
       mounted = false
 
-      // Cleanup in reverse order: unlisten → stop watcher
-      // This prevents late in-flight events from calling refresh on a torn-down hook
       const cleanup = async (): Promise<void> => {
+        // Unlisten first so a late in-flight event can't call refresh on
+        // the torn-down hook.
         if (listenerAttached && unlistenRef.current) {
           unlistenRef.current()
           unlistenRef.current = null
         }
+
+        // Wait for setup to settle before deciding whether to stop. If
+        // setup is still in-flight, this blocks until watcherStarted is
+        // either true (stop is needed) or setup errored (nothing to stop).
+        await setupPromise.catch(() => {
+          // setup errored — nothing to stop
+        })
 
         if (watcherStarted) {
           try {
@@ -183,11 +210,14 @@ export const useGitStatus = (
     }
   }, [cwd, watch, enabled, refresh])
 
+  const idle = !enabled || !isValidCwd(cwd)
+
   return {
     files,
     filesCwd,
     loading,
     error,
     refresh,
+    idle,
   }
 }

@@ -646,13 +646,34 @@ pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
     // `git diff --no-index /dev/null <file>` so the sidebar `+N / -0`
     // badge reflects the file's actual line count. Skips binary files
     // (helper returns None) so they stay badge-less.
-    for file in &mut files {
-        if matches!(file.status, ChangedFileStatus::Untracked) {
-            if let Ok(Some((insertions, deletions))) =
-                get_untracked_numstat(&canonical_toplevel, &file.path).await
-            {
-                file.insertions = Some(insertions);
-                file.deletions = Some(deletions);
+    //
+    // Parallelized via `tokio::task::JoinSet` — a repo with many untracked
+    // files (freshly scaffolded, post-`git stash pop`, etc.) would
+    // serialize as ~5-15 ms per subprocess, producing seconds of latency
+    // on every watcher-triggered refresh. JoinSet runs them concurrently
+    // with no explicit cap; Tokio's blocking pool and the OS's fork/spawn
+    // throughput naturally gate the concurrency.
+    let untracked_indices: Vec<(usize, String)> = files
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| matches!(f.status, ChangedFileStatus::Untracked))
+        .map(|(i, f)| (i, f.path.clone()))
+        .collect();
+
+    if !untracked_indices.is_empty() {
+        let mut set = tokio::task::JoinSet::new();
+        for (idx, path) in untracked_indices {
+            let toplevel = canonical_toplevel.clone();
+            set.spawn(async move {
+                let counts = get_untracked_numstat(&toplevel, &path).await.ok().flatten();
+                (idx, counts)
+            });
+        }
+
+        while let Some(join_result) = set.join_next().await {
+            if let Ok((idx, Some((insertions, deletions)))) = join_result {
+                files[idx].insertions = Some(insertions);
+                files[idx].deletions = Some(deletions);
             }
         }
     }

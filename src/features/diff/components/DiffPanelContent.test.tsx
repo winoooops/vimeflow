@@ -21,6 +21,7 @@ describe('DiffPanelContent', () => {
       loading: true,
       error: null,
       refresh: vi.fn(),
+      idle: false,
     })
 
     vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
@@ -43,6 +44,7 @@ describe('DiffPanelContent', () => {
       loading: false,
       error,
       refresh: vi.fn(),
+      idle: false,
     })
 
     vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
@@ -66,6 +68,7 @@ describe('DiffPanelContent', () => {
       loading: false,
       error: null,
       refresh: vi.fn(),
+      idle: false,
     })
 
     vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
@@ -120,6 +123,7 @@ describe('DiffPanelContent', () => {
       loading: false,
       error: null,
       refresh: vi.fn(),
+      idle: false,
     })
 
     vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
@@ -147,6 +151,7 @@ describe('DiffPanelContent', () => {
         loading: false,
         error: null,
         refresh: vi.fn(),
+        idle: false,
       })
 
     const useFileDiffSpy = vi
@@ -186,6 +191,7 @@ describe('DiffPanelContent', () => {
         loading: false,
         error: null,
         refresh: vi.fn(),
+        idle: false,
       })
 
       const useFileDiffSpy = vi
@@ -224,6 +230,7 @@ describe('DiffPanelContent', () => {
         loading: false,
         error: null,
         refresh: vi.fn(),
+        idle: false,
       })
 
       vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
@@ -265,6 +272,7 @@ describe('DiffPanelContent', () => {
         loading: false,
         error: null,
         refresh: vi.fn(),
+        idle: false,
       })
 
       vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
@@ -305,6 +313,7 @@ describe('DiffPanelContent', () => {
         loading: false,
         error: null,
         refresh: vi.fn(),
+        idle: false,
       })
 
       const mockDiff: FileDiff = {
@@ -362,6 +371,7 @@ describe('DiffPanelContent', () => {
         loading: false,
         error: null,
         refresh: vi.fn(),
+        idle: false,
       })
 
       const untrackedDiff = {
@@ -431,6 +441,7 @@ describe('DiffPanelContent', () => {
         loading: false,
         error: null,
         refresh: vi.fn(),
+        idle: false,
       })
 
       const useFileDiffSpy = vi
@@ -462,6 +473,7 @@ describe('DiffPanelContent', () => {
         loading: false,
         error: null,
         refresh: vi.fn(),
+        idle: false,
       })
 
       const useFileDiffSpy = vi
