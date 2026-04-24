@@ -33,7 +33,7 @@ describe('ChangedFilesList', () => {
     render(
       <ChangedFilesList
         files={mockFiles}
-        selectedPath={null}
+        selectedFile={null}
         onSelectFile={vi.fn()}
       />
     )
@@ -48,7 +48,7 @@ describe('ChangedFilesList', () => {
     render(
       <ChangedFilesList
         files={mockFiles}
-        selectedPath={null}
+        selectedFile={null}
         onSelectFile={vi.fn()}
       />
     )
@@ -67,7 +67,7 @@ describe('ChangedFilesList', () => {
     render(
       <ChangedFilesList
         files={mockFiles}
-        selectedPath={null}
+        selectedFile={null}
         onSelectFile={vi.fn()}
       />
     )
@@ -87,7 +87,7 @@ describe('ChangedFilesList', () => {
     const { container } = render(
       <ChangedFilesList
         files={mockFiles}
-        selectedPath="src/components/NavBar.tsx"
+        selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
         onSelectFile={vi.fn()}
       />
     )
@@ -108,7 +108,7 @@ describe('ChangedFilesList', () => {
     render(
       <ChangedFilesList
         files={mockFiles}
-        selectedPath={null}
+        selectedFile={null}
         onSelectFile={handleSelect}
       />
     )
@@ -117,7 +117,7 @@ describe('ChangedFilesList', () => {
 
     await user.click(navBarFile)
 
-    expect(handleSelect).toHaveBeenCalledWith('src/components/NavBar.tsx')
+    expect(handleSelect).toHaveBeenCalledWith(mockFiles[0])
   })
 
   test('renders files in the order provided (sorting done by parent)', () => {
@@ -148,7 +148,7 @@ describe('ChangedFilesList', () => {
     render(
       <ChangedFilesList
         files={orderedFiles}
-        selectedPath={null}
+        selectedFile={null}
         onSelectFile={vi.fn()}
       />
     )
@@ -167,7 +167,7 @@ describe('ChangedFilesList', () => {
     const { container } = render(
       <ChangedFilesList
         files={mockFiles}
-        selectedPath={null}
+        selectedFile={null}
         onSelectFile={vi.fn()}
       />
     )
@@ -193,7 +193,7 @@ describe('ChangedFilesList', () => {
     render(
       <ChangedFilesList
         files={longPathFile}
-        selectedPath={null}
+        selectedFile={null}
         onSelectFile={vi.fn()}
       />
     )
@@ -206,7 +206,7 @@ describe('ChangedFilesList', () => {
 
   test('renders empty state when no files', () => {
     render(
-      <ChangedFilesList files={[]} selectedPath={null} onSelectFile={vi.fn()} />
+      <ChangedFilesList files={[]} selectedFile={null} onSelectFile={vi.fn()} />
     )
 
     const header = screen.getByText(/Changed Files/i)
@@ -221,7 +221,7 @@ describe('ChangedFilesList', () => {
     const { container } = render(
       <ChangedFilesList
         files={mockFiles}
-        selectedPath={null}
+        selectedFile={null}
         onSelectFile={vi.fn()}
       />
     )
@@ -235,5 +235,79 @@ describe('ChangedFilesList', () => {
     const deletionText = container.querySelector('.text-\\[\\#f38ba8\\]')
 
     expect(deletionText).toBeInTheDocument()
+  })
+
+  test('MM/AM disambiguation: renders two rows for files with same path but different staged flags', async () => {
+    const mmFiles: ChangedFile[] = [
+      {
+        path: 'src/both.ts',
+        status: 'modified',
+        insertions: 10,
+        deletions: 5,
+        staged: true,
+      },
+      {
+        path: 'src/both.ts',
+        status: 'modified',
+        insertions: 3,
+        deletions: 1,
+        staged: false,
+      },
+    ]
+
+    const onSelect = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <ChangedFilesList
+        files={mmFiles}
+        selectedFile={null}
+        onSelectFile={onSelect}
+      />
+    )
+
+    // Two rows with the same filename
+    const fileButtons = screen.getAllByText('both.ts')
+
+    expect(fileButtons).toHaveLength(2)
+
+    // Clicking each row calls onSelect with the correct file
+    await user.click(fileButtons[0])
+    expect(onSelect).toHaveBeenCalledWith(mmFiles[0])
+
+    await user.click(fileButtons[1])
+    expect(onSelect).toHaveBeenCalledWith(mmFiles[1])
+  })
+
+  test('uses unique row keys for MM/AM files (no key collision)', () => {
+    const mmFiles: ChangedFile[] = [
+      {
+        path: 'src/both.ts',
+        status: 'modified',
+        insertions: 10,
+        deletions: 5,
+        staged: true,
+      },
+      {
+        path: 'src/both.ts',
+        status: 'modified',
+        insertions: 3,
+        deletions: 1,
+        staged: false,
+      },
+    ]
+
+    render(
+      <ChangedFilesList
+        files={mmFiles}
+        selectedFile={null}
+        onSelectFile={vi.fn()}
+      />
+    )
+
+    // Both rows should render (no key collision causes React to drop one)
+    const fileButtons = screen.getAllByText('both.ts')
+
+    expect(fileButtons).toHaveLength(2)
   })
 })

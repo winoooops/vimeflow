@@ -114,8 +114,14 @@ export const DiffPanelContent = ({
       <div className="w-60 shrink-0 border-r border-white/5 overflow-y-auto">
         <ChangedFilesList
           files={files}
-          selectedPath={selectedFile}
-          onSelectFile={setSelectedFile}
+          selectedFile={
+            selectedFile !== null
+              ? { path: selectedFile, staged: selectedFileStaged }
+              : null
+          }
+          onSelectFile={(file): void => {
+            setSelectedFile(file.path)
+          }}
         />
       </div>
 

@@ -33,7 +33,10 @@ const mockChangedFiles: ChangedFile[] = [
  * Shows files with git status badges (M/A/D) in a scrollable list.
  */
 export const DiffPanel = (): ReactElement => {
-  const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [selectedFile, setSelectedFile] = useState<{
+    path: string
+    staged: boolean
+  } | null>(null)
 
   return (
     <div
@@ -42,8 +45,10 @@ export const DiffPanel = (): ReactElement => {
     >
       <ChangedFilesList
         files={mockChangedFiles}
-        selectedPath={selectedPath}
-        onSelectFile={setSelectedPath}
+        selectedFile={selectedFile}
+        onSelectFile={(file): void => {
+          setSelectedFile({ path: file.path, staged: file.staged })
+        }}
       />
     </div>
   )

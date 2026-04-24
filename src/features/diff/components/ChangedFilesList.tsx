@@ -3,8 +3,8 @@ import type { ChangedFile } from '../types'
 
 export interface ChangedFilesListProps {
   files: ChangedFile[]
-  selectedPath: string | null
-  onSelectFile: (path: string) => void
+  selectedFile: { path: string; staged: boolean } | null
+  onSelectFile: (file: ChangedFile) => void
 }
 
 /**
@@ -41,7 +41,7 @@ const getFileIcon = (filename: string): string => {
  */
 export const ChangedFilesList = ({
   files,
-  selectedPath,
+  selectedFile,
   onSelectFile,
 }: ChangedFilesListProps): ReactElement => (
   <div className="flex h-full flex-col p-4">
@@ -54,14 +54,16 @@ export const ChangedFilesList = ({
     {/* File List — scrollable with thin scrollbar */}
     <div className="thin-scrollbar flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
       {files.map((file) => {
-        const isActive = file.path === selectedPath
+        const isActive =
+          selectedFile?.path === file.path &&
+          selectedFile.staged === file.staged
         const fileName = file.path.split('/').pop() ?? file.path
         const icon = getFileIcon(fileName)
 
         return (
           <button
-            key={file.path}
-            onClick={(): void => onSelectFile(file.path)}
+            key={`${file.path}:${file.staged}`}
+            onClick={(): void => onSelectFile(file)}
             className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
               isActive
                 ? 'bg-surface-container-highest/40'
