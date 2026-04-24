@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use ignore::WalkBuilder;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 use super::validate_cwd;
 
@@ -43,8 +43,11 @@ struct RepoWatcher {
     /// Signals the polling fallback thread to exit
     stop_flag: Arc<AtomicBool>,
 
-    /// Last OID of HEAD for polling fallback
-    last_head_oid: Arc<Mutex<String>>,
+    /// Last OID of HEAD for polling fallback. The active reader is the
+    /// polling thread (via its own `Arc` clone); this field keeps the
+    /// `Arc` rooted on the owning watcher so the thread can keep reading
+    /// after `RepoWatcher` moves into the state map.
+    _last_head_oid: Arc<Mutex<String>>,
 }
 
 /// Handle to a pre-repo watcher (watching a directory that is not yet a git repo)
@@ -163,7 +166,22 @@ pub async fn start_git_watcher(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, GitWatcherState>,
 ) -> Result<(), String> {
-    let safe_cwd = validate_cwd(&cwd)?;
+    // The underlying watcher setup is entirely synchronous (notify + std::thread),
+    // so we delegate to a helper that works against the owned state. This also lets
+    // `upgrade_to_repo_watcher` call the same code path without fabricating a
+    // `tauri::State`, which cannot be constructed from an owned value.
+    start_git_watcher_inner(&cwd, app_handle, state.inner())
+}
+
+/// Synchronous core of `start_git_watcher`. Called by both the Tauri command and
+/// the pre-repo upgrade path — works against a cloneable `&GitWatcherState` so it
+/// doesn't require a `tauri::State` handle.
+fn start_git_watcher_inner(
+    cwd: &str,
+    app_handle: tauri::AppHandle,
+    state: &GitWatcherState,
+) -> Result<(), String> {
+    let safe_cwd = validate_cwd(cwd)?;
 
     // Try to resolve repo toplevel
     let toplevel = match resolve_toplevel(&safe_cwd) {
@@ -173,7 +191,7 @@ pub async fn start_git_watcher(
         }
         Err(_) => {
             // Not a repo yet — start pre-repo watcher
-            return start_pre_repo_watcher(safe_cwd, app_handle, state).await;
+            return start_pre_repo_watcher_inner(safe_cwd, app_handle, state);
         }
     };
 
@@ -191,9 +209,7 @@ pub async fn start_git_watcher(
     }
 
     // Create new watcher
-    let toplevel_clone = toplevel.clone();
-    let app_handle_clone = app_handle.clone();
-    let state_clone = state.inner().clone();
+    let state_clone = state.clone();
     let last_head_oid = Arc::new(Mutex::new(
         get_head_oid(&toplevel).unwrap_or_default()
     ));
@@ -301,7 +317,7 @@ pub async fn start_git_watcher(
         subscribers,
         _watcher: watcher,
         stop_flag,
-        last_head_oid,
+        _last_head_oid: last_head_oid,
     };
 
     repo_watchers.insert(toplevel, repo_watcher);
@@ -312,11 +328,14 @@ pub async fn start_git_watcher(
     Ok(())
 }
 
-/// Start a pre-repo watcher (for directories that are not yet git repos)
-async fn start_pre_repo_watcher(
+/// Start a pre-repo watcher (for directories that are not yet git repos).
+///
+/// Takes an owned `&GitWatcherState` (cheap: the state is `Arc`-backed) so it
+/// can be called both from the Tauri command path and from the upgrade path.
+fn start_pre_repo_watcher_inner(
     cwd: PathBuf,
     app_handle: tauri::AppHandle,
-    state: tauri::State<'_, GitWatcherState>,
+    state: &GitWatcherState,
 ) -> Result<(), String> {
     let mut pre_repo_watchers = state.pre_repo_watchers.lock()
         .map_err(|e| format!("Failed to lock pre_repo_watchers: {}", e))?;
@@ -335,7 +354,7 @@ async fn start_pre_repo_watcher(
     let stop_flag = Arc::new(AtomicBool::new(false));
     let poll_cwd = cwd.clone();
     let poll_app_handle = app_handle.clone();
-    let poll_state = state.inner().clone();
+    let poll_state = state.clone();
     let poll_stop_flag = stop_flag.clone();
 
     std::thread::spawn(move || {
@@ -373,7 +392,12 @@ async fn start_pre_repo_watcher(
     Ok(())
 }
 
-/// Upgrade a pre-repo watcher to a full repo watcher
+/// Upgrade a pre-repo watcher to a full repo watcher.
+///
+/// Removes the pre-repo entry and re-invokes the repo-watcher bootstrap the
+/// same number of times as the prior refcount so subscribers keep their grip.
+/// Calls the synchronous inner helper directly — no `tauri::State` fabrication
+/// and no blocking executor needed.
 fn upgrade_to_repo_watcher(
     cwd: PathBuf,
     app_handle: tauri::AppHandle,
@@ -391,13 +415,9 @@ fn upgrade_to_repo_watcher(
     };
 
     // Start a proper repo watcher (this will handle the refcount internally)
-    let state_handle = tauri::State::from(&state);
+    let cwd_str = cwd.to_string_lossy().to_string();
     for _ in 0..refcount {
-        futures::executor::block_on(start_git_watcher(
-            cwd.to_string_lossy().to_string(),
-            app_handle.clone(),
-            state_handle.clone(),
-        ))?;
+        start_git_watcher_inner(&cwd_str, app_handle.clone(), &state)?;
     }
 
     Ok(())
