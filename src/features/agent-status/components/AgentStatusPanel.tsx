@@ -8,14 +8,11 @@ import { TestResults } from './TestResults'
 import { ActivityFooter } from './ActivityFooter'
 import { ActivityFeed } from './ActivityFeed'
 import { useActivityEvents } from '../hooks/useActivityEvents'
-import type { FileChangeItem } from './FilesChanged'
 
 interface AgentStatusPanelProps {
   sessionId: string | null
 }
 
-// TODO: derive from tool calls in useAgentStatus hook
-const placeholderFiles: FileChangeItem[] = []
 const placeholderTests = { passed: 0, failed: 0, total: 0 }
 
 export const AgentStatusPanel = ({
@@ -65,7 +62,16 @@ export const AgentStatusPanel = ({
               active={status.toolCalls.active}
             />
             <ActivityFeed events={events} />
-            <FilesChanged files={placeholderFiles} />
+            <FilesChanged
+              files={[]}
+              error={null}
+              onRetry={(): void => {
+                // TODO: wire to git status refresh in Feature #12
+              }}
+              onSelect={(): void => {
+                // TODO: wire to diff viewer in Feature #12
+              }}
+            />
             <TestResults
               passed={placeholderTests.passed}
               failed={placeholderTests.failed}
