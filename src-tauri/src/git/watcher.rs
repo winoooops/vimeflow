@@ -318,6 +318,13 @@ fn start_git_watcher_inner(
         // receives events matching its own input.
         *watcher.subscribers.entry(cwd.to_string()).or_insert(0) += 1;
 
+        // Release `repo_watchers` (lock A) BEFORE acquiring `cwd_to_toplevel`
+        // (lock B). `stop_git_watcher_inner` acquires B first then A, so
+        // holding both here simultaneously would open a deadlock path
+        // against a future caller that reverses the order. Matching the
+        // new-watcher branch below which also releases A before B.
+        drop(repo_watchers);
+
         // Record the cwd → toplevel mapping so stop_git_watcher_inner can
         // find this bucket without re-running `rev-parse` at stop time.
         state
@@ -337,7 +344,14 @@ fn start_git_watcher_inner(
     let last_status_hash = Arc::new(Mutex::new(
         hash_git_status(&toplevel).ok(),
     ));
-    let last_processed = Arc::new(Mutex::new(Instant::now()));
+    // Debounce timestamp starts as `None` so the FIRST real notify event
+    // always passes. Initializing to `Instant::now()` at construction
+    // (the previous revision) would swallow any filesystem change within
+    // the DEBOUNCE_MS window of watcher startup — visible as up-to-10s
+    // stale state when a fast agent edits files right after subscription
+    // (the 10s polling fallback is the only recovery). `None` ≡ "no prior
+    // event, always pass"; after the first match it becomes `Some(now)`.
+    let last_processed: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
     let stop_flag = Arc::new(AtomicBool::new(false));
 
     // Create notify watcher
@@ -370,12 +384,16 @@ fn start_git_watcher_inner(
 
             // Debounce
             {
-                let mut last = last_processed.lock().expect("failed to lock last_processed");
+                let mut last = last_processed
+                    .lock()
+                    .expect("failed to lock last_processed");
                 let now = Instant::now();
-                if now.duration_since(*last) < Duration::from_millis(DEBOUNCE_MS) {
-                    return;
+                if let Some(prev) = *last {
+                    if now.duration_since(prev) < Duration::from_millis(DEBOUNCE_MS) {
+                        return;
+                    }
                 }
-                *last = now;
+                *last = Some(now);
             }
 
             // Emit event for all subscribers
