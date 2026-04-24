@@ -24,6 +24,7 @@ const defaultGitStatus = {
   loading: false,
   error: null,
   refresh: vi.fn(),
+  idle: false,
 }
 
 vi.mock('../hooks/useAgentStatus', () => ({

@@ -158,8 +158,16 @@ export const useGitStatus = (
 
         // Step 3: Explicit refresh after both listener and watcher are live
         // This ensures we catch events that may have fired between listener
-        // attach and watcher start
-        refresh()
+        // attach and watcher start. Guarded by `mounted` because React
+        // cleanup could have fired during the invoke await — a setState on
+        // an unmounted component is a no-op in React 18 production but
+        // still an anti-pattern (and a wasted fetch in Strict Mode's
+        // double-invocation).
+        //
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (mounted) {
+          refresh()
+        }
       } catch (err) {
         if (mounted) {
           setError(

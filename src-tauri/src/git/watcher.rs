@@ -494,22 +494,14 @@ fn start_pre_repo_watcher_inner(
                 break;
             }
 
-            // Still not a repo — emit event using each subscriber's
-            // original cwd string so the frontend exact-string listeners
-            // match. Snapshot under lock.
-            let cwds: Vec<String> = {
-                let watchers = poll_state
-                    .pre_repo_watchers
-                    .lock()
-                    .expect("failed to lock pre_repo_watchers");
-                watchers
-                    .get(&poll_safe_cwd)
-                    .map(|w| w.subscribers.keys().cloned().collect())
-                    .unwrap_or_default()
-            };
-            if !cwds.is_empty() {
-                emit_git_status_changed(&poll_app_handle, cwds);
-            }
+            // Still not a repo — intentionally NO emit on this tick.
+            // The previous revision fired `git-status-changed` on every
+            // 10-second tick for every pre-repo subscriber, which caused
+            // the frontend to run a useless `git_status` round-trip that
+            // always returns []. Subscribers already hold the correct
+            // empty state from their initial fetch; nothing to refresh
+            // until the dir becomes a repo (upgrade path emits its own
+            // initial event).
         }
     });
 

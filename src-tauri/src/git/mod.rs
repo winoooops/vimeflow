@@ -578,12 +578,18 @@ pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
         .arg("-z")
         .env("GIT_TERMINAL_PROMPT", "0");
 
-    // Run status and both diff commands (diffs in parallel)
-    let status_output = run_git_with_timeout(status_cmd).await?;
+    // Run status + both diff commands in parallel. The three subprocesses
+    // are independent; the earlier revision awaited status serially before
+    // the diffs, adding unnecessary latency to every watcher-triggered
+    // refresh. With all three in one `join!`, wall-clock time is the max
+    // of the three rather than the sum of one + max of two.
+    let (status_output, diff_output, cached_diff_output) = tokio::join!(
+        run_git_with_timeout(status_cmd),
+        run_git_with_timeout(diff_cmd),
+        run_git_with_timeout(cached_diff_cmd),
+    );
 
-    let (diff_output, cached_diff_output) =
-        tokio::join!(run_git_with_timeout(diff_cmd), run_git_with_timeout(cached_diff_cmd));
-
+    let status_output = status_output?;
     let diff_output = diff_output?;
     let cached_diff_output = cached_diff_output?;
 
