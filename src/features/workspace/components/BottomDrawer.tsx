@@ -2,6 +2,7 @@ import { type ReactElement, useState } from 'react'
 import { CodeEditor } from '../../editor/components/CodeEditor'
 import { DiffPanelContent } from '../../diff/components/DiffPanelContent'
 import { useResizable } from '../hooks/useResizable'
+import type { SelectedDiffFile } from '../../diff/types'
 
 type TabType = 'editor' | 'diff'
 
@@ -16,6 +17,18 @@ interface BottomDrawerProps {
   isLoading?: boolean
   /** Working directory for git commands (diff viewer) */
   cwd?: string
+  /** Controlled active tab */
+  activeTab?: TabType
+  /** Tab change handler (controlled mode) */
+  onTabChange?: ((tab: TabType) => void) | null
+  /** Controlled collapsed state */
+  isCollapsed?: boolean
+  /** Collapse change handler (controlled mode) */
+  onCollapsedChange?: ((collapsed: boolean) => void) | null
+  /** Controlled selected diff file (forwarded to DiffPanelContent) */
+  selectedDiffFile?: SelectedDiffFile | null
+  /** Diff file selection handler (forwarded to DiffPanelContent) */
+  onSelectedDiffFileChange?: ((file: SelectedDiffFile | null) => void) | null
 }
 
 /**
@@ -35,10 +48,31 @@ const BottomDrawer = ({
   isDirty = false,
   isLoading = false,
   cwd = '.',
+  activeTab: controlledActiveTab = undefined,
+  onTabChange = null,
+  isCollapsed: controlledIsCollapsed = undefined,
+  onCollapsedChange = null,
+  selectedDiffFile = undefined,
+  onSelectedDiffFileChange = null,
 }: BottomDrawerProps): ReactElement => {
-  const [activeTab, setActiveTab] = useState<TabType>('editor')
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [uncontrolledActiveTab, setUncontrolledActiveTab] =
+    useState<TabType>('editor')
+  const [uncontrolledIsCollapsed, setUncontrolledIsCollapsed] = useState(false)
+
   const COLLAPSED_HEIGHT = 48 // Just the tab bar
+
+  // Determine if each prop is controlled
+  const isTabControlled = controlledActiveTab !== undefined
+  const isCollapseControlled = controlledIsCollapsed !== undefined
+
+  // Use controlled value or fallback to uncontrolled
+  const activeTab = isTabControlled
+    ? controlledActiveTab
+    : uncontrolledActiveTab
+
+  const isCollapsed = isCollapseControlled
+    ? controlledIsCollapsed
+    : uncontrolledIsCollapsed
 
   // Drawer sizing is in pixels, not viewport-relative. The 400/150/640
   // constants were chosen to feel roughly right on an 800px workspace
@@ -132,7 +166,11 @@ const BottomDrawer = ({
           <button
             type="button"
             onClick={() => {
-              setActiveTab('editor')
+              if (isTabControlled && onTabChange) {
+                onTabChange('editor')
+              } else if (!isTabControlled) {
+                setUncontrolledActiveTab('editor')
+              }
             }}
             className={`flex items-center space-x-2 font-mono text-xs h-12 px-2 transition-colors ${
               activeTab === 'editor'
@@ -149,7 +187,11 @@ const BottomDrawer = ({
           <button
             type="button"
             onClick={() => {
-              setActiveTab('diff')
+              if (isTabControlled && onTabChange) {
+                onTabChange('diff')
+              } else if (!isTabControlled) {
+                setUncontrolledActiveTab('diff')
+              }
             }}
             className={`flex items-center space-x-2 font-mono text-xs h-12 px-2 transition-colors ${
               activeTab === 'diff'
@@ -180,7 +222,11 @@ const BottomDrawer = ({
             aria-label={isCollapsed ? 'Expand drawer' : 'Collapse drawer'}
             aria-expanded={!isCollapsed}
             onClick={() => {
-              setIsCollapsed((v) => !v)
+              if (isCollapseControlled && onCollapsedChange) {
+                onCollapsedChange(!isCollapsed)
+              } else if (!isCollapseControlled) {
+                setUncontrolledIsCollapsed((v) => !v)
+              }
             }}
             className="material-symbols-outlined text-sm text-outline hover:text-on-surface cursor-pointer transition-colors"
           >
@@ -228,7 +274,11 @@ const BottomDrawer = ({
             data-testid="diff-panel"
             className="flex min-h-0 flex-1 overflow-hidden"
           >
-            <DiffPanelContent cwd={cwd} />
+            <DiffPanelContent
+              cwd={cwd}
+              selectedFile={selectedDiffFile}
+              onSelectedFileChange={onSelectedDiffFileChange}
+            />
           </div>
         )}
       </div>

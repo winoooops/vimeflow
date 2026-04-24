@@ -193,4 +193,138 @@ describe('BottomDrawer', () => {
     const diffTab = screen.getByRole('button', { name: /diff viewer/i })
     expect(within(diffTab).getByText('difference')).toBeInTheDocument()
   })
+
+  describe('Controlled mode', () => {
+    test('controlled activeTab prop overrides internal state', async () => {
+      const user = userEvent.setup()
+      const onTabChange = vi.fn()
+
+      render(
+        <BottomDrawer
+          selectedFilePath={null}
+          content=""
+          activeTab="diff"
+          onTabChange={onTabChange}
+        />
+      )
+
+      // Diff tab should be active (controlled)
+      const diffTab = screen.getByRole('button', { name: /diff viewer/i })
+      expect(diffTab).toHaveClass('text-primary')
+
+      // Clicking Editor tab should call handler
+      const editorTab = screen.getByRole('button', { name: /editor/i })
+      await user.click(editorTab)
+      expect(onTabChange).toHaveBeenCalledWith('editor')
+    })
+
+    test('controlled isCollapsed prop overrides internal state', async () => {
+      const user = userEvent.setup()
+      const onCollapsedChange = vi.fn()
+
+      render(
+        <BottomDrawer
+          selectedFilePath={null}
+          content=""
+          isCollapsed
+          onCollapsedChange={onCollapsedChange}
+        />
+      )
+
+      const drawer = screen.getByTestId('bottom-drawer')
+      expect(drawer).toHaveStyle({ height: '48px' })
+
+      // Clicking collapse toggle should call handler
+      const collapseToggle = screen.getByRole('button', {
+        name: /expand drawer/i,
+      })
+      await user.click(collapseToggle)
+      expect(onCollapsedChange).toHaveBeenCalledWith(false)
+    })
+
+    test('forwards selectedDiffFile to DiffPanelContent', () => {
+      const selectedDiffFile = {
+        path: 'src/test.ts',
+        staged: false,
+        cwd: '/repo',
+      }
+      const onSelectedDiffFileChange = vi.fn()
+
+      render(
+        <BottomDrawer
+          selectedFilePath={null}
+          content=""
+          activeTab="diff"
+          selectedDiffFile={selectedDiffFile}
+          onSelectedDiffFileChange={onSelectedDiffFileChange}
+        />
+      )
+
+      // DiffPanelContent should receive the controlled props
+      expect(screen.getByTestId('diff-panel')).toBeInTheDocument()
+    })
+
+    test('uncontrolled fallback: activeTab works without controlled props', async () => {
+      const user = userEvent.setup()
+
+      render(<BottomDrawer selectedFilePath={null} content="" />)
+
+      // Editor tab active by default
+      const editorTab = screen.getByRole('button', { name: /editor/i })
+      expect(editorTab).toHaveClass('text-primary')
+
+      // Click Diff tab
+      const diffTab = screen.getByRole('button', { name: /diff viewer/i })
+      await user.click(diffTab)
+
+      // Diff tab should now be active
+      expect(diffTab).toHaveClass('text-primary')
+      expect(editorTab).not.toHaveClass('text-primary')
+    })
+
+    test('uncontrolled fallback: isCollapsed works without controlled props', async () => {
+      const user = userEvent.setup()
+
+      render(<BottomDrawer selectedFilePath={null} content="" />)
+
+      const drawer = screen.getByTestId('bottom-drawer')
+      expect(drawer).toHaveStyle({ height: '400px' })
+
+      // Click collapse toggle
+      const collapseToggle = screen.getByRole('button', {
+        name: /collapse drawer/i,
+      })
+      await user.click(collapseToggle)
+
+      // Should now be collapsed
+      expect(drawer).toHaveStyle({ height: '48px' })
+    })
+
+    test('passes through all three controlled prop pairs independently', () => {
+      const onTabChange = vi.fn()
+      const onCollapsedChange = vi.fn()
+      const onSelectedDiffFileChange = vi.fn()
+
+      render(
+        <BottomDrawer
+          selectedFilePath={null}
+          content=""
+          activeTab="diff"
+          onTabChange={onTabChange}
+          onCollapsedChange={onCollapsedChange}
+          selectedDiffFile={{ path: 'test.ts', staged: false, cwd: '/repo' }}
+          onSelectedDiffFileChange={onSelectedDiffFileChange}
+        />
+      )
+
+      // All controlled props should be respected
+      const diffTab = screen.getByRole('button', { name: /diff viewer/i })
+      expect(diffTab).toHaveClass('text-primary')
+
+      const drawer = screen.getByTestId('bottom-drawer')
+      expect(drawer).toHaveStyle({ height: '400px' })
+
+      expect(screen.getByTestId('diff-panel')).toBeInTheDocument()
+    })
+  })
 })
