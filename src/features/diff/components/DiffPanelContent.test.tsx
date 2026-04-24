@@ -342,7 +342,12 @@ describe('DiffPanelContent', () => {
       })
     })
 
-    test('untracked file regression: shows placeholder for untracked files', (): void => {
+    test('untracked file: renders DiffViewer with synthesized all-added content', (): void => {
+      // Backend now runs `git diff --no-index /dev/null <file>` for untracked
+      // paths, returning a real FileDiff with all-added lines. The frontend
+      // used to short-circuit to a "New file — not yet tracked" placeholder;
+      // that branch is gone. Untracked files render in DiffViewer just like
+      // modified files, so the user can actually see the content.
       const mockFiles: ChangedFile[] = [
         {
           path: 'new.ts',
@@ -359,10 +364,36 @@ describe('DiffPanelContent', () => {
         refresh: vi.fn(),
       })
 
+      const untrackedDiff = {
+        filePath: 'new.ts',
+        hunks: [
+          {
+            id: 'hunk-0',
+            header: '@@ -0,0 +1,2 @@',
+            oldStart: 0,
+            oldLines: 0,
+            newStart: 1,
+            newLines: 2,
+            lines: [
+              {
+                type: 'added' as const,
+                newLineNumber: 1,
+                content: 'alpha',
+              },
+              {
+                type: 'added' as const,
+                newLineNumber: 2,
+                content: 'beta',
+              },
+            ],
+          },
+        ],
+      }
+
       const useFileDiffSpy = vi
         .spyOn(useFileDiffModule, 'useFileDiff')
         .mockReturnValue({
-          diff: null,
+          diff: untrackedDiff,
           loading: false,
           error: null,
         })
@@ -375,9 +406,11 @@ describe('DiffPanelContent', () => {
         />
       )
 
-      // Should show untracked placeholder
-      expect(screen.getByText('New file — not yet tracked')).toBeInTheDocument()
-      // useFileDiff should still be called with the path
+      // Placeholder is gone
+      expect(screen.queryByText('New file — not yet tracked')).toBeNull()
+      // DiffViewer (unified) is rendered instead
+      expect(screen.getByTestId('unified-pane')).toBeInTheDocument()
+      // useFileDiff was called with the path and staged flag
       expect(useFileDiffSpy).toHaveBeenCalledWith('new.ts', false, '/repo')
     })
   })

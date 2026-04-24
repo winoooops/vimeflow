@@ -643,6 +643,71 @@ pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
     Ok(files)
 }
 
+/// Check whether a repo-relative file path is untracked under the given
+/// toplevel. Uses `git ls-files --error-unmatch`: exit 0 = tracked, non-zero
+/// = untracked (or the path doesn't exist, or some other git error — all
+/// treated as "not tracked" which is the safe fallback for the caller).
+async fn is_file_untracked(toplevel: &Path, file: &str) -> Result<bool, String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(toplevel)
+        .arg("ls-files")
+        .arg("--error-unmatch")
+        .arg("--")
+        .arg(file)
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let output = run_git_with_timeout(cmd).await?;
+    Ok(!output.status.success())
+}
+
+/// Platform-portable path to the null device for `git diff --no-index`.
+/// On Unix this is `/dev/null`; on Windows, `NUL`. Git accepts both on
+/// their respective platforms but not cross-platform, so cfg-dispatch.
+#[cfg(windows)]
+const NULL_DEVICE: &str = "NUL";
+#[cfg(not(windows))]
+const NULL_DEVICE: &str = "/dev/null";
+
+/// Run `git diff --no-index /dev/null <file>` to synthesize an "all new"
+/// diff for an untracked file. The regular `git diff -- <file>` produces
+/// empty output for untracked paths (git won't diff against the index
+/// because the file isn't in it), which made the diff viewer unable to
+/// show content for new-but-not-yet-staged files. This fallback shows the
+/// full file content as one big set of added lines.
+///
+/// `git diff --no-index` exits 0 when files are identical, 1 when they
+/// differ (expected here since the comparison is against an empty file),
+/// and other codes for genuine errors.
+async fn get_untracked_diff(toplevel: &Path, file: &str) -> Result<String, String> {
+    let file_abs = toplevel.join(file);
+
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(toplevel)
+        .arg("diff")
+        .arg("--no-index")
+        .arg("--no-color")
+        .arg("--")
+        .arg(NULL_DEVICE)
+        .arg(&file_abs)
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let output = run_git_with_timeout(cmd).await?;
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    if exit_code != 0 && exit_code != 1 {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!("git diff --no-index failed with exit code {}", output.status)
+        } else {
+            format!("git diff --no-index failed: {}", stderr.trim())
+        });
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 /// Tauri command: Get diff for a specific file
 #[tauri::command]
 pub async fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<FileDiff, String> {
@@ -702,7 +767,27 @@ pub async fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<Fil
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(parse_git_diff(&stdout, &file))
+    let parsed = parse_git_diff(&stdout, &file);
+
+    // Fallback for untracked files: the regular `git diff -- <file>`
+    // produces empty output because untracked paths aren't in the index.
+    // When that's the case AND we're asking for the working-tree side
+    // (staged == false), try `git diff --no-index /dev/null <file>` to
+    // synthesize a full-content diff so the viewer can show it as "all
+    // new lines" instead of a blank pane.
+    //
+    // Skipped for staged == true: staged new files show up as status "A"
+    // and `git diff --cached -- <file>` already produces correct output
+    // for them. Only the untracked (status "??") path needs the fallback.
+    if parsed.hunks.is_empty()
+        && !staged
+        && is_file_untracked(&canonical_toplevel, &file).await?
+    {
+        let untracked_stdout = get_untracked_diff(&canonical_toplevel, &file).await?;
+        return Ok(parse_git_diff(&untracked_stdout, &file));
+    }
+
+    Ok(parsed)
 }
 
 #[cfg(test)]
@@ -1240,5 +1325,55 @@ mod tests {
         let diff = result.unwrap();
         assert_eq!(diff.file_path, "foo.txt");
         assert_eq!(diff.hunks.len(), 0, "non-repo should return empty hunks");
+    }
+
+    #[tokio::test]
+    async fn test_get_git_diff_untracked_file_returns_all_added() {
+        // An untracked file (never staged, never committed) produces zero
+        // output from plain `git diff -- <file>`. The fallback via
+        // `git diff --no-index /dev/null <file>` should synthesize a diff
+        // where every line of the file content appears as a DiffLineType::Added.
+        use std::fs;
+        use std::process::Command;
+
+        let tmp = home_tempdir();
+        let repo_path = tmp.path();
+
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git init failed");
+
+        // Create an untracked file — do NOT `git add` it.
+        let untracked = repo_path.join("untracked.txt");
+        fs::write(&untracked, "alpha\nbeta\ngamma\n").expect("failed to write");
+
+        let repo_str = repo_path.to_string_lossy().to_string();
+        let result = get_git_diff(repo_str, "untracked.txt".to_string(), false).await;
+
+        assert!(
+            result.is_ok(),
+            "get_git_diff on untracked file should succeed (fallback to --no-index)"
+        );
+        let diff = result.unwrap();
+        assert_eq!(diff.file_path, "untracked.txt");
+        assert_eq!(
+            diff.hunks.len(),
+            1,
+            "untracked file should produce one hunk (whole-file)"
+        );
+
+        let hunk = &diff.hunks[0];
+        assert_eq!(hunk.lines.len(), 3, "three lines of content");
+        for line in &hunk.lines {
+            assert!(
+                matches!(line.line_type, DiffLineType::Added),
+                "every line of an untracked file should be Added"
+            );
+        }
+        assert_eq!(hunk.lines[0].content, "alpha");
+        assert_eq!(hunk.lines[1].content, "beta");
+        assert_eq!(hunk.lines[2].content, "gamma");
     }
 }

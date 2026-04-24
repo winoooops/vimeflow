@@ -121,7 +121,6 @@ export const DiffPanelContent = ({
       : undefined
   const selectedFilePath = selectedFileEntry?.path ?? null
   const selectedFileStaged = selectedFileEntry?.staged ?? false
-  const selectedFileIsUntracked = selectedFileEntry?.status === 'untracked'
 
   const {
     diff,
@@ -198,18 +197,13 @@ export const DiffPanelContent = ({
         />
       </div>
 
-      {/* Right: Diff viewer (fills remaining space) */}
+      {/* Right: Diff viewer (fills remaining space).
+          Untracked files used to short-circuit here to a placeholder
+          because `git diff -- <file>` returned empty. The backend now
+          falls back to `git diff --no-index /dev/null <file>` so untracked
+          files render as an all-added diff in the normal DiffViewer. */}
       <div className="flex-1 min-w-0 overflow-hidden">
-        {selectedFileIsUntracked ? (
-          <div className="flex h-full items-center justify-center text-on-surface-variant">
-            <div className="text-center space-y-2">
-              <p className="text-sm">New file — not yet tracked</p>
-              <p className="text-xs opacity-60">
-                Stage with git add to see diff against index
-              </p>
-            </div>
-          </div>
-        ) : diffError ? (
+        {diffError ? (
           <div
             className="flex h-full items-center justify-center text-error"
             role="alert"
