@@ -70,8 +70,12 @@ struct RepoWatcher {
 
 /// Handle to a pre-repo watcher (watching a directory that is not yet a git repo)
 struct PreRepoWatcher {
-    /// Refcount — multiple subscribers can watch the same pre-repo dir
-    refcount: u32,
+    /// Map from **original** frontend cwd string → refcount. Same
+    /// shape as `RepoWatcher.subscribers` so the pre-repo → repo
+    /// upgrade path can transfer identities without re-canonicalizing.
+    /// Key is the exact string the frontend passed to
+    /// `start_git_watcher` — that's what its event listener matches on.
+    subscribers: HashMap<String, u32>,
 
     /// Signals the polling thread to exit
     stop_flag: Arc<AtomicBool>,
@@ -217,8 +221,14 @@ fn start_git_watcher_inner(
             canonical
         }
         Err(_) => {
-            // Not a repo yet — start pre-repo watcher
-            return start_pre_repo_watcher_inner(safe_cwd, app_handle, state);
+            // Not a repo yet — start pre-repo watcher.
+            // Pass both the frontend's original cwd string AND the
+            // canonicalized PathBuf: the string becomes the subscriber
+            // identity (so events match the listener's exact-string
+            // filter), the PathBuf is the map key (so two calls for
+            // the same dir via different spellings share one poll
+            // thread).
+            return start_pre_repo_watcher_inner(cwd, safe_cwd, app_handle, state);
         }
     };
 
@@ -264,10 +274,13 @@ fn start_git_watcher_inner(
                 }
             };
 
-            // Only react to modifications or creations
+            // Accept Modify, Create, AND Remove. Deletes and untracked-file
+            // removals change git status too; filtering them out stranded
+            // those workflows on the 10s polling fallback even when notify
+            // was otherwise healthy.
             let relevant = matches!(
                 event.kind,
-                EventKind::Modify(_) | EventKind::Create(_)
+                EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_)
             );
             if !relevant {
                 return;
@@ -418,29 +431,35 @@ fn start_git_watcher_inner(
 
 /// Start a pre-repo watcher (for directories that are not yet git repos).
 ///
-/// Takes an owned `&GitWatcherState` (cheap: the state is `Arc`-backed) so it
-/// can be called both from the Tauri command path and from the upgrade path.
+/// Takes both the frontend's original `cwd` string (subscriber identity,
+/// used in event payloads) and the canonicalized `safe_cwd` PathBuf (map
+/// key, used for dedup when multiple callers watch the same dir via
+/// different spellings).
 fn start_pre_repo_watcher_inner(
-    cwd: PathBuf,
+    cwd: &str,
+    safe_cwd: PathBuf,
     app_handle: tauri::AppHandle,
     state: &GitWatcherState,
 ) -> Result<(), String> {
     let mut pre_repo_watchers = state.pre_repo_watchers.lock()
         .map_err(|e| format!("Failed to lock pre_repo_watchers: {}", e))?;
 
-    if let Some(watcher) = pre_repo_watchers.get_mut(&cwd) {
-        // Pre-repo watcher exists — increment refcount
-        watcher.refcount += 1;
+    if let Some(watcher) = pre_repo_watchers.get_mut(&safe_cwd) {
+        // Pre-repo watcher exists — add this subscription. Same cwd
+        // string bumps its refcount; a new cwd string (e.g. a different
+        // symlink spelling of the same canonical path) becomes a new
+        // subscriber entry. Either way, this subscriber receives events
+        // under its own original string.
+        *watcher.subscribers.entry(cwd.to_string()).or_insert(0) += 1;
 
-        // Emit initial event
-        emit_git_status_changed(&app_handle, vec![cwd.to_string_lossy().to_string()]);
+        emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
 
         return Ok(());
     }
 
     // Create new pre-repo watcher with polling
     let stop_flag = Arc::new(AtomicBool::new(false));
-    let poll_cwd = cwd.clone();
+    let poll_safe_cwd = safe_cwd.clone();
     let poll_app_handle = app_handle.clone();
     let poll_state = state.clone();
     let poll_stop_flag = stop_flag.clone();
@@ -454,58 +473,93 @@ fn start_pre_repo_watcher_inner(
             }
 
             // Check if this became a repo
-            if resolve_toplevel(&poll_cwd).is_ok() {
-                // Upgrade to repo watcher
-                if let Err(e) = upgrade_to_repo_watcher(poll_cwd.clone(), poll_app_handle.clone(), poll_state.clone()) {
+            if resolve_toplevel(&poll_safe_cwd).is_ok() {
+                // Upgrade to repo watcher — transfers the subscriber map
+                // (with original cwd strings intact) into repo_watchers.
+                if let Err(e) = upgrade_to_repo_watcher(
+                    poll_safe_cwd.clone(),
+                    poll_app_handle.clone(),
+                    poll_state.clone(),
+                ) {
                     log::error!("Failed to upgrade to repo watcher: {}", e);
                 }
                 break;
             }
 
-            // Still not a repo — emit event anyway (git_status will return empty)
-            emit_git_status_changed(&poll_app_handle, vec![poll_cwd.to_string_lossy().to_string()]);
+            // Still not a repo — emit event using each subscriber's
+            // original cwd string so the frontend exact-string listeners
+            // match. Snapshot under lock.
+            let cwds: Vec<String> = {
+                let watchers = poll_state
+                    .pre_repo_watchers
+                    .lock()
+                    .expect("failed to lock pre_repo_watchers");
+                watchers
+                    .get(&poll_safe_cwd)
+                    .map(|w| w.subscribers.keys().cloned().collect())
+                    .unwrap_or_default()
+            };
+            if !cwds.is_empty() {
+                emit_git_status_changed(&poll_app_handle, cwds);
+            }
         }
     });
 
+    let mut subscribers = HashMap::new();
+    subscribers.insert(cwd.to_string(), 1);
+
     let pre_repo_watcher = PreRepoWatcher {
-        refcount: 1,
+        subscribers,
         stop_flag,
     };
 
-    pre_repo_watchers.insert(cwd.clone(), pre_repo_watcher);
+    pre_repo_watchers.insert(safe_cwd, pre_repo_watcher);
 
-    // Emit initial event
-    emit_git_status_changed(&app_handle, vec![cwd.to_string_lossy().to_string()]);
+    // Emit initial event with the frontend's original cwd string
+    emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
 
     Ok(())
 }
 
 /// Upgrade a pre-repo watcher to a full repo watcher.
 ///
-/// Removes the pre-repo entry and re-invokes the repo-watcher bootstrap the
-/// same number of times as the prior refcount so subscribers keep their grip.
-/// Calls the synchronous inner helper directly — no `tauri::State` fabrication
-/// and no blocking executor needed.
+/// Removes the pre-repo entry, then re-invokes the repo-watcher bootstrap
+/// for each of its subscribers using their ORIGINAL cwd string so the
+/// subscriber-identity (and thus event-matching) is preserved across
+/// the upgrade. Previously this used `cwd.to_string_lossy()` (the
+/// canonical form), stranding any frontend that had subscribed with a
+/// symlinked or non-canonical path.
 fn upgrade_to_repo_watcher(
-    cwd: PathBuf,
+    safe_cwd: PathBuf,
     app_handle: tauri::AppHandle,
     state: GitWatcherState,
 ) -> Result<(), String> {
-    let refcount = {
+    // Collect the subscribers (original-cwd → refcount) from the pre-repo
+    // entry and drop it.
+    let subscribers: HashMap<String, u32> = {
         let mut pre_repo_watchers = state.pre_repo_watchers.lock()
             .map_err(|e| format!("Failed to lock pre_repo_watchers: {}", e))?;
 
-        if let Some(watcher) = pre_repo_watchers.remove(&cwd) {
-            watcher.refcount
+        if let Some(mut watcher) = pre_repo_watchers.remove(&safe_cwd) {
+            // `PreRepoWatcher` impls `Drop` (sets stop_flag), so we can't
+            // move `subscribers` out by field. `mem::take` swaps it with
+            // HashMap::default() (empty map), which is fine because the
+            // watcher is about to be dropped anyway.
+            std::mem::take(&mut watcher.subscribers)
         } else {
             return Err("Pre-repo watcher not found".to_string());
         }
     };
 
-    // Start a proper repo watcher (this will handle the refcount internally)
-    let cwd_str = cwd.to_string_lossy().to_string();
-    for _ in 0..refcount {
-        start_git_watcher_inner(&cwd_str, app_handle.clone(), &state)?;
+    // Start a proper repo watcher once per subscribed original-cwd string,
+    // bumping the refcount the same number of times it had in the pre-repo
+    // entry. This keeps every subscriber's identity intact across the
+    // upgrade — the Files Changed panel continues receiving events on the
+    // exact string it subscribed with, so its exact-string filter matches.
+    for (original_cwd, refcount) in subscribers {
+        for _ in 0..refcount {
+            start_git_watcher_inner(&original_cwd, app_handle.clone(), &state)?;
+        }
     }
 
     Ok(())
@@ -549,14 +603,21 @@ pub async fn stop_git_watcher(
         }
     }
 
-    // Try pre-repo watchers
+    // Try pre-repo watchers (keyed on canonical PathBuf, values now
+    // have a subscribers map like repo watchers)
     let mut pre_repo_watchers = state.pre_repo_watchers.lock()
         .map_err(|e| format!("Failed to lock pre_repo_watchers: {}", e))?;
 
     if let Some(watcher) = pre_repo_watchers.get_mut(&safe_cwd) {
-        watcher.refcount = watcher.refcount.saturating_sub(1);
+        if let Some(count) = watcher.subscribers.get_mut(&cwd) {
+            *count = count.saturating_sub(1);
 
-        if watcher.refcount == 0 {
+            if *count == 0 {
+                watcher.subscribers.remove(&cwd);
+            }
+        }
+
+        if watcher.subscribers.is_empty() {
             pre_repo_watchers.remove(&safe_cwd);
         }
 
