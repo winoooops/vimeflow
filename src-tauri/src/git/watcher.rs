@@ -151,6 +151,20 @@ pub struct GitWatcherState {
     /// Watchers for directories that are not yet repos (but might become one),
     /// keyed by canonical input cwd
     pre_repo_watchers: Arc<Mutex<HashMap<PathBuf, PreRepoWatcher>>>,
+
+    /// Side-map: frontend's original cwd string → canonical repo toplevel.
+    /// Populated on every successful `start_git_watcher_inner` repo-path
+    /// insertion; consumed by `stop_git_watcher_inner` to find the right
+    /// `repo_watchers` bucket without re-running `rev-parse --show-toplevel`
+    /// at stop time.
+    ///
+    /// Without this map, a session that starts with `.git` present and stops
+    /// after `.git` is removed (e.g. agent running `rm -rf .git`, force-reset,
+    /// `git filter-repo` rewrite) would leak its RepoWatcher: the stop-time
+    /// `resolve_toplevel` would fail, the repo-bucket lookup would be
+    /// skipped, and the polling thread (kept alive by the un-removed
+    /// RepoWatcher) would keep firing `hash_git_status` forever.
+    cwd_to_toplevel: Arc<Mutex<HashMap<String, PathBuf>>>,
 }
 
 impl GitWatcherState {
@@ -303,6 +317,14 @@ fn start_git_watcher_inner(
         // subscriber entries — they share the notify watcher but each
         // receives events matching its own input.
         *watcher.subscribers.entry(cwd.to_string()).or_insert(0) += 1;
+
+        // Record the cwd → toplevel mapping so stop_git_watcher_inner can
+        // find this bucket without re-running `rev-parse` at stop time.
+        state
+            .cwd_to_toplevel
+            .lock()
+            .expect("failed to lock cwd_to_toplevel")
+            .insert(cwd.to_string(), toplevel.clone());
 
         // Emit initial event using the frontend's original cwd string.
         emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
@@ -481,7 +503,17 @@ fn start_git_watcher_inner(
         _last_status_hash: last_status_hash,
     };
 
-    repo_watchers.insert(toplevel, repo_watcher);
+    repo_watchers.insert(toplevel.clone(), repo_watcher);
+
+    // Record cwd → toplevel mapping (see cwd_to_toplevel doc comment).
+    // Drop the repo_watchers guard before acquiring the side-map lock to
+    // avoid needlessly widening the lock scope.
+    drop(repo_watchers);
+    state
+        .cwd_to_toplevel
+        .lock()
+        .expect("failed to lock cwd_to_toplevel")
+        .insert(cwd.to_string(), toplevel);
 
     // Emit initial event using the frontend's original cwd string
     emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
@@ -635,21 +667,32 @@ pub async fn stop_git_watcher(
 /// Synchronous core of `stop_git_watcher`. Owns its state clone so it can
 /// be called from the blocking pool.
 fn stop_git_watcher_inner(cwd: String, state: GitWatcherState) -> Result<(), String> {
-    let safe_cwd = validate_cwd(&cwd)?;
+    // First: look up the repo-toplevel from the side-map populated by
+    // `start_git_watcher_inner`. This is critical — re-running
+    // `resolve_toplevel(&safe_cwd)` at stop time would fail if `.git`
+    // was removed mid-session (agent ran `rm -rf .git`, force-reset,
+    // `git filter-repo` etc.), silently skipping the repo-watcher
+    // removal and leaking the polling thread. Using the recorded
+    // mapping is correct even when the repo no longer resolves.
+    let recorded_toplevel: Option<PathBuf> = {
+        let mut map = state
+            .cwd_to_toplevel
+            .lock()
+            .map_err(|e| format!("Failed to lock cwd_to_toplevel: {}", e))?;
+        // `remove` here is optimistic: if the later repo-watcher lookup
+        // finds nothing, we've also cleaned up the side-map so a future
+        // idempotent stop is a pure no-op. If we stopped the watcher
+        // successfully, the map entry is no longer needed either.
+        map.remove(&cwd)
+    };
 
-    // Try repo watchers first
-    let toplevel = resolve_toplevel(&safe_cwd).ok();
-
-    if let Some(toplevel) = toplevel {
-        let canonical = validate_cwd(&toplevel.to_string_lossy())?;
-
-        let mut repo_watchers = state.repo_watchers.lock()
+    if let Some(canonical) = recorded_toplevel {
+        let mut repo_watchers = state
+            .repo_watchers
+            .lock()
             .map_err(|e| format!("Failed to lock repo_watchers: {}", e))?;
 
         if let Some(watcher) = repo_watchers.get_mut(&canonical) {
-            // Subscribers are now keyed on the frontend's ORIGINAL cwd
-            // string (F3 fix) so the same cwd the caller passed is the
-            // lookup key here — not safe_cwd.
             if let Some(count) = watcher.subscribers.get_mut(&cwd) {
                 *count = count.saturating_sub(1);
 
@@ -658,18 +701,32 @@ fn stop_git_watcher_inner(cwd: String, state: GitWatcherState) -> Result<(), Str
                 }
             }
 
-            // If no more subscribers, remove the watcher
+            // If no more subscribers, remove the watcher (its Drop fires
+            // the stop_flag, which the polling thread observes on its
+            // next wake).
             if watcher.subscribers.is_empty() {
                 repo_watchers.remove(&canonical);
             }
 
             return Ok(());
         }
+        // Recorded mapping but no watcher — fall through (possible if
+        // upgrade/teardown race removed the watcher but not the map
+        // entry; the map-removal above already cleaned up).
     }
 
-    // Try pre-repo watchers (keyed on canonical PathBuf, values now
-    // have a subscribers map like repo watchers)
-    let mut pre_repo_watchers = state.pre_repo_watchers.lock()
+    // No recorded toplevel → pre-repo watcher path. We still need the
+    // canonical `safe_cwd` PathBuf to look up the pre-repo map.
+    // `validate_cwd` may itself fail if the cwd has been deleted, in
+    // which case there's nothing we can clean up from here and
+    // idempotent-stop is the right answer.
+    let Ok(safe_cwd) = validate_cwd(&cwd) else {
+        return Ok(());
+    };
+
+    let mut pre_repo_watchers = state
+        .pre_repo_watchers
+        .lock()
         .map_err(|e| format!("Failed to lock pre_repo_watchers: {}", e))?;
 
     if let Some(watcher) = pre_repo_watchers.get_mut(&safe_cwd) {
