@@ -12,8 +12,10 @@
 //! - 300ms debounce to avoid redundant processing
 //! - 10s polling fallback for systems where inotify/FSEvents is unreliable
 
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -32,22 +34,38 @@ const POLL_INTERVAL_SECS: u64 = 10;
 
 /// Handle to a running watcher for a git repository
 struct RepoWatcher {
-    /// Map from input cwd to refcount — multiple subscribers can watch the same repo
-    /// from different subdirectories. Each subscription increments the count; each
-    /// unsubscribe decrements it. When the map is empty, the watcher is torn down.
-    subscribers: HashMap<PathBuf, u32>,
+    /// Map from **input** cwd string (exactly what the frontend passed) to
+    /// refcount. Multiple subscribers can watch the same repo from different
+    /// subdirectories; each subscription increments its own entry's count.
+    ///
+    /// Keyed on the raw input string (not canonicalized) so the event payload
+    /// the frontend receives matches the cwd it subscribed with. The
+    /// canonical form is used only to find the correct `repo_watchers`
+    /// bucket (the outer map) — dedup of "same repo via different strings"
+    /// happens at the watcher level, not at the subscriber level.
+    subscribers: HashMap<String, u32>,
 
-    /// The notify watcher instance
-    _watcher: RecommendedWatcher,
+    /// The notify watcher instance. Wrapped in `Arc<Mutex<_>>` so the
+    /// polling thread can dynamically register newly-created directories
+    /// as `NonRecursive` watches (non-recursive inotify does NOT extend
+    /// into directories created after startup).
+    _watcher: Arc<Mutex<RecommendedWatcher>>,
+
+    /// Set of directories currently registered with the notify watcher.
+    /// The polling thread diffs this against the current `ignore`-filtered
+    /// walk and registers any additions. Shared with the polling thread.
+    _watched_dirs: Arc<Mutex<HashSet<PathBuf>>>,
 
     /// Signals the polling fallback thread to exit
     stop_flag: Arc<AtomicBool>,
 
-    /// Last OID of HEAD for polling fallback. The active reader is the
-    /// polling thread (via its own `Arc` clone); this field keeps the
-    /// `Arc` rooted on the owning watcher so the thread can keep reading
-    /// after `RepoWatcher` moves into the state map.
-    _last_head_oid: Arc<Mutex<String>>,
+    /// Hash of the last-seen `git status --porcelain=v1 -z` output.
+    /// Changes on any staging/unstaging/edit/delete/add — everything that
+    /// would cause a panel row to change. The HEAD-only comparison in the
+    /// previous revision missed staging ops and plain file edits because
+    /// HEAD only moves on commit/checkout. The active reader is the
+    /// polling thread; this field roots the Arc.
+    _last_status_hash: Arc<Mutex<Option<u64>>>,
 }
 
 /// Handle to a pre-repo watcher (watching a directory that is not yet a git repo)
@@ -118,22 +136,31 @@ fn resolve_toplevel(cwd: &std::path::Path) -> Result<PathBuf, String> {
     Ok(PathBuf::from(toplevel))
 }
 
-/// Get the current HEAD OID for a repo
-fn get_head_oid(toplevel: &std::path::Path) -> Result<String, String> {
+/// Hash the current `git status --porcelain=v1 -z` output.
+///
+/// Used by the polling fallback as the change-detection signal. Unlike
+/// HEAD-only comparison (which only moves on commit/checkout), this
+/// captures every state that affects the Files Changed panel: staging,
+/// unstaging, editing tracked files, creating/deleting untracked files,
+/// etc. Returns the hash so the poller can cheaply detect "any change".
+fn hash_git_status(toplevel: &Path) -> Result<u64, String> {
     let output = std::process::Command::new("git")
         .arg("-C")
         .arg(toplevel)
-        .arg("rev-parse")
-        .arg("HEAD")
+        .arg("status")
+        .arg("--porcelain=v1")
+        .arg("-z")
         .env("GIT_TERMINAL_PROMPT", "0")
         .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+        .map_err(|e| format!("Failed to run git status: {}", e))?;
 
     if !output.status.success() {
-        return Err("Failed to get HEAD OID".to_string());
+        return Err("git status failed".to_string());
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    let mut hasher = DefaultHasher::new();
+    output.stdout.hash(&mut hasher);
+    Ok(hasher.finish())
 }
 
 /// Enumerate non-ignored directories in a git repository using ignore::WalkBuilder
@@ -199,19 +226,24 @@ fn start_git_watcher_inner(
         .map_err(|e| format!("Failed to lock repo_watchers: {}", e))?;
 
     if let Some(watcher) = repo_watchers.get_mut(&toplevel) {
-        // Watcher exists — increment refcount
-        *watcher.subscribers.entry(safe_cwd.clone()).or_insert(0) += 1;
+        // Watcher exists — increment refcount keyed on the ORIGINAL cwd
+        // string (NOT the canonical form) so later event fan-out emits
+        // the exact string the frontend subscribed with. Two frontend
+        // strings that canonicalize to the same path still get separate
+        // subscriber entries — they share the notify watcher but each
+        // receives events matching its own input.
+        *watcher.subscribers.entry(cwd.to_string()).or_insert(0) += 1;
 
-        // Emit initial event for this subscriber
-        emit_git_status_changed(&app_handle, vec![safe_cwd.to_string_lossy().to_string()]);
+        // Emit initial event using the frontend's original cwd string.
+        emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
 
         return Ok(());
     }
 
     // Create new watcher
     let state_clone = state.clone();
-    let last_head_oid = Arc::new(Mutex::new(
-        get_head_oid(&toplevel).unwrap_or_default()
+    let last_status_hash = Arc::new(Mutex::new(
+        hash_git_status(&toplevel).ok(),
     ));
     let last_processed = Arc::new(Mutex::new(Instant::now()));
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -257,37 +289,59 @@ fn start_git_watcher_inner(
         .map_err(|e| format!("Failed to create watcher: {}", e))?
     };
 
-    // Register watches for all non-ignored directories
-    let dirs = enumerate_dirs(&toplevel);
-    let mut watcher = notify_watcher;
+    // Wrap the watcher in Arc<Mutex<_>> so the polling thread can
+    // dynamically register newly-created directories. NonRecursive inotify
+    // does NOT extend into subdirs created after startup, so without this
+    // a new feature folder would become invisible to notify.
+    let watcher_arc = Arc::new(Mutex::new(notify_watcher));
+    let watched_dirs: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
 
-    for dir in dirs {
-        if let Err(e) = watcher.watch(&dir, RecursiveMode::NonRecursive) {
-            log::warn!("Failed to watch {}: {}", dir.display(), e);
+    // Register initial watches for all non-ignored directories, tracking
+    // them in `watched_dirs` so the poller's dir-diff knows what's new.
+    {
+        let mut watcher_guard = watcher_arc.lock().expect("failed to lock watcher");
+        let mut dirs_guard = watched_dirs.lock().expect("failed to lock watched_dirs");
+
+        for dir in enumerate_dirs(&toplevel) {
+            if let Err(e) = watcher_guard.watch(&dir, RecursiveMode::NonRecursive) {
+                log::warn!("Failed to watch {}: {}", dir.display(), e);
+                continue;
+            }
+            dirs_guard.insert(dir);
+        }
+
+        // Also watch .git/index and .git/HEAD (non-recursive — never recurse
+        // into .git/ because .git/objects/ would explode the watch count).
+        let git_index = toplevel.join(".git/index");
+        if git_index.exists() {
+            if let Err(e) = watcher_guard.watch(&git_index, RecursiveMode::NonRecursive) {
+                log::warn!("Failed to watch .git/index: {}", e);
+            }
+        }
+
+        let git_head = toplevel.join(".git/HEAD");
+        if git_head.exists() {
+            if let Err(e) = watcher_guard.watch(&git_head, RecursiveMode::NonRecursive) {
+                log::warn!("Failed to watch .git/HEAD: {}", e);
+            }
         }
     }
 
-    // Also watch .git/index and .git/HEAD
-    let git_index = toplevel.join(".git/index");
-    if git_index.exists() {
-        if let Err(e) = watcher.watch(&git_index, RecursiveMode::NonRecursive) {
-            log::warn!("Failed to watch .git/index: {}", e);
-        }
-    }
-
-    let git_head = toplevel.join(".git/HEAD");
-    if git_head.exists() {
-        if let Err(e) = watcher.watch(&git_head, RecursiveMode::NonRecursive) {
-            log::warn!("Failed to watch .git/HEAD: {}", e);
-        }
-    }
-
-    // Start polling fallback thread
+    // Start polling fallback thread with two jobs on the same 10s tick:
+    //   (1) Change detection — hashes `git status --porcelain=v1 -z`
+    //       output. Unlike HEAD-only comparison, this catches every
+    //       panel-visible change: staging, unstaging, editing tracked
+    //       files, creating/deleting untracked files.
+    //   (2) Dynamic dir registration — re-enumerates non-ignored dirs and
+    //       registers any not yet watched. Compensates for non-recursive
+    //       inotify's inability to extend into post-startup directories.
     let poll_toplevel = toplevel.clone();
     let poll_app_handle = app_handle.clone();
     let poll_state = state_clone.clone();
     let poll_stop_flag = stop_flag.clone();
-    let poll_last_head_oid = last_head_oid.clone();
+    let poll_last_status_hash = last_status_hash.clone();
+    let poll_watcher = watcher_arc.clone();
+    let poll_watched_dirs = watched_dirs.clone();
 
     std::thread::spawn(move || {
         while !poll_stop_flag.load(Ordering::Relaxed) {
@@ -297,33 +351,67 @@ fn start_git_watcher_inner(
                 break;
             }
 
-            // Check if HEAD changed
-            if let Ok(current_oid) = get_head_oid(&poll_toplevel) {
-                let last = poll_last_head_oid.lock().expect("failed to lock last_head_oid");
-                if *last != current_oid {
-                    drop(last);
-                    *poll_last_head_oid.lock().expect("failed to lock") = current_oid;
+            // (1) Change detection via status hash.
+            if let Ok(current_hash) = hash_git_status(&poll_toplevel) {
+                let changed = {
+                    let mut last = poll_last_status_hash
+                        .lock()
+                        .expect("failed to lock last_status_hash");
+                    let changed = last.map_or(true, |h| h != current_hash);
+                    if changed {
+                        *last = Some(current_hash);
+                    }
+                    changed
+                };
+                if changed {
                     emit_for_all_subscribers(&poll_app_handle, &poll_state, &poll_toplevel);
+                }
+            }
+
+            // (2) Register any newly-created non-ignored directories.
+            let new_dirs: Vec<PathBuf> = {
+                let current = enumerate_dirs(&poll_toplevel);
+                let watched = poll_watched_dirs
+                    .lock()
+                    .expect("failed to lock watched_dirs");
+                current
+                    .into_iter()
+                    .filter(|d| !watched.contains(d))
+                    .collect()
+            };
+
+            if !new_dirs.is_empty() {
+                let mut watcher_guard = poll_watcher.lock().expect("failed to lock watcher");
+                let mut dirs_guard = poll_watched_dirs
+                    .lock()
+                    .expect("failed to lock watched_dirs");
+                for dir in new_dirs {
+                    if let Err(e) = watcher_guard.watch(&dir, RecursiveMode::NonRecursive) {
+                        log::warn!("Failed to watch new dir {}: {}", dir.display(), e);
+                        continue;
+                    }
+                    dirs_guard.insert(dir);
                 }
             }
         }
     });
 
-    // Insert watcher with initial subscriber
+    // Insert watcher with initial subscriber (keyed on original cwd string)
     let mut subscribers = HashMap::new();
-    subscribers.insert(safe_cwd.clone(), 1);
+    subscribers.insert(cwd.to_string(), 1);
 
     let repo_watcher = RepoWatcher {
         subscribers,
-        _watcher: watcher,
+        _watcher: watcher_arc,
+        _watched_dirs: watched_dirs,
         stop_flag,
-        _last_head_oid: last_head_oid,
+        _last_status_hash: last_status_hash,
     };
 
     repo_watchers.insert(toplevel, repo_watcher);
 
-    // Emit initial event
-    emit_git_status_changed(&app_handle, vec![safe_cwd.to_string_lossy().to_string()]);
+    // Emit initial event using the frontend's original cwd string
+    emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
 
     Ok(())
 }
@@ -441,11 +529,14 @@ pub async fn stop_git_watcher(
             .map_err(|e| format!("Failed to lock repo_watchers: {}", e))?;
 
         if let Some(watcher) = repo_watchers.get_mut(&canonical) {
-            if let Some(count) = watcher.subscribers.get_mut(&safe_cwd) {
+            // Subscribers are now keyed on the frontend's ORIGINAL cwd
+            // string (F3 fix) so the same cwd the caller passed is the
+            // lookup key here — not safe_cwd.
+            if let Some(count) = watcher.subscribers.get_mut(&cwd) {
                 *count = count.saturating_sub(1);
 
                 if *count == 0 {
-                    watcher.subscribers.remove(&safe_cwd);
+                    watcher.subscribers.remove(&cwd);
                 }
             }
 
@@ -482,13 +573,13 @@ fn emit_for_all_subscribers(
     state: &GitWatcherState,
     toplevel: &std::path::Path,
 ) {
-    let cwds = {
+    let cwds: Vec<String> = {
         let repo_watchers = state.repo_watchers.lock().expect("failed to lock repo_watchers");
 
         if let Some(watcher) = repo_watchers.get(toplevel) {
-            watcher.subscribers.keys()
-                .map(|p| p.to_string_lossy().to_string())
-                .collect()
+            // Subscriber keys are the frontend's original cwd strings — emit
+            // them as-is so listener's `event.cwds.includes(myCwd)` matches.
+            watcher.subscribers.keys().cloned().collect()
         } else {
             vec![]
         }
@@ -600,5 +691,57 @@ mod tests {
         assert!(dir_names.contains(&"components"), "should include components");
         assert!(dir_names.contains(&"tests"), "should include tests");
         assert!(!dir_names.contains(&"ignored"), "should NOT include ignored");
+    }
+
+    #[test]
+    fn test_hash_git_status_detects_changes() {
+        // Regression test for F1 (HIGH): the polling fallback must detect
+        // any change that affects `git status`, not just HEAD movement.
+        // Hash must differ after staging, after editing tracked files,
+        // and after creating untracked files.
+        let temp = create_temp_repo();
+        let repo = temp.path();
+
+        // Empty repo: hash is stable across two consecutive calls
+        let h0 = hash_git_status(repo).expect("h0 failed");
+        let h0_again = hash_git_status(repo).expect("h0_again failed");
+        assert_eq!(h0, h0_again, "idempotent when nothing changed");
+
+        // Create an untracked file — hash must change (HEAD didn't move)
+        fs::write(repo.join("untracked.txt"), "hello\n").expect("write failed");
+        let h1 = hash_git_status(repo).expect("h1 failed");
+        assert_ne!(
+            h1, h0,
+            "hash must change when untracked file is created"
+        );
+
+        // Stage the file — hash must change again (HEAD still didn't move)
+        Command::new("git")
+            .args(["add", "untracked.txt"])
+            .current_dir(repo)
+            .output()
+            .expect("git add failed");
+        let h2 = hash_git_status(repo).expect("h2 failed");
+        assert_ne!(
+            h2, h1,
+            "hash must change when file is staged (previous HEAD-only poll missed this)"
+        );
+
+        // Commit — HEAD moves, working tree becomes clean
+        Command::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(repo)
+            .output()
+            .expect("git commit failed");
+        let h3 = hash_git_status(repo).expect("h3 failed");
+        assert_ne!(h3, h2, "hash must change after commit (clean status now)");
+
+        // Modify the committed file — hash must change
+        fs::write(repo.join("untracked.txt"), "hello\nworld\n").expect("write failed");
+        let h4 = hash_git_status(repo).expect("h4 failed");
+        assert_ne!(
+            h4, h3,
+            "hash must change when a tracked file is edited (previous HEAD-only poll missed this)"
+        );
     }
 }
