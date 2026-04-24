@@ -57,6 +57,7 @@ describe('BottomDrawer', () => {
     // Mock diff hooks to return empty state by default
     vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
       files: [],
+      filesCwd: null,
       loading: false,
       error: null,
       refresh: vi.fn(),

@@ -17,6 +17,7 @@ describe('DiffPanelContent', () => {
   test('renders loading state while fetching', (): void => {
     vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
       files: [],
+      filesCwd: null,
       loading: true,
       error: null,
       refresh: vi.fn(),
@@ -38,6 +39,7 @@ describe('DiffPanelContent', () => {
 
     vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
       files: [],
+      filesCwd: null,
       loading: false,
       error,
       refresh: vi.fn(),
@@ -60,6 +62,7 @@ describe('DiffPanelContent', () => {
   test('renders empty state when no changes exist', (): void => {
     vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
       files: [],
+      filesCwd: null,
       loading: false,
       error: null,
       refresh: vi.fn(),
@@ -113,6 +116,7 @@ describe('DiffPanelContent', () => {
 
     vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
       files: mockFiles,
+      filesCwd: '/test/cwd',
       loading: false,
       error: null,
       refresh: vi.fn(),
@@ -139,6 +143,7 @@ describe('DiffPanelContent', () => {
       .spyOn(useGitStatusModule, 'useGitStatus')
       .mockReturnValue({
         files: [],
+        filesCwd: null,
         loading: false,
         error: null,
         refresh: vi.fn(),
