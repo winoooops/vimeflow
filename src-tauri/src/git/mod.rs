@@ -1,3 +1,5 @@
+pub mod watcher;
+
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -64,7 +66,7 @@ async fn run_git_with_timeout(mut cmd: Command) -> Result<std::process::Output, 
 }
 
 /// Validate that `cwd` resolves to a path inside the user's home directory.
-fn validate_cwd(cwd: &str) -> Result<std::path::PathBuf, String> {
+pub(crate) fn validate_cwd(cwd: &str) -> Result<std::path::PathBuf, String> {
     let expanded = expand_home(cwd);
     reject_parent_refs(&expanded)?;
     let home = home_canonical()?;
