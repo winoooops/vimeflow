@@ -103,8 +103,13 @@ export const FilesChanged = ({
                 <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-on-surface-variant">
                   {file.path}
                 </span>
+                {/* Suppress the badge for (0, 0) — e.g. an empty untracked
+                    file where `git diff --no-index` reports no additions
+                    AND no deletions. `+0 / -0` is visually confusing
+                    (looks like a rendering bug) and carries no info. */}
                 {typeof file.insertions === 'number' &&
-                  typeof file.deletions === 'number' && (
+                  typeof file.deletions === 'number' &&
+                  (file.insertions > 0 || file.deletions > 0) && (
                     <span className="text-[9px] text-outline">
                       +{file.insertions} / -{file.deletions}
                     </span>

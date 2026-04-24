@@ -233,19 +233,39 @@ fn hash_git_status(toplevel: &Path) -> Result<u64, String> {
     Ok(hasher.finish())
 }
 
-/// Enumerate non-ignored directories in a git repository using ignore::WalkBuilder
+/// Enumerate non-ignored directories in a git repository using ignore::WalkBuilder.
+///
+/// Explicitly excludes the `.git/` directory and everything under it. The
+/// `ignore` crate respects `.gitignore` patterns, but `.git/` is NOT a
+/// gitignore entry — git itself treats it as opaque metadata. Without this
+/// filter the walker descends into `.git/objects/`, `.git/refs/`, `.git/logs/`,
+/// etc., and every directory there gets passed to `watcher.watch()`. That's
+/// bad on two axes:
+///   1. Every `git commit`, `git fetch`, `git rebase`, etc. updates
+///      `.git/refs/` and `.git/logs/`, firing spurious `git-status-changed`
+///      events through the debounce.
+///   2. The 10s polling thread re-enumerates dirs and registers newly-
+///      observed ones. As loose objects accumulate in `.git/objects/XX/`,
+///      inotify watch descriptors accumulate until `max_user_watches` is
+///      exhausted.
+///
+/// The explicit `.git/index` and `.git/HEAD` additions in
+/// `start_git_watcher_inner` (which DO need to be watched so staging /
+/// commits fire events) are the ONLY `.git/*` paths that should end up
+/// registered with notify.
 fn enumerate_dirs(toplevel: &std::path::Path) -> Vec<PathBuf> {
+    use std::ffi::OsStr;
+
     let mut dirs = vec![];
 
     let walker = WalkBuilder::new(toplevel)
         .follow_links(false)
+        .filter_entry(|e| e.file_name() != OsStr::new(".git"))
         .build();
 
-    for entry in walker {
-        if let Ok(entry) = entry {
-            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                dirs.push(entry.path().to_path_buf());
-            }
+    for entry in walker.flatten() {
+        if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+            dirs.push(entry.path().to_path_buf());
         }
     }
 
@@ -891,6 +911,20 @@ mod tests {
         assert!(dir_names.contains(&"components"), "should include components");
         assert!(dir_names.contains(&"tests"), "should include tests");
         assert!(!dir_names.contains(&"ignored"), "should NOT include ignored");
+        // Regression guard for the .git/ exclusion — without `.filter_entry`
+        // on the WalkBuilder, enumerate_dirs would recurse into `.git/`
+        // and its subdirs (objects/, refs/, logs/ etc.), causing spurious
+        // notify events and steady inotify FD growth.
+        assert!(
+            !dir_names.contains(&".git"),
+            "should NOT include .git directory"
+        );
+        assert!(
+            !dirs
+                .iter()
+                .any(|p| p.components().any(|c| c.as_os_str() == ".git")),
+            "should NOT include any path under .git/"
+        );
     }
 
     #[test]
