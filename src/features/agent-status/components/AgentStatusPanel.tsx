@@ -8,18 +8,36 @@ import { TestResults } from './TestResults'
 import { ActivityFooter } from './ActivityFooter'
 import { ActivityFeed } from './ActivityFeed'
 import { useActivityEvents } from '../hooks/useActivityEvents'
+import { useGitStatus } from '../../diff/hooks/useGitStatus'
+import type { ChangedFile } from '../../diff/types'
 
 interface AgentStatusPanelProps {
   sessionId: string | null
+  cwd: string
+  onOpenDiff: (file: ChangedFile) => void
 }
 
 const placeholderTests = { passed: 0, failed: 0, total: 0 }
 
 export const AgentStatusPanel = ({
   sessionId,
+  cwd,
+  onOpenDiff,
 }: AgentStatusPanelProps): ReactElement => {
   const status = useAgentStatus(sessionId)
   const events = useActivityEvents(status)
+
+  // Git status with file-system watcher
+  const { files, filesCwd, loading, error, refresh } = useGitStatus(cwd, {
+    watch: true,
+    enabled: status.isActive,
+  })
+
+  // Freshness check — files are only valid if they came from the current cwd
+  const filesAreFresh = filesCwd === cwd
+  const effectiveFiles = filesAreFresh ? files : []
+
+  const effectiveLoading = loading || (!filesAreFresh && error === null)
 
   return (
     <div
@@ -63,14 +81,11 @@ export const AgentStatusPanel = ({
             />
             <ActivityFeed events={events} />
             <FilesChanged
-              files={[]}
-              error={null}
-              onRetry={(): void => {
-                // TODO: wire to git status refresh in Feature #12
-              }}
-              onSelect={(): void => {
-                // TODO: wire to diff viewer in Feature #12
-              }}
+              files={effectiveFiles}
+              loading={effectiveLoading}
+              error={error}
+              onRetry={refresh}
+              onSelect={onOpenDiff}
             />
             <TestResults
               passed={placeholderTests.passed}
