@@ -517,27 +517,120 @@ fn parse_hunk_range(range: &str) -> (u32, u32) {
 pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
     let safe_cwd = validate_cwd(&cwd)?;
 
-    let mut cmd = Command::new("git");
-    cmd.arg("-C")
+    // Resolve repo toplevel — if not in a repo, return empty list
+    let mut toplevel_cmd = Command::new("git");
+    toplevel_cmd
+        .arg("-C")
         .arg(&safe_cwd)
+        .arg("rev-parse")
+        .arg("--show-toplevel")
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let toplevel_output = run_git_with_timeout(toplevel_cmd).await?;
+
+    if !toplevel_output.status.success() {
+        // Not a git repo — return empty list (no error state)
+        return Ok(vec![]);
+    }
+
+    let toplevel_str = String::from_utf8_lossy(&toplevel_output.stdout);
+    let toplevel_path = toplevel_str.trim();
+
+    // Canonicalize and validate toplevel is under $HOME
+    let canonical_toplevel = validate_cwd(toplevel_path)?;
+
+    // Run git status and numstat commands from toplevel
+    let mut status_cmd = Command::new("git");
+    status_cmd
+        .arg("-C")
+        .arg(&canonical_toplevel)
         .arg("status")
         .arg("--porcelain=v1")
         .arg("-z")
         .env("GIT_TERMINAL_PROMPT", "0");
 
-    let output = run_git_with_timeout(cmd).await?;
+    let mut diff_cmd = Command::new("git");
+    diff_cmd
+        .arg("-C")
+        .arg(&canonical_toplevel)
+        .arg("diff")
+        .arg("--numstat")
+        .arg("-z")
+        .env("GIT_TERMINAL_PROMPT", "0");
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    let mut cached_diff_cmd = Command::new("git");
+    cached_diff_cmd
+        .arg("-C")
+        .arg(&canonical_toplevel)
+        .arg("diff")
+        .arg("--cached")
+        .arg("--numstat")
+        .arg("-z")
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    // Run status and both diff commands (diffs in parallel)
+    let status_output = run_git_with_timeout(status_cmd).await?;
+
+    let (diff_output, cached_diff_output) =
+        tokio::join!(run_git_with_timeout(diff_cmd), run_git_with_timeout(cached_diff_cmd));
+
+    let diff_output = diff_output?;
+    let cached_diff_output = cached_diff_output?;
+
+    // Check all commands succeeded
+    if !status_output.status.success() {
+        let stderr = String::from_utf8_lossy(&status_output.stderr);
         return Err(if stderr.trim().is_empty() {
-            format!("git status failed with exit code {}", output.status)
+            format!("git status failed with exit code {}", status_output.status)
         } else {
             format!("git status failed: {}", stderr.trim())
         });
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(parse_git_status(&stdout))
+    if !diff_output.status.success() {
+        let stderr = String::from_utf8_lossy(&diff_output.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!("git diff failed with exit code {}", diff_output.status)
+        } else {
+            format!("git diff failed: {}", stderr.trim())
+        });
+    }
+
+    if !cached_diff_output.status.success() {
+        let stderr = String::from_utf8_lossy(&cached_diff_output.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!("git diff --cached failed with exit code {}", cached_diff_output.status)
+        } else {
+            format!("git diff --cached failed: {}", stderr.trim())
+        });
+    }
+
+    // Parse outputs
+    let status_stdout = String::from_utf8_lossy(&status_output.stdout);
+    let mut files = parse_git_status(&status_stdout);
+
+    let working_tree_stats = parse_numstat(&diff_output.stdout);
+    let cached_stats = parse_numstat(&cached_diff_output.stdout);
+
+    // Merge numstat data into ChangedFile entries
+    for file in &mut files {
+        if file.staged {
+            // Staged entries look up cached map
+            if let Some((insertions, deletions)) = cached_stats.get(&file.path) {
+                file.insertions = Some(*insertions);
+                file.deletions = Some(*deletions);
+            }
+        } else {
+            // Unstaged entries look up working-tree map
+            if let Some((insertions, deletions)) = working_tree_stats.get(&file.path) {
+                file.insertions = Some(*insertions);
+                file.deletions = Some(*deletions);
+            }
+        }
+        // Leave None for untracked or binary files
+    }
+
+    Ok(files)
 }
 
 /// Tauri command: Get diff for a specific file
@@ -546,9 +639,37 @@ pub async fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<Fil
     let safe_cwd = validate_cwd(&cwd)?;
     validate_file_path(&file)?;
 
+    // Resolve repo toplevel — if not in a repo, return empty hunks
+    let mut toplevel_cmd = Command::new("git");
+    toplevel_cmd
+        .arg("-C")
+        .arg(&safe_cwd)
+        .arg("rev-parse")
+        .arg("--show-toplevel")
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let toplevel_output = run_git_with_timeout(toplevel_cmd).await?;
+
+    if !toplevel_output.status.success() {
+        // Not a git repo — return empty FileDiff
+        return Ok(FileDiff {
+            file_path: file.clone(),
+            old_path: None,
+            new_path: None,
+            hunks: vec![],
+        });
+    }
+
+    let toplevel_str = String::from_utf8_lossy(&toplevel_output.stdout);
+    let toplevel_path = toplevel_str.trim();
+
+    // Canonicalize and validate toplevel is under $HOME
+    let canonical_toplevel = validate_cwd(toplevel_path)?;
+
+    // Run git diff from toplevel
     let mut cmd = Command::new("git");
     cmd.arg("-C")
-        .arg(&safe_cwd)
+        .arg(&canonical_toplevel)
         .arg("diff")
         .arg("--no-color")
         .env("GIT_TERMINAL_PROMPT", "0");
@@ -861,5 +982,239 @@ mod tests {
         assert_eq!(parse_hunk_range("+102,6"), (102, 6));
         assert_eq!(parse_hunk_range("-1,1"), (1, 1));
         assert_eq!(parse_hunk_range("+1"), (1, 1));
+    }
+
+    // Integration tests for git_status command (Feature 4)
+
+    #[tokio::test]
+    async fn test_git_status_subdir_cwd_returns_repo_level_changes() {
+        // Test that calling git_status from a subdirectory returns repo-level
+        // changes (via rev-parse --show-toplevel resolution)
+        use std::fs;
+        use std::process::Command;
+
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let repo_path = tmp.path();
+
+        // Initialize git repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git init failed");
+
+        // Create a subdirectory
+        let subdir = repo_path.join("src");
+        fs::create_dir(&subdir).expect("failed to create subdir");
+
+        // Create and stage a file at repo root
+        let root_file = repo_path.join("root.txt");
+        fs::write(&root_file, "root file").expect("failed to write root file");
+
+        Command::new("git")
+            .args(["add", "root.txt"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git add failed");
+
+        // Call git_status from the subdirectory
+        let subdir_str = subdir.to_string_lossy().to_string();
+        let result = git_status(subdir_str).await;
+
+        assert!(result.is_ok(), "git_status should succeed from subdir");
+        let files = result.unwrap();
+
+        // Should see root.txt even though we called from src/
+        assert_eq!(files.len(), 1, "should return repo-level changes");
+        assert_eq!(files[0].path, "root.txt");
+        assert!(files[0].staged);
+    }
+
+    #[tokio::test]
+    async fn test_git_status_non_repo_returns_empty() {
+        // Test that calling git_status from a non-repo directory returns
+        // empty vec (not an error)
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let non_repo = tmp.path().to_string_lossy().to_string();
+
+        let result = git_status(non_repo).await;
+
+        assert!(result.is_ok(), "non-repo should return Ok, not error");
+        let files = result.unwrap();
+        assert_eq!(files.len(), 0, "non-repo should return empty vec");
+    }
+
+    #[tokio::test]
+    async fn test_git_status_mm_file_has_both_halves_with_numstat() {
+        // Test that an MM file (modified in index and worktree) produces
+        // two entries, and both have their respective numstat counts.
+        use std::fs;
+        use std::process::Command;
+
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let repo_path = tmp.path();
+
+        // Initialize git repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git init failed");
+
+        // Create and commit initial file
+        let file = repo_path.join("test.txt");
+        fs::write(&file, "line 1\nline 2\n").expect("failed to write file");
+
+        Command::new("git")
+            .args(["add", "test.txt"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git add failed");
+
+        Command::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git commit failed");
+
+        // Modify and stage (adds line 3)
+        fs::write(&file, "line 1\nline 2\nline 3\n").expect("failed to write");
+
+        Command::new("git")
+            .args(["add", "test.txt"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git add failed");
+
+        // Modify again unstaged (adds line 4)
+        fs::write(&file, "line 1\nline 2\nline 3\nline 4\n")
+            .expect("failed to write");
+
+        // Now we have MM: staged +1 line, unstaged +1 line
+        let repo_str = repo_path.to_string_lossy().to_string();
+        let result = git_status(repo_str).await;
+
+        assert!(result.is_ok(), "git_status should succeed");
+        let files = result.unwrap();
+
+        assert_eq!(files.len(), 2, "MM should produce two entries");
+
+        // Find staged and unstaged entries
+        let staged = files
+            .iter()
+            .find(|f| f.staged)
+            .expect("should have staged entry");
+        let unstaged = files
+            .iter()
+            .find(|f| !f.staged)
+            .expect("should have unstaged entry");
+
+        assert_eq!(staged.path, "test.txt");
+        assert_eq!(unstaged.path, "test.txt");
+
+        // Both should have numstat data
+        assert!(
+            staged.insertions.is_some(),
+            "staged entry should have insertions count"
+        );
+        assert!(
+            staged.deletions.is_some(),
+            "staged entry should have deletions count"
+        );
+        assert!(
+            unstaged.insertions.is_some(),
+            "unstaged entry should have insertions count"
+        );
+        assert!(
+            unstaged.deletions.is_some(),
+            "unstaged entry should have deletions count"
+        );
+
+        // Staged should show +1/-0 (added line 3)
+        assert_eq!(staged.insertions, Some(1));
+        assert_eq!(staged.deletions, Some(0));
+
+        // Unstaged should show +1/-0 (added line 4)
+        assert_eq!(unstaged.insertions, Some(1));
+        assert_eq!(unstaged.deletions, Some(0));
+    }
+
+    // Integration test for get_git_diff command (Feature 5)
+
+    #[tokio::test]
+    async fn test_get_git_diff_subdir_cwd_returns_populated_hunks() {
+        // Test that calling get_git_diff from a subdirectory works correctly
+        // (via rev-parse --show-toplevel resolution)
+        use std::fs;
+        use std::process::Command;
+
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let repo_path = tmp.path();
+
+        // Initialize git repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git init failed");
+
+        // Create subdirectory
+        let subdir = repo_path.join("sub");
+        fs::create_dir(&subdir).expect("failed to create subdir");
+
+        // Create and commit file in subdirectory
+        let file_path = subdir.join("foo.ts");
+        fs::write(&file_path, "line 1\nline 2\n").expect("failed to write file");
+
+        Command::new("git")
+            .args(["add", "sub/foo.ts"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git add failed");
+
+        Command::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git commit failed");
+
+        // Modify the file
+        fs::write(&file_path, "line 1\nline 2\nline 3\n").expect("failed to write");
+
+        // Call get_git_diff from the subdirectory with file path "sub/foo.ts"
+        let subdir_str = subdir.to_string_lossy().to_string();
+        let result = get_git_diff(subdir_str, "sub/foo.ts".to_string(), false).await;
+
+        assert!(result.is_ok(), "get_git_diff should succeed from subdir");
+        let diff = result.unwrap();
+
+        assert_eq!(diff.file_path, "sub/foo.ts");
+        assert!(!diff.hunks.is_empty(), "should have populated hunks");
+
+        // Verify the diff shows the added line
+        let hunk = &diff.hunks[0];
+        let added_lines: Vec<_> = hunk
+            .lines
+            .iter()
+            .filter(|l| matches!(l.line_type, DiffLineType::Added))
+            .collect();
+
+        assert_eq!(added_lines.len(), 1, "should have one added line");
+        assert_eq!(added_lines[0].content, "line 3");
+    }
+
+    #[tokio::test]
+    async fn test_get_git_diff_non_repo_returns_empty_hunks() {
+        // Test that calling get_git_diff from a non-repo directory returns
+        // FileDiff with empty hunks (not an error)
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let non_repo = tmp.path().to_string_lossy().to_string();
+
+        let result = get_git_diff(non_repo, "foo.txt".to_string(), false).await;
+
+        assert!(result.is_ok(), "non-repo should return Ok, not error");
+        let diff = result.unwrap();
+        assert_eq!(diff.file_path, "foo.txt");
+        assert_eq!(diff.hunks.len(), 0, "non-repo should return empty hunks");
     }
 }
