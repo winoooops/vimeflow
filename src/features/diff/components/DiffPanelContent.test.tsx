@@ -62,7 +62,7 @@ describe('DiffPanelContent', () => {
   test('renders empty state when no changes exist', (): void => {
     vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
       files: [],
-      filesCwd: null,
+      filesCwd: '.',
       loading: false,
       error: null,
       refresh: vi.fn(),
@@ -116,7 +116,7 @@ describe('DiffPanelContent', () => {
 
     vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
       files: mockFiles,
-      filesCwd: '/test/cwd',
+      filesCwd: '.',
       loading: false,
       error: null,
       refresh: vi.fn(),
@@ -159,11 +159,297 @@ describe('DiffPanelContent', () => {
 
     render(<DiffPanelContent cwd="/home/user/project" />)
 
-    expect(useGitStatusSpy).toHaveBeenCalledWith('/home/user/project')
+    expect(useGitStatusSpy).toHaveBeenCalledWith('/home/user/project', {
+      watch: true,
+    })
+
     expect(useFileDiffSpy).toHaveBeenCalledWith(
       null,
       false,
       '/home/user/project'
     )
+  })
+
+  describe('Controlled mode', () => {
+    test('render-time cwd guard: ignores selection from different cwd', (): void => {
+      const mockFiles: ChangedFile[] = [
+        {
+          path: 'src/App.tsx',
+          status: 'modified',
+          staged: false,
+        },
+      ]
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: mockFiles,
+        filesCwd: '/repo/b',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      })
+
+      const useFileDiffSpy = vi
+        .spyOn(useFileDiffModule, 'useFileDiff')
+        .mockReturnValue({
+          diff: null,
+          loading: false,
+          error: null,
+        })
+
+      // selectedFile is from /repo/a but current cwd is /repo/b
+      render(
+        <DiffPanelContent
+          cwd="/repo/b"
+          selectedFile={{ path: 'src/App.tsx', staged: false, cwd: '/repo/a' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      // useFileDiff should be called with null (selection ignored)
+      expect(useFileDiffSpy).toHaveBeenCalledWith(null, false, '/repo/b')
+    })
+
+    test('auto-select gated on filesCwd: only fires when filesCwd matches cwd', (): void => {
+      const mockFiles: ChangedFile[] = [
+        {
+          path: 'src/App.tsx',
+          status: 'modified',
+          staged: false,
+        },
+      ]
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: mockFiles,
+        filesCwd: '/repo/a', // Fresh data
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+        diff: null,
+        loading: false,
+        error: null,
+      })
+
+      const onSelectedFileChange = vi.fn()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo/a"
+          selectedFile={null}
+          onSelectedFileChange={onSelectedFileChange}
+        />
+      )
+
+      // Should auto-select first file with cwd tag
+      expect(onSelectedFileChange).toHaveBeenCalledWith({
+        path: 'src/App.tsx',
+        staged: false,
+        cwd: '/repo/a',
+      })
+    })
+
+    test('stale rows not rendered when filesCwd !== cwd', (): void => {
+      const mockFiles: ChangedFile[] = [
+        {
+          path: 'src/OldFile.tsx',
+          status: 'modified',
+          staged: false,
+        },
+      ]
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: mockFiles,
+        filesCwd: '/repo/a', // Stale data from old cwd
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+        diff: null,
+        loading: false,
+        error: null,
+      })
+
+      render(
+        <DiffPanelContent
+          cwd="/repo/b"
+          selectedFile={null}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      // Should show loading state (not stale files)
+      expect(screen.getByText('Loading diff…')).toBeInTheDocument()
+    })
+
+    test('commitSelection tags with current cwd on click', (): void => {
+      const mockFiles: ChangedFile[] = [
+        {
+          path: 'src/App.tsx',
+          status: 'modified',
+          staged: false,
+        },
+        {
+          path: 'src/Other.tsx',
+          status: 'added',
+          staged: true,
+        },
+      ]
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: mockFiles,
+        filesCwd: '/repo/b',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      })
+
+      const mockDiff: FileDiff = {
+        filePath: 'src/App.tsx',
+        oldPath: 'src/App.tsx',
+        newPath: 'src/App.tsx',
+        hunks: [],
+      }
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+        diff: mockDiff,
+        loading: false,
+        error: null,
+      })
+
+      const onSelectedFileChange = vi.fn()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo/b"
+          selectedFile={{ path: 'src/App.tsx', staged: false, cwd: '/repo/b' }}
+          onSelectedFileChange={onSelectedFileChange}
+        />
+      )
+
+      // Find and click a different file row
+      const otherFileRow = screen.getByText('Other.tsx')
+      otherFileRow.click()
+
+      // Should call with cwd tag
+      expect(onSelectedFileChange).toHaveBeenCalledWith({
+        path: 'src/Other.tsx',
+        staged: true,
+        cwd: '/repo/b',
+      })
+    })
+
+    test('untracked file regression: shows placeholder for untracked files', (): void => {
+      const mockFiles: ChangedFile[] = [
+        {
+          path: 'new.ts',
+          status: 'untracked',
+          staged: false,
+        },
+      ]
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: mockFiles,
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      })
+
+      const useFileDiffSpy = vi
+        .spyOn(useFileDiffModule, 'useFileDiff')
+        .mockReturnValue({
+          diff: null,
+          loading: false,
+          error: null,
+        })
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'new.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      // Should show untracked placeholder
+      expect(screen.getByText('New file — not yet tracked')).toBeInTheDocument()
+      // useFileDiff should still be called with the path
+      expect(useFileDiffSpy).toHaveBeenCalledWith('new.ts', false, '/repo')
+    })
+  })
+
+  describe('Uncontrolled mode fallback', () => {
+    test('auto-select works without controlled props', (): void => {
+      const mockFiles: ChangedFile[] = [
+        {
+          path: 'src/App.tsx',
+          status: 'modified',
+          staged: false,
+        },
+      ]
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: mockFiles,
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      })
+
+      const useFileDiffSpy = vi
+        .spyOn(useFileDiffModule, 'useFileDiff')
+        .mockReturnValue({
+          diff: null,
+          loading: false,
+          error: null,
+        })
+
+      render(<DiffPanelContent cwd="/repo" />)
+
+      // Should auto-select first file (via local state)
+      expect(useFileDiffSpy).toHaveBeenCalledWith('src/App.tsx', false, '/repo')
+    })
+
+    test('cwd guard works in uncontrolled mode', (): void => {
+      const mockFiles: ChangedFile[] = [
+        {
+          path: 'src/App.tsx',
+          status: 'modified',
+          staged: false,
+        },
+      ]
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: mockFiles,
+        filesCwd: '/repo/b',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      })
+
+      const useFileDiffSpy = vi
+        .spyOn(useFileDiffModule, 'useFileDiff')
+        .mockReturnValue({
+          diff: null,
+          loading: false,
+          error: null,
+        })
+
+      const { rerender } = render(<DiffPanelContent cwd="/repo/a" />)
+
+      // Change cwd
+      rerender(<DiffPanelContent cwd="/repo/b" />)
+
+      // Initially should call with null (stale selection from old cwd)
+      // Then after filesCwd updates, should auto-select
+      const calls = useFileDiffSpy.mock.calls
+      // Last call should be with the correct file after auto-select
+      const lastCall = calls[calls.length - 1]
+      expect(lastCall).toEqual(['src/App.tsx', false, '/repo/b'])
+    })
   })
 })
