@@ -637,7 +637,24 @@ pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
                 file.deletions = Some(*deletions);
             }
         }
-        // Leave None for untracked or binary files
+        // Untracked rows need a separate pass (see below) — the two numstat
+        // maps above don't include them because untracked paths aren't in
+        // the index.
+    }
+
+    // Second pass: synthesize numstat for untracked files via
+    // `git diff --no-index /dev/null <file>` so the sidebar `+N / -0`
+    // badge reflects the file's actual line count. Skips binary files
+    // (helper returns None) so they stay badge-less.
+    for file in &mut files {
+        if matches!(file.status, ChangedFileStatus::Untracked) {
+            if let Ok(Some((insertions, deletions))) =
+                get_untracked_numstat(&canonical_toplevel, &file.path).await
+            {
+                file.insertions = Some(insertions);
+                file.deletions = Some(deletions);
+            }
+        }
     }
 
     Ok(files)
@@ -706,6 +723,78 @@ async fn get_untracked_diff(toplevel: &Path, file: &str) -> Result<String, Strin
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Run `git diff --no-index --numstat -z /dev/null <file>` to get numstat
+/// counts for an untracked file. Returns `Some((insertions, deletions))`
+/// for a text file (deletions is always 0 for an all-new file), `None`
+/// for binary files or on any soft failure (caller treats it as "no
+/// numstat available" and leaves the sidebar badge off).
+///
+/// Invoked per untracked file from `git_status`. The regular `git diff
+/// --numstat` run from `git_status` doesn't see untracked paths because
+/// they aren't in the index, so without this fallback the sidebar
+/// `+N / -N` badge would never render for untracked rows — even though
+/// the row click now successfully shows the full-content diff in the
+/// viewer via `get_untracked_diff`.
+async fn get_untracked_numstat(
+    toplevel: &Path,
+    file: &str,
+) -> Result<Option<(u32, u32)>, String> {
+    let file_abs = toplevel.join(file);
+
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(toplevel)
+        .arg("diff")
+        .arg("--no-index")
+        .arg("--numstat")
+        .arg("-z")
+        .arg("--")
+        .arg(NULL_DEVICE)
+        .arg(&file_abs)
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let output = run_git_with_timeout(cmd).await?;
+    let exit_code = output.status.code().unwrap_or(-1);
+
+    // Exit 1 is normal for --no-index when files differ.
+    // Exit 0 means they were identical (empty untracked file vs /dev/null).
+    // Anything else is a genuine error; soft-fail rather than poisoning the
+    // whole git_status response.
+    if exit_code != 0 && exit_code != 1 {
+        return Ok(None);
+    }
+
+    // First record has shape `<ins>\t<del>\t<path>\0`. We only care about the
+    // first two fields; the path is the absolute one we passed in so there's
+    // nothing useful to parse from it.
+    let first_record: &[u8] = output
+        .stdout
+        .split(|&b| b == b'\0')
+        .next()
+        .unwrap_or(&[]);
+    let parts: Vec<&[u8]> = first_record.split(|&b| b == b'\t').collect();
+
+    if parts.len() < 2 {
+        return Ok(None);
+    }
+
+    let ins_str = String::from_utf8_lossy(parts[0]);
+    let del_str = String::from_utf8_lossy(parts[1]);
+
+    // Binary files report `-\t-\t<path>`.
+    if ins_str == "-" || del_str == "-" {
+        return Ok(None);
+    }
+
+    let insertions = ins_str.parse::<u32>().ok();
+    let deletions = del_str.parse::<u32>().ok();
+
+    match (insertions, deletions) {
+        (Some(i), Some(d)) => Ok(Some((i, d))),
+        _ => Ok(None),
+    }
 }
 
 /// Tauri command: Get diff for a specific file
@@ -1325,6 +1414,53 @@ mod tests {
         let diff = result.unwrap();
         assert_eq!(diff.file_path, "foo.txt");
         assert_eq!(diff.hunks.len(), 0, "non-repo should return empty hunks");
+    }
+
+    #[tokio::test]
+    async fn test_git_status_untracked_file_has_line_count_numstat() {
+        // An untracked file should carry `insertions == <line count>` and
+        // `deletions == 0` so the sidebar `+N / -0` badge renders. Verifies
+        // the second-pass `git diff --no-index --numstat` synthesizer.
+        use std::fs;
+        use std::process::Command;
+
+        let tmp = home_tempdir();
+        let repo_path = tmp.path();
+
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git init failed");
+
+        // Create an untracked 4-line file.
+        let untracked = repo_path.join("fresh.txt");
+        fs::write(&untracked, "one\ntwo\nthree\nfour\n").expect("write failed");
+
+        let repo_str = repo_path.to_string_lossy().to_string();
+        let result = git_status(repo_str).await;
+
+        assert!(result.is_ok(), "git_status should succeed");
+        let files = result.unwrap();
+        let untracked_entry = files
+            .iter()
+            .find(|f| f.path == "fresh.txt")
+            .expect("untracked file should appear in status");
+
+        assert!(matches!(
+            untracked_entry.status,
+            ChangedFileStatus::Untracked
+        ));
+        assert_eq!(
+            untracked_entry.insertions,
+            Some(4),
+            "insertions should equal the file's line count"
+        );
+        assert_eq!(
+            untracked_entry.deletions,
+            Some(0),
+            "deletions should be 0 for an untracked file (nothing to remove)"
+        );
     }
 
     #[tokio::test]
