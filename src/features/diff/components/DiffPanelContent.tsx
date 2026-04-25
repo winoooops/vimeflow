@@ -82,9 +82,17 @@ export const DiffPanelContent = ({
   const effectiveSelectedFile = rawSelection?.cwd === cwd ? rawSelection : null
 
   // Shared commitSelection helper that tags with current cwd.
-  // The discriminated union on props guarantees onSelectedFileChange is
-  // defined whenever isControlled is true, so the inner `&& onSelectedFileChange`
-  // guard is no longer needed — TypeScript narrows it across the union.
+  //
+  // The discriminated union on props guarantees callers pair
+  // `selectedFile` with `onSelectedFileChange`. TypeScript 4.4+ aliased-
+  // condition narrowing (which this project relies on elsewhere, e.g.
+  // BottomDrawer) tracks the `isControlled` const back through the
+  // discriminant, so TypeScript narrows `onSelectedFileChange` to its
+  // non-undefined variant inside `if (isControlled)`. Verified: tsc
+  // --strict does NOT emit TS2722 here, and ESLint's
+  // no-unnecessary-condition rule actively rejects an `&& onSelectedFileChange`
+  // guard as provably truthy. Do not add that guard back — the union is
+  // our single source of truth for the invariant.
   const commitSelection = useCallback(
     (newSelection: SelectedDiffFile | null): void => {
       if (isControlled) {
