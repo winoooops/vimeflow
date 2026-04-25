@@ -8,7 +8,7 @@ use agent::{
     stop_transcript_watcher, AgentWatcherState, TranscriptState,
 };
 use filesystem::{list_dir, read_file, write_file};
-use git::{get_git_diff, git_status};
+use git::{get_git_diff, git_status, watcher::{start_git_watcher, stop_git_watcher, GitWatcherState}};
 use terminal::{kill_pty, resize_pty, spawn_pty, write_pty, PtyState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -26,7 +26,8 @@ pub fn run() {
         })
         .manage(PtyState::new())
         .manage(AgentWatcherState::new())
-        .manage(TranscriptState::new());
+        .manage(TranscriptState::new())
+        .manage(GitWatcherState::new());
 
     #[cfg(not(feature = "e2e-test"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -43,7 +44,9 @@ pub fn run() {
         read_file,
         write_file,
         git_status,
-        get_git_diff
+        get_git_diff,
+        start_git_watcher,
+        stop_git_watcher
     ]);
 
     #[cfg(feature = "e2e-test")]
@@ -62,6 +65,8 @@ pub fn run() {
         write_file,
         git_status,
         get_git_diff,
+        start_git_watcher,
+        stop_git_watcher,
         terminal::test_commands::list_active_pty_sessions
     ]);
 

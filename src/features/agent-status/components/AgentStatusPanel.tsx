@@ -8,21 +8,41 @@ import { TestResults } from './TestResults'
 import { ActivityFooter } from './ActivityFooter'
 import { ActivityFeed } from './ActivityFeed'
 import { useActivityEvents } from '../hooks/useActivityEvents'
-import type { FileChangeItem } from './FilesChanged'
+import { useGitStatus } from '../../diff/hooks/useGitStatus'
+import type { ChangedFile } from '../../diff/types'
 
 interface AgentStatusPanelProps {
   sessionId: string | null
+  cwd: string
+  onOpenDiff: (file: ChangedFile) => void
 }
 
-// TODO: derive from tool calls in useAgentStatus hook
-const placeholderFiles: FileChangeItem[] = []
 const placeholderTests = { passed: 0, failed: 0, total: 0 }
 
 export const AgentStatusPanel = ({
   sessionId,
+  cwd,
+  onOpenDiff,
 }: AgentStatusPanelProps): ReactElement => {
   const status = useAgentStatus(sessionId)
   const events = useActivityEvents(status)
+
+  // Git status with file-system watcher
+  const { files, filesCwd, loading, error, refresh, idle } = useGitStatus(cwd, {
+    watch: true,
+    enabled: status.isActive,
+  })
+
+  // Freshness check — files are only valid if they came from the current cwd
+  const filesAreFresh = filesCwd === cwd
+  const effectiveFiles = filesAreFresh ? files : []
+
+  // Gate the transitional-loading arm on the hook actually running. When
+  // `idle` is true (hook short-circuited because enabled=false or cwd is
+  // a fallback), `filesCwd` stays null forever and `!filesAreFresh` would
+  // otherwise spin "Loading…" indefinitely. An idle hook never loads.
+  const effectiveLoading =
+    !idle && (loading || (!filesAreFresh && error === null))
 
   return (
     <div
@@ -65,7 +85,13 @@ export const AgentStatusPanel = ({
               active={status.toolCalls.active}
             />
             <ActivityFeed events={events} />
-            <FilesChanged files={placeholderFiles} />
+            <FilesChanged
+              files={effectiveFiles}
+              loading={effectiveLoading}
+              error={error}
+              onRetry={refresh}
+              onSelect={onOpenDiff}
+            />
             <TestResults
               passed={placeholderTests.passed}
               failed={placeholderTests.failed}

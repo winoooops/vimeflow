@@ -18,9 +18,28 @@ const defaultStatus: AgentStatus = {
   recentToolCalls: [],
 }
 
+const defaultGitStatus = {
+  files: [],
+  filesCwd: '/test',
+  loading: false,
+  error: null,
+  refresh: vi.fn(),
+  idle: false,
+}
+
 vi.mock('../hooks/useAgentStatus', () => ({
   useAgentStatus: vi.fn(() => defaultStatus),
 }))
+
+vi.mock('../../diff/hooks/useGitStatus', () => ({
+  useGitStatus: vi.fn(() => defaultGitStatus),
+}))
+
+const defaultProps = {
+  sessionId: null as string | null,
+  cwd: '/test',
+  onOpenDiff: vi.fn(),
+}
 
 describe('AgentStatusPanel', () => {
   test('renders at 0px width when agent is not active', async () => {
@@ -30,7 +49,7 @@ describe('AgentStatusPanel', () => {
       isActive: false,
     })
 
-    render(<AgentStatusPanel sessionId={null} />)
+    render(<AgentStatusPanel {...defaultProps} sessionId={null} />)
 
     const panel = screen.getByTestId('agent-status-panel')
     expect(panel.style.width).toBe('0px')
@@ -45,7 +64,7 @@ describe('AgentStatusPanel', () => {
       sessionId: 'session-1',
     })
 
-    render(<AgentStatusPanel sessionId="session-1" />)
+    render(<AgentStatusPanel {...defaultProps} sessionId="session-1" />)
 
     const panel = screen.getByTestId('agent-status-panel')
     expect(panel.style.width).toBe('280px')
@@ -58,7 +77,7 @@ describe('AgentStatusPanel', () => {
       isActive: false,
     })
 
-    render(<AgentStatusPanel sessionId={null} />)
+    render(<AgentStatusPanel {...defaultProps} sessionId={null} />)
 
     const panel = screen.getByTestId('agent-status-panel')
     expect(panel.style.transition).toBe('width 200ms ease-out')
@@ -73,7 +92,7 @@ describe('AgentStatusPanel', () => {
       sessionId: 'session-1',
     })
 
-    render(<AgentStatusPanel sessionId="session-1" />)
+    render(<AgentStatusPanel {...defaultProps} sessionId="session-1" />)
 
     const panel = screen.getByTestId('agent-status-panel')
     expect(panel.style.transition).toBe('width 200ms ease-in')
@@ -83,7 +102,7 @@ describe('AgentStatusPanel', () => {
     const { useAgentStatus } = await import('../hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue(defaultStatus)
 
-    render(<AgentStatusPanel sessionId={null} />)
+    render(<AgentStatusPanel {...defaultProps} sessionId={null} />)
 
     const panel = screen.getByTestId('agent-status-panel')
     expect(panel).toHaveClass('overflow-hidden')
@@ -93,7 +112,7 @@ describe('AgentStatusPanel', () => {
     const { useAgentStatus } = await import('../hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue(defaultStatus)
 
-    render(<AgentStatusPanel sessionId="session-42" />)
+    render(<AgentStatusPanel {...defaultProps} sessionId="session-42" />)
 
     expect(useAgentStatus).toHaveBeenCalledWith('session-42')
   })
@@ -122,7 +141,7 @@ describe('AgentStatusPanel', () => {
       ],
     })
 
-    render(<AgentStatusPanel sessionId="session-1" />)
+    render(<AgentStatusPanel {...defaultProps} sessionId="session-1" />)
 
     const toolCallsHeader = screen.getByRole('button', { name: /tool calls/i })
     const activityHeader = screen.getByRole('button', { name: /activity/i })
@@ -144,7 +163,9 @@ describe('AgentStatusPanel', () => {
       sessionId: 'session-1',
     })
 
-    const { container } = render(<AgentStatusPanel sessionId="session-1" />)
+    const { container } = render(
+      <AgentStatusPanel {...defaultProps} sessionId="session-1" />
+    )
 
     // The scroll region wraps ActivityFeed + ToolCallSummary + FilesChanged +
     // TestResults so the lower sections remain reachable when the ActivityFeed
@@ -179,7 +200,7 @@ describe('AgentStatusPanel', () => {
       ],
     })
 
-    render(<AgentStatusPanel sessionId="session-1" />)
+    render(<AgentStatusPanel {...defaultProps} sessionId="session-1" />)
 
     // ToolCallSummary: renders the byType chip label "Edit".
     expect(screen.getAllByText('Edit').length).toBeGreaterThan(0)

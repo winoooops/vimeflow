@@ -11,6 +11,7 @@ import { useSessionManager } from './hooks/useSessionManager'
 import { useResizable } from './hooks/useResizable'
 import { createFileSystemService } from '../files/services/fileSystemService'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
+import type { ChangedFile, SelectedDiffFile } from '../diff/types'
 
 const SIDEBAR_MIN = 180
 const SIDEBAR_MAX = 560
@@ -79,6 +80,16 @@ export const WorkspaceView = (): ReactElement => {
   // General-purpose error banner for non-dialog file ops (direct file open,
   // async load failure inside CodeEditor, vim :w save failure).
   const [fileError, setFileError] = useState<string | null>(null)
+
+  // Bottom drawer controlled state
+  const [bottomDrawerTab, setBottomDrawerTab] = useState<'editor' | 'diff'>(
+    'editor'
+  )
+
+  const [selectedDiffFile, setSelectedDiffFile] =
+    useState<SelectedDiffFile | null>(null)
+
+  const [isBottomDrawerCollapsed, setIsBottomDrawerCollapsed] = useState(false)
 
   // Open a file directly (no unsaved-changes guard). Errors were previously
   // swallowed via `void editorBuffer.openFile(...)`, leaving the user with
@@ -238,6 +249,23 @@ export const WorkspaceView = (): ReactElement => {
     setSaveError(null)
   }, [setPendingFilePathSynced])
 
+  // Handle opening a diff file from AgentStatusPanel
+  const handleOpenDiff = useCallback(
+    (file: ChangedFile): void => {
+      const cwd = activeSession?.workingDirectory ?? '.'
+
+      setBottomDrawerTab('diff')
+      setSelectedDiffFile({ path: file.path, staged: file.staged, cwd })
+      setIsBottomDrawerCollapsed(false)
+    },
+    [activeSession?.workingDirectory]
+  )
+
+  // Belt-and-suspenders: clear selection on cwd change
+  useEffect(() => {
+    setSelectedDiffFile(null)
+  }, [activeSession?.workingDirectory])
+
   return (
     <div
       data-testid="workspace-view"
@@ -306,6 +334,12 @@ export const WorkspaceView = (): ReactElement => {
           isDirty={editorBuffer.isDirty}
           isLoading={editorBuffer.isLoading}
           cwd={activeSession?.workingDirectory ?? '.'}
+          activeTab={bottomDrawerTab}
+          onTabChange={setBottomDrawerTab}
+          isCollapsed={isBottomDrawerCollapsed}
+          onCollapsedChange={setIsBottomDrawerCollapsed}
+          selectedDiffFile={selectedDiffFile}
+          onSelectedDiffFileChange={setSelectedDiffFile}
         />
 
         {/* File error banner — surfaces failures from direct file open
@@ -332,7 +366,11 @@ export const WorkspaceView = (): ReactElement => {
       </div>
 
       {/* Agent Status Panel — self-manages width (0↔280px) */}
-      <AgentStatusPanel sessionId={activeSessionId} />
+      <AgentStatusPanel
+        sessionId={activeSessionId}
+        cwd={activeSession?.workingDirectory ?? '.'}
+        onOpenDiff={handleOpenDiff}
+      />
 
       {/* Unsaved Changes Dialog — shows the CURRENTLY dirty file, not the
           destination the user is switching to. */}

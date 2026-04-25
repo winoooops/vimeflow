@@ -12,6 +12,13 @@ export interface ChangedFile {
   staged: boolean // whether file is in the index
 }
 
+/** Selected diff file with cwd tag (for cross-cwd staleness detection) */
+export interface SelectedDiffFile {
+  path: string
+  staged: boolean
+  cwd: string
+}
+
 /** Parsed diff for a single file */
 export interface FileDiff {
   filePath: string

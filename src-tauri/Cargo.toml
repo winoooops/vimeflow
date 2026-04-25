@@ -26,9 +26,10 @@ tauri-plugin-log = "2"
 portable-pty = "0.8"
 anyhow = "1.0"
 thiserror = "2.0"
-tokio = { version = "1", features = ["sync", "io-util", "time", "rt"] }
+tokio = { version = "1", features = ["sync", "io-util", "time", "rt", "macros"] }
 notify = "6"
 dirs = "6"
+ignore = "0.4"
 
 [features]
 e2e-test = []

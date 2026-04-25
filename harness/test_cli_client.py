@@ -190,6 +190,73 @@ def test_query_drains_stderr_without_deadlock(tmp_path, monkeypatch):
     assert len(result_events) == 1 and not result_events[0].is_error
 
 
+def test_query_reads_stream_lines_over_64kb(tmp_path, monkeypatch):
+    """A single stream-JSON line larger than asyncio's default 64 KB
+    StreamReader limit must not crash the parser.
+
+    Pre-fix: create_subprocess_exec used the default `limit` of 64 KB,
+    so reading any tool result that serialized to a line bigger than
+    that raised `LimitOverrunError: Separator is not found, and chunk
+    exceed the limit`. This happened in practice when the initializer
+    Read-tool result for a long markdown spec came back as one JSON
+    line. Post-fix: we pass `limit=STREAM_BUFFER_LIMIT` (10 MB) so the
+    parser can absorb realistic single-message payloads.
+
+    Stubs _build_args to a Python one-liner that emits one JSON line
+    containing a ~500 KB text block, followed by a normal result line.
+    """
+    import asyncio
+    import sys
+
+    settings = tmp_path / "settings.json"
+    settings.write_text("{}")
+    session = ClaudeCliSession(
+        role="big-line",
+        project_dir=tmp_path,
+        model="claude-sonnet-4-5-20250929",
+        settings_path=settings,
+        allowed_tools=["Read"],
+    )
+
+    # 500 KB — well above the old 64 KB ceiling, well under the new 10 MB.
+    # Emit as an assistant text block so the parser has something concrete
+    # to yield; then a normal result line.
+    payload = (
+        "import json,sys\n"
+        "msg = {\"type\": \"assistant\", \"message\": {\"content\": ["
+        "{\"type\": \"text\", \"text\": \"X\" * 500_000}"
+        "]}}\n"
+        "print(json.dumps(msg))\n"
+        "print('{\"type\":\"result\",\"subtype\":\"success\","
+        "\"session_id\":\"x\",\"is_error\":false}')\n"
+        "sys.exit(0)"
+    )
+    monkeypatch.setattr(
+        session,
+        "_build_args",
+        lambda prompt, resume: [sys.executable, "-c", payload],
+    )
+
+    async def run():
+        events = []
+        async for event in session.query("ignored"):
+            events.append(event)
+        return events
+
+    events = asyncio.run(asyncio.wait_for(run(), timeout=10))
+
+    # We should get one AssistantMessage (the big text) and one ResultEvent.
+    # Pre-fix, this raised LimitOverrunError before either event was yielded.
+    assistant_events = [e for e in events if isinstance(e, AssistantMessage)]
+    result_events = [e for e in events if isinstance(e, ResultEvent)]
+    assert len(assistant_events) == 1
+    assert len(result_events) == 1 and not result_events[0].is_error
+
+    # Sanity-check the payload actually round-tripped at its full size.
+    assert isinstance(assistant_events[0].content[0], TextBlock)
+    assert len(assistant_events[0].content[0].text) == 500_000
+
+
 def test_query_times_out_on_stalled_subprocess(tmp_path, monkeypatch):
     """A `claude -p` that never closes stdout (network hang / auth expiry
     mid-stream) must NOT hang the harness forever. Pre-fix: query() had

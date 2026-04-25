@@ -20,6 +20,16 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 
+# asyncio's StreamReader defaults to a 64 KB line buffer. `claude -p` emits
+# one stream-JSON message per line, and a single tool result (e.g. Read of
+# a long markdown spec, ls -la of a deep tree, or a big git log) can easily
+# exceed that and crash the parser with
+# `LimitOverrunError: Separator is not found, and chunk exceed the limit`.
+# 10 MB is generous enough to cover any realistic single message without
+# letting a runaway process chew unbounded memory before the pipe closes.
+STREAM_BUFFER_LIMIT = 10 * 1024 * 1024
+
+
 @dataclass
 class TextBlock:
     text: str
@@ -198,6 +208,7 @@ class ClaudeCliSession:
             cwd=str(self.project_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=STREAM_BUFFER_LIMIT,
         )
         # Set _started after a successful spawn. If create_subprocess_exec
         # raises (e.g. `claude` not on PATH), the flag stays False and a

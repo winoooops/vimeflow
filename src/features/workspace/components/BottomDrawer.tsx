@@ -2,10 +2,40 @@ import { type ReactElement, useState } from 'react'
 import { CodeEditor } from '../../editor/components/CodeEditor'
 import { DiffPanelContent } from '../../diff/components/DiffPanelContent'
 import { useResizable } from '../hooks/useResizable'
+import type { SelectedDiffFile } from '../../diff/types'
 
 type TabType = 'editor' | 'diff'
 
-interface BottomDrawerProps {
+/**
+ * Controlled/uncontrolled prop pairs for the three pieces of state this
+ * component can be driven by. Discriminated unions force callers to either
+ * pass BOTH `value` + `onChange` (controlled) or NEITHER (uncontrolled).
+ *
+ * Previously the two sides were independent optionals, so a caller could
+ * pass `activeTab='diff'` without `onTabChange` and get a silently-dead
+ * tab bar: clicks hit the `if (isTabControlled && onTabChange)` guard and
+ * fell through with no state update anywhere. The union removes that
+ * pitfall at compile time.
+ */
+type TabControl =
+  | { activeTab?: undefined; onTabChange?: undefined }
+  | { activeTab: TabType; onTabChange: (tab: TabType) => void }
+
+type CollapseControl =
+  | { isCollapsed?: undefined; onCollapsedChange?: undefined }
+  | {
+      isCollapsed: boolean
+      onCollapsedChange: (collapsed: boolean) => void
+    }
+
+type SelectedDiffControl =
+  | { selectedDiffFile?: undefined; onSelectedDiffFileChange?: undefined }
+  | {
+      selectedDiffFile: SelectedDiffFile | null
+      onSelectedDiffFileChange: (file: SelectedDiffFile | null) => void
+    }
+
+interface BottomDrawerBaseProps {
   selectedFilePath: string | null
   /** Current buffer content, owned by the parent `useEditorBuffer`. */
   content: string
@@ -17,6 +47,11 @@ interface BottomDrawerProps {
   /** Working directory for git commands (diff viewer) */
   cwd?: string
 }
+
+type BottomDrawerProps = BottomDrawerBaseProps &
+  TabControl &
+  CollapseControl &
+  SelectedDiffControl
 
 /**
  * BottomDrawer - Editor and Diff Viewer panel below terminal
@@ -35,10 +70,31 @@ const BottomDrawer = ({
   isDirty = false,
   isLoading = false,
   cwd = '.',
+  activeTab: controlledActiveTab,
+  onTabChange,
+  isCollapsed: controlledIsCollapsed,
+  onCollapsedChange,
+  selectedDiffFile,
+  onSelectedDiffFileChange,
 }: BottomDrawerProps): ReactElement => {
-  const [activeTab, setActiveTab] = useState<TabType>('editor')
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [uncontrolledActiveTab, setUncontrolledActiveTab] =
+    useState<TabType>('editor')
+  const [uncontrolledIsCollapsed, setUncontrolledIsCollapsed] = useState(false)
+
   const COLLAPSED_HEIGHT = 48 // Just the tab bar
+
+  // Determine if each prop is controlled
+  const isTabControlled = controlledActiveTab !== undefined
+  const isCollapseControlled = controlledIsCollapsed !== undefined
+
+  // Use controlled value or fallback to uncontrolled
+  const activeTab = isTabControlled
+    ? controlledActiveTab
+    : uncontrolledActiveTab
+
+  const isCollapsed = isCollapseControlled
+    ? controlledIsCollapsed
+    : uncontrolledIsCollapsed
 
   // Drawer sizing is in pixels, not viewport-relative. The 400/150/640
   // constants were chosen to feel roughly right on an 800px workspace
@@ -132,7 +188,14 @@ const BottomDrawer = ({
           <button
             type="button"
             onClick={() => {
-              setActiveTab('editor')
+              // Discriminated union guarantees onTabChange is defined
+              // whenever isTabControlled is true; no `&& onTabChange` guard
+              // needed at runtime.
+              if (isTabControlled) {
+                onTabChange('editor')
+              } else {
+                setUncontrolledActiveTab('editor')
+              }
             }}
             className={`flex items-center space-x-2 font-mono text-xs h-12 px-2 transition-colors ${
               activeTab === 'editor'
@@ -149,7 +212,11 @@ const BottomDrawer = ({
           <button
             type="button"
             onClick={() => {
-              setActiveTab('diff')
+              if (isTabControlled) {
+                onTabChange('diff')
+              } else {
+                setUncontrolledActiveTab('diff')
+              }
             }}
             className={`flex items-center space-x-2 font-mono text-xs h-12 px-2 transition-colors ${
               activeTab === 'diff'
@@ -180,7 +247,11 @@ const BottomDrawer = ({
             aria-label={isCollapsed ? 'Expand drawer' : 'Collapse drawer'}
             aria-expanded={!isCollapsed}
             onClick={() => {
-              setIsCollapsed((v) => !v)
+              if (isCollapseControlled) {
+                onCollapsedChange(!isCollapsed)
+              } else {
+                setUncontrolledIsCollapsed((v) => !v)
+              }
             }}
             className="material-symbols-outlined text-sm text-outline hover:text-on-surface cursor-pointer transition-colors"
           >
@@ -228,7 +299,20 @@ const BottomDrawer = ({
             data-testid="diff-panel"
             className="flex min-h-0 flex-1 overflow-hidden"
           >
-            <DiffPanelContent cwd={cwd} />
+            {/* DiffPanelContent expects BOTH controlled-selection props
+                together or neither. BottomDrawer's own type is a
+                discriminated union: `selectedDiffFile` undefined implies
+                `onSelectedDiffFileChange` undefined too, so checking one
+                narrows both. */}
+            {selectedDiffFile !== undefined ? (
+              <DiffPanelContent
+                cwd={cwd}
+                selectedFile={selectedDiffFile}
+                onSelectedFileChange={onSelectedDiffFileChange}
+              />
+            ) : (
+              <DiffPanelContent cwd={cwd} />
+            )}
           </div>
         )}
       </div>
