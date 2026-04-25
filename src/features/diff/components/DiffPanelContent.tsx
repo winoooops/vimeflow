@@ -11,14 +11,29 @@ import { ChangedFilesList } from './ChangedFilesList'
 import { DiffViewer } from './DiffViewer'
 import type { ChangedFile, SelectedDiffFile } from '../types'
 
-export interface DiffPanelContentProps {
+/**
+ * Controlled/uncontrolled selection pair as a discriminated union. Forces
+ * callers to pass BOTH `selectedFile` + `onSelectedFileChange` (controlled
+ * mode) or NEITHER (uncontrolled). Without this, a caller that passed only
+ * `selectedFile` would flip `isControlled` to true but hit the
+ * `if (isControlled && onSelectedFileChange)` guard inside `commitSelection`
+ * and get a silently-frozen selection — no auto-select-first, no cwd reset,
+ * no stale-selection invalidation. Same pattern as `BottomDrawerProps`.
+ */
+type DiffPanelSelectionControl =
+  | { selectedFile?: undefined; onSelectedFileChange?: undefined }
+  | {
+      selectedFile: SelectedDiffFile | null
+      onSelectedFileChange: (file: SelectedDiffFile | null) => void
+    }
+
+interface DiffPanelContentBaseProps {
   /** Working directory for git commands */
   cwd?: string
-  /** Controlled selected file (with cwd tag for staleness detection) */
-  selectedFile?: SelectedDiffFile | null
-  /** Controlled selection change handler */
-  onSelectedFileChange?: ((file: SelectedDiffFile | null) => void) | null
 }
+
+export type DiffPanelContentProps = DiffPanelContentBaseProps &
+  DiffPanelSelectionControl
 
 /**
  * DiffPanelContent - Real diff viewer that replaces the placeholder
@@ -28,8 +43,8 @@ export interface DiffPanelContentProps {
  */
 export const DiffPanelContent = ({
   cwd = '.',
-  selectedFile: controlledSelectedFile = undefined,
-  onSelectedFileChange = null,
+  selectedFile: controlledSelectedFile,
+  onSelectedFileChange,
 }: DiffPanelContentProps): ReactElement => {
   const {
     files,
@@ -66,12 +81,15 @@ export const DiffPanelContent = ({
   // Render-time cwd guard: reject selections from a different cwd
   const effectiveSelectedFile = rawSelection?.cwd === cwd ? rawSelection : null
 
-  // Shared commitSelection helper that tags with current cwd
+  // Shared commitSelection helper that tags with current cwd.
+  // The discriminated union on props guarantees onSelectedFileChange is
+  // defined whenever isControlled is true, so the inner `&& onSelectedFileChange`
+  // guard is no longer needed — TypeScript narrows it across the union.
   const commitSelection = useCallback(
     (newSelection: SelectedDiffFile | null): void => {
-      if (isControlled && onSelectedFileChange) {
+      if (isControlled) {
         onSelectedFileChange(newSelection)
-      } else if (!isControlled) {
+      } else {
         setUncontrolledSelectedFile(newSelection)
       }
     },

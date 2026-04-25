@@ -299,11 +299,20 @@ const BottomDrawer = ({
             data-testid="diff-panel"
             className="flex min-h-0 flex-1 overflow-hidden"
           >
-            <DiffPanelContent
-              cwd={cwd}
-              selectedFile={selectedDiffFile}
-              onSelectedFileChange={onSelectedDiffFileChange}
-            />
+            {/* DiffPanelContent expects BOTH controlled-selection props
+                together or neither. BottomDrawer's own type is a
+                discriminated union: `selectedDiffFile` undefined implies
+                `onSelectedDiffFileChange` undefined too, so checking one
+                narrows both. */}
+            {selectedDiffFile !== undefined ? (
+              <DiffPanelContent
+                cwd={cwd}
+                selectedFile={selectedDiffFile}
+                onSelectedFileChange={onSelectedDiffFileChange}
+              />
+            ) : (
+              <DiffPanelContent cwd={cwd} />
+            )}
           </div>
         )}
       </div>

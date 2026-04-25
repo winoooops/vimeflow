@@ -726,13 +726,36 @@ fn upgrade_to_repo_watcher(
     // entry. This keeps every subscriber's identity intact across the
     // upgrade — the Files Changed panel continues receiving events on the
     // exact string it subscribed with, so its exact-string filter matches.
+    //
+    // Collect errors instead of bailing on the first failure. The previous
+    // revision used `?`, which meant one bad subscriber (e.g. cwd deleted
+    // between pre-repo registration and upgrade) stranded every subsequent
+    // subscriber: the pre-repo entry was already removed, so subsequent
+    // stops would silent-no-op and the frontend panel would go permanently
+    // stale with no surfaced error. Per-subscriber errors are now
+    // accumulated; each surviving subscriber still gets its repo watcher,
+    // and the caller sees a combined error describing all failures.
+    let mut errors: Vec<String> = Vec::new();
     for (original_cwd, refcount) in subscribers {
         for _ in 0..refcount {
-            start_git_watcher_inner(&original_cwd, app_handle.clone(), &state)?;
+            if let Err(e) =
+                start_git_watcher_inner(&original_cwd, app_handle.clone(), &state)
+            {
+                errors.push(format!("{}: {}", original_cwd, e));
+                break; // don't retry the same cwd if it's fundamentally broken
+            }
         }
     }
 
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "upgrade_to_repo_watcher: {} subscriber(s) failed to upgrade: {}",
+            errors.len(),
+            errors.join("; ")
+        ))
+    }
 }
 
 /// Stop watching a git repository
