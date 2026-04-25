@@ -175,6 +175,18 @@ pub struct GitWatcherState {
     /// skipped, and the polling thread (kept alive by the un-removed
     /// RepoWatcher) would keep firing `hash_git_status` forever.
     cwd_to_toplevel: Arc<Mutex<HashMap<String, PathBuf>>>,
+
+    /// Side-map: frontend's original cwd string → canonicalized PathBuf
+    /// for **pre-repo** entries. Same role as `cwd_to_toplevel` but for
+    /// the non-repo path: populated by `start_pre_repo_watcher_inner`,
+    /// consumed by `stop_git_watcher_inner` to find the `pre_repo_watchers`
+    /// bucket without re-running `validate_cwd`.
+    ///
+    /// Without this, a session watching a non-repo directory whose path
+    /// is then deleted (agent runs `rm -rf` on its working dir) would leak
+    /// its PreRepoWatcher: stop-time `validate_cwd` fails on `canonicalize`,
+    /// the early-return fires, and the polling thread runs forever.
+    cwd_to_safe_pre_repo: Arc<Mutex<HashMap<String, PathBuf>>>,
 }
 
 impl GitWatcherState {
@@ -317,6 +329,21 @@ fn start_git_watcher_inner(
     state: &GitWatcherState,
 ) -> Result<(), String> {
     let safe_cwd = validate_cwd(cwd)?;
+
+    // Opportunistically clear any stale pre-repo side-map entry for this
+    // cwd. If we're transitioning from pre-repo to repo (called via
+    // `upgrade_to_repo_watcher`, or just a re-subscription after `git init`),
+    // the old `cwd_to_safe_pre_repo` mapping is now obsolete. Leaving it
+    // would just be a tiny memory leak — stop_git_watcher_inner consults
+    // `cwd_to_toplevel` first so the stale entry can't cause incorrect
+    // routing — but tidiness wins.
+    {
+        let mut pre_repo_map = state
+            .cwd_to_safe_pre_repo
+            .lock()
+            .expect("failed to lock cwd_to_safe_pre_repo");
+        pre_repo_map.remove(cwd);
+    }
 
     // Try to resolve repo toplevel
     let toplevel = match resolve_toplevel(&safe_cwd) {
@@ -630,6 +657,15 @@ fn start_pre_repo_watcher_inner(
         // under its own original string.
         *watcher.subscribers.entry(cwd.to_string()).or_insert(0) += 1;
 
+        // Record cwd → safe_cwd in the side-map so stop_git_watcher_inner
+        // can find this bucket without re-running validate_cwd at stop time
+        // (which fails if the directory has since been deleted).
+        state
+            .cwd_to_safe_pre_repo
+            .lock()
+            .expect("failed to lock cwd_to_safe_pre_repo")
+            .insert(cwd.to_string(), safe_cwd.clone());
+
         emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
 
         return Ok(());
@@ -683,7 +719,15 @@ fn start_pre_repo_watcher_inner(
         stop_flag,
     };
 
-    pre_repo_watchers.insert(safe_cwd, pre_repo_watcher);
+    pre_repo_watchers.insert(safe_cwd.clone(), pre_repo_watcher);
+
+    // Record cwd → safe_cwd in the side-map (see field doc on
+    // GitWatcherState.cwd_to_safe_pre_repo).
+    state
+        .cwd_to_safe_pre_repo
+        .lock()
+        .expect("failed to lock cwd_to_safe_pre_repo")
+        .insert(cwd.to_string(), safe_cwd);
 
     // Emit initial event with the frontend's original cwd string
     emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
@@ -824,13 +868,34 @@ fn stop_git_watcher_inner(cwd: String, state: GitWatcherState) -> Result<(), Str
         // entry; the map-removal above already cleaned up).
     }
 
-    // No recorded toplevel → pre-repo watcher path. We still need the
-    // canonical `safe_cwd` PathBuf to look up the pre-repo map.
-    // `validate_cwd` may itself fail if the cwd has been deleted, in
-    // which case there's nothing we can clean up from here and
-    // idempotent-stop is the right answer.
-    let Ok(safe_cwd) = validate_cwd(&cwd) else {
-        return Ok(());
+    // No recorded toplevel → pre-repo watcher path. Look up the canonical
+    // PathBuf from the pre-repo side-map first. Falls back to live
+    // `validate_cwd` only if the side-map has no record (defensive — covers
+    // pre-existing watchers from before this side-map existed in long-
+    // running sessions, though there shouldn't be any in practice).
+    //
+    // The side-map removal here is symmetric with `cwd_to_toplevel.remove`
+    // above: it cleans up the map regardless of whether we successfully
+    // stop the watcher, so a future idempotent stop is a pure no-op.
+    let recorded_pre_repo: Option<PathBuf> = {
+        let mut map = state
+            .cwd_to_safe_pre_repo
+            .lock()
+            .map_err(|e| format!("Failed to lock cwd_to_safe_pre_repo: {}", e))?;
+        map.remove(&cwd)
+    };
+
+    let safe_cwd = match recorded_pre_repo {
+        Some(p) => p,
+        None => {
+            // No recorded mapping. Try live validation as a last resort;
+            // if even that fails (cwd no longer exists), there's truly
+            // nothing we can do from here and idempotent-stop is correct.
+            let Ok(p) = validate_cwd(&cwd) else {
+                return Ok(());
+            };
+            p
+        }
     };
 
     let mut pre_repo_watchers = state
