@@ -241,29 +241,13 @@ Verdict: WARNING — 2 HIGH issues should be resolved before merge.
 
 ## IDEA Analysis (MANDATORY — per finding)
 
-Pair **every finding** with its own IDEA block. IDEA is not a global summary anymore; it lives directly under each finding so the reader gets reasoning paired with the code location. Because IDEA carries the "why," the finding body above it can stay short.
+Pair **every finding** with its own IDEA block. The body says what's wrong; IDEA carries the why.
 
-Scope each field to **this specific finding**, not the whole PR:
+The four-field definition and formatting live in `rules/common/idea-framework.md` — that is the canonical source. Do not redefine the fields here. Code-review-specific rules:
 
-- **I — Intent**: What was the author trying to do at this spot, and does the code match that intent?
-- **D — Danger**: What breaks or degrades if this ships — edge cases, security, bad data, UX — specifically because of this issue?
-- **E — Explain**: Why did the author likely write it this way? Trade-offs or reasoning behind this particular code.
-- **A — Alternatives**: Is there a simpler/safer approach for this specific issue? Would a senior dev push back? Only suggest alternatives when meaningfully better.
-
-```
-### [SEVERITY] Finding title
-📍 path/to/file.ts L12-18
-
-Short body: what's wrong, impact, fix. A few sentences max.
-
-💡 IDEA
-- I — Intent: ...
-- D — Danger: ...
-- E — Explain: ...
-- A — Alternatives: ...
-```
-
-Do **not** produce a PR-level IDEA block at the end of the review.
+- Scope each IDEA to **this specific finding**, not the whole PR.
+- Do **not** produce a PR-level IDEA block at the end of the review.
+- Use the per-finding format shown in the "Review Output Format" example above.
 
 ## Approval Criteria
 

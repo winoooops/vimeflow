@@ -6,7 +6,7 @@ Rules follow a layered precedence model (like CSS specificity). Language-specifi
 
 ```
 rules/
-├── common/                # Universal defaults (10 files) — always applies
+├── common/                # Universal defaults (11 files) — always applies
 ├── typescript/            # TypeScript/React overrides
 │   ├── coding-style/      # CLAUDE.md (auto-loaded) + a11y-components.md (on-demand)
 │   ├── testing/           # CLAUDE.md (auto-loaded) + a11y-queries.md (on-demand)
@@ -24,19 +24,20 @@ Topics with enough depth use the **directory pattern**: `topic/CLAUDE.md` (auto-
 
 Each directory contains files covering the same topics:
 
-| File                      | Covers                                                               |
-| ------------------------- | -------------------------------------------------------------------- |
-| `coding-style/`           | Formatting, immutability, naming, a11y component patterns            |
-| `testing/`                | Framework, coverage targets, TDD workflow, a11y query patterns       |
-| `patterns.md`             | Repository pattern, API format, IPC patterns (Tauri)                 |
-| `security.md`             | Secrets, input validation, scanning tools                            |
-| `hooks.md`                | PreToolUse/PostToolUse hooks for formatters and linters              |
-| `git-workflow.md`         | Commit format, PR process (common only)                              |
-| `development-workflow.md` | Full pipeline: research → plan → TDD → review → commit (common only) |
-| `performance.md`          | Profiling, caching, bundle size (common only)                        |
-| `code-review.md`          | Review triggers, severity levels, agent delegation (common only)     |
-| `agents.md`               | Agent orchestration, parallel execution (common only)                |
-| `worktrees.md`            | Git worktree lifecycle, lock guardrails, cleanup (common only)       |
+| File                      | Covers                                                                                                                                                                |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coding-style/`           | Formatting, immutability, naming, a11y component patterns                                                                                                             |
+| `testing/`                | Framework, coverage targets, TDD workflow, a11y query patterns                                                                                                        |
+| `patterns.md`             | Repository pattern, API format, IPC patterns (Tauri)                                                                                                                  |
+| `security.md`             | Secrets, input validation, scanning tools                                                                                                                             |
+| `hooks.md`                | PreToolUse/PostToolUse hooks for formatters and linters                                                                                                               |
+| `git-workflow.md`         | Commit format, PR process (common only)                                                                                                                               |
+| `development-workflow.md` | Full pipeline: research → plan → TDD → review → commit (common only)                                                                                                  |
+| `performance.md`          | Profiling, caching, bundle size (common only)                                                                                                                         |
+| `code-review.md`          | Review triggers, severity levels, agent delegation (common only)                                                                                                      |
+| `agents.md`               | Agent orchestration, parallel execution (common only)                                                                                                                 |
+| `worktrees.md`            | Git worktree lifecycle, lock guardrails, cleanup (common only)                                                                                                        |
+| `idea-framework.md`       | IDEA (Intent/Danger/Explain/Alternatives) for code-review findings and option comparisons (common only) — **canonical home**; `agents/code-reviewer.md` references it |
 
 ## Precedence
 
