@@ -336,40 +336,43 @@ fn start_git_watcher_inner(
         }
     };
 
-    let mut repo_watchers = state.repo_watchers.lock()
-        .map_err(|e| format!("Failed to lock repo_watchers: {}", e))?;
-
-    if let Some(watcher) = repo_watchers.get_mut(&toplevel) {
-        // Watcher exists — increment refcount keyed on the ORIGINAL cwd
-        // string (NOT the canonical form) so later event fan-out emits
-        // the exact string the frontend subscribed with. Two frontend
-        // strings that canonicalize to the same path still get separate
-        // subscriber entries — they share the notify watcher but each
-        // receives events matching its own input.
-        *watcher.subscribers.entry(cwd.to_string()).or_insert(0) += 1;
-
-        // Release `repo_watchers` (lock A) BEFORE acquiring `cwd_to_toplevel`
-        // (lock B). `stop_git_watcher_inner` acquires B first then A, so
-        // holding both here simultaneously would open a deadlock path
-        // against a future caller that reverses the order. Matching the
-        // new-watcher branch below which also releases A before B.
-        drop(repo_watchers);
-
-        // Record the cwd → toplevel mapping so stop_git_watcher_inner can
-        // find this bucket without re-running `rev-parse` at stop time.
-        state
-            .cwd_to_toplevel
+    // ── Phase 1: short check under lock A ─────────────────────────────
+    //
+    // Only check whether a watcher already exists for this toplevel. The
+    // expensive setup work (`hash_git_status`, notify watcher creation,
+    // `enumerate_dirs` filesystem walk, polling-thread spawn) used to run
+    // while this lock was held — up to 10s under NFS/FUSE stalls or held
+    // `.git/index.lock`s — blocking the notify callback's
+    // `emit_for_all_subscribers` (which also locks `repo_watchers`) for
+    // every other repo's events. Phase 2 below builds all that state
+    // lock-free; phase 3 re-acquires A only for the final
+    // check-then-insert.
+    //
+    // While holding A here, ALSO insert into `cwd_to_toplevel` (lock B).
+    // `stop_git_watcher_inner` always releases B before acquiring A, so
+    // start holding A→B simultaneously is deadlock-free. Without the A+B
+    // overlap, a concurrent stop could slip in between A's release and
+    // B's acquire and miss the watcher (TOCTOU leak).
+    {
+        let mut repo_watchers = state
+            .repo_watchers
             .lock()
-            .expect("failed to lock cwd_to_toplevel")
-            .insert(cwd.to_string(), toplevel.clone());
+            .map_err(|e| format!("Failed to lock repo_watchers: {}", e))?;
 
-        // Emit initial event using the frontend's original cwd string.
-        emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
-
-        return Ok(());
+        if let Some(watcher) = repo_watchers.get_mut(&toplevel) {
+            *watcher.subscribers.entry(cwd.to_string()).or_insert(0) += 1;
+            state
+                .cwd_to_toplevel
+                .lock()
+                .expect("failed to lock cwd_to_toplevel")
+                .insert(cwd.to_string(), toplevel.clone());
+            drop(repo_watchers);
+            emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
+            return Ok(());
+        }
     }
 
-    // Create new watcher
+    // ── Phase 2: build watcher state OUTSIDE locks ────────────────────
     let state_clone = state.clone();
     let last_status_hash = Arc::new(Mutex::new(
         hash_git_status(&toplevel).ok(),
@@ -539,7 +542,7 @@ fn start_git_watcher_inner(
         }
     });
 
-    // Insert watcher with initial subscriber (keyed on original cwd string)
+    // Build the locally-owned RepoWatcher with its initial subscriber.
     let mut subscribers = HashMap::new();
     subscribers.insert(cwd.to_string(), 1);
 
@@ -551,19 +554,54 @@ fn start_git_watcher_inner(
         _last_status_hash: last_status_hash,
     };
 
-    repo_watchers.insert(toplevel.clone(), repo_watcher);
+    // ── Phase 3: re-check and insert under lock A ─────────────────────
+    //
+    // Re-acquire `repo_watchers` to publish the new watcher. The brief
+    // hold here covers two cases:
+    //   (a) Another thread inserted a watcher for the same toplevel
+    //       between phase 1 and now (TOCTOU race). We discard our
+    //       locally-built `repo_watcher` — its `Drop` fires `stop_flag`,
+    //       which our just-spawned polling thread observes on its next
+    //       tick and exits cleanly. Then we bump the existing watcher's
+    //       refcount as if we were a phase-1 hit.
+    //   (b) Common case: no race; insert the new watcher.
+    //
+    // `cwd_to_toplevel.insert` happens while lock A is still held, same
+    // reasoning as phase 1 — closes the TOCTOU window where a concurrent
+    // stop could read empty B, then read empty A, and silently leak the
+    // watcher.
+    {
+        let mut repo_watchers = state
+            .repo_watchers
+            .lock()
+            .map_err(|e| format!("Failed to lock repo_watchers: {}", e))?;
 
-    // Record cwd → toplevel mapping (see cwd_to_toplevel doc comment).
-    // Drop the repo_watchers guard before acquiring the side-map lock to
-    // avoid needlessly widening the lock scope.
-    drop(repo_watchers);
-    state
-        .cwd_to_toplevel
-        .lock()
-        .expect("failed to lock cwd_to_toplevel")
-        .insert(cwd.to_string(), toplevel);
+        if let Some(existing) = repo_watchers.get_mut(&toplevel) {
+            // Race: someone else won. Bump THEIR subscribers; our local
+            // `repo_watcher` will be dropped when this scope ends,
+            // which fires its stop_flag and shuts down our poll thread.
+            *existing.subscribers.entry(cwd.to_string()).or_insert(0) += 1;
+            state
+                .cwd_to_toplevel
+                .lock()
+                .expect("failed to lock cwd_to_toplevel")
+                .insert(cwd.to_string(), toplevel.clone());
+            drop(repo_watchers);
+            // `repo_watcher` (local) drops here.
+            emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
+            return Ok(());
+        }
 
-    // Emit initial event using the frontend's original cwd string
+        repo_watchers.insert(toplevel.clone(), repo_watcher);
+        state
+            .cwd_to_toplevel
+            .lock()
+            .expect("failed to lock cwd_to_toplevel")
+            .insert(cwd.to_string(), toplevel);
+        drop(repo_watchers);
+    }
+
+    // Emit initial event using the frontend's original cwd string.
     emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
 
     Ok(())
