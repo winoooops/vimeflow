@@ -47,7 +47,10 @@ export const FileExplorer = ({
   const isRoot = currentPath === '~' || currentPath === '/'
 
   return (
-    <div className="flex h-full flex-col px-4 pt-3" data-testid="file-explorer">
+    <div
+      className="flex h-full min-h-0 flex-col px-4 pt-3"
+      data-testid="file-explorer"
+    >
       {/* Header */}
       <div className="mb-1 flex items-center gap-2">
         <span className="material-symbols-outlined text-base text-on-surface/50">
@@ -91,8 +94,13 @@ export const FileExplorer = ({
         </span>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Content — `min-h-0` is required so this `flex-1` child can shrink
+          below the intrinsic height of its content. Without it, the
+          `overflow-y-auto` never engages because the flex child's default
+          `min-height: auto` forces the container to grow to fit the entire
+          tree, which pushed the scrollbar offscreen and made `scrollIntoView`
+          walk up to the wrong ancestor. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading && (
           <div className="py-4 text-center font-mono text-xs text-on-surface/40">
             Loading...
