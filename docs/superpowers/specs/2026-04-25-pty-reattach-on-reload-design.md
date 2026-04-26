@@ -274,48 +274,93 @@ Tauri app shutdown
 
 ## Replay Buffer + Offset Cursor
 
-Each `ManagedSession` in `PtyState` gains:
+The cursor is necessary but not sufficient. Race-free reattach requires three things working together: (1) producer keeps the offset and the buffer in one critical section, (2) subscriber listens before snapshotting and buffers events received during the restore window, (3) cursor-filtered drain reconciles them. Any one missing reintroduces a lost-byte or doubled-byte race.
 
-- A `VecDeque<u8>` ring buffer with a fixed capacity (default 65536 bytes / 64 KB).
-- An `AtomicU64` `next_offset` counter — total bytes ever produced for this session, monotonically increasing from 0.
+### 1. Producer: atomic ring buffer + offset (one lock)
 
-The read loop in `commands.rs:316-360` writes every chunk to the buffer, increments the counter, and emits a `pty-data` event tagged with the chunk's starting offset:
+Each `ManagedSession` in `PtyState` gains a single mutex-protected struct, **not** a separate atomic counter and a separate buffer:
 
 ```rust
-let chunk_start = session.next_offset.fetch_add(n as u64, Ordering::SeqCst);
-session_buffer.write(&buf[..n]);  // truncates from front when over capacity
+struct RingBuffer {
+    bytes: VecDeque<u8>,   // fixed capacity 65536 / 64 KB; truncates from front
+    end_offset: u64,       // total bytes ever produced; monotonically increasing
+}
+
+struct ManagedSession {
+    // ... existing fields
+    ring: Mutex<RingBuffer>,
+}
+```
+
+The read loop appends bytes and advances `end_offset` **inside one critical section**, then emits the event after the lock drops:
+
+```rust
+let chunk_start = {
+    let mut buf_guard = session.ring.lock();
+    let start = buf_guard.end_offset;
+    buf_guard.bytes.write(&buf[..n]);   // truncates from front when over capacity
+    buf_guard.end_offset += n as u64;
+    start
+};
 app.emit("pty-data", PtyDataEvent { session_id, data, offset_start: chunk_start })?;
 ```
 
+`list_sessions` snapshots `(bytes.clone(), end_offset)` under the same lock. This guarantees the returned `replay_end_offset` exactly matches the bytes in `replay_data` — never an offset that has advanced past bytes the snapshot doesn't contain.
+
 `PtyDataEvent` gains a single `offset_start: u64` field. Backwards-incompatible change, but the event is internal — only consumed by `useTerminal`.
 
-### Snapshot + subscribe is race-free via the cursor
+> ⚠️ **Why not `AtomicU64`?** A separate `AtomicU64` for `next_offset` and a separate `Mutex<VecDeque>` for the buffer creates a window where a `list_sessions` snapshot can land between `fetch_add` and `buffer.write`. The snapshot then returns `replay_end_offset` that already accounts for the new chunk, but `replay_data` doesn't include it. The follow-up live event has `offset_start < replay_end_offset` and gets dropped — actual data loss. One mutex, one struct, one atomic snapshot. Don't split state that must be consistent at any observable moment.
 
-`list_sessions` for an Alive session returns:
+### 2. Subscriber: listen BEFORE snapshot, buffer during restore
 
-- `replay_data: String` — current ring buffer contents (lossy-UTF-8).
-- `replay_end_offset: u64` — value of `next_offset` at the time of the snapshot.
+The subscriber's protocol — same for every restored session in the `list_sessions` response:
 
-The frontend's restore-mode flow:
+1. **Register a buffering listener first.** Before calling `list_sessions`, set up a `pty-data` listener that pushes incoming events into a per-session `buffered: PtyDataEvent[]` queue. This captures any events emitted between snapshot return and the final live listener swap.
+2. **Call `list_sessions`** and receive `Alive { replay_data, replay_end_offset }`.
+3. **Write `replay_data`** to xterm.
+4. **Drain `buffered`** with the cursor filter: write every event whose `offset_start >= replay_end_offset`; drop the rest (they were in the replay).
+5. **Swap to a direct-write listener** — events go straight to xterm; the buffering listener is removed.
 
-1. Receives `Alive { replay_data, replay_end_offset }`.
-2. Writes `replay_data` to xterm.
-3. Stashes `replay_end_offset` as the per-session "already-seen-up-to" cursor.
-4. Subscribes to `pty-data` events.
-5. For every incoming event, applies the dedupe rule:
-   - `event.offset_start < replay_end_offset` → **drop** (chunk was already in `replay_data`).
-   - `event.offset_start >= replay_end_offset` → **write to xterm**.
+```ts
+// frontend pseudocode (per-session)
+const buffered: PtyDataEvent[] = []
+const stopBuffering = service.onData((sessionId, data, offsetStart) => {
+  if (sessionId === ourSessionId) buffered.push({ data, offsetStart })
+})
 
-This closes both halves of the race that a "snapshot then subscribe" protocol leaks:
+const result = await service.listSessions()
+const alive = result.sessions.find((s) => s.id === ourSessionId)?.status
+if (alive?.kind === 'Alive') {
+  xterm.write(alive.replay_data)
 
-- **Lost bytes** (chunks emitted between snapshot and subscribe): captured by the live subscription, kept because `offset_start >= replay_end_offset`.
-- **Doubled bytes** (chunks already in the snapshot that re-appear in live events): dropped by the cursor check.
+  buffered
+    .filter((e) => e.offsetStart >= alive.replay_end_offset)
+    .forEach((e) => xterm.write(e.data))
+
+  stopBuffering()
+  service.onData((sessionId, data) => {
+    if (sessionId === ourSessionId) xterm.write(data)
+  })
+}
+```
+
+> The previous draft of this spec said "write replay before subscribing." That's wrong. Events emitted between snapshot and subscribe go to nobody — the cursor can't recover bytes the listener never received. **Subscribe first.**
+
+### 3. Why all three together
+
+| Missing piece              | Failure mode                                                                                                           |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| (1) atomic producer        | Live event may carry an `offset_start` that the cursor incorrectly classifies as "already replayed" — drops real data. |
+| (2) listen-before-snapshot | Events emitted between snapshot return and listener registration go to nobody — irrecoverable lost bytes.              |
+| (3) cursor filter on drain | No dedupe — buffered events that overlap the replay get written twice — doubled bytes on screen.                       |
 
 Chunks are atomic — one read, one event — so partial-overlap doesn't happen. Lossy-UTF-8 in `replay_data` doesn't affect cursor math; the cursor counts raw input bytes, not decoded characters.
 
 ### Sizing
 
 64 KB covers ~1000 lines at typical width (80 cols × 80 chars/line), which exceeds the visible terminal area for any reasonable reload window. Memory cost: 64 KB × N sessions; with 10 sessions that's 640 KB, with 64 (cap on `spawn_pty`) it's 4 MB. Acceptable.
+
+The frontend's per-session `buffered: PtyDataEvent[]` is bounded by the time between `listSessions` IPC fire and its return — typically <50 ms even on a busy machine. At a worst-case sustained 1 MB/s of PTY output, that's ~50 KB of buffered events per session. Trivial.
 
 ## Frontend Integration
 
@@ -396,53 +441,57 @@ The TerminalPane unmount cleanup retains: xterm.js dispose, `pty-data` listener 
 
 ### Rust (`src-tauri/src/terminal/`)
 
-| Test                                                        | What it pins                                                                                                                              |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_sessions_returns_alive_for_running_pty`               | Happy path: alive variant + replay_data populated                                                                                         |
-| `list_sessions_returns_exited_for_dead_pty`                 | Read-loop EOF marks cache; restore reflects it                                                                                            |
-| `list_sessions_reconciles_alive_cache_with_empty_pty_state` | Simulate hard kill (cache says `alive`, PtyState empty); list_sessions flips to Exited and flushes — pins lazy reconciliation correctness |
-| `list_sessions_returns_in_session_order`                    | Order matches `session_order`, not HashMap iteration                                                                                      |
-| `list_sessions_includes_active_session_id`                  | Active id round-trips                                                                                                                     |
-| `list_sessions_replay_data_contains_recent_output`          | Ring buffer write + restore round-trips bytes                                                                                             |
-| `list_sessions_replay_data_truncated_at_capacity`           | Long output respects 64 KB cap                                                                                                            |
-| `list_sessions_replay_end_offset_matches_next_offset`       | Snapshot returns the cursor at the moment of the snapshot; pins the offset/cursor protocol                                                |
-| `pty_data_event_includes_monotonic_offset_start`            | Every emitted chunk's `offset_start` equals previous `next_offset`; pins the producer side of the cursor                                  |
-| `next_offset_continues_past_buffer_truncation`              | When the ring buffer truncates from the front, `next_offset` keeps incrementing — total bytes ever, not buffer bytes                      |
-| `cache_flush_failure_does_not_roll_back_in_memory_mirror`   | When `app_data_dir` is unwritable, the in-memory `SessionCache` still updates so frontend reload (same Tauri process) restores correctly  |
-| `set_active_session_persists_to_cache`                      | Active id written                                                                                                                         |
-| `set_active_session_rejects_unknown_id`                     | Validation                                                                                                                                |
-| `reorder_sessions_persists_to_cache`                        | Order written                                                                                                                             |
-| `reorder_sessions_rejects_non_permutation`                  | Validation (no add/remove)                                                                                                                |
-| `spawn_pty_appends_to_session_order`                        | Lifecycle: spawn updates order                                                                                                            |
-| `spawn_pty_promotes_first_session_to_active`                | Lifecycle: empty → first active                                                                                                           |
-| `spawn_pty_returns_error_on_existing_session_id`            | Contract change: no more kill-and-replace                                                                                                 |
-| `spawn_pty_caps_at_64_active_sessions`                      | DoS guard                                                                                                                                 |
-| `kill_pty_is_idempotent_for_missing_session`                | Contract change: no more error on missing                                                                                                 |
-| `kill_pty_removes_from_session_order_and_cache`             | Lifecycle cleanup                                                                                                                         |
-| `kill_pty_advances_active_when_active_killed`               | Active session rotation                                                                                                                   |
-| `update_session_cwd_persists_to_cache`                      | OSC 7 sync path                                                                                                                           |
-| `update_session_cwd_rejects_invalid_path`                   | Validation                                                                                                                                |
-| `read_loop_eof_marks_cache_exited`                          | Lifecycle: natural exit                                                                                                                   |
-| `cache_atomic_write_survives_simulated_crash`               | Write to tmp, kill before rename, ensure old file intact                                                                                  |
-| `cache_corrupt_file_returns_error_not_panic`                | Outer `Err` path, no crash                                                                                                                |
+| Test                                                        | What it pins                                                                                                                                                                                   |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_sessions_returns_alive_for_running_pty`               | Happy path: alive variant + replay_data populated                                                                                                                                              |
+| `list_sessions_returns_exited_for_dead_pty`                 | Read-loop EOF marks cache; restore reflects it                                                                                                                                                 |
+| `list_sessions_reconciles_alive_cache_with_empty_pty_state` | Simulate hard kill (cache says `alive`, PtyState empty); list_sessions flips to Exited and flushes — pins lazy reconciliation correctness                                                      |
+| `list_sessions_returns_in_session_order`                    | Order matches `session_order`, not HashMap iteration                                                                                                                                           |
+| `list_sessions_includes_active_session_id`                  | Active id round-trips                                                                                                                                                                          |
+| `list_sessions_replay_data_contains_recent_output`          | Ring buffer write + restore round-trips bytes                                                                                                                                                  |
+| `list_sessions_replay_data_truncated_at_capacity`           | Long output respects 64 KB cap                                                                                                                                                                 |
+| `list_sessions_replay_end_offset_matches_buffer_contents`   | Under one mutex: snapshot returns `(bytes, end_offset)` where `end_offset == buffer_start + bytes.len()`. Pins atomic producer.                                                                |
+| `read_loop_advances_offset_and_buffer_atomically`           | Spawn many concurrent `list_sessions` calls while bytes stream; assert no snapshot ever returns `replay_end_offset > buffer_byte_count`. Pins no-window-for-drift between fetch_add and write. |
+| `pty_data_event_includes_monotonic_offset_start`            | Every emitted chunk's `offset_start` equals the buffer's `end_offset` immediately before the write. Pins the producer side of the cursor.                                                      |
+| `end_offset_continues_past_buffer_truncation`               | When the ring buffer truncates from the front, `end_offset` keeps incrementing — total bytes ever, not buffer bytes                                                                            |
+| `cache_flush_failure_does_not_roll_back_in_memory_mirror`   | When `app_data_dir` is unwritable, the in-memory `SessionCache` still updates so frontend reload (same Tauri process) restores correctly                                                       |
+| `set_active_session_persists_to_cache`                      | Active id written                                                                                                                                                                              |
+| `set_active_session_rejects_unknown_id`                     | Validation                                                                                                                                                                                     |
+| `reorder_sessions_persists_to_cache`                        | Order written                                                                                                                                                                                  |
+| `reorder_sessions_rejects_non_permutation`                  | Validation (no add/remove)                                                                                                                                                                     |
+| `spawn_pty_appends_to_session_order`                        | Lifecycle: spawn updates order                                                                                                                                                                 |
+| `spawn_pty_promotes_first_session_to_active`                | Lifecycle: empty → first active                                                                                                                                                                |
+| `spawn_pty_returns_error_on_existing_session_id`            | Contract change: no more kill-and-replace                                                                                                                                                      |
+| `spawn_pty_caps_at_64_active_sessions`                      | DoS guard                                                                                                                                                                                      |
+| `kill_pty_is_idempotent_for_missing_session`                | Contract change: no more error on missing                                                                                                                                                      |
+| `kill_pty_removes_from_session_order_and_cache`             | Lifecycle cleanup                                                                                                                                                                              |
+| `kill_pty_advances_active_when_active_killed`               | Active session rotation                                                                                                                                                                        |
+| `update_session_cwd_persists_to_cache`                      | OSC 7 sync path                                                                                                                                                                                |
+| `update_session_cwd_rejects_invalid_path`                   | Validation                                                                                                                                                                                     |
+| `read_loop_eof_marks_cache_exited`                          | Lifecycle: natural exit                                                                                                                                                                        |
+| `cache_atomic_write_survives_simulated_crash`               | Write to tmp, kill before rename, ensure old file intact                                                                                                                                       |
+| `cache_corrupt_file_returns_error_not_panic`                | Outer `Err` path, no crash                                                                                                                                                                     |
 
 ### Frontend (`src/features/{workspace,terminal}/`)
 
-| Test                                                                      | What it pins                                                              |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `useSessionManager_calls_list_sessions_on_mount`                          | Single canonical read                                                     |
-| `useSessionManager_does_not_persist_to_localStorage`                      | Pure IPC client, no local writes                                          |
-| `useSessionManager_optimistically_updates_active_then_calls_ipc`          | Tab switch UX                                                             |
-| `useSessionManager_reverts_optimistic_update_on_ipc_error`                | Error recovery                                                            |
-| `useSessionManager_renders_exited_sessions_with_restart_action`           | UX for Exited variant                                                     |
-| `TerminalPane_restored_mode_skips_spawn_calls_attach`                     | No new PTY spawn on reload                                                |
-| `TerminalPane_restored_mode_writes_replay_data_to_xterm_before_listening` | Ordering: replay before live                                              |
-| `TerminalPane_restored_mode_drops_pty_data_event_below_replay_cursor`     | Cursor dedupe: events with `offset_start < replay_end_offset` are skipped |
-| `TerminalPane_restored_mode_writes_pty_data_event_at_or_above_cursor`     | Cursor dedupe: events with `offset_start >= replay_end_offset` are kept   |
-| `TerminalPane_restored_mode_sends_resize_after_attach`                    | SIGWINCH nudge for TUIs                                                   |
-| `useTerminal_unmount_does_not_call_kill_in_restored_mode`                 | Lifecycle: ref stays false on restore                                     |
-| `removeSession_explicitly_calls_kill_pty`                                 | Explicit close path                                                       |
-| `osc7_cwd_change_calls_update_session_cwd`                                | Live cwd persistence                                                      |
+| Test                                                                       | What it pins                                                                                                         |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `useSessionManager_calls_list_sessions_on_mount`                           | Single canonical read                                                                                                |
+| `useSessionManager_does_not_persist_to_localStorage`                       | Pure IPC client, no local writes                                                                                     |
+| `useSessionManager_optimistically_updates_active_then_calls_ipc`           | Tab switch UX                                                                                                        |
+| `useSessionManager_reverts_optimistic_update_on_ipc_error`                 | Error recovery                                                                                                       |
+| `useSessionManager_renders_exited_sessions_with_restart_action`            | UX for Exited variant                                                                                                |
+| `TerminalPane_restored_mode_skips_spawn_calls_attach`                      | No new PTY spawn on reload                                                                                           |
+| `TerminalPane_restored_mode_listens_before_calling_list_sessions`          | Pins listen-before-snapshot ordering: a buffering listener is registered before `listSessions()` IPC fires           |
+| `TerminalPane_restored_mode_buffers_pty_data_during_restore_window`        | Events received between `listSessions()` call and replay write land in the per-session buffer, not directly in xterm |
+| `TerminalPane_restored_mode_drains_buffer_with_cursor_filter_after_replay` | After writing replay, drain rule: write events with `offset_start >= replay_end_offset`, drop the rest               |
+| `TerminalPane_restored_mode_drops_pty_data_event_below_replay_cursor`      | Cursor dedupe (live phase): events with `offset_start < replay_end_offset` are skipped                               |
+| `TerminalPane_restored_mode_writes_pty_data_event_at_or_above_cursor`      | Cursor dedupe (live phase): events with `offset_start >= replay_end_offset` are kept                                 |
+| `TerminalPane_restored_mode_swaps_to_direct_listener_after_drain`          | Pins listener handoff: after drain, the buffering listener is detached and a direct-write listener is attached       |
+| `TerminalPane_restored_mode_sends_resize_after_attach`                     | SIGWINCH nudge for TUIs                                                                                              |
+| `useTerminal_unmount_does_not_call_kill_in_restored_mode`                  | Lifecycle: ref stays false on restore                                                                                |
+| `removeSession_explicitly_calls_kill_pty`                                  | Explicit close path                                                                                                  |
+| `osc7_cwd_change_calls_update_session_cwd`                                 | Live cwd persistence                                                                                                 |
 
 ### Manual smoke
 
