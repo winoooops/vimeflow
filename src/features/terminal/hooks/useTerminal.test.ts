@@ -572,7 +572,7 @@ describe('useTerminal', () => {
             pid: 1234,
             replayData: 'REPLAY',
             replayEndOffset: 50,
-            bufferedEvents: [{ data: 'BUFFERED', offsetStart: 50 }],
+            bufferedEvents: [{ data: 'BUFFERED', offsetStart: 50, byteLen: 8 }],
           },
         })
       )
@@ -612,9 +612,9 @@ describe('useTerminal', () => {
             replayData: 'REPLAY',
             replayEndOffset: 100,
             bufferedEvents: [
-              { data: 'BELOW', offsetStart: 99 }, // Below cursor — filtered
-              { data: 'AT', offsetStart: 100 }, // At cursor (bytes 100-101)
-              { data: 'ABOVE', offsetStart: 102 }, // Past AT — written
+              { data: 'BELOW', offsetStart: 99, byteLen: 5 }, // Below cursor — filtered
+              { data: 'AT', offsetStart: 100, byteLen: 2 }, // At cursor (bytes 100-101)
+              { data: 'ABOVE', offsetStart: 102, byteLen: 5 }, // Past AT — written
             ],
           },
         })
@@ -734,6 +734,76 @@ describe('useTerminal', () => {
       })
 
       expect(mockTerminal.write).toHaveBeenCalledWith('ABOVE_CURSOR')
+    })
+
+    // Round 6 F1 regression: cursor advances by the producer's byte_len, NOT
+    // by `new TextEncoder().encode(data).length`. When the PTY emits a chunk
+    // with invalid UTF-8 bytes, `String::from_utf8_lossy` replaces them with
+    // U+FFFD, which re-encodes to 3 bytes. Without `byteLen` from the
+    // producer, the cursor would advance by the inflated length and silently
+    // drop the next legitimate chunk whose offsetStart falls in the gap.
+    //
+    // Scenario:
+    //   chunk 1: raw bytes [0xE2, 0x82] (truncated start of '€'),
+    //            data="��" (re-encodes to 6 bytes), byteLen=2
+    //   chunk 2: data="ok", offsetStart=2, byteLen=2
+    // With the buggy code, cursor would jump to 6 after chunk 1 and chunk 2
+    // (offsetStart=2 < 6) would be dropped. With the fix, cursor jumps to 2
+    // and chunk 2 is written correctly.
+    test('F1 (round 6): cursor advances by producer byteLen, not lossy data length', async () => {
+      const writes: string[] = []
+      vi.mocked(mockTerminal.write).mockImplementation(
+        (data: string | Uint8Array) => {
+          writes.push(
+            typeof data === 'string' ? data : new TextDecoder().decode(data)
+          )
+        }
+      )
+
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: '', // empty replay so cursor starts at 0
+            replayEndOffset: 0,
+            bufferedEvents: [],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+      })
+
+      writes.length = 0
+      vi.mocked(mockTerminal.write).mockClear()
+
+      // Chunk 1: lossy-decoded U+FFFD pair (6 bytes when re-encoded), but
+      // the producer only consumed 2 raw bytes from the PTY buffer.
+      mockService.emit('data', {
+        sessionId: 'session-1',
+        data: '��',
+        offsetStart: 0,
+        byteLen: 2,
+      })
+
+      // Chunk 2: legitimate ASCII that picks up exactly where the producer's
+      // raw byte count left off. With the buggy `data.length` cursor advance,
+      // cursor would be 6 and this event (offsetStart=2) would be dropped.
+      mockService.emit('data', {
+        sessionId: 'session-1',
+        data: 'ok',
+        offsetStart: 2,
+        byteLen: 2,
+      })
+
+      // Both events MUST be written. The fix ensures chunk 2 is not silently
+      // dropped due to the cursor sailing past 2 from re-encoded U+FFFD bytes.
+      expect(writes).toEqual(['��', 'ok'])
     })
   })
 

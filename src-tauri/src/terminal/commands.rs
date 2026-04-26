@@ -579,6 +579,12 @@ async fn read_pty_output<R: tauri::Runtime>(
                         session_id: session_id.clone(),
                         data,
                         offset_start: chunk_start,
+                        // Raw byte count — the unit the producer's offset
+                        // arithmetic (RingBuffer::append) used. Subscribers
+                        // MUST advance their cursor with this, NOT with the
+                        // length of `data` (lossy UTF-8 inflates invalid
+                        // bytes to U+FFFD, which is 3 bytes when re-encoded).
+                        byte_len: n as u64,
                     },
                 )
                 .ok();

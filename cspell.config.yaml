@@ -13,6 +13,7 @@ words:
 
   # General vocabulary flagged by cspell's defaults
   - unparseable
+  - lossily
 
   # Project
   - vibm

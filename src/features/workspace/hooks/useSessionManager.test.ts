@@ -62,7 +62,8 @@ describe('useSessionManager', () => {
     let dataCallback: (
       sessionId: string,
       data: string,
-      offsetStart: number
+      offsetStart: number,
+      byteLen: number
     ) => void = vi.fn()
     service.onData = vi.fn((cb): Promise<() => void> => {
       dataCallback = cb
@@ -86,9 +87,11 @@ describe('useSessionManager', () => {
     // listen-before-snapshot step) so dataCallback is wired before we fire events
     await waitFor(() => expect(service.onData).toHaveBeenCalled())
 
-    // Fire events while list_sessions is in-flight
-    dataCallback('s1', 'mid-flight', 100)
-    dataCallback('s1', 'mid-flight-2', 105)
+    // Fire events while list_sessions is in-flight. byteLen is the producer's
+    // raw byte count from the PTY read — passed through verbatim into the
+    // restore buffer so the per-pane drain advances its cursor correctly.
+    dataCallback('s1', 'mid-flight', 100, 10)
+    dataCallback('s1', 'mid-flight-2', 105, 12)
 
     resolveListSessions({
       activeSessionId: 's1',
@@ -111,8 +114,8 @@ describe('useSessionManager', () => {
     const restored = result.current.restoreData.get('s1')
     expect(restored).toBeDefined()
     expect(restored!.bufferedEvents).toEqual([
-      { data: 'mid-flight', offsetStart: 100 },
-      { data: 'mid-flight-2', offsetStart: 105 },
+      { data: 'mid-flight', offsetStart: 100, byteLen: 10 },
+      { data: 'mid-flight-2', offsetStart: 105, byteLen: 12 },
     ])
   })
 
@@ -942,7 +945,8 @@ describe('useSessionManager', () => {
     let dataCallback: (
       sessionId: string,
       data: string,
-      offsetStart: number
+      offsetStart: number,
+      byteLen: number
     ) => void = vi.fn()
     service.onData = vi.fn((cb): Promise<() => void> => {
       dataCallback = cb
@@ -976,23 +980,23 @@ describe('useSessionManager', () => {
     // (state has updated, render scheduled) but BEFORE the pane subscribes.
     // Previously stopBuffering() fired right after setLoading and these
     // events were dropped.
-    dataCallback('s1', 'POST_RENDER_1', 200)
-    dataCallback('s1', 'POST_RENDER_2', 220)
+    dataCallback('s1', 'POST_RENDER_1', 200, 13)
+    dataCallback('s1', 'POST_RENDER_2', 220, 13)
 
     // Now simulate the pane reporting ready. Capture the events the
     // orchestrator drains through our handler.
-    const drained: { data: string; offsetStart: number }[] = []
+    const drained: { data: string; offsetStart: number; byteLen: number }[] = []
     act(() => {
-      result.current.notifyPaneReady('s1', (data, offsetStart) => {
-        drained.push({ data, offsetStart })
+      result.current.notifyPaneReady('s1', (data, offsetStart, byteLen) => {
+        drained.push({ data, offsetStart, byteLen })
       })
     })
 
     // Both post-setLoading events must be drained — they would have been
     // lost before this fix.
     expect(drained).toEqual([
-      { data: 'POST_RENDER_1', offsetStart: 200 },
-      { data: 'POST_RENDER_2', offsetStart: 220 },
+      { data: 'POST_RENDER_1', offsetStart: 200, byteLen: 13 },
+      { data: 'POST_RENDER_2', offsetStart: 220, byteLen: 13 },
     ])
   })
 
@@ -1060,7 +1064,8 @@ describe('useSessionManager', () => {
     let dataCallback: (
       sessionId: string,
       data: string,
-      offsetStart: number
+      offsetStart: number,
+      byteLen: number
     ) => void = vi.fn()
     service.onData = vi.fn((cb): Promise<() => void> => {
       dataCallback = cb
@@ -1090,20 +1095,23 @@ describe('useSessionManager', () => {
     // Simulate Rust emitting the shell's startup prompt for the new session
     // BEFORE useTerminal has subscribed. Without the permanent listener this
     // would land nowhere and be silently dropped.
-    dataCallback('fresh-tab', '$ ', 0)
-    dataCallback('fresh-tab', 'welcome\r\n', 2)
+    dataCallback('fresh-tab', '$ ', 0, 2)
+    dataCallback('fresh-tab', 'welcome\r\n', 2, 9)
 
     // Pane subscribes — the buffered events must drain through our handler.
-    const drained: { data: string; offsetStart: number }[] = []
+    const drained: { data: string; offsetStart: number; byteLen: number }[] = []
     act(() => {
-      result.current.notifyPaneReady('fresh-tab', (data, offsetStart) => {
-        drained.push({ data, offsetStart })
-      })
+      result.current.notifyPaneReady(
+        'fresh-tab',
+        (data, offsetStart, byteLen) => {
+          drained.push({ data, offsetStart, byteLen })
+        }
+      )
     })
 
     expect(drained).toEqual([
-      { data: '$ ', offsetStart: 0 },
-      { data: 'welcome\r\n', offsetStart: 2 },
+      { data: '$ ', offsetStart: 0, byteLen: 2 },
+      { data: 'welcome\r\n', offsetStart: 2, byteLen: 9 },
     ])
   })
 
@@ -1116,7 +1124,8 @@ describe('useSessionManager', () => {
     let dataCallback: (
       sessionId: string,
       data: string,
-      offsetStart: number
+      offsetStart: number,
+      byteLen: number
     ) => void = vi.fn()
     service.onData = vi.fn((cb): Promise<() => void> => {
       dataCallback = cb
@@ -1144,10 +1153,10 @@ describe('useSessionManager', () => {
     const { result } = renderHook(() => useSessionManager(service))
     await waitFor(() => expect(result.current.loading).toBe(false))
 
-    const drained: { data: string; offsetStart: number }[] = []
+    const drained: { data: string; offsetStart: number; byteLen: number }[] = []
     act(() => {
-      result.current.notifyPaneReady('live', (data, offsetStart) => {
-        drained.push({ data, offsetStart })
+      result.current.notifyPaneReady('live', (data, offsetStart, byteLen) => {
+        drained.push({ data, offsetStart, byteLen })
       })
     })
     expect(drained).toEqual([])
@@ -1157,12 +1166,16 @@ describe('useSessionManager', () => {
     // orchestrator's buffer were still capturing, a later notifyPaneReady
     // call would re-deliver the same payload — driving doubled bytes and
     // unbounded memory growth.
-    dataCallback('live', 'POST_READY', 100)
+    dataCallback('live', 'POST_READY', 100, 10)
 
-    const drainedAgain: { data: string; offsetStart: number }[] = []
+    const drainedAgain: {
+      data: string
+      offsetStart: number
+      byteLen: number
+    }[] = []
     act(() => {
-      result.current.notifyPaneReady('live', (data, offsetStart) => {
-        drainedAgain.push({ data, offsetStart })
+      result.current.notifyPaneReady('live', (data, offsetStart, byteLen) => {
+        drainedAgain.push({ data, offsetStart, byteLen })
       })
     })
 

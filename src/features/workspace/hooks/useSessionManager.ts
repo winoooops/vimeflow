@@ -46,16 +46,22 @@ export interface RestoreData {
   pid: number
   replayData: string
   replayEndOffset: number
-  bufferedEvents: { data: string; offsetStart: number }[]
+  bufferedEvents: { data: string; offsetStart: number; byteLen: number }[]
 }
 
 /**
  * Handler that receives a buffered PTY event during pane drain.
  * Same signature as the live `pty-data` callback, so callers can reuse
  * a single function (with cursor dedupe) for both buffered drain and
- * live events.
+ * live events. `byteLen` is the producer's raw byte count for the chunk —
+ * the cursor MUST advance by this value (not by `data.length`) to avoid
+ * lossy-UTF-8 drift away from the producer's offset stream.
  */
-export type PaneEventHandler = (data: string, offsetStart: number) => void
+export type PaneEventHandler = (
+  data: string,
+  offsetStart: number,
+  byteLen: number
+) => void
 
 /**
  * Function returned by `notifyPaneReady` — call it on pane unmount or when
@@ -162,7 +168,7 @@ export const useSessionManager = (
   //                                    arrives before createSession adds it
   //                                    to pendingPanesRef.
   const bufferedRef = useRef<
-    Map<string, { data: string; offsetStart: number }[]>
+    Map<string, { data: string; offsetStart: number; byteLen: number }[]>
   >(new Map())
   const stopBufferingRef = useRef<(() => void) | null>(null)
   const pendingPanesRef = useRef<Set<string>>(new Set())
@@ -200,7 +206,7 @@ export const useSessionManager = (
         //    inside the callback (see readyPanesRef) ensures we don't double-
         //    deliver to panes that have already attached their own listener.
         stopBufferingRef.current = await service.onData(
-          (sessionId, data, offsetStart) => {
+          (sessionId, data, offsetStart, byteLen) => {
             // Drop events for sessions whose pane has already attached its
             // own per-pane onData subscription — that subscription writes
             // directly to xterm. Buffering would risk re-delivery and
@@ -214,7 +220,7 @@ export const useSessionManager = (
               q = []
               bufferedRef.current.set(sessionId, q)
             }
-            q.push({ data, offsetStart })
+            q.push({ data, offsetStart, byteLen })
           }
         )
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -368,7 +374,7 @@ export const useSessionManager = (
       const events = bufferedRef.current.get(sessionId)
       if (events && events.length > 0) {
         for (const e of events) {
-          handler(e.data, e.offsetStart)
+          handler(e.data, e.offsetStart, e.byteLen)
         }
         bufferedRef.current.delete(sessionId)
       }

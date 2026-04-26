@@ -58,7 +58,12 @@ describe('MockTerminalService', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 150))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, '$ ', expect.any(Number))
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        '$ ',
+        expect.any(Number),
+        expect.any(Number)
+      )
     })
   })
 
@@ -76,10 +81,28 @@ describe('MockTerminalService', () => {
 
       // Per-character processing: each char emitted separately. Offsets are
       // monotonically auto-assigned by the mock's per-session cursor (mirrors
-      // the Rust producer's RingBuffer.end_offset).
-      expect(onData).toHaveBeenCalledWith(sessionId, 'h', expect.any(Number))
-      expect(onData).toHaveBeenCalledWith(sessionId, 'e', expect.any(Number))
-      expect(onData).toHaveBeenCalledWith(sessionId, 'o', expect.any(Number))
+      // the Rust producer's RingBuffer.end_offset). byteLen defaults to the
+      // utf-8 byte count of `data` (here, 1 per char).
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        'h',
+        expect.any(Number),
+        expect.any(Number)
+      )
+
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        'e',
+        expect.any(Number),
+        expect.any(Number)
+      )
+
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        'o',
+        expect.any(Number),
+        expect.any(Number)
+      )
       expect(onData).toHaveBeenCalledTimes(5)
     })
 
@@ -103,6 +126,7 @@ describe('MockTerminalService', () => {
       expect(onData).toHaveBeenCalledWith(
         sessionId,
         'hello\r\n$ ',
+        expect.any(Number),
         expect.any(Number)
       )
     })
@@ -126,6 +150,7 @@ describe('MockTerminalService', () => {
       expect(onData).toHaveBeenCalledWith(
         sessionId,
         '/home/user\r\n$ ',
+        expect.any(Number),
         expect.any(Number)
       )
     })
@@ -149,6 +174,7 @@ describe('MockTerminalService', () => {
       expect(onData).toHaveBeenCalledWith(
         sessionId,
         '\b \b',
+        expect.any(Number),
         expect.any(Number)
       )
     })
@@ -284,7 +310,7 @@ describe('MockTerminalService', () => {
 
       service.emitData(sessionId, 'test data')
 
-      expect(callback).toHaveBeenCalledWith(sessionId, 'test data', 0)
+      expect(callback).toHaveBeenCalledWith(sessionId, 'test data', 0, 9)
 
       unsubscribe()
     })

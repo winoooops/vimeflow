@@ -9,11 +9,19 @@ export type PtyDataEvent = {
    */
   sessionId: string
   /**
-   * Output data from PTY stdout
+   * Output data from PTY stdout (lossy UTF-8 — invalid bytes become U+FFFD)
    */
   data: string
   /**
    * Starting byte offset of this chunk in the session's lifetime stream
    */
   offsetStart: bigint
+  /**
+   * Raw byte count of this chunk from the PTY read (matches the producer's
+   * offset arithmetic). MUST be used by subscribers to advance their cursor
+   * — never derive cursor advances from `data.len()`, since lossy UTF-8
+   * decoding can replace invalid bytes with U+FFFD (3 bytes when re-encoded)
+   * and shift the cursor away from the producer's offset stream.
+   */
+  byteLen: bigint
 }

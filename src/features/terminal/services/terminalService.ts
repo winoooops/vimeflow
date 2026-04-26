@@ -35,7 +35,14 @@ export interface ITerminalService {
 
   /**
    * Subscribe to PTY data events. Callback receives the chunk's starting
-   * byte offset for cursor-based dedupe during reattach.
+   * byte offset and the raw byte count from the PTY read for cursor-based
+   * dedupe during reattach.
+   *
+   * `byteLen` is the producer's raw byte count (from `buf[..n]`), not the
+   * length of `data`. The PTY producer encodes `data` lossily — invalid
+   * UTF-8 becomes U+FFFD (3 bytes when re-encoded), which would skew any
+   * cursor derived from `data.length` away from the producer's offsets.
+   * Subscribers MUST advance their cursor with `offsetStart + byteLen`.
    *
    * Returns a Promise that resolves to the unsubscribe function once the
    * underlying transport listener is fully attached. Callers in the restore
@@ -44,7 +51,12 @@ export interface ITerminalService {
    * callers (e.g. `useTerminal`) may discard the returned promise with `void`.
    */
   onData(
-    callback: (sessionId: string, data: string, offsetStart: number) => void
+    callback: (
+      sessionId: string,
+      data: string,
+      offsetStart: number,
+      byteLen: number
+    ) => void
   ): Promise<() => void>
 
   /**
@@ -95,7 +107,8 @@ export class MockTerminalService implements ITerminalService {
   private dataCallbacks: ((
     sessionId: string,
     data: string,
-    offsetStart: number
+    offsetStart: number,
+    byteLen: number
   ) => void)[] = []
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
@@ -229,7 +242,12 @@ export class MockTerminalService implements ITerminalService {
   }
 
   onData(
-    callback: (sessionId: string, data: string, offsetStart: number) => void
+    callback: (
+      sessionId: string,
+      data: string,
+      offsetStart: number,
+      byteLen: number
+    ) => void
   ): Promise<() => void> {
     this.dataCallbacks.push(callback)
 
@@ -269,17 +287,25 @@ export class MockTerminalService implements ITerminalService {
   /**
    * Emit a pty-data event. When `offsetStart` is omitted, the mock auto-assigns
    * the next monotonic offset for `sessionId` (mirrors the Rust producer's
-   * RingBuffer.end_offset). Tests that need a specific offset for cursor-dedupe
-   * coverage can pass it explicitly.
+   * RingBuffer.end_offset). When `byteLen` is omitted, defaults to the UTF-8
+   * byte count of `data` — safe for the mock because no lossy decode happens
+   * here (the real producer must emit the raw `buf[..n]` byte count, which
+   * may differ from the re-encoded length). Tests can pass an explicit
+   * `byteLen` to exercise the producer-vs-decoded mismatch case.
    */
-  emitData(sessionId: string, data: string, offsetStart?: number): void {
+  emitData(
+    sessionId: string,
+    data: string,
+    offsetStart?: number,
+    byteLen?: number
+  ): void {
     const offset = offsetStart ?? this.nextOffset.get(sessionId) ?? 0
-    this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset))
+    const len = byteLen ?? new TextEncoder().encode(data).length
+    this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset, len))
     // Always advance the per-session cursor past this chunk so future
     // auto-assigned offsets stay monotonic, even when the caller passed
     // an explicit offset.
-    const byteLen = new TextEncoder().encode(data).length
-    this.nextOffset.set(sessionId, offset + byteLen)
+    this.nextOffset.set(sessionId, offset + len)
   }
 
   emitExit(sessionId: string, code: number | null): void {
@@ -297,12 +323,18 @@ export class MockTerminalService implements ITerminalService {
       sessionId: string
       data?: string
       offsetStart?: number
+      byteLen?: number
       code?: number | null
       message?: string
     }
   ): void {
     if (event === 'data' && payload.data !== undefined) {
-      this.emitData(payload.sessionId, payload.data, payload.offsetStart)
+      this.emitData(
+        payload.sessionId,
+        payload.data,
+        payload.offsetStart,
+        payload.byteLen
+      )
     } else if (event === 'exit') {
       this.emitExit(payload.sessionId, payload.code ?? null)
     } else if (event === 'error' && payload.message !== undefined) {

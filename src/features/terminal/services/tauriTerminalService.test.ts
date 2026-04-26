@@ -156,9 +156,10 @@ describe('TauriTerminalService', () => {
         sessionId: 'sess-1',
         data: 'hello world',
         offsetStart: 0,
+        byteLen: 11,
       })
 
-      expect(callback).toHaveBeenCalledWith('sess-1', 'hello world', 0)
+      expect(callback).toHaveBeenCalledWith('sess-1', 'hello world', 0, 11)
     })
 
     test('onExit delivers pty-exit events to callback', async () => {
@@ -221,10 +222,11 @@ describe('TauriTerminalService', () => {
         sessionId: 'sess-1',
         data: 'broadcast',
         offsetStart: 100,
+        byteLen: 9,
       })
 
-      expect(cb1).toHaveBeenCalledWith('sess-1', 'broadcast', 100)
-      expect(cb2).toHaveBeenCalledWith('sess-1', 'broadcast', 100)
+      expect(cb1).toHaveBeenCalledWith('sess-1', 'broadcast', 100, 9)
+      expect(cb2).toHaveBeenCalledWith('sess-1', 'broadcast', 100, 9)
     })
   })
 
@@ -301,10 +303,11 @@ describe('TauriTerminalService', () => {
         sessionId: string
         data: string
         offsetStart: number
+        byteLen: number
       }[] = []
       const testService = new TauriTerminalService()
-      await testService.onData((sessionId, data, offsetStart) => {
-        captured.push({ sessionId, data, offsetStart })
+      await testService.onData((sessionId, data, offsetStart, byteLen) => {
+        captured.push({ sessionId, data, offsetStart, byteLen })
       })
 
       await mockSpawnAndInit(testService)
@@ -314,6 +317,7 @@ describe('TauriTerminalService', () => {
         sessionId: 'sess-1',
         data: 'test',
         offsetStart: BigInt(42),
+        byteLen: BigInt(4),
       })
 
       await new Promise((resolve) => setTimeout(resolve, 10))
@@ -322,13 +326,14 @@ describe('TauriTerminalService', () => {
       expect(captured[0].sessionId).toBe('sess-1')
       expect(captured[0].data).toBe('test')
       expect(captured[0].offsetStart).toBe(42)
+      expect(captured[0].byteLen).toBe(4)
     })
 
-    test('onData coerces bigint offsetStart to number', async () => {
-      const captured: number[] = []
+    test('onData coerces bigint offsetStart and byteLen to number', async () => {
+      const captured: { offset: number; byteLen: number }[] = []
       const testService = new TauriTerminalService()
-      await testService.onData((_sessionId, _data, offsetStart) => {
-        captured.push(offsetStart)
+      await testService.onData((_sessionId, _data, offsetStart, byteLen) => {
+        captured.push({ offset: offsetStart, byteLen })
       })
 
       await mockSpawnAndInit(testService)
@@ -338,12 +343,48 @@ describe('TauriTerminalService', () => {
         sessionId: 'sess-1',
         data: 'test',
         offsetStart: BigInt(1024),
+        byteLen: BigInt(4),
       })
 
       await new Promise((resolve) => setTimeout(resolve, 10))
 
-      expect(captured[0]).toBe(1024)
-      expect(typeof captured[0]).toBe('number')
+      expect(captured[0].offset).toBe(1024)
+      expect(typeof captured[0].offset).toBe('number')
+      expect(captured[0].byteLen).toBe(4)
+      expect(typeof captured[0].byteLen).toBe('number')
+    })
+
+    // F1 (round 6): byte_len from the producer is the source of truth for
+    // cursor advancement. Lossy UTF-8 in `data` (invalid bytes → U+FFFD,
+    // 3 bytes when re-encoded) means data.length can diverge from the
+    // producer's raw byte count. Subscribers MUST receive the producer's
+    // byte_len verbatim and not derive it from `data`.
+    test('onData passes byteLen through verbatim even when it differs from data length', async () => {
+      const captured: { data: string; byteLen: number }[] = []
+      const testService = new TauriTerminalService()
+      await testService.onData((_sessionId, data, _offsetStart, byteLen) => {
+        captured.push({ data, byteLen })
+      })
+
+      await mockSpawnAndInit(testService)
+
+      // Lossy decode case: producer's raw bytes were 2 (e.g. partial UTF-8
+      // codepoint), but `data` contains 2 U+FFFD which encodes back to 6
+      // bytes. The subscriber must see byteLen=2 (producer truth), not 6.
+      emitTauriEvent('pty-data', {
+        sessionId: 'sess-1',
+        data: '��',
+        offsetStart: BigInt(0),
+        byteLen: BigInt(2),
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(captured).toHaveLength(1)
+      expect(captured[0].byteLen).toBe(2)
+      // Sanity: the encoded length of the U+FFFD pair is 6 bytes; this
+      // confirms byteLen is NOT a re-derivation of data.length.
+      expect(new TextEncoder().encode(captured[0].data).length).toBe(6)
     })
 
     // F1 regression: onData must NOT resolve until the underlying tauri.listen
@@ -392,11 +433,11 @@ describe('TauriTerminalService', () => {
 
       try {
         const testService = new TauriTerminalService()
-        const captured: { data: string; offset: number }[] = []
+        const captured: { data: string; offset: number; byteLen: number }[] = []
 
         const onDataPromise = testService.onData(
-          (_sessionId, data, offsetStart) => {
-            captured.push({ data, offset: offsetStart })
+          (_sessionId, data, offsetStart, byteLen) => {
+            captured.push({ data, offset: offsetStart, byteLen })
           }
         )
 
@@ -406,6 +447,7 @@ describe('TauriTerminalService', () => {
           sessionId: 'sess-1',
           data: 'pre-attach-event',
           offsetStart: 0,
+          byteLen: 16,
         })
         expect(captured).toHaveLength(0)
 
@@ -432,8 +474,12 @@ describe('TauriTerminalService', () => {
           sessionId: 'sess-1',
           data: 'post-attach-event',
           offsetStart: 100,
+          byteLen: 17,
         })
-        expect(captured).toEqual([{ data: 'post-attach-event', offset: 100 }])
+
+        expect(captured).toEqual([
+          { data: 'post-attach-event', offset: 100, byteLen: 17 },
+        ])
       } finally {
         // Restore the original listen impl for subsequent tests
         if (originalImpl) {

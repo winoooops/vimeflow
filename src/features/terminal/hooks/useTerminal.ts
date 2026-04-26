@@ -4,7 +4,13 @@ import type { ITerminalService } from '../services/terminalService'
 import type { TerminalSession } from '../types'
 
 /**
- * Data required to restore a terminal session from snapshot + live events
+ * Data required to restore a terminal session from snapshot + live events.
+ *
+ * `byteLen` on each buffered event is the producer's raw byte count for the
+ * chunk (matches `RingBuffer.append` arithmetic in Rust). Subscribers MUST
+ * advance their cursor with `offsetStart + byteLen`, NOT with the length of
+ * `data` — the producer encodes invalid UTF-8 lossily, so `data.length` can
+ * diverge from the producer's offset stream and cause silent dedupe drops.
  */
 export interface RestoreData {
   sessionId: string
@@ -12,7 +18,7 @@ export interface RestoreData {
   pid: number
   replayData: string
   replayEndOffset: number
-  bufferedEvents: { data: string; offsetStart: number }[]
+  bufferedEvents: { data: string; offsetStart: number; byteLen: number }[]
 }
 
 /**
@@ -24,7 +30,7 @@ export interface RestoreData {
  */
 export type NotifyPaneReady = (
   sessionId: string,
-  handler: (data: string, offsetStart: number) => void
+  handler: (data: string, offsetStart: number, byteLen: number) => void
 ) => () => void
 
 /**
@@ -258,13 +264,13 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         // cursor with each write. The orchestrator's notifyPaneReady drain
         // (in the data-subscribe effect) may re-deliver the same events
         // along with any that arrived later — cursor dedupe filters them.
-        const encoder = new TextEncoder()
+        // Cursor advances by `event.byteLen` (the producer's raw byte count),
+        // NOT by `encoder.encode(event.data).length` — see RestoreData jsdoc.
         for (const event of restore.bufferedEvents) {
           if (event.offsetStart >= cursorRef.current) {
             terminal.write(event.data)
 
-            const writtenEnd =
-              event.offsetStart + encoder.encode(event.data).length
+            const writtenEnd = event.offsetStart + event.byteLen
             if (writtenEnd > cursorRef.current) {
               cursorRef.current = writtenEnd
             }
@@ -390,19 +396,20 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     const handleData = (
       eventSessionId: string,
       data: string,
-      offsetStart: number
+      offsetStart: number,
+      byteLen: number
     ): void => {
       if (eventSessionId === session.id && isMountedRef.current) {
         // Cursor dedupe: drop events whose offset predates what we've
         // already written (replay or earlier live/buffered event).
         if (offsetStart >= cursorRef.current) {
           terminal.write(data)
-          // Advance the cursor past the event we just wrote so an overlapping
-          // event delivered through the orchestrator's buffer drain (or vice
-          // versa) gets filtered. Byte length matches what was passed to
-          // terminal.write — the event payload is utf-8 string and the
-          // producer's offset arithmetic counts utf-8 bytes.
-          const writtenEnd = offsetStart + new TextEncoder().encode(data).length
+          // Advance the cursor by the producer's raw byte count, not by the
+          // length of `data`. Lossy UTF-8 in the producer (invalid bytes →
+          // U+FFFD = 3 bytes when re-encoded) would otherwise drift the
+          // cursor past legitimate offsets and silently drop subsequent
+          // chunks whose offsetStart falls in the inflated gap.
+          const writtenEnd = offsetStart + byteLen
           if (writtenEnd > cursorRef.current) {
             cursorRef.current = writtenEnd
           }
@@ -413,8 +420,12 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // Drain-tolerant variant for orchestrator buffer flush. Same as handleData
     // but doesn't filter by sessionId since the orchestrator always passes
     // events for the session we registered for.
-    const handleDataForDrain = (data: string, offsetStart: number): void => {
-      handleData(session.id, data, offsetStart)
+    const handleDataForDrain = (
+      data: string,
+      offsetStart: number,
+      byteLen: number
+    ): void => {
+      handleData(session.id, data, offsetStart, byteLen)
     }
 
     const handleExit = (eventSessionId: string, code: number | null): void => {

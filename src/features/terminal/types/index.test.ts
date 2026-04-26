@@ -153,11 +153,13 @@ describe('Terminal Types', () => {
         sessionId: 'session-1',
         data: 'hello world\n',
         offsetStart: 0n,
+        byteLen: 12n,
       }
 
       expect(event.sessionId).toBe('session-1')
       expect(event.data).toBe('hello world\n')
       expect(event.offsetStart).toBe(0n)
+      expect(event.byteLen).toBe(12n)
     })
 
     test('PTYExitEvent with exit code', () => {

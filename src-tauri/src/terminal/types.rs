@@ -86,10 +86,16 @@ pub struct KillPtyRequest {
 pub struct PtyDataEvent {
     /// Session ID
     pub session_id: SessionId,
-    /// Output data from PTY stdout
+    /// Output data from PTY stdout (lossy UTF-8 — invalid bytes become U+FFFD)
     pub data: String,
     /// Starting byte offset of this chunk in the session's lifetime stream
     pub offset_start: u64,
+    /// Raw byte count of this chunk from the PTY read (matches the producer's
+    /// offset arithmetic). MUST be used by subscribers to advance their cursor
+    /// — never derive cursor advances from `data.len()`, since lossy UTF-8
+    /// decoding can replace invalid bytes with U+FFFD (3 bytes when re-encoded)
+    /// and shift the cursor away from the producer's offset stream.
+    pub byte_len: u64,
 }
 
 /// PTY exit event payload (emitted when process exits)

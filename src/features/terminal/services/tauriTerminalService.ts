@@ -30,7 +30,8 @@ export class TauriTerminalService implements ITerminalService {
   private dataCallbacks: ((
     sessionId: string,
     data: string,
-    offsetStart: number
+    offsetStart: number,
+    byteLen: number
   ) => void)[] = []
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
@@ -56,13 +57,15 @@ export class TauriTerminalService implements ITerminalService {
 
     this.initPromise = (async (): Promise<void> => {
       const unlistenData = await listen<PtyDataEvent>('pty-data', (event) => {
-        const { sessionId, data, offsetStart } = event.payload
+        const { sessionId, data, offsetStart, byteLen } = event.payload
 
-        // PtyDataEvent.offset_start is u64 — bindings may emit as bigint or number.
-        // Coerce to number; safe up to 2^53 = ~9 PB per session.
+        // PtyDataEvent.offset_start and .byte_len are u64 — bindings may emit
+        // as bigint or number. Coerce to number; safe up to 2^53 = ~9 PB per
+        // session.
         const offset =
           typeof offsetStart === 'bigint' ? Number(offsetStart) : offsetStart
-        this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset))
+        const len = typeof byteLen === 'bigint' ? Number(byteLen) : byteLen
+        this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset, len))
       })
 
       const unlistenExit = await listen<PtyExitEvent>('pty-exit', (event) => {
@@ -136,7 +139,12 @@ export class TauriTerminalService implements ITerminalService {
   }
 
   async onData(
-    callback: (sessionId: string, data: string, offsetStart: number) => void
+    callback: (
+      sessionId: string,
+      data: string,
+      offsetStart: number,
+      byteLen: number
+    ) => void
   ): Promise<() => void> {
     // Push the callback BEFORE awaiting so that any callbacks already queued
     // during a concurrent ensureListeners() in-flight don't race with the listen()
