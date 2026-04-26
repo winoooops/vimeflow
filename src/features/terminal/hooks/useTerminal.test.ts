@@ -521,4 +521,215 @@ describe('useTerminal', () => {
 
     expect(mockTerminal.write).not.toHaveBeenCalled()
   })
+
+  describe('Restored mode (replay + cursor dedupe)', () => {
+    test('skips spawn when restoredFrom is provided', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          cwd: '/home/user',
+          restoredFrom: {
+            sessionId: 'restored-session-id',
+            cwd: '/home/user',
+            pid: 9999,
+            replayData: 'Restored output\r\n',
+            replayEndOffset: 100,
+            bufferedEvents: [],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+        expect(result.current.session?.id).toBe('restored-session-id')
+      })
+
+      // Should NOT spawn a new PTY
+      expect(mockService.spawn).not.toHaveBeenCalled()
+
+      // Should write replay data to terminal
+      expect(mockTerminal.write).toHaveBeenCalledWith('Restored output\r\n')
+    })
+
+    test('writes replay data before draining buffered events', async () => {
+      const writes: string[] = []
+      vi.mocked(mockTerminal.write).mockImplementation(
+        (data: string | Uint8Array) => {
+          writes.push(
+            typeof data === 'string' ? data : new TextDecoder().decode(data)
+          )
+        }
+      )
+
+      renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: 'REPLAY',
+            replayEndOffset: 50,
+            bufferedEvents: [
+              { sessionId: 'session-1', data: 'BUFFERED', offsetStart: 50 },
+            ],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(writes.length).toBeGreaterThanOrEqual(2)
+      })
+
+      // Replay data should be written first
+      expect(writes[0]).toBe('REPLAY')
+      // Then buffered events
+      expect(writes[1]).toBe('BUFFERED')
+    })
+
+    test('flushes buffered events with cursor filter (offsetStart >= replayEndOffset)', async () => {
+      const writes: string[] = []
+      vi.mocked(mockTerminal.write).mockImplementation(
+        (data: string | Uint8Array) => {
+          writes.push(
+            typeof data === 'string' ? data : new TextDecoder().decode(data)
+          )
+        }
+      )
+
+      renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: 'REPLAY',
+            replayEndOffset: 100,
+            bufferedEvents: [
+              { sessionId: 'session-1', data: 'BELOW', offsetStart: 99 }, // Below cursor
+              { sessionId: 'session-1', data: 'AT', offsetStart: 100 }, // At cursor
+              { sessionId: 'session-1', data: 'ABOVE', offsetStart: 101 }, // Above cursor
+            ],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(writes.length).toBeGreaterThanOrEqual(2)
+      })
+
+      // Should NOT write event below cursor (offsetStart < replayEndOffset)
+      expect(writes).not.toContain('BELOW')
+
+      // Should write events at/above cursor (offsetStart >= replayEndOffset)
+      expect(writes).toContain('AT')
+      expect(writes).toContain('ABOVE')
+    })
+
+    test('does not kill session on unmount when restored', async () => {
+      const { unmount } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'restored-session-id',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: 'test',
+            replayEndOffset: 0,
+            bufferedEvents: [],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(mockTerminal.write).toHaveBeenCalled()
+      })
+
+      unmount()
+
+      // Should NOT call kill for restored sessions
+      expect(mockService.kill).not.toHaveBeenCalled()
+    })
+
+    test('live event below cursor is dropped', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: 'REPLAY',
+            replayEndOffset: 100,
+            bufferedEvents: [],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+      })
+
+      vi.mocked(mockTerminal.write).mockClear()
+
+      // Emit live event with offsetStart below cursor
+      mockService.emit('data', {
+        sessionId: 'session-1',
+        data: 'BELOW_CURSOR',
+        offsetStart: 99,
+      })
+
+      // Should NOT write to terminal (below cursor)
+      expect(mockTerminal.write).not.toHaveBeenCalled()
+    })
+
+    test('live event at or above cursor is written', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: 'REPLAY',
+            replayEndOffset: 100,
+            bufferedEvents: [],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+      })
+
+      vi.mocked(mockTerminal.write).mockClear()
+
+      // Emit live event at cursor
+      mockService.emit('data', {
+        sessionId: 'session-1',
+        data: 'AT_CURSOR',
+        offsetStart: 100,
+      })
+
+      expect(mockTerminal.write).toHaveBeenCalledWith('AT_CURSOR')
+
+      vi.mocked(mockTerminal.write).mockClear()
+
+      // Emit live event above cursor
+      mockService.emit('data', {
+        sessionId: 'session-1',
+        data: 'ABOVE_CURSOR',
+        offsetStart: 150,
+      })
+
+      expect(mockTerminal.write).toHaveBeenCalledWith('ABOVE_CURSOR')
+    })
+  })
 })

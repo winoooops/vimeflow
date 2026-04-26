@@ -253,9 +253,8 @@ export class MockTerminalService implements ITerminalService {
   }
 
   // Test helpers
-  emitData(sessionId: string, data: string): void {
-    // offsetStart = 0 for mock emissions (not load-bearing in tests)
-    this.dataCallbacks.forEach((cb) => cb(sessionId, data, 0))
+  emitData(sessionId: string, data: string, offsetStart = 0): void {
+    this.dataCallbacks.forEach((cb) => cb(sessionId, data, offsetStart))
   }
 
   emitExit(sessionId: string, code: number | null): void {
@@ -272,12 +271,13 @@ export class MockTerminalService implements ITerminalService {
     payload: {
       sessionId: string
       data?: string
+      offsetStart?: number
       code?: number | null
       message?: string
     }
   ): void {
     if (event === 'data' && payload.data !== undefined) {
-      this.emitData(payload.sessionId, payload.data)
+      this.emitData(payload.sessionId, payload.data, payload.offsetStart ?? 0)
     } else if (event === 'exit') {
       this.emitExit(payload.sessionId, payload.code ?? null)
     } else if (event === 'error' && payload.message !== undefined) {

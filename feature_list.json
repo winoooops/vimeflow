@@ -191,7 +191,7 @@
       "Write tests: skips spawn, writes replay first, flushes buffered with filter, no kill on unmount, live event below cursor dropped, live event at/above cursor written",
       "Commit with message: feat(terminal): add useTerminal restored mode with replay and cursor dedupe"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [11]
   },
   {

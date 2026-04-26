@@ -3,6 +3,18 @@ import type { Terminal } from '@xterm/xterm'
 import type { ITerminalService } from '../services/terminalService'
 import type { TerminalSession } from '../types'
 
+/**
+ * Data required to restore a terminal session from snapshot + live events
+ */
+export interface RestoreData {
+  sessionId: string
+  cwd: string
+  pid: number
+  replayData: string
+  replayEndOffset: number
+  bufferedEvents: { sessionId: string; data: string; offsetStart: number }[]
+}
+
 export interface UseTerminalOptions {
   /**
    * xterm.js Terminal instance
@@ -29,8 +41,10 @@ export interface UseTerminalOptions {
    */
   env?: Record<string, string>
 
-  // sessionId removed - reconnection feature not fully implemented yet
-  // Will be added back when backend supports persistent sessions
+  /**
+   * Optional restore data for reconnecting to an existing session
+   */
+  restoredFrom?: RestoreData
 }
 
 export interface UseTerminalReturn {
@@ -64,14 +78,15 @@ export interface UseTerminalReturn {
  * useTerminal hook - manages PTY lifecycle and xterm integration
  *
  * Features:
- * - Spawns PTY on mount
+ * - Spawns PTY on mount (or restores from snapshot)
  * - Listens to PTY data events and writes to xterm
  * - Handles keyboard input from xterm
  * - Handles PTY exit and error events
  * - Cleans up on unmount
+ * - Supports replay + cursor dedupe for session restoration
  */
 export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
-  const { terminal, service, cwd, shell, env } = options
+  const { terminal, service, cwd, shell, env, restoredFrom } = options
 
   const [session, setSession] = useState<TerminalSession | null>(null)
 
@@ -89,6 +104,13 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   // Track whether this hook spawned the session
   const didSpawnSessionRef = useRef(false)
 
+  // Track the replay end offset (cursor) for deduplication
+  // Events with offsetStart < cursor are dropped
+  const cursorRef = useRef<number>(restoredFrom?.replayEndOffset ?? 0)
+
+  // Store restoredFrom in a ref to prevent effect dependency cycles
+  const restoredFromRef = useRef(restoredFrom)
+
   // Store cwd in a ref — used only at spawn time, not as an effect dependency.
   // OSC 7 updates session.workingDirectory which flows here as `cwd`, but we
   // must NOT respawn the PTY when the shell changes directory.
@@ -103,7 +125,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     []
   )
 
-  // Spawn PTY on mount
+  // Spawn PTY on mount (or restore from snapshot)
   useEffect(() => {
     // Reset mounted ref on each effect run (fixes StrictMode double-mount where
     // the first fake unmount sets this to false and it never resets)
@@ -119,12 +141,53 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // "[Process exited]" to the cached terminal before the new session starts)
     terminal.clear()
 
-    setDebugInfo('spawning...')
-
     let currentSession: TerminalSession | null = null
 
     const initializeSession = async (): Promise<void> => {
-      // Spawn a new PTY process
+      // RESTORED MODE: Reattach to existing session
+      const restore = restoredFromRef.current
+      if (restore) {
+        if (!isMountedRef.current) {
+          return
+        }
+
+        didSpawnSessionRef.current = false // We did NOT spawn this session
+
+        // Write replay data first
+        terminal.write(restore.replayData)
+
+        // Drain buffered events with cursor filter
+        for (const event of restore.bufferedEvents) {
+          if (event.offsetStart >= restore.replayEndOffset) {
+            terminal.write(event.data)
+          }
+        }
+
+        // Create session object from restore data
+        const restoredSession: TerminalSession = {
+          id: restore.sessionId,
+          pid: restore.pid,
+          name: `Session ${restore.sessionId}`,
+          cwd: restore.cwd,
+          shell: shell ?? 'default',
+          status: 'running',
+          createdAt: new Date(),
+          env: {},
+          lastActivityAt: new Date(),
+        }
+
+        currentSession = restoredSession
+        setSession(restoredSession)
+        setStatus('running')
+        setError(null)
+        setDebugInfo(`restored pid=${String(restore.pid)}`)
+
+        return
+      }
+
+      // NORMAL MODE: Spawn a new PTY process
+      setDebugInfo('spawning...')
+
       try {
         const effectiveCwd = cwdRef.current ?? '~'
 
@@ -191,7 +254,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // Cleanup session when dependencies change or on unmount
     return (): void => {
       const cleanupSession = async (): Promise<void> => {
-        // Only kill sessions we spawned, not reconnected sessions
+        // Only kill sessions we spawned, not restored sessions
         if (currentSession && didSpawnSessionRef.current) {
           try {
             await service.kill({ sessionId: currentSession.id })
@@ -204,6 +267,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     }
     // cwd intentionally excluded — it's read from cwdRef at spawn time.
     // OSC 7 updates cwd continuously; including it here would kill the PTY on every cd.
+    // restoredFrom intentionally excluded — it's read from restoredFromRef at init time.
+    // Including it would cause infinite loops as object identity changes.
   }, [terminal, service, shell, env])
 
   // Listen to PTY data events
@@ -215,11 +280,13 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     const handleData = (
       eventSessionId: string,
       data: string,
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      _offsetStart: number
+      offsetStart: number
     ): void => {
       if (eventSessionId === session.id && isMountedRef.current) {
-        terminal.write(data)
+        // Apply cursor filter: drop events below the replay end offset
+        if (offsetStart >= cursorRef.current) {
+          terminal.write(data)
+        }
       }
     }
 
