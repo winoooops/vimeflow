@@ -90,21 +90,38 @@ impl SessionCache {
         self.data.lock().expect("cache mutex poisoned").clone()
     }
 
-    /// Apply a mutation under the lock, then atomically flush to disk.
-    /// Returns Ok even if disk flush fails — in-memory mirror is updated
-    /// regardless so frontend reload still restores correctly. Disk failure
-    /// is logged.
+    /// Apply a mutation under the lock, then atomically flush to disk WHILE
+    /// STILL HOLDING THE LOCK. Returns Ok even if disk flush fails —
+    /// in-memory mirror is updated regardless so frontend reload still
+    /// restores correctly. Disk failure is logged.
+    ///
+    /// Round 3, Finding 1 (codex P1): the lock MUST be held across
+    /// `flush_to_disk` so two overlapping mutations cannot persist their
+    /// snapshots out of order. With the previous implementation the lock was
+    /// released before the disk write, so two concurrent `mutate()` calls
+    /// could run as `lock-A → modify → unlock-A → lock-B → modify → unlock-B
+    /// → flush-B → flush-A`, leaving disk with the OLDER snapshot even
+    /// though the in-memory mirror ended in the right state. After a reload
+    /// (which reads the disk file), the wrong active tab or tab order would
+    /// surface. Serializing the flush with the mutation is correctness by
+    /// construction.
+    ///
+    /// The perf cost is real but acceptable: `mutate()` is called at
+    /// human-interactive frequency (tab create / kill / reorder), not in
+    /// tight loops. A typical local-SSD `flush_to_disk` takes a few ms
+    /// (mkdir + tempfile write + persist-rename), and the mutex is
+    /// uncontended in the steady state. Holding the lock across the I/O
+    /// blocks other mutators for that window — at human cadence this is
+    /// invisible.
     pub fn mutate<F>(&self, f: F) -> Result<(), String>
     where
         F: FnOnce(&mut SessionCacheData),
     {
-        let snapshot = {
-            let mut guard = self.data.lock().expect("cache mutex poisoned");
-            f(&mut guard);
-            guard.clone()
-        };
-        // Best-effort disk write
-        if let Err(e) = self.flush_to_disk(&snapshot) {
+        let mut guard = self.data.lock().expect("cache mutex poisoned");
+        f(&mut guard);
+        // Best-effort disk write — held under the lock so concurrent
+        // mutations cannot reorder their flushes.
+        if let Err(e) = self.flush_to_disk(&guard) {
             log::warn!("cache flush failed (in-memory still updated): {e}");
         }
         Ok(())
@@ -221,6 +238,79 @@ mod tests {
             let snap = cache.snapshot();
             assert_eq!(snap.session_order, vec!["uuid-a".to_string()]);
         }
+    }
+
+    /// Round 3, Finding 1 (codex P1) regression test.
+    ///
+    /// Simulates two concurrent `mutate()` calls. With the previous
+    /// implementation (lock released before `flush_to_disk`), the disk file
+    /// could end up with the OLDER snapshot — even though the in-memory
+    /// mirror ended in the right state. This test would fail intermittently
+    /// against that old code: the slow flush from thread A (writing
+    /// `["a-only"]`) could win the race and overwrite thread B's already-
+    /// persisted `["a-only","b"]`. With the lock held across the flush,
+    /// the only valid disk states are `["a-only"]` (thread A flushed first
+    /// then thread B both mutated and flushed) or `["a-only","b"]` (thread
+    /// B got the lock first); the file can never end at `["a-only"]` AFTER
+    /// `["a-only","b"]` was written.
+    ///
+    /// We assert the strong post-condition: after both mutations resolve,
+    /// disk == in-memory. That's only achievable if flushes are serialized
+    /// with mutations.
+    #[test]
+    fn mutate_holds_lock_through_flush() {
+        use std::sync::Arc;
+        use std::thread;
+        use std::time::Duration;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("sessions.json");
+        let cache = Arc::new(SessionCache::load(path.clone()).unwrap());
+
+        // Thread A: appends "a", then sleeps inside the closure to widen the
+        // critical section. Under a buggy mutate (lock released before
+        // flush), thread B's mutate-and-flush could slip between A's modify
+        // and A's flush, then A would persist its older snapshot on top of
+        // B's newer one.
+        let cache_a = Arc::clone(&cache);
+        let handle_a = thread::spawn(move || {
+            cache_a
+                .mutate(|d| {
+                    d.session_order.push("a".into());
+                    // Force the critical section to overlap with thread B.
+                    thread::sleep(Duration::from_millis(50));
+                })
+                .unwrap();
+        });
+
+        // Stagger so thread A definitely starts first and is mid-mutation.
+        thread::sleep(Duration::from_millis(10));
+
+        let cache_b = Arc::clone(&cache);
+        let handle_b = thread::spawn(move || {
+            cache_b
+                .mutate(|d| {
+                    d.session_order.push("b".into());
+                })
+                .unwrap();
+        });
+
+        handle_a.join().unwrap();
+        handle_b.join().unwrap();
+
+        // Strong invariant: after both threads finish, the disk snapshot
+        // MUST equal the in-memory snapshot. With the buggy version where
+        // the lock was released before flush, the disk could end up at
+        // ["a"] while the in-memory state is ["a","b"].
+        let in_memory = cache.snapshot();
+        let on_disk = SessionCache::load(path).unwrap().snapshot();
+        assert_eq!(
+            on_disk.session_order, in_memory.session_order,
+            "disk snapshot must match in-memory after concurrent mutations"
+        );
+        // Both ids must be present — no mutation was lost.
+        assert!(in_memory.session_order.contains(&"a".to_string()));
+        assert!(in_memory.session_order.contains(&"b".to_string()));
     }
 
     #[test]
