@@ -133,7 +133,7 @@ struct SessionCache {
 
 #[serde(tag = "kind")]
 enum SessionStatus {
-    Alive  { pid: u32, replay_data: String },
+    Alive  { pid: u32, replay_data: String, replay_end_offset: u64 },
     Exited { last_exit_code: Option<i32> },
 }
 
@@ -159,7 +159,7 @@ For each session in `session_order`:
 
 | Cache `exited` | `PtyState` membership                                                                                                                                 | `SessionStatus`                                                                                          |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `false`        | alive                                                                                                                                                 | `Alive { pid, replay_data }`                                                                             |
+| `false`        | alive                                                                                                                                                 | `Alive { pid, replay_data, replay_end_offset }`                                                          |
 | `false`        | **absent** — most commonly because the prior Tauri process was hard-killed (SIGKILL / OOM / OS shutdown / panic) and the read-loop EOF path never ran | **`list_sessions` flips cache to `exited: true` and flushes**, returns `Exited { last_exit_code: None }` |
 | `true`         | absent                                                                                                                                                | `Exited { last_exit_code }`                                                                              |
 
@@ -272,20 +272,50 @@ Tauri app shutdown
        regardless of how the prior process died. User can Restart or close.
 ```
 
-## Replay Buffer
+## Replay Buffer + Offset Cursor
 
-Each `ManagedSession` in `PtyState` gains a `VecDeque<u8>` ring buffer with a fixed capacity (default 65536 bytes / 64 KB).
+Each `ManagedSession` in `PtyState` gains:
 
-The read loop in `commands.rs:316-360` writes every chunk to the buffer before emitting the `pty-data` event:
+- A `VecDeque<u8>` ring buffer with a fixed capacity (default 65536 bytes / 64 KB).
+- An `AtomicU64` `next_offset` counter — total bytes ever produced for this session, monotonically increasing from 0.
+
+The read loop in `commands.rs:316-360` writes every chunk to the buffer, increments the counter, and emits a `pty-data` event tagged with the chunk's starting offset:
 
 ```rust
+let chunk_start = session.next_offset.fetch_add(n as u64, Ordering::SeqCst);
 session_buffer.write(&buf[..n]);  // truncates from front when over capacity
-app.emit("pty-data", PtyDataEvent { session_id, data })?;
+app.emit("pty-data", PtyDataEvent { session_id, data, offset_start: chunk_start })?;
 ```
 
-`list_sessions` snapshots the buffer (lossy-UTF-8) into `replay_data` for `Alive` sessions. The frontend writes `replay_data` into xterm.js with `terminal.write(replayData)` _before_ re-attaching the `pty-data` listener — this prevents duplicate display of the same bytes if a new chunk arrives mid-restore (xterm processes writes serially).
+`PtyDataEvent` gains a single `offset_start: u64` field. Backwards-incompatible change, but the event is internal — only consumed by `useTerminal`.
 
-Sizing rationale: 64 KB covers ~1000 lines at typical width (80 cols × 80 chars/line), which exceeds the visible terminal area for any reasonable reload window. Memory cost: 64 KB × N sessions; with 10 sessions that's 640 KB, with 64 (cap on `spawn_pty`) it's 4 MB. Acceptable.
+### Snapshot + subscribe is race-free via the cursor
+
+`list_sessions` for an Alive session returns:
+
+- `replay_data: String` — current ring buffer contents (lossy-UTF-8).
+- `replay_end_offset: u64` — value of `next_offset` at the time of the snapshot.
+
+The frontend's restore-mode flow:
+
+1. Receives `Alive { replay_data, replay_end_offset }`.
+2. Writes `replay_data` to xterm.
+3. Stashes `replay_end_offset` as the per-session "already-seen-up-to" cursor.
+4. Subscribes to `pty-data` events.
+5. For every incoming event, applies the dedupe rule:
+   - `event.offset_start < replay_end_offset` → **drop** (chunk was already in `replay_data`).
+   - `event.offset_start >= replay_end_offset` → **write to xterm**.
+
+This closes both halves of the race that a "snapshot then subscribe" protocol leaks:
+
+- **Lost bytes** (chunks emitted between snapshot and subscribe): captured by the live subscription, kept because `offset_start >= replay_end_offset`.
+- **Doubled bytes** (chunks already in the snapshot that re-appear in live events): dropped by the cursor check.
+
+Chunks are atomic — one read, one event — so partial-overlap doesn't happen. Lossy-UTF-8 in `replay_data` doesn't affect cursor math; the cursor counts raw input bytes, not decoded characters.
+
+### Sizing
+
+64 KB covers ~1000 lines at typical width (80 cols × 80 chars/line), which exceeds the visible terminal area for any reasonable reload window. Memory cost: 64 KB × N sessions; with 10 sessions that's 640 KB, with 64 (cap on `spawn_pty`) it's 4 MB. Acceptable.
 
 ## Frontend Integration
 
@@ -350,17 +380,17 @@ The TerminalPane unmount cleanup retains: xterm.js dispose, `pty-data` listener 
 
 ## Failure Modes
 
-| Failure                                           | Handling                                                                                                                                                                                                           |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Cache file unparseable / corrupt                  | `list_sessions` returns `Err("cache corrupt: <details>")`. Frontend logs, renders an empty session list, offers a "start fresh" prompt. A `.bak` is kept on every successful write so manual recovery is possible. |
-| `app_data_dir` not writable                       | Cache writes log a warning but do not fail `spawn_pty`. Sessions work in-memory; reload will lose them.                                                                                                            |
-| Atomic write interrupted (Tauri crash mid-rename) | `tempfile::NamedTempFile::persist` either fully renames or doesn't — never leaves a torn file. Worst case the prior version is read on next mount.                                                                 |
-| `set_active_session` with unknown id              | `Err("unknown session")`. Frontend reverts the optimistic active-tab change.                                                                                                                                       |
-| `reorder_sessions` with non-permutation           | `Err("invalid reorder: not a permutation")`. Frontend reverts.                                                                                                                                                     |
-| `update_session_cwd` for an unknown id            | `Err("unknown session")`. Frontend logs and ignores (probably an OSC 7 racing kill).                                                                                                                               |
-| `update_session_cwd` with non-existent path       | `Err("invalid cwd: not a directory")`. Frontend logs and ignores; the cache keeps the previous cwd.                                                                                                                |
-| Cap exceeded on `spawn_pty` (more than 64 active) | `Err("session limit reached")`. UI surfaces a toast.                                                                                                                                                               |
-| Read-loop EOF race vs `set_active_session`        | Cache writes are serialized by the cache mutex; either order is consistent. UI may briefly show an active id whose session just exited — next list_sessions call corrects.                                         |
+| Failure                                           | Handling                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cache file unparseable / corrupt                  | `list_sessions` returns `Err("cache corrupt: <details>")`. Frontend logs, renders an empty session list, offers a "start fresh" prompt. A `.bak` is kept on every successful write so manual recovery is possible.                                                                           |
+| `app_data_dir` not writable                       | Cache writes log a warning but do not fail `spawn_pty`, and **do not roll back the in-memory `SessionCache` mirror**. Frontend reload still restores correctly from in-memory cache + `PtyState`. Only Tauri restart loses the persisted state (the in-memory mirror dies with the process). |
+| Atomic write interrupted (Tauri crash mid-rename) | `tempfile::NamedTempFile::persist` either fully renames or doesn't — never leaves a torn file. Worst case the prior version is read on next mount.                                                                                                                                           |
+| `set_active_session` with unknown id              | `Err("unknown session")`. Frontend reverts the optimistic active-tab change.                                                                                                                                                                                                                 |
+| `reorder_sessions` with non-permutation           | `Err("invalid reorder: not a permutation")`. Frontend reverts.                                                                                                                                                                                                                               |
+| `update_session_cwd` for an unknown id            | `Err("unknown session")`. Frontend logs and ignores (probably an OSC 7 racing kill).                                                                                                                                                                                                         |
+| `update_session_cwd` with non-existent path       | `Err("invalid cwd: not a directory")`. Frontend logs and ignores; the cache keeps the previous cwd.                                                                                                                                                                                          |
+| Cap exceeded on `spawn_pty` (more than 64 active) | `Err("session limit reached")`. UI surfaces a toast.                                                                                                                                                                                                                                         |
+| Read-loop EOF race vs `set_active_session`        | Cache writes are serialized by the cache mutex; either order is consistent. UI may briefly show an active id whose session just exited — next list_sessions call corrects.                                                                                                                   |
 
 ## Testing Strategy
 
@@ -375,6 +405,10 @@ The TerminalPane unmount cleanup retains: xterm.js dispose, `pty-data` listener 
 | `list_sessions_includes_active_session_id`                  | Active id round-trips                                                                                                                     |
 | `list_sessions_replay_data_contains_recent_output`          | Ring buffer write + restore round-trips bytes                                                                                             |
 | `list_sessions_replay_data_truncated_at_capacity`           | Long output respects 64 KB cap                                                                                                            |
+| `list_sessions_replay_end_offset_matches_next_offset`       | Snapshot returns the cursor at the moment of the snapshot; pins the offset/cursor protocol                                                |
+| `pty_data_event_includes_monotonic_offset_start`            | Every emitted chunk's `offset_start` equals previous `next_offset`; pins the producer side of the cursor                                  |
+| `next_offset_continues_past_buffer_truncation`              | When the ring buffer truncates from the front, `next_offset` keeps incrementing — total bytes ever, not buffer bytes                      |
+| `cache_flush_failure_does_not_roll_back_in_memory_mirror`   | When `app_data_dir` is unwritable, the in-memory `SessionCache` still updates so frontend reload (same Tauri process) restores correctly  |
 | `set_active_session_persists_to_cache`                      | Active id written                                                                                                                         |
 | `set_active_session_rejects_unknown_id`                     | Validation                                                                                                                                |
 | `reorder_sessions_persists_to_cache`                        | Order written                                                                                                                             |
@@ -394,19 +428,21 @@ The TerminalPane unmount cleanup retains: xterm.js dispose, `pty-data` listener 
 
 ### Frontend (`src/features/{workspace,terminal}/`)
 
-| Test                                                                      | What it pins                          |
-| ------------------------------------------------------------------------- | ------------------------------------- |
-| `useSessionManager_calls_list_sessions_on_mount`                          | Single canonical read                 |
-| `useSessionManager_does_not_persist_to_localStorage`                      | Pure IPC client, no local writes      |
-| `useSessionManager_optimistically_updates_active_then_calls_ipc`          | Tab switch UX                         |
-| `useSessionManager_reverts_optimistic_update_on_ipc_error`                | Error recovery                        |
-| `useSessionManager_renders_exited_sessions_with_restart_action`           | UX for Exited variant                 |
-| `TerminalPane_restored_mode_skips_spawn_calls_attach`                     | No new PTY spawn on reload            |
-| `TerminalPane_restored_mode_writes_replay_data_to_xterm_before_listening` | Ordering: replay before live          |
-| `TerminalPane_restored_mode_sends_resize_after_attach`                    | SIGWINCH nudge for TUIs               |
-| `useTerminal_unmount_does_not_call_kill_in_restored_mode`                 | Lifecycle: ref stays false on restore |
-| `removeSession_explicitly_calls_kill_pty`                                 | Explicit close path                   |
-| `osc7_cwd_change_calls_update_session_cwd`                                | Live cwd persistence                  |
+| Test                                                                      | What it pins                                                              |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `useSessionManager_calls_list_sessions_on_mount`                          | Single canonical read                                                     |
+| `useSessionManager_does_not_persist_to_localStorage`                      | Pure IPC client, no local writes                                          |
+| `useSessionManager_optimistically_updates_active_then_calls_ipc`          | Tab switch UX                                                             |
+| `useSessionManager_reverts_optimistic_update_on_ipc_error`                | Error recovery                                                            |
+| `useSessionManager_renders_exited_sessions_with_restart_action`           | UX for Exited variant                                                     |
+| `TerminalPane_restored_mode_skips_spawn_calls_attach`                     | No new PTY spawn on reload                                                |
+| `TerminalPane_restored_mode_writes_replay_data_to_xterm_before_listening` | Ordering: replay before live                                              |
+| `TerminalPane_restored_mode_drops_pty_data_event_below_replay_cursor`     | Cursor dedupe: events with `offset_start < replay_end_offset` are skipped |
+| `TerminalPane_restored_mode_writes_pty_data_event_at_or_above_cursor`     | Cursor dedupe: events with `offset_start >= replay_end_offset` are kept   |
+| `TerminalPane_restored_mode_sends_resize_after_attach`                    | SIGWINCH nudge for TUIs                                                   |
+| `useTerminal_unmount_does_not_call_kill_in_restored_mode`                 | Lifecycle: ref stays false on restore                                     |
+| `removeSession_explicitly_calls_kill_pty`                                 | Explicit close path                                                       |
+| `osc7_cwd_change_calls_update_session_cwd`                                | Live cwd persistence                                                      |
 
 ### Manual smoke
 
