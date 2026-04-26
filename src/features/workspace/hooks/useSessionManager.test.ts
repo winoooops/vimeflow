@@ -532,7 +532,12 @@ describe('useSessionManager', () => {
     ])
   })
 
-  test('F2: stops buffering only after every pending pane reports ready', async () => {
+  // F1 (round 2): the global buffering listener is permanent for the
+  // lifetime of useSessionManager — sessions created after restore via
+  // createSession also need the buffer→drain protocol so their early
+  // pty-data isn't lost while waiting for useTerminal to subscribe.
+  // Tearing it down once restored panes were ready left fresh tabs blank.
+  test('F1 (round 2): buffering listener stays attached after all restored panes report ready', async () => {
     const service = createMockService()
     const stopBufferingSpy = vi.fn()
     service.onData = vi.fn(
@@ -568,18 +573,135 @@ describe('useSessionManager', () => {
     const { result } = renderHook(() => useSessionManager(service))
     await waitFor(() => expect(result.current.loading).toBe(false))
 
-    // Buffering listener still active — only one of two panes ready.
+    // All restored panes report ready — the listener must remain alive so
+    // sessions spawned later also benefit from buffer→drain.
     act(() => {
       // eslint-disable-next-line @typescript-eslint/no-empty-function
       result.current.notifyPaneReady('a', () => {})
-    })
-    expect(stopBufferingSpy).not.toHaveBeenCalled()
-
-    // Last pane reports ready → stopBuffering fires exactly once.
-    act(() => {
       // eslint-disable-next-line @typescript-eslint/no-empty-function
       result.current.notifyPaneReady('b', () => {})
     })
-    expect(stopBufferingSpy).toHaveBeenCalledTimes(1)
+
+    expect(stopBufferingSpy).not.toHaveBeenCalled()
+  })
+
+  // F1 (round 2) regression: a session created via createSession AFTER the
+  // initial restore must still get its early pty-data delivered. Before this
+  // fix, the buffering listener was torn down once every restored pane was
+  // ready, so events emitted between createSession's spawn() and the new
+  // pane's useTerminal subscription were lost — fresh tabs came up blank
+  // until the shell produced more output.
+  test('F1 (round 2): events for sessions created after restore are buffered and drained on notifyPaneReady', async () => {
+    const service = createMockService()
+    let dataCallback: (
+      sessionId: string,
+      data: string,
+      offsetStart: number
+    ) => void = vi.fn()
+    service.onData = vi.fn((cb): Promise<() => void> => {
+      dataCallback = cb
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return Promise.resolve((): void => {})
+    })
+
+    // Restore returns no sessions — clean startup.
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: null,
+      sessions: [],
+    })
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'fresh-tab', pid: 777 })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Create a fresh tab AFTER restore completes.
+    act(() => result.current.createSession())
+    await waitFor(() => expect(service.spawn).toHaveBeenCalled())
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    // Simulate Rust emitting the shell's startup prompt for the new session
+    // BEFORE useTerminal has subscribed. Without the permanent listener this
+    // would land nowhere and be silently dropped.
+    dataCallback('fresh-tab', '$ ', 0)
+    dataCallback('fresh-tab', 'welcome\r\n', 2)
+
+    // Pane subscribes — the buffered events must drain through our handler.
+    const drained: { data: string; offsetStart: number }[] = []
+    act(() => {
+      result.current.notifyPaneReady('fresh-tab', (data, offsetStart) => {
+        drained.push({ data, offsetStart })
+      })
+    })
+
+    expect(drained).toEqual([
+      { data: '$ ', offsetStart: 0 },
+      { data: 'welcome\r\n', offsetStart: 2 },
+    ])
+  })
+
+  // After a pane reports ready, its events should NOT continue to accumulate
+  // in the orchestrator's buffer — the per-pane onData subscription handles
+  // them directly. Without dropping ready-pane events the global listener
+  // would leak memory across the hook's lifetime.
+  test('F1 (round 2): events for sessions whose panes already reported ready are dropped (no buffer leak)', async () => {
+    const service = createMockService()
+    let dataCallback: (
+      sessionId: string,
+      data: string,
+      offsetStart: number
+    ) => void = vi.fn()
+    service.onData = vi.fn((cb): Promise<() => void> => {
+      dataCallback = cb
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return Promise.resolve((): void => {})
+    })
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'live',
+      sessions: [
+        {
+          id: 'live',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const drained: { data: string; offsetStart: number }[] = []
+    act(() => {
+      result.current.notifyPaneReady('live', (data, offsetStart) => {
+        drained.push({ data, offsetStart })
+      })
+    })
+    expect(drained).toEqual([])
+
+    // Subsequent events for this session (after notifyPaneReady) are routed
+    // through the per-pane listener, NOT the orchestrator's buffer. If the
+    // orchestrator's buffer were still capturing, a later notifyPaneReady
+    // call would re-deliver the same payload — driving doubled bytes and
+    // unbounded memory growth.
+    dataCallback('live', 'POST_READY', 100)
+
+    const drainedAgain: { data: string; offsetStart: number }[] = []
+    act(() => {
+      result.current.notifyPaneReady('live', (data, offsetStart) => {
+        drainedAgain.push({ data, offsetStart })
+      })
+    })
+
+    expect(drainedAgain).toEqual([])
   })
 })

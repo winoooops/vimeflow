@@ -121,11 +121,30 @@ export const useSessionManager = (
   // panes invoke from their useTerminal effect, possibly several React
   // ticks later). Held outside the effect's closure so notifyPaneReady can
   // see them across renders.
+  //
+  // F1 (round 2): the buffering listener lives for the ENTIRE lifetime of
+  // useSessionManager — no longer torn down once restored panes report ready.
+  // Without that, sessions created via createSession after restore had no
+  // safety net for the pty-data window between spawn() and useTerminal
+  // subscribing — events were silently lost on every fresh tab. Per-session
+  // gating now decides whether to buffer:
+  //
+  //   - sessionId in pendingPanesRef → buffer (pane hasn't attached yet)
+  //   - sessionId in readyPanesRef   → drop (per-pane listener handles it)
+  //   - neither (unknown session)    → buffer optimistically; the pane will
+  //                                    drain on notifyPaneReady. Covers the
+  //                                    race where pty-data for a new session
+  //                                    arrives before createSession adds it
+  //                                    to pendingPanesRef.
   const bufferedRef = useRef<
     Map<string, { data: string; offsetStart: number }[]>
   >(new Map())
   const stopBufferingRef = useRef<(() => void) | null>(null)
   const pendingPanesRef = useRef<Set<string>>(new Set())
+  // Sessions whose panes have already attached their per-pane live listener.
+  // Events for these sessions are dropped by the global buffering callback
+  // — the per-pane onData subscription delivers them directly to xterm.
+  const readyPanesRef = useRef<Set<string>>(new Set())
 
   // Mount-time restore orchestration: listen first, then list_sessions,
   // then KEEP buffering alive until every restored pane reports ready.
@@ -144,8 +163,22 @@ export const useSessionManager = (
         //    only resolves after the underlying tauri.listen('pty-data', ...) is wired up.
         //    Without awaiting, PTY events emitted during the listen()-attach window are
         //    lost from both replay_data AND bufferedEvents (irrecoverable).
+        //
+        //    F1 (round 2): this listener now stays attached for the lifetime of
+        //    useSessionManager so sessions created AFTER restore (createSession)
+        //    also benefit from the buffer→drain protocol. Per-session gating
+        //    inside the callback (see readyPanesRef) ensures we don't double-
+        //    deliver to panes that have already attached their own listener.
         stopBufferingRef.current = await service.onData(
           (sessionId, data, offsetStart) => {
+            // Drop events for sessions whose pane has already attached its
+            // own per-pane onData subscription — that subscription writes
+            // directly to xterm. Buffering would risk re-delivery and
+            // unbounded memory growth.
+            if (readyPanesRef.current.has(sessionId)) {
+              return
+            }
+
             let q = bufferedRef.current.get(sessionId)
             if (!q) {
               q = []
@@ -201,15 +234,10 @@ export const useSessionManager = (
         setSessions(newSessions)
         setActiveSessionIdState(list.activeSessionId)
         setLoading(false)
-
-        // If there are no Alive panes to report ready, stop buffering now —
-        // future event delivery happens via direct service.onData subscription
-        // from each TerminalPane (or for an entirely empty session list, no
-        // delivery is needed at all).
-        if (pendingPanesRef.current.size === 0) {
-          stopBufferingRef.current()
-          stopBufferingRef.current = null
-        }
+        // F1 (round 2): no stop-buffering call here. The global listener
+        // stays attached for the hook's lifetime so any session created via
+        // createSession also benefits from buffer→drain. The listener tears
+        // down only on hook unmount (see effect cleanup below).
       } catch (err) {
         // Cache load error or IPC failure — start fresh
         // Surfaced as toast in a future iteration; for now log.
@@ -232,8 +260,22 @@ export const useSessionManager = (
 
   // Drain buffer + remove from pending set when a pane subscribes.
   // Stable ref-only identity so passing this through props doesn't churn deps.
+  //
+  // F1 (round 2): the global buffering listener now lives for the hook's
+  // lifetime, so this function no longer tears it down. Instead, marking
+  // a session as `ready` flips the buffer callback's per-session gate so
+  // future events are dropped (the per-pane onData subscription handles them).
   const notifyPaneReady = useCallback(
     (sessionId: string, handler: PaneEventHandler): NotifyPaneReadyResult => {
+      // Mark the pane ready FIRST so any pty-data event that lands while
+      // we're draining lands directly via the per-pane listener (which is
+      // already attached by the time notifyPaneReady fires) and bypasses
+      // the buffer. Without flipping the gate before the drain, an event
+      // arriving mid-loop would be appended to bufferedRef AFTER we already
+      // copied it locally — leaking memory across the lifetime of the hook.
+      readyPanesRef.current.add(sessionId)
+      pendingPanesRef.current.delete(sessionId)
+
       // Drain any events the buffering listener captured for this session
       // before the pane attached its live listener. The handler is the same
       // function the pane uses for live events (with cursor dedupe), so any
@@ -245,19 +287,6 @@ export const useSessionManager = (
           handler(e.data, e.offsetStart)
         }
         bufferedRef.current.delete(sessionId)
-      }
-
-      // Mark this pane as ready. When every pane reports ready, the buffering
-      // listener is no longer needed — future events flow through each pane's
-      // own service.onData subscription.
-      if (pendingPanesRef.current.delete(sessionId)) {
-        if (
-          pendingPanesRef.current.size === 0 &&
-          stopBufferingRef.current !== null
-        ) {
-          stopBufferingRef.current()
-          stopBufferingRef.current = null
-        }
       }
 
       // Return value is reserved for future per-pane teardown (e.g. unsubscribing
@@ -295,8 +324,11 @@ export const useSessionManager = (
   //
   // pendingPanesRef inclusion: pty-data events emitted between
   // service.spawn() resolving and useTerminal subscribing land in the
-  // orchestrator's buffering listener (still attached if any restored
-  // panes are still pending) and get drained when the new pane reports ready.
+  // orchestrator's permanent buffering listener (kept alive for the hook's
+  // lifetime by F1-round-2) and get drained when the new pane reports ready.
+  // Without the permanent listener, fresh tabs created after restore would
+  // come up blank until the shell produced more output — early prompts,
+  // OSC sequences, and any startup banner would be silently lost.
   const createSession = useCallback((): void => {
     void (async (): Promise<void> => {
       try {
@@ -378,6 +410,14 @@ export const useSessionManager = (
         try {
           await service.kill({ sessionId: id })
 
+          // F1 (round 2) cleanup: drop the session from the buffering bookkeeping
+          // so the global listener doesn't accumulate per-session state for
+          // destroyed tabs.
+          readyPanesRef.current.delete(id)
+          pendingPanesRef.current.delete(id)
+          bufferedRef.current.delete(id)
+          restoreData.delete(id)
+
           setSessions((prev) => {
             const next = prev.filter((s) => s.id !== id)
 
@@ -398,7 +438,7 @@ export const useSessionManager = (
         }
       })()
     },
-    [activeSessionId, service]
+    [activeSessionId, service, restoreData]
   )
 
   // Rename session — in-memory only (no IPC)
