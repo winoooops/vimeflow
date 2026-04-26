@@ -226,6 +226,12 @@ impl PtyState {
             .try_clone_reader()
             .map_err(|e| anyhow::anyhow!("failed to clone PTY reader: {}", e))
     }
+
+    /// Internal accessor for code that needs to take the sessions lock directly
+    /// (e.g., the read loop accessing the ring buffer atomically).
+    pub fn inner_sessions(&self) -> &Arc<Mutex<HashMap<SessionId, ManagedSession>>> {
+        &self.sessions
+    }
 }
 
 #[cfg(test)]

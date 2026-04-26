@@ -94,7 +94,7 @@
       "Write test: read_loop_eof_marks_cache_exited",
       "Commit with message: feat(terminal): atomic ring buffer write + offset emission in read loop"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [5]
   },
   {

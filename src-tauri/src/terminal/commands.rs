@@ -269,9 +269,16 @@ pub async fn spawn_pty<R: tauri::Runtime>(
     // Spawn blocking thread for PTY read loop (avoids starving async runtime)
     let session_id = request.session_id.clone();
     let state_clone = state.inner().clone();
+    let cache_clone = cache.inner().clone();
     std::thread::spawn(move || {
         let rt = tauri::async_runtime::handle();
-        if let Err(e) = rt.block_on(read_pty_output(app, state_clone, session_id, generation)) {
+        if let Err(e) = rt.block_on(read_pty_output(
+            app,
+            state_clone,
+            cache_clone,
+            session_id,
+            generation,
+        )) {
             log::error!("PTY output reader error: {}", e);
         }
     });
@@ -350,6 +357,7 @@ pub fn kill_pty(
 async fn read_pty_output<R: tauri::Runtime>(
     app: AppHandle<R>,
     state: PtyState,
+    cache: std::sync::Arc<crate::terminal::cache::SessionCache>,
     session_id: SessionId,
     generation: u64,
 ) -> anyhow::Result<()> {
@@ -367,6 +375,14 @@ async fn read_pty_output<R: tauri::Runtime>(
             Ok(0) => {
                 // EOF - process exited
                 log::info!("PTY session {} exited (EOF)", session_id);
+                // Mark cache as exited
+                let _ = cache.mutate(|d| {
+                    if let Some(s) = d.sessions.get_mut(&session_id) {
+                        s.exited = true;
+                        // last_exit_code stays None in v1 — capturing requires
+                        // child.try_wait() with locking; deferred to follow-up.
+                    }
+                });
                 app.emit(
                     "pty-exit",
                     PtyExitEvent {
@@ -378,14 +394,24 @@ async fn read_pty_output<R: tauri::Runtime>(
                 break;
             }
             Ok(n) => {
-                // Got data - emit to frontend
+                // Atomically: append to ring buffer, get chunk_start, drop the lock
+                let chunk_start = {
+                    let sessions = state.inner_sessions().lock().expect("poisoned");
+                    if let Some(session) = sessions.get(&session_id) {
+                        let mut ring = session.ring.lock().expect("ring poisoned");
+                        ring.append(&buf[..n])
+                    } else {
+                        // Session was removed mid-read — exit loop
+                        break;
+                    }
+                };
                 let data = String::from_utf8_lossy(&buf[..n]).to_string();
                 app.emit(
                     "pty-data",
                     PtyDataEvent {
                         session_id: session_id.clone(),
                         data,
-                        offset_start: 0, // TODO(feature#6): populate from ring buffer append
+                        offset_start: chunk_start,
                     },
                 )
                 .ok();
@@ -946,5 +972,53 @@ mod tests {
         // Cleanup
         let _ = state.remove(&"session-2".to_string());
         let _ = state.remove(&"session-3".to_string());
+    }
+
+    #[tokio::test]
+    async fn read_loop_eof_marks_cache_exited() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+        let cache = handle.state::<Arc<SessionCache>>();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        spawn_pty(
+            handle.clone(),
+            state.clone(),
+            cache.clone(),
+            SpawnPtyRequest {
+                session_id: "eof-test".into(),
+                cwd,
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Force EOF by sending exit
+        write_pty(
+            state.clone(),
+            WritePtyRequest {
+                session_id: "eof-test".into(),
+                data: "exit\n".into(),
+            },
+        )
+        .unwrap();
+
+        // Wait for read loop to process EOF (give shell a moment to exit)
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        let snap = cache.snapshot();
+        let entry = snap
+            .sessions
+            .get("eof-test")
+            .expect("session should still be in cache after exit");
+        assert!(entry.exited, "cache entry should be marked exited after EOF");
     }
 }
