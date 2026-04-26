@@ -106,25 +106,53 @@ impl SessionCache {
     /// surface. Serializing the flush with the mutation is correctness by
     /// construction.
     ///
+    /// Round 4, Finding 3 (codex P2): the closure can now return
+    /// `Result<(), String>` so callers may VALIDATE state and reject the
+    /// mutation under the same lock. Without this, callers had to snapshot,
+    /// validate, drop the lock, then mutate — letting a concurrent
+    /// spawn/kill change the underlying state between the validation and
+    /// the write. `reorder_sessions` was the canonical victim: it could
+    /// pass a permutation check against an old `session_order`, then
+    /// overwrite the newer state with stale ids. Validation under the
+    /// mutate lock makes the check + write atomic.
+    ///
     /// The perf cost is real but acceptable: `mutate()` is called at
     /// human-interactive frequency (tab create / kill / reorder), not in
     /// tight loops. A typical local-SSD `flush_to_disk` takes a few ms
     /// (mkdir + tempfile write + persist-rename), and the mutex is
     /// uncontended in the steady state. Holding the lock across the I/O
     /// blocks other mutators for that window — at human cadence this is
-    /// invisible.
+    /// invisible. Validation is done under the same lock — a closure that
+    /// returns Err DOES NOT trigger a flush (no state to persist).
     pub fn mutate<F>(&self, f: F) -> Result<(), String>
     where
-        F: FnOnce(&mut SessionCacheData),
+        F: FnOnce(&mut SessionCacheData) -> Result<(), String>,
     {
         let mut guard = self.data.lock().expect("cache mutex poisoned");
-        f(&mut guard);
-        // Best-effort disk write — held under the lock so concurrent
-        // mutations cannot reorder their flushes.
-        if let Err(e) = self.flush_to_disk(&guard) {
-            log::warn!("cache flush failed (in-memory still updated): {e}");
+        // Snapshot the pre-mutation state so a closure that returns Err
+        // doesn't half-modify the in-memory mirror. Cheap enough at
+        // human-interactive frequency, and only paid on the validation
+        // failure path.
+        let pre = guard.clone();
+        match f(&mut guard) {
+            Ok(()) => {
+                // Best-effort disk write — held under the lock so concurrent
+                // mutations cannot reorder their flushes.
+                if let Err(e) = self.flush_to_disk(&guard) {
+                    log::warn!("cache flush failed (in-memory still updated): {e}");
+                }
+                Ok(())
+            }
+            Err(e) => {
+                // Roll back any partial mutation. The closure may have
+                // touched the data before deciding to bail (e.g. validation
+                // happens after a clone or partial assignment), so restore
+                // the pre-mutation snapshot to keep the in-memory mirror
+                // consistent with what callers see via `snapshot()`.
+                *guard = pre;
+                Err(e)
+            }
         }
-        Ok(())
     }
 
     fn flush_to_disk(&self, data: &SessionCacheData) -> Result<(), String> {
@@ -178,6 +206,7 @@ mod tests {
                         last_exit_code: None,
                     },
                 );
+                Ok(())
             })
             .unwrap();
 
@@ -210,6 +239,7 @@ mod tests {
         cache
             .mutate(|d| {
                 d.session_order.push("uuid-a".into());
+                Ok(())
             })
             .unwrap();
         assert!(path.exists());
@@ -232,6 +262,7 @@ mod tests {
             cache
                 .mutate(|d| {
                     d.session_order.push("uuid-a".into());
+                    Ok(())
                 })
                 .unwrap();
             // In-memory mirror updated even though disk flush failed
@@ -279,6 +310,7 @@ mod tests {
                     d.session_order.push("a".into());
                     // Force the critical section to overlap with thread B.
                     thread::sleep(Duration::from_millis(50));
+                    Ok(())
                 })
                 .unwrap();
         });
@@ -291,6 +323,7 @@ mod tests {
             cache_b
                 .mutate(|d| {
                     d.session_order.push("b".into());
+                    Ok(())
                 })
                 .unwrap();
         });

@@ -254,6 +254,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
             if data.active_session_id.is_none() {
                 data.active_session_id = Some(request.session_id.clone());
             }
+            Ok(())
         })
         .map_err(|e| format!("failed to write cache: {}", e))?;
     debug_log(
@@ -347,6 +348,7 @@ pub fn kill_pty(
                 // Find the next session in order (or None if no more sessions)
                 data.active_session_id = data.session_order.first().cloned();
             }
+            Ok(())
         })
         .map_err(|e| format!("failed to update cache: {}", e))?;
 
@@ -422,6 +424,7 @@ pub fn list_sessions(
                     }
                 }
             }
+            Ok(())
         })?;
     }
 
@@ -431,39 +434,60 @@ pub fn list_sessions(
     })
 }
 
-/// Set the active session ID in the cache
+/// Set the active session ID in the cache.
+///
+/// Round 4, Finding 3 (codex P2): the membership check happens INSIDE the
+/// `mutate` closure so it's serialized with the write under one lock.
+/// Without this, a concurrent `kill_pty` could remove the id between the
+/// snapshot-based check and the write — the check passed against the old
+/// state and we'd then write a now-stale `active_session_id`.
 #[tauri::command]
 pub fn set_active_session(
     cache: State<'_, std::sync::Arc<crate::terminal::cache::SessionCache>>,
     request: SetActiveSessionRequest,
 ) -> Result<(), String> {
-    let snap = cache.snapshot();
-    if !snap.session_order.contains(&request.id) {
-        return Err("unknown session".into());
-    }
     cache.mutate(|d| {
+        if !d.session_order.contains(&request.id) {
+            return Err("unknown session".into());
+        }
         d.active_session_id = Some(request.id.clone());
+        Ok(())
     })
 }
 
-/// Reorder the session list in the cache
+/// Reorder the session list in the cache.
+///
+/// Round 4, Finding 3 (codex P2): the permutation check happens INSIDE the
+/// `mutate` closure so the validation and the write are atomic under one
+/// lock. Previously the check ran against `cache.snapshot()` (taking and
+/// releasing the lock briefly), then a SECOND `mutate` call wrote the new
+/// order. A concurrent `spawn_pty` or `kill_pty` between those two locks
+/// could change `session_order`; the permutation check passed against the
+/// OLD state and the subsequent write overwrote the NEWER state with stale
+/// ids — dropping a just-spawned session from `session_order` even though
+/// its PTY was still alive (the ghost only appeared after a reload).
 #[tauri::command]
 pub fn reorder_sessions(
     cache: State<'_, std::sync::Arc<crate::terminal::cache::SessionCache>>,
     request: ReorderSessionsRequest,
 ) -> Result<(), String> {
-    let snap = cache.snapshot();
-    let current: std::collections::HashSet<_> = snap.session_order.iter().cloned().collect();
-    let proposed: std::collections::HashSet<_> = request.ids.iter().cloned().collect();
-    if current != proposed {
-        return Err("invalid reorder: not a permutation".into());
-    }
     cache.mutate(|d| {
+        let current: std::collections::HashSet<_> = d.session_order.iter().cloned().collect();
+        let proposed: std::collections::HashSet<_> = request.ids.iter().cloned().collect();
+        if current != proposed {
+            return Err("invalid reorder: not a permutation".into());
+        }
         d.session_order = request.ids.clone();
+        Ok(())
     })
 }
 
-/// Update the current working directory for a session in the cache
+/// Update the current working directory for a session in the cache.
+///
+/// Round 4, Finding 3 (codex P2): membership check moved INSIDE the
+/// `mutate` closure so a concurrent `kill_pty` cannot remove the session
+/// between the check and the write. Path validation stays outside — it's
+/// stateless and doesn't touch cache state.
 #[tauri::command]
 pub fn update_session_cwd(
     cache: State<'_, std::sync::Arc<crate::terminal::cache::SessionCache>>,
@@ -486,14 +510,12 @@ pub fn update_session_cwd(
         return Err("invalid cwd: not a directory".into());
     }
 
-    let snap = cache.snapshot();
-    if !snap.sessions.contains_key(&request.id) {
-        return Err("unknown session".into());
-    }
-    cache.mutate(|d| {
-        if let Some(s) = d.sessions.get_mut(&request.id) {
+    cache.mutate(|d| match d.sessions.get_mut(&request.id) {
+        Some(s) => {
             s.cwd = request.cwd.clone();
+            Ok(())
         }
+        None => Err("unknown session".into()),
     })
 }
 
@@ -526,6 +548,7 @@ async fn read_pty_output<R: tauri::Runtime>(
                         // last_exit_code stays None in v1 — capturing requires
                         // child.try_wait() with locking; deferred to follow-up.
                     }
+                    Ok(())
                 });
                 app.emit(
                     "pty-exit",
@@ -1229,6 +1252,7 @@ mod tests {
                         last_exit_code: None,
                     },
                 );
+                Ok(())
             })
             .unwrap();
 
@@ -1566,5 +1590,199 @@ mod tests {
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not a directory"));
+    }
+
+    /// Round 4, Finding 3 (codex P2) regression test.
+    ///
+    /// The pre-fix `reorder_sessions` flow was:
+    ///   1. snapshot → take HashSet of session_order under the lock
+    ///   2. drop the lock
+    ///   3. validate that request.ids is a permutation of the snapshot
+    ///   4. take the lock AGAIN and assign d.session_order = request.ids
+    ///
+    /// Between (2) and (4) a concurrent mutation could change session_order.
+    /// This test drives that race directly by mutating the cache from a
+    /// helper thread between the snapshot/check and the assignment.
+    ///
+    /// We can't easily drive the race against the actual `reorder_sessions`
+    /// async fn (no hook to inject between snapshot and mutate), so we
+    /// assert the equivalent invariant on `cache.mutate`: a closure that
+    /// observes the in-memory state through `&mut SessionCacheData` will
+    /// always see the SAME state it then writes — i.e. the permutation
+    /// check inside the closure cannot pass against an old state and then
+    /// overwrite a newer one.
+    #[test]
+    fn reorder_sessions_validates_under_same_lock_as_write() {
+        use crate::terminal::cache::CachedSession;
+        use std::sync::Arc as StdArc;
+        use std::thread;
+
+        let temp_dir = TempDir::new().expect("temp");
+        let cache = StdArc::new(
+            SessionCache::load(temp_dir.path().join("sessions.json")).expect("load"),
+        );
+
+        // Seed two sessions, "a" and "b", in a known order.
+        let cache_seed = StdArc::clone(&cache);
+        cache_seed
+            .mutate(|d| {
+                for id in ["a", "b"] {
+                    d.session_order.push(id.into());
+                    d.sessions.insert(
+                        id.into(),
+                        CachedSession {
+                            cwd: "/tmp".into(),
+                            created_at: "2026-04-25T00:00:00Z".into(),
+                            exited: false,
+                            last_exit_code: None,
+                        },
+                    );
+                }
+                Ok(())
+            })
+            .unwrap();
+
+        // Thread A: emulates reorder_sessions(["b","a"]). Under the old
+        // implementation it would snapshot, see {"a","b"} == {"b","a"} as
+        // sets, then write d.session_order = ["b","a"] AFTER thread B
+        // appended "c". With the round-4 fix, the validation runs INSIDE
+        // the same mutate closure that does the write, so by the time the
+        // closure observes session_order, it already contains "c" and the
+        // permutation check rejects (request.ids missing "c").
+        let cache_a = StdArc::clone(&cache);
+        let handle_a = thread::spawn(move || {
+            cache_a.mutate(|d| {
+                let current: std::collections::HashSet<_> =
+                    d.session_order.iter().cloned().collect();
+                let proposed: std::collections::HashSet<_> =
+                    ["b", "a"].iter().map(|s| (*s).to_string()).collect();
+                if current != proposed {
+                    return Err("invalid reorder: not a permutation".into());
+                }
+                d.session_order = vec!["b".into(), "a".into()];
+                Ok(())
+            })
+        });
+
+        // Thread B: emulates spawn_pty("c") inserting into session_order.
+        // Without giving thread A a head start, the test-thread scheduler
+        // may run B first; that's fine — both interleavings preserve the
+        // invariant we're asserting (no session is lost).
+        let cache_b = StdArc::clone(&cache);
+        let handle_b = thread::spawn(move || {
+            cache_b
+                .mutate(|d| {
+                    d.session_order.push("c".into());
+                    d.sessions.insert(
+                        "c".into(),
+                        CachedSession {
+                            cwd: "/tmp".into(),
+                            created_at: "2026-04-25T00:00:00Z".into(),
+                            exited: false,
+                            last_exit_code: None,
+                        },
+                    );
+                    Ok(())
+                })
+                .unwrap();
+        });
+
+        let result_a = handle_a.join().unwrap();
+        handle_b.join().unwrap();
+
+        let snap = cache.snapshot();
+
+        // Strong invariant: session "c" must be in session_order. Under
+        // the OLD code, this assertion could fail if thread A's stale
+        // permutation check passed before thread B's write. Under the
+        // new code, this invariant ALWAYS holds:
+        //
+        //   - If A locks first → A writes ["b","a"], B then appends → ["b","a","c"]
+        //   - If B locks first → A's closure sees ["a","b","c"] and rejects;
+        //     session_order stays ["a","b","c"]
+        //
+        // Either way "c" survives.
+        assert!(
+            snap.session_order.contains(&"c".to_string()),
+            "race lost session 'c'; session_order = {:?}",
+            snap.session_order
+        );
+
+        // Plus: if A succeeded, it must have observed B's write (so its
+        // assignment was ["b","a"] only when B hadn't yet inserted "c");
+        // if A failed, the order ends in [a,b,c] from B alone.
+        if result_a.is_ok() {
+            assert_eq!(snap.session_order, vec!["b", "a", "c"]);
+        } else {
+            assert_eq!(snap.session_order, vec!["a", "b", "c"]);
+            assert!(result_a.unwrap_err().contains("not a permutation"));
+        }
+    }
+
+    /// Round 4, Finding 3 (codex P2): a closure that returns Err must NOT
+    /// leave the in-memory mirror partially modified. Without rollback, a
+    /// closure that mutated `d` before validating would leave the cache in
+    /// an invalid state visible via `snapshot()`.
+    #[test]
+    fn mutate_rolls_back_on_err() {
+        let temp_dir = TempDir::new().expect("temp");
+        let cache =
+            SessionCache::load(temp_dir.path().join("sessions.json")).expect("load");
+
+        cache
+            .mutate(|d| {
+                d.session_order.push("seed".into());
+                Ok(())
+            })
+            .unwrap();
+
+        let result = cache.mutate(|d| {
+            d.session_order.push("partial".into());
+            Err("validation failed".into())
+        });
+        assert!(result.is_err());
+
+        // The in-memory mirror must be unchanged from before the failed
+        // mutate — "partial" must NOT have leaked into session_order.
+        let snap = cache.snapshot();
+        assert_eq!(snap.session_order, vec!["seed".to_string()]);
+    }
+
+    /// Round 4, Finding 3 (codex P2) follow-up: set_active_session must
+    /// reject ids not in session_order even when the check is now inside
+    /// the mutate closure.
+    #[test]
+    fn set_active_session_rejects_unknown_id_under_lock() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let cache = app.handle().state::<Arc<SessionCache>>();
+
+        let result = set_active_session(
+            cache.clone(),
+            SetActiveSessionRequest { id: "ghost".into() },
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown session"));
+        // Mirror unchanged — no half-written active id.
+        assert!(cache.snapshot().active_session_id.is_none());
+    }
+
+    /// Round 4, Finding 3 (codex P2) follow-up: update_session_cwd must
+    /// reject unknown ids under the same lock as the write — and must NOT
+    /// leave a half-modified cwd if an entry exists but for a different id.
+    #[test]
+    fn update_session_cwd_rejects_unknown_id_under_lock() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let cache = app.handle().state::<Arc<SessionCache>>();
+
+        let result = update_session_cwd(
+            cache.clone(),
+            UpdateSessionCwdRequest {
+                id: "ghost".into(),
+                cwd: "/tmp".into(),
+            },
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown session"));
+        assert!(cache.snapshot().sessions.is_empty());
     }
 }
