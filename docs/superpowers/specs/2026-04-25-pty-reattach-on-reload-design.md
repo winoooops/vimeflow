@@ -218,9 +218,21 @@ Ok(())
 
 This handles both "user closes tab" and "user clicks Restart on Exited session" (the Restart flow: `kill_pty(old_id)` cleanup → `spawn_pty(new_uuid, cached_cwd)`).
 
+### Modified: `pty-data` event
+
+**Contract change** — payload gains `offset_start: u64` (chunk's starting byte offset in the session's lifetime stream). Required by the replay protocol's cursor dedupe — see "Replay Buffer + Offset Cursor" below.
+
+Touchpoints when this lands:
+
+- `src-tauri/src/terminal/types.rs` — `PtyDataEvent` struct gains the field.
+- `src/bindings/` — regenerated via `npm run generate:bindings`.
+- `src/features/terminal/services/terminalService.ts` — `ITerminalService.onData` callback signature changes to `(sessionId, data, offsetStart)`.
+- `src/features/terminal/services/tauriTerminalService.ts` and any mock service — surface the new field.
+- All existing tests that construct or assert on `pty-data` payloads — add `offset_start` (default `0` for tests that don't exercise replay).
+
 ### Unchanged
 
-`write_pty`, `resize_pty`, the `pty-data` / `pty-exit` / `pty-error` events — all keep their current contracts. The ring-buffer write happens transparently inside the read loop.
+`write_pty`, `resize_pty`, the `pty-exit` / `pty-error` events — all keep their current contracts.
 
 ## Lifecycle
 
@@ -311,31 +323,42 @@ app.emit("pty-data", PtyDataEvent { session_id, data, offset_start: chunk_start 
 
 > ⚠️ **Why not `AtomicU64`?** A separate `AtomicU64` for `next_offset` and a separate `Mutex<VecDeque>` for the buffer creates a window where a `list_sessions` snapshot can land between `fetch_add` and `buffer.write`. The snapshot then returns `replay_end_offset` that already accounts for the new chunk, but `replay_data` doesn't include it. The follow-up live event has `offset_start < replay_end_offset` and gets dropped — actual data loss. One mutex, one struct, one atomic snapshot. Don't split state that must be consistent at any observable moment.
 
-### 2. Subscriber: listen BEFORE snapshot, buffer during restore
+### 2. Subscriber: ONE global listener BEFORE list_sessions, buffer-by-id during restore
 
-The subscriber's protocol — same for every restored session in the `list_sessions` response:
+Critical sequencing constraint: at the moment we need to start buffering, **the frontend doesn't know any session ids yet** — those live in Rust and arrive only with the `list_sessions` response. So the buffering listener must be **global** (one listener, not per-session) and key its buffer by `sessionId` from the event payload.
 
-1. **Register a buffering listener first.** Before calling `list_sessions`, set up a `pty-data` listener that pushes incoming events into a per-session `buffered: PtyDataEvent[]` queue. This captures any events emitted between snapshot return and the final live listener swap.
-2. **Call `list_sessions`** and receive `Alive { replay_data, replay_end_offset }`.
-3. **Write `replay_data`** to xterm.
-4. **Drain `buffered`** with the cursor filter: write every event whose `offset_start >= replay_end_offset`; drop the rest (they were in the replay).
-5. **Swap to a direct-write listener** — events go straight to xterm; the buffering listener is removed.
+The protocol fires once per page mount, before any TerminalPane component renders:
+
+1. **Register one global buffering listener** on `pty-data`. It pushes every event into a `Map<sessionId, PtyDataEvent[]>` keyed by `event.sessionId`. This captures all events emitted before the frontend has session metadata.
+2. **Call `list_sessions`** — receive ordered `[SessionInfo]` with status per session.
+3. **For each `Alive { replay_data, replay_end_offset }` session**:
+   - Write `replay_data` to that session's xterm instance.
+   - Drain `buffered.get(sessionId)` with cursor filter: write every event whose `offset_start >= replay_end_offset`; drop the rest (they were in the replay).
+4. **Swap the global buffering listener to a global direct-write listener** that routes each event to the corresponding xterm by sessionId. Discard any remaining buffered entries for sessions not present in `list_sessions` (Missing / Exited).
 
 ```ts
-// frontend pseudocode (per-session)
-const buffered: PtyDataEvent[] = []
+// frontend pseudocode (orchestrated once per mount, ahead of TerminalPane render)
+const buffered = new Map<string, PtyDataEvent[]>()
 const stopBuffering = service.onData((sessionId, data, offsetStart) => {
-  if (sessionId === ourSessionId) buffered.push({ data, offsetStart })
+  let q = buffered.get(sessionId)
+  if (!q) {
+    q = []
+    buffered.set(sessionId, q)
+  }
+  q.push({ sessionId, data, offsetStart })
 })
 
 const result = await service.listSessions()
-const alive = result.sessions.find((s) => s.id === ourSessionId)?.status
-if (alive?.kind === 'Alive') {
+
+for (const session of result.sessions) {
+  const alive = session.status
+  if (alive.kind !== 'Alive') continue
+  const xterm = terminalForSession(session.id) // mount the pane, get its xterm
   xterm.write(alive.replay_data)
 
-  buffered
-    .filter((e) => e.offsetStart >= alive.replay_end_offset)
-    .forEach((e) => xterm.write(e.data))
+  for (const e of buffered.get(session.id) ?? []) {
+    if (e.offsetStart >= alive.replay_end_offset) xterm.write(e.data)
+  }
 
   stopBuffering()
   service.onData((sessionId, data) => {
@@ -368,15 +391,30 @@ The frontend's per-session `buffered: PtyDataEvent[]` is bounded by the time bet
 src/
 ├── features/
 │   ├── workspace/hooks/
-│   │   └── useSessionManager.ts        ← rewrite: pure IPC client.
-│   │                                     useEffect on mount calls
-│   │                                     list_sessions; UI actions call
+│   │   └── useSessionManager.ts        ← rewrite: pure IPC client +
+│   │                                     mount-time restore orchestrator:
+│   │                                       1. register global pty-data
+│   │                                          buffering listener (Map<id, []>)
+│   │                                       2. await list_sessions()
+│   │                                       3. for each Alive session: write
+│   │                                          replay_data + drain buffer
+│   │                                          (cursor filter)
+│   │                                       4. swap to direct-write listener
+│   │                                     UI actions call
 │   │                                     set_active / reorder / kill / spawn
 │   ├── terminal/
-│   │   ├── components/TerminalPane.tsx ← restored-mode branch:
-│   │   │                                 1. write replayData to xterm
-│   │   │                                 2. register pty-data listener
+│   │   ├── components/TerminalPane.tsx ← restored-mode branch consumes
+│   │   │                                 the per-session replay payload
+│   │   │                                 (replay_data, replay_end_offset,
+│   │   │                                 buffered events) prepared by the
+│   │   │                                 mount-time orchestrator. Sequence:
+│   │   │                                 1. write replay_data to xterm
+│   │   │                                 2. flush cursor-filtered buffered
+│   │   │                                    events
 │   │   │                                 3. send resize → SIGWINCH → TUI redraw
+│   │   │                                 (See "Replay Buffer + Offset Cursor"
+│   │   │                                 §2 for the global-listener-first
+│   │   │                                 orchestration that owns steps 0-1.)
 │   │   ├── hooks/useTerminal.ts        ← restored sessions never set
 │   │   │                                 didSpawnSessionRef.current = true,
 │   │   │                                 so existing cleanup gate already
@@ -474,24 +512,25 @@ The TerminalPane unmount cleanup retains: xterm.js dispose, `pty-data` listener 
 
 ### Frontend (`src/features/{workspace,terminal}/`)
 
-| Test                                                                       | What it pins                                                                                                         |
-| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `useSessionManager_calls_list_sessions_on_mount`                           | Single canonical read                                                                                                |
-| `useSessionManager_does_not_persist_to_localStorage`                       | Pure IPC client, no local writes                                                                                     |
-| `useSessionManager_optimistically_updates_active_then_calls_ipc`           | Tab switch UX                                                                                                        |
-| `useSessionManager_reverts_optimistic_update_on_ipc_error`                 | Error recovery                                                                                                       |
-| `useSessionManager_renders_exited_sessions_with_restart_action`            | UX for Exited variant                                                                                                |
-| `TerminalPane_restored_mode_skips_spawn_calls_attach`                      | No new PTY spawn on reload                                                                                           |
-| `TerminalPane_restored_mode_listens_before_calling_list_sessions`          | Pins listen-before-snapshot ordering: a buffering listener is registered before `listSessions()` IPC fires           |
-| `TerminalPane_restored_mode_buffers_pty_data_during_restore_window`        | Events received between `listSessions()` call and replay write land in the per-session buffer, not directly in xterm |
-| `TerminalPane_restored_mode_drains_buffer_with_cursor_filter_after_replay` | After writing replay, drain rule: write events with `offset_start >= replay_end_offset`, drop the rest               |
-| `TerminalPane_restored_mode_drops_pty_data_event_below_replay_cursor`      | Cursor dedupe (live phase): events with `offset_start < replay_end_offset` are skipped                               |
-| `TerminalPane_restored_mode_writes_pty_data_event_at_or_above_cursor`      | Cursor dedupe (live phase): events with `offset_start >= replay_end_offset` are kept                                 |
-| `TerminalPane_restored_mode_swaps_to_direct_listener_after_drain`          | Pins listener handoff: after drain, the buffering listener is detached and a direct-write listener is attached       |
-| `TerminalPane_restored_mode_sends_resize_after_attach`                     | SIGWINCH nudge for TUIs                                                                                              |
-| `useTerminal_unmount_does_not_call_kill_in_restored_mode`                  | Lifecycle: ref stays false on restore                                                                                |
-| `removeSession_explicitly_calls_kill_pty`                                  | Explicit close path                                                                                                  |
-| `osc7_cwd_change_calls_update_session_cwd`                                 | Live cwd persistence                                                                                                 |
+| Test                                                                      | What it pins                                                                                                                            |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `useSessionManager_calls_list_sessions_on_mount`                          | Single canonical read                                                                                                                   |
+| `useSessionManager_does_not_persist_to_localStorage`                      | Pure IPC client, no local writes                                                                                                        |
+| `useSessionManager_optimistically_updates_active_then_calls_ipc`          | Tab switch UX                                                                                                                           |
+| `useSessionManager_reverts_optimistic_update_on_ipc_error`                | Error recovery                                                                                                                          |
+| `useSessionManager_renders_exited_sessions_with_restart_action`           | UX for Exited variant                                                                                                                   |
+| `TerminalPane_restored_mode_skips_spawn_calls_attach`                     | No new PTY spawn on reload                                                                                                              |
+| `restore_orchestrator_registers_global_listener_before_list_sessions`     | Pins listen-before-snapshot ordering at the orchestrator level (one global listener, before any `listSessions()` IPC)                   |
+| `restore_orchestrator_buffers_pty_data_keyed_by_session_id`               | Events received between `listSessions()` call and per-session drain land in `Map<sessionId, PtyDataEvent[]>`                            |
+| `restore_orchestrator_drains_buffer_with_cursor_filter_per_alive_session` | For each Alive session: write `replay_data`, then drain buffer entries with `offset_start >= replay_end_offset`                         |
+| `restore_orchestrator_swaps_to_direct_listener_after_drain`               | Pins listener handoff: after all alive sessions are drained, the buffering listener is detached and a direct-write listener is attached |
+| `restore_orchestrator_discards_buffered_events_for_missing_or_exited`     | Buffered entries for sessions absent from `list_sessions` (or in `Exited` state) are dropped, not written                               |
+| `TerminalPane_restored_mode_drops_pty_data_event_below_replay_cursor`     | Cursor dedupe (live phase): events with `offset_start < replay_end_offset` are skipped                                                  |
+| `TerminalPane_restored_mode_writes_pty_data_event_at_or_above_cursor`     | Cursor dedupe (live phase): events with `offset_start >= replay_end_offset` are kept                                                    |
+| `TerminalPane_restored_mode_sends_resize_after_attach`                    | SIGWINCH nudge for TUIs                                                                                                                 |
+| `useTerminal_unmount_does_not_call_kill_in_restored_mode`                 | Lifecycle: ref stays false on restore                                                                                                   |
+| `removeSession_explicitly_calls_kill_pty`                                 | Explicit close path                                                                                                                     |
+| `osc7_cwd_change_calls_update_session_cwd`                                | Live cwd persistence                                                                                                                    |
 
 ### Manual smoke
 
