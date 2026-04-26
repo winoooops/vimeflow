@@ -22,10 +22,14 @@ def run_local_review(project_dir: Path, base_branch: str = "main") -> dict:
       - raw_review: str (the full Codex output)
       - findings: list (parsed if possible)
     """
+    # Pin gpt-5.4: ChatGPT-account auth (~/.codex/auth.json without API key)
+    # rejects gpt-5.2-codex with "model not supported when using Codex with a
+    # ChatGPT account". gpt-5.5 works but burns ChatGPT plan quota fast;
+    # gpt-5.4 is the cheaper ChatGPT-compatible option per user preference.
     cmd = [
         "codex", "exec", "review",
         "--base", base_branch,
-        "--model", "gpt-5.2-codex",
+        "--model", "gpt-5.4",
         "--full-auto",
     ]
 
