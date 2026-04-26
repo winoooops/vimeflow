@@ -705,6 +705,72 @@ describe('useSessionManager', () => {
     expect(drainedAgain).toEqual([])
   })
 
+  // F3 (round 2): two rapid createSession() calls before either spawn()
+  // resolves must produce a reorderSessions IPC payload that includes BOTH
+  // new tab ids. The previous code closed over the render-time `sessions`
+  // array; the second async closure therefore omitted the first new tab,
+  // and reorderSessions persisted an order that no longer matched the live
+  // tab strip after reload (or rejected as a non-permutation).
+  test('F3 (round 2): two rapid createSession calls persist both new tabs in reorderSessions', async () => {
+    const service = createMockService()
+    service.listSessions = vi
+      .fn()
+      .mockResolvedValue({ activeSessionId: null, sessions: [] })
+
+    let resolveSpawn1: (v: { sessionId: string; pid: number }) => void = vi.fn()
+    let resolveSpawn2: (v: { sessionId: string; pid: number }) => void = vi.fn()
+
+    service.spawn = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSpawn1 = resolve
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSpawn2 = resolve
+          })
+      )
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Fire both createSession calls before either spawn resolves. With the
+    // old code, both async closures captured the same empty `sessions`
+    // array — the second closure would build `[id2]` instead of `[id2, id1]`.
+    act(() => {
+      result.current.createSession()
+      result.current.createSession()
+    })
+
+    await waitFor(() => expect(service.spawn).toHaveBeenCalledTimes(2))
+
+    // Resolve them in order. The state should now reflect both tabs.
+    await act(async () => {
+      resolveSpawn1({ sessionId: 'tab-1', pid: 1 })
+      resolveSpawn2({ sessionId: 'tab-2', pid: 2 })
+      // Yield so the resolved spawn microtasks run.
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(result.current.sessions).toHaveLength(2))
+
+    // The second reorderSessions call must include BOTH tab ids — not just
+    // tab-2. This is the F3 invariant: the order is derived from the latest
+    // setSessions state, not the closure's stale `sessions`.
+    const reorderCalls = (
+      service.reorderSessions as ReturnType<typeof vi.fn>
+    ).mock.calls.map((call) => call[0] as string[])
+
+    // The most recent reorder must contain both ids.
+    const lastReorder = reorderCalls[reorderCalls.length - 1]
+    expect(lastReorder).toEqual(expect.arrayContaining(['tab-1', 'tab-2']))
+    expect(lastReorder).toHaveLength(2)
+  })
+
   // F2 (round 2): if the user creates a tab via createSession while the
   // mount-time restore is still in flight, the in-flight listSessions
   // snapshot was taken BEFORE the new tab existed in cache. Without

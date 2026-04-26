@@ -368,18 +368,6 @@ export const useSessionManager = (
 
         const now = new Date().toISOString()
 
-        const newSession: Session = {
-          id: result.sessionId,
-          projectId: 'proj-1',
-          name: `session ${sessions.length + 1}`,
-          status: 'running',
-          workingDirectory: '~',
-          agentType: 'claude-code',
-          createdAt: now,
-          lastActivityAt: now,
-          activity: { ...emptyActivity },
-        }
-
         // Populate restoreData with empty replay so TerminalPane attaches
         // instead of spawning a duplicate PTY.
         restoreData.set(result.sessionId, {
@@ -392,45 +380,72 @@ export const useSessionManager = (
         })
         pendingPanesRef.current.add(result.sessionId)
 
-        setSessions((prev) => [newSession, ...prev])
+        // F3 (round 2) — derive the persisted order from the latest state,
+        // not the closure-captured `sessions`. With the previous code, two
+        // rapid createSession() calls before either spawn() resolved would
+        // both close over the original (empty) `sessions` array; the second
+        // closure's `[result.sessionId, ...sessions.map(...)]` therefore
+        // omitted the FIRST new tab, and reorderSessions persisted an order
+        // that didn't match the live tab strip. After reload the order was
+        // wrong (or `reorder_sessions` rejected the call as a non-permutation,
+        // depending on Rust-side validation).
+        //
+        // Fix: build the new order INSIDE the setSessions functional updater
+        // and fire reorderSessions / setActiveSession from the same callback.
+        // Both IPCs are idempotent — replaying the same payload is safe under
+        // React 18 StrictMode's double-invoke. The same name-from-length
+        // calculation also moves inside the updater so two rapid calls produce
+        // distinct names ("session 2", "session 3", not "session 2", "session 2").
+        setSessions((prev) => {
+          const newSession: Session = {
+            id: result.sessionId,
+            projectId: 'proj-1',
+            name: `session ${prev.length + 1}`,
+            status: 'running',
+            workingDirectory: '~',
+            agentType: 'claude-code',
+            createdAt: now,
+            lastActivityAt: now,
+            activity: { ...emptyActivity },
+          }
+
+          const next = [newSession, ...prev]
+          const newOrder = next.map((s) => s.id)
+
+          // Fire IPC inside the updater so we always see the latest state.
+          // setActiveSession persists the new tab as cache.active_session_id;
+          // reorderSessions persists the prepend. Both are independent — wrap
+          // each in its own catch so a partial failure (e.g. permission denied
+          // on the cache file) is logged but the in-memory mirror still wins.
+          // eslint-disable-next-line promise/prefer-await-to-then
+          service.setActiveSession(result.sessionId).catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn(
+              'createSession: setActiveSession IPC failed (cache active id will lag)',
+              err
+            )
+          })
+
+          // eslint-disable-next-line promise/prefer-await-to-then
+          service.reorderSessions(newOrder).catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn(
+              'createSession: reorderSessions IPC failed (cache order will lag)',
+              err
+            )
+          })
+
+          return next
+        })
+
         setActiveSessionIdState(result.sessionId)
         registerPtySession(result.sessionId, result.sessionId, '~')
-
-        // F4 fix: persist the new tab's order + selection back to the cache
-        // so reload restores them. spawn_pty only promotes-to-active when the
-        // cache had no active session, and appends to the end of session_order.
-        // The frontend prepends new tabs (line 334 above) and treats the new
-        // tab as the active one — so without these IPC calls the cache and
-        // the React state diverge: reload comes back with the OLD active tab
-        // and the wrong order.
-        //
-        // Build the new ordered id list from the same prev value setSessions
-        // saw — the new tab at the front, every existing session after.
-        const newOrder = [result.sessionId, ...sessions.map((s) => s.id)]
-        try {
-          await service.setActiveSession(result.sessionId)
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn(
-            'createSession: setActiveSession IPC failed (cache active id will lag)',
-            err
-          )
-        }
-        try {
-          await service.reorderSessions(newOrder)
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn(
-            'createSession: reorderSessions IPC failed (cache order will lag)',
-            err
-          )
-        }
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn('spawn failed', err)
       }
     })()
-  }, [restoreData, service, sessions])
+  }, [restoreData, service])
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(
