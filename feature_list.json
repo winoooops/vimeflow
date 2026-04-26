@@ -110,7 +110,7 @@
       "Write tests: list_sessions_returns_alive_for_running_pty, list_sessions_reconciles_alive_cache_with_empty_pty_state, list_sessions_returns_in_session_order, list_sessions_replay_end_offset_matches_buffer_contents",
       "Commit with message: feat(terminal): add list_sessions command with lazy reconciliation"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [6]
   },
   {
