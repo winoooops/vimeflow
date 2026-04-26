@@ -431,6 +431,72 @@ pub fn list_sessions(
     })
 }
 
+/// Set the active session ID in the cache
+#[tauri::command]
+pub fn set_active_session(
+    cache: State<'_, std::sync::Arc<crate::terminal::cache::SessionCache>>,
+    request: SetActiveSessionRequest,
+) -> Result<(), String> {
+    let snap = cache.snapshot();
+    if !snap.session_order.contains(&request.id) {
+        return Err("unknown session".into());
+    }
+    cache.mutate(|d| {
+        d.active_session_id = Some(request.id.clone());
+    })
+}
+
+/// Reorder the session list in the cache
+#[tauri::command]
+pub fn reorder_sessions(
+    cache: State<'_, std::sync::Arc<crate::terminal::cache::SessionCache>>,
+    request: ReorderSessionsRequest,
+) -> Result<(), String> {
+    let snap = cache.snapshot();
+    let current: std::collections::HashSet<_> = snap.session_order.iter().cloned().collect();
+    let proposed: std::collections::HashSet<_> = request.ids.iter().cloned().collect();
+    if current != proposed {
+        return Err("invalid reorder: not a permutation".into());
+    }
+    cache.mutate(|d| {
+        d.session_order = request.ids.clone();
+    })
+}
+
+/// Update the current working directory for a session in the cache
+#[tauri::command]
+pub fn update_session_cwd(
+    cache: State<'_, std::sync::Arc<crate::terminal::cache::SessionCache>>,
+    request: UpdateSessionCwdRequest,
+) -> Result<(), String> {
+    // UUID-shape allow-list (same as spawn_pty)
+    if !request
+        .id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("invalid session id".into());
+    }
+    // cwd must be an absolute path that exists and is a directory
+    let path = std::path::PathBuf::from(&request.cwd);
+    if !path.is_absolute() {
+        return Err("invalid cwd: must be absolute".into());
+    }
+    if !path.is_dir() {
+        return Err("invalid cwd: not a directory".into());
+    }
+
+    let snap = cache.snapshot();
+    if !snap.sessions.contains_key(&request.id) {
+        return Err("unknown session".into());
+    }
+    cache.mutate(|d| {
+        if let Some(s) = d.sessions.get_mut(&request.id) {
+            s.cwd = request.cwd.clone();
+        }
+    })
+}
+
 /// Background task to read PTY output and emit events
 async fn read_pty_output<R: tauri::Runtime>(
     app: AppHandle<R>,
@@ -1285,5 +1351,220 @@ mod tests {
                 session_id: "off-test".into(),
             },
         );
+    }
+
+    #[tokio::test]
+    async fn set_active_session_persists_to_cache() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+        let cache = handle.state::<Arc<SessionCache>>();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        for id in &["a", "b"] {
+            spawn_pty(
+                handle.clone(),
+                state.clone(),
+                cache.clone(),
+                SpawnPtyRequest {
+                    session_id: id.to_string(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        set_active_session(
+            cache.clone(),
+            SetActiveSessionRequest { id: "b".into() },
+        )
+        .unwrap();
+
+        assert_eq!(cache.snapshot().active_session_id.as_deref(), Some("b"));
+
+        for id in &["a", "b"] {
+            let _ = kill_pty(
+                state.clone(),
+                cache.clone(),
+                KillPtyRequest {
+                    session_id: id.to_string(),
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn set_active_session_rejects_unknown_id() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let cache = app.handle().state::<Arc<SessionCache>>();
+
+        let result = set_active_session(
+            cache.clone(),
+            SetActiveSessionRequest { id: "nope".into() },
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown session"));
+    }
+
+    #[tokio::test]
+    async fn reorder_sessions_persists_to_cache() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+        let cache = handle.state::<Arc<SessionCache>>();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        for id in &["a", "b", "c"] {
+            spawn_pty(
+                handle.clone(),
+                state.clone(),
+                cache.clone(),
+                SpawnPtyRequest {
+                    session_id: id.to_string(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        reorder_sessions(
+            cache.clone(),
+            ReorderSessionsRequest {
+                ids: vec!["c".into(), "a".into(), "b".into()],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(cache.snapshot().session_order, vec!["c", "a", "b"]);
+
+        for id in &["a", "b", "c"] {
+            let _ = kill_pty(
+                state.clone(),
+                cache.clone(),
+                KillPtyRequest {
+                    session_id: id.to_string(),
+                },
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn reorder_sessions_rejects_non_permutation() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+        let cache = handle.state::<Arc<SessionCache>>();
+
+        spawn_pty(
+            handle.clone(),
+            state.clone(),
+            cache.clone(),
+            SpawnPtyRequest {
+                session_id: "only".into(),
+                cwd: std::env::current_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        let result = reorder_sessions(
+            cache.clone(),
+            ReorderSessionsRequest {
+                ids: vec!["only".into(), "extra".into()],
+            },
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not a permutation"));
+
+        let _ = kill_pty(
+            state.clone(),
+            cache.clone(),
+            KillPtyRequest {
+                session_id: "only".into(),
+            },
+        );
+    }
+
+    #[tokio::test]
+    async fn update_session_cwd_persists_to_cache() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+        let cache = handle.state::<Arc<SessionCache>>();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        spawn_pty(
+            handle.clone(),
+            state.clone(),
+            cache.clone(),
+            SpawnPtyRequest {
+                session_id: "cwd-test".into(),
+                cwd: cwd.clone(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Use /tmp which is guaranteed to exist on POSIX
+        update_session_cwd(
+            cache.clone(),
+            UpdateSessionCwdRequest {
+                id: "cwd-test".into(),
+                cwd: "/tmp".into(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(cache.snapshot().sessions["cwd-test"].cwd, "/tmp");
+
+        let _ = kill_pty(
+            state.clone(),
+            cache.clone(),
+            KillPtyRequest {
+                session_id: "cwd-test".into(),
+            },
+        );
+    }
+
+    #[test]
+    fn update_session_cwd_rejects_invalid_path() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let cache = app.handle().state::<Arc<SessionCache>>();
+
+        let result = update_session_cwd(
+            cache.clone(),
+            UpdateSessionCwdRequest {
+                id: "any".into(),
+                cwd: "/nonexistent/totally/fake/path".into(),
+            },
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not a directory"));
     }
 }

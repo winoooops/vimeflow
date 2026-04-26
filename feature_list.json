@@ -126,7 +126,7 @@
       "Write tests: set_active_session_persists_to_cache, set_active_session_rejects_unknown_id, reorder_sessions_persists_to_cache, reorder_sessions_rejects_non_permutation, update_session_cwd_persists_to_cache, update_session_cwd_rejects_invalid_path",
       "Commit with message: feat(terminal): add session management commands"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [7]
   },
   {

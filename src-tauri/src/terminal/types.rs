@@ -152,3 +152,28 @@ pub struct SessionList {
     pub active_session_id: Option<String>,
     pub sessions: Vec<SessionInfo>,
 }
+
+/// Request payload for set_active_session command
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct SetActiveSessionRequest {
+    pub id: String,
+}
+
+/// Request payload for reorder_sessions command
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct ReorderSessionsRequest {
+    pub ids: Vec<String>,
+}
+
+/// Request payload for update_session_cwd command
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct UpdateSessionCwdRequest {
+    pub id: String,
+    pub cwd: String,
+}
