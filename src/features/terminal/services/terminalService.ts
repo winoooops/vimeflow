@@ -36,10 +36,16 @@ export interface ITerminalService {
   /**
    * Subscribe to PTY data events. Callback receives the chunk's starting
    * byte offset for cursor-based dedupe during reattach.
+   *
+   * Returns a Promise that resolves to the unsubscribe function once the
+   * underlying transport listener is fully attached. Callers in the restore
+   * orchestrator MUST `await` this before kicking off `listSessions()` so
+   * no events emitted between snapshot and subscription are lost. Live-mode
+   * callers (e.g. `useTerminal`) may discard the returned promise with `void`.
    */
   onData(
     callback: (sessionId: string, data: string, offsetStart: number) => void
-  ): () => void
+  ): Promise<() => void>
 
   /**
    * Subscribe to PTY exit events
@@ -217,15 +223,15 @@ export class MockTerminalService implements ITerminalService {
 
   onData(
     callback: (sessionId: string, data: string, offsetStart: number) => void
-  ): () => void {
+  ): Promise<() => void> {
     this.dataCallbacks.push(callback)
 
-    return () => {
+    return Promise.resolve(() => {
       const index = this.dataCallbacks.indexOf(callback)
       if (index > -1) {
         this.dataCallbacks.splice(index, 1)
       }
-    }
+    })
   }
 
   onExit(

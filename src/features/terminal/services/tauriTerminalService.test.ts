@@ -149,7 +149,7 @@ describe('TauriTerminalService', () => {
   describe('event subscriptions', () => {
     test('onData delivers pty-data events to callback', async () => {
       const callback = vi.fn()
-      service.onData(callback)
+      await service.onData(callback)
       await mockSpawnAndInit(service)
 
       emitTauriEvent('pty-data', {
@@ -197,7 +197,7 @@ describe('TauriTerminalService', () => {
     test('unsubscribe removes callback', async () => {
       const callback = vi.fn()
 
-      const unsubscribe = service.onData(callback)
+      const unsubscribe = await service.onData(callback)
       await mockSpawnAndInit(service)
 
       unsubscribe()
@@ -213,8 +213,8 @@ describe('TauriTerminalService', () => {
     test('multiple callbacks receive same event', async () => {
       const cb1 = vi.fn()
       const cb2 = vi.fn()
-      service.onData(cb1)
-      service.onData(cb2)
+      await service.onData(cb1)
+      await service.onData(cb2)
       await mockSpawnAndInit(service)
 
       emitTauriEvent('pty-data', {
@@ -231,7 +231,7 @@ describe('TauriTerminalService', () => {
   describe('dispose', () => {
     test('clears all callbacks and listeners', async () => {
       const callback = vi.fn()
-      service.onData(callback)
+      await service.onData(callback)
       await mockSpawnAndInit(service)
 
       service.dispose()
@@ -303,7 +303,7 @@ describe('TauriTerminalService', () => {
         offsetStart: number
       }[] = []
       const testService = new TauriTerminalService()
-      testService.onData((sessionId, data, offsetStart) => {
+      await testService.onData((sessionId, data, offsetStart) => {
         captured.push({ sessionId, data, offsetStart })
       })
 
@@ -327,7 +327,7 @@ describe('TauriTerminalService', () => {
     test('onData coerces bigint offsetStart to number', async () => {
       const captured: number[] = []
       const testService = new TauriTerminalService()
-      testService.onData((_sessionId, _data, offsetStart) => {
+      await testService.onData((_sessionId, _data, offsetStart) => {
         captured.push(offsetStart)
       })
 
@@ -344,6 +344,102 @@ describe('TauriTerminalService', () => {
 
       expect(captured[0]).toBe(1024)
       expect(typeof captured[0]).toBe('number')
+    })
+
+    // F1 regression: onData must NOT resolve until the underlying tauri.listen
+    // is fully attached. Otherwise, the orchestrator's "listen before snapshot"
+    // step lets PTY events fire into the void during the listen() roundtrip.
+    test('F1 regression: onData await blocks until underlying listen attaches', async () => {
+      // Re-import the listen mock so we can stall it
+      const eventModule = await import('@tauri-apps/api/event')
+      const listenMock = vi.mocked(eventModule.listen)
+
+      // Stall the first three listen() calls (one per event: pty-data, pty-exit, pty-error)
+      // by deferring their resolution until we explicitly release them.
+      let releaseListen: () => void = () => undefined
+
+      const listenGate = new Promise<void>((resolve) => {
+        releaseListen = resolve
+      })
+
+      // Save and replace the listen impl. We use a permissive signature here
+      // (the test mock module also widens it) so vi.mocked's strict types
+      // don't reject the override.
+      const originalImpl = listenMock.getMockImplementation()
+
+      const stalledImpl = async (
+        eventName: string,
+        callback: EventCallback
+      ): Promise<() => void> => {
+        await listenGate
+        // After release, fall through to the standard test impl that records
+        // the callback in eventListeners so emitTauriEvent works.
+        const existing = eventListeners.get(eventName) ?? []
+        existing.push(callback)
+        eventListeners.set(eventName, existing)
+
+        return () => {
+          const cbs = eventListeners.get(eventName) ?? []
+          const index = cbs.indexOf(callback)
+          if (index > -1) {
+            cbs.splice(index, 1)
+          }
+        }
+      }
+      listenMock.mockImplementation(
+        stalledImpl as unknown as typeof eventModule.listen
+      )
+
+      try {
+        const testService = new TauriTerminalService()
+        const captured: { data: string; offset: number }[] = []
+
+        const onDataPromise = testService.onData(
+          (_sessionId, data, offsetStart) => {
+            captured.push({ data, offset: offsetStart })
+          }
+        )
+
+        // Synchronously try to emit an event — there's no listener yet, so
+        // it must NOT be captured (this matches the real Tauri pre-attach window).
+        emitTauriEvent('pty-data', {
+          sessionId: 'sess-1',
+          data: 'pre-attach-event',
+          offsetStart: 0,
+        })
+        expect(captured).toHaveLength(0)
+
+        // The onData promise must still be pending — listen hasn't resolved.
+        // Race onDataPromise against a short timer; the timer wins iff onData
+        // is correctly blocked on listen().
+        const RACE_WINNER = 'timeout-won'
+
+        const racer = await Promise.race([
+          onDataPromise.then(() => 'onData-resolved' as const),
+          new Promise<typeof RACE_WINNER>((resolve) =>
+            setTimeout(() => resolve(RACE_WINNER), 5)
+          ),
+        ])
+        expect(racer).toBe(RACE_WINNER)
+
+        // Now release the gated listen() calls
+        releaseListen()
+
+        // After awaiting onData, the underlying listener IS attached and
+        // subsequent events ARE captured.
+        await onDataPromise
+        emitTauriEvent('pty-data', {
+          sessionId: 'sess-1',
+          data: 'post-attach-event',
+          offsetStart: 100,
+        })
+        expect(captured).toEqual([{ data: 'post-attach-event', offset: 100 }])
+      } finally {
+        // Restore the original listen impl for subsequent tests
+        if (originalImpl) {
+          listenMock.mockImplementation(originalImpl)
+        }
+      }
     })
   })
 })

@@ -9,8 +9,11 @@ const createMockService = (): ITerminalService => ({
   write: vi.fn().mockResolvedValue(undefined),
   resize: vi.fn().mockResolvedValue(undefined),
   kill: vi.fn().mockResolvedValue(undefined),
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  onData: vi.fn((): (() => void) => (): void => {}),
+  onData: vi.fn(
+    (): Promise<() => void> =>
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      Promise.resolve((): void => {})
+  ),
   // eslint-disable-next-line @typescript-eslint/no-empty-function
   onExit: vi.fn((): (() => void) => (): void => {}),
   // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -32,12 +35,12 @@ describe('useSessionManager', () => {
   test('on mount, registers global pty-data listener BEFORE calling listSessions', async () => {
     const order: string[] = []
     const service = createMockService()
-    service.onData = vi.fn((cb): (() => void) => {
+    service.onData = vi.fn((cb): Promise<() => void> => {
       void cb
       order.push('onData')
 
       // eslint-disable-next-line @typescript-eslint/no-empty-function
-      return (): void => {}
+      return Promise.resolve((): void => {})
     })
 
     service.listSessions = vi.fn(() => {
@@ -59,11 +62,11 @@ describe('useSessionManager', () => {
       data: string,
       offsetStart: number
     ) => void = vi.fn()
-    service.onData = vi.fn((cb): (() => void) => {
+    service.onData = vi.fn((cb): Promise<() => void> => {
       dataCallback = cb
 
       // eslint-disable-next-line @typescript-eslint/no-empty-function
-      return (): void => {}
+      return Promise.resolve((): void => {})
     })
 
     // Resolve list_sessions only after we've fired some events
@@ -76,6 +79,10 @@ describe('useSessionManager', () => {
     )
 
     const { result } = renderHook(() => useSessionManager(service))
+
+    // Wait for the orchestrator's awaited onData to complete (the effect's
+    // listen-before-snapshot step) so dataCallback is wired before we fire events
+    await waitFor(() => expect(service.onData).toHaveBeenCalled())
 
     // Fire events while list_sessions is in-flight
     dataCallback('s1', 'mid-flight', 100)

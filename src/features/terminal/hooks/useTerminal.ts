@@ -310,12 +310,33 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       }
     }
 
-    const unsubscribeData = service.onData(handleData)
+    // service.onData now returns a Promise<() => void> that resolves once the
+    // underlying transport listener is attached. Track the resolved unsubscribe
+    // function and a cancellation flag so the cleanup path correctly tears down
+    // even if the effect cleanup runs before the promise resolves.
+    let unsubscribeData: (() => void) | null = null
+    let dataSubscriptionCancelled = false
+
+    void (async (): Promise<void> => {
+      const unsubscribe = await service.onData(handleData)
+      // The cleanup runs synchronously and can flip dataSubscriptionCancelled
+      // before this microtask resumes, so the guard is necessary even though
+      // ESLint can't prove the awaited function returned to a different scope.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (dataSubscriptionCancelled) {
+        unsubscribe()
+
+        return
+      }
+      unsubscribeData = unsubscribe
+    })()
+
     const unsubscribeExit = service.onExit(handleExit)
     const unsubscribeError = service.onError(handleError)
 
     return (): void => {
-      unsubscribeData()
+      dataSubscriptionCancelled = true
+      unsubscribeData?.()
       unsubscribeExit()
       unsubscribeError()
     }

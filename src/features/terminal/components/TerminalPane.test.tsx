@@ -619,8 +619,10 @@ describe('TerminalPane', () => {
         resize: vi.fn().mockResolvedValue(undefined),
         kill: vi.fn().mockResolvedValue(undefined),
         updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-        // eslint-disable-next-line @typescript-eslint/no-empty-function
-        onData: vi.fn(() => (): void => {}),
+        onData: vi.fn(() =>
+          // eslint-disable-next-line @typescript-eslint/no-empty-function
+          Promise.resolve((): void => {})
+        ),
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         onExit: vi.fn(() => (): void => {}),
         // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -672,8 +674,10 @@ describe('TerminalPane', () => {
         resize: vi.fn().mockResolvedValue(undefined),
         kill: vi.fn().mockResolvedValue(undefined),
         updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-        // eslint-disable-next-line @typescript-eslint/no-empty-function
-        onData: vi.fn(() => (): void => {}),
+        onData: vi.fn(() =>
+          // eslint-disable-next-line @typescript-eslint/no-empty-function
+          Promise.resolve((): void => {})
+        ),
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         onExit: vi.fn(() => (): void => {}),
         // eslint-disable-next-line @typescript-eslint/no-empty-function

@@ -49,7 +49,7 @@ describe('MockTerminalService', () => {
 
     test('emits initial prompt after spawn', async () => {
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
@@ -70,7 +70,7 @@ describe('MockTerminalService', () => {
       })
 
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       await service.write({ sessionId, data: 'hello' })
 
@@ -88,7 +88,7 @@ describe('MockTerminalService', () => {
       })
 
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       // Type characters then press Enter
       for (const ch of 'echo hello') {
@@ -108,7 +108,7 @@ describe('MockTerminalService', () => {
       })
 
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       for (const ch of 'pwd') {
         await service.write({ sessionId, data: ch })
@@ -127,7 +127,7 @@ describe('MockTerminalService', () => {
       })
 
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       // Type a character first so the buffer isn't empty
       await service.write({ sessionId, data: 'a' })
@@ -146,7 +146,7 @@ describe('MockTerminalService', () => {
       })
 
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       // Backspace on empty buffer should be a no-op
       await service.write({ sessionId, data: '\x7f' })
@@ -161,7 +161,7 @@ describe('MockTerminalService', () => {
       })
 
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       // Pasted text with CRLF should only trigger one command execution
       await service.write({ sessionId, data: 'pwd\r\n' })
@@ -261,7 +261,7 @@ describe('MockTerminalService', () => {
   describe('event subscriptions', () => {
     test('onData registers callback', async () => {
       const callback = vi.fn()
-      const unsubscribe = service.onData(callback)
+      const unsubscribe = await service.onData(callback)
 
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
@@ -277,7 +277,7 @@ describe('MockTerminalService', () => {
 
     test('onData unsubscribe removes callback', async () => {
       const callback = vi.fn()
-      const unsubscribe = service.onData(callback)
+      const unsubscribe = await service.onData(callback)
 
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',

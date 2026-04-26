@@ -37,8 +37,11 @@ vi.mock('../terminal/services/terminalService', () => ({
     write: vi.fn().mockResolvedValue(undefined),
     resize: vi.fn().mockResolvedValue(undefined),
     kill: vi.fn().mockResolvedValue(undefined),
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    onData: vi.fn((): (() => void) => (): void => {}),
+    onData: vi.fn(
+      (): Promise<() => void> =>
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        Promise.resolve((): void => {})
+    ),
     // eslint-disable-next-line @typescript-eslint/no-empty-function
     onExit: vi.fn((): (() => void) => (): void => {}),
     // eslint-disable-next-line @typescript-eslint/no-empty-function

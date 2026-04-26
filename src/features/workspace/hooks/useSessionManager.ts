@@ -88,20 +88,31 @@ export const useSessionManager = (
     ranRestoreRef.current = true
 
     let cancelled = false
+    let stopBuffering: (() => void) | null = null
     const buffered = new Map<string, { data: string; offsetStart: number }[]>()
-
-    // 1. Register global buffering listener BEFORE list_sessions
-    const stopBuffering = service.onData((sessionId, data, offsetStart) => {
-      let q = buffered.get(sessionId)
-      if (!q) {
-        q = []
-        buffered.set(sessionId, q)
-      }
-      q.push({ data, offsetStart })
-    })
 
     void (async (): Promise<void> => {
       try {
+        // 1. Register global buffering listener and AWAIT its attachment
+        //    BEFORE calling list_sessions. The await is critical: TauriTerminalService.onData
+        //    only resolves after the underlying tauri.listen('pty-data', ...) is wired up.
+        //    Without awaiting, PTY events emitted during the listen()-attach window are
+        //    lost from both replay_data AND bufferedEvents (irrecoverable).
+        stopBuffering = await service.onData((sessionId, data, offsetStart) => {
+          let q = buffered.get(sessionId)
+          if (!q) {
+            q = []
+            buffered.set(sessionId, q)
+          }
+          q.push({ data, offsetStart })
+        })
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (cancelled) {
+          stopBuffering()
+
+          return
+        }
+
         // 2. Snapshot sessions
         const list: SessionList = await service.listSessions()
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -135,7 +146,8 @@ export const useSessionManager = (
 
         // 4. Listener swap happens implicitly: future onData subscribers
         //    in TerminalPane will receive new events. The buffering listener
-        //    is removed here.
+        //    is removed here. (stopBuffering is guaranteed non-null here —
+        //    we just awaited its assignment above without throwing.)
         stopBuffering()
       } catch (err) {
         // Cache load error or IPC failure — start fresh
@@ -145,13 +157,13 @@ export const useSessionManager = (
         setSessions([])
         setActiveSessionIdState(null)
         setLoading(false)
-        stopBuffering()
+        stopBuffering?.()
       }
     })()
 
     return (): void => {
       cancelled = true
-      stopBuffering()
+      stopBuffering?.()
     }
   }, [service, restoreData])
 

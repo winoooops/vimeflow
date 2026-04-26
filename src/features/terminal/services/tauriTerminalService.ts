@@ -37,39 +37,51 @@ export class TauriTerminalService implements ITerminalService {
   private errorCallbacks: ((sessionId: string, message: string) => void)[] = []
 
   private unlistenFns: UnlistenFn[] = []
-  private initialized = false
+  private initPromise: Promise<void> | null = null
 
   /**
    * Lazily initialize Tauri event listeners on first use.
    * Listeners are shared across all sessions — callbacks filter by sessionId.
+   *
+   * Uses promise memoization: the first caller drives initialization; concurrent
+   * callers await the same promise. This guarantees that any caller awaiting
+   * ensureListeners() resumes only after listen() has fully attached, avoiding
+   * the previous race where `initialized = true` was set synchronously and let
+   * a second caller through before the underlying listener was wired up.
    */
-  private async ensureListeners(): Promise<void> {
-    if (this.initialized) {
-      return
+  private ensureListeners(): Promise<void> {
+    if (this.initPromise) {
+      return this.initPromise
     }
-    this.initialized = true
 
-    const unlistenData = await listen<PtyDataEvent>('pty-data', (event) => {
-      const { sessionId, data, offsetStart } = event.payload
+    this.initPromise = (async (): Promise<void> => {
+      const unlistenData = await listen<PtyDataEvent>('pty-data', (event) => {
+        const { sessionId, data, offsetStart } = event.payload
 
-      // PtyDataEvent.offset_start is u64 — bindings may emit as bigint or number.
-      // Coerce to number; safe up to 2^53 = ~9 PB per session.
-      const offset =
-        typeof offsetStart === 'bigint' ? Number(offsetStart) : offsetStart
-      this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset))
-    })
+        // PtyDataEvent.offset_start is u64 — bindings may emit as bigint or number.
+        // Coerce to number; safe up to 2^53 = ~9 PB per session.
+        const offset =
+          typeof offsetStart === 'bigint' ? Number(offsetStart) : offsetStart
+        this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset))
+      })
 
-    const unlistenExit = await listen<PtyExitEvent>('pty-exit', (event) => {
-      const { sessionId, code } = event.payload
-      this.exitCallbacks.forEach((cb) => cb(sessionId, code))
-    })
+      const unlistenExit = await listen<PtyExitEvent>('pty-exit', (event) => {
+        const { sessionId, code } = event.payload
+        this.exitCallbacks.forEach((cb) => cb(sessionId, code))
+      })
 
-    const unlistenError = await listen<PtyErrorEvent>('pty-error', (event) => {
-      const { sessionId, message } = event.payload
-      this.errorCallbacks.forEach((cb) => cb(sessionId, message))
-    })
+      const unlistenError = await listen<PtyErrorEvent>(
+        'pty-error',
+        (event) => {
+          const { sessionId, message } = event.payload
+          this.errorCallbacks.forEach((cb) => cb(sessionId, message))
+        }
+      )
 
-    this.unlistenFns.push(unlistenData, unlistenExit, unlistenError)
+      this.unlistenFns.push(unlistenData, unlistenExit, unlistenError)
+    })()
+
+    return this.initPromise
   }
 
   async spawn(params: PTYSpawnParams): Promise<PTYSpawnResult> {
@@ -123,11 +135,19 @@ export class TauriTerminalService implements ITerminalService {
     })
   }
 
-  onData(
+  async onData(
     callback: (sessionId: string, data: string, offsetStart: number) => void
-  ): () => void {
+  ): Promise<() => void> {
+    // Push the callback BEFORE awaiting so that any callbacks already queued
+    // during a concurrent ensureListeners() in-flight don't race with the listen()
+    // attachment — once the listener fires, it iterates this.dataCallbacks.
     this.dataCallbacks.push(callback)
-    void this.ensureListeners()
+
+    // CRITICAL: await ensureListeners so the underlying tauri.listen('pty-data', ...)
+    // is attached before the caller proceeds. The restore orchestrator depends on
+    // being able to await this method — without it, PTY events emitted between this
+    // call returning and listen() resolving go to nobody (irrecoverable lost bytes).
+    await this.ensureListeners()
 
     return () => {
       const index = this.dataCallbacks.indexOf(callback)
@@ -172,7 +192,7 @@ export class TauriTerminalService implements ITerminalService {
     this.dataCallbacks = []
     this.exitCallbacks = []
     this.errorCallbacks = []
-    this.initialized = false
+    this.initPromise = null
   }
 
   async listSessions(): Promise<SessionList> {
