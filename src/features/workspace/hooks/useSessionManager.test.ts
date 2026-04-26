@@ -704,4 +704,67 @@ describe('useSessionManager', () => {
 
     expect(drainedAgain).toEqual([])
   })
+
+  // F2 (round 2): if the user creates a tab via createSession while the
+  // mount-time restore is still in flight, the in-flight listSessions
+  // snapshot was taken BEFORE the new tab existed in cache. Without
+  // merging, the restore effect's wholesale `setSessions(snapshot)` blew
+  // the optimistically-created tab out of React state until the next
+  // reload (the live PTY/cache entry kept running in Rust).
+  test('F2 (round 2): createSession during loading is preserved when restore resolves', async () => {
+    const service = createMockService()
+
+    // Hold listSessions until we explicitly resolve it — simulates a slow
+    // mount-time restore so the test can interleave createSession.
+    let resolveListSessions: (v: SessionList) => void = vi.fn()
+    service.listSessions = vi.fn(
+      () =>
+        new Promise<SessionList>((resolve) => {
+          resolveListSessions = resolve
+        })
+    )
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'in-flight-tab', pid: 555 })
+
+    const { result } = renderHook(() => useSessionManager(service))
+
+    // While restore is still loading, the user clicks +
+    act(() => result.current.createSession())
+    await waitFor(() => expect(service.spawn).toHaveBeenCalled())
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    expect(result.current.sessions[0].id).toBe('in-flight-tab')
+    expect(result.current.activeSessionId).toBe('in-flight-tab')
+
+    // Now the restore IPC resolves with a snapshot taken BEFORE the new tab
+    // was added to the cache (it only contains a previously-existing tab).
+    resolveListSessions({
+      activeSessionId: 'cached-tab',
+      sessions: [
+        {
+          id: 'cached-tab',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // BOTH sessions must be present after restore resolves — the in-flight
+    // tab must NOT be wiped out by the snapshot. Order: in-flight first
+    // (matches the createSession prepend convention), then restored tabs.
+    const ids = result.current.sessions.map((s) => s.id)
+    expect(ids).toEqual(['in-flight-tab', 'cached-tab'])
+
+    // Active id stays on the user's most recent intent (the in-flight tab),
+    // not the cached id. createSession's optimistic active update wins.
+    expect(result.current.activeSessionId).toBe('in-flight-tab')
+  })
 })

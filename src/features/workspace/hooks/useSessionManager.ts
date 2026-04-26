@@ -231,20 +231,49 @@ export const useSessionManager = (
           }
         }
 
-        setSessions(newSessions)
-        setActiveSessionIdState(list.activeSessionId)
+        // F2 (round 2): MERGE the restore snapshot with any sessions the
+        // user added via createSession while loading was still true. The
+        // previous wholesale `setSessions(newSessions)` blew away those
+        // optimistically-created tabs — the live PTY/cache entry survived
+        // in Rust, but the frontend lost track of it until the next reload.
+        //
+        // Merge order: existing in-memory sessions (added during the load
+        // window) come FIRST so they appear at the start of the tab strip,
+        // matching the [newSession, ...prev] prepend convention used by
+        // createSession. Restored sessions follow in their cached order.
+        // This also matches the cache invariant — createSession persists
+        // the prepended order via reorderSessions, so the merged in-memory
+        // arrangement here matches what the next reload will see.
+        setSessions((prev) => {
+          const restoredIds = new Set(newSessions.map((s) => s.id))
+          const addedDuringLoad = prev.filter((s) => !restoredIds.has(s.id))
+
+          return [...addedDuringLoad, ...newSessions]
+        })
+
+        // Active id: prefer an in-memory session created during load (the
+        // user's most recent intent) over the cached active id. Falls back
+        // to the cached value when no in-flight tabs exist, preserving
+        // behavior for the common clean-startup path.
+        setActiveSessionIdState(
+          (prevActive) => prevActive ?? list.activeSessionId
+        )
+
         setLoading(false)
         // F1 (round 2): no stop-buffering call here. The global listener
         // stays attached for the hook's lifetime so any session created via
         // createSession also benefits from buffer→drain. The listener tears
         // down only on hook unmount (see effect cleanup below).
       } catch (err) {
-        // Cache load error or IPC failure — start fresh
-        // Surfaced as toast in a future iteration; for now log.
+        // Cache load error or IPC failure — start fresh, but PRESERVE any
+        // sessions the user added via createSession during the load window
+        // (F2 round-2 alignment). Their PTY/cache entry exists in Rust and
+        // wiping them out would orphan the live tab strip until reload.
         // eslint-disable-next-line no-console
         console.warn('listSessions failed; starting empty', err)
-        setSessions([])
-        setActiveSessionIdState(null)
+        // Leave sessions / activeSessionId untouched — createSession may
+        // have already populated them. If nothing was created, they remain
+        // at their initial empty values.
         setLoading(false)
         stopBufferingRef.current?.()
         stopBufferingRef.current = null
