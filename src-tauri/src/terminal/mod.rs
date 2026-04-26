@@ -4,6 +4,7 @@
 //! and IPC communication with the frontend via Tauri commands and events.
 
 pub mod bridge;
+pub mod cache;
 pub mod commands;
 pub mod state;
 #[cfg(feature = "e2e-test")]
