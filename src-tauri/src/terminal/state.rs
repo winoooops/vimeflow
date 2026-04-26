@@ -129,6 +129,12 @@ impl PtyState {
         sessions.contains_key(session_id)
     }
 
+    /// Return the number of active sessions
+    pub fn active_count(&self) -> usize {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        sessions.len()
+    }
+
     /// Get the process ID for a session
     #[allow(dead_code)]
     pub fn get_pid(&self, session_id: &SessionId) -> Option<u32> {

@@ -9,7 +9,9 @@ use agent::{
 };
 use filesystem::{list_dir, read_file, write_file};
 use git::{get_git_diff, git_status, watcher::{start_git_watcher, stop_git_watcher, GitWatcherState}};
-use terminal::{kill_pty, resize_pty, spawn_pty, write_pty, PtyState};
+use std::sync::Arc;
+use tauri::Manager;
+use terminal::{cache::SessionCache, kill_pty, resize_pty, spawn_pty, write_pty, PtyState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,6 +24,18 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // Initialize session cache in app_data_dir
+            let app_data_dir = app.path().app_data_dir().expect("failed to get app_data_dir");
+            let cache_path = app_data_dir.join("sessions.json");
+            let cache = SessionCache::load(cache_path)
+                .map_err(|e| {
+                    log::error!("Failed to load session cache: {}", e);
+                    e
+                })
+                .expect("session cache load failed");
+            app.manage(Arc::new(cache));
+
             Ok(())
         })
         .manage(PtyState::new())

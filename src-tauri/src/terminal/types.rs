@@ -88,6 +88,8 @@ pub struct PtyDataEvent {
     pub session_id: SessionId,
     /// Output data from PTY stdout
     pub data: String,
+    /// Starting byte offset of this chunk in the session's lifetime stream
+    pub offset_start: u64,
 }
 
 /// PTY exit event payload (emitted when process exits)
