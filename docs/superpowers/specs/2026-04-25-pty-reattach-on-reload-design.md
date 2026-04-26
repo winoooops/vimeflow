@@ -157,15 +157,22 @@ The single read on mount. Returns the merged view: cache contents reconciled wit
 
 For each session in `session_order`:
 
-| Cache `exited` | `PtyState` membership                      | `SessionStatus`                                                          |
-| -------------- | ------------------------------------------ | ------------------------------------------------------------------------ |
-| `false`        | alive                                      | `Alive { pid, replay_data }`                                             |
-| `false`        | absent (rare race: read-loop EOF mid-call) | `Exited { last_exit_code: None }` (cache also flipped to `exited: true`) |
-| `true`         | absent                                     | `Exited { last_exit_code }`                                              |
+| Cache `exited` | `PtyState` membership                                                                                                                                 | `SessionStatus`                                                                                          |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `false`        | alive                                                                                                                                                 | `Alive { pid, replay_data }`                                                                             |
+| `false`        | **absent** — most commonly because the prior Tauri process was hard-killed (SIGKILL / OOM / OS shutdown / panic) and the read-loop EOF path never ran | **`list_sessions` flips cache to `exited: true` and flushes**, returns `Exited { last_exit_code: None }` |
+| `true`         | absent                                                                                                                                                | `Exited { last_exit_code }`                                                                              |
 
 `replay_data` is the snapshot of the per-session ring buffer (lossy UTF-8). It lets the frontend repaint the screen for the reload window before new bytes arrive.
 
 The outer `Result` distinguishes "cache file is corrupt or unreadable" (catastrophic) from per-session status (in-band).
+
+💡 **IDEA — why `list_sessions` reconciles instead of trusting the cache flag**
+
+- **I — Intent**: surface previously-running sessions as restartable on next launch, regardless of how the prior process died.
+- **D — Danger**: depending on a shutdown hook to mark sessions exited produces stale `alive` cache entries any time the process is hard-killed (SIGKILL, OOM, OS shutdown, panic) — which is exactly when users most need the cache to be honest. Lying about liveness leads to UIs that show fake-alive tabs that can't actually be attached.
+- **E — Explain**: the read-loop EOF path is best-effort and runs only on graceful PTY exit while Rust is still alive. Tauri-process termination is a different lifecycle that bypasses it entirely. Reconciliation on next read is the only correctness-by-construction option.
+- **A — Alternatives**: rely on shutdown hooks (rejected — not guaranteed to run); keep stale entries and disable attach (rejected — UX gets worse over time as orphans accumulate); periodic background sweep (rejected — adds a thread + complexity for the same effect lazy reconciliation provides for free at the only point that matters).
 
 ### New: `set_active_session(id: String) -> Result<()>`
 
@@ -252,8 +259,17 @@ list_sessions() — frontend mount, single read
    └─ return SessionList
 
 Tauri app shutdown
-   └─ no special handling. PTYs die → read-loops EOF → cache marks exited.
-       Next launch: all sessions show as Exited; user can Restart or close.
+   └─ no shutdown hook. Read-loop EOF will *try* to mark exited, but
+       SIGKILL / OOM / OS shutdown / panic all skip that path. The cache
+       can therefore lie about liveness across a hard restart.
+
+       Correctness comes from list_sessions reconciliation (see IDEA
+       below): on next launch the cache is read, every entry whose
+       `exited: false` is checked against PtyState, and any with no
+       PtyState entry is flipped to exited and flushed.
+
+       Result: next launch shows previously-running sessions as Exited
+       regardless of how the prior process died. User can Restart or close.
 ```
 
 ## Replay Buffer
@@ -350,30 +366,31 @@ The TerminalPane unmount cleanup retains: xterm.js dispose, `pty-data` listener 
 
 ### Rust (`src-tauri/src/terminal/`)
 
-| Test                                               | What it pins                                             |
-| -------------------------------------------------- | -------------------------------------------------------- |
-| `list_sessions_returns_alive_for_running_pty`      | Happy path: alive variant + replay_data populated        |
-| `list_sessions_returns_exited_for_dead_pty`        | Read-loop EOF marks cache; restore reflects it           |
-| `list_sessions_returns_in_session_order`           | Order matches `session_order`, not HashMap iteration     |
-| `list_sessions_includes_active_session_id`         | Active id round-trips                                    |
-| `list_sessions_replay_data_contains_recent_output` | Ring buffer write + restore round-trips bytes            |
-| `list_sessions_replay_data_truncated_at_capacity`  | Long output respects 64 KB cap                           |
-| `set_active_session_persists_to_cache`             | Active id written                                        |
-| `set_active_session_rejects_unknown_id`            | Validation                                               |
-| `reorder_sessions_persists_to_cache`               | Order written                                            |
-| `reorder_sessions_rejects_non_permutation`         | Validation (no add/remove)                               |
-| `spawn_pty_appends_to_session_order`               | Lifecycle: spawn updates order                           |
-| `spawn_pty_promotes_first_session_to_active`       | Lifecycle: empty → first active                          |
-| `spawn_pty_returns_error_on_existing_session_id`   | Contract change: no more kill-and-replace                |
-| `spawn_pty_caps_at_64_active_sessions`             | DoS guard                                                |
-| `kill_pty_is_idempotent_for_missing_session`       | Contract change: no more error on missing                |
-| `kill_pty_removes_from_session_order_and_cache`    | Lifecycle cleanup                                        |
-| `kill_pty_advances_active_when_active_killed`      | Active session rotation                                  |
-| `update_session_cwd_persists_to_cache`             | OSC 7 sync path                                          |
-| `update_session_cwd_rejects_invalid_path`          | Validation                                               |
-| `read_loop_eof_marks_cache_exited`                 | Lifecycle: natural exit                                  |
-| `cache_atomic_write_survives_simulated_crash`      | Write to tmp, kill before rename, ensure old file intact |
-| `cache_corrupt_file_returns_error_not_panic`       | Outer `Err` path, no crash                               |
+| Test                                                        | What it pins                                                                                                                              |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_sessions_returns_alive_for_running_pty`               | Happy path: alive variant + replay_data populated                                                                                         |
+| `list_sessions_returns_exited_for_dead_pty`                 | Read-loop EOF marks cache; restore reflects it                                                                                            |
+| `list_sessions_reconciles_alive_cache_with_empty_pty_state` | Simulate hard kill (cache says `alive`, PtyState empty); list_sessions flips to Exited and flushes — pins lazy reconciliation correctness |
+| `list_sessions_returns_in_session_order`                    | Order matches `session_order`, not HashMap iteration                                                                                      |
+| `list_sessions_includes_active_session_id`                  | Active id round-trips                                                                                                                     |
+| `list_sessions_replay_data_contains_recent_output`          | Ring buffer write + restore round-trips bytes                                                                                             |
+| `list_sessions_replay_data_truncated_at_capacity`           | Long output respects 64 KB cap                                                                                                            |
+| `set_active_session_persists_to_cache`                      | Active id written                                                                                                                         |
+| `set_active_session_rejects_unknown_id`                     | Validation                                                                                                                                |
+| `reorder_sessions_persists_to_cache`                        | Order written                                                                                                                             |
+| `reorder_sessions_rejects_non_permutation`                  | Validation (no add/remove)                                                                                                                |
+| `spawn_pty_appends_to_session_order`                        | Lifecycle: spawn updates order                                                                                                            |
+| `spawn_pty_promotes_first_session_to_active`                | Lifecycle: empty → first active                                                                                                           |
+| `spawn_pty_returns_error_on_existing_session_id`            | Contract change: no more kill-and-replace                                                                                                 |
+| `spawn_pty_caps_at_64_active_sessions`                      | DoS guard                                                                                                                                 |
+| `kill_pty_is_idempotent_for_missing_session`                | Contract change: no more error on missing                                                                                                 |
+| `kill_pty_removes_from_session_order_and_cache`             | Lifecycle cleanup                                                                                                                         |
+| `kill_pty_advances_active_when_active_killed`               | Active session rotation                                                                                                                   |
+| `update_session_cwd_persists_to_cache`                      | OSC 7 sync path                                                                                                                           |
+| `update_session_cwd_rejects_invalid_path`                   | Validation                                                                                                                                |
+| `read_loop_eof_marks_cache_exited`                          | Lifecycle: natural exit                                                                                                                   |
+| `cache_atomic_write_survives_simulated_crash`               | Write to tmp, kill before rename, ensure old file intact                                                                                  |
+| `cache_corrupt_file_returns_error_not_panic`                | Outer `Err` path, no crash                                                                                                                |
 
 ### Frontend (`src/features/{workspace,terminal}/`)
 
