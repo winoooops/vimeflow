@@ -25,6 +25,7 @@ export default defineConfig([
       'playwright-report',
       'vite-plugin-*.ts',
       'src-tauri/target',
+      'src-tauri/bindings/',
       '.claude/**',
       'src/bindings/',
       'docs/**',
