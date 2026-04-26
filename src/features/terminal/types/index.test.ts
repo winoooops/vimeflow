@@ -110,10 +110,12 @@ describe('Terminal Types', () => {
       const result: PTYSpawnResult = {
         sessionId: 'session-1',
         pid: 12345,
+        cwd: '/home/user',
       }
 
       expect(result.sessionId).toBe('session-1')
       expect(result.pid).toBe(12345)
+      expect(result.cwd).toBe('/home/user')
     })
 
     test('PTYWriteParams structure', () => {

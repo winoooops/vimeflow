@@ -115,7 +115,10 @@ export class MockTerminalService implements ITerminalService {
       this.emitData(sessionId, `$ `)
     }, 100)
 
-    return Promise.resolve({ sessionId, pid })
+    // Mock returns the cwd that was requested. Real Tauri side resolves
+    // '~' to the absolute home dir; we keep the mock pass-through so test
+    // expectations stay deterministic without depending on the host.
+    return Promise.resolve({ sessionId, pid, cwd: params.cwd })
   }
 
   write(params: PTYWriteParams): Promise<void> {

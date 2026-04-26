@@ -5,7 +5,9 @@ import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { SessionList } from '../../../bindings'
 
 const createMockService = (): ITerminalService => ({
-  spawn: vi.fn().mockResolvedValue({ sessionId: 'new-id', pid: 123 }),
+  spawn: vi
+    .fn()
+    .mockResolvedValue({ sessionId: 'new-id', pid: 123, cwd: '/home/user' }),
   write: vi.fn().mockResolvedValue(undefined),
   resize: vi.fn().mockResolvedValue(undefined),
   kill: vi.fn().mockResolvedValue(undefined),
@@ -280,6 +282,39 @@ describe('useSessionManager', () => {
     await waitFor(() =>
       expect(service.reorderSessions).toHaveBeenCalledWith(['new-id'])
     )
+  })
+
+  // Round 5 regression: createSession must seed sessions[i].workingDirectory
+  // and restoreData[id].cwd from spawn().cwd (the resolved absolute path),
+  // not from the literal '~' it passed in. Many shells don't emit OSC 7 on
+  // first prompt, so without this useGitStatus / agent-status / diff panes
+  // sit idle until the user `cd`s manually.
+  test('round 5: createSession uses resolved cwd from spawn() not literal "~"', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: null,
+      sessions: [],
+    })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'new-id',
+      pid: 999,
+      cwd: '/home/user/projects/foo',
+    })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.createSession())
+
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    expect(result.current.sessions[0].workingDirectory).toBe(
+      '/home/user/projects/foo'
+    )
+
+    const restored = result.current.restoreData.get('new-id')
+    expect(restored).toBeDefined()
+    expect(restored!.cwd).toBe('/home/user/projects/foo')
   })
 
   // F4 specific: with existing tabs, the new tab must be PREPENDED in the

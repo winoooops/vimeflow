@@ -317,13 +317,15 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         didSpawnSessionRef.current = true // We spawned this session
 
         // Convert result to TerminalSession
-        // Use the resolved cwd from Rust (absolute path) if available,
-        // otherwise fall back to the requested cwd.
+        // result.cwd is the resolved absolute path from Rust (PTYSpawnResult
+        // requires it). Round 5: previously fell back to effectiveCwd ('~'
+        // pre-resolution), but Rust always returns a real path so the
+        // fallback was misleading and lint flagged the conditional.
         const newSession: TerminalSession = {
           id: result.sessionId,
           pid: result.pid,
           name: `Session ${result.sessionId}`,
-          cwd: result.cwd ?? effectiveCwd,
+          cwd: result.cwd,
           shell:
             shell ??
             (typeof process !== 'undefined' ? process.env.SHELL : undefined) ??

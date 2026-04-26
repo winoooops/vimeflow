@@ -422,9 +422,13 @@ export const useSessionManager = (
 
         // Populate restoreData with empty replay so TerminalPane attaches
         // instead of spawning a duplicate PTY.
+        // Use the resolved absolute cwd from spawn (e.g. /home/will), not
+        // the literal '~' we passed in — many shells don't emit OSC 7 on
+        // first prompt, so without this, useGitStatus and the agent-status
+        // panel sit idle until the user manually `cd`s.
         restoreData.set(result.sessionId, {
           sessionId: result.sessionId,
-          cwd: '~',
+          cwd: result.cwd,
           pid: result.pid,
           replayData: '',
           replayEndOffset: 0,
@@ -452,9 +456,13 @@ export const useSessionManager = (
           const newSession: Session = {
             id: result.sessionId,
             projectId: 'proj-1',
+            // Use spawn's resolved absolute cwd, not '~'. useGitStatus,
+            // tab-name derivation, and the diff/agent panes all need an
+            // absolute path; relying on OSC 7 to backfill leaves them
+            // idle for shells that don't emit it on first prompt.
             name: `session ${prev.length + 1}`,
             status: 'running',
-            workingDirectory: '~',
+            workingDirectory: result.cwd,
             agentType: 'claude-code',
             createdAt: now,
             lastActivityAt: now,
