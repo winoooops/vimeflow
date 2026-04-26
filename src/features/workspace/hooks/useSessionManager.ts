@@ -141,8 +141,6 @@ export const useSessionManager = (
   const [restoreData] = useState(new Map<string, RestoreData>())
   const [loading, setLoading] = useState(true)
 
-  const ranRestoreRef = useRef(false)
-
   // Refs that bridge the mount-time restore effect (which builds the buffer
   // and the buffering listener) and the notifyPaneReady callback (which
   // panes invoke from their useTerminal effect, possibly several React
@@ -175,12 +173,17 @@ export const useSessionManager = (
 
   // Mount-time restore orchestration: listen first, then list_sessions,
   // then KEEP buffering alive until every restored pane reports ready.
+  //
+  // Note: under React 18 StrictMode dev, this effect runs twice (mount →
+  // cleanup → mount). The previous `ranRestoreRef` short-circuit blocked
+  // the second invocation from completing, but the FIRST invocation's
+  // cancelled-abort path skipped `setLoading(false)` — so loading was
+  // stuck on "Restoring sessions..." forever in dev. Removed the guard;
+  // both invocations now run, and the second one reaches setLoading(false)
+  // normally. The first invocation's listener gets unsubscribed in its
+  // cancelled-abort branch (line below), so the second invocation's
+  // listener is the durable one.
   useEffect(() => {
-    if (ranRestoreRef.current) {
-      return
-    }
-    ranRestoreRef.current = true
-
     let cancelled = false
 
     void (async (): Promise<void> => {
