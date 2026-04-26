@@ -266,7 +266,11 @@ describe('Terminal Integration Tests', () => {
       // Mount and unmount multiple times rapidly
       for (let i = 0; i < 5; i++) {
         const { unmount } = render(
-          <TerminalPane sessionId={`rapid-test-${i}`} cwd="/home/user" />
+          <TerminalPane
+            sessionId={`rapid-test-${i}`}
+            cwd="/home/user"
+            service={mockServiceInstance}
+          />
         )
         await new Promise((resolve) => setTimeout(resolve, 50))
         unmount()

@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 // WebGL addon disabled — causes blank terminal in Tauri's webview (WebView2/WebKit)
@@ -10,10 +10,7 @@ import {
   type RestoreData,
   type NotifyPaneReady,
 } from '../hooks/useTerminal'
-import {
-  createTerminalService,
-  type ITerminalService,
-} from '../services/terminalService'
+import { type ITerminalService } from '../services/terminalService'
 import { registerPtySession, unregisterPtySession } from '../ptySessionMap'
 import { isTauri } from '../../../lib/environment'
 import '@xterm/xterm/css/xterm.css'
@@ -69,9 +66,19 @@ export interface TerminalPaneProps {
   cwd: string
 
   /**
-   * Optional terminal service (defaults to MockTerminalService in dev)
+   * Terminal service used for PTY operations.
+   *
+   * Round 4, Finding 1 (codex P1): REQUIRED — must be the same instance the
+   * `useSessionManager` hook receives. Previously this defaulted to a
+   * `useMemo(() => createTerminalService(), ...)` per-pane fallback, which
+   * worked under Tauri (singleton) but produced disjoint `MockTerminalService`
+   * instances in the browser/Vite/test workflow — sessions spawned by the
+   * manager never attached in the pane and close/restart calls talked to a
+   * different empty service. Removing the fallback forces callers to share
+   * one service via prop drilling (TerminalZone forwards it from
+   * WorkspaceView).
    */
-  service?: ITerminalService
+  service: ITerminalService
 
   /**
    * Optional shell path (defaults to system shell)
@@ -129,7 +136,7 @@ export interface TerminalPaneProps {
 export const TerminalPane = ({
   sessionId,
   cwd,
-  service = undefined,
+  service,
   shell = undefined,
   env = undefined,
   restoredFrom = undefined,
@@ -141,12 +148,6 @@ export const TerminalPane = ({
   const containerRef = useRef<HTMLDivElement>(null)
   const [terminal, setTerminal] = useState<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
-
-  // Memoize service: use injected service (tests) or factory (Tauri/browser auto-detect)
-  const stableService = useMemo(
-    () => service ?? createTerminalService(),
-    [service]
-  )
 
   // awaiting-restart mode: render a Restart affordance and skip ALL PTY
   // interaction (no spawn, no attach, no xterm). Per spec, exited sessions
@@ -163,7 +164,7 @@ export const TerminalPane = ({
   } = useTerminal({
     // Pass null terminal in awaiting-restart so useTerminal short-circuits.
     terminal: isAwaitingRestart ? null : terminal,
-    service: stableService,
+    service,
     cwd,
     shell,
     env,
@@ -280,7 +281,7 @@ export const TerminalPane = ({
             // Sync to Rust cache via IPC (fire-and-forget)
             void (async (): Promise<void> => {
               try {
-                await stableService.updateSessionCwd(sessionId, path)
+                await service.updateSessionCwd(sessionId, path)
               } catch (err) {
                 // eslint-disable-next-line no-console
                 console.warn('updateSessionCwd IPC failed', err)
@@ -295,7 +296,7 @@ export const TerminalPane = ({
             // Sync to Rust cache via IPC (fire-and-forget)
             void (async (): Promise<void> => {
               try {
-                await stableService.updateSessionCwd(sessionId, data)
+                await service.updateSessionCwd(sessionId, data)
               } catch (err) {
                 // eslint-disable-next-line no-console
                 console.warn('updateSessionCwd IPC failed', err)
@@ -360,7 +361,7 @@ export const TerminalPane = ({
       setTerminal(null)
       fitAddonRef.current = null
     }
-  }, [sessionId, stableService, isAwaitingRestart])
+  }, [sessionId, service, isAwaitingRestart])
 
   // Awaiting-restart: render a Restart affordance instead of an xterm.
   // Per the design spec ("no auto-respawn for Exited" IDEA), the user must

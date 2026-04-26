@@ -1,10 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import type { Session, AgentActivity } from '../types'
 import type { SessionList, SessionInfo } from '../../../bindings'
-import {
-  createTerminalService,
-  type ITerminalService,
-} from '../../terminal/services/terminalService'
+import type { ITerminalService } from '../../terminal/services/terminalService'
 import { registerPtySession } from '../../terminal/ptySessionMap'
 
 const emptyActivity: AgentActivity = {
@@ -114,8 +111,27 @@ export interface SessionManager {
   ) => NotifyPaneReadyResult
 }
 
+/**
+ * Manage the session list, restore data, and tab orchestration for the
+ * workspace.
+ *
+ * Round 4, Finding 1 (codex P1): `service` is now REQUIRED. Previously the
+ * default `service = createTerminalService()` was evaluated on every render.
+ * Under Tauri this happened to work because `createTerminalService` returns
+ * a singleton bound to Tauri IPC — every call resolved to the same backend.
+ * In the browser/Vite/test workflow, however, `createTerminalService` returns
+ * a FRESH `MockTerminalService` per call, so each render gave the hook a
+ * different backend than the one each `TerminalPane` resolved separately —
+ * the tabs spawned by the manager and the panes that should attach to them
+ * lived in disjoint state, so attach/restart/close all silently no-op'd.
+ *
+ * The single-source-of-truth fix: callers create the service once at the
+ * top of the tree (e.g. `WorkspaceView` via `useMemo`) and pass the same
+ * instance to both `useSessionManager` and every `TerminalPane`. Removing
+ * the default arg makes the wiring impossible to forget.
+ */
 export const useSessionManager = (
-  service: ITerminalService = createTerminalService()
+  service: ITerminalService
 ): SessionManager => {
   const [sessions, setSessions] = useState<Session[]>([])
 

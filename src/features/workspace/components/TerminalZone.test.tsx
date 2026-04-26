@@ -4,6 +4,34 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TerminalZone } from './TerminalZone'
 import { mockSessions } from '../data/mockSessions'
+import type { ITerminalService } from '../../terminal/services/terminalService'
+
+// Round 4 Finding 1: TerminalZone now requires a `service` prop so it can
+// forward it to every TerminalPane. The shared mock below is a no-op stub —
+// individual tests don't exercise service behavior because TerminalPane is
+// itself mocked.
+const mockService: ITerminalService = {
+  spawn: vi.fn().mockResolvedValue({ sessionId: 'mock', pid: 0 }),
+  write: vi.fn().mockResolvedValue(undefined),
+  resize: vi.fn().mockResolvedValue(undefined),
+  kill: vi.fn().mockResolvedValue(undefined),
+  onData: vi.fn(
+    (): Promise<() => void> =>
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      Promise.resolve((): void => {})
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  onExit: vi.fn((): (() => void) => (): void => {}),
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  onError: vi.fn((): (() => void) => (): void => {}),
+  listSessions: vi.fn().mockResolvedValue({
+    activeSessionId: null,
+    sessions: [],
+  }),
+  setActiveSession: vi.fn().mockResolvedValue(undefined),
+  reorderSessions: vi.fn().mockResolvedValue(undefined),
+  updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+}
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../../terminal/components/TerminalPane', () => ({
@@ -47,6 +75,7 @@ describe('TerminalZone', () => {
     activeSessionId: 'sess-1',
     onSessionChange: mockOnSessionChange,
     onNewTab: mockOnNewTab,
+    service: mockService,
   }
 
   test('renders tab bar with agent session tabs', () => {

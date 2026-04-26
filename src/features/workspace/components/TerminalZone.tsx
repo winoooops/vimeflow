@@ -4,6 +4,7 @@ import {
   TerminalPane,
   type TerminalPaneMode,
 } from '../../terminal/components/TerminalPane'
+import type { ITerminalService } from '../../terminal/services/terminalService'
 import type {
   RestoreData,
   PaneEventHandler,
@@ -33,6 +34,12 @@ export interface TerminalZoneProps {
    * Called when the user clicks Restart on an Exited (awaiting-restart) pane.
    */
   onSessionRestart?: (sessionId: string) => void
+  /**
+   * Terminal service forwarded to every `TerminalPane`. MUST be the same
+   * instance the parent passes to `useSessionManager` — see Round 4
+   * Finding 1 in `useSessionManager.ts` for the rationale.
+   */
+  service: ITerminalService
 }
 
 export const TerminalZone = ({
@@ -46,6 +53,7 @@ export const TerminalZone = ({
   loading = false,
   onPaneReady = undefined,
   onSessionRestart = undefined,
+  service,
 }: TerminalZoneProps): ReactElement => {
   const handleTabClick = (sessionId: string): void => {
     if (activeSessionId === null || sessionId !== activeSessionId) {
@@ -174,6 +182,7 @@ export const TerminalZone = ({
                 <TerminalPane
                   sessionId={session.id}
                   cwd={session.workingDirectory}
+                  service={service}
                   restoredFrom={restore}
                   mode={mode}
                   onCwdChange={(cwd) => onSessionCwdChange?.(session.id, cwd)}

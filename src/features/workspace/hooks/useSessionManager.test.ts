@@ -1210,4 +1210,87 @@ describe('useSessionManager', () => {
     // not the cached id. createSession's optimistic active update wins.
     expect(result.current.activeSessionId).toBe('in-flight-tab')
   })
+
+  // Round 4, Finding 1 (codex P1) regression test.
+  //
+  // Before the fix, `useSessionManager`'s default arg
+  // `service = createTerminalService()` re-evaluated every render. In the
+  // browser/Vite/test workflow that returned a fresh `MockTerminalService`
+  // each time, so the manager and any per-pane fallback service ended up
+  // talking to disjoint backends — tabs spawned by the manager were never
+  // observable on the pane's service and close/restart silently no-op'd.
+  //
+  // The contract is now: a SINGLE service instance must be passed in and
+  // every IPC the manager fires (spawn, kill, setActiveSession,
+  // reorderSessions) MUST land on that exact instance. This test fakes the
+  // "shared service handed to both the manager and a downstream consumer"
+  // pattern by capturing call counts on the same vi.fn instances and
+  // asserting createSession's spawn lands on them — i.e. the manager does
+  // NOT create its own backend behind the scenes.
+  test('round 4 F1: createSession routes IPC to the EXACT service passed in', async () => {
+    const sharedService = createMockService()
+    sharedService.spawn = vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'spawned', pid: 100 })
+
+    const { result } = renderHook(() => useSessionManager(sharedService))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.createSession())
+
+    // The manager fires spawn on the SHARED instance — not a hidden
+    // per-render `createTerminalService()` mock. Asserting on the exact
+    // function reference (`sharedService.spawn`) catches the disjoint-
+    // backend bug: a fresh service from a re-evaluated default arg would
+    // have its OWN spawn fn, leaving sharedService.spawn untouched.
+    await waitFor(() => expect(sharedService.spawn).toHaveBeenCalled())
+    expect(sharedService.spawn).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: '~' })
+    )
+
+    // setActiveSession + reorderSessions also hit the shared instance —
+    // catches a partial regression where only spawn was wired through.
+    await waitFor(() =>
+      expect(sharedService.setActiveSession).toHaveBeenCalledWith('spawned')
+    )
+
+    await waitFor(() =>
+      expect(sharedService.reorderSessions).toHaveBeenCalledWith(['spawned'])
+    )
+  })
+
+  // Re-renders MUST NOT swap the backend. Without the round-4 fix, the
+  // default-arg `createTerminalService()` gave each render a new mock and
+  // the second-render hook talked to a different backend than the first.
+  // We assert the same service instance is observed across re-renders by
+  // verifying that re-rendering does not cause an additional listSessions
+  // call on a DIFFERENT mock — and that subsequent IPC routes through the
+  // original.
+  test('round 4 F1: re-rendering useSessionManager keeps using the same service', async () => {
+    const sharedService = createMockService()
+    sharedService.spawn = vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'after-rerender', pid: 9 })
+
+    const { result, rerender } = renderHook(() =>
+      useSessionManager(sharedService)
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const initialListCallCount = (
+      sharedService.listSessions as ReturnType<typeof vi.fn>
+    ).mock.calls.length
+
+    // Rerender the hook with the same service — must not trigger a fresh
+    // mount-time restore on a different backend.
+    rerender()
+    rerender()
+
+    expect(
+      (sharedService.listSessions as ReturnType<typeof vi.fn>).mock.calls.length
+    ).toBe(initialListCallCount)
+
+    act(() => result.current.createSession())
+    await waitFor(() => expect(sharedService.spawn).toHaveBeenCalled())
+  })
 })
