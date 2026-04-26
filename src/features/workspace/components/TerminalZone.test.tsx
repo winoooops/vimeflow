@@ -473,6 +473,53 @@ describe('TerminalZone', () => {
     expect(exitedPane).toHaveAttribute('data-mode', 'awaiting-restart')
   })
 
+  // Round 3 Finding 3 (codex P2): mode resolution must put status BEFORE
+  // restoreData. Round-2 F1 made restoreData get seeded for every session
+  // (so per-session buffering works for newly-created tabs) and nothing
+  // clears it when the PTY later exits. With the old `restore ?
+  // 'attach' : ...` precedence, a session that exits AFTER mount stayed
+  // in 'attach' mode forever — the Restart button was unreachable until
+  // a full reload rebuilt state from listSessions().
+  test('F-r3-3: completed status takes precedence over lingering restoreData', () => {
+    const exitedAfterMount = [
+      // Simulates the "live exit" case: status flipped to completed (e.g.
+      // from a pty-exit event) while restoreData still has the entry that
+      // was seeded at mount time and is now stale.
+      {
+        ...mockSessions[0],
+        id: 'just-exited',
+        status: 'completed' as const,
+      },
+    ]
+
+    const restoreData = new Map([
+      [
+        'just-exited',
+        {
+          sessionId: 'just-exited',
+          cwd: '/tmp',
+          pid: 1,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [],
+        },
+      ],
+    ])
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={exitedAfterMount}
+        activeSessionId="just-exited"
+        restoreData={restoreData}
+      />
+    )
+
+    const pane = screen.getAllByTestId('terminal-pane-mock')[0]
+    // Status wins — the user can reach the Restart UX without a reload.
+    expect(pane).toHaveAttribute('data-mode', 'awaiting-restart')
+  })
+
   // F5 (round 2): the Restart click on an Exited (awaiting-restart) pane
   // must propagate through TerminalZone → TerminalPane.onRestart with the
   // session id. Previously WorkspaceView never passed onSessionRestart, so
