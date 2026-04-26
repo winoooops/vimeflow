@@ -12,4 +12,8 @@ export type PtyDataEvent = {
    * Output data from PTY stdout
    */
   data: string
+  /**
+   * Starting byte offset of this chunk in the session's lifetime stream
+   */
+  offsetStart: bigint
 }

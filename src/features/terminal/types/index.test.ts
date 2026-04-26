@@ -150,10 +150,12 @@ describe('Terminal Types', () => {
       const event: PTYDataEvent = {
         sessionId: 'session-1',
         data: 'hello world\n',
+        offsetStart: 0n,
       }
 
       expect(event.sessionId).toBe('session-1')
       expect(event.data).toBe('hello world\n')
+      expect(event.offsetStart).toBe(0n)
     })
 
     test('PTYExitEvent with exit code', () => {

@@ -157,7 +157,7 @@
       "Verify PtyDataEvent.ts updated to include offset_start",
       "Commit with message: chore(bindings): regenerate after session cache types"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [9]
   },
   {
