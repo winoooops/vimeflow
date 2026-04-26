@@ -467,4 +467,14 @@ function readBody(
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), gitApiPlugin(), fileApiPlugin()],
+  server: {
+    watch: {
+      ignored: [
+        '**/.vimeflow/**',
+        '**/target/**',
+        '**/.codex*/**',
+        '**/.git/**',
+      ],
+    },
+  },
 })
