@@ -314,14 +314,34 @@ pub fn resize_pty(state: State<'_, PtyState>, request: ResizePtyRequest) -> Resu
 
 /// Kill a PTY session
 #[tauri::command]
-pub fn kill_pty(state: State<'_, PtyState>, request: KillPtyRequest) -> Result<(), String> {
+pub fn kill_pty(
+    state: State<'_, PtyState>,
+    cache: State<'_, std::sync::Arc<super::cache::SessionCache>>,
+    request: KillPtyRequest,
+) -> Result<(), String> {
     log::info!("Killing PTY session: {}", request.session_id);
 
-    // Kill the process
-    state.kill(&request.session_id).map_err(|e| e.to_string())?;
+    // Attempt to kill the process - idempotent (no error if session missing)
+    if let Err(e) = state.kill(&request.session_id) {
+        log::debug!("kill_pty: session not found in state ({}), continuing to clean cache", e);
+    }
 
     // Remove from state
     state.remove(&request.session_id);
+
+    // Clean up cache: remove from sessions map and session_order
+    cache
+        .mutate(|data| {
+            data.sessions.remove(&request.session_id);
+            data.session_order.retain(|id| id != &request.session_id);
+
+            // Advance active_session_id if the killed session was active
+            if data.active_session_id.as_ref() == Some(&request.session_id) {
+                // Find the next session in order (or None if no more sessions)
+                data.active_session_id = data.session_order.first().cloned();
+            }
+        })
+        .map_err(|e| format!("failed to update cache: {}", e))?;
 
     Ok(())
 }
@@ -786,5 +806,145 @@ mod tests {
         for i in 0..64 {
             let _ = state.remove(&format!("session-{}", i));
         }
+    }
+
+    #[tokio::test]
+    async fn kill_pty_is_idempotent_for_missing_session() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let state = app.handle().state::<PtyState>();
+        let cache = app.handle().state::<Arc<SessionCache>>();
+
+        let request = KillPtyRequest {
+            session_id: "nonexistent".to_string(),
+        };
+
+        let result = kill_pty(state.clone(), cache.clone(), request);
+        assert!(result.is_ok(), "kill_pty should be idempotent for missing session");
+    }
+
+    #[tokio::test]
+    async fn kill_pty_removes_from_session_order_and_cache() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+        let cache = handle.state::<Arc<SessionCache>>();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        // Spawn two sessions
+        let request1 = SpawnPtyRequest {
+            session_id: "session-1".to_string(),
+            cwd: cwd.clone(),
+            shell: None,
+            env: None,
+            enable_agent_bridge: false,
+        };
+        spawn_pty(handle.clone(), state.clone(), cache.clone(), request1)
+            .await
+            .expect("first spawn should succeed");
+
+        let request2 = SpawnPtyRequest {
+            session_id: "session-2".to_string(),
+            cwd,
+            shell: None,
+            env: None,
+            enable_agent_bridge: false,
+        };
+        spawn_pty(handle.clone(), state.clone(), cache.clone(), request2)
+            .await
+            .expect("second spawn should succeed");
+
+        // Verify both sessions are in cache
+        let snap_before = cache.snapshot();
+        assert_eq!(snap_before.session_order, vec!["session-1", "session-2"]);
+        assert!(snap_before.sessions.contains_key("session-1"));
+        assert!(snap_before.sessions.contains_key("session-2"));
+
+        // Kill session-1
+        let kill_request = KillPtyRequest {
+            session_id: "session-1".to_string(),
+        };
+        kill_pty(state.clone(), cache.clone(), kill_request)
+            .expect("kill_pty should succeed");
+
+        // Verify session-1 is removed from session_order and sessions map
+        let snap_after = cache.snapshot();
+        assert_eq!(snap_after.session_order, vec!["session-2"]);
+        assert!(!snap_after.sessions.contains_key("session-1"));
+        assert!(snap_after.sessions.contains_key("session-2"));
+
+        // Cleanup
+        let _ = state.remove(&"session-2".to_string());
+    }
+
+    #[tokio::test]
+    async fn kill_pty_advances_active_when_active_killed() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+        let cache = handle.state::<Arc<SessionCache>>();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        // Spawn three sessions
+        let request1 = SpawnPtyRequest {
+            session_id: "session-1".to_string(),
+            cwd: cwd.clone(),
+            shell: None,
+            env: None,
+            enable_agent_bridge: false,
+        };
+        spawn_pty(handle.clone(), state.clone(), cache.clone(), request1)
+            .await
+            .expect("first spawn should succeed");
+
+        let request2 = SpawnPtyRequest {
+            session_id: "session-2".to_string(),
+            cwd: cwd.clone(),
+            shell: None,
+            env: None,
+            enable_agent_bridge: false,
+        };
+        spawn_pty(handle.clone(), state.clone(), cache.clone(), request2)
+            .await
+            .expect("second spawn should succeed");
+
+        let request3 = SpawnPtyRequest {
+            session_id: "session-3".to_string(),
+            cwd,
+            shell: None,
+            env: None,
+            enable_agent_bridge: false,
+        };
+        spawn_pty(handle.clone(), state.clone(), cache.clone(), request3)
+            .await
+            .expect("third spawn should succeed");
+
+        // Verify session-1 is active
+        let snap_before = cache.snapshot();
+        assert_eq!(snap_before.active_session_id.as_deref(), Some("session-1"));
+        assert_eq!(snap_before.session_order, vec!["session-1", "session-2", "session-3"]);
+
+        // Kill session-1 (the active session)
+        let kill_request = KillPtyRequest {
+            session_id: "session-1".to_string(),
+        };
+        kill_pty(state.clone(), cache.clone(), kill_request)
+            .expect("kill_pty should succeed");
+
+        // Verify active_session_id advanced to session-2
+        let snap_after = cache.snapshot();
+        assert_eq!(snap_after.active_session_id.as_deref(), Some("session-2"));
+        assert_eq!(snap_after.session_order, vec!["session-2", "session-3"]);
+
+        // Cleanup
+        let _ = state.remove(&"session-2".to_string());
+        let _ = state.remove(&"session-3".to_string());
     }
 }

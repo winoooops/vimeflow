@@ -78,7 +78,7 @@
       "Write tests: kill_pty_is_idempotent_for_missing_session, kill_pty_removes_from_session_order_and_cache, kill_pty_advances_active_when_active_killed",
       "Commit with message: fix(terminal): make kill_pty idempotent and clean cache"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [4]
   },
   {
