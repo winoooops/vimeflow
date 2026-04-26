@@ -462,6 +462,18 @@ export const useSessionManager = (
           bufferedRef.current.delete(id)
           restoreData.delete(id)
 
+          // F4 (round 2): when the user closes the ACTIVE tab and the hook
+          // promotes a neighbor, the cache must learn about it too. Without
+          // setActiveSession the Rust kill_pty path rotates active to the
+          // FIRST remaining tab (cache.session_order[0]) — but the React
+          // state moved to the index-aligned neighbor (Math.min(removedIndex,
+          // next.length - 1)). After reload the restored selection diverges
+          // from where the UI actually moved.
+          //
+          // Derive the fallback inside the setSessions updater so the
+          // computation matches the React-state branch and races with
+          // concurrent createSession/removeSession calls are resolved
+          // against the latest state.
           setSessions((prev) => {
             const next = prev.filter((s) => s.id !== id)
 
@@ -469,9 +481,31 @@ export const useSessionManager = (
             if (activeSessionId === id) {
               const removedIndex = prev.findIndex((s) => s.id === id)
 
-              const fallback =
-                next[Math.min(removedIndex, next.length - 1)]?.id ?? null
+              // next.length is 0 when the LAST tab was just removed; that's
+              // the only case `fallback` is null. Compute defensively so the
+              // empty-tabs path still drains React state to null without
+              // firing a setActiveSession IPC (Rust's kill_pty already
+              // cleared cache.active_session_id when session_order emptied).
+              const fallback: string | null =
+                next.length === 0
+                  ? null
+                  : next[Math.min(removedIndex, next.length - 1)].id
+
               setActiveSessionIdState(fallback)
+
+              // Fire setActiveSession IPC inside the updater so the cache's
+              // active id matches the React-state choice. Idempotent — safe
+              // under StrictMode double-invoke.
+              if (fallback !== null) {
+                // eslint-disable-next-line promise/prefer-await-to-then
+                service.setActiveSession(fallback).catch((err) => {
+                  // eslint-disable-next-line no-console
+                  console.warn(
+                    'removeSession: setActiveSession IPC failed (cache active id will lag)',
+                    err
+                  )
+                })
+              }
             }
 
             return next

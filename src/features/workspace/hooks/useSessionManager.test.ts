@@ -369,6 +369,118 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(result.current.sessions).toHaveLength(0))
   })
 
+  // F4 (round 2): when the user closes the active middle tab, the hook
+  // promotes a neighbor in React state but the previous code never told
+  // Rust about it. Rust's kill_pty path rotates active to the FIRST
+  // remaining tab — so after reload the cache's restored selection
+  // diverged from where the UI actually moved.
+  test('F4 (round 2): removeSession persists fallback active id when closing the active tab', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'middle',
+      sessions: [
+        {
+          id: 'first',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'middle',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'last',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 3,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Sanity-check the restore set 'middle' as active.
+    expect(result.current.activeSessionId).toBe('middle')
+
+    // Reset spy so the restore-time assertions don't leak in.
+    ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
+
+    act(() => result.current.removeSession('middle'))
+
+    await waitFor(() =>
+      expect(service.kill).toHaveBeenCalledWith({ sessionId: 'middle' })
+    )
+
+    // React state moved active to 'last' (Math.min(removedIndex=1, next.length-1=1)).
+    await waitFor(() => expect(result.current.activeSessionId).toBe('last'))
+
+    // The IPC must echo the same choice. Without this, Rust's kill_pty
+    // rotates active to 'first' (cache.session_order[0]) and the next
+    // reload comes back with a different selection than the UI.
+    await waitFor(() =>
+      expect(service.setActiveSession).toHaveBeenCalledWith('last')
+    )
+  })
+
+  // F4 (round 2): closing an INACTIVE tab must NOT fire setActiveSession —
+  // the active tab didn't change, and the spurious IPC would overwrite the
+  // cache's active id with the same value (harmless but pointless I/O).
+  test('F4 (round 2): removeSession does not call setActiveSession when closing an inactive tab', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'b',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
+
+    act(() => result.current.removeSession('b'))
+    await waitFor(() => expect(service.kill).toHaveBeenCalled())
+
+    // Active stays on 'a' — no setActiveSession IPC needed.
+    expect(result.current.activeSessionId).toBe('a')
+    expect(service.setActiveSession).not.toHaveBeenCalled()
+  })
+
   test('renameSession updates session name in-memory only', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
