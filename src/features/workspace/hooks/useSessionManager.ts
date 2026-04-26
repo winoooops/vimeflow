@@ -298,6 +298,31 @@ export const useSessionManager = (
     }
   }, [service, restoreData])
 
+  // Round 3 (codex P2 follow-up to Finding 3): mark sessions completed when
+  // their PTY exits. The mode-precedence fix in TerminalZone (status-first)
+  // depends on `session.status === 'completed'` flipping when the shell
+  // terminates after mount — without an onExit listener at the orchestrator
+  // level, status stays at 'running' and the Restart UX never appears until
+  // a full reload rebuilds state from listSessions().
+  //
+  // Lifecycle: subscribed for the entire useSessionManager lifetime so
+  // sessions created via createSession (post-restore) also flip status on
+  // exit. Idempotent — flipping an already-completed session to completed
+  // is a no-op. Unsubscribes on unmount via the returned cleanup.
+  useEffect(() => {
+    const unsubscribeExit = service.onExit((sessionId) => {
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId ? { ...s, status: 'completed' } : s
+        )
+      )
+    })
+
+    return (): void => {
+      unsubscribeExit()
+    }
+  }, [service])
+
   // Drain buffer + remove from pending set when a pane subscribes.
   // Stable ref-only identity so passing this through props doesn't churn deps.
   //

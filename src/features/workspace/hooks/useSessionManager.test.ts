@@ -672,6 +672,60 @@ describe('useSessionManager', () => {
     )
   })
 
+  // Round 3 codex P2 (gap in Finding 3): the orchestrator must mark sessions
+  // 'completed' when the PTY exits — without that, the live-exit branch of
+  // the status-first mode fix in TerminalZone never triggers, so the
+  // Restart button stays unreachable until a full reload.
+  test('F-r3-3 follow-up: pty-exit flips session status to completed', async () => {
+    const service = createMockService()
+    let exitCallback:
+      | ((sessionId: string, code: number | null) => void)
+      | null = null
+    service.onExit = vi.fn((cb) => {
+      exitCallback = cb
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return (): void => {}
+    })
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions[0].status).toBe('running')
+    expect(exitCallback).not.toBeNull()
+
+    // Simulate the PTY exiting (e.g. user typed `exit`). The orchestrator
+    // must flip status to 'completed' so TerminalZone's status-first mode
+    // resolution renders the awaiting-restart UX without a reload.
+    act(() => {
+      // exitCallback is captured above as non-null; cast for the closure.
+      ;(exitCallback as (sessionId: string, code: number | null) => void)(
+        'a',
+        0
+      )
+    })
+
+    await waitFor(() => {
+      expect(result.current.sessions[0].status).toBe('completed')
+    })
+  })
+
   test('F5 (round 2): restartSession on unknown id is a no-op', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
