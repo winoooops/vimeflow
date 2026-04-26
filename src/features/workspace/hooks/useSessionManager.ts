@@ -73,6 +73,17 @@ export interface SessionManager {
   setActiveSessionId: (id: string) => void
   createSession: () => void
   removeSession: (id: string) => void
+  /**
+   * Restart an Exited session in the same cwd. Idempotent on the kill side:
+   * any remaining cache entry for `id` is killed (no-op if already gone),
+   * then a new PTY is spawned at the cached cwd. The React-state entry is
+   * replaced with metadata for the new session — status flips to 'running'
+   * and id is the new sessionId returned by spawn.
+   *
+   * No-op if the id isn't in `sessions`. Surfaces spawn errors via
+   * console.warn — a future iteration may surface as a toast.
+   */
+  restartSession: (id: string) => void
   renameSession: (id: string, name: string) => void
   reorderSessions: (reordered: Session[]) => void
   updateSessionCwd: (id: string, cwd: string) => void
@@ -519,6 +530,134 @@ export const useSessionManager = (
     [activeSessionId, service, restoreData]
   )
 
+  // Use a ref to read the latest sessions inside the async closure without
+  // making the callback's identity depend on `sessions` (which would churn
+  // every render that tabs change). The `prev` snapshot from setSessions
+  // wouldn't help here because the restart ID needs to be looked up before
+  // the setState updater runs.
+  const sessionsRef = useRef(sessions)
+  sessionsRef.current = sessions
+
+  // F5 (round 2): restart an Exited session in the same cwd.
+  //
+  // Flow (kill-then-spawn):
+  //   1. Look up cached cwd for the exited tab from React state
+  //   2. service.kill(id) — idempotent, clears any stale Rust state
+  //   3. service.spawn({ cwd: cachedCwd }) — gets a fresh sessionId/pid
+  //   4. Replace the old session in React state with the new metadata:
+  //      id flips to result.sessionId, status flips to 'running', cwd
+  //      stays the same so the user's location is preserved
+  //   5. If the restarted tab was active, refresh activeSessionId + IPC
+  //   6. Seed restoreData with empty replay so TerminalPane attaches
+  //      instead of triggering the legacy spawn fallback (same trick as
+  //      createSession's F3 fix)
+  //
+  // The new session id differs from the old one — Rust's spawn_pty
+  // assigns a fresh UUID. Callers (TerminalPane) re-render with the new
+  // id and useTerminal mounts a fresh attach lifecycle.
+  const restartSession = useCallback(
+    (id: string): void => {
+      void (async (): Promise<void> => {
+        const oldSession = sessionsRef.current.find((s) => s.id === id)
+        if (!oldSession) {
+          // eslint-disable-next-line no-console
+          console.warn(`restartSession: no session with id ${id}`)
+
+          return
+        }
+
+        const cachedCwd = oldSession.workingDirectory
+
+        // 1. Kill the old session (no-op if already gone — kill_pty is
+        // idempotent in Rust). This clears any stale cache entry so the
+        // subsequent spawn doesn't trip the duplicate-session-id guard.
+        try {
+          await service.kill({ sessionId: id })
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('restartSession: kill failed (continuing)', err)
+        }
+
+        // Drop bookkeeping for the OLD id — the new spawn will register
+        // fresh entries under the new sessionId.
+        readyPanesRef.current.delete(id)
+        pendingPanesRef.current.delete(id)
+        bufferedRef.current.delete(id)
+        restoreData.delete(id)
+
+        // 2. Spawn fresh PTY at the cached cwd.
+        let result: { sessionId: string; pid: number; cwd?: string }
+        try {
+          result = await service.spawn({ cwd: cachedCwd, env: {} })
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('restartSession: spawn failed', err)
+
+          return
+        }
+
+        // 3. Seed restoreData so TerminalPane mounts in 'attach' mode
+        // instead of falling through to the legacy spawn path (which would
+        // create a hidden duplicate PTY — the F3 / round-1 bug).
+        restoreData.set(result.sessionId, {
+          sessionId: result.sessionId,
+          cwd: cachedCwd,
+          pid: result.pid,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [],
+        })
+        pendingPanesRef.current.add(result.sessionId)
+        registerPtySession(result.sessionId, result.sessionId, cachedCwd)
+
+        const wasActive = activeSessionId === id
+
+        // 4. Replace the old session entry with new metadata. Inside the
+        // setSessions updater so it races correctly against any concurrent
+        // create/remove operations. Preserve the in-memory position by
+        // mapping over `prev` rather than filter+push.
+        setSessions((prev) => {
+          const idx = prev.findIndex((s) => s.id === id)
+          if (idx === -1) {
+            // The session was removed between the spawn() and now. Discard
+            // the orphan PTY by killing it; React state stays as-is.
+            // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
+            service.kill({ sessionId: result.sessionId }).catch((): void => {})
+
+            return prev
+          }
+
+          const next = [...prev]
+          next[idx] = {
+            ...prev[idx],
+            id: result.sessionId,
+            status: 'running',
+            // workingDirectory unchanged — restart preserves cwd by spec
+            lastActivityAt: new Date().toISOString(),
+          }
+
+          return next
+        })
+
+        // 5. If the restarted tab was active, the React-state id moved.
+        // Update active to the new id and tell Rust about it.
+        if (wasActive) {
+          setActiveSessionIdState(result.sessionId)
+          try {
+            await service.setActiveSession(result.sessionId)
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn(
+              'restartSession: setActiveSession IPC failed (cache active id will lag)',
+              err
+            )
+          }
+        }
+      })()
+    },
+    [activeSessionId, restoreData, service]
+  )
+
   // Rename session — in-memory only (no IPC)
   const renameSession = useCallback((id: string, name: string): void => {
     const trimmed = name.trim()
@@ -569,6 +708,7 @@ export const useSessionManager = (
     setActiveSessionId,
     createSession,
     removeSession,
+    restartSession,
     renameSession,
     reorderSessions,
     updateSessionCwd,

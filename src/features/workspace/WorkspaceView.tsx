@@ -24,6 +24,7 @@ export const WorkspaceView = (): ReactElement => {
     setActiveSessionId,
     createSession,
     removeSession,
+    restartSession,
     renameSession,
     reorderSessions,
     updateSessionCwd,
@@ -327,6 +328,7 @@ export const WorkspaceView = (): ReactElement => {
           restoreData={restoreData}
           loading={loading}
           onPaneReady={notifyPaneReady}
+          onSessionRestart={restartSession}
         />
 
         {/* Bottom Drawer - Editor + Diff Viewer */}

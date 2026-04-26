@@ -7,7 +7,7 @@ import { mockSessions } from '../data/mockSessions'
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../../terminal/components/TerminalPane', () => ({
-  TerminalPane: vi.fn(({ sessionId, cwd, restoredFrom, mode }) => (
+  TerminalPane: vi.fn(({ sessionId, cwd, restoredFrom, mode, onRestart }) => (
     <div
       data-testid="terminal-pane-mock"
       data-session-id={sessionId}
@@ -16,6 +16,19 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
       data-mode={mode}
     >
       Mocked TerminalPane
+      {/* Expose the onRestart wiring so tests can assert TerminalZone
+          forwards onSessionRestart down to the pane. */}
+      {onRestart && (
+        <button
+          type="button"
+          data-testid={`mock-restart-${sessionId as string}`}
+          onClick={() =>
+            (onRestart as (id: string) => void)(sessionId as string)
+          }
+        >
+          mock-restart
+        </button>
+      )}
     </div>
   )),
 }))
@@ -458,6 +471,25 @@ describe('TerminalZone', () => {
     // Exited session must NOT be in spawn or attach mode — would resurrect
     // the PTY. Awaiting-restart waits for explicit user opt-in.
     expect(exitedPane).toHaveAttribute('data-mode', 'awaiting-restart')
+  })
+
+  // F5 (round 2): the Restart click on an Exited (awaiting-restart) pane
+  // must propagate through TerminalZone → TerminalPane.onRestart with the
+  // session id. Previously WorkspaceView never passed onSessionRestart, so
+  // the Restart button was a silent no-op.
+  test('F5 (round 2): forwards onSessionRestart to TerminalPane onRestart', async () => {
+    const user = userEvent.setup()
+    const onSessionRestart = vi.fn()
+
+    render(
+      <TerminalZone {...defaultProps} onSessionRestart={onSessionRestart} />
+    )
+
+    const button = screen.getByTestId('mock-restart-sess-1')
+    await user.click(button)
+
+    expect(onSessionRestart).toHaveBeenCalledWith('sess-1')
+    expect(onSessionRestart).toHaveBeenCalledTimes(1)
   })
 
   test('F3: alive session with restoreData renders in attach mode (no spawn)', () => {

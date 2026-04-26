@@ -481,6 +481,146 @@ describe('useSessionManager', () => {
     expect(service.setActiveSession).not.toHaveBeenCalled()
   })
 
+  // F5 (round 2): exited sessions surface a Restart affordance, but the
+  // hook had no restart path at all — the button was a silent no-op.
+  test('F5 (round 2): restartSession kills then spawns and replaces session metadata', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'exited-id',
+      sessions: [
+        {
+          id: 'exited-id',
+          cwd: '/home/user/projects/foo',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+      ],
+    })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'fresh-id',
+      pid: 4242,
+    })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions).toHaveLength(1)
+    expect(result.current.sessions[0].id).toBe('exited-id')
+    expect(result.current.sessions[0].status).toBe('completed')
+
+    act(() => result.current.restartSession('exited-id'))
+
+    // 1. kill_pty is fired against the OLD id (idempotent — Rust no-ops if
+    //    the session is already gone, which is the common case for Exited).
+    await waitFor(() =>
+      expect(service.kill).toHaveBeenCalledWith({ sessionId: 'exited-id' })
+    )
+
+    // 2. spawn fires AT THE CACHED CWD so the user lands back where they were.
+    await waitFor(() =>
+      expect(service.spawn).toHaveBeenCalledWith(
+        expect.objectContaining({ cwd: '/home/user/projects/foo' })
+      )
+    )
+
+    // Order: kill BEFORE spawn so the Rust cache slot is free for reuse.
+    const killCallOrder = (service.kill as ReturnType<typeof vi.fn>).mock
+      .invocationCallOrder[0]
+
+    const spawnCallOrder = (service.spawn as ReturnType<typeof vi.fn>).mock
+      .invocationCallOrder[0]
+
+    expect(killCallOrder).toBeLessThan(spawnCallOrder)
+
+    // 3. React state replaces the old session — id flips to fresh-id, status
+    //    flips to 'running'. The previous 'exited-id' must NOT linger.
+    await waitFor(() => {
+      expect(result.current.sessions).toHaveLength(1)
+      expect(result.current.sessions[0].id).toBe('fresh-id')
+      expect(result.current.sessions[0].status).toBe('running')
+    })
+
+    expect(result.current.sessions[0].workingDirectory).toBe(
+      '/home/user/projects/foo'
+    )
+
+    // 4. restoreData has a fresh entry under the NEW id with the new pid so
+    //    TerminalPane attaches via the spawn-attached lifecycle (no duplicate
+    //    PTY — same trick as createSession's F3 fix).
+    const restored = result.current.restoreData.get('fresh-id')
+    expect(restored).toBeDefined()
+    expect(restored!.pid).toBe(4242)
+    expect(restored!.cwd).toBe('/home/user/projects/foo')
+
+    // 5. Active id was 'exited-id'; it must move to 'fresh-id' AND echo to
+    //    Rust so reload sees the same selection.
+    expect(result.current.activeSessionId).toBe('fresh-id')
+    await waitFor(() =>
+      expect(service.setActiveSession).toHaveBeenCalledWith('fresh-id')
+    )
+  })
+
+  test('F5 (round 2): restartSession of inactive session does NOT call setActiveSession', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'alive',
+      sessions: [
+        {
+          id: 'alive',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'exited',
+          cwd: '/var',
+          status: { kind: 'Exited', last_exit_code: null },
+        },
+      ],
+    })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'fresh',
+      pid: 99,
+    })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
+
+    act(() => result.current.restartSession('exited'))
+
+    await waitFor(() => expect(service.spawn).toHaveBeenCalled())
+    // The inactive 'exited' tab restarts to 'fresh', but the active tab
+    // ('alive') stays untouched — no setActiveSession should fire.
+    expect(result.current.activeSessionId).toBe('alive')
+    expect(service.setActiveSession).not.toHaveBeenCalled()
+  })
+
+  test('F5 (round 2): restartSession on unknown id is a no-op', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: null,
+      sessions: [],
+    })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.restartSession('does-not-exist'))
+
+    // No spawn, no kill — the unknown id is logged and the function returns.
+    await waitFor(() => {
+      expect(service.spawn).not.toHaveBeenCalled()
+    })
+    expect(service.kill).not.toHaveBeenCalled()
+    expect(result.current.sessions).toHaveLength(0)
+  })
+
   test('renameSession updates session name in-memory only', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({

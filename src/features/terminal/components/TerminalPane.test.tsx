@@ -721,4 +721,33 @@ describe('TerminalPane', () => {
       })
     })
   })
+
+  // F5 (round 2): the Restart button on Exited tabs must invoke the
+  // onRestart callback with the session id. Without wiring, the button
+  // was a silent no-op even after the awaiting-restart UI shipped.
+  describe('Awaiting-restart mode', () => {
+    test('renders Restart button and fires onRestart with sessionId on click', async () => {
+      const onRestart = vi.fn()
+
+      render(
+        <TerminalPane
+          sessionId="exited-session"
+          cwd="/var"
+          mode="awaiting-restart"
+          onRestart={onRestart}
+        />
+      )
+
+      const button = await screen.findByRole('button', {
+        name: /restart session exited-session/i,
+      })
+
+      const userEvent = await import('@testing-library/user-event')
+      const user = userEvent.default.setup()
+      await user.click(button)
+
+      expect(onRestart).toHaveBeenCalledWith('exited-session')
+      expect(onRestart).toHaveBeenCalledTimes(1)
+    })
+  })
 })
