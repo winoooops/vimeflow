@@ -229,7 +229,7 @@
       "Write tests: restoreData passthrough, OSC 7 IPC, loading state",
       "Commit with message: feat(workspace): wire TerminalPane and TerminalZone to restore protocol"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [13]
   }
 ]

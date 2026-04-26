@@ -588,6 +588,28 @@ describe('TerminalPane', () => {
     })
   })
 
+  // Feature #14: Restore protocol tests
+  describe('Restored mode', () => {
+    test('passes restoredFrom prop to useTerminal', () => {
+      const restoredFrom = {
+        sessionId: 'r1',
+        cwd: '/tmp',
+        pid: 99,
+        replayData: 'X',
+        replayEndOffset: 1,
+        bufferedEvents: [],
+      }
+
+      render(
+        <TerminalPane sessionId="r1" cwd="/tmp" restoredFrom={restoredFrom} />
+      )
+
+      expect(vi.mocked(useTerminal)).toHaveBeenCalledWith(
+        expect.objectContaining({ restoredFrom })
+      )
+    })
+  })
+
   // Feature #14: OSC 7 IPC sync tests
   describe('OSC 7 handler', () => {
     test('calls service.updateSessionCwd when OSC 7 is emitted', async () => {
