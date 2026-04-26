@@ -1,7 +1,7 @@
 //! PTY session state management
 
 use portable_pty::{Child, MasterPty};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -9,6 +9,49 @@ use super::types::SessionId;
 
 /// Global generation counter — monotonically increasing across all sessions
 static GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Bounded circular byte buffer paired with a monotonic byte offset.
+///
+/// Both fields advance under the same mutex (the one wrapping `RingBuffer`
+/// inside `ManagedSession`), so a snapshot always returns `(bytes, end_offset)`
+/// where `end_offset == start_offset + bytes.len()`. Required for the
+/// replay/cursor protocol — see docs/superpowers/specs/2026-04-25-pty-reattach-on-reload-design.md
+/// "Replay Buffer + Offset Cursor".
+pub struct RingBuffer {
+    bytes: VecDeque<u8>,
+    capacity: usize,
+    end_offset: u64,
+}
+
+impl RingBuffer {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            bytes: VecDeque::with_capacity(capacity),
+            capacity,
+            end_offset: 0,
+        }
+    }
+
+    /// Append a chunk and return its starting offset (the byte index of
+    /// the first appended byte in the lifetime stream).
+    pub fn append(&mut self, chunk: &[u8]) -> u64 {
+        let chunk_start = self.end_offset;
+        self.bytes.extend(chunk.iter().copied());
+        while self.bytes.len() > self.capacity {
+            self.bytes.pop_front();
+        }
+        self.end_offset += chunk.len() as u64;
+        chunk_start
+    }
+
+    pub fn bytes_snapshot(&self) -> Vec<u8> {
+        self.bytes.iter().copied().collect()
+    }
+
+    pub fn end_offset(&self) -> u64 {
+        self.end_offset
+    }
+}
 
 /// Managed PTY session with process handle and master PTY
 pub struct ManagedSession {
@@ -23,6 +66,8 @@ pub struct ManagedSession {
     pub cwd: String,
     /// Generation counter — distinguishes old vs new session on ID reuse
     pub generation: u64,
+    /// Ring buffer for recent output + monotonic offset (replay protocol)
+    pub ring: Mutex<RingBuffer>,
 }
 
 /// Thread-safe PTY session state
@@ -191,5 +236,44 @@ mod tests {
     fn contains_returns_false_for_missing_session() {
         let state = PtyState::new();
         assert!(!state.contains(&"nonexistent".to_string()));
+    }
+
+    #[test]
+    fn ring_buffer_appends_and_advances_offset_under_one_lock() {
+        use super::RingBuffer;
+        let mut buf = RingBuffer::new(16);
+        let start1 = buf.append(b"hello");
+        assert_eq!(start1, 0);
+        assert_eq!(buf.end_offset(), 5);
+        assert_eq!(buf.bytes_snapshot(), b"hello");
+
+        let start2 = buf.append(b"world");
+        assert_eq!(start2, 5);
+        assert_eq!(buf.end_offset(), 10);
+        assert_eq!(buf.bytes_snapshot(), b"helloworld");
+    }
+
+    #[test]
+    fn ring_buffer_truncates_from_front_at_capacity() {
+        use super::RingBuffer;
+        let mut buf = RingBuffer::new(8);
+        buf.append(b"abcdefgh"); // exactly capacity
+        assert_eq!(buf.bytes_snapshot(), b"abcdefgh");
+        assert_eq!(buf.end_offset(), 8);
+
+        buf.append(b"ij"); // overflows by 2
+        assert_eq!(buf.bytes_snapshot(), b"cdefghij");
+        assert_eq!(buf.end_offset(), 10); // total bytes ever, not buffer bytes
+    }
+
+    #[test]
+    fn ring_buffer_end_offset_continues_past_truncation() {
+        use super::RingBuffer;
+        let mut buf = RingBuffer::new(4);
+        for _ in 0..10 {
+            buf.append(b"xy");
+        }
+        assert_eq!(buf.end_offset(), 20);
+        assert_eq!(buf.bytes_snapshot().len(), 4);
     }
 }

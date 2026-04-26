@@ -225,6 +225,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         child,
         cwd: cwd.to_string_lossy().to_string(),
         generation,
+        ring: std::sync::Mutex::new(crate::terminal::state::RingBuffer::new(65536)),
     };
     state.insert(request.session_id.clone(), session);
     debug_log(
