@@ -324,7 +324,9 @@ describe('useSessionManager', () => {
 
     await waitFor(() => expect(service.spawn).toHaveBeenCalled())
     // Active id flips to the new tab, both in React state and in the cache IPC.
-    expect(result.current.activeSessionId).toBe('new-tab')
+    // Wrap in waitFor — the active id updates AFTER spawn resolves and React
+    // flushes the setSessions/setActiveSessionIdState batch.
+    await waitFor(() => expect(result.current.activeSessionId).toBe('new-tab'))
     await waitFor(() =>
       expect(service.setActiveSession).toHaveBeenCalledWith('new-tab')
     )
