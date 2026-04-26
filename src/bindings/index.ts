@@ -11,6 +11,12 @@ export type { KillPtyRequest } from './KillPtyRequest'
 export type { PtyDataEvent } from './PtyDataEvent'
 export type { PtyExitEvent } from './PtyExitEvent'
 export type { PtyErrorEvent } from './PtyErrorEvent'
+export type { SessionList } from './SessionList'
+export type { SessionInfo } from './SessionInfo'
+export type { SessionStatus } from './SessionStatus'
+export type { SetActiveSessionRequest } from './SetActiveSessionRequest'
+export type { ReorderSessionsRequest } from './ReorderSessionsRequest'
+export type { UpdateSessionCwdRequest } from './UpdateSessionCwdRequest'
 
 // Filesystem types
 export type { ListDirRequest } from './ListDirRequest'

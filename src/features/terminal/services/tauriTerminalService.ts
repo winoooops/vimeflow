@@ -13,6 +13,10 @@ import type {
   PtyDataEvent,
   PtyExitEvent,
   PtyErrorEvent,
+  SessionList,
+  SetActiveSessionRequest,
+  ReorderSessionsRequest,
+  UpdateSessionCwdRequest,
 } from '../../../bindings'
 import type { ITerminalService } from './terminalService'
 
@@ -23,7 +27,11 @@ import type { ITerminalService } from './terminalService'
  * Events (listen): pty-data, pty-exit, pty-error
  */
 export class TauriTerminalService implements ITerminalService {
-  private dataCallbacks: ((sessionId: string, data: string) => void)[] = []
+  private dataCallbacks: ((
+    sessionId: string,
+    data: string,
+    offsetStart: number
+  ) => void)[] = []
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
   private errorCallbacks: ((sessionId: string, message: string) => void)[] = []
@@ -42,8 +50,13 @@ export class TauriTerminalService implements ITerminalService {
     this.initialized = true
 
     const unlistenData = await listen<PtyDataEvent>('pty-data', (event) => {
-      const { sessionId, data } = event.payload
-      this.dataCallbacks.forEach((cb) => cb(sessionId, data))
+      const { sessionId, data, offsetStart } = event.payload
+
+      // PtyDataEvent.offset_start is u64 — bindings may emit as bigint or number.
+      // Coerce to number; safe up to 2^53 = ~9 PB per session.
+      const offset =
+        typeof offsetStart === 'bigint' ? Number(offsetStart) : offsetStart
+      this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset))
     })
 
     const unlistenExit = await listen<PtyExitEvent>('pty-exit', (event) => {
@@ -110,7 +123,9 @@ export class TauriTerminalService implements ITerminalService {
     })
   }
 
-  onData(callback: (sessionId: string, data: string) => void): () => void {
+  onData(
+    callback: (sessionId: string, data: string, offsetStart: number) => void
+  ): () => void {
     this.dataCallbacks.push(callback)
     void this.ensureListeners()
 
@@ -158,5 +173,27 @@ export class TauriTerminalService implements ITerminalService {
     this.exitCallbacks = []
     this.errorCallbacks = []
     this.initialized = false
+  }
+
+  async listSessions(): Promise<SessionList> {
+    return invoke<SessionList>('list_sessions')
+  }
+
+  async setActiveSession(id: string): Promise<void> {
+    await invoke('set_active_session', {
+      request: { id } satisfies SetActiveSessionRequest,
+    })
+  }
+
+  async reorderSessions(ids: string[]): Promise<void> {
+    await invoke('reorder_sessions', {
+      request: { ids } satisfies ReorderSessionsRequest,
+    })
+  }
+
+  async updateSessionCwd(id: string, cwd: string): Promise<void> {
+    await invoke('update_session_cwd', {
+      request: { id, cwd } satisfies UpdateSessionCwdRequest,
+    })
   }
 }

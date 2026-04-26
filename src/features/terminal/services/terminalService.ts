@@ -5,6 +5,7 @@ import type {
   PTYResizeParams,
   PTYKillParams,
 } from '../types'
+import type { SessionList } from '../../../bindings'
 import { isTauri } from '../../../lib/environment'
 import { TauriTerminalService } from './tauriTerminalService'
 
@@ -33,9 +34,12 @@ export interface ITerminalService {
   kill(params: PTYKillParams): Promise<void>
 
   /**
-   * Subscribe to PTY data events
+   * Subscribe to PTY data events. Callback receives the chunk's starting
+   * byte offset for cursor-based dedupe during reattach.
    */
-  onData(callback: (sessionId: string, data: string) => void): () => void
+  onData(
+    callback: (sessionId: string, data: string, offsetStart: number) => void
+  ): () => void
 
   /**
    * Subscribe to PTY exit events
@@ -46,6 +50,26 @@ export interface ITerminalService {
    * Subscribe to PTY error events
    */
   onError(callback: (sessionId: string, message: string) => void): () => void
+
+  /**
+   * List all sessions with their status (Alive or Exited)
+   */
+  listSessions(): Promise<SessionList>
+
+  /**
+   * Set the active session ID
+   */
+  setActiveSession(id: string): Promise<void>
+
+  /**
+   * Reorder the session list
+   */
+  reorderSessions(ids: string[]): Promise<void>
+
+  /**
+   * Update the current working directory for a session
+   */
+  updateSessionCwd(id: string, cwd: string): Promise<void>
 }
 
 /**
@@ -58,7 +82,11 @@ export class MockTerminalService implements ITerminalService {
     string,
     { pid: number; running: boolean; inputBuffer: string }
   >()
-  private dataCallbacks: ((sessionId: string, data: string) => void)[] = []
+  private dataCallbacks: ((
+    sessionId: string,
+    data: string,
+    offsetStart: number
+  ) => void)[] = []
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
   private errorCallbacks: ((sessionId: string, message: string) => void)[] = []
@@ -187,7 +215,9 @@ export class MockTerminalService implements ITerminalService {
     return Promise.resolve()
   }
 
-  onData(callback: (sessionId: string, data: string) => void): () => void {
+  onData(
+    callback: (sessionId: string, data: string, offsetStart: number) => void
+  ): () => void {
     this.dataCallbacks.push(callback)
 
     return () => {
@@ -224,7 +254,8 @@ export class MockTerminalService implements ITerminalService {
 
   // Test helpers
   emitData(sessionId: string, data: string): void {
-    this.dataCallbacks.forEach((cb) => cb(sessionId, data))
+    // offsetStart = 0 for mock emissions (not load-bearing in tests)
+    this.dataCallbacks.forEach((cb) => cb(sessionId, data, 0))
   }
 
   emitExit(sessionId: string, code: number | null): void {
@@ -257,6 +288,32 @@ export class MockTerminalService implements ITerminalService {
   // Get active sessions for testing
   getActiveSessions(): string[] {
     return Array.from(this.sessions.keys())
+  }
+
+  listSessions(): Promise<SessionList> {
+    // Mock returns empty session list
+    return Promise.resolve({
+      activeSessionId: null,
+      sessions: [],
+    })
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  setActiveSession(_id: string): Promise<void> {
+    // Mock no-op
+    return Promise.resolve()
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  reorderSessions(_ids: string[]): Promise<void> {
+    // Mock no-op
+    return Promise.resolve()
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  updateSessionCwd(_id: string, _cwd: string): Promise<void> {
+    // Mock no-op
+    return Promise.resolve()
   }
 }
 

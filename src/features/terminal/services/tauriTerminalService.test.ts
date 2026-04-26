@@ -155,9 +155,10 @@ describe('TauriTerminalService', () => {
       emitTauriEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'hello world',
+        offsetStart: 0,
       })
 
-      expect(callback).toHaveBeenCalledWith('sess-1', 'hello world')
+      expect(callback).toHaveBeenCalledWith('sess-1', 'hello world', 0)
     })
 
     test('onExit delivers pty-exit events to callback', async () => {
@@ -219,10 +220,11 @@ describe('TauriTerminalService', () => {
       emitTauriEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'broadcast',
+        offsetStart: 100,
       })
 
-      expect(cb1).toHaveBeenCalledWith('sess-1', 'broadcast')
-      expect(cb2).toHaveBeenCalledWith('sess-1', 'broadcast')
+      expect(cb1).toHaveBeenCalledWith('sess-1', 'broadcast', 100)
+      expect(cb2).toHaveBeenCalledWith('sess-1', 'broadcast', 100)
     })
   })
 
@@ -240,6 +242,108 @@ describe('TauriTerminalService', () => {
       })
 
       expect(callback).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Session Management', () => {
+    test('listSessions invokes list_sessions IPC', async () => {
+      const mockInvoke = vi.fn().mockResolvedValue({
+        activeSessionId: 'a',
+        sessions: [],
+      })
+      vi.mocked(invoke).mockImplementation(mockInvoke)
+
+      const testService = new TauriTerminalService()
+      const result = await testService.listSessions()
+
+      expect(mockInvoke).toHaveBeenCalledWith('list_sessions')
+      expect(result.activeSessionId).toBe('a')
+    })
+
+    test('setActiveSession invokes set_active_session with id', async () => {
+      const mockInvoke = vi.fn().mockResolvedValue(undefined)
+      vi.mocked(invoke).mockImplementation(mockInvoke)
+
+      const testService = new TauriTerminalService()
+      await testService.setActiveSession('xyz')
+
+      expect(mockInvoke).toHaveBeenCalledWith('set_active_session', {
+        request: { id: 'xyz' },
+      })
+    })
+
+    test('reorderSessions invokes reorder_sessions with ids', async () => {
+      const mockInvoke = vi.fn().mockResolvedValue(undefined)
+      vi.mocked(invoke).mockImplementation(mockInvoke)
+
+      const testService = new TauriTerminalService()
+      await testService.reorderSessions(['a', 'b'])
+
+      expect(mockInvoke).toHaveBeenCalledWith('reorder_sessions', {
+        request: { ids: ['a', 'b'] },
+      })
+    })
+
+    test('updateSessionCwd invokes update_session_cwd with id and cwd', async () => {
+      const mockInvoke = vi.fn().mockResolvedValue(undefined)
+      vi.mocked(invoke).mockImplementation(mockInvoke)
+
+      const testService = new TauriTerminalService()
+      await testService.updateSessionCwd('s1', '/tmp')
+
+      expect(mockInvoke).toHaveBeenCalledWith('update_session_cwd', {
+        request: { id: 's1', cwd: '/tmp' },
+      })
+    })
+
+    test('onData callback receives offsetStart from pty-data event', async () => {
+      const captured: {
+        sessionId: string
+        data: string
+        offsetStart: number
+      }[] = []
+      const testService = new TauriTerminalService()
+      testService.onData((sessionId, data, offsetStart) => {
+        captured.push({ sessionId, data, offsetStart })
+      })
+
+      await mockSpawnAndInit(testService)
+
+      // Emit pty-data event with offsetStart as bigint (common Rust u64 binding)
+      emitTauriEvent('pty-data', {
+        sessionId: 'sess-1',
+        data: 'test',
+        offsetStart: BigInt(42),
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(captured).toHaveLength(1)
+      expect(captured[0].sessionId).toBe('sess-1')
+      expect(captured[0].data).toBe('test')
+      expect(captured[0].offsetStart).toBe(42)
+    })
+
+    test('onData coerces bigint offsetStart to number', async () => {
+      const captured: number[] = []
+      const testService = new TauriTerminalService()
+      testService.onData((_sessionId, _data, offsetStart) => {
+        captured.push(offsetStart)
+      })
+
+      await mockSpawnAndInit(testService)
+
+      // Emit with bigint
+      emitTauriEvent('pty-data', {
+        sessionId: 'sess-1',
+        data: 'test',
+        offsetStart: BigInt(1024),
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(captured[0]).toBe(1024)
+      expect(typeof captured[0]).toBe('number')
     })
   })
 })

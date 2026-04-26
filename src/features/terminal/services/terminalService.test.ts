@@ -58,7 +58,7 @@ describe('MockTerminalService', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 150))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, '$ ')
+      expect(onData).toHaveBeenCalledWith(sessionId, '$ ', 0)
     })
   })
 
@@ -75,9 +75,9 @@ describe('MockTerminalService', () => {
       await service.write({ sessionId, data: 'hello' })
 
       // Per-character processing: each char emitted separately
-      expect(onData).toHaveBeenCalledWith(sessionId, 'h')
-      expect(onData).toHaveBeenCalledWith(sessionId, 'e')
-      expect(onData).toHaveBeenCalledWith(sessionId, 'o')
+      expect(onData).toHaveBeenCalledWith(sessionId, 'h', 0)
+      expect(onData).toHaveBeenCalledWith(sessionId, 'e', 0)
+      expect(onData).toHaveBeenCalledWith(sessionId, 'o', 0)
       expect(onData).toHaveBeenCalledTimes(5)
     })
 
@@ -98,7 +98,7 @@ describe('MockTerminalService', () => {
       await service.write({ sessionId, data: '\r' })
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, 'hello\r\n$ ')
+      expect(onData).toHaveBeenCalledWith(sessionId, 'hello\r\n$ ', 0)
     })
 
     test('simulates pwd command output on Enter', async () => {
@@ -117,7 +117,7 @@ describe('MockTerminalService', () => {
       await service.write({ sessionId, data: '\r' })
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, '/home/user\r\n$ ')
+      expect(onData).toHaveBeenCalledWith(sessionId, '/home/user\r\n$ ', 0)
     })
 
     test('handles backspace by removing last buffered character', async () => {
@@ -136,7 +136,7 @@ describe('MockTerminalService', () => {
       // Backspace should erase the character
       await service.write({ sessionId, data: '\x7f' })
 
-      expect(onData).toHaveBeenCalledWith(sessionId, '\b \b')
+      expect(onData).toHaveBeenCalledWith(sessionId, '\b \b', 0)
     })
 
     test('ignores backspace on empty buffer', async () => {
@@ -270,7 +270,7 @@ describe('MockTerminalService', () => {
 
       service.emitData(sessionId, 'test data')
 
-      expect(callback).toHaveBeenCalledWith(sessionId, 'test data')
+      expect(callback).toHaveBeenCalledWith(sessionId, 'test data', 0)
 
       unsubscribe()
     })

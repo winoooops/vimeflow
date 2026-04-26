@@ -212,7 +212,12 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       return
     }
 
-    const handleData = (eventSessionId: string, data: string): void => {
+    const handleData = (
+      eventSessionId: string,
+      data: string,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      _offsetStart: number
+    ): void => {
       if (eventSessionId === session.id && isMountedRef.current) {
         terminal.write(data)
       }

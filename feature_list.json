@@ -174,7 +174,7 @@
       "Add tests to tauriTerminalService.test.ts for each new method + onData offset propagation",
       "Commit with message: feat(terminal): update terminalService with new IPC methods and offset_start"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [10]
   },
   {
