@@ -11,5 +11,13 @@ pub mod state;
 pub mod test_commands;
 pub mod types;
 
-pub use commands::*;
+pub use cache::SessionCache;
+pub use commands::{
+    kill_pty, list_sessions, reorder_sessions, resize_pty, set_active_session, spawn_pty,
+    update_session_cwd, write_pty,
+};
 pub use state::PtyState;
+pub use types::{
+    ReorderSessionsRequest, SessionInfo, SessionList, SessionStatus, SetActiveSessionRequest,
+    UpdateSessionCwdRequest,
+};

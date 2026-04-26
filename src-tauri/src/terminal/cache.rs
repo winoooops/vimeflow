@@ -68,6 +68,23 @@ impl SessionCache {
         })
     }
 
+    /// Load from disk; if corrupted, move aside and start empty.
+    /// Never panics; always returns a valid cache.
+    pub fn load_or_recover(path: PathBuf) -> Self {
+        match Self::load(path.clone()) {
+            Ok(cache) => cache,
+            Err(e) => {
+                log::warn!("cache load failed ({e}); moving aside and starting empty");
+                let backup = path.with_extension(format!(
+                    "json.corrupt-{}",
+                    chrono::Utc::now().format("%Y%m%d%H%M%S")
+                ));
+                let _ = std::fs::rename(&path, &backup);
+                Self::load(path).expect("empty cache load should never fail")
+            }
+        }
+    }
+
     /// Snapshot the in-memory mirror.
     pub fn snapshot(&self) -> SessionCacheData {
         self.data.lock().expect("cache mutex poisoned").clone()
@@ -204,5 +221,24 @@ mod tests {
             let snap = cache.snapshot();
             assert_eq!(snap.session_order, vec!["uuid-a".to_string()]);
         }
+    }
+
+    #[test]
+    fn load_or_recover_moves_corrupt_aside() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("sessions.json");
+        std::fs::write(&path, b"corrupt!").unwrap();
+
+        let cache = SessionCache::load_or_recover(path.clone());
+        let snap = cache.snapshot();
+        assert_eq!(snap.session_order.len(), 0);
+
+        // Backup file exists
+        let entries: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains("corrupt-"))
+            .collect();
+        assert_eq!(entries.len(), 1, "expected one .corrupt-* backup");
     }
 }

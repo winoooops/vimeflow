@@ -143,7 +143,7 @@
       "Write test: load_or_recover_moves_corrupt_aside",
       "Commit with message: feat(terminal): register session management commands and cache in lib.rs"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [8]
   },
   {

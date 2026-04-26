@@ -11,7 +11,10 @@ use filesystem::{list_dir, read_file, write_file};
 use git::{get_git_diff, git_status, watcher::{start_git_watcher, stop_git_watcher, GitWatcherState}};
 use std::sync::Arc;
 use tauri::Manager;
-use terminal::{cache::SessionCache, kill_pty, resize_pty, spawn_pty, write_pty, PtyState};
+use terminal::{
+    cache::SessionCache, kill_pty, list_sessions, reorder_sessions, resize_pty,
+    set_active_session, spawn_pty, update_session_cwd, write_pty, PtyState,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -28,13 +31,8 @@ pub fn run() {
             // Initialize session cache in app_data_dir
             let app_data_dir = app.path().app_data_dir().expect("failed to get app_data_dir");
             let cache_path = app_data_dir.join("sessions.json");
-            let cache = SessionCache::load(cache_path)
-                .map_err(|e| {
-                    log::error!("Failed to load session cache: {}", e);
-                    e
-                })
-                .expect("session cache load failed");
-            app.manage(Arc::new(cache));
+            let cache = Arc::new(SessionCache::load_or_recover(cache_path));
+            app.manage(cache);
 
             Ok(())
         })
@@ -49,6 +47,10 @@ pub fn run() {
         write_pty,
         resize_pty,
         kill_pty,
+        list_sessions,
+        set_active_session,
+        reorder_sessions,
+        update_session_cwd,
         detect_agent_in_session,
         start_agent_watcher,
         stop_agent_watcher,
@@ -69,6 +71,10 @@ pub fn run() {
         write_pty,
         resize_pty,
         kill_pty,
+        list_sessions,
+        set_active_session,
+        reorder_sessions,
+        update_session_cwd,
         detect_agent_in_session,
         start_agent_watcher,
         stop_agent_watcher,
