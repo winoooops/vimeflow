@@ -7,11 +7,12 @@ import { mockSessions } from '../data/mockSessions'
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../../terminal/components/TerminalPane', () => ({
-  TerminalPane: vi.fn(({ sessionId, cwd }) => (
+  TerminalPane: vi.fn(({ sessionId, cwd, restoredFrom }) => (
     <div
       data-testid="terminal-pane-mock"
       data-session-id={sessionId}
       data-cwd={cwd}
+      data-restored={restoredFrom ? 'true' : 'false'}
     >
       Mocked TerminalPane
     </div>
@@ -357,5 +358,54 @@ describe('TerminalZone', () => {
 
     expect(updatedSession1Pane).toHaveClass('hidden')
     expect(updatedSession2Pane).not.toHaveClass('hidden')
+  })
+
+  // Feature #14: Restore protocol tests
+  test('shows loading state when loading=true', () => {
+    render(<TerminalZone {...defaultProps} loading />)
+
+    expect(screen.getByText(/restoring sessions/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('terminal-pane-mock')).not.toBeInTheDocument()
+  })
+
+  test('passes restoreData to TerminalPane for each session', () => {
+    const restoreData = new Map([
+      [
+        'sess-1',
+        {
+          sessionId: 'sess-1',
+          cwd: '/tmp',
+          pid: 123,
+          replayData: 'AAA',
+          replayEndOffset: 3,
+          bufferedEvents: [],
+        },
+      ],
+    ])
+
+    render(<TerminalZone {...defaultProps} restoreData={restoreData} />)
+
+    const mockPanes = screen.getAllByTestId('terminal-pane-mock')
+
+    const restoredPane = mockPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-1'
+    )
+
+    const normalPane = mockPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-2'
+    )
+
+    expect(restoredPane).toHaveAttribute('data-restored', 'true')
+    expect(normalPane).toHaveAttribute('data-restored', 'false')
+  })
+
+  test('does not pass restoreData when not provided', () => {
+    render(<TerminalZone {...defaultProps} />)
+
+    const mockPanes = screen.getAllByTestId('terminal-pane-mock')
+
+    mockPanes.forEach((pane) => {
+      expect(pane).toHaveAttribute('data-restored', 'false')
+    })
   })
 })

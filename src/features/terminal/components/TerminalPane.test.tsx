@@ -587,4 +587,112 @@ describe('TerminalPane', () => {
       })
     })
   })
+
+  // Feature #14: OSC 7 IPC sync tests
+  describe('OSC 7 handler', () => {
+    test('calls service.updateSessionCwd when OSC 7 is emitted', async () => {
+      const mockService = {
+        spawn: vi.fn().mockResolvedValue({ sessionId: 'pty-1', pid: 123 }),
+        write: vi.fn().mockResolvedValue(undefined),
+        resize: vi.fn().mockResolvedValue(undefined),
+        kill: vi.fn().mockResolvedValue(undefined),
+        updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        onData: vi.fn(() => (): void => {}),
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        onExit: vi.fn(() => (): void => {}),
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        onError: vi.fn(() => (): void => {}),
+        listSessions: vi.fn().mockResolvedValue({
+          activeSessionId: null,
+          sessions: [],
+        }),
+        setActiveSession: vi.fn().mockResolvedValue(undefined),
+        reorderSessions: vi.fn().mockResolvedValue(undefined),
+      }
+
+      render(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={mockService}
+        />
+      )
+
+      await waitFor(() => {
+        expect(mockTerminal.parser.registerOscHandler).toHaveBeenCalledWith(
+          7,
+          expect.any(Function)
+        )
+      })
+
+      // Get the OSC 7 handler
+      const oscHandler = vi.mocked(mockTerminal.parser.registerOscHandler).mock
+        .calls[0]?.[1]
+
+      // Simulate OSC 7 emission: file://hostname/path/to/dir
+      ;(oscHandler as ((data: string) => void) | undefined)?.(
+        'file://localhost/home/user/projects'
+      )
+
+      await waitFor(() => {
+        expect(mockService.updateSessionCwd).toHaveBeenCalledWith(
+          'test-session',
+          '/home/user/projects'
+        )
+      })
+    })
+
+    test('calls onCwdChange callback after IPC sync', async () => {
+      const mockService = {
+        spawn: vi.fn().mockResolvedValue({ sessionId: 'pty-1', pid: 123 }),
+        write: vi.fn().mockResolvedValue(undefined),
+        resize: vi.fn().mockResolvedValue(undefined),
+        kill: vi.fn().mockResolvedValue(undefined),
+        updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        onData: vi.fn(() => (): void => {}),
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        onExit: vi.fn(() => (): void => {}),
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        onError: vi.fn(() => (): void => {}),
+        listSessions: vi.fn().mockResolvedValue({
+          activeSessionId: null,
+          sessions: [],
+        }),
+        setActiveSession: vi.fn().mockResolvedValue(undefined),
+        reorderSessions: vi.fn().mockResolvedValue(undefined),
+      }
+
+      const onCwdChange = vi.fn()
+
+      render(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={mockService}
+          onCwdChange={onCwdChange}
+        />
+      )
+
+      await waitFor(() => {
+        expect(mockTerminal.parser.registerOscHandler).toHaveBeenCalled()
+      })
+
+      const oscHandler = vi.mocked(mockTerminal.parser.registerOscHandler).mock
+        .calls[0]?.[1]
+
+      ;(oscHandler as ((data: string) => void) | undefined)?.(
+        'file://localhost/tmp'
+      )
+
+      await waitFor(() => {
+        expect(mockService.updateSessionCwd).toHaveBeenCalledWith(
+          'test-session',
+          '/tmp'
+        )
+        expect(onCwdChange).toHaveBeenCalledWith('/tmp')
+      })
+    })
+  })
 })
