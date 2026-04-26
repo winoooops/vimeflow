@@ -267,6 +267,77 @@ describe('useSessionManager', () => {
     expect(restored!.replayEndOffset).toBe(0)
     // service.spawn called exactly once (not twice).
     expect(service.spawn).toHaveBeenCalledTimes(1)
+
+    // F4 regression: createSession must persist the new active id and the
+    // updated session_order to the cache. spawn_pty only auto-promotes
+    // active when cache.active_session_id was null, and appends to
+    // session_order — so without these IPC calls, reload comes back with
+    // the OLD active tab and the wrong order.
+    await waitFor(() =>
+      expect(service.setActiveSession).toHaveBeenCalledWith('new-id')
+    )
+
+    await waitFor(() =>
+      expect(service.reorderSessions).toHaveBeenCalledWith(['new-id'])
+    )
+  })
+
+  // F4 specific: with existing tabs, the new tab must be PREPENDED in the
+  // reorderSessions call (matching the React-state insertion order so cache
+  // and view agree on the post-create arrangement).
+  test('F4: createSession persists prepended order to cache when other tabs exist', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'existing-1',
+      sessions: [
+        {
+          id: 'existing-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 100,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'existing-2',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 200,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'new-tab', pid: 999 })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.createSession())
+
+    await waitFor(() => expect(service.spawn).toHaveBeenCalled())
+    // Active id flips to the new tab, both in React state and in the cache IPC.
+    expect(result.current.activeSessionId).toBe('new-tab')
+    await waitFor(() =>
+      expect(service.setActiveSession).toHaveBeenCalledWith('new-tab')
+    )
+
+    // Order: new tab first (matches the [newSession, ...prev] prepend),
+    // then the two existing tabs in their original order.
+    await waitFor(() =>
+      expect(service.reorderSessions).toHaveBeenCalledWith([
+        'new-tab',
+        'existing-1',
+        'existing-2',
+      ])
+    )
   })
 
   test('removeSession kills PTY and filters from state', async () => {

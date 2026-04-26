@@ -334,12 +334,42 @@ export const useSessionManager = (
         setSessions((prev) => [newSession, ...prev])
         setActiveSessionIdState(result.sessionId)
         registerPtySession(result.sessionId, result.sessionId, '~')
+
+        // F4 fix: persist the new tab's order + selection back to the cache
+        // so reload restores them. spawn_pty only promotes-to-active when the
+        // cache had no active session, and appends to the end of session_order.
+        // The frontend prepends new tabs (line 334 above) and treats the new
+        // tab as the active one — so without these IPC calls the cache and
+        // the React state diverge: reload comes back with the OLD active tab
+        // and the wrong order.
+        //
+        // Build the new ordered id list from the same prev value setSessions
+        // saw — the new tab at the front, every existing session after.
+        const newOrder = [result.sessionId, ...sessions.map((s) => s.id)]
+        try {
+          await service.setActiveSession(result.sessionId)
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            'createSession: setActiveSession IPC failed (cache active id will lag)',
+            err
+          )
+        }
+        try {
+          await service.reorderSessions(newOrder)
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            'createSession: reorderSessions IPC failed (cache order will lag)',
+            err
+          )
+        }
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn('spawn failed', err)
       }
     })()
-  }, [restoreData, service, sessions.length])
+  }, [restoreData, service, sessions])
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(
