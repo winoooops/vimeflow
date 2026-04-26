@@ -603,6 +603,75 @@ describe('useSessionManager', () => {
     expect(service.setActiveSession).not.toHaveBeenCalled()
   })
 
+  // Round 3, Finding 2 (codex P1): kill_pty in Rust REMOVES the old id from
+  // cache.session_order and spawn_pty APPENDS the new id. Without an
+  // explicit reorderSessions IPC, a restarted MIDDLE tab persists as
+  // [A, C, fresh] in cache.session_order while the live UI shows
+  // [A, fresh, C]. After a reload the restored order would diverge.
+  test('F5 (round 3): restartSession persists the new tab order via reorderSessions', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp/a',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'b',
+          cwd: '/tmp/b',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+        {
+          id: 'c',
+          cwd: '/tmp/c',
+          status: {
+            kind: 'Alive',
+            pid: 3,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'fresh',
+      pid: 99,
+    })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions.map((s) => s.id)).toEqual(['a', 'b', 'c'])
+    // Clear any IPC calls from listSessions / restore.
+    ;(service.reorderSessions as ReturnType<typeof vi.fn>).mockClear()
+
+    act(() => result.current.restartSession('b'))
+
+    // React state replaces 'b' in place — the order is preserved.
+    await waitFor(() =>
+      expect(result.current.sessions.map((s) => s.id)).toEqual([
+        'a',
+        'fresh',
+        'c',
+      ])
+    )
+
+    // Rust cache must learn the in-memory order [a, fresh, c] — otherwise
+    // kill+spawn would leave session_order at [a, c, fresh] and a reload
+    // would render the tabs in the wrong order.
+    await waitFor(() =>
+      expect(service.reorderSessions).toHaveBeenCalledWith(['a', 'fresh', 'c'])
+    )
+  })
+
   test('F5 (round 2): restartSession on unknown id is a no-op', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({

@@ -616,6 +616,16 @@ export const useSessionManager = (
         // setSessions updater so it races correctly against any concurrent
         // create/remove operations. Preserve the in-memory position by
         // mapping over `prev` rather than filter+push.
+        //
+        // Round 3, Finding 2 (codex P1): also fire reorderSessions IPC from
+        // inside the updater. Without this, kill_pty in Rust REMOVES the
+        // old id from cache.session_order and spawn_pty APPENDS the
+        // replacement id at the end, so a restarted middle tab would render
+        // as `[A, fresh, C]` in the live UI but persist as
+        // `[A, C, fresh]` in cache.session_order. After a reload the
+        // restored order would diverge from the live UI. Same pattern as
+        // round-2 F4's createSession fix: derive the persisted order from
+        // `next` (latest state) inside setSessions and fire the IPC there.
         setSessions((prev) => {
           const idx = prev.findIndex((s) => s.id === id)
           if (idx === -1) {
@@ -635,6 +645,21 @@ export const useSessionManager = (
             // workingDirectory unchanged — restart preserves cwd by spec
             lastActivityAt: new Date().toISOString(),
           }
+
+          // Push the post-restart order back to Rust so cache.session_order
+          // reflects the in-memory position (not the kill-removes-then-
+          // spawn-appends order Rust would otherwise end up with). Fire
+          // inside the updater so the payload always derives from the
+          // latest state — same race-safety pattern as createSession (F4).
+          const newOrder = next.map((s) => s.id)
+          // eslint-disable-next-line promise/prefer-await-to-then
+          service.reorderSessions(newOrder).catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn(
+              'restartSession: reorderSessions IPC failed (cache order will lag)',
+              err
+            )
+          })
 
           return next
         })
