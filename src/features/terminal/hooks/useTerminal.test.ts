@@ -724,6 +724,8 @@ describe('useTerminal', () => {
 
       vi.mocked(mockTerminal.write).mockClear()
 
+      // Cursor was advanced past 'AT_CURSOR' (9 bytes, so cursor=109).
+      // Choose an offset past that range for the next write to land.
       // Emit live event above cursor
       mockService.emit('data', {
         sessionId: 'session-1',
@@ -732,6 +734,88 @@ describe('useTerminal', () => {
       })
 
       expect(mockTerminal.write).toHaveBeenCalledWith('ABOVE_CURSOR')
+    })
+  })
+
+  // F3 regression: explicit `mode` prop must override the legacy
+  // "spawn unless restoredFrom is set" inference. Two pinned behaviors:
+  //  - mode='awaiting-restart' MUST NOT call service.spawn (no resurrection)
+  //  - mode='attach' without restoredFrom MUST surface as an error,
+  //    not silently fall through to spawn
+  describe('Mode prop (Codex F3)', () => {
+    test('mode=awaiting-restart does not call service.spawn', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          mode: 'awaiting-restart',
+        })
+      )
+
+      // Wait long enough that an async spawn would have fired.
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(mockService.spawn).not.toHaveBeenCalled()
+      expect(result.current.session).toBeNull()
+      expect(result.current.status).toBe('idle')
+    })
+
+    test('mode=attach with restoredFrom does not call service.spawn', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          mode: 'attach',
+          restoredFrom: {
+            sessionId: 'r1',
+            cwd: '/tmp',
+            pid: 42,
+            replayData: '',
+            replayEndOffset: 0,
+            bufferedEvents: [],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+      })
+
+      expect(mockService.spawn).not.toHaveBeenCalled()
+      expect(result.current.session?.id).toBe('r1')
+      expect(result.current.session?.pid).toBe(42)
+    })
+
+    test('mode=attach without restoredFrom surfaces as error (no silent spawn)', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          mode: 'attach',
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('error')
+      })
+
+      expect(mockService.spawn).not.toHaveBeenCalled()
+      expect(result.current.error).toBe('attach mode requires restoredFrom')
+    })
+
+    test('mode=spawn calls service.spawn (legacy default behavior preserved)', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          mode: 'spawn',
+        })
+      )
+
+      await waitFor(() => {
+        expect(mockService.spawn).toHaveBeenCalledOnce()
+      })
+      expect(result.current.status).toBe('running')
     })
   })
 })

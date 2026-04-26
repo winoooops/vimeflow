@@ -7,12 +7,13 @@ import { mockSessions } from '../data/mockSessions'
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../../terminal/components/TerminalPane', () => ({
-  TerminalPane: vi.fn(({ sessionId, cwd, restoredFrom }) => (
+  TerminalPane: vi.fn(({ sessionId, cwd, restoredFrom, mode }) => (
     <div
       data-testid="terminal-pane-mock"
       data-session-id={sessionId}
       data-cwd={cwd}
       data-restored={restoredFrom ? 'true' : 'false'}
+      data-mode={mode}
     >
       Mocked TerminalPane
     </div>
@@ -406,6 +407,92 @@ describe('TerminalZone', () => {
 
     mockPanes.forEach((pane) => {
       expect(pane).toHaveAttribute('data-restored', 'false')
+    })
+  })
+
+  // F3 regression: Exited (status='completed') sessions must NOT trigger
+  // a spawn — they go to awaiting-restart so the user explicitly opts in.
+  // Previously TerminalPane inferred from `restoredFrom===undefined` and
+  // resurrected dead sessions on the next reload.
+  test('F3 regression: Exited session renders in awaiting-restart mode', () => {
+    const aliveAndExited = [
+      // Use the mockSessions shape from the test file but override status
+      { ...mockSessions[0], id: 'alive', status: 'running' as const },
+      { ...mockSessions[0], id: 'exited', status: 'completed' as const },
+    ]
+
+    const restoreData = new Map([
+      [
+        'alive',
+        {
+          sessionId: 'alive',
+          cwd: '/tmp',
+          pid: 1,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [],
+        },
+      ],
+    ])
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={aliveAndExited}
+        activeSessionId="alive"
+        restoreData={restoreData}
+      />
+    )
+
+    const mockPanes = screen.getAllByTestId('terminal-pane-mock')
+
+    const alivePane = mockPanes.find(
+      (p) => p.getAttribute('data-session-id') === 'alive'
+    )
+
+    const exitedPane = mockPanes.find(
+      (p) => p.getAttribute('data-session-id') === 'exited'
+    )
+
+    expect(alivePane).toHaveAttribute('data-mode', 'attach')
+    // Exited session must NOT be in spawn or attach mode — would resurrect
+    // the PTY. Awaiting-restart waits for explicit user opt-in.
+    expect(exitedPane).toHaveAttribute('data-mode', 'awaiting-restart')
+  })
+
+  test('F3: alive session with restoreData renders in attach mode (no spawn)', () => {
+    const restoreData = new Map([
+      [
+        'sess-1',
+        {
+          sessionId: 'sess-1',
+          cwd: '/tmp',
+          pid: 1,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [],
+        },
+      ],
+      [
+        'sess-2',
+        {
+          sessionId: 'sess-2',
+          cwd: '/tmp',
+          pid: 2,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [],
+        },
+      ],
+    ])
+
+    render(<TerminalZone {...defaultProps} restoreData={restoreData} />)
+
+    const mockPanes = screen.getAllByTestId('terminal-pane-mock')
+
+    expect(mockPanes).toHaveLength(2)
+    mockPanes.forEach((pane) => {
+      expect(pane).toHaveAttribute('data-mode', 'attach')
     })
   })
 })

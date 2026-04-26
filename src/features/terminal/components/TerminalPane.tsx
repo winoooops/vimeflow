@@ -45,6 +45,18 @@ export const disposeTerminalSession = (sessionId: string): void => {
   }
 }
 
+/**
+ * Terminal pane lifecycle mode — explicit instead of inferred from
+ * `restoredFrom`. Inference was the source of two Codex P1 bugs:
+ *
+ *   - Newly-created sessions (createSession spawned, then TerminalPane
+ *     mounted with restoredFrom undefined) hit the spawn branch a second
+ *     time and created hidden duplicate PTYs.
+ *   - Cached Exited sessions (no restoredFrom) were resurrected as fresh
+ *     PTYs on reload instead of waiting for the user to opt in to restart.
+ */
+export type TerminalPaneMode = 'attach' | 'spawn' | 'awaiting-restart'
+
 export interface TerminalPaneProps {
   /**
    * Terminal session identifier
@@ -89,6 +101,18 @@ export interface TerminalPaneProps {
    * so the orchestrator can drain its mount-time buffer for this session.
    */
   onPaneReady?: NotifyPaneReady
+
+  /**
+   * Explicit lifecycle mode — see {@link TerminalPaneMode}.
+   * @default 'spawn'
+   */
+  mode?: TerminalPaneMode
+
+  /**
+   * Called when the user clicks Restart in `awaiting-restart` mode. No-op
+   * if not provided.
+   */
+  onRestart?: (sessionId: string) => void
 }
 
 /**
@@ -111,6 +135,8 @@ export const TerminalPane = ({
   restoredFrom = undefined,
   onCwdChange = undefined,
   onPaneReady = undefined,
+  mode = 'spawn',
+  onRestart = undefined,
 }: TerminalPaneProps): ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [terminal, setTerminal] = useState<Terminal | null>(null)
@@ -122,6 +148,12 @@ export const TerminalPane = ({
     [service]
   )
 
+  // awaiting-restart mode: render a Restart affordance and skip ALL PTY
+  // interaction (no spawn, no attach, no xterm). Per spec, exited sessions
+  // wait for explicit user action — auto-respawn would mask intentional
+  // exits and silently re-execute commands in stale cwds.
+  const isAwaitingRestart = mode === 'awaiting-restart'
+
   // Use terminal hook for PTY lifecycle management
   const {
     session: ptySession,
@@ -129,13 +161,15 @@ export const TerminalPane = ({
     status,
     debugInfo,
   } = useTerminal({
-    terminal,
+    // Pass null terminal in awaiting-restart so useTerminal short-circuits.
+    terminal: isAwaitingRestart ? null : terminal,
     service: stableService,
     cwd,
     shell,
     env,
     restoredFrom,
     onPaneReady,
+    mode,
   })
 
   // Bridge workspace sessionId ↔ PTY sessionId for agent detection.
@@ -175,10 +209,12 @@ export const TerminalPane = ({
     }
   }, [terminal, resize, status])
 
-  // P2 Fix: Terminal instance management with caching
-  // Terminals persist when switching sessions to avoid killing PTY processes
+  // P2 Fix: Terminal instance management with caching.
+  // Terminals persist when switching sessions to avoid killing PTY processes.
+  // Skip xterm setup entirely in awaiting-restart mode — there's no PTY to
+  // attach to and we render a Restart button instead of a terminal.
   useEffect(() => {
-    if (!containerRef.current) {
+    if (!containerRef.current || isAwaitingRestart) {
       return
     }
 
@@ -324,7 +360,31 @@ export const TerminalPane = ({
       setTerminal(null)
       fitAddonRef.current = null
     }
-  }, [sessionId, stableService])
+  }, [sessionId, stableService, isAwaitingRestart])
+
+  // Awaiting-restart: render a Restart affordance instead of an xterm.
+  // Per the design spec ("no auto-respawn for Exited" IDEA), the user must
+  // explicitly opt in to restarting an Exited session.
+  if (isAwaitingRestart) {
+    return (
+      <div
+        data-testid="terminal-pane-wrapper"
+        data-session-id={sessionId}
+        data-mode="awaiting-restart"
+        className="relative flex h-full w-full flex-col items-center justify-center gap-3 overflow-hidden bg-surface text-on-surface/70"
+      >
+        <p className="font-mono text-sm">Session exited.</p>
+        <button
+          type="button"
+          aria-label={`Restart session ${sessionId}`}
+          onClick={() => onRestart?.(sessionId)}
+          className="rounded bg-surface-container px-3 py-1.5 font-label text-sm text-on-surface hover:bg-surface-container/80"
+        >
+          Restart
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div

@@ -283,7 +283,20 @@ export const useSessionManager = (
     [activeSessionId, service]
   )
 
-  // Create session — spawn + prepend
+  // Create session — spawn + prepend, then mark the pane as 'attach'.
+  //
+  // The PTY is created up-front in this hook (so we get the canonical id and
+  // pid for state). We then populate restoreData with empty replay/buffered
+  // slots and add the new session to pendingPanesRef so TerminalPane renders
+  // in 'attach' mode. Without this the pane would mount with no restoredFrom
+  // and TerminalZone's mode-decision rules would route it to the legacy
+  // 'spawn' fallback — which calls service.spawn() a SECOND time and
+  // creates a hidden duplicate PTY (Codex P1 finding).
+  //
+  // pendingPanesRef inclusion: pty-data events emitted between
+  // service.spawn() resolving and useTerminal subscribing land in the
+  // orchestrator's buffering listener (still attached if any restored
+  // panes are still pending) and get drained when the new pane reports ready.
   const createSession = useCallback((): void => {
     void (async (): Promise<void> => {
       try {
@@ -306,6 +319,18 @@ export const useSessionManager = (
           activity: { ...emptyActivity },
         }
 
+        // Populate restoreData with empty replay so TerminalPane attaches
+        // instead of spawning a duplicate PTY.
+        restoreData.set(result.sessionId, {
+          sessionId: result.sessionId,
+          cwd: '~',
+          pid: result.pid,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [],
+        })
+        pendingPanesRef.current.add(result.sessionId)
+
         setSessions((prev) => [newSession, ...prev])
         setActiveSessionIdState(result.sessionId)
         registerPtySession(result.sessionId, result.sessionId, '~')
@@ -314,7 +339,7 @@ export const useSessionManager = (
         console.warn('spawn failed', err)
       }
     })()
-  }, [service, sessions.length])
+  }, [restoreData, service, sessions.length])
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(

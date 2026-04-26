@@ -255,6 +255,18 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(result.current.sessions).toHaveLength(1))
     expect(result.current.sessions[0].id).toBe('new-id')
     expect(result.current.activeSessionId).toBe('new-id')
+
+    // F3 regression: the new session must be marked attach-ready (restoreData
+    // populated). Without this, TerminalZone's mode-decision routes the
+    // pane to legacy 'spawn' mode and useTerminal calls service.spawn() a
+    // SECOND time — hidden duplicate PTY.
+    const restored = result.current.restoreData.get('new-id')
+    expect(restored).toBeDefined()
+    expect(restored!.pid).toBe(999)
+    expect(restored!.replayData).toBe('')
+    expect(restored!.replayEndOffset).toBe(0)
+    // service.spawn called exactly once (not twice).
+    expect(service.spawn).toHaveBeenCalledTimes(1)
   })
 
   test('removeSession kills PTY and filters from state', async () => {

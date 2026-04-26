@@ -27,6 +27,21 @@ export type NotifyPaneReady = (
   handler: (data: string, offsetStart: number) => void
 ) => () => void
 
+/**
+ * Lifecycle mode. Mirrors `TerminalPaneMode` — kept here separately so the
+ * hook is consumable without dragging the component contract along.
+ *
+ * - `attach` — A PTY already exists; reattach without spawning. Requires
+ *   `restoredFrom` so the hook knows the session id and pid (and replay
+ *   data, if any). Used for both restored sessions AND newly-created
+ *   sessions where the parent already called spawn_pty.
+ * - `spawn` — Call `service.spawn()` to create a new PTY. Legacy default
+ *   path; existing call sites that don't set `mode` continue to work.
+ * - `awaiting-restart` — Do NOT touch the PTY. Caller renders a Restart UI.
+ *   Per spec, exited sessions wait for explicit user opt-in to restart.
+ */
+export type UseTerminalMode = 'attach' | 'spawn' | 'awaiting-restart'
+
 export interface UseTerminalOptions {
   /**
    * xterm.js Terminal instance
@@ -65,6 +80,18 @@ export interface UseTerminalOptions {
    * any pty-data buffered between snapshot and live subscription.
    */
   onPaneReady?: NotifyPaneReady
+
+  /**
+   * Explicit lifecycle mode. When omitted, falls back to legacy inference
+   * (`attach` if `restoredFrom` is set, else `spawn`) so existing call
+   * sites that haven't migrated to the explicit prop continue to work.
+   *
+   * New code should always pass an explicit mode; the inference path stays
+   * for backwards compatibility but is the source of the bug Codex flagged
+   * (Exited sessions resurrected as fresh PTYs because `restoredFrom ===
+   * undefined` was treated as a spawn signal).
+   */
+  mode?: UseTerminalMode
 }
 
 export interface UseTerminalReturn {
@@ -106,8 +133,26 @@ export interface UseTerminalReturn {
  * - Supports replay + cursor dedupe for session restoration
  */
 export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
-  const { terminal, service, cwd, shell, env, restoredFrom, onPaneReady } =
-    options
+  const {
+    terminal,
+    service,
+    cwd,
+    shell,
+    env,
+    restoredFrom,
+    onPaneReady,
+    mode,
+  } = options
+
+  // Resolve effective mode. Explicit wins; otherwise infer from restoredFrom
+  // for backwards compatibility (legacy "spawn unless restoredFrom is set").
+  const effectiveMode: UseTerminalMode =
+    mode ?? (restoredFrom ? 'attach' : 'spawn')
+
+  // Mirror in a ref so the spawn effect (which intentionally excludes mode
+  // from its deps) can read the latest value at init without re-running.
+  const effectiveModeRef = useRef(effectiveMode)
+  effectiveModeRef.current = effectiveMode
 
   const [session, setSession] = useState<TerminalSession | null>(null)
 
@@ -174,9 +219,31 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     let currentSession: TerminalSession | null = null
 
     const initializeSession = async (): Promise<void> => {
-      // RESTORED MODE: Reattach to existing session
-      const restore = restoredFromRef.current
-      if (restore) {
+      const currentMode = effectiveModeRef.current
+
+      // AWAITING-RESTART: per spec, do NOT touch the PTY. The component
+      // renders a Restart button instead of a terminal, so this hook just
+      // sits in idle state.
+      if (currentMode === 'awaiting-restart') {
+        setDebugInfo('awaiting-restart')
+
+        return
+      }
+
+      // ATTACH: A PTY already exists in Rust state. Do NOT call spawn.
+      if (currentMode === 'attach') {
+        const restore = restoredFromRef.current
+        if (!restore) {
+          // Defensive: caller must always provide restoredFrom in attach mode
+          // (need the session id and pid to subscribe). Surface as error so
+          // misuse is loud rather than producing a silent zombie pane.
+          setStatus('error')
+          setError('attach mode requires restoredFrom')
+          setDebugInfo('attach without restoredFrom')
+
+          return
+        }
+
         if (!isMountedRef.current) {
           return
         }
@@ -221,12 +288,12 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         setSession(restoredSession)
         setStatus('running')
         setError(null)
-        setDebugInfo(`restored pid=${String(restore.pid)}`)
+        setDebugInfo(`attached pid=${String(restore.pid)}`)
 
         return
       }
 
-      // NORMAL MODE: Spawn a new PTY process
+      // SPAWN: Create a new PTY process via service.spawn.
       setDebugInfo('spawning...')
 
       try {

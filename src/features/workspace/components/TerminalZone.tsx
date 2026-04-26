@@ -1,6 +1,9 @@
 import type { ReactElement } from 'react'
 import type { Session } from '../types'
-import { TerminalPane } from '../../terminal/components/TerminalPane'
+import {
+  TerminalPane,
+  type TerminalPaneMode,
+} from '../../terminal/components/TerminalPane'
 import type {
   RestoreData,
   PaneEventHandler,
@@ -26,6 +29,10 @@ export interface TerminalZoneProps {
     sessionId: string,
     handler: PaneEventHandler
   ) => NotifyPaneReadyResult
+  /**
+   * Called when the user clicks Restart on an Exited (awaiting-restart) pane.
+   */
+  onSessionRestart?: (sessionId: string) => void
 }
 
 export const TerminalZone = ({
@@ -38,6 +45,7 @@ export const TerminalZone = ({
   restoreData = undefined,
   loading = false,
   onPaneReady = undefined,
+  onSessionRestart = undefined,
 }: TerminalZoneProps): ReactElement => {
   const handleTabClick = (sessionId: string): void => {
     if (activeSessionId === null || sessionId !== activeSessionId) {
@@ -124,10 +132,28 @@ export const TerminalZone = ({
             <p>No active session. Click + to create a new terminal.</p>
           </div>
         ) : (
-          // Render all sessions but hide inactive ones to keep PTY sessions alive
+          // Render all sessions but hide inactive ones to keep PTY sessions alive.
+          // Decide explicit mode for this pane. Pinning the lifecycle here
+          // avoids the previous bug (TerminalPane inferred from
+          // restoredFrom===undefined, which spawned a hidden duplicate PTY
+          // for newly-created sessions and resurrected dead ones on reload).
           sessions.map((session) => {
             const isActive = session.id === activeSessionId
             const restore = restoreData?.get(session.id)
+
+            // Rules:
+            //  - Has restoreData → 'attach'. Covers Alive restored sessions
+            //    AND newly-created sessions (createSession seeds an empty
+            //    restoreData slot so the pane attaches instead of spawning).
+            //  - status === 'completed' (cached Exited) → 'awaiting-restart'.
+            //    Render a Restart button; do NOT auto-spawn.
+            //  - Otherwise → 'spawn' (legacy fallback).
+            let mode: TerminalPaneMode = 'spawn'
+            if (restore) {
+              mode = 'attach'
+            } else if (session.status === 'completed') {
+              mode = 'awaiting-restart'
+            }
 
             return (
               <div
@@ -135,14 +161,17 @@ export const TerminalZone = ({
                 data-testid="terminal-pane"
                 data-session-id={session.id}
                 data-cwd={session.workingDirectory}
+                data-mode={mode}
                 className={`absolute inset-0 ${isActive ? '' : 'hidden'}`}
               >
                 <TerminalPane
                   sessionId={session.id}
                   cwd={session.workingDirectory}
                   restoredFrom={restore}
+                  mode={mode}
                   onCwdChange={(cwd) => onSessionCwdChange?.(session.id, cwd)}
                   onPaneReady={onPaneReady}
+                  onRestart={onSessionRestart}
                 />
               </div>
             )
