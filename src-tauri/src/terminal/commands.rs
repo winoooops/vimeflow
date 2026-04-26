@@ -466,15 +466,26 @@ pub fn set_active_session(
 /// OLD state and the subsequent write overwrote the NEWER state with stale
 /// ids — dropping a just-spawned session from `session_order` even though
 /// its PTY was still alive (the ghost only appeared after a reload).
+///
+/// Round 6, Finding 2 (codex HIGH): the permutation check uses a
+/// sort-and-compare against the CURRENT `session_order` rather than a
+/// `HashSet` equality. `HashSet` collapses duplicates — `[a, b, c]` and
+/// `[a, b, c, c]` produce the same set `{a, b, c}` and pass validation,
+/// then `d.session_order = request.ids.clone()` persists the duplicate id.
+/// On the next reload, `list_sessions` returns a duplicate session entry,
+/// React tab keys collide, and active-tab selection becomes unstable.
+/// Comparing sorted vectors enforces equal length AND equal multiset.
 #[tauri::command]
 pub fn reorder_sessions(
     cache: State<'_, std::sync::Arc<crate::terminal::cache::SessionCache>>,
     request: ReorderSessionsRequest,
 ) -> Result<(), String> {
     cache.mutate(|d| {
-        let current: std::collections::HashSet<_> = d.session_order.iter().cloned().collect();
-        let proposed: std::collections::HashSet<_> = request.ids.iter().cloned().collect();
-        if current != proposed {
+        let mut current_sorted = d.session_order.clone();
+        let mut proposed_sorted = request.ids.clone();
+        current_sorted.sort();
+        proposed_sorted.sort();
+        if current_sorted != proposed_sorted {
             return Err("invalid reorder: not a permutation".into());
         }
         d.session_order = request.ids.clone();
@@ -1533,6 +1544,71 @@ mod tests {
                 session_id: "only".into(),
             },
         );
+    }
+
+    /// Round 6, Finding 2 (codex HIGH): the permutation check must reject
+    /// a request whose ids contain a duplicate already present in
+    /// session_order, even though the SET of unique ids matches the SET in
+    /// session_order. Sort+compare catches the length mismatch; the previous
+    /// HashSet-based check let the duplicate through and persisted it,
+    /// producing a duplicate session entry on reload (React key collision +
+    /// unstable active-tab selection).
+    #[tokio::test]
+    async fn reorder_sessions_rejects_duplicate_id() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+        let cache = handle.state::<Arc<SessionCache>>();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        for id in &["a", "b", "c"] {
+            spawn_pty(
+                handle.clone(),
+                state.clone(),
+                cache.clone(),
+                SpawnPtyRequest {
+                    session_id: id.to_string(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        // Proposed order has the SAME unique ids as current ([a, b, c])
+        // but adds a duplicate of `c`. HashSet equality would pass; the
+        // multiset (sort+compare) catches the duplicate.
+        let result = reorder_sessions(
+            cache.clone(),
+            ReorderSessionsRequest {
+                ids: vec!["a".into(), "b".into(), "c".into(), "c".into()],
+            },
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not a permutation"));
+
+        // Cache must be unchanged — no duplicate `c` got persisted.
+        let snapshot = cache.snapshot();
+        assert_eq!(snapshot.session_order.len(), 3);
+        assert!(snapshot.session_order.contains(&"a".to_string()));
+        assert!(snapshot.session_order.contains(&"b".to_string()));
+        assert!(snapshot.session_order.contains(&"c".to_string()));
+
+        for id in &["a", "b", "c"] {
+            let _ = kill_pty(
+                state.clone(),
+                cache.clone(),
+                KillPtyRequest {
+                    session_id: id.to_string(),
+                },
+            );
+        }
     }
 
     #[tokio::test]
