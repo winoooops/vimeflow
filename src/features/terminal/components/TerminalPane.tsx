@@ -5,7 +5,7 @@ import { FitAddon } from '@xterm/addon-fit'
 // WebGL addon disabled — causes blank terminal in Tauri's webview (WebView2/WebKit)
 // due to broken WebGL2 context. Canvas2D renderer works fine. See PR #33.
 import { catppuccinMocha, toXtermTheme } from '../theme/catppuccin-mocha'
-import { useTerminal } from '../hooks/useTerminal'
+import { useTerminal, type RestoreData } from '../hooks/useTerminal'
 import {
   createTerminalService,
   type ITerminalService,
@@ -70,6 +70,11 @@ export interface TerminalPaneProps {
   env?: Record<string, string>
 
   /**
+   * Optional restore data for reconnecting to an existing session
+   */
+  restoredFrom?: RestoreData
+
+  /**
    * Called when the shell reports a working directory change (via OSC 7)
    */
   onCwdChange?: (cwd: string) => void
@@ -92,6 +97,7 @@ export const TerminalPane = ({
   service = undefined,
   shell = undefined,
   env = undefined,
+  restoredFrom = undefined,
   onCwdChange = undefined,
 }: TerminalPaneProps): ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -116,6 +122,7 @@ export const TerminalPane = ({
     cwd,
     shell,
     env,
+    restoredFrom,
   })
 
   // Bridge workspace sessionId ↔ PTY sessionId for agent detection.
@@ -221,11 +228,31 @@ export const TerminalPane = ({
             path = path.slice(1)
           }
           if (path) {
+            // Sync to Rust cache via IPC (fire-and-forget)
+            void (async (): Promise<void> => {
+              try {
+                await stableService.updateSessionCwd(sessionId, path)
+              } catch (err) {
+                // eslint-disable-next-line no-console
+                console.warn('updateSessionCwd IPC failed', err)
+              }
+            })()
+            // Also call the callback for local state update
             onCwdChangeRef.current?.(path)
           }
         } catch {
           // Not a valid URL — some shells emit plain paths
           if (data.startsWith('/')) {
+            // Sync to Rust cache via IPC (fire-and-forget)
+            void (async (): Promise<void> => {
+              try {
+                await stableService.updateSessionCwd(sessionId, data)
+              } catch (err) {
+                // eslint-disable-next-line no-console
+                console.warn('updateSessionCwd IPC failed', err)
+              }
+            })()
+            // Also call the callback for local state update
             onCwdChangeRef.current?.(data)
           }
         }
@@ -284,7 +311,7 @@ export const TerminalPane = ({
       setTerminal(null)
       fitAddonRef.current = null
     }
-  }, [sessionId])
+  }, [sessionId, stableService])
 
   return (
     <div

@@ -31,6 +31,40 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   })),
 }))
 
+// Mock terminal service to return initial session data synchronously
+vi.mock('../terminal/services/terminalService', () => ({
+  createTerminalService: vi.fn(() => ({
+    spawn: vi.fn().mockResolvedValue({ sessionId: 'new-id', pid: 999 }),
+    write: vi.fn().mockResolvedValue(undefined),
+    resize: vi.fn().mockResolvedValue(undefined),
+    kill: vi.fn().mockResolvedValue(undefined),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onData: vi.fn((): (() => void) => (): void => {}),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onExit: vi.fn((): (() => void) => (): void => {}),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onError: vi.fn((): (() => void) => (): void => {}),
+    listSessions: vi.fn().mockResolvedValue({
+      activeSessionId: 'sess-1',
+      sessions: [
+        {
+          id: 'sess-1',
+          cwd: '~',
+          status: {
+            kind: 'Alive',
+            pid: 1234,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    }),
+    setActiveSession: vi.fn().mockResolvedValue(undefined),
+    reorderSessions: vi.fn().mockResolvedValue(undefined),
+    updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+  })),
+}))
+
 // Mock CodeMirror hooks for unsaved changes tests
 let mockOnChange: ((content: string) => void) | undefined
 let mockOnSave: (() => void) | undefined
@@ -73,8 +107,20 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      // Wait for initial session to load
+      await screen.findByRole('button', { name: 'session 1' })
+
       const sidebar = screen.getByTestId('sidebar')
       const terminalZone = screen.getByTestId('terminal-zone')
+
+      // Create a second session so we can test switching
+      const newInstanceButton = screen.getByRole('button', {
+        name: 'New Instance',
+      })
+      await user.click(newInstanceButton)
+
+      // Wait for second session to appear
+      await screen.findByRole('button', { name: 'session 2' })
 
       // Get session buttons from sidebar (session list contains buttons)
       const sessionList = within(sidebar).getByTestId('session-list')
@@ -82,9 +128,9 @@ describe('WorkspaceView Integration Tests', () => {
 
       expect(sessionButtons.length).toBeGreaterThan(1)
 
-      // Click second session
-      const secondSession = sessionButtons[1]
-      await user.click(secondSession)
+      // Click first session (second is already active after creation)
+      const firstSession = sessionButtons[1]
+      await user.click(firstSession)
 
       // Terminal zone should update its active session
       const tabBar = within(terminalZone).getByTestId('tab-bar')
@@ -106,7 +152,19 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      // Wait for initial session to load
+      await screen.findByRole('button', { name: 'session 1' })
+
       const sidebar = screen.getByTestId('sidebar')
+
+      // Create a second session so we can test switching
+      const newInstanceButton = screen.getByRole('button', {
+        name: 'New Instance',
+      })
+      await user.click(newInstanceButton)
+
+      // Wait for second session to appear
+      await screen.findByRole('button', { name: 'session 2' })
 
       // Get all session buttons from session list
       const sessionList = within(sidebar).getByTestId('session-list')
@@ -114,7 +172,7 @@ describe('WorkspaceView Integration Tests', () => {
 
       expect(sessionButtons.length).toBeGreaterThan(1)
 
-      // Click second session button
+      // Click first session button (second is already active after creation)
       await user.click(sessionButtons[1])
 
       // Agent Status Panel should be present (content comes in sub-specs 5-7)
@@ -125,10 +183,13 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      // Wait for initial session to load
+      await screen.findByRole('button', { name: 'session 1' })
+
       const sidebar = screen.getByTestId('sidebar')
       const terminalZone = screen.getByTestId('terminal-zone')
 
-      // Click a session
+      // Click the session
       const sessionList = within(sidebar).getByTestId('session-list')
       const sessionButtons = within(sessionList).getAllByRole('button')
 

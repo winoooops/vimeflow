@@ -572,9 +572,7 @@ describe('useTerminal', () => {
             pid: 1234,
             replayData: 'REPLAY',
             replayEndOffset: 50,
-            bufferedEvents: [
-              { sessionId: 'session-1', data: 'BUFFERED', offsetStart: 50 },
-            ],
+            bufferedEvents: [{ data: 'BUFFERED', offsetStart: 50 }],
           },
         })
       )
@@ -610,9 +608,9 @@ describe('useTerminal', () => {
             replayData: 'REPLAY',
             replayEndOffset: 100,
             bufferedEvents: [
-              { sessionId: 'session-1', data: 'BELOW', offsetStart: 99 }, // Below cursor
-              { sessionId: 'session-1', data: 'AT', offsetStart: 100 }, // At cursor
-              { sessionId: 'session-1', data: 'ABOVE', offsetStart: 101 }, // Above cursor
+              { data: 'BELOW', offsetStart: 99 }, // Below cursor
+              { data: 'AT', offsetStart: 100 }, // At cursor
+              { data: 'ABOVE', offsetStart: 101 }, // Above cursor
             ],
           },
         })

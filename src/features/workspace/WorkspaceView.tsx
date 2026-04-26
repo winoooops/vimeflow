@@ -27,6 +27,8 @@ export const WorkspaceView = (): ReactElement => {
     renameSession,
     reorderSessions,
     updateSessionCwd,
+    restoreData,
+    loading,
   } = useSessionManager()
 
   const {
@@ -321,6 +323,8 @@ export const WorkspaceView = (): ReactElement => {
           onNewTab={createSession}
           onCloseTab={removeSession}
           onSessionCwdChange={updateSessionCwd}
+          restoreData={restoreData}
+          loading={loading}
         />
 
         {/* Bottom Drawer - Editor + Diff Viewer */}

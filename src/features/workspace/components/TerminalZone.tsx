@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import type { Session } from '../types'
 import { TerminalPane } from '../../terminal/components/TerminalPane'
+import type { RestoreData } from '../hooks/useSessionManager'
 
 export interface TerminalZoneProps {
   sessions: Session[]
@@ -9,6 +10,10 @@ export interface TerminalZoneProps {
   onNewTab: () => void
   onCloseTab?: (sessionId: string) => void
   onSessionCwdChange?: (sessionId: string, cwd: string) => void
+  /** Restore data per session id, populated during mount-time restore */
+  restoreData?: Map<string, RestoreData>
+  /** True until the initial restore IPC + drain completes */
+  loading?: boolean
 }
 
 export const TerminalZone = ({
@@ -18,6 +23,8 @@ export const TerminalZone = ({
   onNewTab,
   onCloseTab = undefined,
   onSessionCwdChange = undefined,
+  restoreData = undefined,
+  loading = false,
 }: TerminalZoneProps): ReactElement => {
   const handleTabClick = (sessionId: string): void => {
     if (activeSessionId === null || sessionId !== activeSessionId) {
@@ -95,7 +102,11 @@ export const TerminalZone = ({
         data-testid="terminal-content"
         className="relative min-h-0 flex-1 bg-surface"
       >
-        {sessions.length === 0 ? (
+        {loading ? (
+          <div className="flex h-full items-center justify-center font-mono text-on-surface/60">
+            <p>Restoring sessions...</p>
+          </div>
+        ) : sessions.length === 0 ? (
           <div className="flex h-full items-center justify-center font-mono text-on-surface/60">
             <p>No active session. Click + to create a new terminal.</p>
           </div>
@@ -103,6 +114,7 @@ export const TerminalZone = ({
           // Render all sessions but hide inactive ones to keep PTY sessions alive
           sessions.map((session) => {
             const isActive = session.id === activeSessionId
+            const restore = restoreData?.get(session.id)
 
             return (
               <div
@@ -115,6 +127,7 @@ export const TerminalZone = ({
                 <TerminalPane
                   sessionId={session.id}
                   cwd={session.workingDirectory}
+                  restoredFrom={restore}
                   onCwdChange={(cwd) => onSessionCwdChange?.(session.id, cwd)}
                 />
               </div>

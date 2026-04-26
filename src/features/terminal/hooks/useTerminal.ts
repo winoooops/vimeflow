@@ -12,7 +12,7 @@ export interface RestoreData {
   pid: number
   replayData: string
   replayEndOffset: number
-  bufferedEvents: { sessionId: string; data: string; offsetStart: number }[]
+  bufferedEvents: { data: string; offsetStart: number }[]
 }
 
 export interface UseTerminalOptions {

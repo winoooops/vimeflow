@@ -34,6 +34,40 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   })),
 }))
 
+// Mock terminal service to return initial session data synchronously
+vi.mock('../terminal/services/terminalService', () => ({
+  createTerminalService: vi.fn(() => ({
+    spawn: vi.fn().mockResolvedValue({ sessionId: 'new-id', pid: 999 }),
+    write: vi.fn().mockResolvedValue(undefined),
+    resize: vi.fn().mockResolvedValue(undefined),
+    kill: vi.fn().mockResolvedValue(undefined),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onData: vi.fn((): (() => void) => (): void => {}),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onExit: vi.fn((): (() => void) => (): void => {}),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onError: vi.fn((): (() => void) => (): void => {}),
+    listSessions: vi.fn().mockResolvedValue({
+      activeSessionId: 'sess-1',
+      sessions: [
+        {
+          id: 'sess-1',
+          cwd: '~',
+          status: {
+            kind: 'Alive',
+            pid: 1234,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    }),
+    setActiveSession: vi.fn().mockResolvedValue(undefined),
+    reorderSessions: vi.fn().mockResolvedValue(undefined),
+    updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+  })),
+}))
+
 // eslint-disable-next-line import/first
 import { render, screen } from '@testing-library/react'
 // eslint-disable-next-line import/first
@@ -95,13 +129,17 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       expect(sessionList).toBeInTheDocument()
     })
 
-    test('shows session status badges', () => {
+    test('shows session status badges', async () => {
       render(<WorkspaceView />)
 
       // Session list should render session buttons (status is conveyed via
       // visual indicators, not text — text badges were removed when
       // AgentActivity was replaced by the AgentStatusPanel shell)
       const sessionList = screen.getByTestId('session-list')
+
+      // Wait for sessions to load from listSessions IPC
+      await screen.findByRole('button', { name: 'session 1' })
+
       const sessionButtons = sessionList.querySelectorAll('button[aria-label]')
 
       expect(sessionButtons.length).toBeGreaterThan(0)
