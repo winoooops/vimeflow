@@ -29,6 +29,7 @@ export const WorkspaceView = (): ReactElement => {
     updateSessionCwd,
     restoreData,
     loading,
+    notifyPaneReady,
   } = useSessionManager()
 
   const {
@@ -325,6 +326,7 @@ export const WorkspaceView = (): ReactElement => {
           onSessionCwdChange={updateSessionCwd}
           restoreData={restoreData}
           loading={loading}
+          onPaneReady={notifyPaneReady}
         />
 
         {/* Bottom Drawer - Editor + Diff Viewer */}

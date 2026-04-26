@@ -5,7 +5,11 @@ import { FitAddon } from '@xterm/addon-fit'
 // WebGL addon disabled — causes blank terminal in Tauri's webview (WebView2/WebKit)
 // due to broken WebGL2 context. Canvas2D renderer works fine. See PR #33.
 import { catppuccinMocha, toXtermTheme } from '../theme/catppuccin-mocha'
-import { useTerminal, type RestoreData } from '../hooks/useTerminal'
+import {
+  useTerminal,
+  type RestoreData,
+  type NotifyPaneReady,
+} from '../hooks/useTerminal'
 import {
   createTerminalService,
   type ITerminalService,
@@ -78,6 +82,13 @@ export interface TerminalPaneProps {
    * Called when the shell reports a working directory change (via OSC 7)
    */
   onCwdChange?: (cwd: string) => void
+
+  /**
+   * Bridge to `useSessionManager.notifyPaneReady`. Forwarded to
+   * `useTerminal`; called once the pane's live data subscription is attached
+   * so the orchestrator can drain its mount-time buffer for this session.
+   */
+  onPaneReady?: NotifyPaneReady
 }
 
 /**
@@ -99,6 +110,7 @@ export const TerminalPane = ({
   env = undefined,
   restoredFrom = undefined,
   onCwdChange = undefined,
+  onPaneReady = undefined,
 }: TerminalPaneProps): ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [terminal, setTerminal] = useState<Terminal | null>(null)
@@ -123,6 +135,7 @@ export const TerminalPane = ({
     shell,
     env,
     restoredFrom,
+    onPaneReady,
   })
 
   // Bridge workspace sessionId ↔ PTY sessionId for agent detection.

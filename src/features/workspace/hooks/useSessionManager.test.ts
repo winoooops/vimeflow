@@ -383,4 +383,120 @@ describe('useSessionManager', () => {
       expect(service.updateSessionCwd).toHaveBeenCalledWith('s1', '/home/user')
     )
   })
+
+  // F2 regression: events fired AFTER listSessions resolves but BEFORE the
+  // pane attaches its live listener must still reach the pane via the
+  // notifyPaneReady drain. Without this, the previous code stopped buffering
+  // as soon as setLoading(false) ran (which only schedules a render) — events
+  // emitted between then and useTerminal subscribing went to neither the
+  // buffer nor the live stream and were silently lost on busy reloads.
+  test('F2 regression: keeps buffering until each pane reports ready', async () => {
+    const service = createMockService()
+    let dataCallback: (
+      sessionId: string,
+      data: string,
+      offsetStart: number
+    ) => void = vi.fn()
+    service.onData = vi.fn((cb): Promise<() => void> => {
+      dataCallback = cb
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return Promise.resolve((): void => {})
+    })
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: 'REPLAY',
+            replay_end_offset: BigInt(6),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() => useSessionManager(service))
+
+    // Wait for restore to complete (loading → false).
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // SIMULATE THE BUG WINDOW: events arrive AFTER listSessions/setLoading
+    // (state has updated, render scheduled) but BEFORE the pane subscribes.
+    // Previously stopBuffering() fired right after setLoading and these
+    // events were dropped.
+    dataCallback('s1', 'POST_RENDER_1', 200)
+    dataCallback('s1', 'POST_RENDER_2', 220)
+
+    // Now simulate the pane reporting ready. Capture the events the
+    // orchestrator drains through our handler.
+    const drained: { data: string; offsetStart: number }[] = []
+    act(() => {
+      result.current.notifyPaneReady('s1', (data, offsetStart) => {
+        drained.push({ data, offsetStart })
+      })
+    })
+
+    // Both post-setLoading events must be drained — they would have been
+    // lost before this fix.
+    expect(drained).toEqual([
+      { data: 'POST_RENDER_1', offsetStart: 200 },
+      { data: 'POST_RENDER_2', offsetStart: 220 },
+    ])
+  })
+
+  test('F2: stops buffering only after every pending pane reports ready', async () => {
+    const service = createMockService()
+    const stopBufferingSpy = vi.fn()
+    service.onData = vi.fn(
+      (): Promise<() => void> => Promise.resolve(stopBufferingSpy)
+    )
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'b',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Buffering listener still active — only one of two panes ready.
+    act(() => {
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      result.current.notifyPaneReady('a', () => {})
+    })
+    expect(stopBufferingSpy).not.toHaveBeenCalled()
+
+    // Last pane reports ready → stopBuffering fires exactly once.
+    act(() => {
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      result.current.notifyPaneReady('b', () => {})
+    })
+    expect(stopBufferingSpy).toHaveBeenCalledTimes(1)
+  })
 })

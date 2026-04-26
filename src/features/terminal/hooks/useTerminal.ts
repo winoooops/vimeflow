@@ -15,6 +15,18 @@ export interface RestoreData {
   bufferedEvents: { data: string; offsetStart: number }[]
 }
 
+/**
+ * Callback invoked once the live data subscription is attached. Drives the
+ * orchestrator's per-pane buffer drain (see useSessionManager.notifyPaneReady).
+ *
+ * The handler argument is the same function used for live events, so the
+ * orchestrator can fire buffered events through the same cursor-dedupe path.
+ */
+export type NotifyPaneReady = (
+  sessionId: string,
+  handler: (data: string, offsetStart: number) => void
+) => () => void
+
 export interface UseTerminalOptions {
   /**
    * xterm.js Terminal instance
@@ -45,6 +57,14 @@ export interface UseTerminalOptions {
    * Optional restore data for reconnecting to an existing session
    */
   restoredFrom?: RestoreData
+
+  /**
+   * Optional callback exposed by `useSessionManager` for the mount-time
+   * buffer drain. When provided, the data-subscription effect calls this
+   * once its live listener is attached so the orchestrator can flush
+   * any pty-data buffered between snapshot and live subscription.
+   */
+  onPaneReady?: NotifyPaneReady
 }
 
 export interface UseTerminalReturn {
@@ -86,7 +106,8 @@ export interface UseTerminalReturn {
  * - Supports replay + cursor dedupe for session restoration
  */
 export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
-  const { terminal, service, cwd, shell, env, restoredFrom } = options
+  const { terminal, service, cwd, shell, env, restoredFrom, onPaneReady } =
+    options
 
   const [session, setSession] = useState<TerminalSession | null>(null)
 
@@ -104,9 +125,18 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   // Track whether this hook spawned the session
   const didSpawnSessionRef = useRef(false)
 
-  // Track the replay end offset (cursor) for deduplication
-  // Events with offsetStart < cursor are dropped
+  // Track the replay end offset (cursor) for deduplication.
+  // Events with offsetStart < cursor are dropped. Advances on every write
+  // so a buffered drain that overlaps a live event is filtered (no doubled bytes).
   const cursorRef = useRef<number>(restoredFrom?.replayEndOffset ?? 0)
+
+  // Latest onPaneReady, kept in a ref so the data-subscribe effect can call
+  // it without depending on the function identity (which would re-run the
+  // effect and re-subscribe).
+  const onPaneReadyRef = useRef(onPaneReady)
+  useEffect(() => {
+    onPaneReadyRef.current = onPaneReady
+  }, [onPaneReady])
 
   // Store restoredFrom in a ref to prevent effect dependency cycles
   const restoredFromRef = useRef(restoredFrom)
@@ -153,13 +183,24 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
 
         didSpawnSessionRef.current = false // We did NOT spawn this session
 
-        // Write replay data first
+        // Write replay data first; the cursor is already initialized to
+        // restore.replayEndOffset (set when the ref was created).
         terminal.write(restore.replayData)
 
-        // Drain buffered events with cursor filter
+        // Drain buffered events captured at restore-time, advancing the
+        // cursor with each write. The orchestrator's notifyPaneReady drain
+        // (in the data-subscribe effect) may re-deliver the same events
+        // along with any that arrived later — cursor dedupe filters them.
+        const encoder = new TextEncoder()
         for (const event of restore.bufferedEvents) {
-          if (event.offsetStart >= restore.replayEndOffset) {
+          if (event.offsetStart >= cursorRef.current) {
             terminal.write(event.data)
+
+            const writtenEnd =
+              event.offsetStart + encoder.encode(event.data).length
+            if (writtenEnd > cursorRef.current) {
+              cursorRef.current = writtenEnd
+            }
           }
         }
 
@@ -283,11 +324,28 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       offsetStart: number
     ): void => {
       if (eventSessionId === session.id && isMountedRef.current) {
-        // Apply cursor filter: drop events below the replay end offset
+        // Cursor dedupe: drop events whose offset predates what we've
+        // already written (replay or earlier live/buffered event).
         if (offsetStart >= cursorRef.current) {
           terminal.write(data)
+          // Advance the cursor past the event we just wrote so an overlapping
+          // event delivered through the orchestrator's buffer drain (or vice
+          // versa) gets filtered. Byte length matches what was passed to
+          // terminal.write — the event payload is utf-8 string and the
+          // producer's offset arithmetic counts utf-8 bytes.
+          const writtenEnd = offsetStart + new TextEncoder().encode(data).length
+          if (writtenEnd > cursorRef.current) {
+            cursorRef.current = writtenEnd
+          }
         }
       }
+    }
+
+    // Drain-tolerant variant for orchestrator buffer flush. Same as handleData
+    // but doesn't filter by sessionId since the orchestrator always passes
+    // events for the session we registered for.
+    const handleDataForDrain = (data: string, offsetStart: number): void => {
+      handleData(session.id, data, offsetStart)
     }
 
     const handleExit = (eventSessionId: string, code: number | null): void => {
@@ -316,6 +374,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // even if the effect cleanup runs before the promise resolves.
     let unsubscribeData: (() => void) | null = null
     let dataSubscriptionCancelled = false
+    let releasePaneReady: (() => void) | null = null
 
     void (async (): Promise<void> => {
       const unsubscribe = await service.onData(handleData)
@@ -329,6 +388,25 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         return
       }
       unsubscribeData = unsubscribe
+
+      // Tell the orchestrator we're attached. It drains any pty-data events
+      // it buffered for our session id between snapshot and now into our
+      // handler — same function as the live path, so cursor dedupe filters
+      // any overlap with live events that arrived during the window between
+      // service.onData() resolving and notifyPaneReady firing.
+      const notify = onPaneReadyRef.current
+      if (notify) {
+        const release = notify(session.id, handleDataForDrain)
+        // Stash for cleanup so the orchestrator can release any per-pane
+        // tracking even if the buffered drain has already happened.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (dataSubscriptionCancelled) {
+          release()
+
+          return
+        }
+        releasePaneReady = release
+      }
     })()
 
     const unsubscribeExit = service.onExit(handleExit)
@@ -336,6 +414,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
 
     return (): void => {
       dataSubscriptionCancelled = true
+      releasePaneReady?.()
       unsubscribeData?.()
       unsubscribeExit()
       unsubscribeError()

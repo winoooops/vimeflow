@@ -1,7 +1,11 @@
 import type { ReactElement } from 'react'
 import type { Session } from '../types'
 import { TerminalPane } from '../../terminal/components/TerminalPane'
-import type { RestoreData } from '../hooks/useSessionManager'
+import type {
+  RestoreData,
+  PaneEventHandler,
+  NotifyPaneReadyResult,
+} from '../hooks/useSessionManager'
 
 export interface TerminalZoneProps {
   sessions: Session[]
@@ -14,6 +18,14 @@ export interface TerminalZoneProps {
   restoreData?: Map<string, RestoreData>
   /** True until the initial restore IPC + drain completes */
   loading?: boolean
+  /**
+   * Called by each TerminalPane once its live pty-data subscription is
+   * attached. Forwarded from `useSessionManager.notifyPaneReady`.
+   */
+  onPaneReady?: (
+    sessionId: string,
+    handler: PaneEventHandler
+  ) => NotifyPaneReadyResult
 }
 
 export const TerminalZone = ({
@@ -25,6 +37,7 @@ export const TerminalZone = ({
   onSessionCwdChange = undefined,
   restoreData = undefined,
   loading = false,
+  onPaneReady = undefined,
 }: TerminalZoneProps): ReactElement => {
   const handleTabClick = (sessionId: string): void => {
     if (activeSessionId === null || sessionId !== activeSessionId) {
@@ -129,6 +142,7 @@ export const TerminalZone = ({
                   cwd={session.workingDirectory}
                   restoredFrom={restore}
                   onCwdChange={(cwd) => onSessionCwdChange?.(session.id, cwd)}
+                  onPaneReady={onPaneReady}
                 />
               </div>
             )

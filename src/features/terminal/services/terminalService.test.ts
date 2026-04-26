@@ -58,7 +58,7 @@ describe('MockTerminalService', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 150))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, '$ ', 0)
+      expect(onData).toHaveBeenCalledWith(sessionId, '$ ', expect.any(Number))
     })
   })
 
@@ -74,10 +74,12 @@ describe('MockTerminalService', () => {
 
       await service.write({ sessionId, data: 'hello' })
 
-      // Per-character processing: each char emitted separately
-      expect(onData).toHaveBeenCalledWith(sessionId, 'h', 0)
-      expect(onData).toHaveBeenCalledWith(sessionId, 'e', 0)
-      expect(onData).toHaveBeenCalledWith(sessionId, 'o', 0)
+      // Per-character processing: each char emitted separately. Offsets are
+      // monotonically auto-assigned by the mock's per-session cursor (mirrors
+      // the Rust producer's RingBuffer.end_offset).
+      expect(onData).toHaveBeenCalledWith(sessionId, 'h', expect.any(Number))
+      expect(onData).toHaveBeenCalledWith(sessionId, 'e', expect.any(Number))
+      expect(onData).toHaveBeenCalledWith(sessionId, 'o', expect.any(Number))
       expect(onData).toHaveBeenCalledTimes(5)
     })
 
@@ -98,7 +100,11 @@ describe('MockTerminalService', () => {
       await service.write({ sessionId, data: '\r' })
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, 'hello\r\n$ ', 0)
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        'hello\r\n$ ',
+        expect.any(Number)
+      )
     })
 
     test('simulates pwd command output on Enter', async () => {
@@ -117,7 +123,11 @@ describe('MockTerminalService', () => {
       await service.write({ sessionId, data: '\r' })
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, '/home/user\r\n$ ', 0)
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        '/home/user\r\n$ ',
+        expect.any(Number)
+      )
     })
 
     test('handles backspace by removing last buffered character', async () => {
@@ -136,7 +146,11 @@ describe('MockTerminalService', () => {
       // Backspace should erase the character
       await service.write({ sessionId, data: '\x7f' })
 
-      expect(onData).toHaveBeenCalledWith(sessionId, '\b \b', 0)
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        '\b \b',
+        expect.any(Number)
+      )
     })
 
     test('ignores backspace on empty buffer', async () => {

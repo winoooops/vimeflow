@@ -597,6 +597,10 @@ describe('useTerminal', () => {
         }
       )
 
+      // Buffered offsets reflect the producer contract: chunks are atomic
+      // and non-overlapping. After AT (offset 100, len 2 → bytes 100-101),
+      // the next event must start at ≥102. Cursor advance honors this and
+      // filters anything that lies inside the already-written range.
       renderHook(() =>
         useTerminal({
           terminal: mockTerminal,
@@ -608,9 +612,9 @@ describe('useTerminal', () => {
             replayData: 'REPLAY',
             replayEndOffset: 100,
             bufferedEvents: [
-              { data: 'BELOW', offsetStart: 99 }, // Below cursor
-              { data: 'AT', offsetStart: 100 }, // At cursor
-              { data: 'ABOVE', offsetStart: 101 }, // Above cursor
+              { data: 'BELOW', offsetStart: 99 }, // Below cursor — filtered
+              { data: 'AT', offsetStart: 100 }, // At cursor (bytes 100-101)
+              { data: 'ABOVE', offsetStart: 102 }, // Past AT — written
             ],
           },
         })
@@ -623,7 +627,7 @@ describe('useTerminal', () => {
       // Should NOT write event below cursor (offsetStart < replayEndOffset)
       expect(writes).not.toContain('BELOW')
 
-      // Should write events at/above cursor (offsetStart >= replayEndOffset)
+      // Should write non-overlapping events at/above cursor
       expect(writes).toContain('AT')
       expect(writes).toContain('ABOVE')
     })

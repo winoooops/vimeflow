@@ -88,6 +88,10 @@ export class MockTerminalService implements ITerminalService {
     string,
     { pid: number; running: boolean; inputBuffer: string }
   >()
+  // Per-session monotonic offset cursor — mirrors the Rust producer's
+  // RingBuffer.end_offset so the cursor dedupe in useTerminal sees realistic
+  // offsets when emitData is called without explicit offsetStart.
+  private nextOffset = new Map<string, number>()
   private dataCallbacks: ((
     sessionId: string,
     data: string,
@@ -259,8 +263,20 @@ export class MockTerminalService implements ITerminalService {
   }
 
   // Test helpers
-  emitData(sessionId: string, data: string, offsetStart = 0): void {
-    this.dataCallbacks.forEach((cb) => cb(sessionId, data, offsetStart))
+  /**
+   * Emit a pty-data event. When `offsetStart` is omitted, the mock auto-assigns
+   * the next monotonic offset for `sessionId` (mirrors the Rust producer's
+   * RingBuffer.end_offset). Tests that need a specific offset for cursor-dedupe
+   * coverage can pass it explicitly.
+   */
+  emitData(sessionId: string, data: string, offsetStart?: number): void {
+    const offset = offsetStart ?? this.nextOffset.get(sessionId) ?? 0
+    this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset))
+    // Always advance the per-session cursor past this chunk so future
+    // auto-assigned offsets stay monotonic, even when the caller passed
+    // an explicit offset.
+    const byteLen = new TextEncoder().encode(data).length
+    this.nextOffset.set(sessionId, offset + byteLen)
   }
 
   emitExit(sessionId: string, code: number | null): void {
@@ -283,7 +299,7 @@ export class MockTerminalService implements ITerminalService {
     }
   ): void {
     if (event === 'data' && payload.data !== undefined) {
-      this.emitData(payload.sessionId, payload.data, payload.offsetStart ?? 0)
+      this.emitData(payload.sessionId, payload.data, payload.offsetStart)
     } else if (event === 'exit') {
       this.emitExit(payload.sessionId, payload.code ?? null)
     } else if (event === 'error' && payload.message !== undefined) {

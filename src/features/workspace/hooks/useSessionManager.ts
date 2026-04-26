@@ -52,6 +52,21 @@ export interface RestoreData {
   bufferedEvents: { data: string; offsetStart: number }[]
 }
 
+/**
+ * Handler that receives a buffered PTY event during pane drain.
+ * Same signature as the live `pty-data` callback, so callers can reuse
+ * a single function (with cursor dedupe) for both buffered drain and
+ * live events.
+ */
+export type PaneEventHandler = (data: string, offsetStart: number) => void
+
+/**
+ * Function returned by `notifyPaneReady` — call it on pane unmount or when
+ * the subscription is no longer needed. Currently a no-op for the buffer
+ * drain side, but reserved for future per-pane teardown.
+ */
+export type NotifyPaneReadyResult = () => void
+
 export interface SessionManager {
   sessions: Session[]
   activeSessionId: string | null
@@ -65,6 +80,27 @@ export interface SessionManager {
   restoreData: Map<string, RestoreData>
   /** True until the initial restore IPC + drain completes */
   loading: boolean
+  /**
+   * Called by each TerminalPane (`useTerminal`) once its live `pty-data`
+   * subscription is attached. The orchestrator immediately drains any
+   * pty-data events buffered for `sessionId` to `handler`, then removes the
+   * pane from the pending set; once every pane has reported ready, the
+   * mount-time global buffering listener is detached.
+   *
+   * Without this protocol, the orchestrator would stop buffering as soon as
+   * the React state updates (which only schedules a render); events emitted
+   * between that point and `useTerminal`'s actual subscription would land in
+   * NEITHER the buffer NOR the live stream — silent output loss on busy reloads.
+   *
+   * The handler is the same function the pane uses for live events, so the
+   * cursor dedupe in `useTerminal` skips events whose offsets predate the
+   * pane's cursor (avoids doubled writes if a live event arrives between
+   * subscription and the drain).
+   */
+  notifyPaneReady: (
+    sessionId: string,
+    handler: PaneEventHandler
+  ) => NotifyPaneReadyResult
 }
 
 export const useSessionManager = (
@@ -80,7 +116,19 @@ export const useSessionManager = (
 
   const ranRestoreRef = useRef(false)
 
-  // Mount-time restore orchestration: listen first, then list_sessions, then drain.
+  // Refs that bridge the mount-time restore effect (which builds the buffer
+  // and the buffering listener) and the notifyPaneReady callback (which
+  // panes invoke from their useTerminal effect, possibly several React
+  // ticks later). Held outside the effect's closure so notifyPaneReady can
+  // see them across renders.
+  const bufferedRef = useRef<
+    Map<string, { data: string; offsetStart: number }[]>
+  >(new Map())
+  const stopBufferingRef = useRef<(() => void) | null>(null)
+  const pendingPanesRef = useRef<Set<string>>(new Set())
+
+  // Mount-time restore orchestration: listen first, then list_sessions,
+  // then KEEP buffering alive until every restored pane reports ready.
   useEffect(() => {
     if (ranRestoreRef.current) {
       return
@@ -88,8 +136,6 @@ export const useSessionManager = (
     ranRestoreRef.current = true
 
     let cancelled = false
-    let stopBuffering: (() => void) | null = null
-    const buffered = new Map<string, { data: string; offsetStart: number }[]>()
 
     void (async (): Promise<void> => {
       try {
@@ -98,17 +144,20 @@ export const useSessionManager = (
         //    only resolves after the underlying tauri.listen('pty-data', ...) is wired up.
         //    Without awaiting, PTY events emitted during the listen()-attach window are
         //    lost from both replay_data AND bufferedEvents (irrecoverable).
-        stopBuffering = await service.onData((sessionId, data, offsetStart) => {
-          let q = buffered.get(sessionId)
-          if (!q) {
-            q = []
-            buffered.set(sessionId, q)
+        stopBufferingRef.current = await service.onData(
+          (sessionId, data, offsetStart) => {
+            let q = bufferedRef.current.get(sessionId)
+            if (!q) {
+              q = []
+              bufferedRef.current.set(sessionId, q)
+            }
+            q.push({ data, offsetStart })
           }
-          q.push({ data, offsetStart })
-        })
+        )
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (cancelled) {
-          stopBuffering()
+          stopBufferingRef.current()
+          stopBufferingRef.current = null
 
           return
         }
@@ -120,7 +169,12 @@ export const useSessionManager = (
           return
         }
 
-        // 3. For each Alive session, prepare restoreData
+        // 3. For each Alive session, prepare restoreData and add to the
+        //    pending-pane set. The buffering listener stays attached until
+        //    every pane reports ready (see notifyPaneReady below) — without
+        //    this, events emitted between setSessions() (which only
+        //    *schedules* a render) and useTerminal's subscription land in
+        //    neither the buffer nor the live stream.
         const newSessions: Session[] = list.sessions.map((info, idx) =>
           sessionFromInfo(info, idx)
         )
@@ -133,8 +187,12 @@ export const useSessionManager = (
               pid: status.pid,
               replayData: status.replay_data,
               replayEndOffset: Number(status.replay_end_offset),
-              bufferedEvents: buffered.get(info.id) ?? [],
+              // Snapshot of buffered events known at restore-time (pre-render).
+              // Additional events arriving before the pane subscribes are
+              // captured by the buffering listener and drained by notifyPaneReady.
+              bufferedEvents: [...(bufferedRef.current.get(info.id) ?? [])],
             })
+            pendingPanesRef.current.add(info.id)
             // Repopulate ptySessionMap so agent detection works after reload
             registerPtySession(info.id, info.id, info.cwd)
           }
@@ -144,11 +202,14 @@ export const useSessionManager = (
         setActiveSessionIdState(list.activeSessionId)
         setLoading(false)
 
-        // 4. Listener swap happens implicitly: future onData subscribers
-        //    in TerminalPane will receive new events. The buffering listener
-        //    is removed here. (stopBuffering is guaranteed non-null here —
-        //    we just awaited its assignment above without throwing.)
-        stopBuffering()
+        // If there are no Alive panes to report ready, stop buffering now —
+        // future event delivery happens via direct service.onData subscription
+        // from each TerminalPane (or for an entirely empty session list, no
+        // delivery is needed at all).
+        if (pendingPanesRef.current.size === 0) {
+          stopBufferingRef.current()
+          stopBufferingRef.current = null
+        }
       } catch (err) {
         // Cache load error or IPC failure — start fresh
         // Surfaced as toast in a future iteration; for now log.
@@ -157,15 +218,55 @@ export const useSessionManager = (
         setSessions([])
         setActiveSessionIdState(null)
         setLoading(false)
-        stopBuffering?.()
+        stopBufferingRef.current?.()
+        stopBufferingRef.current = null
       }
     })()
 
     return (): void => {
       cancelled = true
-      stopBuffering?.()
+      stopBufferingRef.current?.()
+      stopBufferingRef.current = null
     }
   }, [service, restoreData])
+
+  // Drain buffer + remove from pending set when a pane subscribes.
+  // Stable ref-only identity so passing this through props doesn't churn deps.
+  const notifyPaneReady = useCallback(
+    (sessionId: string, handler: PaneEventHandler): NotifyPaneReadyResult => {
+      // Drain any events the buffering listener captured for this session
+      // before the pane attached its live listener. The handler is the same
+      // function the pane uses for live events (with cursor dedupe), so any
+      // event that also arrived live between subscribe and this drain gets
+      // filtered by the cursor — no duplicates.
+      const events = bufferedRef.current.get(sessionId)
+      if (events && events.length > 0) {
+        for (const e of events) {
+          handler(e.data, e.offsetStart)
+        }
+        bufferedRef.current.delete(sessionId)
+      }
+
+      // Mark this pane as ready. When every pane reports ready, the buffering
+      // listener is no longer needed — future events flow through each pane's
+      // own service.onData subscription.
+      if (pendingPanesRef.current.delete(sessionId)) {
+        if (
+          pendingPanesRef.current.size === 0 &&
+          stopBufferingRef.current !== null
+        ) {
+          stopBufferingRef.current()
+          stopBufferingRef.current = null
+        }
+      }
+
+      // Return value is reserved for future per-pane teardown (e.g. unsubscribing
+      // a per-pane orchestrator route). Currently a no-op.
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return (): void => {}
+    },
+    []
+  )
 
   // Active session — optimistic update + IPC
   const setActiveSessionId = useCallback(
@@ -204,6 +305,7 @@ export const useSessionManager = (
           lastActivityAt: now,
           activity: { ...emptyActivity },
         }
+
         setSessions((prev) => [newSession, ...prev])
         setActiveSessionIdState(result.sessionId)
         registerPtySession(result.sessionId, result.sessionId, '~')
@@ -299,5 +401,6 @@ export const useSessionManager = (
     updateSessionCwd,
     restoreData,
     loading,
+    notifyPaneReady,
   }
 }
