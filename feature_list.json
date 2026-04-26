@@ -212,7 +212,7 @@
       "Write tests: registers listener before list_sessions, buffers events during in-flight, no localStorage writes, optimistic active update + revert on error, renders Exited sessions",
       "Commit with message: refactor(workspace): rewrite useSessionManager as pure IPC client with restore orchestration"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [12]
   },
   {
