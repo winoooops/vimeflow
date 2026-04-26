@@ -353,6 +353,84 @@ pub fn kill_pty(
     Ok(())
 }
 
+/// List all sessions with their current status and replay data
+#[tauri::command]
+pub fn list_sessions(
+    state: State<'_, PtyState>,
+    cache: State<'_, std::sync::Arc<super::cache::SessionCache>>,
+) -> Result<SessionList, String> {
+    let snapshot = cache.snapshot();
+    let mut needs_flush = false;
+    let mut session_infos = Vec::with_capacity(snapshot.session_order.len());
+
+    for id in &snapshot.session_order {
+        let cached = match snapshot.sessions.get(id) {
+            Some(c) => c.clone(),
+            None => continue, // session_order/sessions desync — skip
+        };
+
+        let pid_opt = state.get_pid(id);
+        let status = if cached.exited {
+            SessionStatus::Exited {
+                last_exit_code: cached.last_exit_code,
+            }
+        } else if let Some(pid) = pid_opt {
+            // Alive: snapshot ring buffer + end_offset under one lock
+            let sessions_lock = state.inner_sessions().lock().expect("poisoned");
+            if let Some(session) = sessions_lock.get(id) {
+                let ring_guard = session.ring.lock().expect("ring poisoned");
+                let bytes = ring_guard.bytes_snapshot();
+                let end_offset = ring_guard.end_offset();
+                drop(ring_guard);
+                drop(sessions_lock);
+                let replay_data = String::from_utf8_lossy(&bytes).to_string();
+                SessionStatus::Alive {
+                    pid,
+                    replay_data,
+                    replay_end_offset: end_offset,
+                }
+            } else {
+                // Race: removed between get_pid and lock — treat as exited
+                needs_flush = true;
+                SessionStatus::Exited {
+                    last_exit_code: None,
+                }
+            }
+        } else {
+            // Lazy reconciliation: cache says alive, but PtyState doesn't
+            // have it (Tauri restart, hard kill, etc). Flip the cache.
+            needs_flush = true;
+            SessionStatus::Exited {
+                last_exit_code: None,
+            }
+        };
+
+        session_infos.push(SessionInfo {
+            id: id.clone(),
+            cwd: cached.cwd,
+            status,
+        });
+    }
+
+    if needs_flush {
+        // Flush the lazy reconciliation results back to cache
+        cache.mutate(|d| {
+            for info in &session_infos {
+                if matches!(info.status, SessionStatus::Exited { .. }) {
+                    if let Some(s) = d.sessions.get_mut(&info.id) {
+                        s.exited = true;
+                    }
+                }
+            }
+        })?;
+    }
+
+    Ok(SessionList {
+        active_session_id: snapshot.active_session_id,
+        sessions: session_infos,
+    })
+}
+
 /// Background task to read PTY output and emit events
 async fn read_pty_output<R: tauri::Runtime>(
     app: AppHandle<R>,
@@ -1020,5 +1098,192 @@ mod tests {
             .get("eof-test")
             .expect("session should still be in cache after exit");
         assert!(entry.exited, "cache entry should be marked exited after EOF");
+    }
+
+    #[tokio::test]
+    async fn list_sessions_returns_alive_for_running_pty() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+        let cache = handle.state::<Arc<SessionCache>>();
+
+        spawn_pty(
+            handle.clone(),
+            state.clone(),
+            cache.clone(),
+            SpawnPtyRequest {
+                session_id: "alive-1".into(),
+                cwd: std::env::current_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        let result = list_sessions(state.clone(), cache.clone()).unwrap();
+        assert_eq!(result.sessions.len(), 1);
+        assert_eq!(result.sessions[0].id, "alive-1");
+        assert!(matches!(
+            result.sessions[0].status,
+            SessionStatus::Alive { .. }
+        ));
+
+        let _ = kill_pty(
+            state.clone(),
+            cache.clone(),
+            KillPtyRequest {
+                session_id: "alive-1".into(),
+            },
+        );
+    }
+
+    #[tokio::test]
+    async fn list_sessions_reconciles_alive_cache_with_empty_pty_state() {
+        use crate::terminal::cache;
+
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let cache_state = app.handle().state::<Arc<SessionCache>>();
+        let state = app.handle().state::<PtyState>();
+
+        // Manually plant an "alive but missing" entry in the cache
+        cache_state
+            .mutate(|d| {
+                d.session_order.push("phantom".into());
+                d.sessions.insert(
+                    "phantom".into(),
+                    cache::CachedSession {
+                        cwd: "/tmp".into(),
+                        created_at: "2026-04-25T00:00:00Z".into(),
+                        exited: false,
+                        last_exit_code: None,
+                    },
+                );
+            })
+            .unwrap();
+
+        let result = list_sessions(state.clone(), cache_state.clone()).unwrap();
+        assert_eq!(result.sessions.len(), 1);
+        match &result.sessions[0].status {
+            SessionStatus::Exited { last_exit_code } => assert_eq!(*last_exit_code, None),
+            other => panic!("expected Exited, got {:?}", other),
+        }
+
+        // Verify lazy reconciliation flushed back to cache
+        let snap = cache_state.snapshot();
+        assert!(snap.sessions["phantom"].exited);
+    }
+
+    #[tokio::test]
+    async fn list_sessions_returns_in_session_order() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+        let cache = handle.state::<Arc<SessionCache>>();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        for id in &["zebra", "alpha", "mike"] {
+            spawn_pty(
+                handle.clone(),
+                state.clone(),
+                cache.clone(),
+                SpawnPtyRequest {
+                    session_id: id.to_string(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        let result = list_sessions(state.clone(), cache.clone()).unwrap();
+        let ids: Vec<_> = result.sessions.iter().map(|s| s.id.clone()).collect();
+        assert_eq!(ids, vec!["zebra", "alpha", "mike"]);
+
+        for id in &["zebra", "alpha", "mike"] {
+            let _ = kill_pty(
+                state.clone(),
+                cache.clone(),
+                KillPtyRequest {
+                    session_id: id.to_string(),
+                },
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn list_sessions_replay_end_offset_matches_buffer_contents() {
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+        let cache = handle.state::<Arc<SessionCache>>();
+
+        spawn_pty(
+            handle.clone(),
+            state.clone(),
+            cache.clone(),
+            SpawnPtyRequest {
+                session_id: "off-test".into(),
+                cwd: std::env::current_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Write some output and let the read loop process
+        write_pty(
+            state.clone(),
+            WritePtyRequest {
+                session_id: "off-test".into(),
+                data: "echo hello\n".into(),
+            },
+        )
+        .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+
+        let result = list_sessions(state.clone(), cache.clone()).unwrap();
+        match &result.sessions[0].status {
+            SessionStatus::Alive {
+                replay_data,
+                replay_end_offset,
+                ..
+            } => {
+                // Ring buffer contents may be longer than just the echo
+                // (prompt, command echo, output, new prompt)
+                let bytes_in_buffer = replay_data.bytes().count() as u64;
+                // end_offset >= buffer length (truncation tolerance)
+                assert!(
+                    *replay_end_offset >= bytes_in_buffer,
+                    "end_offset {} < buffer len {}",
+                    replay_end_offset,
+                    bytes_in_buffer
+                );
+            }
+            other => panic!("expected Alive, got {:?}", other),
+        }
+
+        let _ = kill_pty(
+            state.clone(),
+            cache.clone(),
+            KillPtyRequest {
+                session_id: "off-test".into(),
+            },
+        );
     }
 }

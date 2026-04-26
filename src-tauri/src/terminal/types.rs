@@ -115,3 +115,40 @@ pub struct PtyErrorEvent {
     /// Error message
     pub message: String,
 }
+
+/// Session status — Alive (with replay data) or Exited
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(tag = "kind")]
+pub enum SessionStatus {
+    Alive {
+        pid: u32,
+        replay_data: String,
+        replay_end_offset: u64,
+    },
+    Exited {
+        last_exit_code: Option<i32>,
+    },
+}
+
+/// Single session info returned by list_sessions
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionInfo {
+    pub id: String,
+    pub cwd: String,
+    pub status: SessionStatus,
+}
+
+/// Response payload for list_sessions command
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionList {
+    pub active_session_id: Option<String>,
+    pub sessions: Vec<SessionInfo>,
+}
