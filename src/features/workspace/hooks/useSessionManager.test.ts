@@ -485,7 +485,7 @@ describe('useSessionManager', () => {
 
   // F5 (round 2): exited sessions surface a Restart affordance, but the
   // hook had no restart path at all — the button was a silent no-op.
-  test('F5 (round 2): restartSession kills then spawns and replaces session metadata', async () => {
+  test('F5 (round 2 / round 4): restartSession spawns then kills and replaces session metadata', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 'exited-id',
@@ -512,27 +512,31 @@ describe('useSessionManager', () => {
 
     act(() => result.current.restartSession('exited-id'))
 
-    // 1. kill_pty is fired against the OLD id (idempotent — Rust no-ops if
-    //    the session is already gone, which is the common case for Exited).
-    await waitFor(() =>
-      expect(service.kill).toHaveBeenCalledWith({ sessionId: 'exited-id' })
-    )
-
-    // 2. spawn fires AT THE CACHED CWD so the user lands back where they were.
+    // 1. spawn fires FIRST at the cached cwd. Round 4 Finding 2: spawn-then-
+    //    kill so a failed spawn doesn't tear down the cache entry for the
+    //    old session.
     await waitFor(() =>
       expect(service.spawn).toHaveBeenCalledWith(
         expect.objectContaining({ cwd: '/home/user/projects/foo' })
       )
     )
 
-    // Order: kill BEFORE spawn so the Rust cache slot is free for reuse.
+    // 2. kill_pty fires AFTER spawn against the OLD id (idempotent — Rust
+    //    no-ops if the session is already gone, which is the common case
+    //    for Exited).
+    await waitFor(() =>
+      expect(service.kill).toHaveBeenCalledWith({ sessionId: 'exited-id' })
+    )
+
+    // Order: spawn BEFORE kill so the old session is preserved in the cache
+    // until the new PTY is alive.
     const killCallOrder = (service.kill as ReturnType<typeof vi.fn>).mock
       .invocationCallOrder[0]
 
     const spawnCallOrder = (service.spawn as ReturnType<typeof vi.fn>).mock
       .invocationCallOrder[0]
 
-    expect(killCallOrder).toBeLessThan(spawnCallOrder)
+    expect(spawnCallOrder).toBeLessThan(killCallOrder)
 
     // 3. React state replaces the old session — id flips to fresh-id, status
     //    flips to 'running'. The previous 'exited-id' must NOT linger.
@@ -724,6 +728,54 @@ describe('useSessionManager', () => {
     await waitFor(() => {
       expect(result.current.sessions[0].status).toBe('completed')
     })
+  })
+
+  // Round 4, Finding 2 (codex P2) regression test.
+  //
+  // Before the spawn-then-kill reorder, a failed spawn (e.g. cwd deleted)
+  // left React state showing the tab as `completed` but the Rust cache
+  // had already removed it via the pre-spawn kill. The session vanished
+  // on the next reload and any later IPC against the old id rejected as
+  // unknown. With the new ordering, the old session is preserved when
+  // spawn fails — the user can fix the cwd and try again.
+  test('round 4 F2: spawn failure preserves the old session in cache and React state', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'exited-id',
+      sessions: [
+        {
+          id: 'exited-id',
+          cwd: '/now-deleted',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+      ],
+    })
+
+    // Simulate Rust rejecting spawn because the cwd no longer exists.
+    service.spawn = vi.fn().mockRejectedValue(new Error('invalid cwd'))
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    ;(service.kill as ReturnType<typeof vi.fn>).mockClear()
+
+    act(() => result.current.restartSession('exited-id'))
+
+    // Spawn must be attempted — but should be the only IPC fired since it
+    // failed. kill MUST NOT be called: that's exactly the behavior that
+    // would have torn down the cache entry under the buggy ordering.
+    await waitFor(() => expect(service.spawn).toHaveBeenCalled())
+    expect(service.kill).not.toHaveBeenCalled()
+
+    // The React tab still shows the old id with `completed` status — the
+    // user can retry once they recreate the cwd. The orchestrator did NOT
+    // pretend the restart succeeded.
+    expect(result.current.sessions).toHaveLength(1)
+    expect(result.current.sessions[0].id).toBe('exited-id')
+    expect(result.current.sessions[0].status).toBe('completed')
+
+    // restoreData for the old id stays untouched — same as before the
+    // restart attempt — so the next listSessions/render cycle doesn't
+    // accidentally re-resolve the tab to a different mode.
   })
 
   test('F5 (round 2): restartSession on unknown id is a no-op', async () => {

@@ -581,17 +581,34 @@ export const useSessionManager = (
 
   // F5 (round 2): restart an Exited session in the same cwd.
   //
-  // Flow (kill-then-spawn):
+  // Round 4, Finding 2 (codex P2): SPAWN-THEN-KILL ordering. The previous
+  // kill-then-spawn flow removed the old session from cache.sessions and
+  // cache.session_order BEFORE we knew the spawn would succeed. If the
+  // user restarted a tab whose cwd no longer existed (rm -rf, branch
+  // switch, etc.), spawn returned an error and the React tab stayed
+  // visible as `completed`, but the backend had already forgotten it —
+  // the next reload silently dropped the tab and any later IPC against
+  // the old id rejected as unknown.
+  //
+  // Spawn-first means: if spawn fails, the OLD session still exists in
+  // the cache (still `exited: true`, still restorable later — the user
+  // can recover by fixing the cwd and clicking Restart again, or by
+  // using a different tab). If spawn succeeds, we then kill the old —
+  // safe because the new session is already alive. The only caveat is
+  // that during the spawn the cache briefly contains BOTH ids (old as
+  // exited, new as alive), which is harmless: list_sessions still
+  // returns the right set and the in-memory React state replaces the
+  // old entry atomically once spawn resolves.
+  //
+  // Flow (spawn-then-kill):
   //   1. Look up cached cwd for the exited tab from React state
-  //   2. service.kill(id) — idempotent, clears any stale Rust state
-  //   3. service.spawn({ cwd: cachedCwd }) — gets a fresh sessionId/pid
-  //   4. Replace the old session in React state with the new metadata:
-  //      id flips to result.sessionId, status flips to 'running', cwd
-  //      stays the same so the user's location is preserved
+  //   2. service.spawn({ cwd: cachedCwd }) — gets a fresh sessionId/pid;
+  //      bail early if it fails (old session preserved)
+  //   3. service.kill(oldId) — only after the new PTY exists; idempotent
+  //   4. Replace the old session in React state with the new metadata
   //   5. If the restarted tab was active, refresh activeSessionId + IPC
   //   6. Seed restoreData with empty replay so TerminalPane attaches
-  //      instead of triggering the legacy spawn fallback (same trick as
-  //      createSession's F3 fix)
+  //      instead of triggering the legacy spawn fallback
   //
   // The new session id differs from the old one — Rust's spawn_pty
   // assigns a fresh UUID. Callers (TerminalPane) re-render with the new
@@ -609,33 +626,47 @@ export const useSessionManager = (
 
         const cachedCwd = oldSession.workingDirectory
 
-        // 1. Kill the old session (no-op if already gone — kill_pty is
-        // idempotent in Rust). This clears any stale cache entry so the
-        // subsequent spawn doesn't trip the duplicate-session-id guard.
-        try {
-          await service.kill({ sessionId: id })
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn('restartSession: kill failed (continuing)', err)
-        }
-
-        // Drop bookkeeping for the OLD id — the new spawn will register
-        // fresh entries under the new sessionId.
-        readyPanesRef.current.delete(id)
-        pendingPanesRef.current.delete(id)
-        bufferedRef.current.delete(id)
-        restoreData.delete(id)
-
-        // 2. Spawn fresh PTY at the cached cwd.
+        // 1. Spawn fresh PTY at the cached cwd FIRST. If this fails (cwd
+        // deleted, permission denied, session cap hit), we bail BEFORE
+        // touching any cache state for the old id — the old session
+        // stays intact, still restorable on a later attempt. Round 4
+        // Finding 2: previously we killed the old id before spawn, so a
+        // failed spawn left the React tab visible but the backend cache
+        // gone — the tab silently disappeared on the next reload.
         let result: { sessionId: string; pid: number; cwd?: string }
         try {
           result = await service.spawn({ cwd: cachedCwd, env: {} })
         } catch (err) {
           // eslint-disable-next-line no-console
-          console.warn('restartSession: spawn failed', err)
+          console.warn(
+            'restartSession: spawn failed; old session preserved',
+            err
+          )
 
           return
         }
+
+        // 2. Now that the new PTY exists, retire the old. kill_pty is
+        // idempotent in Rust (no error if already gone — common case for
+        // an Exited tab whose process is already cleaned up). Failures
+        // here are non-fatal: the new session is already alive and the
+        // old will get cleaned up on the next reload via lazy
+        // reconciliation. Drop frontend bookkeeping for the old id
+        // regardless so the buffer doesn't accumulate stale entries.
+        try {
+          await service.kill({ sessionId: id })
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            'restartSession: kill of old id failed (continuing)',
+            err
+          )
+        }
+
+        readyPanesRef.current.delete(id)
+        pendingPanesRef.current.delete(id)
+        bufferedRef.current.delete(id)
+        restoreData.delete(id)
 
         // 3. Seed restoreData so TerminalPane mounts in 'attach' mode
         // instead of falling through to the legacy spawn path (which would
