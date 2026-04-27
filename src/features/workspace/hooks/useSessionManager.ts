@@ -984,19 +984,39 @@ export const useSessionManager = (
   }, [])
 
   // Reorder sessions — optimistic update + IPC
+  //
+  // Round 9, Finding 5 (codex P2 / claude LOW): no rollback on IPC failure.
+  // The previous code captured `prev = sessions` at call time and called
+  // `setSessions(prev)` from the catch handler — a render-time snapshot
+  // that overwrote any concurrent createSession / removeSession updates
+  // that committed during the IPC roundtrip. Rust's reorder_sessions
+  // already validates the input is a permutation of the current set, so
+  // a rejected call leaves the cache untouched. Without rolling back the
+  // UI here, the in-memory order may briefly diverge from the cache;
+  // the next reload merges via list_sessions and reconciles. The cost is
+  // tiny (a refresh window where the tab strip shows the user's intent
+  // even though the cache holds the prior order) and the win is large
+  // (no clobbering of unrelated concurrent state).
   const reorderSessions = useCallback(
     (reordered: Session[]): void => {
-      const prev = sessions
       setSessions(reordered)
       const ids = reordered.map((s) => s.id)
       // eslint-disable-next-line promise/prefer-await-to-then
       service.reorderSessions(ids).catch((err) => {
         // eslint-disable-next-line no-console
-        console.warn('reorderSessions IPC failed; reverting', err)
-        setSessions(prev)
+        console.warn(
+          'reorderSessions IPC failed; cache untouched, UI may diverge until next reload',
+          err
+        )
+        // No rollback: setSessions(prev) with a render-time snapshot
+        // would discard concurrent create/remove updates that commit
+        // during the IPC roundtrip. The Rust side rejected the write so
+        // the cache retains the prior order; on next reload the merge
+        // logic in the orchestrator reconciles in-memory React state
+        // with the cached order.
       })
     },
-    [service, sessions]
+    [service]
   )
 
   // Update session cwd — optimistic update + IPC

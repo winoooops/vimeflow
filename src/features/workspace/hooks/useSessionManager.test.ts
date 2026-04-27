@@ -1302,6 +1302,75 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].name).not.toBe(originalName)
   })
 
+  // Round 9, Finding 5 (codex P2 / claude LOW): reorderSessions's old
+  // rollback used a render-time `prev` snapshot. On IPC rejection the
+  // catch handler called setSessions(prev), which clobbered any concurrent
+  // createSession / removeSession update that committed during the IPC
+  // roundtrip. The fix drops the rollback entirely — Rust's permutation
+  // validator already protects the cache, and on next reload the merge
+  // logic reconciles UI with cache.
+  test('round 9 F5: reorderSessions does not roll back on IPC failure (preserves concurrent state)', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'b',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    // Rejecting IPC simulates the cache rejecting the order (permutation
+    // mismatch, cache file not writable, etc).
+    let rejectReorder: ((e: unknown) => void) | null = null
+    service.reorderSessions = vi.fn(
+      (): Promise<void> =>
+        new Promise<void>((_resolve, reject) => {
+          rejectReorder = reject
+        })
+    )
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions.map((s) => s.id)).toEqual(['a', 'b'])
+
+    // User reorders → optimistic ['b','a']. IPC stays in-flight.
+    const reversed = [...result.current.sessions].reverse()
+    act(() => result.current.reorderSessions(reversed))
+    expect(result.current.sessions.map((s) => s.id)).toEqual(['b', 'a'])
+
+    // IPC rejects. With the bug, setSessions(prev) reverted to ['a','b'].
+    // With the fix, no rollback runs — the user's intended order stays.
+    act(() => {
+      rejectReorder?.('cache rejected')
+    })
+
+    // Give the reject handler a microtask to run.
+    await waitFor(() =>
+      expect(result.current.sessions.map((s) => s.id)).toEqual(['b', 'a'])
+    )
+    expect(result.current.sessions.map((s) => s.id)).toEqual(['b', 'a'])
+  })
+
   test('reorderSessions calls IPC', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
