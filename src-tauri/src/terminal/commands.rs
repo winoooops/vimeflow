@@ -545,6 +545,13 @@ pub fn reorder_sessions(
 /// `mutate` closure so a concurrent `kill_pty` cannot remove the session
 /// between the check and the write. Path validation stays outside — it's
 /// stateless and doesn't touch cache state.
+///
+/// Round 8, Finding 4 (claude LOW): canonicalize the path before storing,
+/// matching `spawn_pty`. Without this, OSC 7 emissions like `/tmp/./` or
+/// `/home/user/../user/projects` were stored verbatim, leading to spurious
+/// inequality checks and confusing output in tests / debug logs. Canonical
+/// paths also serve as a safety net against directory-traversal-style cwds
+/// that pass the absolute + is_dir checks but mask the actual location.
 #[tauri::command]
 pub fn update_session_cwd(
     cache: State<'_, std::sync::Arc<crate::terminal::cache::SessionCache>>,
@@ -558,18 +565,22 @@ pub fn update_session_cwd(
     {
         return Err("invalid session id".into());
     }
-    // cwd must be an absolute path that exists and is a directory
-    let path = std::path::PathBuf::from(&request.cwd);
-    if !path.is_absolute() {
-        return Err("invalid cwd: must be absolute".into());
-    }
+    // Canonicalize before storing. `canonicalize` resolves symlinks, strips
+    // `.`/`..` components, and verifies the path exists in one shot.
+    // Mirrors the validation `spawn_pty` performs at session creation.
+    let path = std::fs::canonicalize(std::path::PathBuf::from(&request.cwd))
+        .map_err(|e| format!("invalid cwd: {e}"))?;
     if !path.is_dir() {
-        return Err("invalid cwd: not a directory".into());
+        return Err(format!(
+            "invalid cwd: not a directory: {}",
+            path.display()
+        ));
     }
+    let canonical_cwd = path.to_string_lossy().to_string();
 
     cache.mutate(|d| match d.sessions.get_mut(&request.id) {
         Some(s) => {
-            s.cwd = request.cwd.clone();
+            s.cwd = canonical_cwd.clone();
             Ok(())
         }
         None => Err("unknown session".into()),
@@ -1683,17 +1694,26 @@ mod tests {
         .await
         .unwrap();
 
-        // Use /tmp which is guaranteed to exist on POSIX
+        // Round 8, Finding 4 (claude LOW): the OSC 7 path is canonicalized
+        // BEFORE persisting. Pass `/tmp/./` (a non-canonical form) and assert
+        // the stored value is the canonical `/tmp` (or `/private/tmp` on
+        // macOS). Mirrors `spawn_pty`'s canonicalize step so reload sees the
+        // same path the OS reports for the cwd.
         update_session_cwd(
             cache.clone(),
             UpdateSessionCwdRequest {
                 id: "cwd-test".into(),
-                cwd: "/tmp".into(),
+                cwd: "/tmp/./".into(),
             },
         )
         .unwrap();
 
-        assert_eq!(cache.snapshot().sessions["cwd-test"].cwd, "/tmp");
+        let stored = &cache.snapshot().sessions["cwd-test"].cwd;
+        let expected_canonical = std::fs::canonicalize("/tmp")
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        assert_eq!(stored, &expected_canonical);
 
         let _ = kill_pty(
             state.clone(),
@@ -1717,7 +1737,17 @@ mod tests {
             },
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not a directory"));
+        // Round 8, Finding 4 (claude LOW): canonicalize() fails on
+        // non-existent paths before the is_dir check runs, so the error
+        // message comes from std::fs::canonicalize ("No such file or
+        // directory" on POSIX, similar on Windows). Just assert it's an
+        // "invalid cwd" prefix and the upstream path failure produced
+        // a recognizable error.
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("invalid cwd"),
+            "expected 'invalid cwd' prefix, got: {err}"
+        );
     }
 
     /// Round 4, Finding 3 (codex P2) regression test.
