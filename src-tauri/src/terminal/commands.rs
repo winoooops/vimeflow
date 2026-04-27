@@ -190,26 +190,14 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         );
     }
 
-    // Error if session ID already exists (no kill-and-replace)
-    if state.contains(&request.session_id) {
-        return Err(format!(
-            "session '{}' already exists — cannot spawn duplicate session ID",
-            request.session_id
-        ));
-    }
-
-    // Cap at 64 active sessions
-    if state.active_count() >= 64 {
-        return Err(format!(
-            "maximum of 64 active sessions reached — cannot spawn new session"
-        ));
-    }
-
-    // Spawn child process. We hold the child owned (mut) so that we can
-    // best-effort kill it if cache.mutate fails below — without that path,
-    // the child would be orphaned: alive but unreferenced anywhere, with
-    // its stdout buffer eventually filling and the process blocking.
-    let mut child = pty_pair
+    // Spawn child process. We hold the child owned so that we can
+    // best-effort kill it on any failure path below (try_insert cap/dup
+    // race, cache.mutate failure) — the failure paths take ownership of
+    // a `ManagedSession` (containing the child) and call `kill`/`wait`
+    // there. Without owning the child here, a bail-out would leak the
+    // process: alive but unreferenced anywhere, with its stdout buffer
+    // eventually filling and the process blocking.
+    let child = pty_pair
         .slave
         .spawn_command(cmd)
         .map_err(|e| format!("failed to spawn shell: {}", e))?;
@@ -226,24 +214,66 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         .take_writer()
         .map_err(|e| format!("failed to get PTY writer: {}", e))?;
 
-    // Round 7, Finding 1 (claude HIGH): persist to cache BEFORE inserting
-    // into PtyState. If cache.mutate returns Err, kill the freshly-spawned
-    // child (best-effort) and bail. Previously the order was:
-    //   state.insert(session)  // line 236
-    //   cache.mutate(...)?     // line 259 — `?` could propagate Err
-    //   spawn read loop        // never reached on Err
-    // → on cache failure, the child stayed alive in PtyState with NO read
-    //   loop spawned. The PTY master's kernel buffer would fill, the child
-    //   would block on stdout, and `list_sessions` (which iterates
-    //   cache.session_order, NOT PtyState) would never surface the orphan
-    //   to the frontend — only reaped on app exit. A disk-full or
-    //   perm-denied scenario could let a user accumulate multiple zombies.
+    // Round 7, Finding 3 (claude MEDIUM): atomic check-and-insert against
+    // the cap and duplicate id. The previous flow ran three independent
+    // lock acquisitions:
     //
-    // The cache-first ordering makes the failure-handling reversible:
-    //   - cache.mutate Err → child still owned here, kill it and return
-    //   - cache.mutate Ok  → state.insert is infallible (no Result), so
-    //                        we cannot leave a session in cache without
-    //                        a corresponding entry in PtyState
+    //   if state.contains(...) { return Err(...) }
+    //   if state.active_count() >= 64 { return Err(...) }
+    //   state.insert(...)
+    //
+    // Two concurrent spawn_pty calls at exactly cap-1 (63) could BOTH pass
+    // `active_count() == 63` and BOTH insert, ending at 65 sessions. The
+    // duplicate-id race is academic given UUIDs but the cap race is real.
+    // `try_insert` holds the sessions mutex across the check and the
+    // insert so the race window is closed.
+    //
+    // Ordering note (interaction with Finding 1, claude HIGH): we do
+    // try_insert FIRST (fallible) and cache.mutate SECOND. This is the
+    // CLEANER of the two stack orderings:
+    //
+    //   - try_insert Err → no state, no cache; kill+wait the child
+    //     returned in the Err tuple
+    //   - cache.mutate Err → state has the entry; rollback via the
+    //     INFALLIBLE `state.remove`, then kill+wait the child returned
+    //
+    // The reverse (cache.mutate first → try_insert second) would require
+    // a fallible cache rollback closure on the try_insert-Err path,
+    // nesting error handling. Finding 1's invariant is preserved:
+    // whenever spawn_pty returns Err, no orphan child remains in
+    // PtyState — independent of which step failed.
+    let generation = state.next_generation();
+    let session = ManagedSession {
+        master: pty_pair.master,
+        writer,
+        child,
+        cwd: cwd.to_string_lossy().to_string(),
+        generation,
+        ring: std::sync::Mutex::new(crate::terminal::state::RingBuffer::new(65536)),
+    };
+    if let Err((reason, mut rejected)) =
+        state.try_insert(request.session_id.clone(), session, 64)
+    {
+        // Reap the child whose session we couldn't insert. portable_pty's
+        // Child::Drop does not kill the process by default — we must call
+        // kill explicitly so spawn_pty's failure path doesn't leak the
+        // freshly-spawned shell.
+        let _ = rejected.child.kill();
+        let _ = rejected.child.wait();
+        return Err(match reason {
+            crate::terminal::state::TryInsertError::AlreadyExists => format!(
+                "session '{}' already exists — cannot spawn duplicate session ID",
+                request.session_id
+            ),
+            crate::terminal::state::TryInsertError::CapReached => {
+                "maximum of 64 active sessions reached — cannot spawn new session".to_string()
+            }
+        });
+    }
+
+    // Cache write — under the same `mutate` lock as every other state
+    // change. On failure we roll back the PtyState insert via the
+    // infallible `state.remove` and reap the child it carries.
     let created_at = chrono::Utc::now().to_rfc3339();
     if let Err(e) = cache.mutate(|data| {
         use super::cache::CachedSession;
@@ -263,26 +293,16 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         }
         Ok(())
     }) {
-        // Cache write failed — reap the orphan child so we don't leak a
-        // zombie. Both kill and wait are best-effort: we're already on the
-        // failure path and surfacing the original cache error is more
-        // useful than chaining a kill error.
-        let _ = child.kill();
-        let _ = child.wait();
+        // Roll back the PtyState insert, then reap the child. Both are
+        // best-effort: surfacing the original cache error is more useful
+        // than chaining a kill or remove error.
+        if let Some(mut removed) = state.remove(&request.session_id) {
+            let _ = removed.child.kill();
+            let _ = removed.child.wait();
+        }
         return Err(format!("failed to write cache: {}", e));
     }
 
-    // Cache is consistent. Insert into PtyState (infallible — no Result).
-    let generation = state.next_generation();
-    let session = ManagedSession {
-        master: pty_pair.master,
-        writer,
-        child,
-        cwd: cwd.to_string_lossy().to_string(),
-        generation,
-        ring: std::sync::Mutex::new(crate::terminal::state::RingBuffer::new(65536)),
-    };
-    state.insert(request.session_id.clone(), session);
     debug_log(
         "pty",
         &format!(

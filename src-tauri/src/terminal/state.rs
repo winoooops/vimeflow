@@ -79,6 +79,16 @@ pub struct PtyState {
     sessions: Arc<Mutex<HashMap<SessionId, ManagedSession>>>,
 }
 
+/// Reason why `PtyState::try_insert` rejected a new session — returned to
+/// `spawn_pty` for mapping to user-facing error strings.
+#[derive(Debug, PartialEq, Eq)]
+pub enum TryInsertError {
+    /// A session with the same id already exists in `PtyState`.
+    AlreadyExists,
+    /// `sessions.len() >= max` — adding would exceed the configured cap.
+    CapReached,
+}
+
 impl PtyState {
     /// Create a new empty PTY state
     pub fn new() -> Self {
@@ -92,10 +102,50 @@ impl PtyState {
         GENERATION.fetch_add(1, Ordering::Relaxed)
     }
 
-    /// Insert a new PTY session
+    /// Insert a new PTY session.
+    ///
+    /// Test-only after round 7 finding 3 — production callers use
+    /// `try_insert` to take the cap check + insert under a single lock.
+    /// Retained for tests that don't care about the cap and want a
+    /// straight insert.
+    #[cfg(test)]
     pub fn insert(&self, session_id: SessionId, session: ManagedSession) {
         let mut sessions = self.sessions.lock().expect("failed to lock sessions");
         sessions.insert(session_id, session);
+    }
+
+    /// Atomic check-and-insert: rejects when the session id already exists
+    /// or when the active count is at or above `max`. The mutex is held for
+    /// the entire check + insert, so two concurrent `spawn_pty` calls at
+    /// exactly cap-1 (e.g. 63) cannot both pass the cap check and both
+    /// insert — one wins, the other gets `CapReached`.
+    ///
+    /// Round 7, Finding 3 (claude MEDIUM): closes the TOCTOU window between
+    /// `state.contains()`, `state.active_count()`, and `state.insert()` —
+    /// each of which used to acquire and release the lock independently in
+    /// `spawn_pty`. The duplicate-id race is largely academic given UUIDs,
+    /// but the cap race is real: a burst of 65+ spawn calls on a near-full
+    /// state could push `sessions.len()` over 64.
+    ///
+    /// On rejection the session is returned back via the Err variant so the
+    /// caller can kill the child it owns — without this, ownership of the
+    /// `ManagedSession` (and its `Box<dyn Child>`) would be lost inside
+    /// `try_insert` and the freshly-spawned process would leak.
+    pub fn try_insert(
+        &self,
+        session_id: SessionId,
+        session: ManagedSession,
+        max: usize,
+    ) -> Result<(), (TryInsertError, ManagedSession)> {
+        let mut sessions = self.sessions.lock().expect("failed to lock sessions");
+        if sessions.contains_key(&session_id) {
+            return Err((TryInsertError::AlreadyExists, session));
+        }
+        if sessions.len() >= max {
+            return Err((TryInsertError::CapReached, session));
+        }
+        sessions.insert(session_id, session);
+        Ok(())
     }
 
     /// Remove a PTY session
@@ -129,7 +179,12 @@ impl PtyState {
         sessions.contains_key(session_id)
     }
 
-    /// Return the number of active sessions
+    /// Return the number of active sessions.
+    ///
+    /// Test-only after round 7 finding 3 — production cap checks now run
+    /// inside `try_insert` under a single lock. Retained for tests that
+    /// want to assert state size invariants.
+    #[cfg(test)]
     pub fn active_count(&self) -> usize {
         let sessions = self.sessions.lock().expect("failed to lock sessions");
         sessions.len()
@@ -287,5 +342,147 @@ mod tests {
         }
         assert_eq!(buf.end_offset(), 20);
         assert_eq!(buf.bytes_snapshot().len(), 4);
+    }
+
+    /// Build a real but ephemeral `ManagedSession` for tests that need
+    /// `PtyState::try_insert` exercising. The shell is `/bin/true` so the
+    /// child exits immediately — we don't care about its output, only that
+    /// `Box<dyn MasterPty + Send>` and `Box<dyn Child + Send + Sync>` are
+    /// real values that satisfy `try_insert`'s signature. The `Drop` impl
+    /// of the test (running at the end of the function) reaps the children.
+    #[cfg(test)]
+    fn make_test_session() -> ManagedSession {
+        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        let pty_system = native_pty_system();
+        let pty_pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        // /bin/true exits immediately with status 0 — keeps the test fast
+        // and avoids leaving long-running shells around if cleanup is
+        // skipped.
+        let cmd = CommandBuilder::new("/bin/true");
+        let child = pty_pair.slave.spawn_command(cmd).expect("spawn");
+        let writer = pty_pair.master.take_writer().expect("take_writer");
+        ManagedSession {
+            master: pty_pair.master,
+            writer,
+            child,
+            cwd: "/tmp".into(),
+            generation: 0,
+            ring: Mutex::new(super::RingBuffer::new(64)),
+        }
+    }
+
+    #[test]
+    fn try_insert_succeeds_under_cap() {
+        let state = PtyState::new();
+        let result = state.try_insert("a".into(), make_test_session(), 4);
+        assert!(result.is_ok());
+        assert_eq!(state.active_count(), 1);
+    }
+
+    #[test]
+    fn try_insert_rejects_duplicate_id() {
+        let state = PtyState::new();
+        // .expect would require ManagedSession: Debug for the Err variant;
+        // unwrap via match to avoid the bound.
+        match state.try_insert("dup".into(), make_test_session(), 4) {
+            Ok(()) => {}
+            Err(_) => panic!("first insert should succeed"),
+        }
+        let result = state.try_insert("dup".into(), make_test_session(), 4);
+        match result {
+            Err((TryInsertError::AlreadyExists, _)) => {}
+            Err((other_reason, _)) => panic!("expected AlreadyExists, got {:?}", other_reason),
+            Ok(()) => panic!("expected AlreadyExists, got Ok"),
+        }
+        // Cap stayed at 1 — the rejected insert did NOT bump the count.
+        assert_eq!(state.active_count(), 1);
+    }
+
+    #[test]
+    fn try_insert_rejects_when_at_cap() {
+        let state = PtyState::new();
+        for i in 0..3 {
+            match state.try_insert(format!("s{}", i), make_test_session(), 3) {
+                Ok(()) => {}
+                Err(_) => panic!("under-cap insert should succeed"),
+            }
+        }
+        let result = state.try_insert("overflow".into(), make_test_session(), 3);
+        match result {
+            Err((TryInsertError::CapReached, _)) => {}
+            Err((other_reason, _)) => panic!("expected CapReached, got {:?}", other_reason),
+            Ok(()) => panic!("expected CapReached, got Ok"),
+        }
+        assert_eq!(state.active_count(), 3);
+    }
+
+    /// Round 7, Finding 3 (claude MEDIUM) regression test.
+    ///
+    /// `state.contains() / state.active_count() / state.insert()` ran as
+    /// three INDEPENDENT lock acquisitions in `spawn_pty`. Two concurrent
+    /// callers at exactly cap-1 could both pass the cap check and both
+    /// insert, ending at cap+1. `try_insert` holds the lock across the
+    /// entire check + insert, so a burst of N callers against capacity K
+    /// produces EXACTLY K successes — never K+1.
+    ///
+    /// We validate this by spawning 8 threads against a cap of 4. With
+    /// proper atomicity, exactly 4 succeed; 4 fail with CapReached. A
+    /// `Barrier` synchronizes the 8 threads to start as close to
+    /// simultaneously as possible, maximizing the race window. With the
+    /// pre-fix code (separate locks), this test would intermittently see
+    /// 5+ successes — under proper atomicity, it's deterministic.
+    #[test]
+    fn try_insert_concurrent_does_not_exceed_cap() {
+        use std::sync::Arc;
+        use std::sync::Barrier;
+        use std::thread;
+
+        let state = Arc::new(PtyState::new());
+        let cap = 4usize;
+        let workers = 8usize;
+        let barrier = Arc::new(Barrier::new(workers));
+
+        let mut handles = Vec::with_capacity(workers);
+        for i in 0..workers {
+            let state = Arc::clone(&state);
+            let barrier = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                let session = make_test_session();
+                // Wait for all workers to reach the barrier before any of
+                // them call try_insert — maximizes the chance that the
+                // contains/cap checks would have raced under the buggy
+                // pre-fix implementation.
+                barrier.wait();
+                state.try_insert(format!("s{}", i), session, cap)
+            }));
+        }
+
+        let mut succeeded = 0;
+        let mut cap_rejections = 0;
+        for h in handles {
+            match h.join().unwrap() {
+                Ok(()) => succeeded += 1,
+                Err((TryInsertError::CapReached, _)) => cap_rejections += 1,
+                Err((TryInsertError::AlreadyExists, _)) => {
+                    panic!("unique ids — AlreadyExists impossible")
+                }
+            }
+        }
+
+        // EXACTLY `cap` succeed — not `cap + 1` (the buggy outcome) or
+        // anything else. The remaining `workers - cap` get CapReached.
+        assert_eq!(
+            succeeded, cap,
+            "exactly {cap} inserts should succeed, got {succeeded}"
+        );
+        assert_eq!(cap_rejections, workers - cap);
+        assert_eq!(state.active_count(), cap);
     }
 }
