@@ -340,8 +340,10 @@ export const useSessionManager = (
         // have already populated them. If nothing was created, they remain
         // at their initial empty values.
         setLoading(false)
-        stopBufferingRef.current?.()
-        stopBufferingRef.current = null
+        // Round 13, Codex P2: do NOT tear down the global buffering
+        // listener here. createSession() still relies on it to buffer
+        // pty-data between spawn() and the pane's live subscription.
+        // The listener tears down on hook unmount (cleanup below).
       }
     })()
 
@@ -820,16 +822,15 @@ export const useSessionManager = (
           })
 
           if (shouldUpdateActive) {
-            setActiveSessionIdState(computedFallback)
             if (computedFallback !== null) {
-              // eslint-disable-next-line promise/prefer-await-to-then
-              void service.setActiveSession(computedFallback).catch((err) => {
-                // eslint-disable-next-line no-console
-                console.warn(
-                  'removeSession: setActiveSession IPC failed (cache active id will lag)',
-                  err
-                )
-              })
+              // Round 13, Codex P2: route through the guarded helper so a
+              // stale fallback IPC can't overwrite a newer user selection
+              // that fires while this kill is in flight.
+              setActiveSessionId(computedFallback)
+            } else {
+              // Last tab removed — Rust's kill_pty already cleared
+              // cache.active_session_id, no IPC needed.
+              setActiveSessionIdState(null)
             }
           }
         } catch (err) {
@@ -838,7 +839,7 @@ export const useSessionManager = (
         }
       })()
     },
-    [service]
+    [service, setActiveSessionId]
   )
 
   // Use a ref to read the latest sessions inside the async closure without
@@ -1080,20 +1081,14 @@ export const useSessionManager = (
         // `setActiveSession` for an unknown id, and the stale selection
         // would leak until the next user action.
         if (wasActive && oldIdStillExists) {
-          setActiveSessionIdState(result.sessionId)
-          try {
-            await service.setActiveSession(result.sessionId)
-          } catch (err) {
-            // eslint-disable-next-line no-console
-            console.warn(
-              'restartSession: setActiveSession IPC failed (cache active id will lag)',
-              err
-            )
-          }
+          // Round 13, Codex P2: route through the guarded helper so a
+          // stale active write from this restart cannot persist over a
+          // newer user tab-pick fired before this IPC settles.
+          setActiveSessionId(result.sessionId)
         }
       })()
     },
-    [service]
+    [service, setActiveSessionId]
   )
 
   // Rename session — in-memory only (no IPC)
