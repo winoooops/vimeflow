@@ -840,7 +840,23 @@ export const useSessionManager = (
         pendingPanesRef.current.add(result.sessionId)
         registerPtySession(result.sessionId, result.sessionId, cachedCwd)
 
-        const wasActive = activeSessionId === id
+        // Round 9, Finding 3 (codex P2): read the LATEST active id post-await,
+        // not the closure-captured `activeSessionId` from when restartSession
+        // was first called. The user may have switched tabs during the spawn
+        // / kill roundtrip; promoting the restarted tab on top of the newer
+        // pick would clobber the user's selection. Capturing post-await
+        // ensures any tab switch that landed in the meantime wins.
+        const wasActive = activeSessionIdRef.current === id
+
+        // Verify the session still exists in React state (latest committed
+        // snapshot via sessionsRef) before deciding to promote the new id.
+        // sessionsRef is updated synchronously during render — it reflects
+        // the latest committed state at the time of this read, not a
+        // closure-captured value. If the session was removed during the
+        // spawn/kill roundtrip, the swap below will be a no-op and we
+        // MUST NOT setActiveSessionIdState to an id that won't appear in
+        // `sessions`.
+        const oldIdStillExists = sessionsRef.current.some((s) => s.id === id)
 
         // 4. Replace the old session entry with new metadata. Inside the
         // setSessions updater so it races correctly against any concurrent
@@ -894,9 +910,15 @@ export const useSessionManager = (
           return next
         })
 
-        // 5. If the restarted tab was active, the React-state id moved.
-        // Update active to the new id and tell Rust about it.
-        if (wasActive) {
+        // 5. If the restarted tab was active AND the old id still exists in
+        // the latest committed state (so the swap above produced a NEW id
+        // that will be in `sessions`), the React-state id moved. Update
+        // active to the new id and tell Rust about it. Skipping the
+        // promotion when `oldIdStillExists` is false prevents setting an
+        // active id that won't appear in `sessions` — Rust would reject
+        // `setActiveSession` for an unknown id, and the stale selection
+        // would leak until the next user action.
+        if (wasActive && oldIdStillExists) {
           setActiveSessionIdState(result.sessionId)
           try {
             await service.setActiveSession(result.sessionId)
@@ -910,7 +932,7 @@ export const useSessionManager = (
         }
       })()
     },
-    [activeSessionId, restoreData, service]
+    [restoreData, service]
   )
 
   // Rename session — in-memory only (no IPC)

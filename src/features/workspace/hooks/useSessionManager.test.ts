@@ -846,6 +846,93 @@ describe('useSessionManager', () => {
     )
   })
 
+  // Round 9, Finding 3 (codex P2): the `wasActive` capture in restartSession
+  // used a closure-bound `activeSessionId`. If the user switched tabs during
+  // the spawn / kill roundtrip, promoting the restarted session would
+  // overwrite the user's newer pick. Reading `activeSessionIdRef.current`
+  // post-await keeps the user's latest selection.
+  //
+  // Scenario:
+  //   - Sessions ['exited','alive'], active = 'exited'
+  //   - User clicks Restart on 'exited' (spawn in-flight)
+  //   - User clicks 'alive' (active = 'alive')
+  //   - Spawn resolves → kill resolves → swap commits as 'fresh'
+  //   - Active should STILL be 'alive', not 'fresh'.
+  test('round 9 F3: restartSession respects tab switches landing during spawn/kill', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'exited',
+      sessions: [
+        {
+          id: 'exited',
+          cwd: '/tmp',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+        {
+          id: 'alive',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    // Suspend spawn so we can race a tab switch in.
+    let resolveSpawn:
+      | ((v: { sessionId: string; pid: number; cwd: string }) => void)
+      | null = null
+    service.spawn = vi.fn(
+      (): Promise<{ sessionId: string; pid: number; cwd: string }> =>
+        new Promise((resolve) => {
+          resolveSpawn = resolve
+        })
+    )
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.activeSessionId).toBe('exited')
+    ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
+
+    // Step 1: user restarts the active 'exited' tab. spawn() in-flight.
+    act(() => result.current.restartSession('exited'))
+    await waitFor(() => expect(service.spawn).toHaveBeenCalled())
+
+    // Step 2: user switches to 'alive' BEFORE spawn resolves.
+    act(() => result.current.setActiveSessionId('alive'))
+    expect(result.current.activeSessionId).toBe('alive')
+
+    // Step 3: spawn resolves → restartSession's post-await branch runs.
+    // The fix reads activeSessionIdRef.current ('alive') so wasActive=false,
+    // and the swap commits without promoting 'fresh'.
+    act(() => {
+      resolveSpawn?.({ sessionId: 'fresh', pid: 9000, cwd: '/tmp' })
+    })
+
+    // Wait for the swap to commit.
+    await waitFor(() =>
+      expect(
+        result.current.sessions.find((s) => s.id === 'fresh')
+      ).toBeDefined()
+    )
+
+    // Critical: active stays on 'alive'. With the bug, the closure-captured
+    // wasActive=true triggered setActiveSessionIdState('fresh'), clobbering
+    // the user's newer pick.
+    expect(result.current.activeSessionId).toBe('alive')
+
+    // setActiveSession must not have been called for 'fresh' — only the
+    // user's tab switch ('alive') should appear, if at all.
+    const calls = (service.setActiveSession as ReturnType<typeof vi.fn>).mock
+      .calls
+    expect(calls.some(([id]) => id === 'fresh')).toBe(false)
+  })
+
   test('F5 (round 2): restartSession of inactive session does NOT call setActiveSession', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
