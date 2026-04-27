@@ -656,19 +656,7 @@ export const useSessionManager = (
 
         // IPCs fire OUTSIDE the updater. Captured `computedNewOrder` is
         // derived from the latest `prev` (race-safety from F3-round-2 is
-        // preserved). setActiveSession persists the new tab as
-        // cache.active_session_id; reorderSessions persists the prepend.
-        // Both are independent — wrap each in its own catch so a partial
-        // failure is logged but the in-memory mirror still wins.
-        // eslint-disable-next-line promise/prefer-await-to-then
-        service.setActiveSession(result.sessionId).catch((err) => {
-          // eslint-disable-next-line no-console
-          console.warn(
-            'createSession: setActiveSession IPC failed (cache active id will lag)',
-            err
-          )
-        })
-
+        // preserved). reorderSessions persists the prepend.
         if (computedNewOrder !== null) {
           // eslint-disable-next-line promise/prefer-await-to-then
           service.reorderSessions(computedNewOrder).catch((err) => {
@@ -680,7 +668,17 @@ export const useSessionManager = (
           })
         }
 
-        setActiveSessionIdState(result.sessionId)
+        // Round 12, Finding 5 (codex P2): route the active-session write
+        // through `setActiveSessionId` (the canonical path) so it shares
+        // the round-9 F4 monotonic-request guard. The previous code did
+        // `setActiveSessionIdState(...) + service.setActiveSession(...).catch(...)`
+        // — which bypassed the guard entirely. If the user switched tabs
+        // while createSession's IPC was in flight, a late completion
+        // could persist a stale active id to the Rust cache. Using the
+        // canonical setter consolidates the request-token logic and
+        // makes the optimistic-update / rollback semantics consistent
+        // across all active-session writes.
+        setActiveSessionId(result.sessionId)
         // Round 10 (claude LOW): use the resolved absolute cwd from spawn,
         // not the literal '~'. Agent detection and useGitStatus read this
         // map immediately on mount; '~' would leave both subsystems idle
@@ -693,7 +691,7 @@ export const useSessionManager = (
         setPendingSpawns((c) => c - 1)
       }
     })()
-  }, [service])
+  }, [service, setActiveSessionId])
 
   // Auto-create one default tab on clean launch.
   //

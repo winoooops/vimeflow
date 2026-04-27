@@ -1120,6 +1120,90 @@ describe('useSessionManager', () => {
     expect(calls.some(([id]) => id === 'fresh')).toBe(false)
   })
 
+  // Round 12, Finding 5 (codex P2): createSession's active-session write
+  // must share the round-9 F4 monotonic request guard. Previously it
+  // bypassed the guard with a raw `service.setActiveSession + .catch`,
+  // so a tab switch landing during createSession's in-flight IPC could
+  // be clobbered by the late completion (or its rollback). Routing
+  // through the canonical `setActiveSessionId` ensures the LATEST
+  // request always wins — older completions detect they're stale via
+  // the request-id ref and skip both the optimistic write and the
+  // rollback.
+  test('round 12 F5: createSession routes setActiveSession through the request-token guard', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: null,
+      sessions: [],
+    })
+
+    // Suspend createSession's setActiveSession IPC so we can race a tab
+    // switch in. We resolve it later to assert the request-token guard
+    // suppresses any stale rollback.
+    let resolveCreateActive: (() => void) | null = null
+    let rejectCreateActive: ((err: Error) => void) | null = null
+    let setActiveCallCount = 0
+    service.setActiveSession = vi.fn((): Promise<void> => {
+      setActiveCallCount += 1
+      if (setActiveCallCount === 1) {
+        return new Promise((_resolve, reject) => {
+          rejectCreateActive = reject
+        })
+      }
+
+      return new Promise((resolve) => {
+        resolveCreateActive = resolve
+      })
+    })
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        sessionId: 'created',
+        pid: 1,
+        cwd: '/home/user',
+      })
+      .mockResolvedValueOnce({ sessionId: 'second', pid: 2, cwd: '/home/user' })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Step 1: createSession — fires setActiveSession #1 (suspended).
+    act(() => result.current.createSession())
+    await waitFor(() =>
+      expect(
+        result.current.sessions.find((s) => s.id === 'created')
+      ).toBeDefined()
+    )
+    expect(result.current.activeSessionId).toBe('created')
+
+    // Step 2: another createSession — fires setActiveSession #2.
+    act(() => result.current.createSession())
+    await waitFor(() =>
+      expect(
+        result.current.sessions.find((s) => s.id === 'second')
+      ).toBeDefined()
+    )
+    expect(result.current.activeSessionId).toBe('second')
+
+    // Step 3: createSession #1's IPC now FAILS (e.g. transient backend
+    // error). Without the request-token guard, this would revert active
+    // back to null (the value captured at call time). With the guard,
+    // the failure detects a newer request superseded it and skips the
+    // rollback.
+    act(() => {
+      rejectCreateActive?.(new Error('transient'))
+    })
+
+    // Critical: active stays on 'second'. With the bug, the rollback
+    // would have reverted to null and clobbered the user's selection.
+    await waitFor(() => expect(result.current.activeSessionId).toBe('second'))
+
+    // Resolve #2 so test cleanup is clean.
+    act(() => resolveCreateActive?.())
+  })
+
   // Round 12, Finding 4 (codex P2): when restartSession races a concurrent
   // removeSession of the same id, the new spawn becomes an orphan that
   // gets killed in the orphan-kill branch. But before the orphan branch
