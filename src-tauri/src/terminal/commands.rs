@@ -366,7 +366,21 @@ pub fn resize_pty(state: State<'_, PtyState>, request: ResizePtyRequest) -> Resu
         .map_err(|e| e.to_string())
 }
 
-/// Kill a PTY session
+/// Kill a PTY session.
+///
+/// Idempotent on the missing-session axis: if the id isn't in `PtyState`
+/// (read-loop EOF already cleaned up, never spawned, etc.) the cache is
+/// still scrubbed and `Ok(())` is returned — closing a tab whose PTY died
+/// in the background should not surface an error to the user.
+///
+/// Round 9, Finding 1 (codex P1): a `KillFailed` from `state.kill` (the
+/// session IS in PtyState but `child.kill()` syscall returned an error)
+/// is now propagated as `Err`. Previously we swallowed every kill error
+/// and removed the session entry anyway — the child kept running on a
+/// disconnected PTY while React believed the tab was gone, leaking
+/// processes the user could not see or close. By preserving state on
+/// `KillFailed` the user can retry, and the cache stays consistent with
+/// the actual process tree.
 #[tauri::command]
 pub fn kill_pty(
     state: State<'_, PtyState>,
@@ -375,12 +389,21 @@ pub fn kill_pty(
 ) -> Result<(), String> {
     log::info!("Killing PTY session: {}", request.session_id);
 
-    // Attempt to kill the process - idempotent (no error if session missing)
-    if let Err(e) = state.kill(&request.session_id) {
-        log::debug!("kill_pty: session not found in state ({}), continuing to clean cache", e);
+    match state.kill(&request.session_id) {
+        // Either we just killed it, or it was already gone — both are
+        // safe to follow with cache cleanup.
+        Ok(()) | Err(super::state::KillError::NotPresent) => {}
+        Err(super::state::KillError::KillFailed(msg)) => {
+            // Child may still be alive. Preserve PtyState + cache so a
+            // retry can find the session, and surface the failure.
+            return Err(format!(
+                "kill_pty: failed to kill child for session {}: {}",
+                request.session_id, msg
+            ));
+        }
     }
 
-    // Remove from state
+    // Remove from state (no-op if NotPresent, the safe path above).
     state.remove(&request.session_id);
 
     // Clean up cache: remove from sessions map and session_order
@@ -1087,6 +1110,154 @@ mod tests {
 
         let result = kill_pty(state.clone(), cache.clone(), request);
         assert!(result.is_ok(), "kill_pty should be idempotent for missing session");
+    }
+
+    /// Fake `Child` whose `kill()` returns an `io::Error` — exercises the
+    /// `KillError::KillFailed` branch in the kill_pty regression test below.
+    /// Mirrors the helper in `state::tests` (kept duplicated to avoid
+    /// re-exporting `tests` modules across files).
+    #[derive(Debug)]
+    struct FailingKillChild;
+
+    impl portable_pty::ChildKiller for FailingKillChild {
+        fn kill(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "synthetic kill failure",
+            ))
+        }
+        fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> {
+            Box::new(FailingKillChild)
+        }
+    }
+
+    impl portable_pty::Child for FailingKillChild {
+        fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
+            Ok(None)
+        }
+        fn wait(&mut self) -> std::io::Result<portable_pty::ExitStatus> {
+            Ok(portable_pty::ExitStatus::with_exit_code(0))
+        }
+        fn process_id(&self) -> Option<u32> {
+            Some(1)
+        }
+    }
+
+    fn make_failing_kill_session() -> crate::terminal::state::ManagedSession {
+        use crate::terminal::state::{ManagedSession, RingBuffer};
+        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use std::sync::Mutex;
+        let pty_system = native_pty_system();
+        let pty_pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        // Spawn /bin/true and reap immediately. We only need the pair to
+        // source a real master + writer of the correct trait-object types;
+        // the synthetic child below replaces the real one for the kill path.
+        let cmd = CommandBuilder::new("/bin/true");
+        let mut helper_child = pty_pair.slave.spawn_command(cmd).expect("spawn");
+        let _ = helper_child.wait();
+        let writer = pty_pair.master.take_writer().expect("take_writer");
+        ManagedSession {
+            master: pty_pair.master,
+            writer,
+            child: Box::new(FailingKillChild),
+            cwd: "/tmp".into(),
+            generation: 0,
+            ring: Mutex::new(RingBuffer::new(64)),
+        }
+    }
+
+    /// Round 9, Finding 1 (codex P1) regression — when `state.kill` returns
+    /// `KillError::KillFailed` (the session IS in `PtyState` but the OS-level
+    /// `child.kill()` syscall failed), `kill_pty` must propagate the error
+    /// AND leave both `PtyState` and the cache untouched. The previous
+    /// implementation swallowed every error and unconditionally cleaned up,
+    /// so a failed kill silently orphaned the live PTY child while React
+    /// believed the tab was gone.
+    ///
+    /// The fake child below is wired through `state.insert` (test-only),
+    /// not `spawn_pty`, so the cache entry has to be primed manually to
+    /// match what `spawn_pty` would have written.
+    #[tokio::test]
+    async fn kill_pty_preserves_state_and_cache_when_child_kill_fails() {
+        use crate::terminal::cache::CachedSession;
+
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+        let cache = handle.state::<Arc<SessionCache>>();
+
+        let id = "stuck-session".to_string();
+
+        // Seed PtyState with a session whose child.kill() always errors.
+        state.insert(id.clone(), make_failing_kill_session());
+
+        // Mirror the cache entry spawn_pty would have written so we can
+        // verify it survives the failed kill.
+        cache
+            .mutate(|data| {
+                data.sessions.insert(
+                    id.clone(),
+                    CachedSession {
+                        cwd: "/tmp".to_string(),
+                        created_at: "2026-04-25T00:00:00Z".to_string(),
+                        exited: false,
+                        last_exit_code: None,
+                    },
+                );
+                data.session_order.push(id.clone());
+                data.active_session_id = Some(id.clone());
+                Ok(())
+            })
+            .expect("seed cache");
+
+        let request = KillPtyRequest {
+            session_id: id.clone(),
+        };
+        let result = kill_pty(state.clone(), cache.clone(), request);
+
+        // The OS-level kill syscall failed; kill_pty must surface that.
+        let err = match result {
+            Err(e) => e,
+            Ok(()) => panic!("expected Err propagating KillFailed, got Ok"),
+        };
+        assert!(
+            err.contains("synthetic kill failure"),
+            "error should carry the underlying kill message, got {err:?}"
+        );
+
+        // PtyState retained — the user (or a retry) needs to see the
+        // session so they can try again instead of orphaning the child.
+        assert!(
+            state.contains(&id),
+            "session must remain in PtyState when kill failed"
+        );
+
+        // Cache untouched — no removal from session_order, sessions map,
+        // or rotation of active_session_id.
+        let snap = cache.snapshot();
+        assert!(
+            snap.session_order.iter().any(|x| x == &id),
+            "session must remain in session_order"
+        );
+        assert!(
+            snap.sessions.contains_key(&id),
+            "session metadata must remain in cache"
+        );
+        assert_eq!(
+            snap.active_session_id.as_deref(),
+            Some(id.as_str()),
+            "active_session_id must not rotate when kill failed"
+        );
+
+        // Cleanup: drop the synthetic session so the next test starts clean.
+        let _ = state.remove(&id);
     }
 
     #[tokio::test]

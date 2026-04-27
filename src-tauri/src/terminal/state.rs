@@ -89,6 +89,28 @@ pub enum TryInsertError {
     CapReached,
 }
 
+/// Why `PtyState::kill` failed.
+///
+/// Round 9, Finding 1 (codex P1): `kill_pty` needs to distinguish "the
+/// session isn't here, treat as already-dead" (idempotent path — clean up
+/// the cache) from "the session IS here but the OS-level kill syscall
+/// failed" (the child may still be alive — preserve state and propagate
+/// the error so the user sees it and can retry instead of orphaning the
+/// PTY process). The previous `anyhow::Result<()>` collapsed both into
+/// one string, which forced `kill_pty` to swallow every error and clean
+/// up unconditionally — eating real failures and leaking the live child.
+#[derive(Debug)]
+pub enum KillError {
+    /// The session id was not present in `PtyState`. From the caller's
+    /// perspective this is no-op territory — there is no PTY left to kill,
+    /// so the state/cache cleanup that follows in `kill_pty` is safe.
+    NotPresent,
+    /// The session was present and we attempted `child.kill()`, but the
+    /// underlying syscall returned an error. The child may still be alive;
+    /// the session entry stays in `PtyState` so a retry can find it.
+    KillFailed(String),
+}
+
 impl PtyState {
     /// Create a new empty PTY state
     pub fn new() -> Self {
@@ -248,17 +270,25 @@ impl PtyState {
         Ok(())
     }
 
-    /// Kill a PTY session (send SIGTERM)
-    pub fn kill(&self, session_id: &SessionId) -> anyhow::Result<()> {
+    /// Kill a PTY session (send SIGTERM).
+    ///
+    /// Round 9, Finding 1 (codex P1): returns a typed `KillError` so callers
+    /// can distinguish "session already gone" (idempotent — safe to clean up)
+    /// from "OS-level kill failed" (child may still be alive — must preserve
+    /// state). The previous `anyhow::Result<()>` collapsed both into one
+    /// string, forcing `kill_pty` to either swallow everything (orphans the
+    /// child on real failures) or reject everything (breaks the idempotent
+    /// contract for missing sessions).
+    pub fn kill(&self, session_id: &SessionId) -> Result<(), KillError> {
         let mut sessions = self.sessions.lock().expect("failed to lock sessions");
-        let session = sessions
-            .get_mut(session_id)
-            .ok_or_else(|| anyhow::anyhow!("session not found: {}", session_id))?;
+        let Some(session) = sessions.get_mut(session_id) else {
+            return Err(KillError::NotPresent);
+        };
 
         session
             .child
             .kill()
-            .map_err(|e| anyhow::anyhow!("failed to kill PTY process: {}", e))?;
+            .map_err(|e| KillError::KillFailed(e.to_string()))?;
 
         Ok(())
     }
@@ -376,6 +406,112 @@ mod tests {
             generation: 0,
             ring: Mutex::new(super::RingBuffer::new(64)),
         }
+    }
+
+    /// Fake `Child` whose `kill()` returns an `io::Error` — exercises the
+    /// `KillError::KillFailed` branch without depending on host-level
+    /// scheduler races to make a real child's `kill()` syscall fail.
+    ///
+    /// Round 9, Finding 1 (codex P1) regression scaffold.
+    #[derive(Debug)]
+    struct FailingKillChild;
+
+    impl portable_pty::ChildKiller for FailingKillChild {
+        fn kill(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "synthetic kill failure",
+            ))
+        }
+        fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> {
+            Box::new(FailingKillChild)
+        }
+    }
+
+    impl portable_pty::Child for FailingKillChild {
+        fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
+            Ok(None)
+        }
+        fn wait(&mut self) -> std::io::Result<portable_pty::ExitStatus> {
+            Ok(portable_pty::ExitStatus::with_exit_code(0))
+        }
+        fn process_id(&self) -> Option<u32> {
+            // Use a sentinel non-zero so `state.get_pid` returns Some(...)
+            // — pretends the child is alive.
+            Some(1)
+        }
+    }
+
+    /// Build a `ManagedSession` whose `child.kill()` always errors. Reuses a
+    /// real PTY pair for `master`/`writer` (the only working way to satisfy
+    /// the trait-object types) but swaps the child for `FailingKillChild`.
+    /// Reap the spawned helper child immediately so the OS-level process
+    /// table stays clean — we only kept the pair to source a master/writer.
+    #[cfg(test)]
+    fn make_failing_kill_session() -> ManagedSession {
+        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        let pty_system = native_pty_system();
+        let pty_pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        // Spawn /bin/true and immediately drop the real child handle —
+        // we only used the pair to obtain a master + writer of correct
+        // trait-object types. The writer dangles when the helper exits,
+        // which is fine because the test never writes to it.
+        let cmd = CommandBuilder::new("/bin/true");
+        let mut helper_child = pty_pair.slave.spawn_command(cmd).expect("spawn");
+        // Reap the helper so it doesn't linger as a zombie in CI. Best-effort.
+        let _ = helper_child.wait();
+        let writer = pty_pair.master.take_writer().expect("take_writer");
+        ManagedSession {
+            master: pty_pair.master,
+            writer,
+            child: Box::new(FailingKillChild),
+            cwd: "/tmp".into(),
+            generation: 0,
+            ring: Mutex::new(super::RingBuffer::new(64)),
+        }
+    }
+
+    #[test]
+    fn kill_returns_not_present_for_missing_session() {
+        let state = PtyState::new();
+        match state.kill(&"ghost".to_string()) {
+            Err(KillError::NotPresent) => {}
+            other => panic!("expected NotPresent, got {:?}", other),
+        }
+    }
+
+    /// Round 9, Finding 1 (codex P1) — when the OS-level kill syscall
+    /// fails, `kill` returns `KillError::KillFailed(_)` and the session
+    /// stays in `PtyState`. Without this, `kill_pty` would clean up the
+    /// cache while the child kept running, orphaning the PTY process.
+    #[test]
+    fn kill_returns_kill_failed_when_child_kill_errors_and_preserves_session() {
+        let state = PtyState::new();
+        state.insert("stuck".into(), make_failing_kill_session());
+        assert!(state.contains(&"stuck".to_string()));
+
+        match state.kill(&"stuck".to_string()) {
+            Err(KillError::KillFailed(msg)) => {
+                assert!(
+                    msg.contains("synthetic kill failure"),
+                    "expected synthetic message in error, got {msg:?}"
+                );
+            }
+            other => panic!("expected KillFailed, got {:?}", other),
+        }
+        // The session MUST remain in PtyState so a retry can find it —
+        // the child may still be alive on the OS side.
+        assert!(
+            state.contains(&"stuck".to_string()),
+            "session should be retained after KillFailed so the user can retry"
+        );
     }
 
     #[test]
