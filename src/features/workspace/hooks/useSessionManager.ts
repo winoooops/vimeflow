@@ -396,10 +396,31 @@ export const useSessionManager = (
         bufferedRef.current.delete(sessionId)
       }
 
-      // Return value is reserved for future per-pane teardown (e.g. unsubscribing
-      // a per-pane orchestrator route). Currently a no-op.
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
-      return (): void => {}
+      // Round 7, Finding 2 (claude MEDIUM): the cleanup callback returned
+      // by notifyPaneReady fires when the pane unmounts (StrictMode dev
+      // double-mount, error-boundary reset, route change, …). Previously
+      // this was a no-op, so:
+      //
+      //   1. pane unmounts → cleanup (no-op) — sessionId stays in
+      //      readyPanesRef
+      //   2. pty-data events for sessionId arrive → global listener sees
+      //      readyPanesRef.has(sessionId) and DROPS them (the `return`
+      //      branch in the buffering callback)
+      //   3. pane remounts → calls notifyPaneReady → tries to drain
+      //      bufferedRef → events from step 2 are NOT in the buffer
+      //      because step 2 dropped them. Silent output loss.
+      //
+      // Re-arm the per-session state on cleanup: remove from ready, add
+      // back to pending, ensure an empty buffer exists. The next
+      // pty-data event lands in the buffer, the next notifyPaneReady
+      // call drains it cleanly.
+      return (): void => {
+        readyPanesRef.current.delete(sessionId)
+        pendingPanesRef.current.add(sessionId)
+        if (!bufferedRef.current.has(sessionId)) {
+          bufferedRef.current.set(sessionId, [])
+        }
+      }
     },
     []
   )

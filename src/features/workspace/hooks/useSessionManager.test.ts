@@ -1498,4 +1498,92 @@ describe('useSessionManager', () => {
     act(() => result.current.createSession())
     await waitFor(() => expect(sharedService.spawn).toHaveBeenCalled())
   })
+
+  // Round 7, Finding 2 (claude MEDIUM) regression test.
+  //
+  // The cleanup function returned by notifyPaneReady used to be a no-op.
+  // When a pane unmounted (StrictMode dev double-mount, error-boundary
+  // reset, route change), cleanup ran but the sessionId stayed in
+  // readyPanesRef. The global buffering listener saw the still-ready
+  // entry and DROPPED subsequent pty-data events for that session — they
+  // landed in neither the buffer nor a pane subscription. When the pane
+  // remounted, it called notifyPaneReady again and tried to drain
+  // bufferedRef, but the events from the unmount→remount window were
+  // dropped, not buffered. Silent output loss.
+  //
+  // The fix: cleanup must remove the session from readyPanesRef, re-add
+  // it to pendingPanesRef, and seed an empty buffer so the next pty-data
+  // event accumulates.
+  test('round 7 F2: notifyPaneReady cleanup re-arms buffering for pane remount', async () => {
+    const service = createMockService()
+    let dataCallback: (
+      sessionId: string,
+      data: string,
+      offsetStart: number,
+      byteLen: number
+    ) => void = vi.fn()
+    service.onData = vi.fn((cb): Promise<() => void> => {
+      dataCallback = cb
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return Promise.resolve((): void => {})
+    })
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // First mount: pane reports ready.
+    let cleanup: (() => void) | null = null
+    act(() => {
+      cleanup = result.current.notifyPaneReady('s1', () => {
+        // first-mount handler — irrelevant to this test
+      })
+    })
+    expect(cleanup).not.toBeNull()
+
+    // Pane unmounts: cleanup must re-arm buffering. Without the fix, this
+    // is a no-op and 's1' stays in readyPanesRef.
+    act(() => {
+      ;(cleanup as () => void)()
+    })
+
+    // Event arrives during the unmount → remount window. Under the old
+    // no-op cleanup, the global listener still saw 's1' as ready and
+    // dropped the event. Under the fix, it lands in the buffer.
+    dataCallback('s1', 'BETWEEN_MOUNTS', 50, 14)
+
+    // Pane remounts: notifyPaneReady should drain the buffered event
+    // through the new handler.
+    const drained: { data: string; offsetStart: number; byteLen: number }[] = []
+    act(() => {
+      result.current.notifyPaneReady('s1', (data, offsetStart, byteLen) => {
+        drained.push({ data, offsetStart, byteLen })
+      })
+    })
+
+    // Without the fix this would be empty (event dropped during unmount
+    // window). With the fix, the event lands in the per-session buffer
+    // and is drained on remount.
+    expect(drained).toEqual([
+      { data: 'BETWEEN_MOUNTS', offsetStart: 50, byteLen: 14 },
+    ])
+  })
 })
