@@ -70,6 +70,15 @@ impl SessionCache {
 
     /// Load from disk; if corrupted, move aside and start empty.
     /// Never panics; always returns a valid cache.
+    ///
+    /// Round 8, Finding 1 (claude HIGH): when the rename to move the corrupt
+    /// file aside fails (Windows file lock, cross-device move, read-only FS),
+    /// we previously called `Self::load(path)` again, which would re-parse the
+    /// same corrupt bytes, return Err, then `expect(...)` would panic — crashing
+    /// the Tauri process at startup. The fix is to construct the empty default
+    /// in-memory WITHOUT re-reading from disk, so a stuck-corrupt-file scenario
+    /// degrades to "in-memory only, disk write attempts will overwrite the
+    /// corrupt file on the next mutate" rather than a hard crash.
     pub fn load_or_recover(path: PathBuf) -> Self {
         match Self::load(path.clone()) {
             Ok(cache) => cache,
@@ -80,7 +89,14 @@ impl SessionCache {
                     chrono::Utc::now().format("%Y%m%d%H%M%S")
                 ));
                 let _ = std::fs::rename(&path, &backup);
-                Self::load(path).expect("empty cache load should never fail")
+                // Construct directly from default — never re-read disk. If the
+                // rename above failed, the corrupt file is still at `path`;
+                // re-running `Self::load(path)` would re-parse it and Err
+                // again, and the previous `.expect(...)` would panic.
+                Self {
+                    path,
+                    data: Mutex::new(SessionCacheData::default()),
+                }
             }
         }
     }
@@ -421,6 +437,61 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().contains("corrupt-"))
             .collect();
         assert_eq!(entries.len(), 1, "expected one .corrupt-* backup");
+    }
+
+    /// Round 8, Finding 1 (claude HIGH) regression test.
+    ///
+    /// When the corrupt-file rename fails (read-only parent directory in this
+    /// test; in production: Windows file lock, cross-device move, read-only
+    /// FS), the corrupt file remains at `path`. The previous implementation
+    /// re-called `Self::load(path)` and unwrapped with `expect(...)`, which
+    /// would re-parse the same corrupt bytes, return Err, and panic — taking
+    /// the Tauri process down at startup.
+    ///
+    /// The fix: construct the empty default in-memory directly, so a stuck-
+    /// corrupt-file scenario degrades to "in-memory only" without crashing.
+    /// We assert no panic, an empty in-memory snapshot, and that the corrupt
+    /// file is still present (proving the rename did fail and the recovery
+    /// path was the only thing keeping us alive).
+    #[cfg(unix)]
+    #[test]
+    fn load_or_recover_does_not_panic_when_rename_fails() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new().unwrap();
+        let parent = dir.path().join("readonly");
+        std::fs::create_dir(&parent).unwrap();
+        let path = parent.join("sessions.json");
+        std::fs::write(&path, b"corrupt!").unwrap();
+
+        // Make parent read-only so rename inside it fails with EACCES.
+        let mut perms = std::fs::metadata(&parent).unwrap().permissions();
+        perms.set_mode(0o555);
+        std::fs::set_permissions(&parent, perms).unwrap();
+
+        // The actual assertion: this MUST NOT panic. With the previous code
+        // (re-load + expect), this line crashed the Tauri process at startup.
+        let cache = SessionCache::load_or_recover(path.clone());
+        let snap = cache.snapshot();
+        assert_eq!(
+            snap.session_order.len(),
+            0,
+            "in-memory cache should be empty after corrupt + rename-fail recovery"
+        );
+        assert_eq!(snap.version, SCHEMA_VERSION);
+        assert!(snap.sessions.is_empty());
+        assert!(snap.active_session_id.is_none());
+
+        // Restore write perms so TempDir can clean up on drop. Also serves
+        // as a sanity check that the original corrupt file is still present
+        // (rename did fail), confirming we exercised the recovery path.
+        let mut perms = std::fs::metadata(&parent).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&parent, perms).unwrap();
+        assert!(
+            path.exists(),
+            "corrupt file should still be at `path` because rename failed"
+        );
     }
 
     /// Pins the graceful-exit cleanup path. `clear_all()` must wipe all
