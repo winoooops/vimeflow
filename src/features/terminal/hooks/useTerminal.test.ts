@@ -521,4 +521,377 @@ describe('useTerminal', () => {
 
     expect(mockTerminal.write).not.toHaveBeenCalled()
   })
+
+  describe('Restored mode (replay + cursor dedupe)', () => {
+    test('skips spawn when restoredFrom is provided', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          cwd: '/home/user',
+          restoredFrom: {
+            sessionId: 'restored-session-id',
+            cwd: '/home/user',
+            pid: 9999,
+            replayData: 'Restored output\r\n',
+            replayEndOffset: 100,
+            bufferedEvents: [],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+        expect(result.current.session?.id).toBe('restored-session-id')
+      })
+
+      // Should NOT spawn a new PTY
+      expect(mockService.spawn).not.toHaveBeenCalled()
+
+      // Should write replay data to terminal
+      expect(mockTerminal.write).toHaveBeenCalledWith('Restored output\r\n')
+    })
+
+    test('writes replay data before draining buffered events', async () => {
+      const writes: string[] = []
+      vi.mocked(mockTerminal.write).mockImplementation(
+        (data: string | Uint8Array) => {
+          writes.push(
+            typeof data === 'string' ? data : new TextDecoder().decode(data)
+          )
+        }
+      )
+
+      renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: 'REPLAY',
+            replayEndOffset: 50,
+            bufferedEvents: [{ data: 'BUFFERED', offsetStart: 50, byteLen: 8 }],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(writes.length).toBeGreaterThanOrEqual(2)
+      })
+
+      // Replay data should be written first
+      expect(writes[0]).toBe('REPLAY')
+      // Then buffered events
+      expect(writes[1]).toBe('BUFFERED')
+    })
+
+    test('flushes buffered events with cursor filter (offsetStart >= replayEndOffset)', async () => {
+      const writes: string[] = []
+      vi.mocked(mockTerminal.write).mockImplementation(
+        (data: string | Uint8Array) => {
+          writes.push(
+            typeof data === 'string' ? data : new TextDecoder().decode(data)
+          )
+        }
+      )
+
+      // Buffered offsets reflect the producer contract: chunks are atomic
+      // and non-overlapping. After AT (offset 100, len 2 → bytes 100-101),
+      // the next event must start at ≥102. Cursor advance honors this and
+      // filters anything that lies inside the already-written range.
+      renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: 'REPLAY',
+            replayEndOffset: 100,
+            bufferedEvents: [
+              { data: 'BELOW', offsetStart: 99, byteLen: 5 }, // Below cursor — filtered
+              { data: 'AT', offsetStart: 100, byteLen: 2 }, // At cursor (bytes 100-101)
+              { data: 'ABOVE', offsetStart: 102, byteLen: 5 }, // Past AT — written
+            ],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(writes.length).toBeGreaterThanOrEqual(2)
+      })
+
+      // Should NOT write event below cursor (offsetStart < replayEndOffset)
+      expect(writes).not.toContain('BELOW')
+
+      // Should write non-overlapping events at/above cursor
+      expect(writes).toContain('AT')
+      expect(writes).toContain('ABOVE')
+    })
+
+    test('does not kill session on unmount when restored', async () => {
+      const { unmount } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'restored-session-id',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: 'test',
+            replayEndOffset: 0,
+            bufferedEvents: [],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(mockTerminal.write).toHaveBeenCalled()
+      })
+
+      unmount()
+
+      // Should NOT call kill for restored sessions
+      expect(mockService.kill).not.toHaveBeenCalled()
+    })
+
+    test('live event below cursor is dropped', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: 'REPLAY',
+            replayEndOffset: 100,
+            bufferedEvents: [],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+      })
+
+      vi.mocked(mockTerminal.write).mockClear()
+
+      // Emit live event with offsetStart below cursor
+      mockService.emit('data', {
+        sessionId: 'session-1',
+        data: 'BELOW_CURSOR',
+        offsetStart: 99,
+      })
+
+      // Should NOT write to terminal (below cursor)
+      expect(mockTerminal.write).not.toHaveBeenCalled()
+    })
+
+    test('live event at or above cursor is written', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: 'REPLAY',
+            replayEndOffset: 100,
+            bufferedEvents: [],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+      })
+
+      vi.mocked(mockTerminal.write).mockClear()
+
+      // Emit live event at cursor
+      mockService.emit('data', {
+        sessionId: 'session-1',
+        data: 'AT_CURSOR',
+        offsetStart: 100,
+      })
+
+      expect(mockTerminal.write).toHaveBeenCalledWith('AT_CURSOR')
+
+      vi.mocked(mockTerminal.write).mockClear()
+
+      // Cursor was advanced past 'AT_CURSOR' (9 bytes, so cursor=109).
+      // Choose an offset past that range for the next write to land.
+      // Emit live event above cursor
+      mockService.emit('data', {
+        sessionId: 'session-1',
+        data: 'ABOVE_CURSOR',
+        offsetStart: 150,
+      })
+
+      expect(mockTerminal.write).toHaveBeenCalledWith('ABOVE_CURSOR')
+    })
+
+    // Round 6 F1 regression: cursor advances by the producer's byte_len, NOT
+    // by `new TextEncoder().encode(data).length`. When the PTY emits a chunk
+    // with invalid UTF-8 bytes, `String::from_utf8_lossy` replaces them with
+    // U+FFFD, which re-encodes to 3 bytes. Without `byteLen` from the
+    // producer, the cursor would advance by the inflated length and silently
+    // drop the next legitimate chunk whose offsetStart falls in the gap.
+    //
+    // Scenario:
+    //   chunk 1: raw bytes [0xE2, 0x82] (truncated start of '€'),
+    //            data="��" (re-encodes to 6 bytes), byteLen=2
+    //   chunk 2: data="ok", offsetStart=2, byteLen=2
+    // With the buggy code, cursor would jump to 6 after chunk 1 and chunk 2
+    // (offsetStart=2 < 6) would be dropped. With the fix, cursor jumps to 2
+    // and chunk 2 is written correctly.
+    test('F1 (round 6): cursor advances by producer byteLen, not lossy data length', async () => {
+      const writes: string[] = []
+      vi.mocked(mockTerminal.write).mockImplementation(
+        (data: string | Uint8Array) => {
+          writes.push(
+            typeof data === 'string' ? data : new TextDecoder().decode(data)
+          )
+        }
+      )
+
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: '', // empty replay so cursor starts at 0
+            replayEndOffset: 0,
+            bufferedEvents: [],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+      })
+
+      writes.length = 0
+      vi.mocked(mockTerminal.write).mockClear()
+
+      // Chunk 1: lossy-decoded U+FFFD pair (6 bytes when re-encoded), but
+      // the producer only consumed 2 raw bytes from the PTY buffer.
+      mockService.emit('data', {
+        sessionId: 'session-1',
+        data: '��',
+        offsetStart: 0,
+        byteLen: 2,
+      })
+
+      // Chunk 2: legitimate ASCII that picks up exactly where the producer's
+      // raw byte count left off. With the buggy `data.length` cursor advance,
+      // cursor would be 6 and this event (offsetStart=2) would be dropped.
+      mockService.emit('data', {
+        sessionId: 'session-1',
+        data: 'ok',
+        offsetStart: 2,
+        byteLen: 2,
+      })
+
+      // Both events MUST be written. The fix ensures chunk 2 is not silently
+      // dropped due to the cursor sailing past 2 from re-encoded U+FFFD bytes.
+      expect(writes).toEqual(['��', 'ok'])
+    })
+  })
+
+  // F3 regression: explicit `mode` prop must override the legacy
+  // "spawn unless restoredFrom is set" inference. Two pinned behaviors:
+  //  - mode='awaiting-restart' MUST NOT call service.spawn (no resurrection)
+  //  - mode='attach' without restoredFrom MUST surface as an error,
+  //    not silently fall through to spawn
+  describe('Mode prop (Codex F3)', () => {
+    test('mode=awaiting-restart does not call service.spawn', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          mode: 'awaiting-restart',
+        })
+      )
+
+      // Wait long enough that an async spawn would have fired.
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(mockService.spawn).not.toHaveBeenCalled()
+      expect(result.current.session).toBeNull()
+      expect(result.current.status).toBe('idle')
+    })
+
+    test('mode=attach with restoredFrom does not call service.spawn', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          mode: 'attach',
+          restoredFrom: {
+            sessionId: 'r1',
+            cwd: '/tmp',
+            pid: 42,
+            replayData: '',
+            replayEndOffset: 0,
+            bufferedEvents: [],
+          },
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('running')
+      })
+
+      expect(mockService.spawn).not.toHaveBeenCalled()
+      expect(result.current.session?.id).toBe('r1')
+      expect(result.current.session?.pid).toBe(42)
+    })
+
+    test('mode=attach without restoredFrom surfaces as error (no silent spawn)', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          mode: 'attach',
+        })
+      )
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('error')
+      })
+
+      expect(mockService.spawn).not.toHaveBeenCalled()
+      expect(result.current.error).toBe('attach mode requires restoredFrom')
+    })
+
+    test('mode=spawn calls service.spawn (legacy default behavior preserved)', async () => {
+      const { result } = renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          mode: 'spawn',
+        })
+      )
+
+      // Both assertions must be inside the same waitFor: spawn is called
+      // synchronously inside the effect, but status='running' fires only
+      // AFTER `await service.spawn(...)` resolves. Splitting these into
+      // a `waitFor(spawn-called)` then synchronous `expect(status)` was
+      // race-prone — the post-await microtask may not have flushed by the time
+      // the synchronous check ran.
+      await waitFor(() => {
+        expect(mockService.spawn).toHaveBeenCalledOnce()
+        expect(result.current.status).toBe('running')
+      })
+    })
+  })
 })

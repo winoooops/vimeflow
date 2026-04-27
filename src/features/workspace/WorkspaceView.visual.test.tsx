@@ -30,6 +30,43 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   })),
 }))
 
+// Mock terminal service to return initial session data synchronously
+vi.mock('../terminal/services/terminalService', () => ({
+  createTerminalService: vi.fn(() => ({
+    spawn: vi.fn().mockResolvedValue({ sessionId: 'new-id', pid: 999 }),
+    write: vi.fn().mockResolvedValue(undefined),
+    resize: vi.fn().mockResolvedValue(undefined),
+    kill: vi.fn().mockResolvedValue(undefined),
+    onData: vi.fn(
+      (): Promise<() => void> =>
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        Promise.resolve((): void => {})
+    ),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onExit: vi.fn((): (() => void) => (): void => {}),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onError: vi.fn((): (() => void) => (): void => {}),
+    listSessions: vi.fn().mockResolvedValue({
+      activeSessionId: 'sess-1',
+      sessions: [
+        {
+          id: 'sess-1',
+          cwd: '~',
+          status: {
+            kind: 'Alive',
+            pid: 1234,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    }),
+    setActiveSession: vi.fn().mockResolvedValue(undefined),
+    reorderSessions: vi.fn().mockResolvedValue(undefined),
+    updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+  })),
+}))
+
 // eslint-disable-next-line import/first
 import { render, screen } from '@testing-library/react'
 // eslint-disable-next-line import/first
@@ -293,7 +330,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   })
 
   describe('Intentional Deviations from Mockup', () => {
-    test('documented deviation: mock data differs from screenshot', () => {
+    test('documented deviation: mock data differs from screenshot', async () => {
       // DEVIATION DOCUMENTED:
       // The mockup shows "Fix Auth Bug", "Update Docs" sessions.
       // Our mock data uses different session names from mockSessions.ts.
@@ -304,6 +341,9 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       // Verify our mock sessions render (session list exists)
       const sessionList = screen.getByTestId('session-list')
       expect(sessionList).toBeInTheDocument()
+
+      // Wait for sessions to load from listSessions IPC
+      await screen.findByRole('button', { name: 'session 1' })
 
       // Verify sessions have content (buttons with aria-labels)
       const sessionButtons = sessionList.querySelectorAll('button[aria-label]')

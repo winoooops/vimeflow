@@ -30,6 +30,8 @@ tokio = { version = "1", features = ["sync", "io-util", "time", "rt", "macros"] 
 notify = "6"
 dirs = "6"
 ignore = "0.4"
+tempfile = "3"
+chrono = "0.4"
 
 [features]
 e2e-test = []

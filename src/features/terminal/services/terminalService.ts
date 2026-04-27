@@ -5,6 +5,7 @@ import type {
   PTYResizeParams,
   PTYKillParams,
 } from '../types'
+import type { SessionList } from '../../../bindings'
 import { isTauri } from '../../../lib/environment'
 import { TauriTerminalService } from './tauriTerminalService'
 
@@ -33,9 +34,30 @@ export interface ITerminalService {
   kill(params: PTYKillParams): Promise<void>
 
   /**
-   * Subscribe to PTY data events
+   * Subscribe to PTY data events. Callback receives the chunk's starting
+   * byte offset and the raw byte count from the PTY read for cursor-based
+   * dedupe during reattach.
+   *
+   * `byteLen` is the producer's raw byte count (from `buf[..n]`), not the
+   * length of `data`. The PTY producer encodes `data` lossily — invalid
+   * UTF-8 becomes U+FFFD (3 bytes when re-encoded), which would skew any
+   * cursor derived from `data.length` away from the producer's offsets.
+   * Subscribers MUST advance their cursor with `offsetStart + byteLen`.
+   *
+   * Returns a Promise that resolves to the unsubscribe function once the
+   * underlying transport listener is fully attached. Callers in the restore
+   * orchestrator MUST `await` this before kicking off `listSessions()` so
+   * no events emitted between snapshot and subscription are lost. Live-mode
+   * callers (e.g. `useTerminal`) may discard the returned promise with `void`.
    */
-  onData(callback: (sessionId: string, data: string) => void): () => void
+  onData(
+    callback: (
+      sessionId: string,
+      data: string,
+      offsetStart: number,
+      byteLen: number
+    ) => void
+  ): Promise<() => void>
 
   /**
    * Subscribe to PTY exit events
@@ -46,6 +68,26 @@ export interface ITerminalService {
    * Subscribe to PTY error events
    */
   onError(callback: (sessionId: string, message: string) => void): () => void
+
+  /**
+   * List all sessions with their status (Alive or Exited)
+   */
+  listSessions(): Promise<SessionList>
+
+  /**
+   * Set the active session ID
+   */
+  setActiveSession(id: string): Promise<void>
+
+  /**
+   * Reorder the session list
+   */
+  reorderSessions(ids: string[]): Promise<void>
+
+  /**
+   * Update the current working directory for a session
+   */
+  updateSessionCwd(id: string, cwd: string): Promise<void>
 }
 
 /**
@@ -58,7 +100,16 @@ export class MockTerminalService implements ITerminalService {
     string,
     { pid: number; running: boolean; inputBuffer: string }
   >()
-  private dataCallbacks: ((sessionId: string, data: string) => void)[] = []
+  // Per-session monotonic offset cursor — mirrors the Rust producer's
+  // RingBuffer.end_offset so the cursor dedupe in useTerminal sees realistic
+  // offsets when emitData is called without explicit offsetStart.
+  private nextOffset = new Map<string, number>()
+  private dataCallbacks: ((
+    sessionId: string,
+    data: string,
+    offsetStart: number,
+    byteLen: number
+  ) => void)[] = []
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
   private errorCallbacks: ((sessionId: string, message: string) => void)[] = []
@@ -77,7 +128,10 @@ export class MockTerminalService implements ITerminalService {
       this.emitData(sessionId, `$ `)
     }, 100)
 
-    return Promise.resolve({ sessionId, pid })
+    // Mock returns the cwd that was requested. Real Tauri side resolves
+    // '~' to the absolute home dir; we keep the mock pass-through so test
+    // expectations stay deterministic without depending on the host.
+    return Promise.resolve({ sessionId, pid, cwd: params.cwd })
   }
 
   write(params: PTYWriteParams): Promise<void> {
@@ -187,15 +241,22 @@ export class MockTerminalService implements ITerminalService {
     return Promise.resolve()
   }
 
-  onData(callback: (sessionId: string, data: string) => void): () => void {
+  onData(
+    callback: (
+      sessionId: string,
+      data: string,
+      offsetStart: number,
+      byteLen: number
+    ) => void
+  ): Promise<() => void> {
     this.dataCallbacks.push(callback)
 
-    return () => {
+    return Promise.resolve(() => {
       const index = this.dataCallbacks.indexOf(callback)
       if (index > -1) {
         this.dataCallbacks.splice(index, 1)
       }
-    }
+    })
   }
 
   onExit(
@@ -223,8 +284,28 @@ export class MockTerminalService implements ITerminalService {
   }
 
   // Test helpers
-  emitData(sessionId: string, data: string): void {
-    this.dataCallbacks.forEach((cb) => cb(sessionId, data))
+  /**
+   * Emit a pty-data event. When `offsetStart` is omitted, the mock auto-assigns
+   * the next monotonic offset for `sessionId` (mirrors the Rust producer's
+   * RingBuffer.end_offset). When `byteLen` is omitted, defaults to the UTF-8
+   * byte count of `data` — safe for the mock because no lossy decode happens
+   * here (the real producer must emit the raw `buf[..n]` byte count, which
+   * may differ from the re-encoded length). Tests can pass an explicit
+   * `byteLen` to exercise the producer-vs-decoded mismatch case.
+   */
+  emitData(
+    sessionId: string,
+    data: string,
+    offsetStart?: number,
+    byteLen?: number
+  ): void {
+    const offset = offsetStart ?? this.nextOffset.get(sessionId) ?? 0
+    const len = byteLen ?? new TextEncoder().encode(data).length
+    this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset, len))
+    // Always advance the per-session cursor past this chunk so future
+    // auto-assigned offsets stay monotonic, even when the caller passed
+    // an explicit offset.
+    this.nextOffset.set(sessionId, offset + len)
   }
 
   emitExit(sessionId: string, code: number | null): void {
@@ -241,12 +322,19 @@ export class MockTerminalService implements ITerminalService {
     payload: {
       sessionId: string
       data?: string
+      offsetStart?: number
+      byteLen?: number
       code?: number | null
       message?: string
     }
   ): void {
     if (event === 'data' && payload.data !== undefined) {
-      this.emitData(payload.sessionId, payload.data)
+      this.emitData(
+        payload.sessionId,
+        payload.data,
+        payload.offsetStart,
+        payload.byteLen
+      )
     } else if (event === 'exit') {
       this.emitExit(payload.sessionId, payload.code ?? null)
     } else if (event === 'error' && payload.message !== undefined) {
@@ -257,6 +345,32 @@ export class MockTerminalService implements ITerminalService {
   // Get active sessions for testing
   getActiveSessions(): string[] {
     return Array.from(this.sessions.keys())
+  }
+
+  listSessions(): Promise<SessionList> {
+    // Mock returns empty session list
+    return Promise.resolve({
+      activeSessionId: null,
+      sessions: [],
+    })
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  setActiveSession(_id: string): Promise<void> {
+    // Mock no-op
+    return Promise.resolve()
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  reorderSessions(_ids: string[]): Promise<void> {
+    // Mock no-op
+    return Promise.resolve()
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  updateSessionCwd(_id: string, _cwd: string): Promise<void> {
+    // Mock no-op
+    return Promise.resolve()
   }
 }
 

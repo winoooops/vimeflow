@@ -110,10 +110,12 @@ describe('Terminal Types', () => {
       const result: PTYSpawnResult = {
         sessionId: 'session-1',
         pid: 12345,
+        cwd: '/home/user',
       }
 
       expect(result.sessionId).toBe('session-1')
       expect(result.pid).toBe(12345)
+      expect(result.cwd).toBe('/home/user')
     })
 
     test('PTYWriteParams structure', () => {
@@ -150,10 +152,14 @@ describe('Terminal Types', () => {
       const event: PTYDataEvent = {
         sessionId: 'session-1',
         data: 'hello world\n',
+        offsetStart: 0n,
+        byteLen: 12n,
       }
 
       expect(event.sessionId).toBe('session-1')
       expect(event.data).toBe('hello world\n')
+      expect(event.offsetStart).toBe(0n)
+      expect(event.byteLen).toBe(12n)
     })
 
     test('PTYExitEvent with exit code', () => {

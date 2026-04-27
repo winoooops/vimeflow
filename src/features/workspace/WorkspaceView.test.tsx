@@ -30,6 +30,43 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   })),
 }))
 
+// Mock terminal service to return initial session data synchronously
+vi.mock('../terminal/services/terminalService', () => ({
+  createTerminalService: vi.fn(() => ({
+    spawn: vi.fn().mockResolvedValue({ sessionId: 'new-id', pid: 999 }),
+    write: vi.fn().mockResolvedValue(undefined),
+    resize: vi.fn().mockResolvedValue(undefined),
+    kill: vi.fn().mockResolvedValue(undefined),
+    onData: vi.fn(
+      (): Promise<() => void> =>
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        Promise.resolve((): void => {})
+    ),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onExit: vi.fn((): (() => void) => (): void => {}),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onError: vi.fn((): (() => void) => (): void => {}),
+    listSessions: vi.fn().mockResolvedValue({
+      activeSessionId: 'sess-1',
+      sessions: [
+        {
+          id: 'sess-1',
+          cwd: '~',
+          status: {
+            kind: 'Alive',
+            pid: 1234,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    }),
+    setActiveSession: vi.fn().mockResolvedValue(undefined),
+    reorderSessions: vi.fn().mockResolvedValue(undefined),
+    updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+  })),
+}))
+
 describe('WorkspaceView', () => {
   test('renders all five zones (icon rail, sidebar, terminal, bottom drawer, agent status panel)', () => {
     render(<WorkspaceView />)
@@ -80,8 +117,11 @@ describe('WorkspaceView', () => {
     ).toBeInTheDocument()
   })
 
-  test('passes active session to TerminalZone', () => {
+  test('passes active session to TerminalZone', async () => {
     render(<WorkspaceView />)
+
+    // Wait for session to load
+    await screen.findByRole('button', { name: 'session 1' })
 
     const terminalZone = screen.getByTestId('terminal-zone')
 
@@ -114,11 +154,13 @@ describe('WorkspaceView', () => {
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
   })
 
-  test('defaults to first session as active', () => {
+  test('defaults to first session as active', async () => {
     render(<WorkspaceView />)
 
     // Default session should have active styling on the list item wrapper
-    const firstSession = screen.getByRole('button', { name: 'session 1' })
+    const firstSession = await screen.findByRole('button', {
+      name: 'session 1',
+    })
     const listItem = firstSession.closest('li')!
     expect(listItem.className).toContain('bg-surface-container-high')
     expect(listItem.className).toContain('text-on-surface')
@@ -194,8 +236,10 @@ describe('WorkspaceView', () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    // Initially, default session is active
-    const firstSession = screen.getByRole('button', { name: 'session 1' })
+    // Wait for initial session to load from listSessions
+    const firstSession = await screen.findByRole('button', {
+      name: 'session 1',
+    })
     expect(firstSession.closest('li')!.className).toContain(
       'bg-surface-container-high'
     )
@@ -207,7 +251,9 @@ describe('WorkspaceView', () => {
     await user.click(newInstanceButton)
 
     // New session should now be active, first should not
-    const secondSession = screen.getByRole('button', { name: 'session 2' })
+    const secondSession = await screen.findByRole('button', {
+      name: 'session 2',
+    })
     expect(secondSession.closest('li')!.className).toContain(
       'bg-surface-container-high'
     )

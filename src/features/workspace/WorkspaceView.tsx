@@ -10,6 +10,7 @@ import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { useSessionManager } from './hooks/useSessionManager'
 import { useResizable } from './hooks/useResizable'
 import { createFileSystemService } from '../files/services/fileSystemService'
+import { createTerminalService } from '../terminal/services/terminalService'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import type { ChangedFile, SelectedDiffFile } from '../diff/types'
 
@@ -18,16 +19,30 @@ const SIDEBAR_MAX = 560
 const SIDEBAR_DEFAULT = 340
 
 export const WorkspaceView = (): ReactElement => {
+  // Round 4, Finding 1 (codex P1): one terminal service per WorkspaceView
+  // instance. Both `useSessionManager` and every `TerminalPane` (via
+  // `TerminalZone`) MUST receive the same instance. Under Tauri the factory
+  // returns a singleton anyway (singleton-by-IPC-binding), so the only
+  // observable change is in the browser/Vite/test workflow where the factory
+  // returns a fresh `MockTerminalService` per call. Wrapping in `useMemo`
+  // pins the instance for the component's lifetime so re-renders don't
+  // produce a fresh mock and silently disconnect the manager from the panes.
+  const terminalService = useMemo(() => createTerminalService(), [])
+
   const {
     sessions,
     activeSessionId,
     setActiveSessionId,
     createSession,
     removeSession,
+    restartSession,
     renameSession,
     reorderSessions,
     updateSessionCwd,
-  } = useSessionManager()
+    restoreData,
+    loading,
+    notifyPaneReady,
+  } = useSessionManager(terminalService)
 
   const {
     size: sidebarWidth,
@@ -321,6 +336,11 @@ export const WorkspaceView = (): ReactElement => {
           onNewTab={createSession}
           onCloseTab={removeSession}
           onSessionCwdChange={updateSessionCwd}
+          restoreData={restoreData}
+          loading={loading}
+          onPaneReady={notifyPaneReady}
+          onSessionRestart={restartSession}
+          service={terminalService}
         />
 
         {/* Bottom Drawer - Editor + Diff Viewer */}

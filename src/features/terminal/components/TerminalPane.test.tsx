@@ -4,6 +4,35 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { TerminalPane, clearTerminalCache, terminalCache } from './TerminalPane'
 import { useTerminal, type UseTerminalReturn } from '../hooks/useTerminal'
+import type { ITerminalService } from '../services/terminalService'
+
+// Shared mock service for tests that don't exercise service-specific behavior.
+// Round 4 Finding 1 made `service` a required prop on TerminalPane (the
+// previous fallback to `createTerminalService()` produced disjoint mocks
+// in the browser/Vite/test workflow). Tests now pass an explicit service.
+const createDefaultMockService = (): ITerminalService =>
+  ({
+    spawn: vi.fn().mockResolvedValue({ sessionId: 'mock', pid: 0 }),
+    write: vi.fn().mockResolvedValue(undefined),
+    resize: vi.fn().mockResolvedValue(undefined),
+    kill: vi.fn().mockResolvedValue(undefined),
+    onData: vi.fn(
+      (): Promise<() => void> =>
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        Promise.resolve((): void => {})
+    ),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onExit: vi.fn((): (() => void) => (): void => {}),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onError: vi.fn((): (() => void) => (): void => {}),
+    listSessions: vi.fn().mockResolvedValue({
+      activeSessionId: null,
+      sessions: [],
+    }),
+    setActiveSession: vi.fn().mockResolvedValue(undefined),
+    reorderSessions: vi.fn().mockResolvedValue(undefined),
+    updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+  }) as ITerminalService
 
 // Mock xterm modules
 vi.mock('@xterm/xterm', () => ({
@@ -32,8 +61,10 @@ describe('TerminalPane', () => {
   }
   let mockFitAddon: { fit: ReturnType<typeof vi.fn> }
   let mockUseTerminal: UseTerminalReturn
+  let defaultMockService: ITerminalService
 
   beforeEach(() => {
+    defaultMockService = createDefaultMockService()
     // Mock ResizeObserver
     global.ResizeObserver = vi.fn().mockImplementation(() => ({
       observe: vi.fn(),
@@ -74,7 +105,6 @@ describe('TerminalPane', () => {
       status: 'running',
       error: null,
       resize: vi.fn(),
-      debugInfo: 'test',
     }
 
     // Setup mocks
@@ -90,13 +120,25 @@ describe('TerminalPane', () => {
   })
 
   test('renders terminal container', () => {
-    render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+    render(
+      <TerminalPane
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
     const container = screen.getByTestId('terminal-pane')
     expect(container).toBeInTheDocument()
   })
 
   test('initializes xterm terminal on mount', async () => {
-    render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+    render(
+      <TerminalPane
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
 
     await waitFor(() => {
       expect(Terminal).toHaveBeenCalledWith(
@@ -110,7 +152,13 @@ describe('TerminalPane', () => {
   })
 
   test('applies Catppuccin Mocha theme', async () => {
-    render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+    render(
+      <TerminalPane
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
 
     await waitFor(() => {
       expect(Terminal).toHaveBeenCalledWith(
@@ -126,7 +174,13 @@ describe('TerminalPane', () => {
   })
 
   test('loads fit addon', async () => {
-    render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+    render(
+      <TerminalPane
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
 
     await waitFor(() => {
       expect(FitAddon).toHaveBeenCalled()
@@ -137,7 +191,13 @@ describe('TerminalPane', () => {
   // WebGL addon test removed — addon disabled due to broken WebGL2 in Tauri webview
 
   test('opens terminal in container', async () => {
-    render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+    render(
+      <TerminalPane
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
 
     await waitFor(() => {
       expect(mockTerminal.open).toHaveBeenCalledWith(expect.any(HTMLDivElement))
@@ -149,7 +209,13 @@ describe('TerminalPane', () => {
       .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
       .mockReturnValue(800)
 
-    render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+    render(
+      <TerminalPane
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
 
     await waitFor(() => {
       expect(mockFitAddon.fit).toHaveBeenCalled()
@@ -159,7 +225,13 @@ describe('TerminalPane', () => {
   })
 
   test('handles terminal resize events', async () => {
-    render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+    render(
+      <TerminalPane
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
 
     await waitFor(() => {
       expect(mockTerminal.onResize).toHaveBeenCalled()
@@ -168,7 +240,11 @@ describe('TerminalPane', () => {
 
   test('disposes terminal from cache on unmount to prevent memory leaks', async () => {
     const { unmount } = render(
-      <TerminalPane sessionId="test-session" cwd="/home/user" />
+      <TerminalPane
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
     )
 
     // Wait for terminal to initialize
@@ -187,14 +263,26 @@ describe('TerminalPane', () => {
 
   test('passes sessionId prop correctly', () => {
     const sessionId = 'custom-session-123'
-    render(<TerminalPane sessionId={sessionId} cwd="/home/user" />)
+    render(
+      <TerminalPane
+        sessionId={sessionId}
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
 
     const container = screen.getByTestId('terminal-pane')
     expect(container).toHaveAttribute('data-session-id', sessionId)
   })
 
   test('uses full width and height', () => {
-    render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+    render(
+      <TerminalPane
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
 
     const container = screen.getByTestId('terminal-pane')
     expect(container).toHaveClass('w-full')
@@ -204,7 +292,13 @@ describe('TerminalPane', () => {
   describe('PTY Service Integration', () => {
     test('accepts cwd prop for terminal session', () => {
       const cwd = '/home/user/project'
-      render(<TerminalPane sessionId="test-session" cwd={cwd} />)
+      render(
+        <TerminalPane
+          sessionId="test-session"
+          cwd={cwd}
+          service={defaultMockService}
+        />
+      )
 
       const container = screen.getByTestId('terminal-pane')
       expect(container).toBeInTheDocument()
@@ -213,7 +307,13 @@ describe('TerminalPane', () => {
     test('spawns PTY session via useTerminal hook', async () => {
       // TODO: This test will verify that useTerminal is called
       // with correct parameters when component mounts
-      render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+      render(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
 
       // Will add assertions once useTerminal is wired
       await waitFor(() => {
@@ -224,7 +324,13 @@ describe('TerminalPane', () => {
     test('connects xterm data events to PTY write', async () => {
       // TODO: This test will verify that typing in terminal
       // sends data to PTY service
-      render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+      render(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
 
       await waitFor(() => {
         expect(mockTerminal.open).toHaveBeenCalled()
@@ -236,7 +342,13 @@ describe('TerminalPane', () => {
     test('connects PTY data events to xterm write', async () => {
       // TODO: This test will verify that PTY output
       // is written to xterm terminal
-      render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+      render(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
 
       await waitFor(() => {
         expect(mockTerminal.open).toHaveBeenCalled()
@@ -248,7 +360,13 @@ describe('TerminalPane', () => {
     test('handles terminal resize for PTY', async () => {
       // TODO: This test will verify that terminal resize events
       // trigger PTY resize via service
-      render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+      render(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
 
       await waitFor(() => {
         expect(mockTerminal.onResize).toHaveBeenCalled()
@@ -277,7 +395,13 @@ describe('TerminalPane', () => {
           }
         })
 
-      render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+      render(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
 
       await waitFor(() => {
         expect(global.ResizeObserver).toHaveBeenCalled()
@@ -341,7 +465,13 @@ describe('TerminalPane', () => {
           }
         })
 
-      render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+      render(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
 
       await waitFor(() => {
         expect(global.ResizeObserver).toHaveBeenCalled()
@@ -404,7 +534,13 @@ describe('TerminalPane', () => {
         .mockReturnValue(0)
 
       try {
-        render(<TerminalPane sessionId="cached-session" cwd="/home/user" />)
+        render(
+          <TerminalPane
+            sessionId="cached-session"
+            cwd="/home/user"
+            service={defaultMockService}
+          />
+        )
 
         await waitFor(() => {
           expect(cachedTerminal.open).toHaveBeenCalled()
@@ -419,7 +555,13 @@ describe('TerminalPane', () => {
     })
 
     test('regression #81: onResize does not forward tiny dimensions to PTY when container is hidden', async () => {
-      render(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+      render(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
 
       await waitFor(() => {
         expect(mockTerminal.onResize).toHaveBeenCalled()
@@ -462,7 +604,11 @@ describe('TerminalPane', () => {
     test('P2: disposes old session terminal when switching to different sessionId', async () => {
       // Render with session A
       const { rerender } = render(
-        <TerminalPane sessionId="session-a" cwd="/home/user" />
+        <TerminalPane
+          sessionId="session-a"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
       )
 
       await waitFor(() => {
@@ -476,7 +622,13 @@ describe('TerminalPane', () => {
       vi.mocked(FitAddon).mockClear()
 
       // Switch to session B (cleanup effect disposes session A terminal)
-      rerender(<TerminalPane sessionId="session-b" cwd="/home/user" />)
+      rerender(
+        <TerminalPane
+          sessionId="session-b"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
 
       // Wait for new terminal to be created
       await waitFor(() => {
@@ -489,10 +641,18 @@ describe('TerminalPane', () => {
   })
 
   describe('Stability and Performance (Codex Review Findings)', () => {
-    test('P2: keeps service instance stable across re-renders', async () => {
-      // Render component without explicit service prop (uses default)
+    test('P2: forwards stable service prop to useTerminal across re-renders', async () => {
+      // Round 4 Finding 1: TerminalPane no longer memoizes a fallback
+      // service internally — callers MUST pass a stable instance. This test
+      // now verifies the contract holds: a stable service prop reaches
+      // useTerminal unchanged across renders. The parent (WorkspaceView)
+      // owns the memoization via useMemo.
       const { rerender } = render(
-        <TerminalPane sessionId="test-session" cwd="/home/user" />
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
       )
 
       await waitFor(() => {
@@ -505,8 +665,14 @@ describe('TerminalPane', () => {
       // Clear mocks to count new calls
       vi.mocked(useTerminal).mockClear()
 
-      // Trigger re-render with same props
-      rerender(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+      // Trigger re-render with same service prop
+      rerender(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
 
       await waitFor(() => {
         expect(useTerminal).toHaveBeenCalled()
@@ -515,14 +681,19 @@ describe('TerminalPane', () => {
       const secondCallService =
         vi.mocked(useTerminal).mock.calls[0]?.[0]?.service
 
-      // Service instance should be the same across re-renders
+      // Same prop reference reaches useTerminal both times.
       expect(firstCallService).toBe(secondCallService)
+      expect(firstCallService).toBe(defaultMockService)
     })
 
     test('P1: does not recreate terminal when resize callback changes', async () => {
       // Render component
       const { rerender } = render(
-        <TerminalPane sessionId="test-session" cwd="/home/user" />
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
       )
 
       await waitFor(() => {
@@ -540,7 +711,13 @@ describe('TerminalPane', () => {
       vi.mocked(Terminal).mockClear()
 
       // Trigger re-render (this would happen when resize callback changes)
-      rerender(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+      rerender(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
 
       // Wait a bit to ensure effect would run if it was going to
       await new Promise((resolve) => setTimeout(resolve, 50))
@@ -560,7 +737,11 @@ describe('TerminalPane', () => {
 
       // Render component
       const { rerender } = render(
-        <TerminalPane sessionId="test-session" cwd="/home/user" />
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
       )
 
       await waitFor(() => {
@@ -579,12 +760,188 @@ describe('TerminalPane', () => {
       vi.mocked(useTerminal).mockReturnValue(runningMockUseTerminal)
 
       // Trigger re-render (this simulates the status change)
-      rerender(<TerminalPane sessionId="test-session" cwd="/home/user" />)
+      rerender(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
 
       // Resize should be called when status becomes 'running'
       await waitFor(() => {
         expect(initialMockUseTerminal.resize).toHaveBeenCalled()
       })
+    })
+  })
+
+  // Feature #14: Restore protocol tests
+  describe('Restored mode', () => {
+    test('passes restoredFrom prop to useTerminal', () => {
+      const restoredFrom = {
+        sessionId: 'r1',
+        cwd: '/tmp',
+        pid: 99,
+        replayData: 'X',
+        replayEndOffset: 1,
+        bufferedEvents: [],
+      }
+
+      render(
+        <TerminalPane
+          sessionId="r1"
+          cwd="/tmp"
+          service={defaultMockService}
+          restoredFrom={restoredFrom}
+        />
+      )
+
+      expect(vi.mocked(useTerminal)).toHaveBeenCalledWith(
+        expect.objectContaining({ restoredFrom })
+      )
+    })
+  })
+
+  // Feature #14: OSC 7 cwd sync tests.
+  // The pane reports cwd changes via onCwdChange; the parent (useSessionManager)
+  // is the sole writer that issues the updateSessionCwd IPC. The pane MUST NOT
+  // call service.updateSessionCwd directly — doubling the IPC was the round-12
+  // MEDIUM finding, and the second call silently swallows errors when the
+  // session is concurrently killed.
+  describe('OSC 7 handler', () => {
+    test('forwards file:// URL path to onCwdChange', async () => {
+      const mockService = {
+        spawn: vi.fn().mockResolvedValue({ sessionId: 'pty-1', pid: 123 }),
+        write: vi.fn().mockResolvedValue(undefined),
+        resize: vi.fn().mockResolvedValue(undefined),
+        kill: vi.fn().mockResolvedValue(undefined),
+        updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+        onData: vi.fn(() =>
+          // eslint-disable-next-line @typescript-eslint/no-empty-function
+          Promise.resolve((): void => {})
+        ),
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        onExit: vi.fn(() => (): void => {}),
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        onError: vi.fn(() => (): void => {}),
+        listSessions: vi.fn().mockResolvedValue({
+          activeSessionId: null,
+          sessions: [],
+        }),
+        setActiveSession: vi.fn().mockResolvedValue(undefined),
+        reorderSessions: vi.fn().mockResolvedValue(undefined),
+      }
+
+      const onCwdChange = vi.fn()
+
+      render(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={mockService}
+          onCwdChange={onCwdChange}
+        />
+      )
+
+      await waitFor(() => {
+        expect(mockTerminal.parser.registerOscHandler).toHaveBeenCalledWith(
+          7,
+          expect.any(Function)
+        )
+      })
+
+      const oscHandler = vi.mocked(mockTerminal.parser.registerOscHandler).mock
+        .calls[0]?.[1]
+
+      ;(oscHandler as ((data: string) => void) | undefined)?.(
+        'file://localhost/home/user/projects'
+      )
+
+      await waitFor(() => {
+        expect(onCwdChange).toHaveBeenCalledWith('/home/user/projects')
+      })
+
+      expect(mockService.updateSessionCwd).not.toHaveBeenCalled()
+    })
+
+    test('forwards plain absolute path to onCwdChange', async () => {
+      const mockService = {
+        spawn: vi.fn().mockResolvedValue({ sessionId: 'pty-1', pid: 123 }),
+        write: vi.fn().mockResolvedValue(undefined),
+        resize: vi.fn().mockResolvedValue(undefined),
+        kill: vi.fn().mockResolvedValue(undefined),
+        updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+        onData: vi.fn(() =>
+          // eslint-disable-next-line @typescript-eslint/no-empty-function
+          Promise.resolve((): void => {})
+        ),
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        onExit: vi.fn(() => (): void => {}),
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        onError: vi.fn(() => (): void => {}),
+        listSessions: vi.fn().mockResolvedValue({
+          activeSessionId: null,
+          sessions: [],
+        }),
+        setActiveSession: vi.fn().mockResolvedValue(undefined),
+        reorderSessions: vi.fn().mockResolvedValue(undefined),
+      }
+
+      const onCwdChange = vi.fn()
+
+      render(
+        <TerminalPane
+          sessionId="test-session"
+          cwd="/home/user"
+          service={mockService}
+          onCwdChange={onCwdChange}
+        />
+      )
+
+      await waitFor(() => {
+        expect(mockTerminal.parser.registerOscHandler).toHaveBeenCalled()
+      })
+
+      const oscHandler = vi.mocked(mockTerminal.parser.registerOscHandler).mock
+        .calls[0]?.[1]
+
+      ;(oscHandler as ((data: string) => void) | undefined)?.('/tmp')
+
+      await waitFor(() => {
+        expect(onCwdChange).toHaveBeenCalledWith('/tmp')
+      })
+
+      expect(mockService.updateSessionCwd).not.toHaveBeenCalled()
+    })
+  })
+
+  // F5 (round 2): the Restart button on Exited tabs must invoke the
+  // onRestart callback with the session id. Without wiring, the button
+  // was a silent no-op even after the awaiting-restart UI shipped.
+  describe('Awaiting-restart mode', () => {
+    test('renders Restart button and fires onRestart with sessionId on click', async () => {
+      const onRestart = vi.fn()
+
+      render(
+        <TerminalPane
+          sessionId="exited-session"
+          cwd="/var"
+          service={defaultMockService}
+          mode="awaiting-restart"
+          onRestart={onRestart}
+        />
+      )
+
+      const button = await screen.findByRole('button', {
+        name: /restart session exited-session/i,
+      })
+
+      const userEvent = await import('@testing-library/user-event')
+      const user = userEvent.default.setup()
+      await user.click(button)
+
+      expect(onRestart).toHaveBeenCalledWith('exited-session')
+      expect(onRestart).toHaveBeenCalledTimes(1)
     })
   })
 })

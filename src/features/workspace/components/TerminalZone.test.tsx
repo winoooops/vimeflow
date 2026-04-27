@@ -4,16 +4,59 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TerminalZone } from './TerminalZone'
 import { mockSessions } from '../data/mockSessions'
+import type { ITerminalService } from '../../terminal/services/terminalService'
+
+// Round 4 Finding 1: TerminalZone now requires a `service` prop so it can
+// forward it to every TerminalPane. The shared mock below is a no-op stub —
+// individual tests don't exercise service behavior because TerminalPane is
+// itself mocked.
+const mockService: ITerminalService = {
+  spawn: vi.fn().mockResolvedValue({ sessionId: 'mock', pid: 0 }),
+  write: vi.fn().mockResolvedValue(undefined),
+  resize: vi.fn().mockResolvedValue(undefined),
+  kill: vi.fn().mockResolvedValue(undefined),
+  onData: vi.fn(
+    (): Promise<() => void> =>
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      Promise.resolve((): void => {})
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  onExit: vi.fn((): (() => void) => (): void => {}),
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  onError: vi.fn((): (() => void) => (): void => {}),
+  listSessions: vi.fn().mockResolvedValue({
+    activeSessionId: null,
+    sessions: [],
+  }),
+  setActiveSession: vi.fn().mockResolvedValue(undefined),
+  reorderSessions: vi.fn().mockResolvedValue(undefined),
+  updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+}
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../../terminal/components/TerminalPane', () => ({
-  TerminalPane: vi.fn(({ sessionId, cwd }) => (
+  TerminalPane: vi.fn(({ sessionId, cwd, restoredFrom, mode, onRestart }) => (
     <div
       data-testid="terminal-pane-mock"
       data-session-id={sessionId}
       data-cwd={cwd}
+      data-restored={restoredFrom ? 'true' : 'false'}
+      data-mode={mode}
     >
       Mocked TerminalPane
+      {/* Expose the onRestart wiring so tests can assert TerminalZone
+          forwards onSessionRestart down to the pane. */}
+      {onRestart && (
+        <button
+          type="button"
+          data-testid={`mock-restart-${sessionId as string}`}
+          onClick={() =>
+            (onRestart as (id: string) => void)(sessionId as string)
+          }
+        >
+          mock-restart
+        </button>
+      )}
     </div>
   )),
 }))
@@ -32,6 +75,7 @@ describe('TerminalZone', () => {
     activeSessionId: 'sess-1',
     onSessionChange: mockOnSessionChange,
     onNewTab: mockOnNewTab,
+    service: mockService,
   }
 
   test('renders tab bar with agent session tabs', () => {
@@ -357,5 +401,206 @@ describe('TerminalZone', () => {
 
     expect(updatedSession1Pane).toHaveClass('hidden')
     expect(updatedSession2Pane).not.toHaveClass('hidden')
+  })
+
+  // Feature #14: Restore protocol tests
+  test('shows loading state when loading=true', () => {
+    render(<TerminalZone {...defaultProps} loading />)
+
+    expect(screen.getByText(/restoring sessions/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('terminal-pane-mock')).not.toBeInTheDocument()
+  })
+
+  test('passes restoreData to TerminalPane for each session', () => {
+    const restoreData = new Map([
+      [
+        'sess-1',
+        {
+          sessionId: 'sess-1',
+          cwd: '/tmp',
+          pid: 123,
+          replayData: 'AAA',
+          replayEndOffset: 3,
+          bufferedEvents: [],
+        },
+      ],
+    ])
+
+    render(<TerminalZone {...defaultProps} restoreData={restoreData} />)
+
+    const mockPanes = screen.getAllByTestId('terminal-pane-mock')
+
+    const restoredPane = mockPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-1'
+    )
+
+    const normalPane = mockPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-2'
+    )
+
+    expect(restoredPane).toHaveAttribute('data-restored', 'true')
+    expect(normalPane).toHaveAttribute('data-restored', 'false')
+  })
+
+  test('does not pass restoreData when not provided', () => {
+    render(<TerminalZone {...defaultProps} />)
+
+    const mockPanes = screen.getAllByTestId('terminal-pane-mock')
+
+    mockPanes.forEach((pane) => {
+      expect(pane).toHaveAttribute('data-restored', 'false')
+    })
+  })
+
+  // F3 regression: Exited (status='completed') sessions must NOT trigger
+  // a spawn — they go to awaiting-restart so the user explicitly opts in.
+  // Previously TerminalPane inferred from `restoredFrom===undefined` and
+  // resurrected dead sessions on the next reload.
+  test('F3 regression: Exited session renders in awaiting-restart mode', () => {
+    const aliveAndExited = [
+      // Use the mockSessions shape from the test file but override status
+      { ...mockSessions[0], id: 'alive', status: 'running' as const },
+      { ...mockSessions[0], id: 'exited', status: 'completed' as const },
+    ]
+
+    const restoreData = new Map([
+      [
+        'alive',
+        {
+          sessionId: 'alive',
+          cwd: '/tmp',
+          pid: 1,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [],
+        },
+      ],
+    ])
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={aliveAndExited}
+        activeSessionId="alive"
+        restoreData={restoreData}
+      />
+    )
+
+    const mockPanes = screen.getAllByTestId('terminal-pane-mock')
+
+    const alivePane = mockPanes.find(
+      (p) => p.getAttribute('data-session-id') === 'alive'
+    )
+
+    const exitedPane = mockPanes.find(
+      (p) => p.getAttribute('data-session-id') === 'exited'
+    )
+
+    expect(alivePane).toHaveAttribute('data-mode', 'attach')
+    // Exited session must NOT be in spawn or attach mode — would resurrect
+    // the PTY. Awaiting-restart waits for explicit user opt-in.
+    expect(exitedPane).toHaveAttribute('data-mode', 'awaiting-restart')
+  })
+
+  // Round 3 Finding 3 (codex P2): mode resolution must put status BEFORE
+  // restoreData. Round-2 F1 made restoreData get seeded for every session
+  // (so per-session buffering works for newly-created tabs) and nothing
+  // clears it when the PTY later exits. With the old `restore ?
+  // 'attach' : ...` precedence, a session that exits AFTER mount stayed
+  // in 'attach' mode forever — the Restart button was unreachable until
+  // a full reload rebuilt state from listSessions().
+  test('F-r3-3: completed status takes precedence over lingering restoreData', () => {
+    const exitedAfterMount = [
+      // Simulates the "live exit" case: status flipped to completed (e.g.
+      // from a pty-exit event) while restoreData still has the entry that
+      // was seeded at mount time and is now stale.
+      {
+        ...mockSessions[0],
+        id: 'just-exited',
+        status: 'completed' as const,
+      },
+    ]
+
+    const restoreData = new Map([
+      [
+        'just-exited',
+        {
+          sessionId: 'just-exited',
+          cwd: '/tmp',
+          pid: 1,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [],
+        },
+      ],
+    ])
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={exitedAfterMount}
+        activeSessionId="just-exited"
+        restoreData={restoreData}
+      />
+    )
+
+    const pane = screen.getAllByTestId('terminal-pane-mock')[0]
+    // Status wins — the user can reach the Restart UX without a reload.
+    expect(pane).toHaveAttribute('data-mode', 'awaiting-restart')
+  })
+
+  // F5 (round 2): the Restart click on an Exited (awaiting-restart) pane
+  // must propagate through TerminalZone → TerminalPane.onRestart with the
+  // session id. Previously WorkspaceView never passed onSessionRestart, so
+  // the Restart button was a silent no-op.
+  test('F5 (round 2): forwards onSessionRestart to TerminalPane onRestart', async () => {
+    const user = userEvent.setup()
+    const onSessionRestart = vi.fn()
+
+    render(
+      <TerminalZone {...defaultProps} onSessionRestart={onSessionRestart} />
+    )
+
+    const button = screen.getByTestId('mock-restart-sess-1')
+    await user.click(button)
+
+    expect(onSessionRestart).toHaveBeenCalledWith('sess-1')
+    expect(onSessionRestart).toHaveBeenCalledTimes(1)
+  })
+
+  test('F3: alive session with restoreData renders in attach mode (no spawn)', () => {
+    const restoreData = new Map([
+      [
+        'sess-1',
+        {
+          sessionId: 'sess-1',
+          cwd: '/tmp',
+          pid: 1,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [],
+        },
+      ],
+      [
+        'sess-2',
+        {
+          sessionId: 'sess-2',
+          cwd: '/tmp',
+          pid: 2,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [],
+        },
+      ],
+    ])
+
+    render(<TerminalZone {...defaultProps} restoreData={restoreData} />)
+
+    const mockPanes = screen.getAllByTestId('terminal-pane-mock')
+
+    expect(mockPanes).toHaveLength(2)
+    mockPanes.forEach((pane) => {
+      expect(pane).toHaveAttribute('data-mode', 'attach')
+    })
   })
 })

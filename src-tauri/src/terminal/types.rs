@@ -86,8 +86,16 @@ pub struct KillPtyRequest {
 pub struct PtyDataEvent {
     /// Session ID
     pub session_id: SessionId,
-    /// Output data from PTY stdout
+    /// Output data from PTY stdout (lossy UTF-8 — invalid bytes become U+FFFD)
     pub data: String,
+    /// Starting byte offset of this chunk in the session's lifetime stream
+    pub offset_start: u64,
+    /// Raw byte count of this chunk from the PTY read (matches the producer's
+    /// offset arithmetic). MUST be used by subscribers to advance their cursor
+    /// — never derive cursor advances from `data.len()`, since lossy UTF-8
+    /// decoding can replace invalid bytes with U+FFFD (3 bytes when re-encoded)
+    /// and shift the cursor away from the producer's offset stream.
+    pub byte_len: u64,
 }
 
 /// PTY exit event payload (emitted when process exits)
@@ -112,4 +120,66 @@ pub struct PtyErrorEvent {
     pub session_id: SessionId,
     /// Error message
     pub message: String,
+}
+
+/// Session status — Alive (with replay data) or Exited
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(tag = "kind")]
+pub enum SessionStatus {
+    Alive {
+        pid: u32,
+        replay_data: String,
+        replay_end_offset: u64,
+    },
+    Exited {
+        last_exit_code: Option<i32>,
+    },
+}
+
+/// Single session info returned by list_sessions
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionInfo {
+    pub id: String,
+    pub cwd: String,
+    pub status: SessionStatus,
+}
+
+/// Response payload for list_sessions command
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionList {
+    pub active_session_id: Option<String>,
+    pub sessions: Vec<SessionInfo>,
+}
+
+/// Request payload for set_active_session command
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct SetActiveSessionRequest {
+    pub id: String,
+}
+
+/// Request payload for reorder_sessions command
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct ReorderSessionsRequest {
+    pub ids: Vec<String>,
+}
+
+/// Request payload for update_session_cwd command
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct UpdateSessionCwdRequest {
+    pub id: String,
+    pub cwd: String,
 }

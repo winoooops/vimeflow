@@ -49,7 +49,7 @@ describe('MockTerminalService', () => {
 
     test('emits initial prompt after spawn', async () => {
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
@@ -58,7 +58,12 @@ describe('MockTerminalService', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 150))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, '$ ')
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        '$ ',
+        expect.any(Number),
+        expect.any(Number)
+      )
     })
   })
 
@@ -70,14 +75,34 @@ describe('MockTerminalService', () => {
       })
 
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       await service.write({ sessionId, data: 'hello' })
 
-      // Per-character processing: each char emitted separately
-      expect(onData).toHaveBeenCalledWith(sessionId, 'h')
-      expect(onData).toHaveBeenCalledWith(sessionId, 'e')
-      expect(onData).toHaveBeenCalledWith(sessionId, 'o')
+      // Per-character processing: each char emitted separately. Offsets are
+      // monotonically auto-assigned by the mock's per-session cursor (mirrors
+      // the Rust producer's RingBuffer.end_offset). byteLen defaults to the
+      // utf-8 byte count of `data` (here, 1 per char).
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        'h',
+        expect.any(Number),
+        expect.any(Number)
+      )
+
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        'e',
+        expect.any(Number),
+        expect.any(Number)
+      )
+
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        'o',
+        expect.any(Number),
+        expect.any(Number)
+      )
       expect(onData).toHaveBeenCalledTimes(5)
     })
 
@@ -88,7 +113,7 @@ describe('MockTerminalService', () => {
       })
 
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       // Type characters then press Enter
       for (const ch of 'echo hello') {
@@ -98,7 +123,12 @@ describe('MockTerminalService', () => {
       await service.write({ sessionId, data: '\r' })
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, 'hello\r\n$ ')
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        'hello\r\n$ ',
+        expect.any(Number),
+        expect.any(Number)
+      )
     })
 
     test('simulates pwd command output on Enter', async () => {
@@ -108,7 +138,7 @@ describe('MockTerminalService', () => {
       })
 
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       for (const ch of 'pwd') {
         await service.write({ sessionId, data: ch })
@@ -117,7 +147,12 @@ describe('MockTerminalService', () => {
       await service.write({ sessionId, data: '\r' })
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      expect(onData).toHaveBeenCalledWith(sessionId, '/home/user\r\n$ ')
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        '/home/user\r\n$ ',
+        expect.any(Number),
+        expect.any(Number)
+      )
     })
 
     test('handles backspace by removing last buffered character', async () => {
@@ -127,7 +162,7 @@ describe('MockTerminalService', () => {
       })
 
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       // Type a character first so the buffer isn't empty
       await service.write({ sessionId, data: 'a' })
@@ -136,7 +171,12 @@ describe('MockTerminalService', () => {
       // Backspace should erase the character
       await service.write({ sessionId, data: '\x7f' })
 
-      expect(onData).toHaveBeenCalledWith(sessionId, '\b \b')
+      expect(onData).toHaveBeenCalledWith(
+        sessionId,
+        '\b \b',
+        expect.any(Number),
+        expect.any(Number)
+      )
     })
 
     test('ignores backspace on empty buffer', async () => {
@@ -146,7 +186,7 @@ describe('MockTerminalService', () => {
       })
 
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       // Backspace on empty buffer should be a no-op
       await service.write({ sessionId, data: '\x7f' })
@@ -161,7 +201,7 @@ describe('MockTerminalService', () => {
       })
 
       const onData = vi.fn()
-      service.onData(onData)
+      await service.onData(onData)
 
       // Pasted text with CRLF should only trigger one command execution
       await service.write({ sessionId, data: 'pwd\r\n' })
@@ -261,7 +301,7 @@ describe('MockTerminalService', () => {
   describe('event subscriptions', () => {
     test('onData registers callback', async () => {
       const callback = vi.fn()
-      const unsubscribe = service.onData(callback)
+      const unsubscribe = await service.onData(callback)
 
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
@@ -270,14 +310,14 @@ describe('MockTerminalService', () => {
 
       service.emitData(sessionId, 'test data')
 
-      expect(callback).toHaveBeenCalledWith(sessionId, 'test data')
+      expect(callback).toHaveBeenCalledWith(sessionId, 'test data', 0, 9)
 
       unsubscribe()
     })
 
     test('onData unsubscribe removes callback', async () => {
       const callback = vi.fn()
-      const unsubscribe = service.onData(callback)
+      const unsubscribe = await service.onData(callback)
 
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
