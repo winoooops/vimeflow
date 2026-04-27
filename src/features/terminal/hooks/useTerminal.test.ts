@@ -882,10 +882,16 @@ describe('useTerminal', () => {
         })
       )
 
+      // Both assertions must be inside the same waitFor: spawn is called
+      // synchronously inside the effect, but status='running' fires only
+      // AFTER `await service.spawn(...)` resolves. Splitting these into
+      // a `waitFor(spawn-called)` then synchronous `expect(status)` was
+      // race-prone — the post-await microtask may not have flushed by the time
+      // the synchronous check ran.
       await waitFor(() => {
         expect(mockService.spawn).toHaveBeenCalledOnce()
+        expect(result.current.status).toBe('running')
       })
-      expect(result.current.status).toBe('running')
     })
   })
 })
