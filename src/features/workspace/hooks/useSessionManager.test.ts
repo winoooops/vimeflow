@@ -1120,6 +1120,80 @@ describe('useSessionManager', () => {
     expect(calls.some(([id]) => id === 'fresh')).toBe(false)
   })
 
+  // Round 12, Finding 4 (codex P2): when restartSession races a concurrent
+  // removeSession of the same id, the new spawn becomes an orphan that
+  // gets killed in the orphan-kill branch. But before the orphan branch
+  // discovered the session was gone, restartSession had ALREADY seeded
+  // restoreData / pendingPanes / readyPanes / bufferedRef / ptySessionMap
+  // entries for the new id. Without the round-12 cleanup, those entries
+  // leaked per race — repeated races accumulated stale state.
+  //
+  // Reproduce: spawn resolves slowly, removeSession lands during the
+  // spawn's in-flight window, then assert restoreData has no entry
+  // for the orphan id after both calls settle.
+  test('round 12 F4: restartSession orphan branch tears down seeded bookkeeping', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'exited',
+      sessions: [
+        {
+          id: 'exited',
+          cwd: '/tmp',
+          status: { kind: 'Exited', last_exit_code: null },
+        },
+      ],
+    })
+
+    let resolveSpawn:
+      | ((v: { sessionId: string; pid: number; cwd: string }) => void)
+      | null = null
+    service.spawn = vi.fn(
+      (): Promise<{ sessionId: string; pid: number; cwd: string }> =>
+        new Promise((resolve) => {
+          resolveSpawn = resolve
+        })
+    )
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Step 1: kick off restartSession — spawn is in flight.
+    act(() => result.current.restartSession('exited'))
+    await waitFor(() => expect(service.spawn).toHaveBeenCalled())
+
+    // Step 2: remove the session BEFORE spawn resolves.
+    act(() => result.current.removeSession('exited'))
+    await waitFor(() =>
+      expect(
+        result.current.sessions.find((s) => s.id === 'exited')
+      ).toBeUndefined()
+    )
+
+    // Step 3: spawn now resolves with the orphan id.
+    act(() => {
+      resolveSpawn?.({ sessionId: 'orphan-fresh', pid: 1234, cwd: '/tmp' })
+    })
+
+    // Wait until the orphan-kill IPC has fired. Cast through the typed
+    // service.kill signature so TypeScript narrows req.sessionId.
+    await waitFor(() => {
+      const killCalls = (
+        service.kill as unknown as ReturnType<
+          typeof vi.fn<(req: { sessionId: string }) => Promise<void>>
+        >
+      ).mock.calls
+      expect(killCalls.some(([req]) => req.sessionId === 'orphan-fresh')).toBe(
+        true
+      )
+    })
+
+    // Critical: the bookkeeping for the orphan id must NOT remain in
+    // restoreData. Without the cleanup, this entry would leak forever.
+    expect(result.current.restoreData.has('orphan-fresh')).toBe(false)
+  })
+
   test('F5 (round 2): restartSession of inactive session does NOT call setActiveSession', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({

@@ -3,7 +3,10 @@ import { flushSync } from 'react-dom'
 import type { Session, AgentActivity } from '../types'
 import type { SessionList, SessionInfo } from '../../../bindings'
 import type { ITerminalService } from '../../terminal/services/terminalService'
-import { registerPtySession } from '../../terminal/ptySessionMap'
+import {
+  registerPtySession,
+  unregisterPtySession,
+} from '../../terminal/ptySessionMap'
 
 const emptyActivity: AgentActivity = {
   fileChanges: [],
@@ -1046,6 +1049,18 @@ export const useSessionManager = (
         if (orphanedSessionId !== null) {
           // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
           service.kill({ sessionId: orphanedSessionId }).catch((): void => {})
+          // Round 12, Finding 4 (codex P2): tear down the bookkeeping we
+          // seeded BEFORE the setSessions updater discovered the session
+          // had been removed. Without this, repeated restart-vs-close
+          // races leak per-session entries in restoreData / pendingPanes /
+          // readyPanes / bufferedRef / ptySessionMap. The orphan PTY
+          // itself is killed above; this just removes the dangling
+          // metadata so the next reload reconciles cleanly.
+          restoreDataRef.current.delete(orphanedSessionId)
+          pendingPanesRef.current.delete(orphanedSessionId)
+          readyPanesRef.current.delete(orphanedSessionId)
+          bufferedRef.current.delete(orphanedSessionId)
+          unregisterPtySession(orphanedSessionId)
         }
         if (computedNewOrder !== null) {
           // eslint-disable-next-line promise/prefer-await-to-then
