@@ -162,7 +162,15 @@ export const useSessionManager = (
   const [activeSessionId, setActiveSessionIdState] = useState<string | null>(
     null
   )
-  const [restoreData] = useState(new Map<string, RestoreData>())
+  // Round 12, Finding 2 (claude MEDIUM): restoreData is a mutable
+  // side-channel, NOT React state. The previous `useState(new Map())`
+  // was misleading — Map mutations via .set/.delete don't notify React,
+  // and the UI only "saw" changes because every call site happened to
+  // pair its mutation with a setSessions call. Future call sites might
+  // forget the pairing. Promoting to useRef makes the design intent
+  // explicit: restoreData is read by consumers (TerminalZone) but
+  // changes are coordinated by the sessions array, never by Map identity.
+  const restoreDataRef = useRef(new Map<string, RestoreData>())
   const [loading, setLoading] = useState(true)
 
   // Refs that bridge the mount-time restore effect (which builds the buffer
@@ -268,7 +276,7 @@ export const useSessionManager = (
         for (const info of list.sessions) {
           if (info.status.kind === 'Alive') {
             const status = info.status
-            restoreData.set(info.id, {
+            restoreDataRef.current.set(info.id, {
               sessionId: info.id,
               cwd: info.cwd,
               pid: status.pid,
@@ -339,7 +347,7 @@ export const useSessionManager = (
       stopBufferingRef.current?.()
       stopBufferingRef.current = null
     }
-  }, [service, restoreData])
+  }, [service])
 
   // Round 3 (codex P2 follow-up to Finding 3): mark sessions completed when
   // their PTY exits. The mode-precedence fix in TerminalZone (status-first)
@@ -431,7 +439,7 @@ export const useSessionManager = (
       // continues to work because those code paths leave restoreData intact —
       // only an explicit removeSession deletes it.
       return (): void => {
-        if (!restoreData.has(sessionId)) {
+        if (!restoreDataRef.current.has(sessionId)) {
           // removeSession already cleared this session — treat unmount as
           // permanent teardown and skip the re-arm.
           return
@@ -443,7 +451,7 @@ export const useSessionManager = (
         }
       }
     },
-    [restoreData]
+    []
   )
 
   // Mirror the latest active session id into a ref so async callbacks can
@@ -574,7 +582,7 @@ export const useSessionManager = (
         // the literal '~' we passed in — many shells don't emit OSC 7 on
         // first prompt, so without this, useGitStatus and the agent-status
         // panel sit idle until the user manually `cd`s.
-        restoreData.set(result.sessionId, {
+        restoreDataRef.current.set(result.sessionId, {
           sessionId: result.sessionId,
           cwd: result.cwd,
           pid: result.pid,
@@ -682,7 +690,7 @@ export const useSessionManager = (
         setPendingSpawns((c) => c - 1)
       }
     })()
-  }, [restoreData, service])
+  }, [service])
 
   // Auto-create one default tab on clean launch.
   //
@@ -752,7 +760,7 @@ export const useSessionManager = (
           readyPanesRef.current.delete(id)
           pendingPanesRef.current.delete(id)
           bufferedRef.current.delete(id)
-          restoreData.delete(id)
+          restoreDataRef.current.delete(id)
 
           // F4 (round 2): when the user closes the ACTIVE tab and the hook
           // promotes a neighbor, the cache must learn about it too. Without
@@ -829,7 +837,7 @@ export const useSessionManager = (
         }
       })()
     },
-    [service, restoreData]
+    [service]
   )
 
   // Use a ref to read the latest sessions inside the async closure without
@@ -934,12 +942,12 @@ export const useSessionManager = (
         readyPanesRef.current.delete(id)
         pendingPanesRef.current.delete(id)
         bufferedRef.current.delete(id)
-        restoreData.delete(id)
+        restoreDataRef.current.delete(id)
 
         // 3. Seed restoreData so TerminalPane mounts in 'attach' mode
         // instead of falling through to the legacy spawn path (which would
         // create a hidden duplicate PTY — the F3 / round-1 bug).
-        restoreData.set(result.sessionId, {
+        restoreDataRef.current.set(result.sessionId, {
           sessionId: result.sessionId,
           cwd: cachedCwd,
           pid: result.pid,
@@ -1072,7 +1080,7 @@ export const useSessionManager = (
         }
       })()
     },
-    [restoreData, service]
+    [service]
   )
 
   // Rename session — in-memory only (no IPC)
@@ -1149,7 +1157,12 @@ export const useSessionManager = (
     renameSession,
     reorderSessions,
     updateSessionCwd,
-    restoreData,
+    // Round 12 F2: expose the ref-backed Map. Identity is stable across
+    // renders; consumers that previously relied on Map identity changing
+    // were reading stale state — every mutation in this hook is paired
+    // with a setSessions call, so the consuming render is triggered by
+    // the sessions array, not by the Map.
+    restoreData: restoreDataRef.current,
     loading,
     notifyPaneReady,
   }
