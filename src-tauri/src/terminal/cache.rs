@@ -155,6 +155,28 @@ impl SessionCache {
         }
     }
 
+    /// Wipe all sessions, session order, and active id — for graceful-exit
+    /// cleanup so the next launch starts fresh instead of showing ghost
+    /// "Restart" tabs for sessions that died with the app.
+    ///
+    /// This is invoked from the Tauri `RunEvent::ExitRequested` handler in
+    /// `lib.rs`. Process-kill paths (SIGKILL, OOM, panic, sudden power loss)
+    /// skip that handler — the lazy reconciliation in `list_sessions`
+    /// (cache says alive + PtyState empty → flip to Exited) is the
+    /// correctness safety net for those, by design (see
+    /// memory: feedback_lazy_reconciliation_over_shutdown_hooks).
+    ///
+    /// Held under the same `mutate` lock + atomic disk flush as every other
+    /// state change, so a concurrent IPC mutation can't race the wipe.
+    pub fn clear_all(&self) -> Result<(), String> {
+        self.mutate(|d| {
+            d.sessions.clear();
+            d.session_order.clear();
+            d.active_session_id = None;
+            Ok(())
+        })
+    }
+
     fn flush_to_disk(&self, data: &SessionCacheData) -> Result<(), String> {
         let parent = self
             .path
@@ -363,5 +385,67 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().contains("corrupt-"))
             .collect();
         assert_eq!(entries.len(), 1, "expected one .corrupt-* backup");
+    }
+
+    /// Pins the graceful-exit cleanup path. `clear_all()` must wipe all
+    /// three top-level fields (sessions, session_order, active_session_id)
+    /// AND persist the wipe to disk — so that the next `SessionCache::load`
+    /// returns an empty cache (no ghost "Restart" tabs on next launch).
+    #[test]
+    fn clear_all_wipes_all_fields_and_persists() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("sessions.json");
+
+        let cache = SessionCache::load(path.clone()).unwrap();
+        cache
+            .mutate(|d| {
+                d.session_order.push("uuid-a".into());
+                d.session_order.push("uuid-b".into());
+                d.active_session_id = Some("uuid-a".into());
+                d.sessions.insert(
+                    "uuid-a".into(),
+                    CachedSession {
+                        cwd: "/tmp/a".into(),
+                        created_at: "2026-04-26T00:00:00Z".into(),
+                        exited: false,
+                        last_exit_code: None,
+                    },
+                );
+                d.sessions.insert(
+                    "uuid-b".into(),
+                    CachedSession {
+                        cwd: "/tmp/b".into(),
+                        created_at: "2026-04-26T00:01:00Z".into(),
+                        exited: true,
+                        last_exit_code: None,
+                    },
+                );
+                Ok(())
+            })
+            .unwrap();
+
+        // Verify pre-state: cache has content.
+        let pre = cache.snapshot();
+        assert_eq!(pre.session_order.len(), 2);
+        assert_eq!(pre.sessions.len(), 2);
+        assert!(pre.active_session_id.is_some());
+
+        // Clear all — the graceful-exit path.
+        cache.clear_all().unwrap();
+
+        // In-memory mirror is empty.
+        let post = cache.snapshot();
+        assert_eq!(post.session_order.len(), 0);
+        assert_eq!(post.sessions.len(), 0);
+        assert!(post.active_session_id.is_none());
+
+        // Disk is empty too — load again from a fresh handle, simulating
+        // a next-launch read. This is the actual user-facing assertion:
+        // the next launch must NOT see ghost sessions.
+        let reloaded = SessionCache::load(path).unwrap();
+        let snap = reloaded.snapshot();
+        assert_eq!(snap.session_order.len(), 0);
+        assert_eq!(snap.sessions.len(), 0);
+        assert!(snap.active_session_id.is_none());
     }
 }

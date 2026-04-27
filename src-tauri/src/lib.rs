@@ -90,7 +90,28 @@ pub fn run() {
         terminal::test_commands::list_active_pty_sessions
     ]);
 
-    builder
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    // Build the App so we can intercept the exit event. Equivalent to
+    // builder.run(generate_context!()) plus an event handler — needed so we
+    // can wipe the SessionCache on graceful exit (Cmd+Q, window-close)
+    // before the cache file gets re-read on next launch as a list of
+    // ghost-Exited tabs.
+    //
+    // Process-kill paths (SIGKILL, OOM, panic, sudden power loss) skip
+    // this handler — the lazy reconciliation in list_sessions is the
+    // correctness safety net for those, by design.
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { .. } = event {
+            if let Some(cache) =
+                app_handle.try_state::<std::sync::Arc<terminal::cache::SessionCache>>()
+            {
+                if let Err(e) = cache.clear_all() {
+                    log::warn!("failed to clear session cache on exit: {e}");
+                }
+            }
+        }
+    });
 }
