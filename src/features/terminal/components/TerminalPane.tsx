@@ -12,7 +12,6 @@ import {
 } from '../hooks/useTerminal'
 import { type ITerminalService } from '../services/terminalService'
 import { registerPtySession, unregisterPtySession } from '../ptySessionMap'
-import { isTauri } from '../../../lib/environment'
 import '@xterm/xterm/css/xterm.css'
 
 // P2 Fix: Global cache of terminal instances per sessionId
@@ -160,7 +159,6 @@ export const TerminalPane = ({
     session: ptySession,
     resize,
     status,
-    debugInfo,
   } = useTerminal({
     // Pass null terminal in awaiting-restart so useTerminal short-circuits.
     terminal: isAwaitingRestart ? null : terminal,
@@ -390,14 +388,8 @@ export const TerminalPane = ({
   return (
     <div
       data-testid="terminal-pane-wrapper"
-      className={`relative w-full h-full overflow-hidden${import.meta.env.DEV ? ' border-2 border-red-500' : ''}`}
+      className="relative w-full h-full overflow-hidden"
     >
-      {import.meta.env.DEV && (
-        <div className="absolute bottom-0 left-0 z-50 bg-black/80 px-2 py-1 text-xs font-mono text-green-400">
-          env={isTauri() ? 'tauri' : 'browser'} | status={status} | debug=
-          {debugInfo}
-        </div>
-      )}
       <div
         ref={containerRef}
         data-testid="terminal-pane"

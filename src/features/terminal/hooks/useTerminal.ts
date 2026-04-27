@@ -120,11 +120,6 @@ export interface UseTerminalReturn {
    * Resize the PTY
    */
   resize: (cols: number, rows: number) => void
-
-  /**
-   * DEBUG: spawn lifecycle trace (remove before merge)
-   */
-  debugInfo: string
 }
 
 /**
@@ -166,9 +161,6 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     'idle'
   )
   const [error, setError] = useState<string | null>(null)
-
-  // DEBUG: trace spawn lifecycle
-  const [debugInfo, setDebugInfo] = useState('init')
 
   // Track if component is mounted to prevent state updates after unmount
   const isMountedRef = useRef(true)
@@ -213,8 +205,6 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     isMountedRef.current = true
 
     if (!terminal) {
-      setDebugInfo('no-terminal')
-
       return
     }
 
@@ -231,8 +221,6 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       // renders a Restart button instead of a terminal, so this hook just
       // sits in idle state.
       if (currentMode === 'awaiting-restart') {
-        setDebugInfo('awaiting-restart')
-
         return
       }
 
@@ -245,7 +233,6 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           // misuse is loud rather than producing a silent zombie pane.
           setStatus('error')
           setError('attach mode requires restoredFrom')
-          setDebugInfo('attach without restoredFrom')
 
           return
         }
@@ -294,14 +281,11 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         setSession(restoredSession)
         setStatus('running')
         setError(null)
-        setDebugInfo(`attached pid=${String(restore.pid)}`)
 
         return
       }
 
       // SPAWN: Create a new PTY process via service.spawn.
-      setDebugInfo('spawning...')
-
       try {
         const effectiveCwd = cwdRef.current ?? '~'
 
@@ -346,7 +330,6 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         setSession(newSession)
         setStatus('running')
         setError(null)
-        setDebugInfo(`running pid=${String(result.pid)}`)
       } catch (err: unknown) {
         if (!isMountedRef.current) {
           return
@@ -361,7 +344,6 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
               : 'Failed to spawn PTY'
         setStatus('error')
         setError(errorMessage)
-        setDebugInfo(`error: ${errorMessage}`)
       }
     }
 
@@ -551,6 +533,5 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     status,
     error,
     resize,
-    debugInfo,
   }
 }
