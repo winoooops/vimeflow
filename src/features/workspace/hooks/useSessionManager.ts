@@ -531,7 +531,17 @@ export const useSessionManager = (
   // Without the permanent listener, fresh tabs created after restore would
   // come up blank until the shell produced more output — early prompts,
   // OSC sequences, and any startup banner would be silently lost.
+  // Round 10 (codex P2): track in-flight `service.spawn()` requests so the
+  // auto-create-on-empty effect can defer when a manual createSession is
+  // already racing. Without this guard, a user clicking `+` during the
+  // restore window (loading=true, no live sessions yet) could end up with
+  // TWO tabs from a single click: their manual one, plus an auto-created
+  // one that fired between when loading flipped to false and when the
+  // manual spawn resolved into `sessions`.
+  const pendingSpawnsRef = useRef(0)
+
   const createSession = useCallback((): void => {
+    pendingSpawnsRef.current += 1
     void (async (): Promise<void> => {
       try {
         // Round 8, Finding 3 (claude MEDIUM): explicitly opt in to the
@@ -650,10 +660,16 @@ export const useSessionManager = (
         }
 
         setActiveSessionIdState(result.sessionId)
-        registerPtySession(result.sessionId, result.sessionId, '~')
+        // Round 10 (claude LOW): use the resolved absolute cwd from spawn,
+        // not the literal '~'. Agent detection and useGitStatus read this
+        // map immediately on mount; '~' would leave both subsystems idle
+        // until the shell emits OSC 7 (most shells don't on first prompt).
+        registerPtySession(result.sessionId, result.sessionId, result.cwd)
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn('spawn failed', err)
+      } finally {
+        pendingSpawnsRef.current -= 1
       }
     })()
   }, [restoreData, service])
@@ -690,6 +706,20 @@ export const useSessionManager = (
   const hasLiveSession = sessions.some((s) => s.status === 'running')
   useEffect(() => {
     if (!autoCreateOnEmpty || loading || didInitialAutoCreateRef.current) {
+      return
+    }
+    // Round 10 (codex P2): if a manual createSession is already in flight
+    // (e.g. user clicked `+` during the restore window), DEFER auto-create.
+    // The effect re-fires when `hasLiveSession` flips after the manual
+    // spawn lands; at that point either it lands successfully (we skip
+    // auto-create, hasLiveSession=true) or it failed (we fire auto-create
+    // because pendingSpawnsRef is back to 0).
+    //
+    // Note: don't set `didInitialAutoCreateRef = true` in this early-return
+    // branch — we want a future re-fire (when the manual spawn resolves
+    // and changes hasLiveSession) to be able to auto-create if the manual
+    // attempt failed.
+    if (pendingSpawnsRef.current > 0) {
       return
     }
     didInitialAutoCreateRef.current = true
@@ -733,46 +763,55 @@ export const useSessionManager = (
           // `service.kill` await, the closure value is stale and "removing
           // the active tab" branch would fire even though a different tab
           // is now active — clobbering the newer selection.
+          //
+          // Round 10 (claude MEDIUM): hoist setActiveSessionIdState + IPC
+          // OUT of the setSessions updater. React requires updaters to be
+          // pure; createSession/restartSession adopted this pattern in
+          // round 9 F6 but removeSession was missed. flushSync forces the
+          // updater to run synchronously so the captured `computedFallback`
+          // and `shouldUpdateActive` are populated by the time the outer
+          // scope reads them.
           const currentActiveId = activeSessionIdRef.current
-          setSessions((prev) => {
-            const next = prev.filter((s) => s.id !== id)
-
-            // If the user just removed the tab THAT IS ACTUALLY ACTIVE RIGHT
-            // NOW, pick a neighbor. If a tab switch landed during the await
-            // and the active id has moved, do nothing — we still removed the
-            // requested tab, but we don't override the user's newer choice.
-            if (currentActiveId === id) {
-              const removedIndex = prev.findIndex((s) => s.id === id)
-
-              // next.length is 0 when the LAST tab was just removed; that's
-              // the only case `fallback` is null. Compute defensively so the
-              // empty-tabs path still drains React state to null without
-              // firing a setActiveSession IPC (Rust's kill_pty already
-              // cleared cache.active_session_id when session_order emptied).
-              const fallback: string | null =
-                next.length === 0
-                  ? null
-                  : next[Math.min(removedIndex, next.length - 1)].id
-
-              setActiveSessionIdState(fallback)
-
-              // Fire setActiveSession IPC inside the updater so the cache's
-              // active id matches the React-state choice. Idempotent — safe
-              // under StrictMode double-invoke.
-              if (fallback !== null) {
-                // eslint-disable-next-line promise/prefer-await-to-then
-                service.setActiveSession(fallback).catch((err) => {
-                  // eslint-disable-next-line no-console
-                  console.warn(
-                    'removeSession: setActiveSession IPC failed (cache active id will lag)',
-                    err
-                  )
-                })
+          // Widen via `as` so TS doesn't narrow to the literal types `null`
+          // and `false` — flushSync's callback-mutation of these locals
+          // isn't visible to control-flow analysis, so the outer `if`
+          // checks would be flagged as always-falsy without the widening.
+          // Same idiom used by createSession/restartSession in round 9.
+          let computedFallback = null as string | null
+          let shouldUpdateActive = false as boolean
+          flushSync(() => {
+            setSessions((prev) => {
+              const next = prev.filter((s) => s.id !== id)
+              if (currentActiveId === id) {
+                const removedIndex = prev.findIndex((s) => s.id === id)
+                shouldUpdateActive = true
+                // next.length is 0 when the LAST tab was just removed; that's
+                // the only case fallback is null. Rust's kill_pty already
+                // cleared cache.active_session_id in that branch, so we don't
+                // fire a setActiveSession IPC for null.
+                computedFallback =
+                  next.length === 0
+                    ? null
+                    : next[Math.min(removedIndex, next.length - 1)].id
               }
-            }
 
-            return next
+              return next
+            })
           })
+
+          if (shouldUpdateActive) {
+            setActiveSessionIdState(computedFallback)
+            if (computedFallback !== null) {
+              // eslint-disable-next-line promise/prefer-await-to-then
+              void service.setActiveSession(computedFallback).catch((err) => {
+                // eslint-disable-next-line no-console
+                console.warn(
+                  'removeSession: setActiveSession IPC failed (cache active id will lag)',
+                  err
+                )
+              })
+            }
+          }
         } catch (err) {
           // eslint-disable-next-line no-console
           console.warn('kill failed', err)
