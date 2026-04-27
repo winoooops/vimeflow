@@ -802,9 +802,14 @@ describe('TerminalPane', () => {
     })
   })
 
-  // Feature #14: OSC 7 IPC sync tests
+  // Feature #14: OSC 7 cwd sync tests.
+  // The pane reports cwd changes via onCwdChange; the parent (useSessionManager)
+  // is the sole writer that issues the updateSessionCwd IPC. The pane MUST NOT
+  // call service.updateSessionCwd directly — doubling the IPC was the round-12
+  // MEDIUM finding, and the second call silently swallows errors when the
+  // session is concurrently killed.
   describe('OSC 7 handler', () => {
-    test('calls service.updateSessionCwd when OSC 7 is emitted', async () => {
+    test('forwards file:// URL path to onCwdChange', async () => {
       const mockService = {
         spawn: vi.fn().mockResolvedValue({ sessionId: 'pty-1', pid: 123 }),
         write: vi.fn().mockResolvedValue(undefined),
@@ -827,11 +832,14 @@ describe('TerminalPane', () => {
         reorderSessions: vi.fn().mockResolvedValue(undefined),
       }
 
+      const onCwdChange = vi.fn()
+
       render(
         <TerminalPane
           sessionId="test-session"
           cwd="/home/user"
           service={mockService}
+          onCwdChange={onCwdChange}
         />
       )
 
@@ -842,24 +850,21 @@ describe('TerminalPane', () => {
         )
       })
 
-      // Get the OSC 7 handler
       const oscHandler = vi.mocked(mockTerminal.parser.registerOscHandler).mock
         .calls[0]?.[1]
 
-      // Simulate OSC 7 emission: file://hostname/path/to/dir
       ;(oscHandler as ((data: string) => void) | undefined)?.(
         'file://localhost/home/user/projects'
       )
 
       await waitFor(() => {
-        expect(mockService.updateSessionCwd).toHaveBeenCalledWith(
-          'test-session',
-          '/home/user/projects'
-        )
+        expect(onCwdChange).toHaveBeenCalledWith('/home/user/projects')
       })
+
+      expect(mockService.updateSessionCwd).not.toHaveBeenCalled()
     })
 
-    test('calls onCwdChange callback after IPC sync', async () => {
+    test('forwards plain absolute path to onCwdChange', async () => {
       const mockService = {
         spawn: vi.fn().mockResolvedValue({ sessionId: 'pty-1', pid: 123 }),
         write: vi.fn().mockResolvedValue(undefined),
@@ -900,17 +905,13 @@ describe('TerminalPane', () => {
       const oscHandler = vi.mocked(mockTerminal.parser.registerOscHandler).mock
         .calls[0]?.[1]
 
-      ;(oscHandler as ((data: string) => void) | undefined)?.(
-        'file://localhost/tmp'
-      )
+      ;(oscHandler as ((data: string) => void) | undefined)?.('/tmp')
 
       await waitFor(() => {
-        expect(mockService.updateSessionCwd).toHaveBeenCalledWith(
-          'test-session',
-          '/tmp'
-        )
         expect(onCwdChange).toHaveBeenCalledWith('/tmp')
       })
+
+      expect(mockService.updateSessionCwd).not.toHaveBeenCalled()
     })
   })
 

@@ -276,31 +276,11 @@ export const TerminalPane = ({
             path = path.slice(1)
           }
           if (path) {
-            // Sync to Rust cache via IPC (fire-and-forget)
-            void (async (): Promise<void> => {
-              try {
-                await service.updateSessionCwd(sessionId, path)
-              } catch (err) {
-                // eslint-disable-next-line no-console
-                console.warn('updateSessionCwd IPC failed', err)
-              }
-            })()
-            // Also call the callback for local state update
             onCwdChangeRef.current?.(path)
           }
         } catch {
           // Not a valid URL — some shells emit plain paths
           if (data.startsWith('/')) {
-            // Sync to Rust cache via IPC (fire-and-forget)
-            void (async (): Promise<void> => {
-              try {
-                await service.updateSessionCwd(sessionId, data)
-              } catch (err) {
-                // eslint-disable-next-line no-console
-                console.warn('updateSessionCwd IPC failed', err)
-              }
-            })()
-            // Also call the callback for local state update
             onCwdChangeRef.current?.(data)
           }
         }
