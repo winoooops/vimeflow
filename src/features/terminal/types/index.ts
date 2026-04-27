@@ -63,6 +63,19 @@ export interface PTYSpawnParams {
   /** Terminal size */
   cols?: number
   rows?: number
+  /**
+   * Whether to create a `.vimeflow/sessions/<uuid>/` agent-bridge directory in
+   * the cwd. The agent statusline (Claude Code transcript watching) requires
+   * this — when the user explicitly creates a tab via the workspace UI, the
+   * bridge IS the product. Defaults to `false` so callers (e.g. tests, ad-hoc
+   * spawns) don't pollute arbitrary cwd values with bookkeeping dirs.
+   *
+   * Round 8, Finding 3 (claude MEDIUM): previously hardcoded `true` in
+   * `tauriTerminalService.spawn`, so every spawn — including throwaway test
+   * sessions, integration runs in `/tmp`, and any third-party project root —
+   * created a `.vimeflow/sessions/` tree that showed up in `git status`.
+   */
+  enableAgentBridge?: boolean
 }
 
 /**

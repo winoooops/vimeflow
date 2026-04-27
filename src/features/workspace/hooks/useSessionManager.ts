@@ -480,9 +480,16 @@ export const useSessionManager = (
   const createSession = useCallback((): void => {
     void (async (): Promise<void> => {
       try {
+        // Round 8, Finding 3 (claude MEDIUM): explicitly opt in to the
+        // agent bridge. The workspace UI is the canonical entry point for
+        // user-driven tab creation, and the Claude Code transcript watcher
+        // (agent statusline) is the product. Other (test, ad-hoc) callers
+        // get the default `false` so they don't litter arbitrary cwds with
+        // `.vimeflow/sessions/<uuid>/` directories.
         const result = await service.spawn({
           cwd: '~',
           env: {},
+          enableAgentBridge: true,
         })
 
         const now = new Date().toISOString()
@@ -739,7 +746,14 @@ export const useSessionManager = (
         // gone — the tab silently disappeared on the next reload.
         let result: { sessionId: string; pid: number; cwd?: string }
         try {
-          result = await service.spawn({ cwd: cachedCwd, env: {} })
+          // Round 8, Finding 3 (claude MEDIUM): restart preserves the
+          // user's tab semantics, so re-enable the agent bridge for parity
+          // with createSession. See createSession for full rationale.
+          result = await service.spawn({
+            cwd: cachedCwd,
+            env: {},
+            enableAgentBridge: true,
+          })
         } catch (err) {
           // eslint-disable-next-line no-console
           console.warn(

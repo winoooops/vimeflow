@@ -92,12 +92,21 @@ export class TauriTerminalService implements ITerminalService {
 
     const sessionId = crypto.randomUUID()
 
+    // Round 8, Finding 3 (claude MEDIUM): forward the caller's intent
+    // instead of hardcoding `true`. Previously every spawn created a
+    // `.vimeflow/sessions/<uuid>/` tree in the cwd — including `/tmp`, the
+    // user's home, third-party project roots — which showed up in
+    // `git status` and was excluded from Vite's HMR watch list as a
+    // workaround. The agent statusline IS the product when the workspace
+    // UI explicitly spawns a tab (useSessionManager passes `true`); other
+    // callers default to `false` so ad-hoc spawns don't pollute arbitrary
+    // working directories.
     const request: SpawnPtyRequest = {
       sessionId,
       cwd: params.cwd,
       shell: params.shell,
       env: params.env,
-      enableAgentBridge: true,
+      enableAgentBridge: params.enableAgentBridge ?? false,
     }
 
     const response = await invoke<PtySession>('spawn_pty', {

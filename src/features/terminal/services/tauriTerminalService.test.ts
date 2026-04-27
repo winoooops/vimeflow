@@ -111,6 +111,39 @@ describe('TauriTerminalService', () => {
       expect(eventListeners.has('pty-exit')).toBe(true)
       expect(eventListeners.has('pty-error')).toBe(true)
     })
+
+    // Round 8, Finding 3 (claude MEDIUM): the agent bridge creates a
+    // `.vimeflow/sessions/<uuid>/` tree in the spawn cwd. This was previously
+    // hardcoded `true`, which polluted ad-hoc spawns (tests, scripts, third-
+    // party project roots) with bookkeeping directories that surfaced in
+    // `git status`. The flag now defaults to `false` and only the workspace
+    // UI's `useSessionManager` opts in.
+    test('round 8 F3: spawn forwards enableAgentBridge=true when caller opts in', async () => {
+      mockInvokeOnce({ id: 's1', pid: 1, cwd: '/home/user' })
+      await service.spawn({ cwd: '/home/user', enableAgentBridge: true })
+
+      expect(invoke).toHaveBeenCalledWith('spawn_pty', {
+        request: expect.objectContaining({ enableAgentBridge: true }),
+      })
+    })
+
+    test('round 8 F3: spawn defaults enableAgentBridge to false when caller omits it', async () => {
+      mockInvokeOnce({ id: 's1', pid: 1, cwd: '/tmp' })
+      await service.spawn({ cwd: '/tmp' })
+
+      expect(invoke).toHaveBeenCalledWith('spawn_pty', {
+        request: expect.objectContaining({ enableAgentBridge: false }),
+      })
+    })
+
+    test('round 8 F3: spawn forwards enableAgentBridge=false when caller explicitly opts out', async () => {
+      mockInvokeOnce({ id: 's1', pid: 1, cwd: '/tmp' })
+      await service.spawn({ cwd: '/tmp', enableAgentBridge: false })
+
+      expect(invoke).toHaveBeenCalledWith('spawn_pty', {
+        request: expect.objectContaining({ enableAgentBridge: false }),
+      })
+    })
   })
 
   describe('write', () => {

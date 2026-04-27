@@ -326,6 +326,15 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].id).toBe('new-id')
     expect(result.current.activeSessionId).toBe('new-id')
 
+    // Round 8, Finding 3 (claude MEDIUM): the workspace UI is the canonical
+    // entry point for user-driven tab creation, and the agent bridge IS the
+    // product. createSession must opt in explicitly so other (test, ad-hoc)
+    // callers — which now default to `false` — don't litter cwds with
+    // `.vimeflow/sessions/<uuid>/` directories.
+    expect(service.spawn).toHaveBeenCalledWith(
+      expect.objectContaining({ enableAgentBridge: true })
+    )
+
     // F3 regression: the new session must be marked attach-ready (restoreData
     // populated). Without this, TerminalZone's mode-decision routes the
     // pane to legacy 'spawn' mode and useTerminal calls service.spawn() a
@@ -629,10 +638,16 @@ describe('useSessionManager', () => {
 
     // 1. spawn fires FIRST at the cached cwd. Round 4 Finding 2: spawn-then-
     //    kill so a failed spawn doesn't tear down the cache entry for the
-    //    old session.
+    //    old session. Round 8, Finding 3 (claude MEDIUM): restart preserves
+    //    the user's tab semantics, so it must opt in to the agent bridge for
+    //    parity with createSession — `enableAgentBridge` now defaults to
+    //    `false` in tauriTerminalService, so callers must be explicit.
     await waitFor(() =>
       expect(service.spawn).toHaveBeenCalledWith(
-        expect.objectContaining({ cwd: '/home/user/projects/foo' })
+        expect.objectContaining({
+          cwd: '/home/user/projects/foo',
+          enableAgentBridge: true,
+        })
       )
     )
 
