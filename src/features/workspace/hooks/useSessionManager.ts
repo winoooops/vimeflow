@@ -834,7 +834,11 @@ export const useSessionManager = (
               setActiveSessionId(computedFallback)
             } else {
               // Last tab removed — Rust's kill_pty already cleared
-              // cache.active_session_id, no IPC needed.
+              // cache.active_session_id, no IPC needed. Round 14, Codex P2:
+              // bump activeRequestIdRef to supersede any in-flight tab-pick
+              // request whose .catch rollback would otherwise restore the
+              // just-deleted prev id (UI ↔ sessions divergence).
+              activeRequestIdRef.current += 1
               setActiveSessionIdState(null)
             }
           }

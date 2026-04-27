@@ -285,10 +285,27 @@ impl PtyState {
             return Err(KillError::NotPresent);
         };
 
-        session
-            .child
-            .kill()
-            .map_err(|e| KillError::KillFailed(e.to_string()))?;
+        if let Err(e) = session.child.kill() {
+            // Round 14, Claude MEDIUM: the process may have exited between
+            // the read loop's last `remove_if_generation` and this kill.
+            // Unix surfaces ESRCH and Windows surfaces ERROR_ACCESS_DENIED
+            // for an already-dead PID — both arrive here as Err. Distinguish
+            // "already gone" from a real kill failure by asking the child:
+            // try_wait returns Ok(Some(_)) iff the process has been reaped.
+            //
+            // Returning Ok lets kill_pty proceed with cache cleanup. The
+            // read loop's later `remove_if_generation` (or remove() called
+            // by kill_pty) drops the lingering PtyState entry — both paths
+            // are idempotent on a missing id. Without this branch, every
+            // race-window kill surfaced as a KillFailed error to the UI
+            // and stranded the session in cache as `alive` until the
+            // read loop processed EOF.
+            if matches!(session.child.try_wait(), Ok(Some(_))) {
+                return Ok(());
+            }
+
+            return Err(KillError::KillFailed(e.to_string()));
+        }
 
         Ok(())
     }

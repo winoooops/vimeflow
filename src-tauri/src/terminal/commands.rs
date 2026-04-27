@@ -485,8 +485,51 @@ pub fn list_sessions(
         });
     }
 
+    // Round 14, Claude MEDIUM: after lazy reconciliation, the snapshot's
+    // active_session_id may point at a session that has just been flipped
+    // to Exited. Returning it unchanged lets a caller route input or
+    // highlight a tab for an Exited session in the same response, which
+    // is structurally inconsistent. Compute a rotation here so the
+    // returned active_session_id mirrors what set_active_session /
+    // kill_pty would have produced.
+    //
+    // Build the set of reconciled-to-Exited ids first; we use it both to
+    // decide whether the active id needs rotation and to pick a
+    // replacement (the first session_order entry that is NOT in the set
+    // and is NOT already cached.exited).
+    let reconciled_to_exited: std::collections::HashSet<String> = session_infos
+        .iter()
+        .filter(|info| matches!(info.status, SessionStatus::Exited { .. }))
+        .filter(|info| {
+            // Only the freshly reconciled ones; sessions already exited in
+            // the cache snapshot don't change anything.
+            snapshot
+                .sessions
+                .get(&info.id)
+                .is_some_and(|c| !c.exited)
+        })
+        .map(|info| info.id.clone())
+        .collect();
+
+    let mut active_session_id = snapshot.active_session_id.clone();
+    if let Some(active) = active_session_id.as_ref() {
+        if reconciled_to_exited.contains(active) {
+            // Pick the first session whose status is Alive in this very
+            // response — that matches the reconciliation we just did and
+            // is consistent with what the caller will see.
+            active_session_id = session_infos
+                .iter()
+                .find(|info| matches!(info.status, SessionStatus::Alive { .. }))
+                .map(|info| info.id.clone());
+        }
+    }
+
     if needs_flush {
-        // Flush the lazy reconciliation results back to cache
+        // Flush the lazy reconciliation results back to cache. Same closure
+        // also rotates active_session_id when it pointed at a reconciled
+        // session; persisting this here keeps the cache in sync with the
+        // response we are about to return.
+        let new_active = active_session_id.clone();
         cache.mutate(|d| {
             for info in &session_infos {
                 if matches!(info.status, SessionStatus::Exited { .. }) {
@@ -495,12 +538,17 @@ pub fn list_sessions(
                     }
                 }
             }
+            if let Some(active) = d.active_session_id.as_ref() {
+                if reconciled_to_exited.contains(active) {
+                    d.active_session_id = new_active.clone();
+                }
+            }
             Ok(())
         })?;
     }
 
     Ok(SessionList {
-        active_session_id: snapshot.active_session_id,
+        active_session_id,
         sessions: session_infos,
     })
 }
@@ -1513,6 +1561,78 @@ mod tests {
         // Verify lazy reconciliation flushed back to cache
         let snap = cache_state.snapshot();
         assert!(snap.sessions["phantom"].exited);
+    }
+
+    /// Round 14, Claude MEDIUM: when lazy reconciliation flips the active
+    /// session to Exited, list_sessions must rotate active_session_id in
+    /// both the response AND the cache so callers don't see an Exited
+    /// session as the "active" one.
+    #[tokio::test]
+    async fn list_sessions_rotates_active_id_when_reconciled_to_exited() {
+        use crate::terminal::cache;
+
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let cache_state = handle.state::<Arc<SessionCache>>();
+        let state = handle.state::<PtyState>();
+
+        // Spawn a real Alive session first so there's a rotation target.
+        spawn_pty(
+            handle.clone(),
+            state.clone(),
+            cache_state.clone(),
+            SpawnPtyRequest {
+                session_id: "alive-real".into(),
+                cwd: std::env::current_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Plant a phantom alive cache entry AND make it the active id.
+        // session_order ordering matters — put phantom FIRST so rotation
+        // has to scan past it to find alive-real.
+        cache_state
+            .mutate(|d| {
+                d.session_order.insert(0, "phantom".into());
+                d.sessions.insert(
+                    "phantom".into(),
+                    cache::CachedSession {
+                        cwd: "/tmp".into(),
+                        created_at: "2026-04-25T00:00:00Z".into(),
+                        exited: false,
+                        last_exit_code: None,
+                    },
+                );
+                d.active_session_id = Some("phantom".into());
+                Ok(())
+            })
+            .unwrap();
+
+        let result = list_sessions(state.clone(), cache_state.clone()).unwrap();
+
+        // Response active_session_id rotated away from phantom to alive-real.
+        assert_eq!(result.active_session_id, Some("alive-real".into()));
+
+        // Cache also persisted the rotation so subsequent calls are consistent.
+        let snap = cache_state.snapshot();
+        assert_eq!(snap.active_session_id, Some("alive-real".into()));
+        assert!(snap.sessions["phantom"].exited);
+
+        // Cleanup: kill the live session so the test doesn't leak a process.
+        let _ = kill_pty(
+            state.clone(),
+            cache_state.clone(),
+            KillPtyRequest {
+                session_id: "alive-real".into(),
+            },
+        );
     }
 
     #[tokio::test]
