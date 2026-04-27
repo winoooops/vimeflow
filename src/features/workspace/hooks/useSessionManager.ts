@@ -764,6 +764,11 @@ export const useSessionManager = (
           pendingPanesRef.current.delete(id)
           bufferedRef.current.delete(id)
           restoreDataRef.current.delete(id)
+          // Round 14, Claude MEDIUM: also drop the module-level ptySessionMap
+          // entry. Without this, getAllPtySessionIds() (used by the E2E bridge)
+          // returns dead ids after every removeSession, and per-spec session-
+          // count assertions break as the map accumulates across specs.
+          unregisterPtySession(id)
 
           // F4 (round 2): when the user closes the ACTIVE tab and the hook
           // promotes a neighbor, the cache must learn about it too. Without
@@ -956,6 +961,12 @@ export const useSessionManager = (
         pendingPanesRef.current.delete(id)
         bufferedRef.current.delete(id)
         restoreDataRef.current.delete(id)
+        // Round 14, Claude MEDIUM: drop the retired id from the module-level
+        // ptySessionMap symmetrically with registerPtySession(result.sessionId)
+        // below. The new id replaces the old in the workspace, but without
+        // unregisterPtySession the old entry leaks forever and the E2E bridge
+        // sees dead ids.
+        unregisterPtySession(id)
 
         // 3. Seed restoreData so TerminalPane mounts in 'attach' mode
         // instead of falling through to the legacy spawn path (which would

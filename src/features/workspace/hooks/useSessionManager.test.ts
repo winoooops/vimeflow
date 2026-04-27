@@ -3,6 +3,11 @@ import { renderHook, act, waitFor } from '@testing-library/react'
 import { useSessionManager } from './useSessionManager'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { SessionList } from '../../../bindings'
+import {
+  clearPtySessionMap,
+  getAllPtySessionIds,
+  registerPtySession,
+} from '../../terminal/ptySessionMap'
 
 const createMockService = (): ITerminalService => ({
   spawn: vi
@@ -32,6 +37,7 @@ const createMockService = (): ITerminalService => ({
 describe('useSessionManager', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    clearPtySessionMap()
   })
 
   test('on mount, registers global pty-data listener BEFORE calling listSessions', async () => {
@@ -1341,6 +1347,101 @@ describe('useSessionManager', () => {
     // would have fired reorderSessions(['fresh']), which Rust would
     // reject as a non-permutation of session_order=[exited, fresh].
     expect(service.reorderSessions).not.toHaveBeenCalled()
+  })
+
+  // Round 14, Claude MEDIUM: removeSession must unregister the retired id
+  // from ptySessionMap. Without this the E2E bridge's getAllPtySessionIds()
+  // returns dead ids and per-spec session-count assertions break as the
+  // map accumulates across specs. Alive sessions are registered by the
+  // restore loop, so an Alive listSessions mock exercises the natural path.
+  test('round 14: removeSession unregisters retired id from ptySessionMap', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'sess-a',
+      sessions: [
+        {
+          id: 'sess-a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 4321,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    } satisfies SessionList)
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Restore registered the id; verify the precondition.
+    expect(getAllPtySessionIds()).toContain('sess-a')
+
+    act(() => result.current.removeSession('sess-a'))
+
+    await waitFor(() =>
+      expect(result.current.sessions.find((s) => s.id === 'sess-a')).toBe(
+        undefined
+      )
+    )
+
+    // The retired id must NOT remain in ptySessionMap.
+    expect(getAllPtySessionIds()).not.toContain('sess-a')
+  })
+
+  // Round 14, Claude MEDIUM: restartSession must unregister the OLD id
+  // when swapping in the new one. registerPtySession(result.sessionId)
+  // already runs for the new id; the old id needed the symmetric
+  // unregister before this fix.
+  //
+  // Exited sessions are not auto-registered by the restore loop (only
+  // Alive ones are), but they CAN be in ptySessionMap when an
+  // originally-Alive session crashes and onExit flips its status to
+  // 'completed'. Seed the map manually to mimic that real flow.
+  test('round 14: restartSession unregisters old id and registers new id', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'old-id',
+      sessions: [
+        {
+          id: 'old-id',
+          cwd: '/tmp',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+      ],
+    } satisfies SessionList)
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'new-id',
+      pid: 7777,
+      cwd: '/tmp',
+    })
+
+    // Seed: this session was Alive earlier, then onExit flipped it. Its
+    // ptySessionMap entry persisted across the status flip, just like in
+    // production.
+    registerPtySession('old-id', 'old-id', '/tmp')
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(getAllPtySessionIds()).toContain('old-id')
+
+    act(() => result.current.restartSession('old-id'))
+
+    // Wait until the React swap has landed: the new id replaces the old.
+    await waitFor(() => {
+      expect(result.current.sessions.map((s) => s.id)).toEqual(['new-id'])
+    })
+
+    const ids = getAllPtySessionIds()
+    expect(ids).toContain('new-id')
+    expect(ids).not.toContain('old-id')
   })
 
   test('F5 (round 2): restartSession of inactive session does NOT call setActiveSession', async () => {
