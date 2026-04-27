@@ -105,6 +105,25 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
 
 #### Fixed
 
+- Vite HMR 全量刷新（如在工作区里 `vim :w`、手动刷新、错误边界重置）会摧
+  毁 PTY 会话。把会话状态搬进 Rust 文件系统缓存（单一事实源），并引入基于
+  游标的回放协议（`offset_start` + `byte_len` + 每个面板的 `cursorRef`）配
+  合「先订阅后快照」次序，使任意 remount 都能透明重连到存活 PTY，既不丢字
+  节也不重复回放。
+  ([#99](https://github.com/winoooops/vimeflow/pull/99), `cb0ffa6`) —
+  patterns: [Async Race Conditions](docs/reviews/patterns/async-race-conditions.md),
+  [PTY Session Management](docs/reviews/patterns/pty-session-management.md),
+  [React Lifecycle](docs/reviews/patterns/react-lifecycle.md),
+  [Resource Cleanup](docs/reviews/patterns/resource-cleanup.md)
+  - 15 轮 Codex / Claude 评审循环；最终判定 ✅ APPROVE。
+  - 复盘：[`docs/reviews/retrospectives/2026-04-27-pty-reattach-review-cycle.md`](docs/reviews/retrospectives/2026-04-27-pty-reattach-review-cycle.md)
+  - 设计：[`docs/superpowers/specs/2026-04-25-pty-reattach-on-reload-design.md`](docs/superpowers/specs/2026-04-25-pty-reattach-on-reload-design.md)
+  - 未在本 PR 解决、已分别建 issue 的后续：#100（read 循环全局锁性能）、
+    #101（`kill_pty` 与 `removeSession` 的活动 tab 旋转策略不一致）、
+    #102（`spawn_pty` 在达到上限时遗留 bridge 目录）、
+    #103（`RingBuffer` 改用 drain）、#104（清理 `ManagedSession.cwd` 死字
+    段）、#105（`TerminalPane` 多余依赖）、#106（收紧 `inner_sessions` 可
+    见性）。
 - `agent-status` 的 `ContextBucket` 测试对照的是硬编码英文字串，而非运行
   时 locale。
   ([#69](https://github.com/winoooops/vimeflow/pull/69), `a656daf`) —
