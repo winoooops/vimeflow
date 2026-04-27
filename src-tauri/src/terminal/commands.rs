@@ -440,15 +440,21 @@ pub fn list_sessions(
             None => continue, // session_order/sessions desync — skip
         };
 
-        let pid_opt = state.get_pid(id);
+        // Round 12, Finding 3 (claude LOW): acquire the PtyState sessions
+        // lock once per id and snapshot pid + ring + end_offset together.
+        // The previous code called `state.get_pid()` (lock #1) then
+        // `state.inner_sessions().lock()` (lock #2) — same data under two
+        // locks, with a race window between them that the original code
+        // had to detect and demote to Exited. Reading both fields under
+        // a single guard collapses that window and the redundant work.
         let status = if cached.exited {
             SessionStatus::Exited {
                 last_exit_code: cached.last_exit_code,
             }
-        } else if let Some(pid) = pid_opt {
-            // Alive: snapshot ring buffer + end_offset under one lock
+        } else {
             let sessions_lock = state.inner_sessions().lock().expect("poisoned");
             if let Some(session) = sessions_lock.get(id) {
+                let pid = session.child.process_id().unwrap_or(0);
                 let ring_guard = session.ring.lock().expect("ring poisoned");
                 let bytes = ring_guard.bytes_snapshot();
                 let end_offset = ring_guard.end_offset();
@@ -461,18 +467,14 @@ pub fn list_sessions(
                     replay_end_offset: end_offset,
                 }
             } else {
-                // Race: removed between get_pid and lock — treat as exited
+                // Lazy reconciliation: cache says alive but PtyState
+                // doesn't have the session (Tauri restart, hard kill,
+                // graceful close mid-loop). Flip the cache so the next
+                // load sees the truth.
                 needs_flush = true;
                 SessionStatus::Exited {
                     last_exit_code: None,
                 }
-            }
-        } else {
-            // Lazy reconciliation: cache says alive, but PtyState doesn't
-            // have it (Tauri restart, hard kill, etc). Flip the cache.
-            needs_flush = true;
-            SessionStatus::Exited {
-                last_exit_code: None,
             }
         };
 
