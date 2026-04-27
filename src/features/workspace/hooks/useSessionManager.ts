@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
+import { flushSync } from 'react-dom'
 import type { Session, AgentActivity } from '../types'
 import type { SessionList, SessionInfo } from '../../../bindings'
 import type { ITerminalService } from '../../terminal/services/terminalService'
@@ -573,57 +574,80 @@ export const useSessionManager = (
         // wrong (or `reorder_sessions` rejected the call as a non-permutation,
         // depending on Rust-side validation).
         //
-        // Fix: build the new order INSIDE the setSessions functional updater
-        // and fire reorderSessions / setActiveSession from the same callback.
-        // Both IPCs are idempotent — replaying the same payload is safe under
-        // React 18 StrictMode's double-invoke. The same name-from-length
-        // calculation also moves inside the updater so two rapid calls produce
-        // distinct names ("session 2", "session 3", not "session 2", "session 2").
-        setSessions((prev) => {
-          const newSession: Session = {
-            id: result.sessionId,
-            projectId: 'proj-1',
-            // Use spawn's resolved absolute cwd, not '~'. useGitStatus,
-            // tab-name derivation, and the diff/agent panes all need an
-            // absolute path; relying on OSC 7 to backfill leaves them
-            // idle for shells that don't emit it on first prompt.
-            name: `session ${prev.length + 1}`,
-            status: 'running',
-            workingDirectory: result.cwd,
-            agentType: 'claude-code',
-            createdAt: now,
-            lastActivityAt: now,
-            activity: { ...emptyActivity },
-          }
+        // Round 9, Finding 6 (claude MEDIUM): React requires functional
+        // updaters to be PURE — no side effects. The previous code fired
+        // `service.setActiveSession` and `service.reorderSessions` from
+        // INSIDE the setSessions updater, which StrictMode invokes twice
+        // (and concurrent React features may re-invoke unpredictably).
+        // Each extra invocation re-fired both IPCs.
+        //
+        // The fix captures the derived value (`computedNewOrder`) inside
+        // the updater — the closure still sees the latest `prev` so the
+        // race-safety from F3-round-2 is preserved — and fires the IPCs
+        // in the OUTER scope after `setSessions` returns. The captured
+        // value is a plain string array that survives StrictMode double
+        // invoke (each invoke writes the same array; the last write wins).
+        // Use flushSync to make the setSessions updater run synchronously,
+        // so we can capture the derived `computedNewOrder` and fire IPCs
+        // in the OUTER scope after the updater returns. Without flushSync,
+        // React 18's automatic batching defers the updater to the next
+        // render — `computedNewOrder` would still be null when we read it.
+        //
+        // The `as string[] | null` widens TypeScript's narrowed `null`
+        // literal — TS doesn't follow the closure assignment inside the
+        // updater callback by default.
+        let computedNewOrder = null as string[] | null
+        flushSync(() => {
+          setSessions((prev) => {
+            const newSession: Session = {
+              id: result.sessionId,
+              projectId: 'proj-1',
+              // Use spawn's resolved absolute cwd, not '~'. useGitStatus,
+              // tab-name derivation, and the diff/agent panes all need an
+              // absolute path; relying on OSC 7 to backfill leaves them
+              // idle for shells that don't emit it on first prompt.
+              name: `session ${prev.length + 1}`,
+              status: 'running',
+              workingDirectory: result.cwd,
+              agentType: 'claude-code',
+              createdAt: now,
+              lastActivityAt: now,
+              activity: { ...emptyActivity },
+            }
 
-          const next = [newSession, ...prev]
-          const newOrder = next.map((s) => s.id)
+            const next = [newSession, ...prev]
+            // Capture only — do NOT fire IPC inside the updater.
+            computedNewOrder = next.map((s) => s.id)
 
-          // Fire IPC inside the updater so we always see the latest state.
-          // setActiveSession persists the new tab as cache.active_session_id;
-          // reorderSessions persists the prepend. Both are independent — wrap
-          // each in its own catch so a partial failure (e.g. permission denied
-          // on the cache file) is logged but the in-memory mirror still wins.
-          // eslint-disable-next-line promise/prefer-await-to-then
-          service.setActiveSession(result.sessionId).catch((err) => {
-            // eslint-disable-next-line no-console
-            console.warn(
-              'createSession: setActiveSession IPC failed (cache active id will lag)',
-              err
-            )
+            return next
           })
+        })
 
+        // IPCs fire OUTSIDE the updater. Captured `computedNewOrder` is
+        // derived from the latest `prev` (race-safety from F3-round-2 is
+        // preserved). setActiveSession persists the new tab as
+        // cache.active_session_id; reorderSessions persists the prepend.
+        // Both are independent — wrap each in its own catch so a partial
+        // failure is logged but the in-memory mirror still wins.
+        // eslint-disable-next-line promise/prefer-await-to-then
+        service.setActiveSession(result.sessionId).catch((err) => {
+          // eslint-disable-next-line no-console
+          console.warn(
+            'createSession: setActiveSession IPC failed (cache active id will lag)',
+            err
+          )
+        })
+
+        if (computedNewOrder !== null) {
           // eslint-disable-next-line promise/prefer-await-to-then
-          service.reorderSessions(newOrder).catch((err) => {
+          service.reorderSessions(computedNewOrder).catch((err) => {
             // eslint-disable-next-line no-console
             console.warn(
               'createSession: reorderSessions IPC failed (cache order will lag)',
               err
             )
           })
-
-          return next
-        })
+        }
 
         setActiveSessionIdState(result.sessionId)
         registerPtySession(result.sessionId, result.sessionId, '~')
@@ -899,52 +923,82 @@ export const useSessionManager = (
         // create/remove operations. Preserve the in-memory position by
         // mapping over `prev` rather than filter+push.
         //
-        // Round 3, Finding 2 (codex P1): also fire reorderSessions IPC from
-        // inside the updater. Without this, kill_pty in Rust REMOVES the
+        // Round 3, Finding 2 (codex P1): the new tab order MUST be persisted
+        // via reorderSessions IPC. Without it, kill_pty in Rust REMOVES the
         // old id from cache.session_order and spawn_pty APPENDS the
         // replacement id at the end, so a restarted middle tab would render
         // as `[A, fresh, C]` in the live UI but persist as
         // `[A, C, fresh]` in cache.session_order. After a reload the
-        // restored order would diverge from the live UI. Same pattern as
-        // round-2 F4's createSession fix: derive the persisted order from
-        // `next` (latest state) inside setSessions and fire the IPC there.
-        setSessions((prev) => {
-          const idx = prev.findIndex((s) => s.id === id)
-          if (idx === -1) {
-            // The session was removed between the spawn() and now. Discard
-            // the orphan PTY by killing it; React state stays as-is.
-            // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
-            service.kill({ sessionId: result.sessionId }).catch((): void => {})
+        // restored order would diverge from the live UI.
+        //
+        // Round 9, Finding 6 (claude MEDIUM): React requires functional
+        // updaters to be PURE. The previous code fired
+        // `service.reorderSessions` and `service.kill` (orphan path) from
+        // INSIDE the updater — StrictMode invokes updaters twice, and
+        // concurrent React features may re-invoke unpredictably. Each
+        // extra invocation re-fired the IPCs.
+        //
+        // Fix: capture the derived values inside the updater (`computedNewOrder`
+        // for the persisted order, `orphanedSessionId` for the orphan-kill
+        // case), and fire the IPCs in the OUTER scope after `setSessions`
+        // returns. The captures still derive from the latest `prev`, so the
+        // race-safety pattern is preserved.
+        //
+        // `flushSync` forces the updater to run synchronously so the captures
+        // are populated before we read them; without it React 18's automatic
+        // batching defers the updater to the next render and the captures
+        // remain null when we check.
+        //
+        // The `as ... | null` widens TypeScript's narrowed `null` literal —
+        // TS doesn't follow the closure assignment inside the updater
+        // callback by default.
+        let computedNewOrder = null as string[] | null
+        let orphanedSessionId = null as string | null
+        flushSync(() => {
+          setSessions((prev) => {
+            const idx = prev.findIndex((s) => s.id === id)
+            if (idx === -1) {
+              // The session was removed between the spawn() and now. Mark
+              // the new PTY for orphan-kill in the outer scope; React state
+              // stays as-is.
+              orphanedSessionId = result.sessionId
 
-            return prev
-          }
+              return prev
+            }
 
-          const next = [...prev]
-          next[idx] = {
-            ...prev[idx],
-            id: result.sessionId,
-            status: 'running',
-            // workingDirectory unchanged — restart preserves cwd by spec
-            lastActivityAt: new Date().toISOString(),
-          }
+            const next = [...prev]
+            next[idx] = {
+              ...prev[idx],
+              id: result.sessionId,
+              status: 'running',
+              // workingDirectory unchanged — restart preserves cwd by spec
+              lastActivityAt: new Date().toISOString(),
+            }
 
-          // Push the post-restart order back to Rust so cache.session_order
-          // reflects the in-memory position (not the kill-removes-then-
-          // spawn-appends order Rust would otherwise end up with). Fire
-          // inside the updater so the payload always derives from the
-          // latest state — same race-safety pattern as createSession (F4).
-          const newOrder = next.map((s) => s.id)
+            // Capture the post-restart order for outer-scope IPC fire.
+            computedNewOrder = next.map((s) => s.id)
+
+            return next
+          })
+        })
+
+        // IPCs fire OUTSIDE the updater (Round 9 F6 — preserve updater
+        // purity for StrictMode + concurrent React). Captured values
+        // derived from latest `prev`, so race-safety preserved.
+        if (orphanedSessionId !== null) {
+          // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
+          service.kill({ sessionId: orphanedSessionId }).catch((): void => {})
+        }
+        if (computedNewOrder !== null) {
           // eslint-disable-next-line promise/prefer-await-to-then
-          service.reorderSessions(newOrder).catch((err) => {
+          service.reorderSessions(computedNewOrder).catch((err) => {
             // eslint-disable-next-line no-console
             console.warn(
               'restartSession: reorderSessions IPC failed (cache order will lag)',
               err
             )
           })
-
-          return next
-        })
+        }
 
         // 5. If the restarted tab was active AND the old id still exists in
         // the latest committed state (so the swap above produced a NEW id

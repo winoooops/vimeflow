@@ -635,6 +635,52 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(result.current.sessions).toHaveLength(0))
   })
 
+  // Round 9, Finding 6 (claude MEDIUM): React requires functional updaters to
+  // be PURE. The previous code fired `service.setActiveSession` and
+  // `service.reorderSessions` from INSIDE the setSessions updater in
+  // createSession, so StrictMode dev double-invoked them. After the fix
+  // (capture inside, fire outside via flushSync), each IPC fires EXACTLY
+  // once per createSession call.
+  //
+  // This test asserts that mock-call counts match the user-visible action
+  // count (1 click = 1 IPC), with no doubling under StrictMode.
+  test('round 9 F6: createSession fires setActiveSession + reorderSessions exactly once each (no StrictMode double)', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: null,
+      sessions: [],
+    })
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'fresh', pid: 1, cwd: '/tmp' })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Reset spies so the restore-time auto-create (if any) doesn't leak in.
+    ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
+    ;(service.reorderSessions as ReturnType<typeof vi.fn>).mockClear()
+
+    act(() => result.current.createSession())
+
+    // Wait for the spawn + setSessions cascade to settle.
+    await waitFor(() =>
+      expect(service.reorderSessions).toHaveBeenCalledWith(['fresh'])
+    )
+
+    await waitFor(() =>
+      expect(service.setActiveSession).toHaveBeenCalledWith('fresh')
+    )
+
+    // Each IPC fires EXACTLY once. Pre-fix (IPCs inside setSessions
+    // updater), StrictMode dev's double-invoke would push the count to 2.
+    expect(service.reorderSessions).toHaveBeenCalledTimes(1)
+    expect(service.setActiveSession).toHaveBeenCalledTimes(1)
+  })
+
   // F4 (round 2): when the user closes the active middle tab, the hook
   // promotes a neighbor in React state but the previous code never told
   // Rust about it. Rust's kill_pty path rotates active to the FIRST
