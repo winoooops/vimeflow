@@ -414,7 +414,27 @@ export const useSessionManager = (
       // back to pending, ensure an empty buffer exists. The next
       // pty-data event lands in the buffer, the next notifyPaneReady
       // call drains it cleanly.
+      //
+      // Round 8, Finding 2 (claude MEDIUM): only re-arm when the session is
+      // still alive in the manager's view. `removeSession` synchronously
+      // deletes `sessionId` from `pendingPanesRef`, `readyPanesRef`,
+      // `bufferedRef`, AND `restoreData` BEFORE setSessions() schedules the
+      // re-render that unmounts the pane. By the time this cleanup runs the
+      // Map no longer contains the entry — treating that as a teardown signal
+      // means we DON'T re-add the session to pending/buffer state. Without
+      // this guard, any pty-data event racing the async kill_pty would land
+      // in the per-session buffer with no consumer, accumulating per removed
+      // session for the lifetime of the hook.
+      //
+      // The remount path (StrictMode, error-boundary reset, route change)
+      // continues to work because those code paths leave restoreData intact —
+      // only an explicit removeSession deletes it.
       return (): void => {
+        if (!restoreData.has(sessionId)) {
+          // removeSession already cleared this session — treat unmount as
+          // permanent teardown and skip the re-arm.
+          return
+        }
         readyPanesRef.current.delete(sessionId)
         pendingPanesRef.current.add(sessionId)
         if (!bufferedRef.current.has(sessionId)) {
@@ -422,7 +442,7 @@ export const useSessionManager = (
         }
       }
     },
-    []
+    [restoreData]
   )
 
   // Active session — optimistic update + IPC
