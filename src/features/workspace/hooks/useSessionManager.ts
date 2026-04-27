@@ -594,21 +594,32 @@ export const useSessionManager = (
   // which assumed a TerminalPane mounts automatically.
   //
   // This effect runs ONCE after the initial restore completes (loading
-  // transitions from true to false). If the merged session list is empty
-  // at that point, we fire createSession() to seed a default tab. The
-  // ref-guard prevents this from re-firing — if the user later closes all
-  // tabs, we DO NOT auto-create another (closing all tabs is intentional;
-  // re-creating one would be confusing).
+  // transitions from true to false). If the merged session list contains
+  // no LIVE session at that point, we fire createSession() to seed a
+  // default tab. The ref-guard prevents this from re-firing — if the
+  // user later closes all tabs, we DO NOT auto-create another (closing
+  // all tabs is intentional; re-creating one would be confusing).
+  //
+  // "No live session" — not just "empty list" — covers the post-crash
+  // path: if the previous app was killed (SIGKILL, OOM, wdio session
+  // teardown without graceful exit), `list_sessions` lazy-reconciles
+  // every cached "alive" entry to Exited. The user (or E2E suite) lands
+  // in a workspace full of "Restart" tabs and zero live PTYs, defeating
+  // the round-7 auto-create that was supposed to guarantee a usable
+  // terminal on first paint. Treat that case the same as empty cache
+  // and seed a fresh tab; the Exited tabs remain available for the user
+  // to Restart in their original cwd if they want to.
   const didInitialAutoCreateRef = useRef(false)
+  const hasLiveSession = sessions.some((s) => s.status === 'running')
   useEffect(() => {
     if (!autoCreateOnEmpty || loading || didInitialAutoCreateRef.current) {
       return
     }
     didInitialAutoCreateRef.current = true
-    if (sessions.length === 0) {
+    if (!hasLiveSession) {
       createSession()
     }
-  }, [autoCreateOnEmpty, loading, sessions.length, createSession])
+  }, [autoCreateOnEmpty, loading, hasLiveSession, createSession])
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(

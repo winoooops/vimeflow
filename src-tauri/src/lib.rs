@@ -31,6 +31,41 @@ pub fn run() {
             // Initialize session cache in app_data_dir
             let app_data_dir = app.path().app_data_dir().expect("failed to get app_data_dir");
             let cache_path = app_data_dir.join("sessions.json");
+
+            // E2E test mode: wipe the cache on every launch.
+            //
+            // Production cache persistence is one of the round-7 features —
+            // if the app dies non-gracefully (SIGKILL, OOM, panic, host
+            // shutdown) the cache still has the session list and lazy
+            // reconciliation in `list_sessions` flips them all to Exited
+            // so the user lands on a workspace of "Restart" tabs.
+            //
+            // wdio's `deleteSession()` teardown looks like a non-graceful
+            // crash to the runtime — `RunEvent::ExitRequested` never fires,
+            // so `cache.clear_all()` below never runs. Each spec inherits
+            // the previous spec's session list as Exited stragglers, the
+            // round-7 auto-create skips because `sessions.length > 0`, and
+            // the test sees a full tab strip with zero live PTY → "PTY
+            // never produced a prompt" / "default session never became
+            // active" / "closing the spawned tab did not decrement count".
+            //
+            // The fix: under the `e2e-test` Cargo feature (only enabled by
+            // `npm run test:e2e:build` and the CI E2E job), pre-emptively
+            // delete the cache file before `SessionCache::load_or_recover`
+            // reads it. Production builds are unaffected.
+            #[cfg(feature = "e2e-test")]
+            {
+                if let Err(e) = std::fs::remove_file(&cache_path) {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        log::warn!(
+                            "e2e-test: failed to remove cache file {}: {}",
+                            cache_path.display(),
+                            e
+                        );
+                    }
+                }
+            }
+
             let cache = Arc::new(SessionCache::load_or_recover(cache_path));
             app.manage(cache);
 

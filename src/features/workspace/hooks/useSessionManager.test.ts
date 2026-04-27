@@ -305,6 +305,56 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].id).toBe('restored-1')
   })
 
+  // Post-crash recovery: the previous app died without a graceful exit
+  // (SIGKILL, OOM, wdio teardown). The session cache still lists alive
+  // entries, but no PTY survives — `list_sessions` reconciles them all to
+  // Exited. The frontend lands in a workspace full of "Restart" tabs and
+  // ZERO live PTYs.
+  //
+  // Round-7 auto-create only fired when `sessions.length === 0`, so this
+  // post-crash case left the auto-create dormant: every E2E spec that
+  // reused the cache from a prior spec saw stale Exited tabs and no live
+  // session, hence `PTY never produced a prompt`. Auto-create now fires
+  // whenever there's no `running` session — the Exited tabs stay visible
+  // (user can Restart in their original cwd) AND we add a fresh live tab.
+  test('auto-creates a fresh tab when listSessions returns only Exited sessions', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'stale-1',
+      sessions: [
+        {
+          id: 'stale-1',
+          cwd: '/home/user',
+          status: { kind: 'Exited', last_exit_code: null },
+        },
+        {
+          id: 'stale-2',
+          cwd: '/home/user/proj',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+      ],
+    })
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'fresh-1', pid: 9, cwd: '/home/user' })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Auto-create fires because no session has status: 'running'.
+    await waitFor(() => expect(service.spawn).toHaveBeenCalledTimes(1))
+
+    // Final state: original Exited tabs preserved + the freshly spawned tab.
+    await waitFor(() => expect(result.current.sessions).toHaveLength(3))
+    expect(result.current.sessions[0].id).toBe('fresh-1')
+    expect(result.current.sessions[0].status).toBe('running')
+    // Exited tabs remain so the user can Restart them.
+    expect(
+      result.current.sessions.filter((s) => s.status === 'completed')
+    ).toHaveLength(2)
+  })
+
   test('createSession spawns PTY and appends to sessions', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
