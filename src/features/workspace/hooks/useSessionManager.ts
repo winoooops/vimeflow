@@ -462,19 +462,55 @@ export const useSessionManager = (
     activeSessionIdRef.current = activeSessionId
   }, [activeSessionId])
 
+  // Round 9, Finding 4 (codex P2): out-of-order setActiveSession IPC failures
+  // can revert the active id to a stale value. Tag every call with a
+  // monotonically increasing request id and only honor the rollback when
+  // our request is still the latest. If a NEWER request has been issued in
+  // the meantime, the newer request now "owns" the active selection;
+  // reverting to the value WE captured at our call site would clobber the
+  // user's latest pick.
+  //
+  // Concrete scenario the previous code mis-handled:
+  //   1. Active = 'a'
+  //   2. User clicks 'b' → req=1 fires, optimistic active = 'b'
+  //   3. User clicks 'c' before req=1 settles → req=2 fires,
+  //      optimistic active = 'c'
+  //   4. req=1 rejects (e.g. transient cache write failure or 'b' was
+  //      killed) → revert to 'a'   ❌ clobbers user's 'c' pick
+  //   5. req=2 resolves successfully → cache active = 'c', UI active = 'a'
+  //
+  // After the fix, step 4 sees `myReq=1 !== activeRequestIdRef.current=2`
+  // and skips the rollback. `c` stays the user's selection.
+  const activeRequestIdRef = useRef(0)
+
   // Active session — optimistic update + IPC
   const setActiveSessionId = useCallback(
     (id: string): void => {
-      const prev = activeSessionId
+      const myReq = ++activeRequestIdRef.current
+      // Capture the value BEFORE we change it so a rollback restores
+      // exactly what was on screen, not a stale activeSessionId from a
+      // previous render cycle.
+      const prev = activeSessionIdRef.current
       setActiveSessionIdState(id)
       // eslint-disable-next-line promise/prefer-await-to-then
       service.setActiveSession(id).catch((err) => {
-        // eslint-disable-next-line no-console
-        console.warn('setActiveSession IPC failed; reverting', err)
-        setActiveSessionIdState(prev)
+        if (myReq === activeRequestIdRef.current) {
+          // We're still the latest — safe to revert.
+          // eslint-disable-next-line no-console
+          console.warn('setActiveSession IPC failed; reverting', err)
+          setActiveSessionIdState(prev)
+        } else {
+          // A newer request superseded us; let it own the active id. Reverting
+          // here would clobber the user's actual newest selection.
+          // eslint-disable-next-line no-console
+          console.warn(
+            'setActiveSession IPC failed but newer request superseded; not reverting',
+            err
+          )
+        }
       })
     },
-    [activeSessionId, service]
+    [service]
   )
 
   // Create session — spawn + prepend, then mark the pane as 'attach'.
