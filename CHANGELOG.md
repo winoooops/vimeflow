@@ -112,6 +112,24 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
 
 #### Fixed
 
+- PTY sessions destroyed by Vite HMR full-reload (e.g. `vim :w` inside the
+  workspace, manual refresh, error-boundary reset). Moved session state to a
+  Rust filesystem cache (single source of truth) and added a cursor-based
+  replay protocol (`offset_start` + `byte_len` + per-pane `cursorRef`) with
+  listen-before-snapshot ordering, so any remount transparently reattaches
+  to the live PTY without losing or doubling bytes.
+  ([#99](https://github.com/winoooops/vimeflow/pull/99), `cb0ffa6`) —
+  patterns: [Async Race Conditions](docs/reviews/patterns/async-race-conditions.md),
+  [PTY Session Management](docs/reviews/patterns/pty-session-management.md),
+  [React Lifecycle](docs/reviews/patterns/react-lifecycle.md),
+  [Resource Cleanup](docs/reviews/patterns/resource-cleanup.md)
+  - 15-round Codex/Claude review cycle; final verdict ✅ APPROVE.
+  - Retrospective: [`docs/reviews/retrospectives/2026-04-27-pty-reattach-review-cycle.md`](docs/reviews/retrospectives/2026-04-27-pty-reattach-review-cycle.md)
+  - Design: [`docs/superpowers/specs/2026-04-25-pty-reattach-on-reload-design.md`](docs/superpowers/specs/2026-04-25-pty-reattach-on-reload-design.md)
+  - Follow-ups deferred as separate issues: #100 (read-loop global mutex perf),
+    #101 (kill_pty active rotation alignment), #102 (bridge-dir cleanup on
+    CapReached), #103 (RingBuffer drain), #104 (dead `ManagedSession.cwd`),
+    #105 (TerminalPane unused dep), #106 (`inner_sessions` visibility).
 - `agent-status` `ContextBucket` test compared against hard-coded English
   instead of runtime locale.
   ([#69](https://github.com/winoooops/vimeflow/pull/69), `a656daf`) —
