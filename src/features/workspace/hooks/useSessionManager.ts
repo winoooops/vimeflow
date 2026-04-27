@@ -445,6 +445,23 @@ export const useSessionManager = (
     [restoreData]
   )
 
+  // Mirror the latest active session id into a ref so async callbacks can
+  // read the freshest value AFTER an await rather than the stale closure
+  // capture from the call site.
+  //
+  // Round 9, Findings 2 + 3 (codex P2): `removeSession` and `restartSession`
+  // both branch on `activeSessionId === id` BEFORE an `await service.kill(...)`
+  // / `await service.spawn(...)`. If the user switches tabs while the IPC is
+  // in flight, the closure-captured id no longer reflects the user's choice;
+  // promoting (or rotating away from) the stale id then clobbers the newer
+  // selection. Reading `activeSessionIdRef.current` post-await uses the latest
+  // committed selection — including any tab switch that landed during the
+  // roundtrip.
+  const activeSessionIdRef = useRef(activeSessionId)
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId
+  }, [activeSessionId])
+
   // Active session — optimistic update + IPC
   const setActiveSessionId = useCallback(
     (id: string): void => {
@@ -648,11 +665,23 @@ export const useSessionManager = (
           // computation matches the React-state branch and races with
           // concurrent createSession/removeSession calls are resolved
           // against the latest state.
+          //
+          // Round 9, Finding 2 (codex P2): read the LATEST active id from
+          // `activeSessionIdRef.current`, not the closure-captured
+          // `activeSessionId`. The closure was bound when removeSession was
+          // called; if the user switched tabs during the in-flight
+          // `service.kill` await, the closure value is stale and "removing
+          // the active tab" branch would fire even though a different tab
+          // is now active — clobbering the newer selection.
+          const currentActiveId = activeSessionIdRef.current
           setSessions((prev) => {
             const next = prev.filter((s) => s.id !== id)
 
-            // If we removed the active session, pick a neighbor
-            if (activeSessionId === id) {
+            // If the user just removed the tab THAT IS ACTUALLY ACTIVE RIGHT
+            // NOW, pick a neighbor. If a tab switch landed during the await
+            // and the active id has moved, do nothing — we still removed the
+            // requested tab, but we don't override the user's newer choice.
+            if (currentActiveId === id) {
               const removedIndex = prev.findIndex((s) => s.id === id)
 
               // next.length is 0 when the LAST tab was just removed; that's
@@ -690,7 +719,7 @@ export const useSessionManager = (
         }
       })()
     },
-    [activeSessionId, service, restoreData]
+    [service, restoreData]
   )
 
   // Use a ref to read the latest sessions inside the async closure without

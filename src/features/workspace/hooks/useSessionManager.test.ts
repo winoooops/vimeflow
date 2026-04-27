@@ -610,6 +610,106 @@ describe('useSessionManager', () => {
     )
   })
 
+  // Round 9, Finding 2 (codex P2): the active-tab branch in removeSession
+  // used a closure-captured `activeSessionId`. If the user switched tabs
+  // while `service.kill(...)` was in flight, the stale closure value still
+  // matched the about-to-be-removed id and promoted a neighbor on top of
+  // the user's newer pick. After the fix, we read the LATEST active id
+  // from a ref so a tab switch landing during the await wins.
+  //
+  // Scenario:
+  //   - Sessions ['a','b','c'], active = 'a'
+  //   - User clicks close on 'a' (kill in-flight)
+  //   - User clicks 'c' (active = 'c')
+  //   - Kill resolves
+  //   - Active should STILL be 'c', not the closure-derived neighbor 'b'.
+  test('round 9 F2: removeSession respects tab switches that landed during in-flight kill', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'b',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'c',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 3,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    // Suspend kill so we can interleave a setActiveSessionId between
+    // dispatch and resolution.
+    let resolveKill: (() => void) | null = null
+    service.kill = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveKill = resolve
+        })
+    )
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.activeSessionId).toBe('a')
+    ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
+
+    // Step 1: user closes 'a' (the active tab). Kill stays in-flight.
+    act(() => result.current.removeSession('a'))
+    await waitFor(() => expect(service.kill).toHaveBeenCalled())
+
+    // Step 2: user switches to 'c' BEFORE the kill resolves. This is the
+    // race that the fix protects against.
+    act(() => result.current.setActiveSessionId('c'))
+    expect(result.current.activeSessionId).toBe('c')
+
+    // Step 3: kill resolves. The post-await branch must see active='c'
+    // (not the closure-captured 'a') and leave the user's pick alone.
+    act(() => {
+      resolveKill?.()
+    })
+
+    await waitFor(() =>
+      expect(result.current.sessions.map((s) => s.id)).toEqual(['b', 'c'])
+    )
+
+    // Critical assertion — active stays on 'c'. With the bug, the stale
+    // closure ('a') triggered the neighbor-promotion branch and moved
+    // active to 'b' (Math.min(removedIndex=0, next.length-1)).
+    expect(result.current.activeSessionId).toBe('c')
+
+    // Only the user's tab switch should have called setActiveSession with
+    // 'c'. removeSession's neighbor-promotion path must NOT have called
+    // setActiveSession('b').
+    const calls = (service.setActiveSession as ReturnType<typeof vi.fn>).mock
+      .calls
+    expect(calls.some(([id]) => id === 'b')).toBe(false)
+  })
+
   // F4 (round 2): closing an INACTIVE tab must NOT fire setActiveSession —
   // the active tab didn't change, and the spurious IPC would overwrite the
   // cache's active id with the same value (harmless but pointless I/O).
