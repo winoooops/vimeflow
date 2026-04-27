@@ -451,6 +451,51 @@ describe('useSessionManager', () => {
     ).toHaveLength(2)
   })
 
+  // Round 12, Finding 1 (claude HIGH): when a manual createSession is
+  // racing the mount-time auto-create AND its spawn FAILS, the auto-create
+  // effect must still recover so the user isn't stuck with an empty tab
+  // strip. The round-10 implementation used a `pendingSpawnsRef` (useRef)
+  // to coordinate; decrementing the ref after spawn failure didn't schedule
+  // a re-render, so the auto-create effect never re-evaluated.
+  //
+  // Promoting `pendingSpawns` to React state makes the decrement schedule
+  // a render; the effect's dep array now includes `pendingSpawns`; the
+  // post-failure tick observes pendingSpawns === 0 && !hasLiveSession and
+  // fires the auto-create. End result: the user sees a tab even when their
+  // first manual click happened to race a backend hiccup.
+  test('round 12 F1: failed manual spawn during restore window triggers auto-create recovery', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: null,
+      sessions: [],
+    })
+
+    // First spawn (manual) rejects. Subsequent spawn (auto-create recovery)
+    // resolves so we can assert the effect re-fired.
+    service.spawn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('transient backend hiccup'))
+      .mockResolvedValueOnce({
+        sessionId: 'auto-recovery',
+        pid: 7,
+        cwd: '/home/user',
+      })
+
+    // Auto-create on (default true). The first manual click races the
+    // mount-time auto-create — pendingSpawns goes to 1 before the effect
+    // decides to fire, so the effect defers; spawn rejects; pendingSpawns
+    // decrements; the effect re-fires; auto-create now runs.
+    const { result } = renderHook(() => useSessionManager(service))
+
+    // Trigger the manual spawn during the restore window. Calling it via
+    // act ensures we don't lose the failure between renders.
+    act(() => result.current.createSession())
+
+    await waitFor(() => expect(service.spawn).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    expect(result.current.sessions[0].id).toBe('auto-recovery')
+  })
+
   test('createSession spawns PTY and appends to sessions', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({

@@ -538,10 +538,20 @@ export const useSessionManager = (
   // TWO tabs from a single click: their manual one, plus an auto-created
   // one that fired between when loading flipped to false and when the
   // manual spawn resolved into `sessions`.
-  const pendingSpawnsRef = useRef(0)
+  //
+  // Round 12, Finding 1 (claude HIGH): this is REACT STATE, not a ref. The
+  // round-10 implementation used a ref, but the auto-create effect is gated
+  // on hasLiveSession changing. When a manual spawn FAILS, hasLiveSession
+  // stays false (no session was added) — and decrementing a ref doesn't
+  // schedule a re-render, so the effect never re-fires and the user is
+  // stuck with an empty tab strip. Promoting to state makes the decrement
+  // schedule a render, the effect's deps include `pendingSpawns`, and the
+  // post-failure tick observes `pendingSpawns === 0 && !hasLiveSession`
+  // and fires the auto-create that the round-10 comment promised.
+  const [pendingSpawns, setPendingSpawns] = useState(0)
 
   const createSession = useCallback((): void => {
-    pendingSpawnsRef.current += 1
+    setPendingSpawns((c) => c + 1)
     void (async (): Promise<void> => {
       try {
         // Round 8, Finding 3 (claude MEDIUM): explicitly opt in to the
@@ -669,7 +679,7 @@ export const useSessionManager = (
         // eslint-disable-next-line no-console
         console.warn('spawn failed', err)
       } finally {
-        pendingSpawnsRef.current -= 1
+        setPendingSpawns((c) => c - 1)
       }
     })()
   }, [restoreData, service])
@@ -710,23 +720,24 @@ export const useSessionManager = (
     }
     // Round 10 (codex P2): if a manual createSession is already in flight
     // (e.g. user clicked `+` during the restore window), DEFER auto-create.
-    // The effect re-fires when `hasLiveSession` flips after the manual
-    // spawn lands; at that point either it lands successfully (we skip
-    // auto-create, hasLiveSession=true) or it failed (we fire auto-create
-    // because pendingSpawnsRef is back to 0).
+    // Round 12 F1: `pendingSpawns` is now state (not a ref) so its decrement
+    // re-fires this effect even when `hasLiveSession` doesn't flip — i.e.
+    // when the manual spawn FAILED. The post-failure tick observes
+    // `pendingSpawns === 0 && !hasLiveSession` and reaches the auto-create
+    // path below, restoring the "always have a tab" invariant.
     //
     // Note: don't set `didInitialAutoCreateRef = true` in this early-return
     // branch — we want a future re-fire (when the manual spawn resolves
-    // and changes hasLiveSession) to be able to auto-create if the manual
+    // and changes pendingSpawns) to be able to auto-create if the manual
     // attempt failed.
-    if (pendingSpawnsRef.current > 0) {
+    if (pendingSpawns > 0) {
       return
     }
     didInitialAutoCreateRef.current = true
     if (!hasLiveSession) {
       createSession()
     }
-  }, [autoCreateOnEmpty, loading, hasLiveSession, createSession])
+  }, [autoCreateOnEmpty, loading, hasLiveSession, pendingSpawns, createSession])
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(
