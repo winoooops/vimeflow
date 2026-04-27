@@ -925,20 +925,31 @@ export const useSessionManager = (
         }
 
         // 2. Now that the new PTY exists, retire the old. kill_pty is
-        // idempotent in Rust (no error if already gone — common case for
-        // an Exited tab whose process is already cleaned up). Failures
-        // here are non-fatal: the new session is already alive and the
-        // old will get cleaned up on the next reload via lazy
-        // reconciliation. Drop frontend bookkeeping for the old id
-        // regardless so the buffer doesn't accumulate stale entries.
+        // idempotent in Rust for the "already gone" case (a typed
+        // KillError::NotPresent collapses to Ok), so this only rejects
+        // when the actual SIGKILL or cache mutation fails.
+        //
+        // Round 13, Codex P2: if kill rejects, Rust cache still holds
+        // BOTH ids in session_order. The later `reorderSessions(new_only)`
+        // call would fail the permutation check and the cache would
+        // diverge from the UI; on reload the old tab would resurrect.
+        // Abort the restart instead — kill the new orphan to undo the
+        // spawn, leave React state untouched (old id keeps its prior
+        // status). The user can click Restart again. No bookkeeping
+        // for `result.sessionId` has been seeded yet at this point
+        // (it happens below), so nothing to tear down besides the PTY.
         try {
           await service.kill({ sessionId: id })
         } catch (err) {
           // eslint-disable-next-line no-console
           console.warn(
-            'restartSession: kill of old id failed (continuing)',
+            'restartSession: kill of old id failed; aborting and killing new orphan',
             err
           )
+          // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
+          service.kill({ sessionId: result.sessionId }).catch((): void => {})
+
+          return
         }
 
         readyPanesRef.current.delete(id)

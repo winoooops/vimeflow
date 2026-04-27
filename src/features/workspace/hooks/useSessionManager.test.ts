@@ -1278,6 +1278,71 @@ describe('useSessionManager', () => {
     expect(result.current.restoreData.has('orphan-fresh')).toBe(false)
   })
 
+  // Round 13, Codex P2: when service.kill of the OLD id fails, Rust cache
+  // still contains both ids in session_order. The restart path must abort
+  // (kill the new orphan) instead of continuing to setSessions + the
+  // reorderSessions IPC, which would diverge UI from cache.
+  test('round 13: restartSession aborts and kills orphan when kill of old id fails', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'exited',
+      sessions: [
+        {
+          id: 'exited',
+          cwd: '/tmp',
+          status: { kind: 'Exited', last_exit_code: 1 },
+        },
+      ],
+    } satisfies SessionList)
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'fresh', pid: 999, cwd: '/tmp' })
+
+    // First kill (of 'exited') rejects. Second kill (of orphan 'fresh')
+    // resolves so the abort path completes cleanly.
+    service.kill = vi.fn((req: { sessionId: string }): Promise<void> => {
+      if (req.sessionId === 'exited') {
+        return Promise.reject(new Error('kill_pty: SIGKILL failed'))
+      }
+
+      return Promise.resolve()
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.restartSession('exited'))
+
+    // Spawn fires first — verify it was called with the cached cwd.
+    await waitFor(() => expect(service.spawn).toHaveBeenCalled())
+
+    // Both kills land: the old id (rejects), then the orphan new id.
+    await waitFor(() => {
+      const killCalls = (
+        service.kill as unknown as ReturnType<
+          typeof vi.fn<(req: { sessionId: string }) => Promise<void>>
+        >
+      ).mock.calls
+      expect(killCalls.some(([req]) => req.sessionId === 'exited')).toBe(true)
+      expect(killCalls.some(([req]) => req.sessionId === 'fresh')).toBe(true)
+    })
+
+    // Critical: setSessions was NOT swapped. The old 'exited' id is
+    // still in React state with status='completed'. The 'fresh' id is
+    // not present (orphan was killed without seeding bookkeeping).
+    expect(result.current.sessions.map((s) => s.id)).toEqual(['exited'])
+    expect(result.current.sessions[0].status).toBe('completed')
+    expect(result.current.restoreData.has('fresh')).toBe(false)
+
+    // Critical: reorderSessions was NOT called. The earlier code
+    // would have fired reorderSessions(['fresh']), which Rust would
+    // reject as a non-permutation of session_order=[exited, fresh].
+    expect(service.reorderSessions).not.toHaveBeenCalled()
+  })
+
   test('F5 (round 2): restartSession of inactive session does NOT call setActiveSession', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
