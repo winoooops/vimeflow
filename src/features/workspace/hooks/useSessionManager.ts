@@ -136,9 +136,26 @@ export interface SessionManager {
  * instance to both `useSessionManager` and every `TerminalPane`. Removing
  * the default arg makes the wiring impossible to forget.
  */
+/**
+ * Optional per-instance overrides for the session manager.
+ *
+ * `autoCreateOnEmpty` controls whether `useSessionManager` fires
+ * `createSession()` once if the initial restore resolves with zero sessions
+ * (clean first launch with no cached tabs). Default `true` — the user
+ * always sees at least one TerminalPane on launch instead of an empty
+ * "click + to create" prompt. Tests that want to assert empty-state
+ * behavior pass `false` to suppress the auto-create.
+ */
+export interface UseSessionManagerOptions {
+  autoCreateOnEmpty?: boolean
+}
+
 export const useSessionManager = (
-  service: ITerminalService
+  service: ITerminalService,
+  options: UseSessionManagerOptions = {}
 ): SessionManager => {
+  const { autoCreateOnEmpty = true } = options
+
   const [sessions, setSessions] = useState<Session[]>([])
 
   const [activeSessionId, setActiveSessionIdState] = useState<string | null>(
@@ -515,6 +532,35 @@ export const useSessionManager = (
       }
     })()
   }, [restoreData, service])
+
+  // Auto-create one default tab on clean launch.
+  //
+  // Before the orchestrator rewrite, useSessionManager initialized state
+  // with a hard-coded `defaultSession`, so the workspace always rendered
+  // a TerminalPane on first paint. The rewrite starts with `sessions: []`
+  // and only fills from `list_sessions` — combined with the graceful-exit
+  // cache wipe (commit 463290e), this means a clean launch (cache empty,
+  // no restored sessions) leaves the workspace blank with a "click + to
+  // create a new terminal" prompt. Forcing the user to create the first
+  // tab manually on every launch is annoying, AND it broke the E2E suite
+  // which assumed a TerminalPane mounts automatically.
+  //
+  // This effect runs ONCE after the initial restore completes (loading
+  // transitions from true to false). If the merged session list is empty
+  // at that point, we fire createSession() to seed a default tab. The
+  // ref-guard prevents this from re-firing — if the user later closes all
+  // tabs, we DO NOT auto-create another (closing all tabs is intentional;
+  // re-creating one would be confusing).
+  const didInitialAutoCreateRef = useRef(false)
+  useEffect(() => {
+    if (!autoCreateOnEmpty || loading || didInitialAutoCreateRef.current) {
+      return
+    }
+    didInitialAutoCreateRef.current = true
+    if (sessions.length === 0) {
+      createSession()
+    }
+  }, [autoCreateOnEmpty, loading, sessions.length, createSession])
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(

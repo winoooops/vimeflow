@@ -51,7 +51,7 @@ describe('useSessionManager', () => {
       return Promise.resolve({ activeSessionId: null, sessions: [] })
     })
 
-    renderHook(() => useSessionManager(service))
+    renderHook(() => useSessionManager(service, { autoCreateOnEmpty: false }))
 
     await waitFor(() => expect(service.listSessions).toHaveBeenCalled())
     expect(order).toEqual(['onData', 'listSessions'])
@@ -81,7 +81,9 @@ describe('useSessionManager', () => {
         })
     )
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
 
     // Wait for the orchestrator's awaited onData to complete (the effect's
     // listen-before-snapshot step) so dataCallback is wired before we fire events
@@ -126,7 +128,7 @@ describe('useSessionManager', () => {
       .fn()
       .mockResolvedValue({ activeSessionId: null, sessions: [] })
 
-    renderHook(() => useSessionManager(service))
+    renderHook(() => useSessionManager(service, { autoCreateOnEmpty: false }))
     await waitFor(() => expect(service.listSessions).toHaveBeenCalled())
 
     // Filter out unrelated localStorage writes
@@ -164,7 +166,9 @@ describe('useSessionManager', () => {
       ],
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     act(() => result.current.setActiveSessionId('b'))
@@ -201,7 +205,9 @@ describe('useSessionManager', () => {
     })
     service.setActiveSession = vi.fn().mockRejectedValue('unknown session')
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     act(() => result.current.setActiveSessionId('b'))
@@ -234,12 +240,69 @@ describe('useSessionManager', () => {
       ],
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     expect(result.current.sessions).toHaveLength(2)
     expect(result.current.sessions[0].status).toBe('running')
     expect(result.current.sessions[1].status).toBe('completed')
+  })
+
+  // Round 7 regression: when listSessions returns empty (clean launch with
+  // no cached sessions), the hook auto-creates one default tab so the
+  // workspace isn't blank. Without this, the user would have to click '+'
+  // every launch AND the E2E suite (which assumes a TerminalPane mounts
+  // automatically) would fail with "[data-testid=terminal-pane] still not
+  // displayed after 20000ms". The opt-out (`autoCreateOnEmpty: false`)
+  // preserves the original empty-state behavior for tests that need it.
+  test('round 7: auto-creates a default session on empty listSessions (opt-out via autoCreateOnEmpty: false)', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: null,
+      sessions: [],
+    })
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'auto-id', pid: 1, cwd: '/home/user' })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Auto-create fires once after loading transitions to false.
+    await waitFor(() => expect(service.spawn).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    expect(result.current.sessions[0].id).toBe('auto-id')
+  })
+
+  test('round 7: auto-create is skipped when listSessions returns sessions', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'restored-1',
+      sessions: [
+        {
+          id: 'restored-1',
+          cwd: '/home/user',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+            byte_len: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    // No auto-create — restored session populates the list.
+    expect(service.spawn).not.toHaveBeenCalled()
+    expect(result.current.sessions[0].id).toBe('restored-1')
   })
 
   test('createSession spawns PTY and appends to sessions', async () => {
@@ -251,7 +314,9 @@ describe('useSessionManager', () => {
 
     service.spawn = vi.fn().mockResolvedValue({ sessionId: 'new-id', pid: 999 })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     act(() => result.current.createSession())
@@ -305,7 +370,9 @@ describe('useSessionManager', () => {
       cwd: '/home/user/projects/foo',
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     act(() => result.current.createSession())
@@ -355,7 +422,9 @@ describe('useSessionManager', () => {
       .fn()
       .mockResolvedValue({ sessionId: 'new-tab', pid: 999 })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     act(() => result.current.createSession())
@@ -398,7 +467,9 @@ describe('useSessionManager', () => {
       ],
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     act(() => result.current.removeSession('s1'))
@@ -452,7 +523,9 @@ describe('useSessionManager', () => {
       ],
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     // Sanity-check the restore set 'middle' as active.
@@ -509,7 +582,9 @@ describe('useSessionManager', () => {
       ],
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
     ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
 
@@ -541,7 +616,9 @@ describe('useSessionManager', () => {
       pid: 4242,
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     expect(result.current.sessions).toHaveLength(1)
@@ -632,7 +709,9 @@ describe('useSessionManager', () => {
       pid: 99,
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
     ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
 
@@ -688,7 +767,9 @@ describe('useSessionManager', () => {
       pid: 99,
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     expect(result.current.sessions.map((s) => s.id)).toEqual(['a', 'b', 'c'])
@@ -746,7 +827,9 @@ describe('useSessionManager', () => {
       ],
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     expect(result.current.sessions[0].status).toBe('running')
@@ -792,7 +875,9 @@ describe('useSessionManager', () => {
     // Simulate Rust rejecting spawn because the cwd no longer exists.
     service.spawn = vi.fn().mockRejectedValue(new Error('invalid cwd'))
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
     ;(service.kill as ReturnType<typeof vi.fn>).mockClear()
 
@@ -823,7 +908,9 @@ describe('useSessionManager', () => {
       sessions: [],
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     act(() => result.current.restartSession('does-not-exist'))
@@ -854,7 +941,9 @@ describe('useSessionManager', () => {
       ],
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     const originalName = result.current.sessions[0].name
@@ -893,7 +982,9 @@ describe('useSessionManager', () => {
       ],
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     const reversed = [...result.current.sessions].reverse()
@@ -923,7 +1014,9 @@ describe('useSessionManager', () => {
       ],
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     act(() => result.current.updateSessionCwd('s1', '/home/user'))
@@ -971,7 +1064,9 @@ describe('useSessionManager', () => {
       ],
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
 
     // Wait for restore to complete (loading → false).
     await waitFor(() => expect(result.current.loading).toBe(false))
@@ -1038,7 +1133,9 @@ describe('useSessionManager', () => {
       ],
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     // All restored panes report ready — the listener must remain alive so
@@ -1084,7 +1181,9 @@ describe('useSessionManager', () => {
       .fn()
       .mockResolvedValue({ sessionId: 'fresh-tab', pid: 777 })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     // Create a fresh tab AFTER restore completes.
@@ -1150,7 +1249,9 @@ describe('useSessionManager', () => {
       ],
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     const drained: { data: string; offsetStart: number; byteLen: number }[] = []
@@ -1212,7 +1313,9 @@ describe('useSessionManager', () => {
           })
       )
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     // Fire both createSession calls before either spawn resolves. With the
@@ -1271,7 +1374,9 @@ describe('useSessionManager', () => {
       .fn()
       .mockResolvedValue({ sessionId: 'in-flight-tab', pid: 555 })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
 
     // While restore is still loading, the user clicks +
     act(() => result.current.createSession())
