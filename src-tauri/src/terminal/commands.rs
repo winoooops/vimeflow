@@ -205,8 +205,11 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         ));
     }
 
-    // Spawn child process
-    let child = pty_pair
+    // Spawn child process. We hold the child owned (mut) so that we can
+    // best-effort kill it if cache.mutate fails below — without that path,
+    // the child would be orphaned: alive but unreferenced anywhere, with
+    // its stdout buffer eventually filling and the process blocking.
+    let mut child = pty_pair
         .slave
         .spawn_command(cmd)
         .map_err(|e| format!("failed to spawn shell: {}", e))?;
@@ -223,7 +226,53 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         .take_writer()
         .map_err(|e| format!("failed to get PTY writer: {}", e))?;
 
-    // Store session with generation counter
+    // Round 7, Finding 1 (claude HIGH): persist to cache BEFORE inserting
+    // into PtyState. If cache.mutate returns Err, kill the freshly-spawned
+    // child (best-effort) and bail. Previously the order was:
+    //   state.insert(session)  // line 236
+    //   cache.mutate(...)?     // line 259 — `?` could propagate Err
+    //   spawn read loop        // never reached on Err
+    // → on cache failure, the child stayed alive in PtyState with NO read
+    //   loop spawned. The PTY master's kernel buffer would fill, the child
+    //   would block on stdout, and `list_sessions` (which iterates
+    //   cache.session_order, NOT PtyState) would never surface the orphan
+    //   to the frontend — only reaped on app exit. A disk-full or
+    //   perm-denied scenario could let a user accumulate multiple zombies.
+    //
+    // The cache-first ordering makes the failure-handling reversible:
+    //   - cache.mutate Err → child still owned here, kill it and return
+    //   - cache.mutate Ok  → state.insert is infallible (no Result), so
+    //                        we cannot leave a session in cache without
+    //                        a corresponding entry in PtyState
+    let created_at = chrono::Utc::now().to_rfc3339();
+    if let Err(e) = cache.mutate(|data| {
+        use super::cache::CachedSession;
+        data.sessions.insert(
+            request.session_id.clone(),
+            CachedSession {
+                cwd: cwd.to_string_lossy().to_string(),
+                created_at,
+                exited: false,
+                last_exit_code: None,
+            },
+        );
+        data.session_order.push(request.session_id.clone());
+        // Promote to active if this is the first session
+        if data.active_session_id.is_none() {
+            data.active_session_id = Some(request.session_id.clone());
+        }
+        Ok(())
+    }) {
+        // Cache write failed — reap the orphan child so we don't leak a
+        // zombie. Both kill and wait are best-effort: we're already on the
+        // failure path and surfacing the original cache error is more
+        // useful than chaining a kill error.
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!("failed to write cache: {}", e));
+    }
+
+    // Cache is consistent. Insert into PtyState (infallible — no Result).
     let generation = state.next_generation();
     let session = ManagedSession {
         master: pty_pair.master,
@@ -234,29 +283,6 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         ring: std::sync::Mutex::new(crate::terminal::state::RingBuffer::new(65536)),
     };
     state.insert(request.session_id.clone(), session);
-
-    // Write to cache: create cached session, append to session_order, promote to active if first
-    let created_at = chrono::Utc::now().to_rfc3339();
-    cache
-        .mutate(|data| {
-            use super::cache::CachedSession;
-            data.sessions.insert(
-                request.session_id.clone(),
-                CachedSession {
-                    cwd: cwd.to_string_lossy().to_string(),
-                    created_at,
-                    exited: false,
-                    last_exit_code: None,
-                },
-            );
-            data.session_order.push(request.session_id.clone());
-            // Promote to active if this is the first session
-            if data.active_session_id.is_none() {
-                data.active_session_id = Some(request.session_id.clone());
-            }
-            Ok(())
-        })
-        .map_err(|e| format!("failed to write cache: {}", e))?;
     debug_log(
         "pty",
         &format!(
@@ -1866,5 +1892,103 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown session"));
         assert!(cache.snapshot().sessions.is_empty());
+    }
+
+    /// Round 7, Finding 1 (claude HIGH) regression test.
+    ///
+    /// Verifies the cache-first ordering in `spawn_pty`. Before the fix, the
+    /// flow was:
+    ///
+    ///   1. spawn child (owned)
+    ///   2. take_writer
+    ///   3. state.insert(session)        // line 236
+    ///   4. cache.mutate(...)?           // line 259, `?` propagates Err
+    ///   5. spawn read loop
+    ///
+    /// If step (4) returned Err the function bailed via `?`, but step (3)
+    /// had already moved the child into `PtyState`. The read loop in step
+    /// (5) never started, so the PTY master's kernel buffer would fill and
+    /// the child would block on stdout — and `list_sessions` iterates
+    /// `cache.session_order` (NOT `PtyState`), so the orphan was permanently
+    /// invisible to the frontend until app exit.
+    ///
+    /// The fixed flow is:
+    ///
+    ///   1. spawn child (owned, mut so we can kill on failure)
+    ///   2. take_writer
+    ///   3. cache.mutate(...) — if Err, kill+wait child and return Err
+    ///   4. state.insert(session)        // infallible after this point
+    ///   5. spawn read loop
+    ///
+    /// We use the `cache::test_force_mutate_err::arm` test hook to force
+    /// step (3) to fail. Asserts:
+    ///   - `spawn_pty` returns Err with "failed to write cache"
+    ///   - `state.contains(session_id) == false` — no orphan in PtyState
+    ///   - `cache.snapshot()` is unchanged — no half-written cache entry
+    #[tokio::test]
+    async fn spawn_pty_does_not_orphan_state_when_cache_mutate_fails() {
+        use crate::terminal::cache::test_force_mutate_err;
+
+        let (app, _temp_dir) = create_test_app_with_cache();
+        let handle = app.handle();
+        let state = handle.state::<PtyState>();
+        let cache = handle.state::<Arc<SessionCache>>();
+
+        // Snapshot pre-state so we can verify the cache stayed unchanged.
+        let pre_snapshot = cache.snapshot();
+        assert!(pre_snapshot.session_order.is_empty());
+        assert!(pre_snapshot.sessions.is_empty());
+        assert!(pre_snapshot.active_session_id.is_none());
+
+        // Force the next cache.mutate call (the one inside spawn_pty) to
+        // return Err, simulating a disk-full / perm-denied write OR a
+        // future closure that bails on validation under the lock.
+        test_force_mutate_err::arm("simulated cache write failure");
+
+        let result = spawn_pty(
+            handle.clone(),
+            state.clone(),
+            cache.clone(),
+            SpawnPtyRequest {
+                session_id: "orphan-test".to_string(),
+                cwd: std::env::current_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+            },
+        )
+        .await;
+
+        // 1. spawn_pty must surface the cache failure to the caller.
+        assert!(result.is_err(), "spawn_pty should fail when cache.mutate fails");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("failed to write cache"),
+            "error should mention cache write failure, got: {}",
+            err
+        );
+
+        // 2. PtyState must NOT contain the session — the previous code
+        //    inserted into PtyState BEFORE the cache.mutate call, so this
+        //    assertion would have caught the orphan: state.insert ran, the
+        //    `?` from cache.mutate propagated Err, and the session was
+        //    permanently stuck in PtyState with no read loop.
+        assert!(
+            !state.contains(&"orphan-test".to_string()),
+            "PtyState must not contain the session — child should be reaped, not orphaned"
+        );
+
+        // 3. Cache must be unchanged — no half-written entry that a later
+        //    list_sessions could surface as a phantom session.
+        let post_snapshot = cache.snapshot();
+        assert_eq!(post_snapshot.session_order, pre_snapshot.session_order);
+        assert_eq!(post_snapshot.sessions.len(), pre_snapshot.sessions.len());
+        assert_eq!(
+            post_snapshot.active_session_id,
+            pre_snapshot.active_session_id
+        );
     }
 }

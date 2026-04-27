@@ -128,6 +128,19 @@ impl SessionCache {
     where
         F: FnOnce(&mut SessionCacheData) -> Result<(), String>,
     {
+        // Round 7, Finding 1 (claude HIGH) test hook: lets `commands.rs`
+        // unit tests force a `mutate` failure to verify spawn_pty's
+        // cache-first ordering reaps the orphan child instead of leaving
+        // it in PtyState. Compiled out of release builds. Returning Err
+        // BEFORE acquiring the lock is intentional — we want the tested
+        // failure path to behave identically to a closure that returns
+        // Err, which is what real cache writes can do (validation under
+        // lock per round 4 finding 3).
+        #[cfg(test)]
+        if let Some(err) = test_force_mutate_err::take() {
+            return Err(err);
+        }
+
         let mut guard = self.data.lock().expect("cache mutex poisoned");
         // Snapshot the pre-mutation state so a closure that returns Err
         // doesn't half-modify the in-memory mirror. Cheap enough at
@@ -190,6 +203,29 @@ impl SessionCache {
         tmp.persist(&self.path)
             .map_err(|e| format!("persist: {e}"))?;
         Ok(())
+    }
+}
+
+/// Test-only injection point used by `commands.rs` round-7 finding-1 tests.
+/// Setting `next` causes the NEXT call to `mutate` (on any cache) to return
+/// `Err(next.clone())` without invoking the closure or touching state.
+/// Thread-local so parallel cargo-test runs cannot interfere with each other.
+#[cfg(test)]
+pub(crate) mod test_force_mutate_err {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static FORCED_ERR: RefCell<Option<String>> = const { RefCell::new(None) };
+    }
+
+    pub fn arm(err: impl Into<String>) {
+        FORCED_ERR.with(|cell| {
+            *cell.borrow_mut() = Some(err.into());
+        });
+    }
+
+    pub fn take() -> Option<String> {
+        FORCED_ERR.with(|cell| cell.borrow_mut().take())
     }
 }
 
