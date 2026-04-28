@@ -43,7 +43,7 @@
       "Check full file_path in process_assistant_message",
       "Add isTestFile to TS types and propagate through useAgentStatus"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [
       2
     ]
