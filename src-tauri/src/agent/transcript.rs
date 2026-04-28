@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -15,6 +15,7 @@ use serde_json::Value;
 use tauri::Emitter;
 
 use super::types::{AgentToolCallEvent, ToolCallStatus};
+use crate::agent::test_runners::matcher::{match_command, MatchedCommand};
 
 /// Poll interval for checking new transcript lines
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -53,9 +54,11 @@ pub(crate) fn validate_transcript_path(transcript_path: &str) -> Result<PathBuf,
 
 struct InFlightToolCall {
     started_at: Instant,
+    started_at_iso: String,
     tool: String,
     args: String,
     is_test_file: bool,
+    test_match: Option<MatchedCommand>,
 }
 
 type InFlightToolCalls = HashMap<String, InFlightToolCall>;
@@ -254,7 +257,7 @@ pub fn start_tailing<R: tauri::Runtime>(
 fn tail_loop<R: tauri::Runtime>(
     app_handle: tauri::AppHandle<R>,
     session_id: String,
-    _cwd: Option<PathBuf>,
+    cwd: Option<PathBuf>,
     file: File,
     stop_flag: Arc<AtomicBool>,
 ) {
@@ -283,7 +286,7 @@ fn tail_loop<R: tauri::Runtime>(
                 if line.is_empty() {
                     continue;
                 }
-                process_line(line, &session_id, &app_handle, &mut in_flight);
+                process_line(line, &session_id, cwd.as_deref(), &app_handle, &mut in_flight);
             }
             Err(e) => {
                 log::warn!("Error reading transcript line: {}", e);
@@ -297,6 +300,7 @@ fn tail_loop<R: tauri::Runtime>(
 fn process_line(
     line: &str,
     session_id: &str,
+    cwd: Option<&Path>,
     app_handle: &tauri::AppHandle<impl tauri::Runtime>,
     in_flight: &mut InFlightToolCalls,
 ) {
@@ -312,14 +316,14 @@ fn process_line(
 
     match line_type {
         "assistant" => {
-            process_assistant_message(&value, session_id, app_handle, in_flight);
+            process_assistant_message(&value, session_id, cwd, app_handle, in_flight);
         }
         "user" => {
-            process_user_message(&value, session_id, app_handle, in_flight);
+            process_user_message(&value, session_id, cwd, app_handle, in_flight);
         }
         "tool_result" => {
             let timestamp = extract_timestamp(&value);
-            process_tool_result(&value, session_id, app_handle, in_flight, &timestamp);
+            process_tool_result(&value, session_id, cwd, app_handle, in_flight, &timestamp);
         }
         _ => {
             // Other message types — ignore
@@ -344,6 +348,7 @@ fn extract_timestamp(value: &Value) -> String {
 fn process_assistant_message(
     value: &Value,
     session_id: &str,
+    cwd: Option<&Path>,
     app_handle: &tauri::AppHandle<impl tauri::Runtime>,
     in_flight: &mut InFlightToolCalls,
 ) {
@@ -371,6 +376,17 @@ fn process_assistant_message(
             .unwrap_or("unknown")
             .to_string();
 
+        // Run the matcher BEFORE summarize_input truncates — the matcher
+        // needs the full untruncated command to tokenize correctly.
+        let test_match = if name == "Bash" {
+            item.get("input")
+                .and_then(|v| v.get("command"))
+                .and_then(|v| v.as_str())
+                .and_then(|cmd| match_command(cmd, cwd))
+        } else {
+            None
+        };
+
         let args = summarize_input(item.get("input"));
 
         // Tag Write/Edit on test files. Use the FULL untruncated
@@ -392,9 +408,11 @@ fn process_assistant_message(
             id.clone(),
             InFlightToolCall {
                 started_at: now,
+                started_at_iso: timestamp.clone(),
                 tool: name.clone(),
                 args: args.clone(),
                 is_test_file,
+                test_match,
             },
         );
 
@@ -419,6 +437,7 @@ fn process_assistant_message(
 fn process_user_message(
     value: &Value,
     session_id: &str,
+    cwd: Option<&Path>,
     app_handle: &tauri::AppHandle<impl tauri::Runtime>,
     in_flight: &mut InFlightToolCalls,
 ) {
@@ -431,7 +450,7 @@ fn process_user_message(
 
     for item in content {
         if is_tool_result_block(item) {
-            process_tool_result(item, session_id, app_handle, in_flight, &timestamp);
+            process_tool_result(item, session_id, cwd, app_handle, in_flight, &timestamp);
         }
     }
 }
@@ -440,6 +459,7 @@ fn process_user_message(
 fn process_tool_result(
     value: &Value,
     session_id: &str,
+    cwd: Option<&Path>,
     app_handle: &tauri::AppHandle<impl tauri::Runtime>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
@@ -469,6 +489,35 @@ fn process_tool_result(
     let tool_name = call.tool;
     let args = call.args;
     let is_test_file = call.is_test_file;
+
+    if let Some(matched) = call.test_match {
+        // Pull the captured Bash output content.
+        let content = extract_tool_result_content(value);
+        let captured = crate::agent::test_runners::types::CapturedOutput {
+            content,
+            is_error,
+        };
+        let cwd_ref = cwd.unwrap_or_else(|| Path::new("."));
+        let snapshot = crate::agent::test_runners::build::maybe_build_snapshot(
+            crate::agent::test_runners::build::BuildArgs {
+                session_id,
+                matched: &matched,
+                started_at: &call.started_at_iso,
+                finished_at: timestamp,
+                instant_fallback: call.started_at.elapsed(),
+                captured,
+                cwd: cwd_ref,
+            },
+        );
+        if let Some(snap) = snapshot {
+            // For now (Task 5), emit immediately. Task 6 introduces the
+            // TestRunEmitter for replay batching — this direct emit will be
+            // refactored to call emitter.submit().
+            if let Err(e) = app_handle.emit("test-run", &snap) {
+                log::warn!("Failed to emit test-run event: {}", e);
+            }
+        }
+    }
 
     let status = if is_error {
         ToolCallStatus::Failed
@@ -584,6 +633,32 @@ fn days_to_date(days: u64) -> (u64, u64, u64) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     (y, m, d)
+}
+
+/// Pull the textual `content` out of a tool_result JSON value.
+/// Handles both the simple-string shape and the array-of-blocks shape
+/// (where each block may carry `{type:"text", text:"..."}` payloads).
+fn extract_tool_result_content(value: &Value) -> String {
+    let raw = match value.get("content") {
+        Some(c) => c,
+        None => return String::new(),
+    };
+    if let Some(s) = raw.as_str() {
+        return s.to_string();
+    }
+    if let Some(arr) = raw.as_array() {
+        let mut out = String::new();
+        for block in arr {
+            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                    out.push_str(text);
+                    out.push('\n');
+                }
+            }
+        }
+        return out;
+    }
+    String::new()
 }
 
 // --- Tauri Commands ---
@@ -884,9 +959,11 @@ mod tests {
             "toolu_abc".to_string(),
             InFlightToolCall {
                 started_at: start,
+                started_at_iso: "2026-04-28T12:00:00Z".to_string(),
                 tool: "Read".to_string(),
                 args: "/src/foo.ts".to_string(),
                 is_test_file: false,
+                test_match: None,
             },
         );
         assert!(in_flight.contains_key("toolu_abc"));
