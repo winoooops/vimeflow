@@ -15,6 +15,7 @@ use serde_json::Value;
 use tauri::Emitter;
 
 use super::types::{AgentToolCallEvent, ToolCallStatus};
+use crate::agent::test_runners::emitter::TestRunEmitter;
 use crate::agent::test_runners::matcher::{match_command, MatchedCommand};
 
 /// Poll interval for checking new transcript lines
@@ -271,6 +272,11 @@ fn tail_loop<R: tauri::Runtime>(
     // In-flight tool calls: tool_use_id -> call details
     let mut in_flight: InFlightToolCalls = HashMap::new();
 
+    // Replay-aware emitter — buffers test-run snapshots during the initial
+    // catch-up read and emits the latest one (only) on the first EOF. Once
+    // we're tailing live, every snapshot emits immediately.
+    let mut emitter = TestRunEmitter::new(app_handle.clone());
+
     // Buffer for partial lines
     let mut line_buf = String::new();
 
@@ -278,7 +284,9 @@ fn tail_loop<R: tauri::Runtime>(
         line_buf.clear();
         match reader.read_line(&mut line_buf) {
             Ok(0) => {
-                // No new data — sleep and retry
+                // First EOF marks the end of replay; subsequent EOFs are
+                // idempotent. After this, every submit emits live.
+                emitter.finish_replay();
                 std::thread::sleep(POLL_INTERVAL);
             }
             Ok(_) => {
@@ -286,7 +294,14 @@ fn tail_loop<R: tauri::Runtime>(
                 if line.is_empty() {
                     continue;
                 }
-                process_line(line, &session_id, cwd.as_deref(), &app_handle, &mut in_flight);
+                process_line(
+                    line,
+                    &session_id,
+                    cwd.as_deref(),
+                    &app_handle,
+                    &mut emitter,
+                    &mut in_flight,
+                );
             }
             Err(e) => {
                 log::warn!("Error reading transcript line: {}", e);
@@ -297,11 +312,12 @@ fn tail_loop<R: tauri::Runtime>(
 }
 
 /// Process a single JSONL line and emit events if it's a tool call
-fn process_line(
+fn process_line<R: tauri::Runtime>(
     line: &str,
     session_id: &str,
     cwd: Option<&Path>,
-    app_handle: &tauri::AppHandle<impl tauri::Runtime>,
+    app_handle: &tauri::AppHandle<R>,
+    emitter: &mut TestRunEmitter<R>,
     in_flight: &mut InFlightToolCalls,
 ) {
     let value: Value = match serde_json::from_str(line) {
@@ -319,11 +335,19 @@ fn process_line(
             process_assistant_message(&value, session_id, cwd, app_handle, in_flight);
         }
         "user" => {
-            process_user_message(&value, session_id, cwd, app_handle, in_flight);
+            process_user_message(&value, session_id, cwd, app_handle, emitter, in_flight);
         }
         "tool_result" => {
             let timestamp = extract_timestamp(&value);
-            process_tool_result(&value, session_id, cwd, app_handle, in_flight, &timestamp);
+            process_tool_result(
+                &value,
+                session_id,
+                cwd,
+                app_handle,
+                emitter,
+                in_flight,
+                &timestamp,
+            );
         }
         _ => {
             // Other message types — ignore
@@ -345,11 +369,11 @@ fn extract_timestamp(value: &Value) -> String {
         .unwrap_or_else(now_iso8601)
 }
 
-fn process_assistant_message(
+fn process_assistant_message<R: tauri::Runtime>(
     value: &Value,
     session_id: &str,
     cwd: Option<&Path>,
-    app_handle: &tauri::AppHandle<impl tauri::Runtime>,
+    app_handle: &tauri::AppHandle<R>,
     in_flight: &mut InFlightToolCalls,
 ) {
     let content = match message_content_items(value) {
@@ -434,11 +458,12 @@ fn process_assistant_message(
 }
 
 /// Extract tool_result entries from a user message.
-fn process_user_message(
+fn process_user_message<R: tauri::Runtime>(
     value: &Value,
     session_id: &str,
     cwd: Option<&Path>,
-    app_handle: &tauri::AppHandle<impl tauri::Runtime>,
+    app_handle: &tauri::AppHandle<R>,
+    emitter: &mut TestRunEmitter<R>,
     in_flight: &mut InFlightToolCalls,
 ) {
     let content = match message_content_items(value) {
@@ -450,17 +475,26 @@ fn process_user_message(
 
     for item in content {
         if is_tool_result_block(item) {
-            process_tool_result(item, session_id, cwd, app_handle, in_flight, &timestamp);
+            process_tool_result(
+                item,
+                session_id,
+                cwd,
+                app_handle,
+                emitter,
+                in_flight,
+                &timestamp,
+            );
         }
     }
 }
 
 /// Process a tool_result line and emit Done/Failed event
-fn process_tool_result(
+fn process_tool_result<R: tauri::Runtime>(
     value: &Value,
     session_id: &str,
     cwd: Option<&Path>,
-    app_handle: &tauri::AppHandle<impl tauri::Runtime>,
+    app_handle: &tauri::AppHandle<R>,
+    emitter: &mut TestRunEmitter<R>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
@@ -510,12 +544,10 @@ fn process_tool_result(
             },
         );
         if let Some(snap) = snapshot {
-            // For now (Task 5), emit immediately. Task 6 introduces the
-            // TestRunEmitter for replay batching — this direct emit will be
-            // refactored to call emitter.submit().
-            if let Err(e) = app_handle.emit("test-run", &snap) {
-                log::warn!("Failed to emit test-run event: {}", e);
-            }
+            // Route through the replay-aware emitter — during the initial
+            // catch-up read this batches to latest-only; after first EOF it
+            // emits live.
+            emitter.submit(snap);
         }
     }
 

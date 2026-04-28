@@ -1,5 +1,6 @@
 pub mod build;
 pub mod cargo;
+pub mod emitter;
 pub mod matcher;
 pub mod path_resolution;
 pub mod preview;
