@@ -133,4 +133,36 @@ describe('toolCallsToEvents', () => {
       timestamp: '2026-04-22T09:00:00Z',
     })
   })
+
+  test('propagates isTestFile from RecentToolCall to ActivityEvent', () => {
+    const events = toolCallsToEvents(null, [
+      {
+        id: 'tu_1',
+        tool: 'Write',
+        args: 'src/foo.test.ts',
+        status: 'done',
+        durationMs: 100,
+        timestamp: '2026-04-28T12:00:00Z',
+        isTestFile: true,
+      },
+    ])
+
+    expect(events[0]?.isTestFile).toBe(true)
+  })
+
+  test('isTestFile defaults to false when not on RecentToolCall', () => {
+    const events = toolCallsToEvents(null, [
+      {
+        id: 'tu_2',
+        tool: 'Read',
+        args: 'src/foo.ts',
+        status: 'done',
+        durationMs: 5,
+        timestamp: '2026-04-28T12:01:00Z',
+        isTestFile: false,
+      },
+    ])
+
+    expect(events[0]?.isTestFile).toBe(false)
+  })
 })

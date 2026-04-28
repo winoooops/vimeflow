@@ -15,6 +15,13 @@ export interface BaseActivityEvent {
   timestamp: string
   status: 'running' | 'done' | 'failed'
   body: string
+  /**
+   * True when this event is a Write/Edit on a path that matches a known
+   * test-file convention. Only meaningful on ToolActivityEvents; Think
+   * and User events never set this. Lives on the base type so consumers
+   * can read `event.isTestFile` without union narrowing.
+   */
+  isTestFile?: boolean
 }
 
 export interface ToolActivityEvent extends BaseActivityEvent {

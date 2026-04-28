@@ -426,3 +426,61 @@ describe('ActivityEvent — tooltip integration', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 })
+
+describe('ActivityEvent — test-file glyph and verb', () => {
+  test('renders 🧪 CREATED TEST label for Write of a test file', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          id: 'e1',
+          kind: 'write',
+          tool: 'Write',
+          body: 'src/foo.test.ts',
+          isTestFile: true,
+        })}
+        now={now}
+      />
+    )
+
+    expect(screen.getByText(/created test/i)).toBeInTheDocument()
+    // Glyph rides inside the same label span — partial-text match is fine.
+    expect(screen.getByText(/🧪/)).toBeInTheDocument()
+  })
+
+  test('renders 🧪 UPDATED TEST label for Edit of a test file', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          id: 'e2',
+          kind: 'edit',
+          tool: 'Edit',
+          body: 'src/foo.test.ts',
+          isTestFile: true,
+        })}
+        now={now}
+      />
+    )
+
+    expect(screen.getByText(/updated test/i)).toBeInTheDocument()
+  })
+
+  test('regular Write event has no test glyph or prefix', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          id: 'e3',
+          kind: 'write',
+          tool: 'Write',
+          body: 'src/foo.ts',
+          isTestFile: false,
+        })}
+        now={now}
+      />
+    )
+
+    expect(screen.queryByText(/created test/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/🧪/)).not.toBeInTheDocument()
+    // Falls back to the kind-based label.
+    expect(screen.getByText(/^WRITE$/)).toBeInTheDocument()
+  })
+})
