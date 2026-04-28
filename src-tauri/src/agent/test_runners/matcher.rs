@@ -48,8 +48,29 @@ pub fn first_segment<'a>(tokens: &'a [String]) -> &'a [String] {
     tokens
 }
 
-/// Strip leading wrapper prefixes one pass.
+/// Strip leading wrapper prefixes, looping until no further wrapper is
+/// recognised. Composed wrappers like `dotenv -- npx vitest` or
+/// `pnpm exec dotenv -- vitest` would otherwise leave an inner wrapper
+/// in place, the runner registry wouldn't match, and the test-run event
+/// would silently never fire.
+///
+/// The loop is bounded at 8 iterations to defend against pathological
+/// inputs (a long chain of wrappers, repeated tokenization round-trips).
+/// 8 comfortably exceeds any realistic composition.
 pub fn strip_wrappers<'a>(tokens: &'a [String]) -> &'a [String] {
+    const MAX_ITERATIONS: usize = 8;
+    let mut current = tokens;
+    for _ in 0..MAX_ITERATIONS {
+        let next = strip_one_wrapper(current);
+        if std::ptr::eq(next, current) {
+            return current;
+        }
+        current = next;
+    }
+    current
+}
+
+fn strip_one_wrapper<'a>(tokens: &'a [String]) -> &'a [String] {
     if tokens.is_empty() {
         return tokens;
     }
@@ -166,6 +187,27 @@ mod tests {
     fn strip_wrappers_no_change_when_no_wrapper() {
         let tokens = vec_of(&["vitest"]);
         assert_eq!(strip_wrappers(&tokens), &tokens[..]);
+    }
+
+    #[test]
+    fn strip_wrappers_handles_composed_dotenv_npx() {
+        // dotenv -- npx vitest → vitest (both wrappers must be peeled)
+        let tokens = vec_of(&["dotenv", "--", "npx", "vitest"]);
+        assert_eq!(strip_wrappers(&tokens), &tokens[3..]);
+    }
+
+    #[test]
+    fn strip_wrappers_handles_composed_pnpm_exec_dotenv() {
+        // pnpm exec dotenv -- vitest → vitest
+        let tokens = vec_of(&["pnpm", "exec", "dotenv", "--", "vitest"]);
+        assert_eq!(strip_wrappers(&tokens), &tokens[4..]);
+    }
+
+    #[test]
+    fn match_command_finds_vitest_through_composed_wrappers() {
+        let m = match_command("dotenv -- npx vitest run", None).expect("should match");
+        assert_eq!(m.runner.name, "vitest");
+        assert_eq!(m.stripped_tokens, vec_of(&["vitest", "run"]));
     }
 
     #[test]

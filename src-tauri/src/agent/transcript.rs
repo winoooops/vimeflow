@@ -72,6 +72,13 @@ pub struct TranscriptHandle {
 
 struct TranscriptWatcher {
     transcript_path: PathBuf,
+    /// Workspace cwd at the time this watcher was started. Currently only
+    /// consumed by the spawned `tail_loop` (passed through `start_tailing`),
+    /// not read back from the struct itself — but retained on the watcher
+    /// so a future debug surface (`/get_transcript_watchers` introspection,
+    /// session-restart with cwd carry-over) can recover it without having
+    /// to reach into the running thread.
+    #[allow(dead_code)]
     cwd: Option<PathBuf>,
     handle: TranscriptHandle,
 }
