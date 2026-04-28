@@ -11,7 +11,7 @@
       "Wire module into agent/mod.rs",
       "Add smoke tests for matchers"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": []
   },
   {
