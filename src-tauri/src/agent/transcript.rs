@@ -72,13 +72,13 @@ pub struct TranscriptHandle {
 
 struct TranscriptWatcher {
     transcript_path: PathBuf,
-    /// Workspace cwd at the time this watcher was started. Currently only
-    /// consumed by the spawned `tail_loop` (passed through `start_tailing`),
-    /// not read back from the struct itself — but retained on the watcher
-    /// so a future debug surface (`/get_transcript_watchers` introspection,
-    /// session-restart with cwd carry-over) can recover it without having
-    /// to reach into the running thread.
-    #[allow(dead_code)]
+    /// Canonicalized workspace cwd captured when the tail_loop was spawned.
+    /// Load-bearing for the test-runner data flow (npm-script alias resolution
+    /// and per-file path resolution both consume this value inside the
+    /// spawned thread). Compared in `start_or_replace` so a same-transcript-
+    /// different-cwd start triggers a replace — without this check the tail
+    /// thread would keep using the stale snapshot and the test-runner parser
+    /// would resolve aliases / files against the wrong workspace.
     cwd: Option<PathBuf>,
     handle: TranscriptHandle,
 }
@@ -133,7 +133,10 @@ impl TranscriptState {
         Ok(())
     }
 
-    /// Start tailing when none is active, or switch to a newer transcript path.
+    /// Start tailing when none is active, or switch to a newer transcript path
+    /// or workspace cwd. The watcher identity is `(transcript_path, cwd)` —
+    /// either changing forces a replace so the tail thread runs against the
+    /// current workspace state.
     pub fn start_or_replace<R: tauri::Runtime>(
         &self,
         app_handle: tauri::AppHandle<R>,
@@ -144,7 +147,7 @@ impl TranscriptState {
         {
             let watchers = self.watchers.lock().expect("failed to lock watchers");
             if let Some(current) = watchers.get(&session_id) {
-                if current.transcript_path == transcript_path {
+                if current.transcript_path == transcript_path && current.cwd == cwd {
                     return Ok(TranscriptStartStatus::AlreadyRunning);
                 }
             }
@@ -161,7 +164,7 @@ impl TranscriptState {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
 
             if let Some(current) = watchers.get(&session_id) {
-                if current.transcript_path == transcript_path {
+                if current.transcript_path == transcript_path && current.cwd == cwd {
                     (None, TranscriptStartStatus::AlreadyRunning)
                 } else {
                     let old = watchers.insert(
@@ -702,17 +705,25 @@ fn extract_tool_result_content(value: &Value) -> String {
 
 // --- Tauri Commands ---
 
-/// Start watching a transcript JSONL file for tool call events
+/// Start watching a transcript JSONL file for tool call events.
+///
+/// `cwd` is NOT a renderer-supplied parameter. It is derived server-side
+/// from `PtyState::get_cwd(session_id)` so a compromised renderer can't
+/// influence which workspace the test-runner parser reads `package.json`
+/// from or resolves test-file paths against. If the session has no live
+/// PTY (and therefore no resolved CWD), script-alias resolution and
+/// per-file path resolution silently degrade — direct binary matches
+/// (`vitest`, `cargo test`) still work.
 #[tauri::command]
 pub async fn start_transcript_watcher(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, TranscriptState>,
+    pty_state: tauri::State<'_, crate::terminal::PtyState>,
     session_id: String,
     transcript_path: String,
-    cwd: Option<String>,
 ) -> Result<(), String> {
     let path = validate_transcript_path(&transcript_path)?;
-    let cwd_path = cwd.map(PathBuf::from);
+    let cwd_path = pty_state.get_cwd(&session_id).map(PathBuf::from);
     state.start(app_handle, session_id, path, cwd_path)
 }
 
@@ -789,6 +800,70 @@ mod tests {
             )
             .expect("failed to start watcher with cwd");
         assert_eq!(status, TranscriptStartStatus::Started);
+
+        state.stop(&session_id).expect("failed to stop watcher");
+    }
+
+    #[test]
+    fn transcript_state_replaces_when_only_cwd_changes() {
+        // Regression: same transcript path with a different cwd must
+        // trigger Replace so the tail thread runs against the new
+        // workspace. Previously start_or_replace ignored cwd in the
+        // identity check and silently kept the stale snapshot.
+        let app = tauri::test::mock_builder()
+            .build(tauri::generate_context!())
+            .expect("failed to build test app");
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let transcript_path = tmp.path().join("t.jsonl");
+        std::fs::write(&transcript_path, "").expect("failed to write transcript");
+        let cwd_a = tempfile::tempdir().expect("failed to create cwd_a");
+        let cwd_b = tempfile::tempdir().expect("failed to create cwd_b");
+
+        let state = TranscriptState::new();
+        let session_id = "session-cwd-change".to_string();
+
+        let first = state
+            .start_or_replace(
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path.clone(),
+                Some(cwd_a.path().to_path_buf()),
+            )
+            .expect("failed to start with cwd_a");
+        assert_eq!(first, TranscriptStartStatus::Started);
+
+        // Same transcript path, same cwd → AlreadyRunning (not a change).
+        let same = state
+            .start_or_replace(
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path.clone(),
+                Some(cwd_a.path().to_path_buf()),
+            )
+            .expect("failed to detect already-running");
+        assert_eq!(same, TranscriptStartStatus::AlreadyRunning);
+
+        // Same transcript path, DIFFERENT cwd → must Replace.
+        let replaced = state
+            .start_or_replace(
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path.clone(),
+                Some(cwd_b.path().to_path_buf()),
+            )
+            .expect("failed to replace on cwd change");
+        assert_eq!(replaced, TranscriptStartStatus::Replaced);
+
+        // Same transcript path, cwd None → also distinct from Some(cwd_b).
+        let replaced_to_none = state
+            .start_or_replace(
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path,
+                None,
+            )
+            .expect("failed to replace on cwd → None transition");
+        assert_eq!(replaced_to_none, TranscriptStartStatus::Replaced);
 
         state.stop(&session_id).expect("failed to stop watcher");
     }
