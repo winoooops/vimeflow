@@ -67,6 +67,7 @@ pub struct TranscriptHandle {
 
 struct TranscriptWatcher {
     transcript_path: PathBuf,
+    cwd: Option<PathBuf>,
     handle: TranscriptHandle,
 }
 
@@ -114,8 +115,9 @@ impl TranscriptState {
         app_handle: tauri::AppHandle<R>,
         session_id: String,
         transcript_path: PathBuf,
+        cwd: Option<PathBuf>,
     ) -> Result<(), String> {
-        let _ = self.start_or_replace(app_handle, session_id, transcript_path)?;
+        let _ = self.start_or_replace(app_handle, session_id, transcript_path, cwd)?;
         Ok(())
     }
 
@@ -125,6 +127,7 @@ impl TranscriptState {
         app_handle: tauri::AppHandle<R>,
         session_id: String,
         transcript_path: PathBuf,
+        cwd: Option<PathBuf>,
     ) -> Result<TranscriptStartStatus, String> {
         {
             let watchers = self.watchers.lock().expect("failed to lock watchers");
@@ -139,6 +142,7 @@ impl TranscriptState {
             app_handle,
             session_id.clone(),
             transcript_path.clone(),
+            cwd.clone(),
         )?);
 
         let (old_handle, status) = {
@@ -151,7 +155,8 @@ impl TranscriptState {
                     let old = watchers.insert(
                         session_id,
                         TranscriptWatcher {
-                            transcript_path,
+                            transcript_path: transcript_path.clone(),
+                            cwd: cwd.clone(),
                             handle: new_handle
                                 .take()
                                 .expect("new transcript handle should be available"),
@@ -168,6 +173,7 @@ impl TranscriptState {
                     session_id,
                     TranscriptWatcher {
                         transcript_path,
+                        cwd,
                         handle: new_handle
                             .take()
                             .expect("new transcript handle should be available"),
@@ -220,6 +226,7 @@ pub fn start_tailing<R: tauri::Runtime>(
     app_handle: tauri::AppHandle<R>,
     session_id: String,
     transcript_path: PathBuf,
+    cwd: Option<PathBuf>,
 ) -> Result<TranscriptHandle, String> {
     let file = File::open(&transcript_path).map_err(|e| {
         format!(
@@ -233,7 +240,7 @@ pub fn start_tailing<R: tauri::Runtime>(
     let stop_clone = stop_flag.clone();
 
     let join_handle = std::thread::spawn(move || {
-        tail_loop(app_handle, session_id, file, stop_clone);
+        tail_loop(app_handle, session_id, cwd, file, stop_clone);
     });
 
     Ok(TranscriptHandle {
@@ -246,6 +253,7 @@ pub fn start_tailing<R: tauri::Runtime>(
 fn tail_loop<R: tauri::Runtime>(
     app_handle: tauri::AppHandle<R>,
     session_id: String,
+    _cwd: Option<PathBuf>,
     file: File,
     stop_flag: Arc<AtomicBool>,
 ) {
@@ -568,9 +576,11 @@ pub async fn start_transcript_watcher(
     state: tauri::State<'_, TranscriptState>,
     session_id: String,
     transcript_path: String,
+    cwd: Option<String>,
 ) -> Result<(), String> {
     let path = validate_transcript_path(&transcript_path)?;
-    state.start(app_handle, session_id, path)
+    let cwd_path = cwd.map(PathBuf::from);
+    state.start(app_handle, session_id, path, cwd_path)
 }
 
 /// Stop watching a transcript JSONL file
@@ -607,19 +617,45 @@ mod tests {
         let session_id = "session-1".to_string();
 
         let first_status = state
-            .start_or_replace(app.handle().clone(), session_id.clone(), first_path.clone())
+            .start_or_replace(app.handle().clone(), session_id.clone(), first_path.clone(), None)
             .expect("failed to start first transcript watcher");
         assert_eq!(first_status, TranscriptStartStatus::Started);
 
         let duplicate_status = state
-            .start_or_replace(app.handle().clone(), session_id.clone(), first_path)
+            .start_or_replace(app.handle().clone(), session_id.clone(), first_path, None)
             .expect("failed to check duplicate transcript watcher");
         assert_eq!(duplicate_status, TranscriptStartStatus::AlreadyRunning);
 
         let replaced_status = state
-            .start_or_replace(app.handle().clone(), session_id.clone(), second_path)
+            .start_or_replace(app.handle().clone(), session_id.clone(), second_path, None)
             .expect("failed to replace transcript watcher");
         assert_eq!(replaced_status, TranscriptStartStatus::Replaced);
+
+        state.stop(&session_id).expect("failed to stop watcher");
+    }
+
+    #[test]
+    fn transcript_state_threads_cwd_through() {
+        let app = tauri::test::mock_builder()
+            .build(tauri::generate_context!())
+            .expect("failed to build test app");
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let transcript_path = tmp.path().join("t.jsonl");
+        std::fs::write(&transcript_path, "").expect("failed to write transcript");
+        let cwd = tmp.path().to_path_buf();
+
+        let state = TranscriptState::new();
+        let session_id = "session-cwd".to_string();
+
+        let status = state
+            .start_or_replace(
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path,
+                Some(cwd),
+            )
+            .expect("failed to start watcher with cwd");
+        assert_eq!(status, TranscriptStartStatus::Started);
 
         state.stop(&session_id).expect("failed to stop watcher");
     }

@@ -64,7 +64,12 @@ impl AgentWatcherState {
 }
 
 /// Try to start transcript tailing, switching files if Claude reports a new path.
-fn maybe_start_transcript(app_handle: &tauri::AppHandle, session_id: &str, transcript_path: &str) {
+fn maybe_start_transcript(
+    app_handle: &tauri::AppHandle,
+    session_id: &str,
+    transcript_path: &str,
+    cwd: Option<PathBuf>,
+) {
     let transcript_path = match validate_transcript_path(transcript_path) {
         Ok(path) => path,
         Err(e) => {
@@ -82,6 +87,7 @@ fn maybe_start_transcript(app_handle: &tauri::AppHandle, session_id: &str, trans
         app_handle.clone(),
         session_id.to_string(),
         transcript_path.clone(),
+        cwd,
     ) {
         Ok(TranscriptStartStatus::Started) => {
             log::info!(
@@ -116,9 +122,11 @@ pub fn start_watching(
     app_handle: tauri::AppHandle,
     session_id: String,
     status_file_path: PathBuf,
+    cwd: PathBuf,
 ) -> Result<WatcherHandle, String> {
     let target_path = status_file_path.clone();
     let sid = session_id.clone();
+    let cwd_for_closure = cwd.clone();
     let last_processed = Arc::new(Mutex::new(Instant::now()));
     let app_handle_for_poll = app_handle.clone();
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -182,7 +190,7 @@ pub fn start_watching(
 
                 if let Some(ref path) = parsed.transcript_path {
                     log::debug!("Transcript path for session {}: {}", sid, path);
-                    maybe_start_transcript(&app_handle, &sid, path);
+                    maybe_start_transcript(&app_handle, &sid, path, Some(cwd_for_closure.clone()));
                 }
             }
             Err(e) => {
@@ -212,12 +220,18 @@ pub fn start_watching(
         let initial_sid = session_id.clone();
         let initial_path = status_file_path.clone();
         let initial_app = app_handle_for_poll.clone();
+        let initial_cwd = cwd.clone();
         if let Ok(contents) = std::fs::read_to_string(&initial_path) {
             if !contents.trim().is_empty() {
                 if let Ok(parsed) = parse_statusline(&initial_sid, &contents) {
                     let _ = initial_app.emit("agent-status", &parsed.event);
                     if let Some(ref path) = parsed.transcript_path {
-                        maybe_start_transcript(&initial_app, &initial_sid, path);
+                        maybe_start_transcript(
+                            &initial_app,
+                            &initial_sid,
+                            path,
+                            Some(initial_cwd.clone()),
+                        );
                     }
                 }
             }
@@ -231,6 +245,7 @@ pub fn start_watching(
         let poll_sid = session_id.clone();
         let poll_path = status_file_path.clone();
         let poll_app = app_handle_for_poll;
+        let poll_cwd = cwd.clone();
         let poll_last = Arc::new(Mutex::new(String::new()));
         let poll_stop = stop_flag.clone();
         std::thread::spawn(move || {
@@ -256,7 +271,12 @@ pub fn start_watching(
                 if let Ok(parsed) = parse_statusline(&poll_sid, &contents) {
                     let _ = poll_app.emit("agent-status", &parsed.event);
                     if let Some(ref path) = parsed.transcript_path {
-                        maybe_start_transcript(&poll_app, &poll_sid, path);
+                        maybe_start_transcript(
+                            &poll_app,
+                            &poll_sid,
+                            path,
+                            Some(poll_cwd.clone()),
+                        );
                     }
                 }
             }
@@ -332,7 +352,8 @@ pub async fn start_agent_watcher(
     // Stop any existing watcher for this session
     state.remove(&session_id);
 
-    let handle = start_watching(app_handle, session_id.clone(), path)?;
+    let cwd_path = PathBuf::from(&cwd);
+    let handle = start_watching(app_handle, session_id.clone(), path, cwd_path)?;
     state.insert(session_id.clone(), handle);
 
     Ok(())
