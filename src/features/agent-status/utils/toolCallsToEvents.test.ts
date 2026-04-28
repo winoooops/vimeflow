@@ -9,6 +9,7 @@ const recent = (overrides: Partial<RecentToolCall> = {}): RecentToolCall => ({
   status: 'done',
   durationMs: 100,
   timestamp: '2026-04-22T10:00:00Z',
+  isTestFile: false,
   ...overrides,
 })
 

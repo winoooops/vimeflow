@@ -278,6 +278,29 @@ describe('useAgentStatus', () => {
     expect(result.current.toolCalls.active).toBeNull()
   })
 
+  test('propagates isTestFile from agent-tool-call event to recentToolCalls', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'toolu_test1',
+        tool: 'Write',
+        args: 'src/foo.test.ts',
+        status: 'done',
+        timestamp: '2026-04-28T12:00:00Z',
+        durationMs: 100,
+        isTestFile: true,
+      })
+    })
+
+    expect(result.current.recentToolCalls[0]?.isTestFile).toBe(true)
+  })
+
   test('parallel same-tool completions retain distinct ids via toolUseId', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 

@@ -83,4 +83,10 @@ export interface RecentToolCall {
   status: 'done' | 'failed'
   durationMs: number | null
   timestamp: string
+  /**
+   * True when this entry is a Write/Edit on a path that matches a
+   * known test-file convention. Sourced from the originating Rust
+   * AgentToolCallEvent — see `src-tauri/src/agent/test_runners/test_file_patterns.rs`.
+   */
+  isTestFile: boolean
 }

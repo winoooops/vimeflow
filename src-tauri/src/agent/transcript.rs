@@ -55,6 +55,7 @@ struct InFlightToolCall {
     started_at: Instant,
     tool: String,
     args: String,
+    is_test_file: bool,
 }
 
 type InFlightToolCalls = HashMap<String, InFlightToolCall>;
@@ -372,6 +373,20 @@ fn process_assistant_message(
 
         let args = summarize_input(item.get("input"));
 
+        // Tag Write/Edit on test files. Use the FULL untruncated
+        // input.file_path — `args` is summarized to MAX_ARGS_LEN and
+        // long workspace paths could otherwise drop the suffix that
+        // makes a file recognizable as a test (e.g. `…ndle.test.ts`).
+        let is_test_file = if matches!(name.as_str(), "Write" | "Edit") {
+            item.get("input")
+                .and_then(|v| v.get("file_path"))
+                .and_then(|v| v.as_str())
+                .map(crate::agent::test_runners::test_file_patterns::is_test_file)
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
         let now = Instant::now();
         in_flight.insert(
             id.clone(),
@@ -379,6 +394,7 @@ fn process_assistant_message(
                 started_at: now,
                 tool: name.clone(),
                 args: args.clone(),
+                is_test_file,
             },
         );
 
@@ -390,6 +406,7 @@ fn process_assistant_message(
             status: ToolCallStatus::Running,
             timestamp: timestamp.clone(),
             duration_ms: 0,
+            is_test_file,
         };
 
         if let Err(e) = app_handle.emit("agent-tool-call", &event) {
@@ -451,6 +468,7 @@ fn process_tool_result(
     let duration_ms = call.started_at.elapsed().as_millis() as u64;
     let tool_name = call.tool;
     let args = call.args;
+    let is_test_file = call.is_test_file;
 
     let status = if is_error {
         ToolCallStatus::Failed
@@ -466,6 +484,7 @@ fn process_tool_result(
         status,
         timestamp: timestamp.to_string(),
         duration_ms,
+        is_test_file,
     };
 
     if let Err(e) = app_handle.emit("agent-tool-call", &event) {
@@ -867,6 +886,7 @@ mod tests {
                 started_at: start,
                 tool: "Read".to_string(),
                 args: "/src/foo.ts".to_string(),
+                is_test_file: false,
             },
         );
         assert!(in_flight.contains_key("toolu_abc"));

@@ -292,6 +292,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
               status: p.status,
               durationMs: Number(p.durationMs) || null,
               timestamp: p.timestamp,
+              isTestFile: p.isTestFile,
             }
 
             setStatus((prev) => {

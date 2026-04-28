@@ -137,6 +137,7 @@ describe('AgentStatusPanel', () => {
           status: 'done',
           durationMs: 100,
           timestamp: '2026-04-22T11:59:42Z',
+          isTestFile: false,
         },
       ],
     })
@@ -196,6 +197,7 @@ describe('AgentStatusPanel', () => {
           status: 'done',
           durationMs: 100,
           timestamp: '2026-04-22T11:59:42Z',
+          isTestFile: false,
         },
       ],
     })

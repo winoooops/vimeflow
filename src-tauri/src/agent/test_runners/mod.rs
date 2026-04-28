@@ -1,4 +1,5 @@
 pub mod cargo;
+pub mod test_file_patterns;
 pub mod types;
 pub mod vitest;
 
