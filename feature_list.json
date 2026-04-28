@@ -170,7 +170,7 @@
       "Create transcript_cargo_mixed.jsonl fixture",
       "Add integration test verifying cargo runner end-to-end"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [
       9
     ]
