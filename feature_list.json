@@ -2,234 +2,174 @@
   {
     "id": 1,
     "phase": 1,
-    "category": "scaffold",
-    "description": "Exclude noisy paths from Vite HMR watch",
+    "category": "backend-types",
+    "description": "Rust types and module skeleton — Create test_runners module with TestRunSnapshot, TestRunStatus, TestRunSummary, TestGroup types and stub VITEST/CARGO_TEST runners",
     "steps": [
-      "Read current vite.config.ts to confirm structure",
-      "Add server.watch.ignored for .vimeflow/, target/, .codex*/, .git/",
-      "Run type-check and lint to verify changes",
-      "Commit with message: fix(vite): exclude .vimeflow/, target/, .codex*/, .git/ from HMR watch"
+      "Add shell-words, regex, once_cell dependencies",
+      "Create types.rs with all data structures",
+      "Create stub vitest.rs and cargo.rs with matchers",
+      "Wire module into agent/mod.rs",
+      "Add smoke tests for matchers"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": []
   },
   {
     "id": 2,
-    "phase": 2,
-    "category": "data models",
-    "description": "Add Rust SessionCache module with atomic write + in-memory mirror",
+    "phase": 1,
+    "category": "backend-plumbing",
+    "description": "CWD threading through TranscriptWatcher — Add cwd: Option<PathBuf> to TranscriptWatcher, thread through start_tailing and tail_loop for script resolution and path resolution",
     "steps": [
-      "Add tempfile dependency to Cargo.toml",
-      "Declare cache module in terminal/mod.rs",
-      "Create cache.rs with CachedSession, SessionCacheData, SessionCache types",
-      "Implement load(), snapshot(), mutate() methods with atomic disk write via tempfile",
-      "Write and run tests: empty load, round-trip, corrupt file, atomic write, flush failure",
-      "Commit with message: feat(terminal): add SessionCache module"
+      "Add cwd field to TranscriptWatcher struct",
+      "Update start_or_replace and start_tailing signatures",
+      "Thread cwd through tail_loop (as _cwd for now)",
+      "Update watcher.rs to pass resolved CWD",
+      "Update existing tests with None cwd argument"
     ],
-    "passes": true,
-    "dependencies": []
+    "passes": false,
+    "dependencies": [1]
   },
   {
     "id": 3,
-    "phase": 2,
-    "category": "data models",
-    "description": "Add RingBuffer to ManagedSession for atomic offset + bytes snapshots",
+    "phase": 1,
+    "category": "backend-tagging",
+    "description": "AgentToolCallEvent.is_test_file flag — Add is_test_file: bool to AgentToolCallEvent, create test_file_patterns.rs, tag Write/Edit tool calls whose file_path matches test patterns",
     "steps": [
-      "Read current state.rs ManagedSession structure",
-      "Write failing tests for RingBuffer: append-advances-offset, truncates-at-capacity, end_offset-continues-past-truncation",
-      "Implement RingBuffer struct with VecDeque, capacity, end_offset",
-      "Implement append(), bytes_snapshot(), end_offset() methods",
-      "Add pub ring: Mutex<RingBuffer> field to ManagedSession",
-      "Run tests to verify RingBuffer behavior",
-      "Commit with message: feat(terminal): add RingBuffer to ManagedSession for replay protocol"
+      "Create test_file_patterns.rs with is_test_file(path) matcher",
+      "Add is_test_file field to AgentToolCallEvent",
+      "Extend InFlightToolCall with is_test_file",
+      "Check full file_path in process_assistant_message",
+      "Add isTestFile to TS types and propagate through useAgentStatus"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [2]
   },
   {
     "id": 4,
-    "phase": 3,
-    "category": "core implementation",
-    "description": "spawn_pty — error on existing id, write cache, cap at 64, add ring buffer",
+    "phase": 2,
+    "category": "backend-matching",
+    "description": "Command matching algorithm — Implement tokenize, strip env, segment-split, strip wrappers, script-alias resolution, and runner matching with depth-3 recursion bound",
     "steps": [
-      "Add offset_start: u64 field to PtyDataEvent in types.rs",
-      "Add chrono dependency to Cargo.toml",
-      "Add tauri::State<'_, Arc<SessionCache>> parameter to spawn_pty",
-      "Replace kill-and-replace block with error on existing session id",
-      "Add session cap at 64 active sessions (PtyState::active_count())",
-      "Construct ManagedSession with Mutex::new(RingBuffer::new(65536))",
-      "Write CachedSession to cache, append to session_order, promote to active if first",
-      "Write tests: spawn_pty_returns_error_on_existing_session_id, spawn_pty_appends_to_session_order_and_promotes_active, spawn_pty_caps_at_64_active_sessions",
-      "Update all pre-existing spawn_pty test callers to pass cache state",
-      "Commit with message: feat(terminal): spawn_pty writes to cache and errors on id reuse"
+      "Create matcher.rs with tokenize and strip functions",
+      "Implement segment-split and wrapper-strip",
+      "Create script_resolution.rs for package.json script lookup",
+      "Implement match_command orchestrator",
+      "Add comprehensive unit tests for all edge cases"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [3]
   },
   {
     "id": 5,
-    "phase": 3,
-    "category": "core implementation",
-    "description": "kill_pty — make idempotent + clean cache + advance active",
+    "phase": 2,
+    "category": "backend-parser",
+    "description": "Vitest result parser + first end-to-end fixture — Implement vitest_parse_result, create sanitiser/preview/timestamps/path_resolution helpers, integrate into process_tool_result, emit test-run event",
     "steps": [
-      "Modify kill_pty to return Ok(()) for missing sessions (idempotent)",
-      "Add cache cleanup: remove from sessions map, retain from session_order",
-      "Add active_session_id rotation: if killed session was active, advance to next in order",
-      "Write tests: kill_pty_is_idempotent_for_missing_session, kill_pty_removes_from_session_order_and_cache, kill_pty_advances_active_when_active_killed",
-      "Commit with message: fix(terminal): make kill_pty idempotent and clean cache"
+      "Create sanitiser.rs for command/output redaction",
+      "Create preview.rs for command_preview building",
+      "Create timestamps.rs for ISO 8601 parsing and duration computation",
+      "Create path_resolution.rs with containment check",
+      "Implement vitest_parse_result against canonical format",
+      "Extend InFlightToolCall with test_match",
+      "Wire matcher and builder into transcript.rs",
+      "Create transcript_vitest_pass.jsonl fixture",
+      "Add integration test verifying end-to-end emission"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [4]
   },
   {
     "id": 6,
-    "phase": 3,
-    "category": "core implementation",
-    "description": "read_pty_output — atomic ring buffer write + offset emission + EOF marks cache",
+    "phase": 2,
+    "category": "backend-batching",
+    "description": "TestRunEmitter + replay batching — Replace direct emit with TestRunEmitter.submit, batch during replay to emit latest-only once at first EOF, eliminate UI flicker on session restore",
     "steps": [
-      "Modify read_pty_output to pass cache through",
-      "On Ok(n): append to ring buffer + advance offset under one lock, emit PtyDataEvent with offset_start after lock drops",
-      "On Ok(0) EOF: set cache.sessions[id].exited = true",
-      "Add PtyState::inner_sessions() accessor for testing",
-      "Write test: read_loop_eof_marks_cache_exited",
-      "Commit with message: feat(terminal): atomic ring buffer write + offset emission in read loop"
+      "Create emitter.rs with TestRunEmitter struct",
+      "Implement submit (batches during replay) and finish_replay",
+      "Integrate emitter into tail_loop",
+      "Call finish_replay on first EOF",
+      "Create transcript_vitest_replay.jsonl fixture",
+      "Add integration test verifying exactly one emit for 3 historical runs"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [5]
   },
   {
     "id": 7,
     "phase": 3,
-    "category": "core implementation",
-    "description": "list_sessions command + lazy reconciliation of cache vs PtyState",
+    "category": "frontend-types",
+    "description": "TS test-run listener + ordering regression test — Add TestRunSnapshot types, extend AgentStatus with testRun, attach test-run listener BEFORE start_agent_watcher, lock ordering invariant with regression test",
     "steps": [
-      "Add SessionStatus, SessionInfo, SessionList types to types.rs",
-      "Implement list_sessions(state, cache): iterate session_order, check cache + PtyState per id",
-      "Add lazy reconciliation: if cache says exited: false but PtyState has no entry, return Exited and flush corrected state",
-      "For Alive: snapshot (bytes, end_offset) under one ring lock",
-      "Write tests: list_sessions_returns_alive_for_running_pty, list_sessions_reconciles_alive_cache_with_empty_pty_state, list_sessions_returns_in_session_order, list_sessions_replay_end_offset_matches_buffer_contents",
-      "Commit with message: feat(terminal): add list_sessions command with lazy reconciliation"
+      "Add TestRunSnapshot/TestGroup/TestRunStatus types to TS",
+      "Add testRun: null to AgentStatus and createDefaultStatus",
+      "Add test-run listener inside subscribe() block",
+      "Add listener-ordering regression test",
+      "Add hook tests for ptyId filtering and default state"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [6]
   },
   {
     "id": 8,
     "phase": 3,
-    "category": "core implementation",
-    "description": "set_active_session, reorder_sessions, update_session_cwd commands",
+    "category": "frontend-ui",
+    "description": "TestResults rewrite + AgentStatusPanel wiring — Full rewrite of TestResults with snapshot prop, placeholder + live sub-components, inline collapsible button, three-part proportional bar, per-group rows",
     "steps": [
-      "Add SetActiveSessionRequest, ReorderSessionsRequest, UpdateSessionCwdRequest to types.rs",
-      "Implement set_active_session(id): validate id in session_order, update cache.active_session_id",
-      "Implement reorder_sessions(ids): validate permutation, update cache.session_order",
-      "Implement update_session_cwd(id, cwd): validate UUID-shaped id and absolute-existing-directory cwd, update cache",
-      "Write tests: set_active_session_persists_to_cache, set_active_session_rejects_unknown_id, reorder_sessions_persists_to_cache, reorder_sessions_rejects_non_permutation, update_session_cwd_persists_to_cache, update_session_cwd_rejects_invalid_path",
-      "Commit with message: feat(terminal): add session management commands"
+      "Write comprehensive tests for all five states (placeholder, pass, fail, noTests, error)",
+      "Implement TestResultsPlaceholder component",
+      "Implement TestResultsLive with inline collapsible button",
+      "Render three-part proportional bar (passed/failed/skipped)",
+      "Implement per-group rows with click handlers",
+      "Update AgentStatusPanel to pass snapshot and onOpenFile"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [7]
   },
   {
     "id": 9,
-    "phase": 4,
-    "category": "wiring",
-    "description": "Register new commands + manage SessionCache in lib.rs",
+    "phase": 3,
+    "category": "frontend-integration",
+    "description": "WorkspaceView.handleOpenTestFile — Add dirty-state-guarded file opener mirroring handleFileSelect, pass to AgentStatusPanel.onOpenFile, prevent silent edit discard",
     "steps": [
-      "Re-export new commands from terminal/mod.rs",
-      "In lib.rs setup(), resolve app_data_dir().join('sessions.json')",
-      "Add app.manage(Arc::new(SessionCache::load_or_recover(path)))",
-      "Register list_sessions, set_active_session, reorder_sessions, update_session_cwd in tauri::generate_handler![] blocks",
-      "Add SessionCache::load_or_recover method: move corrupt files to .corrupt-YYYYMMDDHHMMSS backup, then load empty",
-      "Write test: load_or_recover_moves_corrupt_aside",
-      "Commit with message: feat(terminal): register session management commands and cache in lib.rs"
+      "Add handleOpenTestFile in WorkspaceView",
+      "Guard with editorBuffer.isDirty check",
+      "Call setPendingFilePathSynced + setShowUnsavedDialog when dirty",
+      "Call openFileSafely when clean",
+      "Pass handleOpenTestFile to AgentStatusPanel",
+      "Add tests for clean-buffer and dirty-buffer flows"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [8]
   },
   {
     "id": 10,
-    "phase": 5,
-    "category": "wiring",
-    "description": "Regenerate TypeScript bindings for new Rust types",
+    "phase": 4,
+    "category": "backend-parser",
+    "description": "Cargo result parser + cargo fixture — Implement cargo_parse_result for cargo 1.7x format with module-level groups, create transcript_cargo_mixed.jsonl fixture, validate registry abstraction",
     "steps": [
-      "Run npm run generate:bindings",
-      "Verify new files created: SessionList.ts, SessionInfo.ts, SessionStatus.ts, SetActiveSessionRequest.ts, ReorderSessionsRequest.ts, UpdateSessionCwdRequest.ts",
-      "Verify PtyDataEvent.ts updated to include offset_start",
-      "Commit with message: chore(bindings): regenerate after session cache types"
+      "Implement cargo_parse_result for multi-binary summary format",
+      "Parse per-test outcome lines into module groups",
+      "Group by <crate>::<module> prefix",
+      "Set kind: Module and path: null for cargo groups",
+      "Create transcript_cargo_mixed.jsonl fixture",
+      "Add integration test verifying cargo runner end-to-end"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [9]
   },
   {
     "id": 11,
-    "phase": 6,
-    "category": "core implementation",
-    "description": "Update terminalService.ts — onData callback signature + new methods",
+    "phase": 4,
+    "category": "frontend-activity",
+    "description": "Activity feed glyph + verb mapping — Extend ActivityEvent with isTestFile, propagate from RecentToolCall, render 🧪 CREATED TEST / 🧪 UPDATED TEST for Write/Edit of test files",
     "steps": [
-      "Update ITerminalService.onData callback signature to (sessionId, data, offsetStart) => void",
-      "Add listSessions(), setActiveSession(id), reorderSessions(ids), updateSessionCwd(id, cwd) to ITerminalService interface",
-      "Implement all four methods in TauriTerminalService",
-      "Update pty-data listener to extract offset_start (coerce bigint to number if needed)",
-      "Update every test mock to match the new onData signature",
-      "Add tests to tauriTerminalService.test.ts for each new method + onData offset propagation",
-      "Commit with message: feat(terminal): update terminalService with new IPC methods and offset_start"
+      "Add isTestFile?: boolean to ActivityEvent type",
+      "Propagate isTestFile in toolCallsToEvents",
+      "Update ActivityEvent getLabel to prepend glyph and verb",
+      "Map Write → 'Created test', Edit → 'Updated test'",
+      "Add tests for test-file Write/Edit rendering"
     ],
-    "passes": true,
+    "passes": false,
     "dependencies": [10]
-  },
-  {
-    "id": 12,
-    "phase": 7,
-    "category": "core implementation",
-    "description": "useTerminal — add restored mode with replay + cursor dedupe",
-    "steps": [
-      "Add optional restoredFrom prop: { sessionId, cwd, pid, replayData, replayEndOffset, bufferedEvents }",
-      "When restoredFrom provided: skip service.spawn, set didSpawnSessionRef.current = false",
-      "Write replayData to xterm before any other writes",
-      "Drain bufferedEvents with cursor filter (offsetStart >= replayEndOffset)",
-      "Continue normally with cursor-filtered live pty-data listener",
-      "Write tests: skips spawn, writes replay first, flushes buffered with filter, no kill on unmount, live event below cursor dropped, live event at/above cursor written",
-      "Commit with message: feat(terminal): add useTerminal restored mode with replay and cursor dedupe"
-    ],
-    "passes": true,
-    "dependencies": [11]
-  },
-  {
-    "id": 13,
-    "phase": 7,
-    "category": "core implementation",
-    "description": "useSessionManager — rewrite as pure IPC client + restore orchestrator",
-    "steps": [
-      "Replace localStorage/in-memory persistence with IPC",
-      "On mount: register ONE global pty-data buffering listener keyed by sessionId from event payload",
-      "Call service.listSessions() while buffering",
-      "Build per-session RestoreData { sessionId, cwd, pid, replayData, replayEndOffset, bufferedEvents } from response",
-      "Stop buffering listener after restore data prepared",
-      "Expose restoreData: Map<string, RestoreData> and loading: boolean",
-      "UI actions (setActiveSessionId, reorderSessions, removeSession, createSession, updateSessionCwd) are optimistic local update + IPC + revert on error",
-      "Renames stay in-memory (not persisted)",
-      "Repopulate ptySessionMap from list_sessions results",
-      "Write tests: registers listener before list_sessions, buffers events during in-flight, no localStorage writes, optimistic active update + revert on error, renders Exited sessions",
-      "Commit with message: refactor(workspace): rewrite useSessionManager as pure IPC client with restore orchestration"
-    ],
-    "passes": true,
-    "dependencies": [12]
-  },
-  {
-    "id": 14,
-    "phase": 8,
-    "category": "wiring",
-    "description": "TerminalPane + TerminalZone — wire restoreData and OSC 7 IPC sync",
-    "steps": [
-      "TerminalPane: accept restoredFrom prop and forward to useTerminal",
-      "After attach (status === 'running'), send resize to nudge TUI apps (vim, claude) into SIGWINCH redraw",
-      "OSC 7 cwd handler: call service.updateSessionCwd(sessionId, path) to sync Rust cache",
-      "TerminalZone: consume restoreData from useSessionManager and pass per-session entry to each TerminalPane",
-      "Show loading state until useSessionManager.loading is false",
-      "Write tests: restoreData passthrough, OSC 7 IPC, loading state",
-      "Commit with message: feat(workspace): wire TerminalPane and TerminalZone to restore protocol"
-    ],
-    "passes": true,
-    "dependencies": [13]
   }
 ]
