@@ -152,7 +152,7 @@
       "Pass handleOpenTestFile to AgentStatusPanel",
       "Add tests for clean-buffer and dirty-buffer flows"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [
       8
     ]
