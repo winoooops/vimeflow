@@ -1,41 +1,52 @@
 import { afterEach, describe, test, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import { getPtySessionId } from '../../terminal/ptySessionMap'
+import type { TestRunSnapshot } from '../types'
 import { useAgentStatus } from './useAgentStatus'
 
 type EventCallback<T = unknown> = (event: { payload: T }) => void
 
 const eventListeners = new Map<string, EventCallback[]>()
 
+const defaultListenImpl = (
+  eventName: string,
+  callback: EventCallback
+): Promise<() => void> => {
+  const existing = eventListeners.get(eventName) ?? []
+  existing.push(callback)
+  eventListeners.set(eventName, existing)
+
+  const unlisten = (): void => {
+    const listeners = eventListeners.get(eventName) ?? []
+    const idx = listeners.indexOf(callback)
+
+    if (idx >= 0) {
+      listeners.splice(idx, 1)
+    }
+  }
+
+  return Promise.resolve(unlisten)
+}
+
+const defaultInvokeImpl = (): Promise<null> => Promise.resolve(null)
+
+const defaultGetPtySessionIdImpl = (id: string): string => `pty-${id}`
+
 vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(() => Promise.resolve(null)),
+  invoke: vi.fn(),
 }))
 
 vi.mock('../../terminal/ptySessionMap', () => ({
-  getPtySessionId: vi.fn((id: string) => `pty-${id}`),
+  getPtySessionId: vi.fn(),
   getStatusFilePath: vi.fn(
     (id: string) => `/project/.vimeflow/sessions/pty-${id}/status.json`
   ),
 }))
 
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(
-    (eventName: string, callback: EventCallback): Promise<() => void> => {
-      const existing = eventListeners.get(eventName) ?? []
-      existing.push(callback)
-      eventListeners.set(eventName, existing)
-
-      const unlisten = (): void => {
-        const listeners = eventListeners.get(eventName) ?? []
-        const idx = listeners.indexOf(callback)
-
-        if (idx >= 0) {
-          listeners.splice(idx, 1)
-        }
-      }
-
-      return Promise.resolve(unlisten)
-    }
-  ),
+  listen: vi.fn(),
 }))
 
 const emit = <T>(eventName: string, payload: T): void => {
@@ -49,6 +60,12 @@ describe('useAgentStatus', () => {
   beforeEach(() => {
     eventListeners.clear()
     vi.clearAllMocks()
+    // Restore default implementations so per-test overrides don't leak.
+    vi.mocked(invoke).mockImplementation(defaultInvokeImpl)
+    vi.mocked(listen).mockImplementation(
+      defaultListenImpl as unknown as typeof listen
+    )
+    vi.mocked(getPtySessionId).mockImplementation(defaultGetPtySessionIdImpl)
     vi.useFakeTimers()
   })
 
@@ -66,8 +83,6 @@ describe('useAgentStatus', () => {
   })
 
   test('subscribes to tauri events when sessionId is provided', async () => {
-    const { listen } = await import('@tauri-apps/api/event')
-
     renderHook(() => useAgentStatus('session-1'))
 
     // Detection/disconnect is polling-only — only agent-status and
@@ -333,8 +348,6 @@ describe('useAgentStatus', () => {
   })
 
   test('polls detect_agent_in_session on interval', async () => {
-    const { invoke } = await import('@tauri-apps/api/core')
-
     renderHook(() => useAgentStatus('session-1'))
 
     // Should have called invoke immediately for detection
@@ -354,8 +367,6 @@ describe('useAgentStatus', () => {
   })
 
   test('stops watchers when sessionId changes', async () => {
-    const { invoke } = await import('@tauri-apps/api/core')
-
     const { rerender } = renderHook(
       ({ id }: { id: string | null }) => useAgentStatus(id),
       { initialProps: { id: 'session-1' } }
@@ -379,11 +390,8 @@ describe('useAgentStatus', () => {
   })
 
   test('does not start duplicate watchers on repeated detection', async () => {
-    const { invoke: mockInvoke } = await import('@tauri-apps/api/core')
-    const invokeMock = vi.mocked(mockInvoke)
-
     // Return detected agent on every poll
-    invokeMock.mockImplementation((cmd: string) => {
+    vi.mocked(invoke).mockImplementation(((cmd: string) => {
       if (cmd === 'detect_agent_in_session') {
         return Promise.resolve({
           sessionId: 'pty-session-1',
@@ -393,7 +401,7 @@ describe('useAgentStatus', () => {
       }
 
       return Promise.resolve(null)
-    })
+    }) as unknown as typeof invoke)
 
     const { result } = renderHook(() => useAgentStatus('session-1'))
 
@@ -410,5 +418,133 @@ describe('useAgentStatus', () => {
     // The hook should have set isActive once and not re-triggered
     expect(result.current.isActive).toBe(true)
     expect(result.current.agentType).toBe('claude-code')
+  })
+
+  test('attaches test-run listener BEFORE invoking start_agent_watcher', async () => {
+    const PTY_ID = 'pty-ordering'
+    vi.mocked(getPtySessionId).mockReturnValue(PTY_ID)
+
+    const callOrder: string[] = []
+
+    vi.mocked(listen).mockImplementation(((event: string) => {
+      callOrder.push(`listen:${String(event)}`)
+
+      return Promise.resolve((): void => undefined)
+    }) as unknown as typeof listen)
+
+    vi.mocked(invoke).mockImplementation(((cmd: string) => {
+      callOrder.push(`invoke:${String(cmd)}`)
+
+      if (cmd === 'detect_agent_in_session') {
+        return Promise.resolve({ agentType: 'claudeCode', sessionId: PTY_ID })
+      }
+
+      return Promise.resolve(undefined)
+    }) as unknown as typeof invoke)
+
+    renderHook(() => useAgentStatus('ws-1'))
+
+    // Wait for the subscribe + first detection cycle to complete.
+    await vi.waitFor(() => {
+      expect(callOrder).toContain('invoke:start_agent_watcher')
+    })
+
+    const testRunIndex = callOrder.indexOf('listen:test-run')
+    const startWatcherIndex = callOrder.indexOf('invoke:start_agent_watcher')
+
+    expect(testRunIndex).toBeGreaterThanOrEqual(0)
+    expect(startWatcherIndex).toBeGreaterThanOrEqual(0)
+    expect(testRunIndex).toBeLessThan(startWatcherIndex)
+  })
+
+  test('test-run event with matching pty id updates status.testRun', async () => {
+    const PTY_ID = 'pty-tr'
+    vi.mocked(getPtySessionId).mockReturnValue(PTY_ID)
+
+    let testRunHandler: ((e: { payload: TestRunSnapshot }) => void) | undefined
+
+    vi.mocked(listen).mockImplementation(((
+      event: string,
+      handler: (e: { payload: TestRunSnapshot }) => void
+    ) => {
+      if (event === 'test-run') {
+        testRunHandler = handler
+      }
+
+      return Promise.resolve((): void => undefined)
+    }) as unknown as typeof listen)
+
+    const { result } = renderHook(() => useAgentStatus('ws-1'))
+
+    await vi.waitFor(() => {
+      expect(testRunHandler).toBeDefined()
+    })
+
+    const snap: TestRunSnapshot = {
+      sessionId: PTY_ID,
+      runner: 'vitest',
+      commandPreview: 'vitest run',
+      startedAt: '2026-04-28T12:00:00Z',
+      finishedAt: '2026-04-28T12:00:01Z',
+      durationMs: 1000,
+      status: 'pass',
+      summary: { passed: 3, failed: 0, skipped: 0, total: 3, groups: [] },
+      outputExcerpt: null,
+    }
+
+    act(() => {
+      testRunHandler?.({ payload: snap })
+    })
+
+    expect(result.current.testRun).toEqual(snap)
+  })
+
+  test('test-run event with mismatched pty id is ignored', async () => {
+    const PTY_ID = 'pty-real'
+    vi.mocked(getPtySessionId).mockReturnValue(PTY_ID)
+
+    let testRunHandler: ((e: { payload: TestRunSnapshot }) => void) | undefined
+
+    vi.mocked(listen).mockImplementation(((
+      event: string,
+      handler: (e: { payload: TestRunSnapshot }) => void
+    ) => {
+      if (event === 'test-run') {
+        testRunHandler = handler
+      }
+
+      return Promise.resolve((): void => undefined)
+    }) as unknown as typeof listen)
+
+    const { result } = renderHook(() => useAgentStatus('ws-1'))
+
+    await vi.waitFor(() => {
+      expect(testRunHandler).toBeDefined()
+    })
+
+    act(() => {
+      testRunHandler?.({
+        payload: {
+          sessionId: 'wrong-pty-id',
+          runner: 'vitest',
+          commandPreview: 'vitest',
+          startedAt: '',
+          finishedAt: '',
+          durationMs: 0,
+          status: 'pass',
+          summary: { passed: 1, failed: 0, skipped: 0, total: 1, groups: [] },
+          outputExcerpt: null,
+        },
+      })
+    })
+
+    expect(result.current.testRun).toBeNull()
+  })
+
+  test('createDefaultStatus has testRun: null', () => {
+    // The hook always starts with testRun: null on first render.
+    vi.mocked(getPtySessionId).mockReturnValue(undefined)
+    const { result } = renderHook(() => useAgentStatus('ws-default'))
+    expect(result.current.testRun).toBeNull()
   })
 })

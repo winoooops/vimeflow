@@ -16,6 +16,7 @@ const defaultStatus: AgentStatus = {
   rateLimits: null,
   toolCalls: { total: 0, byType: {}, active: null },
   recentToolCalls: [],
+  testRun: null,
 }
 
 const defaultGitStatus = {
