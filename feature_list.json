@@ -116,7 +116,7 @@
       "Add listener-ordering regression test",
       "Add hook tests for ptyId filtering and default state"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [
       6
     ]
