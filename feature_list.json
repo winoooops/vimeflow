@@ -187,7 +187,7 @@
       "Map Write → 'Created test', Edit → 'Updated test'",
       "Add tests for test-file Write/Edit rendering"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [
       10
     ]
