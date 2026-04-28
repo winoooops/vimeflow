@@ -99,7 +99,7 @@
       "Create transcript_vitest_replay.jsonl fixture",
       "Add integration test verifying exactly one emit for 3 historical runs"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [
       5
     ]
