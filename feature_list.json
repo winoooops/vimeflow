@@ -134,7 +134,7 @@
       "Implement per-group rows with click handlers",
       "Update AgentStatusPanel to pass snapshot and onOpenFile"
     ],
-    "passes": false,
+    "passes": true,
     "dependencies": [
       7
     ]
