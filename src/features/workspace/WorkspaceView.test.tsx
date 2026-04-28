@@ -1,9 +1,11 @@
 /* eslint-disable testing-library/no-node-access */
 /* eslint-disable vitest/expect-expect */
-import { describe, test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceView } from './WorkspaceView'
+import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../terminal/components/TerminalPane', () => ({
@@ -29,6 +31,42 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
     recentToolCalls: [],
     testRun: null,
   })),
+}))
+
+// Mock useEditorBuffer so individual tests can flip isDirty without
+// having to drive the real hook through the editor. The default impl
+// (set in beforeEach below) returns a clean buffer so the bulk of
+// existing tests behave as if no file is open.
+vi.mock('../editor/hooks/useEditorBuffer', () => ({
+  useEditorBuffer: vi.fn(),
+}))
+
+// Capture AgentStatusPanel's props (specifically `onOpenFile`) so the
+// new handleOpenTestFile tests can invoke the handler directly without
+// rendering the full panel and synthesizing a test-row click.
+const capturedAgentStatusPanelProps: {
+  onOpenFile?: (path: string) => void
+  onOpenDiff?: unknown
+} = {}
+
+interface MockAgentStatusPanelProps {
+  onOpenFile?: (path: string) => void
+  onOpenDiff?: unknown
+}
+
+vi.mock('../agent-status/components/AgentStatusPanel', () => ({
+  AgentStatusPanel: ({
+    onOpenFile = undefined,
+    onOpenDiff = undefined,
+  }: MockAgentStatusPanelProps): ReactElement => {
+    capturedAgentStatusPanelProps.onOpenFile = onOpenFile
+    capturedAgentStatusPanelProps.onOpenDiff = onOpenDiff
+
+    // Render the panel testid so the existing zone-presence tests
+    // (`getByTestId('agent-status-panel')`) keep passing without
+    // dragging the real panel and its hooks into this test file.
+    return <div data-testid="agent-status-panel" />
+  },
 }))
 
 // Mock terminal service to return initial session data synchronously
@@ -69,6 +107,25 @@ vi.mock('../terminal/services/terminalService', () => ({
 }))
 
 describe('WorkspaceView', () => {
+  beforeEach(() => {
+    capturedAgentStatusPanelProps.onOpenFile = undefined
+    capturedAgentStatusPanelProps.onOpenDiff = undefined
+
+    // Default: clean buffer with no file open. Mirrors the real hook's
+    // initial state so existing tests don't see a dirty buffer or get
+    // an undefined return value.
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: null,
+      originalContent: '',
+      currentContent: '',
+      isDirty: false,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+    })
+  })
+
   test('renders all five zones (icon rail, sidebar, terminal, bottom drawer, agent status panel)', () => {
     render(<WorkspaceView />)
 
@@ -371,5 +428,64 @@ describe('WorkspaceView', () => {
 
   test('unsaved changes dialog: Cancel button closes dialog and stays on current file', async () => {
     // This will be fully tested in Feature 22 integration tests
+  })
+
+  test('handleOpenTestFile opens file directly when buffer is clean', () => {
+    const openFileMock = vi.fn().mockResolvedValue(undefined)
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: null,
+      originalContent: '',
+      currentContent: '',
+      isDirty: false,
+      isLoading: false,
+      openFile: openFileMock,
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    const onOpenFile = capturedAgentStatusPanelProps.onOpenFile
+    expect(onOpenFile).toBeDefined()
+
+    act(() => {
+      onOpenFile?.('/abs/src/foo.test.ts')
+    })
+
+    expect(openFileMock).toHaveBeenCalledOnce()
+    expect(openFileMock).toHaveBeenCalledWith('/abs/src/foo.test.ts')
+    expect(
+      screen.queryByRole('dialog', { name: /unsaved changes/i })
+    ).toBeNull()
+  })
+
+  test('handleOpenTestFile shows unsaved dialog when buffer is dirty', async () => {
+    const openFileMock = vi.fn().mockResolvedValue(undefined)
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: openFileMock,
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    const onOpenFile = capturedAgentStatusPanelProps.onOpenFile
+    expect(onOpenFile).toBeDefined()
+
+    act(() => {
+      onOpenFile?.('/abs/src/bar.test.ts')
+    })
+
+    expect(openFileMock).not.toHaveBeenCalled()
+    expect(
+      await screen.findByRole('dialog', { name: /unsaved changes/i })
+    ).toBeInTheDocument()
   })
 })
