@@ -7,6 +7,7 @@
 pub mod commands;
 pub mod detector;
 pub mod statusline;
+pub mod test_runners;
 pub mod transcript;
 pub mod types;
 pub mod watcher;
