@@ -24,12 +24,17 @@ fn vitest_pass_fixture_emits_one_test_run() {
     let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/transcript_vitest_pass.jsonl");
 
+    // Pass a valid cwd — process_tool_result skips test-run snapshots
+    // when cwd is None to avoid resolving file groups against the wrong
+    // directory. The fixture has no per-file rows so a temp cwd is fine.
+    let cwd = tempfile::tempdir().expect("temp cwd");
+
     state
         .start_or_replace(
             app_handle,
             "session-fixture".to_string(),
             fixture_path,
-            None,
+            Some(cwd.path().to_path_buf()),
         )
         .expect("start watcher");
 

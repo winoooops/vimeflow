@@ -541,23 +541,36 @@ fn process_tool_result<R: tauri::Runtime>(
             content,
             is_error,
         };
-        let cwd_ref = cwd.unwrap_or_else(|| Path::new("."));
-        let snapshot = crate::agent::test_runners::build::maybe_build_snapshot(
-            crate::agent::test_runners::build::BuildArgs {
-                session_id,
-                matched: &matched,
-                started_at: &call.started_at_iso,
-                finished_at: timestamp,
-                instant_fallback: call.started_at.elapsed(),
-                captured,
-                cwd: cwd_ref,
-            },
-        );
-        if let Some(snap) = snapshot {
-            // Route through the replay-aware emitter — during the initial
-            // catch-up read this batches to latest-only; after first EOF it
-            // emits live.
-            emitter.submit(snap);
+        // Build the snapshot only when we have a workspace cwd. Falling
+        // back to `Path::new(".")` would canonicalise to the Tauri app
+        // process's cwd — NOT the user's workspace — so test-file groups
+        // would resolve against the wrong directory (silently producing
+        // non-clickable or misleadingly-scoped rows). When cwd is absent
+        // the standard agent-tool-call event still fires below; only the
+        // structured test-run snapshot is skipped.
+        if let Some(cwd_ref) = cwd {
+            let snapshot = crate::agent::test_runners::build::maybe_build_snapshot(
+                crate::agent::test_runners::build::BuildArgs {
+                    session_id,
+                    matched: &matched,
+                    started_at: &call.started_at_iso,
+                    finished_at: timestamp,
+                    instant_fallback: call.started_at.elapsed(),
+                    captured,
+                    cwd: cwd_ref,
+                },
+            );
+            if let Some(snap) = snapshot {
+                // Route through the replay-aware emitter — during the
+                // initial catch-up read this batches to latest-only;
+                // after first EOF it emits live.
+                emitter.submit(snap);
+            }
+        } else {
+            log::debug!(
+                "Skipping test-run snapshot for session {}: no workspace cwd resolved",
+                session_id
+            );
         }
     }
 
@@ -694,7 +707,16 @@ fn extract_tool_result_content(value: &Value) -> String {
             if block.get("type").and_then(|t| t.as_str()) == Some("text") {
                 if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
                     out.push_str(text);
-                    out.push('\n');
+                    // Add a separator newline only if the block didn't
+                    // already end with one — terminal output frequently
+                    // does, and an unconditional `push('\n')` would
+                    // produce a double blank line at every block boundary
+                    // (the simple-string code path above doesn't add
+                    // anything, so this also brings the two paths into
+                    // alignment).
+                    if !out.ends_with('\n') {
+                        out.push('\n');
+                    }
                 }
             }
         }

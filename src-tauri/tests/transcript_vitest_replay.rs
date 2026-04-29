@@ -25,12 +25,17 @@ fn replay_emits_only_latest_snapshot() {
     let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/transcript_vitest_replay.jsonl");
 
+    // Pass a valid cwd — process_tool_result skips test-run snapshots
+    // when cwd is None (avoids resolving file groups against the wrong
+    // directory). Replay-batching behaviour is independent of cwd.
+    let cwd = tempfile::tempdir().expect("temp cwd");
+
     state
         .start_or_replace(
             app_handle,
             "session-replay".to_string(),
             fixture_path,
-            None,
+            Some(cwd.path().to_path_buf()),
         )
         .expect("start watcher");
 

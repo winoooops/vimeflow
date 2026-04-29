@@ -20,12 +20,18 @@ fn cargo_mixed_fixture_emits_test_run_with_groups() {
     let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/transcript_cargo_mixed.jsonl");
 
+    // Pass a valid cwd — process_tool_result skips the snapshot entirely
+    // when cwd is None (so it doesn't resolve test files against the
+    // wrong directory). A temp dir is enough; cargo groups always have
+    // path: None regardless of cwd, so the rest of the assertions hold.
+    let cwd = tempfile::tempdir().expect("temp cwd");
+
     state
         .start_or_replace(
             app_handle,
             "session-cargo".to_string(),
             fixture_path,
-            None,
+            Some(cwd.path().to_path_buf()),
         )
         .expect("start watcher");
 

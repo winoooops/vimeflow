@@ -61,14 +61,20 @@ fn cargo_parse_result(out: &CapturedOutput, _cwd: &Path) -> Option<TestRunSummar
     let mut found_summary = false;
     for cap in SUMMARY_RE.captures_iter(&stripped) {
         found_summary = true;
-        passed += cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
-        failed += cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
-        skipped += cap.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+        // Use saturating_add — bare `+=` would panic in debug and wrap
+        // silently in release if a workspace had implausibly many test
+        // binaries. Saturating clamps at u32::MAX with no extra cost.
+        let p: u32 = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+        let f: u32 = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+        let s: u32 = cap.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+        passed = passed.saturating_add(p);
+        failed = failed.saturating_add(f);
+        skipped = skipped.saturating_add(s);
     }
     if !found_summary {
         return None;
     }
-    let total = passed + failed + skipped;
+    let total = passed.saturating_add(failed).saturating_add(skipped);
 
     // Build per-module groups from individual test lines.
     let mut module_counts: HashMap<String, (u32, u32, u32)> = HashMap::new(); // (pass, fail, skip)
