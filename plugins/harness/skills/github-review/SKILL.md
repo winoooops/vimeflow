@@ -6,140 +6,115 @@ tools: Read, Write, Edit, Bash, Grep, Glob
 
 # /harness-plugin:github-review — Fix PR Review Findings (Connector-Aware Self-Driving Loop)
 
-Fetch the latest reviews from the current branch's PR (or a user-specified PR), fix every finding, push, then poll for the next review and repeat — until both reviewers come back clean or the loop hits the max-rounds cap.
+Fetch the latest reviews from the current branch's PR (or a user-specified
+PR), fix every finding, push, then poll for the next review and repeat —
+until both reviewers come back clean or the loop hits the max-rounds cap.
 
-This skill consumes two reviewers:
+This skill consumes three reviewer surfaces:
 
-1. **Claude Code Review** — `github-actions[bot]` issue comments with `## Claude Code Review` header. Aggregated, no threads.
-2. **chatgpt-codex-connector** — `chatgpt-codex-connector[bot]` PR-level review summaries (`### 💡 Codex Review`) + inline file-level comments (`**P1/P2 Badge** Title`). Inline comments are the actionable units; threads resolved via GraphQL `resolveReviewThread`.
+1. **Claude Code Review** — `github-actions[bot]` issue comments with `##
+Claude Code Review` header. Aggregated, no threads.
+2. **chatgpt-codex-connector** — `chatgpt-codex-connector[bot]` PR-level
+   review summaries (`### 💡 Codex Review`) + inline file-level comments
+   (`**P1/P2 Badge** Title`). Inline comments are the actionable units;
+   threads resolved via GraphQL `resolveReviewThread`.
+3. **Human reviewers** — issue comments + inline review comments from
+   non-bot authors. Unstructured prose; default severity MEDIUM with
+   heuristic overrides.
 
-The old aggregated `openai/codex-action@v1` workflow (`.github/workflows/codex-review.yml`) was disabled in the same PR that introduced this rewrite (issue #111).
+The old aggregated `openai/codex-action@v1` workflow
+(`.github/workflows/codex-review.yml`) was disabled in the same PR that
+introduced this rewrite (issue #111).
 
-## Loop Control
+## File structure
+
+```
+plugins/harness/skills/github-review/
+├── SKILL.md                              # this file — thin orchestrator
+├── references/
+│   ├── parsing.md                        # Step 2A/2B/2D parse rules + regexes + Finding type
+│   ├── empty-state-classification.md     # Step 3: 5-case table + classify_cycle pseudocode
+│   ├── verify-prompt.md                  # Step 5: prompt template + matrix + retry budget + abort
+│   ├── pattern-kb.md                     # Step 6.1-6.4: matching, append, new pattern, index
+│   ├── commit-trailers.md                # Step 6.6: full trailer schema + commit-message template
+│   └── cleanup-recovery.md               # Cleanup: lifecycle table + 3 recovery paths
+└── scripts/
+    ├── helpers.sh                        # paginated_review_threads_query + extract_trailer
+    └── verify.sh                         # codex exec wrapper for the verify gate
+```
+
+Read references on-demand from the per-step "see" links — none of them are
+required to start a run, but they carry the load-bearing protocol details
+(GraphQL queries, regexes, classification table, trailer schema).
+
+## Pipeline
+
+```
+Step 0 — Resolve PR + assert branch matches PR head
+Step 1 — PR_BASE + watermark trailers (Step 6 reconciliation lives here)
+Step 1.5 — Non-review CI gate (block until green)
+Step 2 — Poll Claude + Codex + Humans → parsed Finding table
+Step 3 — Classify cycle: FIX / EXIT_CLEAN / POLL_NEXT / LOUD_FAIL
+Step 4 — Fix (or skip-with-rationale) every finding; stage; do NOT commit
+Step 5 — Codex verify on staged diff (retry budget 3; docs-only escape)
+Step 6 — Pattern KB append → stage → commit → push → reply → resolve threads
+Step 7 — Exit check + retro prompt; or poll-next sub-flow
+```
+
+## Loop control
 
 - **Max rounds:** 10 (hard cap to prevent runaway loops)
 - **Per-round verify retry budget:** 3 (codex-verify re-entries to fix; exceed → cycle abort)
 - **Inter-round poll interval:** 60 seconds
 - **Inter-round poll timeout:** 10 minutes per round
 - **State persistence:** Git commit-message trailers (no `.json` state file). Cycle start derives processed sets via `git log "$PR_BASE..HEAD"`.
-- **Per-cycle artifacts:** under `.harness-github-review/` (gitignored). See § Cleanup.
+- **Per-cycle artifacts:** under `.harness-github-review/` (gitignored). See `references/cleanup-recovery.md`.
 
-## Helpers
+## Key invariants
 
-The skill defines bash helper functions reused across multiple steps. They are sourced at the start of the skill bootstrap so any later step can call them. Step 1 (reconciliation) and Step 2B (thread-id lookup) and Step 7.1 (unresolved-thread exit check) all share `paginated_review_threads_query`.
+1. **Branch guard:** `git branch --show-current == HEAD_REF` before any
+   write op. Step 0 asserts this and aborts otherwise.
+2. **No silent-empty path:** Step 3's classification has cases 4 and 5 that
+   loud-fail when a reviewer emits a malformed comment. We never treat
+   "couldn't parse" as "clean".
+3. **No auto-`git stash`:** working-tree visibility is mandatory.
+   `references/cleanup-recovery.md` documents the three explicit
+   user-driven recovery paths.
+4. **Pattern KB appends are ATOMIC with the code fix:** same commit. If
+   the commit aborts, the pattern appends discard with it.
+5. **Reply + thread-resolve only after codex-verify passes** AND only
+   after `git push` succeeds (so the cited commit SHA exists on origin).
+6. **State persistence is via commit-message trailers** — no `.json` state
+   file. See `references/commit-trailers.md`.
 
-### `paginated_review_threads_query`
+## Bootstrap
 
-GraphQL pagination is page-aware: review threads come back 100 per page; per-thread comments come back 50 per page. The helper walks every review-threads page and returns a flat JSON array of `{thread_id, comment_databaseId, comment_author_login, comment_author_type, isResolved, pull_request_review_id}` entries — caller filters by author / by ID set as needed. The `pull_request_review_id` field exists so Step 1 reconciliation can subtract stale review IDs from `PROCESSED_CODEX_REVIEW_IDS` (otherwise Step 2B's review-id filter would reject the inline before our inline-id subtraction takes effect). The `comment_author_type` field is derived from GraphQL `author.__typename` (Actor union discriminator) and exposes a `"Bot"` vs `"User"` distinction so Step 7.1's human-thread exit check can filter cleanly without enumerating bot logins.
+Source the helper functions used across multiple steps:
 
 ```bash
-# Returns a flat JSON array of {thread_id, comment_databaseId,
-# comment_author_login, comment_author_type, isResolved,
-# pull_request_review_id} entries across ALL review threads and ALL
-# comments per thread. Caller filters by author / by ID set as needed.
-paginated_review_threads_query() {
-  local cursor=""
-  local result="[]"
-
-  while :; do
-    local page_json
-    if [ -z "$cursor" ]; then
-      page_json=$(gh api graphql -f query='
-        query($owner:String!, $name:String!, $pr:Int!) {
-          repository(owner:$owner, name:$name) {
-            pullRequest(number:$pr) {
-              reviewThreads(first:100) {
-                pageInfo { hasNextPage endCursor }
-                nodes {
-                  id
-                  isResolved
-                  comments(first:50) {
-                    pageInfo { hasNextPage endCursor }
-                    nodes {
-                      databaseId
-                      author { login __typename }
-                      pullRequestReview { databaseId }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER") || return 1
-    else
-      page_json=$(gh api graphql -f query='
-        query($owner:String!, $name:String!, $pr:Int!, $cursor:String!) {
-          repository(owner:$owner, name:$name) {
-            pullRequest(number:$pr) {
-              reviewThreads(first:100, after:$cursor) {
-                pageInfo { hasNextPage endCursor }
-                nodes {
-                  id
-                  isResolved
-                  comments(first:50) {
-                    pageInfo { hasNextPage endCursor }
-                    nodes {
-                      databaseId
-                      author { login __typename }
-                      pullRequestReview { databaseId }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER" -F cursor="$cursor") || return 1
-    fi
-
-    # Warn if any thread's comments page overflowed first page (50). This is
-    # not fatal — connector original inline comments are typically the thread's
-    # first comment and live in the first page. The loud-fail at lookup time
-    # (after all pages exhausted) catches the rare case where a target inline
-    # comment id ends up beyond the first 50 thread-comments.
-    local overflow
-    overflow=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]
-                    | select(.comments.pageInfo.hasNextPage == true)
-                    | .id]' <<< "$page_json")
-    if [ "$(jq 'length' <<< "$overflow")" -gt 0 ]; then
-      echo "WARNING: review thread(s) $overflow have more than 50 comments;" >&2
-      echo "         per-thread pagination not implemented. If a target inline" >&2
-      echo "         comment id is missing from the resulting map, the lookup" >&2
-      echo "         loud-fail at Step 2B will catch it." >&2
-    fi
-
-    # Append flattened entries from this page.
-    result=$(jq -s '.[0] + .[1]' \
-      <(echo "$result") \
-      <(jq '[.data.repository.pullRequest.reviewThreads.nodes
-              | .[] as $thread
-              | .comments.nodes[]
-              | {thread_id: $thread.id, comment_databaseId: .databaseId,
-                 comment_author_login: .author.login,
-                 comment_author_type: (if .author.__typename == "Bot" then "Bot" else "User" end),
-                 isResolved: $thread.isResolved,
-                 pull_request_review_id: (.pullRequestReview.databaseId // null)}]' \
-            <<< "$page_json"))
-
-    # Advance cursor or exit.
-    local has_next
-    has_next=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<< "$page_json")
-    if [ "$has_next" != "true" ]; then break; fi
-    cursor=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<< "$page_json")
-  done
-
-  echo "$result"
-}
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
+source "$SCRIPT_DIR/scripts/helpers.sh"
 ```
 
-`OWNER`, `NAME`, and `PR_NUMBER` are set in Step 0 — the helper is callable from Step 1 onward.
+`scripts/helpers.sh` defines `paginated_review_threads_query` (used in
+Steps 1, 2B, and 7.1) and `extract_trailer` (used in Step 1).
 
-## Step 0: Input resolution
-
-The skill supports both current-branch operation and explicit PR targeting. **Explicit PR targeting only changes which PR is _read_ from — write operations (commit, push) still happen on the current `git` checkout.** This step enforces that the current branch matches the PR's head ref so fixes can never accidentally land on the wrong branch.
+Run the loop-start scan to handle prior aborted artifacts before
+anything else:
 
 ```bash
-# If the user supplied a PR number (env var or first argument), use it.
-# Otherwise resolve the current branch's PR.
+loop_start_scan   # defined in references/cleanup-recovery.md
+```
+
+## Step 0 — Input resolution
+
+The skill supports both current-branch operation and explicit PR
+targeting. **Explicit PR targeting only changes which PR is _read_ from —
+write operations (commit, push) still happen on the current `git`
+checkout.** This step enforces that the current branch matches the PR's
+head ref so fixes can never accidentally land on the wrong branch.
+
+```bash
 USER_SUPPLIED_PR_NUMBER="${USER_SUPPLIED_PR_NUMBER:-${1:-}}"
 
 if [ -n "$USER_SUPPLIED_PR_NUMBER" ]; then
@@ -179,29 +154,19 @@ fi
 echo "Working on PR #$PR_NUMBER (repo: $REPO, base: $BASE_REF, head: $HEAD_REF)"
 ```
 
-## Step 1: Resolve `PR_BASE` and derive processed-set watermarks from commit trailers
+## Step 1 — Resolve `PR_BASE` and derive watermarks from commit trailers
 
-The processed-set watermarks live in commit-message trailers on prior fix commits in this PR. We need `PR_BASE` (the commit where this PR's branch diverged from `BASE_REF`) so we can scope `git log` correctly across base-branch renames and stacked PRs.
+The processed-set watermarks live in commit-message trailers on prior fix
+commits in this PR. We need `PR_BASE` (the commit where this PR's branch
+diverged from `BASE_REF`) so we can scope `git log` correctly across
+base-branch renames and stacked PRs. This step also reconciles the
+`Closes-Codex-Threads` trailer against live GraphQL state — see
+`references/commit-trailers.md` for the trailer schema and the
+reconciliation rationale.
 
 ```bash
-# Fetch the base ref so origin/$BASE_REF exists locally.
 git fetch origin "$BASE_REF" --no-tags
-
-# Use merge-base so we count only commits unique to this branch — robust
-# against upstream advancing while the PR is open.
 PR_BASE=$(git merge-base HEAD "origin/$BASE_REF")
-
-# Extract trailer values for each watermark key. Each var holds a comma-separated
-# list of integer or string IDs (empty if no prior fix commits).
-extract_trailer() {
-  local key="$1"
-  git log "$PR_BASE..HEAD" --pretty=%B \
-    | awk -v k="^${key}:" '$0 ~ k { sub(k, ""); gsub(/^ +| +$/, ""); print }' \
-    | tr ',' '\n' \
-    | awk 'NF' \
-    | tr '\n' ',' \
-    | sed 's/,$//'
-}
 
 PROCESSED_CLAUDE_IDS=$(extract_trailer "GitHub-Review-Processed-Claude")
 SUPERSEDED_CLAUDE_IDS=$(extract_trailer "GitHub-Review-Superseded-Claude")
@@ -211,104 +176,35 @@ CLOSED_CODEX_THREADS=$(extract_trailer "Closes-Codex-Threads")
 PROCESSED_HUMAN_ISSUE_IDS=$(extract_trailer "GitHub-Review-Processed-Human-Issue")
 PROCESSED_HUMAN_INLINE_IDS=$(extract_trailer "GitHub-Review-Processed-Human-Inline")
 
-# Claude side: union of processed and superseded.
-CLAUDE_HANDLED_IDS=$(printf '%s,%s' "$PROCESSED_CLAUDE_IDS" "$SUPERSEDED_CLAUDE_IDS" | tr ',' '\n' | awk 'NF' | sort -u | tr '\n' ',' | sed 's/,$//')
+CLAUDE_HANDLED_IDS=$(printf '%s,%s' "$PROCESSED_CLAUDE_IDS" "$SUPERSEDED_CLAUDE_IDS" \
+  | tr ',' '\n' | awk 'NF' | sort -u | tr '\n' ',' | sed 's/,$//')
 
-echo "PR_BASE=$PR_BASE"
-echo "Claude handled count:    $(echo "$CLAUDE_HANDLED_IDS" | tr ',' '\n' | awk 'NF' | wc -l)"
-echo "Codex review handled:    $(echo "$PROCESSED_CODEX_REVIEW_IDS" | tr ',' '\n' | awk 'NF' | wc -l)"
-echo "Codex inline handled:    $(echo "$PROCESSED_CODEX_INLINE_IDS" | tr ',' '\n' | awk 'NF' | wc -l)"
-echo "Closed Codex threads:    $(echo "$CLOSED_CODEX_THREADS" | tr ',' '\n' | awk 'NF' | wc -l)"
-echo "Human issue comments handled: $(echo "$PROCESSED_HUMAN_ISSUE_IDS" | tr ',' '\n' | awk 'NF' | wc -l)"
-echo "Human inline comments handled: $(echo "$PROCESSED_HUMAN_INLINE_IDS" | tr ',' '\n' | awk 'NF' | wc -l)"
-
-# Reconcile Closes-Codex-Threads trailer against live GitHub state.
-# Step 6 writes the Processed-Codex-Inline + Closes-Codex-Threads trailers
-# BEFORE Step 6.8 (reply) and 6.9 (resolveReviewThread) run. If push
-# succeeds but reply/resolve fails (transient network glitch, GitHub API
-# hiccup, etc.), the trailer says "closed" but GitHub disagrees — the
-# next cycle would skip the comment as processed yet Step 7 would see
-# the thread still unresolved, looping forever. Lazy reconciliation:
-# cross-check the trailer against live GraphQL state and drop stale
-# entries from the processed set so this cycle re-attempts them.
-if [ -n "$CLOSED_CODEX_THREADS" ]; then
-  # paginated_review_threads_query is defined in § Helpers above.
-  LIVE_THREAD_STATE=$(paginated_review_threads_query 2>/dev/null || echo "[]")
-
-  # Find thread IDs in trailer that are still unresolved on GitHub.
-  STALE_THREAD_IDS=$(jq -n \
-    --argjson live "$LIVE_THREAD_STATE" \
-    --arg trailer "$CLOSED_CODEX_THREADS" '
-    ($trailer | split(",") | map(select(length > 0))) as $claimed_closed
-    | [$live[] | select(.isResolved == false and (.thread_id as $tid | $claimed_closed | index($tid)))]
-    | [.[] | .thread_id]
-    | unique
-  ')
-
-  if [ "$(jq 'length' <<< "$STALE_THREAD_IDS")" -gt 0 ]; then
-    echo "Reconciliation: $(jq 'length' <<< "$STALE_THREAD_IDS") threads in Closes-Codex-Threads trailer are still unresolved on GitHub." >&2
-    echo "Treating them as un-processed; this cycle will re-attempt reply + resolve." >&2
-
-    # Find inline comment IDs whose thread is in STALE_THREAD_IDS, so we can
-    # remove them from PROCESSED_CODEX_INLINE_IDS.
-    STALE_COMMENT_IDS=$(jq -r --argjson live "$LIVE_THREAD_STATE" --argjson stale "$STALE_THREAD_IDS" '
-      [$live[] | select(.thread_id as $tid | $stale | index($tid)) | .comment_databaseId | tostring] | join(",")
-    ')
-
-    if [ -n "$STALE_COMMENT_IDS" ]; then
-      # Subtract STALE_COMMENT_IDS from PROCESSED_CODEX_INLINE_IDS.
-      PROCESSED_CODEX_INLINE_IDS=$(printf '%s\n%s\n' "$PROCESSED_CODEX_INLINE_IDS" "$STALE_COMMENT_IDS" \
-        | tr ',' '\n' | awk 'NF' | sort -u \
-        | grep -vxFf <(echo "$STALE_COMMENT_IDS" | tr ',' '\n' | awk 'NF') \
-        | tr '\n' ',' | sed 's/,$//')
-    fi
-
-    # Also reconcile PROCESSED_CODEX_REVIEW_IDS — the parent review IDs
-    # of the stale inline comments need to come out of the processed-review
-    # set, otherwise the Step 2B inline-comment poll's review-id filter
-    # rejects the inline before our inline-id subtraction takes effect.
-    STALE_REVIEW_IDS=$(jq -r --argjson live "$LIVE_THREAD_STATE" --argjson stale "$STALE_THREAD_IDS" '
-      [$live[] | select(.thread_id as $tid | $stale | index($tid))
-               | .pull_request_review_id // empty
-               | tostring]
-      | unique
-      | join(",")
-    ')
-
-    if [ -n "$STALE_REVIEW_IDS" ]; then
-      PROCESSED_CODEX_REVIEW_IDS=$(printf '%s\n%s\n' "$PROCESSED_CODEX_REVIEW_IDS" "$STALE_REVIEW_IDS" \
-        | tr ',' '\n' | awk 'NF' | sort -u \
-        | grep -vxFf <(echo "$STALE_REVIEW_IDS" | tr ',' '\n') \
-        | tr '\n' ',' | sed 's/,$//')
-    fi
-
-    # Subtract stale thread IDs from CLOSED_CODEX_THREADS so Step 6's
-    # eventual close-set rebuild doesn't double-count.
-    CLOSED_CODEX_THREADS=$(printf '%s\n' "$CLOSED_CODEX_THREADS" \
-      | tr ',' '\n' | awk 'NF' \
-      | grep -vxFf <(jq -r '.[]' <<< "$STALE_THREAD_IDS") \
-      | tr '\n' ',' | sed 's/,$//')
-  fi
-fi
+# Reconcile CLOSED_CODEX_THREADS against live GraphQL state. Full logic +
+# rationale in references/commit-trailers.md § Step 1 — Reconciliation.
 ```
 
-The four `*_IDS` variables become inputs to Step 2's poll filtering. They feed `jq --argjson` calls as JSON arrays — convert via `jq -R 'split(",") | map(select(length > 0))' <<< "$VAR"` at the call site.
+See `references/commit-trailers.md` for the reconciliation block, the full
+trailer schema, and the multi-line `Pattern-Files-Touched` continuation
+form.
 
-The reconciliation pass exists because the trailers in Step 6.6 are written by `git commit` BEFORE Step 6.8/6.9 actually call the GitHub API. A failure there leaves the trailer "ahead" of live state — without reconciliation, the next cycle would see a `Processed-Codex-Inline` entry for an inline comment whose thread is still unresolved on GitHub, filter it out as already-processed, then watch Step 7's `UNRESOLVED_CONNECTOR_THREADS > 0` keep the loop spinning. Per the auto-memory **lazy reconciliation over shutdown hooks** rule: don't rely on a Step 6 shutdown ordering to keep the trailer in sync; reconcile on the next read instead.
+## Step 1.5 — Non-review CI gate
 
-## Step 1.5: Check non-review CI status
-
-Before looking at review comments, ensure the PR's non-review CI checks are green. Failing review-side checks (the disabled `Codex Code Review` job, or the Claude review job mid-flight) are NOT blockers; we don't gate on them.
+Before looking at review comments, ensure the PR's non-review CI checks
+are green. Failing review-side checks (the disabled `Codex Code Review`
+job, or the Claude review job mid-flight) are NOT blockers; we don't gate
+on them.
 
 ```bash
 gh pr checks "$PR_NUMBER"
 ```
 
-If any checks **other than `Codex Code Review` and `Claude Code Review`** are failing (e.g., Code Quality Check, Unit Tests, Tauri Build):
+If any checks **other than `Codex Code Review` and `Claude Code Review`**
+are failing (e.g., Code Quality Check, Unit Tests, Tauri Build):
 
 1. Read the failing check's log: `gh run view <run_id> --log-failed`
 2. Fix the issue (formatting, lint, type errors, test failures)
-3. Commit and push the fix in a separate non-review-fix commit (does NOT use the trailer schema)
+3. Commit and push the fix in a separate non-review-fix commit (does NOT
+   use the trailer schema)
 4. Re-run `gh pr checks` until non-review CI is green
 
 Common CI failure recipes:
@@ -320,898 +216,224 @@ Common CI failure recipes:
 
 Only proceed to Step 2 once all non-review CI is passing.
 
-## Step 2: Poll both reviewers + parse findings
+## Step 2 — Poll both reviewers + parse findings
 
-This step polls both reviewers, parses their findings, and prepares the per-cycle finding table that Step 3 will classify and Step 4 will fix.
+Step 2 polls three reviewer surfaces, parses each into a uniform `Finding`
+shape, and aggregates into the per-cycle finding table that Step 3
+classifies and Step 4 fixes.
 
-### Step 2A: Claude reviewer (issue comments, aggregated, no threads)
-
-**Poll:**
+- **Step 2A** — Claude reviewer (issue comments, aggregated, no threads).
+  Take the latest unprocessed comment; mark older unprocessed as
+  superseded.
+- **Step 2B** — Codex connector reviewer. Two-step poll: review summaries
+  then inline comments scoped to unprocessed review IDs. Race-retry when
+  summary appears before inline (6 × 5s). Build inline-id → thread-id map
+  via `paginated_review_threads_query` (loud-fail on GraphQL failure).
+- **Step 2D** — Human reviewers (issue + inline). Unstructured prose;
+  default severity MEDIUM with heuristic overrides for `nit:` /
+  `wontfix` / explicit `[SEV]` tags.
+- **Step 2C** — Aggregate into the `Finding` table; assign sequential
+  `cycle_id` strings (`F1`, `F2`, ...).
 
 ```bash
-# --paginate returns one JSON array per page, so we slurp pages then filter.
+# Brief operational gist — full poll, parse, race-retry logic in
+# references/parsing.md.
+
+# 2A — Claude (latest aggregated comment).
 CLAUDE_COMMENTS_JSON=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
   | jq -s 'add | [.[] | select(
            .user.login == "github-actions[bot]"
            and (.body | startswith("## Claude Code Review"))
          )]')
+# ... compute LATEST_CLAUDE / LATEST_CLAUDE_ID / SUPERSEDED_THIS_CYCLE
 
-# Convert handled IDs to a jq-compatible JSON array.
-CLAUDE_HANDLED_JSON=$(jq -R 'split(",") | map(select(length > 0) | tonumber)' <<< "$CLAUDE_HANDLED_IDS")
-
-# Filter out already-handled comments. Take the latest by created_at — Claude
-# reviews are aggregated current-state, so older unprocessed comments are
-# stale-by-construction and should be marked superseded (Step 6 trailer).
-LATEST_CLAUDE=$(jq --argjson handled "$CLAUDE_HANDLED_JSON" '
-  [.[] | select(.id as $id | ($handled | index($id) | not))]
-  | sort_by(.created_at)
-  | last
-  | if . then . else null end
-' <<< "$CLAUDE_COMMENTS_JSON")
-
-# Derive the scalar comment ID for the Step 6.6 commit-trailer template.
-# Without this, GitHub-Review-Processed-Claude in the trailer is always blank,
-# Step 1's extract_trailer returns empty, CLAUDE_HANDLED_IDS stays empty, and
-# the next cycle re-processes the same already-fixed Claude comment as new.
-LATEST_CLAUDE_ID=$(jq -r 'if . == null then "" else (.id | tostring) end' <<< "$LATEST_CLAUDE")
-
-# Compute superseded set: any unhandled Claude comment with created_at strictly
-# less than LATEST_CLAUDE.created_at. These will be added to the
-# GitHub-Review-Superseded-Claude trailer in Step 6.
-SUPERSEDED_THIS_CYCLE=$(jq --argjson handled "$CLAUDE_HANDLED_JSON" \
-  --argjson latest "$LATEST_CLAUDE" '
-  if $latest == null then []
-  else
-    [.[] | select(.id as $id | ($handled | index($id) | not))
-         | select(.created_at < $latest.created_at)
-         | .id]
-  end
-' <<< "$CLAUDE_COMMENTS_JSON")
-```
-
-Note `startswith` (not `contains`) — avoids matching human comments that quote the header.
-
-**Parse format** (verified on PR #109):
-
-```
-## Claude Code Review
-
-### 🟠 [HIGH] match_command recurses infinitely on cyclic npm script aliases
-
-📍 `/home/runner/work/vimeflow/vimeflow/src-tauri/src/agent/test_runners/matcher.rs` L103-108
-🎯 Confidence: 93%
-
-<finding body, possibly multi-paragraph, may include code blocks>
-
-<details><summary>💡 IDEA</summary>
-- **I — Intent:** ...
-- **D — Danger:** ...
-- **E — Explain:** ...
-- **A — Alternatives:** ...
-</details>
-
----
-```
-
-Per finding, extracted from the body split on `---`:
-
-- `severity`: regex `### .* \[(\w+)\]` → group 1
-- `title`: same line, after `]`, trimmed to end-of-line
-- `file`: regex `` 📍 `([^`]+)` `` → resolve via path normalization (below)
-- `line_range`: regex `L(\d+)-(\d+)` (start, end)
-- `body`: text between the `🎯 Confidence` line and `<details>` (or `---` if no IDEA block)
-
-**Path normalization** must be deterministic and verify file existence:
-
-```python
-def resolve_claude_path(reported: str, repo_root: Path) -> str:
-    # Case 1: relative path that exists at repo_root
-    if not reported.startswith('/'):
-        if (repo_root / reported).exists():
-            return reported
-        # fall through to suffix-search
-
-    # Case 2 & 3: absolute path — try progressively shorter suffixes
-    parts = reported.lstrip('/').split('/')
-    for i in range(len(parts)):
-        suffix = '/'.join(parts[i:])
-        if (repo_root / suffix).exists():
-            return suffix
-
-    raise SkillError(f"path normalization failed: {reported!r} not found in {repo_root}")
-```
-
-Any unresolvable path = loud error. The skill must NOT silently fall back to e.g. `parts[-1]`.
-
-**Verdict regex** (at end of body, used for "review is clean" exit detection):
-
-```python
-CLAUDE_VERDICT_PATTERNS = [
-    r'(?im)^\s*\*\*Overall:\s*✅\s*patch is correct\*\*',
-    r'(?im)^\s*Overall:\s*✅\s*patch is correct\b',
-]
-def is_claude_clean(body: str) -> bool:
-    return any(re.search(p, body) for p in CLAUDE_VERDICT_PATTERNS)
-```
-
-Anchored to start-of-line; refuses to match quoted/embedded references inside finding bodies.
-
-### Step 2B: Codex connector reviewer (PR review summary + inline comments)
-
-The connector posts on two surfaces:
-
-1. `/pulls/{pr}/reviews` — summary review with body `### 💡 Codex Review`
-2. `/pulls/{pr}/comments` — inline file-level comments with `**P1/P2 Badge** Title` body
-
-Inline comments are the actionable findings. Summary reviews are used only for the "is this run clean" verdict signal.
-
-**Two-step poll:**
-
-```bash
-# Step 1: connector reviews (summary level).
-# --paginate returns one JSON array per page, so we slurp pages then filter.
+# 2B — Connector (reviews → inline, scoped to unprocessed review IDs).
 NEW_REVIEWS_JSON=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate \
   | jq -s 'add | [.[] | select(.user.login == "chatgpt-codex-connector[bot]")]')
+# ... NEW_INLINE_JSON, race-retry, build INLINE_TO_THREAD_MAP
 
-# Subtract Processed-Codex-Reviews trailer set.
-PROCESSED_REVIEWS_JSON=$(jq -R 'split(",") | map(select(length > 0) | tonumber)' <<< "$PROCESSED_CODEX_REVIEW_IDS")
-UNPROCESSED_REVIEWS_JSON=$(jq --argjson done "$PROCESSED_REVIEWS_JSON" '
-  [.[] | select(.id as $id | ($done | index($id) | not))]
-' <<< "$NEW_REVIEWS_JSON")
-UNPROCESSED_REVIEW_IDS_JSON=$(jq '[.[].id]' <<< "$UNPROCESSED_REVIEWS_JSON")
+# 2D — Humans (issue + inline).
+# 2C — Aggregate into FINDINGS_JSON with cycle_id F1..FN.
 ```
 
-```bash
-# Step 2: connector inline comments scoped to unprocessed review IDs,
-# also subtracting Processed-Codex-Inline. Use string-membership index()
-# to dodge jq's number-vs-string typing across REST endpoints.
-#
-# IMPORTANT: gh api's --jq accepts ONLY the filter expression, not other jq
-# flags like --argjson. Pipe gh api raw output to a separate jq invocation.
-PROCESSED_INLINE_JSON=$(jq -R 'split(",") | map(select(length > 0))' <<< "$PROCESSED_CODEX_INLINE_IDS")
+See `references/parsing.md` for the full poll-and-parse implementation —
+regex tables, GraphQL query usage, race-retry loop, path normalization,
+verdict patterns, and the `Finding` TypeScript type.
 
-# --paginate returns one JSON array per page, so we slurp pages then filter.
-NEW_INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments" --paginate \
-  | jq -s --argjson rids "$UNPROCESSED_REVIEW_IDS_JSON" \
-       --argjson done_inline "$PROCESSED_INLINE_JSON" '
-    ($rids | map(tostring)) as $ridset |
-    ($done_inline | map(tostring)) as $doneset |
-    add | [.[] | select(
-      .user.login == "chatgpt-codex-connector[bot]"
-      and ((.pull_request_review_id // empty | tostring) as $rid | $ridset | index($rid))
-      and ((.id | tostring) as $cid | $doneset | index($cid) | not)
-    )]')
-```
+## Step 3 — Empty-state classification
 
-**Race retry — review summary appears before inline comments are queryable:**
+Classify the cycle into exactly one of five cases:
 
-Per unprocessed review, fetch its inline comments. If empty:
+| Case | Outcome                                                               |
+| ---- | --------------------------------------------------------------------- |
+| 1    | No new content — `POLL_NEXT` (Step 7 sub-flow)                        |
+| 2    | At least one new finding — `FIX` (Step 4)                             |
+| 3    | Both reviewers explicitly clean — `EXIT_CLEAN` (Step 7 retro prompt)  |
+| 4    | Reviewer comment present but unparseable — **loud-fail**, abort cycle |
+| 5    | Reviewer says "issues" but lists none — **loud-fail**, abort cycle    |
 
-```python
-def is_summary_clean(body: str) -> bool:
-    CLEAN_PATTERNS = [
-        r'(?im)^\s*(?:✅\s*)?No issues found\.?\s*$',
-        r'(?im)^\s*\*\*Overall:\s*✅\s*patch is correct\*\*',
-        r'(?im)^\s*Overall:\s*✅\s*patch is correct\b',
-    ]
-    return any(re.search(p, body) for p in CLEAN_PATTERNS)
+**No silent-empty path** — every empty result is either case 3 (explicit
+clean) or case 4/5 (loud-fail). On `LOUD_FAIL`, write the offending raw
+body to `.harness-github-review/cycle-${ROUND}-loud-fail-<source>.txt` and
+`exit 1`.
 
-# Per review:
-if not inline_for_this_review:
-    if is_summary_clean(review.body):
-        # Summary explicitly clean — no inline expected. Skip retry.
-        continue
-    # Race: summary suggests findings but inline not yet visible.
-    for attempt in range(1, 7):  # 6 attempts × 5s = 30s max
-        time.sleep(5)
-        re_fetch_inline()
-        if non_empty:
-            break
-    else:
-        raise SkillError(
-          f"connector review {review.id} summary suggests findings but inline "
-          "comments still empty after 6×5s retries — refusing to silently exit"
-        )
-```
+See `references/empty-state-classification.md` for the full case table and
+the `classify_cycle` pseudocode.
 
-**Inline comment parse** — body shape (verified on PR #109):
-
-```
-**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  <Title>**
-
-<Description>
-
-Useful? React with 👍 / 👎.
-```
-
-Top-level fields (no body parsing required for these): `id`, `path`, `original_line`, `pull_request_review_id`.
-
-Body parsing:
-
-- `severity`: regex `!\[(P\d) Badge\]` → P1 maps to internal HIGH, P2 to internal MEDIUM. Original `P1` / `P2` label preserved in pattern entry's `Severity:` field as `P1 / HIGH` / `P2 / MEDIUM`.
-- `title`: regex `\*\*<sub>.*?</sub>\s+(.+?)\*\*` → group 1, trimmed
-- `body`: text between the title line and `Useful? React with 👍 / 👎.`
-
-**Thread ID lookup** for connector inline comments — REST does not return thread IDs, so we query GraphQL. Implementation **must be page-aware**. The single named helper, `paginated_review_threads_query`, is defined in the § Helpers section above and handles pagination once. Both Step 2B (thread-id lookup, here) and Step 7.1 (unresolved-thread exit check) — and Step 1 (Closes-Codex-Threads reconciliation) — reuse it:
-
-```bash
-# Step 2 usage: build inline-comment-id → thread-id map.
-# (paginated_review_threads_query is defined in § Helpers, above.)
-# Loud-fail on GraphQL failure — silent empty-array would silently miss every
-# thread mapping and either trigger a downstream loud-fail at lookup or, worse,
-# pass through with an empty INLINE_TO_THREAD_MAP. Better to surface the
-# transient GraphQL error here.
-ALL_THREAD_COMMENTS=$(paginated_review_threads_query) || {
-  echo "ERROR: paginated_review_threads_query failed in Step 2B." >&2
-  exit 1
-}
-INLINE_TO_THREAD_MAP=$(jq '[.[] | select(.comment_author_login == "chatgpt-codex-connector[bot]")
-                            | {thread_id, comment_id: .comment_databaseId, isResolved}]' \
-                          <<< "$ALL_THREAD_COMMENTS")
-```
-
-After all pages exhausted: any connector inline-comment ID not present in `INLINE_TO_THREAD_MAP` is a loud error (`"connector inline comment {id} not found in any review thread — data state anomaly"`).
-
-The mapping table is consumed in Step 6 (reply + resolve threads). Step 7.1 reuses `paginated_review_threads_query` for the unresolved-thread exit check.
-
-### Step 2D: Human reviewers (issue comments + inline review comments)
-
-Humans (project maintainers, contributors, the PR author themselves) leave unstructured prose comments on PRs. The skill treats any non-bot author as a human reviewer and processes their comments as findings. Two endpoints:
-
-1. `/issues/{pr}/comments` — top-level PR-conversation comments (no file context).
-2. `/pulls/{pr}/comments` — inline review comments (have `path` and `original_line`).
-
-(The `/pulls/{pr}/reviews` endpoint also accepts human reviews, but the bodies are typically empty wrappers around the inline comments. The actionable content lives in the inline-comments endpoint, which we already poll. Skip the reviews endpoint to avoid duplicates.)
-
-**Poll human issue comments:**
-
-```bash
-PROCESSED_HUMAN_ISSUE_JSON=$(jq -R 'split(",") | map(select(length > 0) | tonumber)' <<< "$PROCESSED_HUMAN_ISSUE_IDS")
-
-NEW_HUMAN_ISSUE_JSON=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
-  | jq -s --argjson done "$PROCESSED_HUMAN_ISSUE_JSON" '
-    add | [.[] | select(
-      (.user.type // "User") == "User"
-      and (.id as $id | $done | index($id) | not)
-    )]')
-```
-
-**Poll human inline comments:**
-
-```bash
-PROCESSED_HUMAN_INLINE_JSON=$(jq -R 'split(",") | map(select(length > 0) | tonumber)' <<< "$PROCESSED_HUMAN_INLINE_IDS")
-
-NEW_HUMAN_INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments" --paginate \
-  | jq -s --argjson done "$PROCESSED_HUMAN_INLINE_JSON" '
-    add | [.[] | select(
-      (.user.type // "User") == "User"
-      and (.id as $id | $done | index($id) | not)
-    )]')
-```
-
-Note: human inline comments don't go through the unprocessed-review-id filter (humans submit them directly, often without a review wrapper). The connector inline poll filters by `pull_request_review_id IN $unprocessed_review_ids`; humans get a simpler "unprocessed comment id" filter.
-
-**Parse — unstructured:** Humans don't follow the `### [HIGH] Title` format. Treat each comment as a single finding:
-
-- `severity_internal`: **MEDIUM** by default (humans don't tag severity; assume actionable unless body explicitly says LOW/nit/wontfix).
-- `severity_label_original`: `"HUMAN"` (preserved for pattern entry).
-- `title`: first sentence of body (regex `^(.{1,80}?)(?:[.!?\n]|$)`), truncated to 80 chars max.
-- `file`: top-level `path` field for inline; `null` for issue comments.
-- `line_range`: `{start: original_line, end: original_line}` for inline; `{start: 1, end: 1}` for issue (placeholder).
-- `body`: raw comment text (markdown preserved).
-- `source`: `'human'`.
-- `source_comment_id`: comment `id`.
-- `thread_id`: for inline only — looked up via `paginated_review_threads_query` (same helper as connector). Issue comments have no thread.
-
-**Heuristic severity overrides** (optional, applied after default MEDIUM): if the body matches one of these, downgrade or upgrade:
-
-- Body starts with `nit:`, `style:`, `optional:` (case-insensitive) → LOW
-- Body contains `WONTFIX`, `wontfix`, `won't fix` → SKIP candidate (record `severity_internal: LOW` and let Step 4 default to skipped)
-- Body explicitly says `[CRITICAL]`, `[HIGH]`, `[MEDIUM]`, `[LOW]` (e.g. when humans copy the format) → use that
-
-**Empty-state classification additions:** human findings are case 2 if any non-empty parsed finding exists. Cases 4/5 don't apply to human comments — humans aren't required to follow a parser format, so an "unparseable" human comment is just "treat the body verbatim as MEDIUM".
-
-### Step 2C: Finding-table aggregation
-
-After Steps 2A + 2B + 2D, build the per-cycle finding table. The table is **transient** (in-memory only — not persisted; spec §1). Human findings receive `severity_internal: 'MEDIUM'` by default; the skill applies heuristic overrides per Step 2D.
-
-```typescript
-type Finding = {
-  cycle_id: string // "F1", "F2", ... — stable for this cycle, used in verify prompt
-  source: 'claude' | 'codex-connector' | 'human'
-  source_comment_id: number // Claude: comment ID. Connector: inline comment ID. Human: issue or inline comment ID.
-  source_review_id: number | null // Connector only
-  thread_id: string | null // Connector + human inline only (PRRT_xxx form); null for human issue comments
-  severity_internal: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
-  severity_label_original: string // e.g. "HIGH" or "P1 / HIGH" or "HUMAN" (preserved for pattern entry)
-  title: string
-  file: string | null // repo-relative; null for human issue comments (no file context)
-  line_range: { start: number; end: number }
-  body: string
-  status: 'pending' | 'fixed' | 'skipped' | 'verify_failed'
-  fix_summary: string | null // populated after Step 4
-}
-```
-
-Build the table by iterating Claude findings (if `LATEST_CLAUDE` is non-null and parsing succeeded), connector inline findings (everything in the post-race-retry inline set), and human findings (issue comments + inline comments from Step 2D), assigning sequential `cycle_id` strings (`F1`, `F2`, ...). The table is consumed by Step 3 (classification), Step 4 (fix loop), Step 5 (verify prompt), and Step 6 (commit message + pattern routing).
-
-## Step 3: Empty-state classification
-
-After Step 2 polls and parses, classify the per-cycle finding state into exactly one of five cases. **No silent-empty path** — every empty result is either explicitly clean (case 3) or a loud-fail (case 4/5).
-
-| Case | Claude side                                                                 | Codex side                                                                       | Action                                                  |
-| ---- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| 1    | No new comment in unprocessed set                                           | No new review in unprocessed set; no unresolved threads                          | **Step 7 poll-next**                                    |
-| 2    | New comment with ≥1 successfully-parsed finding **OR** unchanged            | New review with ≥1 inline finding, all parseable **OR** unchanged                | **Step 4 fix**                                          |
-| 3    | New comment, 0 findings, verdict explicitly clean (per `is_claude_clean`)   | No new unresolved findings (all reviews `is_summary_clean` or already processed) | **Loop exit (clean)**                                   |
-| 4    | New comment, parser failed (no `### [SEV]` blocks AND no parseable verdict) | New review, after race-retry inline still empty AND summary not explicitly clean | **loud-fail**, dump raw body to user                    |
-| 5    | New comment, verdict says ⚠️ but 0 findings parseable                       | (case-4-equivalent on Codex side)                                                | **loud-fail** (reviewer claims problems but lists none) |
-
-If at least one reviewer is case 2, the cycle proceeds with whatever findings were parsed from that reviewer (the other may be case 1 — that's fine; we just have nothing new from that side). Cases 4 and 5 abort the cycle BEFORE any code changes.
-
-```bash
-# Pseudocode for the case selection. Implement as a function in the skill.
-classify_cycle() {
-  local claude_state codex_state
-
-  # Determine claude_state from Step 2A outputs:
-  if [ "$LATEST_CLAUDE" = "null" ]; then
-    claude_state="case_1"
-  elif claude_parse_succeeded && [ "$CLAUDE_FINDINGS_COUNT" -gt 0 ]; then
-    claude_state="case_2"
-  elif claude_parse_succeeded && [ "$CLAUDE_FINDINGS_COUNT" -eq 0 ] && is_claude_clean; then
-    claude_state="case_3"
-  elif claude_parse_succeeded && [ "$CLAUDE_FINDINGS_COUNT" -eq 0 ] && claude_verdict_says_dirty; then
-    claude_state="case_5"
-  else
-    claude_state="case_4"
-  fi
-
-  # Determine codex_state from Step 2B outputs (similar logic).
-  # ...
-
-  # Combined disposition:
-  if [ "$claude_state" = "case_4" ] || [ "$claude_state" = "case_5" ] \
-     || [ "$codex_state" = "case_4" ] || [ "$codex_state" = "case_5" ]; then
-    echo "LOUD_FAIL"
-    return 1
-  fi
-
-  if [ "$claude_state" = "case_2" ] || [ "$codex_state" = "case_2" ]; then
-    echo "FIX"
-    return 0
-  fi
-
-  if [ "$claude_state" = "case_3" ] && [ "$codex_state" = "case_3" ]; then
-    echo "EXIT_CLEAN"
-    return 0
-  fi
-
-  # Mixed case 1 / case 3 → still nothing actionable from either side.
-  echo "POLL_NEXT"
-  return 0
-}
-```
-
-On `LOUD_FAIL`: write the offending raw body to `.harness-github-review/cycle-${ROUND}-loud-fail-<source>.txt` and `exit 1`. Do NOT proceed to fix or commit.
-
-On `EXIT_CLEAN`: continue to Step 7 (loop exit + retro prompt).
-
-On `FIX`: proceed to Step 4.
-
-On `POLL_NEXT`: continue to Step 7 (poll-next sub-flow).
-
-## Step 4: Fix all findings
+## Step 4 — Fix all findings
 
 For each finding in the cycle's finding table, in order:
 
-1. **Read the file** at the specified `file` path and `line_range`. Use the `Read` tool with `offset` and `limit` parameters.
-2. **Understand the issue** — the finding's `body` describes what's wrong and (often) suggests a fix. Cross-reference with the IDEA block if present (Claude reviewer always includes it; connector typically does not).
+1. **Read the file** at the specified `file` path and `line_range`. Use
+   the `Read` tool with `offset` and `limit` parameters.
+2. **Understand the issue** — the finding's `body` describes what's wrong
+   and (often) suggests a fix. Cross-reference with the IDEA block if
+   present (Claude reviewer always includes it; connector typically does
+   not).
 3. **Decide:**
-   - **FIX** — make the minimal change to resolve the issue. Use `Edit` for surgical changes; `Write` only for whole-file replacements.
-   - **SKIP** — explain why in the finding's `fix_summary` field. Valid reasons: false positive, intentional pattern with rationale, out of scope (the finding flagged adjacent untouched code in violation of the SCOPE BOUNDARY RULE).
-4. After the change, set `finding.status = 'fixed'` (or `'skipped'`) and `finding.fix_summary = <one-sentence description>`.
+   - **FIX** — make the minimal change to resolve the issue. Use `Edit`
+     for surgical changes; `Write` only for whole-file replacements.
+   - **SKIP** — explain why in the finding's `fix_summary` field. Valid
+     reasons: false positive, intentional pattern with rationale, out of
+     scope (the finding flagged adjacent untouched code in violation of
+     the SCOPE BOUNDARY RULE).
+4. After the change, set `finding.status = 'fixed'` (or `'skipped'`) and
+   `finding.fix_summary = <one-sentence description>`.
 
-**Rules** (preserved from the old skill, still apply):
+**Rules:**
 
 - Fix **only** what the review identified. No drive-by refactoring.
-- Never introduce new issues while fixing existing ones — Step 5's codex verify catches this if it slips through, but the discipline is to think about new-issue risk at fix time.
-- Run quick local validation as you go (`npm run lint -- <file>`, `cargo check`, etc.) — but **do not** run the full test suite per finding. The full validation runs in Step 5.
-- For each finding, also consult `docs/reviews/patterns/<matching-pattern>.md` BEFORE fixing if the pattern is relevant — it may carry prior fixes for the same finding class. If you read a pattern file, bump its `ref_count` in frontmatter by 1 (this is the consumer-bumps-on-read protocol from `docs/reviews/CLAUDE.md`).
+- Never introduce new issues while fixing existing ones — Step 5's codex
+  verify catches this if it slips through, but the discipline is to think
+  about new-issue risk at fix time.
+- Run quick local validation as you go (`npm run lint -- <file>`, `cargo
+check`, etc.) — but **do not** run the full test suite per finding. The
+  full validation runs in Step 5.
+- For each finding, also consult
+  `docs/reviews/patterns/<matching-pattern>.md` BEFORE fixing if the
+  pattern is relevant — it may carry prior fixes for the same finding
+  class. If you read a pattern file, bump its `ref_count` in frontmatter
+  by 1 (consumer-bumps-on-read protocol from `docs/reviews/CLAUDE.md`).
 
-**Do NOT commit yet.** Stage all changes (`git add`) but defer commit until after Step 5 (codex verify) passes.
+**Do NOT commit yet.** Stage all changes (`git add`) but defer commit
+until after Step 5 (codex verify) passes.
 
-After the loop, every finding has `status` ∈ {`fixed`, `skipped`}. Findings still `pending` after the loop = a bug in the loop logic; loud-fail.
+After the loop, every finding has `status` ∈ {`fixed`, `skipped`}.
+Findings still `pending` after the loop = a bug in the loop logic;
+loud-fail.
 
-## Step 5: Codex verify on staged diff
+## Step 5 — Codex verify on staged diff
 
-After Step 4 stages all fixes (no commit yet), this step runs `codex exec` against the staged diff to verify:
+Run `codex exec` against the staged diff to verify (a) every upstream
+finding is addressed and (b) no new MEDIUM/HIGH/CRITICAL issues introduced.
+New LOW issues are deferred (allowed; recorded in commit message).
 
-1. Every upstream finding from this cycle is **addressed** by the diff.
-2. The diff does **NOT** introduce new MEDIUM/HIGH/CRITICAL issues. New LOW issues are allowed and will be deferred.
-
-If verify passes (or only finds new-LOW issues), Step 6 commits. If verify finds new MEDIUM/HIGH/CRITICAL issues OR any unaddressed upstream finding, the cycle re-enters Step 4 (retry budget ≤ 3). The matrix in Step 5D below is authoritative on which severity triggers what behavior.
-
-### Step 5A: Setup — gitignored artifact directory
+Brief invariant: **codex verifies before reply or thread-resolve runs.**
+The verify gate is the only thing standing between staged fixes and the
+commit; all reply/resolve actions in Step 6 are downstream of a passing
+verify.
 
 ```bash
 mkdir -p .harness-github-review
-
 DIFF_PATCH=".harness-github-review/cycle-${ROUND}-diff.patch"
 PROMPT_FILE=".harness-github-review/cycle-${ROUND}-verify-prompt.md"
 RESULT_JSON=".harness-github-review/cycle-${ROUND}-verify-result.json"
 EVENTS_LOG=".harness-github-review/cycle-${ROUND}-verify-events.log"
 STDERR_LOG=".harness-github-review/cycle-${ROUND}-verify-stderr.log"
-```
 
-The directory is gitignored (Task 1's `.gitignore` change). Step 6's commit will explicitly enumerate files (no `git add -A`) so these artifacts can never accidentally land in a commit.
-
-### Step 5B: Build the verify prompt
-
-````bash
+# Build the prompt (template in references/verify-prompt.md § Step 5B).
 git diff --staged > "$DIFF_PATCH"
-DIFF_LINES=$(wc -l < "$DIFF_PATCH")
+# ... render findings table + diff into PROMPT_FILE
 
-# render_findings_table_with_F_ids: emit each finding as a markdown bullet
-# referencing its cycle_id, source, severity, file, line_range, title, body.
-render_findings_table() {
-  jq -r '.[] | "
-- **\(.cycle_id)** [\(.source) | \(.severity_label_original)] **\(.title)**
-  - File: `\(.file)` L\(.line_range.start)-\(.line_range.end)
-  - \(.body | gsub("\n"; "\n  "))
-"' <<< "$FINDINGS_JSON"
-}
-
-cat > "$PROMPT_FILE" <<'EOF'
-You are verifying a review-fix cycle. The agent has staged code changes intended to address the upstream findings listed below. Your job is to verify the staged diff resolves every upstream finding without introducing new MEDIUM/HIGH/CRITICAL issues. New LOW-severity issues may be reported and will be deferred (not blocking).
-
-## Upstream findings addressed in this cycle
-
-EOF
-
-render_findings_table >> "$PROMPT_FILE"
-
-cat >> "$PROMPT_FILE" <<EOF
-
-## Staged diff to verify
-
-EOF
-
-if [ "$DIFF_LINES" -le 500 ]; then
-  printf '\n```diff\n' >> "$PROMPT_FILE"
-  cat "$DIFF_PATCH" >> "$PROMPT_FILE"
-  printf '\n```\n' >> "$PROMPT_FILE"
-else
-  printf '\nThe full staged diff is at `%s`. Read that file. Do NOT run `git diff` — staged changes may diverge from HEAD until commit.\n' "$DIFF_PATCH" >> "$PROMPT_FILE"
-fi
-
-cat >> "$PROMPT_FILE" <<'EOF'
-
-## Verification rules
-
-1. For each upstream finding F1..FN, decide ADDRESSED or NOT_ADDRESSED.
-   - If NOT_ADDRESSED: emit a finding with `title` PREFIXED `[UNADDRESSED Fk] <original title>` and `severity` matching the upstream's original severity.
-2. Beyond upstream coverage, scan the diff for NEW issues introduced by the fix. Emit those normally (no [UNADDRESSED] prefix).
-3. SCOPE BOUNDARY RULE — review ONLY lines in this staged diff. Do NOT cascade into untouched files.
-4. Confidence-based filtering: only report >80% confidence issues.
-
-Output JSON conforming to the codex-output-schema. An empty `findings` array means: every upstream finding ADDRESSED and no new issues found.
-EOF
-````
-
-The 500-line threshold for inline-vs-file is heuristic. Larger diffs would inflate the prompt past codex's effective context window; the file-pointer fallback lets codex use its own read tool to ingest progressively.
-
-### Step 5C: Call `codex exec` (verified CLI flags)
-
-```bash
-timeout 300 codex exec \
-  --sandbox read-only \
-  --output-schema .github/codex/codex-output-schema.json \
-  --output-last-message "$RESULT_JSON" \
-  -- "$(cat "$PROMPT_FILE")" \
-  > "$EVENTS_LOG" \
-  2> "$STDERR_LOG"
-
+# Invoke codex via the verify wrapper.
+"$SCRIPT_DIR/scripts/verify.sh" "$PROMPT_FILE" "$RESULT_JSON" "$EVENTS_LOG" "$STDERR_LOG"
 CODEX_EXIT=$?
+
+# Classify result via the matrix (Step 5D).
+# Re-enter Step 4 if unaddressed_upstream / new_medium / new_high
+# (retry budget ≤ 3). Continue Step 6 if pass / pass_with_deferred.
+# Abort on verify_timeout / verify_error / contradiction / retry-exhausted.
 ```
 
-Important flag notes:
+See `references/verify-prompt.md` for the prompt template, the 5D
+classification matrix, the retry budget semantics, the docs-only escape
+(5F), and the abort path (5G — `incident.md` schema).
 
-- `--output-schema` (not `--output-schema-file` — that flag does not exist).
-- `--output-last-message` writes the final structured JSON; stdout is event-stream noise (events log).
-- **No `--model` flag.** Per auto-memory `feedback_codex_model_for_chatgpt_auth`: omitting lets `codex` pick the auth-mode-correct default (ChatGPT-account auth rejects explicit model selection).
-- External GNU `timeout 300` — `codex exec` has no built-in timeout flag.
-- `--sandbox read-only`: codex is verifying, not modifying. Read-only ensures it can't alter the staged diff during verification.
-- If `timeout` is unavailable on the platform: omit it and rely on the harness/agent timeout (typically 5–10 min). Acceptable degradation; codex normally finishes in 30–90s on a small staged diff.
+## Step 6 — Pattern KB → stage → commit → push → reply → resolve threads
 
-### Step 5D: Result classification matrix
+This step lands the cycle's work atomically. **Order matters** — pattern
+files must be written BEFORE the commit (so they're part of the same
+commit as the code fix), and reply + thread resolution must come AFTER
+push (so the cited commit SHA exists on origin).
+
+1. **6.1 Match** each fixed finding to a pattern file
+   (`docs/reviews/patterns/<slug>.md`). See `references/pattern-kb.md`
+   § Step 6.1.
+2. **6.2 Append** entries to existing patterns under `## Findings` (next
+   `### N.` index). See `references/pattern-kb.md` § Step 6.2.
+3. **6.3 Create** new patterns when fallback rules require. See
+   `references/pattern-kb.md` § Step 6.3.
+4. **6.4 Update** the pattern index (`docs/reviews/CLAUDE.md` table). See
+   `references/pattern-kb.md` § Step 6.4.
+5. **6.5 Stage** pattern files + index explicitly (no `git add -A`). Code
+   fixes are already staged from Step 4.
+6. **6.6 Commit** with the watermark-trailer template. See
+   `references/commit-trailers.md` for the full template (including the
+   cycle-1 commitlint fixes for `Pattern-Files-Touched` and
+   footer-leading-blank).
+7. **6.7 Push.**
+8. **6.8 Reply** to each connector inline finding, each human inline
+   finding, and each human issue comment.
+9. **6.9 Resolve** connector + human-inline threads via GraphQL
+   `resolveReviewThread`.
 
 ```bash
-HAS_UNADDRESSED=$(jq '[.findings[].title | select(startswith("[UNADDRESSED"))] | length' "$RESULT_JSON")
-HIGHEST_NEW_SEV=$(jq -r '
-  [.findings[] | select((.title // "") | startswith("[UNADDRESSED") | not) | .severity]
-  | (if length==0 then "NONE"
-     else (sort_by({"CRITICAL":4,"HIGH":3,"MEDIUM":2,"LOW":1}[.]) | last)
-     end)
-' "$RESULT_JSON")
-VERDICT=$(jq -r '.overall_correctness' "$RESULT_JSON")
-FINDINGS_COUNT=$(jq '.findings | length' "$RESULT_JSON")
-```
-
-| Condition                                                               | State                  | Action                                                                      |
-| ----------------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------- |
-| `CODEX_EXIT == 124`                                                     | `verify_timeout`       | Abort cycle (Step 5G)                                                       |
-| `CODEX_EXIT != 0` (and not 124)                                         | `verify_error`         | Abort cycle                                                                 |
-| `FINDINGS_COUNT == 0 && VERDICT == "patch is correct"`                  | `pass`                 | Continue Step 6                                                             |
-| `FINDINGS_COUNT == 0 && VERDICT == "patch has issues"`                  | `contradiction`        | **loud-fail**, abort cycle                                                  |
-| `HAS_UNADDRESSED > 0` (any sev)                                         | `unaddressed_upstream` | Re-enter Step 4 with the unaddressed Fk findings re-added; retry counter +1 |
-| `HIGHEST_NEW_SEV == "LOW"` AND `HAS_UNADDRESSED == 0`                   | `pass_with_deferred`   | Continue Step 6; commit message `Verify-Deferred-LOW:` lists each           |
-| `HIGHEST_NEW_SEV == "MEDIUM"` AND `HAS_UNADDRESSED == 0`                | `new_medium`           | Re-enter Step 4 to fix; retry counter +1                                    |
-| `HIGHEST_NEW_SEV == "HIGH"` OR `"CRITICAL"`, AND `HAS_UNADDRESSED == 0` | `new_high`             | Re-enter Step 4; retry counter +1; if counter reaches 3 → abort             |
-
-`overall_correctness` enum is `"patch is correct" | "patch has issues"` per `.github/codex/codex-output-schema.json`. The matrix uses these exact strings.
-
-### Step 5E: Verify retry budget
-
-`VERIFY_RETRY_COUNTER` starts at 0 at cycle start. Each `unaddressed_upstream` / `new_medium` / `new_high` re-entry to Step 4 increments it.
-
-```bash
-if [ "$VERIFY_RETRY_COUNTER" -ge 3 ]; then
-  echo "Verify retry budget exhausted (3 attempts) — aborting cycle." >&2
-  goto_step_5g_abort
-fi
-
-VERIFY_RETRY_COUNTER=$((VERIFY_RETRY_COUNTER + 1))
-goto_step_4
-```
-
-### Step 5F: Docs-only escape (narrow)
-
-Verify is skipped only when **all three** are true:
-
-1. Every Finding in the cycle is severity LOW
-2. Every staged path matches `^docs/` OR `^[^/]*\.md$` OR `^[^/]*\.txt$`
-3. **No** staged path matches `^\.github/`, `^package(-lock)?\.json$`, `^src-tauri/`, `^src/`, `^vite\.config\.`, `^tailwind\.config\.`, `^eslint\.config\.`, `^tsconfig\.`, `^\.husky/`
-
-```bash
-should_skip_verify_docs_only() {
-  # Condition 1
-  local non_low_count
-  non_low_count=$(jq '[.[] | select(.severity_internal != "LOW")] | length' <<< "$FINDINGS_JSON")
-  [ "$non_low_count" -eq 0 ] || return 1
-
-  # Condition 2 + 3 (combined: any path that doesn't match the docs-only allowlist OR matches the forbidden list)
-  local violations
-  violations=$(git diff --staged --name-only \
-    | awk '
-      /^docs\// { next }
-      /^[^\/]*\.md$/ { next }
-      /^[^\/]*\.txt$/ { next }
-      /^\.github\// { print "FORBIDDEN:" $0; next }
-      /^package(-lock)?\.json$/ { print "FORBIDDEN:" $0; next }
-      /^src-tauri\// { print "FORBIDDEN:" $0; next }
-      /^src\// { print "FORBIDDEN:" $0; next }
-      /^vite\.config\./ { print "FORBIDDEN:" $0; next }
-      /^tailwind\.config\./ { print "FORBIDDEN:" $0; next }
-      /^eslint\.config\./ { print "FORBIDDEN:" $0; next }
-      /^tsconfig\./ { print "FORBIDDEN:" $0; next }
-      /^\.husky\// { print "FORBIDDEN:" $0; next }
-      { print "NOT_DOCS:" $0 }
-    ')
-  [ -z "$violations" ] || return 1
-
-  return 0
-}
-
-if should_skip_verify_docs_only; then
-  echo "Verify skipped: docs-only diff (all LOW findings, allowed paths)." >&2
-  VERIFY_SKIPPED=1
-  # Step 6 will add Verify-Skipped: docs-only to the commit message.
-  goto_step_6
-fi
-```
-
-### Step 5G: Abort
-
-On `verify_timeout` / `verify_error` / `contradiction` / retry-exhausted:
-
-```bash
-ABORT_DIR=".harness-github-review/cycle-${ROUND}-aborted"
-mkdir -p "$ABORT_DIR"
-
-git diff --staged > "$ABORT_DIR/staged.patch"
-git diff > "$ABORT_DIR/unstaged.patch"
-git status --porcelain > "$ABORT_DIR/status.txt"
-git ls-files --others --exclude-standard > "$ABORT_DIR/untracked.txt"
-
-# Build incident report (per spec §3.7).
-write_incident_report > "$ABORT_DIR/incident.md"
-```
-
-`incident.md` contains, in order:
-
-1. Cycle metadata: round number, abort reason, retry counter at abort, started/aborted timestamps.
-2. The cycle's full Finding table (the `$FINDINGS_JSON`), each finding's `status` and `fix_summary`.
-3. For each verify attempt 1..N: the prompt sent, raw `findings[]` from the result JSON, which findings caused retry/abort.
-4. The watermark trailers that **would have been** committed for this cycle (so the user can re-run after manual fixup without losing the watermark progression).
-5. A "Recommended next steps" section enumerating the recovery paths from the Cleanup section (§6.3).
-
-The skill **does not** auto-`git stash`. Working tree is left visible. The skill exits the entire loop (not just this cycle):
-
-```bash
-echo "Cycle ${ROUND} aborted in verify after ${VERIFY_RETRY_COUNTER} attempts."
-echo "See $ABORT_DIR/."
-echo ""
-echo "Working tree contains the last attempted fix — inspect with 'git status' / 'git diff'."
-echo "See § Cleanup → recovery paths for next steps."
-exit 1
-```
-
-## Step 6: Write patterns → stage all → commit → push → reply + resolve threads
-
-This step lands the cycle's work atomically. **Order matters** — pattern files must be written BEFORE the commit (so they're part of the same commit as the code fix), and reply + thread resolution must come AFTER push (so the cited commit SHA exists on origin).
-
-### 6.1: Match each fixed finding to a pattern file
-
-For each finding with `status == 'fixed'`, decide its target pattern file using the algorithm from spec §4.1:
-
-```
-1. Read docs/reviews/CLAUDE.md → get list of (pattern_file_path, category).
-2. Pre-filter candidates by:
-   - Finding's file path overlap with files already in the pattern.
-   - Category vs finding's domain.
-3. Read Summary section ONLY for the top 3-5 candidates from Step 2 to disambiguate.
-4. Fallback rules:
-   a. 2+ findings sharing a novel theme → create new pattern.
-   b. Single novel security/data-loss/correctness finding → create new pattern (single-entry security patterns earn their cost).
-   c. Other single novel findings → fit into closest existing with a 1-line note.
-5. Never create a new category without user approval — abort with prompt.
-```
-
-Record decisions in a list for the commit-message trailer:
-
-```
-Pattern-Append-Decisions:
-
-- F1 (alias recursion) → patterns/async-race-conditions.md (existing, theme: bounded recursion)
-- F2 (Authorization regex) → patterns/credential-leakage.md (NEW pattern)
-```
-
-### 6.2: Append entries to existing patterns
-
-For each finding routed to an existing pattern, compute the next entry number:
-
-```python
-def next_finding_number(pattern_file_path: str) -> int:
-    text = read(pattern_file_path)
-    if "## Findings" not in text:
-        return 1
-    findings_section = text.split("## Findings", 1)[1]
-    findings_section = findings_section.split("\n## ", 1)[0]  # stop at next H2
-    matches = re.findall(r'^### (\d+)\. ', findings_section, re.MULTILINE)
-    return max(int(n) for n in matches) + 1 if matches else 1
-```
-
-Append each entry under `## Findings`, schema:
-
-```markdown
-### N. <Finding's title>
-
-- **Source:** <github-claude | github-codex-connector | local-codex> | PR #<PR_NUMBER> round <ROUND> | <YYYY-MM-DD>
-- **Severity:** <severity_label_original> # e.g. "HIGH" or "P1 / HIGH"
-- **File:** `<repo-relative path>`
-- **Finding:** <one to three sentences from the finding body>
-- **Fix:** <one to three sentences describing what was changed>
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-```
-
-Note: `Commit:` does NOT contain the SHA — pattern file is part of the same commit being created, so the SHA isn't yet known. Recoverable via `git blame` later.
-
-Update frontmatter `last_updated:` to today's date. Do **NOT** bump `ref_count` on append — it's a consumer counter (per `docs/reviews/CLAUDE.md`).
-
-### 6.3: Create new patterns when needed
-
-For findings without a close fit, create a new pattern file at `docs/reviews/patterns/<kebab-slug>.md`:
-
-```markdown
----
-id: <kebab-slug-of-name>
-category: <one of: security | react-patterns | testing | terminal | code-quality |
-                   error-handling | files | review-process | a11y | cross-platform |
-                   editor | backend | correctness | e2e-testing>
-created: <today>
-last_updated: <today>
-ref_count: 0
----
-
-# <Title Case Pattern Name>
-
-## Summary
-
-<One paragraph (3-5 sentences) describing the pattern's theme — failure mode + general fix shape — drafted from the finding bodies that triggered creation.>
-
-## Findings
-
-### 1. <First finding's title>
-
-- **Source:** ...
-  (continues per 6.2 schema)
-```
-
-Category MUST come from the existing closed list (see §4.3). New categories require user approval — abort if needed.
-
-### 6.4: Update the pattern index
-
-`docs/reviews/CLAUDE.md` has a markdown table:
-
-| Pattern                                          | Category | Findings | Refs | Last Updated |
-| ------------------------------------------------ | -------- | -------- | ---- | ------------ |
-| [Filesystem Scope](patterns/filesystem-scope.md) | security | 20       | 2    | 2026-04-29   |
-
-For each touched pattern, update the row's `Findings` count (re-derive from `### N.` count after this commit's appends), `Last Updated` to today. `Refs` unchanged.
-
-For new pattern files, append a row in the same alphabetical order as existing rows (or end-of-table — verify by reading the file before adding).
-
-### 6.5: Stage everything explicitly
-
-**Do not** use `git add -A` — that would catch the gitignored `.harness-github-review/` if the gitignore failed somehow, and unrelated untracked files. Code-fix files were already staged in Step 4 (`git add` per modification); only the pattern files and index need explicit staging here:
-
-```bash
-# Pattern files (from 6.2 / 6.3) and the pattern index (from 6.4) are NOT
-# yet staged — Step 4 only stages code fixes. Stage them now.
+# 6.5 Stage explicitly.
 STAGED_FILES=()
-
-# Pattern files modified or created in this cycle:
 for f in "${TOUCHED_PATTERN_FILES[@]}"; do STAGED_FILES+=("$f"); done
+[ "${INDEX_TOUCHED:-0}" -eq 1 ] && STAGED_FILES+=("docs/reviews/CLAUDE.md")
+[ "${#STAGED_FILES[@]}" -gt 0 ] && git add "${STAGED_FILES[@]}"
+git status --short
 
-# Index file if any pattern was added/created:
-if [ "${INDEX_TOUCHED:-0}" -eq 1 ]; then
-  STAGED_FILES+=("docs/reviews/CLAUDE.md")
-fi
-
-# Only invoke `git add` when there's something to add — empty array would
-# error on some shells.
-if [ "${#STAGED_FILES[@]}" -gt 0 ]; then
-  git add "${STAGED_FILES[@]}"
-fi
-
-git status --short  # sanity check — verify expected files staged, no surprises
-```
-
-NOTE: do **not** use `git diff --name-only` to enumerate code-fix files here. It reports working-tree-vs-index, which is empty for files Step 4 already staged — and would instead pick up unrelated unstaged edits (debug files, half-finished work) and sweep them into the review-fix commit.
-
-### 6.6: Build the commit message and commit
-
-```bash
-COMMIT_MSG_FILE=".harness-github-review/cycle-${ROUND}-commit-msg.txt"
-
-cat > "$COMMIT_MSG_FILE" <<EOF
-fix(#${PR_NUMBER}): address review round ${ROUND} findings
-
-$(render_per_finding_listing)
-
-Reviewers: $(list_unique_sources)
-
-GitHub-Review-Processed-Claude: ${LATEST_CLAUDE_ID:-}
-GitHub-Review-Superseded-Claude: $(jq -r 'join(",")' <<< "$SUPERSEDED_THIS_CYCLE")
-GitHub-Review-Processed-Codex-Reviews: $(jq -r 'join(",")' <<< "$UNPROCESSED_REVIEW_IDS_JSON")
-GitHub-Review-Processed-Codex-Inline: $(list_inline_ids_processed_this_cycle)
-GitHub-Review-Processed-Human-Issue: $(list_human_issue_ids_processed_this_cycle)
-GitHub-Review-Processed-Human-Inline: $(list_human_inline_ids_processed_this_cycle)
-Closes-Codex-Threads: $(list_thread_ids_to_close)
-Pattern-Files-Touched: $(printf '%s, ' "${TOUCHED_PATTERN_FILES[@]}" | sed 's/, $//')
-Pattern-Append-Decisions:
-$(render_pattern_append_decisions)
-EOF
-
-# Conditional trailers (only if state applies):
-if [ -n "${VERIFY_DEFERRED_LOW:-}" ]; then
-  echo "Verify-Deferred-LOW: $VERIFY_DEFERRED_LOW" >> "$COMMIT_MSG_FILE"
-fi
-if [ "${VERIFY_SKIPPED:-0}" -eq 1 ]; then
-  echo "Verify-Skipped: docs-only" >> "$COMMIT_MSG_FILE"
-fi
-
+# 6.6 Commit using the trailer template (references/commit-trailers.md).
 git commit -F "$COMMIT_MSG_FILE"
 COMMIT_SHA=$(git rev-parse HEAD)
 
-echo "Committed cycle $ROUND as $COMMIT_SHA"
-```
-
-### 6.7: Push
-
-```bash
+# 6.7 Push.
 git push
 ```
 
-### 6.8: Reply to each connector inline finding and to each human finding
+NOTE on 6.5: do **not** use `git diff --name-only` to enumerate code-fix
+files. It reports working-tree-vs-index, which is empty for files Step 4
+already staged — and would instead pick up unrelated unstaged edits
+(debug files, half-finished work) and sweep them into the review-fix
+commit.
 
-The reply loop has three branches: connector inline (existing), human inline (same thread-reply path), and human issue comments (a NEW issue-level comment that quotes the original for context — there is no thread-reply endpoint for issue comments).
+### 6.8 — Reply
 
-```bash
-# Reply to connector inline findings (existing logic). Both fixed and skipped
-# get a reply — skipped findings are intentional non-fixes (false positive,
-# out of scope per SCOPE BOUNDARY RULE) and need a rationale on the thread
-# before Step 6.9 resolves it; otherwise Step 7's unresolved-threads check
-# would never reach exit-clean.
-#
-# Iterate findings line-by-line via process substitution. Using
-# `for finding in $(jq -c ...)` would trigger shell word-splitting on
-# JSON objects containing spaces (e.g. inside titles/bodies), fragmenting
-# them and producing malformed input to subsequent `jq -r '.foo' <<< "$finding"`
-# calls. The `while read` form preserves each JSON object intact.
-while IFS= read -r finding; do
-  COMMENT_ID=$(jq -r '.source_comment_id' <<< "$finding")
-  CYCLE_ID=$(jq -r '.cycle_id' <<< "$finding")
-  STATUS=$(jq -r '.status' <<< "$finding")
-  FIX_SUMMARY=$(jq -r '.fix_summary // ""' <<< "$finding")
+Reply to every fixed AND skipped connector + human finding so reviewers
+see the disposition before 6.9 resolves threads. Both states need a
+reply — skipped findings need a rationale on the thread before resolve;
+otherwise Step 7's unresolved-threads check would never reach exit-clean.
 
-  if [ "$STATUS" = "fixed" ]; then
-    REPLY_BODY=$(printf 'Fixed in %s — %s\n\n(github-review cycle %s, finding %s)' "$COMMIT_SHA" "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
-  else
-    REPLY_BODY=$(printf 'Skipped — %s\n\n(github-review cycle %s, finding %s)' "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
-  fi
+Three branches: connector inline + human inline use thread-reply (`POST
+/pulls/$PR/comments/$ID/replies`); human issue comments use a new
+issue-level comment (`POST /issues/$PR/comments`) that quotes the
+original body — there is no thread-reply endpoint for issue comments.
+Iterate via `while IFS= read -r finding; do ...; done < <(jq -c '...')`
+(process substitution) — NOT `for finding in $(jq -c ...)`, which
+word-splits JSON containing spaces.
 
-  gh api -X POST "repos/$REPO/pulls/$PR_NUMBER/comments/${COMMENT_ID}/replies" \
-    -f body="$REPLY_BODY"
-done < <(jq -c '.[] | select(.source == "codex-connector" and (.status == "fixed" or .status == "skipped"))' <<< "$FINDINGS_JSON")
+See `references/commit-trailers.md` § Step 6.8 for the full unified
+implementation, the body-shape spec, and the 3-branch routing table.
 
-# Reply to human inline findings (new — same thread-reply path as connector).
-# Filter on .file != null so issue-comment-level human findings are excluded
-# from this branch; they're handled by the issue-comment branch below.
-while IFS= read -r finding; do
-  COMMENT_ID=$(jq -r '.source_comment_id' <<< "$finding")
-  CYCLE_ID=$(jq -r '.cycle_id' <<< "$finding")
-  STATUS=$(jq -r '.status' <<< "$finding")
-  FIX_SUMMARY=$(jq -r '.fix_summary // ""' <<< "$finding")
+### 6.9 — Resolve threads via GraphQL
 
-  if [ "$STATUS" = "fixed" ]; then
-    REPLY_BODY=$(printf 'Fixed in %s — %s\n\n(github-review cycle %s, finding %s)' "$COMMIT_SHA" "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
-  else
-    REPLY_BODY=$(printf 'Skipped — %s\n\n(github-review cycle %s, finding %s)' "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
-  fi
-
-  gh api -X POST "repos/$REPO/pulls/$PR_NUMBER/comments/${COMMENT_ID}/replies" \
-    -f body="$REPLY_BODY"
-done < <(jq -c '.[] | select(.source == "human" and .file != null and (.status == "fixed" or .status == "skipped"))' <<< "$FINDINGS_JSON")
-
-# Reply to human issue comments (new — issue-comment-level reply, NOT
-# thread-reply). There is no thread-reply endpoint for issue comments, so we
-# post a NEW issue-level comment quoting the original to give context.
-while IFS= read -r finding; do
-  CYCLE_ID=$(jq -r '.cycle_id' <<< "$finding")
-  STATUS=$(jq -r '.status' <<< "$finding")
-  FIX_SUMMARY=$(jq -r '.fix_summary // ""' <<< "$finding")
-  ORIG_BODY=$(jq -r '.body' <<< "$finding")
-
-  if [ "$STATUS" = "fixed" ]; then
-    REPLY_BODY=$(printf '> %s\n\nFixed in %s — %s\n\n(github-review cycle %s, finding %s)' \
-      "$(printf '%s' "$ORIG_BODY" | head -c 200)" \
-      "$COMMIT_SHA" "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
-  else
-    REPLY_BODY=$(printf '> %s\n\nSkipped — %s\n\n(github-review cycle %s, finding %s)' \
-      "$(printf '%s' "$ORIG_BODY" | head -c 200)" \
-      "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
-  fi
-
-  # Post a NEW issue-level comment (not a reply to a specific comment — no
-  # thread-reply endpoint for issue comments). Quote the original to give context.
-  gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$REPLY_BODY"
-done < <(jq -c '.[] | select(.source == "human" and .file == null and (.status == "fixed" or .status == "skipped"))' <<< "$FINDINGS_JSON")
-```
-
-### 6.9: Resolve threads via GraphQL
+Resolve threads for fixed AND skipped connector AND human-inline findings.
+Issue-comment-level human findings have no thread; the reply in 6.8 is
+sufficient.
 
 ```bash
-# Resolve threads for fixed AND skipped connector AND human-inline findings.
-# Issue-comment-level human findings have no thread; the reply in Step 6.8
-# is sufficient. Skipped threads got a rationale reply in Step 6.8; resolving
-# them here closes the loop so Step 7's exit check sees no lingering
-# unresolved threads.
-#
-# list_thread_ids_to_close should return thread IDs for all findings with
-# .thread_id != null and (.source == "codex-connector" or .source == "human")
-# and (.status == "fixed" or .status == "skipped").
 for thread_id in $(list_thread_ids_to_close); do
   gh api graphql -f query='
     mutation($threadId:ID!) {
@@ -1223,29 +445,22 @@ for thread_id in $(list_thread_ids_to_close); do
 done
 ```
 
-After 6.8 + 6.9, every finding has been:
+`list_thread_ids_to_close` returns thread IDs for all findings with
+`thread_id != null` AND `(source == "codex-connector" OR source ==
+"human")` AND `(status == "fixed" OR status == "skipped")`. After 6.8 +
+6.9, the cycle is done. Proceed to Step 7.
 
-- Fixed in code (Step 4)
-- Verified by codex (Step 5)
-- Documented in the pattern KB (6.1–6.4)
-- Committed atomically (6.5–6.6)
-- Pushed (6.7)
-- Replied to on the connector side (6.8)
-- Marked resolved in GraphQL (6.9)
+## Step 7 — Exit check + retro prompt
 
-The cycle is now done. Proceed to Step 7.
+After Step 6 commits + pushes (or after Step 3 returned `EXIT_CLEAN` /
+`POLL_NEXT`), determine if the loop continues or exits.
 
-## Step 7: Exit check + retro prompt
+### 7.1 — Check unresolved threads (connector + human)
 
-After Step 6 commits + pushes (or after Step 3 returns `EXIT_CLEAN` / `POLL_NEXT`), determine if the loop continues or exits.
-
-### 7.1: Check unresolved threads via GraphQL (connector + human)
-
-Reuse the `paginated_review_threads_query` helper defined in § Helpers. Two parallel counts: connector-authored unresolved threads and human-authored unresolved threads.
+Reuse `paginated_review_threads_query`. Two parallel counts: connector
+unresolved threads and human unresolved threads.
 
 ```bash
-# Loud-fail on GraphQL failure — silent empty-array would lie about
-# unresolved threads and let the loop declare clean exit prematurely.
 ALL_THREADS=$(paginated_review_threads_query) || {
   echo "ERROR: paginated_review_threads_query failed in Step 7.1." >&2
   exit 1
@@ -1262,21 +477,35 @@ UNRESOLVED_HUMAN_THREADS=$(jq '[.[] | select(
 )] | length' <<< "$ALL_THREADS")
 ```
 
-If either number is > 0, the corresponding reviewer still has unresolved findings.
+**Why no fresh-verdict gate?** Earlier iterations tried to require a
+"fresh clean summary review" from the connector before exiting clean.
+That doesn't work — the connector posts a fixed informational summary
+only when it has suggestions; on a clean run, it emits a 👍 reaction with
+no summary review at all. There's no programmatic clean-summary signal.
+The freshness gate is provided instead by Step 7.4's 10-minute poll-next
+window: if no new connector activity (review summary OR inline comment)
+appears during that window and Claude is clean, the loop legitimately
+exits clean.
 
-**Why no fresh-verdict gate?** Earlier iterations of this skill tried to require a "fresh clean summary review" from the chatgpt-codex-connector before exiting clean. That doesn't work — the connector posts a fixed informational summary only when it has suggestions; on a clean run, it emits a 👍 reaction with no summary review at all. There's no programmatic clean-summary signal. The freshness gate is provided instead by Step 7.4's 10-minute poll-next window: if no new connector activity (review summary OR inline comment) appears during that window and Claude is clean, the loop legitimately exits clean.
+### 7.2 — Check Claude verdict on the latest comment
 
-### 7.2: Check Claude verdict on the latest comment
+After Step 6's push, the Claude reviewer will re-run on the new commit.
+The verdict on its NEW comment determines if Claude is satisfied. If we're
+at this step right after a fresh commit, the new Claude review hasn't run
+yet — that's the "poll-next" case.
 
-After Step 6's push, the Claude reviewer will re-run on the new commit. The verdict on its NEW comment determines if Claude is satisfied. If we're at this step right after a fresh commit, the new Claude review hasn't run yet — that's the "poll-next" case.
+### 7.3 — Decide
 
-### 7.3: Decide
+- **All clean** = `UNRESOLVED_CONNECTOR_THREADS == 0` AND
+  `UNRESOLVED_HUMAN_THREADS == 0` AND latest Claude comment verdict is
+  `is_claude_clean` → **exit clean** (regardless of round number).
+- **More expected** = either reviewer hasn't reported on the new commit
+  yet (Claude not clean OR connector posted new review/inline content
+  this cycle) → **poll next** (if `ROUND < MAX_ROUNDS`) or fall through.
+- **Max rounds reached** = `ROUND == MAX_ROUNDS` AND clean condition NOT
+  met → exit "max rounds" (abnormal — print warning).
 
-- **All clean** = `UNRESOLVED_CONNECTOR_THREADS == 0` AND `UNRESOLVED_HUMAN_THREADS == 0` AND latest Claude comment verdict is `is_claude_clean` → **exit clean** (regardless of round number).
-- **More expected** = either reviewer hasn't reported on the new commit yet (Claude not clean OR connector posted new review/inline content this cycle) → **poll next** (if `ROUND < MAX_ROUNDS`) or fall through to the next bullet.
-- **Max rounds reached** = `ROUND == MAX_ROUNDS` AND clean condition NOT met → exit "max rounds" (abnormal — print warning).
-
-### 7.4: Poll-next sub-flow
+### 7.4 — Poll-next sub-flow
 
 ```bash
 echo "Round $ROUND committed — polling for next review (60s × 10 rounds)."
@@ -1284,7 +513,6 @@ echo "Round $ROUND committed — polling for next review (60s × 10 rounds)."
 for poll_attempt in $(seq 1 10); do
   sleep 60
   # Re-poll Claude and connector exactly as Step 2.
-  # If new finding(s) appear (cases 2/3/4/5), break and either continue cycle or loud-fail.
   if step_2_yields_new_content; then
     ROUND=$((ROUND + 1))
     goto_step_2
@@ -1293,187 +521,43 @@ done
 
 # Poll timeout → abnormal exit. Reviewers haven't produced a clean verdict
 # within the 10-minute window after the last push; we must NOT report clean.
-# Route to Step 7.6 with REASON="poll-timeout" so artifacts are preserved
-# for the user to investigate and the exit prints ⚠️ not ✅.
 REASON="poll-timeout"
 goto_step_7_abnormal_exit_message
 ```
 
-### 7.5: Clean exit message + retro prompt
+### 7.5 — Clean exit message + retro prompt
 
-```bash
-cat <<EOF
-✅ Review loop complete after $ROUND rounds.
+Print a ✅ banner with totals (fixed / skipped / pattern files touched /
+threads resolved), offer the user a retro option, then run
+`cleanup_on_clean_exit`. The skill **does NOT auto-write retros** —
+synthesis needs hindsight. See `references/cleanup-recovery.md` § Step
+7.5 for the verbatim message HEREDOC.
 
-  Findings processed: $TOTAL_FIXED (fixed) / $TOTAL_SKIPPED (skipped)
-  Pattern files touched: $TOTAL_PATTERN_FILES
-  Connector threads resolved: $TOTAL_THREADS_RESOLVED
+### 7.6 — Abnormal exit
 
-Want a retrospective written for this cycle?
+Three `REASON` values:
 
-  • If your environment has a /write-retro skill: run \`/write-retro PR$PR_NUMBER\`
-  • Otherwise: write manually at
-      docs/reviews/retrospectives/$(date -I)-<your-topic>.md
-    using the format from prior retros (e.g.
-    docs/reviews/retrospectives/2026-04-29-tests-panel-bridge-session.md)
+- `"poll-timeout"` — Step 7.4's 10×60s window elapsed.
+- `"max-rounds"` — `ROUND == MAX_ROUNDS` and clean condition not met.
+- `"abort"` — a cycle hit a loud-fail abort (verify failure, push
+  failure) and bubbled up.
 
-Skip if the cycle was uneventful.
-EOF
-
-# Run cleanup before exit (§6.1 success path).
-cleanup_on_clean_exit
-```
-
-### 7.6: Abnormal exit message
-
-The abnormal-exit path handles three `REASON` values:
-
-- `"poll-timeout"` — Step 7.4's 10×60s polling window elapsed without a new review (set by 7.4).
-- `"max-rounds"` — `ROUND == MAX_ROUNDS` and the clean condition was not met (set by 7.3).
-- `"abort"` — a cycle hit a loud-fail abort (e.g. verify failure, push failure) and bubbled up.
-
-In all three cases artifacts under `.harness-github-review/` are preserved
-for forensics — `cleanup_on_clean_exit` is **never** called on this path.
-
-```bash
-cat <<EOF >&2
-⚠️ Loop exited at round $ROUND because $REASON.
-
-  Incident report: $ABORT_DIR/incident.md
-  Last verify result: .harness-github-review/cycle-${ROUND}-verify-result.json
-
-Recommended next step: $(human_guidance_for_reason "$REASON")
-
-Once the cycle is unstuck, consider /write-retro (if available) or a
-manual retrospective — incident retros are highest-signal entries in
-docs/reviews/retrospectives/.
-EOF
-
-# DO NOT auto-cleanup on abnormal exit — preserve forensics.
-exit 1
-```
-
-The skill **does NOT auto-write retros**. Synthesis needs hindsight; mandatory low-value retros pollute the directory.
+In all three cases artifacts under `.harness-github-review/` are
+**preserved** — `cleanup_on_clean_exit` is **never** called on this
+path. Print a ⚠️ banner with `$ROUND`, `$REASON`, the path to
+`incident.md`, the latest `verify-result.json` path, and a
+`human_guidance_for_reason "$REASON"` recommendation. Then `exit 1`. See
+`references/cleanup-recovery.md` § Step 7.6 for the verbatim message
+HEREDOC and the per-`REASON` guidance strings.
 
 ## Cleanup, recovery & failsafe
 
-### Per-cycle artifact lifecycle
+Per-cycle artifacts under `.harness-github-review/` follow a strict
+lifecycle (keep across rounds, wipe on clean exit, preserve on abort).
+The skill never auto-`git stash`es; three explicit user-driven recovery
+paths are documented for the abort case.
 
-The skill writes `cycle-${ROUND}-*` files to `.harness-github-review/` (gitignored): `cycle-${ROUND}-diff.patch`, `cycle-${ROUND}-verify-prompt.md`, `cycle-${ROUND}-verify-result.json`, `cycle-${ROUND}-verify-events.log`, `cycle-${ROUND}-verify-stderr.log`. On abort, also `cycle-${ROUND}-aborted/`.
-
-| Event                                                                                               | Action                                                                                                                                                                                                                                                                                                       |
-| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Round N commits OK, loop continuing to N+1                                                          | **Keep** N's artifacts. Next round may compare.                                                                                                                                                                                                                                                              |
-| Round N aborts → loop exits                                                                         | **Preserve everything** in `.harness-github-review/`. Print recovery instructions (below).                                                                                                                                                                                                                   |
-| Loop exits cleanly (final round verdict clean)                                                      | `cleanup_on_clean_exit`: wipe non-aborted `cycle-*-{diff,verify-prompt,verify-result,verify-events,verify-stderr}.{patch,md,json,log}` files. **Preserve any `cycle-*-aborted/` dirs** from earlier rounds in this run. Print "cleaned N artifact files from this run".                                      |
-| New `/harness-plugin:github-review` invocation, `.harness-github-review/` already has prior content | **Scan first.** If any `cycle-*-aborted/` dirs found from prior loops → **prompt user**: list paths, suggest inspecting, do NOT auto-delete. Skill exits without starting a new loop. If only orphaned `cycle-*` files exist → wipe with one-line "cleaned N stale files from prior run" notice and proceed. |
-
-The "scan-on-loop-start, prompt-don't-delete" rule for prior aborted dirs is the **load-bearing forensics guarantee**: aborted dirs are the evidence we need when the loop failed in a confusing way. Auto-deleting violates the loud-fail / preserve-forensics posture.
-
-```bash
-loop_start_scan() {
-  if [ ! -d .harness-github-review ]; then return 0; fi
-
-  local aborted_dirs
-  aborted_dirs=$(find .harness-github-review -maxdepth 1 -type d -name 'cycle-*-aborted' 2>/dev/null)
-
-  if [ -n "$aborted_dirs" ]; then
-    echo "Found prior aborted cycle(s):" >&2
-    echo "$aborted_dirs" | sed 's/^/  /' >&2
-    echo "" >&2
-    echo "Inspect each cycle-*-aborted/incident.md before continuing." >&2
-    echo "Once resolved, remove them with: rm -rf .harness-github-review/cycle-*-aborted/" >&2
-    echo "Then re-run /harness-plugin:github-review." >&2
-    exit 1
-  fi
-
-  # Wipe orphan non-aborted artifacts.
-  local orphans
-  orphans=$(find .harness-github-review -maxdepth 1 -type f -name 'cycle-*' 2>/dev/null | wc -l)
-  if [ "$orphans" -gt 0 ]; then
-    find .harness-github-review -maxdepth 1 -type f -name 'cycle-*' -delete
-    echo "Cleaned $orphans stale artifact files from prior run."
-  fi
-}
-
-cleanup_on_clean_exit() {
-  if [ ! -d .harness-github-review ]; then return 0; fi
-
-  local count=0
-  while IFS= read -r f; do
-    rm -f "$f"
-    count=$((count + 1))
-  done < <(find .harness-github-review -maxdepth 1 -type f -name 'cycle-*')
-
-  if [ "$count" -gt 0 ]; then
-    echo "Cleaned $count artifact files from this run."
-  fi
-
-  # Aborted dirs (if any) are preserved.
-}
-```
-
-`loop_start_scan` runs at the start of Step 1 (BEFORE input resolution). `cleanup_on_clean_exit` runs in Step 7.5.
-
-### No `git stash`, by design
-
-The skill does NOT auto-`git stash`. Reasons:
-
-1. **Working-tree visibility.** Auto-hiding contradicts loud-fail discipline.
-2. **Loop state lives elsewhere.** Persistent state is GitHub + commit trailers. Abort artifacts are `.harness-github-review/cycle-*-aborted/`. Stash would be a third surface.
-3. **Stash is user-controlled.** A parking lot for the user's own workflow needs.
-
-Stash is documented as one of three explicit user-driven recovery paths (below), not an automatic step.
-
-### Three recovery paths on abort
-
-The skill prints all three in §3.7's exit message:
-
-```
-Cycle ${ROUND} aborted in verify after ${RETRY_COUNT} attempts.
-See ${ABORT_DIR}/.
-
-Working tree contains the last attempted fix.
-
-  # Inspect first:
-  git status
-  git diff
-  git diff --staged
-
-Choose ONE recovery path:
-
-  # 1. Discard the attempt entirely
-  git restore --staged .
-  git restore .
-  # Then remove only the untracked paths listed in:
-  #   ${ABORT_DIR}/untracked.txt
-  # Review that file before any rm — do NOT run a blanket `git clean -fd`.
-
-  # 2. Keep & finish manually
-  # (edit files, then `git add` and `git commit` yourself)
-
-  # 3. Snapshot the attempt as a stash for later
-  git stash push -u -m "github-review cycle ${ROUND} aborted attempt"
-  # Restore later with: git stash pop
-```
-
-Notes on path 1:
-
-- `git restore --staged . && git restore .` reverts both index and working-tree mods, including staged deletions (which `git checkout -- .` misses).
-- Untracked-file removal is **per-path from `untracked.txt`**, not blanket `git clean -fd`. Blanket clean risks deleting unrelated work.
-
-### Pattern-file rollback is N/A
-
-Pattern appends only happen if the cycle's commit succeeds (§4 atomicity). On abort, attempted appends are still in working tree alongside the code fix — discarded by recovery path 1, kept by paths 2/3.
-
-### Watermark trailers are durable
-
-Trailers live in committed history; nothing to clean. If the entire fix commit needs to be undone (`git reset HEAD~1`), the trailers vanish with the commit and the next cycle re-derives a smaller processed set. Self-healing.
-
-### Manual full reset
-
-```bash
-rm -rf .harness-github-review/
-```
-
-Safe because gitignored. Wipes all artifacts including aborted dirs. User invokes only after resolving aborted dirs.
+See `references/cleanup-recovery.md` for the full lifecycle table, the
+three recovery paths, the `loop_start_scan` / `cleanup_on_clean_exit`
+helpers, the rationale for no-auto-stash, and the manual-full-reset
+escape hatch.
