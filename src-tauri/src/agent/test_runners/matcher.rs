@@ -140,6 +140,31 @@ fn match_command_inner(
             });
         }
     }
+
+    // Fallback: direct invocations like `pnpm vitest` or `yarn cargo test`
+    // skip the wrapper-strip path (`pnpm exec` / `yarn exec`) and skip the
+    // script-alias path (the second token isn't a known script name in our
+    // registry). Try once more with the leading `pnpm` / `yarn` dropped.
+    // Only fires AFTER the script-alias path returned None, so a real
+    // `pnpm test` / `yarn test` still resolves through the alias resolver
+    // and never reaches this fallback.
+    if matches!(
+        after_wrapper.first().map(String::as_str),
+        Some("pnpm") | Some("yarn")
+    ) && after_wrapper.len() > 1
+    {
+        let after_pm: Vec<String> = after_wrapper[1..].to_vec();
+        let pm_token_refs: Vec<&str> = after_pm.iter().map(String::as_str).collect();
+        for runner in RUNNERS {
+            if (runner.matches)(&pm_token_refs) {
+                return Some(MatchedCommand {
+                    runner,
+                    stripped_tokens: after_pm,
+                });
+            }
+        }
+    }
+
     None
 }
 
@@ -327,5 +352,66 @@ mod tests {
         .unwrap();
         assert!(match_command("npm run a", Some(dir.path())).is_none());
         assert!(match_command("npm run b", Some(dir.path())).is_none());
+    }
+
+    #[test]
+    fn match_command_finds_runner_through_pnpm_direct_invocation() {
+        // Regression: `pnpm vitest` (no `exec`) is documented as a valid
+        // way to run a binary via pnpm. The wrapper-strip path only
+        // handled `pnpm exec vitest`. Now a fallback in match_command_inner
+        // strips a leading `pnpm`/`yarn` and re-walks the runner registry.
+        let m = match_command("pnpm vitest run src/foo.test.ts", None).expect("should match");
+        assert_eq!(m.runner.name, "vitest");
+        assert_eq!(
+            m.stripped_tokens,
+            vec_of(&["vitest", "run", "src/foo.test.ts"])
+        );
+    }
+
+    #[test]
+    fn match_command_finds_runner_through_yarn_direct_invocation() {
+        let m = match_command("yarn cargo test --release", None).expect("should match");
+        assert_eq!(m.runner.name, "cargo");
+    }
+
+    #[test]
+    fn match_command_pnpm_test_still_resolves_via_alias_not_fallback() {
+        // The fallback only fires AFTER alias resolution returns None.
+        // `pnpm test` MUST still go through script-alias resolution
+        // (so the resolved script body, not the literal `test`, is matched).
+        use std::fs;
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts": {"test": "vitest run"}}"#,
+        )
+        .unwrap();
+        let m = match_command("pnpm test", Some(dir.path())).expect("should match");
+        assert_eq!(m.runner.name, "vitest");
+    }
+
+    #[test]
+    fn match_command_preserves_cli_args_after_npm_test_separator() {
+        // Regression: `npm test -- src/foo.test.ts` used to drop the args
+        // because resolve_alias returned only the script body. Now CLI args
+        // after the script name (with `--` separator stripped) are appended
+        // to the resolved command, then re-tokenized through the pipeline.
+        use std::fs;
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts": {"test": "vitest"}}"#,
+        )
+        .unwrap();
+        let m = match_command("npm test -- src/foo.test.ts", Some(dir.path()))
+            .expect("should match");
+        assert_eq!(m.runner.name, "vitest");
+        assert_eq!(
+            m.stripped_tokens,
+            vec_of(&["vitest", "src/foo.test.ts"]),
+            "CLI args after npm `--` separator should be preserved"
+        );
     }
 }

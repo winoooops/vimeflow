@@ -17,8 +17,27 @@ const MAX_RECURSION_DEPTH: usize = 3;
 /// test runner. Adding a Bun runner is future work.
 pub fn resolve_alias(tokens: &[String], cwd: Option<&Path>) -> Option<String> {
     let cwd = cwd?;
-    let (script_name, _consumed) = parse_alias_invocation(tokens)?;
-    resolve_recursive(&script_name, cwd, 0)
+    let (script_name, consumed) = parse_alias_invocation(tokens)?;
+    let resolved = resolve_recursive(&script_name, cwd, 0)?;
+
+    // Preserve any CLI args after the script name. npm forwards
+    // `npm test -- src/foo.test.ts` as `<script-body> src/foo.test.ts`
+    // (the `--` separator is dropped before forwarding). Without this,
+    // `npm test -- --reporter verbose` would resolve to just `vitest`,
+    // losing the user-supplied args.
+    let leftover = &tokens[consumed..];
+    let leftover = if leftover.first().map(String::as_str) == Some("--") {
+        &leftover[1..]
+    } else {
+        leftover
+    };
+    if leftover.is_empty() {
+        Some(resolved)
+    } else {
+        // shell-words::join re-escapes any tokens with spaces or quotes
+        // so the resulting string round-trips through tokenize cleanly.
+        Some(format!("{} {}", resolved, shell_words::join(leftover.iter())))
+    }
 }
 
 fn parse_alias_invocation(tokens: &[String]) -> Option<(String, usize)> {
@@ -119,14 +138,20 @@ mod tests {
     }
 
     #[test]
-    fn alias_loop_bounded_to_depth_3() {
+    fn alias_loop_does_not_hang_at_depth_limit() {
+        // Renamed from `alias_loop_bounded_to_depth_3` to reflect what's
+        // actually being asserted: this test only verifies termination,
+        // NOT that resolve_alias detects the cycle. Cross-call cycle
+        // safety lives in `match_command_inner`'s visited HashSet (see
+        // matcher.rs); resolve_alias here returns the LITERAL resolved
+        // string when depth bottoms out, which would then re-enter
+        // match_command_inner and be caught by the visited set.
         let dir = tempdir().unwrap();
-        // "test" → "npm run test" → "npm run test" → ... should not infinite-loop
         write_pkg(dir.path(), r#""test": "npm run test""#);
-        // Depth bound triggers, returns None for the deepest recursion attempt.
-        // The outer call still returns Some(the literal resolved string) because
-        // recursion bottoms out and the outer fallback is the resolved string itself.
-        // We just need to confirm it doesn't hang.
+        // Some(literal string) is the EXPECTED return — termination is
+        // the only property under test here. End-to-end cycle safety is
+        // covered by match_command_breaks_on_self_referential_npm_script
+        // in matcher.rs.
         let result = resolve_alias(&vec_of(&["npm", "test"]), Some(dir.path()));
         assert!(result.is_some());
     }

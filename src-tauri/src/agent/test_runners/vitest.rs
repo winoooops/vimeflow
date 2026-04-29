@@ -12,7 +12,7 @@ use std::path::Path;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use super::path_resolution::resolve_group_path;
+use super::path_resolution::resolve_group_path_with_cwd_canonical;
 use super::types::{
     CapturedOutput, TestGroup, TestGroupKind, TestGroupStatus, TestRunSummary, TestRunner,
 };
@@ -59,6 +59,13 @@ fn vitest_parse_result(out: &CapturedOutput, cwd: &Path) -> Option<TestRunSummar
     let skipped = caps.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
     let total = passed + failed + skipped;
 
+    // Canonicalize CWD ONCE up front. resolve_group_path's per-call
+    // version would re-canonicalize for every group — wasted OS round-trip
+    // when MAX_GROUPS=500. None means cwd doesn't exist; per-group path
+    // resolution falls back to None for every group (rows render
+    // non-clickable, summary counts unaffected).
+    let cwd_canonical = cwd.canonicalize().ok();
+
     // Pull per-file groups.
     let mut groups: Vec<TestGroup> = Vec::new();
     for cap in FILE_ROW_RE.captures_iter(&stripped) {
@@ -91,7 +98,9 @@ fn vitest_parse_result(out: &CapturedOutput, cwd: &Path) -> Option<TestRunSummar
         } else {
             (file_total.saturating_sub(file_failed), 0)
         };
-        let path = resolve_group_path(cwd, &label);
+        let path = cwd_canonical
+            .as_ref()
+            .and_then(|c| resolve_group_path_with_cwd_canonical(c, &label));
         groups.push(TestGroup {
             label,
             path,

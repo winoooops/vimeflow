@@ -11,7 +11,19 @@ use std::path::{Component, Path};
 /// We check `..` as an actual path COMPONENT, not as a substring, so legitimate
 /// filenames containing the two-character sequence `..` (e.g.
 /// `reconnect..server.test.ts`) aren't falsely rejected.
+///
+/// Convenience wrapper for one-shot callers. Per-snapshot parsers should
+/// canonicalize CWD ONCE up front and call `resolve_group_path_with_cwd_canonical`
+/// in the loop, since `cwd.canonicalize()` is an OS round-trip and a snapshot
+/// can have up to MAX_GROUPS=500 groups.
 pub fn resolve_group_path(cwd: &Path, label: &str) -> Option<String> {
+    let cwd_canonical = cwd.canonicalize().ok()?;
+    resolve_group_path_with_cwd_canonical(&cwd_canonical, label)
+}
+
+/// Same as `resolve_group_path` but skips canonicalizing CWD on every call.
+/// Use this from within a per-group loop after canonicalizing CWD once.
+pub fn resolve_group_path_with_cwd_canonical(cwd_canonical: &Path, label: &str) -> Option<String> {
     let label_path = Path::new(label);
     if label_path.is_absolute()
         || label_path
@@ -20,9 +32,8 @@ pub fn resolve_group_path(cwd: &Path, label: &str) -> Option<String> {
     {
         return None;
     }
-    let candidate = cwd.join(label_path).canonicalize().ok()?;
-    let cwd_canonical = cwd.canonicalize().ok()?;
-    if !candidate.starts_with(&cwd_canonical) {
+    let candidate = cwd_canonical.join(label_path).canonicalize().ok()?;
+    if !candidate.starts_with(cwd_canonical) {
         return None;
     }
     Some(candidate.display().to_string())

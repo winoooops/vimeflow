@@ -83,7 +83,7 @@ fn build_snapshot_with_summary(
     }
 }
 
-fn derive_status(summary: Option<&TestRunSummary>, is_error: bool) -> TestRunStatus {
+fn derive_status(summary: Option<&TestRunSummary>, _is_error: bool) -> TestRunStatus {
     match summary {
         Some(s) if s.failed > 0 => TestRunStatus::Fail,
         Some(s) if s.total == 0 => TestRunStatus::NoTests,
@@ -95,12 +95,12 @@ fn derive_status(summary: Option<&TestRunSummary>, is_error: bool) -> TestRunSta
         // text like "all skipped") is future work.
         Some(s) if s.passed == 0 && s.skipped > 0 => TestRunStatus::NoTests,
         Some(_) => TestRunStatus::Pass,
-        None if is_error => TestRunStatus::Error,
-        // None + no error: treat as Error. Note: maybe_build_snapshot
-        // filters this case out before calling, so callers going through
-        // that wrapper never reach this arm. Direct callers of
-        // build_snapshot DO reach it and get Error — which is the
-        // safest fallback when we can't classify the result.
+        // None: classify as Error regardless of `is_error`. Both
+        // `is_error=true` and `is_error=false` produce Error here BY
+        // DESIGN. The wrapper `maybe_build_snapshot` already filters out
+        // the `None + is_error=false` case (we don't know what happened,
+        // skip emit). Direct callers of `build_snapshot` reach this arm
+        // and get Error as the safest fallback.
         None => TestRunStatus::Error,
     }
 }

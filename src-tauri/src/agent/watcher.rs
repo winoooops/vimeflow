@@ -325,30 +325,19 @@ pub async fn start_agent_watcher(
         path.display()
     );
 
-    // Debug-only file log for diagnosing watcher startup
-    #[cfg(debug_assertions)]
-    {
-        use std::io::Write;
-        use std::time::SystemTime;
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/tmp/vimeflow-debug.log")
-        {
-            let secs = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            let _ = writeln!(
-                f,
-                "[{}] [watcher] start: session={}, cwd={}, path={}",
-                secs,
-                session_id,
-                cwd,
-                path.display()
-            );
-        }
-    }
+    // Use the structured logger (already configured for the rest of this
+    // file) for startup diagnostics. The earlier debug-only file log at
+    // `/tmp/vimeflow-debug.log` was dropped: a fixed predictable path
+    // under /tmp without O_EXCL follows symlinks, allowing a local actor
+    // on a shared system to redirect appends, and Linux's default umask
+    // 022 left the file world-readable. Run with RUST_LOG=debug to see
+    // these lines.
+    log::debug!(
+        "Watcher startup detail: session={}, cwd={}, path={}",
+        session_id,
+        cwd,
+        path.display()
+    );
 
     // Stop any existing watcher for this session
     state.remove(&session_id);
