@@ -1052,8 +1052,12 @@ for poll_attempt in $(seq 1 10); do
   fi
 done
 
-echo "No new review after 10×60s — exiting loop."
-goto_step_7_clean_exit_message
+# Poll timeout → abnormal exit. Reviewers haven't produced a clean verdict
+# within the 10-minute window after the last push; we must NOT report clean.
+# Route to Step 7.6 with REASON="poll-timeout" so artifacts are preserved
+# for the user to investigate and the exit prints ⚠️ not ✅.
+REASON="poll-timeout"
+goto_step_7_abnormal_exit_message
 ```
 
 ### 7.5: Clean exit message + retro prompt
@@ -1083,7 +1087,14 @@ cleanup_on_clean_exit
 
 ### 7.6: Abnormal exit message
 
-For max-rounds, abort, or poll-timeout:
+The abnormal-exit path handles three `REASON` values:
+
+- `"poll-timeout"` — Step 7.4's 10×60s polling window elapsed without a new review (set by 7.4).
+- `"max-rounds"` — `ROUND == MAX_ROUNDS` and the clean condition was not met (set by 7.3).
+- `"abort"` — a cycle hit a loud-fail abort (e.g. verify failure, push failure) and bubbled up.
+
+In all three cases artifacts under `.harness-github-review/` are preserved
+for forensics — `cleanup_on_clean_exit` is **never** called on this path.
 
 ```bash
 cat <<EOF >&2
