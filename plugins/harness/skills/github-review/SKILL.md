@@ -245,6 +245,215 @@ def is_claude_clean(body: str) -> bool:
 
 Anchored to start-of-line; refuses to match quoted/embedded references inside finding bodies.
 
+### Step 2B: Codex connector reviewer (PR review summary + inline comments)
+
+The connector posts on two surfaces:
+
+1. `/pulls/{pr}/reviews` — summary review with body `### 💡 Codex Review`
+2. `/pulls/{pr}/comments` — inline file-level comments with `**P1/P2 Badge** Title` body
+
+Inline comments are the actionable findings. Summary reviews are used only for the "is this run clean" verdict signal.
+
+**Two-step poll:**
+
+```bash
+# Step 1: connector reviews (summary level).
+NEW_REVIEWS_JSON=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate \
+  --jq '[.[] | select(.user.login == "chatgpt-codex-connector[bot]")]')
+
+# Subtract Processed-Codex-Reviews trailer set.
+PROCESSED_REVIEWS_JSON=$(jq -R 'split(",") | map(select(length > 0) | tonumber)' <<< "$PROCESSED_CODEX_REVIEW_IDS")
+UNPROCESSED_REVIEWS_JSON=$(jq --argjson done "$PROCESSED_REVIEWS_JSON" '
+  [.[] | select(.id as $id | ($done | index($id) | not))]
+' <<< "$NEW_REVIEWS_JSON")
+UNPROCESSED_REVIEW_IDS_JSON=$(jq '[.[].id]' <<< "$UNPROCESSED_REVIEWS_JSON")
+```
+
+```bash
+# Step 2: connector inline comments scoped to unprocessed review IDs,
+# also subtracting Processed-Codex-Inline. Use string-membership index()
+# to dodge jq's number-vs-string typing across REST endpoints.
+#
+# IMPORTANT: gh api's --jq accepts ONLY the filter expression, not other jq
+# flags like --argjson. Pipe gh api raw output to a separate jq invocation.
+PROCESSED_INLINE_JSON=$(jq -R 'split(",") | map(select(length > 0))' <<< "$PROCESSED_CODEX_INLINE_IDS")
+
+NEW_INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments" --paginate \
+  | jq --argjson rids "$UNPROCESSED_REVIEW_IDS_JSON" \
+       --argjson done_inline "$PROCESSED_INLINE_JSON" '
+    ($rids | map(tostring)) as $ridset |
+    ($done_inline | map(tostring)) as $doneset |
+    [.[] | select(
+      .user.login == "chatgpt-codex-connector[bot]"
+      and ((.pull_request_review_id // empty | tostring) as $rid | $ridset | index($rid))
+      and ((.id | tostring) as $cid | $doneset | index($cid) | not)
+    )]')
+```
+
+**Race retry — review summary appears before inline comments are queryable:**
+
+Per unprocessed review, fetch its inline comments. If empty:
+
+```python
+def is_summary_clean(body: str) -> bool:
+    CLEAN_PATTERNS = [
+        r'(?im)^\s*(?:✅\s*)?No issues found\.?\s*$',
+        r'(?im)^\s*\*\*Overall:\s*✅\s*patch is correct\*\*',
+        r'(?im)^\s*Overall:\s*✅\s*patch is correct\b',
+    ]
+    return any(re.search(p, body) for p in CLEAN_PATTERNS)
+
+# Per review:
+if not inline_for_this_review:
+    if is_summary_clean(review.body):
+        # Summary explicitly clean — no inline expected. Skip retry.
+        continue
+    # Race: summary suggests findings but inline not yet visible.
+    for attempt in range(1, 7):  # 6 attempts × 5s = 30s max
+        time.sleep(5)
+        re_fetch_inline()
+        if non_empty:
+            break
+    else:
+        raise SkillError(
+          f"connector review {review.id} summary suggests findings but inline "
+          "comments still empty after 6×5s retries — refusing to silently exit"
+        )
+```
+
+**Inline comment parse** — body shape (verified on PR #109):
+
+```
+**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  <Title>**
+
+<Description>
+
+Useful? React with 👍 / 👎.
+```
+
+Top-level fields (no body parsing required for these): `id`, `path`, `original_line`, `pull_request_review_id`.
+
+Body parsing:
+
+- `severity`: regex `!\[(P\d) Badge\]` → P1 maps to internal HIGH, P2 to internal MEDIUM. Original `P1` / `P2` label preserved in pattern entry's `Severity:` field as `P1 / HIGH` / `P2 / MEDIUM`.
+- `title`: regex `\*\*<sub>.*?</sub>\s+(.+?)\*\*` → group 1, trimmed
+- `body`: text between the title line and `Useful? React with 👍 / 👎.`
+
+**Thread ID lookup** for connector inline comments — REST does not return thread IDs, so we query GraphQL. Implementation **must be page-aware**. Define a single named helper, `paginated_review_threads_query`, that handles pagination once. Both Step 2 (thread-id lookup) and Step 7.1 (unresolved-thread exit check) reuse it:
+
+```bash
+# Returns a flat JSON array of {thread_id, comment_databaseId,
+# comment_author_login, isResolved} entries across ALL review threads and
+# ALL comments per thread. Caller filters by author / by ID set as needed.
+paginated_review_threads_query() {
+  local cursor=""
+  local result="[]"
+
+  while :; do
+    local page_json
+    if [ -z "$cursor" ]; then
+      page_json=$(gh api graphql -f query='
+        query($owner:String!, $name:String!, $pr:Int!) {
+          repository(owner:$owner, name:$name) {
+            pullRequest(number:$pr) {
+              reviewThreads(first:100) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  id
+                  isResolved
+                  comments(first:50) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { databaseId author { login } }
+                  }
+                }
+              }
+            }
+          }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER")
+    else
+      page_json=$(gh api graphql -f query='
+        query($owner:String!, $name:String!, $pr:Int!, $cursor:String!) {
+          repository(owner:$owner, name:$name) {
+            pullRequest(number:$pr) {
+              reviewThreads(first:100, after:$cursor) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  id
+                  isResolved
+                  comments(first:50) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { databaseId author { login } }
+                  }
+                }
+              }
+            }
+          }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER" -F cursor="$cursor")
+    fi
+
+    # Detect any thread whose comments page itself overflowed.
+    local overflow
+    overflow=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+                    | select(.comments.pageInfo.hasNextPage == true)
+                    | .id]' <<< "$page_json")
+    if [ "$(jq 'length' <<< "$overflow")" -gt 0 ]; then
+      echo "ERROR: review thread(s) $overflow exceed 50-comment first page; per-thread pagination required but not yet implemented." >&2
+      return 1
+    fi
+
+    # Append flattened entries from this page.
+    result=$(jq -s '.[0] + .[1]' \
+      <(echo "$result") \
+      <(jq '[.data.repository.pullRequest.reviewThreads.nodes
+              | .[] as $thread
+              | .comments.nodes[]
+              | {thread_id: $thread.id, comment_databaseId: .databaseId,
+                 comment_author_login: .author.login, isResolved: $thread.isResolved}]' \
+            <<< "$page_json"))
+
+    # Advance cursor or exit.
+    local has_next
+    has_next=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<< "$page_json")
+    if [ "$has_next" != "true" ]; then break; fi
+    cursor=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<< "$page_json")
+  done
+
+  echo "$result"
+}
+
+# Step 2 usage: build inline-comment-id → thread-id map.
+ALL_THREAD_COMMENTS=$(paginated_review_threads_query)
+INLINE_TO_THREAD_MAP=$(jq '[.[] | select(.comment_author_login == "chatgpt-codex-connector[bot]")
+                            | {thread_id, comment_id: .comment_databaseId, isResolved}]' \
+                          <<< "$ALL_THREAD_COMMENTS")
+```
+
+After all pages exhausted: any connector inline-comment ID not present in `INLINE_TO_THREAD_MAP` is a loud error (`"connector inline comment {id} not found in any review thread — data state anomaly"`).
+
+The mapping table is consumed in Step 6 (reply + resolve threads). Step 7.1 reuses `paginated_review_threads_query` for the unresolved-thread exit check.
+
+### Step 2C: Finding-table aggregation
+
+After Steps 2A + 2B, build the per-cycle finding table. The table is **transient** (in-memory only — not persisted; spec §1).
+
+```typescript
+type Finding = {
+  cycle_id: string // "F1", "F2", ... — stable for this cycle, used in verify prompt
+  source: 'claude' | 'codex-connector'
+  source_comment_id: number // Claude: comment ID. Connector: inline comment ID.
+  source_review_id: number | null // Connector only
+  thread_id: string | null // Connector only (PRRT_xxx form)
+  severity_internal: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
+  severity_label_original: string // e.g. "HIGH" or "P1 / HIGH" (preserved for pattern entry)
+  title: string
+  file: string // repo-relative
+  line_range: { start: number; end: number }
+  body: string
+  status: 'pending' | 'fixed' | 'skipped' | 'verify_failed'
+  fix_summary: string | null // populated after Step 4
+}
+```
+
+Build the table by iterating Claude findings (if `LATEST_CLAUDE` is non-null and parsing succeeded) and connector inline findings (everything in the post-race-retry inline set), assigning sequential `cycle_id` strings (`F1`, `F2`, ...). The table is consumed by Step 3 (classification), Step 4 (fix loop), Step 5 (verify prompt), and Step 6 (commit message + pattern routing).
+
 ## Step 3: Empty-state classification
 
 (Filled in Task 7.)
