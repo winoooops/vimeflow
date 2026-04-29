@@ -87,6 +87,51 @@ Step 7 — Exit check + retro prompt; or poll-next sub-flow
 6. **State persistence is via commit-message trailers** — no `.json` state
    file. See `references/commit-trailers.md`.
 
+## Codex-verified react + resolve chain
+
+The fate of each comment-thread on a PR is tied to an explicit
+codex-verified chain. Reply + thread-resolve only happen if local codex
+agrees the fix addressed the upstream finding without introducing new
+HIGH/CRITICAL/MEDIUM issues. The reply body cites both the commit SHA
+and the codex-verify status so the human reading the resolved thread
+sees the fix was independently verified before resolution.
+
+```text
+finding (Step 2)
+   │
+   ▼
+fix in working tree (Step 4)  ◀──── retry (≤3) ──── unaddressed / new MEDIUM+
+   │                                                       ▲
+   ▼                                                       │
+stage diff (no commit yet)                                 │
+   │                                                       │
+   ▼                                                       │
+codex exec verify on staged diff (Step 5) ─────────────────┘
+   │ pass / pass_with_deferred_LOW
+   ▼
+commit with watermark trailers (Step 6.6)
+   │
+   ▼
+git push (Step 6.7)
+   │
+   ▼
+reply on comment (Step 6.8)
+   │   body cites: COMMIT_SHA + (codex-verify cycle N: pass | pass_with_deferred_LOW | skipped: docs-only)
+   ▼
+resolveReviewThread mutation (Step 6.9)
+```
+
+If codex verify fails (`unaddressed_upstream`, `new_medium`, `new_high`,
+`verify_timeout`, `verify_error`, `contradiction`, retry-exhausted) the
+chain ABORTS before commit. No reply, no thread-resolve, no trailer
+update. The cycle exits with the abort directory preserved per
+`references/cleanup-recovery.md`.
+
+References:
+
+- `references/verify-prompt.md` — codex prompt template + result-classification matrix.
+- `references/commit-trailers.md` — reply-body template (with the verify-status citation).
+
 ## Bootstrap
 
 Source the helper functions used across multiple steps:

@@ -252,10 +252,20 @@ since the comment is detached from the original thread:
 | 2      | `.source == "human" and .file != null` | same as branch 1 (thread-reply on `/pulls/comments`)       | none                                       |
 | 3      | `.source == "human" and .file == null` | `POST /repos/$REPO/issues/$PR/comments` (new issue-level)  | `> <first 200 chars of original body>\n\n` |
 
-Body core (after the optional prefix):
+Body core (after the optional prefix). The `Fixed` body cites the
+codex-verify status so the human reading the resolved thread sees the
+fix was independently verified before resolution (see SKILL.md
+"Codex-verified react + resolve chain"):
 
-- Fixed: `Fixed in <COMMIT_SHA> — <FIX_SUMMARY>\n\n(github-review cycle <ROUND>, finding <CYCLE_ID>)`
-- Skipped: `Skipped — <FIX_SUMMARY>\n\n(github-review cycle <ROUND>, finding <CYCLE_ID>)`
+- **Fixed (verify pass):** `Fixed in <COMMIT_SHA> (codex-verify cycle <ROUND>: pass) — <FIX_SUMMARY>\n\n(github-review cycle <ROUND>, finding <CYCLE_ID>)`
+- **Fixed (verify pass with deferred LOW):** `Fixed in <COMMIT_SHA> (codex-verify cycle <ROUND>: pass_with_deferred_LOW) — <FIX_SUMMARY>\n\n(github-review cycle <ROUND>, finding <CYCLE_ID>)`
+- **Fixed (verify skipped via docs-only escape, §5F):** `Fixed in <COMMIT_SHA> (codex-verify skipped: docs-only) — <FIX_SUMMARY>\n\n(github-review cycle <ROUND>, finding <CYCLE_ID>)`
+- **Skipped (no code change made):** `Skipped — <FIX_SUMMARY>\n\n(github-review cycle <ROUND>, finding <CYCLE_ID>)`
+
+Skipped findings have no codex-verify citation because there's nothing
+new to verify — the commit either contains no code change for that
+finding (truly skipped) or addresses it via a prior commit's already-fixed
+state (in which case `<FIX_SUMMARY>` cites that prior SHA).
 
 Iterate via `while IFS= read -r finding; do ...; done < <(jq -c '...' <<<
 "$FINDINGS_JSON")` (process substitution). The `for finding in $(jq -c
@@ -280,8 +290,16 @@ while IFS= read -r finding; do
     QUOTE_PREFIX=""
   fi
   if [ "$STATUS" = "fixed" ]; then
-    BODY_CORE=$(printf 'Fixed in %s — %s\n\n(github-review cycle %s, finding %s)' \
-      "$COMMIT_SHA" "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
+    # Cite the codex-verify status so the human sees the fix was verified.
+    if [ "${VERIFY_SKIPPED:-0}" -eq 1 ]; then
+      VERIFY_MARKER=" (codex-verify skipped: docs-only)"
+    elif [ -n "${VERIFY_DEFERRED_LOW:-}" ]; then
+      VERIFY_MARKER=" (codex-verify cycle ${ROUND}: pass_with_deferred_LOW)"
+    else
+      VERIFY_MARKER=" (codex-verify cycle ${ROUND}: pass)"
+    fi
+    BODY_CORE=$(printf 'Fixed in %s%s — %s\n\n(github-review cycle %s, finding %s)' \
+      "$COMMIT_SHA" "$VERIFY_MARKER" "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
   else
     BODY_CORE=$(printf 'Skipped — %s\n\n(github-review cycle %s, finding %s)' \
       "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
