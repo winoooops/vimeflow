@@ -643,6 +643,129 @@ Important flag notes:
 - `--sandbox read-only`: codex is verifying, not modifying. Read-only ensures it can't alter the staged diff during verification.
 - If `timeout` is unavailable on the platform: omit it and rely on the harness/agent timeout (typically 5–10 min). Acceptable degradation; codex normally finishes in 30–90s on a small staged diff.
 
+### Step 5D: Result classification matrix
+
+```bash
+HAS_UNADDRESSED=$(jq '[.findings[].title | select(startswith("[UNADDRESSED"))] | length' "$RESULT_JSON")
+HIGHEST_NEW_SEV=$(jq -r '
+  [.findings[] | select((.title // "") | startswith("[UNADDRESSED") | not) | .severity]
+  | (if length==0 then "NONE"
+     else (sort_by({"CRITICAL":4,"HIGH":3,"MEDIUM":2,"LOW":1}[.]) | last)
+     end)
+' "$RESULT_JSON")
+VERDICT=$(jq -r '.overall_correctness' "$RESULT_JSON")
+FINDINGS_COUNT=$(jq '.findings | length' "$RESULT_JSON")
+```
+
+| Condition                                                               | State                  | Action                                                                      |
+| ----------------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------- |
+| `CODEX_EXIT == 124`                                                     | `verify_timeout`       | Abort cycle (Step 5G)                                                       |
+| `CODEX_EXIT != 0` (and not 124)                                         | `verify_error`         | Abort cycle                                                                 |
+| `FINDINGS_COUNT == 0 && VERDICT == "patch is correct"`                  | `pass`                 | Continue Step 6                                                             |
+| `FINDINGS_COUNT == 0 && VERDICT == "patch has issues"`                  | `contradiction`        | **loud-fail**, abort cycle                                                  |
+| `HAS_UNADDRESSED > 0` (any sev)                                         | `unaddressed_upstream` | Re-enter Step 4 with the unaddressed Fk findings re-added; retry counter +1 |
+| `HIGHEST_NEW_SEV == "LOW"` AND `HAS_UNADDRESSED == 0`                   | `pass_with_deferred`   | Continue Step 6; commit message `Verify-Deferred-LOW:` lists each           |
+| `HIGHEST_NEW_SEV == "MEDIUM"` AND `HAS_UNADDRESSED == 0`                | `new_medium`           | Re-enter Step 4 to fix; retry counter +1                                    |
+| `HIGHEST_NEW_SEV == "HIGH"` OR `"CRITICAL"`, AND `HAS_UNADDRESSED == 0` | `new_high`             | Re-enter Step 4; retry counter +1; if counter reaches 3 → abort             |
+
+`overall_correctness` enum is `"patch is correct" | "patch has issues"` per `.github/codex/codex-output-schema.json`. The matrix uses these exact strings.
+
+### Step 5E: Verify retry budget
+
+`VERIFY_RETRY_COUNTER` starts at 0 at cycle start. Each `unaddressed_upstream` / `new_medium` / `new_high` re-entry to Step 4 increments it.
+
+```bash
+if [ "$VERIFY_RETRY_COUNTER" -ge 3 ]; then
+  echo "Verify retry budget exhausted (3 attempts) — aborting cycle." >&2
+  goto_step_5g_abort
+fi
+
+VERIFY_RETRY_COUNTER=$((VERIFY_RETRY_COUNTER + 1))
+goto_step_4
+```
+
+### Step 5F: Docs-only escape (narrow)
+
+Verify is skipped only when **all three** are true:
+
+1. Every Finding in the cycle is severity LOW
+2. Every staged path matches `^docs/` OR `^[^/]*\.md$` OR `^[^/]*\.txt$`
+3. **No** staged path matches `^\.github/`, `^package(-lock)?\.json$`, `^src-tauri/`, `^src/`, `^vite\.config\.`, `^tailwind\.config\.`, `^eslint\.config\.`, `^tsconfig\.`, `^\.husky/`
+
+```bash
+should_skip_verify_docs_only() {
+  # Condition 1
+  local non_low_count
+  non_low_count=$(jq '[.[] | select(.severity_internal != "LOW")] | length' <<< "$FINDINGS_JSON")
+  [ "$non_low_count" -eq 0 ] || return 1
+
+  # Condition 2 + 3 (combined: any path that doesn't match the docs-only allowlist OR matches the forbidden list)
+  local violations
+  violations=$(git diff --staged --name-only \
+    | awk '
+      /^docs\// { next }
+      /^[^\/]*\.md$/ { next }
+      /^[^\/]*\.txt$/ { next }
+      /^\.github\// { print "FORBIDDEN:" $0; next }
+      /^package(-lock)?\.json$/ { print "FORBIDDEN:" $0; next }
+      /^src-tauri\// { print "FORBIDDEN:" $0; next }
+      /^src\// { print "FORBIDDEN:" $0; next }
+      /^vite\.config\./ { print "FORBIDDEN:" $0; next }
+      /^tailwind\.config\./ { print "FORBIDDEN:" $0; next }
+      /^eslint\.config\./ { print "FORBIDDEN:" $0; next }
+      /^tsconfig\./ { print "FORBIDDEN:" $0; next }
+      /^\.husky\// { print "FORBIDDEN:" $0; next }
+      { print "NOT_DOCS:" $0 }
+    ')
+  [ -z "$violations" ] || return 1
+
+  return 0
+}
+
+if should_skip_verify_docs_only; then
+  echo "Verify skipped: docs-only diff (all LOW findings, allowed paths)." >&2
+  VERIFY_SKIPPED=1
+  # Step 6 will add Verify-Skipped: docs-only to the commit message.
+  goto_step_6
+fi
+```
+
+### Step 5G: Abort
+
+On `verify_timeout` / `verify_error` / `contradiction` / retry-exhausted:
+
+```bash
+ABORT_DIR=".harness-github-review/cycle-${ROUND}-aborted"
+mkdir -p "$ABORT_DIR"
+
+git diff --staged > "$ABORT_DIR/staged.patch"
+git diff > "$ABORT_DIR/unstaged.patch"
+git status --porcelain > "$ABORT_DIR/status.txt"
+git ls-files --others --exclude-standard > "$ABORT_DIR/untracked.txt"
+
+# Build incident report (per spec §3.7).
+write_incident_report > "$ABORT_DIR/incident.md"
+```
+
+`incident.md` contains, in order:
+
+1. Cycle metadata: round number, abort reason, retry counter at abort, started/aborted timestamps.
+2. The cycle's full Finding table (the `$FINDINGS_JSON`), each finding's `status` and `fix_summary`.
+3. For each verify attempt 1..N: the prompt sent, raw `findings[]` from the result JSON, which findings caused retry/abort.
+4. The watermark trailers that **would have been** committed for this cycle (so the user can re-run after manual fixup without losing the watermark progression).
+5. A "Recommended next steps" section enumerating the recovery paths from the Cleanup section (§6.3).
+
+The skill **does not** auto-`git stash`. Working tree is left visible. The skill exits the entire loop (not just this cycle):
+
+```bash
+echo "Cycle ${ROUND} aborted in verify after ${VERIFY_RETRY_COUNTER} attempts."
+echo "See $ABORT_DIR/."
+echo ""
+echo "Working tree contains the last attempted fix — inspect with 'git status' / 'git diff'."
+echo "See § Cleanup → recovery paths for next steps."
+exit 1
+```
+
 ## Step 6: Write patterns → stage all → commit → push → reply + resolve threads
 
 (Filled in Task 11.)
