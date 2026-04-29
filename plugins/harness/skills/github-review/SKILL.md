@@ -30,12 +30,13 @@ The skill defines bash helper functions reused across multiple steps. They are s
 
 ### `paginated_review_threads_query`
 
-GraphQL pagination is page-aware: review threads come back 100 per page; per-thread comments come back 50 per page. The helper walks every review-threads page and returns a flat JSON array of `{thread_id, comment_databaseId, comment_author_login, isResolved}` entries — caller filters by author / by ID set as needed.
+GraphQL pagination is page-aware: review threads come back 100 per page; per-thread comments come back 50 per page. The helper walks every review-threads page and returns a flat JSON array of `{thread_id, comment_databaseId, comment_author_login, isResolved, pull_request_review_id}` entries — caller filters by author / by ID set as needed. The `pull_request_review_id` field exists so Step 1 reconciliation can subtract stale review IDs from `PROCESSED_CODEX_REVIEW_IDS` (otherwise Step 2B's review-id filter would reject the inline before our inline-id subtraction takes effect).
 
 ```bash
 # Returns a flat JSON array of {thread_id, comment_databaseId,
-# comment_author_login, isResolved} entries across ALL review threads and
-# ALL comments per thread. Caller filters by author / by ID set as needed.
+# comment_author_login, isResolved, pull_request_review_id} entries across
+# ALL review threads and ALL comments per thread. Caller filters by author /
+# by ID set as needed.
 paginated_review_threads_query() {
   local cursor=""
   local result="[]"
@@ -54,7 +55,11 @@ paginated_review_threads_query() {
                   isResolved
                   comments(first:50) {
                     pageInfo { hasNextPage endCursor }
-                    nodes { databaseId author { login } }
+                    nodes {
+                      databaseId
+                      author { login }
+                      pullRequestReview { databaseId }
+                    }
                   }
                 }
               }
@@ -73,7 +78,11 @@ paginated_review_threads_query() {
                   isResolved
                   comments(first:50) {
                     pageInfo { hasNextPage endCursor }
-                    nodes { databaseId author { login } }
+                    nodes {
+                      databaseId
+                      author { login }
+                      pullRequestReview { databaseId }
+                    }
                   }
                 }
               }
@@ -105,7 +114,8 @@ paginated_review_threads_query() {
               | .[] as $thread
               | .comments.nodes[]
               | {thread_id: $thread.id, comment_databaseId: .databaseId,
-                 comment_author_login: .author.login, isResolved: $thread.isResolved}]' \
+                 comment_author_login: .author.login, isResolved: $thread.isResolved,
+                 pull_request_review_id: (.pullRequestReview.databaseId // null)}]' \
             <<< "$page_json"))
 
     # Advance cursor or exit.
@@ -120,6 +130,22 @@ paginated_review_threads_query() {
 ```
 
 `OWNER`, `NAME`, and `PR_NUMBER` are set in Step 0 — the helper is callable from Step 1 onward.
+
+### `is_summary_clean_bash`
+
+Bash-side mirror of the python `is_summary_clean()` defined in §2.2 (Step 2B). The python version is conceptual — actual matching is regex-based — so this bash function uses the same anchored patterns. Step 7.1's fresh-connector-verdict gate calls this against the connector's latest post-push review body.
+
+```bash
+# Bash-side mirror of the python is_summary_clean() in §2.2. Returns 0 (true)
+# iff the body matches one of the explicit-clean patterns:
+#   - "✅ No issues found" (or "No issues found.")
+#   - "**Overall: ✅ patch is correct**"
+#   - "Overall: ✅ patch is correct"
+is_summary_clean_bash() {
+  local body="$1"
+  printf '%s' "$body" | grep -qE '^[[:space:]]*(✅[[:space:]]*)?No issues found\.?[[:space:]]*$|^[[:space:]]*\*\*Overall:[[:space:]]*✅[[:space:]]*patch is correct\*\*|^[[:space:]]*Overall:[[:space:]]*✅[[:space:]]*patch is correct\b'
+}
+```
 
 ## Step 0: Input resolution
 
@@ -244,6 +270,25 @@ if [ -n "$CLOSED_CODEX_THREADS" ]; then
       PROCESSED_CODEX_INLINE_IDS=$(printf '%s\n%s\n' "$PROCESSED_CODEX_INLINE_IDS" "$STALE_COMMENT_IDS" \
         | tr ',' '\n' | awk 'NF' | sort -u \
         | grep -vxFf <(echo "$STALE_COMMENT_IDS" | tr ',' '\n' | awk 'NF') \
+        | tr '\n' ',' | sed 's/,$//')
+    fi
+
+    # Also reconcile PROCESSED_CODEX_REVIEW_IDS — the parent review IDs
+    # of the stale inline comments need to come out of the processed-review
+    # set, otherwise the Step 2B inline-comment poll's review-id filter
+    # rejects the inline before our inline-id subtraction takes effect.
+    STALE_REVIEW_IDS=$(jq -r --argjson live "$LIVE_THREAD_STATE" --argjson stale "$STALE_THREAD_IDS" '
+      [$live[] | select(.thread_id as $tid | $stale | index($tid))
+               | .pull_request_review_id // empty
+               | tostring]
+      | unique
+      | join(",")
+    ')
+
+    if [ -n "$STALE_REVIEW_IDS" ]; then
+      PROCESSED_CODEX_REVIEW_IDS=$(printf '%s\n%s\n' "$PROCESSED_CODEX_REVIEW_IDS" "$STALE_REVIEW_IDS" \
+        | tr ',' '\n' | awk 'NF' | sort -u \
+        | grep -vxFf <(echo "$STALE_REVIEW_IDS" | tr ',' '\n') \
         | tr '\n' ',' | sed 's/,$//')
     fi
 
@@ -1082,17 +1127,45 @@ The cycle is now done. Proceed to Step 7.
 
 After Step 6 commits + pushes (or after Step 3 returns `EXIT_CLEAN` / `POLL_NEXT`), determine if the loop continues or exits.
 
-### 7.1: Check connector unresolved threads via GraphQL
+### 7.1: Check connector freshness + unresolved threads via GraphQL
 
-Reuse the `paginated_review_threads_query` helper defined in § Helpers (no separate inline GraphQL query — that would re-introduce the unpaginated-bounded-query bug):
+`UNRESOLVED_CONNECTOR_THREADS == 0` is necessary but **not sufficient** for clean exit. The connector typically posts slower than Claude, so the count can be 0 simply because the connector hasn't reviewed the just-pushed commit yet — declaring success on that signal alone would exit before the connector ever weighs in. Step 7.1 requires both: zero unresolved threads AND a fresh post-push connector review whose summary is explicitly clean.
 
 ```bash
+# Get the timestamp of the just-pushed commit (the one Step 6 created).
+PUSHED_COMMIT_AT=$(git log -1 --format=%cI HEAD)
+
+# Fetch latest connector reviews and find any submitted AFTER the pushed commit.
+FRESH_CONNECTOR_REVIEW=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate \
+  | jq -s --arg cutoff "$PUSHED_COMMIT_AT" '
+    add | [.[] | select(.user.login == "chatgpt-codex-connector[bot]"
+                        and .submitted_at > $cutoff)]
+    | sort_by(.submitted_at) | last
+  ')
+
+# Determine connector freshness:
+# - null  → no fresh post-push review yet  → POLL_NEXT
+# - non-null AND is_summary_clean_bash(.body) → fresh and clean
+# - non-null AND NOT is_summary_clean_bash(.body) → fresh and dirty (case 2 / 4 / 5)
+CONNECTOR_FRESH_CLEAN=false
+if [ "$FRESH_CONNECTOR_REVIEW" != "null" ]; then
+  CONNECTOR_BODY=$(jq -r '.body // ""' <<< "$FRESH_CONNECTOR_REVIEW")
+  if is_summary_clean_bash "$CONNECTOR_BODY"; then
+    CONNECTOR_FRESH_CLEAN=true
+  fi
+fi
+
+# Connector unresolved threads — reuse the paginated_review_threads_query
+# helper defined in § Helpers (no separate inline GraphQL query — that would
+# re-introduce the unpaginated-bounded-query bug).
 UNRESOLVED_CONNECTOR_THREADS=$(paginated_review_threads_query \
   | jq '[.[] | select(.comment_author_login == "chatgpt-codex-connector[bot]"
                       and .isResolved == false)] | length')
 ```
 
-If this number is > 0, the connector still has unresolved findings (either from this cycle's work that didn't fully resolve, or from a fresh review that just landed).
+If `UNRESOLVED_CONNECTOR_THREADS > 0`, the connector still has unresolved findings (either from this cycle's work that didn't fully resolve, or from a fresh review that just landed). If `CONNECTOR_FRESH_CLEAN == false` (either because no fresh review yet, or fresh review's summary isn't clean), the connector has not yet signaled approval of the new commit.
+
+`is_summary_clean_bash` is defined in § Helpers; it mirrors the python `is_summary_clean()` from §2.2.
 
 ### 7.2: Check Claude verdict on the latest comment
 
@@ -1100,8 +1173,8 @@ After Step 6's push, the Claude reviewer will re-run on the new commit. The verd
 
 ### 7.3: Decide
 
-- **All clean** = `UNRESOLVED_CONNECTOR_THREADS == 0` AND latest Claude comment verdict is `is_claude_clean` → **exit clean** (regardless of round number).
-- **More expected** = either reviewer hasn't reported on the new commit yet → **poll next** (if `ROUND < MAX_ROUNDS`) or fall through to the next bullet.
+- **All clean** = `UNRESOLVED_CONNECTOR_THREADS == 0` AND latest Claude comment verdict is `is_claude_clean` AND `CONNECTOR_FRESH_CLEAN == true` → **exit clean** (regardless of round number).
+- **More expected** = either reviewer hasn't reported on the new commit yet (Claude not clean OR no fresh connector review OR fresh connector summary isn't clean) → **poll next** (if `ROUND < MAX_ROUNDS`) or fall through to the next bullet.
 - **Max rounds reached** = `ROUND == MAX_ROUNDS` AND clean condition NOT met → exit "max rounds" (abnormal — print warning).
 
 ### 7.4: Poll-next sub-flow
