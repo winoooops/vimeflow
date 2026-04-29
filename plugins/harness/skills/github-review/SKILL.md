@@ -133,22 +133,6 @@ paginated_review_threads_query() {
 
 `OWNER`, `NAME`, and `PR_NUMBER` are set in Step 0 — the helper is callable from Step 1 onward.
 
-### `is_summary_clean_bash`
-
-Bash-side mirror of the python `is_summary_clean()` defined in §2.2 (Step 2B). The python version is conceptual — actual matching is regex-based — so this bash function uses the same anchored patterns. Step 7.1's fresh-connector-verdict gate calls this against the connector's latest post-push review body.
-
-```bash
-# Bash-side mirror of the python is_summary_clean() in §2.2. Returns 0 (true)
-# iff the body matches one of the explicit-clean patterns:
-#   - "✅ No issues found" (or "No issues found.")
-#   - "**Overall: ✅ patch is correct**"
-#   - "Overall: ✅ patch is correct"
-is_summary_clean_bash() {
-  local body="$1"
-  printf '%s' "$body" | grep -qE '^[[:space:]]*(✅[[:space:]]*)?No issues found\.?[[:space:]]*$|^[[:space:]]*\*\*Overall:[[:space:]]*✅[[:space:]]*patch is correct\*\*|^[[:space:]]*Overall:[[:space:]]*✅[[:space:]]*patch is correct\b'
-}
-```
-
 ## Step 0: Input resolution
 
 The skill supports both current-branch operation and explicit PR targeting. **Explicit PR targeting only changes which PR is _read_ from — write operations (commit, push) still happen on the current `git` checkout.** This step enforces that the current branch matches the PR's head ref so fixes can never accidentally land on the wrong branch.
@@ -1132,7 +1116,13 @@ The reply loop has three branches: connector inline (existing), human inline (sa
 # out of scope per SCOPE BOUNDARY RULE) and need a rationale on the thread
 # before Step 6.9 resolves it; otherwise Step 7's unresolved-threads check
 # would never reach exit-clean.
-for finding in $(jq -c '.[] | select(.source == "codex-connector" and (.status == "fixed" or .status == "skipped"))' <<< "$FINDINGS_JSON"); do
+#
+# Iterate findings line-by-line via process substitution. Using
+# `for finding in $(jq -c ...)` would trigger shell word-splitting on
+# JSON objects containing spaces (e.g. inside titles/bodies), fragmenting
+# them and producing malformed input to subsequent `jq -r '.foo' <<< "$finding"`
+# calls. The `while read` form preserves each JSON object intact.
+while IFS= read -r finding; do
   COMMENT_ID=$(jq -r '.source_comment_id' <<< "$finding")
   CYCLE_ID=$(jq -r '.cycle_id' <<< "$finding")
   STATUS=$(jq -r '.status' <<< "$finding")
@@ -1146,12 +1136,12 @@ for finding in $(jq -c '.[] | select(.source == "codex-connector" and (.status =
 
   gh api -X POST "repos/$REPO/pulls/$PR_NUMBER/comments/${COMMENT_ID}/replies" \
     -f body="$REPLY_BODY"
-done
+done < <(jq -c '.[] | select(.source == "codex-connector" and (.status == "fixed" or .status == "skipped"))' <<< "$FINDINGS_JSON")
 
 # Reply to human inline findings (new — same thread-reply path as connector).
 # Filter on .file != null so issue-comment-level human findings are excluded
 # from this branch; they're handled by the issue-comment branch below.
-for finding in $(jq -c '.[] | select(.source == "human" and .file != null and (.status == "fixed" or .status == "skipped"))' <<< "$FINDINGS_JSON"); do
+while IFS= read -r finding; do
   COMMENT_ID=$(jq -r '.source_comment_id' <<< "$finding")
   CYCLE_ID=$(jq -r '.cycle_id' <<< "$finding")
   STATUS=$(jq -r '.status' <<< "$finding")
@@ -1165,12 +1155,12 @@ for finding in $(jq -c '.[] | select(.source == "human" and .file != null and (.
 
   gh api -X POST "repos/$REPO/pulls/$PR_NUMBER/comments/${COMMENT_ID}/replies" \
     -f body="$REPLY_BODY"
-done
+done < <(jq -c '.[] | select(.source == "human" and .file != null and (.status == "fixed" or .status == "skipped"))' <<< "$FINDINGS_JSON")
 
 # Reply to human issue comments (new — issue-comment-level reply, NOT
 # thread-reply). There is no thread-reply endpoint for issue comments, so we
 # post a NEW issue-level comment quoting the original to give context.
-for finding in $(jq -c '.[] | select(.source == "human" and .file == null and (.status == "fixed" or .status == "skipped"))' <<< "$FINDINGS_JSON"); do
+while IFS= read -r finding; do
   CYCLE_ID=$(jq -r '.cycle_id' <<< "$finding")
   STATUS=$(jq -r '.status' <<< "$finding")
   FIX_SUMMARY=$(jq -r '.fix_summary // ""' <<< "$finding")
@@ -1189,7 +1179,7 @@ for finding in $(jq -c '.[] | select(.source == "human" and .file == null and (.
   # Post a NEW issue-level comment (not a reply to a specific comment — no
   # thread-reply endpoint for issue comments). Quote the original to give context.
   gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$REPLY_BODY"
-done
+done < <(jq -c '.[] | select(.source == "human" and .file == null and (.status == "fixed" or .status == "skipped"))' <<< "$FINDINGS_JSON")
 ```
 
 ### 6.9: Resolve threads via GraphQL
@@ -1231,54 +1221,27 @@ The cycle is now done. Proceed to Step 7.
 
 After Step 6 commits + pushes (or after Step 3 returns `EXIT_CLEAN` / `POLL_NEXT`), determine if the loop continues or exits.
 
-### 7.1: Check connector freshness + unresolved threads via GraphQL
+### 7.1: Check unresolved threads via GraphQL (connector + human)
 
-`UNRESOLVED_CONNECTOR_THREADS == 0` is necessary but **not sufficient** for clean exit. The connector typically posts slower than Claude, so the count can be 0 simply because the connector hasn't reviewed the just-pushed commit yet — declaring success on that signal alone would exit before the connector ever weighs in. Step 7.1 requires both: zero unresolved threads AND a fresh post-push connector review whose summary is explicitly clean.
+Reuse the `paginated_review_threads_query` helper defined in § Helpers. Two parallel counts: connector-authored unresolved threads and human-authored unresolved threads.
 
 ```bash
-# Get the timestamp of the just-pushed commit (the one Step 6 created).
-PUSHED_COMMIT_AT=$(git log -1 --format=%cI HEAD)
+ALL_THREADS=$(paginated_review_threads_query)
 
-# Fetch latest connector reviews and find any submitted AFTER the pushed commit.
-FRESH_CONNECTOR_REVIEW=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate \
-  | jq -s --arg cutoff "$PUSHED_COMMIT_AT" '
-    add | [.[] | select(.user.login == "chatgpt-codex-connector[bot]"
-                        and .submitted_at > $cutoff)]
-    | sort_by(.submitted_at) | last
-  ')
+UNRESOLVED_CONNECTOR_THREADS=$(jq '[.[] | select(
+  .comment_author_login == "chatgpt-codex-connector[bot]"
+  and .isResolved == false
+)] | length' <<< "$ALL_THREADS")
 
-# Determine connector freshness:
-# - null  → no fresh post-push review yet  → POLL_NEXT
-# - non-null AND is_summary_clean_bash(.body) → fresh and clean
-# - non-null AND NOT is_summary_clean_bash(.body) → fresh and dirty (case 2 / 4 / 5)
-CONNECTOR_FRESH_CLEAN=false
-if [ "$FRESH_CONNECTOR_REVIEW" != "null" ]; then
-  CONNECTOR_BODY=$(jq -r '.body // ""' <<< "$FRESH_CONNECTOR_REVIEW")
-  if is_summary_clean_bash "$CONNECTOR_BODY"; then
-    CONNECTOR_FRESH_CLEAN=true
-  fi
-fi
-
-# Connector unresolved threads — reuse the paginated_review_threads_query
-# helper defined in § Helpers (no separate inline GraphQL query — that would
-# re-introduce the unpaginated-bounded-query bug).
-UNRESOLVED_CONNECTOR_THREADS=$(paginated_review_threads_query \
-  | jq '[.[] | select(.comment_author_login == "chatgpt-codex-connector[bot]"
-                      and .isResolved == false)] | length')
-
-# Human unresolved threads — same helper, but filtered on the bot-vs-user
-# discriminator (.comment_author_type == "User") instead of an explicit
-# bot-login exclusion list. Cleaner than enumerating every bot login and
-# negating, and the helper now exposes comment_author_type via the
-# author.__typename projection.
-UNRESOLVED_HUMAN_THREADS=$(paginated_review_threads_query \
-  | jq '[.[] | select(.comment_author_type == "User"
-                      and .isResolved == false)] | length')
+UNRESOLVED_HUMAN_THREADS=$(jq '[.[] | select(
+  .comment_author_type == "User"
+  and .isResolved == false
+)] | length' <<< "$ALL_THREADS")
 ```
 
-If `UNRESOLVED_CONNECTOR_THREADS > 0`, the connector still has unresolved findings (either from this cycle's work that didn't fully resolve, or from a fresh review that just landed). If `UNRESOLVED_HUMAN_THREADS > 0`, a human reviewer has open threads on the PR. If `CONNECTOR_FRESH_CLEAN == false` (either because no fresh review yet, or fresh review's summary isn't clean), the connector has not yet signaled approval of the new commit.
+If either number is > 0, the corresponding reviewer still has unresolved findings.
 
-`is_summary_clean_bash` is defined in § Helpers; it mirrors the python `is_summary_clean()` from §2.2.
+**Why no fresh-verdict gate?** Earlier iterations of this skill tried to require a "fresh clean summary review" from the chatgpt-codex-connector before exiting clean. That doesn't work — the connector posts a fixed informational summary only when it has suggestions; on a clean run, it emits a 👍 reaction with no summary review at all. There's no programmatic clean-summary signal. The freshness gate is provided instead by Step 7.4's 10-minute poll-next window: if no new connector activity (review summary OR inline comment) appears during that window and Claude is clean, the loop legitimately exits clean.
 
 ### 7.2: Check Claude verdict on the latest comment
 
@@ -1286,8 +1249,8 @@ After Step 6's push, the Claude reviewer will re-run on the new commit. The verd
 
 ### 7.3: Decide
 
-- **All clean** = `UNRESOLVED_CONNECTOR_THREADS == 0` AND `UNRESOLVED_HUMAN_THREADS == 0` AND latest Claude comment verdict is `is_claude_clean` AND `CONNECTOR_FRESH_CLEAN == true` → **exit clean** (regardless of round number).
-- **More expected** = either reviewer hasn't reported on the new commit yet (Claude not clean OR no fresh connector review OR fresh connector summary isn't clean) → **poll next** (if `ROUND < MAX_ROUNDS`) or fall through to the next bullet.
+- **All clean** = `UNRESOLVED_CONNECTOR_THREADS == 0` AND `UNRESOLVED_HUMAN_THREADS == 0` AND latest Claude comment verdict is `is_claude_clean` → **exit clean** (regardless of round number).
+- **More expected** = either reviewer hasn't reported on the new commit yet (Claude not clean OR connector posted new review/inline content this cycle) → **poll next** (if `ROUND < MAX_ROUNDS`) or fall through to the next bullet.
 - **Max rounds reached** = `ROUND == MAX_ROUNDS` AND clean condition NOT met → exit "max rounds" (abnormal — print warning).
 
 ### 7.4: Poll-next sub-flow
