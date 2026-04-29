@@ -348,7 +348,27 @@ Iterate via `while IFS= read -r finding; do ...; done < <(jq -c '...' <<<
 titles/bodies and produce malformed input to `jq -r '.foo' <<<
 "$finding"` calls.
 
+**Reply/resolve atomicity.** Each `gh api -X POST` is guarded with `|| {
+warn; continue; }`. On success, the finding's `cycle_id` is appended to
+`REPLIED_FINDING_IDS`. Step 6.9 then **filters
+`list_thread_ids_to_close` to only those findings whose reply
+succeeded** — finding-id-keyed, not thread-id-keyed, so a thread-reply
+branch with a missing-or-empty `thread_id` (a data-state anomaly that
+shouldn't happen, but if it does) cannot leak past the filter and let
+6.9 close a thread whose reply never landed. Without this guard a
+transient network error during 6.8 would let 6.9 close the thread
+silently — and Step 1's reconciliation only checks `isResolved`, so the
+missing reply is undetectable to later cycles. (See SKILL.md § 6.9 for
+the consumer-side filter.)
+
 ```bash
+# Initialize the cross-step success list. Step 6.9 intersects
+# list_thread_ids_to_close with this set so reply + resolve stay
+# atomically coupled per finding (NOT per thread — keying on cycle_id
+# means a missing/empty thread_id on a threaded branch can't sneak past
+# the filter, since the absent finding row never gets added here).
+REPLIED_FINDING_IDS=()
+
 while IFS= read -r finding; do
   COMMENT_ID=$(jq -r '.source_comment_id' <<< "$finding")
   CYCLE_ID=$(jq -r '.cycle_id' <<< "$finding")
@@ -357,6 +377,21 @@ while IFS= read -r finding; do
   ORIG_BODY=$(jq -r '.body' <<< "$finding")
   SOURCE=$(jq -r '.source' <<< "$finding")
   FILE=$(jq -r '.file' <<< "$finding")
+  THREAD_ID=$(jq -r '.thread_id // ""' <<< "$finding")
+
+  # Threaded branches require a thread_id. Treat absent-or-empty as a data
+  # anomaly: warn loudly and skip both reply AND resolve (no entry added to
+  # REPLIED_FINDING_IDS, so Step 6.9's filter naturally excludes this row).
+  # This catches the edge case codex flagged in cycle 6: a malformed finding
+  # row missing thread_id on a threaded branch would otherwise reach 6.9 and
+  # could resolve some other thread accidentally.
+  if [ "$SOURCE" != "human" ] || [ "$FILE" != "null" ]; then
+    if [ -z "$THREAD_ID" ] || [ "$THREAD_ID" = "null" ]; then
+      echo "WARN: finding $CYCLE_ID (source=$SOURCE, comment $COMMENT_ID) has no thread_id;" >&2
+      echo "      skipping reply + resolve — data anomaly, next cycle's reconciliation may catch." >&2
+      continue
+    fi
+  fi
 
   # Build reply body.
   if [ "$SOURCE" = "human" ] && [ "$FILE" = "null" ]; then
@@ -381,13 +416,27 @@ while IFS= read -r finding; do
   fi
   REPLY_BODY="${QUOTE_PREFIX}${BODY_CORE}"
 
-  # Post via the right endpoint.
+  # Post via the right endpoint. On success, append CYCLE_ID to
+  # REPLIED_FINDING_IDS so Step 6.9 will resolve this finding's thread.
+  # On failure, `continue` without recording — Step 6.9's filter will
+  # exclude this finding and the next cycle's reconciliation re-attempts
+  # both reply and resolve (Step 1 sees the thread still unresolved).
   if [ "$SOURCE" = "human" ] && [ "$FILE" = "null" ]; then
-    gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$REPLY_BODY"
+    gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$REPLY_BODY" || {
+      echo "WARN: issue-comment reply failed for finding $CYCLE_ID (comment $COMMENT_ID)" >&2
+      echo "      Will be re-attempted on the next cycle (issue comments have no thread)." >&2
+      continue
+    }
   else
     gh api -X POST "repos/$REPO/pulls/$PR_NUMBER/comments/${COMMENT_ID}/replies" \
-      -f body="$REPLY_BODY"
+      -f body="$REPLY_BODY" || {
+      echo "WARN: thread-reply failed for finding $CYCLE_ID (comment $COMMENT_ID, thread $THREAD_ID)" >&2
+      echo "      Skipping Step 6.9 resolve so the next cycle can re-attempt both halves." >&2
+      continue
+    }
   fi
+
+  REPLIED_FINDING_IDS+=("$CYCLE_ID")
 done < <(jq -c '.[] | select(
   ((.source == "codex-connector") or (.source == "human"))
   and (.status == "fixed" or .status == "skipped")

@@ -304,7 +304,7 @@ NEW_HUMAN_ISSUE_JSON=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginat
     add | [.[] | select(
       (.user.type // "User") == "User"
       and (.id as $id | $done | index($id) | not)
-      and ((.body // "") | contains("(github-review cycle ") | not)
+      and ((.body // "") | test("\\(github-review cycle [0-9]+, finding F[0-9]+\\)\\s*$") | not)
     )]')
 ```
 
@@ -318,14 +318,24 @@ NEW_HUMAN_INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments" --paginat
     add | [.[] | select(
       (.user.type // "User") == "User"
       and (.id as $id | $done | index($id) | not)
-      and ((.body // "") | contains("(github-review cycle ") | not)
+      and ((.body // "") | test("\\(github-review cycle [0-9]+, finding F[0-9]+\\)\\s*$") | not)
     )]')
 ```
 
-The `contains("(github-review cycle ")` check is a string-prefix match, robust
-to the rest of the marker varying (e.g. cycle number / finding ID changes).
-The marker is asserted in `commit-trailers.md` § Step 6.8 — every fixed and
-skipped reply carries it.
+The `test("\\(github-review cycle [0-9]+, finding F[0-9]+\\)\\s*$")`
+check is anchored to end-of-body (with optional trailing whitespace). The
+anchored form preserves the self-reply detection while letting humans
+quote a prior skill reply mid-body without being filtered out as a
+self-reply. Earlier iterations used `contains("(github-review cycle ")`,
+which silently dropped any human follow-up that quoted a previous skill
+reply (e.g. `> Fixed in abc123 ... (github-review cycle 1, finding F2)\n\nThis
+doesn't address the root cause.`); the regex form catches only comments
+whose final line carries the marker.
+
+The marker is asserted in `commit-trailers.md` § Step 6.8 — every fixed
+and skipped reply ends with `(github-review cycle <N>, finding F<K>)` as
+the last non-whitespace content of the reply body, so the end-of-body
+anchor is sound.
 
 Note: human inline comments don't go through the unprocessed-review-id
 filter (humans submit them directly, often without a review wrapper). The

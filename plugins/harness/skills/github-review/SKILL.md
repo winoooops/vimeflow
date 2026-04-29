@@ -470,11 +470,44 @@ implementation, the body-shape spec, and the 3-branch routing table.
 
 ### 6.9 — Resolve threads via GraphQL
 
-Resolve threads for fixed AND skipped connector AND human-inline findings.
-Issue-comment-level human findings have no thread; the reply in 6.8 is
-sufficient.
+Resolve threads for fixed AND skipped connector AND human-inline findings,
+**only when 6.8 successfully replied** (the reply loop appends each
+successful finding's `cycle_id` to `REPLIED_FINDING_IDS`). Issue-comment-level
+human findings have no thread; the reply in 6.8 is sufficient.
+
+The `REPLIED_FINDING_IDS` filter is the consumer side of the
+reply/resolve atomicity guarantee documented in
+`references/commit-trailers.md` § Step 6.8. Keying the filter on
+`cycle_id` (rather than `thread_id`) closes a subtle hole: if a threaded
+finding row has a missing/empty `thread_id` (data anomaly), keying on
+thread_id would let it leak past a skip-list filter; keying on cycle_id
+ensures a finding row never reaches resolve unless its reply succeeded
+AND its `thread_id` was non-empty (Step 6.8 already loud-fails the
+empty-thread-id case).
 
 ```bash
+# Build the cycle-id → thread-id map for findings whose reply succeeded.
+# We project FINDINGS_JSON down to (cycle_id, thread_id) pairs scoped to
+# the same set list_thread_ids_to_close consumes (connector + human-
+# inline + fixed/skipped + thread_id present), then filter by membership
+# in REPLIED_FINDING_IDS.
+# Build the replied-set as a jq array, omitting empty strings so the
+# ${REPLIED_FINDING_IDS[@]:-} fallback doesn't sneak `""` into the set.
+REPLIED_JSON=$(printf '%s\n' "${REPLIED_FINDING_IDS[@]:-}" \
+  | jq -R . | jq -s 'map(select(length > 0))')
+
+ELIGIBLE_THREAD_IDS=$(jq -r --argjson replied "$REPLIED_JSON" '
+  .[]
+  | .cycle_id as $cycle_id
+  | select(
+      ((.source == "codex-connector") or (.source == "human" and .file != null))
+      and (.status == "fixed" or .status == "skipped")
+      and (.thread_id != null and .thread_id != "")
+      and ($replied | index($cycle_id))
+    )
+  | .thread_id
+' <<< "$FINDINGS_JSON")
+
 # Use process-substitution + while read for consistency with Step 6.8.
 # PRRT_ IDs have no embedded spaces today, but the for-in-$() form would
 # silently corrupt iteration if the format ever changed.
@@ -503,13 +536,20 @@ while IFS= read -r thread_id; do
     continue
   fi
   jq '.data.resolveReviewThread.thread' <<< "$RESP"
-done < <(list_thread_ids_to_close)
+done <<< "$ELIGIBLE_THREAD_IDS"
 ```
 
-`list_thread_ids_to_close` returns thread IDs for all findings with
-`thread_id != null` AND `(source == "codex-connector" OR source ==
-"human")` AND `(status == "fixed" OR status == "skipped")`. After 6.8 +
-6.9, the cycle is done. Proceed to Step 7.
+`list_thread_ids_to_close` (informational name) is now realised as the
+`ELIGIBLE_THREAD_IDS` jq projection above: thread IDs for all findings
+with `thread_id != null && != ""` AND `(source == "codex-connector" OR
+(source == "human" AND file != null))` AND `(status == "fixed" OR ==
+"skipped")` AND `cycle_id ∈ REPLIED_FINDING_IDS`. The `REPLIED_FINDING_IDS`
+membership requirement is the new gate added in cycle 6 — it ensures
+threads whose 6.8 reply failed (or whose finding row had a missing
+thread_id and was skipped wholesale) are picked up by Step 1's
+next-cycle reconciliation rather than silently closed.
+
+After 6.8 + 6.9, the cycle is done. Proceed to Step 7.
 
 ## Step 7 — Exit check + retro prompt
 
