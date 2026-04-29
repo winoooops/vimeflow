@@ -63,6 +63,11 @@ fi
 
 PROMPT_BODY=$(cat "$PROMPT_FILE")
 
+# Stdin is redirected from /dev/null on every codex invocation: cycle 6
+# observed a transient hang where codex appeared to wait on stdin (likely
+# a TTY/no-TTY transition surface in the agent runner). `</dev/null`
+# closes stdin immediately so codex can never block reading from it; the
+# prompt is supplied via the positional `-- "$PROMPT_BODY"` arg, not stdin.
 if command -v timeout >/dev/null 2>&1; then
   set +e
   timeout 300 codex exec \
@@ -70,6 +75,7 @@ if command -v timeout >/dev/null 2>&1; then
     --output-schema "$SCHEMA_PATH" \
     --output-last-message "$RESULT_JSON" \
     -- "$PROMPT_BODY" \
+    < /dev/null \
     > "$EVENTS_LOG" \
     2> "$STDERR_LOG"
   CODEX_EXIT=$?
@@ -82,6 +88,7 @@ else
     --output-schema "$SCHEMA_PATH" \
     --output-last-message "$RESULT_JSON" \
     -- "$PROMPT_BODY" \
+    < /dev/null \
     > "$EVENTS_LOG" \
     2> "$STDERR_LOG"
   CODEX_EXIT=$?

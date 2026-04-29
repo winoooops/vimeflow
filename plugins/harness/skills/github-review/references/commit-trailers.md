@@ -200,6 +200,30 @@ if [ -n "$CLOSED_CODEX_THREADS" ]; then
       | tr '\n' ',' | sed 's/,$//')
   fi
 fi
+
+# Threadless surface reconciliation — issue-comment reply failures.
+# Issue comments have no GraphQL thread, so the LIVE_THREAD_STATE-based
+# block above can't catch failed human-issue replies. Step 6.8 records
+# them in `.harness-github-review/replies-failed-human-issue.txt`; here we
+# subtract those IDs from PROCESSED_HUMAN_ISSUE_IDS so the next cycle's
+# Step 2D poll picks the comment up again. See § Step 6.8 above for the
+# write-side and the file lifecycle.
+REPLIES_FAILED_FILE=".harness-github-review/replies-failed-human-issue.txt"
+if [ -f "$REPLIES_FAILED_FILE" ]; then
+  STALE_HUMAN_ISSUE_IDS=$(awk 'NF' "$REPLIES_FAILED_FILE" \
+    | sort -u | tr '\n' ',' | sed 's/,$//')
+
+  if [ -n "$STALE_HUMAN_ISSUE_IDS" ]; then
+    echo "Reconciliation: $REPLIES_FAILED_FILE lists IDs whose replies failed in a prior cycle." >&2
+    echo "Treating them as un-processed; this cycle will re-attempt the reply." >&2
+
+    PROCESSED_HUMAN_ISSUE_IDS=$(awk -v stale="$STALE_HUMAN_ISSUE_IDS" '
+      BEGIN { n = split(stale, a, /,/); for (i = 1; i <= n; i++) if (a[i] != "") s[a[i]] = 1 }
+      NF && !($0 in s) { print }
+    ' < <(printf '%s\n' "$PROCESSED_HUMAN_ISSUE_IDS" | tr ',' '\n') \
+      | sort -u | tr '\n' ',' | sed 's/,$//')
+  fi
+fi
 ```
 
 The four `*_IDS` variables become inputs to Step 2's poll filtering. They
@@ -277,6 +301,36 @@ concatenated under the same trailer key.
 
 Multi-line full paths are clearer for humans than basenames-only; the
 trade-off (parsing complexity) is absorbed by the helper.
+
+### 1b. `Pattern-Append-Decisions:` line-length wrap convention
+
+A single `Pattern-Append-Decisions` entry combines: cycle_id + finding
+title, target pattern (existing/new), and a one-line rationale. Combined
+into a single line per entry, the rationale phrasing routinely overshoots
+commitlint's `footer-max-line-length: 100` (cycle 6 hit this on every
+entry that mentioned both the source surface and the fix mechanism).
+
+**Convention: one entry occupies up to 3 indented lines** under the trailer
+key, where each line is a self-contained thought:
+
+```
+Pattern-Append-Decisions:
+  - F1 (Retry failed human-issue replies): patterns/error-surfacing.md
+    (existing, theme: silent-failure modes on threadless surfaces)
+    rationale: cycle 7 dogfood — symmetric to cycle 2's connector-thread
+    reconciliation, side-channel file replaces missing GraphQL signal.
+```
+
+`extract_trailer` already supports the multi-line continuation form (see
+`../scripts/helpers.sh`); each indented line under the trailer key is
+collapsed back into the trailer's value list. Each line individually
+stays under the 100-char ceiling.
+
+If a single sub-line still threatens the limit (long pattern slug + long
+rationale phrasing), wrap the rationale into 2 indented lines underneath
+its parent — the helper concatenates them into the trailer value, and the
+human readability cost is small. The wrap is purely commitlint-driven; no
+runtime parsing depends on the line-break placement.
 
 ### 2. `footer-leading-blank` warning
 
@@ -421,12 +475,36 @@ while IFS= read -r finding; do
   # On failure, `continue` without recording — Step 6.9's filter will
   # exclude this finding and the next cycle's reconciliation re-attempts
   # both reply and resolve (Step 1 sees the thread still unresolved).
+  #
+  # Issue-comment branch (human, no file context) has no thread, so
+  # Step 1's reconciliation against `LIVE_THREAD_STATE` cannot detect a
+  # failed reply. We use a side-channel file
+  # `.harness-github-review/replies-failed-human-issue.txt` (gitignored)
+  # to record failed COMMENT_IDs; Step 1 reads that file and subtracts
+  # the listed IDs from `PROCESSED_HUMAN_ISSUE_IDS` so the next cycle's
+  # Step 2D poll picks up the comment again. Symmetric to the
+  # `Closes-Codex-Threads` reconciliation (cycle 2), but for the
+  # threadless surface. On success, drop the COMMENT_ID from the file so
+  # a previously-failed-then-recovered reply doesn't keep re-firing.
+  REPLIES_FAILED_FILE=".harness-github-review/replies-failed-human-issue.txt"
   if [ "$SOURCE" = "human" ] && [ "$FILE" = "null" ]; then
-    gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$REPLY_BODY" || {
+    if gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$REPLY_BODY"; then
+      # Drop COMMENT_ID from the failed-replies file (success path cleans
+      # up after a previously-failed retry that has now succeeded). awk
+      # set-difference: keep lines not equal to COMMENT_ID. No file → no-op.
+      if [ -f "$REPLIES_FAILED_FILE" ]; then
+        TMP=$(mktemp)
+        awk -v drop="$COMMENT_ID" 'NF && $0 != drop { print }' "$REPLIES_FAILED_FILE" > "$TMP"
+        mv "$TMP" "$REPLIES_FAILED_FILE"
+      fi
+    else
       echo "WARN: issue-comment reply failed for finding $CYCLE_ID (comment $COMMENT_ID)" >&2
-      echo "      Will be re-attempted on the next cycle (issue comments have no thread)." >&2
+      echo "      Recording $COMMENT_ID in $REPLIES_FAILED_FILE so Step 1 of the" >&2
+      echo "      next cycle can subtract it from PROCESSED_HUMAN_ISSUE_IDS." >&2
+      mkdir -p "$(dirname "$REPLIES_FAILED_FILE")"
+      printf '%s\n' "$COMMENT_ID" >> "$REPLIES_FAILED_FILE"
       continue
-    }
+    fi
   else
     gh api -X POST "repos/$REPO/pulls/$PR_NUMBER/comments/${COMMENT_ID}/replies" \
       -f body="$REPLY_BODY" || {
@@ -442,6 +520,74 @@ done < <(jq -c '.[] | select(
   and (.status == "fixed" or .status == "skipped")
 )' <<< "$FINDINGS_JSON")
 ```
+
+### Step 6.8 — `replies-failed-human-issue.txt` lifecycle
+
+Reasons we use a per-checkout sidecar file rather than (a) committing a
+trailer or (b) reordering Step 6.6 to commit AFTER reply:
+
+1. **Trailer is sealed before reply runs.** Step 6.6's commit happens
+   before Step 6.7's push and Step 6.8's reply (so the reply body can cite
+   `COMMIT_SHA`). By the time we know reply failed, the trailer is already
+   in committed history. A `--amend` would rewrite the just-pushed commit,
+   which is destructive on the remote even with `--force-with-lease`.
+2. **Issue comments have no GraphQL thread.** The existing
+   `LIVE_THREAD_STATE` reconciliation in Step 1 cannot see them, so we
+   need a side-channel.
+3. **Symmetric pattern.** `Closes-Codex-Threads` is reconciled against
+   live state by reading from GraphQL; the threadless human-issue surface
+   reads from a local file instead — same shape, different source.
+
+The file:
+
+- Lives at `.harness-github-review/replies-failed-human-issue.txt` (one
+  COMMENT_ID per line, blank lines stripped). Gitignored alongside the
+  rest of `.harness-github-review/`.
+- Is **not** subject to `loop_start_scan` orphan-wipe — that helper only
+  matches `cycle-*` filenames, so the failed-replies file persists across
+  cycles. (See `cleanup-recovery.md` § Per-cycle artifact lifecycle.)
+- Is wiped by `cleanup_on_clean_exit` only when empty after Step 7.5
+  (handled implicitly: a non-empty file means at least one human-issue
+  reply is still outstanding, which makes "exit clean" wrong; Step 7.1's
+  unresolved-threads check stays > 0 because Step 1's reconciliation
+  re-claims those comments as unprocessed and the next cycle's Step 2D
+  picks them up).
+
+### Step 1 — reconciling `replies-failed-human-issue.txt`
+
+Step 1 reads the file (if it exists) and subtracts the listed IDs from
+`PROCESSED_HUMAN_ISSUE_IDS` AFTER `extract_trailer` populates it. This
+runs alongside the `LIVE_THREAD_STATE` reconciliation block (which only
+covers thread-bearing surfaces).
+
+```bash
+REPLIES_FAILED_FILE=".harness-github-review/replies-failed-human-issue.txt"
+if [ -f "$REPLIES_FAILED_FILE" ]; then
+  STALE_HUMAN_ISSUE_IDS=$(awk 'NF' "$REPLIES_FAILED_FILE" \
+    | sort -u | tr '\n' ',' | sed 's/,$//')
+
+  if [ -n "$STALE_HUMAN_ISSUE_IDS" ]; then
+    echo "Reconciliation: $REPLIES_FAILED_FILE lists IDs whose replies failed in a prior cycle." >&2
+    echo "Treating them as un-processed; this cycle will re-attempt the reply." >&2
+
+    # awk-based set-difference (mirrors the connector-thread reconciliation
+    # form earlier in this section). Keeps PROCESSED_HUMAN_ISSUE_IDS lines
+    # NOT in the stale set. `grep -v` would exit 1 when ALL lines match,
+    # aborting under set -euo pipefail.
+    PROCESSED_HUMAN_ISSUE_IDS=$(awk -v stale="$STALE_HUMAN_ISSUE_IDS" '
+      BEGIN { n = split(stale, a, /,/); for (i = 1; i <= n; i++) if (a[i] != "") s[a[i]] = 1 }
+      NF && !($0 in s) { print }
+    ' < <(printf '%s\n' "$PROCESSED_HUMAN_ISSUE_IDS" | tr ',' '\n') \
+      | sort -u | tr '\n' ',' | sed 's/,$//')
+  fi
+fi
+```
+
+Step 6.8's success path (above) drops the ID from the file so a
+previously-failed reply that succeeds on retry doesn't keep getting
+re-claimed forever. The empty file is left in place (zero-cost; next
+cycle's reconciliation finds an empty list and is a no-op); operators
+who care can `rm` it manually.
 
 ## Cross-references
 
