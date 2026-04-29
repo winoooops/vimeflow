@@ -24,6 +24,54 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 fi
 
 # ----------------------------------------------------------------------------
+# _assert_graphql_response_ok
+# ----------------------------------------------------------------------------
+# Validate a `gh api graphql` response body. `gh api graphql` exits 0 on HTTP
+# 200, but GitHub signals application-level failures (auth issue, rate-limit
+# exhaustion, malformed query, stale node ID) by returning HTTP 200 with
+# `{"errors": [...], "data": null}`. Subprocess-exit guards (`|| return 1`)
+# never fire in that path — `page_json` contains the error envelope and
+# downstream `jq` traversals silently produce empty results, leading to
+# false-clean exits and corrupted state.
+#
+# This helper checks two invariants on every GraphQL response:
+#   1. The `errors` array, if present, must be empty.
+#   2. The expected data path (passed by caller) must exist and be non-null.
+#
+# Args:
+#   $1  response_json  — the body returned by `gh api graphql`
+#   $2  expected_path  — jq path the caller intends to consume (e.g.
+#                        `.data.repository.pullRequest.reviewThreads`)
+#   $3  context_label  — short label included in stderr messages (e.g.
+#                        `paginated_review_threads_query (cursor)`)
+#
+# Returns 0 if the response is well-formed; 1 otherwise (with diagnostics on
+# stderr). Callers should `|| return 1` (or `|| exit 1` from a script).
+_assert_graphql_response_ok() {
+  local response_json="$1"
+  local expected_path="$2"
+  local context_label="$3"
+
+  if jq -e 'has("errors") and (.errors | length > 0)' <<< "$response_json" >/dev/null 2>&1; then
+    echo "ERROR: GraphQL response in $context_label contains errors:" >&2
+    jq -r '.errors[] | "  - \(.message // "unknown") (type: \(.type // "unknown"))"' \
+      <<< "$response_json" >&2
+    return 1
+  fi
+
+  if ! jq -e "$expected_path" <<< "$response_json" >/dev/null 2>&1; then
+    echo "ERROR: GraphQL response in $context_label missing expected path '$expected_path'." >&2
+    local head
+    head=$(jq -c '{data: (.data // null), errors: (.errors // null)}' <<< "$response_json" 2>/dev/null \
+      || printf '%s' "$response_json" | head -c 500)
+    echo "  Response head: $head" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+# ----------------------------------------------------------------------------
 # paginated_review_threads_query
 # ----------------------------------------------------------------------------
 # Walks every reviewThreads page (100 per page) for the PR and flattens each
@@ -66,6 +114,17 @@ fi
 # Overflow emits a warning to stderr; the loud-fail at lookup time (after all
 # pages exhausted) catches the rare case where a target inline comment ID
 # ends up beyond the first 50 thread-comments.
+#
+# GraphQL response invariant: every `gh api graphql` call MUST be validated
+# for `errors` array AND the expected `.data...reviewThreads` path before its
+# output is consumed. `gh api graphql` exits 0 on HTTP 200, even when the
+# body is `{"errors": [...], "data": null}` — auth issue, rate limit
+# exhaustion, malformed query, or stale node ID. Without the `errors` check
+# the helper silently traverses null paths, accumulates an empty array,
+# breaks the pagination loop on `"null" != "true"`, and returns 0 with `[]`.
+# Step 7.1's `UNRESOLVED_*_THREADS == 0` check would then satisfy the
+# all-clean exit while real unresolved threads exist on GitHub. Use
+# `_assert_graphql_response_ok` after each call to fail-loud instead.
 paginated_review_threads_query() {
   local cursor=""
   local result="[]"
@@ -95,6 +154,10 @@ paginated_review_threads_query() {
             }
           }
         }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER") || return 1
+      _assert_graphql_response_ok "$page_json" \
+        '.data.repository.pullRequest.reviewThreads' \
+        'paginated_review_threads_query (no-cursor)' \
+        || return 1
     else
       page_json=$(gh api graphql -f query='
         query($owner:String!, $name:String!, $pr:Int!, $cursor:String!) {
@@ -118,6 +181,10 @@ paginated_review_threads_query() {
             }
           }
         }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER" -F cursor="$cursor") || return 1
+      _assert_graphql_response_ok "$page_json" \
+        '.data.repository.pullRequest.reviewThreads' \
+        'paginated_review_threads_query (cursor)' \
+        || return 1
     fi
 
     # Warn if any thread's comments page overflowed first page (50). Not fatal:
@@ -207,6 +274,77 @@ extract_trailer() {
       ' \
     | tr ',' '\n' \
     | awk 'NF' \
+    | sort -u \
     | tr '\n' ',' \
     | sed 's/,$//'
+}
+
+# ----------------------------------------------------------------------------
+# loop_start_scan
+# ----------------------------------------------------------------------------
+# Scan `.harness-github-review/` for prior-cycle artifacts before a new run
+# starts. Aborted cycles preserve a `cycle-*-aborted/` directory; the skill
+# refuses to start a new loop while any such directory exists (forensics
+# guarantee — the abort evidence is what we need to debug a confusing
+# failure). Orphan non-aborted artifacts (`cycle-*-{diff,verify-*}.{patch,log,...}`)
+# from a prior run with no abort are wiped silently with a one-line notice.
+#
+# This function is called from SKILL.md's Bootstrap section, BEFORE Step 0
+# (input resolution). It must execute before any step reads or writes PR
+# state. The body is mirrored verbatim in references/cleanup-recovery.md as
+# illustrative copy; THIS implementation is canonical.
+#
+# Returns 0 normally; calls `exit 1` directly when prior aborted dirs
+# require user attention (the skill must not proceed silently in that case).
+loop_start_scan() {
+  if [ ! -d .harness-github-review ]; then return 0; fi
+
+  local aborted_dirs
+  aborted_dirs=$(find .harness-github-review -maxdepth 1 -type d -name 'cycle-*-aborted' 2>/dev/null)
+
+  if [ -n "$aborted_dirs" ]; then
+    echo "Found prior aborted cycle(s):" >&2
+    echo "$aborted_dirs" | sed 's/^/  /' >&2
+    echo "" >&2
+    echo "Inspect each cycle-*-aborted/incident.md before continuing." >&2
+    echo "Once resolved, remove them with: rm -rf .harness-github-review/cycle-*-aborted/" >&2
+    echo "Then re-run /harness-plugin:github-review." >&2
+    exit 1
+  fi
+
+  # Wipe orphan non-aborted artifacts.
+  local orphans
+  orphans=$(find .harness-github-review -maxdepth 1 -type f -name 'cycle-*' 2>/dev/null | wc -l)
+  if [ "$orphans" -gt 0 ]; then
+    find .harness-github-review -maxdepth 1 -type f -name 'cycle-*' -delete
+    echo "Cleaned $orphans stale artifact files from prior run."
+  fi
+}
+
+# ----------------------------------------------------------------------------
+# cleanup_on_clean_exit
+# ----------------------------------------------------------------------------
+# Wipe transient cycle artifacts (diff patches, verify prompts, verify
+# results, event logs, stderr logs) on a clean loop exit. Aborted-cycle
+# directories from earlier rounds in the same run are PRESERVED — they are
+# the forensics record we promised to keep. Called from Step 7.5
+# (clean-exit message) only; never called on abnormal exit per
+# `references/cleanup-recovery.md` § Step 7.6.
+#
+# The body is mirrored verbatim in references/cleanup-recovery.md as
+# illustrative copy; THIS implementation is canonical.
+cleanup_on_clean_exit() {
+  if [ ! -d .harness-github-review ]; then return 0; fi
+
+  local count=0
+  while IFS= read -r f; do
+    rm -f "$f"
+    count=$((count + 1))
+  done < <(find .harness-github-review -maxdepth 1 -type f -name 'cycle-*')
+
+  if [ "$count" -gt 0 ]; then
+    echo "Cleaned $count artifact files from this run."
+  fi
+
+  # Aborted dirs (if any) are preserved.
 }

@@ -32,6 +32,11 @@ the loud-fail / preserve-forensics posture.
 
 ## Cleanup helpers
 
+> **Canonical implementation lives in `../scripts/helpers.sh`** — the
+> bash bodies below are mirrored from there as illustrative copy so the
+> reference reads standalone. Edit `helpers.sh` first, then mirror the
+> change here.
+
 ```bash
 loop_start_scan() {
   if [ ! -d .harness-github-review ]; then return 0; fi

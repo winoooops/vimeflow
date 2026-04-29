@@ -478,15 +478,31 @@ sufficient.
 # Use process-substitution + while read for consistency with Step 6.8.
 # PRRT_ IDs have no embedded spaces today, but the for-in-$() form would
 # silently corrupt iteration if the format ever changed.
+#
+# Capture the full response and validate via _assert_graphql_response_ok
+# (see scripts/helpers.sh). `gh api graphql` exits 0 even when GitHub returns
+# `{"errors": [...], "data": null}` (auth, rate-limit, stale node ID); the
+# `--jq '...'` shorthand would silently emit `null` and the loop would mark
+# the thread as "resolved" in the trailer when GitHub never resolved it.
+# Same bug class as paginated_review_threads_query — see references/commit-trailers.md
+# § Reconciliation for the symptom this prevents.
 while IFS= read -r thread_id; do
   [ -z "$thread_id" ] && continue
-  gh api graphql -f query='
+  RESP=$(gh api graphql -f query='
     mutation($threadId:ID!) {
       resolveReviewThread(input:{threadId:$threadId}) {
         thread { id isResolved }
       }
-    }' -F threadId="$thread_id" \
-    --jq '.data.resolveReviewThread.thread'
+    }' -F threadId="$thread_id") || {
+    echo "ERROR: gh api graphql exited non-zero resolving thread $thread_id" >&2
+    continue
+  }
+  if ! _assert_graphql_response_ok "$RESP" \
+       '.data.resolveReviewThread.thread' \
+       "resolveReviewThread $thread_id"; then
+    continue
+  fi
+  jq '.data.resolveReviewThread.thread' <<< "$RESP"
 done < <(list_thread_ids_to_close)
 ```
 

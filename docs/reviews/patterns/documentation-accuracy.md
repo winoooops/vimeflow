@@ -159,3 +159,21 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** When a cycle gets stuck (verify times out, branch mismatch, plugin cache out of sync, max-rounds hit), users had to read through `incident.md` or chase cross-references to figure out the recovery. No quick lookup table of "symptom → likely cause → fastest fix" — recovery friction wasted dogfood iteration time in cycle 1.
 - **Fix:** Added a `## Troubleshooting / Q&A` section near the end of SKILL.md (before the final Cleanup link) with 9 terse Q+A entries: branch mismatch, verify timeout/error, reconciliation lag, commitlint nits, plugin cache sync, max-rounds, GraphQL bot-suffix difference, INDEX_TOUCHED missing.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. Bootstrap calls `loop_start_scan` not defined in the only sourced file
+
+- **Source:** github-claude | PR #112 round 3 | 2026-04-29
+- **Severity:** MEDIUM
+- **File:** `plugins/harness/skills/github-review/SKILL.md`
+- **Finding:** SKILL.md Bootstrap sources only `$SKILL_DIR/scripts/helpers.sh`, which previously defined exactly two functions: `paginated_review_threads_query` and `extract_trailer`. Bootstrap then called `loop_start_scan` with the comment `# defined in references/cleanup-recovery.md`. That function lived inside a markdown code block in `cleanup-recovery.md`, never sourced — so under `set -euo pipefail` Bootstrap exited with `command not found: loop_start_scan` on first execution. This contradicted SKILL.md's own header claim "Read references on-demand from the per-step 'see' links — none of them are required to start a run." Worse, an AI agent recovering from the failure could synthesize a simplified `loop_start_scan` that auto-deletes aborted dirs (the load-bearing forensics guarantee).
+- **Fix:** Moved both `loop_start_scan` and `cleanup_on_clean_exit` from `references/cleanup-recovery.md` into `scripts/helpers.sh` as canonical implementations. Marked the markdown copies in `cleanup-recovery.md` as illustrative with a pointer to `helpers.sh`. Bootstrap now successfully calls both helpers because they are part of the sourced file.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. `extract_trailer` doc claims deduplication but pipeline has no `sort -u`
+
+- **Source:** github-claude | PR #112 round 3 | 2026-04-29
+- **Severity:** LOW
+- **File:** `plugins/harness/skills/github-review/scripts/helpers.sh`
+- **Finding:** `extract_trailer`'s function header stated "deduplicated by line, blanks stripped" but the pipeline `tr ',' '\n' | awk 'NF' | tr '\n' ',' | sed 's/,$//'` only stripped blanks — no `sort -u` or `uniq`. If the same trailer key appeared in multiple commits within `PR_BASE..HEAD` (cherry-picks, accidental double-commits), output contained duplicate values. Current consumers use `jq`'s `index()` membership test which tolerates duplicates, but the false doc contract risked misleading any future consumer that did length-based set arithmetic. The same-codebase inconsistency was particularly confusing because `commit-trailers.md`'s `CLAUDE_HANDLED_IDS` derivation correctly used `sort -u` for the union of two trailer sources.
+- **Fix:** Added `| sort -u` between `awk 'NF'` and `tr '\n' ','` in the pipeline. Implementation now matches the doc claim and the sibling `CLAUDE_HANDLED_IDS` derivation.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
