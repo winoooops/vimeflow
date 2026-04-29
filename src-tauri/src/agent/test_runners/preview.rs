@@ -1,10 +1,12 @@
-use super::sanitiser::sanitize_for_ui;
+use super::sanitiser::sanitize_for_command;
 
 const MAX_PREVIEW_LEN: usize = 120;
 
 pub fn build_command_preview(stripped_tokens: &[String]) -> String {
     let joined = stripped_tokens.join(" ");
-    let sanitized = sanitize_for_ui(&joined);
+    // Use the command-specific sanitiser — narrower than the output one
+    // so benign env vars like NODE_ENV=test stay visible in the header.
+    let sanitized = sanitize_for_command(&joined);
     truncate(&sanitized, MAX_PREVIEW_LEN)
 }
 

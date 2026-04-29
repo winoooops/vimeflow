@@ -1,16 +1,26 @@
 //! Conservative redaction for content shown in the UI. Catches the common
-//! shapes; not a comprehensive secret scanner. Applied to BOTH command_preview
-//! and output_excerpt.
+//! shapes; not a comprehensive secret scanner.
+//!
+//! TWO patterns are exposed:
+//!   - sanitize_for_command — narrower; tuned for `command_preview` where
+//!     the matcher pipeline already stripped leading env-var prefixes. Only
+//!     redacts known-sensitive prefixes, plus bearer/authorization/api-key/
+//!     jwt shapes. Leaves benign env vars like NODE_ENV=test or
+//!     VITEST_POOL_ID=1 readable in the panel header.
+//!   - sanitize_for_output — broader; tuned for `output_excerpt` where the
+//!     content is arbitrary captured stderr/stdout that may contain any
+//!     env-var dump. Adds the catch-all KEY=VALUE rule on top of the
+//!     command patterns.
 
 use once_cell::sync::Lazy;
 use regex::Regex;
 
 const REDACTED: &str = "[REDACTED]";
 
-static PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
+// Patterns shared by both sanitisers — catch token-shaped secrets that
+// can appear anywhere in either surface.
+static SHARED_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
     vec![
-        // KEY=value where KEY is uppercase identifier (env-style)
-        Regex::new(r"\b[A-Z][A-Z0-9_]{2,}=\S+").unwrap(),
         // Bearer tokens (case-insensitive)
         Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._\-]+").unwrap(),
         // Authorization headers (case-insensitive)
@@ -22,9 +32,49 @@ static PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
     ]
 });
 
-pub fn sanitize_for_ui(input: &str) -> String {
+// Command-only: KEY=VALUE assignments where KEY matches a KNOWN-SECRET
+// prefix list. Catches the common credential shapes without redacting
+// benign diagnostic vars (NODE_ENV, CI, DEBUG, VITEST_POOL_ID, etc.).
+// The matcher's `strip_env_prefix` already removes leading env-var
+// assignments before the preview is built, so this rule mostly catches
+// secrets passed as flag values or positional args.
+static COMMAND_ONLY_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
+    vec![
+        // SECRET_*, API_*, AUTH_*, TOKEN_*, KEY_*, PASSWORD_*, PASS_*,
+        // PWD_*, PRIVATE_*, ACCESS_*, plus exact GITHUB_TOKEN /
+        // STRIPE_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY / AWS_*.
+        Regex::new(
+            r"\b(SECRET|API|AUTH|TOKEN|KEY|PASSWORD|PASS|PWD|PRIVATE|ACCESS|GITHUB|STRIPE|ANTHROPIC|OPENAI|AWS|GCP|AZURE)_[A-Z0-9_]*=\S+",
+        )
+        .unwrap(),
+    ]
+});
+
+// Output-only: broad KEY=VALUE rule for arbitrary captured terminal
+// output where the over-redaction trade-off is acceptable (a 240-char
+// error excerpt loses less by over-redacting than by leaking a secret).
+static OUTPUT_ONLY_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
+    vec![
+        // Any uppercase identifier with =value
+        Regex::new(r"\b[A-Z][A-Z0-9_]{2,}=\S+").unwrap(),
+    ]
+});
+
+/// Sanitiser tuned for `command_preview`. Use this when displaying the
+/// reconstructed test command in the panel header.
+pub fn sanitize_for_command(input: &str) -> String {
+    apply_patterns(input, SHARED_PATTERNS.iter().chain(COMMAND_ONLY_PATTERNS.iter()))
+}
+
+/// Sanitiser tuned for `output_excerpt`. Use this for arbitrary captured
+/// stderr/stdout that may contain env-var dumps or unstructured output.
+pub fn sanitize_for_output(input: &str) -> String {
+    apply_patterns(input, SHARED_PATTERNS.iter().chain(OUTPUT_ONLY_PATTERNS.iter()))
+}
+
+fn apply_patterns<'a>(input: &str, patterns: impl Iterator<Item = &'a Regex>) -> String {
     let mut out = input.to_string();
-    for re in PATTERNS.iter() {
+    for re in patterns {
         out = re.replace_all(&out, REDACTED).to_string();
     }
     out
@@ -34,41 +84,65 @@ pub fn sanitize_for_ui(input: &str) -> String {
 mod tests {
     use super::*;
 
+    // --- command preview ---
+
     #[test]
-    fn redacts_env_assignments() {
-        let s = sanitize_for_ui("STRIPE_KEY=sk_live_abc123 vitest");
-        assert!(!s.contains("sk_live_abc123"));
+    fn command_redacts_known_secret_env_prefixes() {
+        let s = sanitize_for_command("STRIPE_KEY=sk_live_abc1234567890abcd vitest");
+        assert!(!s.contains("sk_live_abc1234567890abcd"));
         assert!(s.contains("[REDACTED]"));
     }
 
     #[test]
-    fn redacts_bearer_tokens() {
-        let s = sanitize_for_ui("curl -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.foo'");
+    fn command_does_not_redact_benign_env_vars() {
+        // Regression: previously `\b[A-Z][A-Z0-9_]{2,}=\S+` redacted these
+        // unconditionally, leaving "[REDACTED] vitest run" in the header.
+        let s = sanitize_for_command("NODE_ENV=test VITEST_POOL_ID=1 CI=true vitest run");
+        assert!(s.contains("NODE_ENV=test"), "NODE_ENV should be visible: {}", s);
+        assert!(s.contains("VITEST_POOL_ID=1"), "VITEST_POOL_ID should be visible: {}", s);
+        assert!(s.contains("CI=true"), "CI should be visible: {}", s);
+    }
+
+    #[test]
+    fn command_redacts_bearer_and_jwt() {
+        let s = sanitize_for_command(
+            "curl -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.foo' https://api",
+        );
         assert!(!s.contains("eyJhbGciOiJIUzI1NiJ9.foo"));
     }
 
     #[test]
-    fn redacts_api_key_prefixes() {
-        let s = sanitize_for_ui("--key sk_live_1234567890abcdef1234");
+    fn command_redacts_bare_api_key_prefixes() {
+        let s = sanitize_for_command("--key sk_live_1234567890abcdef1234");
         assert!(!s.contains("sk_live_1234567890abcdef1234"));
     }
 
     #[test]
-    fn redacts_jwt_like() {
-        let s = sanitize_for_ui("token: eyJabcdefghijklmnop.body.sig");
-        assert!(!s.contains("eyJabcdefghijklmnop"));
-    }
-
-    #[test]
-    fn clean_strings_unchanged() {
-        let s = sanitize_for_ui("vitest run src/foo.test.ts");
+    fn command_clean_strings_unchanged() {
+        let s = sanitize_for_command("vitest run src/foo.test.ts");
         assert_eq!(s, "vitest run src/foo.test.ts");
     }
 
     #[test]
-    fn does_not_redact_short_uppercase_words() {
-        // "OK" / "FAIL" without "=" must be untouched
-        let s = sanitize_for_ui("FAIL src/foo.test.ts");
+    fn command_does_not_redact_short_uppercase_words() {
+        let s = sanitize_for_command("FAIL src/foo.test.ts");
         assert_eq!(s, "FAIL src/foo.test.ts");
+    }
+
+    // --- output excerpt (broader rule kicks in) ---
+
+    #[test]
+    fn output_redacts_arbitrary_uppercase_assignments() {
+        // Output excerpts may contain env-var dumps from `env` or panic
+        // messages; the conservative pattern is appropriate here.
+        let s = sanitize_for_output("Crashed with NODE_ENV=test SECRET_KEY=abc123");
+        assert!(!s.contains("NODE_ENV=test"));
+        assert!(!s.contains("SECRET_KEY=abc123"));
+    }
+
+    #[test]
+    fn output_still_redacts_token_shapes() {
+        let s = sanitize_for_output("got token: eyJabcdefghijklmnop.body.sig");
+        assert!(!s.contains("eyJabcdefghijklmnop"));
     }
 }

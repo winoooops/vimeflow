@@ -114,8 +114,12 @@ const TestResultsBody = ({
       <ProportionalBar passed={passed} failed={failed} skipped={skipped} />
       <SummaryText passed={passed} failed={failed} skipped={skipped} />
       <ul className="flex flex-col gap-1">
-        {snapshot.summary.groups.map((g, i) => (
-          <li key={`${g.label}-${i}`}>
+        {snapshot.summary.groups.map((g) => (
+          // Identity-based key, not positional — vitest file paths and
+          // cargo `<crate>::<module>` paths are unique within a snapshot.
+          // Namespace by kind so a future parser producing colliding labels
+          // across kinds wouldn't trigger a duplicate-key warning.
+          <li key={`${g.kind}:${g.label}`}>
             <GroupRow group={g} onOpenFile={onOpenFile} />
           </li>
         ))}

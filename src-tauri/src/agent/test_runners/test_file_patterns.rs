@@ -32,8 +32,14 @@ pub fn is_test_file(path: &str) -> bool {
         }
     }
 
-    // Rust: anything inside a tests/ directory
-    if path.contains("/tests/") || path.starts_with("tests/") {
+    // Rust: .rs files inside a tests/ directory (Cargo integration tests).
+    // Restricting to .rs is important — non-RS files under tests/ are test
+    // ASSETS (fixtures, JSON snapshots, JSONL transcripts) not tests
+    // themselves. Tagging fixture writes as "CREATED TEST" in the activity
+    // feed would erode the label's signal value.
+    let is_in_tests_dir = path.contains("/tests/") || path.starts_with("tests/");
+    let basename = path.rsplit('/').next().unwrap_or(path);
+    if is_in_tests_dir && basename.ends_with(".rs") {
         return true;
     }
 
@@ -72,6 +78,19 @@ mod tests {
     fn rust_non_test_files_dont_match() {
         assert!(!is_test_file("src/foo.rs"));
         assert!(!is_test_file("src/test_helper.rs")); // not _test.rs and not in tests/
+    }
+
+    #[test]
+    fn fixtures_under_tests_dont_match() {
+        // Regression: non-RS files under tests/ (test ASSETS — fixtures,
+        // JSON snapshots, JSONL transcripts) used to satisfy the broad
+        // /tests/ heuristic. Now the rule restricts to .rs files. This
+        // PR's own fixtures live under src-tauri/tests/fixtures/*.jsonl
+        // and would have been mislabelled as test creations.
+        assert!(!is_test_file("src-tauri/tests/fixtures/transcript_vitest_pass.jsonl"));
+        assert!(!is_test_file("tests/fixtures/cases.json"));
+        assert!(!is_test_file("crates/x/tests/snapshot.toml"));
+        assert!(!is_test_file("tests/README.md"));
     }
 
     #[test]

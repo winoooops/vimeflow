@@ -8,7 +8,7 @@ use regex::Regex;
 
 use super::matcher::MatchedCommand;
 use super::preview::build_command_preview;
-use super::sanitiser::sanitize_for_ui;
+use super::sanitiser::sanitize_for_output;
 use super::timestamps::compute_duration_ms;
 use super::types::{
     CapturedOutput, TestRunSnapshot, TestRunStatus, TestRunSummary,
@@ -115,7 +115,7 @@ fn extract_excerpt(content: &str) -> String {
         stripped.lines().find(|l| !l.trim().is_empty()).unwrap_or("")
     });
     let truncated: String = chosen.chars().take(MAX_EXCERPT_LEN).collect();
-    sanitize_for_ui(&truncated)
+    sanitize_for_output(&truncated)
 }
 
 #[cfg(test)]
