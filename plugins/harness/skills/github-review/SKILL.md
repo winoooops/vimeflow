@@ -768,7 +768,220 @@ exit 1
 
 ## Step 6: Write patterns → stage all → commit → push → reply + resolve threads
 
-(Filled in Task 11.)
+This step lands the cycle's work atomically. **Order matters** — pattern files must be written BEFORE the commit (so they're part of the same commit as the code fix), and reply + thread resolution must come AFTER push (so the cited commit SHA exists on origin).
+
+### 6.1: Match each fixed finding to a pattern file
+
+For each finding with `status == 'fixed'`, decide its target pattern file using the algorithm from spec §4.1:
+
+```
+1. Read docs/reviews/CLAUDE.md → get list of (pattern_file_path, category).
+2. Pre-filter candidates by:
+   - Finding's file path overlap with files already in the pattern.
+   - Category vs finding's domain.
+3. Read Summary section ONLY for the top 3-5 candidates from Step 2 to disambiguate.
+4. Fallback rules:
+   a. 2+ findings sharing a novel theme → create new pattern.
+   b. Single novel security/data-loss/correctness finding → create new pattern (single-entry security patterns earn their cost).
+   c. Other single novel findings → fit into closest existing with a 1-line note.
+5. Never create a new category without user approval — abort with prompt.
+```
+
+Record decisions in a list for the commit-message trailer:
+
+```
+Pattern-Append-Decisions:
+
+- F1 (alias recursion) → patterns/async-race-conditions.md (existing, theme: bounded recursion)
+- F2 (Authorization regex) → patterns/credential-leakage.md (NEW pattern)
+```
+
+### 6.2: Append entries to existing patterns
+
+For each finding routed to an existing pattern, compute the next entry number:
+
+```python
+def next_finding_number(pattern_file_path: str) -> int:
+    text = read(pattern_file_path)
+    if "## Findings" not in text:
+        return 1
+    findings_section = text.split("## Findings", 1)[1]
+    findings_section = findings_section.split("\n## ", 1)[0]  # stop at next H2
+    matches = re.findall(r'^### (\d+)\. ', findings_section, re.MULTILINE)
+    return max(int(n) for n in matches) + 1 if matches else 1
+```
+
+Append each entry under `## Findings`, schema:
+
+```markdown
+### N. <Finding's title>
+
+- **Source:** <github-claude | github-codex-connector | local-codex> | PR #<PR_NUMBER> round <ROUND> | <YYYY-MM-DD>
+- **Severity:** <severity_label_original> # e.g. "HIGH" or "P1 / HIGH"
+- **File:** `<repo-relative path>`
+- **Finding:** <one to three sentences from the finding body>
+- **Fix:** <one to three sentences describing what was changed>
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+```
+
+Note: `Commit:` does NOT contain the SHA — pattern file is part of the same commit being created, so the SHA isn't yet known. Recoverable via `git blame` later.
+
+Update frontmatter `last_updated:` to today's date. Do **NOT** bump `ref_count` on append — it's a consumer counter (per `docs/reviews/CLAUDE.md`).
+
+### 6.3: Create new patterns when needed
+
+For findings without a close fit, create a new pattern file at `docs/reviews/patterns/<kebab-slug>.md`:
+
+```markdown
+---
+id: <kebab-slug-of-name>
+category: <one of: security | react-patterns | testing | terminal | code-quality |
+                   error-handling | files | review-process | a11y | cross-platform |
+                   editor | backend | correctness | e2e-testing>
+created: <today>
+last_updated: <today>
+ref_count: 0
+---
+
+# <Title Case Pattern Name>
+
+## Summary
+
+<One paragraph (3-5 sentences) describing the pattern's theme — failure mode + general fix shape — drafted from the finding bodies that triggered creation.>
+
+## Findings
+
+### 1. <First finding's title>
+
+- **Source:** ...
+  (continues per 6.2 schema)
+```
+
+Category MUST come from the existing closed list (see §4.3). New categories require user approval — abort if needed.
+
+### 6.4: Update the pattern index
+
+`docs/reviews/CLAUDE.md` has a markdown table:
+
+| Pattern                                          | Category | Findings | Refs | Last Updated |
+| ------------------------------------------------ | -------- | -------- | ---- | ------------ |
+| [Filesystem Scope](patterns/filesystem-scope.md) | security | 20       | 2    | 2026-04-29   |
+
+For each touched pattern, update the row's `Findings` count (re-derive from `### N.` count after this commit's appends), `Last Updated` to today. `Refs` unchanged.
+
+For new pattern files, append a row in the same alphabetical order as existing rows (or end-of-table — verify by reading the file before adding).
+
+### 6.5: Stage everything explicitly
+
+**Do not** use `git add -A` — that would catch the gitignored `.harness-github-review/` if the gitignore failed somehow, and unrelated untracked files. List exact files:
+
+```bash
+# Build the staged file list:
+STAGED_FILES=()
+
+# Code-fix files (from Step 4 modifications):
+while IFS= read -r f; do STAGED_FILES+=("$f"); done < <(git diff --name-only)
+
+# Pattern files modified or created in this cycle:
+for f in "${TOUCHED_PATTERN_FILES[@]}"; do STAGED_FILES+=("$f"); done
+
+# Index file if any pattern was added/created:
+if [ "${INDEX_TOUCHED:-0}" -eq 1 ]; then
+  STAGED_FILES+=("docs/reviews/CLAUDE.md")
+fi
+
+git add "${STAGED_FILES[@]}"
+git status --short  # sanity check — verify expected files staged, no surprises
+```
+
+### 6.6: Build the commit message and commit
+
+```bash
+COMMIT_MSG_FILE=".harness-github-review/cycle-${ROUND}-commit-msg.txt"
+
+cat > "$COMMIT_MSG_FILE" <<EOF
+fix(#${PR_NUMBER}): address review round ${ROUND} findings
+
+$(render_per_finding_listing)
+
+Reviewers: $(list_unique_sources)
+
+GitHub-Review-Processed-Claude: ${LATEST_CLAUDE_ID:-}
+GitHub-Review-Superseded-Claude: $(jq -r 'join(",")' <<< "$SUPERSEDED_THIS_CYCLE")
+GitHub-Review-Processed-Codex-Reviews: $(jq -r 'join(",")' <<< "$UNPROCESSED_REVIEW_IDS_JSON")
+GitHub-Review-Processed-Codex-Inline: $(list_inline_ids_processed_this_cycle)
+Closes-Codex-Threads: $(list_thread_ids_to_close)
+Pattern-Files-Touched: $(printf '%s, ' "${TOUCHED_PATTERN_FILES[@]}" | sed 's/, $//')
+Pattern-Append-Decisions:
+$(render_pattern_append_decisions)
+EOF
+
+# Conditional trailers (only if state applies):
+if [ -n "${VERIFY_DEFERRED_LOW:-}" ]; then
+  echo "Verify-Deferred-LOW: $VERIFY_DEFERRED_LOW" >> "$COMMIT_MSG_FILE"
+fi
+if [ "${VERIFY_SKIPPED:-0}" -eq 1 ]; then
+  echo "Verify-Skipped: docs-only" >> "$COMMIT_MSG_FILE"
+fi
+
+git commit -F "$COMMIT_MSG_FILE"
+COMMIT_SHA=$(git rev-parse HEAD)
+
+echo "Committed cycle $ROUND as $COMMIT_SHA"
+```
+
+### 6.7: Push
+
+```bash
+git push
+```
+
+### 6.8: Reply to each connector inline finding
+
+```bash
+for finding in $(jq -c '.[] | select(.source == "codex-connector" and .status == "fixed")' <<< "$FINDINGS_JSON"); do
+  COMMENT_ID=$(jq -r '.source_comment_id' <<< "$finding")
+  CYCLE_ID=$(jq -r '.cycle_id' <<< "$finding")
+  TITLE=$(jq -r '.title' <<< "$finding")
+  FIX_SUMMARY=$(jq -r '.fix_summary // ""' <<< "$finding")
+
+  REPLY_BODY=$(cat <<EOF
+Fixed in $COMMIT_SHA — $FIX_SUMMARY
+
+(github-review cycle ${ROUND}, finding ${CYCLE_ID})
+EOF
+)
+
+  gh api -X POST "repos/$REPO/pulls/$PR_NUMBER/comments/${COMMENT_ID}/replies" \
+    -f body="$REPLY_BODY"
+done
+```
+
+### 6.9: Resolve threads via GraphQL
+
+```bash
+for thread_id in $(list_thread_ids_to_close); do
+  gh api graphql -f query='
+    mutation($threadId:ID!) {
+      resolveReviewThread(input:{threadId:$threadId}) {
+        thread { id isResolved }
+      }
+    }' -F threadId="$thread_id" \
+    --jq '.data.resolveReviewThread.thread'
+done
+```
+
+After 6.8 + 6.9, every finding has been:
+
+- Fixed in code (Step 4)
+- Verified by codex (Step 5)
+- Documented in the pattern KB (6.1–6.4)
+- Committed atomically (6.5–6.6)
+- Pushed (6.7)
+- Replied to on the connector side (6.8)
+- Marked resolved in GraphQL (6.9)
+
+The cycle is now done. Proceed to Step 7.
 
 ## Step 7: Exit check + retro prompt
 
