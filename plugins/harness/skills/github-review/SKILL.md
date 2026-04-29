@@ -642,36 +642,49 @@ for `incident.md`. Each entry is "symptom → likely cause → fastest fix."
    `gh api graphql -f query='mutation { resolveReviewThread(input:{threadId:"PRRT_..."}) { thread { isResolved } } }'`
    then re-run.
 
-5. **"Pre-commit hook keeps rejecting commitlint."** See
+5. **"Step 1 prints `WARN: paginated_review_threads_query failed during
+reconciliation; skipping stale-thread reconciliation for this cycle.`"**
+   The reconciliation GraphQL query failed (rate-limit, auth, or transient
+   network) and the cycle continued without correcting the processed-ID
+   sets. The `_assert_graphql_response_ok` diagnostic immediately above the
+   warning explains the cause. Single occurrence: re-run; the next cycle's
+   reconciliation will catch any drift if the API is healthy. Recurring
+   across cycles: check `gh auth status` (token expired) or wait out the
+   rate-limit window (`gh api rate_limit`); manually verify trailer vs
+   live state via the printed `gh api graphql ...` snippet. See
+   `references/commit-trailers.md` § Step 1 — Reconciliation against live
+   GitHub state for the (a)/(b) trade-off rationale.
+
+6. **"Pre-commit hook keeps rejecting commitlint."** See
    `references/commit-trailers.md` § Cycle-1 commitlint fixes. Common
    nits: subject case (lowercase only), `Pattern-Files-Touched` line
    length (use multi-line continuation), missing blank line before the
    trailer block.
 
-6. **"Plugin cache out of sync with working tree."** After editing
+7. **"Plugin cache out of sync with working tree."** After editing
    SKILL.md or any `references/*.md`, re-sync the cache:
    `cp -r plugins/harness/skills/github-review ~/.claude/plugins/cache/harness/harness-plugin/0.0.1/skills/`.
    Skills are loaded from cache, not the working tree (when invoked via
    `/harness-plugin:github-review`).
 
-7. **"Loop hits `max-rounds`."** 10 fix-cycles didn't reach clean. Either
+8. **"Loop hits `max-rounds`."** 10 fix-cycles didn't reach clean. Either
    reviewers found a class of bug the agent can't fix (escalate to human
    review on the PR) or the verify gate is rejecting fixes spuriously
    (read `cycle-N-verify-result.json` — look for `[UNADDRESSED Fk]`
    findings to identify which finding never converged).
 
-8. **"Connector author shows as `chatgpt-codex-connector` not
+9. **"Connector author shows as `chatgpt-codex-connector` not
    `chatgpt-codex-connector[bot]`."** GraphQL strips the `[bot]` suffix,
    REST keeps it. Filters consuming `paginated_review_threads_query`
    output (Step 2B INLINE_TO_THREAD_MAP and Step 7.1's connector check)
    match the bare login. See `scripts/helpers.sh` header for the full
    table.
 
-9. **"Step 6.4 didn't update the index, even though pattern files
-   changed."** `INDEX_TOUCHED=1` must be set whenever any pattern entry
-   is appended (Step 6.2) or any new pattern is created (Step 6.3) — see
-   `references/pattern-kb.md` § Step 6.4. If the flag is unset,
-   Step 6.5's stage list excludes `docs/reviews/CLAUDE.md`.
+10. **"Step 6.4 didn't update the index, even though pattern files
+    changed."** `INDEX_TOUCHED=1` must be set whenever any pattern entry
+    is appended (Step 6.2) or any new pattern is created (Step 6.3) — see
+    `references/pattern-kb.md` § Step 6.4. If the flag is unset,
+    Step 6.5's stage list excludes `docs/reviews/CLAUDE.md`.
 
 ## Cleanup, recovery & failsafe
 

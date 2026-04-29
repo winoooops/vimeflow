@@ -67,8 +67,35 @@ reconcile on the next read instead.)
 
 ```bash
 if [ -n "$CLOSED_CODEX_THREADS" ]; then
-  # paginated_review_threads_query is defined in ../scripts/helpers.sh.
-  LIVE_THREAD_STATE=$(paginated_review_threads_query 2>/dev/null || echo "[]")
+  # paginated_review_threads_query (defined in ../scripts/helpers.sh) returns
+  # non-zero on GraphQL errors via _assert_graphql_response_ok (cycle 3
+  # hardening). DO NOT silence stderr or swallow that failure with
+  # `2>/dev/null || echo "[]"` — the silence would discard the diagnostic
+  # that tells the operator why the loop later exits with `poll-timeout`,
+  # AND would mask the very deadlock case reconciliation exists to catch
+  # (trailer says "closed" but GitHub disagrees, stale IDs block re-fetch
+  # on every subsequent cycle until poll exhausts indefinitely).
+  #
+  # Trade-off considered:
+  #   (a) Let it propagate (no fallback) → set -euo pipefail aborts the
+  #       cycle on a transient blip. Safest, but a one-off GitHub hiccup
+  #       forces the user to re-run.
+  #   (b) Catch + log loud + skip reconciliation for this cycle.
+  #       Less safe (a real drift might be missed for one cycle) but more
+  #       resilient to transient blips. The next cycle's reconciliation
+  #       catches any lingering drift if the API is healthy then.
+  # We pick (b): degrade to empty live state with an explicit, audible
+  # warning to stderr so operators see WHY reconciliation was skipped.
+  if ! LIVE_THREAD_STATE=$(paginated_review_threads_query); then
+    echo "WARN: paginated_review_threads_query failed during reconciliation;" >&2
+    echo "      skipping stale-thread reconciliation for this cycle." >&2
+    echo "      _assert_graphql_response_ok diagnostics above explain the cause." >&2
+    echo "      If the failure persists across cycles, manually verify trailer" >&2
+    echo "      vs live state via:" >&2
+    echo "        gh api graphql -f query='query(\$o:String!,\$n:String!,\$pr:Int!){repository(owner:\$o,name:\$n){pullRequest(number:\$pr){reviewThreads(first:100){nodes{id isResolved}}}}}' \\" >&2
+    echo "          -F o=\"\$OWNER\" -F n=\"\$NAME\" -F pr=\"\$PR_NUMBER\"" >&2
+    LIVE_THREAD_STATE="[]"
+  fi
 
   # Find thread IDs in trailer that are still unresolved on GitHub.
   STALE_THREAD_IDS=$(jq -n \
@@ -84,21 +111,56 @@ if [ -n "$CLOSED_CODEX_THREADS" ]; then
     echo "Reconciliation: $(jq 'length' <<< "$STALE_THREAD_IDS") threads in Closes-Codex-Threads trailer are still unresolved on GitHub." >&2
     echo "Treating them as un-processed; this cycle will re-attempt reply + resolve." >&2
 
-    # Find inline comment IDs whose thread is in STALE_THREAD_IDS, so we can
-    # remove them from PROCESSED_CODEX_INLINE_IDS.
-    STALE_COMMENT_IDS=$(jq -r --argjson live "$LIVE_THREAD_STATE" --argjson stale "$STALE_THREAD_IDS" '
-      [$live[] | select(.thread_id as $tid | $stale | index($tid)) | .comment_databaseId | tostring] | join(",")
+    # `Closes-Codex-Threads` is populated from `list_thread_ids_to_close`
+    # (SKILL.md § Step 6.9), which includes BOTH connector (`source ==
+    # "codex-connector"`) AND human-inline (`source == "human" and .file
+    # != null`) findings. So `STALE_THREAD_IDS` may contain a mix of the
+    # two. We split the stale comment IDs by author type — connector
+    # comments are subtracted from `PROCESSED_CODEX_INLINE_IDS`, human
+    # comments from `PROCESSED_HUMAN_INLINE_IDS`. Author type comes from
+    # `LIVE_THREAD_STATE[i].comment_author_type` (`"Bot"` for the
+    # connector via `__typename` mapping in helpers.sh,
+    # `"User"` for humans).
+    STALE_CONNECTOR_COMMENT_IDS=$(jq -r --argjson live "$LIVE_THREAD_STATE" --argjson stale "$STALE_THREAD_IDS" '
+      [$live[] | select((.thread_id as $tid | $stale | index($tid))
+                        and .comment_author_login == "chatgpt-codex-connector")
+                | .comment_databaseId | tostring]
+      | unique | join(",")
+    ')
+    STALE_HUMAN_COMMENT_IDS=$(jq -r --argjson live "$LIVE_THREAD_STATE" --argjson stale "$STALE_THREAD_IDS" '
+      [$live[] | select((.thread_id as $tid | $stale | index($tid))
+                        and .comment_author_type == "User")
+                | .comment_databaseId | tostring]
+      | unique | join(",")
     ')
 
-    if [ -n "$STALE_COMMENT_IDS" ]; then
-      # Subtract STALE_COMMENT_IDS from PROCESSED_CODEX_INLINE_IDS.
+    if [ -n "$STALE_CONNECTOR_COMMENT_IDS" ]; then
+      # Subtract STALE_CONNECTOR_COMMENT_IDS from PROCESSED_CODEX_INLINE_IDS.
       # awk-based set-difference instead of `grep -vxFf` — `grep -v` exits 1
       # when ALL input lines match the filter (the primary case here: every
       # processed ID is stale), aborting under `set -euo pipefail`.
-      PROCESSED_CODEX_INLINE_IDS=$(awk -v stale="$STALE_COMMENT_IDS" '
+      PROCESSED_CODEX_INLINE_IDS=$(awk -v stale="$STALE_CONNECTOR_COMMENT_IDS" '
         BEGIN { n = split(stale, a, /,/); for (i = 1; i <= n; i++) if (a[i] != "") s[a[i]] = 1 }
         NF && !($0 in s) { print }
       ' < <(printf '%s\n' "$PROCESSED_CODEX_INLINE_IDS" | tr ',' '\n') \
+        | sort -u | tr '\n' ',' | sed 's/,$//')
+    fi
+
+    if [ -n "$STALE_HUMAN_COMMENT_IDS" ]; then
+      # Same shape as the connector subtraction above, applied to the human
+      # surface. Without this, a failed human-inline reply/resolve leaves
+      # the comment ID in PROCESSED_HUMAN_INLINE_IDS forever — Step 2D
+      # excludes it on every subsequent cycle, Step 7.1 keeps seeing
+      # UNRESOLVED_HUMAN_THREADS > 0, and the loop enters POLL_NEXT every
+      # cycle until poll-timeout with no automated recovery path.
+      # Human-inline findings have no parent review-ID surface (they're
+      # not posted under a /pulls/{pr}/reviews wrapper from the operator's
+      # perspective) so there's no human equivalent of
+      # PROCESSED_CODEX_REVIEW_IDS — only the inline-ID subtraction.
+      PROCESSED_HUMAN_INLINE_IDS=$(awk -v stale="$STALE_HUMAN_COMMENT_IDS" '
+        BEGIN { n = split(stale, a, /,/); for (i = 1; i <= n; i++) if (a[i] != "") s[a[i]] = 1 }
+        NF && !($0 in s) { print }
+      ' < <(printf '%s\n' "$PROCESSED_HUMAN_INLINE_IDS" | tr ',' '\n') \
         | sort -u | tr '\n' ',' | sed 's/,$//')
     fi
 
@@ -106,8 +168,12 @@ if [ -n "$CLOSED_CODEX_THREADS" ]; then
     # of the stale inline comments need to come out of the processed-review
     # set, otherwise the Step 2B inline-comment poll's review-id filter
     # rejects the inline before our inline-id subtraction takes effect.
+    # Scoped to connector entries: human-inline comments don't carry a
+    # `pull_request_review_id` the skill processes, so the human surface
+    # has no review-ID equivalent to reconcile.
     STALE_REVIEW_IDS=$(jq -r --argjson live "$LIVE_THREAD_STATE" --argjson stale "$STALE_THREAD_IDS" '
-      [$live[] | select(.thread_id as $tid | $stale | index($tid))
+      [$live[] | select((.thread_id as $tid | $stale | index($tid))
+                        and .comment_author_login == "chatgpt-codex-connector")
                | .pull_request_review_id // empty
                | tostring]
       | unique
