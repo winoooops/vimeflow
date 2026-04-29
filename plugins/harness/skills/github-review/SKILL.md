@@ -1,150 +1,65 @@
 ---
 name: github-review
-description: Fetch Codex review findings from the current PR and fix them. Polls gh for the latest Codex comment, parses findings, fixes each issue, runs tests, commits, and pushes. Automatically loops — polls for the next review after each push.
+description: Fetch review findings from the current PR (Claude Code Review aggregated comments + chatgpt-codex-connector inline comments) and fix them in atomic per-cycle batches. Each cycle polls both reviewers, fixes findings, runs codex verify on the staged diff, commits with watermark trailers, pushes, replies + resolves connector threads, then polls for the next review. Mandates pattern-file appends in the same commit as the fix.
 tools: Read, Write, Edit, Bash, Grep, Glob
 ---
 
-# /harness-plugin:github-review — Fix Codex PR Review Findings (Self-Driving Loop)
+# /harness-plugin:github-review — Fix PR Review Findings (Connector-Aware Self-Driving Loop)
 
-Fetch the latest Codex code review from the current branch's PR, fix every finding, push, then poll for the next review and repeat — until the review comes back clean or the loop hits the max rounds limit.
+Fetch the latest reviews from the current branch's PR (or a user-specified PR), fix every finding, push, then poll for the next review and repeat — until both reviewers come back clean or the loop hits the max-rounds cap.
+
+This skill consumes two reviewers:
+
+1. **Claude Code Review** — `github-actions[bot]` issue comments with `## Claude Code Review` header. Aggregated, no threads.
+2. **chatgpt-codex-connector** — `chatgpt-codex-connector[bot]` PR-level review summaries (`### 💡 Codex Review`) + inline file-level comments (`**P1/P2 Badge** Title`). Inline comments are the actionable units; threads resolved via GraphQL `resolveReviewThread`.
+
+The old aggregated `openai/codex-action@v1` workflow (`.github/workflows/codex-review.yml`) was disabled in the same PR that introduced this rewrite (issue #111).
 
 ## Loop Control
 
-- **Max rounds**: 10 (hard cap to prevent runaway loops)
-- **Poll interval**: 60 seconds between checks for a new review
-- **Poll timeout**: 10 minutes per round (if no new review appears, stop)
-- Track the **comment ID** of the last processed review to detect new ones
+- **Max rounds:** 10 (hard cap to prevent runaway loops)
+- **Per-round verify retry budget:** 3 (codex-verify re-entries to fix; exceed → cycle abort)
+- **Inter-round poll interval:** 60 seconds
+- **Inter-round poll timeout:** 10 minutes per round
+- **State persistence:** Git commit-message trailers (no `.json` state file). Cycle start derives processed sets via `git log "$PR_BASE..HEAD"`.
+- **Per-cycle artifacts:** under `.harness-github-review/` (gitignored). See § Cleanup.
 
-## Step 1: Get PR Number and Baseline
+## Step 0: Input resolution
 
-Run these commands once at the start of the loop:
+(Filled in Task 4.)
 
-```bash
-# Get current branch's PR number
-PR_NUMBER=$(gh pr view --json number --jq '.number' 2>/dev/null)
+## Step 1: Get PR + repo context
 
-# Get the repo name
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-```
+(Filled in Task 4.)
 
-If no PR exists, tell the user and stop.
+## Step 1.5: Check non-review CI status
 
-## Step 1.5: Check CI Status
+(Filled in Task 4.)
 
-Before looking at Codex review comments, check if the PR's CI checks are passing:
+## Step 2: Poll both reviewers + parse findings
 
-```bash
-gh pr checks $PR_NUMBER
-```
+(Filled in Tasks 5–6.)
 
-If any checks **other than Codex Code Review** are failing (e.g., Code Quality Check, Unit Tests):
+## Step 3: Empty-state classification
 
-1. Read the failing check's log: `gh run view <run_id> --log-failed`
-2. Fix the issue (formatting, lint, type errors, test failures)
-3. Commit and push the fix
-4. Re-run this step until CI is green
+(Filled in Task 7.)
 
-Common CI failures:
+## Step 4: Fix all findings
 
-- **Code Quality Check (Prettier)**: run `npx prettier --write <file>` on the flagged files
-- **Code Quality Check (ESLint)**: run `npm run lint:fix`
-- **Unit Tests**: run `npm run test` to reproduce, then fix
+(Filled in Task 8.)
 
-Only proceed to Step 2 once all non-Codex checks are passing.
+## Step 5: Codex verify on staged diff
 
-## Step 2: Fetch Latest Codex Review
+(Filled in Tasks 9–10.)
 
-```bash
-# Fetch the latest Codex review comment ID and body
-gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
-  --jq '[.[] | select(.body | contains("## Codex Code Review"))] | last | {id, body}'
-```
+## Step 6: Write patterns → stage all → commit → push → reply + resolve threads
 
-- If no Codex review comment found, tell the user and stop.
-- Store the **comment ID** so you can detect when a NEW review arrives after pushing.
+(Filled in Task 11.)
 
-## Step 3: Parse Findings
+## Step 7: Exit check + retro prompt
 
-The Codex review comment has this structure:
+(Filled in Task 12.)
 
-```
-## Codex Code Review
+## Cleanup, recovery & failsafe
 
-### [SEVERITY_ICON] [SEVERITY] Title
-
-📍 `file_path` L{start}-{end}
-🎯 Confidence: N%
-
-Description of the issue and how to fix it.
-
----
-
-**Overall: verdict** (confidence: N%)
-> Summary
-```
-
-Extract each finding: severity, file path, line range, description.
-
-If the review says "No issues found" or "patch is correct" — tell the user **the review is clean** and **exit the loop**.
-
-## Step 4: Fix Each Finding
-
-For each finding:
-
-1. **Read the file** at the specified path and line range
-2. **Understand the issue** in context
-3. **Decide**:
-   - **FIX** — make the minimal change to resolve the issue
-   - **SKIP** — explain why (false positive, intentional pattern, out of scope)
-4. If fixing: make the change, verify with `npm run lint` and `npm run test`
-
-Rules:
-
-- Fix ONLY what the review identified — no drive-by refactoring
-- Never introduce new issues while fixing existing ones
-- Run tests after ALL fixes, not after each one
-
-## Step 5: Commit and Push
-
-```bash
-git add -A
-git commit -m "fix: address Codex review round N findings
-
-- [list what was fixed]
-- [list what was skipped and why]"
-
-git push
-```
-
-## Step 6: Report Round Results
-
-Tell the user:
-
-- Round number (e.g., "Round 1 of 10")
-- Which findings were fixed
-- Which were skipped (with reasons)
-
-## Step 7: Poll for Next Review
-
-After pushing, the Codex GitHub Action will run on the new commit. Poll for a NEW review comment (different comment ID than the one just processed):
-
-```bash
-# Poll every 60s, up to 10 minutes
-# Look for a comment with a DIFFERENT id than the last processed one
-gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
-  --jq '[.[] | select(.body | contains("## Codex Code Review"))] | last | {id, body}'
-```
-
-- If a new comment appears (different ID): go back to **Step 3**
-- If no new comment after 10 minutes: tell the user the poll timed out, they can re-run `/harness-plugin:github-review` later
-- If max rounds (10) reached: tell the user the loop hit its cap
-
-## Exit Conditions
-
-The loop exits when ANY of these is true:
-
-1. **Clean review** — Codex says no issues found / patch is correct
-2. **Poll timeout** — no new review appeared within 10 minutes after push
-3. **Max rounds reached** — 10 fix-push-poll cycles completed
-4. **No PR / no review** — nothing to process
-5. **All findings skipped** — nothing was actually changed, no point pushing
+(Filled in Task 12.)
