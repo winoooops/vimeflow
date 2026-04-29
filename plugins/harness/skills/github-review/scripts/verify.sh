@@ -88,4 +88,18 @@ else
   set -e
 fi
 
+# Guard against the codex-exits-0-without-output edge case. Disk-full,
+# codex bug, or a `--output-last-message` path issue can let codex return
+# 0 without writing $RESULT_JSON. Without this guard, the caller's Step
+# 5D classification calls `jq ... "$RESULT_JSON"` on a nonexistent file,
+# crashes with an opaque jq error, and bypasses the structured Step 5G
+# abort path (no incident.md, no preserved artifacts). Re-route exit-0-
+# without-output to a non-zero exit so the caller routes through Step 5G.
+# `-s` (non-empty) also catches the zero-byte output case.
+if [ "$CODEX_EXIT" -eq 0 ] && [ ! -s "$RESULT_JSON" ]; then
+  echo "ERROR: codex exited 0 but $RESULT_JSON was not written or is empty" >&2
+  echo "  See $STDERR_LOG and $EVENTS_LOG for codex output." >&2
+  CODEX_EXIT=2
+fi
+
 exit "$CODEX_EXIT"

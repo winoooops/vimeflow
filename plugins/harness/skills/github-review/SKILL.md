@@ -178,7 +178,7 @@ Run the loop-start scan to handle prior aborted artifacts before
 anything else:
 
 ```bash
-loop_start_scan   # defined in references/cleanup-recovery.md
+loop_start_scan   # defined in scripts/helpers.sh (mirrored in references/cleanup-recovery.md)
 ```
 
 ## Step 0 — Input resolution

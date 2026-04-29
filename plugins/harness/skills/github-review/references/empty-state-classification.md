@@ -33,7 +33,7 @@ verbatim as MEDIUM".
 
 ```bash
 classify_cycle() {
-  local claude_state codex_state
+  local claude_state codex_state human_state
 
   # Determine claude_state from Step 2A outputs:
   if [ "$LATEST_CLAUDE" = "null" ]; then
@@ -51,24 +51,44 @@ classify_cycle() {
   # Determine codex_state from Step 2B outputs (similar logic).
   # ...
 
-  # Combined disposition:
+  # Determine human_state from Step 2D outputs. Humans only have cases 1, 2,
+  # and 3 (no case 4/5 — humans aren't required to follow a parser format,
+  # so unparseable bodies are case 2 with severity MEDIUM, not loud-fail).
+  # $HUMAN_FINDINGS_COUNT covers the union of issue + inline findings after
+  # the skill-self-reply marker filter (see parsing.md § Step 2D).
+  if [ "$HUMAN_FINDINGS_COUNT" -gt 0 ]; then
+    human_state="case_2"
+  else
+    human_state="case_1"
+  fi
+
+  # Combined disposition. Cases 4/5 only apply to claude/codex (humans
+  # cannot loud-fail).
   if [ "$claude_state" = "case_4" ] || [ "$claude_state" = "case_5" ] \
      || [ "$codex_state" = "case_4" ] || [ "$codex_state" = "case_5" ]; then
     echo "LOUD_FAIL"
     return 1
   fi
 
-  if [ "$claude_state" = "case_2" ] || [ "$codex_state" = "case_2" ]; then
+  # Any reviewer with new findings → FIX. Human findings count too.
+  if [ "$claude_state" = "case_2" ] || [ "$codex_state" = "case_2" ] \
+     || [ "$human_state" = "case_2" ]; then
     echo "FIX"
     return 0
   fi
 
-  if [ "$claude_state" = "case_3" ] && [ "$codex_state" = "case_3" ]; then
+  # All three reviewers must be explicitly clean for EXIT_CLEAN. A human
+  # case_1 (no human comments at all) does not block exit-clean — it just
+  # means humans had nothing to say this cycle. Treat case_1 as
+  # exit-eligible for the human surface only (humans never explicitly
+  # signal "clean"; absence is the closest equivalent).
+  if [ "$claude_state" = "case_3" ] && [ "$codex_state" = "case_3" ] \
+     && [ "$human_state" != "case_2" ]; then
     echo "EXIT_CLEAN"
     return 0
   fi
 
-  # Mixed case 1 / case 3 → still nothing actionable from either side.
+  # Mixed case 1 / case 3 → still nothing actionable from any side.
   echo "POLL_NEXT"
   return 0
 }

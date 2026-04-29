@@ -2,9 +2,14 @@
 # Shared helpers for the github-review skill.
 #
 # Source this file at the start of the skill bootstrap so any later step can
-# call the functions defined here:
+# call the functions defined here. Use the repo-relative path approach (see
+# SKILL.md § Bootstrap for rationale — `dirname "$0"` resolves to the shell
+# binary's directory in an interactive skill context, not this file's
+# directory):
 #
-#   source "$(dirname "$0")/scripts/helpers.sh"
+#   SKILL_DIR="plugins/harness/skills/github-review"
+#   [ -d "$SKILL_DIR" ] || SKILL_DIR="$(git rev-parse --show-toplevel)/plugins/harness/skills/github-review"
+#   source "$SKILL_DIR/scripts/helpers.sh"
 #
 # Required env vars (set by Step 0 of SKILL.md):
 #   OWNER      — repo owner

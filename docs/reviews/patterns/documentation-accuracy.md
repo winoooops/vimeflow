@@ -177,3 +177,30 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** `extract_trailer`'s function header stated "deduplicated by line, blanks stripped" but the pipeline `tr ',' '\n' | awk 'NF' | tr '\n' ',' | sed 's/,$//'` only stripped blanks — no `sort -u` or `uniq`. If the same trailer key appeared in multiple commits within `PR_BASE..HEAD` (cherry-picks, accidental double-commits), output contained duplicate values. Current consumers use `jq`'s `index()` membership test which tolerates duplicates, but the false doc contract risked misleading any future consumer that did length-based set arithmetic. The same-codebase inconsistency was particularly confusing because `commit-trailers.md`'s `CLAUDE_HANDLED_IDS` derivation correctly used `sort -u` for the union of two trailer sources.
 - **Fix:** Added `| sort -u` between `awk 'NF'` and `tr '\n' ','` in the pipeline. Implementation now matches the doc claim and the sibling `CLAUDE_HANDLED_IDS` derivation.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 19. `classify_cycle` pseudocode declares only two states while prose mandates three
+
+- **Source:** github-claude | PR #112 round 5 | 2026-04-29
+- **Severity:** MEDIUM
+- **File:** `plugins/harness/skills/github-review/references/empty-state-classification.md`
+- **Finding:** The mixed-state prose rule above the pseudocode reads "if at least one reviewer is case 2, the cycle proceeds" and the human-comment exception says human findings have cases 1, 2, and 3 — so the classification surface is three reviewers, not two. The pseudocode however declared only `local claude_state codex_state` and tested only those two in the FIX / EXIT_CLEAN / POLL_NEXT chain. An LLM agent following the pseudocode literally would let a cycle with `claude_state=case_1`, `codex_state=case_1`, but a real new human comment fall through to POLL_NEXT, silently discarding the human finding. Same family as documentation-accuracy #11 (Bootstrap script-path docs vs runtime), #17 (`loop_start_scan` defined-but-not-sourced), and error-surfacing #15 (incomplete propagation of an earlier reviewer-surface addition). Human reviewers were added as Step 2D after the original Claude+connector pseudocode was authored; the prose was updated, the bash skeleton was not.
+- **Fix:** Added `human_state` to the `local` declaration. Derived case_1/case_2 from `$HUMAN_FINDINGS_COUNT` (humans have no case 4/5 per the prose human-comment exception). Extended the FIX check with `|| [ "$human_state" = "case_2" ]`. Guarded EXIT_CLEAN with `[ "$human_state" != "case_2" ]` (treating case_1 as exit-eligible since humans don't emit explicit "clean" verdicts — absence is the closest equivalent). Inline comments document the human-side asymmetry so a future reader sees why the LOUD_FAIL guard wasn't extended to `human_state`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 20. SKILL.md Bootstrap comment cites `cleanup-recovery.md` for `loop_start_scan` after it moved to `helpers.sh`
+
+- **Source:** github-claude | PR #112 round 5 | 2026-04-29
+- **Severity:** LOW
+- **File:** `plugins/harness/skills/github-review/SKILL.md`
+- **Finding:** Cycle 3 (finding #17 above) moved `loop_start_scan` and `cleanup_on_clean_exit` out of `references/cleanup-recovery.md` (where they had lived as illustrative bash) and into `scripts/helpers.sh` as canonical implementations, with `cleanup-recovery.md` re-marked as illustrative copy with a pointer to `helpers.sh`. The Bootstrap-section comment at SKILL.md:181 was missed by that move and still read `loop_start_scan   # defined in references/cleanup-recovery.md`. An LLM agent or developer debugging a `loop_start_scan` failure would follow that comment to a file that explicitly says "illustrative copy; edit helpers.sh first" — but might attempt to fix the illustrative copy first if not careful, leaving the canonical source unchanged. Stale-after-refactor doc class, same family as #11 (Bootstrap script-path docs) and #17 itself.
+- **Fix:** Replaced the comment with `# defined in scripts/helpers.sh (mirrored in references/cleanup-recovery.md)`. The sourced filename is now primary, the illustrative mirror parenthetical, matching the post-cycle-3 authoritative-source layout.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. `helpers.sh` header documents the `dirname "$0"` sourcing pattern that SKILL.md explicitly replaces
+
+- **Source:** github-claude | PR #112 round 5 | 2026-04-29
+- **Severity:** LOW
+- **File:** `plugins/harness/skills/github-review/scripts/helpers.sh`
+- **Finding:** Lines 4–7 of `helpers.sh` instructed readers to source the file with `source "$(dirname "$0")/scripts/helpers.sh"`. SKILL.md's Bootstrap section spends a full paragraph explaining why this fails in a skill context: in an interactive shell (which is what runs the skill body), `$0` is the shell binary's name (`bash`), so `dirname "$0"` resolves to `/usr/bin` and the source path becomes `/usr/bin/scripts/helpers.sh` — a spurious file-not-found that would mask every later step. SKILL.md's Bootstrap replaces this with a hardcoded repo-relative path (`SKILL_DIR="plugins/harness/skills/github-review"; source "$SKILL_DIR/scripts/helpers.sh"`) plus a `git rev-parse` fallback. A developer or agent reading only `helpers.sh` to learn how to invoke it would copy the documented-but-broken pattern into a new script and hit the same failure without SKILL.md's explanatory bootstrap guard. Doc-vs-authoritative-usage divergence after SKILL.md was refactored, same family as #20 above and #17 (canonical-source migration leaving stale pointers behind).
+- **Fix:** Replaced the `dirname "$0"` example in the header with the repo-relative form from SKILL.md, and added a one-line cross-reference to SKILL.md § Bootstrap so anyone learning to source helpers.sh sees the rationale (interactive `$0` quirk) before trying the broken alternative.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
