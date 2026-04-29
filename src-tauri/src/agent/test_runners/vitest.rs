@@ -75,12 +75,21 @@ fn vitest_parse_result(out: &CapturedOutput, cwd: &Path) -> Option<TestRunSummar
             .get(4)
             .and_then(|m| m.as_str().parse().ok())
             .unwrap_or(0);
-        let file_passed = file_total.saturating_sub(file_failed);
         let status = match icon {
             "✓" => TestGroupStatus::Pass,
             "✗" => TestGroupStatus::Fail,
             "⊘" => TestGroupStatus::Skip,
             _ => TestGroupStatus::Pass,
+        };
+        // Vitest 1.x file rows don't include `| N skipped` in the
+        // parenthesised suffix — only `| N failed`. Without explicit
+        // counts, infer from the icon: a `⊘` row means the file_total
+        // count is the SKIPPED count, not the passed count. Otherwise
+        // the file_total minus file_failed is the passed count.
+        let (file_passed, file_skipped) = if matches!(status, TestGroupStatus::Skip) {
+            (0, file_total)
+        } else {
+            (file_total.saturating_sub(file_failed), 0)
         };
         let path = resolve_group_path(cwd, &label);
         groups.push(TestGroup {
@@ -89,7 +98,7 @@ fn vitest_parse_result(out: &CapturedOutput, cwd: &Path) -> Option<TestRunSummar
             kind: TestGroupKind::File,
             passed: file_passed,
             failed: file_failed,
-            skipped: 0,
+            skipped: file_skipped,
             total: file_total,
             status,
         });
@@ -162,10 +171,31 @@ mod tests {
         assert!(s.groups[0].path.is_some());
         assert_eq!(s.groups[0].passed, 12);
         assert_eq!(s.groups[0].failed, 0);
+        assert_eq!(s.groups[0].skipped, 0);
         assert_eq!(s.groups[1].label, "missing.test.ts");
         assert!(s.groups[1].path.is_none()); // file doesn't exist → no path
         assert_eq!(s.groups[1].passed, 5);
         assert_eq!(s.groups[1].failed, 3);
+        assert_eq!(s.groups[1].skipped, 0);
+    }
+
+    #[test]
+    fn parses_skipped_file_row() {
+        // Regression: a `⊘` row (entire file skipped) used to be recorded as
+        // `passed: file_total, skipped: 0`, so the count badge read "3/3"
+        // alongside the skip icon — contradictory. Now the file_total is
+        // attributed to skipped instead.
+        let out_str =
+            "⊘ skipped.test.ts (3)\n     Tests  0 passed | 0 failed | 3 skipped (3)\n";
+        let out = captured(out_str);
+        let s = vitest_parse_result(&out, &PathBuf::from("/tmp")).unwrap();
+        assert_eq!(s.groups.len(), 1);
+        assert_eq!(s.groups[0].label, "skipped.test.ts");
+        assert_eq!(s.groups[0].status, TestGroupStatus::Skip);
+        assert_eq!(s.groups[0].passed, 0, "skipped row must not report passes");
+        assert_eq!(s.groups[0].failed, 0);
+        assert_eq!(s.groups[0].skipped, 3);
+        assert_eq!(s.groups[0].total, 3);
     }
 
     #[test]

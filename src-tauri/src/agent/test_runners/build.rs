@@ -87,6 +87,13 @@ fn derive_status(summary: Option<&TestRunSummary>, is_error: bool) -> TestRunSta
     match summary {
         Some(s) if s.failed > 0 => TestRunStatus::Fail,
         Some(s) if s.total == 0 => TestRunStatus::NoTests,
+        // All-skipped case: total > 0 but nothing actually ran. Reuse the
+        // NoTests visual path (gray dot, "no tests" header) — strictly less
+        // misleading than the previous Pass classification, which painted
+        // a green badge while announcing "0 of N passed" to screen readers.
+        // A dedicated Skipped variant (with its own dot color and header
+        // text like "all skipped") is future work.
+        Some(s) if s.passed == 0 && s.skipped > 0 => TestRunStatus::NoTests,
         Some(_) => TestRunStatus::Pass,
         None if is_error => TestRunStatus::Error,
         // None + no error: treat as Error. Note: maybe_build_snapshot
@@ -159,6 +166,15 @@ mod tests {
     fn derive_status_picks_pass() {
         let s = TestRunSummary { passed: 3, failed: 0, skipped: 0, total: 3, groups: vec![] };
         assert_eq!(derive_status(Some(&s), false), TestRunStatus::Pass);
+    }
+
+    #[test]
+    fn derive_status_picks_no_tests_for_all_skipped() {
+        // Regression: passed=0 with skipped>0 (and total>0) used to fall
+        // through to Pass, painting a green badge while the aria-label
+        // announced "0 of N passed". Now reuses NoTests (gray + "no tests").
+        let s = TestRunSummary { passed: 0, failed: 0, skipped: 3, total: 3, groups: vec![] };
+        assert_eq!(derive_status(Some(&s), false), TestRunStatus::NoTests);
     }
 
     #[test]
