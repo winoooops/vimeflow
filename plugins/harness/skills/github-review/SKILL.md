@@ -522,7 +522,25 @@ On `POLL_NEXT`: continue to Step 7 (poll-next sub-flow).
 
 ## Step 4: Fix all findings
 
-(Filled in Task 8.)
+For each finding in the cycle's finding table, in order:
+
+1. **Read the file** at the specified `file` path and `line_range`. Use the `Read` tool with `offset` and `limit` parameters.
+2. **Understand the issue** — the finding's `body` describes what's wrong and (often) suggests a fix. Cross-reference with the IDEA block if present (Claude reviewer always includes it; connector typically does not).
+3. **Decide:**
+   - **FIX** — make the minimal change to resolve the issue. Use `Edit` for surgical changes; `Write` only for whole-file replacements.
+   - **SKIP** — explain why in the finding's `fix_summary` field. Valid reasons: false positive, intentional pattern with rationale, out of scope (the finding flagged adjacent untouched code in violation of the SCOPE BOUNDARY RULE).
+4. After the change, set `finding.status = 'fixed'` (or `'skipped'`) and `finding.fix_summary = <one-sentence description>`.
+
+**Rules** (preserved from the old skill, still apply):
+
+- Fix **only** what the review identified. No drive-by refactoring.
+- Never introduce new issues while fixing existing ones — Step 5's codex verify catches this if it slips through, but the discipline is to think about new-issue risk at fix time.
+- Run quick local validation as you go (`npm run lint -- <file>`, `cargo check`, etc.) — but **do not** run the full test suite per finding. The full validation runs in Step 5.
+- For each finding, also consult `docs/reviews/patterns/<matching-pattern>.md` BEFORE fixing if the pattern is relevant — it may carry prior fixes for the same finding class. If you read a pattern file, bump its `ref_count` in frontmatter by 1 (this is the consumer-bumps-on-read protocol from `docs/reviews/CLAUDE.md`).
+
+**Do NOT commit yet.** Stage all changes (`git add`) but defer commit until after Step 5 (codex verify) passes.
+
+After the loop, every finding has `status` ∈ {`fixed`, `skipped`}. Findings still `pending` after the loop = a bug in the loop logic; loud-fail.
 
 ## Step 5: Codex verify on staged diff
 
