@@ -30,13 +30,13 @@ The skill defines bash helper functions reused across multiple steps. They are s
 
 ### `paginated_review_threads_query`
 
-GraphQL pagination is page-aware: review threads come back 100 per page; per-thread comments come back 50 per page. The helper walks every review-threads page and returns a flat JSON array of `{thread_id, comment_databaseId, comment_author_login, isResolved, pull_request_review_id}` entries — caller filters by author / by ID set as needed. The `pull_request_review_id` field exists so Step 1 reconciliation can subtract stale review IDs from `PROCESSED_CODEX_REVIEW_IDS` (otherwise Step 2B's review-id filter would reject the inline before our inline-id subtraction takes effect).
+GraphQL pagination is page-aware: review threads come back 100 per page; per-thread comments come back 50 per page. The helper walks every review-threads page and returns a flat JSON array of `{thread_id, comment_databaseId, comment_author_login, comment_author_type, isResolved, pull_request_review_id}` entries — caller filters by author / by ID set as needed. The `pull_request_review_id` field exists so Step 1 reconciliation can subtract stale review IDs from `PROCESSED_CODEX_REVIEW_IDS` (otherwise Step 2B's review-id filter would reject the inline before our inline-id subtraction takes effect). The `comment_author_type` field is derived from GraphQL `author.__typename` (Actor union discriminator) and exposes a `"Bot"` vs `"User"` distinction so Step 7.1's human-thread exit check can filter cleanly without enumerating bot logins.
 
 ```bash
 # Returns a flat JSON array of {thread_id, comment_databaseId,
-# comment_author_login, isResolved, pull_request_review_id} entries across
-# ALL review threads and ALL comments per thread. Caller filters by author /
-# by ID set as needed.
+# comment_author_login, comment_author_type, isResolved,
+# pull_request_review_id} entries across ALL review threads and ALL
+# comments per thread. Caller filters by author / by ID set as needed.
 paginated_review_threads_query() {
   local cursor=""
   local result="[]"
@@ -57,7 +57,7 @@ paginated_review_threads_query() {
                     pageInfo { hasNextPage endCursor }
                     nodes {
                       databaseId
-                      author { login }
+                      author { login __typename }
                       pullRequestReview { databaseId }
                     }
                   }
@@ -80,7 +80,7 @@ paginated_review_threads_query() {
                     pageInfo { hasNextPage endCursor }
                     nodes {
                       databaseId
-                      author { login }
+                      author { login __typename }
                       pullRequestReview { databaseId }
                     }
                   }
@@ -114,7 +114,9 @@ paginated_review_threads_query() {
               | .[] as $thread
               | .comments.nodes[]
               | {thread_id: $thread.id, comment_databaseId: .databaseId,
-                 comment_author_login: .author.login, isResolved: $thread.isResolved,
+                 comment_author_login: .author.login,
+                 comment_author_type: (if .author.__typename == "Bot" then "Bot" else "User" end),
+                 isResolved: $thread.isResolved,
                  pull_request_review_id: (.pullRequestReview.databaseId // null)}]' \
             <<< "$page_json"))
 
@@ -222,6 +224,8 @@ SUPERSEDED_CLAUDE_IDS=$(extract_trailer "GitHub-Review-Superseded-Claude")
 PROCESSED_CODEX_REVIEW_IDS=$(extract_trailer "GitHub-Review-Processed-Codex-Reviews")
 PROCESSED_CODEX_INLINE_IDS=$(extract_trailer "GitHub-Review-Processed-Codex-Inline")
 CLOSED_CODEX_THREADS=$(extract_trailer "Closes-Codex-Threads")
+PROCESSED_HUMAN_ISSUE_IDS=$(extract_trailer "GitHub-Review-Processed-Human-Issue")
+PROCESSED_HUMAN_INLINE_IDS=$(extract_trailer "GitHub-Review-Processed-Human-Inline")
 
 # Claude side: union of processed and superseded.
 CLAUDE_HANDLED_IDS=$(printf '%s,%s' "$PROCESSED_CLAUDE_IDS" "$SUPERSEDED_CLAUDE_IDS" | tr ',' '\n' | awk 'NF' | sort -u | tr '\n' ',' | sed 's/,$//')
@@ -231,6 +235,8 @@ echo "Claude handled count:    $(echo "$CLAUDE_HANDLED_IDS" | tr ',' '\n' | awk 
 echo "Codex review handled:    $(echo "$PROCESSED_CODEX_REVIEW_IDS" | tr ',' '\n' | awk 'NF' | wc -l)"
 echo "Codex inline handled:    $(echo "$PROCESSED_CODEX_INLINE_IDS" | tr ',' '\n' | awk 'NF' | wc -l)"
 echo "Closed Codex threads:    $(echo "$CLOSED_CODEX_THREADS" | tr ',' '\n' | awk 'NF' | wc -l)"
+echo "Human issue comments handled: $(echo "$PROCESSED_HUMAN_ISSUE_IDS" | tr ',' '\n' | awk 'NF' | wc -l)"
+echo "Human inline comments handled: $(echo "$PROCESSED_HUMAN_INLINE_IDS" | tr ',' '\n' | awk 'NF' | wc -l)"
 
 # Reconcile Closes-Codex-Threads trailer against live GitHub state.
 # Step 6 writes the Processed-Codex-Inline + Closes-Codex-Threads trailers
@@ -551,21 +557,78 @@ After all pages exhausted: any connector inline-comment ID not present in `INLIN
 
 The mapping table is consumed in Step 6 (reply + resolve threads). Step 7.1 reuses `paginated_review_threads_query` for the unresolved-thread exit check.
 
+### Step 2D: Human reviewers (issue comments + inline review comments)
+
+Humans (project maintainers, contributors, the PR author themselves) leave unstructured prose comments on PRs. The skill treats any non-bot author as a human reviewer and processes their comments as findings. Two endpoints:
+
+1. `/issues/{pr}/comments` — top-level PR-conversation comments (no file context).
+2. `/pulls/{pr}/comments` — inline review comments (have `path` and `original_line`).
+
+(The `/pulls/{pr}/reviews` endpoint also accepts human reviews, but the bodies are typically empty wrappers around the inline comments. The actionable content lives in the inline-comments endpoint, which we already poll. Skip the reviews endpoint to avoid duplicates.)
+
+**Poll human issue comments:**
+
+```bash
+PROCESSED_HUMAN_ISSUE_JSON=$(jq -R 'split(",") | map(select(length > 0) | tonumber)' <<< "$PROCESSED_HUMAN_ISSUE_IDS")
+
+NEW_HUMAN_ISSUE_JSON=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+  | jq -s --argjson done "$PROCESSED_HUMAN_ISSUE_JSON" '
+    add | [.[] | select(
+      (.user.type // "User") == "User"
+      and (.id as $id | $done | index($id) | not)
+    )]')
+```
+
+**Poll human inline comments:**
+
+```bash
+PROCESSED_HUMAN_INLINE_JSON=$(jq -R 'split(",") | map(select(length > 0) | tonumber)' <<< "$PROCESSED_HUMAN_INLINE_IDS")
+
+NEW_HUMAN_INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments" --paginate \
+  | jq -s --argjson done "$PROCESSED_HUMAN_INLINE_JSON" '
+    add | [.[] | select(
+      (.user.type // "User") == "User"
+      and (.id as $id | $done | index($id) | not)
+    )]')
+```
+
+Note: human inline comments don't go through the unprocessed-review-id filter (humans submit them directly, often without a review wrapper). The connector inline poll filters by `pull_request_review_id IN $unprocessed_review_ids`; humans get a simpler "unprocessed comment id" filter.
+
+**Parse — unstructured:** Humans don't follow the `### [HIGH] Title` format. Treat each comment as a single finding:
+
+- `severity_internal`: **MEDIUM** by default (humans don't tag severity; assume actionable unless body explicitly says LOW/nit/wontfix).
+- `severity_label_original`: `"HUMAN"` (preserved for pattern entry).
+- `title`: first sentence of body (regex `^(.{1,80}?)(?:[.!?\n]|$)`), truncated to 80 chars max.
+- `file`: top-level `path` field for inline; `null` for issue comments.
+- `line_range`: `{start: original_line, end: original_line}` for inline; `{start: 1, end: 1}` for issue (placeholder).
+- `body`: raw comment text (markdown preserved).
+- `source`: `'human'`.
+- `source_comment_id`: comment `id`.
+- `thread_id`: for inline only — looked up via `paginated_review_threads_query` (same helper as connector). Issue comments have no thread.
+
+**Heuristic severity overrides** (optional, applied after default MEDIUM): if the body matches one of these, downgrade or upgrade:
+
+- Body starts with `nit:`, `style:`, `optional:` (case-insensitive) → LOW
+- Body contains `WONTFIX`, `wontfix`, `won't fix` → SKIP candidate (record `severity_internal: LOW` and let Step 4 default to skipped)
+- Body explicitly says `[CRITICAL]`, `[HIGH]`, `[MEDIUM]`, `[LOW]` (e.g. when humans copy the format) → use that
+
+**Empty-state classification additions:** human findings are case 2 if any non-empty parsed finding exists. Cases 4/5 don't apply to human comments — humans aren't required to follow a parser format, so an "unparseable" human comment is just "treat the body verbatim as MEDIUM".
+
 ### Step 2C: Finding-table aggregation
 
-After Steps 2A + 2B, build the per-cycle finding table. The table is **transient** (in-memory only — not persisted; spec §1).
+After Steps 2A + 2B + 2D, build the per-cycle finding table. The table is **transient** (in-memory only — not persisted; spec §1). Human findings receive `severity_internal: 'MEDIUM'` by default; the skill applies heuristic overrides per Step 2D.
 
 ```typescript
 type Finding = {
   cycle_id: string // "F1", "F2", ... — stable for this cycle, used in verify prompt
-  source: 'claude' | 'codex-connector'
-  source_comment_id: number // Claude: comment ID. Connector: inline comment ID.
+  source: 'claude' | 'codex-connector' | 'human'
+  source_comment_id: number // Claude: comment ID. Connector: inline comment ID. Human: issue or inline comment ID.
   source_review_id: number | null // Connector only
-  thread_id: string | null // Connector only (PRRT_xxx form)
+  thread_id: string | null // Connector + human inline only (PRRT_xxx form); null for human issue comments
   severity_internal: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
-  severity_label_original: string // e.g. "HIGH" or "P1 / HIGH" (preserved for pattern entry)
+  severity_label_original: string // e.g. "HIGH" or "P1 / HIGH" or "HUMAN" (preserved for pattern entry)
   title: string
-  file: string // repo-relative
+  file: string | null // repo-relative; null for human issue comments (no file context)
   line_range: { start: number; end: number }
   body: string
   status: 'pending' | 'fixed' | 'skipped' | 'verify_failed'
@@ -573,7 +636,7 @@ type Finding = {
 }
 ```
 
-Build the table by iterating Claude findings (if `LATEST_CLAUDE` is non-null and parsing succeeded) and connector inline findings (everything in the post-race-retry inline set), assigning sequential `cycle_id` strings (`F1`, `F2`, ...). The table is consumed by Step 3 (classification), Step 4 (fix loop), Step 5 (verify prompt), and Step 6 (commit message + pattern routing).
+Build the table by iterating Claude findings (if `LATEST_CLAUDE` is non-null and parsing succeeded), connector inline findings (everything in the post-race-retry inline set), and human findings (issue comments + inline comments from Step 2D), assigning sequential `cycle_id` strings (`F1`, `F2`, ...). The table is consumed by Step 3 (classification), Step 4 (fix loop), Step 5 (verify prompt), and Step 6 (commit message + pattern routing).
 
 ## Step 3: Empty-state classification
 
@@ -1031,6 +1094,8 @@ GitHub-Review-Processed-Claude: ${LATEST_CLAUDE_ID:-}
 GitHub-Review-Superseded-Claude: $(jq -r 'join(",")' <<< "$SUPERSEDED_THIS_CYCLE")
 GitHub-Review-Processed-Codex-Reviews: $(jq -r 'join(",")' <<< "$UNPROCESSED_REVIEW_IDS_JSON")
 GitHub-Review-Processed-Codex-Inline: $(list_inline_ids_processed_this_cycle)
+GitHub-Review-Processed-Human-Issue: $(list_human_issue_ids_processed_this_cycle)
+GitHub-Review-Processed-Human-Inline: $(list_human_inline_ids_processed_this_cycle)
 Closes-Codex-Threads: $(list_thread_ids_to_close)
 Pattern-Files-Touched: $(printf '%s, ' "${TOUCHED_PATTERN_FILES[@]}" | sed 's/, $//')
 Pattern-Append-Decisions:
@@ -1057,49 +1122,88 @@ echo "Committed cycle $ROUND as $COMMIT_SHA"
 git push
 ```
 
-### 6.8: Reply to each connector inline finding
+### 6.8: Reply to each connector inline finding and to each human finding
+
+The reply loop has three branches: connector inline (existing), human inline (same thread-reply path), and human issue comments (a NEW issue-level comment that quotes the original for context — there is no thread-reply endpoint for issue comments).
 
 ```bash
-# Reply to every connector finding processed this cycle — both fixed and
-# skipped. Skipped findings are intentional non-fixes (false positive, out
-# of scope per SCOPE BOUNDARY RULE) and need a rationale on the thread before
-# Step 6.9 resolves it; otherwise Step 7's unresolved-threads check would
-# never reach exit-clean.
+# Reply to connector inline findings (existing logic). Both fixed and skipped
+# get a reply — skipped findings are intentional non-fixes (false positive,
+# out of scope per SCOPE BOUNDARY RULE) and need a rationale on the thread
+# before Step 6.9 resolves it; otherwise Step 7's unresolved-threads check
+# would never reach exit-clean.
 for finding in $(jq -c '.[] | select(.source == "codex-connector" and (.status == "fixed" or .status == "skipped"))' <<< "$FINDINGS_JSON"); do
   COMMENT_ID=$(jq -r '.source_comment_id' <<< "$finding")
   CYCLE_ID=$(jq -r '.cycle_id' <<< "$finding")
-  TITLE=$(jq -r '.title' <<< "$finding")
   STATUS=$(jq -r '.status' <<< "$finding")
   FIX_SUMMARY=$(jq -r '.fix_summary // ""' <<< "$finding")
 
   if [ "$STATUS" = "fixed" ]; then
-    REPLY_BODY=$(cat <<EOF
-Fixed in $COMMIT_SHA — $FIX_SUMMARY
-
-(github-review cycle ${ROUND}, finding ${CYCLE_ID})
-EOF
-)
+    REPLY_BODY=$(printf 'Fixed in %s — %s\n\n(github-review cycle %s, finding %s)' "$COMMIT_SHA" "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
   else
-    # status == "skipped"
-    REPLY_BODY=$(cat <<EOF
-Skipped — $FIX_SUMMARY
-
-(github-review cycle ${ROUND}, finding ${CYCLE_ID})
-EOF
-)
+    REPLY_BODY=$(printf 'Skipped — %s\n\n(github-review cycle %s, finding %s)' "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
   fi
 
   gh api -X POST "repos/$REPO/pulls/$PR_NUMBER/comments/${COMMENT_ID}/replies" \
     -f body="$REPLY_BODY"
+done
+
+# Reply to human inline findings (new — same thread-reply path as connector).
+# Filter on .file != null so issue-comment-level human findings are excluded
+# from this branch; they're handled by the issue-comment branch below.
+for finding in $(jq -c '.[] | select(.source == "human" and .file != null and (.status == "fixed" or .status == "skipped"))' <<< "$FINDINGS_JSON"); do
+  COMMENT_ID=$(jq -r '.source_comment_id' <<< "$finding")
+  CYCLE_ID=$(jq -r '.cycle_id' <<< "$finding")
+  STATUS=$(jq -r '.status' <<< "$finding")
+  FIX_SUMMARY=$(jq -r '.fix_summary // ""' <<< "$finding")
+
+  if [ "$STATUS" = "fixed" ]; then
+    REPLY_BODY=$(printf 'Fixed in %s — %s\n\n(github-review cycle %s, finding %s)' "$COMMIT_SHA" "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
+  else
+    REPLY_BODY=$(printf 'Skipped — %s\n\n(github-review cycle %s, finding %s)' "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
+  fi
+
+  gh api -X POST "repos/$REPO/pulls/$PR_NUMBER/comments/${COMMENT_ID}/replies" \
+    -f body="$REPLY_BODY"
+done
+
+# Reply to human issue comments (new — issue-comment-level reply, NOT
+# thread-reply). There is no thread-reply endpoint for issue comments, so we
+# post a NEW issue-level comment quoting the original to give context.
+for finding in $(jq -c '.[] | select(.source == "human" and .file == null and (.status == "fixed" or .status == "skipped"))' <<< "$FINDINGS_JSON"); do
+  CYCLE_ID=$(jq -r '.cycle_id' <<< "$finding")
+  STATUS=$(jq -r '.status' <<< "$finding")
+  FIX_SUMMARY=$(jq -r '.fix_summary // ""' <<< "$finding")
+  ORIG_BODY=$(jq -r '.body' <<< "$finding")
+
+  if [ "$STATUS" = "fixed" ]; then
+    REPLY_BODY=$(printf '> %s\n\nFixed in %s — %s\n\n(github-review cycle %s, finding %s)' \
+      "$(printf '%s' "$ORIG_BODY" | head -c 200)" \
+      "$COMMIT_SHA" "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
+  else
+    REPLY_BODY=$(printf '> %s\n\nSkipped — %s\n\n(github-review cycle %s, finding %s)' \
+      "$(printf '%s' "$ORIG_BODY" | head -c 200)" \
+      "$FIX_SUMMARY" "$ROUND" "$CYCLE_ID")
+  fi
+
+  # Post a NEW issue-level comment (not a reply to a specific comment — no
+  # thread-reply endpoint for issue comments). Quote the original to give context.
+  gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$REPLY_BODY"
 done
 ```
 
 ### 6.9: Resolve threads via GraphQL
 
 ```bash
-# Resolve threads for both fixed AND skipped connector findings. Skipped
-# threads got a rationale reply in Step 6.8; resolving them here closes the
-# loop so Step 7's exit check sees no lingering unresolved threads.
+# Resolve threads for fixed AND skipped connector AND human-inline findings.
+# Issue-comment-level human findings have no thread; the reply in Step 6.8
+# is sufficient. Skipped threads got a rationale reply in Step 6.8; resolving
+# them here closes the loop so Step 7's exit check sees no lingering
+# unresolved threads.
+#
+# list_thread_ids_to_close should return thread IDs for all findings with
+# .thread_id != null and (.source == "codex-connector" or .source == "human")
+# and (.status == "fixed" or .status == "skipped").
 for thread_id in $(list_thread_ids_to_close); do
   gh api graphql -f query='
     mutation($threadId:ID!) {
@@ -1161,9 +1265,18 @@ fi
 UNRESOLVED_CONNECTOR_THREADS=$(paginated_review_threads_query \
   | jq '[.[] | select(.comment_author_login == "chatgpt-codex-connector[bot]"
                       and .isResolved == false)] | length')
+
+# Human unresolved threads — same helper, but filtered on the bot-vs-user
+# discriminator (.comment_author_type == "User") instead of an explicit
+# bot-login exclusion list. Cleaner than enumerating every bot login and
+# negating, and the helper now exposes comment_author_type via the
+# author.__typename projection.
+UNRESOLVED_HUMAN_THREADS=$(paginated_review_threads_query \
+  | jq '[.[] | select(.comment_author_type == "User"
+                      and .isResolved == false)] | length')
 ```
 
-If `UNRESOLVED_CONNECTOR_THREADS > 0`, the connector still has unresolved findings (either from this cycle's work that didn't fully resolve, or from a fresh review that just landed). If `CONNECTOR_FRESH_CLEAN == false` (either because no fresh review yet, or fresh review's summary isn't clean), the connector has not yet signaled approval of the new commit.
+If `UNRESOLVED_CONNECTOR_THREADS > 0`, the connector still has unresolved findings (either from this cycle's work that didn't fully resolve, or from a fresh review that just landed). If `UNRESOLVED_HUMAN_THREADS > 0`, a human reviewer has open threads on the PR. If `CONNECTOR_FRESH_CLEAN == false` (either because no fresh review yet, or fresh review's summary isn't clean), the connector has not yet signaled approval of the new commit.
 
 `is_summary_clean_bash` is defined in § Helpers; it mirrors the python `is_summary_clean()` from §2.2.
 
@@ -1173,7 +1286,7 @@ After Step 6's push, the Claude reviewer will re-run on the new commit. The verd
 
 ### 7.3: Decide
 
-- **All clean** = `UNRESOLVED_CONNECTOR_THREADS == 0` AND latest Claude comment verdict is `is_claude_clean` AND `CONNECTOR_FRESH_CLEAN == true` → **exit clean** (regardless of round number).
+- **All clean** = `UNRESOLVED_CONNECTOR_THREADS == 0` AND `UNRESOLVED_HUMAN_THREADS == 0` AND latest Claude comment verdict is `is_claude_clean` AND `CONNECTOR_FRESH_CLEAN == true` → **exit clean** (regardless of round number).
 - **More expected** = either reviewer hasn't reported on the new commit yet (Claude not clean OR no fresh connector review OR fresh connector summary isn't clean) → **poll next** (if `ROUND < MAX_ROUNDS`) or fall through to the next bullet.
 - **Max rounds reached** = `ROUND == MAX_ROUNDS` AND clean condition NOT met → exit "max rounds" (abnormal — print warning).
 
