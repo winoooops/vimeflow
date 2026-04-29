@@ -95,6 +95,28 @@ pub struct MatchedCommand {
 /// The full matching pipeline. Returns None when the command does not match
 /// any known runner.
 pub fn match_command(cmd: &str, cwd: Option<&Path>) -> Option<MatchedCommand> {
+    let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+    match_command_inner(cmd, cwd, &mut visited)
+}
+
+/// Inner matching pipeline carrying the cycle-breaking visited set across
+/// the cross-function `match_command -> resolve_alias -> match_command`
+/// recursion. Without this, a self-referential script like
+/// `{"test": "npm run test"}` overflows the stack: `resolve_alias` returns
+/// the literal `"npm run test"`, the next `match_command` resolves the same
+/// alias, and so on. The depth bound inside `resolve_recursive` only guards
+/// the package.json chain — not the cross-function loop.
+fn match_command_inner(
+    cmd: &str,
+    cwd: Option<&Path>,
+    visited: &mut std::collections::HashSet<String>,
+) -> Option<MatchedCommand> {
+    if !visited.insert(cmd.to_string()) {
+        // Already saw this exact command string in the recursion chain; cycle
+        // detected — refuse to match rather than overflow the stack.
+        return None;
+    }
+
     let initial = tokenize(cmd)?;
     let after_env = strip_env_prefix(&initial).to_vec();
     let after_segment = first_segment(&after_env).to_vec();
@@ -102,9 +124,10 @@ pub fn match_command(cmd: &str, cwd: Option<&Path>) -> Option<MatchedCommand> {
 
     // Try script alias resolution. If it resolves, recurse on the resolved
     // string (which goes through the SAME pipeline so its env/wrapper/etc.
-    // are also normalised).
+    // are also normalised). Pass the visited set down so multi-step cycles
+    // are caught the second time the same command string reappears.
     if let Some(resolved) = script_resolution::resolve_alias(&after_wrapper, cwd) {
-        return match_command(&resolved, cwd);
+        return match_command_inner(&resolved, cwd, visited);
     }
 
     // Walk RUNNERS. First match wins.
@@ -270,5 +293,39 @@ mod tests {
         )
         .unwrap();
         assert!(match_command("bun test", Some(dir.path())).is_none());
+    }
+
+    #[test]
+    fn match_command_breaks_on_self_referential_npm_script() {
+        // Regression for stack overflow on cyclic aliases. Without the
+        // cross-call visited HashSet in match_command_inner, this would
+        // infinite-loop: resolve_alias returns "npm run test" each time
+        // and match_command keeps re-entering with that same string.
+        use std::fs;
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts": {"test": "npm run test"}}"#,
+        )
+        .unwrap();
+        assert!(match_command("npm test", Some(dir.path())).is_none());
+        assert!(match_command("npm run test", Some(dir.path())).is_none());
+    }
+
+    #[test]
+    fn match_command_breaks_on_two_step_alias_cycle() {
+        // Regression for the multi-step cycle the simpler "if resolved == cmd"
+        // guard would miss. a → b → a must terminate.
+        use std::fs;
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts": {"a": "npm run b", "b": "npm run a"}}"#,
+        )
+        .unwrap();
+        assert!(match_command("npm run a", Some(dir.path())).is_none());
+        assert!(match_command("npm run b", Some(dir.path())).is_none());
     }
 }

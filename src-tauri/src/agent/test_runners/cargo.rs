@@ -90,9 +90,13 @@ fn cargo_parse_result(out: &CapturedOutput, _cwd: &Path) -> Option<TestRunSummar
         }
     }
 
+    // Sort BEFORE truncating — `take(MAX_GROUPS)` against a HashMap's
+    // randomized iteration order would otherwise pick a non-deterministic
+    // subset on each run for workspaces with > MAX_GROUPS modules. Sort
+    // by label first so the same subset (the alphabetically-first
+    // MAX_GROUPS modules) shows up reproducibly across runs.
     let mut groups: Vec<TestGroup> = module_counts
         .into_iter()
-        .take(MAX_GROUPS)
         .map(|(label, (p, f, s))| {
             let total = p + f + s;
             let status = if f > 0 {
@@ -115,6 +119,7 @@ fn cargo_parse_result(out: &CapturedOutput, _cwd: &Path) -> Option<TestRunSummar
         })
         .collect();
     groups.sort_by(|a, b| a.label.cmp(&b.label));
+    groups.truncate(MAX_GROUPS);
 
     Some(TestRunSummary {
         passed,

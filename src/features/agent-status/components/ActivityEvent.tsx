@@ -44,9 +44,9 @@ const getLabel = (event: ActivityEventType): string => {
     // Write tools may also overwrite existing files — labelled as
     // "CREATED" by approximation. Edit always means an existing file
     // was modified. Documented limitation in the spec.
-    const verb = event.tool === 'Edit' ? 'UPDATED TEST' : 'CREATED TEST'
-
-    return `🧪 ${verb}`
+    // No emoji in the label per CLAUDE.md ("Avoid adding emojis to files
+    // unless asked"); the verb-prefixed text is the differentiator.
+    return event.tool === 'Edit' ? 'UPDATED TEST' : 'CREATED TEST'
   }
   // The `kind === 'meta'` branch narrows `event` to ToolActivityEvent
   // via the discriminated union — `tool` is always present. Drop the

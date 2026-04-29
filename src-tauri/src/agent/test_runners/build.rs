@@ -78,7 +78,12 @@ fn derive_status(summary: Option<&TestRunSummary>, is_error: bool) -> TestRunSta
         Some(s) if s.total == 0 => TestRunStatus::NoTests,
         Some(_) => TestRunStatus::Pass,
         None if is_error => TestRunStatus::Error,
-        None => TestRunStatus::Error, // maybe_build_snapshot already filtered the unknown case
+        // None + no error: treat as Error. Note: maybe_build_snapshot
+        // filters this case out before calling, so callers going through
+        // that wrapper never reach this arm. Direct callers of
+        // build_snapshot DO reach it and get Error — which is the
+        // safest fallback when we can't classify the result.
+        None => TestRunStatus::Error,
     }
 }
 

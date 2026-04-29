@@ -427,8 +427,8 @@ describe('ActivityEvent — tooltip integration', () => {
   })
 })
 
-describe('ActivityEvent — test-file glyph and verb', () => {
-  test('renders 🧪 CREATED TEST label for Write of a test file', () => {
+describe('ActivityEvent — test-file verb prefix', () => {
+  test('renders CREATED TEST label for Write of a test file', () => {
     render(
       <ActivityEvent
         event={toolEvent({
@@ -442,12 +442,13 @@ describe('ActivityEvent — test-file glyph and verb', () => {
       />
     )
 
-    expect(screen.getByText(/created test/i)).toBeInTheDocument()
-    // Glyph rides inside the same label span — partial-text match is fine.
-    expect(screen.getByText(/🧪/)).toBeInTheDocument()
+    expect(screen.getByText(/^CREATED TEST$/)).toBeInTheDocument()
+    // No emoji per CLAUDE.md no-emoji policy; the verb-prefixed text
+    // is the only differentiator.
+    expect(screen.queryByText(/🧪/)).not.toBeInTheDocument()
   })
 
-  test('renders 🧪 UPDATED TEST label for Edit of a test file', () => {
+  test('renders UPDATED TEST label for Edit of a test file', () => {
     render(
       <ActivityEvent
         event={toolEvent({
@@ -461,10 +462,11 @@ describe('ActivityEvent — test-file glyph and verb', () => {
       />
     )
 
-    expect(screen.getByText(/updated test/i)).toBeInTheDocument()
+    expect(screen.getByText(/^UPDATED TEST$/)).toBeInTheDocument()
+    expect(screen.queryByText(/🧪/)).not.toBeInTheDocument()
   })
 
-  test('regular Write event has no test glyph or prefix', () => {
+  test('regular Write event uses the kind-based label', () => {
     render(
       <ActivityEvent
         event={toolEvent({
@@ -480,7 +482,6 @@ describe('ActivityEvent — test-file glyph and verb', () => {
 
     expect(screen.queryByText(/created test/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/🧪/)).not.toBeInTheDocument()
-    // Falls back to the kind-based label.
     expect(screen.getByText(/^WRITE$/)).toBeInTheDocument()
   })
 })
