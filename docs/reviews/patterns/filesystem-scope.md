@@ -2,7 +2,7 @@
 id: filesystem-scope
 category: security
 created: 2026-04-09
-last_updated: 2026-04-14
+last_updated: 2026-04-29
 ref_count: 2
 ---
 
@@ -151,3 +151,52 @@ enumerate sensitive directories without scope restrictions.
 - **Fix:** Add a shared transcript-path validator that canonicalizes the file and requires it to resolve under the canonical `~/.claude` root before tailing. Use it from both `maybe_start_transcript` and the direct `start_transcript_watcher` IPC command.
 - **Verification:** Added `validate_transcript_path_rejects_path_outside_claude_root`; `cargo test --lib agent::transcript -j1`.
 - **Commit:** (pending — agent-status-sidebar PR)
+
+### 16. `start_transcript_watcher` IPC accepted renderer-controlled cwd
+
+- **Source:** local-handed-back | PR #109 round 0 | 2026-04-29
+- **Severity:** HIGH
+- **File:** `src-tauri/src/agent/transcript.rs`
+- **Finding:** `start_transcript_watcher` Tauri command's `cwd: Option<String>` parameter came from the renderer and was passed straight into the watcher. The test-runner parser then used it to read `package.json` for npm-script alias resolution and to canonicalize per-file test paths. Renderer-controlled filesystem influence on which workspace gets read.
+- **Fix:** Remove the `cwd` parameter from the IPC. The command now derives cwd server-side from `PtyState::get_cwd(session_id)`. Backend-internal callers (the statusline bridge in `watcher.rs`) keep using the inner `start_or_replace` API directly.
+- **Verification:** Existing tests + new `transcript_state_threads_cwd_through`.
+- **Commit:** `006be43 fix(agent): close cwd data-flow gaps in TranscriptWatcher`
+
+### 17. `TranscriptState::start_or_replace` ignored cwd in identity check (stale workspace)
+
+- **Source:** local-handed-back | PR #109 round 0 | 2026-04-29
+- **Severity:** HIGH
+- **File:** `src-tauri/src/agent/transcript.rs`
+- **Finding:** Identity check compared only `transcript_path`, so a same-transcript-different-cwd start returned `AlreadyRunning` and the tail thread kept its stale snapshot. Test-runner parser then resolved aliases and per-file paths against the previous workspace. The `TranscriptWatcher.cwd` field carried a `#[allow(dead_code)]` annotation that silenced the lint without fixing the bug.
+- **Fix:** Identity check became `(transcript_path, cwd)` — either changing forces a Replace. Removed the dead_code annotation; the field is now load-bearing state. Docstring rewritten to explain why.
+- **Verification:** Added `transcript_state_replaces_when_only_cwd_changes`.
+- **Commit:** `006be43 fix(agent): close cwd data-flow gaps in TranscriptWatcher`
+
+### 18. `start_watching` captured cwd snapshot — stale after `cd`
+
+- **Source:** github-codex (chatgpt-codex-connector) | PR #109 round 5 | 2026-04-29
+- **Severity:** P1 / HIGH
+- **File:** `src-tauri/src/agent/watcher.rs`
+- **Finding:** Notify closure, initial-read block, and polling fallback all held a `cwd: PathBuf` snapshot taken at `start_watching` call time. After the user `cd`'d in the PTY, `maybe_start_transcript` kept passing the OLD cwd to `TranscriptState::start_or_replace`, so npm-script alias resolution and per-file path containment kept running against the previous workspace.
+- **Fix:** `maybe_start_transcript` queries cwd FRESH from `PtyState` at every call. The cwd parameter was removed from `start_watching` and from its caller `start_agent_watcher`. Combined with the `(transcript_path, cwd)` identity check, a mid-session `cd` now triggers a Replace of the tail thread on the next statusline event.
+- **Verification:** existing transcript and watcher tests.
+- **Commit:** `99dbfe9 fix(agent): address codex review findings on PR #109`
+
+### 19. `process_tool_result` defaulted to `Path::new(".")` when no PTY cwd
+
+- **Source:** github-codex (chatgpt-codex-connector) | PR #109 round 6 | 2026-04-29
+- **Severity:** P2 / MEDIUM
+- **File:** `src-tauri/src/agent/transcript.rs`
+- **Finding:** When `PtyState::get_cwd(session_id)` returned None, `process_tool_result` substituted `Path::new(".")` as the cwd for the test-runner snapshot builder. `Path::new(".")` canonicalizes to the Tauri app process's cwd — NOT the user's workspace — so per-file test groups would silently resolve against the wrong directory (producing non-clickable rows or rows pointing to unrelated files in the app dir).
+- **Fix:** Skip the test-run snapshot entirely when no workspace cwd is available; log at `debug!`. The standard `agent-tool-call` event still fires unconditionally; only the structured snapshot is gated. Three integration fixtures updated to pass a valid temp cwd (they previously relied on the now-removed fallback).
+- **Verification:** `transcript_vitest_e2e`, `transcript_vitest_replay`, `transcript_cargo_e2e`.
+- **Commit:** `a02be27 fix(agent): round-6 fixes — cwd fallback, content joining, overflow`
+
+### 20. Debug log to fixed `/tmp` path vulnerable to symlink attack
+
+- **Source:** github-claude | PR #109 round 5 | 2026-04-29
+- **Severity:** MEDIUM (security)
+- **File:** `src-tauri/src/agent/watcher.rs`
+- **Finding:** `OpenOptions::new().create(true).append(true).open("/tmp/vimeflow-debug.log")` follows symlinks on Unix. A local actor on a shared system (cloud dev VMs, Codespaces, Gitpod) can pre-create the path as a symlink to redirect appends. Linux's default umask 022 also leaves the file world-readable. The block was inside `cfg(debug_assertions)` so debug builds shipped with this. Logged values include workspace paths and session IDs.
+- **Fix:** Drop the file-log block entirely; use the existing structured `log::debug!` macro (already configured for the rest of the file). Run with `RUST_LOG=debug` to see startup diagnostics.
+- **Commit:** `ea6b1ea fix(agent): round-5 review findings — security, polish, runner coverage`

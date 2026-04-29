@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-04-20
+last_updated: 2026-04-29
 ref_count: 3
 ---
 
@@ -173,3 +173,13 @@ prevent showing previous data.
 - **Finding:** `run_agent_session` printed `[result: error]` when the terminal stream event carried `is_error=True` but still returned `('continue', response_text)`. Non-zero subprocess exit was already escalated via `RuntimeError`; clean-exit-but-session-errored (max-turns, rate-limit abort, transient tool failure) wasn't. Orchestrator would then run the reviewer against stalled output and burn a per-feature iteration.
 - **Fix:** Track `result_errored = False` before the event loop; set it True in the `isinstance(event, ResultEvent) and event.is_error` branch; return `('error' if result_errored else 'continue', response_text)`. Added two regression tests with a `_FakeCliSession` subclass that scripts events (one error, one success).
 - **Commit:** (round 11)
+
+### 18. Listener-attach race in `useAgentStatus` — duplicate `handleDetection` fires `start_agent_watcher` before listeners are attached
+
+- **Source:** local-handed-back during sub-agent task | PR #109 round 7 (Task 7) | 2026-04-29
+- **Severity:** HIGH (load-bearing for v1's no-cache design)
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** The hook had two `useEffect`s that both fired `handleDetection(sessionId)` on mount — one in the polling effect's "Run immediately on mount" line, and one in the subscribe effect's IIFE after `await subscribe()`. The polling-side call raced with subscribe and could fire `invoke('start_agent_watcher', …)` BEFORE `listen('test-run', …)` had attached. With v1 having no backend snapshot cache, the latest-of-replay batched emit fires once at the transcript watcher's first EOF and is gone — losing it to the race meant the panel stayed at `no runs yet` until the next live test run.
+- **Fix:** Removed the duplicate `void handleDetection(sessionId)` from the polling `useEffect`. The subscribe `useEffect` already fires the initial detection after listeners are attached (and a comment in the file explicitly documented that intent). The `attaches test-run listener BEFORE invoking start_agent_watcher` regression test (added in the same task) caught the race on its first run with `expected 4 to be less than 2` — exactly the assertion shape it was designed to enforce.
+- **Lesson:** in a "subscribe + then trigger the publisher" flow, having TWO triggers from independent effects is structurally fragile, even if one is "polling" and the other is "init". Pick a single trigger source. Also: the load-bearing regression test was the right shape — it asserted the call ORDER recorded by mocks, not the eventual outcome.
+- **Commit:** `d7df1e5 feat(agent-status): test-run listener + ordering regression test`
