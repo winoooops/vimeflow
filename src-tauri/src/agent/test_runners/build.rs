@@ -13,12 +13,12 @@ use super::timestamps::compute_duration_ms;
 use super::types::{
     CapturedOutput, TestRunSnapshot, TestRunStatus, TestRunSummary,
 };
+use super::ANSI_RE;
 
 const MAX_EXCERPT_LEN: usize = 240;
 
 static ERROR_HINT_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)(error:|fail|panicked)").unwrap());
-static ANSI_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap());
 
 pub struct BuildArgs<'a> {
     pub session_id: &'a str,
@@ -32,6 +32,31 @@ pub struct BuildArgs<'a> {
 
 pub fn build_snapshot(args: BuildArgs<'_>) -> TestRunSnapshot {
     let summary = (args.matched.runner.parse_result)(&args.captured, args.cwd);
+    build_snapshot_with_summary(args, summary)
+}
+
+/// Returns Some(snapshot) when an event should be emitted; None when we
+/// don't know what happened (parser returned None AND not an error result).
+pub fn maybe_build_snapshot(args: BuildArgs<'_>) -> Option<TestRunSnapshot> {
+    let summary = (args.matched.runner.parse_result)(&args.captured, args.cwd);
+    if summary.is_none() && !args.captured.is_error {
+        log::debug!(
+            "Test runner '{}' produced unparseable output, skipping emit",
+            args.matched.runner.name
+        );
+        return None;
+    }
+    Some(build_snapshot_with_summary(args, summary))
+}
+
+/// Inner builder shared by `build_snapshot` and `maybe_build_snapshot`.
+/// Both used to call `parse_result` independently, doubling the regex pass
+/// over the captured output for every emit. This helper accepts the
+/// pre-computed summary so the parser only runs once per snapshot.
+fn build_snapshot_with_summary(
+    args: BuildArgs<'_>,
+    summary: Option<TestRunSummary>,
+) -> TestRunSnapshot {
     let status = derive_status(summary.as_ref(), args.captured.is_error);
     let summary = summary.unwrap_or_default();
 
@@ -56,20 +81,6 @@ pub fn build_snapshot(args: BuildArgs<'_>) -> TestRunSnapshot {
         summary,
         output_excerpt,
     }
-}
-
-/// Returns Some(snapshot) when an event should be emitted; None when we
-/// don't know what happened (parser returned None AND not an error result).
-pub fn maybe_build_snapshot(args: BuildArgs<'_>) -> Option<TestRunSnapshot> {
-    let summary = (args.matched.runner.parse_result)(&args.captured, args.cwd);
-    if summary.is_none() && !args.captured.is_error {
-        log::debug!(
-            "Test runner '{}' produced unparseable output, skipping emit",
-            args.matched.runner.name
-        );
-        return None;
-    }
-    Some(build_snapshot(args))
 }
 
 fn derive_status(summary: Option<&TestRunSummary>, is_error: bool) -> TestRunStatus {

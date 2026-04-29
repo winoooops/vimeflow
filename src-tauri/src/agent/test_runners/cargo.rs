@@ -20,6 +20,7 @@ use regex::Regex;
 use super::types::{
     CapturedOutput, TestGroup, TestGroupKind, TestGroupStatus, TestRunSummary, TestRunner,
 };
+use super::ANSI_RE;
 
 pub static CARGO_TEST: TestRunner = TestRunner {
     name: "cargo",
@@ -32,8 +33,6 @@ const MAX_GROUPS: usize = 500;
 fn cargo_matches(tokens: &[&str]) -> bool {
     matches!(tokens, ["cargo", "test", ..])
 }
-
-static ANSI_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap());
 
 // Summary line. Cargo may produce multiple summary lines (one per binary);
 // we sum across all of them.

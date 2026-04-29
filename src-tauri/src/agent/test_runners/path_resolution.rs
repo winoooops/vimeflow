@@ -1,17 +1,26 @@
 //! Resolve a runner-emitted relative label to an absolute, contained path.
 
-use std::path::Path;
+use std::path::{Component, Path};
 
 /// Returns Some(absolute_path_string) when:
-///   - label has no `..` segments
+///   - label has no `..` path components (parent-dir traversal)
 ///   - label is not absolute
 ///   - the canonical resolved path is inside the canonical CWD
 /// Returns None otherwise — the row will render non-clickable.
+///
+/// We check `..` as an actual path COMPONENT, not as a substring, so legitimate
+/// filenames containing the two-character sequence `..` (e.g.
+/// `reconnect..server.test.ts`) aren't falsely rejected.
 pub fn resolve_group_path(cwd: &Path, label: &str) -> Option<String> {
-    if label.contains("..") || Path::new(label).is_absolute() {
+    let label_path = Path::new(label);
+    if label_path.is_absolute()
+        || label_path
+            .components()
+            .any(|c| matches!(c, Component::ParentDir))
+    {
         return None;
     }
-    let candidate = cwd.join(label).canonicalize().ok()?;
+    let candidate = cwd.join(label_path).canonicalize().ok()?;
     let cwd_canonical = cwd.canonicalize().ok()?;
     if !candidate.starts_with(&cwd_canonical) {
         return None;
@@ -45,6 +54,29 @@ mod tests {
         let resolved = resolve_group_path(dir.path(), "foo.test.ts");
         assert!(resolved.is_some());
         assert!(resolved.unwrap().contains("foo.test.ts"));
+    }
+
+    #[test]
+    fn accepts_filenames_containing_double_dots() {
+        // Regression: substring `label.contains("..")` would falsely reject
+        // legitimate filenames whose name happens to contain `..` (not the
+        // parent-dir component). The component-based check distinguishes
+        // them. The canonicalize+containment guard below handles the actual
+        // escape case.
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("reconnect..server.test.ts");
+        fs::write(&file, "").unwrap();
+        let resolved = resolve_group_path(dir.path(), "reconnect..server.test.ts");
+        assert!(resolved.is_some(), "should resolve a filename with .. characters");
+        assert!(resolved.unwrap().contains("reconnect..server.test.ts"));
+    }
+
+    #[test]
+    fn rejects_dotdot_in_middle_of_path() {
+        // Component-based check catches `..` whether it's the leading
+        // segment or buried in the middle.
+        let dir = tempdir().unwrap();
+        assert_eq!(resolve_group_path(dir.path(), "src/../../etc/passwd"), None);
     }
 
     #[test]

@@ -16,6 +16,7 @@ use super::path_resolution::resolve_group_path;
 use super::types::{
     CapturedOutput, TestGroup, TestGroupKind, TestGroupStatus, TestRunSummary, TestRunner,
 };
+use super::ANSI_RE;
 
 pub static VITEST: TestRunner = TestRunner {
     name: "vitest",
@@ -28,8 +29,6 @@ const MAX_GROUPS: usize = 500;
 fn vitest_matches(tokens: &[&str]) -> bool {
     matches!(tokens.first(), Some(&"vitest"))
 }
-
-static ANSI_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap());
 
 // Capture passed/failed/skipped counts from the "Tests" summary line.
 // Examples:
