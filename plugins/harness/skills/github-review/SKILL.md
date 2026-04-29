@@ -145,8 +145,9 @@ This step polls both reviewers, parses their findings, and prepares the per-cycl
 **Poll:**
 
 ```bash
+# --paginate returns one JSON array per page, so we slurp pages then filter.
 CLAUDE_COMMENTS_JSON=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
-  --jq '[.[] | select(
+  | jq -s 'add | [.[] | select(
            .user.login == "github-actions[bot]"
            and (.body | startswith("## Claude Code Review"))
          )]')
@@ -258,8 +259,9 @@ Inline comments are the actionable findings. Summary reviews are used only for t
 
 ```bash
 # Step 1: connector reviews (summary level).
+# --paginate returns one JSON array per page, so we slurp pages then filter.
 NEW_REVIEWS_JSON=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate \
-  --jq '[.[] | select(.user.login == "chatgpt-codex-connector[bot]")]')
+  | jq -s 'add | [.[] | select(.user.login == "chatgpt-codex-connector[bot]")]')
 
 # Subtract Processed-Codex-Reviews trailer set.
 PROCESSED_REVIEWS_JSON=$(jq -R 'split(",") | map(select(length > 0) | tonumber)' <<< "$PROCESSED_CODEX_REVIEW_IDS")
@@ -278,12 +280,13 @@ UNPROCESSED_REVIEW_IDS_JSON=$(jq '[.[].id]' <<< "$UNPROCESSED_REVIEWS_JSON")
 # flags like --argjson. Pipe gh api raw output to a separate jq invocation.
 PROCESSED_INLINE_JSON=$(jq -R 'split(",") | map(select(length > 0))' <<< "$PROCESSED_CODEX_INLINE_IDS")
 
+# --paginate returns one JSON array per page, so we slurp pages then filter.
 NEW_INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments" --paginate \
-  | jq --argjson rids "$UNPROCESSED_REVIEW_IDS_JSON" \
+  | jq -s --argjson rids "$UNPROCESSED_REVIEW_IDS_JSON" \
        --argjson done_inline "$PROCESSED_INLINE_JSON" '
     ($rids | map(tostring)) as $ridset |
     ($done_inline | map(tostring)) as $doneset |
-    [.[] | select(
+    add | [.[] | select(
       .user.login == "chatgpt-codex-connector[bot]"
       and ((.pull_request_review_id // empty | tostring) as $rid | $ridset | index($rid))
       and ((.id | tostring) as $cid | $doneset | index($cid) | not)
@@ -1005,9 +1008,9 @@ After Step 6's push, the Claude reviewer will re-run on the new commit. The verd
 
 ### 7.3: Decide
 
-- **All clean** = `UNRESOLVED_CONNECTOR_THREADS == 0` AND latest Claude comment verdict is `is_claude_clean` AND ROUND < MAX_ROUNDS → **exit clean**.
-- **More expected** = either reviewer hasn't reported on the new commit yet → **poll next**.
-- **Max rounds reached** = ROUND == 10 → exit "max rounds" (abnormal — print warning).
+- **All clean** = `UNRESOLVED_CONNECTOR_THREADS == 0` AND latest Claude comment verdict is `is_claude_clean` → **exit clean** (regardless of round number).
+- **More expected** = either reviewer hasn't reported on the new commit yet → **poll next** (if `ROUND < MAX_ROUNDS`) or fall through to the next bullet.
+- **Max rounds reached** = `ROUND == MAX_ROUNDS` AND clean condition NOT met → exit "max rounds" (abnormal — print warning).
 
 ### 7.4: Poll-next sub-flow
 
