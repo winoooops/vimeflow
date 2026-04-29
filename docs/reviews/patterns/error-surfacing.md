@@ -2,7 +2,7 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-04-10
+last_updated: 2026-04-29
 ref_count: 0
 ---
 
@@ -84,3 +84,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** `useEditorBuffer.openFile` fired an async Tauri IPC `readFile` call with no `isLoading` flag exposed. During the IPC round-trip the editor kept showing the previous file's content (or the "No file selected" placeholder) with zero indication that the click registered. On slow disks or permission-checked reads the UI looked unresponsive. Users might click again, firing duplicate `openFile` calls; the race-guard silently discarded stale responses but the user had no feedback at all.
 - **Fix:** Add `isLoading: boolean` to the EditorBuffer interface. Set true before `readFile` await, clear in a `finally` block — but only if the current request is still the latest, so stale responses from earlier calls don't flip it back to false while a newer read is still in flight. Render a glassmorphism loading overlay in CodeEditor with `role="status"` and a spinning progress icon.
 - **Commit:** `0c8f0ac fix: address Claude review round 12 findings`
+
+### 8. Bash function exits 0 even when inner command-substitution calls fail
+
+- **Source:** github-claude | PR #112 round 1 | 2026-04-29
+- **Severity:** MEDIUM
+- **File:** `plugins/harness/skills/github-review/SKILL.md`
+- **Finding:** `paginated_review_threads_query` ends with `echo "$result"` — bash propagates the exit code of the last command, so the function always returns 0 regardless of inner `gh api graphql` failures. A failed `page_json=$(gh api graphql ...)` produces empty output; downstream `jq` errors silently to stderr; the loop hits `break` because `has_next` is not `"true"` for empty input — and the function returns `0` with a corrupted thread map. The Step 1 caller's `2>/dev/null || echo "[]"` fallback never fires; Step 2B and 7.1 callers had no fallback at all. Same shape as the `void promise` footgun: silent error swallowing where the caller is expected to detect failures via exit code.
+- **Fix:** Add `|| return 1` after each `page_json=$(gh api graphql ...)` assignment so transient GraphQL failures actually propagate. Then loud-fail at every call site: Step 1 keeps its `|| echo "[]"` (best-effort reconciliation); Step 2B and 7.1 promote to `|| { echo "ERROR..."; exit 1; }` because a corrupted thread map there silently misses unresolved threads (Step 7.1 would declare clean exit prematurely) or breaks inline-comment lookup with no diagnostic.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

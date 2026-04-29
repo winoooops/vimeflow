@@ -65,7 +65,7 @@ paginated_review_threads_query() {
               }
             }
           }
-        }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER")
+        }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER") || return 1
     else
       page_json=$(gh api graphql -f query='
         query($owner:String!, $name:String!, $pr:Int!, $cursor:String!) {
@@ -88,7 +88,7 @@ paginated_review_threads_query() {
               }
             }
           }
-        }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER" -F cursor="$cursor")
+        }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER" -F cursor="$cursor") || return 1
     fi
 
     # Warn if any thread's comments page overflowed first page (50). This is
@@ -349,6 +349,12 @@ LATEST_CLAUDE=$(jq --argjson handled "$CLAUDE_HANDLED_JSON" '
   | if . then . else null end
 ' <<< "$CLAUDE_COMMENTS_JSON")
 
+# Derive the scalar comment ID for the Step 6.6 commit-trailer template.
+# Without this, GitHub-Review-Processed-Claude in the trailer is always blank,
+# Step 1's extract_trailer returns empty, CLAUDE_HANDLED_IDS stays empty, and
+# the next cycle re-processes the same already-fixed Claude comment as new.
+LATEST_CLAUDE_ID=$(jq -r 'if . == null then "" else (.id | tostring) end' <<< "$LATEST_CLAUDE")
+
 # Compute superseded set: any unhandled Claude comment with created_at strictly
 # less than LATEST_CLAUDE.created_at. These will be added to the
 # GitHub-Review-Superseded-Claude trailer in Step 6.
@@ -531,7 +537,14 @@ Body parsing:
 ```bash
 # Step 2 usage: build inline-comment-id → thread-id map.
 # (paginated_review_threads_query is defined in § Helpers, above.)
-ALL_THREAD_COMMENTS=$(paginated_review_threads_query)
+# Loud-fail on GraphQL failure — silent empty-array would silently miss every
+# thread mapping and either trigger a downstream loud-fail at lookup or, worse,
+# pass through with an empty INLINE_TO_THREAD_MAP. Better to surface the
+# transient GraphQL error here.
+ALL_THREAD_COMMENTS=$(paginated_review_threads_query) || {
+  echo "ERROR: paginated_review_threads_query failed in Step 2B." >&2
+  exit 1
+}
 INLINE_TO_THREAD_MAP=$(jq '[.[] | select(.comment_author_login == "chatgpt-codex-connector[bot]")
                             | {thread_id, comment_id: .comment_databaseId, isResolved}]' \
                           <<< "$ALL_THREAD_COMMENTS")
@@ -1041,14 +1054,12 @@ For new pattern files, append a row in the same alphabetical order as existing r
 
 ### 6.5: Stage everything explicitly
 
-**Do not** use `git add -A` — that would catch the gitignored `.harness-github-review/` if the gitignore failed somehow, and unrelated untracked files. List exact files:
+**Do not** use `git add -A` — that would catch the gitignored `.harness-github-review/` if the gitignore failed somehow, and unrelated untracked files. Code-fix files were already staged in Step 4 (`git add` per modification); only the pattern files and index need explicit staging here:
 
 ```bash
-# Build the staged file list:
+# Pattern files (from 6.2 / 6.3) and the pattern index (from 6.4) are NOT
+# yet staged — Step 4 only stages code fixes. Stage them now.
 STAGED_FILES=()
-
-# Code-fix files (from Step 4 modifications):
-while IFS= read -r f; do STAGED_FILES+=("$f"); done < <(git diff --name-only)
 
 # Pattern files modified or created in this cycle:
 for f in "${TOUCHED_PATTERN_FILES[@]}"; do STAGED_FILES+=("$f"); done
@@ -1058,9 +1069,16 @@ if [ "${INDEX_TOUCHED:-0}" -eq 1 ]; then
   STAGED_FILES+=("docs/reviews/CLAUDE.md")
 fi
 
-git add "${STAGED_FILES[@]}"
+# Only invoke `git add` when there's something to add — empty array would
+# error on some shells.
+if [ "${#STAGED_FILES[@]}" -gt 0 ]; then
+  git add "${STAGED_FILES[@]}"
+fi
+
 git status --short  # sanity check — verify expected files staged, no surprises
 ```
+
+NOTE: do **not** use `git diff --name-only` to enumerate code-fix files here. It reports working-tree-vs-index, which is empty for files Step 4 already staged — and would instead pick up unrelated unstaged edits (debug files, half-finished work) and sweep them into the review-fix commit.
 
 ### 6.6: Build the commit message and commit
 
@@ -1226,7 +1244,12 @@ After Step 6 commits + pushes (or after Step 3 returns `EXIT_CLEAN` / `POLL_NEXT
 Reuse the `paginated_review_threads_query` helper defined in § Helpers. Two parallel counts: connector-authored unresolved threads and human-authored unresolved threads.
 
 ```bash
-ALL_THREADS=$(paginated_review_threads_query)
+# Loud-fail on GraphQL failure — silent empty-array would lie about
+# unresolved threads and let the loop declare clean exit prematurely.
+ALL_THREADS=$(paginated_review_threads_query) || {
+  echo "ERROR: paginated_review_threads_query failed in Step 7.1." >&2
+  exit 1
+}
 
 UNRESOLVED_CONNECTOR_THREADS=$(jq '[.[] | select(
   .comment_author_login == "chatgpt-codex-connector[bot]"

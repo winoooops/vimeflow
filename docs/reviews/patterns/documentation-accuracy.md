@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-04-14
+last_updated: 2026-04-29
 ref_count: 2
 ---
 
@@ -105,3 +105,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** The implementation notes referenced `TranscriptState::start_if_not_exists`, but the implementation had moved to `start_or_replace`. The same note described a double-check locking algorithm that the code did not yet implement at the time of review.
 - **Fix:** Update the note to name `start_or_replace` and describe the current double-check flow after the transcript watcher locking fix.
 - **Commit:** (pending — agent-status-sidebar PR)
+
+### 11. Skill spec uses commit-trailer variable that is never assigned
+
+- **Source:** github-claude | PR #112 round 1 | 2026-04-29
+- **Severity:** HIGH
+- **File:** `plugins/harness/skills/github-review/SKILL.md`
+- **Finding:** Step 6.6 of the github-review skill emits `GitHub-Review-Processed-Claude: ${LATEST_CLAUDE_ID:-}` into the commit-trailer template, but Step 2A only computes the full `LATEST_CLAUDE` JSON object — it never derives the scalar `LATEST_CLAUDE_ID`. The trailer always expands to the empty string, so the next cycle's `extract_trailer "GitHub-Review-Processed-Claude"` returns empty, `CLAUDE_HANDLED_IDS` stays empty, and the same already-fixed Claude comment is re-processed forever. Any spec that names a variable in one step and assumes it exists in another must derive it explicitly.
+- **Fix:** Add `LATEST_CLAUDE_ID=$(jq -r 'if . == null then "" else (.id | tostring) end' <<< "$LATEST_CLAUDE")` immediately after the `LATEST_CLAUDE=$(...)` block in Step 2A. Use `if . == null` so an unprocessed-set-empty cycle still yields `LATEST_CLAUDE_ID=""` (jq's default `// empty` would error on null).
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
