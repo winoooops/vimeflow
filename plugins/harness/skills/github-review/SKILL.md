@@ -544,7 +544,104 @@ After the loop, every finding has `status` ∈ {`fixed`, `skipped`}. Findings st
 
 ## Step 5: Codex verify on staged diff
 
-(Filled in Tasks 9–10.)
+After Step 4 stages all fixes (no commit yet), this step runs `codex exec` against the staged diff to verify:
+
+1. Every upstream finding from this cycle is **addressed** by the diff.
+2. The diff does **NOT** introduce new MEDIUM/HIGH/CRITICAL issues. New LOW issues are allowed and will be deferred.
+
+If verify passes (or only finds new-LOW issues), Step 6 commits. If verify finds new MEDIUM/HIGH/CRITICAL issues OR any unaddressed upstream finding, the cycle re-enters Step 4 (retry budget ≤ 3). The matrix in Step 5D below is authoritative on which severity triggers what behavior.
+
+### Step 5A: Setup — gitignored artifact directory
+
+```bash
+mkdir -p .harness-github-review
+
+DIFF_PATCH=".harness-github-review/cycle-${ROUND}-diff.patch"
+PROMPT_FILE=".harness-github-review/cycle-${ROUND}-verify-prompt.md"
+RESULT_JSON=".harness-github-review/cycle-${ROUND}-verify-result.json"
+EVENTS_LOG=".harness-github-review/cycle-${ROUND}-verify-events.log"
+STDERR_LOG=".harness-github-review/cycle-${ROUND}-verify-stderr.log"
+```
+
+The directory is gitignored (Task 1's `.gitignore` change). Step 6's commit will explicitly enumerate files (no `git add -A`) so these artifacts can never accidentally land in a commit.
+
+### Step 5B: Build the verify prompt
+
+````bash
+git diff --staged > "$DIFF_PATCH"
+DIFF_LINES=$(wc -l < "$DIFF_PATCH")
+
+# render_findings_table_with_F_ids: emit each finding as a markdown bullet
+# referencing its cycle_id, source, severity, file, line_range, title, body.
+render_findings_table() {
+  jq -r '.[] | "
+- **\(.cycle_id)** [\(.source) | \(.severity_label_original)] **\(.title)**
+  - File: `\(.file)` L\(.line_range.start)-\(.line_range.end)
+  - \(.body | gsub("\n"; "\n  "))
+"' <<< "$FINDINGS_JSON"
+}
+
+cat > "$PROMPT_FILE" <<'EOF'
+You are verifying a review-fix cycle. The agent has staged code changes intended to address the upstream findings listed below. Your job is to verify the staged diff resolves every upstream finding without introducing new MEDIUM/HIGH/CRITICAL issues. New LOW-severity issues may be reported and will be deferred (not blocking).
+
+## Upstream findings addressed in this cycle
+
+EOF
+
+render_findings_table >> "$PROMPT_FILE"
+
+cat >> "$PROMPT_FILE" <<EOF
+
+## Staged diff to verify
+
+EOF
+
+if [ "$DIFF_LINES" -le 500 ]; then
+  printf '\n```diff\n' >> "$PROMPT_FILE"
+  cat "$DIFF_PATCH" >> "$PROMPT_FILE"
+  printf '\n```\n' >> "$PROMPT_FILE"
+else
+  printf '\nThe full staged diff is at `%s`. Read that file. Do NOT run `git diff` — staged changes may diverge from HEAD until commit.\n' "$DIFF_PATCH" >> "$PROMPT_FILE"
+fi
+
+cat >> "$PROMPT_FILE" <<'EOF'
+
+## Verification rules
+
+1. For each upstream finding F1..FN, decide ADDRESSED or NOT_ADDRESSED.
+   - If NOT_ADDRESSED: emit a finding with `title` PREFIXED `[UNADDRESSED Fk] <original title>` and `severity` matching the upstream's original severity.
+2. Beyond upstream coverage, scan the diff for NEW issues introduced by the fix. Emit those normally (no [UNADDRESSED] prefix).
+3. SCOPE BOUNDARY RULE — review ONLY lines in this staged diff. Do NOT cascade into untouched files.
+4. Confidence-based filtering: only report >80% confidence issues.
+
+Output JSON conforming to the codex-output-schema. An empty `findings` array means: every upstream finding ADDRESSED and no new issues found.
+EOF
+````
+
+The 500-line threshold for inline-vs-file is heuristic. Larger diffs would inflate the prompt past codex's effective context window; the file-pointer fallback lets codex use its own read tool to ingest progressively.
+
+### Step 5C: Call `codex exec` (verified CLI flags)
+
+```bash
+timeout 300 codex exec \
+  --sandbox read-only \
+  --output-schema .github/codex/codex-output-schema.json \
+  --output-last-message "$RESULT_JSON" \
+  -- "$(cat "$PROMPT_FILE")" \
+  > "$EVENTS_LOG" \
+  2> "$STDERR_LOG"
+
+CODEX_EXIT=$?
+```
+
+Important flag notes:
+
+- `--output-schema` (not `--output-schema-file` — that flag does not exist).
+- `--output-last-message` writes the final structured JSON; stdout is event-stream noise (events log).
+- **No `--model` flag.** Per auto-memory `feedback_codex_model_for_chatgpt_auth`: omitting lets `codex` pick the auth-mode-correct default (ChatGPT-account auth rejects explicit model selection).
+- External GNU `timeout 300` — `codex exec` has no built-in timeout flag.
+- `--sandbox read-only`: codex is verifying, not modifying. Read-only ensures it can't alter the staged diff during verification.
+- If `timeout` is unavailable on the platform: omit it and rely on the harness/agent timeout (typically 5–10 min). Acceptable degradation; codex normally finishes in 30–90s on a small staged diff.
 
 ## Step 6: Write patterns → stage all → commit → push → reply + resolve threads
 
