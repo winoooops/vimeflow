@@ -456,7 +456,69 @@ Build the table by iterating Claude findings (if `LATEST_CLAUDE` is non-null and
 
 ## Step 3: Empty-state classification
 
-(Filled in Task 7.)
+After Step 2 polls and parses, classify the per-cycle finding state into exactly one of five cases. **No silent-empty path** — every empty result is either explicitly clean (case 3) or a loud-fail (case 4/5).
+
+| Case | Claude side                                                                 | Codex side                                                                       | Action                                                  |
+| ---- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| 1    | No new comment in unprocessed set                                           | No new review in unprocessed set; no unresolved threads                          | **Step 7 poll-next**                                    |
+| 2    | New comment with ≥1 successfully-parsed finding **OR** unchanged            | New review with ≥1 inline finding, all parseable **OR** unchanged                | **Step 4 fix**                                          |
+| 3    | New comment, 0 findings, verdict explicitly clean (per `is_claude_clean`)   | No new unresolved findings (all reviews `is_summary_clean` or already processed) | **Loop exit (clean)**                                   |
+| 4    | New comment, parser failed (no `### [SEV]` blocks AND no parseable verdict) | New review, after race-retry inline still empty AND summary not explicitly clean | **loud-fail**, dump raw body to user                    |
+| 5    | New comment, verdict says ⚠️ but 0 findings parseable                       | (case-4-equivalent on Codex side)                                                | **loud-fail** (reviewer claims problems but lists none) |
+
+If at least one reviewer is case 2, the cycle proceeds with whatever findings were parsed from that reviewer (the other may be case 1 — that's fine; we just have nothing new from that side). Cases 4 and 5 abort the cycle BEFORE any code changes.
+
+```bash
+# Pseudocode for the case selection. Implement as a function in the skill.
+classify_cycle() {
+  local claude_state codex_state
+
+  # Determine claude_state from Step 2A outputs:
+  if [ "$LATEST_CLAUDE" = "null" ]; then
+    claude_state="case_1"
+  elif claude_parse_succeeded && [ "$CLAUDE_FINDINGS_COUNT" -gt 0 ]; then
+    claude_state="case_2"
+  elif claude_parse_succeeded && [ "$CLAUDE_FINDINGS_COUNT" -eq 0 ] && is_claude_clean; then
+    claude_state="case_3"
+  elif claude_parse_succeeded && [ "$CLAUDE_FINDINGS_COUNT" -eq 0 ] && claude_verdict_says_dirty; then
+    claude_state="case_5"
+  else
+    claude_state="case_4"
+  fi
+
+  # Determine codex_state from Step 2B outputs (similar logic).
+  # ...
+
+  # Combined disposition:
+  if [ "$claude_state" = "case_4" ] || [ "$claude_state" = "case_5" ] \
+     || [ "$codex_state" = "case_4" ] || [ "$codex_state" = "case_5" ]; then
+    echo "LOUD_FAIL"
+    return 1
+  fi
+
+  if [ "$claude_state" = "case_2" ] || [ "$codex_state" = "case_2" ]; then
+    echo "FIX"
+    return 0
+  fi
+
+  if [ "$claude_state" = "case_3" ] && [ "$codex_state" = "case_3" ]; then
+    echo "EXIT_CLEAN"
+    return 0
+  fi
+
+  # Mixed case 1 / case 3 → still nothing actionable from either side.
+  echo "POLL_NEXT"
+  return 0
+}
+```
+
+On `LOUD_FAIL`: write the offending raw body to `.harness-github-review/cycle-${ROUND}-loud-fail-<source>.txt` and `exit 1`. Do NOT proceed to fix or commit.
+
+On `EXIT_CLEAN`: continue to Step 7 (loop exit + retro prompt).
+
+On `FIX`: proceed to Step 4.
+
+On `POLL_NEXT`: continue to Step 7 (poll-next sub-flow).
 
 ## Step 4: Fix all findings
 
