@@ -21,10 +21,16 @@ const REDACTED: &str = "[REDACTED]";
 // can appear anywhere in either surface.
 static SHARED_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
     vec![
-        // Bearer tokens (case-insensitive)
-        Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._\-]+").unwrap(),
-        // Authorization headers (case-insensitive)
-        Regex::new(r"(?i)\bAuthorization:\s*\S+").unwrap(),
+        // Bearer tokens (case-insensitive). Charset includes base64 chars
+        // (`+`, `/`, `=`) — earlier `[A-Za-z0-9._\-]+` only redacted the
+        // PREFIX of a base64-encoded credential and left the suffix
+        // visible. Now matches the full token through the next whitespace.
+        Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._+/=\-]+").unwrap(),
+        // Authorization headers (case-insensitive). Match through end of
+        // line — the previous `\S+` only consumed the FIRST non-whitespace
+        // token, so multi-token credentials like `Authorization: Basic
+        // abc xyz` left `abc xyz` visible.
+        Regex::new(r"(?i)\bAuthorization:\s*[^\r\n]+").unwrap(),
         // Stripe/etc-style API keys: (sk|pk|rk)_(live|test)_<alnum16+>
         Regex::new(r"\b(sk|pk|rk)_(live|test)_[A-Za-z0-9]{16,}").unwrap(),
         // JWT-like: eyJ followed by base64-ish chunk
@@ -144,5 +150,30 @@ mod tests {
     fn output_still_redacts_token_shapes() {
         let s = sanitize_for_output("got token: eyJabcdefghijklmnop.body.sig");
         assert!(!s.contains("eyJabcdefghijklmnop"));
+    }
+
+    // --- regression: multi-token Authorization values fully redacted ---
+
+    #[test]
+    fn redacts_full_basic_authorization_header() {
+        // Regression: previously `Authorization:\s*\S+` only matched
+        // "Basic" and left "abc xyz" visible.
+        let s = sanitize_for_command("Authorization: Basic abc xyz");
+        assert!(!s.contains("abc xyz"), "secret leaked: {}", s);
+        let t = sanitize_for_output("Authorization: Basic dXNlcjpwYXNz");
+        assert!(!t.contains("dXNlcjpwYXNz"), "secret leaked: {}", t);
+    }
+
+    // --- regression: bearer tokens with base64 chars fully redacted ---
+
+    #[test]
+    fn redacts_bearer_tokens_with_base64_chars() {
+        // Regression: previously `Bearer\s+[A-Za-z0-9._\-]+` excluded
+        // `+`, `/`, `=`, leaving the suffix of base64-encoded tokens
+        // visible (e.g. "Bearer YWJj+/==" only redacted "YWJj").
+        let s = sanitize_for_command("Bearer YWJjZGVm+/==");
+        assert!(!s.contains("YWJjZGVm+/=="), "secret leaked: {}", s);
+        let t = sanitize_for_output("auth: Bearer abc/def+ghi=");
+        assert!(!t.contains("abc/def+ghi="), "secret leaked: {}", t);
     }
 }

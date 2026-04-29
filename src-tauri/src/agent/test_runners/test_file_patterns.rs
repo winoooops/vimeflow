@@ -3,8 +3,17 @@
 
 /// Returns true if `path` matches a known test-file convention.
 /// Matches on the basename and (for some languages) directory position.
+///
+/// Handles both `/` and `\` as path separators so Windows-style paths
+/// from tool calls (e.g. `C:\repo\tests\integration.rs`) are classified
+/// the same as POSIX paths.
 pub fn is_test_file(path: &str) -> bool {
-    let basename = path.rsplit('/').next().unwrap_or(path);
+    // Split on either separator so basename extraction and directory
+    // checks below work regardless of OS path style.
+    let basename = path
+        .rsplit(|c| c == '/' || c == '\\')
+        .next()
+        .unwrap_or(path);
 
     // TS/JS: *.test.{ts,tsx,js,jsx,mjs,cjs} and *.spec.{...}
     if let Some(stem_end) = basename.rfind('.') {
@@ -37,8 +46,12 @@ pub fn is_test_file(path: &str) -> bool {
     // ASSETS (fixtures, JSON snapshots, JSONL transcripts) not tests
     // themselves. Tagging fixture writes as "CREATED TEST" in the activity
     // feed would erode the label's signal value.
-    let is_in_tests_dir = path.contains("/tests/") || path.starts_with("tests/");
-    let basename = path.rsplit('/').next().unwrap_or(path);
+    //
+    // Check both separator styles for Windows compatibility.
+    let is_in_tests_dir = path.contains("/tests/")
+        || path.contains("\\tests\\")
+        || path.starts_with("tests/")
+        || path.starts_with("tests\\");
     if is_in_tests_dir && basename.ends_with(".rs") {
         return true;
     }
@@ -109,5 +122,21 @@ mod tests {
         assert!(!is_test_file(""));
         assert!(!is_test_file("/"));
         assert!(!is_test_file("foo"));
+    }
+
+    #[test]
+    fn windows_paths_match() {
+        // Regression: rsplit('/') and contains("/tests/") only handled
+        // POSIX paths, so Windows-style tool-call paths regressed.
+        assert!(is_test_file(r"C:\repo\src\foo.test.ts"));
+        assert!(is_test_file(r"C:\repo\src\foo_test.rs"));
+        assert!(is_test_file(r"C:\repo\tests\integration.rs"));
+        assert!(is_test_file(r"tests\it.rs"));
+    }
+
+    #[test]
+    fn windows_non_test_files_dont_match() {
+        assert!(!is_test_file(r"C:\repo\src\foo.ts"));
+        assert!(!is_test_file(r"C:\repo\tests\fixture.json"));
     }
 }

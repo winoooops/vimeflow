@@ -64,11 +64,17 @@ impl AgentWatcherState {
 }
 
 /// Try to start transcript tailing, switching files if Claude reports a new path.
+///
+/// `cwd` is queried fresh from PtyState at every call rather than captured
+/// by the outer `start_watching` closures. The user can `cd` mid-session
+/// without restarting the agent watcher; we want the test-runner parser to
+/// pick up the new workspace immediately. Combined with
+/// `TranscriptState::start_or_replace`'s (transcript_path, cwd) identity
+/// check, a cwd change triggers a Replace of the tail thread.
 fn maybe_start_transcript(
     app_handle: &tauri::AppHandle,
     session_id: &str,
     transcript_path: &str,
-    cwd: Option<PathBuf>,
 ) {
     let transcript_path = match validate_transcript_path(transcript_path) {
         Ok(path) => path,
@@ -81,6 +87,11 @@ fn maybe_start_transcript(
             return;
         }
     };
+
+    let cwd = app_handle
+        .state::<crate::terminal::PtyState>()
+        .get_cwd(&session_id.to_string())
+        .map(PathBuf::from);
 
     let ts = app_handle.state::<TranscriptState>();
     match ts.start_or_replace(
@@ -118,15 +129,17 @@ fn maybe_start_transcript(
 ///
 /// Watches the parent directory and filters for events on the target file.
 /// Debounces at 100ms to avoid redundant processing.
+///
+/// CWD is intentionally NOT captured here. `maybe_start_transcript` queries
+/// PtyState fresh on every invocation so a `cd` mid-session updates the
+/// workspace seen by the test-runner parser.
 pub fn start_watching(
     app_handle: tauri::AppHandle,
     session_id: String,
     status_file_path: PathBuf,
-    cwd: PathBuf,
 ) -> Result<WatcherHandle, String> {
     let target_path = status_file_path.clone();
     let sid = session_id.clone();
-    let cwd_for_closure = cwd.clone();
     let last_processed = Arc::new(Mutex::new(Instant::now()));
     let app_handle_for_poll = app_handle.clone();
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -190,7 +203,7 @@ pub fn start_watching(
 
                 if let Some(ref path) = parsed.transcript_path {
                     log::debug!("Transcript path for session {}: {}", sid, path);
-                    maybe_start_transcript(&app_handle, &sid, path, Some(cwd_for_closure.clone()));
+                    maybe_start_transcript(&app_handle, &sid, path);
                 }
             }
             Err(e) => {
@@ -220,18 +233,12 @@ pub fn start_watching(
         let initial_sid = session_id.clone();
         let initial_path = status_file_path.clone();
         let initial_app = app_handle_for_poll.clone();
-        let initial_cwd = cwd.clone();
         if let Ok(contents) = std::fs::read_to_string(&initial_path) {
             if !contents.trim().is_empty() {
                 if let Ok(parsed) = parse_statusline(&initial_sid, &contents) {
                     let _ = initial_app.emit("agent-status", &parsed.event);
                     if let Some(ref path) = parsed.transcript_path {
-                        maybe_start_transcript(
-                            &initial_app,
-                            &initial_sid,
-                            path,
-                            Some(initial_cwd.clone()),
-                        );
+                        maybe_start_transcript(&initial_app, &initial_sid, path);
                     }
                 }
             }
@@ -245,7 +252,6 @@ pub fn start_watching(
         let poll_sid = session_id.clone();
         let poll_path = status_file_path.clone();
         let poll_app = app_handle_for_poll;
-        let poll_cwd = cwd.clone();
         let poll_last = Arc::new(Mutex::new(String::new()));
         let poll_stop = stop_flag.clone();
         std::thread::spawn(move || {
@@ -271,12 +277,7 @@ pub fn start_watching(
                 if let Ok(parsed) = parse_statusline(&poll_sid, &contents) {
                     let _ = poll_app.emit("agent-status", &parsed.event);
                     if let Some(ref path) = parsed.transcript_path {
-                        maybe_start_transcript(
-                            &poll_app,
-                            &poll_sid,
-                            path,
-                            Some(poll_cwd.clone()),
-                        );
+                        maybe_start_transcript(&poll_app, &poll_sid, path);
                     }
                 }
             }
@@ -352,8 +353,7 @@ pub async fn start_agent_watcher(
     // Stop any existing watcher for this session
     state.remove(&session_id);
 
-    let cwd_path = PathBuf::from(&cwd);
-    let handle = start_watching(app_handle, session_id.clone(), path, cwd_path)?;
+    let handle = start_watching(app_handle, session_id.clone(), path)?;
     state.insert(session_id.clone(), handle);
 
     Ok(())
