@@ -12,8 +12,16 @@
 #   PR_NUMBER  — PR number (integer)
 #
 # Required external commands: gh (with GraphQL access), jq, awk, sed, tr.
+#
+# Strict-mode guard: set -euo pipefail is applied only when this file is
+# executed directly. Sourcing should not silently mutate the caller's shell
+# (helpers like grep/diff legitimately exit non-zero, and the caller may not
+# expect strict mode). Helper functions below use explicit `|| return 1` on
+# their internal `gh api` calls so failures still propagate to callers.
 
-set -euo pipefail
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  set -euo pipefail
+fi
 
 # ----------------------------------------------------------------------------
 # paginated_review_threads_query
@@ -25,11 +33,17 @@ set -euo pipefail
 #   {
 #     thread_id: <PRRT_xxx>,
 #     comment_databaseId: <int>,
-#     comment_author_login: <string>,
+#     comment_author_login: <string>,    # GraphQL form: NO `[bot]` suffix
 #     comment_author_type: "Bot" | "User",
 #     isResolved: <bool>,
 #     pull_request_review_id: <int|null>
 #   }
+#
+# IMPORTANT — author-login form differs between REST and GraphQL:
+#   - REST  /pulls/{pr}/comments + /issues/{pr}/comments → "chatgpt-codex-connector[bot]"
+#   - GraphQL (this helper)                              → "chatgpt-codex-connector"
+# Filters consuming this helper's output match WITHOUT the `[bot]` suffix
+# (or use comment_author_type == "Bot" for type-only filtering).
 #
 # Caller filters by author / by ID set as needed.
 #
@@ -120,11 +134,13 @@ paginated_review_threads_query() {
     fi
 
     # Append flattened entries from this page.
+    # NOTE: jq `EXPR as $name | REST` preserves `.` from before EXPR; iterating
+    # via `.[] as $thread` does NOT rebind `.` to the thread. Use `$thread`
+    # explicitly to descend into the per-thread comments array.
     result=$(jq -s '.[0] + .[1]' \
       <(echo "$result") \
-      <(jq '[.data.repository.pullRequest.reviewThreads.nodes
-              | .[] as $thread
-              | .comments.nodes[]
+      <(jq '[.data.repository.pullRequest.reviewThreads.nodes[] as $thread
+              | $thread.comments.nodes[]
               | {thread_id: $thread.id, comment_databaseId: .databaseId,
                  comment_author_login: .author.login,
                  comment_author_type: (if .author.__typename == "Bot" then "Bot" else "User" end),

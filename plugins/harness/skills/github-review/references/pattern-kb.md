@@ -64,13 +64,19 @@ Append each entry under `## Findings`, schema:
 ```markdown
 ### N. <Finding's title>
 
-- **Source:** <github-claude | github-codex-connector | local-codex> | PR #<PR_NUMBER> round <ROUND> | <YYYY-MM-DD>
-- **Severity:** <severity_label_original> # e.g. "HIGH" or "P1 / HIGH"
+- **Source:** <github-claude | github-codex-connector | github-human | local-codex> | PR #<PR_NUMBER> round <ROUND> | <YYYY-MM-DD>
+- **Severity:** <severity_label_original> # e.g. "HIGH" or "P1 / HIGH" or "HUMAN"
 - **File:** `<repo-relative path>`
 - **Finding:** <one to three sentences from the finding body>
 - **Fix:** <one to three sentences describing what was changed>
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 ```
+
+The `Source:` field's reviewer label must come from the closed list mirrored
+in `docs/reviews/CLAUDE.md` § Source labels: `github-claude`,
+`github-codex-connector`, `github-human` (for findings posted by a non-bot
+GitHub account — e.g. PR author / maintainer review comments), `local-codex`,
+or `github-codex` (historical only — do not use for new entries).
 
 Note: `Commit:` does NOT contain the SHA — pattern file is part of the same
 commit being created, so the SHA isn't yet known. Recoverable via `git
@@ -127,6 +133,17 @@ For each touched pattern, update the row's `Findings` count (re-derive from
 
 For new pattern files, append a row in the same alphabetical order as
 existing rows (or end-of-table — verify by reading the file before adding).
+
+**Invariant — set `INDEX_TOUCHED=1` whenever the index file is rewritten.**
+Step 6.5 stages `docs/reviews/CLAUDE.md` only when `INDEX_TOUCHED=1`, so
+forgetting to set it on existing-row updates leaves the index out of the
+commit and the row unchanged in the next cycle's snapshot. The flag must
+be set on:
+
+- Step 6.2 — appending an entry to an existing pattern (Findings count and
+  Last Updated change in the index row).
+- Step 6.3 — creating a new pattern file (a new row is appended to the
+  index).
 
 ## Cross-references
 

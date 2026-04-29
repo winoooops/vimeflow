@@ -93,3 +93,39 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** `paginated_review_threads_query` ends with `echo "$result"` — bash propagates the exit code of the last command, so the function always returns 0 regardless of inner `gh api graphql` failures. A failed `page_json=$(gh api graphql ...)` produces empty output; downstream `jq` errors silently to stderr; the loop hits `break` because `has_next` is not `"true"` for empty input — and the function returns `0` with a corrupted thread map. The Step 1 caller's `2>/dev/null || echo "[]"` fallback never fires; Step 2B and 7.1 callers had no fallback at all. Same shape as the `void promise` footgun: silent error swallowing where the caller is expected to detect failures via exit code.
 - **Fix:** Add `|| return 1` after each `page_json=$(gh api graphql ...)` assignment so transient GraphQL failures actually propagate. Then loud-fail at every call site: Step 1 keeps its `|| echo "[]"` (best-effort reconciliation); Step 2B and 7.1 promote to `|| { echo "ERROR..."; exit 1; }` because a corrupted thread map there silently misses unresolved threads (Step 7.1 would declare clean exit prematurely) or breaks inline-comment lookup with no diagnostic.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. `grep -vxFf` exits 1 on full-match input, aborting under `set -euo pipefail`
+
+- **Source:** github-claude + github-codex-connector | PR #112 round 2 | 2026-04-29
+- **Severity:** HIGH (claude) / P1 / HIGH (connector)
+- **File:** `plugins/harness/skills/github-review/references/commit-trailers.md`
+- **Finding:** The Step 1 reconciliation block subtracts stale IDs from three processed-set variables using pipelines ending `grep -vxFf <(...)`. The exit-code contract for `grep -v` is 1 when every input line is suppressed (no surviving lines). Sourcing `helpers.sh` activates `set -euo pipefail` in the caller's shell, so this exit propagates through the command substitution and aborts the script — exactly in the scenario reconciliation guards against (push succeeded but reply/resolve failed; ALL processed IDs are stale and need clearing). Both reviewers found the same root cause; the connector finding cites L97 specifically, the claude finding generalizes to L95-125. An identical risk pattern: `diff` returning 1 for differences, `cmp` returning non-zero for mismatch — any tool whose exit code encodes "found nothing" rather than "actual error" breaks under strict mode.
+- **Fix:** Replaced all three `grep -vxFf` pipelines with awk-based set-difference: build the stale set in awk's `BEGIN { split(stale, a, /,/); for (i...) s[a[i]] = 1 }`, then filter `NF && !($0 in s) { print }`. awk handles empty input cleanly and never returns non-zero for "no matches." Also took the opportunity to remove the `set -euo pipefail` side-effect when `helpers.sh` is sourced (guard with `[ "${BASH_SOURCE[0]}" = "${0}" ]`), so future shell idioms with non-fatal non-zero exits don't get unexpectedly weaponized.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 10. helpers.sh `set -euo pipefail` propagates strict mode into the caller when sourced
+
+- **Source:** github-claude | PR #112 round 2 | 2026-04-29
+- **Severity:** LOW
+- **File:** `plugins/harness/skills/github-review/scripts/helpers.sh`
+- **Finding:** `helpers.sh` calls `set -euo pipefail` unconditionally at top level. Sourcing the file (per SKILL.md Bootstrap) propagates strict mode into the calling skill session. Commands that legitimately exit non-zero — `grep` with no matches, `diff` finding differences — then abort the skill mid-run with no diagnostic. The `grep -vxFf` regression in Finding 9 is a direct consequence.
+- **Fix:** Guard the `set -euo pipefail` line with `if [ "${BASH_SOURCE[0]}" = "${0}" ]; then ... fi` so strict mode applies only on direct execution, not on source. Internal helper functions already use `|| return 1` on their `gh api` calls, so failures still propagate to callers via exit code.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 11. Bootstrap script-path derivation breaks under interactive-shell `$0`
+
+- **Source:** github-codex-connector | PR #112 round 2 | 2026-04-29
+- **Severity:** P1 / HIGH
+- **File:** `plugins/harness/skills/github-review/SKILL.md`
+- **Finding:** `SCRIPT_DIR="$(dirname "$(realpath "$0")")"` resolves to `/usr/bin/bash` (or similar) when SKILL.md is invoked from an interactive shell — `$0` is the shell name, not the SKILL.md path. The subsequent `source "$SCRIPT_DIR/scripts/helpers.sh"` then fails with file-not-found; every later step that depends on the helpers (`paginated_review_threads_query`, `extract_trailer`) silently uses an unbound name and produces empty results. The skill silently miscounts findings, miscomputes processed sets, or aborts further down with a misleading error.
+- **Fix:** Hard-code the repo-relative path with a git-toplevel fallback: `SKILL_DIR="plugins/harness/skills/github-review"; [ -d "$SKILL_DIR" ] || SKILL_DIR="$(git rev-parse --show-toplevel)/plugins/harness/skills/github-review"`. Explicit precondition check on `helpers.sh` existence with a clear error message. Documented "must be invoked from repo root" assumption in the orchestrator preamble. The skill always runs from the repo root (Claude Code's plugin runner CWD) so the relative path is reliable.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 12. Skill-authored replies re-classified as new human findings on next cycle
+
+- **Source:** github-codex-connector | PR #112 round 2 | 2026-04-29
+- **Severity:** P1 / HIGH
+- **File:** `plugins/harness/skills/github-review/references/parsing.md`
+- **Finding:** Step 2D filters human findings by `user.type == "User"`. But the skill itself authenticates as a human GitHub user (the gh CLI's auth) — its Step 6.8 replies show up as user-authored comments on later cycles. Without a body-content exclusion, the next cycle re-classifies its own replies as new "human findings" and either tries to fix them (creating self-referential loops) or burns processed-set capacity on its own outputs. Same loop-amplification family as the `LATEST_CLAUDE_ID` regression in cycle 1 finding 11.
+- **Fix:** Extended the Step 2D human-comment poll filter (both issue-level and inline) with `((.body // "") | contains("(github-review cycle ") | not)`. Every Step 6.8 reply emits the marker `(github-review cycle <N>, finding F<K>)` as a stable footer; this `contains` check excludes any comment whose body carries that marker, regardless of cycle / finding ID. Added rationale comment in parsing.md and cross-referenced the marker invariant in commit-trailers.md § Step 6.8.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

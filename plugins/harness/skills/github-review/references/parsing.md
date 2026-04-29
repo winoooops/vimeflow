@@ -257,7 +257,11 @@ ALL_THREAD_COMMENTS=$(paginated_review_threads_query) || {
   echo "ERROR: paginated_review_threads_query failed in Step 2B." >&2
   exit 1
 }
-INLINE_TO_THREAD_MAP=$(jq '[.[] | select(.comment_author_login == "chatgpt-codex-connector[bot]")
+# GraphQL strips the `[bot]` suffix from author logins (REST keeps it). Match
+# on the bare login `chatgpt-codex-connector`. comment_author_type ("Bot" |
+# "User") is also available from the helper for filtering when the login is
+# unknown ahead of time.
+INLINE_TO_THREAD_MAP=$(jq '[.[] | select(.comment_author_login == "chatgpt-codex-connector")
                             | {thread_id, comment_id: .comment_databaseId, isResolved}]' \
                           <<< "$ALL_THREAD_COMMENTS")
 ```
@@ -286,6 +290,12 @@ poll. Skip the reviews endpoint to avoid duplicates.)
 
 ### Poll human issue comments
 
+The skill itself authenticates as a human GitHub user (the gh CLI's auth) and
+posts replies in Step 6.8. Those replies show up as user-authored comments on
+later cycles, so the poll must EXCLUDE skill-authored bodies. The reliable
+marker is the `(github-review cycle <N>, finding F<K>)` footer that every
+Step 6.8 reply emits — a stable signature this skill always writes.
+
 ```bash
 PROCESSED_HUMAN_ISSUE_JSON=$(jq -R 'split(",") | map(select(length > 0) | tonumber)' <<< "$PROCESSED_HUMAN_ISSUE_IDS")
 
@@ -294,6 +304,7 @@ NEW_HUMAN_ISSUE_JSON=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginat
     add | [.[] | select(
       (.user.type // "User") == "User"
       and (.id as $id | $done | index($id) | not)
+      and ((.body // "") | contains("(github-review cycle ") | not)
     )]')
 ```
 
@@ -307,8 +318,14 @@ NEW_HUMAN_INLINE_JSON=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments" --paginat
     add | [.[] | select(
       (.user.type // "User") == "User"
       and (.id as $id | $done | index($id) | not)
+      and ((.body // "") | contains("(github-review cycle ") | not)
     )]')
 ```
+
+The `contains("(github-review cycle ")` check is a string-prefix match, robust
+to the rest of the marker varying (e.g. cycle number / finding ID changes).
+The marker is asserted in `commit-trailers.md` § Step 6.8 — every fixed and
+skipped reply carries it.
 
 Note: human inline comments don't go through the unprocessed-review-id
 filter (humans submit them directly, often without a review wrapper). The

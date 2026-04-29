@@ -92,10 +92,14 @@ if [ -n "$CLOSED_CODEX_THREADS" ]; then
 
     if [ -n "$STALE_COMMENT_IDS" ]; then
       # Subtract STALE_COMMENT_IDS from PROCESSED_CODEX_INLINE_IDS.
-      PROCESSED_CODEX_INLINE_IDS=$(printf '%s\n%s\n' "$PROCESSED_CODEX_INLINE_IDS" "$STALE_COMMENT_IDS" \
-        | tr ',' '\n' | awk 'NF' | sort -u \
-        | grep -vxFf <(echo "$STALE_COMMENT_IDS" | tr ',' '\n' | awk 'NF') \
-        | tr '\n' ',' | sed 's/,$//')
+      # awk-based set-difference instead of `grep -vxFf` — `grep -v` exits 1
+      # when ALL input lines match the filter (the primary case here: every
+      # processed ID is stale), aborting under `set -euo pipefail`.
+      PROCESSED_CODEX_INLINE_IDS=$(awk -v stale="$STALE_COMMENT_IDS" '
+        BEGIN { n = split(stale, a, /,/); for (i = 1; i <= n; i++) if (a[i] != "") s[a[i]] = 1 }
+        NF && !($0 in s) { print }
+      ' < <(printf '%s\n' "$PROCESSED_CODEX_INLINE_IDS" | tr ',' '\n') \
+        | sort -u | tr '\n' ',' | sed 's/,$//')
     fi
 
     # Also reconcile PROCESSED_CODEX_REVIEW_IDS — the parent review IDs
@@ -111,17 +115,22 @@ if [ -n "$CLOSED_CODEX_THREADS" ]; then
     ')
 
     if [ -n "$STALE_REVIEW_IDS" ]; then
-      PROCESSED_CODEX_REVIEW_IDS=$(printf '%s\n%s\n' "$PROCESSED_CODEX_REVIEW_IDS" "$STALE_REVIEW_IDS" \
-        | tr ',' '\n' | awk 'NF' | sort -u \
-        | grep -vxFf <(echo "$STALE_REVIEW_IDS" | tr ',' '\n') \
-        | tr '\n' ',' | sed 's/,$//')
+      # awk-based set-difference (see PROCESSED_CODEX_INLINE_IDS comment).
+      PROCESSED_CODEX_REVIEW_IDS=$(awk -v stale="$STALE_REVIEW_IDS" '
+        BEGIN { n = split(stale, a, /,/); for (i = 1; i <= n; i++) if (a[i] != "") s[a[i]] = 1 }
+        NF && !($0 in s) { print }
+      ' < <(printf '%s\n' "$PROCESSED_CODEX_REVIEW_IDS" | tr ',' '\n') \
+        | sort -u | tr '\n' ',' | sed 's/,$//')
     fi
 
     # Subtract stale thread IDs from CLOSED_CODEX_THREADS so Step 6's
     # eventual close-set rebuild doesn't double-count.
-    CLOSED_CODEX_THREADS=$(printf '%s\n' "$CLOSED_CODEX_THREADS" \
-      | tr ',' '\n' | awk 'NF' \
-      | grep -vxFf <(jq -r '.[]' <<< "$STALE_THREAD_IDS") \
+    # awk-based set-difference (see PROCESSED_CODEX_INLINE_IDS comment).
+    STALE_THREAD_IDS_CSV=$(jq -r 'join(",")' <<< "$STALE_THREAD_IDS")
+    CLOSED_CODEX_THREADS=$(awk -v stale="$STALE_THREAD_IDS_CSV" '
+      BEGIN { n = split(stale, a, /,/); for (i = 1; i <= n; i++) if (a[i] != "") s[a[i]] = 1 }
+      NF && !($0 in s) { print }
+    ' < <(printf '%s\n' "$CLOSED_CODEX_THREADS" | tr ',' '\n') \
       | tr '\n' ',' | sed 's/,$//')
   fi
 fi

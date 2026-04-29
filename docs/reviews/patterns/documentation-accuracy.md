@@ -114,3 +114,48 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** Step 6.6 of the github-review skill emits `GitHub-Review-Processed-Claude: ${LATEST_CLAUDE_ID:-}` into the commit-trailer template, but Step 2A only computes the full `LATEST_CLAUDE` JSON object — it never derives the scalar `LATEST_CLAUDE_ID`. The trailer always expands to the empty string, so the next cycle's `extract_trailer "GitHub-Review-Processed-Claude"` returns empty, `CLAUDE_HANDLED_IDS` stays empty, and the same already-fixed Claude comment is re-processed forever. Any spec that names a variable in one step and assumes it exists in another must derive it explicitly.
 - **Fix:** Add `LATEST_CLAUDE_ID=$(jq -r 'if . == null then "" else (.id | tostring) end' <<< "$LATEST_CLAUDE")` immediately after the `LATEST_CLAUDE=$(...)` block in Step 2A. Use `if . == null` so an unprocessed-set-empty cycle still yields `LATEST_CLAUDE_ID=""` (jq's default `// empty` would error on null).
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 12. Spec mandates a convention then violates it two steps later
+
+- **Source:** github-claude | PR #112 round 2 | 2026-04-29
+- **Severity:** MEDIUM
+- **File:** `plugins/harness/skills/github-review/SKILL.md`
+- **Finding:** Step 6.8 explicitly prohibits `for x in $(jq -c ...)` due to JSON word-splitting and mandates `while IFS= read -r x; done < <(...)`. Step 6.9 (resolveReviewThread loop) immediately uses the prohibited form: `for thread_id in $(list_thread_ids_to_close); do ... done`. PRRT\_ IDs have no embedded spaces today, so this is safe in practice, but the inconsistency two steps after the rule is stated will silently corrupt iteration if the ID format changes — and contributors copying from this file would propagate the anti-pattern.
+- **Fix:** Apply the same pattern Step 6.8 mandates: `while IFS= read -r thread_id; do ...; done < <(list_thread_ids_to_close)`. Also added a `[ -z "$thread_id" ] && continue` guard for empty-line input safety.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 13. Cleanup-recovery doc cross-references loop_start_scan placement incorrectly
+
+- **Source:** github-claude | PR #112 round 2 | 2026-04-29
+- **Severity:** LOW
+- **File:** `plugins/harness/skills/github-review/references/cleanup-recovery.md`
+- **Finding:** The cross-reference said "`loop_start_scan` runs at the start of Step 1 (BEFORE input resolution)". But Step 0 is the input-resolution step in this skill's pipeline; Step 1 is "Resolve PR_BASE." SKILL.md actually places `loop_start_scan` in the Bootstrap section (before Step 0). A maintainer following this cross-reference during a refactor would relocate it to Step 1, after PR state has already been read.
+- **Fix:** Rewrite the cross-reference to: "`loop_start_scan` runs in the Bootstrap section, before Step 0 (input resolution). It must execute before any step reads or writes PR state." The "must execute before" framing makes the load-bearing position explicit.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 14. Pattern-kb source-label list missed the human-reviewer source
+
+- **Source:** github-codex-connector | PR #112 round 2 | 2026-04-29
+- **Severity:** P2 / MEDIUM
+- **File:** `plugins/harness/skills/github-review/references/pattern-kb.md`
+- **Finding:** Step 6.2's pattern-entry schema lists allowed `Source:` reviewer labels as `<github-claude | github-codex-connector | local-codex>` — missing a label for human findings (Step 2D source `human`). Without a label, downstream cycles either invent ad-hoc names (`human-reviewer`, `human`, etc.) or silently default to one of the bot labels, breaking the pattern-source taxonomy.
+- **Fix:** Extend the allowed list to include `github-human` and document the meaning ("a non-bot GitHub account commenting on a PR"). Also extended `docs/reviews/CLAUDE.md` § Source labels — the index doc that lists the closed label set — to include `github-human` so the two stay in sync.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. SKILL.md as orchestrator vs progressive-disclosure for reference details
+
+- **Source:** github-human | PR #112 round 2 | 2026-04-29
+- **Severity:** HUMAN
+- **File:** `plugins/harness/skills/github-review/SKILL.md`
+- **Finding:** SKILL.md should be the orchestrator entry-point — describes WHAT each step does and the contract between steps. Long inline bash blocks (>10 lines) for input resolution, reconciliation, etc. should live in the corresponding `references/<step>.md` file. The `scripts/` directory should ONLY hold sourceable / executable shell scripts (helpers.sh, verify.sh) — not one-off bash for a single step. Without the discipline, SKILL.md becomes a 600+ line scroll-fest and the entry-point's WHAT/HOW separation collapses.
+- **Fix:** Extracted Step 0's input-resolution bash (~38 lines) into a new `references/input-resolution.md` (with worktree recipe + per-error-case prompts). Trimmed Step 1's bash (~17 lines) to a brief operational summary citing `references/commit-trailers.md` § Step 1 — Reading trailers back. Updated the File-structure section to add the new reference + a "where to look for what" preamble describing the orchestrator-vs-references discipline.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. SKILL.md missing Q&A / Troubleshooting section
+
+- **Source:** github-human | PR #112 round 2 | 2026-04-29
+- **Severity:** HUMAN
+- **File:** `plugins/harness/skills/github-review/SKILL.md`
+- **Finding:** When a cycle gets stuck (verify times out, branch mismatch, plugin cache out of sync, max-rounds hit), users had to read through `incident.md` or chase cross-references to figure out the recovery. No quick lookup table of "symptom → likely cause → fastest fix" — recovery friction wasted dogfood iteration time in cycle 1.
+- **Fix:** Added a `## Troubleshooting / Q&A` section near the end of SKILL.md (before the final Cleanup link) with 9 terse Q+A entries: branch mismatch, verify timeout/error, reconciliation lag, commitlint nits, plugin cache sync, max-rounds, GraphQL bot-suffix difference, INDEX_TOUCHED missing.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

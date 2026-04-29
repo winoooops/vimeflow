@@ -32,20 +32,27 @@ introduced this rewrite (issue #111).
 plugins/harness/skills/github-review/
 ├── SKILL.md                              # this file — thin orchestrator
 ├── references/
+│   ├── input-resolution.md               # Step 0: PR + branch resolution + worktree recipe
 │   ├── parsing.md                        # Step 2A/2B/2D parse rules + regexes + Finding type
 │   ├── empty-state-classification.md     # Step 3: 5-case table + classify_cycle pseudocode
 │   ├── verify-prompt.md                  # Step 5: prompt template + matrix + retry budget + abort
 │   ├── pattern-kb.md                     # Step 6.1-6.4: matching, append, new pattern, index
-│   ├── commit-trailers.md                # Step 6.6: full trailer schema + commit-message template
+│   ├── commit-trailers.md                # Step 1 reconciliation + Step 6.6 trailer schema + Step 6.8 reply
 │   └── cleanup-recovery.md               # Cleanup: lifecycle table + 3 recovery paths
 └── scripts/
-    ├── helpers.sh                        # paginated_review_threads_query + extract_trailer
-    └── verify.sh                         # codex exec wrapper for the verify gate
+    ├── helpers.sh                        # paginated_review_threads_query + extract_trailer (sourceable)
+    └── verify.sh                         # codex exec wrapper for the verify gate (executable)
 ```
 
+**Where to look for what.** SKILL.md is the orchestrator entry point — it
+describes WHAT each step does and the contract between steps. Implementation
+details (long bash, regex tables, GraphQL queries, the trailer schema, the
+classification matrix) live in `references/`. The `scripts/` directory holds
+only sourceable / executable shell scripts; one-off bash for a single step
+goes into the matching `references/` file, NOT a new `scripts/` file.
+
 Read references on-demand from the per-step "see" links — none of them are
-required to start a run, but they carry the load-bearing protocol details
-(GraphQL queries, regexes, classification table, trailer schema).
+required to start a run, but they carry the load-bearing protocol details.
 
 ## Pipeline
 
@@ -134,12 +141,35 @@ References:
 
 ## Bootstrap
 
-Source the helper functions used across multiple steps:
+Source the helper functions used across multiple steps. SKILL.md is loaded
+by the Claude Code plugin runner — there is no `$0` invocation context, and
+the orchestrator runs from the **repo root** (the runner's CWD when a skill
+fires). The helpers live at a known relative path under the working tree
+(or under the plugin cache, depending on whether the local working tree is
+authoritative for the skill).
 
 ```bash
-SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-source "$SCRIPT_DIR/scripts/helpers.sh"
+# Skill source lives at a stable path relative to the repo root.
+# Prefer the working-tree copy if it exists (lets local edits to helpers.sh
+# take effect immediately during dogfood); otherwise fall back to the
+# git-toplevel join for safety on detached worktrees.
+SKILL_DIR="plugins/harness/skills/github-review"
+[ -d "$SKILL_DIR" ] || SKILL_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/harness/skills/github-review"
+
+if [ ! -f "$SKILL_DIR/scripts/helpers.sh" ]; then
+  echo "ERROR: helpers.sh not found at $SKILL_DIR/scripts/helpers.sh" >&2
+  echo "The skill must be invoked from the repo root (or a worktree of it)." >&2
+  exit 1
+fi
+source "$SKILL_DIR/scripts/helpers.sh"
 ```
+
+Why not `dirname "$(realpath "$0")"`? In an interactive shell `$0` is the
+shell name (e.g. `bash`), so `realpath "$0"` returns `/usr/bin/bash` and
+the source path resolves to `/usr/bin/scripts/helpers.sh` — a spurious
+file-not-found that masks every subsequent step. Hard-coding the
+repo-relative path is more predictable for a skill whose entry point is
+always the repo root.
 
 `scripts/helpers.sh` defines `paginated_review_threads_query` (used in
 Steps 1, 2B, and 7.1) and `extract_trailer` (used in Step 1).
@@ -159,45 +189,13 @@ write operations (commit, push) still happen on the current `git`
 checkout.** This step enforces that the current branch matches the PR's
 head ref so fixes can never accidentally land on the wrong branch.
 
-```bash
-USER_SUPPLIED_PR_NUMBER="${USER_SUPPLIED_PR_NUMBER:-${1:-}}"
+Resolve `PR_NUMBER` from `USER_SUPPLIED_PR_NUMBER` (env var or `$1`) or
+fall back to `gh pr view --json number`. Then derive `REPO` / `OWNER` /
+`NAME` / `BASE_REF` / `HEAD_REF`. Abort if the current branch does not
+match `HEAD_REF` — fixes would otherwise land on the wrong branch.
 
-if [ -n "$USER_SUPPLIED_PR_NUMBER" ]; then
-  PR_NUMBER="$USER_SUPPLIED_PR_NUMBER"
-else
-  PR_NUMBER=$(gh pr view --json number --jq .number 2>/dev/null)
-fi
-
-if [ -z "${PR_NUMBER:-}" ]; then
-  echo "ERROR: No PR found. Either:" >&2
-  echo "  1) Run from a branch that has an open PR, or" >&2
-  echo "  2) Set USER_SUPPLIED_PR_NUMBER=<number> AND check out the PR's head branch" >&2
-  echo "     (or use a worktree on that branch)." >&2
-  exit 1
-fi
-
-REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-OWNER=${REPO%%/*}
-NAME=${REPO#*/}
-BASE_REF=$(gh pr view "$PR_NUMBER" --json baseRefName --jq .baseRefName)
-HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName --jq .headRefName)
-
-# Safety guard — current branch MUST match the PR's head ref.
-CURRENT_BRANCH=$(git branch --show-current)
-if [ "$CURRENT_BRANCH" != "$HEAD_REF" ]; then
-  echo "ERROR: Current branch is '$CURRENT_BRANCH' but PR #$PR_NUMBER head is '$HEAD_REF'." >&2
-  echo "Fixes would commit + push to the wrong branch." >&2
-  echo "Either:" >&2
-  echo "  1) git switch '$HEAD_REF' (if no other in-progress work blocks it), or" >&2
-  echo "  2) Create a worktree on the PR branch:" >&2
-  echo "       git worktree add .claude/worktrees/$HEAD_REF '$HEAD_REF'" >&2
-  echo "       cd .claude/worktrees/$HEAD_REF" >&2
-  echo "     and re-run the skill from there." >&2
-  exit 1
-fi
-
-echo "Working on PR #$PR_NUMBER (repo: $REPO, base: $BASE_REF, head: $HEAD_REF)"
-```
+See `references/input-resolution.md` for the full bash, the worktree
+recipe, and the per-error-case prompts.
 
 ## Step 1 — Resolve `PR_BASE` and derive watermarks from commit trailers
 
@@ -209,28 +207,22 @@ base-branch renames and stacked PRs. This step also reconciles the
 `references/commit-trailers.md` for the trailer schema and the
 reconciliation rationale.
 
-```bash
-git fetch origin "$BASE_REF" --no-tags
-PR_BASE=$(git merge-base HEAD "origin/$BASE_REF")
+Operations:
 
-PROCESSED_CLAUDE_IDS=$(extract_trailer "GitHub-Review-Processed-Claude")
-SUPERSEDED_CLAUDE_IDS=$(extract_trailer "GitHub-Review-Superseded-Claude")
-PROCESSED_CODEX_REVIEW_IDS=$(extract_trailer "GitHub-Review-Processed-Codex-Reviews")
-PROCESSED_CODEX_INLINE_IDS=$(extract_trailer "GitHub-Review-Processed-Codex-Inline")
-CLOSED_CODEX_THREADS=$(extract_trailer "Closes-Codex-Threads")
-PROCESSED_HUMAN_ISSUE_IDS=$(extract_trailer "GitHub-Review-Processed-Human-Issue")
-PROCESSED_HUMAN_INLINE_IDS=$(extract_trailer "GitHub-Review-Processed-Human-Inline")
+1. `git fetch origin "$BASE_REF" --no-tags`; `PR_BASE=$(git merge-base
+HEAD "origin/$BASE_REF")`.
+2. Read each watermark via `extract_trailer "<key>"` (helper in
+   `scripts/helpers.sh`). Keys are listed in `references/commit-trailers.md`
+   § Trailer schema.
+3. Compute `CLAUDE_HANDLED_IDS = PROCESSED_CLAUDE_IDS ∪ SUPERSEDED_CLAUDE_IDS`.
+4. Reconcile `CLOSED_CODEX_THREADS` against live GraphQL state — drops
+   stale entries (push succeeded but reply/resolve failed).
 
-CLAUDE_HANDLED_IDS=$(printf '%s,%s' "$PROCESSED_CLAUDE_IDS" "$SUPERSEDED_CLAUDE_IDS" \
-  | tr ',' '\n' | awk 'NF' | sort -u | tr '\n' ',' | sed 's/,$//')
-
-# Reconcile CLOSED_CODEX_THREADS against live GraphQL state. Full logic +
-# rationale in references/commit-trailers.md § Step 1 — Reconciliation.
-```
-
-See `references/commit-trailers.md` for the reconciliation block, the full
-trailer schema, and the multi-line `Pattern-Files-Touched` continuation
-form.
+See `references/commit-trailers.md` § Step 1 — Reading trailers back via
+`extract_trailer` for the bash invocation, the full trailer schema, the
+multi-line `Pattern-Files-Touched` continuation form, and § Step 1 —
+Reconciliation against live GitHub state for the awk-based set-difference
+logic.
 
 ## Step 1.5 — Non-review CI gate
 
@@ -391,7 +383,7 @@ git diff --staged > "$DIFF_PATCH"
 # ... render findings table + diff into PROMPT_FILE
 
 # Invoke codex via the verify wrapper.
-"$SCRIPT_DIR/scripts/verify.sh" "$PROMPT_FILE" "$RESULT_JSON" "$EVENTS_LOG" "$STDERR_LOG"
+"$SKILL_DIR/scripts/verify.sh" "$PROMPT_FILE" "$RESULT_JSON" "$EVENTS_LOG" "$STDERR_LOG"
 CODEX_EXIT=$?
 
 # Classify result via the matrix (Step 5D).
@@ -436,6 +428,10 @@ push (so the cited commit SHA exists on origin).
 # 6.5 Stage explicitly.
 STAGED_FILES=()
 for f in "${TOUCHED_PATTERN_FILES[@]}"; do STAGED_FILES+=("$f"); done
+# INDEX_TOUCHED must be set whenever Step 6.4 updates docs/reviews/CLAUDE.md
+# — either appending a row for a new pattern (Step 6.3) OR rewriting an
+# existing row's Findings count / Last Updated (Step 6.2). See
+# references/pattern-kb.md § Step 6.4 for the invariant.
 [ "${INDEX_TOUCHED:-0}" -eq 1 ] && STAGED_FILES+=("docs/reviews/CLAUDE.md")
 [ "${#STAGED_FILES[@]}" -gt 0 ] && git add "${STAGED_FILES[@]}"
 git status --short
@@ -479,7 +475,11 @@ Issue-comment-level human findings have no thread; the reply in 6.8 is
 sufficient.
 
 ```bash
-for thread_id in $(list_thread_ids_to_close); do
+# Use process-substitution + while read for consistency with Step 6.8.
+# PRRT_ IDs have no embedded spaces today, but the for-in-$() form would
+# silently corrupt iteration if the format ever changed.
+while IFS= read -r thread_id; do
+  [ -z "$thread_id" ] && continue
   gh api graphql -f query='
     mutation($threadId:ID!) {
       resolveReviewThread(input:{threadId:$threadId}) {
@@ -487,7 +487,7 @@ for thread_id in $(list_thread_ids_to_close); do
       }
     }' -F threadId="$thread_id" \
     --jq '.data.resolveReviewThread.thread'
-done
+done < <(list_thread_ids_to_close)
 ```
 
 `list_thread_ids_to_close` returns thread IDs for all findings with
@@ -512,7 +512,7 @@ ALL_THREADS=$(paginated_review_threads_query) || {
 }
 
 UNRESOLVED_CONNECTOR_THREADS=$(jq '[.[] | select(
-  .comment_author_login == "chatgpt-codex-connector[bot]"
+  .comment_author_login == "chatgpt-codex-connector"
   and .isResolved == false
 )] | length' <<< "$ALL_THREADS")
 
@@ -594,6 +594,68 @@ path. Print a ⚠️ banner with `$ROUND`, `$REASON`, the path to
 `human_guidance_for_reason "$REASON"` recommendation. Then `exit 1`. See
 `references/cleanup-recovery.md` § Step 7.6 for the verbatim message
 HEREDOC and the per-`REASON` guidance strings.
+
+## Troubleshooting / Q&A
+
+When things break mid-loop, consult these quick recipes before reaching
+for `incident.md`. Each entry is "symptom → likely cause → fastest fix."
+
+1. **"Step 0 aborts: Current branch is X but PR #N head is Y."** Either
+   `git switch '<Y>'` (if no in-progress work blocks it), or create a
+   worktree at `.claude/worktrees/<Y>` and re-run from there. See
+   `references/input-resolution.md` § "Why explicit PR targeting still
+   requires a matching checkout" for the rationale.
+
+2. **"Codex verify aborts with `verify_timeout`."** External `timeout 300`
+   fired. Re-run; if recurrent, the staged diff may be too large (split
+   the cycle by reverting some fixes) or the codex CLI itself is hung
+   (`codex --version` to check). The abort directory at
+   `.harness-github-review/cycle-N-aborted/incident.md` records the
+   prompt and partial output.
+
+3. **"Codex verify aborts with `verify_error`."** Non-zero exit from
+   `codex exec` (not 124). Common cause: ChatGPT-account auth + explicit
+   `--model` flag (rejected). Verify wrapper omits `--model` per
+   auto-memory `feedback_codex_model_for_chatgpt_auth`. Read
+   `.harness-github-review/cycle-N-verify-stderr.log` for the exact
+   error string.
+
+4. **"Reconciliation says `STALE_THREAD_IDS` but threads look resolved on
+   GitHub."** GitHub API caching can lag a few seconds — re-run. If the
+   trailer keeps re-claiming closed threads, manually resolve via
+   `gh api graphql -f query='mutation { resolveReviewThread(input:{threadId:"PRRT_..."}) { thread { isResolved } } }'`
+   then re-run.
+
+5. **"Pre-commit hook keeps rejecting commitlint."** See
+   `references/commit-trailers.md` § Cycle-1 commitlint fixes. Common
+   nits: subject case (lowercase only), `Pattern-Files-Touched` line
+   length (use multi-line continuation), missing blank line before the
+   trailer block.
+
+6. **"Plugin cache out of sync with working tree."** After editing
+   SKILL.md or any `references/*.md`, re-sync the cache:
+   `cp -r plugins/harness/skills/github-review ~/.claude/plugins/cache/harness/harness-plugin/0.0.1/skills/`.
+   Skills are loaded from cache, not the working tree (when invoked via
+   `/harness-plugin:github-review`).
+
+7. **"Loop hits `max-rounds`."** 10 fix-cycles didn't reach clean. Either
+   reviewers found a class of bug the agent can't fix (escalate to human
+   review on the PR) or the verify gate is rejecting fixes spuriously
+   (read `cycle-N-verify-result.json` — look for `[UNADDRESSED Fk]`
+   findings to identify which finding never converged).
+
+8. **"Connector author shows as `chatgpt-codex-connector` not
+   `chatgpt-codex-connector[bot]`."** GraphQL strips the `[bot]` suffix,
+   REST keeps it. Filters consuming `paginated_review_threads_query`
+   output (Step 2B INLINE_TO_THREAD_MAP and Step 7.1's connector check)
+   match the bare login. See `scripts/helpers.sh` header for the full
+   table.
+
+9. **"Step 6.4 didn't update the index, even though pattern files
+   changed."** `INDEX_TOUCHED=1` must be set whenever any pattern entry
+   is appended (Step 6.2) or any new pattern is created (Step 6.3) — see
+   `references/pattern-kb.md` § Step 6.4. If the flag is unset,
+   Step 6.5's stage list excludes `docs/reviews/CLAUDE.md`.
 
 ## Cleanup, recovery & failsafe
 

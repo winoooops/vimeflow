@@ -75,7 +75,8 @@ cleanup_on_clean_exit() {
 }
 ```
 
-`loop_start_scan` runs at the start of Step 1 (BEFORE input resolution).
+`loop_start_scan` runs in the Bootstrap section, before Step 0 (input
+resolution). It must execute before any step reads or writes PR state.
 `cleanup_on_clean_exit` runs in Step 7.5.
 
 ## No `git stash`, by design

@@ -29,6 +29,9 @@ When appending findings to a pattern file, label the source so future readers ca
   this label.
 - `github-claude` — the Claude Code Review GitHub Action (`.github/workflows/claude-review.yml`).
   Posts an aggregated `## Claude Code Review` issue comment per push.
+- `github-human` — a human reviewer (PR author, maintainer, contributor) commenting on a PR.
+  Posted via `/issues/{pr}/comments` (top-level conversation) or `/pulls/{pr}/comments` (inline).
+  New entries from `/harness-plugin:github-review` Step 2D use this label.
 - `local-codex` — local `codex exec` runs (e.g. `npm run review` or post-fix verify in the
   github-review skill).
 
@@ -42,7 +45,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)         | code-quality   | 1        | 0    | 2026-04-14   |
 | [Testing Gaps](patterns/testing-gaps.md)                       | testing        | 8        | 1    | 2026-04-11   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md) | terminal       | 3        | 1    | 2026-04-09   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)   | code-quality   | 11       | 2    | 2026-04-29   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)   | code-quality   | 16       | 2    | 2026-04-29   |
 | [Accessibility](patterns/accessibility.md)                     | a11y           | 11       | 1    | 2026-04-10   |
 | [Async Race Conditions](patterns/async-race-conditions.md)     | react-patterns | 18       | 5    | 2026-04-29   |
 | [Command Injection](patterns/command-injection.md)             | security       | 5        | 1    | 2026-04-20   |
@@ -51,9 +54,9 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Preflight Checks](patterns/preflight-checks.md)               | error-handling | 1        | 0    | 2026-04-20   |
 | [CSP Configuration](patterns/csp-configuration.md)             | security       | 2        | 1    | 2026-04-09   |
 | [PTY Session Management](patterns/pty-session-management.md)   | backend        | 5        | 1    | 2026-04-09   |
-| [Git Operations](patterns/git-operations.md)                   | correctness    | 11       | 1    | 2026-04-29   |
+| [Git Operations](patterns/git-operations.md)                   | correctness    | 12       | 1    | 2026-04-29   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)   | editor         | 12       | 0    | 2026-04-11   |
-| [Error Surfacing](patterns/error-surfacing.md)                 | error-handling | 8        | 0    | 2026-04-29   |
+| [Error Surfacing](patterns/error-surfacing.md)                 | error-handling | 12       | 0    | 2026-04-29   |
 | [File Tree Paths](patterns/file-tree-paths.md)                 | files          | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                   | review-process | 5        | 0    | 2026-04-12   |
 | [E2E Testing](patterns/e2e-testing.md)                         | e2e-testing    | 9        | 1    | 2026-04-19   |
