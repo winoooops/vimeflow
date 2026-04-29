@@ -41,7 +41,6 @@ const TestResultsLive = ({
   const [expanded, setExpanded] = useState(false)
   const bodyId = useId()
 
-  const { passed, total } = snapshot.summary
   const dotClass = statusDotClass(snapshot.status)
 
   return (
@@ -53,6 +52,7 @@ const TestResultsLive = ({
         type="button"
         aria-expanded={expanded}
         aria-controls={bodyId}
+        aria-label={headerAriaLabel(snapshot)}
         onClick={(): void => setExpanded((v) => !v)}
         className="flex w-full cursor-pointer items-center gap-2 px-5 py-3 text-left"
       >
@@ -65,7 +65,7 @@ const TestResultsLive = ({
           aria-hidden
         />
         <span className="font-mono text-[10px] text-on-surface">
-          {passed}/{total}
+          {headerStatusText(snapshot)}
         </span>
         <span className="font-mono text-[10px] text-on-surface-variant/70">
           · {snapshot.runner}
@@ -246,6 +246,45 @@ const statusDotClass = (s: TestRunStatus): string => {
     case 'error':
       return 'bg-tertiary'
   }
+}
+
+// Visible header text in the slot the count badge would occupy.
+// pass/fail show the count; noTests and error replace the count with
+// a status word so the collapsed header doesn't read "0/0" for two
+// semantically different states (and so the distinction isn't carried
+// only by the dot color).
+const headerStatusText = (snapshot: TestRunSnapshot): string => {
+  switch (snapshot.status) {
+    case 'pass':
+    case 'fail':
+      return `${snapshot.summary.passed}/${snapshot.summary.total}`
+    case 'noTests':
+      return 'no tests'
+    case 'error':
+      return 'errored'
+  }
+}
+
+// Comprehensive accessible name for the collapsed-header button. Replaces
+// the visual text fragments for screen readers so the user hears the
+// status without depending on the dot color (which is aria-hidden).
+const headerAriaLabel = (snapshot: TestRunSnapshot): string => {
+  const { passed, failed, total } = snapshot.summary
+
+  const detail = ((): string => {
+    switch (snapshot.status) {
+      case 'pass':
+        return `${passed} of ${total} passed`
+      case 'fail':
+        return `${passed} of ${total} passed, ${failed} failed`
+      case 'noTests':
+        return 'no tests collected'
+      case 'error':
+        return 'runner errored'
+    }
+  })()
+
+  return `Tests, ${detail}, ${snapshot.runner}, ${formatDuration(snapshot.durationMs)}`
 }
 
 const groupIcon = (s: TestGroup['status']): string => {

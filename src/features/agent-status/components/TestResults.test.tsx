@@ -49,7 +49,7 @@ describe('TestResults — live header', () => {
     )
   })
 
-  test('noTests state shows 0/0', () => {
+  test('noTests state shows "no tests" status text (not 0/0)', () => {
     render(
       <TestResults
         snapshot={baseSnap({
@@ -59,19 +59,45 @@ describe('TestResults — live header', () => {
       />
     )
 
-    expect(screen.getByRole('button', { name: /tests/i })).toHaveTextContent(
-      '0/0'
-    )
+    const button = screen.getByRole('button', { name: /no tests collected/i })
+    expect(button).toHaveTextContent(/no tests/i)
+    expect(button).not.toHaveTextContent('0/0')
   })
 
-  test('error state header shows the runner and an error indicator', () => {
+  test('error state header shows "errored" text (not 0/0) and the runner', () => {
     render(
       <TestResults
         snapshot={baseSnap({ status: 'error', outputExcerpt: 'TS error' })}
       />
     )
-    const button = screen.getByRole('button', { name: /tests/i })
+    const button = screen.getByRole('button', { name: /runner errored/i })
+    expect(button).toHaveTextContent(/errored/i)
     expect(button).toHaveTextContent('vitest')
+    expect(button).not.toHaveTextContent('0/0')
+  })
+
+  test('header aria-label encodes status without relying on dot color', () => {
+    // pass: full count + runner + duration
+    const { rerender } = render(
+      <TestResults snapshot={baseSnap({ status: 'pass' })} />
+    )
+    expect(
+      screen.getByRole('button', { name: /47 of 47 passed/i })
+    ).toBeInTheDocument()
+
+    // fail: passed + failed counts
+    rerender(
+      <TestResults
+        snapshot={baseSnap({
+          status: 'fail',
+          summary: { passed: 45, failed: 2, skipped: 0, total: 47, groups: [] },
+        })}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: /45 of 47 passed, 2 failed/i })
+    ).toBeInTheDocument()
   })
 })
 
