@@ -17,6 +17,21 @@ pattern or creating a new file. See the spec at
 `docs/superpowers/specs/2026-04-09-review-knowledge-base-design.md` for the
 ingestion protocol.
 
+## Source labels
+
+When appending findings to a pattern file, label the source so future readers can trace which reviewer caught it:
+
+- `github-codex` — the old aggregated Codex GitHub Action (`.github/workflows/codex-review.yml`,
+  disabled as of [#111](https://github.com/winoooops/vimeflow/issues/111)). Existing entries with
+  this label remain as historical record; do **NOT** rewrite or relabel them.
+- `github-codex-connector` — the `chatgpt-codex-connector[bot]` GitHub App integration. Posts
+  inline review comments on PR diffs. New entries from `/harness-plugin:github-review` cycles use
+  this label.
+- `github-claude` — the Claude Code Review GitHub Action (`.github/workflows/claude-review.yml`).
+  Posts an aggregated `## Claude Code Review` issue comment per push.
+- `local-codex` — local `codex exec` runs (e.g. `npm run review` or post-fix verify in the
+  github-review skill).
+
 | Pattern                                                        | Category       | Findings | Refs | Last Updated |
 | -------------------------------------------------------------- | -------------- | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)               | security       | 20       | 2    | 2026-04-29   |
