@@ -138,7 +138,112 @@ Only proceed to Step 2 once all non-review CI is passing.
 
 ## Step 2: Poll both reviewers + parse findings
 
-(Filled in Tasks 5–6.)
+This step polls both reviewers, parses their findings, and prepares the per-cycle finding table that Step 3 will classify and Step 4 will fix.
+
+### Step 2A: Claude reviewer (issue comments, aggregated, no threads)
+
+**Poll:**
+
+```bash
+CLAUDE_COMMENTS_JSON=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+  --jq '[.[] | select(
+           .user.login == "github-actions[bot]"
+           and (.body | startswith("## Claude Code Review"))
+         )]')
+
+# Convert handled IDs to a jq-compatible JSON array.
+CLAUDE_HANDLED_JSON=$(jq -R 'split(",") | map(select(length > 0) | tonumber)' <<< "$CLAUDE_HANDLED_IDS")
+
+# Filter out already-handled comments. Take the latest by created_at — Claude
+# reviews are aggregated current-state, so older unprocessed comments are
+# stale-by-construction and should be marked superseded (Step 6 trailer).
+LATEST_CLAUDE=$(jq --argjson handled "$CLAUDE_HANDLED_JSON" '
+  [.[] | select(.id as $id | ($handled | index($id) | not))]
+  | sort_by(.created_at)
+  | last
+  | if . then . else null end
+' <<< "$CLAUDE_COMMENTS_JSON")
+
+# Compute superseded set: any unhandled Claude comment with created_at strictly
+# less than LATEST_CLAUDE.created_at. These will be added to the
+# GitHub-Review-Superseded-Claude trailer in Step 6.
+SUPERSEDED_THIS_CYCLE=$(jq --argjson handled "$CLAUDE_HANDLED_JSON" \
+  --argjson latest "$LATEST_CLAUDE" '
+  if $latest == null then []
+  else
+    [.[] | select(.id as $id | ($handled | index($id) | not))
+         | select(.created_at < $latest.created_at)
+         | .id]
+  end
+' <<< "$CLAUDE_COMMENTS_JSON")
+```
+
+Note `startswith` (not `contains`) — avoids matching human comments that quote the header.
+
+**Parse format** (verified on PR #109):
+
+```
+## Claude Code Review
+
+### 🟠 [HIGH] match_command recurses infinitely on cyclic npm script aliases
+
+📍 `/home/runner/work/vimeflow/vimeflow/src-tauri/src/agent/test_runners/matcher.rs` L103-108
+🎯 Confidence: 93%
+
+<finding body, possibly multi-paragraph, may include code blocks>
+
+<details><summary>💡 IDEA</summary>
+- **I — Intent:** ...
+- **D — Danger:** ...
+- **E — Explain:** ...
+- **A — Alternatives:** ...
+</details>
+
+---
+```
+
+Per finding, extracted from the body split on `---`:
+
+- `severity`: regex `### .* \[(\w+)\]` → group 1
+- `title`: same line, after `]`, trimmed to end-of-line
+- `file`: regex `` 📍 `([^`]+)` `` → resolve via path normalization (below)
+- `line_range`: regex `L(\d+)-(\d+)` (start, end)
+- `body`: text between the `🎯 Confidence` line and `<details>` (or `---` if no IDEA block)
+
+**Path normalization** must be deterministic and verify file existence:
+
+```python
+def resolve_claude_path(reported: str, repo_root: Path) -> str:
+    # Case 1: relative path that exists at repo_root
+    if not reported.startswith('/'):
+        if (repo_root / reported).exists():
+            return reported
+        # fall through to suffix-search
+
+    # Case 2 & 3: absolute path — try progressively shorter suffixes
+    parts = reported.lstrip('/').split('/')
+    for i in range(len(parts)):
+        suffix = '/'.join(parts[i:])
+        if (repo_root / suffix).exists():
+            return suffix
+
+    raise SkillError(f"path normalization failed: {reported!r} not found in {repo_root}")
+```
+
+Any unresolvable path = loud error. The skill must NOT silently fall back to e.g. `parts[-1]`.
+
+**Verdict regex** (at end of body, used for "review is clean" exit detection):
+
+```python
+CLAUDE_VERDICT_PATTERNS = [
+    r'(?im)^\s*\*\*Overall:\s*✅\s*patch is correct\*\*',
+    r'(?im)^\s*Overall:\s*✅\s*patch is correct\b',
+]
+def is_claude_clean(body: str) -> bool:
+    return any(re.search(p, body) for p in CLAUDE_VERDICT_PATTERNS)
+```
+
+Anchored to start-of-line; refuses to match quoted/embedded references inside finding bodies.
 
 ## Step 3: Empty-state classification
 
