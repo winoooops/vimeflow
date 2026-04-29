@@ -113,7 +113,7 @@ Helper-script extraction (e.g. `lib/codex-verify.sh`) is **not** in scope. The s
 
 ### 0. Input resolution
 
-The skill supports both current-branch operation and explicit PR targeting:
+The skill supports both current-branch operation and explicit PR targeting. **Explicit PR targeting only changes which PR is _read_ from — write operations (commit, push) still happen on the current `git` checkout.** Step 0 enforces that the current branch matches the PR's head ref so fixes can never accidentally land on the wrong branch.
 
 ```bash
 # If the user supplied a PR number, use it. Otherwise resolve the current
@@ -124,15 +124,37 @@ else
   PR_NUMBER=$(gh pr view --json number --jq .number 2>/dev/null)
 fi
 
+if [ -z "${PR_NUMBER:-}" ]; then
+  echo "ERROR: No PR found. Either:" >&2
+  echo "  1) Run from a branch that has an open PR, or" >&2
+  echo "  2) Set USER_SUPPLIED_PR_NUMBER=<number> AND check out the PR's head branch" >&2
+  echo "     (or use a worktree on that branch)." >&2
+  exit 1
+fi
+
 REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 OWNER=${REPO%%/*}
 NAME=${REPO#*/}
 BASE_REF=$(gh pr view "$PR_NUMBER" --json baseRefName --jq .baseRefName)
+HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName --jq .headRefName)
+
+# Safety guard — current branch MUST match the PR's head ref. Otherwise commit
+# and push would land on the wrong branch.
+CURRENT_BRANCH=$(git branch --show-current)
+if [ "$CURRENT_BRANCH" != "$HEAD_REF" ]; then
+  echo "ERROR: Current branch is '$CURRENT_BRANCH' but PR #$PR_NUMBER head is '$HEAD_REF'." >&2
+  echo "Fixes would commit + push to the wrong branch." >&2
+  echo "Either:" >&2
+  echo "  1) git switch '$HEAD_REF' (if no other in-progress work blocks it), or" >&2
+  echo "  2) Create a worktree on the PR branch:" >&2
+  echo "       git worktree add .claude/worktrees/$HEAD_REF '$HEAD_REF'" >&2
+  echo "       cd .claude/worktrees/$HEAD_REF" >&2
+  echo "     and re-run the skill from there." >&2
+  exit 1
+fi
 ```
 
-If no current-branch PR exists and the user did not supply `PR_NUMBER`, the skill
-prints a clear error and exits before polling. Explicit PR targeting is required
-for the throwaway-PR self-test in the [Acceptance gate](#acceptance-gate-pre-merge).
+Explicit PR targeting (`USER_SUPPLIED_PR_NUMBER`) is required for the throwaway-PR self-test in the [Acceptance gate](#acceptance-gate-pre-merge); the self-test invokes the skill from a worktree whose branch matches the throwaway PR's head, satisfying the guard.
 
 ### 1. State persistence (in-memory + commit trailers)
 
@@ -279,8 +301,12 @@ NEW_REVIEWS_JSON=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate \
 # Step 2: connector inline comments scoped to those review IDs,
 # subtracting Processed-Codex-Inline. Note the all-string membership check
 # to dodge jq number-vs-string typing across REST endpoints.
+#
+# IMPORTANT: gh api's --jq flag accepts only a filter expression — it does NOT
+# pass through other jq flags like --argjson. We must pipe gh api's raw output
+# to a separate jq invocation that accepts --argjson.
 gh api "repos/$REPO/pulls/$PR_NUMBER/comments" --paginate \
-  --jq --argjson rids "$UNPROCESSED_REVIEW_IDS" \
+  | jq --argjson rids "$UNPROCESSED_REVIEW_IDS" \
        --argjson done_inline "$PROCESSED_INLINE_IDS" '
     ($rids | map(tostring)) as $ridset |
     ($done_inline | map(tostring)) as $doneset |
@@ -339,33 +365,117 @@ Body parsing:
 - `title`: regex `\*\*<sub>.*?</sub>\s+(.+?)\*\*` → group 1, trimmed
 - `body`: text between the title line and `Useful? React with 👍 / 👎.`
 
-**Thread ID lookup** for connector inline comments (REST doesn't return thread IDs):
+**Thread ID lookup** for connector inline comments (REST doesn't return thread IDs).
+
+The query below shows **only the first page**. The implementation MUST be page-aware — copy-pasting the example without pagination on `reviewThreads` and per-thread `comments` will silently lose comments that fall outside the first window. PRs with many review rounds easily exceed 100 threads; threads with many replies easily exceed 20 comments.
+
+Define a single named helper, `paginated_review_threads_query`, that handles pagination once. Both Step 2 (thread-id lookup) and Step 7.1 (unresolved-thread exit check) reuse it:
 
 ```bash
-gh api graphql -f query='
-  query($owner:String!, $name:String!, $pr:Int!) {
-    repository(owner:$owner, name:$name) {
-      pullRequest(number:$pr) {
-        reviewThreads(first:100) {
-          nodes {
-            id
-            isResolved
-            comments(first:20) {
-              nodes { databaseId author { login } }
+# paginated_review_threads_query — returns a flat JSON array of
+# {thread_id, comment_databaseId, comment_author_login, isResolved} entries
+# across ALL review threads and ALL comments per thread. The caller filters
+# by author / by ID set as needed.
+paginated_review_threads_query() {
+  local cursor=""
+  local result="[]"
+
+  while :; do
+    # First page: cursor is empty → omit `after`. Subsequent pages: pass cursor.
+    local page_json
+    if [ -z "$cursor" ]; then
+      page_json=$(gh api graphql -f query='
+        query($owner:String!, $name:String!, $pr:Int!) {
+          repository(owner:$owner, name:$name) {
+            pullRequest(number:$pr) {
+              reviewThreads(first:100) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  id
+                  isResolved
+                  comments(first:50) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { databaseId author { login } }
+                  }
+                }
+              }
             }
-          }
-        }
-      }
-    }
-  }' -F owner="$OWNER" -F name="$REPO" -F pr="$PR_NUMBER" \
-  --jq '[.data.repository.pullRequest.reviewThreads.nodes
-         | .[] as $thread
-         | .comments.nodes[]
-         | select(.author.login == "chatgpt-codex-connector[bot]")
-         | {thread_id: $thread.id, comment_id: .databaseId, isResolved: $thread.isResolved}]'
+          }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER")
+    else
+      page_json=$(gh api graphql -f query='
+        query($owner:String!, $name:String!, $pr:Int!, $cursor:String!) {
+          repository(owner:$owner, name:$name) {
+            pullRequest(number:$pr) {
+              reviewThreads(first:100, after:$cursor) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  id
+                  isResolved
+                  comments(first:50) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { databaseId author { login } }
+                  }
+                }
+              }
+            }
+          }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER" -F cursor="$cursor")
+    fi
+
+    # Detect any thread whose comments page itself overflowed. If so, the
+    # implementation must extend by paging that specific thread's comments via
+    # a thread-scoped GraphQL query. For PR sizes typical to this project
+    # (<10 review rounds, <50 comments per thread), this branch is unreachable;
+    # raise a loud error if it fires.
+    local overflow
+    overflow=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+                    | select(.comments.pageInfo.hasNextPage == true)
+                    | .id]' <<< "$page_json")
+    if [ "$(jq 'length' <<< "$overflow")" -gt 0 ]; then
+      echo "ERROR: review thread(s) $overflow exceed 50-comment first page; per-thread pagination required but not yet implemented." >&2
+      return 1
+    fi
+
+    # Append flattened entries from this page.
+    result=$(jq -s '.[0] + .[1]' \
+      <(echo "$result") \
+      <(jq '[.data.repository.pullRequest.reviewThreads.nodes
+              | .[] as $thread
+              | .comments.nodes[]
+              | {thread_id: $thread.id, comment_databaseId: .databaseId,
+                 comment_author_login: .author.login, isResolved: $thread.isResolved}]' \
+            <<< "$page_json"))
+
+    # Advance cursor or exit.
+    local has_next
+    has_next=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<< "$page_json")
+    if [ "$has_next" != "true" ]; then
+      break
+    fi
+    cursor=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<< "$page_json")
+  done
+
+  echo "$result"
+}
 ```
 
-The query expands `comments(first:20)` and matches on `databaseId` so we don't rely on thread-comment ordering. The implementation must page through **all** review threads using `pageInfo { hasNextPage endCursor }`; if a target inline comment is not found in the first 100 threads, re-run with the next review-thread cursor until exhausted before loud-failing. If a thread has more than 20 comments and the target ID is not in the first page, the implementation must page that thread's comments (or retry with a higher `comments(first:N)` bound before failing). Any inline comment that fails to map after page-aware lookup is a loud error ("connector inline comment {id} not found in any review thread — data state anomaly").
+Step 2 uses it like:
+
+```bash
+ALL_THREAD_COMMENTS=$(paginated_review_threads_query)
+INLINE_TO_THREAD_MAP=$(jq '[.[] | select(.comment_author_login == "chatgpt-codex-connector[bot]")
+                            | {thread_id, comment_id: .comment_databaseId, isResolved}]' \
+                          <<< "$ALL_THREAD_COMMENTS")
+```
+
+After all pages exhausted: any inline-comment ID not present in `INLINE_TO_THREAD_MAP` is a loud error (`"connector inline comment {id} not found in any review thread — data state anomaly"`).
+
+Step 7.1 reuses the same function:
+
+```bash
+UNRESOLVED_CONNECTOR_COUNT=$(paginated_review_threads_query \
+  | jq '[.[] | select(.comment_author_login == "chatgpt-codex-connector[bot]"
+                      and .isResolved == false)] | length')
+```
 
 #### 2.3. Finding-table aggregation
 
@@ -848,22 +958,30 @@ zh-CN mirror is the same content translated to match existing CHANGELOG.zh-CN st
 
 This PR cannot merge until the skill is self-tested end-to-end:
 
-1. Implement the rewrite + workflow disable + `.gitignore` changes on a feature branch.
-2. Open a separate **throwaway PR against `main`** containing:
+1. Implement the rewrite + workflow disable + `.gitignore` changes on the feature branch (`fix/111-github-review-connector`). The feature branch is the **source of the updated plugin** — it is NOT the working tree where self-test fixes get committed.
+2. Sync the host-wide plugin cache from the feature branch's `plugins/harness/skills/github-review/SKILL.md` to `~/.claude/plugins/cache/harness/skills/github-review/SKILL.md` (or run `/plugin install harness-plugin@harness`). This makes the new skill available to any Claude Code session regardless of cwd.
+3. Open a separate **throwaway PR against `main`** containing:
    - One deliberate HIGH-class bug (Claude will catch it).
    - One P1-class inline-worthy bug (chatgpt-codex-connector will catch it).
-3. From the feature branch (or its installed plugin), run `/harness-plugin:github-review` against the throwaway PR (specify PR number explicitly).
-4. Verify against issue #111's acceptance list:
+4. Run the skill **from a worktree (or checkout) whose current branch matches the throwaway PR's head ref**, not from the feature branch. The Step 0 branch guard requires `current_branch == HEAD_REF`; otherwise the skill aborts. Suggested pattern (per `rules/common/worktrees.md`):
+   ```bash
+   # From the feature-branch primary checkout
+   git worktree add .claude/worktrees/test-throwaway-for-111 -b test/throwaway-for-111 origin/main
+   # … push deliberate-bug commit, open throwaway PR, get $THROWAWAY_PR_NUMBER, then …
+   cd .claude/worktrees/test-throwaway-for-111
+   /harness-plugin:github-review "$THROWAWAY_PR_NUMBER"
+   ```
+5. Verify against issue #111's acceptance list:
    - Skill surfaces inline P1/P2 from connector as actionable findings (case 2)
    - Skill detects new connector reviews via processed-set diff (no silent empty)
    - Codex verify gates the commit; staged diff fed via embedded inline (≤500 lines) or file reference (>500)
    - Connector threads receive reply + resolveReviewThread; GraphQL `isResolved=true` on GitHub
    - Pattern append lands in correct file with `same commit` reference
    - Trailers (`Processed-Claude` / `Processed-Codex-Reviews` / `Processed-Codex-Inline` / `Closes-Codex-Threads` / `Pattern-Files-Touched`) are well-formed and parseable by the next-cycle derivation step
-5. Close throwaway PR (no merge needed).
-6. Capture self-test output (skill log + final commit on throwaway branch) as evidence in this PR's body.
+6. Close throwaway PR (no merge needed). Remove the worktree and delete the local + remote throwaway branch.
+7. Capture self-test output (skill log + final commit on the throwaway branch via `git log` from the worktree before removal) as evidence in this PR's body. Copy artifact files OUT of the worktree to the feature-branch primary checkout's gitignored `.harness-github-review/acceptance-evidence/` before removing the worktree.
 
-`.harness-github-review/cycle-N-*` artifacts from the throwaway run should be inspected, not committed.
+`.harness-github-review/cycle-N-*` artifacts from the throwaway run live in the **worktree** (not the feature-branch checkout) until they are explicitly copied out — they should be inspected, not committed.
 
 Reviewer should not approve this PR until the self-test evidence is posted.
 
