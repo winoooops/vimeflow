@@ -24,6 +24,103 @@ The old aggregated `openai/codex-action@v1` workflow (`.github/workflows/codex-r
 - **State persistence:** Git commit-message trailers (no `.json` state file). Cycle start derives processed sets via `git log "$PR_BASE..HEAD"`.
 - **Per-cycle artifacts:** under `.harness-github-review/` (gitignored). See § Cleanup.
 
+## Helpers
+
+The skill defines bash helper functions reused across multiple steps. They are sourced at the start of the skill bootstrap so any later step can call them. Step 1 (reconciliation) and Step 2B (thread-id lookup) and Step 7.1 (unresolved-thread exit check) all share `paginated_review_threads_query`.
+
+### `paginated_review_threads_query`
+
+GraphQL pagination is page-aware: review threads come back 100 per page; per-thread comments come back 50 per page. The helper walks every review-threads page and returns a flat JSON array of `{thread_id, comment_databaseId, comment_author_login, isResolved}` entries — caller filters by author / by ID set as needed.
+
+```bash
+# Returns a flat JSON array of {thread_id, comment_databaseId,
+# comment_author_login, isResolved} entries across ALL review threads and
+# ALL comments per thread. Caller filters by author / by ID set as needed.
+paginated_review_threads_query() {
+  local cursor=""
+  local result="[]"
+
+  while :; do
+    local page_json
+    if [ -z "$cursor" ]; then
+      page_json=$(gh api graphql -f query='
+        query($owner:String!, $name:String!, $pr:Int!) {
+          repository(owner:$owner, name:$name) {
+            pullRequest(number:$pr) {
+              reviewThreads(first:100) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  id
+                  isResolved
+                  comments(first:50) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { databaseId author { login } }
+                  }
+                }
+              }
+            }
+          }
+        }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER")
+    else
+      page_json=$(gh api graphql -f query='
+        query($owner:String!, $name:String!, $pr:Int!, $cursor:String!) {
+          repository(owner:$owner, name:$name) {
+            pullRequest(number:$pr) {
+              reviewThreads(first:100, after:$cursor) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  id
+                  isResolved
+                  comments(first:50) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { databaseId author { login } }
+                  }
+                }
+              }
+            }
+          }
+        }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER" -F cursor="$cursor")
+    fi
+
+    # Warn if any thread's comments page overflowed first page (50). This is
+    # not fatal — connector original inline comments are typically the thread's
+    # first comment and live in the first page. The loud-fail at lookup time
+    # (after all pages exhausted) catches the rare case where a target inline
+    # comment id ends up beyond the first 50 thread-comments.
+    local overflow
+    overflow=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+                    | select(.comments.pageInfo.hasNextPage == true)
+                    | .id]' <<< "$page_json")
+    if [ "$(jq 'length' <<< "$overflow")" -gt 0 ]; then
+      echo "WARNING: review thread(s) $overflow have more than 50 comments;" >&2
+      echo "         per-thread pagination not implemented. If a target inline" >&2
+      echo "         comment id is missing from the resulting map, the lookup" >&2
+      echo "         loud-fail at Step 2B will catch it." >&2
+    fi
+
+    # Append flattened entries from this page.
+    result=$(jq -s '.[0] + .[1]' \
+      <(echo "$result") \
+      <(jq '[.data.repository.pullRequest.reviewThreads.nodes
+              | .[] as $thread
+              | .comments.nodes[]
+              | {thread_id: $thread.id, comment_databaseId: .databaseId,
+                 comment_author_login: .author.login, isResolved: $thread.isResolved}]' \
+            <<< "$page_json"))
+
+    # Advance cursor or exit.
+    local has_next
+    has_next=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<< "$page_json")
+    if [ "$has_next" != "true" ]; then break; fi
+    cursor=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<< "$page_json")
+  done
+
+  echo "$result"
+}
+```
+
+`OWNER`, `NAME`, and `PR_NUMBER` are set in Step 0 — the helper is callable from Step 1 onward.
+
 ## Step 0: Input resolution
 
 The skill supports both current-branch operation and explicit PR targeting. **Explicit PR targeting only changes which PR is _read_ from — write operations (commit, push) still happen on the current `git` checkout.** This step enforces that the current branch matches the PR's head ref so fixes can never accidentally land on the wrong branch.
@@ -108,9 +205,61 @@ echo "Claude handled count:    $(echo "$CLAUDE_HANDLED_IDS" | tr ',' '\n' | awk 
 echo "Codex review handled:    $(echo "$PROCESSED_CODEX_REVIEW_IDS" | tr ',' '\n' | awk 'NF' | wc -l)"
 echo "Codex inline handled:    $(echo "$PROCESSED_CODEX_INLINE_IDS" | tr ',' '\n' | awk 'NF' | wc -l)"
 echo "Closed Codex threads:    $(echo "$CLOSED_CODEX_THREADS" | tr ',' '\n' | awk 'NF' | wc -l)"
+
+# Reconcile Closes-Codex-Threads trailer against live GitHub state.
+# Step 6 writes the Processed-Codex-Inline + Closes-Codex-Threads trailers
+# BEFORE Step 6.8 (reply) and 6.9 (resolveReviewThread) run. If push
+# succeeds but reply/resolve fails (transient network glitch, GitHub API
+# hiccup, etc.), the trailer says "closed" but GitHub disagrees — the
+# next cycle would skip the comment as processed yet Step 7 would see
+# the thread still unresolved, looping forever. Lazy reconciliation:
+# cross-check the trailer against live GraphQL state and drop stale
+# entries from the processed set so this cycle re-attempts them.
+if [ -n "$CLOSED_CODEX_THREADS" ]; then
+  # paginated_review_threads_query is defined in § Helpers above.
+  LIVE_THREAD_STATE=$(paginated_review_threads_query 2>/dev/null || echo "[]")
+
+  # Find thread IDs in trailer that are still unresolved on GitHub.
+  STALE_THREAD_IDS=$(jq -n \
+    --argjson live "$LIVE_THREAD_STATE" \
+    --arg trailer "$CLOSED_CODEX_THREADS" '
+    ($trailer | split(",") | map(select(length > 0))) as $claimed_closed
+    | [$live[] | select(.isResolved == false and (.thread_id as $tid | $claimed_closed | index($tid)))]
+    | [.[] | .thread_id]
+    | unique
+  ')
+
+  if [ "$(jq 'length' <<< "$STALE_THREAD_IDS")" -gt 0 ]; then
+    echo "Reconciliation: $(jq 'length' <<< "$STALE_THREAD_IDS") threads in Closes-Codex-Threads trailer are still unresolved on GitHub." >&2
+    echo "Treating them as un-processed; this cycle will re-attempt reply + resolve." >&2
+
+    # Find inline comment IDs whose thread is in STALE_THREAD_IDS, so we can
+    # remove them from PROCESSED_CODEX_INLINE_IDS.
+    STALE_COMMENT_IDS=$(jq -r --argjson live "$LIVE_THREAD_STATE" --argjson stale "$STALE_THREAD_IDS" '
+      [$live[] | select(.thread_id as $tid | $stale | index($tid)) | .comment_databaseId | tostring] | join(",")
+    ')
+
+    if [ -n "$STALE_COMMENT_IDS" ]; then
+      # Subtract STALE_COMMENT_IDS from PROCESSED_CODEX_INLINE_IDS.
+      PROCESSED_CODEX_INLINE_IDS=$(printf '%s\n%s\n' "$PROCESSED_CODEX_INLINE_IDS" "$STALE_COMMENT_IDS" \
+        | tr ',' '\n' | awk 'NF' | sort -u \
+        | grep -vxFf <(echo "$STALE_COMMENT_IDS" | tr ',' '\n' | awk 'NF') \
+        | tr '\n' ',' | sed 's/,$//')
+    fi
+
+    # Subtract stale thread IDs from CLOSED_CODEX_THREADS so Step 6's
+    # eventual close-set rebuild doesn't double-count.
+    CLOSED_CODEX_THREADS=$(printf '%s\n' "$CLOSED_CODEX_THREADS" \
+      | tr ',' '\n' | awk 'NF' \
+      | grep -vxFf <(jq -r '.[]' <<< "$STALE_THREAD_IDS") \
+      | tr '\n' ',' | sed 's/,$//')
+  fi
+fi
 ```
 
 The four `*_IDS` variables become inputs to Step 2's poll filtering. They feed `jq --argjson` calls as JSON arrays — convert via `jq -R 'split(",") | map(select(length > 0))' <<< "$VAR"` at the call site.
+
+The reconciliation pass exists because the trailers in Step 6.6 are written by `git commit` BEFORE Step 6.8/6.9 actually call the GitHub API. A failure there leaves the trailer "ahead" of live state — without reconciliation, the next cycle would see a `Processed-Codex-Inline` entry for an inline comment whose thread is still unresolved on GitHub, filter it out as already-processed, then watch Step 7's `UNRESOLVED_CONNECTOR_THREADS > 0` keep the loop spinning. Per the auto-memory **lazy reconciliation over shutdown hooks** rule: don't rely on a Step 6 shutdown ordering to keep the trailer in sync; reconcile on the next read instead.
 
 ## Step 1.5: Check non-review CI status
 
@@ -342,93 +491,11 @@ Body parsing:
 - `title`: regex `\*\*<sub>.*?</sub>\s+(.+?)\*\*` → group 1, trimmed
 - `body`: text between the title line and `Useful? React with 👍 / 👎.`
 
-**Thread ID lookup** for connector inline comments — REST does not return thread IDs, so we query GraphQL. Implementation **must be page-aware**. Define a single named helper, `paginated_review_threads_query`, that handles pagination once. Both Step 2 (thread-id lookup) and Step 7.1 (unresolved-thread exit check) reuse it:
+**Thread ID lookup** for connector inline comments — REST does not return thread IDs, so we query GraphQL. Implementation **must be page-aware**. The single named helper, `paginated_review_threads_query`, is defined in the § Helpers section above and handles pagination once. Both Step 2B (thread-id lookup, here) and Step 7.1 (unresolved-thread exit check) — and Step 1 (Closes-Codex-Threads reconciliation) — reuse it:
 
 ```bash
-# Returns a flat JSON array of {thread_id, comment_databaseId,
-# comment_author_login, isResolved} entries across ALL review threads and
-# ALL comments per thread. Caller filters by author / by ID set as needed.
-paginated_review_threads_query() {
-  local cursor=""
-  local result="[]"
-
-  while :; do
-    local page_json
-    if [ -z "$cursor" ]; then
-      page_json=$(gh api graphql -f query='
-        query($owner:String!, $name:String!, $pr:Int!) {
-          repository(owner:$owner, name:$name) {
-            pullRequest(number:$pr) {
-              reviewThreads(first:100) {
-                pageInfo { hasNextPage endCursor }
-                nodes {
-                  id
-                  isResolved
-                  comments(first:50) {
-                    pageInfo { hasNextPage endCursor }
-                    nodes { databaseId author { login } }
-                  }
-                }
-              }
-            }
-          }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER")
-    else
-      page_json=$(gh api graphql -f query='
-        query($owner:String!, $name:String!, $pr:Int!, $cursor:String!) {
-          repository(owner:$owner, name:$name) {
-            pullRequest(number:$pr) {
-              reviewThreads(first:100, after:$cursor) {
-                pageInfo { hasNextPage endCursor }
-                nodes {
-                  id
-                  isResolved
-                  comments(first:50) {
-                    pageInfo { hasNextPage endCursor }
-                    nodes { databaseId author { login } }
-                  }
-                }
-              }
-            }
-          }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER" -F cursor="$cursor")
-    fi
-
-    # Warn if any thread's comments page overflowed first page (50). This is
-    # not fatal — connector original inline comments are typically the thread's
-    # first comment and live in the first page. The loud-fail at lookup time
-    # (after all pages exhausted) catches the rare case where a target inline
-    # comment id ends up beyond the first 50 thread-comments.
-    local overflow
-    overflow=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]
-                    | select(.comments.pageInfo.hasNextPage == true)
-                    | .id]' <<< "$page_json")
-    if [ "$(jq 'length' <<< "$overflow")" -gt 0 ]; then
-      echo "WARNING: review thread(s) $overflow have more than 50 comments;" >&2
-      echo "         per-thread pagination not implemented. If a target inline" >&2
-      echo "         comment id is missing from the resulting map, the lookup" >&2
-      echo "         loud-fail at Step 2B will catch it." >&2
-    fi
-
-    # Append flattened entries from this page.
-    result=$(jq -s '.[0] + .[1]' \
-      <(echo "$result") \
-      <(jq '[.data.repository.pullRequest.reviewThreads.nodes
-              | .[] as $thread
-              | .comments.nodes[]
-              | {thread_id: $thread.id, comment_databaseId: .databaseId,
-                 comment_author_login: .author.login, isResolved: $thread.isResolved}]' \
-            <<< "$page_json"))
-
-    # Advance cursor or exit.
-    local has_next
-    has_next=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<< "$page_json")
-    if [ "$has_next" != "true" ]; then break; fi
-    cursor=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<< "$page_json")
-  done
-
-  echo "$result"
-}
-
 # Step 2 usage: build inline-comment-id → thread-id map.
+# (paginated_review_threads_query is defined in § Helpers, above.)
 ALL_THREAD_COMMENTS=$(paginated_review_threads_query)
 INLINE_TO_THREAD_MAP=$(jq '[.[] | select(.comment_author_login == "chatgpt-codex-connector[bot]")
                             | {thread_id, comment_id: .comment_databaseId, isResolved}]' \
@@ -1017,7 +1084,7 @@ After Step 6 commits + pushes (or after Step 3 returns `EXIT_CLEAN` / `POLL_NEXT
 
 ### 7.1: Check connector unresolved threads via GraphQL
 
-Reuse the `paginated_review_threads_query` helper defined in Step 2B (no separate inline GraphQL query — that would re-introduce the unpaginated-bounded-query bug):
+Reuse the `paginated_review_threads_query` helper defined in § Helpers (no separate inline GraphQL query — that would re-introduce the unpaginated-bounded-query bug):
 
 ```bash
 UNRESOLVED_CONNECTOR_THREADS=$(paginated_review_threads_query \
