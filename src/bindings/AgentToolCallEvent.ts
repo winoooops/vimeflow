@@ -35,4 +35,11 @@ export type AgentToolCallEvent = {
    * Execution duration in milliseconds
    */
   durationMs: bigint
+  /**
+   * True when this is a Write/Edit on a path that matches a known
+   * test-file convention (e.g. `*.test.ts`, `*_test.rs`). Frontend
+   * uses this to render the activity feed glyph and verb without
+   * needing to glob the path itself.
+   */
+  isTestFile: boolean
 }

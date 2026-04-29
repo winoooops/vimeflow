@@ -15,14 +15,14 @@ interface AgentStatusPanelProps {
   sessionId: string | null
   cwd: string
   onOpenDiff: (file: ChangedFile) => void
+  onOpenFile?: (path: string) => void
 }
-
-const placeholderTests = { passed: 0, failed: 0, total: 0 }
 
 export const AgentStatusPanel = ({
   sessionId,
   cwd,
   onOpenDiff,
+  onOpenFile = undefined,
 }: AgentStatusPanelProps): ReactElement => {
   const status = useAgentStatus(sessionId)
   const events = useActivityEvents(status)
@@ -92,11 +92,7 @@ export const AgentStatusPanel = ({
               onRetry={refresh}
               onSelect={onOpenDiff}
             />
-            <TestResults
-              passed={placeholderTests.passed}
-              failed={placeholderTests.failed}
-              total={placeholderTests.total}
-            />
+            <TestResults snapshot={status.testRun} onOpenFile={onOpenFile} />
           </div>
           <ActivityFooter
             totalDurationMs={status.cost?.totalDurationMs ?? 0}

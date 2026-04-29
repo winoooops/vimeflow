@@ -8,6 +8,7 @@ import type {
   AgentStatusEvent,
   AgentToolCallEvent,
   RecentToolCall,
+  TestRunSnapshot,
 } from '../types'
 
 // Backend cap for the sliding window of completed tool calls. The
@@ -37,6 +38,7 @@ const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
   rateLimits: null,
   toolCalls: { total: 0, byType: {}, active: null },
   recentToolCalls: [],
+  testRun: null,
 })
 
 /** Stop all agent watchers for a given session (best-effort, logs on failure) */
@@ -163,8 +165,10 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       void handleDetection(sessionId)
     }, DETECTION_POLL_MS)
 
-    // Run immediately on mount
-    void handleDetection(sessionId)
+    // Note: the initial detection call is fired by the subscribe useEffect
+    // *after* listeners are attached. Triggering it here would race with
+    // subscribe() and potentially fire start_agent_watcher before the
+    // test-run listener is attached, missing the latest-of-replay snapshot.
 
     return (): void => {
       clearInterval(interval)
@@ -292,6 +296,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
               status: p.status,
               durationMs: Number(p.durationMs) || null,
               timestamp: p.timestamp,
+              isTestFile: p.isTestFile,
             }
 
             setStatus((prev) => {
@@ -318,6 +323,25 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       )
 
       addUnlisten(unlistenToolCall)
+
+      // test-run listener — must be attached before start_agent_watcher fires.
+      // Without a backend snapshot cache in v1, missing the latest-of-replay
+      // batch from session start would lose the snapshot entirely.
+      const unlistenTestRun = await listen<TestRunSnapshot>(
+        'test-run',
+        (event) => {
+          if (event.payload.sessionId !== resolvePtyId()) {
+            return
+          }
+
+          setStatus((prev) => ({
+            ...prev,
+            testRun: event.payload,
+          }))
+        }
+      )
+
+      addUnlisten(unlistenTestRun)
     }
 
     // After all listeners are active, trigger a detection poll to sync

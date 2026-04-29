@@ -162,6 +162,25 @@ export const WorkspaceView = (): ReactElement => {
     [editorBuffer.isDirty, openFileSafely, setPendingFilePathSynced]
   )
 
+  // Open a test file from the activity panel. Mirrors handleFileSelect's
+  // dirty-state guard so clicking a test result row never silently
+  // discards unsaved editor changes — the same unsaved-dialog flow
+  // (handleSave / handleDiscard / handleCancel) resumes the pending
+  // open against pendingFilePathRef once the user picks an action.
+  const handleOpenTestFile = useCallback(
+    (filePath: string): void => {
+      if (editorBuffer.isDirty) {
+        setPendingFilePathSynced(filePath)
+        setShowUnsavedDialog(true)
+
+        return
+      }
+
+      void openFileSafely(filePath)
+    },
+    [editorBuffer.isDirty, openFileSafely, setPendingFilePathSynced]
+  )
+
   // Save current file and open pending file.
   //
   // Use TWO separate try/catch blocks so save-failure and open-failure
@@ -390,6 +409,7 @@ export const WorkspaceView = (): ReactElement => {
         sessionId={activeSessionId}
         cwd={activeSession?.workingDirectory ?? '.'}
         onOpenDiff={handleOpenDiff}
+        onOpenFile={handleOpenTestFile}
       />
 
       {/* Unsaved Changes Dialog — shows the CURRENTLY dirty file, not the

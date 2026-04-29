@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -15,6 +15,8 @@ use serde_json::Value;
 use tauri::Emitter;
 
 use super::types::{AgentToolCallEvent, ToolCallStatus};
+use crate::agent::test_runners::emitter::TestRunEmitter;
+use crate::agent::test_runners::matcher::{match_command, MatchedCommand};
 
 /// Poll interval for checking new transcript lines
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -53,8 +55,11 @@ pub(crate) fn validate_transcript_path(transcript_path: &str) -> Result<PathBuf,
 
 struct InFlightToolCall {
     started_at: Instant,
+    started_at_iso: String,
     tool: String,
     args: String,
+    is_test_file: bool,
+    test_match: Option<MatchedCommand>,
 }
 
 type InFlightToolCalls = HashMap<String, InFlightToolCall>;
@@ -67,6 +72,14 @@ pub struct TranscriptHandle {
 
 struct TranscriptWatcher {
     transcript_path: PathBuf,
+    /// Canonicalized workspace cwd captured when the tail_loop was spawned.
+    /// Load-bearing for the test-runner data flow (npm-script alias resolution
+    /// and per-file path resolution both consume this value inside the
+    /// spawned thread). Compared in `start_or_replace` so a same-transcript-
+    /// different-cwd start triggers a replace — without this check the tail
+    /// thread would keep using the stale snapshot and the test-runner parser
+    /// would resolve aliases / files against the wrong workspace.
+    cwd: Option<PathBuf>,
     handle: TranscriptHandle,
 }
 
@@ -114,22 +127,27 @@ impl TranscriptState {
         app_handle: tauri::AppHandle<R>,
         session_id: String,
         transcript_path: PathBuf,
+        cwd: Option<PathBuf>,
     ) -> Result<(), String> {
-        let _ = self.start_or_replace(app_handle, session_id, transcript_path)?;
+        let _ = self.start_or_replace(app_handle, session_id, transcript_path, cwd)?;
         Ok(())
     }
 
-    /// Start tailing when none is active, or switch to a newer transcript path.
+    /// Start tailing when none is active, or switch to a newer transcript path
+    /// or workspace cwd. The watcher identity is `(transcript_path, cwd)` —
+    /// either changing forces a replace so the tail thread runs against the
+    /// current workspace state.
     pub fn start_or_replace<R: tauri::Runtime>(
         &self,
         app_handle: tauri::AppHandle<R>,
         session_id: String,
         transcript_path: PathBuf,
+        cwd: Option<PathBuf>,
     ) -> Result<TranscriptStartStatus, String> {
         {
             let watchers = self.watchers.lock().expect("failed to lock watchers");
             if let Some(current) = watchers.get(&session_id) {
-                if current.transcript_path == transcript_path {
+                if current.transcript_path == transcript_path && current.cwd == cwd {
                     return Ok(TranscriptStartStatus::AlreadyRunning);
                 }
             }
@@ -139,19 +157,21 @@ impl TranscriptState {
             app_handle,
             session_id.clone(),
             transcript_path.clone(),
+            cwd.clone(),
         )?);
 
         let (old_handle, status) = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
 
             if let Some(current) = watchers.get(&session_id) {
-                if current.transcript_path == transcript_path {
+                if current.transcript_path == transcript_path && current.cwd == cwd {
                     (None, TranscriptStartStatus::AlreadyRunning)
                 } else {
                     let old = watchers.insert(
                         session_id,
                         TranscriptWatcher {
-                            transcript_path,
+                            transcript_path: transcript_path.clone(),
+                            cwd: cwd.clone(),
                             handle: new_handle
                                 .take()
                                 .expect("new transcript handle should be available"),
@@ -168,6 +188,7 @@ impl TranscriptState {
                     session_id,
                     TranscriptWatcher {
                         transcript_path,
+                        cwd,
                         handle: new_handle
                             .take()
                             .expect("new transcript handle should be available"),
@@ -220,6 +241,7 @@ pub fn start_tailing<R: tauri::Runtime>(
     app_handle: tauri::AppHandle<R>,
     session_id: String,
     transcript_path: PathBuf,
+    cwd: Option<PathBuf>,
 ) -> Result<TranscriptHandle, String> {
     let file = File::open(&transcript_path).map_err(|e| {
         format!(
@@ -233,7 +255,7 @@ pub fn start_tailing<R: tauri::Runtime>(
     let stop_clone = stop_flag.clone();
 
     let join_handle = std::thread::spawn(move || {
-        tail_loop(app_handle, session_id, file, stop_clone);
+        tail_loop(app_handle, session_id, cwd, file, stop_clone);
     });
 
     Ok(TranscriptHandle {
@@ -246,6 +268,7 @@ pub fn start_tailing<R: tauri::Runtime>(
 fn tail_loop<R: tauri::Runtime>(
     app_handle: tauri::AppHandle<R>,
     session_id: String,
+    cwd: Option<PathBuf>,
     file: File,
     stop_flag: Arc<AtomicBool>,
 ) {
@@ -259,6 +282,11 @@ fn tail_loop<R: tauri::Runtime>(
     // In-flight tool calls: tool_use_id -> call details
     let mut in_flight: InFlightToolCalls = HashMap::new();
 
+    // Replay-aware emitter — buffers test-run snapshots during the initial
+    // catch-up read and emits the latest one (only) on the first EOF. Once
+    // we're tailing live, every snapshot emits immediately.
+    let mut emitter = TestRunEmitter::new(app_handle.clone());
+
     // Buffer for partial lines
     let mut line_buf = String::new();
 
@@ -266,7 +294,9 @@ fn tail_loop<R: tauri::Runtime>(
         line_buf.clear();
         match reader.read_line(&mut line_buf) {
             Ok(0) => {
-                // No new data — sleep and retry
+                // First EOF marks the end of replay; subsequent EOFs are
+                // idempotent. After this, every submit emits live.
+                emitter.finish_replay();
                 std::thread::sleep(POLL_INTERVAL);
             }
             Ok(_) => {
@@ -274,7 +304,14 @@ fn tail_loop<R: tauri::Runtime>(
                 if line.is_empty() {
                     continue;
                 }
-                process_line(line, &session_id, &app_handle, &mut in_flight);
+                process_line(
+                    line,
+                    &session_id,
+                    cwd.as_deref(),
+                    &app_handle,
+                    &mut emitter,
+                    &mut in_flight,
+                );
             }
             Err(e) => {
                 log::warn!("Error reading transcript line: {}", e);
@@ -285,10 +322,12 @@ fn tail_loop<R: tauri::Runtime>(
 }
 
 /// Process a single JSONL line and emit events if it's a tool call
-fn process_line(
+fn process_line<R: tauri::Runtime>(
     line: &str,
     session_id: &str,
-    app_handle: &tauri::AppHandle<impl tauri::Runtime>,
+    cwd: Option<&Path>,
+    app_handle: &tauri::AppHandle<R>,
+    emitter: &mut TestRunEmitter<R>,
     in_flight: &mut InFlightToolCalls,
 ) {
     let value: Value = match serde_json::from_str(line) {
@@ -303,14 +342,22 @@ fn process_line(
 
     match line_type {
         "assistant" => {
-            process_assistant_message(&value, session_id, app_handle, in_flight);
+            process_assistant_message(&value, session_id, cwd, app_handle, in_flight);
         }
         "user" => {
-            process_user_message(&value, session_id, app_handle, in_flight);
+            process_user_message(&value, session_id, cwd, app_handle, emitter, in_flight);
         }
         "tool_result" => {
             let timestamp = extract_timestamp(&value);
-            process_tool_result(&value, session_id, app_handle, in_flight, &timestamp);
+            process_tool_result(
+                &value,
+                session_id,
+                cwd,
+                app_handle,
+                emitter,
+                in_flight,
+                &timestamp,
+            );
         }
         _ => {
             // Other message types — ignore
@@ -332,10 +379,11 @@ fn extract_timestamp(value: &Value) -> String {
         .unwrap_or_else(now_iso8601)
 }
 
-fn process_assistant_message(
+fn process_assistant_message<R: tauri::Runtime>(
     value: &Value,
     session_id: &str,
-    app_handle: &tauri::AppHandle<impl tauri::Runtime>,
+    cwd: Option<&Path>,
+    app_handle: &tauri::AppHandle<R>,
     in_flight: &mut InFlightToolCalls,
 ) {
     let content = match message_content_items(value) {
@@ -362,15 +410,43 @@ fn process_assistant_message(
             .unwrap_or("unknown")
             .to_string();
 
+        // Run the matcher BEFORE summarize_input truncates — the matcher
+        // needs the full untruncated command to tokenize correctly.
+        let test_match = if name == "Bash" {
+            item.get("input")
+                .and_then(|v| v.get("command"))
+                .and_then(|v| v.as_str())
+                .and_then(|cmd| match_command(cmd, cwd))
+        } else {
+            None
+        };
+
         let args = summarize_input(item.get("input"));
+
+        // Tag Write/Edit on test files. Use the FULL untruncated
+        // input.file_path — `args` is summarized to MAX_ARGS_LEN and
+        // long workspace paths could otherwise drop the suffix that
+        // makes a file recognizable as a test (e.g. `…ndle.test.ts`).
+        let is_test_file = if matches!(name.as_str(), "Write" | "Edit") {
+            item.get("input")
+                .and_then(|v| v.get("file_path"))
+                .and_then(|v| v.as_str())
+                .map(crate::agent::test_runners::test_file_patterns::is_test_file)
+                .unwrap_or(false)
+        } else {
+            false
+        };
 
         let now = Instant::now();
         in_flight.insert(
             id.clone(),
             InFlightToolCall {
                 started_at: now,
+                started_at_iso: timestamp.clone(),
                 tool: name.clone(),
                 args: args.clone(),
+                is_test_file,
+                test_match,
             },
         );
 
@@ -382,6 +458,7 @@ fn process_assistant_message(
             status: ToolCallStatus::Running,
             timestamp: timestamp.clone(),
             duration_ms: 0,
+            is_test_file,
         };
 
         if let Err(e) = app_handle.emit("agent-tool-call", &event) {
@@ -391,10 +468,12 @@ fn process_assistant_message(
 }
 
 /// Extract tool_result entries from a user message.
-fn process_user_message(
+fn process_user_message<R: tauri::Runtime>(
     value: &Value,
     session_id: &str,
-    app_handle: &tauri::AppHandle<impl tauri::Runtime>,
+    cwd: Option<&Path>,
+    app_handle: &tauri::AppHandle<R>,
+    emitter: &mut TestRunEmitter<R>,
     in_flight: &mut InFlightToolCalls,
 ) {
     let content = match message_content_items(value) {
@@ -406,16 +485,26 @@ fn process_user_message(
 
     for item in content {
         if is_tool_result_block(item) {
-            process_tool_result(item, session_id, app_handle, in_flight, &timestamp);
+            process_tool_result(
+                item,
+                session_id,
+                cwd,
+                app_handle,
+                emitter,
+                in_flight,
+                &timestamp,
+            );
         }
     }
 }
 
 /// Process a tool_result line and emit Done/Failed event
-fn process_tool_result(
+fn process_tool_result<R: tauri::Runtime>(
     value: &Value,
     session_id: &str,
-    app_handle: &tauri::AppHandle<impl tauri::Runtime>,
+    cwd: Option<&Path>,
+    app_handle: &tauri::AppHandle<R>,
+    emitter: &mut TestRunEmitter<R>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
@@ -443,6 +532,47 @@ fn process_tool_result(
     let duration_ms = call.started_at.elapsed().as_millis() as u64;
     let tool_name = call.tool;
     let args = call.args;
+    let is_test_file = call.is_test_file;
+
+    if let Some(matched) = call.test_match {
+        // Pull the captured Bash output content.
+        let content = extract_tool_result_content(value);
+        let captured = crate::agent::test_runners::types::CapturedOutput {
+            content,
+            is_error,
+        };
+        // Build the snapshot only when we have a workspace cwd. Falling
+        // back to `Path::new(".")` would canonicalise to the Tauri app
+        // process's cwd — NOT the user's workspace — so test-file groups
+        // would resolve against the wrong directory (silently producing
+        // non-clickable or misleadingly-scoped rows). When cwd is absent
+        // the standard agent-tool-call event still fires below; only the
+        // structured test-run snapshot is skipped.
+        if let Some(cwd_ref) = cwd {
+            let snapshot = crate::agent::test_runners::build::maybe_build_snapshot(
+                crate::agent::test_runners::build::BuildArgs {
+                    session_id,
+                    matched: &matched,
+                    started_at: &call.started_at_iso,
+                    finished_at: timestamp,
+                    instant_fallback: call.started_at.elapsed(),
+                    captured,
+                    cwd: cwd_ref,
+                },
+            );
+            if let Some(snap) = snapshot {
+                // Route through the replay-aware emitter — during the
+                // initial catch-up read this batches to latest-only;
+                // after first EOF it emits live.
+                emitter.submit(snap);
+            }
+        } else {
+            log::debug!(
+                "Skipping test-run snapshot for session {}: no workspace cwd resolved",
+                session_id
+            );
+        }
+    }
 
     let status = if is_error {
         ToolCallStatus::Failed
@@ -458,6 +588,7 @@ fn process_tool_result(
         status,
         timestamp: timestamp.to_string(),
         duration_ms,
+        is_test_file,
     };
 
     if let Err(e) = app_handle.emit("agent-tool-call", &event) {
@@ -559,18 +690,63 @@ fn days_to_date(days: u64) -> (u64, u64, u64) {
     (y, m, d)
 }
 
+/// Pull the textual `content` out of a tool_result JSON value.
+/// Handles both the simple-string shape and the array-of-blocks shape
+/// (where each block may carry `{type:"text", text:"..."}` payloads).
+fn extract_tool_result_content(value: &Value) -> String {
+    let raw = match value.get("content") {
+        Some(c) => c,
+        None => return String::new(),
+    };
+    if let Some(s) = raw.as_str() {
+        return s.to_string();
+    }
+    if let Some(arr) = raw.as_array() {
+        let mut out = String::new();
+        for block in arr {
+            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                    out.push_str(text);
+                    // Add a separator newline only if the block didn't
+                    // already end with one — terminal output frequently
+                    // does, and an unconditional `push('\n')` would
+                    // produce a double blank line at every block boundary
+                    // (the simple-string code path above doesn't add
+                    // anything, so this also brings the two paths into
+                    // alignment).
+                    if !out.ends_with('\n') {
+                        out.push('\n');
+                    }
+                }
+            }
+        }
+        return out;
+    }
+    String::new()
+}
+
 // --- Tauri Commands ---
 
-/// Start watching a transcript JSONL file for tool call events
+/// Start watching a transcript JSONL file for tool call events.
+///
+/// `cwd` is NOT a renderer-supplied parameter. It is derived server-side
+/// from `PtyState::get_cwd(session_id)` so a compromised renderer can't
+/// influence which workspace the test-runner parser reads `package.json`
+/// from or resolves test-file paths against. If the session has no live
+/// PTY (and therefore no resolved CWD), script-alias resolution and
+/// per-file path resolution silently degrade — direct binary matches
+/// (`vitest`, `cargo test`) still work.
 #[tauri::command]
 pub async fn start_transcript_watcher(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, TranscriptState>,
+    pty_state: tauri::State<'_, crate::terminal::PtyState>,
     session_id: String,
     transcript_path: String,
 ) -> Result<(), String> {
     let path = validate_transcript_path(&transcript_path)?;
-    state.start(app_handle, session_id, path)
+    let cwd_path = pty_state.get_cwd(&session_id).map(PathBuf::from);
+    state.start(app_handle, session_id, path, cwd_path)
 }
 
 /// Stop watching a transcript JSONL file
@@ -607,19 +783,109 @@ mod tests {
         let session_id = "session-1".to_string();
 
         let first_status = state
-            .start_or_replace(app.handle().clone(), session_id.clone(), first_path.clone())
+            .start_or_replace(app.handle().clone(), session_id.clone(), first_path.clone(), None)
             .expect("failed to start first transcript watcher");
         assert_eq!(first_status, TranscriptStartStatus::Started);
 
         let duplicate_status = state
-            .start_or_replace(app.handle().clone(), session_id.clone(), first_path)
+            .start_or_replace(app.handle().clone(), session_id.clone(), first_path, None)
             .expect("failed to check duplicate transcript watcher");
         assert_eq!(duplicate_status, TranscriptStartStatus::AlreadyRunning);
 
         let replaced_status = state
-            .start_or_replace(app.handle().clone(), session_id.clone(), second_path)
+            .start_or_replace(app.handle().clone(), session_id.clone(), second_path, None)
             .expect("failed to replace transcript watcher");
         assert_eq!(replaced_status, TranscriptStartStatus::Replaced);
+
+        state.stop(&session_id).expect("failed to stop watcher");
+    }
+
+    #[test]
+    fn transcript_state_threads_cwd_through() {
+        let app = tauri::test::mock_builder()
+            .build(tauri::generate_context!())
+            .expect("failed to build test app");
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let transcript_path = tmp.path().join("t.jsonl");
+        std::fs::write(&transcript_path, "").expect("failed to write transcript");
+        let cwd = tmp.path().to_path_buf();
+
+        let state = TranscriptState::new();
+        let session_id = "session-cwd".to_string();
+
+        let status = state
+            .start_or_replace(
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path,
+                Some(cwd),
+            )
+            .expect("failed to start watcher with cwd");
+        assert_eq!(status, TranscriptStartStatus::Started);
+
+        state.stop(&session_id).expect("failed to stop watcher");
+    }
+
+    #[test]
+    fn transcript_state_replaces_when_only_cwd_changes() {
+        // Regression: same transcript path with a different cwd must
+        // trigger Replace so the tail thread runs against the new
+        // workspace. Previously start_or_replace ignored cwd in the
+        // identity check and silently kept the stale snapshot.
+        let app = tauri::test::mock_builder()
+            .build(tauri::generate_context!())
+            .expect("failed to build test app");
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let transcript_path = tmp.path().join("t.jsonl");
+        std::fs::write(&transcript_path, "").expect("failed to write transcript");
+        let cwd_a = tempfile::tempdir().expect("failed to create cwd_a");
+        let cwd_b = tempfile::tempdir().expect("failed to create cwd_b");
+
+        let state = TranscriptState::new();
+        let session_id = "session-cwd-change".to_string();
+
+        let first = state
+            .start_or_replace(
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path.clone(),
+                Some(cwd_a.path().to_path_buf()),
+            )
+            .expect("failed to start with cwd_a");
+        assert_eq!(first, TranscriptStartStatus::Started);
+
+        // Same transcript path, same cwd → AlreadyRunning (not a change).
+        let same = state
+            .start_or_replace(
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path.clone(),
+                Some(cwd_a.path().to_path_buf()),
+            )
+            .expect("failed to detect already-running");
+        assert_eq!(same, TranscriptStartStatus::AlreadyRunning);
+
+        // Same transcript path, DIFFERENT cwd → must Replace.
+        let replaced = state
+            .start_or_replace(
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path.clone(),
+                Some(cwd_b.path().to_path_buf()),
+            )
+            .expect("failed to replace on cwd change");
+        assert_eq!(replaced, TranscriptStartStatus::Replaced);
+
+        // Same transcript path, cwd None → also distinct from Some(cwd_b).
+        let replaced_to_none = state
+            .start_or_replace(
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path,
+                None,
+            )
+            .expect("failed to replace on cwd → None transition");
+        assert_eq!(replaced_to_none, TranscriptStartStatus::Replaced);
 
         state.stop(&session_id).expect("failed to stop watcher");
     }
@@ -829,8 +1095,11 @@ mod tests {
             "toolu_abc".to_string(),
             InFlightToolCall {
                 started_at: start,
+                started_at_iso: "2026-04-28T12:00:00Z".to_string(),
                 tool: "Read".to_string(),
                 args: "/src/foo.ts".to_string(),
+                is_test_file: false,
+                test_match: None,
             },
         );
         assert!(in_flight.contains_key("toolu_abc"));

@@ -41,6 +41,49 @@ export interface AgentStatus {
   // Activity
   toolCalls: ToolCallState
   recentToolCalls: RecentToolCall[]
+
+  // Latest test run snapshot (null until the first test-run event arrives)
+  testRun: TestRunSnapshot | null
+}
+
+export type TestRunStatus = 'pass' | 'fail' | 'noTests' | 'error'
+
+export type TestGroupKind = 'file' | 'suite' | 'module'
+
+export type TestGroupStatus = 'pass' | 'fail' | 'skip'
+
+export interface TestGroup {
+  label: string
+  // Rust serializes Option<String> as null (not omitted). Use string | null
+  // so the boundary contract matches the wire shape exactly.
+  path: string | null
+  kind: TestGroupKind
+  passed: number
+  failed: number
+  skipped: number
+  total: number
+  status: TestGroupStatus
+}
+
+export interface TestRunSummary {
+  passed: number
+  failed: number
+  skipped: number
+  total: number
+  groups: TestGroup[]
+}
+
+export interface TestRunSnapshot {
+  sessionId: string // PTY session id
+  runner: string
+  commandPreview: string
+  startedAt: string
+  finishedAt: string
+  durationMs: number
+  status: TestRunStatus
+  // Rust serializes Option<String> as null (not omitted).
+  outputExcerpt: string | null
+  summary: TestRunSummary
 }
 
 export interface ContextWindowState {
@@ -83,4 +126,10 @@ export interface RecentToolCall {
   status: 'done' | 'failed'
   durationMs: number | null
   timestamp: string
+  /**
+   * True when this entry is a Write/Edit on a path that matches a
+   * known test-file convention. Sourced from the originating Rust
+   * AgentToolCallEvent — see `src-tauri/src/agent/test_runners/test_file_patterns.rs`.
+   */
+  isTestFile: boolean
 }

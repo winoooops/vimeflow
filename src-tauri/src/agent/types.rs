@@ -192,4 +192,9 @@ pub struct AgentToolCallEvent {
     pub timestamp: String,
     /// Execution duration in milliseconds
     pub duration_ms: u64,
+    /// True when this is a Write/Edit on a path that matches a known
+    /// test-file convention (e.g. `*.test.ts`, `*_test.rs`). Frontend
+    /// uses this to render the activity feed glyph and verb without
+    /// needing to glob the path itself.
+    pub is_test_file: bool,
 }

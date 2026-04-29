@@ -1,4 +1,4 @@
-mod agent;
+pub mod agent;
 mod filesystem;
 mod git;
 mod terminal;

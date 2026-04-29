@@ -64,7 +64,18 @@ impl AgentWatcherState {
 }
 
 /// Try to start transcript tailing, switching files if Claude reports a new path.
-fn maybe_start_transcript(app_handle: &tauri::AppHandle, session_id: &str, transcript_path: &str) {
+///
+/// `cwd` is queried fresh from PtyState at every call rather than captured
+/// by the outer `start_watching` closures. The user can `cd` mid-session
+/// without restarting the agent watcher; we want the test-runner parser to
+/// pick up the new workspace immediately. Combined with
+/// `TranscriptState::start_or_replace`'s (transcript_path, cwd) identity
+/// check, a cwd change triggers a Replace of the tail thread.
+fn maybe_start_transcript(
+    app_handle: &tauri::AppHandle,
+    session_id: &str,
+    transcript_path: &str,
+) {
     let transcript_path = match validate_transcript_path(transcript_path) {
         Ok(path) => path,
         Err(e) => {
@@ -77,11 +88,17 @@ fn maybe_start_transcript(app_handle: &tauri::AppHandle, session_id: &str, trans
         }
     };
 
+    let cwd = app_handle
+        .state::<crate::terminal::PtyState>()
+        .get_cwd(&session_id.to_string())
+        .map(PathBuf::from);
+
     let ts = app_handle.state::<TranscriptState>();
     match ts.start_or_replace(
         app_handle.clone(),
         session_id.to_string(),
         transcript_path.clone(),
+        cwd,
     ) {
         Ok(TranscriptStartStatus::Started) => {
             log::info!(
@@ -112,6 +129,10 @@ fn maybe_start_transcript(app_handle: &tauri::AppHandle, session_id: &str, trans
 ///
 /// Watches the parent directory and filters for events on the target file.
 /// Debounces at 100ms to avoid redundant processing.
+///
+/// CWD is intentionally NOT captured here. `maybe_start_transcript` queries
+/// PtyState fresh on every invocation so a `cd` mid-session updates the
+/// workspace seen by the test-runner parser.
 pub fn start_watching(
     app_handle: tauri::AppHandle,
     session_id: String,
@@ -304,30 +325,19 @@ pub async fn start_agent_watcher(
         path.display()
     );
 
-    // Debug-only file log for diagnosing watcher startup
-    #[cfg(debug_assertions)]
-    {
-        use std::io::Write;
-        use std::time::SystemTime;
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/tmp/vimeflow-debug.log")
-        {
-            let secs = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            let _ = writeln!(
-                f,
-                "[{}] [watcher] start: session={}, cwd={}, path={}",
-                secs,
-                session_id,
-                cwd,
-                path.display()
-            );
-        }
-    }
+    // Use the structured logger (already configured for the rest of this
+    // file) for startup diagnostics. The earlier debug-only file log at
+    // `/tmp/vimeflow-debug.log` was dropped: a fixed predictable path
+    // under /tmp without O_EXCL follows symlinks, allowing a local actor
+    // on a shared system to redirect appends, and Linux's default umask
+    // 022 left the file world-readable. Run with RUST_LOG=debug to see
+    // these lines.
+    log::debug!(
+        "Watcher startup detail: session={}, cwd={}, path={}",
+        session_id,
+        cwd,
+        path.display()
+    );
 
     // Stop any existing watcher for this session
     state.remove(&session_id);

@@ -426,3 +426,62 @@ describe('ActivityEvent — tooltip integration', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 })
+
+describe('ActivityEvent — test-file verb prefix', () => {
+  test('renders CREATED TEST label for Write of a test file', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          id: 'e1',
+          kind: 'write',
+          tool: 'Write',
+          body: 'src/foo.test.ts',
+          isTestFile: true,
+        })}
+        now={now}
+      />
+    )
+
+    expect(screen.getByText(/^CREATED TEST$/)).toBeInTheDocument()
+    // No emoji per CLAUDE.md no-emoji policy; the verb-prefixed text
+    // is the only differentiator.
+    expect(screen.queryByText(/🧪/)).not.toBeInTheDocument()
+  })
+
+  test('renders UPDATED TEST label for Edit of a test file', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          id: 'e2',
+          kind: 'edit',
+          tool: 'Edit',
+          body: 'src/foo.test.ts',
+          isTestFile: true,
+        })}
+        now={now}
+      />
+    )
+
+    expect(screen.getByText(/^UPDATED TEST$/)).toBeInTheDocument()
+    expect(screen.queryByText(/🧪/)).not.toBeInTheDocument()
+  })
+
+  test('regular Write event uses the kind-based label', () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          id: 'e3',
+          kind: 'write',
+          tool: 'Write',
+          body: 'src/foo.ts',
+          isTestFile: false,
+        })}
+        now={now}
+      />
+    )
+
+    expect(screen.queryByText(/created test/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/🧪/)).not.toBeInTheDocument()
+    expect(screen.getByText(/^WRITE$/)).toBeInTheDocument()
+  })
+})

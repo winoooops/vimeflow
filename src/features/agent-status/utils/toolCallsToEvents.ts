@@ -81,6 +81,7 @@ export const toolCallsToEvents = (
       timestamp: r.timestamp,
       status: r.status,
       durationMs: r.durationMs,
+      isTestFile: r.isTestFile,
     })
   }
 
