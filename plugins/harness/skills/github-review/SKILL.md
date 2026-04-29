@@ -392,14 +392,20 @@ paginated_review_threads_query() {
           }' -F owner="$OWNER" -F name="$NAME" -F pr="$PR_NUMBER" -F cursor="$cursor")
     fi
 
-    # Detect any thread whose comments page itself overflowed.
+    # Warn if any thread's comments page overflowed first page (50). This is
+    # not fatal — connector original inline comments are typically the thread's
+    # first comment and live in the first page. The loud-fail at lookup time
+    # (after all pages exhausted) catches the rare case where a target inline
+    # comment id ends up beyond the first 50 thread-comments.
     local overflow
     overflow=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]
                     | select(.comments.pageInfo.hasNextPage == true)
                     | .id]' <<< "$page_json")
     if [ "$(jq 'length' <<< "$overflow")" -gt 0 ]; then
-      echo "ERROR: review thread(s) $overflow exceed 50-comment first page; per-thread pagination required but not yet implemented." >&2
-      return 1
+      echo "WARNING: review thread(s) $overflow have more than 50 comments;" >&2
+      echo "         per-thread pagination not implemented. If a target inline" >&2
+      echo "         comment id is missing from the resulting map, the lookup" >&2
+      echo "         loud-fail at Step 2B will catch it." >&2
     fi
 
     # Append flattened entries from this page.
@@ -942,18 +948,34 @@ git push
 ### 6.8: Reply to each connector inline finding
 
 ```bash
-for finding in $(jq -c '.[] | select(.source == "codex-connector" and .status == "fixed")' <<< "$FINDINGS_JSON"); do
+# Reply to every connector finding processed this cycle — both fixed and
+# skipped. Skipped findings are intentional non-fixes (false positive, out
+# of scope per SCOPE BOUNDARY RULE) and need a rationale on the thread before
+# Step 6.9 resolves it; otherwise Step 7's unresolved-threads check would
+# never reach exit-clean.
+for finding in $(jq -c '.[] | select(.source == "codex-connector" and (.status == "fixed" or .status == "skipped"))' <<< "$FINDINGS_JSON"); do
   COMMENT_ID=$(jq -r '.source_comment_id' <<< "$finding")
   CYCLE_ID=$(jq -r '.cycle_id' <<< "$finding")
   TITLE=$(jq -r '.title' <<< "$finding")
+  STATUS=$(jq -r '.status' <<< "$finding")
   FIX_SUMMARY=$(jq -r '.fix_summary // ""' <<< "$finding")
 
-  REPLY_BODY=$(cat <<EOF
+  if [ "$STATUS" = "fixed" ]; then
+    REPLY_BODY=$(cat <<EOF
 Fixed in $COMMIT_SHA — $FIX_SUMMARY
 
 (github-review cycle ${ROUND}, finding ${CYCLE_ID})
 EOF
 )
+  else
+    # status == "skipped"
+    REPLY_BODY=$(cat <<EOF
+Skipped — $FIX_SUMMARY
+
+(github-review cycle ${ROUND}, finding ${CYCLE_ID})
+EOF
+)
+  fi
 
   gh api -X POST "repos/$REPO/pulls/$PR_NUMBER/comments/${COMMENT_ID}/replies" \
     -f body="$REPLY_BODY"
@@ -963,6 +985,9 @@ done
 ### 6.9: Resolve threads via GraphQL
 
 ```bash
+# Resolve threads for both fixed AND skipped connector findings. Skipped
+# threads got a rationale reply in Step 6.8; resolving them here closes the
+# loop so Step 7's exit check sees no lingering unresolved threads.
 for thread_id in $(list_thread_ids_to_close); do
   gh api graphql -f query='
     mutation($threadId:ID!) {
