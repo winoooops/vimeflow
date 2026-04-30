@@ -63,13 +63,27 @@ impl TxOutcome {
     }
 }
 
+/// Per-source timing state. Each source (notify, inline-init, poll-fallback)
+/// gets its own instance so we can correlate inter-event delta with the
+/// source that fired it.
 #[derive(Default)]
-struct EventDiag {
+struct EventTiming {
     last_event_at: Option<Instant>,
+}
+
+/// Cross-source transcript-path history. SHARED across all event sources
+/// in a watcher, so the speculative→resolved flip is detected even when
+/// the speculative path was first seen by the inline read and the
+/// resolved path is later picked up by notify or the poll fallback.
+/// Without this sharing, each source starts with `last_tx_path = None`
+/// and never observes the flip — `watcher.tx_path_change` would never
+/// fire for the cross-source case it is meant to diagnose.
+#[derive(Default)]
+struct PathHistory {
     last_tx_path: Option<String>,
     /// How many consecutive events have had the SAME transcript path
-    /// (with the SAME outcome) — high values indicate the bridge is
-    /// stuck waiting for Claude Code to resolve a speculative path.
+    /// across ALL sources — high values indicate the bridge is stuck
+    /// waiting for Claude Code to resolve a speculative path.
     same_path_repeat: u32,
 }
 
@@ -86,10 +100,15 @@ fn short_path(path: &str) -> String {
 }
 
 /// Emit the per-event diagnostic line. Gated by `cfg!(debug_assertions)`.
-/// Also tracks the running `last_tx_path` for path-flip detection and
-/// `same_path_repeat` for stuck-bridge visibility.
+///
+/// Reads per-source timing from `timing` and the cross-source path
+/// history from `path_history` (shared across all sources). The path
+/// history MUST be shared so the speculative→resolved flip — which
+/// frequently spans sources (e.g. inline reads the speculative path,
+/// notify sees the resolved one) — is detected.
 fn record_event_diag(
-    diag: &Mutex<EventDiag>,
+    timing: &Mutex<EventTiming>,
+    path_history: &Mutex<PathHistory>,
     source: &'static str,
     sid: &str,
     total: Duration,
@@ -101,33 +120,37 @@ fn record_event_diag(
     }
 
     let now = Instant::now();
-    let (dt, path_change, repeat) = {
-        let mut d = diag.lock().expect("watcher diag lock");
-        let dt = d
+    let dt = {
+        let mut t = timing.lock().expect("watcher timing lock");
+        let dt = t
             .last_event_at
             .map(|prev| now.duration_since(prev))
             .unwrap_or(Duration::ZERO);
-        d.last_event_at = Some(now);
+        t.last_event_at = Some(now);
+        dt
+    };
 
-        let path_change = match (tx_path, d.last_tx_path.as_deref()) {
+    let (path_change, repeat) = {
+        let mut h = path_history.lock().expect("watcher path-history lock");
+        let path_change = match (tx_path, h.last_tx_path.as_deref()) {
             (Some(new), Some(old)) if new != old => {
                 let old_owned = old.to_string();
-                d.last_tx_path = Some(new.to_string());
-                d.same_path_repeat = 1;
+                h.last_tx_path = Some(new.to_string());
+                h.same_path_repeat = 1;
                 Some(old_owned)
             }
             (Some(new), None) => {
-                d.last_tx_path = Some(new.to_string());
-                d.same_path_repeat = 1;
+                h.last_tx_path = Some(new.to_string());
+                h.same_path_repeat = 1;
                 None
             }
             (Some(_), Some(_)) => {
-                d.same_path_repeat = d.same_path_repeat.saturating_add(1);
+                h.same_path_repeat = h.same_path_repeat.saturating_add(1);
                 None
             }
             (None, _) => None,
         };
-        (dt, path_change, d.same_path_repeat)
+        (path_change, h.same_path_repeat)
     };
 
     if let Some(old) = path_change {
@@ -324,13 +347,18 @@ pub fn start_watching(
     let app_handle_for_poll = app_handle.clone();
     let stop_flag = Arc::new(AtomicBool::new(false));
 
-    // Diagnostic state — one EventDiag per source so we can correlate
-    // notify-vs-poll-vs-inline patterns in the log.
-    let notify_diag = Arc::new(Mutex::new(EventDiag::default()));
-    let poll_diag = Arc::new(Mutex::new(EventDiag::default()));
-    let inline_diag = Arc::new(Mutex::new(EventDiag::default()));
+    // Diagnostic state — per-source timing so we can correlate
+    // notify-vs-poll-vs-inline patterns in the log, and a SHARED
+    // path history so the speculative→resolved transcript-path flip is
+    // detected even when it spans sources (e.g. inline saw the
+    // speculative path, notify sees the resolved one).
+    let notify_timing = Arc::new(Mutex::new(EventTiming::default()));
+    let poll_timing = Arc::new(Mutex::new(EventTiming::default()));
+    let inline_timing = Arc::new(Mutex::new(EventTiming::default()));
+    let path_history = Arc::new(Mutex::new(PathHistory::default()));
 
-    let notify_diag_for_cb = notify_diag.clone();
+    let notify_timing_for_cb = notify_timing.clone();
+    let path_history_for_cb = path_history.clone();
 
     // Debounce interval — ignore events within 100ms of the last processed one
     let debounce_ms = 100;
@@ -405,7 +433,8 @@ pub fn start_watching(
         };
 
         record_event_diag(
-            &notify_diag_for_cb,
+            &notify_timing_for_cb,
+            &path_history_for_cb,
             "notify",
             &sid,
             started.elapsed(),
@@ -453,7 +482,8 @@ pub fn start_watching(
                     }
                 }
                 record_event_diag(
-                    &inline_diag,
+                    &inline_timing,
+                    &path_history,
                     "inline",
                     &initial_sid,
                     started.elapsed(),
@@ -473,7 +503,8 @@ pub fn start_watching(
         let poll_app = app_handle_for_poll;
         let poll_last = Arc::new(Mutex::new(String::new()));
         let poll_stop = stop_flag.clone();
-        let poll_diag_for_thread = poll_diag.clone();
+        let poll_timing_for_thread = poll_timing.clone();
+        let path_history_for_poll = path_history.clone();
         std::thread::spawn(move || {
             while !poll_stop.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_secs(3));
@@ -509,7 +540,8 @@ pub fn start_watching(
                 };
 
                 record_event_diag(
-                    &poll_diag_for_thread,
+                    &poll_timing_for_thread,
+                    &path_history_for_poll,
                     "poll",
                     &poll_sid,
                     started.elapsed(),
