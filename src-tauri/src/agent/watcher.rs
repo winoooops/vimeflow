@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{Emitter, Manager};
@@ -16,16 +16,174 @@ use tauri::{Emitter, Manager};
 use super::statusline::parse_statusline;
 use super::transcript::{validate_transcript_path, TranscriptStartStatus, TranscriptState};
 
+// ----------------------------------------------------------------------
+// Diagnostic logging (dev/debug builds only)
+//
+// Every event-processing callback emits a structured INFO line that
+// surrounds the existing WARN ("Skipping transcript tailing ...") with
+// enough context to diagnose freezes from `Vimeflow.log` alone:
+// source, inter-event delta, total processing duration, transcript-path
+// status, and a same-path repeat counter that captures Claude Code's
+// "speculative path → resolved path" flip pattern.
+//
+// Gated by `cfg!(debug_assertions)` so packaged release builds emit zero
+// extra log volume. The real WARN stays at WARN level untouched per the
+// user's directive that the warning frequency itself is signal.
+// ----------------------------------------------------------------------
+
+/// Outcome of a `maybe_start_transcript` call. Returned so the caller
+/// can record an accurate `tx_status` in the diagnostic log without
+/// re-walking the path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TxOutcome {
+    Started,
+    Replaced,
+    AlreadyRunning,
+    Missing,
+    OutsidePath,
+    NotFile,
+    StartFailed,
+    NoPath,
+    ParseError,
+}
+
+impl TxOutcome {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Started => "started",
+            Self::Replaced => "replaced",
+            Self::AlreadyRunning => "already_running",
+            Self::Missing => "missing",
+            Self::OutsidePath => "outside_path",
+            Self::NotFile => "not_file",
+            Self::StartFailed => "start_failed",
+            Self::NoPath => "no_path",
+            Self::ParseError => "parse_error",
+        }
+    }
+}
+
+#[derive(Default)]
+struct EventDiag {
+    last_event_at: Option<Instant>,
+    last_tx_path: Option<String>,
+    /// How many consecutive events have had the SAME transcript path
+    /// (with the SAME outcome) — high values indicate the bridge is
+    /// stuck waiting for Claude Code to resolve a speculative path.
+    same_path_repeat: u32,
+}
+
+fn short_sid(sid: &str) -> &str {
+    sid.get(..8).unwrap_or(sid)
+}
+
+fn short_path(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| s.get(..8).unwrap_or(s).to_string())
+        .unwrap_or_else(|| "?".to_string())
+}
+
+/// Emit the per-event diagnostic line. Gated by `cfg!(debug_assertions)`.
+/// Also tracks the running `last_tx_path` for path-flip detection and
+/// `same_path_repeat` for stuck-bridge visibility.
+fn record_event_diag(
+    diag: &Mutex<EventDiag>,
+    source: &'static str,
+    sid: &str,
+    total: Duration,
+    outcome: TxOutcome,
+    tx_path: Option<&str>,
+) {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+
+    let now = Instant::now();
+    let (dt, path_change, repeat) = {
+        let mut d = diag.lock().expect("watcher diag lock");
+        let dt = d
+            .last_event_at
+            .map(|prev| now.duration_since(prev))
+            .unwrap_or(Duration::ZERO);
+        d.last_event_at = Some(now);
+
+        let path_change = match (tx_path, d.last_tx_path.as_deref()) {
+            (Some(new), Some(old)) if new != old => {
+                let old_owned = old.to_string();
+                d.last_tx_path = Some(new.to_string());
+                d.same_path_repeat = 1;
+                Some(old_owned)
+            }
+            (Some(new), None) => {
+                d.last_tx_path = Some(new.to_string());
+                d.same_path_repeat = 1;
+                None
+            }
+            (Some(_), Some(_)) => {
+                d.same_path_repeat = d.same_path_repeat.saturating_add(1);
+                None
+            }
+            (None, _) => None,
+        };
+        (dt, path_change, d.same_path_repeat)
+    };
+
+    if let Some(old) = path_change {
+        log::info!(
+            "watcher.tx_path_change session={} from={} to={}",
+            short_sid(sid),
+            short_path(&old),
+            tx_path.map(short_path).unwrap_or_else(|| "(none)".into()),
+        );
+    }
+
+    let total_ms = total.as_millis();
+    let tx_path_short = tx_path.map(short_path).unwrap_or_else(|| "(none)".into());
+    if total_ms > 50 {
+        log::warn!(
+            "watcher.slow_event source={} session={} dt={}ms total={}ms tx_status={} tx_path={} repeat={}",
+            source,
+            short_sid(sid),
+            dt.as_millis(),
+            total_ms,
+            outcome.label(),
+            tx_path_short,
+            repeat,
+        );
+    } else {
+        log::info!(
+            "watcher.event source={} session={} dt={}ms total={}ms tx_status={} tx_path={} repeat={}",
+            source,
+            short_sid(sid),
+            dt.as_millis(),
+            total_ms,
+            outcome.label(),
+            tx_path_short,
+            repeat,
+        );
+    }
+}
+
 /// Handle to a running watcher — dropping it stops the watcher and polling thread
 pub struct WatcherHandle {
     _watcher: RecommendedWatcher,
     /// Signals the polling fallback thread to exit
     stop_flag: Arc<AtomicBool>,
+    /// Captured for diagnostic logging on drop (dev builds only)
+    session_id: String,
 }
 
 impl Drop for WatcherHandle {
     fn drop(&mut self) {
         self.stop_flag.store(true, Ordering::Relaxed);
+        if cfg!(debug_assertions) {
+            log::info!(
+                "watcher.handle.dropped session={}",
+                short_sid(&self.session_id)
+            );
+        }
     }
 }
 
@@ -61,6 +219,15 @@ impl AgentWatcherState {
         let watchers = self.watchers.lock().expect("failed to lock watchers");
         watchers.contains_key(session_id)
     }
+
+    /// Number of active watchers across all sessions. Used for the
+    /// diagnostic "active_watchers=N" log line — surfaces leaked
+    /// watchers from prior sessions that are still polling old
+    /// status.json files in the background.
+    fn active_count(&self) -> usize {
+        let watchers = self.watchers.lock().expect("failed to lock watchers");
+        watchers.len()
+    }
 }
 
 /// Try to start transcript tailing, switching files if Claude reports a new path.
@@ -75,8 +242,8 @@ fn maybe_start_transcript(
     app_handle: &tauri::AppHandle,
     session_id: &str,
     transcript_path: &str,
-) {
-    let transcript_path = match validate_transcript_path(transcript_path) {
+) -> TxOutcome {
+    let canonical = match validate_transcript_path(transcript_path) {
         Ok(path) => path,
         Err(e) => {
             log::warn!(
@@ -84,7 +251,17 @@ fn maybe_start_transcript(
                 session_id,
                 e
             );
-            return;
+            // Classify the failure for diagnostic logs. Substring matching
+            // mirrors the error strings in `validate_transcript_path`; if
+            // those strings change, this fallback returns NotFile rather
+            // than misclassifying.
+            return if e.contains("No such file") {
+                TxOutcome::Missing
+            } else if e.contains("access denied") {
+                TxOutcome::OutsidePath
+            } else {
+                TxOutcome::NotFile
+            };
         }
     };
 
@@ -97,30 +274,33 @@ fn maybe_start_transcript(
     match ts.start_or_replace(
         app_handle.clone(),
         session_id.to_string(),
-        transcript_path.clone(),
+        canonical.clone(),
         cwd,
     ) {
         Ok(TranscriptStartStatus::Started) => {
             log::info!(
                 "Started transcript tailing for session {}: {}",
                 session_id,
-                transcript_path.display()
+                canonical.display()
             );
+            TxOutcome::Started
         }
         Ok(TranscriptStartStatus::Replaced) => {
             log::info!(
                 "Switched transcript tailing for session {}: {}",
                 session_id,
-                transcript_path.display()
+                canonical.display()
             );
+            TxOutcome::Replaced
         }
-        Ok(TranscriptStartStatus::AlreadyRunning) => {}
+        Ok(TranscriptStartStatus::AlreadyRunning) => TxOutcome::AlreadyRunning,
         Err(e) => {
             log::warn!(
                 "Failed to start transcript tailing for session {}: {}",
                 session_id,
                 e
             );
+            TxOutcome::StartFailed
         }
     }
 }
@@ -143,6 +323,14 @@ pub fn start_watching(
     let last_processed = Arc::new(Mutex::new(Instant::now()));
     let app_handle_for_poll = app_handle.clone();
     let stop_flag = Arc::new(AtomicBool::new(false));
+
+    // Diagnostic state — one EventDiag per source so we can correlate
+    // notify-vs-poll-vs-inline patterns in the log.
+    let notify_diag = Arc::new(Mutex::new(EventDiag::default()));
+    let poll_diag = Arc::new(Mutex::new(EventDiag::default()));
+    let inline_diag = Arc::new(Mutex::new(EventDiag::default()));
+
+    let notify_diag_for_cb = notify_diag.clone();
 
     // Debounce interval — ignore events within 100ms of the last processed one
     let debounce_ms = 100;
@@ -182,6 +370,8 @@ pub fn start_watching(
             *last = now;
         }
 
+        let started = Instant::now();
+
         // Read and parse the status file
         let contents = match std::fs::read_to_string(&target_path) {
             Ok(c) => c,
@@ -195,21 +385,33 @@ pub fn start_watching(
             return;
         }
 
-        match parse_statusline(&sid, &contents) {
+        let (outcome, tx_path) = match parse_statusline(&sid, &contents) {
             Ok(parsed) => {
                 if let Err(e) = app_handle.emit("agent-status", &parsed.event) {
                     log::error!("Failed to emit agent-status event: {}", e);
                 }
 
                 if let Some(ref path) = parsed.transcript_path {
-                    log::debug!("Transcript path for session {}: {}", sid, path);
-                    maybe_start_transcript(&app_handle, &sid, path);
+                    let outcome = maybe_start_transcript(&app_handle, &sid, path);
+                    (outcome, Some(path.clone()))
+                } else {
+                    (TxOutcome::NoPath, None)
                 }
             }
             Err(e) => {
                 log::warn!("Failed to parse statusline for session {}: {}", sid, e);
+                (TxOutcome::ParseError, None)
             }
-        }
+        };
+
+        record_event_diag(
+            &notify_diag_for_cb,
+            "notify",
+            &sid,
+            started.elapsed(),
+            outcome,
+            tx_path.as_deref(),
+        );
     })
     .map_err(|e| format!("failed to create watcher: {}", e))?;
 
@@ -233,14 +435,31 @@ pub fn start_watching(
         let initial_sid = session_id.clone();
         let initial_path = status_file_path.clone();
         let initial_app = app_handle_for_poll.clone();
+        let started = Instant::now();
+        let mut outcome = TxOutcome::NoPath;
+        let mut inline_tx_path: Option<String> = None;
         if let Ok(contents) = std::fs::read_to_string(&initial_path) {
             if !contents.trim().is_empty() {
-                if let Ok(parsed) = parse_statusline(&initial_sid, &contents) {
-                    let _ = initial_app.emit("agent-status", &parsed.event);
-                    if let Some(ref path) = parsed.transcript_path {
-                        maybe_start_transcript(&initial_app, &initial_sid, path);
+                match parse_statusline(&initial_sid, &contents) {
+                    Ok(parsed) => {
+                        let _ = initial_app.emit("agent-status", &parsed.event);
+                        if let Some(ref path) = parsed.transcript_path {
+                            outcome = maybe_start_transcript(&initial_app, &initial_sid, path);
+                            inline_tx_path = Some(path.clone());
+                        }
+                    }
+                    Err(_) => {
+                        outcome = TxOutcome::ParseError;
                     }
                 }
+                record_event_diag(
+                    &inline_diag,
+                    "inline",
+                    &initial_sid,
+                    started.elapsed(),
+                    outcome,
+                    inline_tx_path.as_deref(),
+                );
             }
         }
     }
@@ -254,6 +473,7 @@ pub fn start_watching(
         let poll_app = app_handle_for_poll;
         let poll_last = Arc::new(Mutex::new(String::new()));
         let poll_stop = stop_flag.clone();
+        let poll_diag_for_thread = poll_diag.clone();
         std::thread::spawn(move || {
             while !poll_stop.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_secs(3));
@@ -274,12 +494,28 @@ pub fn start_watching(
                     *last = contents.clone();
                 }
 
-                if let Ok(parsed) = parse_statusline(&poll_sid, &contents) {
-                    let _ = poll_app.emit("agent-status", &parsed.event);
-                    if let Some(ref path) = parsed.transcript_path {
-                        maybe_start_transcript(&poll_app, &poll_sid, path);
+                let started = Instant::now();
+                let (outcome, tx_path) = match parse_statusline(&poll_sid, &contents) {
+                    Ok(parsed) => {
+                        let _ = poll_app.emit("agent-status", &parsed.event);
+                        if let Some(ref path) = parsed.transcript_path {
+                            let outcome = maybe_start_transcript(&poll_app, &poll_sid, path);
+                            (outcome, Some(path.clone()))
+                        } else {
+                            (TxOutcome::NoPath, None)
+                        }
                     }
-                }
+                    Err(_) => (TxOutcome::ParseError, None),
+                };
+
+                record_event_diag(
+                    &poll_diag_for_thread,
+                    "poll",
+                    &poll_sid,
+                    started.elapsed(),
+                    outcome,
+                    tx_path.as_deref(),
+                );
             }
         });
     }
@@ -293,6 +529,7 @@ pub fn start_watching(
     Ok(WatcherHandle {
         _watcher: watcher,
         stop_flag,
+        session_id: session_id.clone(),
     })
 }
 
@@ -320,9 +557,10 @@ pub async fn start_agent_watcher(
         .join("status.json");
 
     log::info!(
-        "Starting agent watcher: session={}, path={}",
+        "Starting agent watcher: session={}, path={}, active_watchers={}",
         session_id,
-        path.display()
+        path.display(),
+        state.active_count(),
     );
 
     // Use the structured logger (already configured for the rest of this
