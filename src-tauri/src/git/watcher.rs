@@ -40,6 +40,14 @@ const POLL_INTERVAL_SECS: u64 = 10;
 /// leaks along with every `Arc` it holds.
 const SYNC_GIT_TIMEOUT: Duration = Duration::from_secs(10);
 
+fn is_notify_not_found(error: &notify::Error) -> bool {
+    matches!(error.kind, notify::ErrorKind::PathNotFound)
+        || matches!(
+            &error.kind,
+            notify::ErrorKind::Io(e) if e.kind() == std::io::ErrorKind::NotFound
+        )
+}
+
 /// Run a `std::process::Command` synchronously with a deadline. On timeout,
 /// kill the child and return an error. Used from the polling thread (which
 /// lives in `std::thread::spawn`, NOT a tokio task, so `run_git_with_timeout`
@@ -559,11 +567,20 @@ fn start_git_watcher_inner(
                     .lock()
                     .expect("failed to lock watched_dirs");
                 for dir in new_dirs {
-                    if let Err(e) = watcher_guard.watch(&dir, RecursiveMode::NonRecursive) {
-                        log::warn!("Failed to watch new dir {}: {}", dir.display(), e);
-                        continue;
+                    match watcher_guard.watch(&dir, RecursiveMode::NonRecursive) {
+                        Ok(()) => {
+                            dirs_guard.insert(dir);
+                        }
+                        Err(e) if is_notify_not_found(&e) => {
+                            log::debug!(
+                                "New git watcher dir vanished before registration: {}",
+                                dir.display()
+                            );
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to watch new dir {}: {}", dir.display(), e);
+                        }
                     }
-                    dirs_guard.insert(dir);
                 }
             }
         }
@@ -985,6 +1002,30 @@ mod tests {
             .expect("failed to configure git");
 
         temp
+    }
+
+    #[test]
+    fn notify_not_found_classifier_matches_path_not_found() {
+        let error = notify::Error::path_not_found();
+
+        assert!(is_notify_not_found(&error));
+    }
+
+    #[test]
+    fn notify_not_found_classifier_matches_io_not_found() {
+        let error = notify::Error::io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "gone",
+        ));
+
+        assert!(is_notify_not_found(&error));
+    }
+
+    #[test]
+    fn notify_not_found_classifier_rejects_other_errors() {
+        let error = notify::Error::new(notify::ErrorKind::MaxFilesWatch);
+
+        assert!(!is_notify_not_found(&error));
     }
 
     #[test]

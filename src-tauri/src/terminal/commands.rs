@@ -29,6 +29,12 @@ fn debug_log(tag: &str, msg: &str) {
 #[cfg(not(debug_assertions))]
 fn debug_log(_tag: &str, _msg: &str) {}
 
+fn cleanup_generated_bridge_dir(dir: Option<&std::path::Path>) {
+    if let Some(dir) = dir {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
 /// Spawn a new PTY session with a shell
 #[tauri::command]
 pub async fn spawn_pty<R: tauri::Runtime>(
@@ -114,11 +120,12 @@ pub async fn spawn_pty<R: tauri::Runtime>(
     }
 
     // Generate statusline bridge files.
-    let bridge_files = if request.enable_agent_bridge {
+    let (bridge_files, bridge_cleanup_dir) = if request.enable_agent_bridge {
         let dir = cwd
             .join(".vimeflow")
             .join("sessions")
             .join(&request.session_id);
+        let cleanup_dir = (!dir.exists()).then_some(dir.clone());
         match super::bridge::generate_bridge_files(&dir.to_string_lossy(), &request.session_id) {
             Ok(files) => {
                 debug_log(
@@ -129,19 +136,20 @@ pub async fn spawn_pty<R: tauri::Runtime>(
                         files.shell_init_path.display()
                     ),
                 );
-                Some(files)
+                (Some(files), cleanup_dir)
             }
             Err(e) => {
+                cleanup_generated_bridge_dir(cleanup_dir.as_deref());
                 log::warn!(
                     "Failed to generate statusline bridge for session {}: {}",
                     request.session_id,
                     e
                 );
-                None
+                (None, None)
             }
         }
     } else {
-        None
+        (None, None)
     };
 
     // Build command — env from IPC is ignored for security (prevents injection)
@@ -165,10 +173,10 @@ pub async fn spawn_pty<R: tauri::Runtime>(
 
         // For interactive bash, generate a combined rcfile that sources
         // both ~/.bashrc (user config) and our init script
-        let init_dir = files
-            .shell_init_path
-            .parent()
-            .ok_or_else(|| "shell init path has no parent directory".to_string())?;
+        let Some(init_dir) = files.shell_init_path.parent() else {
+            cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+            return Err("shell init path has no parent directory".to_string());
+        };
         let rcfile_path = init_dir.join("bashrc");
         // Use $BASH_ENV (already set above) instead of embedding the path —
         // handles CWDs with apostrophes that would break single-quoted paths.
@@ -197,22 +205,33 @@ pub async fn spawn_pty<R: tauri::Runtime>(
     // there. Without owning the child here, a bail-out would leak the
     // process: alive but unreferenced anywhere, with its stdout buffer
     // eventually filling and the process blocking.
-    let child = pty_pair
-        .slave
-        .spawn_command(cmd)
-        .map_err(|e| format!("failed to spawn shell: {}", e))?;
+    let mut child = match pty_pair.slave.spawn_command(cmd) {
+        Ok(child) => child,
+        Err(e) => {
+            cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+            return Err(format!("failed to spawn shell: {}", e));
+        }
+    };
 
-    let pid = child
-        .process_id()
-        .ok_or_else(|| "failed to get process ID".to_string())?;
+    let Some(pid) = child.process_id() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+        return Err("failed to get process ID".to_string());
+    };
 
     log::info!("Spawned shell with PID: {}", pid);
 
     // Get writer from master PTY (call take_writer once and store it)
-    let writer = pty_pair
-        .master
-        .take_writer()
-        .map_err(|e| format!("failed to get PTY writer: {}", e))?;
+    let writer = match pty_pair.master.take_writer() {
+        Ok(writer) => writer,
+        Err(e) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+            return Err(format!("failed to get PTY writer: {}", e));
+        }
+    };
 
     // Round 7, Finding 3 (claude MEDIUM): atomic check-and-insert against
     // the cap and duplicate id. The previous flow ran three independent
@@ -260,6 +279,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         // freshly-spawned shell.
         let _ = rejected.child.kill();
         let _ = rejected.child.wait();
+        cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
         return Err(match reason {
             crate::terminal::state::TryInsertError::AlreadyExists => format!(
                 "session '{}' already exists — cannot spawn duplicate session ID",
@@ -300,6 +320,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
             let _ = removed.child.kill();
             let _ = removed.child.wait();
         }
+        cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
         return Err(format!("failed to write cache: {}", e));
     }
 
@@ -412,10 +433,14 @@ pub fn kill_pty(
             data.sessions.remove(&request.session_id);
             data.session_order.retain(|id| id != &request.session_id);
 
-            // Advance active_session_id if the killed session was active
+            // Clear active_session_id if the killed session was active.
+            // The frontend owns tab-neighbor selection and persists the
+            // chosen successor via set_active_session after kill_pty returns.
+            // Leaving None during that short window avoids a cache/UI
+            // mismatch where Rust guessed the first remaining tab while React
+            // selected the same-position neighbor.
             if data.active_session_id.as_ref() == Some(&request.session_id) {
-                // Find the next session in order (or None if no more sessions)
-                data.active_session_id = data.session_order.first().cloned();
+                data.active_session_id = None;
             }
             Ok(())
         })
@@ -1105,10 +1130,8 @@ mod tests {
         let state = handle.state::<PtyState>();
         let cache = handle.state::<Arc<SessionCache>>();
 
-        let cwd = std::env::current_dir()
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
+        let cwd_temp_dir = TempDir::new().expect("failed to create cwd temp dir");
+        let cwd = cwd_temp_dir.path().to_string_lossy().to_string();
 
         // Spawn 64 sessions
         for i in 0..64 {
@@ -1131,8 +1154,13 @@ mod tests {
             cwd,
             shell: None,
             env: None,
-            enable_agent_bridge: false,
+            enable_agent_bridge: true,
         };
+        let rejected_bridge_dir = cwd_temp_dir
+            .path()
+            .join(".vimeflow")
+            .join("sessions")
+            .join("session-65");
 
         let result = spawn_pty(handle.clone(), state.clone(), cache.clone(), request_65).await;
         assert!(result.is_err(), "65th spawn should fail due to cap");
@@ -1140,6 +1168,10 @@ mod tests {
         assert!(
             err.contains("maximum") || err.contains("64"),
             "error should mention session cap"
+        );
+        assert!(
+            !rejected_bridge_dir.exists(),
+            "failed spawn should remove generated bridge directory"
         );
 
         // Cleanup: remove all 64 sessions
@@ -1369,7 +1401,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn kill_pty_advances_active_when_active_killed() {
+    async fn kill_pty_clears_active_when_active_killed() {
         let (app, _temp_dir) = create_test_app_with_cache();
         let handle = app.handle();
         let state = handle.state::<PtyState>();
@@ -1426,9 +1458,10 @@ mod tests {
         kill_pty(state.clone(), cache.clone(), kill_request)
             .expect("kill_pty should succeed");
 
-        // Verify active_session_id advanced to session-2
+        // Verify active_session_id is unresolved until the frontend persists
+        // its selected same-position neighbor via set_active_session.
         let snap_after = cache.snapshot();
-        assert_eq!(snap_after.active_session_id.as_deref(), Some("session-2"));
+        assert!(snap_after.active_session_id.is_none());
         assert_eq!(snap_after.session_order, vec!["session-2", "session-3"]);
 
         // Cleanup

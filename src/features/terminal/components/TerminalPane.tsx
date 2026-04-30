@@ -339,7 +339,7 @@ export const TerminalPane = ({
       setTerminal(null)
       fitAddonRef.current = null
     }
-  }, [sessionId, service, isAwaitingRestart])
+  }, [sessionId, isAwaitingRestart])
 
   // Awaiting-restart: render a Restart affordance instead of an xterm.
   // Per the design spec ("no auto-respawn for Exited" IDEA), the user must

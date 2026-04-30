@@ -36,11 +36,20 @@ impl RingBuffer {
     /// the first appended byte in the lifetime stream).
     pub fn append(&mut self, chunk: &[u8]) -> u64 {
         let chunk_start = self.end_offset;
-        self.bytes.extend(chunk.iter().copied());
-        while self.bytes.len() > self.capacity {
-            self.bytes.pop_front();
+
+        let need_drain = self
+            .bytes
+            .len()
+            .saturating_add(chunk.len())
+            .saturating_sub(self.capacity);
+        if need_drain > 0 {
+            let drop_n = need_drain.min(self.bytes.len());
+            self.bytes.drain(..drop_n);
         }
-        self.end_offset += chunk.len() as u64;
+
+        let tail_start = chunk.len().saturating_sub(self.capacity);
+        self.bytes.extend(chunk[tail_start..].iter().copied());
+        self.end_offset = self.end_offset.wrapping_add(chunk.len() as u64);
         chunk_start
     }
 
@@ -329,9 +338,10 @@ impl PtyState {
             .map_err(|e| anyhow::anyhow!("failed to clone PTY reader: {}", e))
     }
 
-    /// Internal accessor for code that needs to take the sessions lock directly
-    /// (e.g., the read loop accessing the ring buffer atomically).
-    pub fn inner_sessions(&self) -> &Arc<Mutex<HashMap<SessionId, ManagedSession>>> {
+    /// Internal terminal-module accessor for code that must lock sessions
+    /// directly. Callers must take locks in sessions -> ring order and must
+    /// not call other `PtyState` methods while holding the sessions lock.
+    pub(crate) fn inner_sessions(&self) -> &Arc<Mutex<HashMap<SessionId, ManagedSession>>> {
         &self.sessions
     }
 }
@@ -389,6 +399,19 @@ mod tests {
         }
         assert_eq!(buf.end_offset(), 20);
         assert_eq!(buf.bytes_snapshot().len(), 4);
+    }
+
+    #[test]
+    fn ring_buffer_keeps_tail_of_oversize_chunk_without_exceeding_capacity() {
+        use super::RingBuffer;
+        let mut buf = RingBuffer::new(4);
+
+        let start = buf.append(b"abcdef");
+
+        assert_eq!(start, 0);
+        assert_eq!(buf.end_offset(), 6);
+        assert_eq!(buf.bytes_snapshot(), b"cdef");
+        assert!(buf.bytes.len() <= buf.capacity);
     }
 
     /// Build a real but ephemeral `ManagedSession` for tests that need

@@ -153,20 +153,18 @@ fn parse_numstat(output: &[u8]) -> HashMap<String, (u32, u32)> {
         // Parse insertions and deletions
         let insertions_str = String::from_utf8_lossy(parts[0]);
         let deletions_str = String::from_utf8_lossy(parts[1]);
+        let is_binary = insertions_str == "-" || deletions_str == "-";
+        let is_rename = parts[2].is_empty();
 
-        // Skip binary files (marked as "-\t-\t...")
-        if insertions_str == "-" || deletions_str == "-" {
-            i += 1;
-            continue;
-        }
+        if is_rename {
+            if is_binary {
+                i += 3;
+                continue;
+            }
 
-        let insertions = insertions_str.parse::<u32>().unwrap_or(0);
-        let deletions = deletions_str.parse::<u32>().unwrap_or(0);
+            let insertions = insertions_str.parse::<u32>().unwrap_or(0);
+            let deletions = deletions_str.parse::<u32>().unwrap_or(0);
 
-        // Check if this is a rename (third field is empty)
-        let path_field = String::from_utf8_lossy(parts[2]);
-
-        if path_field.is_empty() {
             // Rename format: next two NUL-separated tokens are src and dst
             i += 1;
             let _src_path = records.get(i).map(|b| String::from_utf8_lossy(b));
@@ -178,6 +176,16 @@ fn parse_numstat(output: &[u8]) -> HashMap<String, (u32, u32)> {
                 }
             }
         } else {
+            // Skip binary files (marked as "-\t-\t...")
+            if is_binary {
+                i += 1;
+                continue;
+            }
+
+            let insertions = insertions_str.parse::<u32>().unwrap_or(0);
+            let deletions = deletions_str.parse::<u32>().unwrap_or(0);
+            let path_field = String::from_utf8_lossy(parts[2]);
+
             // Non-rename: path is in the third field. Reject brace-compressed
             // text form (like "src/{A.tsx => B.tsx}") which only appears in
             // the non-`-z` output. `-z` uses NUL separators for renames —
@@ -986,6 +994,20 @@ mod tests {
         assert_eq!(stats.len(), 1);
         assert_eq!(stats.get("text.rs"), Some(&(5, 3)));
         assert_eq!(stats.get("binary.png"), None);
+    }
+
+    #[test]
+    fn test_parse_numstat_binary_rename_consumes_src_and_dst_tokens() {
+        // Binary rename format: -\t-\t\0<src>\0<dst>\0. The source path may
+        // legally contain tabs; it must still be consumed as a path token, not
+        // reinterpreted as a standalone numstat record.
+        let output = b"-\t-\t\05\t3\tbogus.rs\0dst.bin\07\t2\ttext.rs\0";
+        let stats = parse_numstat(output);
+
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats.get("text.rs"), Some(&(7, 2)));
+        assert_eq!(stats.get("bogus.rs"), None);
+        assert_eq!(stats.get("dst.bin"), None);
     }
 
     #[test]
