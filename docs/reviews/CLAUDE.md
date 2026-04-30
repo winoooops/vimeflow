@@ -61,4 +61,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Scope Boundary](patterns/scope-boundary.md)                         | review-process | 5        | 0    | 2026-04-12   |
 | [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing    | 9        | 1    | 2026-04-19   |
 | [Module Boundaries](patterns/module-boundaries.md)                   | code-quality   | 1        | 0    | 2026-04-30   |
-| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality   | 3        | 0    | 2026-04-30   |
+| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality   | 6        | 1    | 2026-04-30   |

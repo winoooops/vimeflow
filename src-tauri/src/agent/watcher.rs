@@ -148,13 +148,15 @@ fn short_path(path: &str) -> String {
 
 /// Emit the per-event diagnostic line. Gated by `cfg!(debug_assertions)`.
 ///
-/// Reads per-source timing from `timing` and the cross-source path
-/// history from `path_history` (shared across all sources). The path
-/// history MUST be shared so the speculative→resolved flip — which
-/// frequently spans sources (e.g. inline reads the speculative path,
-/// notify sees the resolved one) — is detected.
+/// Reads per-source timing from `timing` (None for one-shot sources
+/// like the inline-init read, where `dt` would be structurally zero
+/// and misleading) and the cross-source path history from
+/// `path_history` (shared across all sources). The path history MUST
+/// be shared so the speculative→resolved flip — which frequently
+/// spans sources (e.g. inline reads the speculative path, notify
+/// sees the resolved one) — is detected.
 fn record_event_diag(
-    timing: &Mutex<EventTiming>,
+    timing: Option<&Mutex<EventTiming>>,
     path_history: &Mutex<PathHistory>,
     source: &'static str,
     sid: &str,
@@ -166,15 +168,25 @@ fn record_event_diag(
         return;
     }
 
-    let now = Instant::now();
-    let dt = {
-        let mut t = timing.lock().expect("watcher timing lock");
-        let dt = t
-            .last_event_at
-            .map(|prev| now.duration_since(prev))
-            .unwrap_or(Duration::ZERO);
-        t.last_event_at = Some(now);
-        dt
+    // `dt` is only meaningful for sources that fire repeatedly. The
+    // inline-init source runs once per watcher start, so its `dt`
+    // would always be `Duration::ZERO` (the default for a None
+    // `last_event_at`) — emitting `dt=0ms` for inline alongside real
+    // dt values from notify/poll lets a reader misread the zero as
+    // recency. `None` here means "this source is one-shot, log dt as
+    // n/a so the reader doesn't compare it against real deltas."
+    let dt_label = match timing {
+        Some(t) => {
+            let now = Instant::now();
+            let mut t = t.lock().expect("watcher timing lock");
+            let dt = t
+                .last_event_at
+                .map(|prev| now.duration_since(prev))
+                .unwrap_or(Duration::ZERO);
+            t.last_event_at = Some(now);
+            format!("dt={}ms", dt.as_millis())
+        }
+        None => "dt=n/a".to_string(),
     };
 
     let (path_change, repeat) = {
@@ -196,10 +208,10 @@ fn record_event_diag(
     let tx_path_short = tx_path.map(short_path).unwrap_or_else(|| "(none)".into());
     if total_ms > 50 {
         log::warn!(
-            "watcher.slow_event source={} session={} dt={}ms total={}ms tx_status={} tx_path={} repeat={}",
+            "watcher.slow_event source={} session={} {} total={}ms tx_status={} tx_path={} repeat={}",
             source,
             short_sid(sid),
-            dt.as_millis(),
+            dt_label,
             total_ms,
             outcome.label(),
             tx_path_short,
@@ -207,10 +219,10 @@ fn record_event_diag(
         );
     } else {
         log::info!(
-            "watcher.event source={} session={} dt={}ms total={}ms tx_status={} tx_path={} repeat={}",
+            "watcher.event source={} session={} {} total={}ms tx_status={} tx_path={} repeat={}",
             source,
             short_sid(sid),
-            dt.as_millis(),
+            dt_label,
             total_ms,
             outcome.label(),
             tx_path_short,
@@ -224,19 +236,27 @@ pub struct WatcherHandle {
     _watcher: RecommendedWatcher,
     /// Signals the polling fallback thread to exit
     stop_flag: Arc<AtomicBool>,
-    /// Captured for diagnostic logging on drop (dev builds only)
+    /// Captured for diagnostic logging on drop. `#[cfg(debug_assertions)]`
+    /// gates the FIELD itself so release builds skip the `String::clone`
+    /// in the constructor — `cfg!()` on the read site alone left the
+    /// allocation in release. Conditional struct fields are part of
+    /// stable Rust.
+    #[cfg(debug_assertions)]
     session_id: String,
 }
 
 impl Drop for WatcherHandle {
     fn drop(&mut self) {
         self.stop_flag.store(true, Ordering::Relaxed);
-        if cfg!(debug_assertions) {
-            log::info!(
-                "watcher.handle.dropped session={}",
-                short_sid(&self.session_id)
-            );
-        }
+        // `#[cfg(...)]` (attribute) on a statement, NOT `if cfg!(...)`
+        // (runtime). The attribute physically removes both the
+        // statement and the `self.session_id` access in release builds,
+        // matching the field's `#[cfg(...)]` gate above.
+        #[cfg(debug_assertions)]
+        log::info!(
+            "watcher.handle.dropped session={}",
+            short_sid(&self.session_id)
+        );
     }
 }
 
@@ -304,11 +324,19 @@ fn maybe_start_transcript(
                 session_id,
                 e
             );
-            // Classify the failure for diagnostic logs. Substring matching
-            // mirrors the error strings in `validate_transcript_path`; if
-            // those strings change, this fallback returns NotFile rather
-            // than misclassifying.
-            return if e.contains("No such file") {
+            // Classify the failure for diagnostic logs. The
+            // missing-file case uses `Path::exists()` for
+            // platform-neutrality — Linux's "No such file or
+            // directory" string is forwarded by
+            // `validate_transcript_path`, but Windows reports a
+            // different OS-localized message for ENOENT (and other
+            // platforms vary too). `Path::exists()` returns false
+            // uniformly across platforms for a non-existent path, so
+            // it's the right primary signal. The "access denied"
+            // substring is a CUSTOM string from
+            // `validate_transcript_path` (not OS-localized), so it's
+            // safe to substring-match.
+            return if !std::path::Path::new(transcript_path).exists() {
                 TxOutcome::Missing
             } else if e.contains("access denied") {
                 TxOutcome::OutsidePath
@@ -377,14 +405,16 @@ pub fn start_watching(
     let app_handle_for_poll = app_handle.clone();
     let stop_flag = Arc::new(AtomicBool::new(false));
 
-    // Diagnostic state — per-source timing so we can correlate
-    // notify-vs-poll-vs-inline patterns in the log, and a SHARED
-    // path history so the speculative→resolved transcript-path flip is
-    // detected even when it spans sources (e.g. inline saw the
-    // speculative path, notify sees the resolved one).
+    // Diagnostic state — per-source timing for sources that fire
+    // repeatedly (notify, poll), and a SHARED path history so the
+    // speculative→resolved transcript-path flip is detected even when
+    // it spans sources (e.g. inline saw the speculative path, notify
+    // sees the resolved one). The inline-init source has NO timing
+    // mutex: it's one-shot and `dt` would be structurally zero —
+    // record_event_diag accepts `Option<&Mutex<EventTiming>>` and
+    // logs `dt=n/a` when None.
     let notify_timing = Arc::new(Mutex::new(EventTiming::default()));
     let poll_timing = Arc::new(Mutex::new(EventTiming::default()));
-    let inline_timing = Arc::new(Mutex::new(EventTiming::default()));
     let path_history = Arc::new(Mutex::new(PathHistory::default()));
 
     let notify_timing_for_cb = notify_timing.clone();
@@ -463,7 +493,7 @@ pub fn start_watching(
         };
 
         record_event_diag(
-            &notify_timing_for_cb,
+            Some(&notify_timing_for_cb),
             &path_history_for_cb,
             "notify",
             &sid,
@@ -512,7 +542,7 @@ pub fn start_watching(
                     }
                 }
                 record_event_diag(
-                    &inline_timing,
+                    None,
                     &path_history,
                     "inline",
                     &initial_sid,
@@ -579,7 +609,7 @@ pub fn start_watching(
                 };
 
                 record_event_diag(
-                    &poll_timing_for_thread,
+                    Some(&poll_timing_for_thread),
                     &path_history_for_poll,
                     "poll",
                     &poll_sid,
@@ -600,6 +630,7 @@ pub fn start_watching(
     Ok(WatcherHandle {
         _watcher: watcher,
         stop_flag,
+        #[cfg(debug_assertions)]
         session_id: session_id.clone(),
     })
 }
