@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-04-30
-ref_count: 3
+ref_count: 4
 ---
 
 # Documentation Accuracy
@@ -240,3 +240,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** Line 80 read "Retry or mask the failure only when the module can prove that is safe." The pronoun "it" was missing — should be "prove that it is safe." Ungrammatical and the referent of "that" was ambiguous (the failure? the masking action? the module state?) in a rule about when error masking is permissible. Agents reading the rule for guidance might infer broader permission to mask failures from the looser-than-intended phrasing.
 - **Fix:** Inserted the missing pronoun: "prove that is safe" → "prove that it is safe" on line 80. Single-character semantic addition, no structural change.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Multi-paragraph JSDoc on extracted utility violates one-line comment rule
+
+- **Source:** github-claude | PR #115 round 2 | 2026-04-30
+- **Severity:** LOW
+- **File:** `src/features/agent-status/utils/format.ts`
+- **Finding:** Round-1 review-fix added a 10-line JSDoc block on the extracted `formatTokens` utility, listing the three threshold buckets and explaining the intentional non-consolidation with `ContextBucket`'s formatter. The first paragraph describes WHAT the code does — directly readable from the three-line implementation. CLAUDE.md is explicit: "Never write multi-paragraph docstrings or multi-line comment blocks — one short line max" and "Don't explain WHAT the code does, since well-named identifiers already do that." Only the non-obvious WHY (the deliberate split from ContextBucket) qualifies under the allowed exception. The over-documentation is a common artefact of extracting a utility from a component — authors often over-explain at the point of extraction.
+- **Fix:** Collapsed the 10-line block to a single line capturing only the non-obvious WHY: `// Not consolidated with ContextBucket's M-aware formatter — would change that component's display.` Threshold bucket list deleted; the implementation is the spec.
+- **Commit:** `<COMMIT_SHA_PLACEHOLDER>`
