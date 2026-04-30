@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-04-30
-ref_count: 2
+ref_count: 3
 ---
 
 # Testing Gaps
@@ -97,3 +97,12 @@ filesystem scope restrictions).
 - **Finding:** Round-1 review-fix promoted `formatTokens` from `BudgetMetrics.tsx` into a new `src/features/agent-status/utils/format.ts` to fix a module-boundary issue. The new file shipped **without** a sibling `format.test.ts`, even though the project rule (`CLAUDE.md`: "every .tsx/.ts file has a sibling .test.tsx/.test.ts file") is unconditional. The function was still exercised indirectly by `BudgetMetrics.test.tsx` (which kept a `describe('formatTokens', ...)` block that imported from the new path), but that test file is owned by a different module and can't be the canonical coverage owner for `format.ts`. If a later refactor of `BudgetMetrics` removed that import, `formatTokens` would silently lose all coverage with no compile-time signal.
 - **Fix:** Created `src/features/agent-status/utils/format.test.ts` and **moved** the existing `describe('formatTokens', ...)` block out of `BudgetMetrics.test.tsx` into the new sibling. Avoids duplicating the cases (round-2 reviewer suggested the move, not a copy) and keeps `BudgetMetrics.test.tsx` focused on `BudgetMetrics` behaviour.
 - **Commit:** `eadee9c fix(agent-status): address Claude review on TokenCache (PR #115 round 2)`
+
+### 10. Diagnostic state machine inlined into a side-effecting function — no regression-guard tests
+
+- **Source:** github-claude | PR #116 round 2 | 2026-04-30
+- **Severity:** LOW
+- **File:** `src-tauri/src/agent/watcher.rs`
+- **Finding:** The `PathHistory` four-arm match (path-change, first observation, same path, no-path-reset) lived inline inside `record_event_diag`, which itself early-returns under `cfg!(debug_assertions)` and emits log side effects. There was no way to exercise the state machine in a unit test without a `Mutex`, a logger, and a `cfg!(debug_assertions)` build. The round-1 `(None, _)` reset arm — added because the original implementation counted streaks across no-path interludes — was caught by code review only, not by CI. If a later contributor "simplified" the wildcard arm thinking it was a no-op, the streak-across-interlude bug would silently regress: `repeat=N` values during a speculative-path investigation would lie, the diagnostic feature itself would mis-report, and there would be no test failure to flag it. `short_sid`, `short_path`, and `TxOutcome::label()` were also untested pure functions despite being on every diagnostic line's hot path.
+- **Fix:** Extracted the state machine from `record_event_diag` into `PathHistory::observe(tx_path: Option<&str>) -> Option<String>` so each arm is unit-testable directly with no logging, no Mutex, no cfg gate. `record_event_diag` now calls `h.observe(tx_path)` and reads `h.same_path_repeat` afterwards (no behavior change). Added 11 unit tests covering: first observation, repeat increments, path-change-returns-old-and-resets-counter, **no-path-resets-streak-after-repeat (the explicit regression guard for the round-1 `(None, _)` bug)**, idempotent no-path-when-already-no-path, `short_sid` truncation / passthrough / UUID form, `short_path` basename / truncation / no-basename fallback, and `TxOutcome::label` exhaustively across all 9 variants. All 14 tests in `agent::watcher::tests` pass.
+- **Commit:** _(see git log for the round-2 fix commit)_
