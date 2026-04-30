@@ -1,21 +1,12 @@
 import type { ReactElement } from 'react'
 import type { CostState, RateLimitsState } from '../types'
+import { formatTokens } from '../utils/format'
 
 export interface BudgetMetricsProps {
   cost: CostState | null
   rateLimits: RateLimitsState | null
   totalInputTokens: number
   totalOutputTokens: number
-}
-
-export const formatTokens = (n: number): string => {
-  if (n < 1000) {
-    return String(n)
-  }
-
-  const k = n / 1000
-
-  return k >= 100 ? `${Math.round(k)}k` : `${parseFloat(k.toFixed(1))}k`
 }
 
 export const formatCost = (usd: number): string => `$${usd.toFixed(2)}`

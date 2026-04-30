@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-04-30
-ref_count: 3
+ref_count: 5
 ---
 
 # Documentation Accuracy
@@ -240,3 +240,30 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** Line 80 read "Retry or mask the failure only when the module can prove that is safe." The pronoun "it" was missing — should be "prove that it is safe." Ungrammatical and the referent of "that" was ambiguous (the failure? the masking action? the module state?) in a rule about when error masking is permissible. Agents reading the rule for guidance might infer broader permission to mask failures from the looser-than-intended phrasing.
 - **Fix:** Inserted the missing pronoun: "prove that is safe" → "prove that it is safe" on line 80. Single-character semantic addition, no structural change.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Multi-paragraph JSDoc on extracted utility violates one-line comment rule
+
+- **Source:** github-claude | PR #115 round 2 | 2026-04-30
+- **Severity:** LOW
+- **File:** `src/features/agent-status/utils/format.ts`
+- **Finding:** Round-1 review-fix added a 10-line JSDoc block on the extracted `formatTokens` utility, listing the three threshold buckets and explaining the intentional non-consolidation with `ContextBucket`'s formatter. The first paragraph describes WHAT the code does — directly readable from the three-line implementation. CLAUDE.md is explicit: "Never write multi-paragraph docstrings or multi-line comment blocks — one short line max" and "Don't explain WHAT the code does, since well-named identifiers already do that." Only the non-obvious WHY (the deliberate split from ContextBucket) qualifies under the allowed exception. The over-documentation is a common artefact of extracting a utility from a component — authors often over-explain at the point of extraction.
+- **Fix:** Collapsed the 10-line block to a single line capturing only the non-obvious WHY: `// Not consolidated with ContextBucket's M-aware formatter — would change that component's display.` Threshold bucket list deleted; the implementation is the spec.
+- **Commit:** `eadee9c fix(agent-status): address Claude review on TokenCache (PR #115 round 2)`
+
+### 27. Placeholder commit SHAs left unfilled in pattern-file finding entries
+
+- **Source:** github-claude | PR #115 round 3 | 2026-04-30
+- **Severity:** LOW
+- **File:** `docs/reviews/patterns/accessibility.md` (and three sibling pattern files)
+- **Finding:** Round-1 and round-2 review-fix commits each appended pattern-file entries documenting the resolved findings, but every entry's `**Commit:**` field carried the literal template string `\`<COMMIT_SHA_PLACEHOLDER>\``instead of the actual short SHA. Four files affected:`accessibility.md:125`, `module-boundaries.md:33`, `testing-gaps.md:99`, `documentation-accuracy.md:251`. The placeholder is a doc-first authoring artifact — the pattern entry was written before the commit existed and the author forgot to fill the SHA after committing. Future agents and contributors that try `git show <COMMIT_SHA_PLACEHOLDER>` to trace a finding's fix get a git error instead of the diff. Left unaddressed across enough cycles, the knowledge base loses its core traceability value.
+- **Fix:** Replaced every occurrence with the short SHA of the originating commit: round-1 entries → `570d225`, round-2 entries → `eadee9c`. (Claude only flagged three of the four files; `testing-gaps.md` carried the same bug pattern from the round-2 commit and was caught and fixed under the same scope as a same-class issue, not a drive-by. A future-work follow-up could add a pre-commit hook that rejects the literal string `<COMMIT_SHA_PLACEHOLDER>` under `docs/reviews/patterns/` to prevent recurrence; out of scope for this cycle.)
+- **Commit:** _(see git log for the round-3 fix commit)_
+
+### 28. Unused `export default TokenCache` is dead code in a feature module that uses named exports only
+
+- **Source:** github-claude | PR #115 round 3 | 2026-04-30
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/TokenCache.tsx`
+- **Finding:** Line 182 read `export default TokenCache`, alongside the existing `export const TokenCache` at line ~107. Both consumers in this PR (`AgentStatusPanel.tsx:5` and `TokenCache.test.tsx:3`) import via `{ TokenCache }`, and every other component in `src/features/agent-status/components/` (StatusCard, ContextBucket, ToolCallSummary, etc.) exports named-only. The default export was a scaffolding-convention artefact with no current callers. Risk is drift: a future contributor seeing both forms might assume the default is canonical and write `import TokenCache from './TokenCache'` in a new file, breaking module-style consistency across the feature.
+- **Fix:** Removed line 182 (`export default TokenCache`). Named export remains; both existing importers continue to work unchanged. If a default ever becomes necessary (e.g., for `React.lazy`), add it at the point of need.
+- **Commit:** _(see git log for the round-3 fix commit)_

@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-04-11
-ref_count: 1
+last_updated: 2026-04-30
+ref_count: 2
 ---
 
 # Testing Gaps
@@ -88,3 +88,12 @@ filesystem scope restrictions).
 - **Finding:** The `readScrollTargetPos` test helper duck-typed `effect.value.range.head` to read the scroll target. It was gated only on `instanceof StateEffect` at the call site — but `StateEffect` is the common base class of every CM6 effect, so any unrelated effect (compartment reconfiguration, language swap, future CM6 effects) whose `.value` accidentally had a `range.head: number` field would match. The regression test would then pass on the wrong effect. Also: the weak base-class check in the other test (`expect(effects[0]).toBeInstanceOf(StateEffect)`) would let any effect through, so a refactor that replaced `scrollIntoView(...)` with any other effect would leave both tests green.
 - **Fix:** Derive a real `StateEffectType` reference by constructing a throwaway `EditorView.scrollIntoView(0)` at module load and reading its `.type` field. `.type` is a runtime field of `StateEffect` that CM6's public types don't surface, so cast through `unknown as { type: StateEffectType<unknown> }`. `readScrollTargetPos` now gates on `effect.is(scrollIntoViewType)` before accessing `.value.range.head`, so it rejects any effect that isn't genuinely a scrollIntoView. The basic "effect exists" test also calls `readScrollTargetPos` and asserts a number, so it fails if the extender is refactored to return a different effect type.
 - **Commit:** `d38cf4b test(editor): tighten scrollIntoView effect detection in round-5 tests`
+
+### 9. Extracted utility module shipped without a co-located test file
+
+- **Source:** github-claude | PR #115 round 2 | 2026-04-30
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/utils/format.ts`
+- **Finding:** Round-1 review-fix promoted `formatTokens` from `BudgetMetrics.tsx` into a new `src/features/agent-status/utils/format.ts` to fix a module-boundary issue. The new file shipped **without** a sibling `format.test.ts`, even though the project rule (`CLAUDE.md`: "every .tsx/.ts file has a sibling .test.tsx/.test.ts file") is unconditional. The function was still exercised indirectly by `BudgetMetrics.test.tsx` (which kept a `describe('formatTokens', ...)` block that imported from the new path), but that test file is owned by a different module and can't be the canonical coverage owner for `format.ts`. If a later refactor of `BudgetMetrics` removed that import, `formatTokens` would silently lose all coverage with no compile-time signal.
+- **Fix:** Created `src/features/agent-status/utils/format.test.ts` and **moved** the existing `describe('formatTokens', ...)` block out of `BudgetMetrics.test.tsx` into the new sibling. Avoids duplicating the cases (round-2 reviewer suggested the move, not a copy) and keeps `BudgetMetrics.test.tsx` focused on `BudgetMetrics` behaviour.
+- **Commit:** `eadee9c fix(agent-status): address Claude review on TokenCache (PR #115 round 2)`

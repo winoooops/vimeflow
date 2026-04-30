@@ -156,6 +156,169 @@ describe('useAgentStatus', () => {
     expect(result.current.sessionId).toBe('session-2')
   })
 
+  test('surfaces currentUsage through normalization', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'sonnet-4-5',
+        modelDisplayName: 'Sonnet 4.5',
+        version: '1.0',
+        agentSessionId: 'a-1',
+        contextWindow: {
+          usedPercentage: 42.5,
+          remainingPercentage: 57.5,
+          contextWindowSize: 200000,
+          totalInputTokens: 85000,
+          totalOutputTokens: 5000,
+          currentUsage: {
+            inputTokens: 700,
+            outputTokens: 300,
+            cacheCreationInputTokens: 1800,
+            cacheReadInputTokens: 7500,
+          },
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.contextWindow?.currentUsage).toEqual({
+      inputTokens: 700,
+      outputTokens: 300,
+      cacheCreationInputTokens: 1800,
+      cacheReadInputTokens: 7500,
+    })
+  })
+
+  test('preserves null currentUsage', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'sonnet-4-5',
+        modelDisplayName: 'Sonnet 4.5',
+        version: '1.0',
+        agentSessionId: 'a-1',
+        contextWindow: {
+          usedPercentage: 0,
+          remainingPercentage: 100,
+          contextWindowSize: 200000,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.contextWindow?.currentUsage).toBeNull()
+  })
+
+  test('narrows bigint currentUsage tokens to number at the hook boundary', async () => {
+    // The wire payload from Tauri carries `bigint` for each u64 token count
+    // (see CurrentUsage binding). The hook MUST narrow these to `number` so
+    // downstream consumers (cacheRate utilities, TokenCache component) can
+    // operate on plain numbers without dealing with bigint arithmetic.
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: null,
+        modelDisplayName: null,
+        version: null,
+        agentSessionId: null,
+        contextWindow: {
+          usedPercentage: 0,
+          remainingPercentage: 100,
+          contextWindowSize: BigInt(200000),
+          totalInputTokens: BigInt(0),
+          totalOutputTokens: BigInt(0),
+          currentUsage: {
+            inputTokens: BigInt(700),
+            outputTokens: BigInt(300),
+            cacheCreationInputTokens: BigInt(1800),
+            cacheReadInputTokens: BigInt(7500),
+          },
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    const usage = result.current.contextWindow?.currentUsage
+    expect(usage).not.toBeNull()
+    // Each value must be a plain `number`, not a bigint.
+    expect(typeof usage?.inputTokens).toBe('number')
+    expect(typeof usage?.outputTokens).toBe('number')
+    expect(typeof usage?.cacheCreationInputTokens).toBe('number')
+    expect(typeof usage?.cacheReadInputTokens).toBe('number')
+    expect(usage).toEqual({
+      inputTokens: 700,
+      outputTokens: 300,
+      cacheCreationInputTokens: 1800,
+      cacheReadInputTokens: 7500,
+    })
+  })
+
+  test('clears currentUsage when sessionId changes', async () => {
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string | null }) => useAgentStatus(id),
+      { initialProps: { id: 'session-1' } }
+    )
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: null,
+        modelDisplayName: null,
+        version: null,
+        agentSessionId: null,
+        contextWindow: {
+          usedPercentage: 10,
+          remainingPercentage: 90,
+          contextWindowSize: 200000,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          currentUsage: {
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheCreationInputTokens: 200,
+            cacheReadInputTokens: 800,
+          },
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.contextWindow?.currentUsage).not.toBeNull()
+
+    rerender({ id: 'session-2' })
+
+    expect(result.current.contextWindow).toBeNull()
+  })
+
   test('accumulates tool call counts by type', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 
