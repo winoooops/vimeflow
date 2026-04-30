@@ -24,6 +24,9 @@ test-results/
 # Superpowers plugin working directory
 .superpowers/
 
+# Harness review-loop artifacts
+.harness-github-review/
+
 # IDE
 .vscode/*
 !.vscode/extensions.json

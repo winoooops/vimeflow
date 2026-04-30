@@ -57,6 +57,12 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
 
 #### Changed
 
+- Disabled `.github/workflows/codex-review.yml` (renamed to `.disabled`).
+  The aggregated Codex Action hit OpenAI quota every push for two PRs running
+  ([PR #109 retrospective](docs/reviews/retrospectives/2026-04-29-tests-panel-bridge-session.md)).
+  Inline review continues via the `chatgpt-codex-connector` GitHub App
+  integration; `/harness-plugin:github-review` now consumes that surface
+  ([#111](https://github.com/winoooops/vimeflow/issues/111)).
 - Harness default backend swapped from `claude_code_sdk` to `claude -p`
   subprocess per role. Inherits the user's `~/.claude` CLI auth; the
   default path no longer requires `ANTHROPIC_API_KEY` or

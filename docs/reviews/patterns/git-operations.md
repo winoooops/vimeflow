@@ -2,7 +2,7 @@
 id: git-operations
 category: correctness
 created: 2026-04-09
-last_updated: 2026-04-12
+last_updated: 2026-04-29
 ref_count: 1
 ---
 
@@ -104,3 +104,21 @@ between display and mutation operations.
 - **Finding:** MM defaults to staged=false but AM was staged=true; same rationale applies
 - **Fix:** Changed AM to staged=false
 - **Commit:** `c1f0e68`
+
+### 11. `git diff --name-only` enumerates unstaged, not staged, files
+
+- **Source:** github-claude | PR #112 round 1 | 2026-04-29
+- **Severity:** MEDIUM
+- **File:** `plugins/harness/skills/github-review/SKILL.md`
+- **Finding:** Step 6.5 of the github-review skill enumerated code-fix files via `while IFS= read -r f; do STAGED_FILES+=("$f"); done < <(git diff --name-only)`, then re-staged them with `git add`. But Step 4 already stages every code fix; by Step 6.5 those files are in the index, so `git diff --name-only` (which reports working-tree-vs-index) returns nothing for them — and instead picks up unrelated unstaged edits (debug files, half-finished features) and sweeps them into the review-fix commit. This directly violates the "no `git add -A`" safety rule.
+- **Fix:** Remove the loop entirely. Code fixes are already staged from Step 4; only pattern files (`TOUCHED_PATTERN_FILES`) and the index file (`docs/reviews/CLAUDE.md`) need explicit staging in Step 6.5. Added a NOTE explaining why `git diff --name-only` is the wrong API here, plus a guard to skip `git add` when the array is empty.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 12. INDEX_TOUCHED flag missed when only existing-pattern rows update
+
+- **Source:** github-codex-connector | PR #112 round 2 | 2026-04-29
+- **Severity:** P2 / MEDIUM
+- **File:** `plugins/harness/skills/github-review/SKILL.md`
+- **Finding:** Step 6.5 stages `docs/reviews/CLAUDE.md` only when `INDEX_TOUCHED=1`. The flag was set when Step 6.3 created a new pattern (a new row appended to the index) but NOT when Step 6.2 appended an entry to an existing pattern (the row's Findings count + Last Updated also change). Result: an index with stale Findings counts and dates after every cycle that only touched existing patterns — a small but progressively-misleading drift.
+- **Fix:** Documented the invariant explicitly in `references/pattern-kb.md` § Step 6.4: "Set `INDEX_TOUCHED=1` whenever the index file is rewritten — Step 6.2 (appending to existing) AND Step 6.3 (creating new)." Updated SKILL.md § Step 6.5 to reference the invariant with a comment near the `[ "${INDEX_TOUCHED:-0}" -eq 1 ] && STAGED_FILES+=("docs/reviews/CLAUDE.md")` line.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

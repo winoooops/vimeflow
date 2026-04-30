@@ -53,6 +53,12 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
 
 #### Changed
 
+- 禁用 `.github/workflows/codex-review.yml`（重命名为 `.disabled`）。
+  连续两个 PR 中，聚合式 Codex Action 每次推送都触达 OpenAI 配额上限
+  （[PR #109 复盘](docs/reviews/retrospectives/2026-04-29-tests-panel-bridge-session.md)）。
+  行内评审继续通过 `chatgpt-codex-connector` GitHub App 集成进行；
+  `/harness-plugin:github-review` 现在直接消费该入口
+  （[#111](https://github.com/winoooops/vimeflow/issues/111)）。
 - Harness 默认后端从 `claude_code_sdk` 改为按角色启动 `claude -p` 子进程。
   直接继承用户本地 `~/.claude` 的 CLI 登录凭证；默认路径不再需要
   `ANTHROPIC_API_KEY` 或 `ANTHROPIC_BASE_URL`。SDK 被保留为通过
