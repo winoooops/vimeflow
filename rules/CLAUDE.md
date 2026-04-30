@@ -37,7 +37,7 @@ Each directory contains files covering the same topics:
 | `code-review.md`          | Review triggers, severity levels, agent delegation (common only)                                                                                                      |
 | `agents.md`               | Agent orchestration, parallel execution (common only)                                                                                                                 |
 | `worktrees.md`            | Git worktree lifecycle, lock guardrails, cleanup (common only)                                                                                                        |
-| `design-philosophy.md`    | Strategic design, deep modules, complexity budget, and error-prevention principles from _A Philosophy of Software Design_ (common only)                                |
+| `design-philosophy.md`    | Strategic design, deep modules, complexity budget, and error-prevention principles from _A Philosophy of Software Design_ (common only)                               |
 | `idea-framework.md`       | IDEA (Intent/Danger/Explain/Alternatives) for code-review findings and option comparisons (common only) — **canonical home**; `agents/code-reviewer.md` references it |
 
 ## Precedence

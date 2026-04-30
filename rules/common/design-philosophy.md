@@ -1,7 +1,7 @@
 # Design Philosophy
 
-This rule captures the project-level takeaways from *A Philosophy of Software
-Design* and turns them into reviewable engineering judgment. It explains why the
+This rule captures the project-level takeaways from _A Philosophy of Software
+Design_ and turns them into reviewable engineering judgment. It explains why the
 other rules exist, especially when a checklist is too blunt to make the right
 call.
 
