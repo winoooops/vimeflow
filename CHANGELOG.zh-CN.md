@@ -53,12 +53,32 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
 
 #### Changed
 
-- 禁用 `.github/workflows/codex-review.yml`（重命名为 `.disabled`）。
-  连续两个 PR 中，聚合式 Codex Action 每次推送都触达 OpenAI 配额上限
-  （[PR #109 复盘](docs/reviews/retrospectives/2026-04-29-tests-panel-bridge-session.md)）。
-  行内评审继续通过 `chatgpt-codex-connector` GitHub App 集成进行；
-  `/harness-plugin:github-review` 现在直接消费该入口
-  （[#111](https://github.com/winoooops/vimeflow/issues/111)）。
+- 重写 `/harness-plugin:github-review`，同时消费 `chatgpt-codex-connector`
+  行内评审、Claude Code Review 聚合评论与人类评审者评论（第三类输入）。
+  状态持久化改为 git commit-message trailers（不再使用 JSON 状态文件），
+  Step 1 通过实时 GraphQL 比对做惰性回收。React+resolve 链由 codex 验证
+  把关：本地 `codex exec` 确认补丁确实修复了上游 finding 之后，才会触发
+  reply + `resolveReviewThread`。
+  ([#112](https://github.com/winoooops/vimeflow/pull/112),
+  [`e9b6bdc`](https://github.com/winoooops/vimeflow/commit/e9b6bdc),
+  closes [#111](https://github.com/winoooops/vimeflow/issues/111)) —
+  patterns: [Error Surfacing](docs/reviews/patterns/error-surfacing.md),
+  [Documentation Accuracy](docs/reviews/patterns/documentation-accuracy.md),
+  [Git Operations](docs/reviews/patterns/git-operations.md)。
+  - 禁用 `.github/workflows/codex-review.yml`（重命名为 `.disabled`）。
+    连续两个 PR 中，聚合式 Codex Action 每次推送都触达 OpenAI 配额上限
+    （[PR #109 复盘](docs/reviews/retrospectives/2026-04-29-tests-panel-bridge-session.md)）；
+    日后若配额恢复，可一行 commit 还原。
+  - 7 轮自身 dogfood 循环端到端处理约 30 个 findings；其中 16 个是
+    spec/plan 未预见、由 dogfood 循环本身发现的回归。0 个遗留 issue。
+  - Skill 结构：thin orchestrator（`SKILL.md`，约 700 行）+
+    7 个 references（`parsing.md`、`empty-state-classification.md`、
+    `verify-prompt.md`、`pattern-kb.md`、`commit-trailers.md`、
+    `cleanup-recovery.md`、`input-resolution.md`）+ 2 个脚本
+    （`scripts/helpers.sh`、`scripts/verify.sh`）。
+  - 复盘：[`docs/reviews/retrospectives/2026-04-30-harness-github-review-rewrite-session.md`](docs/reviews/retrospectives/2026-04-30-harness-github-review-rewrite-session.md)
+  - 规格：`docs/superpowers/specs/2026-04-29-harness-github-review-connector-design.md`
+  - 计划：`docs/superpowers/plans/2026-04-29-harness-github-review-connector.md`
 - Harness 默认后端从 `claude_code_sdk` 改为按角色启动 `claude -p` 子进程。
   直接继承用户本地 `~/.claude` 的 CLI 登录凭证；默认路径不再需要
   `ANTHROPIC_API_KEY` 或 `ANTHROPIC_BASE_URL`。SDK 被保留为通过

@@ -57,12 +57,34 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
 
 #### Changed
 
-- Disabled `.github/workflows/codex-review.yml` (renamed to `.disabled`).
-  The aggregated Codex Action hit OpenAI quota every push for two PRs running
-  ([PR #109 retrospective](docs/reviews/retrospectives/2026-04-29-tests-panel-bridge-session.md)).
-  Inline review continues via the `chatgpt-codex-connector` GitHub App
-  integration; `/harness-plugin:github-review` now consumes that surface
-  ([#111](https://github.com/winoooops/vimeflow/issues/111)).
+- `/harness-plugin:github-review` rewritten to consume `chatgpt-codex-connector`
+  inline reviews + Claude Code Review aggregated comments + human reviewer
+  comments as a third source. State persistence via git commit-message
+  trailers (no JSON state file) with lazy reconciliation against live GraphQL
+  state. Codex-verified react+resolve chain: reply + `resolveReviewThread`
+  fire only after local `codex exec` agrees the staged fix addressed the
+  upstream finding.
+  ([#112](https://github.com/winoooops/vimeflow/pull/112),
+  [`e9b6bdc`](https://github.com/winoooops/vimeflow/commit/e9b6bdc),
+  closes [#111](https://github.com/winoooops/vimeflow/issues/111)) —
+  patterns: [Error Surfacing](docs/reviews/patterns/error-surfacing.md),
+  [Documentation Accuracy](docs/reviews/patterns/documentation-accuracy.md),
+  [Git Operations](docs/reviews/patterns/git-operations.md).
+  - Disabled `.github/workflows/codex-review.yml` (renamed to `.disabled`).
+    The aggregated Codex Action hit OpenAI quota every push for two PRs
+    running ([PR #109 retrospective](docs/reviews/retrospectives/2026-04-29-tests-panel-bridge-session.md));
+    single-commit revert if quota is restored later.
+  - 7 self-dogfood cycles processed ~30 findings end-to-end; 16 of those
+    were self-discovered regressions caught by the dogfood loop itself.
+    0 follow-up issues filed.
+  - Skill structure: thin orchestrator (`SKILL.md`, ~700 lines) +
+    7 references (`parsing.md`, `empty-state-classification.md`,
+    `verify-prompt.md`, `pattern-kb.md`, `commit-trailers.md`,
+    `cleanup-recovery.md`, `input-resolution.md`) + 2 scripts
+    (`scripts/helpers.sh`, `scripts/verify.sh`).
+  - Retrospective: [`docs/reviews/retrospectives/2026-04-30-harness-github-review-rewrite-session.md`](docs/reviews/retrospectives/2026-04-30-harness-github-review-rewrite-session.md)
+  - Spec: `docs/superpowers/specs/2026-04-29-harness-github-review-connector-design.md`
+  - Plan: `docs/superpowers/plans/2026-04-29-harness-github-review-connector.md`
 - Harness default backend swapped from `claude_code_sdk` to `claude -p`
   subprocess per role. Inherits the user's `~/.claude` CLI auth; the
   default path no longer requires `ANTHROPIC_API_KEY` or
