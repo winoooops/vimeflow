@@ -178,5 +178,3 @@ export const TokenCache = ({ usage }: TokenCacheProps): ReactElement => {
     </div>
   )
 }
-
-export default TokenCache
