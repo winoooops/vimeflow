@@ -6,7 +6,7 @@ Rules follow a layered precedence model (like CSS specificity). Language-specifi
 
 ```
 rules/
-├── common/                # Universal defaults (12 files) — always applies
+├── common/                # Universal defaults (13 files) — always applies
 ├── typescript/            # TypeScript/React overrides
 │   ├── coding-style/      # CLAUDE.md (auto-loaded) + a11y-components.md (on-demand)
 │   ├── testing/           # CLAUDE.md (auto-loaded) + a11y-queries.md (on-demand)
