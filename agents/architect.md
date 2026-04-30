@@ -61,6 +61,9 @@ For each design decision, document:
   implementation complexity
 - Information hiding: callers should not need to know internal sequencing,
   recovery, cleanup, or state transitions
+- See `rules/common/design-philosophy.md` for the full depth-vs-shallowness
+  rationale, complexity budget guidance, and interface discipline review
+  heuristics that inform these principles and the Red Flags below
 
 ### 2. Scalability (Desktop Context)
 
