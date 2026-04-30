@@ -6,7 +6,7 @@ Rules follow a layered precedence model (like CSS specificity). Language-specifi
 
 ```
 rules/
-├── common/                # Universal defaults (11 files) — always applies
+├── common/                # Universal defaults (12 files) — always applies
 ├── typescript/            # TypeScript/React overrides
 │   ├── coding-style/      # CLAUDE.md (auto-loaded) + a11y-components.md (on-demand)
 │   ├── testing/           # CLAUDE.md (auto-loaded) + a11y-queries.md (on-demand)
@@ -37,6 +37,7 @@ Each directory contains files covering the same topics:
 | `code-review.md`          | Review triggers, severity levels, agent delegation (common only)                                                                                                      |
 | `agents.md`               | Agent orchestration, parallel execution (common only)                                                                                                                 |
 | `worktrees.md`            | Git worktree lifecycle, lock guardrails, cleanup (common only)                                                                                                        |
+| `design-philosophy.md`    | Strategic design, deep modules, complexity budget, and error-prevention principles from _A Philosophy of Software Design_ (common only)                                |
 | `idea-framework.md`       | IDEA (Intent/Danger/Explain/Alternatives) for code-review findings and option comparisons (common only) — **canonical home**; `agents/code-reviewer.md` references it |
 
 ## Precedence
@@ -50,4 +51,5 @@ Each directory contains files covering the same topics:
 - **Test coverage**: 80% minimum, TDD mandatory
 - **File size**: 200-400 lines typical, 800 max
 - **Function size**: <50 lines, <4 nesting levels
+- **Design philosophy**: prefer strategic design, deep modules, and error prevention over tactical patches
 - **Commits**: conventional format (`feat|fix|refactor|docs|test|chore|perf|ci`)

@@ -27,10 +27,13 @@ Before requesting review, ensure:
 Before marking code complete:
 
 - [ ] Code is readable and well-named
-- [ ] Functions are focused (<50 lines)
-- [ ] Files are cohesive (<800 lines)
+- [ ] Functions are focused (<50 lines is a review trigger)
+- [ ] Files are cohesive (<800 lines is a review trigger)
+- [ ] Modules are deep enough to hide meaningful complexity behind small interfaces
+- [ ] The change reduces future cognitive load instead of adding hidden coupling
 - [ ] No deep nesting (>4 levels)
 - [ ] Errors are handled explicitly
+- [ ] Preventable error states are designed away where practical
 - [ ] No hardcoded secrets or credentials
 - [ ] No console.log or debug statements
 - [ ] Tests exist for new functionality
@@ -75,7 +78,7 @@ Use these agents for code review:
 ```
 1. Run git diff to understand changes
 2. Check security checklist first
-3. Review code quality checklist
+3. Review code quality and design-complexity checklist
 4. Run relevant tests
 5. Verify coverage >= 80%
 6. Use appropriate agent for detailed review
@@ -101,6 +104,15 @@ Use these agents for code review:
 - Mutation patterns - prefer immutable operations
 - Missing tests - add test coverage
 
+### Design Complexity
+
+- Shallow wrappers - remove them or make them hide real complexity
+- Leaky interfaces - keep validation, sequencing, retries, and cleanup inside the owning module
+- Tactical patches - avoid one-off fixes that make the next change harder
+- Flag arguments - replace hidden modes with clearer operations or domain types
+- Caller burden - prefer one complete operation over several ordered half-steps
+- Preventable errors - validate at boundaries and make invalid states unrepresentable where practical
+
 ### Performance
 
 - N+1 queries - use JOINs or batching
@@ -120,5 +132,6 @@ This rule works with:
 
 - [testing.md](testing.md) - Test coverage requirements
 - [security.md](security.md) - Security checklist
+- [design-philosophy.md](design-philosophy.md) - Strategic design, deep modules, and error-prevention judgment
 - [git-workflow.md](git-workflow.md) - Commit standards
 - [agents.md](agents.md) - Agent delegation

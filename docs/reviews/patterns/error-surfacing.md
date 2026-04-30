@@ -2,13 +2,17 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-04-29
-ref_count: 2
+last_updated: 2026-04-30
+ref_count: 3
 ---
 
 # Error Surfacing
 
 ## Summary
+
+Design principle: first try to make the error impossible, then handle it inside
+the abstraction that has enough context to recover. If neither is possible,
+surface it clearly. Never bury it.
 
 `void promise` is the silent error swallowing footgun of the codebase. Every
 `void editorBuffer.openFile(...)` or `void someAsyncIpc()` discards both the

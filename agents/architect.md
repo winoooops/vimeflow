@@ -57,6 +57,10 @@ For each design decision, document:
 - High cohesion, low coupling
 - Clear interfaces between components
 - Independent deployability
+- Deep modules: small public interfaces that hide substantial, coherent
+  implementation complexity
+- Information hiding: callers should not need to know internal sequencing,
+  recovery, cleanup, or state transitions
 
 ### 2. Scalability (Desktop Context)
 
@@ -209,6 +213,10 @@ Watch for these architectural anti-patterns:
 - **Magic**: Unclear, undocumented behavior
 - **Tight Coupling**: Components too dependent
 - **God Object**: One class/component does everything
+- **Shallow Abstraction**: Extra files/functions that mostly forward calls and
+  add navigation without hiding complexity
+- **Leaky Interface**: Public APIs that force callers to manage validation,
+  retries, cleanup, or internal state ordering
 
 ## Project-Specific Architecture (VIBM)
 

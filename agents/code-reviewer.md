@@ -84,6 +84,10 @@ const result = await db.query(query, [userId])
 - **Missing tests** — New code paths without test coverage
 - **Dead code** — Commented-out code, unused imports, unreachable branches
 
+Treat size limits as design-review triggers, not automatic findings. A cohesive
+deep module can be better than several shallow pass-through files. Prefer
+findings that identify concrete cognitive load, bug risk, or caller burden.
+
 ```typescript
 // BAD: Deep nesting + mutation
 function processUsers(users) {
@@ -108,6 +112,27 @@ function processUsers(users) {
     .map((user) => ({ ...user, verified: true }))
 }
 ```
+
+### Design Complexity (MEDIUM)
+
+Use `rules/common/design-philosophy.md` when a diff changes interfaces,
+abstractions, or error boundaries. Flag only when the design creates concrete
+future-change cost, hidden coupling, or avoidable caller burden.
+
+- **Shallow modules** — New files/functions that mostly forward calls without
+  hiding complexity
+- **Leaky interfaces** — Callers must know internal ordering, cleanup,
+  validation, retry, or state-transition details
+- **Tactical patches** — One-off fixes that solve the immediate case while
+  making adjacent changes harder
+- **Flag-heavy APIs** — Boolean/mode flags that expose hidden behavior instead
+  of clear domain operations
+- **Error burden pushed outward** — Every caller must remember the same
+  validation or recovery sequence
+
+When suggesting a split, explain what complexity the new module will hide. When
+suggesting consolidation, explain how it makes the interface deeper or the call
+path easier to reason about.
 
 ### React/UI Patterns (HIGH)
 
