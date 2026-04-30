@@ -899,4 +899,70 @@ describe('WorkspaceView Integration Tests', () => {
       expect(within(editorPanel).queryByText('[+]')).not.toBeInTheDocument()
     })
   })
+
+  describe('TokenCache wiring', () => {
+    test('renders TokenCache with healthy headline when currentUsage is populated', async () => {
+      const { useAgentStatus } =
+        await import('../agent-status/hooks/useAgentStatus')
+      vi.mocked(useAgentStatus).mockReturnValue({
+        isActive: true,
+        agentType: 'claude-code',
+        modelId: 'sonnet-4-5',
+        modelDisplayName: 'Sonnet 4.5',
+        version: '1.0',
+        sessionId: 'sess-1',
+        agentSessionId: 'a-1',
+        contextWindow: {
+          usedPercentage: 30,
+          contextWindowSize: 200000,
+          totalInputTokens: 60000,
+          totalOutputTokens: 1200,
+          currentUsage: {
+            inputTokens: 700,
+            outputTokens: 0,
+            cacheCreationInputTokens: 1800,
+            cacheReadInputTokens: 7500,
+          },
+        },
+        cost: null,
+        rateLimits: null,
+        toolCalls: { total: 0, byType: {}, active: null },
+        recentToolCalls: [],
+        testRun: null,
+      })
+
+      render(<WorkspaceView />)
+
+      await waitFor(() => {
+        const percent = screen.getByTestId('token-cache-percent')
+        expect(percent).toHaveTextContent('75%')
+      })
+    })
+
+    test('renders TokenCache empty state when currentUsage is null', async () => {
+      const { useAgentStatus } =
+        await import('../agent-status/hooks/useAgentStatus')
+      vi.mocked(useAgentStatus).mockReturnValue({
+        isActive: true,
+        agentType: 'claude-code',
+        modelId: null,
+        modelDisplayName: null,
+        version: null,
+        sessionId: 'sess-1',
+        agentSessionId: null,
+        contextWindow: null,
+        cost: null,
+        rateLimits: null,
+        toolCalls: { total: 0, byType: {}, active: null },
+        recentToolCalls: [],
+        testRun: null,
+      })
+
+      render(<WorkspaceView />)
+
+      await waitFor(() => {
+        expect(screen.getByText(/no data yet/i)).toBeInTheDocument()
+      })
+    })
+  })
 })
