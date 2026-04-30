@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-04-29
-ref_count: 2
+ref_count: 3
 ---
 
 # Documentation Accuracy

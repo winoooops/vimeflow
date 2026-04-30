@@ -3,7 +3,7 @@ id: git-operations
 category: correctness
 created: 2026-04-09
 last_updated: 2026-04-29
-ref_count: 1
+ref_count: 2
 ---
 
 # Git Operations
