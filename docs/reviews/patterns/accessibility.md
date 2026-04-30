@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-04-10
-ref_count: 1
+last_updated: 2026-04-30
+ref_count: 2
 ---
 
 # Accessibility
@@ -114,3 +114,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The dialog moved focus to the Save button on open but never recorded or restored the previously focused element. On close (especially Cancel, where the user intended to keep editing), focus landed on `document.body`. The CodeMirror editor div is not natively focusable (it relies on `view.focus()`), so vim shortcuts silently no-oped until the user clicked back into the editor.
 - **Fix:** Capture `document.activeElement` into `previousFocusRef` when the dialog opens, restore to it when it closes. On the CodeMirror path, the previously focused element is `.cm-content` (natively focusable), so restoration reactivates vim key handling.
 - **Commit:** `3999b50 fix: address Claude review round 13 findings`
+
+### 12. Stat-card label/value/hint trio rendered as `<span>`s — no semantic association for screen readers
+
+- **Source:** github-claude | PR #115 round 1 | 2026-04-30
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/TokenCache.tsx`
+- **Finding:** The `StatCell` sub-component stacked three `<span>` elements (label / value / hint) inside a `<div>`. Screen readers announced the three cells of the stat grid as one run of text — `"cached 7.5k free reuse wrote 1.8k uploaded fresh 700 new tokens"` — with no structural hint that `7.5k` was the value for `cached`. Violates WCAG 1.3.1 (Info and Relationships) and the project's a11y mandate in `rules/typescript/coding-style/CLAUDE.md`.
+- **Fix:** Promote the outer grid container to `<dl>` and rewrite each cell as `<dt>` (term/label) + `<dd>` (value, retains the existing `data-testid` for tests) + `<dd>` (hint/description). Wrapping the per-cell `<dt>`/`<dd>` group in a `<div>` inside the `<dl>` is valid per the HTML living standard (added in 2015) and lets the existing card layout stay unchanged. Tailwind classes preserved → zero visual change.
+- **Commit:** `<COMMIT_SHA_PLACEHOLDER>`

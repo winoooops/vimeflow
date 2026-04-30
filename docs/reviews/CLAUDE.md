@@ -46,7 +46,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Testing Gaps](patterns/testing-gaps.md)                       | testing        | 8        | 1    | 2026-04-11   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md) | terminal       | 3        | 1    | 2026-04-09   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)   | code-quality   | 25       | 3    | 2026-04-30   |
-| [Accessibility](patterns/accessibility.md)                     | a11y           | 11       | 1    | 2026-04-10   |
+| [Accessibility](patterns/accessibility.md)                     | a11y           | 12       | 2    | 2026-04-30   |
 | [Async Race Conditions](patterns/async-race-conditions.md)     | react-patterns | 18       | 5    | 2026-04-29   |
 | [Command Injection](patterns/command-injection.md)             | security       | 5        | 1    | 2026-04-20   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)       | security       | 15       | 2    | 2026-04-20   |
@@ -60,3 +60,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [File Tree Paths](patterns/file-tree-paths.md)                 | files          | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                   | review-process | 5        | 0    | 2026-04-12   |
 | [E2E Testing](patterns/e2e-testing.md)                         | e2e-testing    | 9        | 1    | 2026-04-19   |
+| [Module Boundaries](patterns/module-boundaries.md)             | code-quality   | 1        | 0    | 2026-04-30   |

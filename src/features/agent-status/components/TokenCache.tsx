@@ -6,7 +6,7 @@ import {
   cacheTone,
   type CacheTone,
 } from '../utils/cacheRate'
-import { formatTokens } from './BudgetMetrics'
+import { formatTokens } from '../utils/format'
 
 // Pulse animation: use Tailwind's built-in `animate-pulse` to match the
 // existing pulse-dot pattern (ActivityEvent.tsx:180, ToolCallSummary.tsx:45,
@@ -79,6 +79,14 @@ const StackBar = ({
   )
 }
 
+// Each stat cell renders a definition-list group: <dt> term (label) + <dd>
+// value + <dd> description (hint). HTML5 allows multiple <dd> per <dt> when
+// the same term has multiple descriptions, which fits the
+// label / value / hint trio without needing visually-hidden text.
+// Wrapping <dt>/<dd> in a <div> inside <dl> is valid per the HTML living
+// standard (added in 2015) and lets us keep the existing card layout. Screen
+// readers announce the group as a name-value pair (WCAG 1.3.1) instead of
+// running text.
 const StatCell = ({
   label,
   value,
@@ -91,16 +99,16 @@ const StatCell = ({
   testId: string
 }): ReactElement => (
   <div className="flex flex-col gap-1 rounded-lg bg-surface-container px-2.5 py-2">
-    <span className="text-[8px] font-bold uppercase tracking-[0.08em] text-outline">
+    <dt className="text-[8px] font-bold uppercase tracking-[0.08em] text-outline">
       {label}
-    </span>
-    <span
+    </dt>
+    <dd
       data-testid={testId}
       className="font-mono text-sm font-semibold tabular-nums text-on-surface"
     >
       {value}
-    </span>
-    <span className="text-[8px] text-outline-variant">{hint}</span>
+    </dd>
+    <dd className="text-[8px] text-outline-variant">{hint}</dd>
   </div>
 )
 
@@ -147,7 +155,7 @@ export const TokenCache = ({ usage }: TokenCacheProps): ReactElement => {
         {isEmpty ? 'no data yet' : 'cached this turn'}
       </span>
 
-      <div className="grid grid-cols-3 gap-2">
+      <dl className="grid grid-cols-3 gap-2">
         <StatCell
           label="cached"
           value={formatTokens(buckets.cached)}
@@ -166,7 +174,7 @@ export const TokenCache = ({ usage }: TokenCacheProps): ReactElement => {
           hint="new tokens"
           testId="token-cache-stat-fresh"
         />
-      </div>
+      </dl>
     </div>
   )
 }

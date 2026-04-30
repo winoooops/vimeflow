@@ -1,11 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import {
-  BudgetMetrics,
-  formatTokens,
-  formatCost,
-  formatApiTime,
-} from './BudgetMetrics'
+import { BudgetMetrics, formatCost, formatApiTime } from './BudgetMetrics'
+import { formatTokens } from '../utils/format'
 import type { CostState, RateLimitsState } from '../types'
 
 const makeCost = (overrides: Partial<CostState> = {}): CostState => ({
