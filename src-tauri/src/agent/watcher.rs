@@ -148,7 +148,18 @@ fn record_event_diag(
                 h.same_path_repeat = h.same_path_repeat.saturating_add(1);
                 None
             }
-            (None, _) => None,
+            // No transcript_path on this event — break the streak. Without
+            // this reset, a sequence like [path=A, no-path, path=A] would
+            // log the second A with repeat=2 (treated as consecutive),
+            // making the counter misleading during exactly the
+            // speculative/missing-path windows this diagnostic is meant
+            // to capture. Resetting both fields treats the next
+            // path-bearing event as a fresh observation.
+            (None, _) => {
+                h.last_tx_path = None;
+                h.same_path_repeat = 0;
+                None
+            }
         };
         (path_change, h.same_path_repeat)
     };
@@ -512,6 +523,16 @@ pub fn start_watching(
                     break;
                 }
 
+                // Capture `started` BEFORE the read so `total` covers file
+                // I/O the same way the notify and inline sources do —
+                // otherwise WSL2/virtio-fs read latency is silently
+                // excluded from poll's number, making cross-source
+                // comparison unsound and biasing the freeze diagnosis
+                // toward notify. Dedup-skip `continue` paths run before
+                // `record_event_diag`, so unchanged-content polls never
+                // log a number — no noise.
+                let started = Instant::now();
+
                 let contents = match std::fs::read_to_string(&poll_path) {
                     Ok(c) if !c.trim().is_empty() => c,
                     _ => continue,
@@ -525,7 +546,6 @@ pub fn start_watching(
                     *last = contents.clone();
                 }
 
-                let started = Instant::now();
                 let (outcome, tx_path) = match parse_statusline(&poll_sid, &contents) {
                     Ok(parsed) => {
                         let _ = poll_app.emit("agent-status", &parsed.event);
@@ -588,13 +608,6 @@ pub async fn start_agent_watcher(
         .join(&session_id)
         .join("status.json");
 
-    log::info!(
-        "Starting agent watcher: session={}, path={}, active_watchers={}",
-        session_id,
-        path.display(),
-        state.active_count(),
-    );
-
     // Use the structured logger (already configured for the rest of this
     // file) for startup diagnostics. The earlier debug-only file log at
     // `/tmp/vimeflow-debug.log` was dropped: a fixed predictable path
@@ -609,8 +622,19 @@ pub async fn start_agent_watcher(
         path.display()
     );
 
-    // Stop any existing watcher for this session
+    // Stop any existing watcher for this session BEFORE counting active
+    // watchers — restarting the same session would otherwise inflate the
+    // count and produce a false "leaked watcher" signal. The post-remove
+    // count reflects watchers from OTHER sessions only, which is the
+    // useful leak signal for this log.
     state.remove(&session_id);
+
+    log::info!(
+        "Starting agent watcher: session={}, path={}, active_watchers={}",
+        session_id,
+        path.display(),
+        state.active_count(),
+    );
 
     let handle = start_watching(app_handle, session_id.clone(), path)?;
     state.insert(session_id.clone(), handle);
