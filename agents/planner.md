@@ -30,6 +30,9 @@ You are an expert planning specialist focused on creating comprehensive, actiona
 - Identify affected components
 - Review similar implementations
 - Consider reusable patterns
+- Apply `rules/common/design-philosophy.md`: prefer strategic changes that
+  reduce future cognitive load over tactical patches that only satisfy the
+  immediate request
 
 ### 3. Step Breakdown
 
@@ -110,6 +113,8 @@ Create detailed steps with:
 5. **Enable Testing**: Structure changes to be easily testable
 6. **Think Incrementally**: Each step should be verifiable
 7. **Document Decisions**: Explain why, not just what
+8. **Design for Depth**: Prefer a small interface that hides coherent complexity
+   over many shallow steps callers must coordinate
 
 ## Worked Example: Adding Conversation Export Feature
 

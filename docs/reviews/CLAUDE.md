@@ -45,7 +45,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)         | code-quality   | 1        | 0    | 2026-04-14   |
 | [Testing Gaps](patterns/testing-gaps.md)                       | testing        | 8        | 1    | 2026-04-11   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md) | terminal       | 3        | 1    | 2026-04-09   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)   | code-quality   | 21       | 3    | 2026-04-29   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)   | code-quality   | 25       | 3    | 2026-04-30   |
 | [Accessibility](patterns/accessibility.md)                     | a11y           | 11       | 1    | 2026-04-10   |
 | [Async Race Conditions](patterns/async-race-conditions.md)     | react-patterns | 18       | 5    | 2026-04-29   |
 | [Command Injection](patterns/command-injection.md)             | security       | 5        | 1    | 2026-04-20   |
@@ -56,7 +56,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [PTY Session Management](patterns/pty-session-management.md)   | backend        | 5        | 1    | 2026-04-09   |
 | [Git Operations](patterns/git-operations.md)                   | correctness    | 12       | 2    | 2026-04-29   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)   | editor         | 12       | 0    | 2026-04-11   |
-| [Error Surfacing](patterns/error-surfacing.md)                 | error-handling | 19       | 2    | 2026-04-29   |
+| [Error Surfacing](patterns/error-surfacing.md)                 | error-handling | 19       | 3    | 2026-04-30   |
 | [File Tree Paths](patterns/file-tree-paths.md)                 | files          | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                   | review-process | 5        | 0    | 2026-04-12   |
 | [E2E Testing](patterns/e2e-testing.md)                         | e2e-testing    | 9        | 1    | 2026-04-19   |

@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-04-29
+last_updated: 2026-04-30
 ref_count: 3
 ---
 
@@ -203,4 +203,40 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `plugins/harness/skills/github-review/scripts/helpers.sh`
 - **Finding:** Lines 4–7 of `helpers.sh` instructed readers to source the file with `source "$(dirname "$0")/scripts/helpers.sh"`. SKILL.md's Bootstrap section spends a full paragraph explaining why this fails in a skill context: in an interactive shell (which is what runs the skill body), `$0` is the shell binary's name (`bash`), so `dirname "$0"` resolves to `/usr/bin` and the source path becomes `/usr/bin/scripts/helpers.sh` — a spurious file-not-found that would mask every later step. SKILL.md's Bootstrap replaces this with a hardcoded repo-relative path (`SKILL_DIR="plugins/harness/skills/github-review"; source "$SKILL_DIR/scripts/helpers.sh"`) plus a `git rev-parse` fallback. A developer or agent reading only `helpers.sh` to learn how to invoke it would copy the documented-but-broken pattern into a new script and hit the same failure without SKILL.md's explanatory bootstrap guard. Doc-vs-authoritative-usage divergence after SKILL.md was refactored, same family as #20 above and #17 (canonical-source migration leaving stale pointers behind).
 - **Fix:** Replaced the `dirname "$0"` example in the header with the repo-relative form from SKILL.md, and added a one-line cross-reference to SKILL.md § Bootstrap so anyone learning to source helpers.sh sees the rationale (interactive `$0` quirk) before trying the broken alternative.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. architect.md embeds design-philosophy concepts but omits the cross-reference planner.md carries
+
+- **Source:** github-claude | PR #114 round 1 | 2026-04-30
+- **Severity:** LOW
+- **File:** `agents/architect.md`
+- **Finding:** PR #114 added bullets to two architect.md sections — "1. Modularity & Separation of Concerns" gained "Deep modules" and "Information hiding" lines extracted directly from the new `rules/common/design-philosophy.md`, and "Red Flags" gained "Shallow Abstraction" and "Leaky Interface" anti-patterns from the same source. The sibling `agents/planner.md` was given an explicit "Apply `rules/common/design-philosophy.md`: prefer strategic changes…" pointer in its Pattern Identification step. architect.md got the concepts inline but no pointer back to the source file. An architect agent making a deep design trade-off would see the summary bullets but not know to open `design-philosophy.md` for the full Complexity Budget, Interface Discipline, and Review Heuristics sections. Same family as #20 (stale cross-references after sibling-file refactor) and #21 (doc-vs-authoritative-usage divergence) — sibling docs land their borrowed concepts but the back-pointer to the canonical source is missed.
+- **Fix:** Added a single cross-reference bullet at the end of "### 1. Modularity & Separation of Concerns" — placed adjacent to the existing deep-module and information-hiding bullets so readers see the source pointer right where the embedded concepts appear: "See `rules/common/design-philosophy.md` for the full depth-vs-shallowness rationale, complexity budget guidance, and interface discipline review heuristics that inform these principles and the Red Flags below". Mirrors the planner.md "Apply" approach, costs one bullet, closes the gap between architect's inline embedding and planner's explicit pointer.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. rules/CLAUDE.md common-files count off-by-one after adding design-philosophy.md
+
+- **Source:** github-claude | PR #114 round 2 | 2026-04-30
+- **Severity:** LOW
+- **File:** `rules/CLAUDE.md`
+- **Finding:** Line 9 of `rules/CLAUDE.md` was bumped from `(11 files)` to `(12 files)` by this PR. `ls rules/common/` confirms 13 files are actually present after `design-philosophy.md` was added. The pre-PR count was already stale (claimed 11, actual 12), and the PR incremented by 1 to 12 instead of recounting — so it kept the off-by-one rather than fixing it. Agents reading the structural-tree comment to verify directory completeness would stop at 12 and miss the 13th file. Same off-by-one-after-stale-baseline class as #2 (broken design path mock) and #3 (wrong dev server port): a number-bearing doc gets nudged by the immediate diff without re-deriving from ground truth.
+- **Fix:** Changed `(12 files)` to `(13 files)` on line 9. Re-derived from `ls rules/common/ | wc -l` rather than incrementing the stale baseline. The pre-existing inconsistency that pre-dates this PR is corrected as part of the same fix since it is in the line we are touching anyway and Claude flagged the resulting number specifically.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. code-reviewer.md severity ordering broken — MEDIUM section landed mid-HIGH block
+
+- **Source:** github-claude | PR #114 round 3 | 2026-04-30
+- **Severity:** MEDIUM
+- **File:** `agents/code-reviewer.md`
+- **Finding:** The review checklist in `agents/code-reviewer.md` is severity-ordered (CRITICAL → HIGH → MEDIUM → LOW). The new `### Design Complexity (MEDIUM)` section was inserted between `### Code Quality (HIGH)` and `### React/UI Patterns (HIGH)`, with three more HIGH sections following before the next MEDIUM (`### Performance (MEDIUM)`). An LLM reviewer iterating the file linearly would hit a MEDIUM mid-HIGH and de-prioritize subsequent HIGH sections, weakening the implicit priority signal that document order conveys. Theme: doc structure carries semantic meaning that text-content-only reviews miss — placement = priority hint.
+- **Fix:** Moved the Design Complexity section out of L116–135 (between Code Quality and React/UI) and re-inserted it immediately before Performance (MEDIUM) and after Backend Patterns (HIGH). Final ordering is now contiguous-by-severity: Security (CRITICAL) → Code Quality (HIGH) → React/UI Patterns (HIGH) → Tauri/IPC Patterns (HIGH) → Backend Patterns (HIGH) → Design Complexity (MEDIUM) → Performance (MEDIUM) → Best Practices (LOW). The thematic pairing with Code Quality (the IDEA's stated authoring intent) is preserved at zero cost — Design Complexity still appears in the same overall MEDIUM-band region readers expect.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 25. design-philosophy.md error-handling rule has missing pronoun "it"
+
+- **Source:** github-claude | PR #114 round 3 | 2026-04-30
+- **Severity:** LOW
+- **File:** `rules/common/design-philosophy.md`
+- **Finding:** Line 80 read "Retry or mask the failure only when the module can prove that is safe." The pronoun "it" was missing — should be "prove that it is safe." Ungrammatical and the referent of "that" was ambiguous (the failure? the masking action? the module state?) in a rule about when error masking is permissible. Agents reading the rule for guidance might infer broader permission to mask failures from the looser-than-intended phrasing.
+- **Fix:** Inserted the missing pronoun: "prove that is safe" → "prove that it is safe" on line 80. Single-character semantic addition, no structural change.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
