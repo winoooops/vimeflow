@@ -113,27 +113,6 @@ function processUsers(users) {
 }
 ```
 
-### Design Complexity (MEDIUM)
-
-Use `rules/common/design-philosophy.md` when a diff changes interfaces,
-abstractions, or error boundaries. Flag only when the design creates concrete
-future-change cost, hidden coupling, or avoidable caller burden.
-
-- **Shallow modules** — New files/functions that mostly forward calls without
-  hiding complexity
-- **Leaky interfaces** — Callers must know internal ordering, cleanup,
-  validation, retry, or state-transition details
-- **Tactical patches** — One-off fixes that solve the immediate case while
-  making adjacent changes harder
-- **Flag-heavy APIs** — Boolean/mode flags that expose hidden behavior instead
-  of clear domain operations
-- **Error burden pushed outward** — Every caller must remember the same
-  validation or recovery sequence
-
-When suggesting a split, explain what complexity the new module will hide. When
-suggesting consolidation, explain how it makes the interface deeper or the call
-path easier to reason about.
-
 ### React/UI Patterns (HIGH)
 
 When reviewing React UI code, also check:
@@ -209,6 +188,27 @@ const usersWithPosts = await db.query(`
   GROUP BY u.id
 `)
 ```
+
+### Design Complexity (MEDIUM)
+
+Use `rules/common/design-philosophy.md` when a diff changes interfaces,
+abstractions, or error boundaries. Flag only when the design creates concrete
+future-change cost, hidden coupling, or avoidable caller burden.
+
+- **Shallow modules** — New files/functions that mostly forward calls without
+  hiding complexity
+- **Leaky interfaces** — Callers must know internal ordering, cleanup,
+  validation, retry, or state-transition details
+- **Tactical patches** — One-off fixes that solve the immediate case while
+  making adjacent changes harder
+- **Flag-heavy APIs** — Boolean/mode flags that expose hidden behavior instead
+  of clear domain operations
+- **Error burden pushed outward** — Every caller must remember the same
+  validation or recovery sequence
+
+When suggesting a split, explain what complexity the new module will hide. When
+suggesting consolidation, explain how it makes the interface deeper or the call
+path easier to reason about.
 
 ### Performance (MEDIUM)
 

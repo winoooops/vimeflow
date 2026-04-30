@@ -77,7 +77,7 @@ The best error handling is often error prevention:
 When an error cannot be designed away, do not ignore it. Pick one explicit path:
 
 - Recover locally and leave state consistent.
-- Retry or mask the failure only when the module can prove that is safe.
+- Retry or mask the failure only when the module can prove that it is safe.
 - Translate the low-level failure into a meaningful domain error.
 - Surface the error to a caller or user who can act on it.
 

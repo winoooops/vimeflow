@@ -222,3 +222,21 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** Line 9 of `rules/CLAUDE.md` was bumped from `(11 files)` to `(12 files)` by this PR. `ls rules/common/` confirms 13 files are actually present after `design-philosophy.md` was added. The pre-PR count was already stale (claimed 11, actual 12), and the PR incremented by 1 to 12 instead of recounting — so it kept the off-by-one rather than fixing it. Agents reading the structural-tree comment to verify directory completeness would stop at 12 and miss the 13th file. Same off-by-one-after-stale-baseline class as #2 (broken design path mock) and #3 (wrong dev server port): a number-bearing doc gets nudged by the immediate diff without re-deriving from ground truth.
 - **Fix:** Changed `(12 files)` to `(13 files)` on line 9. Re-derived from `ls rules/common/ | wc -l` rather than incrementing the stale baseline. The pre-existing inconsistency that pre-dates this PR is corrected as part of the same fix since it is in the line we are touching anyway and Claude flagged the resulting number specifically.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. code-reviewer.md severity ordering broken — MEDIUM section landed mid-HIGH block
+
+- **Source:** github-claude | PR #114 round 3 | 2026-04-30
+- **Severity:** MEDIUM
+- **File:** `agents/code-reviewer.md`
+- **Finding:** The review checklist in `agents/code-reviewer.md` is severity-ordered (CRITICAL → HIGH → MEDIUM → LOW). The new `### Design Complexity (MEDIUM)` section was inserted between `### Code Quality (HIGH)` and `### React/UI Patterns (HIGH)`, with three more HIGH sections following before the next MEDIUM (`### Performance (MEDIUM)`). An LLM reviewer iterating the file linearly would hit a MEDIUM mid-HIGH and de-prioritize subsequent HIGH sections, weakening the implicit priority signal that document order conveys. Theme: doc structure carries semantic meaning that text-content-only reviews miss — placement = priority hint.
+- **Fix:** Moved the Design Complexity section out of L116–135 (between Code Quality and React/UI) and re-inserted it immediately before Performance (MEDIUM) and after Backend Patterns (HIGH). Final ordering is now contiguous-by-severity: Security (CRITICAL) → Code Quality (HIGH) → React/UI Patterns (HIGH) → Tauri/IPC Patterns (HIGH) → Backend Patterns (HIGH) → Design Complexity (MEDIUM) → Performance (MEDIUM) → Best Practices (LOW). The thematic pairing with Code Quality (the IDEA's stated authoring intent) is preserved at zero cost — Design Complexity still appears in the same overall MEDIUM-band region readers expect.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 25. design-philosophy.md error-handling rule has missing pronoun "it"
+
+- **Source:** github-claude | PR #114 round 3 | 2026-04-30
+- **Severity:** LOW
+- **File:** `rules/common/design-philosophy.md`
+- **Finding:** Line 80 read "Retry or mask the failure only when the module can prove that is safe." The pronoun "it" was missing — should be "prove that it is safe." Ungrammatical and the referent of "that" was ambiguous (the failure? the masking action? the module state?) in a rule about when error masking is permissible. Agents reading the rule for guidance might infer broader permission to mask failures from the looser-than-intended phrasing.
+- **Fix:** Inserted the missing pronoun: "prove that is safe" → "prove that it is safe" on line 80. Single-character semantic addition, no structural change.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
