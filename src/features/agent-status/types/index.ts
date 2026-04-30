@@ -86,11 +86,19 @@ export interface TestRunSnapshot {
   summary: TestRunSummary
 }
 
+export interface CurrentUsageState {
+  inputTokens: number
+  outputTokens: number
+  cacheCreationInputTokens: number
+  cacheReadInputTokens: number
+}
+
 export interface ContextWindowState {
   usedPercentage: number
   contextWindowSize: number
   totalInputTokens: number
   totalOutputTokens: number
+  currentUsage: CurrentUsageState | null
 }
 
 export interface CostState {

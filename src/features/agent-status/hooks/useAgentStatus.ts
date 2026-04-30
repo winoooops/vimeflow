@@ -224,6 +224,22 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
                   contextWindowSize: Number(p.contextWindow.contextWindowSize),
                   totalInputTokens: Number(p.contextWindow.totalInputTokens),
                   totalOutputTokens: Number(p.contextWindow.totalOutputTokens),
+                  currentUsage: p.contextWindow.currentUsage
+                    ? {
+                        inputTokens: Number(
+                          p.contextWindow.currentUsage.inputTokens
+                        ),
+                        outputTokens: Number(
+                          p.contextWindow.currentUsage.outputTokens
+                        ),
+                        cacheCreationInputTokens: Number(
+                          p.contextWindow.currentUsage.cacheCreationInputTokens
+                        ),
+                        cacheReadInputTokens: Number(
+                          p.contextWindow.currentUsage.cacheReadInputTokens
+                        ),
+                      }
+                    : null,
                 }
               : prev.contextWindow,
             cost: p.cost
