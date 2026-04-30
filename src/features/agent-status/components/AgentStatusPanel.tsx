@@ -2,6 +2,7 @@ import type { ReactElement } from 'react'
 import { useAgentStatus } from '../hooks/useAgentStatus'
 import { StatusCard } from './StatusCard'
 import { ContextBucket } from './ContextBucket'
+import { TokenCache } from './TokenCache'
 import { ToolCallSummary } from './ToolCallSummary'
 import { FilesChanged } from './FilesChanged'
 import { TestResults } from './TestResults'
@@ -76,6 +77,7 @@ export const AgentStatusPanel = ({
               totalInputTokens={status.contextWindow?.totalInputTokens ?? 0}
               totalOutputTokens={status.contextWindow?.totalOutputTokens ?? 0}
             />
+            <TokenCache usage={status.contextWindow?.currentUsage ?? null} />
           </div>
 
           <div className="thin-scrollbar flex-1 overflow-y-auto">

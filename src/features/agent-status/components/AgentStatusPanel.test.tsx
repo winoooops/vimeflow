@@ -212,4 +212,99 @@ describe('AgentStatusPanel', () => {
       screen.getByRole('button', { name: /activity/i })
     ).toBeInTheDocument()
   })
+
+  test('renders TokenCache populated with the canonical hit rate', async () => {
+    const { useAgentStatus } = await import('../hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue({
+      ...defaultStatus,
+      isActive: true,
+      agentType: 'claude-code',
+      sessionId: 'session-1',
+      contextWindow: {
+        usedPercentage: 10,
+        contextWindowSize: 200000,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        currentUsage: {
+          inputTokens: 700,
+          outputTokens: 0,
+          cacheCreationInputTokens: 1800,
+          cacheReadInputTokens: 7500,
+        },
+      },
+    })
+
+    render(<AgentStatusPanel {...defaultProps} sessionId="session-1" />)
+
+    const percent = screen.getByTestId('token-cache-percent')
+    expect(percent).toHaveTextContent('75%')
+  })
+
+  test('renders TokenCache empty state when currentUsage is null', async () => {
+    const { useAgentStatus } = await import('../hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue({
+      ...defaultStatus,
+      isActive: true,
+      agentType: 'claude-code',
+      sessionId: 'session-1',
+      contextWindow: null,
+    })
+
+    render(<AgentStatusPanel {...defaultProps} sessionId="session-1" />)
+
+    expect(screen.getByText(/no data yet/i)).toBeInTheDocument()
+  })
+
+  test('mounts TokenCache between ContextBucket and the scrollable region', async () => {
+    const { useAgentStatus } = await import('../hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue({
+      ...defaultStatus,
+      isActive: true,
+      agentType: 'claude-code',
+      sessionId: 'session-1',
+      contextWindow: {
+        usedPercentage: 10,
+        contextWindowSize: 200000,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        currentUsage: {
+          inputTokens: 700,
+          outputTokens: 0,
+          cacheCreationInputTokens: 1800,
+          cacheReadInputTokens: 7500,
+        },
+      },
+    })
+
+    render(<AgentStatusPanel {...defaultProps} sessionId="session-1" />)
+
+    const panel = screen.getByTestId('agent-status-panel')
+    const tokenCache = screen.getByTestId('token-cache')
+
+    // DOM-order requirements from the design spec:
+    //   StatusCard → ContextBucket → TokenCache  (static top region, in this order)
+    //                                ↓
+    //                         scrollable region
+
+    /* eslint-disable testing-library/no-node-access */
+    const scrollable = panel.querySelector('.thin-scrollbar')
+
+    // 1. TokenCache must be the LAST child of the static top region
+    //    (i.e., it follows StatusCard and ContextBucket, never precedes them).
+    const staticTop = panel.firstElementChild
+    expect(staticTop).not.toBeNull()
+    expect(staticTop?.lastElementChild).toBe(tokenCache)
+
+    // 2. TokenCache must precede the scrollable region in document order.
+    expect(scrollable).not.toBeNull()
+
+    const positionRelativeToScrollable = tokenCache.compareDocumentPosition(
+      scrollable as Node
+    )
+    /* eslint-enable testing-library/no-node-access */
+
+    expect(
+      positionRelativeToScrollable & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
 })
