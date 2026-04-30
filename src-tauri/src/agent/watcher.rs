@@ -87,6 +87,53 @@ struct PathHistory {
     same_path_repeat: u32,
 }
 
+impl PathHistory {
+    /// Record one event's observation of the transcript-path field and
+    /// update the streak counter. Returns `Some(old)` when the path
+    /// changed (caller logs `watcher.tx_path_change`), `None` otherwise.
+    ///
+    /// Extracted as a method so the state machine is unit-testable
+    /// without driving the surrounding `record_event_diag` (which
+    /// otherwise needs a `Mutex` + a logger to be exercised). The four
+    /// arms encode:
+    ///
+    ///   1. Path differs from the last seen → log a path_change, reset
+    ///      the streak counter to 1, return the old path.
+    ///   2. First observation (no prior path) → set, repeat=1.
+    ///   3. Same path as last → increment streak counter.
+    ///   4. No path on this event → reset BOTH `last_tx_path` AND
+    ///      `same_path_repeat`. Without this reset, a sequence
+    ///      `[path=A, no-path, path=A]` would log the second A with
+    ///      `repeat=2` (treated as a consecutive observation across
+    ///      the no-path interlude), which is precisely the
+    ///      speculative/missing-path window this diagnostic exists
+    ///      to capture.
+    fn observe(&mut self, tx_path: Option<&str>) -> Option<String> {
+        match (tx_path, self.last_tx_path.as_deref()) {
+            (Some(new), Some(old)) if new != old => {
+                let old_owned = old.to_string();
+                self.last_tx_path = Some(new.to_string());
+                self.same_path_repeat = 1;
+                Some(old_owned)
+            }
+            (Some(new), None) => {
+                self.last_tx_path = Some(new.to_string());
+                self.same_path_repeat = 1;
+                None
+            }
+            (Some(_), Some(_)) => {
+                self.same_path_repeat = self.same_path_repeat.saturating_add(1);
+                None
+            }
+            (None, _) => {
+                self.last_tx_path = None;
+                self.same_path_repeat = 0;
+                None
+            }
+        }
+    }
+}
+
 fn short_sid(sid: &str) -> &str {
     sid.get(..8).unwrap_or(sid)
 }
@@ -132,35 +179,7 @@ fn record_event_diag(
 
     let (path_change, repeat) = {
         let mut h = path_history.lock().expect("watcher path-history lock");
-        let path_change = match (tx_path, h.last_tx_path.as_deref()) {
-            (Some(new), Some(old)) if new != old => {
-                let old_owned = old.to_string();
-                h.last_tx_path = Some(new.to_string());
-                h.same_path_repeat = 1;
-                Some(old_owned)
-            }
-            (Some(new), None) => {
-                h.last_tx_path = Some(new.to_string());
-                h.same_path_repeat = 1;
-                None
-            }
-            (Some(_), Some(_)) => {
-                h.same_path_repeat = h.same_path_repeat.saturating_add(1);
-                None
-            }
-            // No transcript_path on this event — break the streak. Without
-            // this reset, a sequence like [path=A, no-path, path=A] would
-            // log the second A with repeat=2 (treated as consecutive),
-            // making the counter misleading during exactly the
-            // speculative/missing-path windows this diagnostic is meant
-            // to capture. Resetting both fields treats the next
-            // path-bearing event as a fresh observation.
-            (None, _) => {
-                h.last_tx_path = None;
-                h.same_path_repeat = 0;
-                None
-            }
-        };
+        let path_change = h.observe(tx_path);
         (path_change, h.same_path_repeat)
     };
 
@@ -670,5 +689,159 @@ mod tests {
     fn remove_returns_false_for_missing_session() {
         let state = AgentWatcherState::new();
         assert!(!state.remove("nonexistent"));
+    }
+
+    // -- PathHistory state machine ----------------------------------
+    //
+    // These tests cover all four arms of `PathHistory::observe` and act
+    // as regression guards for the round-1 `(None, _)` reset and the
+    // round-1 fix that ensured `same_path_repeat = 1` (not 0) on a
+    // path change. They run against the extracted method rather than
+    // driving `record_event_diag` end-to-end, which is the only
+    // production caller — that function early-returns under
+    // `cfg!(debug_assertions)` and emits log side effects, both of
+    // which make end-to-end testing noisier than necessary for a pure
+    // state-machine check.
+
+    #[test]
+    fn path_history_first_observation_sets_path_and_repeat_1() {
+        let mut h = PathHistory::default();
+        let r = h.observe(Some("path-a"));
+        assert!(r.is_none(), "first observation must not report a path change");
+        assert_eq!(h.last_tx_path.as_deref(), Some("path-a"));
+        assert_eq!(h.same_path_repeat, 1);
+    }
+
+    #[test]
+    fn path_history_repeat_increments_on_same_path() {
+        let mut h = PathHistory::default();
+        h.observe(Some("path-a"));
+        h.observe(Some("path-a"));
+        assert_eq!(h.same_path_repeat, 2);
+
+        let r = h.observe(Some("path-a"));
+        assert!(
+            r.is_none(),
+            "same-path observation must not report a path change"
+        );
+        assert_eq!(h.same_path_repeat, 3);
+    }
+
+    #[test]
+    fn path_history_path_change_returns_old_and_resets_repeat() {
+        let mut h = PathHistory::default();
+        h.observe(Some("path-a"));
+        h.observe(Some("path-a"));
+        assert_eq!(h.same_path_repeat, 2);
+
+        let r = h.observe(Some("path-b"));
+        assert_eq!(
+            r.as_deref(),
+            Some("path-a"),
+            "path change must return the previous value"
+        );
+        assert_eq!(h.last_tx_path.as_deref(), Some("path-b"));
+        assert_eq!(
+            h.same_path_repeat, 1,
+            "streak counter resets to 1 on a fresh path"
+        );
+    }
+
+    #[test]
+    fn path_history_no_path_resets_streak_after_repeat() {
+        // Regression guard for the round-1 `(None, _)` bug. The
+        // sequence [path=A, no-path, path=A] MUST NOT report the
+        // second A as repeat=2 — the no-path interlude breaks the
+        // streak, and the next path-bearing event is fresh.
+        let mut h = PathHistory::default();
+        h.observe(Some("path-a"));
+        h.observe(Some("path-a"));
+        assert_eq!(h.same_path_repeat, 2);
+
+        let r = h.observe(None);
+        assert!(r.is_none());
+        assert_eq!(h.last_tx_path, None, "no-path must clear the path cache");
+        assert_eq!(h.same_path_repeat, 0, "no-path must reset the streak");
+
+        let r = h.observe(Some("path-a"));
+        assert!(
+            r.is_none(),
+            "the next path-bearing event after a no-path is treated as fresh — \
+             it does not report a change against the cleared cache"
+        );
+        assert_eq!(h.same_path_repeat, 1, "streak starts at 1, not 3");
+    }
+
+    #[test]
+    fn path_history_no_path_when_already_no_path_is_idempotent() {
+        let mut h = PathHistory::default();
+        let r = h.observe(None);
+        assert!(r.is_none());
+        assert_eq!(h.last_tx_path, None);
+        assert_eq!(h.same_path_repeat, 0);
+    }
+
+    // -- short_sid / short_path / TxOutcome::label -------------------
+
+    #[test]
+    fn short_sid_truncates_long_to_8_chars() {
+        assert_eq!(short_sid("abcdefghijklmnop"), "abcdefgh");
+    }
+
+    #[test]
+    fn short_sid_returns_input_unchanged_when_short() {
+        assert_eq!(short_sid("abc"), "abc");
+        assert_eq!(short_sid(""), "");
+    }
+
+    #[test]
+    fn short_sid_handles_uuid_form() {
+        // Real session IDs are UUIDs; the canonical 8-char prefix is
+        // what the diagnostic logs render.
+        assert_eq!(
+            short_sid("ddb8d9f1-30b1-43dc-a1a2-405aaaf95e14"),
+            "ddb8d9f1"
+        );
+    }
+
+    #[test]
+    fn short_path_extracts_basename_without_extension() {
+        assert_eq!(
+            short_path("/home/x/projects/abcdefghijklm.jsonl"),
+            "abcdefgh",
+            "basename file_stem truncated to 8 chars"
+        );
+        assert_eq!(short_path("/x/y/short.jsonl"), "short");
+    }
+
+    #[test]
+    fn short_path_handles_input_without_directory() {
+        assert_eq!(short_path("nofileonly.jsonl"), "nofileon");
+    }
+
+    #[test]
+    fn short_path_returns_question_mark_when_no_basename() {
+        assert_eq!(
+            short_path("/"),
+            "?",
+            "root path has no file_stem — fall back to ? sentinel"
+        );
+    }
+
+    #[test]
+    fn tx_outcome_label_covers_every_variant() {
+        // Drives every match arm so adding a new variant without a
+        // label causes this test to fail to compile (exhaustive match
+        // by construction in TxOutcome::label, plus this test reads
+        // every variant).
+        assert_eq!(TxOutcome::Started.label(), "started");
+        assert_eq!(TxOutcome::Replaced.label(), "replaced");
+        assert_eq!(TxOutcome::AlreadyRunning.label(), "already_running");
+        assert_eq!(TxOutcome::Missing.label(), "missing");
+        assert_eq!(TxOutcome::OutsidePath.label(), "outside_path");
+        assert_eq!(TxOutcome::NotFile.label(), "not_file");
+        assert_eq!(TxOutcome::StartFailed.label(), "start_failed");
+        assert_eq!(TxOutcome::NoPath.label(), "no_path");
+        assert_eq!(TxOutcome::ParseError.label(), "parse_error");
     }
 }
