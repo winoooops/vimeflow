@@ -16,7 +16,7 @@ A separate, smaller problem in the same panel:
 
 3. **`ActivityFooter` lies about lines added/removed.** It sources `linesAdded` / `linesRemoved` from `status.cost?.totalLinesAdded / totalLinesRemoved` — fields populated only when Claude Code emits cost-metrics events (typically on turn-end). Until then the footer shows `+0 / -0` even when files have been edited. Meanwhile, the sibling `<FilesChanged>` panel one tier above already shows the _real_ per-file insertions/deletions from `useGitStatus`. Two readings of the same concept, one wrong.
 
-This spec moves the StatusCard to the Sidebar (problem 1+2) and re-sources the footer's line totals from the same git-diff data that powers FilesChanged (problem 3).
+This spec relocates the StatusCard's render-site to the Sidebar (problem 1+2) — the file itself stays in `agent-status/components/`, only the parent that mounts it changes — and re-sources the footer's line totals from the same git-diff data that powers FilesChanged (problem 3).
 
 ## 2. Out of scope
 
@@ -66,7 +66,7 @@ WorkspaceView
        ├── <Sidebar agentStatus={status} … />
        │     └── <SidebarStatusHeader status={status}
        │                              activeSessionName={…} />   ← new
-       │           ├── if status.isActive: <StatusCard … />     ← moved here
+       │           ├── if status.isActive: <StatusCard … />     ← rendered here, file stays in agent-status/
        │           └── else:                inline idle JSX (avatar + name + "Idle" dot)
        │
        └── <AgentStatusPanel agentStatus={status} … />          ← prop, no longer hook
@@ -134,20 +134,21 @@ The `status="running"` literal currently flows from `AgentStatusPanel.tsx:67`. S
 
 No `<BudgetMetrics>` row in idle state — there's no data to show. The idle card is shorter than the active card (no metrics, no model name, no token cells). This vertical-jiggle on attach is intentional; layout-stability matters at the avatar/title row, not at the metrics row that only exists when there's data.
 
-### 5.2 `<StatusCard>` — moved, no behavior change
+### 5.2 `<StatusCard>` — stays put, only the render-site moves
 
-**From:** `src/features/agent-status/components/StatusCard.tsx`
-**To:** `src/features/workspace/components/StatusCard.tsx`
+**File:** `src/features/agent-status/components/StatusCard.tsx` — **no file move, no source edit**.
 
-Test file moves alongside (`StatusCard.test.tsx`).
+`<SidebarStatusHeader>` (in `src/features/workspace/components/`) imports it as:
 
-Imports updated:
+```ts
+import { StatusCard } from '../../agent-status/components/StatusCard'
+```
 
-- `import { BudgetMetrics } from './BudgetMetrics'` → `import { BudgetMetrics } from '../../agent-status/components/BudgetMetrics'`
-- `import type { CostState, RateLimitsState } from '../types'` → `import type { CostState, RateLimitsState } from '../../agent-status/types'`
-- `import { Tooltip } from '../../../components/Tooltip'` — depth unchanged, no edit
+This is a workspace → agent-status cross-feature import. The agent-status feature owns the `StatusCard` widget, its dependencies (`BudgetMetrics`, `CostState`, `RateLimitsState`), and its tests. The workspace feature only owns _where_ it renders, not the widget itself.
 
-`<BudgetMetrics>` stays at `src/features/agent-status/components/BudgetMetrics.tsx`. The agent-status feature still owns the budget-metrics concept; the workspace feature owns the rendering of the agent identity card. Cross-feature import (workspace → agent-status) is the price for this split, and it's already the pattern for type imports.
+Earlier draft proposed moving `StatusCard.tsx` into `workspace/components/`. Rejected after review (`docs/reviews/...`): physically relocating a component while it still depends on `BudgetMetrics` and agent-status types widens the feature boundary for no UX benefit. The component renders identically in either location; only the file path changes. Keeping it next to its dependencies is cleaner.
+
+`<BudgetMetrics>` and the existing `StatusCard.test.tsx` are unchanged.
 
 ### 5.3 `<Sidebar>` — modified
 
@@ -262,15 +263,15 @@ Add `useAgentStatus(activeSessionId)` call. Pass the resulting `AgentStatus` to 
 
 ## 6. Test plan
 
-| File                                                                                 | Coverage                                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/features/workspace/components/SidebarStatusHeader.test.tsx` (new)               | Active state delegates to `<StatusCard>` with mapped props; idle state renders gradient avatar + session name + "Idle"; idle fallback when `activeSessionName` is `null` shows "No session"             |
-| `src/features/workspace/components/StatusCard.test.tsx` (moved)                      | Existing assertions preserved; only the file path moves                                                                                                                                                 |
-| `src/features/workspace/components/Sidebar.test.tsx` (existing — update)             | Replace assertions about "Agent Alpha" / "SYSTEM IDLE" with assertions that delegate to `<SidebarStatusHeader>` (or test the rendered output for both active and idle props)                            |
-| `src/features/diff/utils/sumLines.test.ts` (new)                                     | Empty input → `{0, 0}`; mixed `insertions` / `deletions` (some `undefined`) sum correctly; large numbers don't overflow; single-file case                                                               |
-| `src/features/agent-status/components/ActivityFooter.test.tsx` (existing — update)   | Drop the `turnCount` test cases; assert two cells (duration + lines) only; remove `turnCount` from `ActivityFooterProps` test fixtures                                                                  |
-| `src/features/agent-status/components/AgentStatusPanel.test.tsx` (existing — update) | Pass `agentStatus` as a prop instead of mocking the hook; assert footer receives `linesAdded` / `linesRemoved` from a mock `useGitStatus`; assert `<StatusCard>` is no longer rendered inside the panel |
-| `src/features/workspace/WorkspaceView.test.tsx` (new or update)                      | Lifted `useAgentStatus` is called once with `activeSessionId`; both child components receive the same `agentStatus` reference                                                                           |
+| File                                                                                 | Coverage                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/features/workspace/components/SidebarStatusHeader.test.tsx` (new)               | Active state delegates to `<StatusCard>` with mapped props; idle state renders gradient avatar + session name + "Idle"; idle fallback when `activeSessionName` is `null` shows "No session"                                                                |
+| `src/features/agent-status/components/StatusCard.test.tsx` (existing — unchanged)    | No change. StatusCard stays in agent-status.                                                                                                                                                                                                               |
+| `src/features/workspace/components/Sidebar.test.tsx` (existing — update)             | Replace assertions about "Agent Alpha" / "SYSTEM IDLE" with assertions that delegate to `<SidebarStatusHeader>` (or test the rendered output for both active and idle props)                                                                               |
+| `src/features/diff/utils/sumLines.test.ts` (new)                                     | Empty input → `{0, 0}`; mixed `insertions` / `deletions` (some `undefined`) sum correctly; large numbers don't overflow; single-file case                                                                                                                  |
+| `src/features/agent-status/components/ActivityFooter.test.tsx` (existing — update)   | Drop the `turnCount` test cases; assert two cells (duration + lines) only; remove `turnCount` from `ActivityFooterProps` test fixtures                                                                                                                     |
+| `src/features/agent-status/components/AgentStatusPanel.test.tsx` (existing — update) | Pass `agentStatus` as a prop instead of mocking the hook; assert footer receives `linesAdded` / `linesRemoved` from a mock `useGitStatus`; assert `<StatusCard>` is no longer rendered inside the panel                                                    |
+| `src/features/workspace/WorkspaceView.test.tsx` (new or update)                      | Assert `useAgentStatus` receives the **latest** `activeSessionId` (not call count — the value flips from `null` to a real id during session restore, so call counts are not stable); assert both child components receive the same `agentStatus` reference |
 
 No Rust changes. No new Tauri events. No bindings to regenerate.
 
@@ -283,7 +284,7 @@ No Rust changes. No new Tauri events. No bindings to regenerate.
 
 **Behavioral regressions:**
 
-- The lifted `useAgentStatus` call now happens at `WorkspaceView` regardless of whether `<AgentStatusPanel>` is collapsed. The hook is cheap (one Tauri listener, derived state) — this is a wash.
+- `useAgentStatus` subscription owner moves from `<AgentStatusPanel>` to `<WorkspaceView>`. Mount/unmount semantics are unchanged: `AgentStatusPanel` is already permanently mounted (the width=0 collapse hides it visually but does not unmount), so it was already running the hook regardless of visibility. This is a refactor of where the hook is called, not a change in how often.
 - `ActivityFooter` lines numbers will differ from before. Previously they reflected agent-reported cumulative cost (which only includes agent-driven edits and only updates on cost events). Now they reflect git-diff working-tree state (includes manual edits, updates as files change). This is the _correct_ behavior; some users may notice the numbers move differently from what they remember.
 
 **Rollback:** No data migration, no persisted state, no schema changes. Reverting the PR fully restores the prior behavior.
