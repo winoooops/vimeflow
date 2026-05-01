@@ -8,7 +8,9 @@ import {
 import { Reorder } from 'framer-motion'
 import type { Session } from '../types'
 import type { FileNode } from '../../files/types'
+import type { AgentStatus } from '../../agent-status/types'
 import { FileExplorer } from './panels/FileExplorer'
+import { SidebarStatusHeader } from './SidebarStatusHeader'
 
 export interface SidebarProps {
   sessions: Session[]
@@ -20,6 +22,7 @@ export interface SidebarProps {
   onRenameSession?: (sessionId: string, name: string) => void
   onReorderSessions?: (sessions: Session[]) => void
   onFileSelect?: (node: FileNode) => void
+  agentStatus: AgentStatus
 }
 
 const FILE_EXPLORER_MIN = 100
@@ -167,6 +170,7 @@ export const Sidebar = ({
   onRenameSession = undefined,
   onReorderSessions = undefined,
   onFileSelect = undefined,
+  agentStatus,
 }: SidebarProps): ReactElement => {
   const [explorerHeight, setExplorerHeight] = useState(FILE_EXPLORER_DEFAULT)
   const [isDraggingSplit, setIsDraggingSplit] = useState(false)
@@ -219,24 +223,13 @@ export const Sidebar = ({
       className="flex h-full w-full flex-col bg-surface-container-low"
       data-testid="sidebar"
     >
-      {/* Agent header */}
-      <div className="flex items-center gap-3 px-4 py-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600">
-          <span className="material-symbols-outlined text-lg text-white">
-            smart_toy
-          </span>
-        </div>
-        <div className="min-w-0">
-          <div className="truncate font-label text-sm font-bold text-on-surface">
-            Agent Alpha
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-            <span className="font-label text-xs uppercase tracking-wider text-on-surface/50">
-              System Idle
-            </span>
-          </div>
-        </div>
+      <div className="px-3 pt-3 pb-2">
+        <SidebarStatusHeader
+          status={agentStatus}
+          activeSessionName={
+            sessions.find((s) => s.id === activeSessionId)?.name ?? null
+          }
+        />
       </div>
 
       {/* Sessions section header */}

@@ -4,6 +4,23 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Sidebar } from './Sidebar'
 import type { Session } from '../types'
+import type { AgentStatus } from '../../agent-status/types'
+
+const inactiveAgentStatus: AgentStatus = {
+  isActive: false,
+  agentType: null,
+  modelId: null,
+  modelDisplayName: null,
+  version: null,
+  sessionId: null,
+  agentSessionId: null,
+  contextWindow: null,
+  cost: null,
+  rateLimits: null,
+  toolCalls: { total: 0, byType: {}, active: null },
+  recentToolCalls: [],
+  testRun: null,
+}
 
 const mockSessions: Session[] = [
   {
@@ -102,6 +119,7 @@ describe('Sidebar', () => {
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
         onNewInstance={mockOnNewInstance}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -110,17 +128,19 @@ describe('Sidebar', () => {
     expect(sidebar).toHaveClass('w-full')
   })
 
-  test('renders agent header with name and status', () => {
+  test('renders the sidebar status header in the top slot', () => {
     render(
       <Sidebar
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
-    expect(screen.getByText('Agent Alpha')).toBeInTheDocument()
-    expect(screen.getByText('System Idle')).toBeInTheDocument()
+    expect(screen.getByTestId('sidebar-status-header-idle')).toBeInTheDocument()
+    expect(screen.queryByText('Agent Alpha')).not.toBeInTheDocument()
+    expect(screen.queryByText('System Idle')).not.toBeInTheDocument()
   })
 
   test('renders "Active Sessions" header with add button', () => {
@@ -129,6 +149,7 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -144,6 +165,7 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -160,6 +182,7 @@ describe('Sidebar', () => {
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
         onNewInstance={mockOnNewInstance}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -175,12 +198,19 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
-    expect(screen.getByText('auth middleware')).toBeInTheDocument()
-    expect(screen.getByText('fix: login bug')).toBeInTheDocument()
-    expect(screen.getByText('refactor: api layer')).toBeInTheDocument()
+    // The active session's name now also renders in the SidebarStatusHeader
+    // (idle state), so query within the session list to avoid duplicate
+    // matches on the active session's name.
+    const sessionList = screen.getByTestId('session-list')
+    expect(within(sessionList).getByText('auth middleware')).toBeInTheDocument()
+    expect(within(sessionList).getByText('fix: login bug')).toBeInTheDocument()
+    expect(
+      within(sessionList).getByText('refactor: api layer')
+    ).toBeInTheDocument()
   })
 
   test('active session has smart_toy icon', () => {
@@ -189,6 +219,7 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -204,6 +235,7 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -219,6 +251,7 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -236,6 +269,7 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -254,6 +288,7 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -269,6 +304,7 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -282,6 +318,7 @@ describe('Sidebar', () => {
         sessions={[]}
         activeSessionId={null}
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -294,6 +331,7 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -308,6 +346,7 @@ describe('Sidebar', () => {
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
         onNewInstance={mockOnNewInstance}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -327,6 +366,7 @@ describe('Sidebar', () => {
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
         onNewInstance={mockOnNewInstance}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -345,6 +385,7 @@ describe('Sidebar', () => {
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
         onNewInstance={mockOnNewInstance}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -363,6 +404,7 @@ describe('Sidebar', () => {
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
         onNewInstance={mockOnNewInstance}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -379,6 +421,7 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId={null}
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
@@ -401,6 +444,7 @@ describe('Sidebar', () => {
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
       />
     )
 
