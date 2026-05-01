@@ -139,6 +139,21 @@ describe('HttpGitService', () => {
       )
     })
 
+    test('includes untracked parameter when provided', async () => {
+      const file = 'src/components/NavBar.tsx'
+
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockFileDiffs[file]),
+      })
+
+      await service.getDiff(file, false, true)
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/git/diff?file=${encodeURIComponent(file)}&staged=false&untracked=true`
+      )
+    })
+
     test('throws error on failed request', async () => {
       fetchMock.mockResolvedValueOnce({
         ok: false,
@@ -324,6 +339,20 @@ describe('TauriGitService', () => {
         cwd: '/home/user/project',
         file: 'src/components/NavBar.tsx',
         staged: true,
+      })
+    })
+
+    test('passes untracked flag to get_git_diff', async () => {
+      const mockDiff = mockFileDiffs['src/components/NavBar.tsx']
+      invokeMock.mockResolvedValueOnce(mockDiff)
+
+      await service.getDiff('src/components/NavBar.tsx', false, true)
+
+      expect(invokeMock).toHaveBeenCalledWith('get_git_diff', {
+        cwd: '/home/user/project',
+        file: 'src/components/NavBar.tsx',
+        staged: false,
+        untracked: true,
       })
     })
 

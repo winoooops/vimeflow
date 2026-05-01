@@ -13,11 +13,13 @@ interface UseFileDiffReturn {
  * @param filePath - Path to the file
  * @param staged - Whether to fetch staged or unstaged diff
  * @param cwd - Working directory for git commands
+ * @param untracked - Whether the selected file is known to be untracked
  */
 export const useFileDiff = (
   filePath: string | null,
   staged = false,
-  cwd = '.'
+  cwd = '.',
+  untracked?: boolean
 ): UseFileDiffReturn => {
   const [diff, setDiff] = useState<FileDiff | null>(null)
   const [loading, setLoading] = useState(false)
@@ -41,7 +43,7 @@ export const useFileDiff = (
         setError(null)
 
         const service = createGitService(cwd)
-        const fileDiff = await service.getDiff(filePath, staged)
+        const fileDiff = await service.getDiff(filePath, staged, untracked)
 
         if (!cancelled) {
           setDiff(fileDiff)
@@ -67,7 +69,7 @@ export const useFileDiff = (
     return (): void => {
       cancelled = true
     }
-  }, [filePath, staged, cwd])
+  }, [filePath, staged, untracked, cwd])
 
   return {
     diff,

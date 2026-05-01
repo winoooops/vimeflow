@@ -331,9 +331,9 @@ pub async fn start_git_watcher(
 /// Synchronous core of `start_git_watcher`. Called by both the Tauri command and
 /// the pre-repo upgrade path — works against a cloneable `&GitWatcherState` so it
 /// doesn't require a `tauri::State` handle.
-fn start_git_watcher_inner(
+fn start_git_watcher_inner<R: tauri::Runtime>(
     cwd: &str,
-    app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle<R>,
     state: &GitWatcherState,
 ) -> Result<(), String> {
     let safe_cwd = validate_cwd(cwd)?;
@@ -657,10 +657,10 @@ fn start_git_watcher_inner(
 /// used in event payloads) and the canonicalized `safe_cwd` PathBuf (map
 /// key, used for dedup when multiple callers watch the same dir via
 /// different spellings).
-fn start_pre_repo_watcher_inner(
+fn start_pre_repo_watcher_inner<R: tauri::Runtime>(
     cwd: &str,
     safe_cwd: PathBuf,
-    app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle<R>,
     state: &GitWatcherState,
 ) -> Result<(), String> {
     let mut pre_repo_watchers = state.pre_repo_watchers.lock()
@@ -760,9 +760,9 @@ fn start_pre_repo_watcher_inner(
 /// the upgrade. Previously this used `cwd.to_string_lossy()` (the
 /// canonical form), stranding any frontend that had subscribed with a
 /// symlinked or non-canonical path.
-fn upgrade_to_repo_watcher(
+fn upgrade_to_repo_watcher<R: tauri::Runtime>(
     safe_cwd: PathBuf,
-    app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle<R>,
     state: GitWatcherState,
 ) -> Result<(), String> {
     // Collect the subscribers (original-cwd → refcount) from the pre-repo
@@ -798,12 +798,49 @@ fn upgrade_to_repo_watcher(
     // and the caller sees a combined error describing all failures.
     let mut errors: Vec<String> = Vec::new();
     for (original_cwd, refcount) in subscribers {
-        for _ in 0..refcount {
-            if let Err(e) =
-                start_git_watcher_inner(&original_cwd, app_handle.clone(), &state)
-            {
-                errors.push(format!("{}: {}", original_cwd, e));
-                break; // don't retry the same cwd if it's fundamentally broken
+        if refcount == 0 {
+            continue;
+        }
+
+        if let Err(e) = start_git_watcher_inner(&original_cwd, app_handle.clone(), &state) {
+            errors.push(format!("{}: {}", original_cwd, e));
+            continue;
+        }
+
+        // `start_git_watcher_inner` emits an initial refresh event on every
+        // call. During a pre-repo -> repo upgrade, a refcount > 1 means
+        // duplicate subscriptions for the SAME original cwd, not distinct
+        // listeners that need separate bootstrap events. Start once, then
+        // restore the remaining count directly under the repo watcher so
+        // the frontend receives one initial event instead of N.
+        if refcount > 1 {
+            let toplevel = state
+                .cwd_to_toplevel
+                .lock()
+                .map_err(|e| format!("Failed to lock cwd_to_toplevel: {}", e))?
+                .get(&original_cwd)
+                .cloned();
+
+            match toplevel {
+                Some(toplevel) => {
+                    let mut repo_watchers = state
+                        .repo_watchers
+                        .lock()
+                        .map_err(|e| format!("Failed to lock repo_watchers: {}", e))?;
+                    if let Some(watcher) = repo_watchers.get_mut(&toplevel) {
+                        *watcher.subscribers.entry(original_cwd.clone()).or_insert(0) +=
+                            refcount - 1;
+                    } else {
+                        errors.push(format!(
+                            "{}: repo watcher missing after successful upgrade",
+                            original_cwd
+                        ));
+                    }
+                }
+                None => errors.push(format!(
+                    "{}: toplevel mapping missing after successful upgrade",
+                    original_cwd
+                )),
             }
         }
     }
@@ -941,8 +978,8 @@ fn stop_git_watcher_inner(cwd: String, state: GitWatcherState) -> Result<(), Str
 }
 
 /// Emit git-status-changed event for all subscribers of a repo
-fn emit_for_all_subscribers(
-    app_handle: &tauri::AppHandle,
+fn emit_for_all_subscribers<R: tauri::Runtime>(
+    app_handle: &tauri::AppHandle<R>,
     state: &GitWatcherState,
     toplevel: &std::path::Path,
 ) {
@@ -964,7 +1001,10 @@ fn emit_for_all_subscribers(
 }
 
 /// Emit a git-status-changed event
-fn emit_git_status_changed(app_handle: &tauri::AppHandle, cwds: Vec<String>) {
+fn emit_git_status_changed<R: tauri::Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    cwds: Vec<String>,
+) {
     let payload = GitStatusChangedPayload { cwds };
 
     if let Err(e) = app_handle.emit("git-status-changed", payload) {
@@ -974,14 +1014,17 @@ fn emit_git_status_changed(app_handle: &tauri::AppHandle, cwds: Vec<String>) {
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_helpers::{configure_test_git, home_tempdir};
     use super::*;
     use std::fs;
     use std::process::Command;
+    use std::sync::{Arc, Mutex};
+    use tauri::Listener;
     use tempfile::TempDir;
 
     /// Create a temp git repo for testing
     fn create_temp_repo() -> TempDir {
-        let temp = TempDir::new().expect("failed to create temp dir");
+        let temp = home_tempdir();
 
         Command::new("git")
             .args(["init"])
@@ -989,19 +1032,69 @@ mod tests {
             .output()
             .expect("failed to run git init");
 
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(temp.path())
-            .output()
-            .expect("failed to configure git");
-
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(temp.path())
-            .output()
-            .expect("failed to configure git");
+        configure_test_git(temp.path());
 
         temp
+    }
+
+    #[test]
+    fn upgrade_to_repo_watcher_emits_once_for_duplicate_original_cwd() {
+        let app = tauri::test::mock_builder()
+            .build(tauri::generate_context!())
+            .expect("failed to build test app");
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let received_for_listener = received.clone();
+
+        app.handle().listen("git-status-changed", move |event| {
+            received_for_listener
+                .lock()
+                .expect("failed to lock received events")
+                .push(event.payload().to_string());
+        });
+
+        let temp = create_temp_repo();
+        let cwd = temp.path().to_string_lossy().to_string();
+        let safe_cwd = validate_cwd(&cwd).expect("cwd should validate");
+        let state = GitWatcherState::new();
+        let mut subscribers = HashMap::new();
+
+        subscribers.insert(cwd.clone(), 3);
+        state
+            .pre_repo_watchers
+            .lock()
+            .expect("failed to lock pre_repo_watchers")
+            .insert(
+                safe_cwd.clone(),
+                PreRepoWatcher {
+                    subscribers,
+                    stop_flag: Arc::new(AtomicBool::new(false)),
+                },
+            );
+
+        let result = upgrade_to_repo_watcher(safe_cwd, app.handle().clone(), state.clone());
+
+        assert!(result.is_ok(), "upgrade should succeed: {:?}", result.err());
+
+        let toplevel = resolve_toplevel(temp.path()).expect("repo should resolve");
+        let toplevel_key =
+            validate_cwd(&toplevel.to_string_lossy()).expect("toplevel should validate");
+        let repo_watchers = state
+            .repo_watchers
+            .lock()
+            .expect("failed to lock repo_watchers");
+        let watcher = repo_watchers
+            .get(&toplevel_key)
+            .expect("repo watcher should exist");
+
+        assert_eq!(watcher.subscribers.get(&cwd), Some(&3));
+        drop(repo_watchers);
+
+        std::thread::sleep(Duration::from_millis(100));
+
+        let events = received.lock().expect("failed to lock received events");
+
+        assert_eq!(events.len(), 1);
+        assert!(events[0].contains(&cwd));
     }
 
     #[test]

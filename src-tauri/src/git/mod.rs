@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod test_helpers;
 pub mod watcher;
 
 use serde::Serialize;
@@ -847,7 +849,12 @@ async fn get_untracked_numstat(
 
 /// Tauri command: Get diff for a specific file
 #[tauri::command]
-pub async fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<FileDiff, String> {
+pub async fn get_git_diff(
+    cwd: String,
+    file: String,
+    staged: bool,
+    untracked: Option<bool>,
+) -> Result<FileDiff, String> {
     let safe_cwd = validate_cwd(&cwd)?;
     validate_file_path(&file)?;
 
@@ -916,10 +923,16 @@ pub async fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<Fil
     // Skipped for staged == true: staged new files show up as status "A"
     // and `git diff --cached -- <file>` already produces correct output
     // for them. Only the untracked (status "??") path needs the fallback.
-    if parsed.hunks.is_empty()
-        && !staged
-        && is_file_untracked(&canonical_toplevel, &file).await?
-    {
+    let should_try_untracked_fallback = if parsed.hunks.is_empty() && !staged {
+        match untracked {
+            Some(value) => value,
+            None => is_file_untracked(&canonical_toplevel, &file).await?,
+        }
+    } else {
+        false
+    };
+
+    if should_try_untracked_fallback {
         let untracked_stdout = get_untracked_diff(&canonical_toplevel, &file).await?;
         return Ok(parse_git_diff(&untracked_stdout, &file));
     }
@@ -929,38 +942,8 @@ pub async fn get_git_diff(cwd: String, file: String, staged: bool) -> Result<Fil
 
 #[cfg(test)]
 mod tests {
+    use super::test_helpers::{configure_test_git, home_tempdir};
     use super::*;
-
-    /// Create a tempdir inside `$HOME` so `validate_cwd`'s
-    /// `ensure_within_home` check passes. The default `tempfile::tempdir()`
-    /// lives in `/tmp` which is outside `$HOME` on every supported platform,
-    /// and the validation in production code would reject the path before
-    /// any git subprocess runs. Tests that exercise the `git_status` /
-    /// `get_git_diff` commands must use this helper instead.
-    fn home_tempdir() -> tempfile::TempDir {
-        let home = dirs::home_dir().expect("no home directory");
-        tempfile::Builder::new()
-            .prefix("vimeflow-git-test-")
-            .tempdir_in(&home)
-            .expect("failed to create temp dir under $HOME")
-    }
-
-    /// Configure `user.email` and `user.name` on a fresh git repo so
-    /// `git commit` doesn't fail on CI runners without a global git
-    /// config. Call this after `git init`, before any `git commit`.
-    fn configure_test_git(repo_path: &std::path::Path) {
-        use std::process::Command;
-        for (key, val) in &[
-            ("user.email", "test@example.com"),
-            ("user.name", "Test User"),
-        ] {
-            Command::new("git")
-                .args(["config", key, val])
-                .current_dir(repo_path)
-                .output()
-                .expect("git config failed");
-        }
-    }
 
     // parse_numstat tests
 
@@ -1473,7 +1456,7 @@ mod tests {
 
         // Call get_git_diff from the subdirectory with file path "sub/foo.ts"
         let subdir_str = subdir.to_string_lossy().to_string();
-        let result = get_git_diff(subdir_str, "sub/foo.ts".to_string(), false).await;
+        let result = get_git_diff(subdir_str, "sub/foo.ts".to_string(), false, None).await;
 
         assert!(result.is_ok(), "get_git_diff should succeed from subdir");
         let diff = result.unwrap();
@@ -1500,7 +1483,7 @@ mod tests {
         let tmp = home_tempdir();
         let non_repo = tmp.path().to_string_lossy().to_string();
 
-        let result = get_git_diff(non_repo, "foo.txt".to_string(), false).await;
+        let result = get_git_diff(non_repo, "foo.txt".to_string(), false, None).await;
 
         assert!(result.is_ok(), "non-repo should return Ok, not error");
         let diff = result.unwrap();
@@ -1578,7 +1561,8 @@ mod tests {
         fs::write(&untracked, "alpha\nbeta\ngamma\n").expect("failed to write");
 
         let repo_str = repo_path.to_string_lossy().to_string();
-        let result = get_git_diff(repo_str, "untracked.txt".to_string(), false).await;
+        let result =
+            get_git_diff(repo_str, "untracked.txt".to_string(), false, Some(true)).await;
 
         assert!(
             result.is_ok(),

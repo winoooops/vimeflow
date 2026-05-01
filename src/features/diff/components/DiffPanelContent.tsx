@@ -153,11 +153,21 @@ export const DiffPanelContent = ({
   const selectedFilePath = selectedFileEntry?.path ?? null
   const selectedFileStaged = selectedFileEntry?.staged ?? false
 
+  const selectedFileUntracked =
+    selectedFileEntry === undefined
+      ? undefined
+      : selectedFileEntry.status === 'untracked'
+
   const {
     diff,
     loading: diffLoading,
     error: diffError,
-  } = useFileDiff(selectedFilePath, selectedFileStaged, cwd)
+  } = useFileDiff(
+    selectedFilePath,
+    selectedFileStaged,
+    cwd,
+    selectedFileUntracked
+  )
 
   // Loading state
   if (effectiveStatusLoading) {

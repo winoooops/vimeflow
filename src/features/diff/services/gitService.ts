@@ -8,7 +8,11 @@ export interface GitService {
   getStatus(): Promise<ChangedFile[]>
 
   /** Get diff for a specific file */
-  getDiff(file: string, staged?: boolean): Promise<FileDiff>
+  getDiff(
+    file: string,
+    staged?: boolean,
+    untracked?: boolean
+  ): Promise<FileDiff>
 
   /** Stage a file or specific hunk */
   stageFile(file: string, hunkIndex?: number): Promise<void>
@@ -59,8 +63,15 @@ export class HttpGitService implements GitService {
     return response.json() as Promise<ChangedFile[]>
   }
 
-  async getDiff(file: string, staged = false): Promise<FileDiff> {
+  async getDiff(
+    file: string,
+    staged = false,
+    untracked?: boolean
+  ): Promise<FileDiff> {
     const params = new URLSearchParams({ file, staged: String(staged) })
+    if (untracked !== undefined) {
+      params.set('untracked', String(untracked))
+    }
     const response = await fetch(`/api/git/diff?${params}`)
 
     if (!response.ok) {
@@ -127,13 +138,20 @@ export class TauriGitService implements GitService {
     }
   }
 
-  async getDiff(file: string, staged = false): Promise<FileDiff> {
+  async getDiff(
+    file: string,
+    staged = false,
+    untracked?: boolean
+  ): Promise<FileDiff> {
     try {
-      return await invoke<FileDiff>('get_git_diff', {
+      const args = {
         cwd: this.cwd,
         file,
         staged,
-      })
+        ...(untracked !== undefined ? { untracked } : {}),
+      }
+
+      return await invoke<FileDiff>('get_git_diff', args)
     } catch (error) {
       throw new Error(`Failed to get diff for ${file}: ${String(error)}`)
     }
