@@ -62,7 +62,7 @@ Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + Re
   <img src="docs/media/agent-status-sidebar.png" alt="代理状态侧边栏 — 上下文计量器、Token 缓存、活动事件流、变更文件、测试面板" width="280" />
 </p>
 
-<sub align="center">右侧面板特写 — 上下文计量器、Token 缓存、活动事件流、变更文件和测试面板，由实时 Claude Code 会话填充。</sub>
+<p align="center"><sub>右侧面板特写 — 上下文计量器、Token 缓存、活动事件流、变更文件和测试面板，由实时 Claude Code 会话填充。</sub></p>
 
 ### 功能模块
 

@@ -21,7 +21,13 @@ Kooha records WebM cleanly without dropping frames; ffmpeg converts to a small, 
 3. Convert to GIF:
 
    ```bash
-   ffmpeg -y -i docs/media/Kooha-*.webm \
+   # Pick the most recent recording explicitly — a bare glob silently picks
+   # only the first match if multiple takes are present, or fails opaquely
+   # when none match.
+   WEBM=$(ls -t docs/media/Kooha-*.webm 2>/dev/null | head -1)
+   [ -z "$WEBM" ] && { echo "No Kooha WebM in docs/media/" >&2; exit 1; }
+
+   ffmpeg -y -i "$WEBM" \
      -vf "setpts=PTS/1.5,fps=15,scale=1280:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=80[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
      -loop 0 docs/media/hero-init.gif
    ```

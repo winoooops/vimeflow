@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-04-30
-ref_count: 5
+ref_count: 6
 ---
 
 # Documentation Accuracy
@@ -267,3 +267,21 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** Line 182 read `export default TokenCache`, alongside the existing `export const TokenCache` at line ~107. Both consumers in this PR (`AgentStatusPanel.tsx:5` and `TokenCache.test.tsx:3`) import via `{ TokenCache }`, and every other component in `src/features/agent-status/components/` (StatusCard, ContextBucket, ToolCallSummary, etc.) exports named-only. The default export was a scaffolding-convention artefact with no current callers. Risk is drift: a future contributor seeing both forms might assume the default is canonical and write `import TokenCache from './TokenCache'` in a new file, breaking module-style consistency across the feature.
 - **Fix:** Removed line 182 (`export default TokenCache`). Named export remains; both existing importers continue to work unchanged. If a default ever becomes necessary (e.g., for `React.lazy`), add it at the point of need.
 - **Commit:** _(see git log for the round-3 fix commit)_
+
+### 29. Bare shell glob in copy-pasteable ffmpeg one-liner silently misfires on multiple or zero matches
+
+- **Source:** github-claude | PR #121 round 1 | 2026-05-01
+- **Severity:** LOW
+- **File:** `docs/media/CLAUDE.md`
+- **Finding:** The capture-pipeline guide showed `ffmpeg -y -i docs/media/Kooha-*.webm \ ...` as the conversion step. Because the shell expands the glob in argument position, two failure modes are silent: (a) if multiple Kooha recordings exist (a re-record left behind), ffmpeg receives them all as separate `-i` inputs but the single-stream filter chain only reads the first — the contributor thinks they converted their latest take but the GIF comes from whichever WebM sorts first; (b) if no file matches, the literal pattern is passed through and ffmpeg fails opaquely with `No such file or directory`. Either way, no diagnostic surfaces "you have multiple takes" or "you have none."
+- **Fix:** Replaced the glob with explicit selection of the newest file via `WEBM=$(ls -t docs/media/Kooha-*.webm 2>/dev/null | head -1)` and a guard `[ -z "$WEBM" ] && { echo "No Kooha WebM in docs/media/" >&2; exit 1; }`. The conversion uses `"$WEBM"` so the choice is unambiguous and the empty case fails loudly with a readable message.
+- **Commit:** _(see git log for the round-1 fix commit)_
+
+### 30. `<sub align="center">` is a no-op — caption renders left-aligned under centered image
+
+- **Source:** github-claude | PR #121 round 1 | 2026-05-01
+- **Severity:** LOW
+- **File:** `README.md`, `README.zh-CN.md`
+- **Finding:** Both READMEs centered the agent-status-sidebar caption with `<sub align="center">…</sub>`. `<sub>` is phrasing content; the `align` attribute has no effect on inline elements and GitHub's Markdown renderer ignores it. Result: the caption rendered left-aligned beneath a centered image, breaking the visual unit. The hero caption two sections higher rendered correctly only because it was wrapped in a `<div align="center">` block, not because of any attribute on `<sub>`.
+- **Fix:** Wrapped the caption in `<p align="center">` so the centering applies at the block level: `<p align="center"><sub>…</sub></p>`. Mirror update applied to `README.zh-CN.md` for bilingual parity.
+- **Commit:** _(see git log for the round-1 fix commit)_

@@ -62,7 +62,7 @@ Design spec: [`docs/superpowers/specs/2026-04-12-agent-status-sidebar/`](docs/su
   <img src="docs/media/agent-status-sidebar.png" alt="Agent Status Sidebar — Current Context gauge, Token Cache block, Activity feed, Files Changed, Tests panel" width="280" />
 </p>
 
-<sub align="center">Right panel close-up — Context gauge, Token Cache, Activity feed, Files Changed, and Tests panel populated by a live Claude Code session.</sub>
+<p align="center"><sub>Right panel close-up — Context gauge, Token Cache, Activity feed, Files Changed, and Tests panel populated by a live Claude Code session.</sub></p>
 
 ### Feature Modules
 
