@@ -66,14 +66,15 @@ Design spec: [`docs/superpowers/specs/2026-04-12-agent-status-sidebar/`](docs/su
 
 ### Feature Modules
 
-| Module           | Description                                                                               |
-| ---------------- | ----------------------------------------------------------------------------------------- |
-| **terminal**     | xterm.js + Tauri PTY IPC bridge, session management                                       |
-| **editor**       | IDE-style tabbed editor — CodeMirror 6, vim mode (@replit/codemirror-vim), vim status bar |
-| **diff**         | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard)    |
-| **files**        | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop           |
-| **agent-status** | Real-time agent observability panel (statusline bridge + transcript parsing)              |
-| **workspace**    | Layout shell composing all zones above                                                    |
+| Module              | Description                                                                                                                 |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **terminal**        | xterm.js + Tauri PTY IPC bridge, session management                                                                         |
+| **editor**          | IDE-style tabbed editor — CodeMirror 6, vim mode (@replit/codemirror-vim), vim status bar                                   |
+| **diff**            | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard)                                      |
+| **files**           | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop                                             |
+| **command-palette** | Vim-style `:` palette (global shortcut, fuzzy match, namespace drill-in) — built-in command registry shipping incrementally |
+| **agent-status**    | Real-time agent observability panel (statusline bridge + transcript parsing)                                                |
+| **workspace**       | Layout shell composing all zones above                                                                                      |
 
 ![Editor with vim mode — `:w` typed, status bar shows -- NORMAL --](docs/media/editor-vim.png)
 

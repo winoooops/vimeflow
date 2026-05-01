@@ -66,14 +66,15 @@ Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + Re
 
 ### 功能模块
 
-| 模块             | 描述                                                                  |
-| ---------------- | --------------------------------------------------------------------- |
-| **terminal**     | xterm.js + Tauri PTY IPC 桥接，会话管理                               |
-| **editor**       | IDE 风格标签编辑器 — CodeMirror 6、Vim 模式、语言扩展、Vim 状态栏     |
-| **diff**         | Lazygit 风格 Git Diff 查看器（并排 + 统一视图，hunk 导航，暂存/丢弃） |
-| **files**        | 文件浏览树，面包屑导航，Git 状态徽章（M/A/D/U），拖放支持             |
-| **agent-status** | 实时代理可观察性面板（statusline 桥接 + transcript 解析）             |
-| **workspace**    | 组合以上所有区域的布局外壳                                            |
+| 模块                | 描述                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| **terminal**        | xterm.js + Tauri PTY IPC 桥接，会话管理                                               |
+| **editor**          | IDE 风格标签编辑器 — CodeMirror 6、Vim 模式、语言扩展、Vim 状态栏                     |
+| **diff**            | Lazygit 风格 Git Diff 查看器（并排 + 统一视图，hunk 导航，暂存/丢弃）                 |
+| **files**           | 文件浏览树，面包屑导航，Git 状态徽章（M/A/D/U），拖放支持                             |
+| **command-palette** | Vim 风格 `:` 命令面板（全局快捷键、模糊匹配、命名空间下钻）— 内置命令注册表陆续交付中 |
+| **agent-status**    | 实时代理可观察性面板（statusline 桥接 + transcript 解析）                             |
+| **workspace**       | 组合以上所有区域的布局外壳                                                            |
 
 ![编辑器与 Vim 模式 — 输入 `:w`，状态栏显示 -- NORMAL --](docs/media/editor-vim.png)
 

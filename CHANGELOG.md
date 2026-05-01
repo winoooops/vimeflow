@@ -34,8 +34,6 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
   evidence that closed `p4-d6` (real Claude Code session, end-to-end).
   Capture pipeline (Kooha WebM → ffmpeg 1.5× / 15 fps / 1280px / 80-color
   palette) documented in `docs/media/CLAUDE.md`.
-  - `command-palette` row removed from "Feature Modules" tables in both
-    READMEs — feature isn't user-facing yet.
   - Bilingual mirror in `README.zh-CN.md`.
   - Roadmap (`docs/roadmap/progress.yaml`) bumped to v7: Phase 4 status →
     `done`, with a top-level note listing cross-phase items shipped during
