@@ -185,7 +185,8 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         if let Err(e) = std::fs::write(&rcfile_path, &rcfile_content) {
             log::warn!("Failed to write combined bashrc: {}", e);
         } else if shell.contains("bash") {
-            cmd.args(["--rcfile", &rcfile_path.to_string_lossy()]);
+            cmd.arg("--rcfile");
+            cmd.arg(rcfile_path.as_os_str());
         }
 
         log::info!("Injected claude wrapper for session {}", request.session_id);

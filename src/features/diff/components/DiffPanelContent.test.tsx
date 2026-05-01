@@ -171,7 +171,8 @@ describe('DiffPanelContent', () => {
     expect(useFileDiffSpy).toHaveBeenCalledWith(
       null,
       false,
-      '/home/user/project'
+      '/home/user/project',
+      undefined
     )
   })
 
@@ -212,7 +213,12 @@ describe('DiffPanelContent', () => {
       )
 
       // useFileDiff should be called with null (selection ignored)
-      expect(useFileDiffSpy).toHaveBeenCalledWith(null, false, '/repo/b')
+      expect(useFileDiffSpy).toHaveBeenCalledWith(
+        null,
+        false,
+        '/repo/b',
+        undefined
+      )
     })
 
     test('auto-select gated on filesCwd: only fires when filesCwd matches cwd', (): void => {
@@ -420,8 +426,13 @@ describe('DiffPanelContent', () => {
       expect(screen.queryByText('New file — not yet tracked')).toBeNull()
       // DiffViewer (unified) is rendered instead
       expect(screen.getByTestId('unified-pane')).toBeInTheDocument()
-      // useFileDiff was called with the path and staged flag
-      expect(useFileDiffSpy).toHaveBeenCalledWith('new.ts', false, '/repo')
+      // useFileDiff was called with the path, staged flag, cwd, and status hint
+      expect(useFileDiffSpy).toHaveBeenCalledWith(
+        'new.ts',
+        false,
+        '/repo',
+        true
+      )
     })
   })
 
@@ -455,7 +466,12 @@ describe('DiffPanelContent', () => {
       render(<DiffPanelContent cwd="/repo" />)
 
       // Should auto-select first file (via local state)
-      expect(useFileDiffSpy).toHaveBeenCalledWith('src/App.tsx', false, '/repo')
+      expect(useFileDiffSpy).toHaveBeenCalledWith(
+        'src/App.tsx',
+        false,
+        '/repo',
+        false
+      )
     })
 
     test('cwd guard works in uncontrolled mode', (): void => {
@@ -494,7 +510,7 @@ describe('DiffPanelContent', () => {
       const calls = useFileDiffSpy.mock.calls
       // Last call should be with the correct file after auto-select
       const lastCall = calls[calls.length - 1]
-      expect(lastCall).toEqual(['src/App.tsx', false, '/repo/b'])
+      expect(lastCall).toEqual(['src/App.tsx', false, '/repo/b', false])
     })
   })
 })

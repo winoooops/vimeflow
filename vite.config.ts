@@ -144,6 +144,10 @@ function gitApiPlugin(): Plugin {
           if (pathname === '/api/git/diff' && req.method === 'GET') {
             const file = url.searchParams.get('file')
             const staged = url.searchParams.get('staged') === 'true'
+            const untrackedParam = url.searchParams.get('untracked')
+
+            const untracked =
+              untrackedParam === null ? undefined : untrackedParam === 'true'
 
             if (!file) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -173,14 +177,18 @@ function gitApiPlugin(): Plugin {
             }
 
             // Handle untracked files — git diff won't show them
-            if (!diff) {
-              const status = await git.status()
-              const fileStatus = status.files.find((f) => f.path === safePath)
+            if (!diff && untracked !== false) {
+              let shouldUseUntrackedFallback = untracked === true
+              if (!shouldUseUntrackedFallback) {
+                const status = await git.status()
+                const fileStatus = status.files.find((f) => f.path === safePath)
 
-              if (
-                fileStatus &&
-                (fileStatus.index === '?' || fileStatus.working_dir === '?')
-              ) {
+                shouldUseUntrackedFallback =
+                  fileStatus !== undefined &&
+                  (fileStatus.index === '?' || fileStatus.working_dir === '?')
+              }
+
+              if (shouldUseUntrackedFallback) {
                 // Generate diff for untracked file using --no-index
                 const { spawnSync } = await import('child_process')
 

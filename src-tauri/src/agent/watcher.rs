@@ -236,6 +236,9 @@ pub struct WatcherHandle {
     _watcher: RecommendedWatcher,
     /// Signals the polling fallback thread to exit
     stop_flag: Arc<AtomicBool>,
+    /// Polling fallback thread. Stored so Drop can join after signalling
+    /// stop, rather than leaving the thread briefly detached.
+    join_handle: Option<std::thread::JoinHandle<()>>,
     /// Captured for diagnostic logging on drop. `#[cfg(debug_assertions)]`
     /// gates the FIELD itself so release builds skip the `String::clone`
     /// in the constructor — `cfg!()` on the read site alone left the
@@ -248,6 +251,9 @@ pub struct WatcherHandle {
 impl Drop for WatcherHandle {
     fn drop(&mut self) {
         self.stop_flag.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.join_handle.take() {
+            let _ = handle.join();
+        }
         // `#[cfg(...)]` (attribute) on a statement, NOT `if cfg!(...)`
         // (runtime). The attribute physically removes both the
         // statement and the `self.session_id` access in release builds,
@@ -503,7 +509,6 @@ pub fn start_watching(
         );
     })
     .map_err(|e| format!("failed to create watcher: {}", e))?;
-
     // Watch the parent directory (notify watches directories, not individual files)
     let parent_dir = status_file_path
         .parent()
@@ -557,7 +562,7 @@ pub fn start_watching(
     // Polling fallback — WSL2's inotify can miss events and Claude Code
     // may use atomic writes (rename). The stop_flag is set when the
     // WatcherHandle is dropped, causing the thread to exit cleanly.
-    {
+    let poll_join_handle = {
         let poll_sid = session_id.clone();
         let poll_path = status_file_path.clone();
         let poll_app = app_handle_for_poll;
@@ -565,7 +570,7 @@ pub fn start_watching(
         let poll_stop = stop_flag.clone();
         let poll_timing_for_thread = poll_timing.clone();
         let path_history_for_poll = path_history.clone();
-        std::thread::spawn(move || {
+        Some(std::thread::spawn(move || {
             while !poll_stop.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_secs(3));
                 if poll_stop.load(Ordering::Relaxed) {
@@ -618,8 +623,8 @@ pub fn start_watching(
                     tx_path.as_deref(),
                 );
             }
-        });
-    }
+        }))
+    };
 
     log::info!(
         "Started watching statusline for session {}: {}",
@@ -630,6 +635,7 @@ pub fn start_watching(
     Ok(WatcherHandle {
         _watcher: watcher,
         stop_flag,
+        join_handle: poll_join_handle,
         #[cfg(debug_assertions)]
         session_id: session_id.clone(),
     })
