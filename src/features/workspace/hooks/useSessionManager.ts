@@ -771,12 +771,11 @@ export const useSessionManager = (
           unregisterPtySession(id)
 
           // F4 (round 2): when the user closes the ACTIVE tab and the hook
-          // promotes a neighbor, the cache must learn about it too. Without
-          // setActiveSession the Rust kill_pty path rotates active to the
-          // FIRST remaining tab (cache.session_order[0]) — but the React
-          // state moved to the index-aligned neighbor (Math.min(removedIndex,
-          // next.length - 1)). After reload the restored selection diverges
-          // from where the UI actually moved.
+          // promotes a neighbor, the cache must learn about it too. Rust
+          // clears active_session_id when the active tab is killed, while
+          // React state moves to the index-aligned neighbor (Math.min(
+          // removedIndex, next.length - 1)). Persisting the same choice keeps
+          // reload state aligned with where the UI moved.
           //
           // Derive the fallback inside the setSessions updater so the
           // computation matches the React-state branch and races with
@@ -814,8 +813,8 @@ export const useSessionManager = (
                 shouldUpdateActive = true
                 // next.length is 0 when the LAST tab was just removed; that's
                 // the only case fallback is null. Rust's kill_pty already
-                // cleared cache.active_session_id in that branch, so we don't
-                // fire a setActiveSession IPC for null.
+                // cleared cache.active_session_id for an active kill, so we
+                // don't fire a setActiveSession IPC for null.
                 computedFallback =
                   next.length === 0
                     ? null

@@ -733,10 +733,10 @@ describe('useSessionManager', () => {
   })
 
   // F4 (round 2): when the user closes the active middle tab, the hook
-  // promotes a neighbor in React state but the previous code never told
-  // Rust about it. Rust's kill_pty path rotates active to the FIRST
-  // remaining tab — so after reload the cache's restored selection
-  // diverged from where the UI actually moved.
+  // promotes a neighbor in React state and must persist that choice to Rust.
+  // Rust clears active_session_id when the active tab is killed, so the
+  // follow-up setActiveSession call is what makes reload restore the same tab
+  // the UI moved to.
   test('F4 (round 2): removeSession persists fallback active id when closing the active tab', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
@@ -795,9 +795,8 @@ describe('useSessionManager', () => {
     // React state moved active to 'last' (Math.min(removedIndex=1, next.length-1=1)).
     await waitFor(() => expect(result.current.activeSessionId).toBe('last'))
 
-    // The IPC must echo the same choice. Without this, Rust's kill_pty
-    // rotates active to 'first' (cache.session_order[0]) and the next
-    // reload comes back with a different selection than the UI.
+    // The IPC must echo the same choice so reload comes back with the same
+    // selection as the UI.
     await waitFor(() =>
       expect(service.setActiveSession).toHaveBeenCalledWith('last')
     )
