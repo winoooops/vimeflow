@@ -515,21 +515,51 @@ Add `agentStatus={inactiveAgentStatus}` to every other `render(<Sidebar … />)`
 
 - [ ] **Step 3: Update `AgentStatusPanel.test.tsx`**
 
-Drop any `vi.mock('../hooks/useAgentStatus')` block.
+The existing test file (verified at the time of writing the plan) mocks `useAgentStatus` at module scope and overrides it per-test via `vi.mocked(useAgentStatus).mockReturnValue(...)` to flip `isActive` between true/false for the 0px-width / 280px-width / ease-in / ease-out cases. There is also a `passes sessionId to useAgentStatus` test (around lines 112-119). All of this becomes obsolete because the panel no longer calls the hook — it accepts `agentStatus` as a prop.
 
-Add the active-status fixture at the top:
+Make the following edits:
+
+**a)** Delete the module-level `vi.mock('../hooks/useAgentStatus', …)` block and the `defaultStatus` fixture's reuse. The hook is no longer called from this component.
+
+**b)** Delete the `passes sessionId to useAgentStatus` test entirely. It asserts a hook call that no longer happens.
+
+**c)** Replace `defaultProps`. Drop the `sessionId` field; the prop no longer exists. Other props are unchanged:
+
+```tsx
+const defaultProps = {
+  cwd: '/test',
+  onOpenDiff: vi.fn(),
+}
+```
+
+**d)** Add **two** fixtures (active and inactive — both are needed because existing tests cover both states):
 
 ```tsx
 import type { AgentStatus } from '../types'
 
+const inactiveAgentStatus: AgentStatus = {
+  isActive: false,
+  agentType: null,
+  modelId: null,
+  modelDisplayName: null,
+  version: null,
+  sessionId: null,
+  agentSessionId: null,
+  contextWindow: null,
+  cost: null,
+  rateLimits: null,
+  toolCalls: { total: 0, byType: {}, active: null },
+  recentToolCalls: [],
+  testRun: null,
+}
+
 const activeAgentStatus: AgentStatus = {
+  ...inactiveAgentStatus,
   isActive: true,
   agentType: 'claude-code',
   modelId: 'claude-3-5-sonnet-20241022',
   modelDisplayName: 'Claude 3.5 Sonnet',
-  version: null,
   sessionId: 'sess-1',
-  agentSessionId: null,
   contextWindow: {
     usedPercentage: 12,
     contextWindowSize: 200_000,
@@ -544,14 +574,58 @@ const activeAgentStatus: AgentStatus = {
     totalLinesAdded: 0,
     totalLinesRemoved: 0,
   },
-  rateLimits: null,
-  toolCalls: { total: 0, byType: {}, active: null },
-  recentToolCalls: [],
-  testRun: null,
 }
 ```
 
-Replace any `sessionId="…"` prop on `<AgentStatusPanel>` with `agentStatus={activeAgentStatus}` (drop `sessionId` — the panel no longer accepts it).
+**e)** Convert each existing test that previously called `vi.mocked(useAgentStatus).mockReturnValue(...)` to instead pass `agentStatus={…}` directly. Mapping:
+
+| Old pattern                                                                                                                         | New pattern                         |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `mockReturnValue({ ...defaultStatus, isActive: false })` + `sessionId={null}`                                                       | `agentStatus={inactiveAgentStatus}` |
+| `mockReturnValue({ ...defaultStatus, isActive: true, agentType: 'claude-code', sessionId: 'session-1' })` + `sessionId="session-1"` | `agentStatus={activeAgentStatus}`   |
+| `mockReturnValue(defaultStatus)` (the default — inactive) + any `sessionId`                                                         | `agentStatus={inactiveAgentStatus}` |
+
+Concretely, after editing, the existing tests look like:
+
+```tsx
+test('renders at 0px width when agent is not active', () => {
+  render(
+    <AgentStatusPanel {...defaultProps} agentStatus={inactiveAgentStatus} />
+  )
+  const panel = screen.getByTestId('agent-status-panel')
+  expect(panel.style.width).toBe('0px')
+})
+
+test('renders at 280px width when agent is active', () => {
+  render(<AgentStatusPanel {...defaultProps} agentStatus={activeAgentStatus} />)
+  const panel = screen.getByTestId('agent-status-panel')
+  expect(panel.style.width).toBe('280px')
+})
+
+test('applies ease-out transition when collapsing', () => {
+  render(
+    <AgentStatusPanel {...defaultProps} agentStatus={inactiveAgentStatus} />
+  )
+  const panel = screen.getByTestId('agent-status-panel')
+  expect(panel.style.transition).toBe('width 200ms ease-out')
+})
+
+test('applies ease-in transition when expanding', () => {
+  render(<AgentStatusPanel {...defaultProps} agentStatus={activeAgentStatus} />)
+  const panel = screen.getByTestId('agent-status-panel')
+  expect(panel.style.transition).toBe('width 200ms ease-in')
+})
+
+test('has overflow-hidden to clip content during collapse', () => {
+  render(
+    <AgentStatusPanel {...defaultProps} agentStatus={inactiveAgentStatus} />
+  )
+  const panel = screen.getByTestId('agent-status-panel')
+  expect(panel).toHaveClass('overflow-hidden')
+})
+```
+
+The tests are now synchronous (no `await import`, no per-test mock setup), which is a side benefit.
 
 Mock `useGitStatus` (which the panel still calls):
 
@@ -917,14 +991,16 @@ export interface SidebarProps {
 
 **b)** Destructure `agentStatus` in the component signature, alongside the other props.
 
-**c)** Import `SidebarStatusHeader` and replace the hardcoded "Agent header" block (lines roughly 222-240, the `<div className="flex items-center gap-3 px-4 py-4">…"Agent Alpha"…"System Idle"…</div>`):
+**c)** Add the `SidebarStatusHeader` import alongside the existing imports at the top of `Sidebar.tsx`:
 
 ```tsx
 import { SidebarStatusHeader } from './SidebarStatusHeader'
+```
 
-// …
+**d)** Replace the hardcoded "Agent header" block (lines roughly 222-240, the `<div className="flex items-center gap-3 px-4 py-4">…"Agent Alpha"…"System Idle"…</div>`) with this JSX inside the existing return statement (no leading semicolon — this is JSX nested inside the existing return, not a new top-level statement):
 
-;<div className="px-3 pt-3 pb-2">
+```jsx
+<div className="px-3 pt-3 pb-2">
   <SidebarStatusHeader
     status={agentStatus}
     activeSessionName={
@@ -935,6 +1011,8 @@ import { SidebarStatusHeader } from './SidebarStatusHeader'
 ```
 
 The `"Active Sessions"` heading + `<Reorder.Group>` + everything below remain unchanged.
+
+> **Heads-up on prettier behavior:** the project uses no-semi prettier. If you copy a code-fenced block that starts with a JSX element into a TS source file at top-level, prettier may insert a leading semicolon (`;<div>…</div>`) to disambiguate from the previous statement. That's a hint your paste landed at the wrong scope — this snippet is meant to be placed _inside_ `Sidebar`'s existing return JSX, not as a top-level statement. If you see prettier add a leading `;`, undo and re-paste at the correct nesting level.
 
 - [ ] **Step 9: Update `AgentStatusPanel.tsx`**
 
@@ -1143,7 +1221,7 @@ git add \
   src/features/workspace/WorkspaceView.test.tsx \
   src/features/workspace/WorkspaceView.subscription.test.tsx
 git commit -m "$(cat <<'EOF'
-feat(workspace): move StatusCard render-site to Sidebar; re-source ActivityFooter lines from git diff
+feat(workspace): move StatusCard to sidebar header; git-diff lines in footer
 
 - Lift useAgentStatus to WorkspaceView; pass agentStatus to both Sidebar
   and AgentStatusPanel (one Tauri subscription, asserted via reference
