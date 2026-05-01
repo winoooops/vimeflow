@@ -146,9 +146,21 @@ import { StatusCard } from '../../agent-status/components/StatusCard'
 
 This is a workspace → agent-status cross-feature import. The agent-status feature owns the `StatusCard` widget, its dependencies (`BudgetMetrics`, `CostState`, `RateLimitsState`), and its tests. The workspace feature only owns _where_ it renders, not the widget itself.
 
-Earlier draft proposed moving `StatusCard.tsx` into `workspace/components/`. Rejected after review (`docs/reviews/...`): physically relocating a component while it still depends on `BudgetMetrics` and agent-status types widens the feature boundary for no UX benefit. The component renders identically in either location; only the file path changes. Keeping it next to its dependencies is cleaner.
+Earlier draft proposed moving `StatusCard.tsx` into `workspace/components/`. Rejected during brainstorming review: physically relocating a component while it still depends on `BudgetMetrics` and agent-status types widens the feature boundary for no UX benefit. The component renders identically in either location; only the file path changes. Keeping it next to its dependencies is cleaner.
 
 `<BudgetMetrics>` and the existing `StatusCard.test.tsx` are unchanged.
+
+#### 5.2.1 Width constraint — `SIDEBAR_MIN` must accommodate StatusCard
+
+The activity panel was a fixed 280px column. The sidebar is resizable: `SIDEBAR_MIN = 180`, `SIDEBAR_DEFAULT = 340`, `SIDEBAR_MAX = 560` (`src/features/workspace/WorkspaceView.tsx:17-19`). Rendering `<StatusCard>` inside the sidebar exposes it to widths it was not designed for.
+
+`BudgetMetrics` uses fixed `grid-cols-2` cells with `px-2.5 py-2` padding and `text-sm` mono values (`src/features/agent-status/components/BudgetMetrics.tsx:26-33`). At `SIDEBAR_MIN = 180`, content area inside the StatusCard's `p-3` shrinks to ~132px, giving each metric cell ~62px, of which ~42px is value-text width. Long values like `"$1234.56"` or `"123.4K"` are at risk of overflow.
+
+**Spec requirement:** `SIDEBAR_MIN` must be raised to a value where `<StatusCard>` renders without horizontal overflow at the narrowest sidebar width, across all `BudgetMetrics` variants (`SubscriberVariant`, `ApiKeyVariant`, `FallbackVariant`) and all realistic value lengths.
+
+- **Initial proposal:** raise `SIDEBAR_MIN` from `180` to `240`.
+- **Verification gate:** during implementation, render the StatusCard at `SIDEBAR_MIN` with worst-case mock data (`totalCostUsd: 9999.99`, large token counts, both 5h+7d rate-limit bars) and confirm no horizontal overflow. If 240px is insufficient, raise further. If 240px is more than needed, the spec's intent is satisfied — leave it at 240 unless the user pushes back.
+- **Out of scope:** making `<StatusCard>` / `<BudgetMetrics>` responsive (container queries, narrow-mode grid-cols-1, font-size scaling). Tracked as a follow-up — see section 8.
 
 ### 5.3 `<Sidebar>` — modified
 
@@ -259,7 +271,8 @@ Pure, deterministic, unit-testable. Lives under `diff/utils/` because `ChangedFi
 
 **File:** `src/features/workspace/WorkspaceView.tsx`
 
-Add `useAgentStatus(activeSessionId)` call. Pass the resulting `AgentStatus` to both `<Sidebar agentStatus={…} />` and `<AgentStatusPanel agentStatus={…} />`.
+- Add `useAgentStatus(activeSessionId)` call. Pass the resulting `AgentStatus` to both `<Sidebar agentStatus={…} />` and `<AgentStatusPanel agentStatus={…} />`.
+- Raise `SIDEBAR_MIN` from `180` to `240` (or to the empirically-verified value per section 5.2.1). `SIDEBAR_DEFAULT` and `SIDEBAR_MAX` unchanged.
 
 ## 6. Test plan
 
@@ -293,6 +306,7 @@ No Rust changes. No new Tauri events. No bindings to regenerate.
 
 - **`feat(agent-status): wire real turnCount in ActivityFooter`** — restore the turns cell using a Rust transcript-watcher counter. References this spec for the deferred decision.
 - **`refactor(diff): consolidate duplicate useGitStatus subscriptions`** — `AgentStatusPanel` and `DiffPanelContent` independently call `useGitStatus(cwd)` for the same cwd, creating two file-watchers. Lift to a shared context or memoize at WorkspaceView.
+- **`feat(agent-status): make StatusCard / BudgetMetrics responsive at narrow widths`** — section 5.2.1 of this spec sidesteps the narrow-width problem by raising `SIDEBAR_MIN`. A more flexible fix is for `<BudgetMetrics>` to drop to `grid-cols-1` (or use container queries) below a threshold, allowing `SIDEBAR_MIN` to return to `180`. Out of scope here.
 
 ## 9. Open questions
 
