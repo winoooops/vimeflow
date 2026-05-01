@@ -3,15 +3,28 @@
 # Source: docs/roadmap/tauri-migration-roadmap.md
 # Schema: phase → steps → dod (definition of done)
 # Status values: pending | in_progress | done | blocked
-# Revised: 2026-04-19 — Phase 4 E2E infra (#70) recorded; bilingual CHANGELOG added as timeline companion.
+# Revised: 2026-05-01 — README hero gif + feature gallery landed; cross-phase work since #70 noted; Phase 4 D6 manually verified via demo recording.
 
-version: 6
-updated: '2026-04-19'
+version: 7
+updated: '2026-05-01'
 roadmap: docs/roadmap/tauri-migration-roadmap.md
 changelog:
   en: CHANGELOG.md
   zh-CN: CHANGELOG.zh-CN.md
-notes: 'Phase 3 (Terminal Core) done. Phase 4 (Agent Status Sidebar) in_progress — detection, statusline bridge, transcript parser, and E2E infrastructure (WebdriverIO + tauri-driver, Linux) merged (PRs #49, #57, #60, #63, #70). Bilingual CHANGELOG.md / CHANGELOG.zh-CN.md added at repo root — linear timeline paired with docs/reviews/.'
+notes: >-
+  Phase 3 (Terminal Core) done. Phase 4 (Agent Status Sidebar) effectively
+  feature-complete — D1-D5 merged (PRs #49, #57, #60, #63, #70) and D6
+  manually verified via the README hero gif (docs/media/hero-init.gif),
+  recorded against a real Claude Code session. Several items in Phases 5-7
+  shipped out-of-order during Phase 4: Files Changed wired to live git
+  state (#86), Activity feed unified into a typed event stream (#80),
+  Tests panel surfacing Claude Code test runs (#109), PTY reattach with
+  cursor-replay protocol (#107), Tooltip primitive (#83), StatusCard
+  relocated to sidebar header (#120), Token Cache block (#115). Phase 5
+  remains the next deliberate roadmap step (Zustand session store).
+  Bilingual CHANGELOG.md / CHANGELOG.zh-CN.md continues as the linear
+  timeline paired with docs/reviews/. README.md / README.zh-CN.md now
+  embed a hero gif and a 4-image feature gallery (docs/media/).
 
 phases:
   - id: phase-1
@@ -279,7 +292,7 @@ phases:
 
   - id: phase-4
     name: 'Agent Status Sidebar'
-    status: in_progress
+    status: done
     blocked_by:
       - phase-3
     specs:
@@ -367,21 +380,24 @@ phases:
         pr: 49
       - id: p4-d6
         check: 'Manual verification in tauri:dev with a real Claude Code session (end-to-end)'
-        status: in-progress
+        status: done
         commit: null
         pr: null
         notes: >-
-          Phase 1a/1b/2 landed 2026-04-19 on native Linux
-          (Fedora/Nobara): tauri-driver + WebdriverIO configs, frontend
-          E2E bridge (window.__VIMEFLOW_E2E__), Cargo e2e-test feature,
-          and 10 spec files (11 tests) all green locally covering app
-          launch, IPC round-trip, navigation, PTY spawn, terminal I/O,
-          session lifecycle, multi-tab isolation, terminal resize,
-          file→editor flow, and fake-claude agent detection. WSL2 (#65)
-          scoped down to "local env unsupported; use native Linux or
-          CI". Deferred: REPL, structured logging (#61), agent
-          transcript parsing, HMR orphan PTY harness (#55), Phase 3 CI.
-          Spec:
+          Manually verified 2026-05-01 against a real Claude Code session.
+          Demo recorded as docs/media/hero-init.gif (spawn → /init → agent
+          panel auto-detects → tool calls stream into Activity feed → Files
+          Changed and Tests panels populate). E2E infra context:
+          Phase 1a/1b/2 landed 2026-04-19 on native Linux (Fedora/Nobara)
+          — tauri-driver + WebdriverIO configs, frontend E2E bridge
+          (window.__VIMEFLOW_E2E__), Cargo e2e-test feature, and 10 spec
+          files (11 tests) all green locally covering app launch, IPC
+          round-trip, navigation, PTY spawn, terminal I/O, session
+          lifecycle, multi-tab isolation, terminal resize, file→editor
+          flow, and fake-claude agent detection. WSL2 (#65) scoped down
+          to "local env unsupported; use native Linux or CI". Deferred:
+          REPL, structured logging (#61), agent transcript parsing in
+          E2E, HMR orphan PTY harness (#55), Phase 3 CI. Spec:
           docs/superpowers/specs/2026-04-14-e2e-testing-design.md.
 
   - id: phase-5
