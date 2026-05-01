@@ -20,6 +20,7 @@
 - `src/features/diff/utils/sumLines.test.ts` — unit tests for the util
 - `src/features/workspace/components/SidebarStatusHeader.tsx` — switches between `<StatusCard>` and an idle placeholder
 - `src/features/workspace/components/SidebarStatusHeader.test.tsx` — tests both states + the null-session fallback
+- `src/features/workspace/WorkspaceView.subscription.test.tsx` — focused test that mocks **both** `<Sidebar>` and `<AgentStatusPanel>`, captures their `agentStatus` props, and asserts reference equality (proving one Tauri subscription, not two)
 
 **Modified files:**
 
@@ -30,7 +31,7 @@
 - `src/features/agent-status/components/AgentStatusPanel.tsx` — accept `agentStatus` prop instead of calling `useAgentStatus`; drop `<StatusCard>` render; pipe `effectiveFiles` through `sumLines` into the footer
 - `src/features/agent-status/components/AgentStatusPanel.test.tsx` — pass `agentStatus` as a prop instead of mocking the hook; assert `<StatusCard>` is no longer rendered inside the panel; assert footer line totals from a mock `useGitStatus`
 - `src/features/workspace/WorkspaceView.tsx` — call `useAgentStatus(activeSessionId)` once, fan out to both `<Sidebar>` and `<AgentStatusPanel>`; raise `SIDEBAR_MIN` from 180 to 240
-- `src/features/workspace/WorkspaceView.test.tsx` — assert the lifted hook's latest-call arg and prop fan-out
+- `src/features/workspace/WorkspaceView.test.tsx` — capture `agentStatus` on the existing `AgentStatusPanel` mock; assert latest `useAgentStatus` call arg
 
 **Untouched (verification only):**
 
@@ -38,6 +39,23 @@
 - `src/features/agent-status/components/StatusCard.test.tsx` — no change
 - `src/features/agent-status/components/BudgetMetrics.tsx` / `.test.tsx` — no change
 - `src/features/agent-status/hooks/useAgentStatus.ts` — no change
+
+---
+
+## Commit Strategy (read before starting)
+
+The pre-commit hook runs `lint-staged`, which runs `tsc --noEmit` over the whole project for any staged `.ts` / `.tsx` file (`lint-staged.config.js:3`). Pre-commit blocks any commit while the tree has type errors anywhere.
+
+This forces us to either keep every commit type-clean, or land every interdependent change in one atomic commit. We pick atomic commits:
+
+| Commit | Tasks             | Why atomic                                                                                                                                                                                                                                                                                                                                         |
+| ------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **C1** | Task 1            | `sumLines` util — additive, no other file changes                                                                                                                                                                                                                                                                                                  |
+| **C2** | Task 2            | `<SidebarStatusHeader>` — additive new component, doesn't touch any existing render path                                                                                                                                                                                                                                                           |
+| **C3** | Task 3            | All component-signature changes land together: `<ActivityFooter>` drops `turnCount`; `<Sidebar>` and `<AgentStatusPanel>` switch to prop-based agent status; `<WorkspaceView>` lifts the hook and bumps `SIDEBAR_MIN`. Each component depends on its caller being updated; splitting causes cross-file type errors that block the pre-commit hook. |
+| **C4** | (optional) Task 4 | Empirical SIDEBAR_MIN bump if 240px doesn't fit                                                                                                                                                                                                                                                                                                    |
+
+Tasks 5 and 6 (visual verification and issue filing) don't touch the working tree.
 
 ---
 
@@ -145,167 +163,24 @@ npx vitest run src/features/diff/utils/sumLines.test.ts
 
 Expected: PASS, 5 tests.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Type-check and commit**
+
+```bash
+npm run type-check
+```
+
+Expected: PASS.
 
 ```bash
 git add src/features/diff/utils/sumLines.ts src/features/diff/utils/sumLines.test.ts
 git commit -m "feat(diff): add sumLines util for aggregating ChangedFile insertions/deletions"
 ```
 
----
-
-## Task 2: Drop `turnCount` from `<ActivityFooter>`
-
-**Files:**
-
-- Modify: `src/features/agent-status/components/ActivityFooter.tsx`
-- Modify: `src/features/agent-status/components/ActivityFooter.test.tsx`
-
-- [ ] **Step 1: Read the existing test file**
-
-```bash
-cat src/features/agent-status/components/ActivityFooter.test.tsx
-```
-
-Note the existing assertions involving `turnCount` and `12 turns`.
-
-- [ ] **Step 2: Update the test file to drop turnCount**
-
-Rewrite `src/features/agent-status/components/ActivityFooter.test.tsx`:
-
-```tsx
-import { render, screen } from '@testing-library/react'
-import { describe, expect, test } from 'vitest'
-import { ActivityFooter, formatDuration } from './ActivityFooter'
-
-describe('ActivityFooter', () => {
-  test('renders duration and line totals', () => {
-    render(
-      <ActivityFooter
-        totalDurationMs={90_000}
-        linesAdded={42}
-        linesRemoved={9}
-      />
-    )
-
-    expect(screen.getByText('1m')).toBeInTheDocument()
-    expect(screen.getByText('+42 / -9')).toBeInTheDocument()
-  })
-
-  test('does not render a turns cell', () => {
-    render(
-      <ActivityFooter totalDurationMs={0} linesAdded={0} linesRemoved={0} />
-    )
-
-    expect(screen.queryByText(/turns?/i)).not.toBeInTheDocument()
-  })
-
-  test('localizes large line counts', () => {
-    render(
-      <ActivityFooter
-        totalDurationMs={0}
-        linesAdded={12_345}
-        linesRemoved={6_789}
-      />
-    )
-
-    expect(screen.getByText('+12,345 / -6,789')).toBeInTheDocument()
-  })
-})
-
-describe('formatDuration', () => {
-  test('renders minutes only when under one hour', () => {
-    expect(formatDuration(45_000)).toBe('0m')
-    expect(formatDuration(90_000)).toBe('1m')
-  })
-
-  test('renders hours and zero-padded minutes when over one hour', () => {
-    expect(formatDuration(3_900_000)).toBe('1h 05m')
-  })
-})
-```
-
-- [ ] **Step 3: Run the test to verify it fails**
-
-```bash
-npx vitest run src/features/agent-status/components/ActivityFooter.test.tsx
-```
-
-Expected: FAIL — `linesAdded` / `linesRemoved` props in current code, but `turnCount` is also required by the existing component, so old fixtures may pass while new tests fail on missing `turnCount`. Actual failure mode depends on TypeScript strictness; a missing-prop type error is acceptable.
-
-- [ ] **Step 4: Update the implementation**
-
-Rewrite `src/features/agent-status/components/ActivityFooter.tsx`:
-
-```tsx
-import type { ReactElement } from 'react'
-
-interface ActivityFooterProps {
-  totalDurationMs: number
-  linesAdded: number
-  linesRemoved: number
-}
-
-const formatDuration = (ms: number): string => {
-  const hours = Math.floor(ms / 3_600_000)
-  const minutes = Math.floor((ms % 3_600_000) / 60_000)
-
-  if (hours > 0) {
-    return `${hours}h ${minutes.toString().padStart(2, '0')}m`
-  }
-
-  return `${minutes}m`
-}
-
-const formatLines = (n: number): string => n.toLocaleString('en-US')
-
-export const ActivityFooter = ({
-  totalDurationMs,
-  linesAdded,
-  linesRemoved,
-}: ActivityFooterProps): ReactElement => (
-  <div className="mt-auto bg-surface-container-low/40 px-5 py-3">
-    <div className="flex items-center justify-between font-mono text-[9px] text-outline">
-      <span>{formatDuration(totalDurationMs)}</span>
-      <span>
-        +{formatLines(linesAdded)} / -{formatLines(linesRemoved)}
-      </span>
-    </div>
-  </div>
-)
-
-export { formatDuration }
-```
-
-- [ ] **Step 5: Run the test to verify it passes**
-
-```bash
-npx vitest run src/features/agent-status/components/ActivityFooter.test.tsx
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Type-check the whole project**
-
-```bash
-npm run type-check
-```
-
-Expected: ONE error in `AgentStatusPanel.tsx` — it still passes `turnCount={0}` to `<ActivityFooter>`, which now rejects unknown props. This is intentional; Task 5 fixes it. Do NOT proceed to commit until you verify the only remaining errors are in `AgentStatusPanel.tsx`.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add src/features/agent-status/components/ActivityFooter.tsx \
-        src/features/agent-status/components/ActivityFooter.test.tsx
-git commit -m "refactor(activity-footer): drop turnCount, render duration + line totals only"
-```
-
-> **Note on the intermediate type-error window:** Task 6 (`npm run type-check`) currently flags `AgentStatusPanel.tsx` because it still passes `turnCount={0}`. That's an intentional cross-task delta — Task 5 fixes it. The pre-push hook only runs `vitest run` (which uses Vite's esbuild, stripping types), not `tsc`, so the commit and push are not blocked. Do **not** push to a remote that runs `tsc` in CI between Tasks 2 and 5; ideally land all of Tasks 2-6 before pushing. If you must push partway through, use a local branch.
+Expected: pre-commit passes (only the new util is staged; tsc clean).
 
 ---
 
-## Task 3: `<SidebarStatusHeader>` component
+## Task 2: `<SidebarStatusHeader>` component
 
 **Files:**
 
@@ -391,8 +266,6 @@ describe('SidebarStatusHeader', () => {
   })
 
   test('treats agent-detected-but-no-agentType as idle', () => {
-    // Defensive case: if isActive flips true before agentType arrives, the
-    // header should not crash and should keep rendering the idle layout.
     render(
       <SidebarStatusHeader
         status={{ ...inactiveStatus, isActive: true, agentType: null }}
@@ -505,7 +378,13 @@ npx vitest run src/features/workspace/components/SidebarStatusHeader.test.tsx
 
 Expected: PASS, 4 tests.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Type-check and commit**
+
+```bash
+npm run type-check
+```
+
+Expected: PASS. (`<SidebarStatusHeader>` is not yet rendered anywhere, so no caller is affected.)
 
 ```bash
 git add src/features/workspace/components/SidebarStatusHeader.tsx \
@@ -515,26 +394,83 @@ git commit -m "feat(workspace): add SidebarStatusHeader component"
 
 ---
 
-## Task 4: Wire `<SidebarStatusHeader>` into `<Sidebar>`
+## Task 3: Atomic component refactor
 
-**Files:**
+**Why one task / one commit:** every signature change in this task depends on its caller being updated in the same diff. Splitting causes intermediate type errors that block the pre-commit hook.
 
+**Files (all in one commit):**
+
+- Modify: `src/features/agent-status/components/ActivityFooter.tsx`
+- Modify: `src/features/agent-status/components/ActivityFooter.test.tsx`
 - Modify: `src/features/workspace/components/Sidebar.tsx`
 - Modify: `src/features/workspace/components/Sidebar.test.tsx`
+- Modify: `src/features/agent-status/components/AgentStatusPanel.tsx`
+- Modify: `src/features/agent-status/components/AgentStatusPanel.test.tsx`
+- Modify: `src/features/workspace/WorkspaceView.tsx`
+- Modify: `src/features/workspace/WorkspaceView.test.tsx`
+- Create: `src/features/workspace/WorkspaceView.subscription.test.tsx`
 
-- [ ] **Step 1: Read the existing Sidebar test**
+### 3.1 Write failing tests first (TDD)
 
-```bash
-cat src/features/workspace/components/Sidebar.test.tsx
+- [ ] **Step 1: Rewrite `ActivityFooter.test.tsx`**
+
+Replace the file contents:
+
+```tsx
+import { render, screen } from '@testing-library/react'
+import { describe, expect, test } from 'vitest'
+import { ActivityFooter, formatDuration } from './ActivityFooter'
+
+describe('ActivityFooter', () => {
+  test('renders duration and line totals', () => {
+    render(
+      <ActivityFooter
+        totalDurationMs={90_000}
+        linesAdded={42}
+        linesRemoved={9}
+      />
+    )
+
+    expect(screen.getByText('1m')).toBeInTheDocument()
+    expect(screen.getByText('+42 / -9')).toBeInTheDocument()
+  })
+
+  test('does not render a turns cell', () => {
+    render(
+      <ActivityFooter totalDurationMs={0} linesAdded={0} linesRemoved={0} />
+    )
+
+    expect(screen.queryByText(/turns?/i)).not.toBeInTheDocument()
+  })
+
+  test('localizes large line counts', () => {
+    render(
+      <ActivityFooter
+        totalDurationMs={0}
+        linesAdded={12_345}
+        linesRemoved={6_789}
+      />
+    )
+
+    expect(screen.getByText('+12,345 / -6,789')).toBeInTheDocument()
+  })
+})
+
+describe('formatDuration', () => {
+  test('renders minutes only when under one hour', () => {
+    expect(formatDuration(45_000)).toBe('0m')
+    expect(formatDuration(90_000)).toBe('1m')
+  })
+
+  test('renders hours and zero-padded minutes when over one hour', () => {
+    expect(formatDuration(3_900_000)).toBe('1h 05m')
+  })
+})
 ```
 
-Note any tests that assert on the literal strings "Agent Alpha" or "SYSTEM IDLE". Those become invalid after this task.
+- [ ] **Step 2: Update `Sidebar.test.tsx`**
 
-- [ ] **Step 2: Update the Sidebar test**
-
-Three changes:
-
-**a)** Add the agent-status fixture at the top of the file (after existing imports / fixtures):
+Add the agent-status fixture at the top of the file (after existing imports):
 
 ```tsx
 import type { AgentStatus } from '../../agent-status/types'
@@ -556,7 +492,7 @@ const inactiveAgentStatus: AgentStatus = {
 }
 ```
 
-**b)** Replace the existing "renders agent header with name and status" test at lines 113-124 of `Sidebar.test.tsx`:
+Replace the existing "renders agent header with name and status" test (Sidebar.test.tsx:113-124) with:
 
 ```tsx
 test('renders the sidebar status header in the top slot', () => {
@@ -569,121 +505,19 @@ test('renders the sidebar status header in the top slot', () => {
     />
   )
 
-  // Idle SidebarStatusHeader renders this testid; the active variant
-  // would render the StatusCard testid instead. Either path proves
-  // delegation succeeded.
   expect(screen.getByTestId('sidebar-status-header-idle')).toBeInTheDocument()
-  // The hardcoded "Agent Alpha" / "System Idle" strings no longer exist.
   expect(screen.queryByText('Agent Alpha')).not.toBeInTheDocument()
   expect(screen.queryByText('System Idle')).not.toBeInTheDocument()
 })
 ```
 
-**c)** Add `agentStatus={inactiveAgentStatus}` to every other `render(<Sidebar … />)` call site in the file. The prop is required, so every test that omits it will fail TypeScript and runtime. Use a recursive search/replace if the file is large.
+Add `agentStatus={inactiveAgentStatus}` to every other `render(<Sidebar … />)` call in the file. The prop is required.
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [ ] **Step 3: Update `AgentStatusPanel.test.tsx`**
 
-```bash
-npx vitest run src/features/workspace/components/Sidebar.test.tsx
-```
+Drop any `vi.mock('../hooks/useAgentStatus')` block.
 
-Expected: FAIL — `agentStatus` is not yet a prop on Sidebar (TypeScript), or the new "renders header" test fails because the header isn't rendered yet.
-
-- [ ] **Step 4: Update `Sidebar.tsx`**
-
-Modify `src/features/workspace/components/Sidebar.tsx`:
-
-1. Add `agentStatus` to `SidebarProps`:
-
-```tsx
-import type { AgentStatus } from '../../agent-status/types'
-
-export interface SidebarProps {
-  sessions: Session[]
-  activeSessionId: string | null
-  activeCwd?: string
-  onSessionClick: (sessionId: string) => void
-  onNewInstance?: () => void
-  onRemoveSession?: (sessionId: string) => void
-  onRenameSession?: (sessionId: string, name: string) => void
-  onReorderSessions?: (sessions: Session[]) => void
-  onFileSelect?: (node: FileNode) => void
-  agentStatus: AgentStatus
-}
-```
-
-2. Add `agentStatus` to the destructure in the component signature.
-
-3. Import `SidebarStatusHeader`:
-
-```tsx
-import { SidebarStatusHeader } from './SidebarStatusHeader'
-```
-
-4. Replace the entire hardcoded "Agent header" block (lines roughly 222-240, the `<div className="flex items-center gap-3 px-4 py-4">…"Agent Alpha"…"System Idle"…</div>` block) with:
-
-```tsx
-<div className="px-3 pt-3 pb-2">
-  <SidebarStatusHeader
-    status={agentStatus}
-    activeSessionName={
-      sessions.find((s) => s.id === activeSessionId)?.name ?? null
-    }
-  />
-</div>
-```
-
-The `"Active Sessions"` heading + `<Reorder.Group>` + everything below remain unchanged.
-
-- [ ] **Step 5: Run Sidebar tests to verify they pass**
-
-```bash
-npx vitest run src/features/workspace/components/Sidebar.test.tsx
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Type-check**
-
-```bash
-npm run type-check
-```
-
-Expected: TypeScript errors in `WorkspaceView.tsx` (it doesn't pass `agentStatus`) and still in `AgentStatusPanel.tsx` (still passes `turnCount`). Both intentional; Tasks 5 and 6 fix them.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add src/features/workspace/components/Sidebar.tsx \
-        src/features/workspace/components/Sidebar.test.tsx
-git commit -m "feat(workspace): render SidebarStatusHeader in Sidebar top slot"
-```
-
-> Same rationale as Task 2: the type-check window between tasks doesn't block the pre-push hook. Local commits are fine.
-
----
-
-## Task 5: Refactor `<AgentStatusPanel>` to take `agentStatus` prop, drop `<StatusCard>`, use `sumLines`
-
-**Files:**
-
-- Modify: `src/features/agent-status/components/AgentStatusPanel.tsx`
-- Modify: `src/features/agent-status/components/AgentStatusPanel.test.tsx`
-
-- [ ] **Step 1: Read the existing AgentStatusPanel test**
-
-```bash
-cat src/features/agent-status/components/AgentStatusPanel.test.tsx
-```
-
-Note how `useAgentStatus` is currently mocked.
-
-- [ ] **Step 2: Update the AgentStatusPanel test**
-
-Update the test file:
-
-1. Drop the `vi.mock('../hooks/useAgentStatus')` block if it exists. The panel no longer calls the hook.
-2. Add the `activeAgentStatus` fixture at the top of the file:
+Add the active-status fixture at the top:
 
 ```tsx
 import type { AgentStatus } from '../types'
@@ -717,28 +551,11 @@ const activeAgentStatus: AgentStatus = {
 }
 ```
 
-3. Pass `agentStatus` directly as a prop in every `render(<AgentStatusPanel … />)` call. Drop any `sessionId` prop (it no longer exists on the panel).
-4. Add a test asserting `<StatusCard>` is no longer rendered inside the panel:
+Replace any `sessionId="…"` prop on `<AgentStatusPanel>` with `agentStatus={activeAgentStatus}` (drop `sessionId` — the panel no longer accepts it).
+
+Mock `useGitStatus` (which the panel still calls):
 
 ```tsx
-test('does not render StatusCard inside the panel', () => {
-  render(
-    <AgentStatusPanel
-      agentStatus={activeAgentStatus}
-      cwd="/tmp/repo"
-      onOpenDiff={() => {}}
-    />
-  )
-
-  expect(screen.queryByTestId('agent-status-card')).not.toBeInTheDocument()
-})
-```
-
-4. Add a test asserting footer line totals come from git-diff data. Mock `useGitStatus` to return changed files with insertions/deletions:
-
-```tsx
-import { vi } from 'vitest'
-
 vi.mock('../../diff/hooks/useGitStatus', () => ({
   useGitStatus: () => ({
     files: [
@@ -764,6 +581,22 @@ vi.mock('../../diff/hooks/useGitStatus', () => ({
     idle: false,
   }),
 }))
+```
+
+Add two new tests:
+
+```tsx
+test('does not render StatusCard inside the panel', () => {
+  render(
+    <AgentStatusPanel
+      agentStatus={activeAgentStatus}
+      cwd="/tmp/repo"
+      onOpenDiff={() => {}}
+    />
+  )
+
+  expect(screen.queryByTestId('agent-status-card')).not.toBeInTheDocument()
+})
 
 test('footer renders aggregated git-diff line totals', () => {
   render(
@@ -774,23 +607,338 @@ test('footer renders aggregated git-diff line totals', () => {
     />
   )
 
+  // From the useGitStatus mock above: 5+7 added, 2+1 removed.
   expect(screen.getByText('+12 / -3')).toBeInTheDocument()
 })
 ```
 
-Use the same `activeAgentStatus` fixture shape from Task 3, but with `cost`, `rateLimits`, etc. populated to satisfy `<ContextBucket>` / `<TokenCache>` rendering (or update those mocks if they crash on null).
+- [ ] **Step 4: Update `WorkspaceView.test.tsx`**
 
-- [ ] **Step 3: Run the test to verify it fails**
+The existing file mocks `useAgentStatus` at module scope (around lines 18-34) and `<AgentStatusPanel>` with a `capturedAgentStatusPanelProps` capture object (around lines 47-70). Extend the capture to include `agentStatus`.
 
-```bash
-npx vitest run src/features/agent-status/components/AgentStatusPanel.test.tsx
+Add the `AgentStatus` import near the top:
+
+```tsx
+import type { AgentStatus } from '../agent-status/types'
+import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 ```
 
-Expected: FAIL — the panel still calls `useAgentStatus` internally and still renders `<StatusCard>`.
+Update `capturedAgentStatusPanelProps` and the mock factory:
 
-- [ ] **Step 4: Update `AgentStatusPanel.tsx`**
+```tsx
+const capturedAgentStatusPanelProps: {
+  onOpenFile?: (path: string) => void
+  onOpenDiff?: unknown
+  agentStatus?: AgentStatus // NEW
+} = {}
 
-Rewrite the component:
+interface MockAgentStatusPanelProps {
+  onOpenFile?: (path: string) => void
+  onOpenDiff?: unknown
+  agentStatus?: AgentStatus // NEW
+}
+
+vi.mock('../agent-status/components/AgentStatusPanel', () => ({
+  AgentStatusPanel: ({
+    onOpenFile = undefined,
+    onOpenDiff = undefined,
+    agentStatus = undefined, // NEW
+  }: MockAgentStatusPanelProps): ReactElement => {
+    capturedAgentStatusPanelProps.onOpenFile = onOpenFile
+    capturedAgentStatusPanelProps.onOpenDiff = onOpenDiff
+    capturedAgentStatusPanelProps.agentStatus = agentStatus // NEW
+    return <div data-testid="agent-status-panel" />
+  },
+}))
+```
+
+Reset the new field in `beforeEach`:
+
+```tsx
+capturedAgentStatusPanelProps.agentStatus = undefined
+```
+
+Add a new test inside the `describe('WorkspaceView', …)` block:
+
+```tsx
+test('lifts useAgentStatus and forwards the latest activeSessionId', async () => {
+  render(<WorkspaceView />)
+
+  // Wait for session restore to settle (the listSessions mock resolves
+  // sess-1, so this proves activeSessionId is non-null).
+  await screen.findByRole('button', { name: 'session 1' })
+
+  const useAgentStatusMock = vi.mocked(useAgentStatus)
+  const calls = useAgentStatusMock.mock.calls
+  const lastArg = calls[calls.length - 1]?.[0] as string | null
+
+  // Latest call arg, not call count — activeSessionId flips from null
+  // to the restored id during mount, and React may re-render multiple
+  // times. We assert the *value* of the most-recent call.
+  expect(lastArg).toBe('sess-1')
+})
+
+test('passes the lifted agentStatus to AgentStatusPanel', async () => {
+  render(<WorkspaceView />)
+
+  await screen.findByRole('button', { name: 'session 1' })
+
+  // The mocked useAgentStatus returns isActive: true / agentType: 'claude-code'.
+  expect(capturedAgentStatusPanelProps.agentStatus).toMatchObject({
+    isActive: true,
+    agentType: 'claude-code',
+  })
+})
+```
+
+- [ ] **Step 5: Create `WorkspaceView.subscription.test.tsx`**
+
+This is a separate file because it mocks `<Sidebar>` (the existing `WorkspaceView.test.tsx` keeps the real Sidebar so its session-list assertions still work).
+
+```tsx
+import type { ReactElement } from 'react'
+import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { WorkspaceView } from './WorkspaceView'
+import type { AgentStatus } from '../agent-status/types'
+
+// Mock TerminalPane / TerminalZone deps to avoid xterm.js in jsdom
+vi.mock('../terminal/components/TerminalPane', () => ({
+  TerminalPane: vi.fn(() => <div data-testid="terminal-pane-mock" />),
+}))
+
+vi.mock('../editor/hooks/useEditorBuffer', () => ({
+  useEditorBuffer: () => ({
+    filePath: null,
+    originalContent: '',
+    currentContent: '',
+    isDirty: false,
+    isLoading: false,
+    openFile: vi.fn().mockResolvedValue(undefined),
+    saveFile: vi.fn().mockResolvedValue(undefined),
+    updateContent: vi.fn(),
+  }),
+}))
+
+vi.mock('../terminal/services/terminalService', () => ({
+  createTerminalService: vi.fn(() => ({
+    spawn: vi.fn().mockResolvedValue({ sessionId: 'new-id', pid: 999 }),
+    write: vi.fn().mockResolvedValue(undefined),
+    resize: vi.fn().mockResolvedValue(undefined),
+    kill: vi.fn().mockResolvedValue(undefined),
+    onData: vi.fn(() => Promise.resolve(() => {})),
+    onExit: vi.fn(() => () => {}),
+    onError: vi.fn(() => () => {}),
+    listSessions: vi.fn().mockResolvedValue({
+      activeSessionId: 'sess-1',
+      sessions: [
+        {
+          id: 'sess-1',
+          cwd: '~',
+          status: {
+            kind: 'Alive',
+            pid: 1234,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    }),
+    setActiveSession: vi.fn().mockResolvedValue(undefined),
+    reorderSessions: vi.fn().mockResolvedValue(undefined),
+    updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+  })),
+}))
+
+// CRITICAL: this mock returns a fresh object per call so reference
+// equality distinguishes "one hook call shared by both children" from
+// "one hook call per child". The previous WorkspaceView.test.tsx mock
+// returns a singleton, which would defeat this assertion.
+vi.mock('../agent-status/hooks/useAgentStatus', () => ({
+  useAgentStatus: vi.fn(
+    (): AgentStatus => ({
+      isActive: true,
+      agentType: 'claude-code',
+      modelId: null,
+      modelDisplayName: null,
+      version: null,
+      sessionId: null,
+      agentSessionId: null,
+      contextWindow: null,
+      cost: null,
+      rateLimits: null,
+      toolCalls: { total: 0, byType: {}, active: null },
+      recentToolCalls: [],
+      testRun: null,
+    })
+  ),
+}))
+
+const capturedSidebarProps: { agentStatus?: AgentStatus } = {}
+const capturedPanelProps: { agentStatus?: AgentStatus } = {}
+
+interface MockSidebarProps {
+  agentStatus?: AgentStatus
+}
+interface MockPanelProps {
+  agentStatus?: AgentStatus
+}
+
+vi.mock('./components/Sidebar', () => ({
+  Sidebar: ({ agentStatus = undefined }: MockSidebarProps): ReactElement => {
+    capturedSidebarProps.agentStatus = agentStatus
+    return <div data-testid="sidebar-mock" />
+  },
+}))
+
+vi.mock('../agent-status/components/AgentStatusPanel', () => ({
+  AgentStatusPanel: ({
+    agentStatus = undefined,
+  }: MockPanelProps): ReactElement => {
+    capturedPanelProps.agentStatus = agentStatus
+    return <div data-testid="agent-status-panel-mock" />
+  },
+}))
+
+describe('WorkspaceView lifted-subscription contract', () => {
+  beforeEach(() => {
+    capturedSidebarProps.agentStatus = undefined
+    capturedPanelProps.agentStatus = undefined
+  })
+
+  test('Sidebar and AgentStatusPanel receive agentStatus from a single hook call', async () => {
+    render(<WorkspaceView />)
+
+    // Wait for the children to be rendered with their props captured.
+    await screen.findByTestId('sidebar-mock')
+    await screen.findByTestId('agent-status-panel-mock')
+
+    expect(capturedSidebarProps.agentStatus).toBeDefined()
+    expect(capturedPanelProps.agentStatus).toBeDefined()
+
+    // Reference equality. Because the useAgentStatus mock above returns
+    // a FRESH object per call (the factory runs anew each invocation),
+    // two separate hook calls would yield two distinct objects, and
+    // `toBe` would fail. A single hook call shared by both children
+    // yields the same object reference and `toBe` passes.
+    expect(capturedSidebarProps.agentStatus).toBe(
+      capturedPanelProps.agentStatus
+    )
+  })
+})
+```
+
+- [ ] **Step 6: Run all the new/changed tests to verify they fail**
+
+```bash
+npx vitest run \
+  src/features/agent-status/components/ActivityFooter.test.tsx \
+  src/features/workspace/components/Sidebar.test.tsx \
+  src/features/agent-status/components/AgentStatusPanel.test.tsx \
+  src/features/workspace/WorkspaceView.test.tsx \
+  src/features/workspace/WorkspaceView.subscription.test.tsx
+```
+
+Expected: FAIL across all five files. Possible failure modes:
+
+- `ActivityFooter` still requires `turnCount` → type/runtime error
+- `Sidebar` doesn't accept `agentStatus` → type error; `<SidebarStatusHeader>` testid not in DOM
+- `AgentStatusPanel` doesn't accept `agentStatus` → type error; `<StatusCard>` still rendered
+- `WorkspaceView` doesn't lift `useAgentStatus` → captured props undefined
+
+### 3.2 Update implementations
+
+- [ ] **Step 7: Update `ActivityFooter.tsx`**
+
+Replace the file contents:
+
+```tsx
+import type { ReactElement } from 'react'
+
+interface ActivityFooterProps {
+  totalDurationMs: number
+  linesAdded: number
+  linesRemoved: number
+}
+
+const formatDuration = (ms: number): string => {
+  const hours = Math.floor(ms / 3_600_000)
+  const minutes = Math.floor((ms % 3_600_000) / 60_000)
+
+  if (hours > 0) {
+    return `${hours}h ${minutes.toString().padStart(2, '0')}m`
+  }
+
+  return `${minutes}m`
+}
+
+const formatLines = (n: number): string => n.toLocaleString('en-US')
+
+export const ActivityFooter = ({
+  totalDurationMs,
+  linesAdded,
+  linesRemoved,
+}: ActivityFooterProps): ReactElement => (
+  <div className="mt-auto bg-surface-container-low/40 px-5 py-3">
+    <div className="flex items-center justify-between font-mono text-[9px] text-outline">
+      <span>{formatDuration(totalDurationMs)}</span>
+      <span>
+        +{formatLines(linesAdded)} / -{formatLines(linesRemoved)}
+      </span>
+    </div>
+  </div>
+)
+
+export { formatDuration }
+```
+
+- [ ] **Step 8: Update `Sidebar.tsx`**
+
+Three edits:
+
+**a)** Add the `agentStatus` prop to `SidebarProps`:
+
+```tsx
+import type { AgentStatus } from '../../agent-status/types'
+
+export interface SidebarProps {
+  sessions: Session[]
+  activeSessionId: string | null
+  activeCwd?: string
+  onSessionClick: (sessionId: string) => void
+  onNewInstance?: () => void
+  onRemoveSession?: (sessionId: string) => void
+  onRenameSession?: (sessionId: string, name: string) => void
+  onReorderSessions?: (sessions: Session[]) => void
+  onFileSelect?: (node: FileNode) => void
+  agentStatus: AgentStatus
+}
+```
+
+**b)** Destructure `agentStatus` in the component signature, alongside the other props.
+
+**c)** Import `SidebarStatusHeader` and replace the hardcoded "Agent header" block (lines roughly 222-240, the `<div className="flex items-center gap-3 px-4 py-4">…"Agent Alpha"…"System Idle"…</div>`):
+
+```tsx
+import { SidebarStatusHeader } from './SidebarStatusHeader'
+
+// …
+
+;<div className="px-3 pt-3 pb-2">
+  <SidebarStatusHeader
+    status={agentStatus}
+    activeSessionName={
+      sessions.find((s) => s.id === activeSessionId)?.name ?? null
+    }
+  />
+</div>
+```
+
+The `"Active Sessions"` heading + `<Reorder.Group>` + everything below remain unchanged.
+
+- [ ] **Step 9: Update `AgentStatusPanel.tsx`**
+
+Replace the file contents:
 
 ```tsx
 import { useMemo, type ReactElement } from 'react'
@@ -891,185 +1039,29 @@ export const AgentStatusPanel = ({
 export default AgentStatusPanel
 ```
 
-Key changes vs. before:
+- [ ] **Step 10: Update `WorkspaceView.tsx`**
 
-1. The `sessionId: string | null` prop is gone; the parent now owns the hook.
-2. `agentStatus: AgentStatus` is the new prop.
-3. The internal `useAgentStatus(sessionId)` call is removed.
-4. `<StatusCard>` is no longer rendered.
-5. `lineTotals = useMemo(() => sumLines(effectiveFiles), …)` feeds the footer.
-6. `<ActivityFooter>` no longer receives `turnCount`.
+Five edits:
 
-- [ ] **Step 5: Run the AgentStatusPanel tests to verify they pass**
-
-```bash
-npx vitest run src/features/agent-status/components/AgentStatusPanel.test.tsx
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Type-check**
-
-```bash
-npm run type-check
-```
-
-Expected: TypeScript errors in `WorkspaceView.tsx` only — it still passes `sessionId` and does not pass `agentStatus`. Task 6 fixes those.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add src/features/agent-status/components/AgentStatusPanel.tsx \
-        src/features/agent-status/components/AgentStatusPanel.test.tsx
-git commit -m "refactor(agent-status): take agentStatus as prop, drop StatusCard render, use sumLines for footer"
-```
-
-> After this task lands, `npm run type-check` still fails on `WorkspaceView.tsx` (sessionId/agentStatus mismatch). Task 6 fixes the last error.
-
----
-
-## Task 6: Lift `useAgentStatus` to `<WorkspaceView>` + bump `SIDEBAR_MIN`
-
-**Files:**
-
-- Modify: `src/features/workspace/WorkspaceView.tsx`
-- Modify: `src/features/workspace/WorkspaceView.test.tsx`
-
-- [ ] **Step 1: Read the existing WorkspaceView test**
-
-```bash
-cat src/features/workspace/WorkspaceView.test.tsx
-```
-
-Note any existing `useAgentStatus` mocks.
-
-- [ ] **Step 2: Update the WorkspaceView test**
-
-The test file already mocks `useAgentStatus` at module scope (`vi.mock('../agent-status/hooks/useAgentStatus', () => ({ useAgentStatus: vi.fn(() => …) }))`) and already mocks `AgentStatusPanel` with a `capturedAgentStatusPanelProps` capture object. We extend both.
-
-**a)** Add `agentStatus` to the captured-props object near the existing capture (around line 47-50 of the file):
-
-```tsx
-import type { AgentStatus } from '../agent-status/types'
-
-const capturedAgentStatusPanelProps: {
-  onOpenFile?: (path: string) => void
-  onOpenDiff?: unknown
-  agentStatus?: AgentStatus // NEW
-} = {}
-
-interface MockAgentStatusPanelProps {
-  onOpenFile?: (path: string) => void
-  onOpenDiff?: unknown
-  agentStatus?: AgentStatus // NEW
-}
-```
-
-**b)** Capture the new prop inside the mock factory (around line 57-69):
-
-```tsx
-vi.mock('../agent-status/components/AgentStatusPanel', () => ({
-  AgentStatusPanel: ({
-    onOpenFile = undefined,
-    onOpenDiff = undefined,
-    agentStatus = undefined, // NEW
-  }: MockAgentStatusPanelProps): ReactElement => {
-    capturedAgentStatusPanelProps.onOpenFile = onOpenFile
-    capturedAgentStatusPanelProps.onOpenDiff = onOpenDiff
-    capturedAgentStatusPanelProps.agentStatus = agentStatus // NEW
-
-    return <div data-testid="agent-status-panel" />
-  },
-}))
-```
-
-**c)** Reset the new field in `beforeEach`:
-
-```tsx
-beforeEach(() => {
-  capturedAgentStatusPanelProps.onOpenFile = undefined
-  capturedAgentStatusPanelProps.onOpenDiff = undefined
-  capturedAgentStatusPanelProps.agentStatus = undefined // NEW
-
-  // … existing useEditorBuffer mock setup …
-})
-```
-
-**d)** Add a top-level import to grab the mock reference:
-
-```tsx
-import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
-```
-
-**e)** Add the new tests inside the `describe('WorkspaceView', …)` block:
-
-```tsx
-test('lifts useAgentStatus and forwards the latest activeSessionId', async () => {
-  render(<WorkspaceView />)
-
-  // Wait for session restore to settle (existing tests use this pattern —
-  // findByRole on the session button proves activeSessionId is non-null).
-  await screen.findByRole('button', { name: 'session 1' })
-
-  const useAgentStatusMock = vi.mocked(useAgentStatus)
-  const calls = useAgentStatusMock.mock.calls
-  const lastArg = calls[calls.length - 1]?.[0] as string | null
-
-  // The exact id depends on the listSessions mock above (currently 'sess-1').
-  // The point of this assertion is the LATEST call arg, not the call count —
-  // activeSessionId flips from null to the restored id, and React may
-  // re-render multiple times, so call count is not stable.
-  expect(lastArg).toBe('sess-1')
-})
-
-test('passes agentStatus to AgentStatusPanel', async () => {
-  render(<WorkspaceView />)
-
-  await screen.findByRole('button', { name: 'session 1' })
-
-  // The mocked useAgentStatus returns an object with isActive: true,
-  // agentType: 'claude-code'. Verify AgentStatusPanel receives that exact
-  // shape (proving the prop drill works).
-  expect(capturedAgentStatusPanelProps.agentStatus).toMatchObject({
-    isActive: true,
-    agentType: 'claude-code',
-  })
-})
-```
-
-> Note: the existing `useAgentStatus` mock at module scope is `vi.fn(() => ({ isActive: true, agentType: 'claude-code', … }))`. Calling `vi.mocked(useAgentStatus).mock.calls` reads the call log directly. No restructuring of the existing mock is needed.
-
-> The "both children receive the same `agentStatus` reference" assertion from the spec test plan is satisfied by TypeScript: the same `agentStatus` const is passed to both `<Sidebar>` and `<AgentStatusPanel>`. Asserting it again at runtime would require also mocking `<Sidebar>`, which the existing test file leaves real. We assert only the AgentStatusPanel side here; if a future regression makes the Sidebar receive a different reference, type-check would catch it before tests run.
-
-- [ ] **Step 3: Run the test to verify it fails**
-
-```bash
-npx vitest run src/features/workspace/WorkspaceView.test.tsx
-```
-
-Expected: FAIL — `useAgentStatus` is not yet called from WorkspaceView.
-
-- [ ] **Step 4: Update `WorkspaceView.tsx`**
-
-1. Bump `SIDEBAR_MIN` from `180` to `240`:
+**a)** Bump `SIDEBAR_MIN`:
 
 ```ts
 const SIDEBAR_MIN = 240
 ```
 
-2. Add the import:
+**b)** Import the hook:
 
 ```ts
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 ```
 
-3. Inside the component, near the other hook calls (after `useSessionManager`, before or after `useResizable` — order doesn't matter for behavior):
+**c)** Inside the component, after `useSessionManager`:
 
 ```ts
 const agentStatus = useAgentStatus(activeSessionId)
 ```
 
-4. In the `<Sidebar … />` JSX, add the prop:
+**d)** Pass `agentStatus` to `<Sidebar>`:
 
 ```tsx
 <Sidebar
@@ -1086,7 +1078,7 @@ const agentStatus = useAgentStatus(activeSessionId)
 />
 ```
 
-5. In the `<AgentStatusPanel … />` JSX, replace `sessionId={activeSessionId}` with `agentStatus={agentStatus}`:
+**e)** Replace `sessionId={activeSessionId}` on `<AgentStatusPanel>` with `agentStatus={agentStatus}`:
 
 ```tsx
 <AgentStatusPanel
@@ -1097,15 +1089,22 @@ const agentStatus = useAgentStatus(activeSessionId)
 />
 ```
 
-- [ ] **Step 5: Run the WorkspaceView test to verify it passes**
+### 3.3 Verify and commit
+
+- [ ] **Step 11: Run all the changed test files**
 
 ```bash
-npx vitest run src/features/workspace/WorkspaceView.test.tsx
+npx vitest run \
+  src/features/agent-status/components/ActivityFooter.test.tsx \
+  src/features/workspace/components/Sidebar.test.tsx \
+  src/features/agent-status/components/AgentStatusPanel.test.tsx \
+  src/features/workspace/WorkspaceView.test.tsx \
+  src/features/workspace/WorkspaceView.subscription.test.tsx
 ```
 
-Expected: PASS.
+Expected: PASS across all five files.
 
-- [ ] **Step 6: Type-check the whole project**
+- [ ] **Step 12: Type-check**
 
 ```bash
 npm run type-check
@@ -1113,15 +1112,15 @@ npm run type-check
 
 Expected: PASS, no errors.
 
-- [ ] **Step 7: Run the full test suite**
+- [ ] **Step 13: Run the full test suite**
 
 ```bash
 npm run test
 ```
 
-Expected: PASS. If any test fails because it depended on the old `<StatusCard>` location inside the panel or the old footer signature, fix it now — those failures belong to this task.
+Expected: PASS. If anything else regresses (other tests assumed `<StatusCard>` was inside the panel, or the old footer signature), fix it now and add the fix to this commit.
 
-- [ ] **Step 8: Run lint + format**
+- [ ] **Step 14: Lint and format**
 
 ```bash
 npm run lint
@@ -1130,19 +1129,44 @@ npm run format:check
 
 Expected: PASS. Run `npm run lint:fix` and `npm run format` if anything fails.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 15: Stage everything and commit**
 
 ```bash
-git add src/features/workspace/WorkspaceView.tsx \
-        src/features/workspace/WorkspaceView.test.tsx
-git commit -m "feat(workspace): lift useAgentStatus to WorkspaceView; bump SIDEBAR_MIN to 240"
+git add \
+  src/features/agent-status/components/ActivityFooter.tsx \
+  src/features/agent-status/components/ActivityFooter.test.tsx \
+  src/features/workspace/components/Sidebar.tsx \
+  src/features/workspace/components/Sidebar.test.tsx \
+  src/features/agent-status/components/AgentStatusPanel.tsx \
+  src/features/agent-status/components/AgentStatusPanel.test.tsx \
+  src/features/workspace/WorkspaceView.tsx \
+  src/features/workspace/WorkspaceView.test.tsx \
+  src/features/workspace/WorkspaceView.subscription.test.tsx
+git commit -m "$(cat <<'EOF'
+feat(workspace): move StatusCard render-site to Sidebar; re-source ActivityFooter lines from git diff
+
+- Lift useAgentStatus to WorkspaceView; pass agentStatus to both Sidebar
+  and AgentStatusPanel (one Tauri subscription, asserted via reference
+  equality in WorkspaceView.subscription.test.tsx).
+- Sidebar replaces hardcoded "Agent Alpha" header with <SidebarStatusHeader>;
+  AgentStatusPanel drops <StatusCard>, takes agentStatus as a prop.
+- ActivityFooter renders two cells (duration + lines); turnCount removed
+  pending real turn-counting (separate issue).
+- Lines now sum from useGitStatus's effectiveFiles via sumLines, matching
+  the per-file numbers shown in <FilesChanged>.
+- Bump SIDEBAR_MIN from 180 to 240 so StatusCard's grid-cols-2
+  BudgetMetrics doesn't overflow at the narrowest sidebar width.
+
+Spec: docs/superpowers/specs/2026-04-30-sidebar-status-header-design.md
+EOF
+)"
 ```
 
-(No `--no-verify` here — the tree should now be fully green, so pre-push must pass.)
+Expected: pre-commit passes (lint-staged → eslint + tsc clean), commit succeeds.
 
 ---
 
-## Task 7: Visual verification at narrow sidebar width
+## Task 4: Visual verification at narrow sidebar width
 
 **Files:** None (manual verification per spec section 5.2.1)
 
@@ -1152,11 +1176,11 @@ git commit -m "feat(workspace): lift useAgentStatus to WorkspaceView; bump SIDEB
 npm run tauri:dev
 ```
 
-(Or `npm run dev` if Tauri is unavailable in your environment — the layout tests can be done in the browser preview.)
+(Or `npm run dev` if Tauri is unavailable.)
 
 - [ ] **Step 2: Drag the sidebar to its minimum width**
 
-Drag the right edge of the sidebar all the way left. Verify the resize stops at the new minimum (240px). The `<SidebarStatusHeader>` should render the `<StatusCard>` (if an agent is attached in the session) without horizontal overflow.
+Drag the right edge of the sidebar all the way left. Verify the resize stops at the new minimum (240px). The `<SidebarStatusHeader>` should render the `<StatusCard>` (when an agent is attached) without horizontal overflow.
 
 - [ ] **Step 3: Verify worst-case `<BudgetMetrics>` variants**
 
@@ -1168,12 +1192,11 @@ Test all three variants of `<BudgetMetrics>` at 240px:
 
 If you cannot reproduce all three with real agents, render the panel with worst-case mock data:
 
-```tsx
-// Worst-case fixtures to drop into the dev server temporarily:
-//   cost.totalCostUsd        = 9999.99   → "$9999.99"
-//   cost.totalApiDurationMs  = 9_999_000 → "9999.0s"
-//   totalInputTokens         = 9_999_999 → "10.0M" (whichever formatTokens produces)
-//   rateLimits.fiveHour      = 99.99%
+```
+cost.totalCostUsd        = 9999.99   → "$9999.99"
+cost.totalApiDurationMs  = 9_999_000 → "9999.0s"
+totalInputTokens         = 9_999_999 → "10.0M" (whichever formatTokens produces)
+rateLimits.fiveHour      = 99.99%
 ```
 
 - [ ] **Step 4: Inspect for horizontal overflow**
@@ -1183,7 +1206,7 @@ Open DevTools, hover the StatusCard, look for clipped or wrapped text inside the
 - [ ] **Step 5: Decide**
 
 - **If no overflow at 240px** → `SIDEBAR_MIN = 240` is correct. Continue to Step 6.
-- **If overflow at 240px** → raise `SIDEBAR_MIN` further (try 260, then 280) and re-verify. Update Task 6's commit (or add a follow-up commit) accordingly. Document the final value in the PR description.
+- **If overflow at 240px** → raise `SIDEBAR_MIN` further (try 260, then 280) and re-verify. Add the bump as a small follow-up commit.
 
 - [ ] **Step 6: Verify the `<SidebarStatusHeader>` idle state**
 
@@ -1198,7 +1221,7 @@ git commit -m "fix(workspace): raise SIDEBAR_MIN to <verified-value> after empir
 
 ---
 
-## Task 8: File the deferred-`turnCount` issue
+## Task 5: File the deferred-`turnCount` issue
 
 **Files:** None (filed via `gh issue create`)
 
@@ -1257,17 +1280,18 @@ No commit — `gh issue create` does not modify the working tree.
 
 ## Self-review notes (post-write)
 
-- Spec § 5.1 (`<SidebarStatusHeader>`): Task 3 covers the active branch (delegates to `<StatusCard>`) and idle branch (inline JSX matching StatusCard chrome).
-- Spec § 5.2 (`<StatusCard>` stays put): No source edit; only Task 3 imports it from its existing location.
-- Spec § 5.2.1 (`SIDEBAR_MIN` bump): Task 6 raises the const; Task 7 verifies and re-bumps if needed.
-- Spec § 5.3 (Sidebar accepts `agentStatus`): Task 4.
-- Spec § 5.4 (AgentStatusPanel takes prop, drops StatusCard, uses sumLines): Task 5.
-- Spec § 5.5 (ActivityFooter drops turnCount): Task 2.
-- Spec § 5.6 (sumLines util): Task 1.
-- Spec § 5.7 (WorkspaceView lifts hook + bumps SIDEBAR_MIN): Task 6.
-- Spec § 6 (test plan): each row mapped to the corresponding task above.
-- Spec § 8 (follow-up): Task 8 files the deferred-turnCount issue.
+- **Spec coverage:**
+  - § 5.1 (`<SidebarStatusHeader>`): Task 2 covers the active branch (delegates to `<StatusCard>`) and idle branch (inline JSX matching StatusCard chrome).
+  - § 5.2 (`<StatusCard>` stays put): Verified — Task 2 imports from existing path; no source edit.
+  - § 5.2.1 (`SIDEBAR_MIN` bump): Task 3 bumps to 240; Task 4 verifies and re-bumps if needed.
+  - § 5.3 (Sidebar accepts `agentStatus`): Task 3, sub-step 8.
+  - § 5.4 (AgentStatusPanel takes prop, drops StatusCard, uses sumLines): Task 3, sub-step 9.
+  - § 5.5 (ActivityFooter drops turnCount): Task 3, sub-step 7.
+  - § 5.6 (sumLines util): Task 1.
+  - § 5.7 (WorkspaceView lifts hook + bumps SIDEBAR_MIN): Task 3, sub-step 10.
+  - § 6 (test plan): each row mapped to the corresponding sub-step.
+  - § 8 (follow-up): Task 5 files the deferred-turnCount issue.
 
-The plan accepts a brief `tsc` red window between Tasks 2 and 6 — the ActivityFooter and Sidebar/AgentStatusPanel signatures shift before `WorkspaceView` is updated, leaving the project type-error-positive but test-green (vitest uses Vite's esbuild, which strips types). Local commits during Tasks 2-5 succeed; the pre-push hook only runs `vitest run`, not `tsc`. Task 6 closes the type window.
+- **Architectural assertion:** the "one Tauri subscription, not two" goal is asserted at runtime by `WorkspaceView.subscription.test.tsx`. The mock returns a fresh `AgentStatus` object per call, so reference equality across captured Sidebar / AgentStatusPanel props proves a single hook invocation feeds both children. TypeScript alone does not catch a regression where `useAgentStatus` is called twice with the same id.
 
-> **Push gate:** CI (`.github/workflows/ci-checks.yml`) runs `npm run type-check` on push. **Do not push to GitHub until Task 6 is committed.** Push only after Task 6, ideally after Task 7 (visual verification) too. Tasks 1-6 are local-only commits.
+- **Pre-commit hook compatibility:** Tasks 1, 2, and 3 each end in a type-clean tree. The pre-commit hook (`lint-staged` → `tsc --noEmit`) passes after every commit. There is no intermediate "type-error window" — the four files that change signature in Task 3 are all updated together in one commit.
