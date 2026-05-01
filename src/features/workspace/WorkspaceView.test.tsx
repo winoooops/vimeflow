@@ -6,6 +6,8 @@ import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceView } from './WorkspaceView'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
+import type { AgentStatus } from '../agent-status/types'
+import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../terminal/components/TerminalPane', () => ({
@@ -47,20 +49,24 @@ vi.mock('../editor/hooks/useEditorBuffer', () => ({
 const capturedAgentStatusPanelProps: {
   onOpenFile?: (path: string) => void
   onOpenDiff?: unknown
+  agentStatus?: AgentStatus
 } = {}
 
 interface MockAgentStatusPanelProps {
   onOpenFile?: (path: string) => void
   onOpenDiff?: unknown
+  agentStatus?: AgentStatus
 }
 
 vi.mock('../agent-status/components/AgentStatusPanel', () => ({
   AgentStatusPanel: ({
     onOpenFile = undefined,
     onOpenDiff = undefined,
+    agentStatus = undefined,
   }: MockAgentStatusPanelProps): ReactElement => {
     capturedAgentStatusPanelProps.onOpenFile = onOpenFile
     capturedAgentStatusPanelProps.onOpenDiff = onOpenDiff
+    capturedAgentStatusPanelProps.agentStatus = agentStatus
 
     // Render the panel testid so the existing zone-presence tests
     // (`getByTestId('agent-status-panel')`) keep passing without
@@ -110,6 +116,7 @@ describe('WorkspaceView', () => {
   beforeEach(() => {
     capturedAgentStatusPanelProps.onOpenFile = undefined
     capturedAgentStatusPanelProps.onOpenDiff = undefined
+    capturedAgentStatusPanelProps.agentStatus = undefined
 
     // Default: clean buffer with no file open. Mirrors the real hook's
     // initial state so existing tests don't see a dirty buffer or get
@@ -487,5 +494,34 @@ describe('WorkspaceView', () => {
     expect(
       await screen.findByRole('dialog', { name: /unsaved changes/i })
     ).toBeInTheDocument()
+  })
+
+  test('lifts useAgentStatus and forwards the latest activeSessionId', async () => {
+    render(<WorkspaceView />)
+
+    // Wait for session restore to settle (the listSessions mock resolves
+    // sess-1, so this proves activeSessionId is non-null).
+    await screen.findByRole('button', { name: 'session 1' })
+
+    const useAgentStatusMock = vi.mocked(useAgentStatus)
+    const calls = useAgentStatusMock.mock.calls
+    const lastArg = calls[calls.length - 1]?.[0]
+
+    // Latest call arg, not call count — activeSessionId flips from null
+    // to the restored id during mount, and React may re-render multiple
+    // times. We assert the *value* of the most-recent call.
+    expect(lastArg).toBe('sess-1')
+  })
+
+  test('passes the lifted agentStatus to AgentStatusPanel', async () => {
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+
+    // The mocked useAgentStatus returns isActive: true / agentType: 'claude-code'.
+    expect(capturedAgentStatusPanelProps.agentStatus).toMatchObject({
+      isActive: true,
+      agentType: 'claude-code',
+    })
   })
 })

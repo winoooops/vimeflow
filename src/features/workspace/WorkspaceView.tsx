@@ -12,9 +12,10 @@ import { useResizable } from './hooks/useResizable'
 import { createFileSystemService } from '../files/services/fileSystemService'
 import { createTerminalService } from '../terminal/services/terminalService'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
+import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import type { ChangedFile, SelectedDiffFile } from '../diff/types'
 
-const SIDEBAR_MIN = 180
+const SIDEBAR_MIN = 240
 const SIDEBAR_MAX = 560
 const SIDEBAR_DEFAULT = 340
 
@@ -43,6 +44,8 @@ export const WorkspaceView = (): ReactElement => {
     loading,
     notifyPaneReady,
   } = useSessionManager(terminalService)
+
+  const agentStatus = useAgentStatus(activeSessionId)
 
   const {
     size: sidebarWidth,
@@ -323,6 +326,7 @@ export const WorkspaceView = (): ReactElement => {
           onRenameSession={renameSession}
           onReorderSessions={reorderSessions}
           onFileSelect={handleFileSelect}
+          agentStatus={agentStatus}
         />
 
         {/* Resize handle */}
@@ -406,7 +410,7 @@ export const WorkspaceView = (): ReactElement => {
 
       {/* Agent Status Panel — self-manages width (0↔280px) */}
       <AgentStatusPanel
-        sessionId={activeSessionId}
+        agentStatus={agentStatus}
         cwd={activeSession?.workingDirectory ?? '.'}
         onOpenDiff={handleOpenDiff}
         onOpenFile={handleOpenTestFile}

@@ -1,6 +1,5 @@
-import type { ReactElement } from 'react'
-import { useAgentStatus } from '../hooks/useAgentStatus'
-import { StatusCard } from './StatusCard'
+import { useMemo, type ReactElement } from 'react'
+import type { AgentStatus } from '../types'
 import { ContextBucket } from './ContextBucket'
 import { TokenCache } from './TokenCache'
 import { ToolCallSummary } from './ToolCallSummary'
@@ -10,40 +9,45 @@ import { ActivityFooter } from './ActivityFooter'
 import { ActivityFeed } from './ActivityFeed'
 import { useActivityEvents } from '../hooks/useActivityEvents'
 import { useGitStatus } from '../../diff/hooks/useGitStatus'
+import { sumLines } from '../../diff/utils/sumLines'
 import type { ChangedFile } from '../../diff/types'
 
 interface AgentStatusPanelProps {
-  sessionId: string | null
+  agentStatus: AgentStatus
   cwd: string
   onOpenDiff: (file: ChangedFile) => void
   onOpenFile?: (path: string) => void
 }
 
 export const AgentStatusPanel = ({
-  sessionId,
+  agentStatus,
   cwd,
   onOpenDiff,
   onOpenFile = undefined,
 }: AgentStatusPanelProps): ReactElement => {
-  const status = useAgentStatus(sessionId)
+  const status = agentStatus
   const events = useActivityEvents(status)
 
-  // Git status with file-system watcher
   const { files, filesCwd, loading, error, refresh, idle } = useGitStatus(cwd, {
     watch: true,
     enabled: status.isActive,
   })
 
-  // Freshness check — files are only valid if they came from the current cwd
   const filesAreFresh = filesCwd === cwd
-  const effectiveFiles = filesAreFresh ? files : []
 
-  // Gate the transitional-loading arm on the hook actually running. When
-  // `idle` is true (hook short-circuited because enabled=false or cwd is
-  // a fallback), `filesCwd` stays null forever and `!filesAreFresh` would
-  // otherwise spin "Loading…" indefinitely. An idle hook never loads.
+  // Memoize the effective files array so its identity is stable across
+  // renders when the underlying data didn't change. Without this, the
+  // ternary creates a fresh array literal on every render and downstream
+  // useMemos depending on it (lineTotals) re-run unnecessarily.
+  const effectiveFiles = useMemo(
+    () => (filesAreFresh ? files : []),
+    [filesAreFresh, files]
+  )
+
   const effectiveLoading =
     !idle && (loading || (!filesAreFresh && error === null))
+
+  const lineTotals = useMemo(() => sumLines(effectiveFiles), [effectiveFiles])
 
   return (
     <div
@@ -59,16 +63,6 @@ export const AgentStatusPanel = ({
       {status.isActive && status.agentType ? (
         <>
           <div className="flex flex-col gap-2 p-2">
-            <StatusCard
-              agentType={status.agentType}
-              modelId={status.modelId}
-              modelDisplayName={status.modelDisplayName}
-              status="running"
-              cost={status.cost}
-              rateLimits={status.rateLimits}
-              totalInputTokens={status.contextWindow?.totalInputTokens ?? 0}
-              totalOutputTokens={status.contextWindow?.totalOutputTokens ?? 0}
-            />
             <ContextBucket
               usedPercentage={status.contextWindow?.usedPercentage ?? null}
               contextWindowSize={
@@ -98,9 +92,8 @@ export const AgentStatusPanel = ({
           </div>
           <ActivityFooter
             totalDurationMs={status.cost?.totalDurationMs ?? 0}
-            turnCount={0}
-            linesAdded={status.cost?.totalLinesAdded ?? 0}
-            linesRemoved={status.cost?.totalLinesRemoved ?? 0}
+            linesAdded={lineTotals.added}
+            linesRemoved={lineTotals.removed}
           />
         </>
       ) : null}
