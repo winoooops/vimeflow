@@ -382,7 +382,7 @@ phases:
         check: 'Manual verification in tauri:dev with a real Claude Code session (end-to-end)'
         status: done
         commit: null
-        pr: null
+        pr: 121
         notes: >-
           Manually verified 2026-05-01 against a real Claude Code session.
           Demo recorded as docs/media/hero-init.gif (spawn → /init → agent

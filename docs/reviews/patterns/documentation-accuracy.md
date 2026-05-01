@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-04-30
-ref_count: 6
+ref_count: 7
 ---
 
 # Documentation Accuracy
@@ -285,3 +285,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** Both READMEs centered the agent-status-sidebar caption with `<sub align="center">…</sub>`. `<sub>` is phrasing content; the `align` attribute has no effect on inline elements and GitHub's Markdown renderer ignores it. Result: the caption rendered left-aligned beneath a centered image, breaking the visual unit. The hero caption two sections higher rendered correctly only because it was wrapped in a `<div align="center">` block, not because of any attribute on `<sub>`.
 - **Fix:** Wrapped the caption in `<p align="center">` so the centering applies at the block level: `<p align="center"><sub>…</sub></p>`. Mirror update applied to `README.zh-CN.md` for bilingual parity.
 - **Commit:** _(see git log for the round-1 fix commit)_
+
+### 31. `progress.yaml` step flipped to `done` but sibling `pr` field left `null`
+
+- **Source:** github-claude | PR #121 round 2 | 2026-05-01
+- **Severity:** LOW
+- **File:** `docs/roadmap/progress.yaml`
+- **Finding:** When `p4-d6` was promoted to `status: done` (manual end-to-end verification satisfied via the hero gif), the sibling `pr` field was left `null`. Every other completed step in Phase 4 records its closing PR (`p4-d3 → 63`, `p4-d4 → 57`, `p4-d5 → 49`), so the gap breaks the per-step traceability the schema was built for. Tooling that walks `pr` fields to auto-generate release notes or to cross-reference to GitHub silently skips the orphaned step. Same finding-class as #5 (phase dependency drift): a single edit to `progress.yaml` left adjacent fields out of sync with the new state.
+- **Fix:** Set `pr: 121` on `p4-d6`. `commit` remains `null` until the PR squash-merges (matches the populate-on-merge pattern of D1-D5).
+- **Commit:** _(see git log for the round-2 fix commit)_
