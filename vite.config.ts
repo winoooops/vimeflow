@@ -10,6 +10,10 @@ import type {
   DiffHunk,
   DiffLine,
 } from './src/features/diff/types'
+import {
+  buildGitDiffArgs,
+  extractHunkPatch,
+} from './src/features/diff/services/gitPatch'
 
 const git = simpleGit()
 const repoRoot = process.cwd()
@@ -140,10 +144,11 @@ function gitApiPlugin(): Plugin {
             return
           }
 
-          // GET /api/git/diff?file=<path>&staged=<bool>
+          // GET /api/git/diff?file=<path>&staged=<bool>&base=<branch>
           if (pathname === '/api/git/diff' && req.method === 'GET') {
             const file = url.searchParams.get('file')
             const staged = url.searchParams.get('staged') === 'true'
+            const baseBranch = url.searchParams.get('base')
             const untrackedParam = url.searchParams.get('untracked')
 
             const untracked =
@@ -166,15 +171,12 @@ function gitApiPlugin(): Plugin {
               return
             }
 
-            // Always diff against the base branch to show all changes
-            let diff = ''
-
-            if (staged) {
-              diff = await git.diff(['--cached', '--', safePath])
-            } else {
-              // Diff against main to capture all committed + working tree changes
-              diff = await git.diff(['main', '--', safePath])
-            }
+            // Default to the working-tree diff so displayed hunk indexes match
+            // the hunk patches used by stage/discard. Branch comparison is an
+            // explicit read-only mode via `base=<branch>`.
+            let diff = await git.diff(
+              buildGitDiffArgs({ safePath, staged, baseBranch })
+            )
 
             // Handle untracked files — git diff won't show them
             if (!diff && untracked !== false) {
@@ -224,7 +226,7 @@ function gitApiPlugin(): Plugin {
           // POST /api/git/stage
           if (pathname === '/api/git/stage' && req.method === 'POST') {
             const body = await readBody(req)
-            const { file, hunkIndex } = JSON.parse(body)
+            const { file, hunkIndex, base } = JSON.parse(body)
 
             if (!file) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -242,28 +244,87 @@ function gitApiPlugin(): Plugin {
               return
             }
 
-            if (hunkIndex !== undefined) {
+            // Refuse hunk-level stage against a branch-comparison diff.
+            // The display-side `base=<branch>` mode produces a different
+            // hunk list than the working-tree diff used here for patch
+            // extraction; mixing the two would apply the wrong hunk. The
+            // UI is expected to surface base-comparison views as
+            // read-only; this is the server-side belt-and-braces.
+            //
+            // The guard mirrors `buildGitDiffArgs`'s own trim-then-falsy
+            // sentinel for "no base in effect" — empty string and
+            // whitespace-only strings produce a working-tree diff there,
+            // so they must not trigger this rejection here either.
+            if (
+              typeof hunkIndex === 'number' &&
+              typeof base === 'string' &&
+              base.trim() !== ''
+            ) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(
+                JSON.stringify({
+                  error:
+                    'Hunk-level stage is not supported when a base= comparison is in effect; the displayed and working-tree hunk indexes can diverge. Stage the whole file instead.',
+                })
+              )
+
+              return
+            }
+
+            if (typeof hunkIndex === 'number') {
               // Stage a specific hunk by extracting the patch and applying it
-              const fullDiff = await git.diff(['--', safePath])
+              const fullDiff = await git.diff(
+                buildGitDiffArgs({ safePath, staged: false })
+              )
+              const patch = extractHunkPatch(fullDiff, hunkIndex)
 
-              if (fullDiff) {
-                const hunks = fullDiff.split(/(?=^@@\s)/m)
-                const header = hunks.shift() ?? ''
+              if (patch === null) {
+                res.writeHead(409, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({ error: 'Requested hunk no longer exists' })
+                )
 
-                if (hunkIndex < hunks.length) {
-                  const patch = header + hunks[hunkIndex]
-                  const { spawnSync } = await import('child_process')
-
-                  spawnSync('git', ['apply', '--cached', '-'], {
-                    input: patch,
-                    cwd: repoRoot,
-                  })
-                } else {
-                  await git.add(safePath)
-                }
-              } else {
-                await git.add(safePath)
+                return
               }
+
+              const { spawnSync } = await import('child_process')
+
+              // encoding: 'utf-8' so result.stderr is a string we can
+              // forward verbatim. `git apply` failures often carry
+              // actionable detail ("error: patch does not apply",
+              // "corrupt patch at line N", context mismatch); swallowing
+              // them turns every dev-time apply error into a generic 409
+              // with no path forward for the developer.
+              const result = spawnSync('git', ['apply', '--cached', '-'], {
+                input: patch,
+                cwd: repoRoot,
+                encoding: 'utf-8',
+              })
+
+              if (result.status !== 0) {
+                res.writeHead(409, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({
+                    error: 'Failed to stage hunk patch',
+                    detail: result.stderr ?? '',
+                  })
+                )
+
+                return
+              }
+            } else if (hunkIndex !== undefined && hunkIndex !== null) {
+              // Reject malformed hunkIndex (string, boolean, etc.) with
+              // 400 instead of falling through to whole-file stage. The
+              // user clearly meant to stage a hunk but sent a non-number;
+              // silently doing something else would be surprising.
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(
+                JSON.stringify({
+                  error: 'Invalid hunkIndex: expected a number',
+                })
+              )
+
+              return
             } else {
               await git.add(safePath)
             }
@@ -306,7 +367,7 @@ function gitApiPlugin(): Plugin {
           // POST /api/git/discard
           if (pathname === '/api/git/discard' && req.method === 'POST') {
             const body = await readBody(req)
-            const { file, hunkIndex } = JSON.parse(body)
+            const { file, hunkIndex, base } = JSON.parse(body)
 
             if (!file) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -332,34 +393,86 @@ function gitApiPlugin(): Plugin {
               fileStatus &&
               (fileStatus.index === '?' || fileStatus.working_dir === '?')
             ) {
-              // Untracked file — remove from disk
+              // Untracked file — remove from disk. `hunkIndex` is
+              // irrelevant for this branch (git.clean takes the whole
+              // file), so the base= guard does not apply here.
               await git.clean('f', ['--', safePath])
             } else if (fileStatus && fileStatus.index === 'A') {
-              // Staged new file — unstage then remove
+              // Staged new file — unstage then remove. Same: `hunkIndex`
+              // is irrelevant for this branch.
               await git.reset(['HEAD', '--', safePath])
               await git.clean('f', ['--', safePath])
-            } else if (hunkIndex !== undefined) {
-              // Discard a specific hunk via reverse patch
-              const fullDiff = await git.diff(['--', safePath])
-
-              if (fullDiff) {
-                const hunks = fullDiff.split(/(?=^@@\s)/m)
-                const header = hunks.shift() ?? ''
-
-                if (hunkIndex < hunks.length) {
-                  const patch = header + hunks[hunkIndex]
-                  const { spawnSync } = await import('child_process')
-
-                  spawnSync('git', ['apply', '-R', '-'], {
-                    input: patch,
-                    cwd: repoRoot,
+            } else if (typeof hunkIndex === 'number') {
+              // Belt-and-braces guard inside the hunk branch only.
+              // Refuse hunk-level discard when a base= comparison is
+              // in effect — the display hunk indexes don't align with
+              // the working-tree patch source. Round-1 had this guard
+              // at the top of the handler, but that fired the 400
+              // before the untracked / staged-new branches above had a
+              // chance to run, blocking valid operations on files
+              // where `hunkIndex` is irrelevant. Empty/whitespace base
+              // strings fall through to the working-tree path in
+              // `buildGitDiffArgs`, so we mirror that sentinel.
+              if (typeof base === 'string' && base.trim() !== '') {
+                res.writeHead(400, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({
+                    error:
+                      'Hunk-level discard is not supported when a base= comparison is in effect; the displayed and working-tree hunk indexes can diverge. Discard the whole file instead.',
                   })
-                } else {
-                  await git.checkout(['--', safePath])
-                }
-              } else {
-                await git.checkout(['--', safePath])
+                )
+
+                return
               }
+
+              // Discard a specific hunk via reverse patch
+              const fullDiff = await git.diff(
+                buildGitDiffArgs({ safePath, staged: false })
+              )
+              const patch = extractHunkPatch(fullDiff, hunkIndex)
+
+              if (patch === null) {
+                res.writeHead(409, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({ error: 'Requested hunk no longer exists' })
+                )
+
+                return
+              }
+
+              const { spawnSync } = await import('child_process')
+
+              // Same encoding+stderr-forward as /api/git/stage so a
+              // failed reverse-apply surfaces git's actual error text.
+              const result = spawnSync('git', ['apply', '-R', '-'], {
+                input: patch,
+                cwd: repoRoot,
+                encoding: 'utf-8',
+              })
+
+              if (result.status !== 0) {
+                res.writeHead(409, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({
+                    error: 'Failed to discard hunk patch',
+                    detail: result.stderr ?? '',
+                  })
+                )
+
+                return
+              }
+            } else if (hunkIndex !== undefined && hunkIndex !== null) {
+              // Same malformed-payload guard as /api/git/stage: reject
+              // non-number hunkIndex with 400 instead of falling through
+              // to whole-file discard.
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(
+                JSON.stringify({
+                  error: 'Invalid hunkIndex: expected a number',
+                })
+              )
+
+              return
             } else {
               // Full file discard — restore from HEAD
               await git.checkout(['--', safePath])

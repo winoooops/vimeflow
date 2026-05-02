@@ -375,3 +375,21 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** A rename of `read_cmdline` → `read_proc_cmdline` left a `#[cfg(test)] fn read_cmdline(pid) -> Option<Vec<String>> { ProcFsProcessSource.read_cmdline(pid) }` shim at MODULE level (outside `mod tests`) so two pre-existing tests (`reads_self_cmdline`, `handles_missing_pid_gracefully`) didn't need their call sites updated. Future readers see a `#[cfg(test)]` function alongside production code with no production callers and have to reason about whether it's a deprecated API, an internal-test seam, or a forgotten helper. Same finding-class as #28 (unused default export) — surface that does nothing in production but adds reader-overhead.
 - **Fix:** Deleted the shim. Updated the two test call sites to call `read_proc_cmdline` directly. Production and test symbols are now cleanly separated; nothing at module level is gated on `#[cfg(test)]`.
 - **Commit:** _(see git log for the round-1 fix commit)_
+
+### 41. Truthy-check guard fires on `null` payload values, attributing the 400 to the wrong cause
+
+- **Source:** github-claude | PR #130 round 3 | 2026-05-02
+- **Severity:** LOW
+- **File:** `vite.config.ts`
+- **Finding:** Both stage and discard endpoints used `hunkIndex !== undefined && (typeof base === 'string' && base.trim() !== '')` to guard against the base+hunk mismatch. JSON `null` is `!== undefined`, so a payload `{ hunkIndex: null, base: 'main' }` triggered the rejection with "Hunk-level X not supported when a base= comparison is in effect" — blaming base-mode alignment when the actual problem is a malformed hunk index. The same payload without `base` falls through to `extractHunkPatch(..., null)` → returns `null` → 409 "Requested hunk no longer exists." Two paths, both meaning "no valid hunk index", surface as different errors. Same finding-class as #6 (DRAWER_MAX) — the message implies a guarantee the value doesn't actually provide.
+- **Fix:** Tightened both guards from `hunkIndex !== undefined` to `typeof hunkIndex === 'number'`, matching `extractHunkPatch`'s own narrowing on the same value (it already returned `null` for non-numbers). The two endpoints now agree on what counts as "a hunk index is present", and the 400 only fires when there's actually a base-mode mismatch to flag.
+- **Commit:** _(see git log for the round-3 fix commit)_
+
+### 42. Pre-checks survive past their structural replacements, misrepresenting what downstream validation actually enforces
+
+- **Source:** github-claude | PR #130 round 5 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src/features/diff/services/gitPatch.ts`
+- **Finding:** Round-1 added `!baseBranch.startsWith('-')` and `!baseBranch.includes('\0')` as defence-in-depth against git option injection and NUL-termination injection. Round-3 then narrowed `SAFE_BASE_BRANCH_REGEX` to `[a-zA-Z0-9_]` first-char + `[a-zA-Z0-9_/.-]*` trailing, which structurally excludes both vectors. The pre-checks survived as belt-and-braces but a reader scanning `isSafeBaseBranch` in isolation would conclude that the regex MUST permit `-`-prefix and NUL — the opposite of reality. Same finding-class as #6 / #36 — adjacent surface that misrepresents the downstream guarantee.
+- **Fix:** Removed the redundant `!startsWith('-')` and `!includes('\0')` checks. Expanded the comment block above `SAFE_BASE_BRANCH_REGEX` to spell out exactly which vectors the first-character class blocks. Kept `!includes('..')` with a "NOT redundant" rationale: the regex's trailing class permits a single `.`, but two-dot and three-dot ranges are sequences of permitted characters that change `git diff` semantics, so the explicit check is load-bearing. The lesson: when defence-in-depth and structural enforcement converge on the same vector, drop the soft check and document the structural enforcement at the regex.
+- **Commit:** _(see git log for the round-5 fix commit)_
