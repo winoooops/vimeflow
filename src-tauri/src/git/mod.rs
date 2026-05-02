@@ -1272,6 +1272,33 @@ rename to new_name.txt
     }
 
     #[test]
+    fn test_parse_git_diff_copy_metadata() {
+        // Mirror of the rename test for the `copy from`/`copy to`
+        // branch. Git emits this header pair when a file is copied
+        // (typically from `git diff --find-copies-harder` or when
+        // both files are present and content-similar). The structure
+        // is identical to rename, so without this test the parser
+        // could silently regress on edge-case header formats with no
+        // failing assertion.
+        let diff = r#"diff --git a/template.txt b/copy.txt
+similarity index 92%
+copy from template.txt
+copy to copy.txt
+@@ -1,2 +1,2 @@
+ base line
+-original
++derived
+"#;
+        let file_diff = parse_git_diff(diff, "copy.txt");
+
+        assert_eq!(file_diff.file_path, "copy.txt");
+        assert_eq!(file_diff.old_path, Some("template.txt".to_string()));
+        assert_eq!(file_diff.new_path, Some("copy.txt".to_string()));
+        assert_eq!(file_diff.hunks.len(), 1);
+        assert_eq!(file_diff.hunks[0].id, "hunk-1-1");
+    }
+
+    #[test]
     fn test_parse_hunk_range() {
         assert_eq!(parse_hunk_range("-102,7"), (102, 7));
         assert_eq!(parse_hunk_range("+102,6"), (102, 6));
