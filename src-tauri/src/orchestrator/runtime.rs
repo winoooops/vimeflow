@@ -6,7 +6,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::orchestrator::{
-    render_prompt, AgentRun, AgentRunRequest, AgentRunner, AttemptTemplateContext,
+    render_prompt, ActiveWork, AgentRun, AgentRunRequest, AgentRunner, AttemptTemplateContext,
     OrchestratorEvent, OrchestratorIssue, OrchestratorSnapshot, OrchestratorState,
     PromptTemplateContext, QueueIssue, RetryEntry, RunStatus, StateError, TrackerClient,
     TrackerError, WorkflowDefinition, WorkspaceManager, WorkspacePlan, WorkspaceTemplateContext,
@@ -87,8 +87,10 @@ impl<T> OrchestratorRuntime<T>
 where
     T: TrackerClient,
 {
-    pub fn snapshot(&self) -> Result<OrchestratorSnapshot, OrchestratorRuntimeError> {
+    pub fn snapshot(&mut self) -> Result<OrchestratorSnapshot, OrchestratorRuntimeError> {
         let issues = self.tracker.fetch_issues()?;
+        self.reconcile_ineligible_work(&issues, None, &mut Vec::new());
+
         Ok(self.state.snapshot(issues))
     }
 
@@ -140,6 +142,7 @@ where
     ) -> Result<ClaimBatch, OrchestratorRuntimeError> {
         let mut claimed = Vec::new();
         let mut events = Vec::new();
+        self.reconcile_ineligible_work(&issues, Some(timestamp), &mut events);
 
         if !self.state.is_paused() {
             let mut available_slots = self.available_slots();
@@ -464,6 +467,35 @@ where
         Ok(parse_timestamp(next_retry_at)? <= parse_timestamp(timestamp)?)
     }
 
+    fn reconcile_ineligible_work(
+        &mut self,
+        issues: &[OrchestratorIssue],
+        timestamp: Option<&str>,
+        events: &mut Vec<OrchestratorEvent>,
+    ) {
+        for work in self.state.active_work() {
+            let issue = issues.iter().find(|issue| issue.id == work.issue_id);
+            if issue.is_some_and(|issue| self.is_active_issue(issue)) {
+                continue;
+            }
+
+            let status = self.release_status_for_work(work.status);
+            self.state.release_issue(&work.issue_id, status);
+
+            if let Some(timestamp) = timestamp {
+                events.push(self.reconciliation_event(issue, &work, timestamp, status));
+            }
+        }
+    }
+
+    fn release_status_for_work(&self, status: RunStatus) -> RunStatus {
+        if status == RunStatus::Running {
+            RunStatus::Stopped
+        } else {
+            RunStatus::Released
+        }
+    }
+
     fn available_slots(&self) -> usize {
         usize::from(self.workflow.config.agent.max_concurrent)
             .saturating_sub(self.state.in_flight_count())
@@ -507,6 +539,29 @@ where
             Some("retry claimed for dispatch".to_string()),
             claim.last_error.clone(),
         )
+    }
+
+    fn reconciliation_event(
+        &self,
+        issue: Option<&OrchestratorIssue>,
+        work: &ActiveWork,
+        timestamp: &str,
+        status: RunStatus,
+    ) -> OrchestratorEvent {
+        OrchestratorEvent {
+            timestamp: timestamp.to_string(),
+            workflow_path: self.workflow.path.clone(),
+            issue_id: work.issue_id.clone(),
+            issue_identifier: issue
+                .map(|issue| issue.identifier.clone())
+                .unwrap_or_else(|| work.issue_identifier.clone()),
+            run_id: work.run_id.clone(),
+            attempt_number: work.attempt_number,
+            status,
+            workspace_path: work.workspace_path.clone(),
+            message: Some("issue no longer eligible; releasing orchestrator work".to_string()),
+            error: work.last_error.clone(),
+        }
     }
 
     fn issue_event(
@@ -561,26 +616,32 @@ mod tests {
 
     #[derive(Debug, Clone)]
     struct StaticTracker {
-        result: Result<Vec<OrchestratorIssue>, TrackerError>,
+        result: Rc<RefCell<Result<Vec<OrchestratorIssue>, TrackerError>>>,
     }
 
     impl StaticTracker {
         fn with_issues(issues: Vec<OrchestratorIssue>) -> Self {
-            Self { result: Ok(issues) }
+            Self {
+                result: Rc::new(RefCell::new(Ok(issues))),
+            }
         }
 
         fn with_error(message: &str) -> Self {
             Self {
-                result: Err(TrackerError::Transient {
+                result: Rc::new(RefCell::new(Err(TrackerError::Transient {
                     message: message.to_string(),
-                }),
+                }))),
             }
+        }
+
+        fn set_issues(&self, issues: Vec<OrchestratorIssue>) {
+            *self.result.borrow_mut() = Ok(issues);
         }
     }
 
     impl TrackerClient for StaticTracker {
         fn fetch_issues(&self) -> Result<Vec<OrchestratorIssue>, TrackerError> {
-            self.result.clone()
+            self.result.borrow().clone()
         }
     }
 
@@ -703,6 +764,28 @@ mod tests {
     }
 
     #[test]
+    fn claim_ready_releases_claimed_work_when_issue_becomes_ineligible() {
+        let workflow = workflow_with_max_concurrent(1);
+        let tracker = StaticTracker::with_issues(vec![issue("issue-1", "#1", "open")]);
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker.clone());
+
+        let first = runtime.claim_ready("2026-05-02T07:55:00Z").unwrap();
+        tracker.set_issues(vec![issue("issue-1", "#1", "closed")]);
+        let second = runtime.claim_ready("2026-05-02T07:56:00Z").unwrap();
+
+        assert_eq!(first.claimed.len(), 1);
+        assert!(second.claimed.is_empty());
+        assert_eq!(second.snapshot.queue[0].status, RunStatus::Released);
+        assert_eq!(runtime.in_flight_count(), 0);
+        assert!(second.events.iter().any(|event| {
+            event.status == RunStatus::Released
+                && event.issue_identifier == "#1"
+                && event.message.as_deref()
+                    == Some("issue no longer eligible; releasing orchestrator work")
+        }));
+    }
+
+    #[test]
     fn claim_ready_surfaces_tracker_errors_without_claiming() {
         let workflow = workflow_with_max_concurrent(1);
         let tracker = StaticTracker::with_error("tracker unavailable");
@@ -711,6 +794,20 @@ mod tests {
         let error = runtime.claim_ready("2026-05-02T07:55:00Z").unwrap_err();
 
         assert!(matches!(error, OrchestratorRuntimeError::Tracker(_)));
+        assert_eq!(runtime.in_flight_count(), 0);
+    }
+
+    #[test]
+    fn snapshot_releases_ineligible_active_work_without_requiring_dispatch() {
+        let workflow = workflow_with_max_concurrent(1);
+        let tracker = StaticTracker::with_issues(vec![issue("issue-1", "#1", "open")]);
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker.clone());
+
+        runtime.claim_ready("2026-05-02T07:55:00Z").unwrap();
+        tracker.set_issues(vec![issue("issue-1", "#1", "closed")]);
+        let snapshot = runtime.snapshot().unwrap();
+
+        assert_eq!(snapshot.queue[0].status, RunStatus::Released);
         assert_eq!(runtime.in_flight_count(), 0);
     }
 
@@ -768,6 +865,31 @@ mod tests {
     }
 
     #[test]
+    fn claim_ready_stops_running_work_when_issue_becomes_ineligible() {
+        let (_dir, workflow) = workflow_fixture(1);
+        let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
+        let tracker = StaticTracker::with_issues(vec![issue("issue-108", "#108", "open")]);
+        let runner = RecordingRunner::with_run("run-108");
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker.clone());
+
+        runtime
+            .dispatch_ready(&workspace_manager, &runner, "2026-05-02T08:15:00Z")
+            .unwrap();
+        tracker.set_issues(vec![issue("issue-108", "#108", "closed")]);
+        let batch = runtime.claim_ready("2026-05-02T08:16:00Z").unwrap();
+
+        assert!(batch.claimed.is_empty());
+        assert!(batch.snapshot.running.is_empty());
+        assert_eq!(batch.snapshot.queue[0].status, RunStatus::Stopped);
+        assert_eq!(runtime.in_flight_count(), 0);
+        assert!(batch.events.iter().any(|event| {
+            event.status == RunStatus::Stopped
+                && event.run_id.as_deref() == Some("run-108")
+                && event.workspace_path.is_some()
+        }));
+    }
+
+    #[test]
     fn dispatch_ready_schedules_retry_when_runner_start_fails_before_max_attempts() {
         let (_dir, workflow) = workflow_fixture(1);
         let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
@@ -798,6 +920,29 @@ mod tests {
             .iter()
             .any(|event| event.status == RunStatus::RetryScheduled
                 && event.error.as_deref() == Some("failed to start agent: codex missing")));
+    }
+
+    #[test]
+    fn claim_ready_releases_retry_work_when_issue_becomes_ineligible() {
+        let (_dir, workflow) = workflow_fixture(1);
+        let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
+        let tracker = StaticTracker::with_issues(vec![issue("issue-108", "#108", "open")]);
+        let runner = RecordingRunner::with_error("codex missing");
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker.clone());
+
+        runtime
+            .dispatch_ready(&workspace_manager, &runner, "2026-05-02T08:15:00Z")
+            .unwrap();
+        tracker.set_issues(vec![issue("issue-108", "#108", "closed")]);
+        let batch = runtime.claim_ready("2026-05-02T08:16:00Z").unwrap();
+
+        assert!(batch.claimed.is_empty());
+        assert!(batch.snapshot.retry_queue.is_empty());
+        assert_eq!(batch.snapshot.queue[0].status, RunStatus::Released);
+        assert!(batch.events.iter().any(|event| {
+            event.status == RunStatus::Released
+                && event.error.as_deref() == Some("failed to start agent: codex missing")
+        }));
     }
 
     #[test]

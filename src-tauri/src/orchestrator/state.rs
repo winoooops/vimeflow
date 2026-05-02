@@ -79,6 +79,17 @@ pub struct OrchestratorEvent {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveWork {
+    pub issue_id: String,
+    pub issue_identifier: String,
+    pub status: RunStatus,
+    pub run_id: Option<String>,
+    pub attempt_number: Option<u32>,
+    pub workspace_path: Option<PathBuf>,
+    pub last_error: Option<String>,
+}
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum StateError {
     #[error("issue is already claimed, running, or retrying: {issue_id}")]
@@ -231,6 +242,40 @@ impl OrchestratorState {
         let mut entries: Vec<_> = self.retry_queue.values().cloned().collect();
         entries.sort_by(|left, right| left.issue_identifier.cmp(&right.issue_identifier));
         entries
+    }
+
+    pub fn active_work(&self) -> Vec<ActiveWork> {
+        let mut work = Vec::new();
+
+        work.extend(self.claimed.iter().map(|(issue_id, claim)| ActiveWork {
+            issue_id: issue_id.clone(),
+            issue_identifier: claim.issue_identifier.clone(),
+            status: RunStatus::Claimed,
+            run_id: None,
+            attempt_number: Some(claim.attempt_number),
+            workspace_path: None,
+            last_error: claim.previous_error.clone(),
+        }));
+        work.extend(self.running.values().map(|run| ActiveWork {
+            issue_id: run.issue_id.clone(),
+            issue_identifier: run.issue_identifier.clone(),
+            status: RunStatus::Running,
+            run_id: Some(run.run_id.clone()),
+            attempt_number: Some(run.attempt_number),
+            workspace_path: Some(run.workspace_path.clone()),
+            last_error: None,
+        }));
+        work.extend(self.retry_queue.values().map(|retry| ActiveWork {
+            issue_id: retry.issue_id.clone(),
+            issue_identifier: retry.issue_identifier.clone(),
+            status: RunStatus::RetryScheduled,
+            run_id: None,
+            attempt_number: Some(retry.attempt_number),
+            workspace_path: None,
+            last_error: Some(retry.last_error.clone()),
+        }));
+        work.sort_by(|left, right| left.issue_identifier.cmp(&right.issue_identifier));
+        work
     }
 
     pub fn release_issue(&mut self, issue_id: &str, status: RunStatus) {
@@ -463,6 +508,43 @@ mod tests {
         assert!(!state.is_issue_active("issue-108"));
         assert!(snapshot.running.is_empty());
         assert_eq!(snapshot.queue[0].status, RunStatus::Stopped);
+    }
+
+    #[test]
+    fn active_work_lists_claimed_running_and_retry_entries() {
+        let mut state = OrchestratorState::new();
+        let claimed = issue("issue-108", "#108");
+        let running = issue("issue-109", "#109");
+        state.claim_issue(&claimed).unwrap();
+        state.claim_issue(&running).unwrap();
+        state
+            .mark_running(
+                "issue-109",
+                "run-109",
+                1,
+                PathBuf::from("/tmp/workspace-109"),
+                "2026-05-02T00:00:00Z",
+            )
+            .unwrap();
+        state.schedule_retry(RetryEntry {
+            issue_id: "issue-110".to_string(),
+            issue_identifier: "#110".to_string(),
+            attempt_number: 2,
+            next_retry_at: "2026-05-02T00:01:00Z".to_string(),
+            last_error: "agent exited 1".to_string(),
+        });
+
+        let work = state.active_work();
+
+        assert_eq!(work.len(), 3);
+        assert_eq!(work[0].issue_identifier, "#108");
+        assert_eq!(work[0].status, RunStatus::Claimed);
+        assert_eq!(work[1].issue_identifier, "#109");
+        assert_eq!(work[1].status, RunStatus::Running);
+        assert_eq!(work[1].run_id.as_deref(), Some("run-109"));
+        assert_eq!(work[2].issue_identifier, "#110");
+        assert_eq!(work[2].status, RunStatus::RetryScheduled);
+        assert_eq!(work[2].last_error.as_deref(), Some("agent exited 1"));
     }
 
     #[test]

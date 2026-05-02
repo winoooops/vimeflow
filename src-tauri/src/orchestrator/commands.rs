@@ -91,7 +91,7 @@ impl OrchestratorService {
         })
     }
 
-    fn snapshot(&self) -> Result<OrchestratorSnapshot, String> {
+    fn snapshot(&mut self) -> Result<OrchestratorSnapshot, String> {
         self.runtime.snapshot().map_err(|error| error.to_string())
     }
 
@@ -112,7 +112,7 @@ pub async fn load_orchestrator_workflow(
     request: LoadOrchestratorWorkflowRequest,
 ) -> Result<OrchestratorSnapshot, String> {
     let workflow_path = validate_workflow_path(&request.workflow_path)?;
-    let service = OrchestratorService::from_workflow_path(&workflow_path)?;
+    let mut service = OrchestratorService::from_workflow_path(&workflow_path)?;
     let snapshot = service.snapshot()?;
     state.replace_service(service)?;
 

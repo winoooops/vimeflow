@@ -16,8 +16,8 @@ pub use runtime::{
     OrchestratorRuntimeError,
 };
 pub use state::{
-    OrchestratorEvent, OrchestratorRun, OrchestratorSnapshot, OrchestratorState, QueueIssue,
-    RetryEntry, RunStatus, StateError,
+    ActiveWork, OrchestratorEvent, OrchestratorRun, OrchestratorSnapshot, OrchestratorState,
+    QueueIssue, RetryEntry, RunStatus, StateError,
 };
 pub use tracker::{
     GithubHttpClient, GithubIssuesTracker, GithubRequest, TrackerClient, TrackerError,
