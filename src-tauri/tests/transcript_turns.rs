@@ -29,12 +29,13 @@ fn transcript_emits_turn_events_for_real_user_prompts_only() {
 
     let tmp = tempfile::tempdir().expect("temp transcript dir");
     let transcript_path = tmp.path().join("turns.jsonl");
-    // Five-line fixture covers four message shapes:
+    // Six-line fixture covers five message shapes:
     //   1. plain-string user prompt   → emits turn 1
     //   2. assistant tool_use         → no event
     //   3. user array of tool_result  → no event (tool return, not a prompt)
     //   4. user array of text block   → emits turn 2
-    //   5. user array mixing tool_result + text (mixed content) → emits turn 3
+    //   5. assistant tool_use         → no event (seeds in_flight for #6)
+    //   6. user array mixing tool_result + text (mixed content) → emits turn 3
     std::fs::write(
         &transcript_path,
         concat!(

@@ -43,9 +43,9 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform | 2        | 1    | 2026-04-10   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality   | 4        | 0    | 2026-04-12   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality   | 1        | 0    | 2026-04-14   |
-| [Testing Gaps](patterns/testing-gaps.md)                             | testing        | 12       | 5    | 2026-05-01   |
+| [Testing Gaps](patterns/testing-gaps.md)                             | testing        | 13       | 6    | 2026-05-01   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal       | 3        | 1    | 2026-04-09   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality   | 33       | 9    | 2026-05-01   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality   | 35       | 10   | 2026-05-01   |
 | [Accessibility](patterns/accessibility.md)                           | a11y           | 12       | 2    | 2026-04-30   |
 | [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns | 18       | 5    | 2026-04-29   |
 | [Command Injection](patterns/command-injection.md)                   | security       | 5        | 1    | 2026-04-20   |

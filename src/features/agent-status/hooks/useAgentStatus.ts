@@ -350,7 +350,10 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
             return
           }
 
-          const nextTurns = Number(event.payload.numTurns)
+          // numTurns is u32 in the Rust binding — fits safely in JS number,
+          // no Number() coercion needed (those are reserved for u64/i64
+          // fields where serde-json may emit values past Number.MAX_SAFE_INTEGER).
+          const nextTurns = event.payload.numTurns
 
           setStatus((prev) => ({
             ...prev,

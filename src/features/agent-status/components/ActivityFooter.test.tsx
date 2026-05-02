@@ -31,6 +31,24 @@ describe('ActivityFooter', () => {
     expect(screen.getByText('1 turn')).toBeInTheDocument()
   })
 
+  test('renders 0 turns during the pre-activity window before the first agent-turn event', () => {
+    // Locks the contract that the cell stays visible when numTurns=0
+    // (the initial value of `status.numTurns` in `createDefaultStatus`).
+    // If we ever decide to hide the cell pre-activity, update this test
+    // and guard the span in ActivityFooter.tsx — the change must be
+    // explicit, not silent.
+    render(
+      <ActivityFooter
+        totalDurationMs={0}
+        numTurns={0}
+        linesAdded={0}
+        linesRemoved={0}
+      />
+    )
+
+    expect(screen.getByText('0 turns')).toBeInTheDocument()
+  })
+
   test('localizes large line counts', () => {
     render(
       <ActivityFooter

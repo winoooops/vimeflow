@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 5
+ref_count: 6
 ---
 
 # Testing Gaps
@@ -124,3 +124,12 @@ filesystem scope restrictions).
 - **Finding:** The transcript-turns fixture covered three message shapes: plain-string user prompt, array-with-only-tool_result (no turn), and array-with-only-text (turn). It missed the fourth shape — `[{"type":"tool_result",...},{"type":"text","text":"follow-up"}]` — a real Claude Code pattern where the user message both drains an in-flight `tool_use` AND emits a follow-up prompt. The production code handled it correctly today, but a future refactor that short-circuited array iteration on the first non-`text` block (or split tool-result drain from turn-counting) would silently break the mixed-content path with no failing test. Same finding-class as #6 (regression-guard test that didn't actually verify the property it claimed to guard) — the test suite asserted the predicate space the author thought about, not the space the system actually inhabits.
 - **Fix:** Added a 5th fixture line with `[{"type":"tool_result",...},{"type":"text","text":"follow-up"}]`, bumped the mpsc signal threshold from `len() >= 2` to `len() >= 3`, and added `assert!(events[2].contains(r#""numTurns":3"#))`. The fixture now exercises every meaningful boundary shape including the mixed case.
 - **Commit:** _(see git log for the round-2 fix commit)_
+
+### 13. Component-test gap on `numTurns=0` after refactor from conditional-render to always-render footer cell
+
+- **Source:** github-claude | PR #122 round 3 | 2026-05-01
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/ActivityFooter.test.tsx`
+- **Finding:** The PR refactored `ActivityFooter` from a conditional-render pattern (no cell when `numTurns=0`) to an always-render pattern (`{n} turn|turns`). The pre-existing test `does not render a turns cell` was deleted and replaced with `renders singular turn label` (numTurns=1) plus a localized 1,234 case. No test exercised `numTurns=0` — the initial value of `createDefaultStatus().numTurns`, visible to users during the pre-activity window between agent detection and the first `agent-turn` replay event. Without a test, the contract was undocumented: a future contributor could re-add a `{numTurns > 0 && …}` guard thinking it's "what was meant" and silently regress the always-render intent.
+- **Fix:** Added `renders 0 turns during the pre-activity window before the first agent-turn event` test that locks the always-render-with-zero contract. The test comment also documents the alternative path: if the design intent is to hide the cell pre-activity, both the test and the component must change together — not one without the other.
+- **Commit:** _(see git log for the round-3 fix commit)_
