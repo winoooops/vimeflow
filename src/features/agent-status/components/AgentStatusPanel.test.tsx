@@ -167,40 +167,46 @@ describe('AgentStatusPanel', () => {
     // module mock for the actual return shape.
     const useGitStatusSpy = vi.spyOn(useGitStatusModule, 'useGitStatus')
 
-    render(
-      <AgentStatusPanel
-        agentStatus={activeAgentStatus}
-        cwd="/tmp/repo"
-        onOpenDiff={vi.fn()}
-        gitStatus={{
-          files: [
-            {
-              path: 'shared.ts',
-              status: 'modified',
-              insertions: 20,
-              deletions: 4,
-              staged: false,
-            },
-          ],
-          filesCwd: '/tmp/repo',
-          loading: false,
-          error: null,
-          refresh: vi.fn(),
-          idle: false,
-        }}
-      />
-    )
+    try {
+      render(
+        <AgentStatusPanel
+          agentStatus={activeAgentStatus}
+          cwd="/tmp/repo"
+          onOpenDiff={vi.fn()}
+          gitStatus={{
+            files: [
+              {
+                path: 'shared.ts',
+                status: 'modified',
+                insertions: 20,
+                deletions: 4,
+                staged: false,
+              },
+            ],
+            filesCwd: '/tmp/repo',
+            loading: false,
+            error: null,
+            refresh: vi.fn(),
+            idle: false,
+          }}
+        />
+      )
 
-    expect(screen.getAllByText('+20 / -4')).toHaveLength(2)
-    // Watcher-deduplication invariant: when parent injects gitStatus,
-    // the internal hook must run with enabled: false so no duplicate
-    // start_git_watcher IPC fires.
-    expect(useGitStatusSpy).toHaveBeenCalledWith(
-      '/tmp/repo',
-      expect.objectContaining({ enabled: false })
-    )
-
-    useGitStatusSpy.mockRestore()
+      expect(screen.getAllByText('+20 / -4')).toHaveLength(2)
+      // Watcher-deduplication invariant: when parent injects gitStatus,
+      // the internal hook must run with enabled: false so no duplicate
+      // start_git_watcher IPC fires.
+      expect(useGitStatusSpy).toHaveBeenCalledWith(
+        '/tmp/repo',
+        expect.objectContaining({ enabled: false })
+      )
+    } finally {
+      // Guarantee spy cleanup even if render() or any expect() above
+      // throws — without this guard, an inline spy leaks past the
+      // failing test and inflates call counts on every subsequent
+      // test that consumes the same module export.
+      useGitStatusSpy.mockRestore()
+    }
   })
 
   test('renders ToolCallSummary and ActivityFeed inside the scrollable region', () => {

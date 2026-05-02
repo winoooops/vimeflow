@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 12
+ref_count: 13
 ---
 
 # Testing Gaps
@@ -187,3 +187,12 @@ filesystem scope restrictions).
 - **Finding:** Round-1 fixed the parent's `enabled: true` assertion (#18) but two related gaps remained: (a) `AgentStatusPanel.test.tsx`'s "uses shared git status when provided by the parent" test verified UI output but never asserted that the internal `useGitStatus` was called with `enabled: false` — the load-bearing watcher-deduplication invariant of the lifted-state refactor. The sibling `DiffPanelContent.test.tsx` already used `vi.spyOn(useGitStatusModule, 'useGitStatus')` correctly; AgentStatusPanel's mock was a plain factory with no spy reference. A regression that dropped `gitStatus === undefined &&` from the internal enabled condition would silently start two simultaneous watchers per cwd while every test stayed green. (b) The parent's round-1 `enabled: true` test only covered the `isActive` arm of the OR-condition (`agentStatus.isActive || bottomDrawerTab === 'diff'`); since `useAgentStatus` always returned `isActive: true`, the diff-tab arm was structurally impossible to exercise. Removing `|| bottomDrawerTab === 'diff'` would still satisfy the assertion. Both gaps follow the same theme as #18 (a lifted-state assertion that doesn't actually constrain the contract it's named after).
 - **Fix:** (a) Restructured `AgentStatusPanel.test.tsx` to import `* as useGitStatusModule` and call `vi.spyOn` on the test-by-test, asserting `expect(useGitStatusSpy).toHaveBeenCalledWith('/tmp/repo', expect.objectContaining({ enabled: false }))`. (b) Extended the BottomDrawer mock in `WorkspaceView.subscription.test.tsx` with a test-only "switch to diff" button bound to `onTabChange`, and added a sibling test using `vi.mocked(useAgentStatus).mockImplementation(() => idleAgentStatus)` so the agent stays idle across the tab-switch re-render. Codex verify v1 caught a `mockReturnValueOnce` bug here: the override only applied to the first render, letting the re-render fall back to the active default and passing the assertion via the wrong branch. v2 uses `mockImplementation` + `getMockImplementation` save-and-restore in a `finally` block.
 - **Commit:** _(see git log for the round-2 fix commit; v1→v2 codex-verify retry documented in `.harness-github-review/cycle-2-verify-result-v{1,2}.json`)_
+
+### 20. Inline `vi.spyOn` without `try/finally` leaks on assertion failure, polluting subsequent tests
+
+- **Source:** github-claude | PR #125 round 3 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/AgentStatusPanel.test.tsx`
+- **Finding:** Round-2 added an inline `const useGitStatusSpy = vi.spyOn(useGitStatusModule, 'useGitStatus')` to assert `enabled: false` was passed to the internal hook. The matching `useGitStatusSpy.mockRestore()` lived at the bottom of the test, with no try/finally guard. If `render()` or any `expect(...)` between the spy creation and the restore throws, `mockRestore()` is skipped and the spy permanently wraps the module export for the rest of the test file. The next test (`'renders ToolCallSummary and ActivityFeed inside the scrollable region'`) calls the same hook through the leaked spy, so call counts accumulate on a spy that nothing tracks. Worst case for `toHaveBeenCalled`-shape assertions later in the file: inflated totals → false positives. The module-level mock is a plain factory (not vi.fn), so the leaked spy can't be inspected or cleared without manual intervention. Same finding-class as #18+#19 (lifted-state assertions that don't constrain what they claim) only at the test-hygiene level: the cleanup invariant is named ("restore the spy") but not enforced by structure.
+- **Fix:** Wrapped the test body in `try { render + asserts } finally { useGitStatusSpy.mockRestore() }`. Cleanup now fires even if any assertion throws. Alternative considered: enable `restoreMocks: true` globally in `vitest.config.ts` — rejected for this PR because it would change behavior across the whole suite (every spy auto-restores), which is a separate refactor with its own review cycle.
+- **Commit:** _(see git log for the round-3 fix commit)_
