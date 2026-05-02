@@ -1273,13 +1273,7 @@ rename to new_name.txt
 
     #[test]
     fn test_parse_git_diff_copy_metadata() {
-        // Mirror of the rename test for the `copy from`/`copy to`
-        // branch. Git emits this header pair when a file is copied
-        // (typically from `git diff --find-copies-harder` or when
-        // both files are present and content-similar). The structure
-        // is identical to rename, so without this test the parser
-        // could silently regress on edge-case header formats with no
-        // failing assertion.
+        // Guards copy-from/copy-to path — structurally identical to rename but needs its own fixture.
         let diff = r#"diff --git a/template.txt b/copy.txt
 similarity index 92%
 copy from template.txt
