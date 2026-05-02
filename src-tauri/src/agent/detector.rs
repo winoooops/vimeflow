@@ -8,6 +8,23 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
+trait ProcessSource {
+    fn read_children(&self, pid: u32) -> Option<Vec<u32>>;
+    fn read_cmdline(&self, pid: u32) -> Option<Vec<String>>;
+}
+
+struct ProcFsProcessSource;
+
+impl ProcessSource for ProcFsProcessSource {
+    fn read_children(&self, pid: u32) -> Option<Vec<u32>> {
+        read_proc_children(pid)
+    }
+
+    fn read_cmdline(&self, pid: u32) -> Option<Vec<String>> {
+        read_proc_cmdline(pid)
+    }
+}
+
 /// Detect which agent is running under the given PID
 ///
 /// Recursively traverses the process tree to find agent processes.
@@ -20,13 +37,18 @@ use std::path::Path;
 /// * `Some((agent_type, agent_pid))` - If an agent is found
 /// * `None` - If no agent is detected
 pub fn detect_agent(pid: u32) -> Option<(AgentType, u32)> {
-    // Collect all descendant PIDs
-    let descendants = collect_descendants(pid)?;
+    detect_agent_with_source(pid, &ProcFsProcessSource)
+}
 
-    // Check each descendant for agent binaries
-    for &descendant_pid in &descendants {
-        if let Some(agent_type) = detect_agent_from_cmdline(descendant_pid) {
-            return Some((agent_type, descendant_pid));
+fn detect_agent_with_source<S: ProcessSource>(
+    pid: u32,
+    source: &S,
+) -> Option<(AgentType, u32)> {
+    // Check the PTY root plus its descendants. Including the root handles
+    // shells that have been replaced with `exec claude`.
+    for candidate_pid in collect_process_tree(pid, source) {
+        if let Some(agent_type) = detect_agent_from_cmdline(candidate_pid, source) {
+            return Some((agent_type, candidate_pid));
         }
     }
 
@@ -36,7 +58,7 @@ pub fn detect_agent(pid: u32) -> Option<(AgentType, u32)> {
 /// Read the children of a process from /proc filesystem
 ///
 /// On Linux, /proc/<pid>/task/<pid>/children contains space-separated child PIDs.
-fn read_children(pid: u32) -> Option<Vec<u32>> {
+fn read_proc_children(pid: u32) -> Option<Vec<u32>> {
     let children_path = format!("/proc/{}/task/{}/children", pid, pid);
     let content = fs::read_to_string(children_path).ok()?;
 
@@ -48,38 +70,35 @@ fn read_children(pid: u32) -> Option<Vec<u32>> {
     Some(children)
 }
 
-/// Collect all descendant PIDs using iterative DFS
-fn collect_descendants(root_pid: u32) -> Option<Vec<u32>> {
-    let mut descendants = Vec::new();
+/// Collect the root PID and all descendant PIDs using iterative DFS
+fn collect_process_tree<S: ProcessSource>(root_pid: u32, source: &S) -> Vec<u32> {
+    let mut candidates = Vec::new();
     let mut visited = HashSet::new();
     let mut queue = vec![root_pid];
 
     visited.insert(root_pid);
 
     while let Some(pid) = queue.pop() {
+        candidates.push(pid);
+
         // Read children of current PID
-        if let Some(children) = read_children(pid) {
+        if let Some(children) = source.read_children(pid) {
             for child_pid in children {
                 // Avoid cycles (shouldn't happen in process tree, but be safe)
                 if visited.insert(child_pid) {
-                    descendants.push(child_pid);
                     queue.push(child_pid);
                 }
             }
         }
     }
 
-    if descendants.is_empty() {
-        None
-    } else {
-        Some(descendants)
-    }
+    candidates
 }
 
 /// Read and parse /proc/<pid>/cmdline
 ///
 /// The cmdline file contains null-separated arguments. argv[0] is the binary name.
-fn read_cmdline(pid: u32) -> Option<Vec<String>> {
+fn read_proc_cmdline(pid: u32) -> Option<Vec<String>> {
     let cmdline_path = format!("/proc/{}/cmdline", pid);
     let content = fs::read(cmdline_path).ok()?;
 
@@ -112,8 +131,8 @@ fn extract_binary_name(cmdline: &[String]) -> Option<String> {
 }
 
 /// Detect agent type from cmdline binary name
-fn detect_agent_from_cmdline(pid: u32) -> Option<AgentType> {
-    let cmdline = read_cmdline(pid)?;
+fn detect_agent_from_cmdline<S: ProcessSource>(pid: u32, source: &S) -> Option<AgentType> {
+    let cmdline = source.read_cmdline(pid)?;
     let binary_name = extract_binary_name(&cmdline)?;
 
     match binary_name.as_str() {
@@ -127,11 +146,71 @@ fn detect_agent_from_cmdline(pid: u32) -> Option<AgentType> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    #[derive(Default)]
+    struct MockProcessSource {
+        children: HashMap<u32, Vec<u32>>,
+        cmdlines: HashMap<u32, Vec<String>>,
+    }
+
+    impl ProcessSource for MockProcessSource {
+        fn read_children(&self, pid: u32) -> Option<Vec<u32>> {
+            self.children.get(&pid).cloned()
+        }
+
+        fn read_cmdline(&self, pid: u32) -> Option<Vec<String>> {
+            self.cmdlines.get(&pid).cloned()
+        }
+    }
+
+    #[test]
+    fn detects_only_agent_inside_pty_process_tree() {
+        let source = MockProcessSource {
+            children: HashMap::from([
+                (10, vec![11]),
+                (11, vec![12]),
+                (20, vec![21]),
+            ]),
+            cmdlines: HashMap::from([
+                (10, vec!["bash".to_string()]),
+                (11, vec!["sh".to_string()]),
+                (12, vec!["claude".to_string()]),
+                (20, vec!["zsh".to_string()]),
+                (21, vec!["claude".to_string()]),
+            ]),
+        };
+
+        let detected = detect_agent_with_source(10, &source);
+
+        assert!(matches!(
+            detected,
+            Some((AgentType::ClaudeCode, 12))
+        ));
+    }
+
+    #[test]
+    fn ignores_agent_outside_pty_process_tree() {
+        let source = MockProcessSource {
+            children: HashMap::from([
+                (10, vec![11]),
+                (20, vec![21]),
+            ]),
+            cmdlines: HashMap::from([
+                (10, vec!["bash".to_string()]),
+                (11, vec!["python".to_string()]),
+                (20, vec!["zsh".to_string()]),
+                (21, vec!["claude".to_string()]),
+            ]),
+        };
+
+        assert!(detect_agent_with_source(10, &source).is_none());
+    }
 
     #[test]
     fn reads_self_cmdline() {
         // /proc/self always exists and points to our own process
-        let cmdline = read_cmdline(std::process::id());
+        let cmdline = read_proc_cmdline(std::process::id());
         assert!(cmdline.is_some(), "Failed to read /proc/self/cmdline");
 
         let cmdline = cmdline.unwrap();
@@ -145,8 +224,30 @@ mod tests {
     #[test]
     fn handles_missing_pid_gracefully() {
         // PID 9999999 is unlikely to exist
-        let cmdline = read_cmdline(9999999);
+        let cmdline = read_proc_cmdline(9999999);
         assert!(cmdline.is_none(), "Should return None for missing PID");
+    }
+
+    #[test]
+    fn detects_agent_at_pty_root_via_exec() {
+        // Locks the `exec claude` contract documented in
+        // `collect_process_tree`'s comment: when the user runs
+        // `exec claude`, the shell process is replaced by the agent
+        // binary in-place, so the PTY's own root PID IS the agent.
+        // The detector must include the root in the candidate set
+        // (not just descendants) for this case to be detected at all.
+        let source = MockProcessSource {
+            children: HashMap::new(),
+            cmdlines: HashMap::from([(12, vec!["claude".to_string()])]),
+        };
+
+        let detected = detect_agent_with_source(12, &source);
+
+        assert!(
+            matches!(detected, Some((AgentType::ClaudeCode, 12))),
+            "expected detection at the PTY root PID for `exec claude`, got {:?}",
+            detected,
+        );
     }
 
     #[test]

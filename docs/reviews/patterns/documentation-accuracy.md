@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-04-30
-ref_count: 14
+ref_count: 15
 ---
 
 # Documentation Accuracy
@@ -366,3 +366,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** `stop_flag = Arc::new(AtomicBool::new(false))` was hoisted before the `pre_repo_watchers` lock so the `else` branch could move it into the inserted watcher AND the later `spawn_pre_repo_poll_thread` call without cloning twice. But on the if-branch (existing watcher found), the local Arc was created, never stored, and silently dropped — dead allocation. Worse, a future maintainer reading the function would see a `stop_flag` in scope after the lock and might write code that observes it expecting it to match the watcher's flag — which is wrong on the if-branch where the watcher kept its own. Same finding-class as #6 / #36 — surface that suggests a guarantee the value doesn't actually provide.
 - **Fix:** Replaced the eager `Arc::new(...)` with `let mut new_watcher_stop_flag: Option<Arc<AtomicBool>> = None;`. The `else` branch creates a fresh Arc, stores one clone in the inserted watcher, and saves the other in the Option. The poll-thread spawn block then uses `if let Some(stop_flag) = new_watcher_stop_flag` to act only when there's a new watcher to govern. No silent drops; the lifetime-and-ownership story is now explicit.
 - **Commit:** _(see git log for the round-4 fix commit)_
+
+### 40. `#[cfg(test)] fn` at module level is a rename artifact, not a test helper
+
+- **Source:** github-claude | PR #128 round 1 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/agent/detector.rs`
+- **Finding:** A rename of `read_cmdline` → `read_proc_cmdline` left a `#[cfg(test)] fn read_cmdline(pid) -> Option<Vec<String>> { ProcFsProcessSource.read_cmdline(pid) }` shim at MODULE level (outside `mod tests`) so two pre-existing tests (`reads_self_cmdline`, `handles_missing_pid_gracefully`) didn't need their call sites updated. Future readers see a `#[cfg(test)]` function alongside production code with no production callers and have to reason about whether it's a deprecated API, an internal-test seam, or a forgotten helper. Same finding-class as #28 (unused default export) — surface that does nothing in production but adds reader-overhead.
+- **Fix:** Deleted the shim. Updated the two test call sites to call `read_proc_cmdline` directly. Production and test symbols are now cleanly separated; nothing at module level is gated on `#[cfg(test)]`.
+- **Commit:** _(see git log for the round-1 fix commit)_

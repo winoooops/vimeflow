@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 16
+ref_count: 17
 ---
 
 # Testing Gaps
@@ -232,3 +232,12 @@ filesystem scope restrictions).
 - **Finding:** The round-1 test added a `git-status-changed` listener that pushed payloads into a `Vec`, then slept 100 ms, then asserted that the vec contained an entry referencing `missing_cwd`. Tauri's mock runtime dispatches event listeners on a separate thread; 100 ms is not a guaranteed bound on dispatch latency. On a saturated CI host (high CPU, GC pauses, slow filesystem) the dispatch thread may not have run within the window, producing a false-negative "missing emit" failure that's hard to reproduce locally. Same finding-class as #11 (sleep-based synchronization in transcript-turns test) — every fixed-deadline assertion against asynchronous dispatch eventually flakes when the runner gets loaded enough.
 - **Fix:** Replaced the `Arc<Mutex<Vec<String>>> + sleep` collector with an `mpsc::channel::<String>()` whose Sender is captured by the listener closure. The test runs an explicit drain loop with `events_rx.recv_timeout(remaining)` and a 1-second deadline. The first event whose payload contains `missing_cwd` flips a `found` flag and breaks the loop early; both `Timeout` and `Disconnected` end the drain. The assertion message names the deadline so a slow CI failure has clear diagnostic value. Pattern matches the existing #11 mpsc-channel fix in `transcript_turns.rs`.
 - **Commit:** _(see git log for the round-4 fix commit)_
+
+### 25. Documented `exec claude` invariant (root PID itself is the agent) had no test
+
+- **Source:** github-claude | PR #128 round 1 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/agent/detector.rs`
+- **Finding:** PR #128 explicitly motivated `collect_process_tree` including the root PID to handle `exec claude` (where the user replaces a shell with the agent binary in-place — the PTY's own root PID becomes `claude` with no shell intermediary). The implementation was correct; the comment documented the contract; both new tests (`detects_only_agent_inside_pty_process_tree`, `ignores_agent_outside_pty_process_tree`) exercised in-tree-descendant scenarios but never the root-IS-agent scenario. A future refactor that restored the old skip-root behavior would silently regress the PR's primary motivating use case while passing every existing test. Same finding-class as #6/#16/#17 — a contract documented in code/comments but not pinned by an assertion that fails when the contract breaks.
+- **Fix:** Added `detects_agent_at_pty_root_via_exec` test using a `MockProcessSource` whose root PID 12 maps directly to `claude` cmdlines with no `children` entry. Asserts `detect_agent_with_source(12, &source) == Some((AgentType::ClaudeCode, 12))`. If a future refactor reverts to skip-root, the descendant lookup returns no candidates and the assertion fails on `None`.
+- **Commit:** _(see git log for the round-1 fix commit)_

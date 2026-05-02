@@ -5,11 +5,9 @@ use super::types::AgentDetectedEvent;
 use crate::terminal::PtyState;
 
 /// Escape hatch for E2E (and any future debugging) — skip the /proc scan
-/// and return no detection. The current detector (see #71) is host-global,
-/// which means it attributes unrelated claude processes on the dev box to
-/// whatever PTY is asking. Setting this env var short-circuits detection
-/// so non-agent E2E suites aren't destabilized by real Claude Code CLI
-/// sessions running in other terminals.
+/// and return no detection. The detector is scoped to the queried PTY's
+/// process tree, but this still gives E2E and debugging flows a deterministic
+/// off-switch for machines with unusual /proc behavior.
 fn agent_detection_disabled() -> bool {
     std::env::var_os("VIMEFLOW_DISABLE_AGENT_DETECTION").is_some()
 }
