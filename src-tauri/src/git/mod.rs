@@ -430,9 +430,21 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
     let mut current_hunk: Option<DiffHunk> = None;
     let mut old_line_num = 0u32;
     let mut new_line_num = 0u32;
+    let mut old_path: Option<String> = None;
+    let mut new_path: Option<String> = None;
 
     for line in output.lines() {
-        if line.starts_with("@@") {
+        if let Some(path) = line
+            .strip_prefix("rename from ")
+            .or_else(|| line.strip_prefix("copy from "))
+        {
+            old_path = Some(path.to_string());
+        } else if let Some(path) = line
+            .strip_prefix("rename to ")
+            .or_else(|| line.strip_prefix("copy to "))
+        {
+            new_path = Some(path.to_string());
+        } else if line.starts_with("@@") {
             // Save previous hunk if exists
             if let Some(hunk) = current_hunk.take() {
                 hunks.push(hunk);
@@ -458,7 +470,7 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
             new_line_num = new_start;
 
             current_hunk = Some(DiffHunk {
-                id: format!("hunk-{}", hunks.len()),
+                id: format!("hunk-{}-{}", old_start, new_start),
                 header,
                 old_start,
                 old_lines,
@@ -515,8 +527,8 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
 
     FileDiff {
         file_path: file_path.to_string(),
-        old_path: None,
-        new_path: None,
+        old_path,
+        new_path,
         hunks,
     }
 }
@@ -1170,6 +1182,7 @@ mod tests {
         assert_eq!(file_diff.hunks.len(), 1);
 
         let hunk = &file_diff.hunks[0];
+        assert_eq!(hunk.id, "hunk-1-1");
         assert_eq!(hunk.old_start, 1);
         assert_eq!(hunk.old_lines, 3);
         assert_eq!(hunk.new_start, 1);
@@ -1202,10 +1215,12 @@ mod tests {
         assert_eq!(file_diff.hunks.len(), 2);
 
         let hunk1 = &file_diff.hunks[0];
+        assert_eq!(hunk1.id, "hunk-1-1");
         assert_eq!(hunk1.old_start, 1);
         assert_eq!(hunk1.lines.len(), 3);
 
         let hunk2 = &file_diff.hunks[1];
+        assert_eq!(hunk2.id, "hunk-10-11");
         assert_eq!(hunk2.old_start, 10);
         assert_eq!(hunk2.lines.len(), 2);
     }
@@ -1234,6 +1249,47 @@ mod tests {
         assert_eq!(hunk.lines.len(), 3);
         assert!(matches!(hunk.lines[1].line_type, DiffLineType::Removed));
         assert_eq!(hunk.lines[1].content, "remove this");
+    }
+
+    #[test]
+    fn test_parse_git_diff_rename_metadata() {
+        let diff = r#"diff --git a/old_name.txt b/new_name.txt
+similarity index 88%
+rename from old_name.txt
+rename to new_name.txt
+@@ -1,2 +1,2 @@
+ line 1
+-old
++new
+"#;
+        let file_diff = parse_git_diff(diff, "new_name.txt");
+
+        assert_eq!(file_diff.file_path, "new_name.txt");
+        assert_eq!(file_diff.old_path, Some("old_name.txt".to_string()));
+        assert_eq!(file_diff.new_path, Some("new_name.txt".to_string()));
+        assert_eq!(file_diff.hunks.len(), 1);
+        assert_eq!(file_diff.hunks[0].id, "hunk-1-1");
+    }
+
+    #[test]
+    fn test_parse_git_diff_copy_metadata() {
+        // Guards copy-from/copy-to path — structurally identical to rename but needs its own fixture.
+        let diff = r#"diff --git a/template.txt b/copy.txt
+similarity index 92%
+copy from template.txt
+copy to copy.txt
+@@ -1,2 +1,2 @@
+ base line
+-original
++derived
+"#;
+        let file_diff = parse_git_diff(diff, "copy.txt");
+
+        assert_eq!(file_diff.file_path, "copy.txt");
+        assert_eq!(file_diff.old_path, Some("template.txt".to_string()));
+        assert_eq!(file_diff.new_path, Some("copy.txt".to_string()));
+        assert_eq!(file_diff.hunks.len(), 1);
+        assert_eq!(file_diff.hunks[0].id, "hunk-1-1");
     }
 
     #[test]

@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 19
+ref_count: 20
 ---
 
 # Testing Gaps
@@ -259,3 +259,12 @@ filesystem scope restrictions).
 - **Finding:** `extractHunkPatch` calls `hunks.shift()` to drop the pre-`@@` header block, then returns `hunks[index]`. The positive test exercised index 1 (a mid-array hunk) and several null-return cases. Index 0 — the most sensitive boundary, where an off-by-one in `shift()` would surface — was not tested. A future refactor that removed the shift (or changed the split shape) would silently return the file-header block as the patch on index-0 calls; `git apply` would either fail or apply garbage. The mid-array test would still pass because `hunks[1]` (now the first real hunk in the regressed layout) would satisfy the existing assertions. Same finding-class as #7 — uncovered branch in a multi-step transform; a positive test for the index-0 path is the small explicit regression guard.
 - **Fix:** Added `extracts the first hunk (index 0) — the boundary case after shift()` test asserting the index-0 patch contains `@@ -1,2 +1,2 @@` and `+added first` (and excludes the second hunk's markers). No new fixture needed — the existing `diffText` already has two hunks. The comment documents WHY the index-0 case is the critical boundary so a future maintainer can't dismiss the test as redundant with the index-1 test.
 - **Commit:** _(see git log for the round-3 fix commit)_
+
+### 28. Symmetric branch added without parallel test fixture
+
+- **Source:** github-claude | PR #131 round 1 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/git/mod.rs`
+- **Finding:** PR #131 added rename-metadata parsing (`rename from`/`rename to` header pair) AND symmetric copy-metadata parsing (`copy from`/`copy to`) in the same `or_else` arm. The new test only exercised the rename fixture; the structurally-identical copy branch had no parallel fixture, so an edge-case regression in copy-header parsing (e.g. casing, whitespace, future git format change) would silently produce `old_path: None` / `new_path: None` with no failing assertion. Same finding-class as #7 (uncovered guard branch) — adding a sibling case to a multi-branch decision needs sibling test coverage.
+- **Fix:** Added `test_parse_git_diff_copy_metadata` that mirrors the rename test exactly except for the header verbs (`copy from`/`copy to`) and fixture file names (`template.txt` → `copy.txt`). Same assertions on `old_path`, `new_path`, hunk count, and stable hunk id.
+- **Commit:** _(see git log for the round-1 fix commit)_
