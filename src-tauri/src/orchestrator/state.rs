@@ -407,6 +407,31 @@ impl OrchestratorState {
             .insert(issue_id.to_string(), terminal);
     }
 
+    pub fn record_terminal_issue(
+        &mut self,
+        issue: &OrchestratorIssue,
+        status: RunStatus,
+        attempt_number: Option<u32>,
+        last_error: Option<String>,
+    ) -> Result<(), StateError> {
+        if self.is_issue_active(&issue.id) {
+            return Err(StateError::IssueAlreadyActive {
+                issue_id: issue.id.clone(),
+            });
+        }
+
+        self.terminal_statuses.insert(
+            issue.id.clone(),
+            TerminalEntry {
+                status,
+                attempt_number,
+                last_error,
+            },
+        );
+
+        Ok(())
+    }
+
     pub fn snapshot(&self, issues: Vec<OrchestratorIssue>) -> OrchestratorSnapshot {
         let mut running: Vec<_> = self.running.values().cloned().collect();
         running.sort_by(|left, right| left.issue_identifier.cmp(&right.issue_identifier));

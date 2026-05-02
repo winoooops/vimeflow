@@ -142,6 +142,44 @@ impl WorkspaceManager {
             ..plan
         })
     }
+
+    pub fn recover_workspace(
+        &self,
+        issue: &OrchestratorIssue,
+    ) -> Result<Option<WorkspacePlan>, WorkspaceError> {
+        let plan = self.plan_for_issue(issue)?;
+        if !plan.path.exists() {
+            return Ok(None);
+        }
+
+        let workspace_path = plan.path.canonicalize().map_err(|error| {
+            WorkspaceError::InvalidConfig(format!(
+                "workspace directory must be canonicalizable: {error}"
+            ))
+        })?;
+        ensure_within_root(&workspace_path, &self.root)?;
+        if !workspace_path.is_dir() {
+            return Err(WorkspaceError::InvalidConfig(format!(
+                "workspace path must be a directory: {}",
+                workspace_path.display()
+            )));
+        }
+
+        let prompt_file = PROMPT_DIR
+            .iter()
+            .fold(workspace_path.clone(), |parent, segment| {
+                parent.join(segment)
+            })
+            .join(PROMPT_FILE_NAME);
+        ensure_no_parent_refs(&prompt_file)?;
+        ensure_within_root(&prompt_file, &workspace_path)?;
+
+        Ok(Some(WorkspacePlan {
+            path: workspace_path,
+            prompt_file,
+            ..plan
+        }))
+    }
 }
 
 fn workflow_default_root(workflow: &WorkflowDefinition) -> Result<PathBuf, WorkspaceError> {
@@ -359,6 +397,22 @@ mod tests {
         assert!(prepared.prompt_file.starts_with(&prepared.path));
     }
 
+    #[test]
+    fn recover_workspace_returns_existing_workspace_without_creating_missing_one() {
+        let root = TempDir::new().unwrap();
+        let manager = WorkspaceManager::new(root.path(), "main", "agent").unwrap();
+        let issue = issue("issue-108", "#108");
+
+        assert!(manager.recover_workspace(&issue).unwrap().is_none());
+
+        let prepared = manager.prepare_workspace(&issue).unwrap();
+        let recovered = manager.recover_workspace(&issue).unwrap().unwrap();
+
+        assert_eq!(recovered.workspace_slug, prepared.workspace_slug);
+        assert_eq!(recovered.path, prepared.path);
+        assert_eq!(recovered.prompt_file, prepared.prompt_file);
+    }
+
     #[cfg(unix)]
     #[test]
     fn prepare_workspace_rejects_existing_symlink_escape() {
@@ -372,6 +426,23 @@ mod tests {
         symlink(outside.path(), &plan.path).unwrap();
 
         let error = manager.prepare_workspace(&issue).unwrap_err();
+
+        assert!(matches!(error, WorkspaceError::PathEscape { .. }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recover_workspace_rejects_existing_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let root = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let manager = WorkspaceManager::new(root.path(), "main", "agent").unwrap();
+        let issue = issue("issue-108", "#108");
+        let plan = manager.plan_for_issue(&issue).unwrap();
+        symlink(outside.path(), &plan.path).unwrap();
+
+        let error = manager.recover_workspace(&issue).unwrap_err();
 
         assert!(matches!(error, WorkspaceError::PathEscape { .. }));
     }

@@ -10,8 +10,11 @@ use crate::orchestrator::{
     AgentRunnerError, AttemptTemplateContext, OrchestratorEvent, OrchestratorIssue,
     OrchestratorRun, OrchestratorSnapshot, OrchestratorState, PromptTemplateContext, QueueIssue,
     RetryEntry, RunStatus, StateError, TrackerClient, TrackerError, WorkflowDefinition,
-    WorkspaceManager, WorkspacePlan, WorkspaceTemplateContext,
+    WorkspaceError, WorkspaceManager, WorkspacePlan, WorkspaceTemplateContext,
 };
+
+const RESTART_RECOVERY_MESSAGE: &str =
+    "existing workspace recovered after restart; waiting for operator retry";
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum OrchestratorRuntimeError {
@@ -21,6 +24,8 @@ pub enum OrchestratorRuntimeError {
     State(#[from] StateError),
     #[error(transparent)]
     Runner(#[from] AgentRunnerError),
+    #[error(transparent)]
+    Workspace(#[from] WorkspaceError),
     #[error("no orchestrator concurrency slots are available for issue: {issue_id}")]
     NoAvailableSlots { issue_id: String },
     #[error("invalid orchestrator timestamp {value}: {message}")]
@@ -109,6 +114,43 @@ where
     pub fn claim_ready(&mut self, timestamp: &str) -> Result<ClaimBatch, OrchestratorRuntimeError> {
         let issues = self.tracker.fetch_issues()?;
         self.claim_ready_from_issues(issues, timestamp)
+    }
+
+    pub fn recover_existing_workspaces(
+        &mut self,
+        workspace_manager: &WorkspaceManager,
+        timestamp: &str,
+    ) -> Result<ControlBatch, OrchestratorRuntimeError> {
+        let issues = self.tracker.fetch_issues()?;
+        let mut events = Vec::new();
+
+        for issue in &issues {
+            if !self.is_active_issue(issue) {
+                continue;
+            }
+
+            if self.state.is_issue_active(&issue.id)
+                || self.state.terminal_status(&issue.id).is_some()
+            {
+                continue;
+            }
+
+            let Some(workspace) = workspace_manager.recover_workspace(issue)? else {
+                continue;
+            };
+            self.state.record_terminal_issue(
+                issue,
+                RunStatus::Stopped,
+                Some(1),
+                Some(RESTART_RECOVERY_MESSAGE.to_string()),
+            )?;
+            events.push(self.workspace_recovery_event(issue, &workspace, timestamp));
+        }
+
+        Ok(ControlBatch {
+            snapshot: self.state.snapshot(issues),
+            events,
+        })
     }
 
     pub fn reconcile_finished_runs<R>(
@@ -743,6 +785,24 @@ where
         }
     }
 
+    fn workspace_recovery_event(
+        &self,
+        issue: &OrchestratorIssue,
+        workspace: &WorkspacePlan,
+        timestamp: &str,
+    ) -> OrchestratorEvent {
+        self.issue_event(
+            issue,
+            timestamp,
+            RunStatus::Stopped,
+            None,
+            Some(1),
+            Some(workspace.path.clone()),
+            Some(RESTART_RECOVERY_MESSAGE.to_string()),
+            None,
+        )
+    }
+
     fn issue_event(
         &self,
         issue: &OrchestratorIssue,
@@ -1013,6 +1073,59 @@ mod tests {
 
         assert_eq!(snapshot.queue[0].status, RunStatus::Released);
         assert_eq!(runtime.in_flight_count(), 0);
+    }
+
+    #[test]
+    fn recover_existing_workspaces_marks_active_workspace_stopped() {
+        let (_dir, workflow) = workflow_fixture(1);
+        let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
+        let issue = issue("issue-108", "#108", "open");
+        let workspace = workspace_manager.prepare_workspace(&issue).unwrap();
+        let tracker = StaticTracker::with_issues(vec![issue]);
+        let runner = RecordingRunner::with_run("run-108");
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker);
+
+        let recovered = runtime
+            .recover_existing_workspaces(&workspace_manager, "2026-05-02T08:14:00Z")
+            .unwrap();
+        let dispatched = runtime
+            .dispatch_ready(&workspace_manager, &runner, "2026-05-02T08:15:00Z")
+            .unwrap();
+
+        assert_eq!(recovered.events.len(), 1);
+        assert_eq!(recovered.events[0].status, RunStatus::Stopped);
+        assert_eq!(
+            recovered.events[0].message.as_deref(),
+            Some(RESTART_RECOVERY_MESSAGE)
+        );
+        assert_eq!(
+            recovered.events[0].workspace_path.as_ref(),
+            Some(&workspace.path)
+        );
+        assert_eq!(recovered.snapshot.queue[0].status, RunStatus::Stopped);
+        assert_eq!(recovered.snapshot.queue[0].attempt_number, Some(1));
+        assert_eq!(
+            recovered.snapshot.queue[0].last_error.as_deref(),
+            Some(RESTART_RECOVERY_MESSAGE)
+        );
+        assert!(dispatched.claimed.is_empty());
+        assert!(dispatched.started.is_empty());
+        assert_eq!(dispatched.snapshot.queue[0].status, RunStatus::Stopped);
+    }
+
+    #[test]
+    fn recover_existing_workspaces_leaves_missing_workspace_queued() {
+        let (_dir, workflow) = workflow_fixture(1);
+        let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
+        let tracker = StaticTracker::with_issues(vec![issue("issue-108", "#108", "open")]);
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker);
+
+        let batch = runtime
+            .recover_existing_workspaces(&workspace_manager, "2026-05-02T08:14:00Z")
+            .unwrap();
+
+        assert!(batch.events.is_empty());
+        assert_eq!(batch.snapshot.queue[0].status, RunStatus::Queued);
     }
 
     #[test]

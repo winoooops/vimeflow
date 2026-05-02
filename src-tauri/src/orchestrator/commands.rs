@@ -116,6 +116,12 @@ impl OrchestratorService {
             .map_err(|error| error.to_string())
     }
 
+    fn recover_existing_workspaces(&mut self, timestamp: &str) -> Result<ControlBatch, String> {
+        self.runtime
+            .recover_existing_workspaces(&self.workspace_manager, timestamp)
+            .map_err(|error| error.to_string())
+    }
+
     fn stop_run(&mut self, issue_id: &str, timestamp: &str) -> Result<ControlBatch, String> {
         self.runtime
             .stop_run(&self.runner, issue_id, timestamp)
@@ -137,6 +143,7 @@ pub async fn load_orchestrator_workflow(
     let workflow_path = validate_workflow_path(&request.workflow_path)?;
     let mut service = OrchestratorService::from_workflow_path(&workflow_path)?;
     let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    service.recover_existing_workspaces(&timestamp)?;
     let batch = service.snapshot(&timestamp)?;
     state.replace_service(service)?;
 
