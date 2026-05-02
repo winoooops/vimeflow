@@ -877,8 +877,12 @@ fn restore_pre_repo_subscribers<R: tauri::Runtime>(
     }
 
     let subscriber_cwds: Vec<String> = subscribers.keys().cloned().collect();
-    let stop_flag = Arc::new(AtomicBool::new(false));
-    let mut should_spawn_poll_thread = false;
+    // Allocated lazily — only the no-existing-watcher branch needs a
+    // fresh stop_flag. Hoisting before the lock would silently drop
+    // an Arc on the existing-watcher branch, leaving a dead allocation
+    // that confuses readers auditing the watcher lifecycle (which
+    // stop_flag governs which thread?).
+    let mut new_watcher_stop_flag: Option<Arc<AtomicBool>> = None;
 
     {
         let mut pre_repo_watchers = state
@@ -891,6 +895,7 @@ fn restore_pre_repo_subscribers<R: tauri::Runtime>(
                 *watcher.subscribers.entry(cwd).or_insert(0) += refcount;
             }
         } else {
+            let stop_flag = Arc::new(AtomicBool::new(false));
             pre_repo_watchers.insert(
                 safe_cwd.clone(),
                 PreRepoWatcher {
@@ -898,7 +903,7 @@ fn restore_pre_repo_subscribers<R: tauri::Runtime>(
                     stop_flag: stop_flag.clone(),
                 },
             );
-            should_spawn_poll_thread = true;
+            new_watcher_stop_flag = Some(stop_flag);
         }
     }
 
@@ -912,7 +917,7 @@ fn restore_pre_repo_subscribers<R: tauri::Runtime>(
         }
     }
 
-    if should_spawn_poll_thread {
+    if let Some(stop_flag) = new_watcher_stop_flag {
         // Guard against a known infinite-retry trap: `restore_pre_repo_subscribers`
         // is called *after* `upgrade_to_repo_watcher` succeeded for at least one
         // subscriber on `safe_cwd`, which means `safe_cwd` is already a git
@@ -1319,18 +1324,15 @@ mod tests {
             .build(tauri::generate_context!())
             .expect("failed to build test app");
 
-        // Listen for git-status-changed so we can assert the restore path
-        // emits an initial-state event for the failed subscriber. Without
-        // this assertion, removing the `emit_git_status_changed` call from
-        // `restore_pre_repo_subscribers` would leave the test green while
-        // the frontend's panel stays stale after restoration.
-        let received = Arc::new(Mutex::new(Vec::new()));
-        let received_for_listener = received.clone();
+        // Listen for git-status-changed and pipe payloads through an
+        // mpsc channel so the assertion below can deterministically wait
+        // for the restored-subscriber event with a generous timeout
+        // instead of guessing a fixed sleep window. A 100 ms sleep on
+        // a saturated CI host can expire before Tauri's listener
+        // dispatch thread is scheduled, producing flaky false negatives.
+        let (events_tx, events_rx) = mpsc::channel::<String>();
         app.handle().listen("git-status-changed", move |event| {
-            received_for_listener
-                .lock()
-                .expect("failed to lock received events")
-                .push(event.payload().to_string());
+            let _ = events_tx.send(event.payload().to_string());
         });
 
         let temp = create_temp_repo();
@@ -1396,18 +1398,34 @@ mod tests {
         assert_eq!(safe_pre_repo.get(&missing_cwd), Some(&safe_cwd));
         drop(safe_pre_repo);
 
-        // Wait for the emit to land on the listener thread, then assert
-        // that an event fired for the restored subscriber. There may be
-        // multiple events (one per emit_git_status_changed call across
-        // the upgrade + restore phases); we only need to verify one
-        // contains the missing_cwd payload.
-        std::thread::sleep(Duration::from_millis(100));
-        let events = received.lock().expect("failed to lock received events");
+        // Drain events with a 1-second deadline, looking for the
+        // payload that mentions `missing_cwd`. The upgrade + restore
+        // phases may emit independently, so we tolerate intervening
+        // events; we only need to confirm one of them references the
+        // restored subscriber. Failing the assertion on
+        // `RecvTimeoutError::Timeout` produces a clear "emit never
+        // arrived" message rather than the ambiguous "vector didn't
+        // contain expected entry" of the prior sleep-then-assert form.
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        let mut found = false;
+        while std::time::Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            match events_rx.recv_timeout(remaining) {
+                Ok(payload) => {
+                    if payload.contains(&missing_cwd) {
+                        found = true;
+                        break;
+                    }
+                    // Not the one we're looking for — keep draining.
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => break,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
         assert!(
-            events.iter().any(|payload| payload.contains(&missing_cwd)),
-            "expected git-status-changed emit for restored subscriber {:?}, got events: {:?}",
+            found,
+            "expected git-status-changed emit for restored subscriber {:?} within 1s",
             missing_cwd,
-            events,
         );
     }
 

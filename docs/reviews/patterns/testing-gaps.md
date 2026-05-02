@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 15
+ref_count: 16
 ---
 
 # Testing Gaps
@@ -223,3 +223,12 @@ filesystem scope restrictions).
 - **Finding:** The new test verified the in-memory state invariants of the restore path (subscriber refcounts, side-map entries, repo-watcher composition) but never registered a `git-status-changed` listener and never asserted the emit. `restore_pre_repo_subscribers` always calls `emit_git_status_changed(&app_handle, subscriber_cwds)`; if that call were accidentally removed or scoped to the wrong slice during a future refactor, the frontend's panel for the restored subscriber would stay stale (correct internal state but no initial-state refresh) and this test would still pass green. The sibling test `upgrade_to_repo_watcher_emits_once_for_duplicate_original_cwd` already demonstrated the listener-plus-sleep pattern; the new test simply didn't replicate it. Same finding-class as #6/#17 (regression-guard tests that didn't actually verify the property they claimed to guard) — internal-state coverage is necessary but not sufficient for a contract whose UI consumer is event-driven.
 - **Fix:** Registered an `app.handle().listen("git-status-changed", ...)` collector mirroring the sibling test's pattern, slept 100 ms after the upgrade call, then asserted that at least one collected payload contains `missing_cwd`. Used `events.iter().any(...)` rather than `events.len() == 1` because the upgrade phase emits independently before the restore phase, so the restored subscriber's emit may be the second of multiple events on the channel.
 - **Commit:** _(see git log for the round-1 fix commit)_
+
+### 24. Fixed-window `sleep + assert collected events` pattern is inherently racy for Tauri listener dispatch
+
+- **Source:** github-claude | PR #126 round 4 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/git/watcher.rs` test `upgrade_to_repo_watcher_restores_failed_subscribers_for_retry`
+- **Finding:** The round-1 test added a `git-status-changed` listener that pushed payloads into a `Vec`, then slept 100 ms, then asserted that the vec contained an entry referencing `missing_cwd`. Tauri's mock runtime dispatches event listeners on a separate thread; 100 ms is not a guaranteed bound on dispatch latency. On a saturated CI host (high CPU, GC pauses, slow filesystem) the dispatch thread may not have run within the window, producing a false-negative "missing emit" failure that's hard to reproduce locally. Same finding-class as #11 (sleep-based synchronization in transcript-turns test) — every fixed-deadline assertion against asynchronous dispatch eventually flakes when the runner gets loaded enough.
+- **Fix:** Replaced the `Arc<Mutex<Vec<String>>> + sleep` collector with an `mpsc::channel::<String>()` whose Sender is captured by the listener closure. The test runs an explicit drain loop with `events_rx.recv_timeout(remaining)` and a 1-second deadline. The first event whose payload contains `missing_cwd` flips a `found` flag and breaks the loop early; both `Timeout` and `Disconnected` end the drain. The assertion message names the deadline so a slow CI failure has clear diagnostic value. Pattern matches the existing #11 mpsc-channel fix in `transcript_turns.rs`.
+- **Commit:** _(see git log for the round-4 fix commit)_
