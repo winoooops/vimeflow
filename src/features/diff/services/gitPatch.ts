@@ -10,7 +10,12 @@ interface BuildGitDiffArgsOptions {
 // main..HEAD` produces a two-dot range diff (commits reachable from HEAD
 // but not main) whose hunk list can differ from a plain `git diff main`,
 // silently misrepresenting which hunks the UI is showing.
-const SAFE_BASE_BRANCH_REGEX = /^[a-zA-Z0-9_/][a-zA-Z0-9_/.-]*$/
+//
+// First character is intentionally narrower than the rest: a leading `/`
+// is invalid per `git check-ref-format` (refs can't begin with a slash).
+// Slash remains in the trailing class so `feature/cleanup` and
+// `refs/heads/main` still pass as internal-separator paths.
+const SAFE_BASE_BRANCH_REGEX = /^[a-zA-Z0-9_][a-zA-Z0-9_/.-]*$/
 
 const isSafeBaseBranch = (baseBranch: string): boolean =>
   baseBranch.length > 0 &&

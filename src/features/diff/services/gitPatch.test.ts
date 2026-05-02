@@ -92,6 +92,22 @@ describe('buildGitDiffArgs', () => {
     ).toEqual(['abc1234', '--', 'src/App.tsx'])
   })
 
+  test('rejects baseBranch with a leading slash (invalid per git check-ref-format)', () => {
+    // Slash is valid as an internal ref separator (feature/cleanup) but
+    // not as the first character. Before the round-3 tightening, the
+    // regex's first character class admitted /, so a value like
+    // `/foo/bar` passed validation and reached `git diff /foo/bar`,
+    // which fails as an unknown revision and surfaces as a 500 instead
+    // of the safe working-tree fallback. This test pins the rejection.
+    expect(
+      buildGitDiffArgs({
+        safePath: 'src/App.tsx',
+        staged: false,
+        baseBranch: '/foo/bar',
+      })
+    ).toEqual(['--', 'src/App.tsx'])
+  })
+
   test('staged: true takes precedence over baseBranch (no merge of the two)', () => {
     // Pinning test for the priority order. `--cached` and a base
     // branch comparison are mutually exclusive call shapes; the

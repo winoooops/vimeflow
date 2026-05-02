@@ -3,7 +3,7 @@ id: command-injection
 category: security
 created: 2026-04-09
 last_updated: 2026-05-02
-ref_count: 2
+ref_count: 3
 ---
 
 # Command Injection
@@ -89,3 +89,12 @@ Beyond the general "no template-string shell commands" rule:
 - **Finding:** `isSafeBaseBranch` blocked `-`-prefixed flag injection and null-byte injection — both real shell-style attacks. It did not block git range operators (`main..HEAD`, `main...HEAD`), which are valid characters in the existing allowlist but completely change git diff's semantics: `git diff main..HEAD` is a two-dot range diff (commits reachable from HEAD but not main), not a simple branch comparison. The displayed hunks would silently misrepresent which changes the user is reviewing. Same finding-class as #4 (untracked diff endpoint allows arbitrary file reads): the validation considered the obvious shell-injection vectors but missed git-semantic injection.
 - **Fix:** Tightened the allowlist to a regex `/^[a-zA-Z0-9_/][a-zA-Z0-9_/.-]*$/` that admits letters, digits, slash, hyphen, underscore, and `.` as a single character — sufficient for branch names, slash-separated ref paths, and SHA-shaped values. Added an explicit `!baseBranch.includes('..')` check on top of the regex so the rejection is unambiguous to readers. Test cases added for `main..HEAD`, `main...HEAD` (both reject → fall back to working-tree path), `feature/diff-cleanup`, and `abc1234` (both accept).
 - **Commit:** _(see git log for the round-1 fix commit)_
+
+### 7. Allowlist's first-character class wider than the rest, admitting refnames git itself rejects
+
+- **Source:** github-claude | PR #130 round 3 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src/features/diff/services/gitPatch.ts`
+- **Finding:** Round-1's regex tightening (#6) used `/^[a-zA-Z0-9_/][a-zA-Z0-9_/.-]*$/` — slash valid in BOTH the first-character class and the trailing class. Slash is a valid internal ref separator (`feature/cleanup`, `refs/heads/main`) but `git check-ref-format` rejects it as the leading character. So a value like `/foo/bar` passed our allowlist, reached `git diff /foo/bar -- file`, and bubbled up as a 500 from the outer error handler instead of falling through to the working-tree path. No file-read vector (git treats it as a tree-ish, not a filesystem path), but the error semantics are wrong: the user sees "internal server error" when the actual outcome should be "ignored, falling back to working-tree". Same finding-class as #4 (validation considered the obvious vectors but missed a related one).
+- **Fix:** Narrowed the first-character class to `[a-zA-Z0-9_]` (no `/`). Slash remains in the trailing class so internal-separator paths still pass. Test added asserting `/foo/bar` falls through to the working-tree path. The lesson: when an allowlist regex has a "first character" vs "rest" split, the first class is almost always strictly narrower — the underlying spec usually has a "must start with" rule that's stricter than its "may contain" rule.
+- **Commit:** _(see git log for the round-3 fix commit)_

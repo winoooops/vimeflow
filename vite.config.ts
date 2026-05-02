@@ -256,7 +256,7 @@ function gitApiPlugin(): Plugin {
             // whitespace-only strings produce a working-tree diff there,
             // so they must not trigger this rejection here either.
             if (
-              hunkIndex !== undefined &&
+              typeof hunkIndex === 'number' &&
               typeof base === 'string' &&
               base.trim() !== ''
             ) {
@@ -379,7 +379,7 @@ function gitApiPlugin(): Plugin {
             // strings fall through to the working-tree path in
             // `buildGitDiffArgs`, so we mirror that sentinel here.
             if (
-              hunkIndex !== undefined &&
+              typeof hunkIndex === 'number' &&
               typeof base === 'string' &&
               base.trim() !== ''
             ) {
