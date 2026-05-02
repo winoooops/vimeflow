@@ -881,7 +881,27 @@ fn restore_pre_repo_subscribers<R: tauri::Runtime>(
     }
 
     if should_spawn_poll_thread {
-        spawn_pre_repo_poll_thread(safe_cwd, app_handle.clone(), state.clone(), stop_flag);
+        // Guard against a known infinite-retry trap: `restore_pre_repo_subscribers`
+        // is called *after* `upgrade_to_repo_watcher` succeeded for at least one
+        // subscriber on `safe_cwd`, which means `safe_cwd` is already a git
+        // repository. Spawning a poll thread that re-runs `resolve_toplevel(&safe_cwd)`
+        // every 10 s would immediately succeed, re-fire `upgrade_to_repo_watcher`,
+        // fail again for the same permanently-invalid subscriber paths, restore
+        // again, and loop forever. Detect the case here and treat the failed
+        // subscribers as terminally stranded — keep their pre-repo entry as a
+        // record (so refcount accounting stays consistent) but don't poll.
+        if resolve_toplevel(&safe_cwd).is_ok() {
+            log::warn!(
+                "git watcher: subscribers {:?} could not upgrade against repo {:?}; \
+                 paths are not reachable inside the repo and will not be polled \
+                 (the parent path is already a repo, so a poll thread would \
+                 re-fire the failed upgrade indefinitely).",
+                subscriber_cwds,
+                safe_cwd,
+            );
+        } else {
+            spawn_pre_repo_poll_thread(safe_cwd, app_handle.clone(), state.clone(), stop_flag);
+        }
     }
 
     emit_git_status_changed(&app_handle, subscriber_cwds);
@@ -1251,6 +1271,21 @@ mod tests {
         let app = tauri::test::mock_builder()
             .build(tauri::generate_context!())
             .expect("failed to build test app");
+
+        // Listen for git-status-changed so we can assert the restore path
+        // emits an initial-state event for the failed subscriber. Without
+        // this assertion, removing the `emit_git_status_changed` call from
+        // `restore_pre_repo_subscribers` would leave the test green while
+        // the frontend's panel stays stale after restoration.
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let received_for_listener = received.clone();
+        app.handle().listen("git-status-changed", move |event| {
+            received_for_listener
+                .lock()
+                .expect("failed to lock received events")
+                .push(event.payload().to_string());
+        });
+
         let temp = create_temp_repo();
         let cwd = temp.path().to_string_lossy().to_string();
         let missing_cwd = temp
@@ -1312,6 +1347,21 @@ mod tests {
             .expect("failed to lock cwd_to_safe_pre_repo");
 
         assert_eq!(safe_pre_repo.get(&missing_cwd), Some(&safe_cwd));
+        drop(safe_pre_repo);
+
+        // Wait for the emit to land on the listener thread, then assert
+        // that an event fired for the restored subscriber. There may be
+        // multiple events (one per emit_git_status_changed call across
+        // the upgrade + restore phases); we only need to verify one
+        // contains the missing_cwd payload.
+        std::thread::sleep(Duration::from_millis(100));
+        let events = received.lock().expect("failed to lock received events");
+        assert!(
+            events.iter().any(|payload| payload.contains(&missing_cwd)),
+            "expected git-status-changed emit for restored subscriber {:?}, got events: {:?}",
+            missing_cwd,
+            events,
+        );
     }
 
     #[test]

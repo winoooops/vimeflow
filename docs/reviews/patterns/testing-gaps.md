@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 14
+ref_count: 15
 ---
 
 # Testing Gaps
@@ -214,3 +214,12 @@ filesystem scope restrictions).
 - **Finding:** BottomDrawer accepts `gitStatus?` and forwards it to TWO `<DiffPanelContent>` render sites (controlled-with-selectedDiffFile branch and unselected-fallback branch). Round-1 added a single test covering the unselected branch. The selected-file branch — reachable when a user has opened a specific diff file — was not covered by any test in `BottomDrawer.test.tsx`, so a regression that dropped `gitStatus={gitStatus}` from that branch (e.g. during a selectedDiffFile ternary refactor) would silently re-introduce the duplicate-watcher IPC. Codex verify caught this in v1 of round 4. Same finding-class as #7 (uncovered guard branch on doc-change-plus-selection): a multi-branch decision needs coverage for each branch the regression-class can hit, not just the one the author thought about.
 - **Fix:** Split the round-1 test into two siblings — one rendering BottomDrawer without `selectedDiffFile` (unselected branch), one with a synthetic `selectedDiffFile` (controlled branch). Both assert `useGitStatus` was called with `enabled: false`. A regression dropping `gitStatus={gitStatus}` from EITHER `<DiffPanelContent>` render site is now caught.
 - **Commit:** _(see git log for the round-4 fix commit, plus the v1→v2 codex-verify retry that closed the second-branch gap)_
+
+### 23. State-invariants test omits assertion on the side-effect that drives the UI
+
+- **Source:** github-claude | PR #126 round 1 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/git/watcher.rs` (`upgrade_to_repo_watcher_restores_failed_subscribers_for_retry`)
+- **Finding:** The new test verified the in-memory state invariants of the restore path (subscriber refcounts, side-map entries, repo-watcher composition) but never registered a `git-status-changed` listener and never asserted the emit. `restore_pre_repo_subscribers` always calls `emit_git_status_changed(&app_handle, subscriber_cwds)`; if that call were accidentally removed or scoped to the wrong slice during a future refactor, the frontend's panel for the restored subscriber would stay stale (correct internal state but no initial-state refresh) and this test would still pass green. The sibling test `upgrade_to_repo_watcher_emits_once_for_duplicate_original_cwd` already demonstrated the listener-plus-sleep pattern; the new test simply didn't replicate it. Same finding-class as #6/#17 (regression-guard tests that didn't actually verify the property they claimed to guard) — internal-state coverage is necessary but not sufficient for a contract whose UI consumer is event-driven.
+- **Fix:** Registered an `app.handle().listen("git-status-changed", ...)` collector mirroring the sibling test's pattern, slept 100 ms after the upgrade call, then asserted that at least one collected payload contains `missing_cwd`. Used `events.iter().any(...)` rather than `events.len() == 1` because the upgrade phase emits independently before the restore phase, so the restored subscriber's emit may be the second of multiple events on the channel.
+- **Commit:** _(see git log for the round-1 fix commit)_
