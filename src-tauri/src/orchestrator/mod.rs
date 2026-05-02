@@ -1,10 +1,15 @@
+pub mod runner;
 pub mod runtime;
 pub mod state;
 pub mod tracker;
 pub mod workflow;
 pub mod workspace;
 
-pub use runtime::{ClaimBatch, OrchestratorRuntime, OrchestratorRuntimeError};
+pub use runner::{AgentRun, AgentRunRequest, AgentRunner, AgentRunnerError, CommandAgentRunner};
+pub use runtime::{
+    ClaimBatch, DispatchBatch, DispatchFailure, DispatchedRun, OrchestratorRuntime,
+    OrchestratorRuntimeError,
+};
 pub use state::{
     OrchestratorEvent, OrchestratorRun, OrchestratorSnapshot, OrchestratorState, QueueIssue,
     RetryEntry, RunStatus, StateError,

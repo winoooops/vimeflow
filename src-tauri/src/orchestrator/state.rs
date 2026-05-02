@@ -154,6 +154,7 @@ impl OrchestratorState {
             });
         };
 
+        self.claimed.remove(issue_id);
         self.running.insert(
             issue_id.to_string(),
             OrchestratorRun {
@@ -304,6 +305,26 @@ mod tests {
         assert_eq!(snapshot.running[0].run_id, "run-1");
         assert_eq!(snapshot.queue[0].status, RunStatus::Running);
         assert_eq!(snapshot.queue[0].attempt_number, Some(2));
+    }
+
+    #[test]
+    fn mark_running_removes_claimed_entry_from_in_flight_count() {
+        let mut state = OrchestratorState::new();
+        let issue = issue("issue-108", "#108");
+        state.claim_issue(&issue).unwrap();
+
+        state
+            .mark_running(
+                "issue-108",
+                "run-1",
+                1,
+                PathBuf::from("/tmp/workspace"),
+                "2026-05-02T00:00:00Z",
+            )
+            .unwrap();
+
+        assert_eq!(state.in_flight_count(), 1);
+        assert!(state.is_issue_active("issue-108"));
     }
 
     #[test]
