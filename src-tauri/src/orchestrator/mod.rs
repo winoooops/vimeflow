@@ -1,6 +1,7 @@
 pub mod state;
 pub mod tracker;
 pub mod workflow;
+pub mod workspace;
 
 pub use state::{
     OrchestratorEvent, OrchestratorRun, OrchestratorSnapshot, OrchestratorState, QueueIssue,
@@ -12,3 +13,4 @@ pub use workflow::{
     AttemptTemplateContext, OrchestratorIssue, PromptTemplateContext, SecretValue,
     WorkflowDefinition, WorkflowError, WorkspaceTemplateContext,
 };
+pub use workspace::{WorkspaceError, WorkspaceManager, WorkspacePlan};
