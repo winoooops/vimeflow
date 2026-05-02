@@ -6,21 +6,24 @@ interface BuildGitDiffArgsOptions {
 
 // Restrict to characters valid in a single git refname segment (letters,
 // digits, plus the separators `_`, `/`, `-`, and `.` as a single character).
-// Specifically blocks the range operators `..` and `...` — `git diff
-// main..HEAD` produces a two-dot range diff (commits reachable from HEAD
-// but not main) whose hunk list can differ from a plain `git diff main`,
-// silently misrepresenting which hunks the UI is showing.
+// The first character class is intentionally narrower than the rest:
+// - Excludes `-` (would be parsed as a git option flag)
+// - Excludes `/` (a leading slash is invalid per `git check-ref-format`)
+// - Excludes all non-ASCII / control characters including NUL (no
+//   C-string termination injection)
 //
-// First character is intentionally narrower than the rest: a leading `/`
-// is invalid per `git check-ref-format` (refs can't begin with a slash).
-// Slash remains in the trailing class so `feature/cleanup` and
-// `refs/heads/main` still pass as internal-separator paths.
+// The `!includes('..')` check below is NOT redundant with the regex:
+// the regex's trailing class permits a single `.`, but two-dot
+// ranges (`main..HEAD`) and three-dot ranges (`main...HEAD`) are
+// valid character sequences inside `[a-zA-Z0-9_/.-]*` and would be
+// admitted by the regex alone. We block them explicitly because they
+// change `git diff` semantics from "branch comparison" to "two-dot
+// range" / "symmetric difference", silently misrepresenting which
+// commits the displayed hunks come from.
 const SAFE_BASE_BRANCH_REGEX = /^[a-zA-Z0-9_][a-zA-Z0-9_/.-]*$/
 
 const isSafeBaseBranch = (baseBranch: string): boolean =>
   baseBranch.length > 0 &&
-  !baseBranch.startsWith('-') &&
-  !baseBranch.includes('\0') &&
   !baseBranch.includes('..') &&
   SAFE_BASE_BRANCH_REGEX.test(baseBranch)
 
