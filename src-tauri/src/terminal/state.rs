@@ -2,7 +2,7 @@
 
 use portable_pty::{Child, MasterPty};
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::types::SessionId;
@@ -12,9 +12,9 @@ static GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Bounded circular byte buffer paired with a monotonic byte offset.
 ///
-/// Both fields advance under the same mutex (the one wrapping `RingBuffer`
-/// inside `ManagedSession`), so a snapshot always returns `(bytes, end_offset)`
-/// where `end_offset == start_offset + bytes.len()`. Required for the
+/// Both fields advance under the same mutex, so a snapshot always returns
+/// `(bytes, end_offset)` where `end_offset == start_offset + bytes.len()`.
+/// Required for the
 /// replay/cursor protocol — see docs/superpowers/specs/2026-04-25-pty-reattach-on-reload-design.md
 /// "Replay Buffer + Offset Cursor".
 pub struct RingBuffer {
@@ -76,7 +76,14 @@ pub struct ManagedSession {
     /// Generation counter — distinguishes old vs new session on ID reuse
     pub generation: u64,
     /// Ring buffer for recent output + monotonic offset (replay protocol)
-    pub ring: Mutex<RingBuffer>,
+    pub ring: Arc<Mutex<RingBuffer>>,
+    /// Cancellation flag observed by the read loop. Set by `kill_pty` so the
+    /// background reader can break out even if the child ignores SIGTERM —
+    /// without it, a long-lived process would keep the read thread alive
+    /// (and emitting `pty-data` for a removed session) until eventual EOF.
+    /// The Arc is shared with the read thread; `kill_pty` flips the flag
+    /// before the session entry is removed from `PtyState`.
+    pub cancelled: Arc<AtomicBool>,
 }
 
 /// Thread-safe PTY session state
@@ -319,6 +326,18 @@ impl PtyState {
         Ok(())
     }
 
+    /// Flip the read-loop cancellation flag for a session, if present.
+    /// Idempotent and lock-light (acquires `sessions` only long enough to
+    /// look up the session and set the AtomicBool). Called by `kill_pty`
+    /// so the read loop can break out promptly even when the child
+    /// ignores SIGTERM and never produces EOF.
+    pub fn set_cancelled(&self, session_id: &SessionId) {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        if let Some(session) = sessions.get(session_id) {
+            session.cancelled.store(true, Ordering::Relaxed);
+        }
+    }
+
     /// Clone the PTY reader for a session while keeping the session in state
     ///
     /// This avoids the race condition where removing/reinserting the session
@@ -339,8 +358,8 @@ impl PtyState {
     }
 
     /// Internal terminal-module accessor for code that must lock sessions
-    /// directly. Callers must take locks in sessions -> ring order and must
-    /// not call other `PtyState` methods while holding the sessions lock.
+    /// directly. Callers should keep this global lock short-lived; clone
+    /// per-session Arcs out of it before doing ring-buffer work.
     pub(crate) fn inner_sessions(&self) -> &Arc<Mutex<HashMap<SessionId, ManagedSession>>> {
         &self.sessions
     }
@@ -444,7 +463,8 @@ mod tests {
             child,
             cwd: "/tmp".into(),
             generation: 0,
-            ring: Mutex::new(super::RingBuffer::new(64)),
+            ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
+            cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -514,7 +534,8 @@ mod tests {
             child: Box::new(FailingKillChild),
             cwd: "/tmp".into(),
             generation: 0,
-            ring: Mutex::new(super::RingBuffer::new(64)),
+            ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
+            cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
 
