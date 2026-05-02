@@ -263,9 +263,9 @@ async def run_feature_iteration(
     if prompt_override:
         prompt = prompt_override
     elif findings:
-        prompt = get_coding_prompt_with_findings(findings)
+        prompt = get_coding_prompt_with_findings(findings, feature)
     else:
-        prompt = get_coding_prompt()
+        prompt = get_coding_prompt(feature)
 
     async with session:
         status, response = await run_agent_session(session, prompt, project_dir, role="coder")
@@ -431,7 +431,7 @@ async def run_autonomous_agent(
                     client_kind, role="coder",
                     project_dir=project_dir, model=model, sandbox=sandbox,
                 )
-                prompt = get_coding_prompt()
+                prompt = get_coding_prompt(feature)
 
                 async with session:
                     status, response = await run_agent_session(session, prompt, project_dir, role="coder")

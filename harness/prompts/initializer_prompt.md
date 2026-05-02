@@ -29,6 +29,31 @@ Based on `app_spec.md`, create `feature_list.json` with detailed, phased feature
 ]
 ```
 
+For UI features, add optional visual metadata so later Coder and Visual Reviewer sessions receive the same visual target:
+
+```json
+{
+  "design_ref": {
+    "surface": "agent_status_sidebar",
+    "prototype_url": "https://example.invalid/prototype",
+    "spec_paths": [
+      "docs/design/UNIFIED.md",
+      "docs/design/agent_status_sidebar/code.html"
+    ],
+    "screenshot_paths": [
+      "docs/design/agent_status_sidebar/references/test-results/desktop-1440x900.png"
+    ]
+  },
+  "visual_review": {
+    "mode": "required",
+    "fixture_url": "/__visual__/agent-status/test-results",
+    "viewports": [{ "name": "desktop-1440x900", "width": 1440, "height": 900 }],
+    "max_changed_ratio": 0.1,
+    "allow_model_only": false
+  }
+}
+```
+
 **Phase ordering depends on what app_spec.md describes.** Typical phases:
 
 1. **Scaffold** — Project setup, configs, dependencies
@@ -46,6 +71,9 @@ Based on `app_spec.md`, create `feature_list.json` with detailed, phased feature
 - ALL features start with `"passes": false`
 - Each feature should be completable in one agent session
 - Cover every feature in app_spec.md
+- If a feature renders user-visible UI, set `visual_review.mode` to `"required"` and populate `design_ref` from matching local files under `docs/design/`
+- If a frontend feature has no rendered visual surface, set `visual_review.mode` to `"advisory"` or `"skip"` and include a short `reason`
+- If any feature has required or advisory visual review, append one final synthetic `"Design coherence pass"` feature that depends on all visual UI features and compares the composed screen as a whole
 
 **CRITICAL:** Never remove or edit features in future sessions. Features can ONLY have their `passes` field changed to `true`.
 
