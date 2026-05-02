@@ -631,6 +631,25 @@ fn is_tool_result_block(value: &Value) -> bool {
     value.get("type").and_then(|t| t.as_str()) == Some("tool_result")
 }
 
+/// Whether a single content block represents real user content. `tool_result`
+/// blocks are tool returns, not prompts. `text` blocks count only when the
+/// inner text is non-whitespace (mirrors the symmetric guard on the
+/// string-typed content path in `is_user_prompt`). Other block types
+/// (image, document, etc.) count as content if present.
+fn is_non_empty_user_block(item: &Value) -> bool {
+    if is_tool_result_block(item) {
+        return false;
+    }
+    if item.get("type").and_then(|t| t.as_str()) == Some("text") {
+        return item
+            .get("text")
+            .and_then(|t| t.as_str())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+    }
+    true
+}
+
 fn is_user_prompt(content: &Value) -> bool {
     if let Some(text) = content.as_str() {
         return !text.trim().is_empty();
@@ -640,7 +659,7 @@ fn is_user_prompt(content: &Value) -> bool {
         return false;
     };
 
-    items.iter().any(|item| !is_tool_result_block(item))
+    items.iter().any(is_non_empty_user_block)
 }
 
 /// Summarize a tool input Value into a short string (~100 chars max)

@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-04-30
-ref_count: 8
+ref_count: 9
 ---
 
 # Documentation Accuracy
@@ -303,3 +303,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** `is_user_prompt` had `!items.is_empty() && items.iter().any(|item| !is_tool_result_block(item))`. Rust's `Iterator::any` returns `false` on an empty iterator (vacuous-truth short-circuit), so the explicit emptiness guard is logically redundant — both halves return the same bool for empty slices. The guard creates the misleading impression that there's a distinct empty-array code path; a future maintainer adding a parallel item-type predicate may copy the pattern, wonder why the empty check exists, and spend time verifying it's necessary. Same finding-class as #28 (unused `export default TokenCache` dead code) — surface area that does nothing.
 - **Fix:** Removed `!items.is_empty() &&`. Expression is now `items.iter().any(|item| !is_tool_result_block(item))`, which still returns `false` for empty slices and all-`tool_result` slices.
 - **Commit:** _(see git log for the round-1 fix commit)_
+
+### 33. Asymmetric whitespace handling between paired user-prompt content paths
+
+- **Source:** github-claude | PR #122 round 2 | 2026-05-01
+- **Severity:** LOW
+- **File:** `src-tauri/src/agent/transcript.rs`
+- **Finding:** `is_user_prompt` had two content paths: a string-typed path that correctly checked `!text.trim().is_empty()`, and an array-typed path that returned `true` for ANY non-`tool_result` block — including `{"type":"text","text":"   "}` whitespace-only text blocks. A user message with whitespace-only text inside an array form would falsely emit an `agent-turn` event and increment `numTurns`, while the same whitespace as a plain string would not. The two paths were intended to be semantically equivalent but drifted: the string path predates the array path; when the array path was added it focused on the structural "is there a non-tool_result block?" question and skipped porting the content-emptiness guard. Same finding-class as #2 (broken design reference path): paired surfaces fall out of sync when one is edited without the other.
+- **Fix:** Extracted a `is_non_empty_user_block(item)` helper that excludes `tool_result`, requires non-whitespace `text` content for `text` blocks, and accepts other types (image, document, etc.) by default. The array path now reads `items.iter().any(is_non_empty_user_block)`, producing symmetric whitespace handling with the string path.
+- **Commit:** _(see git log for the round-2 fix commit)_
