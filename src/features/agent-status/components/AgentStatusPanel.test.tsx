@@ -2,6 +2,7 @@ import { describe, test, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { AgentStatusPanel } from './AgentStatusPanel'
 import type { AgentStatus } from '../types'
+import * as useGitStatusModule from '../../diff/hooks/useGitStatus'
 
 const inactiveAgentStatus: AgentStatus = {
   isActive: false,
@@ -156,6 +157,16 @@ describe('AgentStatusPanel', () => {
   })
 
   test('uses shared git status when provided by the parent', () => {
+    // Spy on the internal hook so we can assert it was called with
+    // `enabled: false` — the load-bearing invariant of the lifted-state
+    // refactor (parent-provided gitStatus must disable the child's
+    // own watcher to prevent duplicate `start_git_watcher` IPCs).
+    // The module-level `vi.mock` factory above can't satisfy this
+    // assertion because it is not a `vi.fn()` — vi.spyOn here gives
+    // us a proper call-args record while still falling through to the
+    // module mock for the actual return shape.
+    const useGitStatusSpy = vi.spyOn(useGitStatusModule, 'useGitStatus')
+
     render(
       <AgentStatusPanel
         agentStatus={activeAgentStatus}
@@ -181,6 +192,15 @@ describe('AgentStatusPanel', () => {
     )
 
     expect(screen.getAllByText('+20 / -4')).toHaveLength(2)
+    // Watcher-deduplication invariant: when parent injects gitStatus,
+    // the internal hook must run with enabled: false so no duplicate
+    // start_git_watcher IPC fires.
+    expect(useGitStatusSpy).toHaveBeenCalledWith(
+      '/tmp/repo',
+      expect.objectContaining({ enabled: false })
+    )
+
+    useGitStatusSpy.mockRestore()
   })
 
   test('renders ToolCallSummary and ActivityFeed inside the scrollable region', () => {

@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 11
+ref_count: 12
 ---
 
 # Testing Gaps
@@ -178,3 +178,12 @@ filesystem scope restrictions).
 - **Finding:** The subscription test mocked `useGitStatus` to return a constant `{ idle: true, ... }` shape regardless of the options object the parent passed. With `agentStatus.isActive = true` the production code computes `enabled: true` and starts a watcher; the mock returned the same idle-state object whether `enabled` was true or false. Worse: the test never called `expect(useGitStatusMock).toHaveBeenCalledWith(..., expect.objectContaining({ enabled: true }))`. A regression that passed `enabled: false` (e.g. an accidental flip of the activation OR-condition, or a misread of `agentStatus.isActive`) would still satisfy the existing reference-equality assertions on the captured props (panel + bottom drawer would each receive the same idle object). Watcher would never start in production; UI would show a permanent empty state. Same finding-class as #6 (regression-guard test that didn't actually verify the property it claimed to guard) — a reference-equality assertion is not a substitute for asserting the input that drives the mechanism.
 - **Fix:** Mock factory now reads `options.enabled` and returns `idle: !enabled`, mirroring the real hook's contract (idle iff disabled). Added a new test `WorkspaceView calls useGitStatus with enabled: true when an agent is active` that asserts `expect(useGitStatus).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ watch: true, enabled: true }))`. The pre-existing reference-equality test stays — they cover orthogonal contracts (one hook call vs. correct args).
 - **Commit:** _(see git log for the round-1 fix commit)_
+
+### 19. Lifted-state contract: child-test missing arg assertion + parent-test missing alternate-arm coverage
+
+- **Source:** github-claude | PR #125 round 2 | 2026-05-02
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/AgentStatusPanel.test.tsx`, `src/features/workspace/WorkspaceView.subscription.test.tsx`
+- **Finding:** Round-1 fixed the parent's `enabled: true` assertion (#18) but two related gaps remained: (a) `AgentStatusPanel.test.tsx`'s "uses shared git status when provided by the parent" test verified UI output but never asserted that the internal `useGitStatus` was called with `enabled: false` — the load-bearing watcher-deduplication invariant of the lifted-state refactor. The sibling `DiffPanelContent.test.tsx` already used `vi.spyOn(useGitStatusModule, 'useGitStatus')` correctly; AgentStatusPanel's mock was a plain factory with no spy reference. A regression that dropped `gitStatus === undefined &&` from the internal enabled condition would silently start two simultaneous watchers per cwd while every test stayed green. (b) The parent's round-1 `enabled: true` test only covered the `isActive` arm of the OR-condition (`agentStatus.isActive || bottomDrawerTab === 'diff'`); since `useAgentStatus` always returned `isActive: true`, the diff-tab arm was structurally impossible to exercise. Removing `|| bottomDrawerTab === 'diff'` would still satisfy the assertion. Both gaps follow the same theme as #18 (a lifted-state assertion that doesn't actually constrain the contract it's named after).
+- **Fix:** (a) Restructured `AgentStatusPanel.test.tsx` to import `* as useGitStatusModule` and call `vi.spyOn` on the test-by-test, asserting `expect(useGitStatusSpy).toHaveBeenCalledWith('/tmp/repo', expect.objectContaining({ enabled: false }))`. (b) Extended the BottomDrawer mock in `WorkspaceView.subscription.test.tsx` with a test-only "switch to diff" button bound to `onTabChange`, and added a sibling test using `vi.mocked(useAgentStatus).mockImplementation(() => idleAgentStatus)` so the agent stays idle across the tab-switch re-render. Codex verify v1 caught a `mockReturnValueOnce` bug here: the override only applied to the first render, letting the re-render fall back to the active default and passing the assertion via the wrong branch. v2 uses `mockImplementation` + `getMockImplementation` save-and-restore in a `finally` block.
+- **Commit:** _(see git log for the round-2 fix commit; v1→v2 codex-verify retry documented in `.harness-github-review/cycle-2-verify-result-v{1,2}.json`)_
