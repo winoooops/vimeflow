@@ -92,6 +92,7 @@ export const AgentStatusPanel = ({
           </div>
           <ActivityFooter
             totalDurationMs={status.cost?.totalDurationMs ?? 0}
+            numTurns={status.numTurns}
             linesAdded={lineTotals.added}
             linesRemoved={lineTotals.removed}
           />

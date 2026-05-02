@@ -7,6 +7,7 @@ import type {
   AgentStatus,
   AgentStatusEvent,
   AgentToolCallEvent,
+  AgentTurnEvent,
   RecentToolCall,
   TestRunSnapshot,
 } from '../types'
@@ -36,6 +37,7 @@ const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
   contextWindow: null,
   cost: null,
   rateLimits: null,
+  numTurns: 0,
   toolCalls: { total: 0, byType: {}, active: null },
   recentToolCalls: [],
   testRun: null,
@@ -199,7 +201,8 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
 
       // agent-detected and agent-disconnected are handled by polling in
       // handleDetection — no Rust-side events are emitted for these.
-      // Only agent-status and agent-tool-call are event-driven.
+      // Only agent-status, agent-tool-call, agent-turn, and test-run are
+      // event-driven.
 
       const unlistenStatus = await listen<AgentStatusEvent>(
         'agent-status',
@@ -339,6 +342,34 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       )
 
       addUnlisten(unlistenToolCall)
+
+      const unlistenTurn = await listen<AgentTurnEvent>(
+        'agent-turn',
+        (event) => {
+          if (event.payload.sessionId !== resolvePtyId()) {
+            return
+          }
+
+          // numTurns is u32 in the Rust binding — fits safely in JS number,
+          // no Number() coercion needed (those are reserved for u64/i64
+          // fields where serde-json may emit values past Number.MAX_SAFE_INTEGER).
+          const nextTurns = event.payload.numTurns
+
+          setStatus((prev) => ({
+            ...prev,
+            // A drop in numTurns signals a transcript restart on the same
+            // PTY (e.g. user re-ran `claude`); accept the lower value as
+            // the reset. Math.max otherwise keeps the count monotonic
+            // against out-of-order replay events within a single run.
+            numTurns:
+              nextTurns < prev.numTurns
+                ? nextTurns
+                : Math.max(prev.numTurns, nextTurns),
+          }))
+        }
+      )
+
+      addUnlisten(unlistenTurn)
 
       // test-run listener — must be attached before start_agent_watcher fires.
       // Without a backend snapshot cache in v1, missing the latest-of-replay

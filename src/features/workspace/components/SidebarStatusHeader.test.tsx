@@ -14,6 +14,7 @@ const inactiveStatus: AgentStatus = {
   contextWindow: null,
   cost: null,
   rateLimits: null,
+  numTurns: 0,
   toolCalls: { total: 0, byType: {}, active: null },
   recentToolCalls: [],
   testRun: null,

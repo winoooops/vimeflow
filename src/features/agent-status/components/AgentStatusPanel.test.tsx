@@ -14,6 +14,7 @@ const inactiveAgentStatus: AgentStatus = {
   contextWindow: null,
   cost: null,
   rateLimits: null,
+  numTurns: 0,
   toolCalls: { total: 0, byType: {}, active: null },
   recentToolCalls: [],
   testRun: null,
@@ -26,6 +27,7 @@ const activeAgentStatus: AgentStatus = {
   modelId: 'claude-3-5-sonnet-20241022',
   modelDisplayName: 'Claude 3.5 Sonnet',
   sessionId: 'sess-1',
+  numTurns: 4,
   contextWindow: {
     usedPercentage: 12,
     contextWindowSize: 200_000,
@@ -149,6 +151,7 @@ describe('AgentStatusPanel', () => {
     )
 
     // From the useGitStatus mock above: 5+7 added, 2+1 removed.
+    expect(screen.getByText('4 turns')).toBeInTheDocument()
     expect(screen.getByText('+12 / -3')).toBeInTheDocument()
   })
 

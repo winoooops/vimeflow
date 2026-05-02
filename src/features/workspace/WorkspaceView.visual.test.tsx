@@ -25,6 +25,7 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
     contextWindow: null,
     cost: null,
     rateLimits: null,
+    numTurns: 0,
     toolCalls: { total: 0, byType: {}, active: null },
     recentToolCalls: [],
     testRun: null,

@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-04-30
-ref_count: 3
+last_updated: 2026-05-01
+ref_count: 7
 ---
 
 # Testing Gaps
@@ -106,3 +106,39 @@ filesystem scope restrictions).
 - **Finding:** The `PathHistory` four-arm match (path-change, first observation, same path, no-path-reset) lived inline inside `record_event_diag`, which itself early-returns under `cfg!(debug_assertions)` and emits log side effects. There was no way to exercise the state machine in a unit test without a `Mutex`, a logger, and a `cfg!(debug_assertions)` build. The round-1 `(None, _)` reset arm — added because the original implementation counted streaks across no-path interludes — was caught by code review only, not by CI. If a later contributor "simplified" the wildcard arm thinking it was a no-op, the streak-across-interlude bug would silently regress: `repeat=N` values during a speculative-path investigation would lie, the diagnostic feature itself would mis-report, and there would be no test failure to flag it. `short_sid`, `short_path`, and `TxOutcome::label()` were also untested pure functions despite being on every diagnostic line's hot path.
 - **Fix:** Extracted the state machine from `record_event_diag` into `PathHistory::observe(tx_path: Option<&str>) -> Option<String>` so each arm is unit-testable directly with no logging, no Mutex, no cfg gate. `record_event_diag` now calls `h.observe(tx_path)` and reads `h.same_path_repeat` afterwards (no behavior change). Added 11 unit tests covering: first observation, repeat increments, path-change-returns-old-and-resets-counter, **no-path-resets-streak-after-repeat (the explicit regression guard for the round-1 `(None, _)` bug)**, idempotent no-path-when-already-no-path, `short_sid` truncation / passthrough / UUID form, `short_path` basename / truncation / no-basename fallback, and `TxOutcome::label` exhaustively across all 9 variants. All 14 tests in `agent::watcher::tests` pass.
 - **Commit:** _(see git log for the round-2 fix commit)_
+
+### 11. Sleep-based synchronization in Rust integration test makes timing flaky on loaded CI
+
+- **Source:** github-claude | PR #122 round 1 | 2026-05-01
+- **Severity:** MEDIUM
+- **File:** `src-tauri/tests/transcript_turns.rs`
+- **Finding:** The test relied on `std::thread::sleep(Duration::from_millis(1500))` between `start_or_replace` and the assertion on `events.len()` to give the watcher's background thread time to open the transcript file, read 4 lines, and dispatch `agent-turn` events through the Tauri mock bus. On a loaded CI runner (memory pressure, slow disk, scheduler latency) the 1500 ms window can be missed — the assertion fails with `assertion failed: 2 == events.len()` non-deterministically, indistinguishable from a real regression. Same root cause as fixed-sleep waits anywhere: the deadline is implicit and cannot adapt.
+- **Fix:** Replaced the sleep with a `std::sync::mpsc::channel::<()>()` signaled from the listener once `events.len() >= 2`, drained via `rx.recv_timeout(Duration::from_secs(5))`. The deadline is now explicit (5 s ceiling) and the test wakes the moment the second event lands rather than always waiting the full window. Drop the original `tx` so the channel closes if the listener is unwound before signaling.
+- **Commit:** _(see git log for the round-1 fix commit)_
+
+### 12. Boundary-shape coverage gap — mixed `tool_result + text` block-array missing from integration fixture
+
+- **Source:** github-claude | PR #122 round 2 | 2026-05-01
+- **Severity:** LOW
+- **File:** `src-tauri/tests/transcript_turns.rs`
+- **Finding:** The transcript-turns fixture covered three message shapes: plain-string user prompt, array-with-only-tool_result (no turn), and array-with-only-text (turn). It missed the fourth shape — `[{"type":"tool_result",...},{"type":"text","text":"follow-up"}]` — a real Claude Code pattern where the user message both drains an in-flight `tool_use` AND emits a follow-up prompt. The production code handled it correctly today, but a future refactor that short-circuited array iteration on the first non-`text` block (or split tool-result drain from turn-counting) would silently break the mixed-content path with no failing test. Same finding-class as #6 (regression-guard test that didn't actually verify the property it claimed to guard) — the test suite asserted the predicate space the author thought about, not the space the system actually inhabits.
+- **Fix:** Added a 5th fixture line with `[{"type":"tool_result",...},{"type":"text","text":"follow-up"}]`, bumped the mpsc signal threshold from `len() >= 2` to `len() >= 3`, and added `assert!(events[2].contains(r#""numTurns":3"#))`. The fixture now exercises every meaningful boundary shape including the mixed case.
+- **Commit:** _(see git log for the round-2 fix commit)_
+
+### 13. Component-test gap on `numTurns=0` after refactor from conditional-render to always-render footer cell
+
+- **Source:** github-claude | PR #122 round 3 | 2026-05-01
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/ActivityFooter.test.tsx`
+- **Finding:** The PR refactored `ActivityFooter` from a conditional-render pattern (no cell when `numTurns=0`) to an always-render pattern (`{n} turn|turns`). The pre-existing test `does not render a turns cell` was deleted and replaced with `renders singular turn label` (numTurns=1) plus a localized 1,234 case. No test exercised `numTurns=0` — the initial value of `createDefaultStatus().numTurns`, visible to users during the pre-activity window between agent detection and the first `agent-turn` replay event. Without a test, the contract was undocumented: a future contributor could re-add a `{numTurns > 0 && …}` guard thinking it's "what was meant" and silently regress the always-render intent.
+- **Fix:** Added `renders 0 turns during the pre-activity window before the first agent-turn event` test that locks the always-render-with-zero contract. The test comment also documents the alternative path: if the design intent is to hide the cell pre-activity, both the test and the component must change together — not one without the other.
+- **Commit:** _(see git log for the round-3 fix commit)_
+
+### 14. Pure predicates covered only by an integration test — edge cases unpinned
+
+- **Source:** github-claude | PR #122 round 4 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/agent/transcript.rs`
+- **Finding:** `is_user_prompt` and `is_non_empty_user_block` had no in-module unit tests. Their behavior was exercised only by the integration test in `tests/transcript_turns.rs` (4–5 message shapes through a real Tauri mock app + watcher). Several edge cases were unverified by any test: whitespace-only string, empty string, empty array, all-tool_result array, mixed `tool_result + text`, unknown block type fallthrough, `text` block missing the `text` field, `text` block with non-string `text` value, block with no `type` field, block with non-string/null `type` field. Reliance on the heavy integration harness alone meant an edge-case regression would only surface when the Tauri mock app could be stood up — not in fast in-module test loops.
+- **Fix:** Added 11 unit tests directly in the existing `#[cfg(test)] mod tests`: 3 string-path tests (whitespace, empty, non-whitespace), 4 array-path tests (empty, only-tool_result, whitespace-only-text, mixed), 1 non-string-content shape, 1 unknown-block-type fallthrough, 1 text-block-missing-text-field, 1 missing/non-string/null `type` fallthrough. All 11 pass; total `agent::transcript::tests` now 38. Verify-cycle-3 caught a subgap (the `type`-field tests originally only covered explicit text-typed blocks); round-4 closes it with the explicit non-string/null type tests.
+- **Commit:** _(see git log for the round-4 fix commit, plus its codex-verify retry that closed the type-field subgap)_

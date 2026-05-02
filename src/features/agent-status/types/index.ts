@@ -6,6 +6,7 @@ import type { RateLimits } from '../../../bindings/RateLimits'
 // because ts-rs doesn't map Rust Option<T> to nullable TypeScript fields.
 export type {
   AgentToolCallEvent,
+  AgentTurnEvent,
   AgentDetectedEvent,
   AgentDisconnectedEvent,
 } from '../../../bindings'
@@ -39,6 +40,7 @@ export interface AgentStatus {
   rateLimits: RateLimitsState | null
 
   // Activity
+  numTurns: number
   toolCalls: ToolCallState
   recentToolCalls: RecentToolCall[]
 
