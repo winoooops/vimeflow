@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 17
+ref_count: 18
 ---
 
 # Testing Gaps
@@ -241,3 +241,12 @@ filesystem scope restrictions).
 - **Finding:** PR #128 explicitly motivated `collect_process_tree` including the root PID to handle `exec claude` (where the user replaces a shell with the agent binary in-place — the PTY's own root PID becomes `claude` with no shell intermediary). The implementation was correct; the comment documented the contract; both new tests (`detects_only_agent_inside_pty_process_tree`, `ignores_agent_outside_pty_process_tree`) exercised in-tree-descendant scenarios but never the root-IS-agent scenario. A future refactor that restored the old skip-root behavior would silently regress the PR's primary motivating use case while passing every existing test. Same finding-class as #6/#16/#17 — a contract documented in code/comments but not pinned by an assertion that fails when the contract breaks.
 - **Fix:** Added `detects_agent_at_pty_root_via_exec` test using a `MockProcessSource` whose root PID 12 maps directly to `claude` cmdlines with no `children` entry. Asserts `detect_agent_with_source(12, &source) == Some((AgentType::ClaudeCode, 12))`. If a future refactor reverts to skip-root, the descendant lookup returns no candidates and the assertion fails on `None`.
 - **Commit:** _(see git log for the round-1 fix commit)_
+
+### 26. Mutually-exclusive option combination not pinned by a test, leaving precedence undocumented
+
+- **Source:** github-claude | PR #130 round 2 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src/features/diff/services/gitPatch.test.ts`
+- **Finding:** `buildGitDiffArgs` accepts both `staged: boolean` and `baseBranch?: string`. The implementation returns the staged form (`['--cached', ...]`) unconditionally when `staged` is true, regardless of whether `baseBranch` is also set — but no test exercised the combination, so the precedence was undocumented. A future maintainer asked to "support staged comparisons against a branch" could plausibly merge the two and would have no failing test to flag the behavior change. Same finding-class as #7 (uncovered guard branch) — multi-input decisions need explicit per-combination coverage, not just per-input.
+- **Fix:** Added a pinning test `staged: true takes precedence over baseBranch (no merge of the two)` asserting the staged form is returned even when both flags are set. Comment in the test documents that they're treated as mutually exclusive call shapes today; combining them would require updating this test, which makes the design choice explicit.
+- **Commit:** _(see git log for the round-2 fix commit)_

@@ -91,6 +91,21 @@ describe('buildGitDiffArgs', () => {
       })
     ).toEqual(['abc1234', '--', 'src/App.tsx'])
   })
+
+  test('staged: true takes precedence over baseBranch (no merge of the two)', () => {
+    // Pinning test for the priority order. `--cached` and a base
+    // branch comparison are mutually exclusive call shapes; the
+    // implementation returns the staged form unconditionally when
+    // staged is true. A future change that tried to combine them
+    // would have to update this test.
+    expect(
+      buildGitDiffArgs({
+        safePath: 'src/App.tsx',
+        staged: true,
+        baseBranch: 'main',
+      })
+    ).toEqual(['--cached', '--', 'src/App.tsx'])
+  })
 })
 
 describe('extractHunkPatch', () => {

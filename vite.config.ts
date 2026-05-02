@@ -250,10 +250,15 @@ function gitApiPlugin(): Plugin {
             // extraction; mixing the two would apply the wrong hunk. The
             // UI is expected to surface base-comparison views as
             // read-only; this is the server-side belt-and-braces.
+            //
+            // The guard mirrors `buildGitDiffArgs`'s own trim-then-falsy
+            // sentinel for "no base in effect" — empty string and
+            // whitespace-only strings produce a working-tree diff there,
+            // so they must not trigger this rejection here either.
             if (
               hunkIndex !== undefined &&
-              base !== undefined &&
-              base !== null
+              typeof base === 'string' &&
+              base.trim() !== ''
             ) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
               res.end(
@@ -370,11 +375,13 @@ function gitApiPlugin(): Plugin {
             // Same belt-and-braces guard as /api/git/stage: refuse
             // hunk-level discard when a base= comparison is in effect,
             // because the display hunk indexes don't align with the
-            // working-tree patch source.
+            // working-tree patch source. Empty/whitespace-only base
+            // strings fall through to the working-tree path in
+            // `buildGitDiffArgs`, so we mirror that sentinel here.
             if (
               hunkIndex !== undefined &&
-              base !== undefined &&
-              base !== null
+              typeof base === 'string' &&
+              base.trim() !== ''
             ) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
               res.end(

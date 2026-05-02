@@ -3,7 +3,7 @@ id: git-operations
 category: correctness
 created: 2026-04-09
 last_updated: 2026-05-02
-ref_count: 4
+ref_count: 5
 ---
 
 # Git Operations
@@ -140,3 +140,12 @@ between display and mutation operations.
 - **Finding:** PR #130 added a `base=<branch>` query parameter to the display endpoint so the UI could show a branch-comparison diff (e.g. PR review). The mutation endpoints (`/api/git/stage`, `/api/git/discard`) continued to extract patches from the working-tree diff via `buildGitDiffArgs({ ..., staged: false })`. In mixed committed + uncommitted states, the branch-comparison hunk list and the working-tree hunk list can differ, so a `hunkIndex` taken from the displayed (base=) view points at a different hunk in the patch source — the wrong patch gets applied. The PR's intent was that base= mode is "read-only", but there was no server-side enforcement. Same finding-class as #13 (displayed diff source diverged from hunk mutation source) — a UI-layer contract that depends on display+mutation alignment but isn't enforced server-side.
 - **Fix:** Added an early-return 400 to both stage and discard handlers when `hunkIndex` is present AND the request body carries a non-null `base`. Error message documents the divergence and suggests staging/discarding the whole file instead. The UI can still surface base= views as read-only at the UI level; this guard exists purely as belt-and-braces so a misbehaving client (current or future) can't trip the mismatch silently.
 - **Commit:** _(see git log for the round-1 fix commit)_
+
+### 15. Defensive guard's "value present" check rejects sentinel values the producer treats as absent
+
+- **Source:** github-claude | PR #130 round 2 | 2026-05-02
+- **Severity:** MEDIUM
+- **File:** `vite.config.ts`
+- **Finding:** Round-1 added a guard `hunkIndex !== undefined && base !== undefined && base !== null` to reject hunk-level mutations against branch-comparison views. But the consumer of `base` — `buildGitDiffArgs` — uses `baseBranch?.trim()` and falsy-checks the result, so empty strings and whitespace-only strings are treated as "no base" and produce a working-tree diff. The guard's stricter "any non-undefined non-null" check disagreed: a client sending `{ base: "" }` gets a 400 even though the server-side diff would have aligned with the working-tree mutation source. Same finding-class as the round-1 #14 issue itself — a contract that depends on alignment but isn't enforced consistently across the participating call sites.
+- **Fix:** Tightened both guards to `typeof base === 'string' && base.trim() !== ''` so they share `buildGitDiffArgs`'s trim-then-falsy sentinel for "no base in effect". Empty/whitespace strings now consistently mean "no base"; only a meaningful branch-comparison value triggers the rejection. (A shared `isActiveBranch(b: unknown): b is string` helper would centralize this further; deferred as a small follow-up.)
+- **Commit:** _(see git log for the round-2 fix commit)_
