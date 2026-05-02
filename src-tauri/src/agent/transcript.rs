@@ -1,7 +1,8 @@
 //! Transcript JSONL parser for Claude Code tool call tracking
 //!
-//! Tails a Claude Code transcript JSONL file and extracts tool call events.
-//! Emits `agent-tool-call` Tauri events for each tool call start and completion.
+//! Tails a Claude Code transcript JSONL file and extracts activity events.
+//! Emits `agent-tool-call` Tauri events for each tool call start/completion
+//! and `agent-turn` events as real user prompts are observed.
 
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -14,7 +15,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use tauri::Emitter;
 
-use super::types::{AgentToolCallEvent, ToolCallStatus};
+use super::types::{AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
 use crate::agent::test_runners::emitter::TestRunEmitter;
 use crate::agent::test_runners::matcher::{match_command, MatchedCommand};
 
@@ -281,6 +282,7 @@ fn tail_loop<R: tauri::Runtime>(
 
     // In-flight tool calls: tool_use_id -> call details
     let mut in_flight: InFlightToolCalls = HashMap::new();
+    let mut num_turns = 0_u32;
 
     // Replay-aware emitter — buffers test-run snapshots during the initial
     // catch-up read and emits the latest one (only) on the first EOF. Once
@@ -311,6 +313,7 @@ fn tail_loop<R: tauri::Runtime>(
                     &app_handle,
                     &mut emitter,
                     &mut in_flight,
+                    &mut num_turns,
                 );
             }
             Err(e) => {
@@ -329,6 +332,7 @@ fn process_line<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
     emitter: &mut TestRunEmitter<R>,
     in_flight: &mut InFlightToolCalls,
+    num_turns: &mut u32,
 ) {
     let value: Value = match serde_json::from_str(line) {
         Ok(v) => v,
@@ -345,7 +349,9 @@ fn process_line<R: tauri::Runtime>(
             process_assistant_message(&value, session_id, cwd, app_handle, in_flight);
         }
         "user" => {
-            process_user_message(&value, session_id, cwd, app_handle, emitter, in_flight);
+            process_user_message(
+                &value, session_id, cwd, app_handle, emitter, in_flight, num_turns,
+            );
         }
         "tool_result" => {
             let timestamp = extract_timestamp(&value);
@@ -475,25 +481,40 @@ fn process_user_message<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
     emitter: &mut TestRunEmitter<R>,
     in_flight: &mut InFlightToolCalls,
+    num_turns: &mut u32,
 ) {
-    let content = match message_content_items(value) {
-        Some(arr) => arr,
+    let content = match message_content(value) {
+        Some(content) => content,
         None => return,
     };
 
     let timestamp = extract_timestamp(value);
 
-    for item in content {
-        if is_tool_result_block(item) {
-            process_tool_result(
-                item,
-                session_id,
-                cwd,
-                app_handle,
-                emitter,
-                in_flight,
-                &timestamp,
-            );
+    if let Some(items) = content.as_array() {
+        for item in items {
+            if is_tool_result_block(item) {
+                process_tool_result(
+                    item,
+                    session_id,
+                    cwd,
+                    app_handle,
+                    emitter,
+                    in_flight,
+                    &timestamp,
+                );
+            }
+        }
+    }
+
+    if is_user_prompt(content) {
+        *num_turns = num_turns.saturating_add(1);
+        let event = AgentTurnEvent {
+            session_id: session_id.to_string(),
+            num_turns: *num_turns,
+        };
+
+        if let Err(e) = app_handle.emit("agent-turn", &event) {
+            log::warn!("Failed to emit agent-turn event: {}", e);
         }
     }
 }
@@ -597,15 +618,29 @@ fn process_tool_result<R: tauri::Runtime>(
 }
 
 fn message_content_items(value: &Value) -> Option<&[Value]> {
-    value
-        .get("message")
-        .and_then(|m| m.get("content"))
+    message_content(value)
         .and_then(|c| c.as_array())
         .map(Vec::as_slice)
 }
 
+fn message_content(value: &Value) -> Option<&Value> {
+    value.get("message").and_then(|m| m.get("content"))
+}
+
 fn is_tool_result_block(value: &Value) -> bool {
     value.get("type").and_then(|t| t.as_str()) == Some("tool_result")
+}
+
+fn is_user_prompt(content: &Value) -> bool {
+    if let Some(text) = content.as_str() {
+        return !text.trim().is_empty();
+    }
+
+    let Some(items) = content.as_array() else {
+        return false;
+    };
+
+    !items.is_empty() && items.iter().any(|item| !is_tool_result_block(item))
 }
 
 /// Summarize a tool input Value into a short string (~100 chars max)

@@ -78,6 +78,7 @@ describe('useAgentStatus', () => {
 
     expect(result.current.isActive).toBe(false)
     expect(result.current.agentType).toBeNull()
+    expect(result.current.numTurns).toBe(0)
     expect(result.current.toolCalls.total).toBe(0)
     expect(result.current.recentToolCalls).toEqual([])
   })
@@ -94,6 +95,8 @@ describe('useAgentStatus', () => {
         'agent-tool-call',
         expect.any(Function)
       )
+
+      expect(listen).toHaveBeenCalledWith('agent-turn', expect.any(Function))
     })
   })
 
@@ -112,6 +115,7 @@ describe('useAgentStatus', () => {
     await vi.waitFor(() => {
       expect(eventListeners.get('agent-status')?.length).toBe(0)
       expect(eventListeners.get('agent-tool-call')?.length).toBe(0)
+      expect(eventListeners.get('agent-turn')?.length).toBe(0)
     })
   })
 
@@ -508,6 +512,64 @@ describe('useAgentStatus', () => {
     const ids = result.current.recentToolCalls.map((c) => c.id)
     expect(ids).toEqual(['toolu_C', 'toolu_B', 'toolu_A'])
     expect(new Set(ids).size).toBe(3)
+  })
+
+  test('updates numTurns from matching agent-turn events', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-turn')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-turn', {
+        sessionId: 'pty-session-1',
+        numTurns: 2,
+      })
+    })
+
+    expect(result.current.numTurns).toBe(2)
+  })
+
+  test('keeps max numTurns when transcript replay emits older counts', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-turn')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-turn', {
+        sessionId: 'pty-session-1',
+        numTurns: 4,
+      })
+    })
+
+    act(() => {
+      emit('agent-turn', {
+        sessionId: 'pty-session-1',
+        numTurns: 3,
+      })
+    })
+
+    expect(result.current.numTurns).toBe(4)
+  })
+
+  test('ignores agent-turn events for other sessions', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-turn')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-turn', {
+        sessionId: 'other-pty-id',
+        numTurns: 7,
+      })
+    })
+
+    expect(result.current.numTurns).toBe(0)
   })
 
   test('polls detect_agent_in_session on interval', async () => {

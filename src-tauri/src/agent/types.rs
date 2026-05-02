@@ -154,6 +154,19 @@ pub struct AgentStatusEvent {
     pub rate_limits: RateLimits,
 }
 
+/// Event emitted when a Claude transcript reveals the latest user-prompt count
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Used by frontend and future sub-specs
+pub struct AgentTurnEvent {
+    /// PTY session ID
+    pub session_id: String,
+    /// Number of real user prompts observed in this transcript
+    pub num_turns: u32,
+}
+
 /// Tool call execution status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

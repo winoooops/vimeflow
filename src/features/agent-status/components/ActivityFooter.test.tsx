@@ -7,32 +7,41 @@ describe('ActivityFooter', () => {
     render(
       <ActivityFooter
         totalDurationMs={90_000}
+        numTurns={3}
         linesAdded={42}
         linesRemoved={9}
       />
     )
 
     expect(screen.getByText('1m')).toBeInTheDocument()
+    expect(screen.getByText('3 turns')).toBeInTheDocument()
     expect(screen.getByText('+42 / -9')).toBeInTheDocument()
   })
 
-  test('does not render a turns cell', () => {
+  test('renders singular turn label', () => {
     render(
-      <ActivityFooter totalDurationMs={0} linesAdded={0} linesRemoved={0} />
+      <ActivityFooter
+        totalDurationMs={0}
+        numTurns={1}
+        linesAdded={0}
+        linesRemoved={0}
+      />
     )
 
-    expect(screen.queryByText(/turns?/i)).not.toBeInTheDocument()
+    expect(screen.getByText('1 turn')).toBeInTheDocument()
   })
 
   test('localizes large line counts', () => {
     render(
       <ActivityFooter
         totalDurationMs={0}
+        numTurns={1_234}
         linesAdded={12_345}
         linesRemoved={6_789}
       />
     )
 
+    expect(screen.getByText('1,234 turns')).toBeInTheDocument()
     expect(screen.getByText('+12,345 / -6,789')).toBeInTheDocument()
   })
 })
