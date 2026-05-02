@@ -3,6 +3,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { WorkspaceView } from './WorkspaceView'
 import type { AgentStatus } from '../agent-status/types'
+import { useGitStatus } from '../diff/hooks/useGitStatus'
 
 // Mock TerminalPane / TerminalZone deps to avoid xterm.js in jsdom
 vi.mock('../terminal/components/TerminalPane', () => ({
@@ -98,14 +99,23 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
 }))
 
 vi.mock('../diff/hooks/useGitStatus', () => ({
-  useGitStatus: vi.fn(() => ({
-    files: [],
-    filesCwd: null,
-    loading: false,
-    error: null,
-    refresh: vi.fn(),
-    idle: true,
-  })),
+  // Respect the `enabled` arg so the mock matches real hook semantics
+  // (idle iff disabled). A test that asserts on `enabled: true` later
+  // gets a non-idle return shape, mirroring what the real hook would
+  // return when the parent injects an active subscription.
+  useGitStatus: vi.fn(
+    (
+      _cwd: string | null | undefined,
+      options?: { enabled?: boolean; watch?: boolean }
+    ) => ({
+      files: [],
+      filesCwd: null,
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: options?.enabled === false,
+    })
+  ),
 }))
 
 const capturedSidebarProps: { agentStatus?: AgentStatus } = {}
@@ -193,6 +203,25 @@ describe('WorkspaceView lifted-subscription contract', () => {
     expect(capturedBottomDrawerProps.gitStatus).toBeDefined()
     expect(capturedPanelProps.gitStatus).toBe(
       capturedBottomDrawerProps.gitStatus
+    )
+  })
+
+  test('WorkspaceView calls useGitStatus with enabled: true when an agent is active', async () => {
+    // Locks the activation contract: with `agentStatus.isActive = true`,
+    // WorkspaceView must compute `enabled: true` and pass it into the
+    // shared `useGitStatus` call. Without this assertion, a regression
+    // that flipped `enabled` to `false` (e.g. a misread of `isActive`,
+    // or a typo in the OR-condition with `bottomDrawerTab === 'diff'`)
+    // would silently turn the watcher off — child components would still
+    // render via their `gitStatus !== undefined` fallback path, masking
+    // the regression in the existing reference-equality assertion.
+    render(<WorkspaceView />)
+
+    await screen.findByTestId('agent-status-panel-mock')
+
+    expect(useGitStatus).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ watch: true, enabled: true })
     )
   })
 })

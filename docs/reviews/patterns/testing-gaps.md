@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 10
+ref_count: 11
 ---
 
 # Testing Gaps
@@ -169,3 +169,12 @@ filesystem scope restrictions).
 - **Finding:** Round-2's regression test for the inner-loop stop_flag check (added in round-1 to fix a 10s thread-pin) asserted "no spurious emit fires when stop_flag is set mid-burst." But emit() in `spawn_trailing_debounce_thread` is reached only via the Timeout arm, which already independently guards against stop_flag. So an Ok-arm regression — the very thing the round-1 fix introduced — couldn't change the emit-side observation: the Timeout arm's own guard would still suppress the emit. The test verified a real property (no spurious teardown emit) but couldn't catch the regression it was named after. The actual production risk (resource pinning ≤300ms after teardown until the burst dries up) was unobservable from the channel side. Same finding-class as #6 (regression-guard test that didn't actually verify the property it claimed to guard) — round-3 is the second instance in this codebase where assertion-on-side-effect failed to catch the regression on the guarded path.
 - **Fix:** Restructured `spawn_trailing_debounce_thread` to return `(Sender<()>, Arc<AtomicBool>)`, where the bool is set from a `Drop` guard inside the spawn closure. The completion flag flips on every exit path (any return + panic), giving tests a direct observation of "thread really gone." Production caller ignores the flag (`let (tx, _completed) = ...`). The regression test now observes the flag with a `IDLE_CHECK_MS + 200ms` deadline; under the regressed path, the inner loop stays in `recv_timeout(delay)` per burst event and the deadline expires before the flag flips. Lesson: when a fix lives in branch X of a multi-branch decision, the regression test must observe a property that branch X uniquely affects — not a downstream side-effect that other branches independently produce.
 - **Commit:** _(see git log for the round-3 fix commit)_
+
+### 18. Idle-shaped hook mock + missing arg assertion masks `enabled: false` regression on lifted-state contract
+
+- **Source:** github-claude | PR #125 round 1 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src/features/workspace/WorkspaceView.subscription.test.tsx`
+- **Finding:** The subscription test mocked `useGitStatus` to return a constant `{ idle: true, ... }` shape regardless of the options object the parent passed. With `agentStatus.isActive = true` the production code computes `enabled: true` and starts a watcher; the mock returned the same idle-state object whether `enabled` was true or false. Worse: the test never called `expect(useGitStatusMock).toHaveBeenCalledWith(..., expect.objectContaining({ enabled: true }))`. A regression that passed `enabled: false` (e.g. an accidental flip of the activation OR-condition, or a misread of `agentStatus.isActive`) would still satisfy the existing reference-equality assertions on the captured props (panel + bottom drawer would each receive the same idle object). Watcher would never start in production; UI would show a permanent empty state. Same finding-class as #6 (regression-guard test that didn't actually verify the property it claimed to guard) — a reference-equality assertion is not a substitute for asserting the input that drives the mechanism.
+- **Fix:** Mock factory now reads `options.enabled` and returns `idle: !enabled`, mirroring the real hook's contract (idle iff disabled). Added a new test `WorkspaceView calls useGitStatus with enabled: true when an agent is active` that asserts `expect(useGitStatus).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ watch: true, enabled: true }))`. The pre-existing reference-equality test stays — they cover orthogonal contracts (one hook call vs. correct args).
+- **Commit:** _(see git log for the round-1 fix commit)_
