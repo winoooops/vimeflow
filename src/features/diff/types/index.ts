@@ -22,8 +22,8 @@ export interface SelectedDiffFile {
 /** Parsed diff for a single file */
 export interface FileDiff {
   filePath: string
-  oldPath?: string // for renames
-  newPath?: string // for renames
+  oldPath?: string // for renames and copies
+  newPath?: string // for renames and copies
   hunks: DiffHunk[]
 }
 
