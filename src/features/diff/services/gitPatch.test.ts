@@ -92,6 +92,29 @@ describe('buildGitDiffArgs', () => {
     ).toEqual(['abc1234', '--', 'src/App.tsx'])
   })
 
+  test('rejects baseBranch with a trailing dot or slash (invalid per git check-ref-format)', () => {
+    // Same class as the leading-slash test: git check-ref-format
+    // disallows refs ending in `.` or `/`. Without the explicit
+    // endsWith guards, `feature.` would slip past the regex (which
+    // admits `.` in the trailing class) and produce a 500 from `git
+    // diff feature.` instead of the intended working-tree fallback.
+    expect(
+      buildGitDiffArgs({
+        safePath: 'src/App.tsx',
+        staged: false,
+        baseBranch: 'feature.',
+      })
+    ).toEqual(['--', 'src/App.tsx'])
+
+    expect(
+      buildGitDiffArgs({
+        safePath: 'src/App.tsx',
+        staged: false,
+        baseBranch: 'origin/',
+      })
+    ).toEqual(['--', 'src/App.tsx'])
+  })
+
   test('rejects baseBranch with a leading slash (invalid per git check-ref-format)', () => {
     // Slash is valid as an internal ref separator (feature/cleanup) but
     // not as the first character. Before the round-3 tightening, the

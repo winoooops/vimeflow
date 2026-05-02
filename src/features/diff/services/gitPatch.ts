@@ -25,6 +25,14 @@ const SAFE_BASE_BRANCH_REGEX = /^[a-zA-Z0-9_][a-zA-Z0-9_/.-]*$/
 const isSafeBaseBranch = (baseBranch: string): boolean =>
   baseBranch.length > 0 &&
   !baseBranch.includes('..') &&
+  // Per `git check-ref-format`, ref names may not end with `.` or `/`.
+  // The regex above admits these as trailing characters (the trailing
+  // class is `[a-zA-Z0-9_/.-]*`) — without these explicit endsWith
+  // checks, `feature.` or `origin/` would pass our validation, hit
+  // `git diff feature.`, fail to resolve, and surface as a 500
+  // rather than the intended working-tree fallback.
+  !baseBranch.endsWith('.') &&
+  !baseBranch.endsWith('/') &&
   SAFE_BASE_BRANCH_REGEX.test(baseBranch)
 
 export const buildGitDiffArgs = ({
