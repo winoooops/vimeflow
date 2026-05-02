@@ -2,9 +2,10 @@
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::Read;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
-use super::state::{ManagedSession, PtyState};
+use super::state::{ManagedSession, PtyState, RingBuffer};
 use super::types::*;
 
 /// Debug-only file logger. Compiles to no-op in release builds.
@@ -263,13 +264,15 @@ pub async fn spawn_pty<R: tauri::Runtime>(
     // whenever spawn_pty returns Err, no orphan child remains in
     // PtyState — independent of which step failed.
     let generation = state.next_generation();
+    let ring = Arc::new(Mutex::new(RingBuffer::new(65536)));
+    let read_ring = Arc::clone(&ring);
     let session = ManagedSession {
         master: pty_pair.master,
         writer,
         child,
         cwd: cwd.to_string_lossy().to_string(),
         generation,
-        ring: std::sync::Mutex::new(crate::terminal::state::RingBuffer::new(65536)),
+        ring,
     };
     if let Err((reason, mut rejected)) =
         state.try_insert(request.session_id.clone(), session, 64)
@@ -347,6 +350,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
             cache_clone,
             session_id,
             generation,
+            read_ring,
         )) {
             log::error!("PTY output reader error: {}", e);
         }
@@ -467,25 +471,35 @@ pub fn list_sessions(
         };
 
         // Round 12, Finding 3 (claude LOW): acquire the PtyState sessions
-        // lock once per id and snapshot pid + ring + end_offset together.
+        // lock once per id and snapshot pid + ring handle together.
         // The previous code called `state.get_pid()` (lock #1) then
         // `state.inner_sessions().lock()` (lock #2) — same data under two
         // locks, with a race window between them that the original code
-        // had to detect and demote to Exited. Reading both fields under
-        // a single guard collapses that window and the redundant work.
+        // had to detect and demote to Exited. Reading both fields under a
+        // single short guard collapses that window and the redundant work.
+        //
+        // Issue #100: clone the per-session ring Arc while holding the global
+        // sessions lock, then read bytes/end_offset after dropping it. That
+        // preserves the ring snapshot invariant without serializing
+        // list_sessions behind read-loop appends.
         let status = if cached.exited {
             SessionStatus::Exited {
                 last_exit_code: cached.last_exit_code,
             }
         } else {
-            let sessions_lock = state.inner_sessions().lock().expect("poisoned");
-            if let Some(session) = sessions_lock.get(id) {
-                let pid = session.child.process_id().unwrap_or(0);
-                let ring_guard = session.ring.lock().expect("ring poisoned");
+            let live_session = {
+                let sessions_lock = state.inner_sessions().lock().expect("poisoned");
+                sessions_lock.get(id).map(|session| {
+                    let pid = session.child.process_id().unwrap_or(0);
+                    let ring = Arc::clone(&session.ring);
+                    (pid, ring)
+                })
+            };
+
+            if let Some((pid, ring)) = live_session {
+                let ring_guard = ring.lock().expect("ring poisoned");
                 let bytes = ring_guard.bytes_snapshot();
                 let end_offset = ring_guard.end_offset();
-                drop(ring_guard);
-                drop(sessions_lock);
                 let replay_data = String::from_utf8_lossy(&bytes).to_string();
                 SessionStatus::Alive {
                     pid,
@@ -693,6 +707,7 @@ async fn read_pty_output<R: tauri::Runtime>(
     cache: std::sync::Arc<crate::terminal::cache::SessionCache>,
     session_id: SessionId,
     generation: u64,
+    ring: Arc<Mutex<RingBuffer>>,
 ) -> anyhow::Result<()> {
     log::info!("Starting PTY output reader for session: {}", session_id);
 
@@ -730,14 +745,8 @@ async fn read_pty_output<R: tauri::Runtime>(
             Ok(n) => {
                 // Atomically: append to ring buffer, get chunk_start, drop the lock
                 let chunk_start = {
-                    let sessions = state.inner_sessions().lock().expect("poisoned");
-                    if let Some(session) = sessions.get(&session_id) {
-                        let mut ring = session.ring.lock().expect("ring poisoned");
-                        ring.append(&buf[..n])
-                    } else {
-                        // Session was removed mid-read — exit loop
-                        break;
-                    }
+                    let mut ring = ring.lock().expect("ring poisoned");
+                    ring.append(&buf[..n])
                 };
                 let data = String::from_utf8_lossy(&buf[..n]).to_string();
                 app.emit(
@@ -787,7 +796,7 @@ async fn read_pty_output<R: tauri::Runtime>(
 mod tests {
     use super::*;
     use crate::terminal::cache::SessionCache;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use tauri::test::{mock_builder, MockRuntime};
     use tauri::Manager;
     use tempfile::TempDir;
@@ -1229,7 +1238,6 @@ mod tests {
     fn make_failing_kill_session() -> crate::terminal::state::ManagedSession {
         use crate::terminal::state::{ManagedSession, RingBuffer};
         use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-        use std::sync::Mutex;
         let pty_system = native_pty_system();
         let pty_pair = pty_system
             .openpty(PtySize {
@@ -1252,7 +1260,7 @@ mod tests {
             child: Box::new(FailingKillChild),
             cwd: "/tmp".into(),
             generation: 0,
-            ring: Mutex::new(RingBuffer::new(64)),
+            ring: Arc::new(Mutex::new(RingBuffer::new(64))),
         }
     }
 

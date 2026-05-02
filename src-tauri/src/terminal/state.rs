@@ -12,9 +12,9 @@ static GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Bounded circular byte buffer paired with a monotonic byte offset.
 ///
-/// Both fields advance under the same mutex (the one wrapping `RingBuffer`
-/// inside `ManagedSession`), so a snapshot always returns `(bytes, end_offset)`
-/// where `end_offset == start_offset + bytes.len()`. Required for the
+/// Both fields advance under the same mutex, so a snapshot always returns
+/// `(bytes, end_offset)` where `end_offset == start_offset + bytes.len()`.
+/// Required for the
 /// replay/cursor protocol — see docs/superpowers/specs/2026-04-25-pty-reattach-on-reload-design.md
 /// "Replay Buffer + Offset Cursor".
 pub struct RingBuffer {
@@ -76,7 +76,7 @@ pub struct ManagedSession {
     /// Generation counter — distinguishes old vs new session on ID reuse
     pub generation: u64,
     /// Ring buffer for recent output + monotonic offset (replay protocol)
-    pub ring: Mutex<RingBuffer>,
+    pub ring: Arc<Mutex<RingBuffer>>,
 }
 
 /// Thread-safe PTY session state
@@ -339,8 +339,8 @@ impl PtyState {
     }
 
     /// Internal terminal-module accessor for code that must lock sessions
-    /// directly. Callers must take locks in sessions -> ring order and must
-    /// not call other `PtyState` methods while holding the sessions lock.
+    /// directly. Callers should keep this global lock short-lived; clone
+    /// per-session Arcs out of it before doing ring-buffer work.
     pub(crate) fn inner_sessions(&self) -> &Arc<Mutex<HashMap<SessionId, ManagedSession>>> {
         &self.sessions
     }
@@ -444,7 +444,7 @@ mod tests {
             child,
             cwd: "/tmp".into(),
             generation: 0,
-            ring: Mutex::new(super::RingBuffer::new(64)),
+            ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
         }
     }
 
@@ -514,7 +514,7 @@ mod tests {
             child: Box::new(FailingKillChild),
             cwd: "/tmp".into(),
             generation: 0,
-            ring: Mutex::new(super::RingBuffer::new(64)),
+            ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
         }
     }
 
