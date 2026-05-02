@@ -18,8 +18,8 @@ const EMPTY_SNAPSHOT: OrchestratorSnapshot = {
 
 export interface OrchestratorService {
   loadWorkflow(workflowPath: string): Promise<OrchestratorSnapshot>
-  refreshSnapshot(): Promise<OrchestratorSnapshot>
-  setPaused(paused: boolean): Promise<OrchestratorSnapshot>
+  refreshSnapshot(): Promise<ControlBatch>
+  setPaused(paused: boolean): Promise<ControlBatch>
   dispatchOnce(): Promise<DispatchBatch>
   stopRun(issueId: string): Promise<ControlBatch>
   retryIssue(issueId: string): Promise<DispatchBatch>
@@ -37,17 +37,17 @@ export class TauriOrchestratorService implements OrchestratorService {
     }
   }
 
-  async refreshSnapshot(): Promise<OrchestratorSnapshot> {
+  async refreshSnapshot(): Promise<ControlBatch> {
     try {
-      return await invoke<OrchestratorSnapshot>('refresh_orchestrator_snapshot')
+      return await invoke<ControlBatch>('refresh_orchestrator_snapshot')
     } catch (error) {
       throw commandError('refresh orchestrator snapshot', error)
     }
   }
 
-  async setPaused(paused: boolean): Promise<OrchestratorSnapshot> {
+  async setPaused(paused: boolean): Promise<ControlBatch> {
     try {
-      return await invoke<OrchestratorSnapshot>('set_orchestrator_paused', {
+      return await invoke<ControlBatch>('set_orchestrator_paused', {
         request: { paused },
       })
     } catch (error) {
@@ -116,14 +116,20 @@ export class MockOrchestratorService implements OrchestratorService {
     return Promise.resolve(this.snapshot)
   }
 
-  refreshSnapshot(): Promise<OrchestratorSnapshot> {
-    return Promise.resolve(this.snapshot)
+  refreshSnapshot(): Promise<ControlBatch> {
+    return Promise.resolve({
+      snapshot: this.snapshot,
+      events: [],
+    })
   }
 
-  setPaused(paused: boolean): Promise<OrchestratorSnapshot> {
+  setPaused(paused: boolean): Promise<ControlBatch> {
     this.snapshot = { ...this.snapshot, paused }
 
-    return Promise.resolve(this.snapshot)
+    return Promise.resolve({
+      snapshot: this.snapshot,
+      events: [],
+    })
   }
 
   dispatchOnce(): Promise<DispatchBatch> {

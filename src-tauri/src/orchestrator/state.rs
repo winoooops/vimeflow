@@ -266,6 +266,12 @@ impl OrchestratorState {
             })
     }
 
+    pub fn running_runs(&self) -> Vec<OrchestratorRun> {
+        let mut runs: Vec<_> = self.running.values().cloned().collect();
+        runs.sort_by(|left, right| left.issue_identifier.cmp(&right.issue_identifier));
+        runs
+    }
+
     pub fn retry_entry(&self, issue_id: &str) -> Result<RetryEntry, StateError> {
         self.retry_queue
             .get(issue_id)
@@ -273,6 +279,10 @@ impl OrchestratorState {
             .ok_or_else(|| StateError::IssueNotRetrying {
                 issue_id: issue_id.to_string(),
             })
+    }
+
+    pub fn terminal_status(&self, issue_id: &str) -> Option<RunStatus> {
+        self.terminal_statuses.get(issue_id).copied()
     }
 
     pub fn active_work(&self) -> Vec<ActiveWork> {

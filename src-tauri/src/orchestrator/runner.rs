@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use serde::Serialize;
@@ -30,6 +32,15 @@ pub struct AgentRun {
     pub stderr_log_path: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRunExit {
+    pub run_id: String,
+    pub success: bool,
+    pub exit_code: Option<i32>,
+    pub message: String,
+}
+
 pub trait AgentRunner {
     fn start(&self, request: AgentRunRequest) -> Result<AgentRun, AgentRunnerError>;
 
@@ -39,10 +50,16 @@ pub trait AgentRunner {
             message: "agent runner does not support stop".to_string(),
         })
     }
+
+    fn take_finished(&self, _run_id: &str) -> Option<AgentRunExit> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct CommandAgentRunner;
+pub struct CommandAgentRunner {
+    finished_runs: Arc<Mutex<HashMap<String, AgentRunExit>>>,
+}
 
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum AgentRunnerError {
@@ -105,14 +122,33 @@ impl AgentRunner for CommandAgentRunner {
         drop(stdin);
 
         let process_id = child.id();
+        let run_id = format!("{}:process-{process_id}", request.issue.id);
+        let finished_runs = Arc::clone(&self.finished_runs);
+        let thread_run_id = run_id.clone();
         thread::spawn(move || {
-            if let Err(error) = child.wait() {
-                log::warn!("failed to wait for orchestrator agent process: {error}");
+            let exit = match child.wait() {
+                Ok(status) => AgentRunExit::from_status(thread_run_id, status),
+                Err(error) => {
+                    let message = format!("failed to wait for agent process: {error}");
+                    log::warn!("{message}");
+                    AgentRunExit {
+                        run_id: thread_run_id,
+                        success: false,
+                        exit_code: None,
+                        message,
+                    }
+                }
+            };
+
+            if let Ok(mut guard) = finished_runs.lock() {
+                guard.insert(exit.run_id.clone(), exit);
+            } else {
+                log::warn!("failed to record completed orchestrator agent process");
             }
         });
 
         Ok(AgentRun {
-            run_id: format!("{}:process-{process_id}", request.issue.id),
+            run_id,
             process_id: Some(process_id),
             stdout_log_path: Some(stdout_log_path),
             stderr_log_path: Some(stderr_log_path),
@@ -128,6 +164,35 @@ impl AgentRunner for CommandAgentRunner {
         };
 
         stop_process(process_id, &run.run_id)
+    }
+
+    fn take_finished(&self, run_id: &str) -> Option<AgentRunExit> {
+        self.finished_runs
+            .lock()
+            .map(|mut guard| guard.remove(run_id))
+            .unwrap_or_else(|_| {
+                log::warn!("failed to read completed orchestrator agent process");
+                None
+            })
+    }
+}
+
+impl AgentRunExit {
+    fn from_status(run_id: String, status: ExitStatus) -> Self {
+        let success = status.success();
+        let exit_code = status.code();
+        let message = if success {
+            "agent process exited successfully".to_string()
+        } else {
+            format!("agent process exited with status {status}")
+        };
+
+        Self {
+            run_id,
+            success,
+            exit_code,
+            message,
+        }
     }
 }
 
@@ -208,7 +273,8 @@ mod tests {
             prompt_file: prompt_file.clone(),
         };
 
-        let run = CommandAgentRunner.start(request).unwrap();
+        let runner = CommandAgentRunner::default();
+        let run = runner.start(request).unwrap();
         wait_for_file(&workspace_dir.path().join("prompt-env.txt"));
 
         assert_eq!(
@@ -239,6 +305,43 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn command_agent_runner_reports_completed_process() {
+        let workspace_dir = TempDir::new().unwrap();
+        let prompt_file = workspace_dir
+            .path()
+            .join(".vimeflow/orchestrator/prompt.md");
+        fs::create_dir_all(prompt_file.parent().unwrap()).unwrap();
+        let runner = CommandAgentRunner::default();
+        let request = AgentRunRequest {
+            issue: issue("issue-108", "#108"),
+            attempt_number: 1,
+            workspace: WorkspacePlan {
+                issue_id: "issue-108".to_string(),
+                issue_identifier: "#108".to_string(),
+                workspace_slug: "108".to_string(),
+                path: workspace_dir.path().to_path_buf(),
+                base_ref: "main".to_string(),
+                branch_name: "agent/108".to_string(),
+                prompt_file: prompt_file.clone(),
+            },
+            command: "sh".to_string(),
+            args: vec!["-c".to_string(), "exit 7".to_string()],
+            prompt: "Fix #108".to_string(),
+            prompt_file,
+        };
+
+        let run = runner.start(request).unwrap();
+        let exit = wait_for_exit(&runner, &run.run_id);
+
+        assert_eq!(exit.run_id, run.run_id);
+        assert!(!exit.success);
+        assert_eq!(exit.exit_code, Some(7));
+        assert!(exit.message.contains("status"));
+        assert!(runner.take_finished(&run.run_id).is_none());
+    }
+
     fn issue(id: &str, identifier: &str) -> OrchestratorIssue {
         OrchestratorIssue {
             id: id.to_string(),
@@ -262,5 +365,16 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         panic!("timed out waiting for {}", path.display());
+    }
+
+    fn wait_for_exit(runner: &CommandAgentRunner, run_id: &str) -> AgentRunExit {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            if let Some(exit) = runner.take_finished(run_id) {
+                return exit;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("timed out waiting for exit {run_id}");
     }
 }

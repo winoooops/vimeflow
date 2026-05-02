@@ -93,12 +93,17 @@ impl OrchestratorService {
         Ok(Self {
             runtime,
             workspace_manager,
-            runner: CommandAgentRunner,
+            runner: CommandAgentRunner::default(),
         })
     }
 
-    fn snapshot(&mut self) -> Result<OrchestratorSnapshot, String> {
-        self.runtime.snapshot().map_err(|error| error.to_string())
+    fn snapshot(&mut self, timestamp: &str) -> Result<ControlBatch, String> {
+        let events = self
+            .runtime
+            .reconcile_finished_runs(&self.runner, timestamp);
+        let snapshot = self.runtime.snapshot().map_err(|error| error.to_string())?;
+
+        Ok(ControlBatch { snapshot, events })
     }
 
     fn set_paused(&mut self, paused: bool) {
@@ -131,28 +136,41 @@ pub async fn load_orchestrator_workflow(
 ) -> Result<OrchestratorSnapshot, String> {
     let workflow_path = validate_workflow_path(&request.workflow_path)?;
     let mut service = OrchestratorService::from_workflow_path(&workflow_path)?;
-    let snapshot = service.snapshot()?;
+    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let batch = service.snapshot(&timestamp)?;
     state.replace_service(service)?;
 
-    Ok(snapshot)
+    Ok(batch.snapshot)
 }
 
 #[tauri::command]
-pub async fn refresh_orchestrator_snapshot(
+pub async fn refresh_orchestrator_snapshot<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, OrchestratorCommandState>,
-) -> Result<OrchestratorSnapshot, String> {
-    state.with_service(|service| service.snapshot())
+) -> Result<ControlBatch, String> {
+    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let batch = state.with_service(|service| service.snapshot(&timestamp))?;
+
+    emit_orchestrator_events(&app, &batch.events);
+
+    Ok(batch)
 }
 
 #[tauri::command]
-pub async fn set_orchestrator_paused(
+pub async fn set_orchestrator_paused<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, OrchestratorCommandState>,
     request: SetOrchestratorPausedRequest,
-) -> Result<OrchestratorSnapshot, String> {
-    state.with_service(|service| {
+) -> Result<ControlBatch, String> {
+    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let batch = state.with_service(|service| {
         service.set_paused(request.paused);
-        service.snapshot()
-    })
+        service.snapshot(&timestamp)
+    })?;
+
+    emit_orchestrator_events(&app, &batch.events);
+
+    Ok(batch)
 }
 
 #[tauri::command]

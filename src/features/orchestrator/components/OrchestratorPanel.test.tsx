@@ -84,11 +84,18 @@ const createService = (
       (): Promise<OrchestratorSnapshot> => Promise.resolve(snapshot)
     ),
     refreshSnapshot: vi.fn(
-      (): Promise<OrchestratorSnapshot> => Promise.resolve(snapshot)
+      (): Promise<{
+        snapshot: OrchestratorSnapshot
+        events: OrchestratorEvent[]
+      }> => Promise.resolve({ snapshot, events: [] })
     ),
     setPaused: vi.fn(
-      (paused: boolean): Promise<OrchestratorSnapshot> =>
-        Promise.resolve({ ...snapshot, paused })
+      (
+        paused: boolean
+      ): Promise<{
+        snapshot: OrchestratorSnapshot
+        events: OrchestratorEvent[]
+      }> => Promise.resolve({ snapshot: { ...snapshot, paused }, events: [] })
     ),
     dispatchOnce: vi.fn(
       (): Promise<DispatchBatch> =>

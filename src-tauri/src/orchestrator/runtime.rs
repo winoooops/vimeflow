@@ -6,11 +6,11 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::orchestrator::{
-    render_prompt, ActiveWork, AgentRun, AgentRunRequest, AgentRunner, AgentRunnerError,
-    AttemptTemplateContext, OrchestratorEvent, OrchestratorIssue, OrchestratorRun,
-    OrchestratorSnapshot, OrchestratorState, PromptTemplateContext, QueueIssue, RetryEntry,
-    RunStatus, StateError, TrackerClient, TrackerError, WorkflowDefinition, WorkspaceManager,
-    WorkspacePlan, WorkspaceTemplateContext,
+    render_prompt, ActiveWork, AgentRun, AgentRunExit, AgentRunRequest, AgentRunner,
+    AgentRunnerError, AttemptTemplateContext, OrchestratorEvent, OrchestratorIssue,
+    OrchestratorRun, OrchestratorSnapshot, OrchestratorState, PromptTemplateContext, QueueIssue,
+    RetryEntry, RunStatus, StateError, TrackerClient, TrackerError, WorkflowDefinition,
+    WorkspaceManager, WorkspacePlan, WorkspaceTemplateContext,
 };
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -111,6 +111,32 @@ where
         self.claim_ready_from_issues(issues, timestamp)
     }
 
+    pub fn reconcile_finished_runs<R>(
+        &mut self,
+        runner: &R,
+        timestamp: &str,
+    ) -> Vec<OrchestratorEvent>
+    where
+        R: AgentRunner,
+    {
+        let mut events = Vec::new();
+
+        for run in self.state.running_runs() {
+            let Some(exit) = runner.take_finished(&run.run_id) else {
+                continue;
+            };
+            let status = if exit.success {
+                RunStatus::Succeeded
+            } else {
+                RunStatus::Failed
+            };
+            self.state.release_issue(&run.issue_id, status);
+            events.push(self.run_exit_event(&run, &exit, timestamp, status));
+        }
+
+        events
+    }
+
     pub fn dispatch_ready<R>(
         &mut self,
         workspace_manager: &WorkspaceManager,
@@ -120,9 +146,10 @@ where
     where
         R: AgentRunner,
     {
+        let mut events = self.reconcile_finished_runs(runner, timestamp);
         let issues = self.tracker.fetch_issues()?;
         let claim_batch = self.claim_ready_from_issues(issues.clone(), timestamp)?;
-        let mut events = claim_batch.events.clone();
+        events.extend(claim_batch.events.clone());
         let mut started = Vec::new();
         let mut failed = Vec::new();
 
@@ -181,7 +208,7 @@ where
         R: AgentRunner,
     {
         let issues = self.tracker.fetch_issues()?;
-        let mut events = Vec::new();
+        let mut events = self.reconcile_finished_runs(runner, timestamp);
         self.reconcile_ineligible_work(&issues, Some(timestamp), &mut events);
 
         self.state.retry_entry(issue_id)?;
@@ -247,8 +274,7 @@ where
 
             let claimable: Vec<_> = issues
                 .iter()
-                .filter(|issue| self.is_active_issue(issue))
-                .filter(|issue| !self.state.is_issue_active(&issue.id))
+                .filter(|issue| self.is_auto_claimable_issue(issue))
                 .take(available_slots)
                 .cloned()
                 .collect();
@@ -600,6 +626,15 @@ where
             .any(|state| state == &issue.state)
     }
 
+    fn is_auto_claimable_issue(&self, issue: &OrchestratorIssue) -> bool {
+        self.is_active_issue(issue)
+            && !self.state.is_issue_active(&issue.id)
+            && !matches!(
+                self.state.terminal_status(&issue.id),
+                Some(RunStatus::Succeeded | RunStatus::Failed | RunStatus::Stopped)
+            )
+    }
+
     fn claim_event(&self, issue: &OrchestratorIssue, timestamp: &str) -> OrchestratorEvent {
         self.issue_event(
             issue,
@@ -678,6 +713,27 @@ where
         }
     }
 
+    fn run_exit_event(
+        &self,
+        run: &OrchestratorRun,
+        exit: &AgentRunExit,
+        timestamp: &str,
+        status: RunStatus,
+    ) -> OrchestratorEvent {
+        OrchestratorEvent {
+            timestamp: timestamp.to_string(),
+            workflow_path: self.workflow.path.clone(),
+            issue_id: run.issue_id.clone(),
+            issue_identifier: run.issue_identifier.clone(),
+            run_id: Some(run.run_id.clone()),
+            attempt_number: Some(run.attempt_number),
+            status,
+            workspace_path: Some(run.workspace_path.clone()),
+            message: Some(exit.message.clone()),
+            error: (!exit.success).then(|| exit.message.clone()),
+        }
+    }
+
     fn issue_event(
         &self,
         issue: &OrchestratorIssue,
@@ -723,9 +779,9 @@ mod tests {
 
     use super::*;
     use crate::orchestrator::{
-        load_workflow_from_path_with_env, AgentRun, AgentRunRequest, AgentRunner, AgentRunnerError,
-        OrchestratorIssue, RunStatus, TrackerClient, TrackerError, WorkflowDefinition,
-        WorkspaceManager,
+        load_workflow_from_path_with_env, AgentRun, AgentRunExit, AgentRunRequest, AgentRunner,
+        AgentRunnerError, OrchestratorIssue, RunStatus, TrackerClient, TrackerError,
+        WorkflowDefinition, WorkspaceManager,
     };
 
     #[derive(Debug, Clone)]
@@ -763,6 +819,7 @@ mod tests {
     struct RecordingRunner {
         requests: Rc<RefCell<Vec<AgentRunRequest>>>,
         stopped_runs: Rc<RefCell<Vec<String>>>,
+        exits: Rc<RefCell<Vec<AgentRunExit>>>,
         result: Result<AgentRun, AgentRunnerError>,
         stop_result: Result<(), AgentRunnerError>,
     }
@@ -772,6 +829,7 @@ mod tests {
             Self {
                 requests: Rc::new(RefCell::new(Vec::new())),
                 stopped_runs: Rc::new(RefCell::new(Vec::new())),
+                exits: Rc::new(RefCell::new(Vec::new())),
                 result: Ok(AgentRun {
                     run_id: run_id.to_string(),
                     process_id: Some(42),
@@ -786,11 +844,16 @@ mod tests {
             Self {
                 requests: Rc::new(RefCell::new(Vec::new())),
                 stopped_runs: Rc::new(RefCell::new(Vec::new())),
+                exits: Rc::new(RefCell::new(Vec::new())),
                 result: Err(AgentRunnerError::Start {
                     message: message.to_string(),
                 }),
                 stop_result: Ok(()),
             }
+        }
+
+        fn push_exit(&self, exit: AgentRunExit) {
+            self.exits.borrow_mut().push(exit);
         }
     }
 
@@ -803,6 +866,13 @@ mod tests {
         fn stop(&self, run: &OrchestratorRun) -> Result<(), AgentRunnerError> {
             self.stopped_runs.borrow_mut().push(run.run_id.clone());
             self.stop_result.clone()
+        }
+
+        fn take_finished(&self, run_id: &str) -> Option<AgentRunExit> {
+            let mut exits = self.exits.borrow_mut();
+            let index = exits.iter().position(|exit| exit.run_id == run_id)?;
+
+            Some(exits.remove(index))
         }
     }
 
@@ -1035,6 +1105,70 @@ mod tests {
             })
         );
         assert!(runner.stopped_runs.borrow().is_empty());
+    }
+
+    #[test]
+    fn reconcile_finished_runs_marks_successful_run_succeeded() {
+        let (_dir, workflow) = workflow_fixture(1);
+        let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
+        let tracker = StaticTracker::with_issues(vec![issue("issue-108", "#108", "open")]);
+        let runner = RecordingRunner::with_run("run-108");
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker);
+
+        runtime
+            .dispatch_ready(&workspace_manager, &runner, "2026-05-02T08:15:00Z")
+            .unwrap();
+        runner.push_exit(AgentRunExit {
+            run_id: "run-108".to_string(),
+            success: true,
+            exit_code: Some(0),
+            message: "agent process exited successfully".to_string(),
+        });
+        let events = runtime.reconcile_finished_runs(&runner, "2026-05-02T08:16:00Z");
+        let snapshot = runtime.snapshot().unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].status, RunStatus::Succeeded);
+        assert_eq!(events[0].error, None);
+        assert_eq!(snapshot.queue[0].status, RunStatus::Succeeded);
+        assert!(snapshot.running.is_empty());
+        assert_eq!(runtime.in_flight_count(), 0);
+    }
+
+    #[test]
+    fn dispatch_ready_reconciles_failed_runs_before_claiming_new_work() {
+        let (_dir, workflow) = workflow_fixture(1);
+        let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
+        let tracker = StaticTracker::with_issues(vec![
+            issue("issue-108", "#108", "open"),
+            issue("issue-109", "#109", "open"),
+        ]);
+        let runner = RecordingRunner::with_run("run-108");
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker);
+
+        runtime
+            .dispatch_ready(&workspace_manager, &runner, "2026-05-02T08:15:00Z")
+            .unwrap();
+        runner.push_exit(AgentRunExit {
+            run_id: "run-108".to_string(),
+            success: false,
+            exit_code: Some(1),
+            message: "agent process exited with status 1".to_string(),
+        });
+        let batch = runtime
+            .dispatch_ready(&workspace_manager, &runner, "2026-05-02T08:16:00Z")
+            .unwrap();
+
+        assert_eq!(batch.claimed.len(), 1);
+        assert_eq!(batch.claimed[0].issue.identifier, "#109");
+        assert_eq!(batch.started[0].issue.identifier, "#109");
+        assert_eq!(batch.events[0].status, RunStatus::Failed);
+        assert_eq!(
+            batch.events[0].error.as_deref(),
+            Some("agent process exited with status 1")
+        );
+        assert_eq!(batch.snapshot.queue[0].status, RunStatus::Failed);
+        assert_eq!(batch.snapshot.queue[1].status, RunStatus::Running);
     }
 
     #[test]

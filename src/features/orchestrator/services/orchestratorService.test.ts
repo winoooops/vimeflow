@@ -76,23 +76,25 @@ describe('TauriOrchestratorService', () => {
   })
 
   test('refreshSnapshot invokes refresh_orchestrator_snapshot', async () => {
-    ;(invoke as Mock).mockResolvedValueOnce(snapshot)
+    const batch = { snapshot, events: [] }
+    ;(invoke as Mock).mockResolvedValueOnce(batch)
 
     const result = await service.refreshSnapshot()
 
     expect(invoke).toHaveBeenCalledWith('refresh_orchestrator_snapshot')
-    expect(result).toBe(snapshot)
+    expect(result).toBe(batch)
   })
 
   test('setPaused invokes set_orchestrator_paused with paused request', async () => {
-    ;(invoke as Mock).mockResolvedValueOnce({ ...snapshot, paused: true })
+    const batch = { snapshot: { ...snapshot, paused: true }, events: [] }
+    ;(invoke as Mock).mockResolvedValueOnce(batch)
 
     const result = await service.setPaused(true)
 
     expect(invoke).toHaveBeenCalledWith('set_orchestrator_paused', {
       request: { paused: true },
     })
-    expect(result.paused).toBe(true)
+    expect(result.snapshot.paused).toBe(true)
   })
 
   test('dispatchOnce invokes dispatch_orchestrator_once', async () => {
