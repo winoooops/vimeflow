@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 7
+ref_count: 8
 ---
 
 # Testing Gaps
@@ -142,3 +142,12 @@ filesystem scope restrictions).
 - **Finding:** `is_user_prompt` and `is_non_empty_user_block` had no in-module unit tests. Their behavior was exercised only by the integration test in `tests/transcript_turns.rs` (4–5 message shapes through a real Tauri mock app + watcher). Several edge cases were unverified by any test: whitespace-only string, empty string, empty array, all-tool_result array, mixed `tool_result + text`, unknown block type fallthrough, `text` block missing the `text` field, `text` block with non-string `text` value, block with no `type` field, block with non-string/null `type` field. Reliance on the heavy integration harness alone meant an edge-case regression would only surface when the Tauri mock app could be stood up — not in fast in-module test loops.
 - **Fix:** Added 11 unit tests directly in the existing `#[cfg(test)] mod tests`: 3 string-path tests (whitespace, empty, non-whitespace), 4 array-path tests (empty, only-tool_result, whitespace-only-text, mixed), 1 non-string-content shape, 1 unknown-block-type fallthrough, 1 text-block-missing-text-field, 1 missing/non-string/null `type` fallthrough. All 11 pass; total `agent::transcript::tests` now 38. Verify-cycle-3 caught a subgap (the `type`-field tests originally only covered explicit text-typed blocks); round-4 closes it with the explicit non-string/null type tests.
 - **Commit:** _(see git log for the round-4 fix commit, plus its codex-verify retry that closed the type-field subgap)_
+
+### 15. Real-time test sleeps with sub-2× margin against the system-under-test's debounce window are CI-fragile
+
+- **Source:** github-claude | PR #124 round 1 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/git/watcher.rs`
+- **Finding:** The `trailing_debounce_emits_once_after_final_burst_event` test sent three events with `sleep(20ms)` gaps against a 60ms debounce window — 35ms of scheduler-jitter margin. On a saturated CI runner `sleep(20ms)` realistically overshoots to 50–100ms. Any single sleep exceeding 60ms splits the burst into independent debounce windows, triggering an early emit and tripping the `recv_timeout(25ms).is_err()` assertion on line 1169. Both sleeps overshooting also breaks the "exactly one emit" assertion at line 1177. The 20/60/35 ratio sat at roughly one Linux scheduler quantum, where typical CI noise routinely violates assumptions. Same finding-class as #11 (sleep-based synchronization in Rust integration test makes timing flaky) — both are absolute-time assertions against the SUT without enough margin to absorb scheduler jitter.
+- **Fix:** Doubled timing budgets: 120ms debounce window, 30ms inter-event sleeps, 50ms negative-window receive, 400ms positive-window receive. Now ~60ms scheduler margin (2× sleep) on the burst-quietness assertion. Adds ~60ms to test runtime in exchange for resilience against typical CI jitter; cheap compared to the alternative of a full event-driven synchronization mechanism.
+- **Commit:** _(see git log for the round-1 fix commit)_

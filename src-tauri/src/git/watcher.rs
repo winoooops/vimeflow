@@ -63,7 +63,22 @@ where
             match rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(()) => loop {
                     match rx.recv_timeout(delay) {
-                        Ok(()) => continue,
+                        Ok(()) => {
+                            // Honor stop_flag inside the inner burst-drain
+                            // loop too. Without this, a continuous event
+                            // burst keeps the thread alive until either the
+                            // burst ends OR every Sender clone drops — and
+                            // the clone held by the notify-watcher closure
+                            // (behind Arc<Mutex<RecommendedWatcher>>) only
+                            // disconnects when the polling thread also
+                            // exits, which can be up to POLL_INTERVAL_SECS
+                            // (10s) later. Checking here lets the thread
+                            // (and its captured Arcs) drop promptly.
+                            if stop_flag.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            continue;
+                        }
                         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                             if !stop_flag.load(Ordering::Relaxed) {
                                 emit();
@@ -1149,32 +1164,37 @@ mod tests {
 
     #[test]
     fn trailing_debounce_emits_once_after_final_burst_event() {
+        // Margins doubled (debounce 60→120ms, sleep 20→30ms) so the test
+        // tolerates ~60ms scheduler jitter on loaded CI runners. The 60ms
+        // / 35ms previous margin sat at roughly one Linux scheduler quantum
+        // and produced spurious failures when sleep(20ms) overshot 60ms,
+        // splitting the burst into separate windows.
         let stop_flag = Arc::new(AtomicBool::new(false));
         let (emitted_tx, emitted_rx) = mpsc::channel::<()>();
         let debounce_tx = spawn_trailing_debounce_thread(
             stop_flag.clone(),
-            Duration::from_millis(60),
+            Duration::from_millis(120),
             move || {
                 emitted_tx.send(()).expect("failed to record debounce emit");
             },
         );
 
         debounce_tx.send(()).expect("failed to send first event");
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(Duration::from_millis(30));
         debounce_tx.send(()).expect("failed to send second event");
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(Duration::from_millis(30));
         debounce_tx.send(()).expect("failed to send third event");
 
         assert!(
-            emitted_rx.recv_timeout(Duration::from_millis(25)).is_err(),
+            emitted_rx.recv_timeout(Duration::from_millis(50)).is_err(),
             "debounce emitted before the burst went quiet"
         );
 
         emitted_rx
-            .recv_timeout(Duration::from_millis(300))
+            .recv_timeout(Duration::from_millis(400))
             .expect("debounce should emit after quiet period");
         assert!(
-            emitted_rx.recv_timeout(Duration::from_millis(100)).is_err(),
+            emitted_rx.recv_timeout(Duration::from_millis(150)).is_err(),
             "burst should produce exactly one trailing emit"
         );
 
