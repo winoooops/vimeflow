@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use ignore::WalkBuilder;
@@ -42,10 +42,70 @@ const IDLE_CHECK_MS: u64 = 100;
 /// Timeout for sync git subprocesses called from the polling thread.
 /// Guards against hangs on NFS/FUSE, stale `.git/index.lock`, or corrupted
 /// packs. `Command::output()` without this would block the polling thread
-/// for the lifetime of the hung child; the stop_flag is only read at the
-/// loop head, so a thread parked inside `output()` never reaches it and
+/// for the lifetime of the hung child; the stop signal is only checked at the
+/// poll boundary, so a thread parked inside `output()` never reaches it and
 /// leaks along with every `Arc` it holds.
 const SYNC_GIT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Interruptible stop signal for polling threads.
+struct WatcherStopSignal {
+    stopped: AtomicBool,
+    wait_lock: Mutex<()>,
+    wait_condvar: Condvar,
+}
+
+impl WatcherStopSignal {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            stopped: AtomicBool::new(false),
+            wait_lock: Mutex::new(()),
+            wait_condvar: Condvar::new(),
+        })
+    }
+
+    fn stop(&self) {
+        {
+            let _guard = self.wait_lock.lock().expect("failed to lock stop signal");
+            self.stopped.store(true, Ordering::Release);
+        }
+        self.wait_condvar.notify_all();
+    }
+
+    fn wait_timeout(&self, timeout: Duration) -> bool {
+        if self.stopped.load(Ordering::Acquire) {
+            return true;
+        }
+
+        let guard = self.wait_lock.lock().expect("failed to lock stop signal");
+        let _guard = self
+            .wait_condvar
+            .wait_timeout_while(guard, timeout, |_| !self.stopped.load(Ordering::Acquire))
+            .expect("failed to wait on stop signal")
+            .0;
+
+        self.stopped.load(Ordering::Acquire)
+    }
+
+    #[cfg(test)]
+    fn wait_timeout_for_test(&self, timeout: Duration, waiter_ready: &AtomicBool) -> bool {
+        if self.stopped.load(Ordering::Acquire) {
+            return true;
+        }
+
+        let guard = self.wait_lock.lock().expect("failed to lock stop signal");
+        // Test-only readiness marker. It is set while `wait_lock` is held:
+        // once the test observes it, `stop()` cannot set `stopped` until this
+        // thread releases the lock into the condvar wait.
+        waiter_ready.store(true, Ordering::Release);
+        let _guard = self
+            .wait_condvar
+            .wait_timeout_while(guard, timeout, |_| !self.stopped.load(Ordering::Acquire))
+            .expect("failed to wait on stop signal")
+            .0;
+
+        self.stopped.load(Ordering::Acquire)
+    }
+}
 
 fn is_notify_not_found(error: &notify::Error) -> bool {
     matches!(error.kind, notify::ErrorKind::PathNotFound)
@@ -201,8 +261,11 @@ struct RepoWatcher {
     /// walk and registers any additions. Shared with the polling thread.
     _watched_dirs: Arc<Mutex<HashSet<PathBuf>>>,
 
-    /// Signals the polling fallback thread to exit
+    /// Signals the trailing debounce thread to exit
     stop_flag: Arc<AtomicBool>,
+
+    /// Wakes and signals the polling fallback thread to exit
+    poll_stop_signal: Arc<WatcherStopSignal>,
 
     /// Hash of the last-seen `git status --porcelain=v1 -z` output.
     /// Changes on any staging/unstaging/edit/delete/add — everything that
@@ -223,18 +286,19 @@ struct PreRepoWatcher {
     subscribers: HashMap<String, u32>,
 
     /// Signals the polling thread to exit
-    stop_flag: Arc<AtomicBool>,
+    stop_signal: Arc<WatcherStopSignal>,
 }
 
 impl Drop for RepoWatcher {
     fn drop(&mut self) {
         self.stop_flag.store(true, Ordering::Relaxed);
+        self.poll_stop_signal.stop();
     }
 }
 
 impl Drop for PreRepoWatcher {
     fn drop(&mut self) {
-        self.stop_flag.store(true, Ordering::Relaxed);
+        self.stop_signal.stop();
     }
 }
 
@@ -521,6 +585,7 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
     let state_clone = state.clone();
     let last_status_hash = Arc::new(Mutex::new(hash_git_status(&toplevel).ok()));
     let stop_flag = Arc::new(AtomicBool::new(false));
+    let poll_stop_signal = WatcherStopSignal::new();
     let debounce_tx = {
         let app_handle = app_handle.clone();
         let state = state_clone.clone();
@@ -624,16 +689,14 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
     let poll_toplevel = toplevel.clone();
     let poll_app_handle = app_handle.clone();
     let poll_state = state_clone.clone();
-    let poll_stop_flag = stop_flag.clone();
+    let poll_thread_stop_signal = poll_stop_signal.clone();
     let poll_last_status_hash = last_status_hash.clone();
     let poll_watcher = watcher_arc.clone();
     let poll_watched_dirs = watched_dirs.clone();
 
     std::thread::spawn(move || {
-        while !poll_stop_flag.load(Ordering::Relaxed) {
-            std::thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
-
-            if poll_stop_flag.load(Ordering::Relaxed) {
+        loop {
+            if poll_thread_stop_signal.wait_timeout(Duration::from_secs(POLL_INTERVAL_SECS)) {
                 break;
             }
 
@@ -700,6 +763,7 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
         _watcher: watcher_arc,
         _watched_dirs: watched_dirs,
         stop_flag,
+        poll_stop_signal,
         _last_status_hash: last_status_hash,
     };
 
@@ -709,9 +773,9 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
     // hold here covers two cases:
     //   (a) Another thread inserted a watcher for the same toplevel
     //       between phase 1 and now (TOCTOU race). We discard our
-    //       locally-built `repo_watcher` — its `Drop` fires `stop_flag`,
-    //       which our just-spawned polling thread observes on its next
-    //       tick and exits cleanly. Then we bump the existing watcher's
+    //       locally-built `repo_watcher` — its `Drop` stops the debounce
+    //       thread and wakes our just-spawned polling thread so it exits
+    //       cleanly. Then we bump the existing watcher's
     //       refcount as if we were a phase-1 hit.
     //   (b) Common case: no race; insert the new watcher.
     //
@@ -728,7 +792,7 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
         if let Some(existing) = repo_watchers.get_mut(&toplevel) {
             // Race: someone else won. Bump THEIR subscribers; our local
             // `repo_watcher` will be dropped when this scope ends,
-            // which fires its stop_flag and shuts down our poll thread.
+            // which stops its debounce and polling threads.
             *existing.subscribers.entry(cwd.to_string()).or_insert(0) += 1;
             state
                 .cwd_to_toplevel
@@ -796,12 +860,12 @@ fn start_pre_repo_watcher_inner<R: tauri::Runtime>(
     }
 
     // Create new pre-repo watcher with polling
-    let stop_flag = Arc::new(AtomicBool::new(false));
+    let stop_signal = WatcherStopSignal::new();
     spawn_pre_repo_poll_thread(
         safe_cwd.clone(),
         app_handle.clone(),
         state.clone(),
-        stop_flag.clone(),
+        stop_signal.clone(),
     );
 
     let mut subscribers = HashMap::new();
@@ -809,7 +873,7 @@ fn start_pre_repo_watcher_inner<R: tauri::Runtime>(
 
     let pre_repo_watcher = PreRepoWatcher {
         subscribers,
-        stop_flag,
+        stop_signal,
     };
 
     pre_repo_watchers.insert(safe_cwd.clone(), pre_repo_watcher);
@@ -832,13 +896,11 @@ fn spawn_pre_repo_poll_thread<R: tauri::Runtime>(
     safe_cwd: PathBuf,
     app_handle: tauri::AppHandle<R>,
     state: GitWatcherState,
-    stop_flag: Arc<AtomicBool>,
+    stop_signal: Arc<WatcherStopSignal>,
 ) {
     std::thread::spawn(move || {
-        while !stop_flag.load(Ordering::Relaxed) {
-            std::thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
-
-            if stop_flag.load(Ordering::Relaxed) {
+        loop {
+            if stop_signal.wait_timeout(Duration::from_secs(POLL_INTERVAL_SECS)) {
                 break;
             }
 
@@ -878,11 +940,11 @@ fn restore_pre_repo_subscribers<R: tauri::Runtime>(
 
     let subscriber_cwds: Vec<String> = subscribers.keys().cloned().collect();
     // Allocated lazily — only the no-existing-watcher branch needs a
-    // fresh stop_flag. Hoisting before the lock would silently drop
+    // fresh stop signal. Hoisting before the lock would silently drop
     // an Arc on the existing-watcher branch, leaving a dead allocation
     // that confuses readers auditing the watcher lifecycle (which
-    // stop_flag governs which thread?).
-    let mut new_watcher_stop_flag: Option<Arc<AtomicBool>> = None;
+    // stop signal governs which thread?).
+    let mut new_watcher_stop_signal: Option<Arc<WatcherStopSignal>> = None;
 
     {
         let mut pre_repo_watchers = state
@@ -895,15 +957,15 @@ fn restore_pre_repo_subscribers<R: tauri::Runtime>(
                 *watcher.subscribers.entry(cwd).or_insert(0) += refcount;
             }
         } else {
-            let stop_flag = Arc::new(AtomicBool::new(false));
+            let stop_signal = WatcherStopSignal::new();
             pre_repo_watchers.insert(
                 safe_cwd.clone(),
                 PreRepoWatcher {
                     subscribers,
-                    stop_flag: stop_flag.clone(),
+                    stop_signal: stop_signal.clone(),
                 },
             );
-            new_watcher_stop_flag = Some(stop_flag);
+            new_watcher_stop_signal = Some(stop_signal);
         }
     }
 
@@ -917,7 +979,7 @@ fn restore_pre_repo_subscribers<R: tauri::Runtime>(
         }
     }
 
-    if let Some(stop_flag) = new_watcher_stop_flag {
+    if let Some(stop_signal) = new_watcher_stop_signal {
         // Guard against a known infinite-retry trap: `restore_pre_repo_subscribers`
         // is called *after* `upgrade_to_repo_watcher` succeeded for at least one
         // subscriber on `safe_cwd`, which means `safe_cwd` is already a git
@@ -937,7 +999,7 @@ fn restore_pre_repo_subscribers<R: tauri::Runtime>(
                 safe_cwd,
             );
         } else {
-            spawn_pre_repo_poll_thread(safe_cwd, app_handle.clone(), state.clone(), stop_flag);
+            spawn_pre_repo_poll_thread(safe_cwd, app_handle.clone(), state.clone(), stop_signal);
         }
     }
 
@@ -968,7 +1030,7 @@ fn upgrade_to_repo_watcher<R: tauri::Runtime>(
             .map_err(|e| format!("Failed to lock pre_repo_watchers: {}", e))?;
 
         if let Some(mut watcher) = pre_repo_watchers.remove(&safe_cwd) {
-            // `PreRepoWatcher` impls `Drop` (sets stop_flag), so we can't
+            // `PreRepoWatcher` impls `Drop` (sets stop_signal), so we can't
             // move `subscribers` out by field. `mem::take` swaps it with
             // HashMap::default() (empty map), which is fine because the
             // watcher is about to be dropped anyway.
@@ -1129,8 +1191,7 @@ fn stop_git_watcher_inner(cwd: String, state: GitWatcherState) -> Result<(), Str
             }
 
             // If no more subscribers, remove the watcher (its Drop fires
-            // the stop_flag, which the polling thread observes on its
-            // next wake).
+            // the stop_signal, which wakes the polling thread).
             if watcher.subscribers.is_empty() {
                 repo_watchers.remove(&canonical);
             }
@@ -1258,6 +1319,34 @@ mod tests {
     }
 
     #[test]
+    fn watcher_stop_signal_wakes_timeout_waiter() {
+        let signal = WatcherStopSignal::new();
+        let waiter_signal = signal.clone();
+        let waiter_ready = Arc::new(AtomicBool::new(false));
+        let waiter_ready_for_thread = waiter_ready.clone();
+        let waiter = std::thread::spawn(move || {
+            waiter_signal.wait_timeout_for_test(Duration::from_secs(2), &waiter_ready_for_thread)
+        });
+
+        let wait_deadline = Instant::now() + Duration::from_secs(1);
+        while !waiter_ready.load(Ordering::Acquire) {
+            assert!(
+                Instant::now() < wait_deadline,
+                "waiter should enter the condvar wait"
+            );
+            std::thread::yield_now();
+        }
+        let wait_started_at = Instant::now();
+        signal.stop();
+
+        assert!(waiter.join().expect("waiter thread should not panic"));
+        assert!(
+            wait_started_at.elapsed() < Duration::from_secs(1),
+            "stop should wake waiter before the timeout elapses"
+        );
+    }
+
+    #[test]
     fn upgrade_to_repo_watcher_emits_once_for_duplicate_original_cwd() {
         let app = tauri::test::mock_builder()
             .build(tauri::generate_context!())
@@ -1287,7 +1376,7 @@ mod tests {
                 safe_cwd.clone(),
                 PreRepoWatcher {
                     subscribers,
-                    stop_flag: Arc::new(AtomicBool::new(false)),
+                    stop_signal: WatcherStopSignal::new(),
                 },
             );
 
@@ -1351,7 +1440,7 @@ mod tests {
                 safe_cwd.clone(),
                 PreRepoWatcher {
                     subscribers,
-                    stop_flag: Arc::new(AtomicBool::new(false)),
+                    stop_signal: WatcherStopSignal::new(),
                 },
             );
 
