@@ -190,6 +190,13 @@ describe('WorkspaceView lifted-subscription contract', () => {
     capturedPanelProps.agentStatus = undefined
     capturedPanelProps.gitStatus = undefined
     capturedBottomDrawerProps.gitStatus = undefined
+    // Clear the mock between tests so `toHaveBeenCalledWith` assertions
+    // see only the calls from THIS test's render. Without this,
+    // accumulated history from earlier tests can satisfy the assertion
+    // vacuously — e.g. tests 1+2 already trigger `enabled: true` calls,
+    // making test 3's assertion pass even if test 3's own render
+    // computed `enabled: false`.
+    vi.mocked(useGitStatus).mockClear()
   })
 
   test('Sidebar and AgentStatusPanel receive agentStatus from a single hook call', async () => {

@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 13
+ref_count: 14
 ---
 
 # Testing Gaps
@@ -196,3 +196,21 @@ filesystem scope restrictions).
 - **Finding:** Round-2 added an inline `const useGitStatusSpy = vi.spyOn(useGitStatusModule, 'useGitStatus')` to assert `enabled: false` was passed to the internal hook. The matching `useGitStatusSpy.mockRestore()` lived at the bottom of the test, with no try/finally guard. If `render()` or any `expect(...)` between the spy creation and the restore throws, `mockRestore()` is skipped and the spy permanently wraps the module export for the rest of the test file. The next test (`'renders ToolCallSummary and ActivityFeed inside the scrollable region'`) calls the same hook through the leaked spy, so call counts accumulate on a spy that nothing tracks. Worst case for `toHaveBeenCalled`-shape assertions later in the file: inflated totals → false positives. The module-level mock is a plain factory (not vi.fn), so the leaked spy can't be inspected or cleared without manual intervention. Same finding-class as #18+#19 (lifted-state assertions that don't constrain what they claim) only at the test-hygiene level: the cleanup invariant is named ("restore the spy") but not enforced by structure.
 - **Fix:** Wrapped the test body in `try { render + asserts } finally { useGitStatusSpy.mockRestore() }`. Cleanup now fires even if any assertion throws. Alternative considered: enable `restoreMocks: true` globally in `vitest.config.ts` — rejected for this PR because it would change behavior across the whole suite (every spy auto-restores), which is a separate refactor with its own review cycle.
 - **Commit:** _(see git log for the round-3 fix commit)_
+
+### 21. `toHaveBeenCalledWith` against accumulated mock history is vacuous unless `mockClear()` resets per-test
+
+- **Source:** github-claude | PR #125 round 4 | 2026-05-02
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.subscription.test.tsx`
+- **Finding:** `vi.fn()` mocks accumulate call history across tests by default. The round-1 assertion `expect(useGitStatus).toHaveBeenCalledWith(..., { enabled: true })` was structurally correct for the test's goal — but `tests 1+2 already triggered `useGitStatus({ enabled: true })`calls during their own renders. By the time the assertion executed, the mock's history already contained satisfying calls regardless of what the round-3 test's own render computed. A regression that flipped`enabled`to`false`in WorkspaceView's computation would leave the assertion green, defeating the round-1 fix entirely. Pairs with the prior round's test 4 which DID use mid-test`mockClear()` correctly — the discipline was named but not applied at the start of every test.
+- **Fix:** Added `vi.mocked(useGitStatus).mockClear()` to the test suite's `beforeEach` block alongside the existing prop-bag resets. Every test now starts with a fresh history, and `toHaveBeenCalledWith` assertions can only pass via the current test's render path.
+- **Commit:** _(see git log for the round-4 fix commit)_
+
+### 22. Pass-through prop forwarding: each render-site branch needs its own coverage
+
+- **Source:** github-claude | PR #125 round 4 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src/features/workspace/components/BottomDrawer.test.tsx`
+- **Finding:** BottomDrawer accepts `gitStatus?` and forwards it to TWO `<DiffPanelContent>` render sites (controlled-with-selectedDiffFile branch and unselected-fallback branch). Round-1 added a single test covering the unselected branch. The selected-file branch — reachable when a user has opened a specific diff file — was not covered by any test in `BottomDrawer.test.tsx`, so a regression that dropped `gitStatus={gitStatus}` from that branch (e.g. during a selectedDiffFile ternary refactor) would silently re-introduce the duplicate-watcher IPC. Codex verify caught this in v1 of round 4. Same finding-class as #7 (uncovered guard branch on doc-change-plus-selection): a multi-branch decision needs coverage for each branch the regression-class can hit, not just the one the author thought about.
+- **Fix:** Split the round-1 test into two siblings — one rendering BottomDrawer without `selectedDiffFile` (unselected branch), one with a synthetic `selectedDiffFile` (controlled branch). Both assert `useGitStatus` was called with `enabled: false`. A regression dropping `gitStatus={gitStatus}` from EITHER `<DiffPanelContent>` render site is now caught.
+- **Commit:** _(see git log for the round-4 fix commit, plus the v1→v2 codex-verify retry that closed the second-branch gap)_
