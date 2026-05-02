@@ -87,9 +87,16 @@ pub enum StateError {
     IssueNotClaimed { issue_id: String },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimedAttempt {
+    pub issue_identifier: String,
+    pub attempt_number: u32,
+    pub previous_error: Option<String>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct OrchestratorState {
-    claimed: HashMap<String, String>,
+    claimed: HashMap<String, ClaimedAttempt>,
     running: HashMap<String, OrchestratorRun>,
     retry_queue: HashMap<String, RetryEntry>,
     terminal_statuses: HashMap<String, RunStatus>,
@@ -127,17 +134,63 @@ impl OrchestratorState {
         }
 
         self.terminal_statuses.remove(&issue.id);
-        self.claimed
-            .insert(issue.id.clone(), issue.identifier.clone());
+        self.claimed.insert(
+            issue.id.clone(),
+            ClaimedAttempt {
+                issue_identifier: issue.identifier.clone(),
+                attempt_number: 1,
+                previous_error: None,
+            },
+        );
 
         Ok(QueueIssue {
             issue: issue.clone(),
             status: RunStatus::Claimed,
             run_id: None,
-            attempt_number: None,
+            attempt_number: Some(1),
             next_retry_at: None,
             last_error: None,
         })
+    }
+
+    pub fn claim_retry(&mut self, issue: &OrchestratorIssue) -> Result<QueueIssue, StateError> {
+        if self.claimed.contains_key(&issue.id) || self.running.contains_key(&issue.id) {
+            return Err(StateError::IssueAlreadyActive {
+                issue_id: issue.id.clone(),
+            });
+        }
+
+        let Some(retry) = self.retry_queue.remove(&issue.id) else {
+            return self.claim_issue(issue);
+        };
+
+        self.terminal_statuses.remove(&issue.id);
+        self.claimed.insert(
+            issue.id.clone(),
+            ClaimedAttempt {
+                issue_identifier: retry.issue_identifier,
+                attempt_number: retry.attempt_number,
+                previous_error: Some(retry.last_error.clone()),
+            },
+        );
+
+        Ok(QueueIssue {
+            issue: issue.clone(),
+            status: RunStatus::Claimed,
+            run_id: None,
+            attempt_number: Some(retry.attempt_number),
+            next_retry_at: None,
+            last_error: Some(retry.last_error),
+        })
+    }
+
+    pub fn claimed_attempt(&self, issue_id: &str) -> Result<ClaimedAttempt, StateError> {
+        self.claimed
+            .get(issue_id)
+            .cloned()
+            .ok_or_else(|| StateError::IssueNotClaimed {
+                issue_id: issue_id.to_string(),
+            })
     }
 
     pub fn mark_running(
@@ -148,11 +201,7 @@ impl OrchestratorState {
         workspace_path: PathBuf,
         started_at: &str,
     ) -> Result<(), StateError> {
-        let Some(issue_identifier) = self.claimed.get(issue_id).cloned() else {
-            return Err(StateError::IssueNotClaimed {
-                issue_id: issue_id.to_string(),
-            });
-        };
+        let claimed_attempt = self.claimed_attempt(issue_id)?;
 
         self.claimed.remove(issue_id);
         self.running.insert(
@@ -160,7 +209,7 @@ impl OrchestratorState {
             OrchestratorRun {
                 run_id: run_id.to_string(),
                 issue_id: issue_id.to_string(),
-                issue_identifier,
+                issue_identifier: claimed_attempt.issue_identifier,
                 attempt_number,
                 status: RunStatus::Running,
                 workspace_path,
@@ -176,6 +225,12 @@ impl OrchestratorState {
         self.running.remove(&entry.issue_id);
         self.terminal_statuses.remove(&entry.issue_id);
         self.retry_queue.insert(entry.issue_id.clone(), entry);
+    }
+
+    pub fn retry_entries(&self) -> Vec<RetryEntry> {
+        let mut entries: Vec<_> = self.retry_queue.values().cloned().collect();
+        entries.sort_by(|left, right| left.issue_identifier.cmp(&right.issue_identifier));
+        entries
     }
 
     pub fn release_issue(&mut self, issue_id: &str, status: RunStatus) {
@@ -228,7 +283,8 @@ impl OrchestratorState {
             };
         }
 
-        let status = if self.claimed.contains_key(&issue.id) {
+        let claimed = self.claimed.get(&issue.id);
+        let status = if claimed.is_some() {
             RunStatus::Claimed
         } else {
             self.terminal_statuses
@@ -241,9 +297,9 @@ impl OrchestratorState {
             issue,
             status,
             run_id: None,
-            attempt_number: None,
+            attempt_number: claimed.map(|claim| claim.attempt_number),
             next_retry_at: None,
-            last_error: None,
+            last_error: claimed.and_then(|claim| claim.previous_error.clone()),
         }
     }
 }
@@ -275,6 +331,7 @@ mod tests {
         let err = state.claim_issue(&issue).unwrap_err();
 
         assert_eq!(claimed.status, RunStatus::Claimed);
+        assert_eq!(claimed.attempt_number, Some(1));
         assert_eq!(
             err,
             StateError::IssueAlreadyActive {
@@ -357,6 +414,32 @@ mod tests {
         state.release_issue("issue-108", RunStatus::Released);
 
         assert!(state.claim_issue(&issue).is_ok());
+    }
+
+    #[test]
+    fn claim_retry_promotes_retry_attempt_and_previous_error() {
+        let mut state = OrchestratorState::new();
+        let issue = issue("issue-108", "#108");
+        state.schedule_retry(RetryEntry {
+            issue_id: "issue-108".to_string(),
+            issue_identifier: "#108".to_string(),
+            attempt_number: 2,
+            next_retry_at: "2026-05-02T00:01:00Z".to_string(),
+            last_error: "agent exited 1".to_string(),
+        });
+
+        let claimed = state.claim_retry(&issue).unwrap();
+        let attempt = state.claimed_attempt("issue-108").unwrap();
+        let snapshot = state.snapshot(vec![issue]);
+
+        assert_eq!(claimed.status, RunStatus::Claimed);
+        assert_eq!(claimed.attempt_number, Some(2));
+        assert_eq!(claimed.last_error.as_deref(), Some("agent exited 1"));
+        assert_eq!(attempt.attempt_number, 2);
+        assert_eq!(attempt.previous_error.as_deref(), Some("agent exited 1"));
+        assert!(snapshot.retry_queue.is_empty());
+        assert_eq!(snapshot.queue[0].status, RunStatus::Claimed);
+        assert_eq!(snapshot.queue[0].attempt_number, Some(2));
     }
 
     #[test]

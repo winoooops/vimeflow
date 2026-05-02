@@ -1,14 +1,15 @@
 use std::fs;
 use std::path::PathBuf;
 
+use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use serde::Serialize;
 use thiserror::Error;
 
 use crate::orchestrator::{
     render_prompt, AgentRun, AgentRunRequest, AgentRunner, AttemptTemplateContext,
     OrchestratorEvent, OrchestratorIssue, OrchestratorSnapshot, OrchestratorState,
-    PromptTemplateContext, QueueIssue, RunStatus, StateError, TrackerClient, TrackerError,
-    WorkflowDefinition, WorkspaceManager, WorkspacePlan, WorkspaceTemplateContext,
+    PromptTemplateContext, QueueIssue, RetryEntry, RunStatus, StateError, TrackerClient,
+    TrackerError, WorkflowDefinition, WorkspaceManager, WorkspacePlan, WorkspaceTemplateContext,
 };
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -17,6 +18,8 @@ pub enum OrchestratorRuntimeError {
     Tracker(#[from] TrackerError),
     #[error(transparent)]
     State(#[from] StateError),
+    #[error("invalid orchestrator timestamp {value}: {message}")]
+    InvalidTimestamp { value: String, message: String },
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -139,7 +142,19 @@ where
         let mut events = Vec::new();
 
         if !self.state.is_paused() {
-            let available_slots = self.available_slots();
+            let mut available_slots = self.available_slots();
+
+            for issue in self.retry_claimable_issues(&issues, timestamp)? {
+                if available_slots == 0 {
+                    break;
+                }
+
+                let claim = self.state.claim_retry(&issue)?;
+                events.push(self.retry_claim_event(&issue, &claim, timestamp));
+                claimed.push(claim);
+                available_slots -= 1;
+            }
+
             let claimable: Vec<_> = issues
                 .iter()
                 .filter(|issue| self.is_active_issue(issue))
@@ -175,8 +190,9 @@ where
     where
         R: AgentRunner,
     {
-        let attempt_number = 1;
         let issue = &claim.issue;
+        let claimed_attempt = self.state.claimed_attempt(&issue.id)?;
+        let attempt_number = claimed_attempt.attempt_number;
 
         events.push(self.issue_event(
             issue,
@@ -199,7 +215,7 @@ where
                     error.to_string(),
                     failed,
                     events,
-                );
+                )?;
                 return Ok(());
             }
         };
@@ -214,7 +230,12 @@ where
             Some("rendering workflow prompt".to_string()),
             None,
         ));
-        let prompt = match self.render_prompt_for_issue(issue, attempt_number, &workspace) {
+        let prompt = match self.render_prompt_for_issue(
+            issue,
+            attempt_number,
+            claimed_attempt.previous_error.as_deref(),
+            &workspace,
+        ) {
             Ok(prompt) => prompt,
             Err(error) => {
                 self.record_dispatch_failure(
@@ -225,7 +246,7 @@ where
                     error.to_string(),
                     failed,
                     events,
-                );
+                )?;
                 return Ok(());
             }
         };
@@ -241,7 +262,7 @@ where
                 ),
                 failed,
                 events,
-            );
+            )?;
             return Ok(());
         }
 
@@ -265,7 +286,7 @@ where
                     error.to_string(),
                     failed,
                     events,
-                );
+                )?;
                 return Ok(());
             }
         };
@@ -301,6 +322,7 @@ where
         &self,
         issue: &OrchestratorIssue,
         attempt_number: u32,
+        previous_error: Option<&str>,
         workspace: &WorkspacePlan,
     ) -> Result<String, crate::orchestrator::WorkflowError> {
         render_prompt(
@@ -309,7 +331,7 @@ where
                 issue: issue.clone(),
                 attempt: AttemptTemplateContext {
                     number: attempt_number,
-                    previous_error: None,
+                    previous_error: previous_error.map(ToString::to_string),
                 },
                 workspace: WorkspaceTemplateContext {
                     path: workspace.path.clone(),
@@ -328,24 +350,118 @@ where
         error: String,
         failed: &mut Vec<DispatchFailure>,
         events: &mut Vec<OrchestratorEvent>,
-    ) {
-        self.state.release_issue(&issue.id, RunStatus::Failed);
-        events.push(self.issue_event(
-            issue,
-            timestamp,
-            RunStatus::Failed,
-            None,
-            Some(attempt_number),
-            workspace_path.clone(),
-            Some("agent dispatch failed".to_string()),
-            Some(error.clone()),
-        ));
+    ) -> Result<(), OrchestratorRuntimeError> {
+        if let Some(retry) =
+            self.retry_entry_for_failure(issue, attempt_number, timestamp, &error)?
+        {
+            self.state.schedule_retry(retry);
+            events.push(self.issue_event(
+                issue,
+                timestamp,
+                RunStatus::RetryScheduled,
+                None,
+                Some(attempt_number),
+                workspace_path.clone(),
+                Some("agent dispatch failed; retry scheduled".to_string()),
+                Some(error.clone()),
+            ));
+        } else {
+            self.state.release_issue(&issue.id, RunStatus::Failed);
+            events.push(self.issue_event(
+                issue,
+                timestamp,
+                RunStatus::Failed,
+                None,
+                Some(attempt_number),
+                workspace_path.clone(),
+                Some("agent dispatch failed".to_string()),
+                Some(error.clone()),
+            ));
+        }
         failed.push(DispatchFailure {
             issue: issue.clone(),
             attempt_number,
             workspace_path,
             error,
         });
+
+        Ok(())
+    }
+
+    fn retry_claimable_issues(
+        &self,
+        issues: &[OrchestratorIssue],
+        timestamp: &str,
+    ) -> Result<Vec<OrchestratorIssue>, OrchestratorRuntimeError> {
+        let mut claimable = Vec::new();
+
+        for retry in self.state.retry_entries() {
+            if !self.is_retry_due(&retry.next_retry_at, timestamp)? {
+                continue;
+            }
+
+            if let Some(issue) = issues
+                .iter()
+                .find(|issue| issue.id == retry.issue_id && self.is_active_issue(issue))
+            {
+                claimable.push(issue.clone());
+            }
+        }
+
+        Ok(claimable)
+    }
+
+    fn retry_entry_for_failure(
+        &self,
+        issue: &OrchestratorIssue,
+        attempt_number: u32,
+        timestamp: &str,
+        error: &str,
+    ) -> Result<Option<RetryEntry>, OrchestratorRuntimeError> {
+        if attempt_number >= u32::from(self.workflow.config.agent.max_attempts) {
+            return Ok(None);
+        }
+
+        Ok(Some(RetryEntry {
+            issue_id: issue.id.clone(),
+            issue_identifier: issue.identifier.clone(),
+            attempt_number: attempt_number + 1,
+            next_retry_at: self.next_retry_at(timestamp, attempt_number)?,
+            last_error: error.to_string(),
+        }))
+    }
+
+    fn next_retry_at(
+        &self,
+        timestamp: &str,
+        failed_attempt_number: u32,
+    ) -> Result<String, OrchestratorRuntimeError> {
+        let timestamp = parse_timestamp(timestamp)?;
+        let delay_ms = self.retry_delay_ms(failed_attempt_number);
+        let delay_ms = delay_ms.min(i64::MAX as u64) as i64;
+        let next_retry = timestamp + Duration::milliseconds(delay_ms);
+
+        Ok(next_retry.to_rfc3339_opts(SecondsFormat::Millis, true))
+    }
+
+    fn retry_delay_ms(&self, failed_attempt_number: u32) -> u64 {
+        let exponent = failed_attempt_number.saturating_sub(1).min(31);
+        let multiplier = 1_u64 << exponent;
+
+        self.workflow
+            .config
+            .polling
+            .interval_ms
+            .saturating_mul(multiplier)
+            .min(self.workflow.config.agent.max_retry_backoff_ms)
+    }
+
+    fn is_retry_due(
+        &self,
+        next_retry_at: &str,
+        timestamp: &str,
+    ) -> Result<bool, OrchestratorRuntimeError> {
+        Ok(parse_timestamp(next_retry_at)? <= parse_timestamp(timestamp)?)
     }
 
     fn available_slots(&self) -> usize {
@@ -368,10 +484,28 @@ where
             timestamp,
             RunStatus::Claimed,
             None,
-            None,
+            Some(1),
             None,
             Some("issue claimed for dispatch".to_string()),
             None,
+        )
+    }
+
+    fn retry_claim_event(
+        &self,
+        issue: &OrchestratorIssue,
+        claim: &QueueIssue,
+        timestamp: &str,
+    ) -> OrchestratorEvent {
+        self.issue_event(
+            issue,
+            timestamp,
+            RunStatus::Claimed,
+            None,
+            claim.attempt_number,
+            None,
+            Some("retry claimed for dispatch".to_string()),
+            claim.last_error.clone(),
         )
     }
 
@@ -399,6 +533,15 @@ where
             error,
         }
     }
+}
+
+fn parse_timestamp(timestamp: &str) -> Result<DateTime<Utc>, OrchestratorRuntimeError> {
+    DateTime::parse_from_rfc3339(timestamp)
+        .map(|timestamp| timestamp.with_timezone(&Utc))
+        .map_err(|error| OrchestratorRuntimeError::InvalidTimestamp {
+            value: timestamp.to_string(),
+            message: error.to_string(),
+        })
 }
 
 #[cfg(test)]
@@ -625,7 +768,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_ready_releases_issue_as_failed_when_runner_start_fails() {
+    fn dispatch_ready_schedules_retry_when_runner_start_fails_before_max_attempts() {
         let (_dir, workflow) = workflow_fixture(1);
         let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
         let tracker = StaticTracker::with_issues(vec![issue("issue-108", "#108", "open")]);
@@ -641,8 +784,79 @@ mod tests {
         assert_eq!(batch.failed[0].issue.identifier, "#108");
         assert_eq!(batch.failed[0].attempt_number, 1);
         assert!(batch.failed[0].error.contains("codex missing"));
-        assert_eq!(batch.snapshot.queue[0].status, RunStatus::Failed);
+        assert_eq!(batch.snapshot.queue[0].status, RunStatus::RetryScheduled);
+        assert_eq!(batch.snapshot.retry_queue.len(), 1);
+        assert_eq!(batch.snapshot.retry_queue[0].attempt_number, 2);
+        assert_eq!(
+            batch.snapshot.retry_queue[0].next_retry_at,
+            "2026-05-02T08:15:30.000Z"
+        );
         assert!(batch.snapshot.running.is_empty());
+        assert_eq!(runtime.in_flight_count(), 0);
+        assert!(batch
+            .events
+            .iter()
+            .any(|event| event.status == RunStatus::RetryScheduled
+                && event.error.as_deref() == Some("failed to start agent: codex missing")));
+    }
+
+    #[test]
+    fn dispatch_ready_retries_due_attempt_with_previous_error() {
+        let (_dir, workflow) = workflow_fixture(1);
+        let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
+        let tracker = StaticTracker::with_issues(vec![issue("issue-108", "#108", "open")]);
+        let failing_runner = RecordingRunner::with_error("codex missing");
+        let success_runner = RecordingRunner::with_run("run-108-retry");
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker);
+
+        runtime
+            .dispatch_ready(&workspace_manager, &failing_runner, "2026-05-02T08:15:00Z")
+            .unwrap();
+        let early = runtime
+            .dispatch_ready(&workspace_manager, &success_runner, "2026-05-02T08:15:29Z")
+            .unwrap();
+        let retried = runtime
+            .dispatch_ready(&workspace_manager, &success_runner, "2026-05-02T08:15:30Z")
+            .unwrap();
+
+        assert!(early.claimed.is_empty());
+        assert!(early.started.is_empty());
+        assert_eq!(early.snapshot.queue[0].status, RunStatus::RetryScheduled);
+        assert_eq!(retried.claimed.len(), 1);
+        assert_eq!(retried.claimed[0].attempt_number, Some(2));
+        assert_eq!(retried.started.len(), 1);
+        assert_eq!(retried.started[0].attempt_number, 2);
+        assert_eq!(retried.snapshot.queue[0].status, RunStatus::Running);
+
+        let requests = success_runner.requests.borrow();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].attempt_number, 2);
+        assert!(requests[0]
+            .prompt
+            .contains("Previous error: failed to start agent: codex missing"));
+        assert!(retried
+            .events
+            .iter()
+            .any(|event| event.message.as_deref() == Some("retry claimed for dispatch")));
+    }
+
+    #[test]
+    fn dispatch_ready_releases_issue_as_failed_after_max_attempts() {
+        let (_dir, mut workflow) = workflow_fixture(1);
+        workflow.config.agent.max_attempts = 1;
+        let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
+        let tracker = StaticTracker::with_issues(vec![issue("issue-108", "#108", "open")]);
+        let runner = RecordingRunner::with_error("codex missing");
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker);
+
+        let batch = runtime
+            .dispatch_ready(&workspace_manager, &runner, "2026-05-02T08:15:00Z")
+            .unwrap();
+
+        assert!(batch.started.is_empty());
+        assert_eq!(batch.failed.len(), 1);
+        assert_eq!(batch.snapshot.queue[0].status, RunStatus::Failed);
+        assert!(batch.snapshot.retry_queue.is_empty());
         assert_eq!(runtime.in_flight_count(), 0);
         assert!(batch
             .events
@@ -681,6 +895,7 @@ agent:
   max_concurrent: {max_concurrent}
 ---
 Fix {{{{ issue.identifier }}}} from attempt {{{{ attempt.number }}}} in workspace {{{{ workspace.path }}}}.
+Previous error: {{{{ attempt.previous_error }}}}.
 "#
             ),
         )
