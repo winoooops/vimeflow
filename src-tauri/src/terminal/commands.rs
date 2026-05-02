@@ -6,30 +6,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
+use crate::debug::debug_log;
+
 use super::state::{ManagedSession, PtyState, RingBuffer};
 use super::types::*;
-
-/// Debug-only file logger. Compiles to no-op in release builds.
-/// Writes to /tmp/vimeflow-debug.log for diagnosing IPC and bridge issues.
-#[cfg(debug_assertions)]
-fn debug_log(tag: &str, msg: &str) {
-    use std::io::Write;
-    use std::time::SystemTime;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("/tmp/vimeflow-debug.log")
-    {
-        let secs = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let _ = writeln!(f, "[{secs}] [{tag}] {msg}");
-    }
-}
-
-#[cfg(not(debug_assertions))]
-fn debug_log(_tag: &str, _msg: &str) {}
 
 fn cleanup_generated_bridge_dir(dir: Option<&std::path::Path>) {
     if let Some(dir) = dir {

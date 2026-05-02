@@ -1,4 +1,5 @@
 pub mod agent;
+mod debug;
 mod filesystem;
 mod git;
 mod terminal;

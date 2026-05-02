@@ -665,12 +665,11 @@ pub async fn start_agent_watcher(
         .join("status.json");
 
     // Use the structured logger (already configured for the rest of this
-    // file) for startup diagnostics. The earlier debug-only file log at
-    // `/tmp/vimeflow-debug.log` was dropped: a fixed predictable path
-    // under /tmp without O_EXCL follows symlinks, allowing a local actor
-    // on a shared system to redirect appends, and Linux's default umask
-    // 022 left the file world-readable. Run with RUST_LOG=debug to see
-    // these lines.
+    // file) for startup diagnostics. The earlier ad-hoc debug-only file
+    // append was dropped: a fixed predictable temp path without O_EXCL
+    // follows symlinks, allowing a local actor on a shared system to
+    // redirect appends, and Linux's default umask 022 left the file
+    // world-readable. Run with RUST_LOG=debug to see these lines.
     log::debug!(
         "Watcher startup detail: session={}, cwd={}, path={}",
         session_id,
