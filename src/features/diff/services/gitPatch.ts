@@ -4,10 +4,20 @@ interface BuildGitDiffArgsOptions {
   baseBranch?: string | null
 }
 
+// Restrict to characters valid in a single git refname segment (letters,
+// digits, plus the separators `_`, `/`, `-`, and `.` as a single character).
+// Specifically blocks the range operators `..` and `...` — `git diff
+// main..HEAD` produces a two-dot range diff (commits reachable from HEAD
+// but not main) whose hunk list can differ from a plain `git diff main`,
+// silently misrepresenting which hunks the UI is showing.
+const SAFE_BASE_BRANCH_REGEX = /^[a-zA-Z0-9_/][a-zA-Z0-9_/.-]*$/
+
 const isSafeBaseBranch = (baseBranch: string): boolean =>
   baseBranch.length > 0 &&
   !baseBranch.startsWith('-') &&
-  !baseBranch.includes('\0')
+  !baseBranch.includes('\0') &&
+  !baseBranch.includes('..') &&
+  SAFE_BASE_BRANCH_REGEX.test(baseBranch)
 
 export const buildGitDiffArgs = ({
   safePath,

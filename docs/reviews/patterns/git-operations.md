@@ -3,7 +3,7 @@ id: git-operations
 category: correctness
 created: 2026-04-09
 last_updated: 2026-05-02
-ref_count: 3
+ref_count: 4
 ---
 
 # Git Operations
@@ -131,3 +131,12 @@ between display and mutation operations.
 - **Finding:** `/api/git/diff` displayed `git diff main -- <file>` while hunk stage/discard extracted patches from `git diff -- <file>`. Mixed committed plus uncommitted changes could shift hunk indexes and stage/discard the wrong patch.
 - **Fix:** Default `/api/git/diff` to the same working-tree diff source used by hunk mutations, keep branch comparison behind explicit `base=<branch>` mode, and reject stale hunk indexes instead of falling back to whole-file operations.
 - **Commit:** issue #22 fix PR
+
+### 14. Display-mode parameter accepted on display endpoint but ignored by mutation endpoints
+
+- **Source:** github-claude | PR #130 round 1 | 2026-05-02
+- **Severity:** MEDIUM
+- **File:** `vite.config.ts` (`/api/git/stage`, `/api/git/discard`)
+- **Finding:** PR #130 added a `base=<branch>` query parameter to the display endpoint so the UI could show a branch-comparison diff (e.g. PR review). The mutation endpoints (`/api/git/stage`, `/api/git/discard`) continued to extract patches from the working-tree diff via `buildGitDiffArgs({ ..., staged: false })`. In mixed committed + uncommitted states, the branch-comparison hunk list and the working-tree hunk list can differ, so a `hunkIndex` taken from the displayed (base=) view points at a different hunk in the patch source — the wrong patch gets applied. The PR's intent was that base= mode is "read-only", but there was no server-side enforcement. Same finding-class as #13 (displayed diff source diverged from hunk mutation source) — a UI-layer contract that depends on display+mutation alignment but isn't enforced server-side.
+- **Fix:** Added an early-return 400 to both stage and discard handlers when `hunkIndex` is present AND the request body carries a non-null `base`. Error message documents the divergence and suggests staging/discarding the whole file instead. The UI can still surface base= views as read-only at the UI level; this guard exists purely as belt-and-braces so a misbehaving client (current or future) can't trip the mismatch silently.
+- **Commit:** _(see git log for the round-1 fix commit)_

@@ -2,8 +2,8 @@
 id: command-injection
 category: security
 created: 2026-04-09
-last_updated: 2026-04-20
-ref_count: 1
+last_updated: 2026-05-02
+ref_count: 2
 ---
 
 # Command Injection
@@ -80,3 +80,12 @@ Beyond the general "no template-string shell commands" rule:
 - **Test with a space-in-path fixture.** Monkey-patch `sys.executable` or
   copy your tool into a `/tmp/has space/` directory in a regression test.
   Static review rarely catches this.
+
+### 6. Allowlist for git refs admits range operators (`..`, `...`) that change diff semantics
+
+- **Source:** github-claude | PR #130 round 1 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src/features/diff/services/gitPatch.ts`
+- **Finding:** `isSafeBaseBranch` blocked `-`-prefixed flag injection and null-byte injection — both real shell-style attacks. It did not block git range operators (`main..HEAD`, `main...HEAD`), which are valid characters in the existing allowlist but completely change git diff's semantics: `git diff main..HEAD` is a two-dot range diff (commits reachable from HEAD but not main), not a simple branch comparison. The displayed hunks would silently misrepresent which changes the user is reviewing. Same finding-class as #4 (untracked diff endpoint allows arbitrary file reads): the validation considered the obvious shell-injection vectors but missed git-semantic injection.
+- **Fix:** Tightened the allowlist to a regex `/^[a-zA-Z0-9_/][a-zA-Z0-9_/.-]*$/` that admits letters, digits, slash, hyphen, underscore, and `.` as a single character — sufficient for branch names, slash-separated ref paths, and SHA-shaped values. Added an explicit `!baseBranch.includes('..')` check on top of the regex so the rejection is unambiguous to readers. Test cases added for `main..HEAD`, `main...HEAD` (both reject → fall back to working-tree path), `feature/diff-cleanup`, and `abc1234` (both accept).
+- **Commit:** _(see git log for the round-1 fix commit)_

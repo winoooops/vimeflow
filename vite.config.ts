@@ -226,7 +226,7 @@ function gitApiPlugin(): Plugin {
           // POST /api/git/stage
           if (pathname === '/api/git/stage' && req.method === 'POST') {
             const body = await readBody(req)
-            const { file, hunkIndex } = JSON.parse(body)
+            const { file, hunkIndex, base } = JSON.parse(body)
 
             if (!file) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -240,6 +240,28 @@ function gitApiPlugin(): Plugin {
             if (!safePath) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
               res.end(JSON.stringify({ error: 'Invalid file path' }))
+
+              return
+            }
+
+            // Refuse hunk-level stage against a branch-comparison diff.
+            // The display-side `base=<branch>` mode produces a different
+            // hunk list than the working-tree diff used here for patch
+            // extraction; mixing the two would apply the wrong hunk. The
+            // UI is expected to surface base-comparison views as
+            // read-only; this is the server-side belt-and-braces.
+            if (
+              hunkIndex !== undefined &&
+              base !== undefined &&
+              base !== null
+            ) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(
+                JSON.stringify({
+                  error:
+                    'Hunk-level stage is not supported when a base= comparison is in effect; the displayed and working-tree hunk indexes can diverge. Stage the whole file instead.',
+                })
+              )
 
               return
             }
@@ -262,14 +284,26 @@ function gitApiPlugin(): Plugin {
 
               const { spawnSync } = await import('child_process')
 
+              // encoding: 'utf-8' so result.stderr is a string we can
+              // forward verbatim. `git apply` failures often carry
+              // actionable detail ("error: patch does not apply",
+              // "corrupt patch at line N", context mismatch); swallowing
+              // them turns every dev-time apply error into a generic 409
+              // with no path forward for the developer.
               const result = spawnSync('git', ['apply', '--cached', '-'], {
                 input: patch,
                 cwd: repoRoot,
+                encoding: 'utf-8',
               })
 
               if (result.status !== 0) {
                 res.writeHead(409, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ error: 'Failed to stage hunk patch' }))
+                res.end(
+                  JSON.stringify({
+                    error: 'Failed to stage hunk patch',
+                    detail: result.stderr ?? '',
+                  })
+                )
 
                 return
               }
@@ -315,7 +349,7 @@ function gitApiPlugin(): Plugin {
           // POST /api/git/discard
           if (pathname === '/api/git/discard' && req.method === 'POST') {
             const body = await readBody(req)
-            const { file, hunkIndex } = JSON.parse(body)
+            const { file, hunkIndex, base } = JSON.parse(body)
 
             if (!file) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -329,6 +363,26 @@ function gitApiPlugin(): Plugin {
             if (!safePath) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
               res.end(JSON.stringify({ error: 'Invalid file path' }))
+
+              return
+            }
+
+            // Same belt-and-braces guard as /api/git/stage: refuse
+            // hunk-level discard when a base= comparison is in effect,
+            // because the display hunk indexes don't align with the
+            // working-tree patch source.
+            if (
+              hunkIndex !== undefined &&
+              base !== undefined &&
+              base !== null
+            ) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(
+                JSON.stringify({
+                  error:
+                    'Hunk-level discard is not supported when a base= comparison is in effect; the displayed and working-tree hunk indexes can diverge. Discard the whole file instead.',
+                })
+              )
 
               return
             }
@@ -365,15 +419,21 @@ function gitApiPlugin(): Plugin {
 
               const { spawnSync } = await import('child_process')
 
+              // Same encoding+stderr-forward as /api/git/stage so a
+              // failed reverse-apply surfaces git's actual error text.
               const result = spawnSync('git', ['apply', '-R', '-'], {
                 input: patch,
                 cwd: repoRoot,
+                encoding: 'utf-8',
               })
 
               if (result.status !== 0) {
                 res.writeHead(409, { 'Content-Type': 'application/json' })
                 res.end(
-                  JSON.stringify({ error: 'Failed to discard hunk patch' })
+                  JSON.stringify({
+                    error: 'Failed to discard hunk patch',
+                    detail: result.stderr ?? '',
+                  })
                 )
 
                 return

@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-04-30
-ref_count: 3
+last_updated: 2026-05-02
+ref_count: 4
 ---
 
 # Error Surfacing
@@ -196,3 +196,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** Step 6.8's issue-comment branch (human findings with `file == null`) handled reply failure by `warn + continue`, but Step 6.6 had already committed `GitHub-Review-Processed-Human-Issue: <COMMENT_ID>` into the trailer. Unlike the inline branches, issue comments have no review thread — Step 1's reconciliation block reads `LIVE_THREAD_STATE` from GraphQL and subtracts stale connector + human-inline IDs, but the threadless surface is invisible to it. Result: a transient `POST /issues/{pr}/comments` failure permanently marked the human comment as processed; the next cycle's Step 2D poll filtered it out, and from the reviewer's perspective the skill silently dropped their feedback. Same anti-pattern as cycle 2's connector-thread reconciliation case (#14), but on the surface where reconciliation could not previously see anything. Loop-completion semantics looked clean while a real reply was missing.
 - **Fix:** Added a side-channel sidecar file `.harness-github-review/replies-failed-human-issue.txt` (gitignored, one COMMENT_ID per line). On reply failure, the issue-comment branch appends `COMMENT_ID` to the file before `continue`; on reply success, the same branch drops `COMMENT_ID` from the file (via awk set-difference) so a previously-failed retry that succeeds doesn't keep re-firing. Step 1 of the next cycle reads the file (if it exists) and subtracts the listed IDs from `PROCESSED_HUMAN_ISSUE_IDS` — symmetric to the existing `Closes-Codex-Threads` reconciliation, but reading from a local file instead of GraphQL. Considered alternatives: (a) commit a `Reply-Failed-Human-Issue` trailer via amend — rejected because the trailer is sealed before reply runs and `--amend --force-with-lease` is destructive on a just-pushed commit; (b) reorder Step 6.6 to commit AFTER reply succeeds — rejected because the reply body cites COMMIT_SHA and would need a 2-commit dance. Sidecar file is symmetric in shape, lives outside `cycle-*` so `loop_start_scan` doesn't wipe it, and operators can `rm` it manually after the queue drains. Documented the file lifecycle in `commit-trailers.md` § Step 6.8 — `replies-failed-human-issue.txt` lifecycle.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 20. `spawnSync` stderr discarded — `git apply` 409s lose actionable detail
+
+- **Source:** github-claude | PR #130 round 1 | 2026-05-02
+- **Severity:** LOW
+- **File:** `vite.config.ts` (`/api/git/stage`, `/api/git/discard`)
+- **Finding:** Both stage and discard endpoints checked `result.status !== 0` after `spawnSync('git', ['apply', ...], { input: patch, cwd: repoRoot })` and returned a generic 409 with `'Failed to stage hunk patch'` / `'Failed to discard hunk patch'`. Because `encoding` wasn't set, `result.stderr` was a Buffer, so even a `.toString()` would have been an extra step the author skipped. Net effect: every `git apply` failure (`error: patch does not apply`, `corrupt patch at line N`, context mismatch) became a content-free 409 the developer had to reproduce in a terminal to diagnose. Same finding-class as #1 / #3 — error swallowed at boundary, downstream consumer left to guess.
+- **Fix:** Added `encoding: 'utf-8'` to the `spawnSync` options so `result.stderr` is a string by construction. The 409 body now carries `{ error: '...', detail: result.stderr ?? '' }`. Same change applied symmetrically to both endpoints. No security concern: this is a Vite dev-server endpoint operating on the local repo; the stderr content comes from local git.
+- **Commit:** _(see git log for the round-1 fix commit)_

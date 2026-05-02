@@ -49,6 +49,48 @@ describe('buildGitDiffArgs', () => {
       })
     ).toEqual(['--', 'src/App.tsx'])
   })
+
+  test('rejects git range syntax in base branch (..)', () => {
+    // `main..HEAD` is a two-dot range diff (commits reachable from HEAD
+    // but not main), not a simple branch comparison; allowing it would
+    // misrepresent the displayed hunks. Falling back to the no-base
+    // working-tree path is the safe behavior.
+    expect(
+      buildGitDiffArgs({
+        safePath: 'src/App.tsx',
+        staged: false,
+        baseBranch: 'main..HEAD',
+      })
+    ).toEqual(['--', 'src/App.tsx'])
+  })
+
+  test('rejects symmetric difference (...) in base branch', () => {
+    expect(
+      buildGitDiffArgs({
+        safePath: 'src/App.tsx',
+        staged: false,
+        baseBranch: 'main...HEAD',
+      })
+    ).toEqual(['--', 'src/App.tsx'])
+  })
+
+  test('accepts slash-separated ref paths and SHA-shaped values', () => {
+    expect(
+      buildGitDiffArgs({
+        safePath: 'src/App.tsx',
+        staged: false,
+        baseBranch: 'feature/diff-cleanup',
+      })
+    ).toEqual(['feature/diff-cleanup', '--', 'src/App.tsx'])
+
+    expect(
+      buildGitDiffArgs({
+        safePath: 'src/App.tsx',
+        staged: false,
+        baseBranch: 'abc1234',
+      })
+    ).toEqual(['abc1234', '--', 'src/App.tsx'])
+  })
 })
 
 describe('extractHunkPatch', () => {
