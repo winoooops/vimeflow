@@ -23,10 +23,21 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
 
 ## [Unreleased]
 
-### Phase 4 — Agent Status Sidebar (in progress)
+### Phase 4 — Agent Status Sidebar
 
 #### Added
 
+- README hero gif (`docs/media/hero-init.gif`) plus four static screenshots
+  in `docs/media/`: workspace overview, agent status sidebar close-up, git
+  diff viewer, and editor with vim mode. The hero recording (spawn `claude` →
+  `/init` → tool calls stream live) doubles as the manual verification
+  evidence that closed `p4-d6` (real Claude Code session, end-to-end).
+  Capture pipeline (Kooha WebM → ffmpeg 1.5× / 15 fps / 1280px / 80-color
+  palette) documented in `docs/media/CLAUDE.md`.
+  - Bilingual mirror in `README.zh-CN.md`.
+  - Roadmap (`docs/roadmap/progress.yaml`) bumped to v7: Phase 4 status →
+    `done`, with a top-level note listing cross-phase items shipped during
+    Phase 4 (#80, #83, #86, #107, #109, #115, #120).
 - WebdriverIO + tauri-driver E2E infrastructure with native Linux CI: 10 spec
   files (11 tests green locally on Fedora/Nobara) covering app launch, IPC
   round-trip, navigation, PTY spawn, terminal I/O, session lifecycle, multi-tab

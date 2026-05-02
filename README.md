@@ -8,6 +8,14 @@
 
 </div>
 
+<div align="center">
+
+<img src="docs/media/hero-init.gif" alt="Spawning a Claude Code session in Vimeflow and running /init — the agent panel auto-detects and streams tool calls live" width="900" />
+
+<sub>Spawn <code>claude</code>, run <code>/init</code>, watch the agent panel auto-detect and stream tool calls live.</sub>
+
+</div>
+
 > A Tauri desktop app that unifies terminal sessions, file explorer, code editor, and git diff into a single workspace — purpose-built for AI coding agents like Claude Code.
 
 Vimeflow is a **CLI coding agent control plane** built with Tauri 2 (Rust + React/TypeScript). It gives you one window to manage terminal sessions where AI agents work, browse files, review diffs, and edit code — all with vim-style keybindings and a dark atmospheric UI.
@@ -16,7 +24,9 @@ But the product is only half the story. This repository is also a testbed for **
 
 ## What's Built
 
-### Terminal Core (Phase 3 — Latest)
+![Vimeflow workspace — Icon Rail, Sidebar, Terminal Zone with an active Claude Code session, and the Agent Status panel](docs/media/workspace-overview.png)
+
+### Terminal Core (Phase 3)
 
 Full xterm.js terminal integrated with a Tauri Rust PTY backend:
 
@@ -36,7 +46,7 @@ A 4-zone grid layout inspired by IDE + terminal multiplexer patterns:
 - **Agent Activity Panel** — status, metrics, collapsible sections
 - **Context Switcher** — Files / Editor / Diff tabs in a top tab bar
 
-### Agent Status Sidebar (Phase 4 — In Progress)
+### Agent Status Sidebar (Phase 4 — Latest)
 
 Real-time agent observability panel that auto-detects running AI coding agents in terminal sessions:
 
@@ -48,17 +58,27 @@ Real-time agent observability panel that auto-detects running AI coding agents i
 
 Design spec: [`docs/superpowers/specs/2026-04-12-agent-status-sidebar/`](docs/superpowers/specs/2026-04-12-agent-status-sidebar/CLAUDE.md)
 
+<p align="center">
+  <img src="docs/media/agent-status-sidebar.png" alt="Agent Status Sidebar — Current Context gauge, Token Cache block, Activity feed, Files Changed, Tests panel" width="280" />
+</p>
+
+<p align="center"><sub>Right panel close-up — Context gauge, Token Cache, Activity feed, Files Changed, and Tests panel populated by a live Claude Code session.</sub></p>
+
 ### Feature Modules
 
-| Module              | Description                                                                               |
-| ------------------- | ----------------------------------------------------------------------------------------- |
-| **terminal**        | xterm.js + Tauri PTY IPC bridge, session management                                       |
-| **editor**          | IDE-style tabbed editor — CodeMirror 6, vim mode (@replit/codemirror-vim), vim status bar |
-| **diff**            | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard)    |
-| **files**           | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop           |
-| **command-palette** | Vim-style `:command` palette with fuzzy matching and nested command tree                  |
-| **agent-status**    | Real-time agent observability panel (statusline bridge + transcript parsing)              |
-| **workspace**       | Layout shell composing all zones above                                                    |
+| Module              | Description                                                                                                                 |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **terminal**        | xterm.js + Tauri PTY IPC bridge, session management                                                                         |
+| **editor**          | IDE-style tabbed editor — CodeMirror 6, vim mode (@replit/codemirror-vim), vim status bar                                   |
+| **diff**            | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard)                                      |
+| **files**           | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop                                             |
+| **command-palette** | Vim-style `:` palette (global shortcut, fuzzy match, namespace drill-in) — built-in command registry shipping incrementally |
+| **agent-status**    | Real-time agent observability panel (statusline bridge + transcript parsing)                                                |
+| **workspace**       | Layout shell composing all zones above                                                                                      |
+
+![Editor with vim mode — `:w` typed, status bar shows -- NORMAL --](docs/media/editor-vim.png)
+
+![Diff Viewer — changed files list and a hunk with green added lines](docs/media/git-diff.png)
 
 ### Quality
 
@@ -219,7 +239,7 @@ The harness (`harness/`) is a Python loop that spawns `claude -p` per role — i
 | Phase 1  | Done    | Tauri scaffold, Rust compilation, CI green              |
 | Phase 2  | Done    | Workspace layout shell (4-zone grid, all components)    |
 | Phase 3  | Done    | Terminal core (xterm.js + Tauri PTY IPC)                |
-| Phase 4  | WIP     | Agent status sidebar (detection, statusline bridge, UI) |
+| Phase 4  | Done    | Agent status sidebar (detection, statusline bridge, UI) |
 | Phase 5  | Next    | Session management + Zustand state                      |
 | Phase 6+ | Planned | Real git ops, AI agent output streaming, drag-and-drop  |
 

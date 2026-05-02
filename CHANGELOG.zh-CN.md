@@ -22,10 +22,20 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
 
 ## [Unreleased]
 
-### 第 4 阶段 — 代理状态侧边栏（进行中）
+### 第 4 阶段 — 代理状态侧边栏
 
 #### Added
 
+- README 首屏 GIF（`docs/media/hero-init.gif`）以及 `docs/media/` 中的 4
+  张静态截图：工作空间总览、代理状态侧边栏特写、Git Diff 查看器、Vim 模式
+  编辑器。首屏录屏（启动 `claude` → 运行 `/init` → 工具调用实时流入）同
+  时作为 `p4-d6`（真实 Claude Code 会话，端到端）的人工验证证据。抓取流
+  程（Kooha WebM → ffmpeg 1.5×/15 fps/1280px 宽/80 色调色板）记录于
+  `docs/media/CLAUDE.md`。
+  - 中文 README（`README.zh-CN.md`）同步更新。
+  - 路线图（`docs/roadmap/progress.yaml`）升级到 v7：第 4 阶段状态 →
+    `done`，并在顶部 `notes` 中列出第 4 阶段期间跨阶段交付的项目
+    （#80、#83、#86、#107、#109、#115、#120）。
 - 基于 WebdriverIO + tauri-driver 的端到端测试基础设施，并在原生 Linux CI
   中运行：10 个 spec 文件（Fedora/Nobara 本地 11 个测试全部通过），
   覆盖应用启动、IPC 往返、导航、PTY 启动、终端读写、会话生命周期、多标签
