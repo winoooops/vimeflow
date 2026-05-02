@@ -16,7 +16,7 @@ interface UseGitStatusOptions {
   enabled?: boolean
 }
 
-interface UseGitStatusReturn {
+export interface UseGitStatusReturn {
   files: ChangedFile[]
   /** The cwd of the last successful fetch — never updates on failure or fetch-start */
   filesCwd: string | null

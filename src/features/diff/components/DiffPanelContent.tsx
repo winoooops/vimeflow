@@ -5,7 +5,7 @@ import {
   useCallback,
   useMemo,
 } from 'react'
-import { useGitStatus } from '../hooks/useGitStatus'
+import { useGitStatus, type UseGitStatusReturn } from '../hooks/useGitStatus'
 import { useFileDiff } from '../hooks/useFileDiff'
 import { ChangedFilesList } from './ChangedFilesList'
 import { DiffViewer } from './DiffViewer'
@@ -30,6 +30,8 @@ type DiffPanelSelectionControl =
 interface DiffPanelContentBaseProps {
   /** Working directory for git commands */
   cwd?: string
+  /** Optional shared git status from a parent-level watcher subscription */
+  gitStatus?: UseGitStatusReturn
 }
 
 export type DiffPanelContentProps = DiffPanelContentBaseProps &
@@ -43,16 +45,22 @@ export type DiffPanelContentProps = DiffPanelContentBaseProps &
  */
 export const DiffPanelContent = ({
   cwd = '.',
+  gitStatus = undefined,
   selectedFile: controlledSelectedFile,
   onSelectedFileChange,
 }: DiffPanelContentProps): ReactElement => {
+  const internalGitStatus = useGitStatus(cwd, {
+    watch: true,
+    enabled: gitStatus === undefined,
+  })
+
   const {
     files,
     filesCwd,
     loading: statusLoading,
     error: statusError,
     idle,
-  } = useGitStatus(cwd, { watch: true })
+  } = gitStatus ?? internalGitStatus
 
   const [uncontrolledSelectedFile, setUncontrolledSelectedFile] =
     useState<SelectedDiffFile | null>(null)

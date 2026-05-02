@@ -97,8 +97,22 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   ),
 }))
 
+vi.mock('../diff/hooks/useGitStatus', () => ({
+  useGitStatus: vi.fn(() => ({
+    files: [],
+    filesCwd: null,
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+    idle: true,
+  })),
+}))
+
 const capturedSidebarProps: { agentStatus?: AgentStatus } = {}
-const capturedPanelProps: { agentStatus?: AgentStatus } = {}
+
+const capturedPanelProps: { agentStatus?: AgentStatus; gitStatus?: unknown } =
+  {}
+const capturedBottomDrawerProps: { gitStatus?: unknown } = {}
 
 interface MockSidebarProps {
   agentStatus?: AgentStatus
@@ -106,6 +120,11 @@ interface MockSidebarProps {
 
 interface MockPanelProps {
   agentStatus?: AgentStatus
+  gitStatus?: unknown
+}
+
+interface MockBottomDrawerProps {
+  gitStatus?: unknown
 }
 
 vi.mock('./components/Sidebar', () => ({
@@ -119,10 +138,20 @@ vi.mock('./components/Sidebar', () => ({
 vi.mock('../agent-status/components/AgentStatusPanel', () => ({
   AgentStatusPanel: ({
     agentStatus = undefined,
+    gitStatus = undefined,
   }: MockPanelProps): ReactElement => {
     capturedPanelProps.agentStatus = agentStatus
+    capturedPanelProps.gitStatus = gitStatus
 
     return <div data-testid="agent-status-panel-mock" />
+  },
+}))
+
+vi.mock('./components/BottomDrawer', () => ({
+  default: ({ gitStatus = undefined }: MockBottomDrawerProps): ReactElement => {
+    capturedBottomDrawerProps.gitStatus = gitStatus
+
+    return <div data-testid="bottom-drawer-mock" />
   },
 }))
 
@@ -130,6 +159,8 @@ describe('WorkspaceView lifted-subscription contract', () => {
   beforeEach(() => {
     capturedSidebarProps.agentStatus = undefined
     capturedPanelProps.agentStatus = undefined
+    capturedPanelProps.gitStatus = undefined
+    capturedBottomDrawerProps.gitStatus = undefined
   })
 
   test('Sidebar and AgentStatusPanel receive agentStatus from a single hook call', async () => {
@@ -149,6 +180,19 @@ describe('WorkspaceView lifted-subscription contract', () => {
     // yields the same object reference and `toBe` passes.
     expect(capturedSidebarProps.agentStatus).toBe(
       capturedPanelProps.agentStatus
+    )
+  })
+
+  test('AgentStatusPanel and BottomDrawer receive one shared git status object', async () => {
+    render(<WorkspaceView />)
+
+    await screen.findByTestId('agent-status-panel-mock')
+    await screen.findByTestId('bottom-drawer-mock')
+
+    expect(capturedPanelProps.gitStatus).toBeDefined()
+    expect(capturedBottomDrawerProps.gitStatus).toBeDefined()
+    expect(capturedPanelProps.gitStatus).toBe(
+      capturedBottomDrawerProps.gitStatus
     )
   })
 })

@@ -155,6 +155,34 @@ describe('AgentStatusPanel', () => {
     expect(screen.getByText('+12 / -3')).toBeInTheDocument()
   })
 
+  test('uses shared git status when provided by the parent', () => {
+    render(
+      <AgentStatusPanel
+        agentStatus={activeAgentStatus}
+        cwd="/tmp/repo"
+        onOpenDiff={vi.fn()}
+        gitStatus={{
+          files: [
+            {
+              path: 'shared.ts',
+              status: 'modified',
+              insertions: 20,
+              deletions: 4,
+              staged: false,
+            },
+          ],
+          filesCwd: '/tmp/repo',
+          loading: false,
+          error: null,
+          refresh: vi.fn(),
+          idle: false,
+        }}
+      />
+    )
+
+    expect(screen.getAllByText('+20 / -4')).toHaveLength(2)
+  })
+
   test('renders ToolCallSummary and ActivityFeed inside the scrollable region', () => {
     render(
       <AgentStatusPanel
