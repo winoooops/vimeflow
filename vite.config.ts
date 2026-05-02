@@ -385,28 +385,6 @@ function gitApiPlugin(): Plugin {
               return
             }
 
-            // Same belt-and-braces guard as /api/git/stage: refuse
-            // hunk-level discard when a base= comparison is in effect,
-            // because the display hunk indexes don't align with the
-            // working-tree patch source. Empty/whitespace-only base
-            // strings fall through to the working-tree path in
-            // `buildGitDiffArgs`, so we mirror that sentinel here.
-            if (
-              typeof hunkIndex === 'number' &&
-              typeof base === 'string' &&
-              base.trim() !== ''
-            ) {
-              res.writeHead(400, { 'Content-Type': 'application/json' })
-              res.end(
-                JSON.stringify({
-                  error:
-                    'Hunk-level discard is not supported when a base= comparison is in effect; the displayed and working-tree hunk indexes can diverge. Discard the whole file instead.',
-                })
-              )
-
-              return
-            }
-
             // Check if file is untracked or newly added
             const status = await git.status()
             const fileStatus = status.files.find((f) => f.path === safePath)
@@ -415,13 +393,38 @@ function gitApiPlugin(): Plugin {
               fileStatus &&
               (fileStatus.index === '?' || fileStatus.working_dir === '?')
             ) {
-              // Untracked file — remove from disk
+              // Untracked file — remove from disk. `hunkIndex` is
+              // irrelevant for this branch (git.clean takes the whole
+              // file), so the base= guard does not apply here.
               await git.clean('f', ['--', safePath])
             } else if (fileStatus && fileStatus.index === 'A') {
-              // Staged new file — unstage then remove
+              // Staged new file — unstage then remove. Same: `hunkIndex`
+              // is irrelevant for this branch.
               await git.reset(['HEAD', '--', safePath])
               await git.clean('f', ['--', safePath])
             } else if (typeof hunkIndex === 'number') {
+              // Belt-and-braces guard inside the hunk branch only.
+              // Refuse hunk-level discard when a base= comparison is
+              // in effect — the display hunk indexes don't align with
+              // the working-tree patch source. Round-1 had this guard
+              // at the top of the handler, but that fired the 400
+              // before the untracked / staged-new branches above had a
+              // chance to run, blocking valid operations on files
+              // where `hunkIndex` is irrelevant. Empty/whitespace base
+              // strings fall through to the working-tree path in
+              // `buildGitDiffArgs`, so we mirror that sentinel.
+              if (typeof base === 'string' && base.trim() !== '') {
+                res.writeHead(400, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({
+                    error:
+                      'Hunk-level discard is not supported when a base= comparison is in effect; the displayed and working-tree hunk indexes can diverge. Discard the whole file instead.',
+                  })
+                )
+
+                return
+              }
+
               // Discard a specific hunk via reverse patch
               const fullDiff = await git.diff(
                 buildGitDiffArgs({ safePath, staged: false })
