@@ -93,6 +93,13 @@ pub struct ActiveWork {
     pub last_error: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TerminalEntry {
+    status: RunStatus,
+    attempt_number: Option<u32>,
+    last_error: Option<String>,
+}
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum StateError {
     #[error("issue is already claimed, running, or retrying: {issue_id}")]
@@ -117,7 +124,7 @@ pub struct OrchestratorState {
     claimed: HashMap<String, ClaimedAttempt>,
     running: HashMap<String, OrchestratorRun>,
     retry_queue: HashMap<String, RetryEntry>,
-    terminal_statuses: HashMap<String, RunStatus>,
+    terminal_statuses: HashMap<String, TerminalEntry>,
     paused: bool,
 }
 
@@ -202,6 +209,67 @@ impl OrchestratorState {
         })
     }
 
+    pub fn ensure_issue_retryable(&self, issue_id: &str) -> Result<(), StateError> {
+        if self.retry_queue.contains_key(issue_id) {
+            return Ok(());
+        }
+
+        if matches!(
+            self.terminal_statuses
+                .get(issue_id)
+                .map(|entry| entry.status),
+            Some(RunStatus::Failed | RunStatus::Stopped)
+        ) {
+            return Ok(());
+        }
+
+        Err(StateError::IssueNotRetrying {
+            issue_id: issue_id.to_string(),
+        })
+    }
+
+    pub fn claim_manual_retry(
+        &mut self,
+        issue: &OrchestratorIssue,
+    ) -> Result<QueueIssue, StateError> {
+        self.ensure_issue_retryable(&issue.id)?;
+
+        if self.retry_queue.contains_key(&issue.id) {
+            return self.claim_retry(issue);
+        }
+
+        if self.claimed.contains_key(&issue.id) || self.running.contains_key(&issue.id) {
+            return Err(StateError::IssueAlreadyActive {
+                issue_id: issue.id.clone(),
+            });
+        }
+
+        let terminal = self.terminal_statuses.remove(&issue.id).ok_or_else(|| {
+            StateError::IssueNotRetrying {
+                issue_id: issue.id.clone(),
+            }
+        })?;
+        let attempt_number = terminal.attempt_number.unwrap_or(1).saturating_add(1);
+
+        self.claimed.insert(
+            issue.id.clone(),
+            ClaimedAttempt {
+                issue_identifier: issue.identifier.clone(),
+                attempt_number,
+                previous_error: terminal.last_error.clone(),
+            },
+        );
+
+        Ok(QueueIssue {
+            issue: issue.clone(),
+            status: RunStatus::Claimed,
+            run_id: None,
+            attempt_number: Some(attempt_number),
+            next_retry_at: None,
+            last_error: terminal.last_error,
+        })
+    }
+
     pub fn claimed_attempt(&self, issue_id: &str) -> Result<ClaimedAttempt, StateError> {
         self.claimed
             .get(issue_id)
@@ -282,7 +350,9 @@ impl OrchestratorState {
     }
 
     pub fn terminal_status(&self, issue_id: &str) -> Option<RunStatus> {
-        self.terminal_statuses.get(issue_id).copied()
+        self.terminal_statuses
+            .get(issue_id)
+            .map(|entry| entry.status)
     }
 
     pub fn active_work(&self) -> Vec<ActiveWork> {
@@ -320,10 +390,21 @@ impl OrchestratorState {
     }
 
     pub fn release_issue(&mut self, issue_id: &str, status: RunStatus) {
+        self.release_issue_with_error(issue_id, status, None);
+    }
+
+    pub fn release_issue_with_error(
+        &mut self,
+        issue_id: &str,
+        status: RunStatus,
+        last_error: Option<String>,
+    ) {
+        let terminal = self.terminal_context(issue_id, status, last_error);
         self.claimed.remove(issue_id);
         self.running.remove(issue_id);
         self.retry_queue.remove(issue_id);
-        self.terminal_statuses.insert(issue_id.to_string(), status);
+        self.terminal_statuses
+            .insert(issue_id.to_string(), terminal);
     }
 
     pub fn snapshot(&self, issues: Vec<OrchestratorIssue>) -> OrchestratorSnapshot {
@@ -369,23 +450,63 @@ impl OrchestratorState {
             };
         }
 
-        let claimed = self.claimed.get(&issue.id);
+        let issue_id = issue.id.clone();
+        let claimed = self.claimed.get(&issue_id);
         let status = if claimed.is_some() {
             RunStatus::Claimed
         } else {
             self.terminal_statuses
-                .get(&issue.id)
-                .copied()
+                .get(&issue_id)
+                .map(|entry| entry.status)
                 .unwrap_or(RunStatus::Queued)
         };
+        let attempt_number = claimed.map(|claim| claim.attempt_number).or_else(|| {
+            self.terminal_statuses
+                .get(&issue_id)
+                .and_then(|entry| entry.attempt_number)
+        });
+        let last_error = claimed
+            .and_then(|claim| claim.previous_error.clone())
+            .or_else(|| {
+                self.terminal_statuses
+                    .get(&issue_id)
+                    .and_then(|entry| entry.last_error.clone())
+            });
 
         QueueIssue {
             issue,
             status,
             run_id: None,
-            attempt_number: claimed.map(|claim| claim.attempt_number),
+            attempt_number,
             next_retry_at: None,
-            last_error: claimed.and_then(|claim| claim.previous_error.clone()),
+            last_error,
+        }
+    }
+
+    fn terminal_context(
+        &self,
+        issue_id: &str,
+        status: RunStatus,
+        last_error: Option<String>,
+    ) -> TerminalEntry {
+        let claimed = self.claimed.get(issue_id);
+        let running = self.running.get(issue_id);
+        let retry = self.retry_queue.get(issue_id);
+        let terminal = self.terminal_statuses.get(issue_id);
+        let attempt_number = claimed
+            .map(|claim| claim.attempt_number)
+            .or_else(|| running.map(|run| run.attempt_number))
+            .or_else(|| retry.map(|entry| entry.attempt_number))
+            .or_else(|| terminal.and_then(|entry| entry.attempt_number));
+        let last_error = last_error
+            .or_else(|| claimed.and_then(|claim| claim.previous_error.clone()))
+            .or_else(|| retry.map(|entry| entry.last_error.clone()))
+            .or_else(|| terminal.and_then(|entry| entry.last_error.clone()));
+
+        TerminalEntry {
+            status,
+            attempt_number,
+            last_error,
         }
     }
 }
@@ -537,6 +658,61 @@ mod tests {
         assert!(snapshot.retry_queue.is_empty());
         assert_eq!(snapshot.queue[0].status, RunStatus::Claimed);
         assert_eq!(snapshot.queue[0].attempt_number, Some(2));
+    }
+
+    #[test]
+    fn claim_manual_retry_promotes_failed_terminal_attempt() {
+        let mut state = OrchestratorState::new();
+        let issue = issue("issue-108", "#108");
+        state.claim_issue(&issue).unwrap();
+        state
+            .mark_running(
+                "issue-108",
+                "run-1",
+                None,
+                2,
+                PathBuf::from("/tmp/workspace"),
+                None,
+                None,
+                "2026-05-02T00:00:00Z",
+            )
+            .unwrap();
+        state.release_issue_with_error(
+            "issue-108",
+            RunStatus::Failed,
+            Some("agent exited 1".to_string()),
+        );
+
+        let failed = state.snapshot(vec![issue.clone()]);
+        let claimed = state.claim_manual_retry(&issue).unwrap();
+        let attempt = state.claimed_attempt("issue-108").unwrap();
+
+        assert_eq!(failed.queue[0].status, RunStatus::Failed);
+        assert_eq!(failed.queue[0].attempt_number, Some(2));
+        assert_eq!(
+            failed.queue[0].last_error.as_deref(),
+            Some("agent exited 1")
+        );
+        assert_eq!(claimed.status, RunStatus::Claimed);
+        assert_eq!(claimed.attempt_number, Some(3));
+        assert_eq!(claimed.last_error.as_deref(), Some("agent exited 1"));
+        assert_eq!(attempt.previous_error.as_deref(), Some("agent exited 1"));
+    }
+
+    #[test]
+    fn claim_manual_retry_rejects_succeeded_terminal_attempt() {
+        let mut state = OrchestratorState::new();
+        let issue = issue("issue-108", "#108");
+        state.release_issue("issue-108", RunStatus::Succeeded);
+
+        let error = state.claim_manual_retry(&issue).unwrap_err();
+
+        assert_eq!(
+            error,
+            StateError::IssueNotRetrying {
+                issue_id: "issue-108".to_string(),
+            }
+        );
     }
 
     #[test]

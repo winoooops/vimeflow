@@ -125,16 +125,25 @@ const createService = (
           events: [{ ...dispatchEvent, status: 'stopped' }],
         })
     ),
-    retryIssue: vi.fn(
-      (): Promise<DispatchBatch> =>
-        Promise.resolve({
-          snapshot: { ...snapshot, retryQueue: [] },
-          claimed: [],
-          started: [],
-          failed: [],
-          events: [{ ...dispatchEvent, status: 'claimed' }],
-        })
-    ),
+    retryIssue: vi.fn((issueId: string): Promise<DispatchBatch> => {
+      const issue = snapshot.queue.find((entry) => entry.issue.id === issueId)
+
+      return Promise.resolve({
+        snapshot: { ...snapshot, retryQueue: [] },
+        claimed: [],
+        started: [],
+        failed: [],
+        events: [
+          {
+            ...dispatchEvent,
+            issueId,
+            issueIdentifier:
+              issue?.issue.identifier ?? dispatchEvent.issueIdentifier,
+            status: 'claimed',
+          },
+        ],
+      })
+    }),
     onEvent: vi.fn(
       (callback: (event: OrchestratorEvent) => void): Promise<() => void> => {
         callbacks.push(callback)
@@ -232,6 +241,56 @@ describe('OrchestratorPanel', () => {
 
     expect(service.stopRun).toHaveBeenCalledWith('issue-2')
     expect(service.retryIssue).toHaveBeenCalledWith('issue-3')
+  })
+
+  test('retries failed and stopped queue rows from row actions', async (): Promise<void> => {
+    const terminalSnapshot: OrchestratorSnapshot = {
+      ...baseSnapshot,
+      running: [],
+      retryQueue: [],
+      queue: [
+        {
+          ...baseSnapshot.queue[0],
+          issue: {
+            ...baseSnapshot.queue[0].issue,
+            id: 'issue-4',
+            identifier: 'VIM-111',
+            title: 'Fix failed run',
+          },
+          status: 'failed',
+          attemptNumber: 2,
+          lastError: 'agent exited 1',
+        },
+        {
+          ...baseSnapshot.queue[0],
+          issue: {
+            ...baseSnapshot.queue[0].issue,
+            id: 'issue-5',
+            identifier: 'VIM-112',
+            title: 'Restart stopped run',
+          },
+          status: 'stopped',
+          attemptNumber: 1,
+          lastError: 'operator stopped agent run',
+        },
+      ],
+    }
+    const service = createService(terminalSnapshot)
+    const user = userEvent.setup()
+
+    render(<OrchestratorPanel service={service} />)
+
+    await user.type(
+      screen.getByRole('textbox', { name: /workflow path/i }),
+      '/repo/WORKFLOW.md'
+    )
+    await user.click(screen.getByRole('button', { name: 'Load' }))
+
+    await user.click(screen.getByRole('button', { name: 'Retry VIM-111' }))
+    await user.click(screen.getByRole('button', { name: 'Retry VIM-112' }))
+
+    expect(service.retryIssue).toHaveBeenCalledWith('issue-4')
+    expect(service.retryIssue).toHaveBeenCalledWith('issue-5')
   })
 
   test('subscribes to orchestrator events and cleans up on unmount', async (): Promise<void> => {

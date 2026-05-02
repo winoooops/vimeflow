@@ -115,7 +115,7 @@ const queueRow = (entry: QueueIssue): QueueRow => ({
   attemptNumber: entry.attemptNumber,
   detail: entry.lastError ?? retryDetail(entry.nextRetryAt),
   canStop: false,
-  canRetry: false,
+  canRetry: entry.status === 'failed' || entry.status === 'stopped',
 })
 
 const retryDetail = (nextRetryAt: string | null): string | null =>

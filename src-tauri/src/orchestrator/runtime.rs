@@ -130,7 +130,11 @@ where
             } else {
                 RunStatus::Failed
             };
-            self.state.release_issue(&run.issue_id, status);
+            self.state.release_issue_with_error(
+                &run.issue_id,
+                status,
+                (!exit.success).then(|| exit.message.clone()),
+            );
             events.push(self.run_exit_event(&run, &exit, timestamp, status));
         }
 
@@ -185,7 +189,11 @@ where
     {
         let run = self.state.running_run(issue_id)?;
         runner.stop(&run)?;
-        self.state.release_issue(issue_id, RunStatus::Stopped);
+        self.state.release_issue_with_error(
+            issue_id,
+            RunStatus::Stopped,
+            Some("operator stopped agent run".to_string()),
+        );
 
         let issues = self.tracker.fetch_issues()?;
         let mut events = vec![self.stop_event(&issues, &run, timestamp)];
@@ -211,7 +219,7 @@ where
         let mut events = self.reconcile_finished_runs(runner, timestamp);
         self.reconcile_ineligible_work(&issues, Some(timestamp), &mut events);
 
-        self.state.retry_entry(issue_id)?;
+        self.state.ensure_issue_retryable(issue_id)?;
         let issue = issues
             .iter()
             .find(|issue| issue.id == issue_id && self.is_active_issue(issue))
@@ -225,7 +233,7 @@ where
             });
         }
 
-        let claim = self.state.claim_retry(&issue)?;
+        let claim = self.state.claim_manual_retry(&issue)?;
         events.push(self.retry_claim_event(&issue, &claim, timestamp));
 
         let mut started = Vec::new();
@@ -485,7 +493,8 @@ where
                 Some(error.clone()),
             ));
         } else {
-            self.state.release_issue(&issue.id, RunStatus::Failed);
+            self.state
+                .release_issue_with_error(&issue.id, RunStatus::Failed, Some(error.clone()));
             events.push(self.issue_event(
                 issue,
                 timestamp,
@@ -1323,6 +1332,94 @@ mod tests {
             .events
             .iter()
             .any(|event| event.message.as_deref() == Some("retry claimed for dispatch")));
+    }
+
+    #[test]
+    fn retry_issue_now_dispatches_failed_terminal_issue() {
+        let (_dir, workflow) = workflow_fixture(1);
+        let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
+        let tracker = StaticTracker::with_issues(vec![issue("issue-108", "#108", "open")]);
+        let runner = RecordingRunner::with_run("run-108");
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker);
+
+        runtime
+            .dispatch_ready(&workspace_manager, &runner, "2026-05-02T08:15:00Z")
+            .unwrap();
+        runner.push_exit(AgentRunExit {
+            run_id: "run-108".to_string(),
+            success: false,
+            exit_code: Some(1),
+            message: "agent process exited with status 1".to_string(),
+        });
+        let retried = runtime
+            .retry_issue_now(
+                &workspace_manager,
+                &runner,
+                "issue-108",
+                "2026-05-02T08:16:00Z",
+            )
+            .unwrap();
+
+        assert_eq!(retried.claimed.len(), 1);
+        assert_eq!(retried.claimed[0].attempt_number, Some(2));
+        assert_eq!(
+            retried.claimed[0].last_error.as_deref(),
+            Some("agent process exited with status 1")
+        );
+        assert_eq!(retried.started.len(), 1);
+        assert_eq!(retried.started[0].attempt_number, 2);
+        assert_eq!(retried.snapshot.queue[0].status, RunStatus::Running);
+        assert!(retried.events.iter().any(|event| {
+            event.status == RunStatus::Failed
+                && event.error.as_deref() == Some("agent process exited with status 1")
+        }));
+
+        let requests = runner.requests.borrow();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[1]
+            .prompt
+            .contains("Previous error: agent process exited with status 1"));
+    }
+
+    #[test]
+    fn retry_issue_now_dispatches_stopped_terminal_issue() {
+        let (_dir, workflow) = workflow_fixture(1);
+        let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
+        let tracker = StaticTracker::with_issues(vec![issue("issue-108", "#108", "open")]);
+        let running_runner = RecordingRunner::with_run("run-108");
+        let retry_runner = RecordingRunner::with_run("run-108-manual-retry");
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker);
+
+        runtime
+            .dispatch_ready(&workspace_manager, &running_runner, "2026-05-02T08:15:00Z")
+            .unwrap();
+        runtime
+            .stop_run(&running_runner, "issue-108", "2026-05-02T08:15:30Z")
+            .unwrap();
+        let retried = runtime
+            .retry_issue_now(
+                &workspace_manager,
+                &retry_runner,
+                "issue-108",
+                "2026-05-02T08:16:00Z",
+            )
+            .unwrap();
+
+        assert_eq!(retried.claimed.len(), 1);
+        assert_eq!(retried.claimed[0].attempt_number, Some(2));
+        assert_eq!(
+            retried.claimed[0].last_error.as_deref(),
+            Some("operator stopped agent run")
+        );
+        assert_eq!(retried.started.len(), 1);
+        assert_eq!(retried.started[0].attempt_number, 2);
+        assert_eq!(retried.snapshot.queue[0].status, RunStatus::Running);
+
+        let requests = retry_runner.requests.borrow();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0]
+            .prompt
+            .contains("Previous error: operator stopped agent run"));
     }
 
     #[test]

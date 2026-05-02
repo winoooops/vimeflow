@@ -162,8 +162,20 @@ export class MockOrchestratorService implements OrchestratorService {
   }
 
   retryIssue(issueId: string): Promise<DispatchBatch> {
+    const queue = this.snapshot.queue.map((entry) =>
+      entry.issue.id === issueId
+        ? {
+            ...entry,
+            status: 'claimed' as const,
+            attemptNumber: (entry.attemptNumber ?? 0) + 1,
+            nextRetryAt: null,
+          }
+        : entry
+    )
+
     this.snapshot = {
       ...this.snapshot,
+      queue,
       retryQueue: this.snapshot.retryQueue.filter(
         (entry) => entry.issueId !== issueId
       ),
