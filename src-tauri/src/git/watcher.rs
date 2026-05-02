@@ -26,11 +26,18 @@ use tauri::Emitter;
 
 use super::validate_cwd;
 
-/// Debounce interval — ignore events within 300ms of the last processed one
+/// Debounce interval — emit after filesystem events have been quiet for 300ms.
 const DEBOUNCE_MS: u64 = 300;
 
 /// Polling fallback interval — check for changes every 10 seconds
 const POLL_INTERVAL_SECS: u64 = 10;
+
+/// Outer-loop poll interval for the debounce thread — bounds the latency
+/// from `stop_flag` being set to thread exit when idle (no burst in
+/// flight). 100 ms is roughly one Linux scheduler quantum: tight enough
+/// to feel instant, loose enough to avoid burning CPU on a thread that
+/// only matters when filesystem events arrive.
+const IDLE_CHECK_MS: u64 = 100;
 
 /// Timeout for sync git subprocesses called from the polling thread.
 /// Guards against hangs on NFS/FUSE, stale `.git/index.lock`, or corrupted
@@ -46,6 +53,77 @@ fn is_notify_not_found(error: &notify::Error) -> bool {
             &error.kind,
             notify::ErrorKind::Io(e) if e.kind() == std::io::ErrorKind::NotFound
         )
+}
+
+/// Returns the burst-event Sender plus a completion flag that flips to
+/// `true` exactly when the spawned thread exits (any path: stop_flag
+/// outer break, stop_flag inner break, Disconnected, panic-via-DropGuard).
+/// Production callers drop the flag and rely on `stop_flag` for shutdown;
+/// tests use the flag to observe prompt-exit semantics directly, instead
+/// of inferring exit timing from a side-channel like emit-suppression
+/// (which is independently guaranteed by the Timeout arm and therefore
+/// can't distinguish an Ok-arm regression from a Timeout-arm guard).
+fn spawn_trailing_debounce_thread<F>(
+    stop_flag: Arc<AtomicBool>,
+    delay: Duration,
+    mut emit: F,
+) -> (std::sync::mpsc::Sender<()>, Arc<AtomicBool>)
+where
+    F: FnMut() + Send + 'static,
+{
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let completed = Arc::new(AtomicBool::new(false));
+    let completed_for_thread = Arc::clone(&completed);
+
+    std::thread::spawn(move || {
+        // Drop guard fires on every exit path including panics, so the
+        // completion flag tracks "thread really gone" rather than "thread
+        // chose to exit cleanly". Tests reading the flag get the strict
+        // contract; production callers ignoring it pay nothing extra.
+        struct CompletionGuard(Arc<AtomicBool>);
+        impl Drop for CompletionGuard {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+        let _completion_guard = CompletionGuard(completed_for_thread);
+
+        while !stop_flag.load(Ordering::Relaxed) {
+            match rx.recv_timeout(Duration::from_millis(IDLE_CHECK_MS)) {
+                Ok(()) => loop {
+                    match rx.recv_timeout(delay) {
+                        Ok(()) => {
+                            // Honor stop_flag inside the inner burst-drain
+                            // loop too. Without this, a continuous event
+                            // burst keeps the thread alive until either the
+                            // burst ends OR every Sender clone drops — and
+                            // the clone held by the notify-watcher closure
+                            // (behind Arc<Mutex<RecommendedWatcher>>) only
+                            // disconnects when the polling thread also
+                            // exits, which can be up to POLL_INTERVAL_SECS
+                            // (10s) later. Checking here lets the thread
+                            // (and its captured Arcs) drop promptly.
+                            if stop_flag.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            continue;
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                            if !stop_flag.load(Ordering::Relaxed) {
+                                emit();
+                            }
+                            break;
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                    }
+                },
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+            }
+        }
+    });
+
+    (tx, completed)
 }
 
 /// Run a `std::process::Command` synchronously with a deadline. On timeout,
@@ -412,22 +490,29 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
     let last_status_hash = Arc::new(Mutex::new(
         hash_git_status(&toplevel).ok(),
     ));
-    // Debounce timestamp starts as `None` so the FIRST real notify event
-    // always passes. Initializing to `Instant::now()` at construction
-    // (the previous revision) would swallow any filesystem change within
-    // the DEBOUNCE_MS window of watcher startup — visible as up-to-10s
-    // stale state when a fast agent edits files right after subscription
-    // (the 10s polling fallback is the only recovery). `None` ≡ "no prior
-    // event, always pass"; after the first match it becomes `Some(now)`.
-    let last_processed: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
     let stop_flag = Arc::new(AtomicBool::new(false));
+    let debounce_tx = {
+        let app_handle = app_handle.clone();
+        let state = state_clone.clone();
+        let toplevel = toplevel.clone();
+        let stop_flag = stop_flag.clone();
+
+        // Production callers ignore the completion flag — `stop_flag` plus
+        // the Drop semantics of the captured Arcs are enough for shutdown.
+        // The flag exists to give tests a way to observe prompt exit
+        // without inferring it from emit-suppression side-channels.
+        let (tx, _completed) = spawn_trailing_debounce_thread(
+            stop_flag,
+            Duration::from_millis(DEBOUNCE_MS),
+            move || emit_for_all_subscribers(&app_handle, &state, &toplevel),
+        );
+        tx
+    };
 
     // Create notify watcher
     let notify_watcher = {
         let toplevel = toplevel.clone();
-        let app_handle = app_handle.clone();
-        let state = state_clone.clone();
-        let last_processed = last_processed.clone();
+        let debounce_tx = debounce_tx.clone();
 
         notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
             let event = match res {
@@ -450,22 +535,12 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
                 return;
             }
 
-            // Debounce
-            {
-                let mut last = last_processed
-                    .lock()
-                    .expect("failed to lock last_processed");
-                let now = Instant::now();
-                if let Some(prev) = *last {
-                    if now.duration_since(prev) < Duration::from_millis(DEBOUNCE_MS) {
-                        return;
-                    }
-                }
-                *last = Some(now);
+            if debounce_tx.send(()).is_err() {
+                log::debug!(
+                    "Git watcher debounce thread stopped for {}",
+                    toplevel.display()
+                );
             }
-
-            // Emit event for all subscribers
-            emit_for_all_subscribers(&app_handle, &state, &toplevel);
         })
         .map_err(|e| format!("Failed to create watcher: {}", e))?
     };
@@ -1018,7 +1093,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::process::Command;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{mpsc, Arc, Mutex};
     use tauri::Listener;
     use tempfile::TempDir;
 
@@ -1119,6 +1194,120 @@ mod tests {
         let error = notify::Error::new(notify::ErrorKind::MaxFilesWatch);
 
         assert!(!is_notify_not_found(&error));
+    }
+
+    #[test]
+    fn trailing_debounce_emits_once_after_final_burst_event() {
+        // Margins doubled (debounce 60→120ms, sleep 20→30ms) so the test
+        // tolerates ~60ms scheduler jitter on loaded CI runners. The 60ms
+        // / 35ms previous margin sat at roughly one Linux scheduler quantum
+        // and produced spurious failures when sleep(20ms) overshot 60ms,
+        // splitting the burst into separate windows.
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let (emitted_tx, emitted_rx) = mpsc::channel::<()>();
+        let (debounce_tx, _completed) = spawn_trailing_debounce_thread(
+            stop_flag.clone(),
+            Duration::from_millis(120),
+            move || {
+                // Swallow send errors: if the receiver was dropped first
+                // (test cleanup ordering), .expect would panic in the
+                // detached thread and silently swallow the panic. The
+                // positive `recv_timeout(...).expect("debounce should emit")`
+                // assertion below is the canonical failure signal.
+                let _ = emitted_tx.send(());
+            },
+        );
+
+        debounce_tx.send(()).expect("failed to send first event");
+        std::thread::sleep(Duration::from_millis(30));
+        debounce_tx.send(()).expect("failed to send second event");
+        std::thread::sleep(Duration::from_millis(30));
+        debounce_tx.send(()).expect("failed to send third event");
+
+        assert!(
+            emitted_rx.recv_timeout(Duration::from_millis(50)).is_err(),
+            "debounce emitted before the burst went quiet"
+        );
+
+        emitted_rx
+            .recv_timeout(Duration::from_millis(400))
+            .expect("debounce should emit after quiet period");
+        assert!(
+            emitted_rx.recv_timeout(Duration::from_millis(150)).is_err(),
+            "burst should produce exactly one trailing emit"
+        );
+
+        stop_flag.store(true, Ordering::Relaxed);
+        drop(debounce_tx);
+    }
+
+    #[test]
+    fn trailing_debounce_inner_loop_breaks_on_stop_flag_during_active_burst() {
+        // Round-3 rewrite. The round-2 version asserted "no emit fires"
+        // — but emit suppression is independently guaranteed by the
+        // Timeout arm's own stop_flag guard, so the test couldn't
+        // distinguish an Ok-arm regression from the Timeout-arm guard.
+        // Round-3 observes the contract directly: the spawn function
+        // exposes a `completed` Arc<AtomicBool> set in a Drop guard at
+        // thread exit; the test asserts it flips within
+        // `IDLE_CHECK_MS + delay + margin` of stop_flag being raised
+        // while a burst is still being fed. If the Ok-arm check
+        // regresses, the inner loop drives the thread past every
+        // `recv_timeout(delay)` of the burst, and `completed` doesn't
+        // flip until the burst dries up — which the assertion catches.
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let (emitted_tx, _emitted_rx) = mpsc::channel::<()>();
+        let (debounce_tx, completed) = spawn_trailing_debounce_thread(
+            stop_flag.clone(),
+            // Use a longer delay (250ms) so the difference between
+            // "Ok-arm bails immediately" and "Ok-arm regressed and waits
+            // for inner timeout / Disconnected" is observable: a 250ms
+            // delay × 5 events × scheduler jitter would push a regressed
+            // thread past 1s, well outside the 200ms assertion window.
+            Duration::from_millis(250),
+            move || {
+                let _ = emitted_tx.send(());
+            },
+        );
+
+        // Kick off the burst — first event enters the inner Ok() loop.
+        debounce_tx.send(()).expect("failed to send burst event 1");
+        std::thread::sleep(Duration::from_millis(20));
+        // Mid-burst flip.
+        stop_flag.store(true, Ordering::Relaxed);
+        // Keep feeding events so the inner loop keeps re-entering Ok().
+        // Each iteration MUST observe stop_flag and `return`; otherwise
+        // the inner `recv_timeout(250ms)` waits the full delay between
+        // events, postponing thread exit far beyond our assertion window.
+        for _ in 0..5 {
+            // Sender side: ignore errors — the thread may exit between
+            // sends, dropping its rx, in which case send() returns Err.
+            let _ = debounce_tx.send(());
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        // Wait briefly for the thread to exit. If the Ok-arm stop_flag
+        // check is in place, the thread returns within IDLE_CHECK_MS
+        // of stop_flag being raised. We add a generous margin (200ms)
+        // to absorb scheduler jitter, well below the regressed-path's
+        // expected lower bound (5×20ms send pacing + 250ms delay = ~350ms
+        // minimum to exhaust the burst, longer under load).
+        let deadline = std::time::Instant::now() + Duration::from_millis(200);
+        while std::time::Instant::now() < deadline {
+            if completed.load(Ordering::Acquire) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+
+        assert!(
+            completed.load(Ordering::Acquire),
+            "thread must exit promptly via the Ok-arm stop_flag check; \
+             still alive after IDLE_CHECK_MS + 200ms margin (the \
+             regressed-path lower bound is delay×N events ≈ 350ms+)"
+        );
+
+        drop(debounce_tx);
     }
 
     #[test]

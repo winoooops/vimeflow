@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-04-29
-ref_count: 3
+ref_count: 4
 ---
 
 # Async Race Conditions
@@ -183,3 +183,12 @@ prevent showing previous data.
 - **Fix:** Removed the duplicate `void handleDetection(sessionId)` from the polling `useEffect`. The subscribe `useEffect` already fires the initial detection after listeners are attached (and a comment in the file explicitly documented that intent). The `attaches test-run listener BEFORE invoking start_agent_watcher` regression test (added in the same task) caught the race on its first run with `expected 4 to be less than 2` — exactly the assertion shape it was designed to enforce.
 - **Lesson:** in a "subscribe + then trigger the publisher" flow, having TWO triggers from independent effects is structurally fragile, even if one is "polling" and the other is "init". Pick a single trigger source. Also: the load-bearing regression test was the right shape — it asserted the call ORDER recorded by mocks, not the eventual outcome.
 - **Commit:** `d7df1e5 feat(agent-status): test-run listener + ordering regression test`
+
+### 19. Inner burst-drain loop missed `stop_flag`, delaying thread shutdown by up to a polling cycle (10s)
+
+- **Source:** github-claude | PR #124 round 1 | 2026-05-02
+- **Severity:** MEDIUM
+- **File:** `src-tauri/src/git/watcher.rs`
+- **Finding:** `spawn_trailing_debounce_thread`'s inner `Ok(()) => continue` arm (which drains a rapid filesystem-event burst before resetting the quiet timer) never inspected `stop_flag`. After `RepoWatcher` was dropped, the thread's only escapes from the inner loop were a 60ms quiet period (correctly skipping the emit) or `Disconnected`. `Disconnected` only fires when EVERY `Sender` clone drops — but the clone living inside the `RecommendedWatcher` notify-callback closure is held behind `Arc<Mutex<RecommendedWatcher>>`, shared with the polling thread. That Arc lives until the polling thread sees its own `stop_flag` check (up to `POLL_INTERVAL_SECS = 10s` later). Net effect: a continuous filesystem burst at watcher teardown could pin the debounce thread (and its captured `app_handle` / `state` / `toplevel` Arcs) for up to 10 seconds. No incorrect emits — `stop_flag` already guarded the emit path — but resource cleanup was substantially delayed and the thread's lingering Arcs blocked observable shutdown ordering.
+- **Fix:** Added `if stop_flag.load(Ordering::Relaxed) { return; }` to the `Ok(()) => continue` branch (renamed to a block to host the check). One-line semantic addition; the inner loop now exits within one `recv_timeout(delay)` of the flag flipping, regardless of the polling-thread cleanup cadence. Same finding-class as #16 (subprocess stdout read with no deadline hangs forever) — both are "shutdown signal that doesn't propagate through every loop branch".
+- **Commit:** _(see git log for the round-1 fix commit)_

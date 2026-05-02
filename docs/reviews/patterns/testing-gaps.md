@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 7
+ref_count: 10
 ---
 
 # Testing Gaps
@@ -142,3 +142,30 @@ filesystem scope restrictions).
 - **Finding:** `is_user_prompt` and `is_non_empty_user_block` had no in-module unit tests. Their behavior was exercised only by the integration test in `tests/transcript_turns.rs` (4–5 message shapes through a real Tauri mock app + watcher). Several edge cases were unverified by any test: whitespace-only string, empty string, empty array, all-tool_result array, mixed `tool_result + text`, unknown block type fallthrough, `text` block missing the `text` field, `text` block with non-string `text` value, block with no `type` field, block with non-string/null `type` field. Reliance on the heavy integration harness alone meant an edge-case regression would only surface when the Tauri mock app could be stood up — not in fast in-module test loops.
 - **Fix:** Added 11 unit tests directly in the existing `#[cfg(test)] mod tests`: 3 string-path tests (whitespace, empty, non-whitespace), 4 array-path tests (empty, only-tool_result, whitespace-only-text, mixed), 1 non-string-content shape, 1 unknown-block-type fallthrough, 1 text-block-missing-text-field, 1 missing/non-string/null `type` fallthrough. All 11 pass; total `agent::transcript::tests` now 38. Verify-cycle-3 caught a subgap (the `type`-field tests originally only covered explicit text-typed blocks); round-4 closes it with the explicit non-string/null type tests.
 - **Commit:** _(see git log for the round-4 fix commit, plus its codex-verify retry that closed the type-field subgap)_
+
+### 16. Round-1 safety fix shipped without a regression test for its specific code path
+
+- **Source:** github-claude | PR #124 round 2 | 2026-05-02
+- **Severity:** MEDIUM
+- **File:** `src-tauri/src/git/watcher.rs`
+- **Finding:** Round-1 (PR #124) added a `stop_flag.load(...)` check inside the inner burst-drain loop's `Ok(()) => continue` arm — the load-bearing fix for finding #19 in async-race-conditions.md (thread pinned for ≤10s during continuous bursts at teardown). The only test added in round-1 was the happy-path `trailing_debounce_emits_once_after_final_burst_event`, which exercises the Timeout arm but never the Ok+stop_flag arm. A future refactor that accidentally reverted the check would not surface in CI: production callers don't observe the resource leak directly (just delayed shutdown), and the existing test wouldn't fail. Same finding-class as #6 (regression-guard test that didn't actually verify the property it claimed to guard) — the fix is in production but the contract proving it works isn't pinned by a test.
+- **Fix:** Added `trailing_debounce_inner_loop_breaks_on_stop_flag_during_active_burst` test that flips `stop_flag` mid-burst and asserts no emit fires for a full debounce window. If the inner-loop check regresses, the burst's continuous events keep the inner loop alive past the assertion deadline → emit fires → `recv_timeout(200ms).is_err()` flips to `Ok(())` and the assertion fails. The lesson going forward: every safety fix should ship with the test that would catch its specific regression, not just the test for the original happy path.
+- **Commit:** _(see git log for the round-2 fix commit)_
+
+### 15. Real-time test sleeps with sub-2× margin against the system-under-test's debounce window are CI-fragile
+
+- **Source:** github-claude | PR #124 round 1 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/git/watcher.rs`
+- **Finding:** The `trailing_debounce_emits_once_after_final_burst_event` test sent three events with `sleep(20ms)` gaps against a 60ms debounce window — 35ms of scheduler-jitter margin. On a saturated CI runner `sleep(20ms)` realistically overshoots to 50–100ms. Any single sleep exceeding 60ms splits the burst into independent debounce windows, triggering an early emit and tripping the `recv_timeout(25ms).is_err()` assertion on line 1169. Both sleeps overshooting also breaks the "exactly one emit" assertion at line 1177. The 20/60/35 ratio sat at roughly one Linux scheduler quantum, where typical CI noise routinely violates assumptions. Same finding-class as #11 (sleep-based synchronization in Rust integration test makes timing flaky) — both are absolute-time assertions against the SUT without enough margin to absorb scheduler jitter.
+- **Fix:** Doubled timing budgets: 120ms debounce window, 30ms inter-event sleeps, 50ms negative-window receive, 400ms positive-window receive. Now ~60ms scheduler margin (2× sleep) on the burst-quietness assertion. Adds ~60ms to test runtime in exchange for resilience against typical CI jitter; cheap compared to the alternative of a full event-driven synchronization mechanism.
+- **Commit:** _(see git log for the round-1 fix commit)_
+
+### 17. Regression-guard test verified an indirectly-guarded property, not the property the fix added
+
+- **Source:** github-claude | PR #124 round 3 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/git/watcher.rs`
+- **Finding:** Round-2's regression test for the inner-loop stop_flag check (added in round-1 to fix a 10s thread-pin) asserted "no spurious emit fires when stop_flag is set mid-burst." But emit() in `spawn_trailing_debounce_thread` is reached only via the Timeout arm, which already independently guards against stop_flag. So an Ok-arm regression — the very thing the round-1 fix introduced — couldn't change the emit-side observation: the Timeout arm's own guard would still suppress the emit. The test verified a real property (no spurious teardown emit) but couldn't catch the regression it was named after. The actual production risk (resource pinning ≤300ms after teardown until the burst dries up) was unobservable from the channel side. Same finding-class as #6 (regression-guard test that didn't actually verify the property it claimed to guard) — round-3 is the second instance in this codebase where assertion-on-side-effect failed to catch the regression on the guarded path.
+- **Fix:** Restructured `spawn_trailing_debounce_thread` to return `(Sender<()>, Arc<AtomicBool>)`, where the bool is set from a `Drop` guard inside the spawn closure. The completion flag flips on every exit path (any return + panic), giving tests a direct observation of "thread really gone." Production caller ignores the flag (`let (tx, _completed) = ...`). The regression test now observes the flag with a `IDLE_CHECK_MS + 200ms` deadline; under the regressed path, the inner loop stays in `recv_timeout(delay)` per burst event and the deadline expires before the flag flips. Lesson: when a fix lives in branch X of a multi-branch decision, the regression test must observe a property that branch X uniquely affects — not a downstream side-effect that other branches independently produce.
+- **Commit:** _(see git log for the round-3 fix commit)_

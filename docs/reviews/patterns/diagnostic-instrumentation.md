@@ -3,7 +3,7 @@ id: diagnostic-instrumentation
 category: code-quality
 created: 2026-04-30
 last_updated: 2026-04-30
-ref_count: 1
+ref_count: 2
 ---
 
 # Diagnostic Instrumentation
@@ -89,3 +89,12 @@ The discipline:
 - **Finding:** The `TxOutcome::Missing` classification depended on `e.contains("No such file")` — the Linux text for ENOENT, forwarded from `validate_transcript_path` via `format!("invalid transcript path '{}': {}", ..., io_error)`. Windows reports a missing path with different OS-localized text ("The system cannot find the file specified"), as does macOS in some locales and any non-English Linux locale. On those platforms a missing transcript would fall through the substring match and be classified as `TxOutcome::NotFile`, defeating the diagnostic during the speculative-path window it exists to capture. The "access denied" substring, by contrast, is a CUSTOM string from `validate_transcript_path` itself (not OS-localized), so it remains safe.
 - **Fix:** Replaced the `e.contains("No such file")` substring match with `std::path::Path::new(transcript_path).exists()`. Linux ENOENT, Windows ERROR_FILE_NOT_FOUND, macOS in any locale, and any future OS variant now classify uniformly as `TxOutcome::Missing`. Comment near the call site explains why the missing case uses path-existence (platform-neutral) while the access-denied case keeps substring matching (project-owned string). The lesson: when classifying errors that originate from the OS, use platform-neutral primitives like `Path::exists()` / `ErrorKind::NotFound`, not substring matching on forwarded error text.
 - **Commit:** _(see git log for the round-3 fix commit)_
+
+### 7. Detached `JoinHandle` swallows test-thread panics, obscuring failure attribution
+
+- **Source:** github-claude | PR #124 round 2 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/git/watcher.rs`
+- **Finding:** `spawn_trailing_debounce_thread` calls `std::thread::spawn(...)` and discards the returned `JoinHandle`. In production the emit closure only calls `emit_for_all_subscribers`, which logs errors rather than panicking, so the swallowed-panic path is unreachable. In tests, however, the closure was `move || { emitted_tx.send(()).expect("failed to record debounce emit"); }` — and if the receiver dropped first (test cleanup ordering races), `.expect` would panic inside the detached thread. The panic was invisible: the next test assertion (`recv_timeout(...).expect("debounce should emit")`) would fire instead, attributing the failure to "no emit" when the real cause was "the emit closure panicked." Same finding-class as #5 (structurally-zero `dt` produces misleading log values) — both are diagnostics that point an investigator at the wrong cause.
+- **Fix:** Tests now use `let _ = emitted_tx.send(())` instead of `.expect(...)`, swallowing send errors so the detached thread can never panic. The positive `recv_timeout(...).expect("debounce should emit")` assertion remains the canonical failure signal, with no false-attribution interference from the worker thread. Returning the `JoinHandle` and exposing it for tests was considered but rejected: the fire-and-forget API is the right shape for production callers, and `catch_unwind` machinery would be heavy for the low-risk scenario.
+- **Commit:** _(see git log for the round-2 fix commit)_
