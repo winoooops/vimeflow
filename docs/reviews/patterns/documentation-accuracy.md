@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-04-30
-ref_count: 10
+ref_count: 11
 ---
 
 # Documentation Accuracy
@@ -330,3 +330,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** `Number(event.payload.numTurns)` wrapped a value already typed `number` in the `AgentTurnEvent` ts-rs binding. Other `Number()` calls in this file are deliberate u64/i64 normalizations (where serde-json may emit values past `Number.MAX_SAFE_INTEGER`); applying the same pattern to a u32 field falsely implies the same hazard exists. A future reviewer might either (a) propagate the no-op pattern to other genuinely-`number` fields for "consistency" or (b) "fix" the apparent confusion by removing the legitimate u64 coercions elsewhere. Either path harms the codebase. Same finding-class as #6 (DRAWER_MAX comment claimed dynamic ratio but value was constant): a mechanism's adjacent doc/code suggests guarantees it doesn't actually provide.
 - **Fix:** Removed the `Number()` wrapper and added an inline comment explaining why u32 fields don't need bigint coercion (`u32` tops out at ~4.3 billion, well within JS safe-integer space). Pattern now is: u64/i64 → coerce; u32/i32/smaller → use directly.
 - **Commit:** _(see git log for the round-3 fix commit)_
+
+### 36. Inline magic-number bound for shutdown latency had no name in a file with named timing peers
+
+- **Source:** github-claude | PR #124 round 2 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/git/watcher.rs`
+- **Finding:** `spawn_trailing_debounce_thread` used `Duration::from_millis(100)` inline for the outer-loop `recv_timeout` value. That 100ms knob bounds shutdown latency from `stop_flag` set → thread exit when no burst is in flight, but it sat unnamed next to two top-level constants (`DEBOUNCE_MS`, `POLL_INTERVAL_SECS`) that had explanatory comments documenting their role. A future maintainer changing `DEBOUNCE_MS` for tuning could easily wonder why shutdown latency didn't change, or pick an arbitrary tweak to this third value without realizing what it controls. Same finding-class as #6 (`DRAWER_MAX` comment claimed dynamic ratio for a hardcoded constant): the magnitude of the value is right but the surface around it doesn't communicate intent.
+- **Fix:** Extracted `const IDLE_CHECK_MS: u64 = 100;` next to the existing constants with a comment explaining: "Outer-loop poll interval for the debounce thread — bounds the latency from `stop_flag` being set to thread exit when idle. 100 ms is roughly one Linux scheduler quantum." `recv_timeout` now reads `Duration::from_millis(IDLE_CHECK_MS)`. Same surface area, but the relationship between the value and its purpose is now explicit.
+- **Commit:** _(see git log for the round-2 fix commit)_

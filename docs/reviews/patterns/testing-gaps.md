@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 8
+ref_count: 9
 ---
 
 # Testing Gaps
@@ -142,6 +142,15 @@ filesystem scope restrictions).
 - **Finding:** `is_user_prompt` and `is_non_empty_user_block` had no in-module unit tests. Their behavior was exercised only by the integration test in `tests/transcript_turns.rs` (4–5 message shapes through a real Tauri mock app + watcher). Several edge cases were unverified by any test: whitespace-only string, empty string, empty array, all-tool_result array, mixed `tool_result + text`, unknown block type fallthrough, `text` block missing the `text` field, `text` block with non-string `text` value, block with no `type` field, block with non-string/null `type` field. Reliance on the heavy integration harness alone meant an edge-case regression would only surface when the Tauri mock app could be stood up — not in fast in-module test loops.
 - **Fix:** Added 11 unit tests directly in the existing `#[cfg(test)] mod tests`: 3 string-path tests (whitespace, empty, non-whitespace), 4 array-path tests (empty, only-tool_result, whitespace-only-text, mixed), 1 non-string-content shape, 1 unknown-block-type fallthrough, 1 text-block-missing-text-field, 1 missing/non-string/null `type` fallthrough. All 11 pass; total `agent::transcript::tests` now 38. Verify-cycle-3 caught a subgap (the `type`-field tests originally only covered explicit text-typed blocks); round-4 closes it with the explicit non-string/null type tests.
 - **Commit:** _(see git log for the round-4 fix commit, plus its codex-verify retry that closed the type-field subgap)_
+
+### 16. Round-1 safety fix shipped without a regression test for its specific code path
+
+- **Source:** github-claude | PR #124 round 2 | 2026-05-02
+- **Severity:** MEDIUM
+- **File:** `src-tauri/src/git/watcher.rs`
+- **Finding:** Round-1 (PR #124) added a `stop_flag.load(...)` check inside the inner burst-drain loop's `Ok(()) => continue` arm — the load-bearing fix for finding #19 in async-race-conditions.md (thread pinned for ≤10s during continuous bursts at teardown). The only test added in round-1 was the happy-path `trailing_debounce_emits_once_after_final_burst_event`, which exercises the Timeout arm but never the Ok+stop_flag arm. A future refactor that accidentally reverted the check would not surface in CI: production callers don't observe the resource leak directly (just delayed shutdown), and the existing test wouldn't fail. Same finding-class as #6 (regression-guard test that didn't actually verify the property it claimed to guard) — the fix is in production but the contract proving it works isn't pinned by a test.
+- **Fix:** Added `trailing_debounce_inner_loop_breaks_on_stop_flag_during_active_burst` test that flips `stop_flag` mid-burst and asserts no emit fires for a full debounce window. If the inner-loop check regresses, the burst's continuous events keep the inner loop alive past the assertion deadline → emit fires → `recv_timeout(200ms).is_err()` flips to `Ok(())` and the assertion fails. The lesson going forward: every safety fix should ship with the test that would catch its specific regression, not just the test for the original happy path.
+- **Commit:** _(see git log for the round-2 fix commit)_
 
 ### 15. Real-time test sleeps with sub-2× margin against the system-under-test's debounce window are CI-fragile
 

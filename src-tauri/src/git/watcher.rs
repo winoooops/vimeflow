@@ -32,6 +32,13 @@ const DEBOUNCE_MS: u64 = 300;
 /// Polling fallback interval — check for changes every 10 seconds
 const POLL_INTERVAL_SECS: u64 = 10;
 
+/// Outer-loop poll interval for the debounce thread — bounds the latency
+/// from `stop_flag` being set to thread exit when idle (no burst in
+/// flight). 100 ms is roughly one Linux scheduler quantum: tight enough
+/// to feel instant, loose enough to avoid burning CPU on a thread that
+/// only matters when filesystem events arrive.
+const IDLE_CHECK_MS: u64 = 100;
+
 /// Timeout for sync git subprocesses called from the polling thread.
 /// Guards against hangs on NFS/FUSE, stale `.git/index.lock`, or corrupted
 /// packs. `Command::output()` without this would block the polling thread
@@ -60,7 +67,7 @@ where
 
     std::thread::spawn(move || {
         while !stop_flag.load(Ordering::Relaxed) {
-            match rx.recv_timeout(Duration::from_millis(100)) {
+            match rx.recv_timeout(Duration::from_millis(IDLE_CHECK_MS)) {
                 Ok(()) => loop {
                     match rx.recv_timeout(delay) {
                         Ok(()) => {
@@ -1175,7 +1182,12 @@ mod tests {
             stop_flag.clone(),
             Duration::from_millis(120),
             move || {
-                emitted_tx.send(()).expect("failed to record debounce emit");
+                // Swallow send errors: if the receiver was dropped first
+                // (test cleanup ordering), .expect would panic in the
+                // detached thread and silently swallow the panic. The
+                // positive `recv_timeout(...).expect("debounce should emit")`
+                // assertion below is the canonical failure signal.
+                let _ = emitted_tx.send(());
             },
         );
 
@@ -1199,6 +1211,50 @@ mod tests {
         );
 
         stop_flag.store(true, Ordering::Relaxed);
+        drop(debounce_tx);
+    }
+
+    #[test]
+    fn trailing_debounce_inner_loop_breaks_on_stop_flag_during_active_burst() {
+        // Round-2 regression guard for the round-1 stop_flag check inside
+        // the inner `Ok(())` arm. If a future refactor accidentally
+        // reverts that check, a continuous burst would pin the thread
+        // until its Sender clones disconnected (up to POLL_INTERVAL_SECS
+        // = 10s in production). The test simulates an active burst,
+        // flips stop_flag mid-burst, and asserts NO emit fires for a
+        // full debounce window — proving the inner loop bailed early.
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let (emitted_tx, emitted_rx) = mpsc::channel::<()>();
+        let debounce_tx = spawn_trailing_debounce_thread(
+            stop_flag.clone(),
+            Duration::from_millis(120),
+            move || {
+                let _ = emitted_tx.send(());
+            },
+        );
+
+        // Kick off the burst — first event enters the inner Ok() loop.
+        debounce_tx.send(()).expect("failed to send burst event 1");
+        std::thread::sleep(Duration::from_millis(20));
+        // Mid-burst flip.
+        stop_flag.store(true, Ordering::Relaxed);
+        // Keep feeding events so the inner loop keeps re-entering Ok();
+        // each iteration must observe stop_flag and `return`.
+        for _ in 0..5 {
+            // Sender side: ignore errors — the thread may exit between
+            // sends, dropping its rx, in which case send() returns Err.
+            let _ = debounce_tx.send(());
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        // No trailing emit should land — the inner loop returned before
+        // ever hitting the Timeout arm where emit() lives. Wait the full
+        // debounce window plus margin to be sure.
+        assert!(
+            emitted_rx.recv_timeout(Duration::from_millis(200)).is_err(),
+            "stop_flag set mid-burst must suppress the trailing emit"
+        );
+
         drop(debounce_tx);
     }
 
