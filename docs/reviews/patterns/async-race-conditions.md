@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-04-29
-ref_count: 4
+ref_count: 5
 ---
 
 # Async Race Conditions
@@ -191,4 +191,13 @@ prevent showing previous data.
 - **File:** `src-tauri/src/git/watcher.rs`
 - **Finding:** `spawn_trailing_debounce_thread`'s inner `Ok(()) => continue` arm (which drains a rapid filesystem-event burst before resetting the quiet timer) never inspected `stop_flag`. After `RepoWatcher` was dropped, the thread's only escapes from the inner loop were a 60ms quiet period (correctly skipping the emit) or `Disconnected`. `Disconnected` only fires when EVERY `Sender` clone drops — but the clone living inside the `RecommendedWatcher` notify-callback closure is held behind `Arc<Mutex<RecommendedWatcher>>`, shared with the polling thread. That Arc lives until the polling thread sees its own `stop_flag` check (up to `POLL_INTERVAL_SECS = 10s` later). Net effect: a continuous filesystem burst at watcher teardown could pin the debounce thread (and its captured `app_handle` / `state` / `toplevel` Arcs) for up to 10 seconds. No incorrect emits — `stop_flag` already guarded the emit path — but resource cleanup was substantially delayed and the thread's lingering Arcs blocked observable shutdown ordering.
 - **Fix:** Added `if stop_flag.load(Ordering::Relaxed) { return; }` to the `Ok(()) => continue` branch (renamed to a block to host the check). One-line semantic addition; the inner loop now exits within one `recv_timeout(delay)` of the flag flipping, regardless of the polling-thread cleanup cadence. Same finding-class as #16 (subprocess stdout read with no deadline hangs forever) — both are "shutdown signal that doesn't propagate through every loop branch".
+- **Commit:** _(see git log for the round-1 fix commit)_
+
+### 20. Restore-after-failure path spawns a poll thread that immediately re-fires the same failure, looping forever
+
+- **Source:** github-claude | PR #126 round 1 | 2026-05-02
+- **Severity:** MEDIUM
+- **File:** `src-tauri/src/git/watcher.rs`
+- **Finding:** `restore_pre_repo_subscribers` is called after `upgrade_to_repo_watcher` succeeds for at least one subscriber on `safe_cwd` — meaning `safe_cwd` is, by construction, already a git repository at the moment of the restore. The original implementation unconditionally spawned a `spawn_pre_repo_poll_thread` whose loop body wakes every `POLL_INTERVAL_SECS` (10 s), checks `resolve_toplevel(&safe_cwd).is_ok()`, and re-runs `upgrade_to_repo_watcher` if so. Result: the poll thread always sees the parent path as a repo, always re-fires the upgrade, always fails for the same permanently-invalid subscriber paths, calls `restore_pre_repo_subscribers` again, and spawns the next thread. At steady state: one thread create/destroy + one `git rev-parse` subprocess + one `log::error!` per 10 s, indefinitely, per stranded subscriber. No state corruption, but unbounded log churn and CPU waste in long-running sessions. Same finding-class as #16 (subprocess stdout read with no deadline hangs forever) — a loop whose termination condition cannot be reached because the precondition is mis-modeled.
+- **Fix:** Before calling `spawn_pre_repo_poll_thread` in the restore path, check `resolve_toplevel(&safe_cwd).is_ok()`. If yes, the parent is already a repo and the failed subscribers cannot become valid via the "directory becomes a repo" pathway — log a one-shot `log::warn!` documenting the terminal-stranded state and skip the spawn. The pre-repo entry remains so refcount accounting stays consistent; only the futile poll thread is suppressed. Lesson: any retry loop needs a termination condition that genuinely could fail at retry time, not one whose precondition was already true at spawn time.
 - **Commit:** _(see git log for the round-1 fix commit)_

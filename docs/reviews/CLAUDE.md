@@ -43,11 +43,11 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform | 2        | 1    | 2026-04-10   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality   | 4        | 0    | 2026-04-12   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality   | 1        | 0    | 2026-04-14   |
-| [Testing Gaps](patterns/testing-gaps.md)                             | testing        | 22       | 14   | 2026-05-02   |
+| [Testing Gaps](patterns/testing-gaps.md)                             | testing        | 24       | 16   | 2026-05-02   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal       | 3        | 1    | 2026-04-09   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality   | 36       | 11   | 2026-05-02   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality   | 39       | 14   | 2026-05-02   |
 | [Accessibility](patterns/accessibility.md)                           | a11y           | 12       | 2    | 2026-04-30   |
-| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns | 19       | 6    | 2026-05-02   |
+| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns | 20       | 7    | 2026-05-02   |
 | [Command Injection](patterns/command-injection.md)                   | security       | 5        | 1    | 2026-04-20   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)             | security       | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                   | security       | 3        | 1    | 2026-04-20   |

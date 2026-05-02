@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-04-30
-ref_count: 11
+ref_count: 14
 ---
 
 # Documentation Accuracy
@@ -339,3 +339,30 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** `spawn_trailing_debounce_thread` used `Duration::from_millis(100)` inline for the outer-loop `recv_timeout` value. That 100ms knob bounds shutdown latency from `stop_flag` set → thread exit when no burst is in flight, but it sat unnamed next to two top-level constants (`DEBOUNCE_MS`, `POLL_INTERVAL_SECS`) that had explanatory comments documenting their role. A future maintainer changing `DEBOUNCE_MS` for tuning could easily wonder why shutdown latency didn't change, or pick an arbitrary tweak to this third value without realizing what it controls. Same finding-class as #6 (`DRAWER_MAX` comment claimed dynamic ratio for a hardcoded constant): the magnitude of the value is right but the surface around it doesn't communicate intent.
 - **Fix:** Extracted `const IDLE_CHECK_MS: u64 = 100;` next to the existing constants with a comment explaining: "Outer-loop poll interval for the debounce thread — bounds the latency from `stop_flag` being set to thread exit when idle. 100 ms is roughly one Linux scheduler quantum." `recv_timeout` now reads `Duration::from_millis(IDLE_CHECK_MS)`. Same surface area, but the relationship between the value and its purpose is now explicit.
 - **Commit:** _(see git log for the round-2 fix commit)_
+
+### 37. Error-message count conflates two failure classes routed through the same accumulator
+
+- **Source:** github-claude | PR #126 round 2 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/git/watcher.rs`
+- **Finding:** `upgrade_to_repo_watcher`'s error accumulator `errors: Vec<String>` was the natural sink for two distinct failure classes: (a) per-subscriber upgrade failures inside the for-loop (subscribers that need restoring), and (b) the restore-path's own failure (a lock-poisoning state-level event that affects no specific subscriber). The combined Err message read `"{} subscriber(s) failed to upgrade"` with `errors.len()` — but that count includes both classes. If a state-level restore failure occurred, the count over-reports subscriber failures by one, misleading any tooling or human that parses the count as authoritative. The full text was always present in the trailing `errors.join("; ")`, so information wasn't lost — only the headline lied. Same finding-class as #6 (`DRAWER_MAX` comment claimed dynamic ratio for a constant): the surface around the value implies a guarantee the value doesn't actually provide.
+- **Fix:** Added a dedicated `subscriber_failures: usize` counter, incremented only at the loop's `start_git_watcher_inner` failure site (the same site that pushes to `failed_subscribers`). Format string updated to `"{} subscriber(s) failed to upgrade ({} total error(s)): {}"` — headline reflects subscriber-level reality, parenthetical preserves the total-error context, full body keeps the unredacted error text. Restore-path errors continue to flow through the same `errors` vec but no longer inflate the headline.
+- **Commit:** _(see git log for the round-2 fix commit)_
+
+### 38. Restore-path entry leaks across pre-repo→repo transition because cleanup contract was unilateral
+
+- **Source:** github-claude | PR #126 round 3 | 2026-05-02
+- **Severity:** LOW (in production code) / HIGH transient (codex verify caught a refcount-loss bug in v1 of the fix)
+- **File:** `src-tauri/src/git/watcher.rs` `start_git_watcher_inner` opportunistic cleanup
+- **Finding:** PR #126's restore path inserted a new `pre_repo_watchers[safe_cwd].subscribers[missing_cwd]` row for terminally-stranded subscribers, but `start_git_watcher_inner`'s opportunistic cleanup block was unchanged from the pre-PR contract: it only removes `cwd_to_safe_pre_repo[cwd]`, not the matching `pre_repo_watchers[safe_cwd].subscribers[cwd]`. When a stranded subscriber's path eventually becomes a real repo and re-subscription routes through `start_git_watcher_inner` → repo path, the pre-repo entry is orphaned. Subsequent stop calls follow `cwd_to_toplevel` and never revisit `pre_repo_watchers`, so the bucket can't be GC'd. Same finding-class as #28 / #34 (paired surfaces drift when one is edited without the other) — the restore path added a new map row without extending the cleanup contract that consumes it.
+- **Fix:** Captured `prior_pre_repo_safe_cwd` from the existing `cwd_to_safe_pre_repo.remove(cwd)`, then ran the matching `pre_repo_watchers` removal AFTER `resolve_toplevel(&safe_cwd).is_ok()` — i.e., only on the actual repo-transition path. **Codex verify v1 caught a HIGH refcount-loss regression in an earlier draft that ran the twin cleanup unconditionally:** on a still-pre-repo re-subscription (with duplicate subscriptions raising the refcount above 1), unconditional cleanup would drop the entry, then `start_pre_repo_watcher_inner` would see no existing bucket and recreate with `refcount=1`, silently losing N-1 subscriptions. Final fix gates the cleanup behind the repo-transition outcome so the still-pre-repo path is untouched.
+- **Commit:** _(see git log for the round-3 fix commit; v1→v2 codex-verify retry documented in `.harness-github-review/cycle-3-verify-result-v{1,2}.json`)_
+
+### 39. Eager `Arc<AtomicBool>` allocation hoisted before lock scope confuses ownership flow
+
+- **Source:** github-claude | PR #126 round 4 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/git/watcher.rs` `restore_pre_repo_subscribers`
+- **Finding:** `stop_flag = Arc::new(AtomicBool::new(false))` was hoisted before the `pre_repo_watchers` lock so the `else` branch could move it into the inserted watcher AND the later `spawn_pre_repo_poll_thread` call without cloning twice. But on the if-branch (existing watcher found), the local Arc was created, never stored, and silently dropped — dead allocation. Worse, a future maintainer reading the function would see a `stop_flag` in scope after the lock and might write code that observes it expecting it to match the watcher's flag — which is wrong on the if-branch where the watcher kept its own. Same finding-class as #6 / #36 — surface that suggests a guarantee the value doesn't actually provide.
+- **Fix:** Replaced the eager `Arc::new(...)` with `let mut new_watcher_stop_flag: Option<Arc<AtomicBool>> = None;`. The `else` branch creates a fresh Arc, stores one clone in the inserted watcher, and saves the other in the Option. The poll-thread spawn block then uses `if let Some(stop_flag) = new_watcher_stop_flag` to act only when there's a new watcher to govern. No silent drops; the lifetime-and-ownership story is now explicit.
+- **Commit:** _(see git log for the round-4 fix commit)_

@@ -423,13 +423,22 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
     // would just be a tiny memory leak — stop_git_watcher_inner consults
     // `cwd_to_toplevel` first so the stale entry can't cause incorrect
     // routing — but tidiness wins.
-    {
+    // Capture the prior pre-repo mapping (if any) but do NOT clean up
+    // `pre_repo_watchers` yet. The decision depends on which branch of
+    // `resolve_toplevel` we take below:
+    //   - repo-transition (Ok): also remove cwd from pre_repo_watchers,
+    //     dropping the bucket if empty. This is the stranded-subscriber
+    //     transition the round-3 finding asked about.
+    //   - still-pre-repo (Err): leave the pre_repo_watchers entry alone
+    //     so `start_pre_repo_watcher_inner` below can see and increment
+    //     its existing refcount instead of clobbering it to 1.
+    let prior_pre_repo_safe_cwd = {
         let mut pre_repo_map = state
             .cwd_to_safe_pre_repo
             .lock()
             .expect("failed to lock cwd_to_safe_pre_repo");
-        pre_repo_map.remove(cwd);
-    }
+        pre_repo_map.remove(cwd)
+    };
 
     // Try to resolve repo toplevel
     let toplevel = match resolve_toplevel(&safe_cwd) {
@@ -448,6 +457,29 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
             return start_pre_repo_watcher_inner(cwd, safe_cwd, app_handle, state);
         }
     };
+
+    // Repo-transition path. Only NOW can we safely clean up the prior
+    // `pre_repo_watchers` entry for this cwd: the subscriber is moving
+    // from pre-repo to repo, so any leftover subscriber row under the
+    // old safe_cwd would never be reached again (stop_git_watcher
+    // routes via `cwd_to_toplevel` once we register below). Doing this
+    // BEFORE `resolve_toplevel` would have been wrong for the still-
+    // pre-repo re-subscription case, where `start_pre_repo_watcher_inner`
+    // needs the existing refcount to bump rather than recreate from 1
+    // (caught by codex verify in v1 of this round as a HIGH issue —
+    // refcount loss on duplicate pre-repo subscriptions).
+    if let Some(old_safe_cwd) = prior_pre_repo_safe_cwd {
+        let mut pre_repo_watchers = state
+            .pre_repo_watchers
+            .lock()
+            .expect("failed to lock pre_repo_watchers");
+        if let Some(watcher) = pre_repo_watchers.get_mut(&old_safe_cwd) {
+            watcher.subscribers.remove(cwd);
+            if watcher.subscribers.is_empty() {
+                pre_repo_watchers.remove(&old_safe_cwd);
+            }
+        }
+    }
 
     // ── Phase 1: short check under lock A ─────────────────────────────
     //
@@ -765,43 +797,12 @@ fn start_pre_repo_watcher_inner<R: tauri::Runtime>(
 
     // Create new pre-repo watcher with polling
     let stop_flag = Arc::new(AtomicBool::new(false));
-    let poll_safe_cwd = safe_cwd.clone();
-    let poll_app_handle = app_handle.clone();
-    let poll_state = state.clone();
-    let poll_stop_flag = stop_flag.clone();
-
-    std::thread::spawn(move || {
-        while !poll_stop_flag.load(Ordering::Relaxed) {
-            std::thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
-
-            if poll_stop_flag.load(Ordering::Relaxed) {
-                break;
-            }
-
-            // Check if this became a repo
-            if resolve_toplevel(&poll_safe_cwd).is_ok() {
-                // Upgrade to repo watcher — transfers the subscriber map
-                // (with original cwd strings intact) into repo_watchers.
-                if let Err(e) = upgrade_to_repo_watcher(
-                    poll_safe_cwd.clone(),
-                    poll_app_handle.clone(),
-                    poll_state.clone(),
-                ) {
-                    log::error!("Failed to upgrade to repo watcher: {}", e);
-                }
-                break;
-            }
-
-            // Still not a repo — intentionally NO emit on this tick.
-            // The previous revision fired `git-status-changed` on every
-            // 10-second tick for every pre-repo subscriber, which caused
-            // the frontend to run a useless `git_status` round-trip that
-            // always returns []. Subscribers already hold the correct
-            // empty state from their initial fetch; nothing to refresh
-            // until the dir becomes a repo (upgrade path emits its own
-            // initial event).
-        }
-    });
+    spawn_pre_repo_poll_thread(
+        safe_cwd.clone(),
+        app_handle.clone(),
+        state.clone(),
+        stop_flag.clone(),
+    );
 
     let mut subscribers = HashMap::new();
     subscribers.insert(cwd.to_string(), 1);
@@ -823,6 +824,124 @@ fn start_pre_repo_watcher_inner<R: tauri::Runtime>(
 
     // Emit initial event with the frontend's original cwd string
     emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
+
+    Ok(())
+}
+
+fn spawn_pre_repo_poll_thread<R: tauri::Runtime>(
+    safe_cwd: PathBuf,
+    app_handle: tauri::AppHandle<R>,
+    state: GitWatcherState,
+    stop_flag: Arc<AtomicBool>,
+) {
+    std::thread::spawn(move || {
+        while !stop_flag.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
+
+            if stop_flag.load(Ordering::Relaxed) {
+                break;
+            }
+
+            // Check if this became a repo
+            if resolve_toplevel(&safe_cwd).is_ok() {
+                // Upgrade to repo watcher — transfers the subscriber map
+                // (with original cwd strings intact) into repo_watchers.
+                if let Err(e) =
+                    upgrade_to_repo_watcher(safe_cwd.clone(), app_handle.clone(), state.clone())
+                {
+                    log::error!("Failed to upgrade to repo watcher: {}", e);
+                }
+                break;
+            }
+
+            // Still not a repo — intentionally NO emit on this tick.
+            // The previous revision fired `git-status-changed` on every
+            // 10-second tick for every pre-repo subscriber, which caused
+            // the frontend to run a useless `git_status` round-trip that
+            // always returns []. Subscribers already hold the correct
+            // empty state from their initial fetch; nothing to refresh
+            // until the dir becomes a repo (upgrade path emits its own
+            // initial event).
+        }
+    });
+}
+
+fn restore_pre_repo_subscribers<R: tauri::Runtime>(
+    safe_cwd: PathBuf,
+    subscribers: HashMap<String, u32>,
+    app_handle: tauri::AppHandle<R>,
+    state: &GitWatcherState,
+) -> Result<(), String> {
+    if subscribers.is_empty() {
+        return Ok(());
+    }
+
+    let subscriber_cwds: Vec<String> = subscribers.keys().cloned().collect();
+    // Allocated lazily — only the no-existing-watcher branch needs a
+    // fresh stop_flag. Hoisting before the lock would silently drop
+    // an Arc on the existing-watcher branch, leaving a dead allocation
+    // that confuses readers auditing the watcher lifecycle (which
+    // stop_flag governs which thread?).
+    let mut new_watcher_stop_flag: Option<Arc<AtomicBool>> = None;
+
+    {
+        let mut pre_repo_watchers = state
+            .pre_repo_watchers
+            .lock()
+            .map_err(|e| format!("Failed to lock pre_repo_watchers: {}", e))?;
+
+        if let Some(watcher) = pre_repo_watchers.get_mut(&safe_cwd) {
+            for (cwd, refcount) in subscribers {
+                *watcher.subscribers.entry(cwd).or_insert(0) += refcount;
+            }
+        } else {
+            let stop_flag = Arc::new(AtomicBool::new(false));
+            pre_repo_watchers.insert(
+                safe_cwd.clone(),
+                PreRepoWatcher {
+                    subscribers,
+                    stop_flag: stop_flag.clone(),
+                },
+            );
+            new_watcher_stop_flag = Some(stop_flag);
+        }
+    }
+
+    {
+        let mut map = state
+            .cwd_to_safe_pre_repo
+            .lock()
+            .map_err(|e| format!("Failed to lock cwd_to_safe_pre_repo: {}", e))?;
+        for cwd in &subscriber_cwds {
+            map.insert(cwd.clone(), safe_cwd.clone());
+        }
+    }
+
+    if let Some(stop_flag) = new_watcher_stop_flag {
+        // Guard against a known infinite-retry trap: `restore_pre_repo_subscribers`
+        // is called *after* `upgrade_to_repo_watcher` succeeded for at least one
+        // subscriber on `safe_cwd`, which means `safe_cwd` is already a git
+        // repository. Spawning a poll thread that re-runs `resolve_toplevel(&safe_cwd)`
+        // every 10 s would immediately succeed, re-fire `upgrade_to_repo_watcher`,
+        // fail again for the same permanently-invalid subscriber paths, restore
+        // again, and loop forever. Detect the case here and treat the failed
+        // subscribers as terminally stranded — keep their pre-repo entry as a
+        // record (so refcount accounting stays consistent) but don't poll.
+        if resolve_toplevel(&safe_cwd).is_ok() {
+            log::warn!(
+                "git watcher: subscribers {:?} could not upgrade against repo {:?}; \
+                 paths are not reachable inside the repo and will not be polled \
+                 (the parent path is already a repo, so a poll thread would \
+                 re-fire the failed upgrade indefinitely).",
+                subscriber_cwds,
+                safe_cwd,
+            );
+        } else {
+            spawn_pre_repo_poll_thread(safe_cwd, app_handle.clone(), state.clone(), stop_flag);
+        }
+    }
+
+    emit_git_status_changed(&app_handle, subscriber_cwds);
 
     Ok(())
 }
@@ -870,8 +989,17 @@ fn upgrade_to_repo_watcher<R: tauri::Runtime>(
     // stops would silent-no-op and the frontend panel would go permanently
     // stale with no surfaced error. Per-subscriber errors are now
     // accumulated; each surviving subscriber still gets its repo watcher,
-    // and the caller sees a combined error describing all failures.
+    // and failed subscribers are restored to a pre-repo watcher so they keep
+    // a backend subscription and retry path.
     let mut errors: Vec<String> = Vec::new();
+    // Counts only per-subscriber upgrade failures from the loop below —
+    // distinct from `errors.len()`, which may also accumulate restore-path
+    // failures (state-machine-level lock poisoning) that are NOT
+    // subscriber failures. The error-format string uses this counter so
+    // the human-facing "N subscriber(s) failed to upgrade" message
+    // reflects subscriber failures only.
+    let mut subscriber_failures: usize = 0;
+    let mut failed_subscribers: HashMap<String, u32> = HashMap::new();
     for (original_cwd, refcount) in subscribers {
         if refcount == 0 {
             continue;
@@ -879,6 +1007,8 @@ fn upgrade_to_repo_watcher<R: tauri::Runtime>(
 
         if let Err(e) = start_git_watcher_inner(&original_cwd, app_handle.clone(), &state) {
             errors.push(format!("{}: {}", original_cwd, e));
+            failed_subscribers.insert(original_cwd, refcount);
+            subscriber_failures += 1;
             continue;
         }
 
@@ -920,11 +1050,27 @@ fn upgrade_to_repo_watcher<R: tauri::Runtime>(
         }
     }
 
+    if let Err(e) = restore_pre_repo_subscribers(
+        safe_cwd,
+        failed_subscribers,
+        app_handle.clone(),
+        &state,
+    ) {
+        errors.push(format!("failed to restore failed subscribers: {}", e));
+    }
+
     if errors.is_empty() {
         Ok(())
     } else {
+        // Use the dedicated counter for the headline so the message
+        // matches reality: only `subscriber_failures` are upgrade
+        // failures whose subscribers need a retry. Other items in
+        // `errors` (post-upgrade state inconsistencies, restore-path
+        // failures) are surfaced in the trailing `errors.join("; ")`
+        // body but don't inflate the headline count.
         Err(format!(
-            "upgrade_to_repo_watcher: {} subscriber(s) failed to upgrade: {}",
+            "upgrade_to_repo_watcher: {} subscriber(s) failed to upgrade ({} total error(s)): {}",
+            subscriber_failures,
             errors.len(),
             errors.join("; ")
         ))
@@ -1170,6 +1316,117 @@ mod tests {
 
         assert_eq!(events.len(), 1);
         assert!(events[0].contains(&cwd));
+    }
+
+    #[test]
+    fn upgrade_to_repo_watcher_restores_failed_subscribers_for_retry() {
+        let app = tauri::test::mock_builder()
+            .build(tauri::generate_context!())
+            .expect("failed to build test app");
+
+        // Listen for git-status-changed and pipe payloads through an
+        // mpsc channel so the assertion below can deterministically wait
+        // for the restored-subscriber event with a generous timeout
+        // instead of guessing a fixed sleep window. A 100 ms sleep on
+        // a saturated CI host can expire before Tauri's listener
+        // dispatch thread is scheduled, producing flaky false negatives.
+        let (events_tx, events_rx) = mpsc::channel::<String>();
+        app.handle().listen("git-status-changed", move |event| {
+            let _ = events_tx.send(event.payload().to_string());
+        });
+
+        let temp = create_temp_repo();
+        let cwd = temp.path().to_string_lossy().to_string();
+        let missing_cwd = temp
+            .path()
+            .join("missing")
+            .to_string_lossy()
+            .to_string();
+        let safe_cwd = validate_cwd(&cwd).expect("cwd should validate");
+        let state = GitWatcherState::new();
+        let mut subscribers = HashMap::new();
+
+        subscribers.insert(missing_cwd.clone(), 1);
+        subscribers.insert(cwd.clone(), 2);
+        state
+            .pre_repo_watchers
+            .lock()
+            .expect("failed to lock pre_repo_watchers")
+            .insert(
+                safe_cwd.clone(),
+                PreRepoWatcher {
+                    subscribers,
+                    stop_flag: Arc::new(AtomicBool::new(false)),
+                },
+            );
+
+        let result = upgrade_to_repo_watcher(safe_cwd.clone(), app.handle().clone(), state.clone());
+
+        assert!(result.is_err(), "missing subscriber should fail upgrade");
+
+        let toplevel = resolve_toplevel(temp.path()).expect("repo should resolve");
+        let toplevel_key =
+            validate_cwd(&toplevel.to_string_lossy()).expect("toplevel should validate");
+        let repo_watchers = state
+            .repo_watchers
+            .lock()
+            .expect("failed to lock repo_watchers");
+        let watcher = repo_watchers
+            .get(&toplevel_key)
+            .expect("valid subscriber should upgrade to repo watcher");
+
+        assert_eq!(watcher.subscribers.get(&cwd), Some(&2));
+        drop(repo_watchers);
+
+        let pre_repo_watchers = state
+            .pre_repo_watchers
+            .lock()
+            .expect("failed to lock pre_repo_watchers");
+        let restored = pre_repo_watchers
+            .get(&safe_cwd)
+            .expect("failed subscriber should be restored to pre-repo watcher");
+
+        assert_eq!(restored.subscribers.get(&missing_cwd), Some(&1));
+        assert!(!restored.subscribers.contains_key(&cwd));
+        drop(pre_repo_watchers);
+
+        let safe_pre_repo = state
+            .cwd_to_safe_pre_repo
+            .lock()
+            .expect("failed to lock cwd_to_safe_pre_repo");
+
+        assert_eq!(safe_pre_repo.get(&missing_cwd), Some(&safe_cwd));
+        drop(safe_pre_repo);
+
+        // Drain events with a 1-second deadline, looking for the
+        // payload that mentions `missing_cwd`. The upgrade + restore
+        // phases may emit independently, so we tolerate intervening
+        // events; we only need to confirm one of them references the
+        // restored subscriber. Failing the assertion on
+        // `RecvTimeoutError::Timeout` produces a clear "emit never
+        // arrived" message rather than the ambiguous "vector didn't
+        // contain expected entry" of the prior sleep-then-assert form.
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        let mut found = false;
+        while std::time::Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            match events_rx.recv_timeout(remaining) {
+                Ok(payload) => {
+                    if payload.contains(&missing_cwd) {
+                        found = true;
+                        break;
+                    }
+                    // Not the one we're looking for — keep draining.
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => break,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        assert!(
+            found,
+            "expected git-status-changed emit for restored subscriber {:?} within 1s",
+            missing_cwd,
+        );
     }
 
     #[test]
