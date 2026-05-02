@@ -105,6 +105,14 @@ impl OrchestratorState {
         self.paused = paused;
     }
 
+    pub fn is_paused(&self) -> bool {
+        self.paused
+    }
+
+    pub fn in_flight_count(&self) -> usize {
+        self.claimed.len() + self.running.len()
+    }
+
     pub fn is_issue_active(&self, issue_id: &str) -> bool {
         self.claimed.contains_key(issue_id)
             || self.running.contains_key(issue_id)
