@@ -55,17 +55,39 @@ fn is_notify_not_found(error: &notify::Error) -> bool {
         )
 }
 
+/// Returns the burst-event Sender plus a completion flag that flips to
+/// `true` exactly when the spawned thread exits (any path: stop_flag
+/// outer break, stop_flag inner break, Disconnected, panic-via-DropGuard).
+/// Production callers drop the flag and rely on `stop_flag` for shutdown;
+/// tests use the flag to observe prompt-exit semantics directly, instead
+/// of inferring exit timing from a side-channel like emit-suppression
+/// (which is independently guaranteed by the Timeout arm and therefore
+/// can't distinguish an Ok-arm regression from a Timeout-arm guard).
 fn spawn_trailing_debounce_thread<F>(
     stop_flag: Arc<AtomicBool>,
     delay: Duration,
     mut emit: F,
-) -> std::sync::mpsc::Sender<()>
+) -> (std::sync::mpsc::Sender<()>, Arc<AtomicBool>)
 where
     F: FnMut() + Send + 'static,
 {
     let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let completed = Arc::new(AtomicBool::new(false));
+    let completed_for_thread = Arc::clone(&completed);
 
     std::thread::spawn(move || {
+        // Drop guard fires on every exit path including panics, so the
+        // completion flag tracks "thread really gone" rather than "thread
+        // chose to exit cleanly". Tests reading the flag get the strict
+        // contract; production callers ignoring it pay nothing extra.
+        struct CompletionGuard(Arc<AtomicBool>);
+        impl Drop for CompletionGuard {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+        let _completion_guard = CompletionGuard(completed_for_thread);
+
         while !stop_flag.load(Ordering::Relaxed) {
             match rx.recv_timeout(Duration::from_millis(IDLE_CHECK_MS)) {
                 Ok(()) => loop {
@@ -101,7 +123,7 @@ where
         }
     });
 
-    tx
+    (tx, completed)
 }
 
 /// Run a `std::process::Command` synchronously with a deadline. On timeout,
@@ -475,11 +497,16 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
         let toplevel = toplevel.clone();
         let stop_flag = stop_flag.clone();
 
-        spawn_trailing_debounce_thread(
+        // Production callers ignore the completion flag — `stop_flag` plus
+        // the Drop semantics of the captured Arcs are enough for shutdown.
+        // The flag exists to give tests a way to observe prompt exit
+        // without inferring it from emit-suppression side-channels.
+        let (tx, _completed) = spawn_trailing_debounce_thread(
             stop_flag,
             Duration::from_millis(DEBOUNCE_MS),
             move || emit_for_all_subscribers(&app_handle, &state, &toplevel),
-        )
+        );
+        tx
     };
 
     // Create notify watcher
@@ -1178,7 +1205,7 @@ mod tests {
         // splitting the burst into separate windows.
         let stop_flag = Arc::new(AtomicBool::new(false));
         let (emitted_tx, emitted_rx) = mpsc::channel::<()>();
-        let debounce_tx = spawn_trailing_debounce_thread(
+        let (debounce_tx, _completed) = spawn_trailing_debounce_thread(
             stop_flag.clone(),
             Duration::from_millis(120),
             move || {
@@ -1216,18 +1243,28 @@ mod tests {
 
     #[test]
     fn trailing_debounce_inner_loop_breaks_on_stop_flag_during_active_burst() {
-        // Round-2 regression guard for the round-1 stop_flag check inside
-        // the inner `Ok(())` arm. If a future refactor accidentally
-        // reverts that check, a continuous burst would pin the thread
-        // until its Sender clones disconnected (up to POLL_INTERVAL_SECS
-        // = 10s in production). The test simulates an active burst,
-        // flips stop_flag mid-burst, and asserts NO emit fires for a
-        // full debounce window — proving the inner loop bailed early.
+        // Round-3 rewrite. The round-2 version asserted "no emit fires"
+        // — but emit suppression is independently guaranteed by the
+        // Timeout arm's own stop_flag guard, so the test couldn't
+        // distinguish an Ok-arm regression from the Timeout-arm guard.
+        // Round-3 observes the contract directly: the spawn function
+        // exposes a `completed` Arc<AtomicBool> set in a Drop guard at
+        // thread exit; the test asserts it flips within
+        // `IDLE_CHECK_MS + delay + margin` of stop_flag being raised
+        // while a burst is still being fed. If the Ok-arm check
+        // regresses, the inner loop drives the thread past every
+        // `recv_timeout(delay)` of the burst, and `completed` doesn't
+        // flip until the burst dries up — which the assertion catches.
         let stop_flag = Arc::new(AtomicBool::new(false));
-        let (emitted_tx, emitted_rx) = mpsc::channel::<()>();
-        let debounce_tx = spawn_trailing_debounce_thread(
+        let (emitted_tx, _emitted_rx) = mpsc::channel::<()>();
+        let (debounce_tx, completed) = spawn_trailing_debounce_thread(
             stop_flag.clone(),
-            Duration::from_millis(120),
+            // Use a longer delay (250ms) so the difference between
+            // "Ok-arm bails immediately" and "Ok-arm regressed and waits
+            // for inner timeout / Disconnected" is observable: a 250ms
+            // delay × 5 events × scheduler jitter would push a regressed
+            // thread past 1s, well outside the 200ms assertion window.
+            Duration::from_millis(250),
             move || {
                 let _ = emitted_tx.send(());
             },
@@ -1238,8 +1275,10 @@ mod tests {
         std::thread::sleep(Duration::from_millis(20));
         // Mid-burst flip.
         stop_flag.store(true, Ordering::Relaxed);
-        // Keep feeding events so the inner loop keeps re-entering Ok();
-        // each iteration must observe stop_flag and `return`.
+        // Keep feeding events so the inner loop keeps re-entering Ok().
+        // Each iteration MUST observe stop_flag and `return`; otherwise
+        // the inner `recv_timeout(250ms)` waits the full delay between
+        // events, postponing thread exit far beyond our assertion window.
         for _ in 0..5 {
             // Sender side: ignore errors — the thread may exit between
             // sends, dropping its rx, in which case send() returns Err.
@@ -1247,12 +1286,25 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
 
-        // No trailing emit should land — the inner loop returned before
-        // ever hitting the Timeout arm where emit() lives. Wait the full
-        // debounce window plus margin to be sure.
+        // Wait briefly for the thread to exit. If the Ok-arm stop_flag
+        // check is in place, the thread returns within IDLE_CHECK_MS
+        // of stop_flag being raised. We add a generous margin (200ms)
+        // to absorb scheduler jitter, well below the regressed-path's
+        // expected lower bound (5×20ms send pacing + 250ms delay = ~350ms
+        // minimum to exhaust the burst, longer under load).
+        let deadline = std::time::Instant::now() + Duration::from_millis(200);
+        while std::time::Instant::now() < deadline {
+            if completed.load(Ordering::Acquire) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+
         assert!(
-            emitted_rx.recv_timeout(Duration::from_millis(200)).is_err(),
-            "stop_flag set mid-burst must suppress the trailing emit"
+            completed.load(Ordering::Acquire),
+            "thread must exit promptly via the Ok-arm stop_flag check; \
+             still alive after IDLE_CHECK_MS + 200ms margin (the \
+             regressed-path lower bound is delay×N events ≈ 350ms+)"
         );
 
         drop(debounce_tx);

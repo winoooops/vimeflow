@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 9
+ref_count: 10
 ---
 
 # Testing Gaps
@@ -160,3 +160,12 @@ filesystem scope restrictions).
 - **Finding:** The `trailing_debounce_emits_once_after_final_burst_event` test sent three events with `sleep(20ms)` gaps against a 60ms debounce window — 35ms of scheduler-jitter margin. On a saturated CI runner `sleep(20ms)` realistically overshoots to 50–100ms. Any single sleep exceeding 60ms splits the burst into independent debounce windows, triggering an early emit and tripping the `recv_timeout(25ms).is_err()` assertion on line 1169. Both sleeps overshooting also breaks the "exactly one emit" assertion at line 1177. The 20/60/35 ratio sat at roughly one Linux scheduler quantum, where typical CI noise routinely violates assumptions. Same finding-class as #11 (sleep-based synchronization in Rust integration test makes timing flaky) — both are absolute-time assertions against the SUT without enough margin to absorb scheduler jitter.
 - **Fix:** Doubled timing budgets: 120ms debounce window, 30ms inter-event sleeps, 50ms negative-window receive, 400ms positive-window receive. Now ~60ms scheduler margin (2× sleep) on the burst-quietness assertion. Adds ~60ms to test runtime in exchange for resilience against typical CI jitter; cheap compared to the alternative of a full event-driven synchronization mechanism.
 - **Commit:** _(see git log for the round-1 fix commit)_
+
+### 17. Regression-guard test verified an indirectly-guarded property, not the property the fix added
+
+- **Source:** github-claude | PR #124 round 3 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/git/watcher.rs`
+- **Finding:** Round-2's regression test for the inner-loop stop_flag check (added in round-1 to fix a 10s thread-pin) asserted "no spurious emit fires when stop_flag is set mid-burst." But emit() in `spawn_trailing_debounce_thread` is reached only via the Timeout arm, which already independently guards against stop_flag. So an Ok-arm regression — the very thing the round-1 fix introduced — couldn't change the emit-side observation: the Timeout arm's own guard would still suppress the emit. The test verified a real property (no spurious teardown emit) but couldn't catch the regression it was named after. The actual production risk (resource pinning ≤300ms after teardown until the burst dries up) was unobservable from the channel side. Same finding-class as #6 (regression-guard test that didn't actually verify the property it claimed to guard) — round-3 is the second instance in this codebase where assertion-on-side-effect failed to catch the regression on the guarded path.
+- **Fix:** Restructured `spawn_trailing_debounce_thread` to return `(Sender<()>, Arc<AtomicBool>)`, where the bool is set from a `Drop` guard inside the spawn closure. The completion flag flips on every exit path (any return + panic), giving tests a direct observation of "thread really gone." Production caller ignores the flag (`let (tx, _completed) = ...`). The regression test now observes the flag with a `IDLE_CHECK_MS + 200ms` deadline; under the regressed path, the inner loop stays in `recv_timeout(delay)` per burst event and the deadline expires before the flag flips. Lesson: when a fix lives in branch X of a multi-branch decision, the regression test must observe a property that branch X uniquely affects — not a downstream side-effect that other branches independently produce.
+- **Commit:** _(see git log for the round-3 fix commit)_
