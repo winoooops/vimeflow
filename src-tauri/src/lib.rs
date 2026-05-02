@@ -1,6 +1,7 @@
 pub mod agent;
 mod filesystem;
 mod git;
+pub mod orchestrator;
 mod terminal;
 
 use agent::{
