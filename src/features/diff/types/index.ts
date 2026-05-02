@@ -29,7 +29,7 @@ export interface FileDiff {
 
 /** A single hunk within a diff */
 export interface DiffHunk {
-  id: string // unique identifier (e.g. 'hunk-0')
+  id: string // unique identifier (e.g. 'hunk-1-1')
   header: string // @@ -102,7 +102,6 @@
   oldStart: number
   oldLines: number
