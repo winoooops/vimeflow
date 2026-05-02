@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-04-30
-ref_count: 7
+ref_count: 8
 ---
 
 # Documentation Accuracy
@@ -294,3 +294,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** When `p4-d6` was promoted to `status: done` (manual end-to-end verification satisfied via the hero gif), the sibling `pr` field was left `null`. Every other completed step in Phase 4 records its closing PR (`p4-d3 → 63`, `p4-d4 → 57`, `p4-d5 → 49`), so the gap breaks the per-step traceability the schema was built for. Tooling that walks `pr` fields to auto-generate release notes or to cross-reference to GitHub silently skips the orphaned step. Same finding-class as #5 (phase dependency drift): a single edit to `progress.yaml` left adjacent fields out of sync with the new state.
 - **Fix:** Set `pr: 121` on `p4-d6`. `commit` remains `null` until the PR squash-merges (matches the populate-on-merge pattern of D1-D5).
 - **Commit:** _(see git log for the round-2 fix commit)_
+
+### 32. Vacuous-truth guard `!items.is_empty() &&` before `Iterator::any` is dead code
+
+- **Source:** github-claude | PR #122 round 1 | 2026-05-01
+- **Severity:** LOW
+- **File:** `src-tauri/src/agent/transcript.rs`
+- **Finding:** `is_user_prompt` had `!items.is_empty() && items.iter().any(|item| !is_tool_result_block(item))`. Rust's `Iterator::any` returns `false` on an empty iterator (vacuous-truth short-circuit), so the explicit emptiness guard is logically redundant — both halves return the same bool for empty slices. The guard creates the misleading impression that there's a distinct empty-array code path; a future maintainer adding a parallel item-type predicate may copy the pattern, wonder why the empty check exists, and spend time verifying it's necessary. Same finding-class as #28 (unused `export default TokenCache` dead code) — surface area that does nothing.
+- **Fix:** Removed `!items.is_empty() &&`. Expression is now `items.iter().any(|item| !is_tool_result_block(item))`, which still returns `false` for empty slices and all-`tool_result` slices.
+- **Commit:** _(see git log for the round-1 fix commit)_

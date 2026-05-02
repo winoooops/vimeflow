@@ -1,3 +1,4 @@
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
 use vimeflow_lib::agent::transcript::TranscriptState;
@@ -10,11 +11,21 @@ fn transcript_emits_turn_events_for_real_user_prompts_only() {
     let app = mock_builder().build(tauri::generate_context!()).unwrap();
     let app_handle = app.handle().clone();
 
+    // Channel signals when the expected event count (2) lands so the test
+    // doesn't rely on a fixed sleep — flaky on loaded CI runners where the
+    // watcher thread can miss a millisecond budget.
+    let (tx, rx) = mpsc::channel::<()>();
     let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let recv_clone = received.clone();
+    let tx_clone = tx.clone();
     app_handle.listen("agent-turn", move |event| {
-        recv_clone.lock().unwrap().push(event.payload().to_string());
+        let mut events = recv_clone.lock().unwrap();
+        events.push(event.payload().to_string());
+        if events.len() >= 2 {
+            let _ = tx_clone.send(());
+        }
     });
+    drop(tx);
 
     let tmp = tempfile::tempdir().expect("temp transcript dir");
     let transcript_path = tmp.path().join("turns.jsonl");
@@ -43,7 +54,8 @@ fn transcript_emits_turn_events_for_real_user_prompts_only() {
         )
         .expect("start watcher");
 
-    std::thread::sleep(std::time::Duration::from_millis(1500));
+    rx.recv_timeout(std::time::Duration::from_secs(5))
+        .expect("timed out waiting for turn events");
     state.stop("session-turns").ok();
 
     let events = received.lock().unwrap();

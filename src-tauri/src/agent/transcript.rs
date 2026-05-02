@@ -640,7 +640,7 @@ fn is_user_prompt(content: &Value) -> bool {
         return false;
     };
 
-    !items.is_empty() && items.iter().any(|item| !is_tool_result_block(item))
+    items.iter().any(|item| !is_tool_result_block(item))
 }
 
 /// Summarize a tool input Value into a short string (~100 chars max)

@@ -354,7 +354,14 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
 
           setStatus((prev) => ({
             ...prev,
-            numTurns: Math.max(prev.numTurns, nextTurns),
+            // A drop in numTurns signals a transcript restart on the same
+            // PTY (e.g. user re-ran `claude`); accept the lower value as
+            // the reset. Math.max otherwise keeps the count monotonic
+            // against out-of-order replay events within a single run.
+            numTurns:
+              nextTurns < prev.numTurns
+                ? nextTurns
+                : Math.max(prev.numTurns, nextTurns),
           }))
         }
       )

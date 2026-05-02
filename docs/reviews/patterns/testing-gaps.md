@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-04-30
-ref_count: 3
+last_updated: 2026-05-01
+ref_count: 4
 ---
 
 # Testing Gaps
@@ -106,3 +106,12 @@ filesystem scope restrictions).
 - **Finding:** The `PathHistory` four-arm match (path-change, first observation, same path, no-path-reset) lived inline inside `record_event_diag`, which itself early-returns under `cfg!(debug_assertions)` and emits log side effects. There was no way to exercise the state machine in a unit test without a `Mutex`, a logger, and a `cfg!(debug_assertions)` build. The round-1 `(None, _)` reset arm — added because the original implementation counted streaks across no-path interludes — was caught by code review only, not by CI. If a later contributor "simplified" the wildcard arm thinking it was a no-op, the streak-across-interlude bug would silently regress: `repeat=N` values during a speculative-path investigation would lie, the diagnostic feature itself would mis-report, and there would be no test failure to flag it. `short_sid`, `short_path`, and `TxOutcome::label()` were also untested pure functions despite being on every diagnostic line's hot path.
 - **Fix:** Extracted the state machine from `record_event_diag` into `PathHistory::observe(tx_path: Option<&str>) -> Option<String>` so each arm is unit-testable directly with no logging, no Mutex, no cfg gate. `record_event_diag` now calls `h.observe(tx_path)` and reads `h.same_path_repeat` afterwards (no behavior change). Added 11 unit tests covering: first observation, repeat increments, path-change-returns-old-and-resets-counter, **no-path-resets-streak-after-repeat (the explicit regression guard for the round-1 `(None, _)` bug)**, idempotent no-path-when-already-no-path, `short_sid` truncation / passthrough / UUID form, `short_path` basename / truncation / no-basename fallback, and `TxOutcome::label` exhaustively across all 9 variants. All 14 tests in `agent::watcher::tests` pass.
 - **Commit:** _(see git log for the round-2 fix commit)_
+
+### 11. Sleep-based synchronization in Rust integration test makes timing flaky on loaded CI
+
+- **Source:** github-claude | PR #122 round 1 | 2026-05-01
+- **Severity:** MEDIUM
+- **File:** `src-tauri/tests/transcript_turns.rs`
+- **Finding:** The test relied on `std::thread::sleep(Duration::from_millis(1500))` between `start_or_replace` and the assertion on `events.len()` to give the watcher's background thread time to open the transcript file, read 4 lines, and dispatch `agent-turn` events through the Tauri mock bus. On a loaded CI runner (memory pressure, slow disk, scheduler latency) the 1500 ms window can be missed — the assertion fails with `assertion failed: 2 == events.len()` non-deterministically, indistinguishable from a real regression. Same root cause as fixed-sleep waits anywhere: the deadline is implicit and cannot adapt.
+- **Fix:** Replaced the sleep with a `std::sync::mpsc::channel::<()>()` signaled from the listener once `events.len() >= 2`, drained via `rx.recv_timeout(Duration::from_secs(5))`. The deadline is now explicit (5 s ceiling) and the test wakes the moment the second event lands rather than always waiting the full window. Drop the original `tx` so the channel closes if the listener is unwound before signaling.
+- **Commit:** _(see git log for the round-1 fix commit)_

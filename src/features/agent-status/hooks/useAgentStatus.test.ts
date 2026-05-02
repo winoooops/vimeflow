@@ -531,7 +531,7 @@ describe('useAgentStatus', () => {
     expect(result.current.numTurns).toBe(2)
   })
 
-  test('keeps max numTurns when transcript replay emits older counts', async () => {
+  test('resets numTurns when a lower count signals a transcript restart on the same session', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 
     await vi.waitFor(() => {
@@ -545,14 +545,17 @@ describe('useAgentStatus', () => {
       })
     })
 
+    // A new `claude` invocation on the same PTY emits agent-turn payloads
+    // starting back at 1, 2, ... — accept the lower value as a reset rather
+    // than keeping the prior run's stale higher count.
     act(() => {
       emit('agent-turn', {
         sessionId: 'pty-session-1',
-        numTurns: 3,
+        numTurns: 1,
       })
     })
 
-    expect(result.current.numTurns).toBe(4)
+    expect(result.current.numTurns).toBe(1)
   })
 
   test('ignores agent-turn events for other sessions', async () => {
