@@ -6,8 +6,8 @@ use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Runtime, State};
 
 use crate::orchestrator::{
-    load_workflow_from_path, CommandAgentRunner, DispatchBatch, GithubIssuesTracker,
-    OrchestratorRuntime, OrchestratorSnapshot, WorkspaceManager,
+    load_workflow_from_path, CommandAgentRunner, ControlBatch, DispatchBatch, GithubIssuesTracker,
+    OrchestratorEvent, OrchestratorRuntime, OrchestratorSnapshot, WorkspaceManager,
 };
 
 const ORCHESTRATOR_EVENT: &str = "orchestrator:event";
@@ -24,6 +24,12 @@ pub struct LoadOrchestratorWorkflowRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SetOrchestratorPausedRequest {
     pub paused: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestratorIssueControlRequest {
+    pub issue_id: String,
 }
 
 pub struct OrchestratorCommandState {
@@ -104,6 +110,18 @@ impl OrchestratorService {
             .dispatch_ready(&self.workspace_manager, &self.runner, timestamp)
             .map_err(|error| error.to_string())
     }
+
+    fn stop_run(&mut self, issue_id: &str, timestamp: &str) -> Result<ControlBatch, String> {
+        self.runtime
+            .stop_run(&self.runner, issue_id, timestamp)
+            .map_err(|error| error.to_string())
+    }
+
+    fn retry_issue(&mut self, issue_id: &str, timestamp: &str) -> Result<DispatchBatch, String> {
+        self.runtime
+            .retry_issue_now(&self.workspace_manager, &self.runner, issue_id, timestamp)
+            .map_err(|error| error.to_string())
+    }
 }
 
 #[tauri::command]
@@ -145,13 +163,45 @@ pub async fn dispatch_orchestrator_once<R: Runtime>(
     let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
     let batch = state.with_service(|service| service.dispatch_once(&timestamp))?;
 
-    for event in &batch.events {
+    emit_orchestrator_events(&app, &batch.events);
+
+    Ok(batch)
+}
+
+#[tauri::command]
+pub async fn stop_orchestrator_run<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, OrchestratorCommandState>,
+    request: OrchestratorIssueControlRequest,
+) -> Result<ControlBatch, String> {
+    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let batch = state.with_service(|service| service.stop_run(&request.issue_id, &timestamp))?;
+
+    emit_orchestrator_events(&app, &batch.events);
+
+    Ok(batch)
+}
+
+#[tauri::command]
+pub async fn retry_orchestrator_issue<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, OrchestratorCommandState>,
+    request: OrchestratorIssueControlRequest,
+) -> Result<DispatchBatch, String> {
+    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let batch = state.with_service(|service| service.retry_issue(&request.issue_id, &timestamp))?;
+
+    emit_orchestrator_events(&app, &batch.events);
+
+    Ok(batch)
+}
+
+fn emit_orchestrator_events<R: Runtime>(app: &AppHandle<R>, events: &[OrchestratorEvent]) {
+    for event in events {
         if let Err(error) = app.emit(ORCHESTRATOR_EVENT, event) {
             log::warn!("failed to emit orchestrator event: {error}");
         }
     }
-
-    Ok(batch)
 }
 
 fn validate_workflow_path(raw_path: &str) -> Result<PathBuf, String> {

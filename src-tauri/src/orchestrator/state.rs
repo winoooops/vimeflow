@@ -36,11 +36,14 @@ pub struct QueueIssue {
 #[serde(rename_all = "camelCase")]
 pub struct OrchestratorRun {
     pub run_id: String,
+    pub process_id: Option<u32>,
     pub issue_id: String,
     pub issue_identifier: String,
     pub attempt_number: u32,
     pub status: RunStatus,
     pub workspace_path: PathBuf,
+    pub stdout_log_path: Option<PathBuf>,
+    pub stderr_log_path: Option<PathBuf>,
     pub started_at: String,
     pub last_event: Option<String>,
 }
@@ -96,6 +99,10 @@ pub enum StateError {
     IssueAlreadyActive { issue_id: String },
     #[error("issue must be claimed before it can run: {issue_id}")]
     IssueNotClaimed { issue_id: String },
+    #[error("issue is not running: {issue_id}")]
+    IssueNotRunning { issue_id: String },
+    #[error("issue is not scheduled for retry: {issue_id}")]
+    IssueNotRetrying { issue_id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -208,8 +215,11 @@ impl OrchestratorState {
         &mut self,
         issue_id: &str,
         run_id: &str,
+        process_id: Option<u32>,
         attempt_number: u32,
         workspace_path: PathBuf,
+        stdout_log_path: Option<PathBuf>,
+        stderr_log_path: Option<PathBuf>,
         started_at: &str,
     ) -> Result<(), StateError> {
         let claimed_attempt = self.claimed_attempt(issue_id)?;
@@ -219,11 +229,14 @@ impl OrchestratorState {
             issue_id.to_string(),
             OrchestratorRun {
                 run_id: run_id.to_string(),
+                process_id,
                 issue_id: issue_id.to_string(),
                 issue_identifier: claimed_attempt.issue_identifier,
                 attempt_number,
                 status: RunStatus::Running,
                 workspace_path,
+                stdout_log_path,
+                stderr_log_path,
                 started_at: started_at.to_string(),
                 last_event: None,
             },
@@ -242,6 +255,24 @@ impl OrchestratorState {
         let mut entries: Vec<_> = self.retry_queue.values().cloned().collect();
         entries.sort_by(|left, right| left.issue_identifier.cmp(&right.issue_identifier));
         entries
+    }
+
+    pub fn running_run(&self, issue_id: &str) -> Result<OrchestratorRun, StateError> {
+        self.running
+            .get(issue_id)
+            .cloned()
+            .ok_or_else(|| StateError::IssueNotRunning {
+                issue_id: issue_id.to_string(),
+            })
+    }
+
+    pub fn retry_entry(&self, issue_id: &str) -> Result<RetryEntry, StateError> {
+        self.retry_queue
+            .get(issue_id)
+            .cloned()
+            .ok_or_else(|| StateError::IssueNotRetrying {
+                issue_id: issue_id.to_string(),
+            })
     }
 
     pub fn active_work(&self) -> Vec<ActiveWork> {
@@ -395,8 +426,11 @@ mod tests {
             .mark_running(
                 "issue-108",
                 "run-1",
+                Some(42),
                 2,
                 PathBuf::from("/tmp/workspace"),
+                Some(PathBuf::from("/tmp/workspace/stdout.log")),
+                Some(PathBuf::from("/tmp/workspace/stderr.log")),
                 "2026-05-02T00:00:00Z",
             )
             .unwrap();
@@ -405,6 +439,11 @@ mod tests {
 
         assert_eq!(snapshot.running.len(), 1);
         assert_eq!(snapshot.running[0].run_id, "run-1");
+        assert_eq!(snapshot.running[0].process_id, Some(42));
+        assert_eq!(
+            snapshot.running[0].stdout_log_path.as_ref(),
+            Some(&PathBuf::from("/tmp/workspace/stdout.log"))
+        );
         assert_eq!(snapshot.queue[0].status, RunStatus::Running);
         assert_eq!(snapshot.queue[0].attempt_number, Some(2));
     }
@@ -419,8 +458,11 @@ mod tests {
             .mark_running(
                 "issue-108",
                 "run-1",
+                None,
                 1,
                 PathBuf::from("/tmp/workspace"),
+                None,
+                None,
                 "2026-05-02T00:00:00Z",
             )
             .unwrap();
@@ -496,8 +538,11 @@ mod tests {
             .mark_running(
                 "issue-108",
                 "run-1",
+                None,
                 1,
                 PathBuf::from("/tmp/workspace"),
+                None,
+                None,
                 "2026-05-02T00:00:00Z",
             )
             .unwrap();
@@ -521,8 +566,11 @@ mod tests {
             .mark_running(
                 "issue-109",
                 "run-109",
+                Some(109),
                 1,
                 PathBuf::from("/tmp/workspace-109"),
+                Some(PathBuf::from("/tmp/workspace-109/stdout.log")),
+                Some(PathBuf::from("/tmp/workspace-109/stderr.log")),
                 "2026-05-02T00:00:00Z",
             )
             .unwrap();

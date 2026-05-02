@@ -7,7 +7,7 @@ use std::thread;
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::orchestrator::{OrchestratorIssue, WorkspacePlan};
+use crate::orchestrator::{OrchestratorIssue, OrchestratorRun, WorkspacePlan};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +32,13 @@ pub struct AgentRun {
 
 pub trait AgentRunner {
     fn start(&self, request: AgentRunRequest) -> Result<AgentRun, AgentRunnerError>;
+
+    fn stop(&self, run: &OrchestratorRun) -> Result<(), AgentRunnerError> {
+        Err(AgentRunnerError::Stop {
+            run_id: run.run_id.clone(),
+            message: "agent runner does not support stop".to_string(),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -43,6 +50,8 @@ pub enum AgentRunnerError {
     Start { message: String },
     #[error("failed to write prompt to agent stdin: {message}")]
     Stdin { message: String },
+    #[error("failed to stop agent run {run_id}: {message}")]
+    Stop { run_id: String, message: String },
 }
 
 impl AgentRunner for CommandAgentRunner {
@@ -109,6 +118,55 @@ impl AgentRunner for CommandAgentRunner {
             stderr_log_path: Some(stderr_log_path),
         })
     }
+
+    fn stop(&self, run: &OrchestratorRun) -> Result<(), AgentRunnerError> {
+        let Some(process_id) = run.process_id else {
+            return Err(AgentRunnerError::Stop {
+                run_id: run.run_id.clone(),
+                message: "agent run has no process id".to_string(),
+            });
+        };
+
+        stop_process(process_id, &run.run_id)
+    }
+}
+
+#[cfg(unix)]
+fn stop_process(process_id: u32, run_id: &str) -> Result<(), AgentRunnerError> {
+    let result = unsafe { libc::kill(process_id as libc::pid_t, libc::SIGTERM) };
+    if result == 0 {
+        return Ok(());
+    }
+
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        return Ok(());
+    }
+
+    Err(AgentRunnerError::Stop {
+        run_id: run_id.to_string(),
+        message: error.to_string(),
+    })
+}
+
+#[cfg(windows)]
+fn stop_process(process_id: u32, run_id: &str) -> Result<(), AgentRunnerError> {
+    let status = Command::new("taskkill")
+        .args(["/PID", &process_id.to_string(), "/T", "/F"])
+        .status()
+        .map_err(|error| AgentRunnerError::Stop {
+            run_id: run_id.to_string(),
+            message: error.to_string(),
+        })?;
+
+    if status.success() {
+        return Ok(());
+    }
+
+    Err(AgentRunnerError::Stop {
+        run_id: run_id.to_string(),
+        message: format!("taskkill exited with status {status}"),
+    })
 }
 
 #[cfg(test)]

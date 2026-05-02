@@ -105,6 +105,30 @@ describe('TauriOrchestratorService', () => {
     expect(result).toBe(batch)
   })
 
+  test('stopRun invokes stop_orchestrator_run with issue id request', async () => {
+    const batch = { snapshot, events: [] }
+    ;(invoke as Mock).mockResolvedValueOnce(batch)
+
+    const result = await service.stopRun('issue-108')
+
+    expect(invoke).toHaveBeenCalledWith('stop_orchestrator_run', {
+      request: { issueId: 'issue-108' },
+    })
+    expect(result).toBe(batch)
+  })
+
+  test('retryIssue invokes retry_orchestrator_issue with issue id request', async () => {
+    const batch = { snapshot, claimed: [], started: [], failed: [], events: [] }
+    ;(invoke as Mock).mockResolvedValueOnce(batch)
+
+    const result = await service.retryIssue('issue-108')
+
+    expect(invoke).toHaveBeenCalledWith('retry_orchestrator_issue', {
+      request: { issueId: 'issue-108' },
+    })
+    expect(result).toBe(batch)
+  })
+
   test('onEvent subscribes to orchestrator:event and returns unlisten', async () => {
     const callback = vi.fn()
 

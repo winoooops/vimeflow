@@ -36,11 +36,14 @@ export interface QueueIssue {
 
 export interface OrchestratorRun {
   runId: string
+  processId: number | null
   issueId: string
   issueIdentifier: string
   attemptNumber: number
   status: RunStatus
   workspacePath: string
+  stdoutLogPath: string | null
+  stderrLogPath: string | null
   startedAt: string
   lastEvent: string | null
 }
@@ -109,5 +112,10 @@ export interface DispatchBatch {
   claimed: QueueIssue[]
   started: DispatchedRun[]
   failed: DispatchFailure[]
+  events: OrchestratorEvent[]
+}
+
+export interface ControlBatch {
+  snapshot: OrchestratorSnapshot
   events: OrchestratorEvent[]
 }

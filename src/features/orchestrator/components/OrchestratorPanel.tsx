@@ -7,6 +7,7 @@ import {
   type ReactElement,
 } from 'react'
 import type {
+  ControlBatch,
   DispatchBatch,
   OrchestratorEvent,
   OrchestratorRun,
@@ -61,12 +62,15 @@ interface OrchestratorPanelProps {
 
 interface QueueRow {
   key: string
+  issueId: string
   identifier: string
   title: string
   status: RunStatus
   state: string | null
   attemptNumber: number | null
   detail: string | null
+  canStop: boolean
+  canRetry: boolean
 }
 
 const toQueueRows = (snapshot: OrchestratorSnapshot): QueueRow[] => [
@@ -77,32 +81,41 @@ const toQueueRows = (snapshot: OrchestratorSnapshot): QueueRow[] => [
 
 const runningRow = (run: OrchestratorRun): QueueRow => ({
   key: `running:${run.runId}`,
+  issueId: run.issueId,
   identifier: run.issueIdentifier,
   title: run.lastEvent ?? shortId(run.runId),
   status: run.status,
   state: null,
   attemptNumber: run.attemptNumber,
   detail: run.workspacePath,
+  canStop: true,
+  canRetry: false,
 })
 
 const retryRow = (entry: RetryEntry): QueueRow => ({
   key: `retry:${entry.issueId}`,
+  issueId: entry.issueId,
   identifier: entry.issueIdentifier,
   title: entry.lastError,
   status: 'retry_scheduled',
   state: null,
   attemptNumber: entry.attemptNumber,
   detail: `Retry ${formatTimestamp(entry.nextRetryAt)}`,
+  canStop: false,
+  canRetry: true,
 })
 
 const queueRow = (entry: QueueIssue): QueueRow => ({
   key: `queue:${entry.issue.id}`,
+  issueId: entry.issue.id,
   identifier: entry.issue.identifier,
   title: entry.issue.title,
   status: entry.status,
   state: entry.issue.state,
   attemptNumber: entry.attemptNumber,
   detail: entry.lastError ?? retryDetail(entry.nextRetryAt),
+  canStop: false,
+  canRetry: false,
 })
 
 const retryDetail = (nextRetryAt: string | null): string | null =>
@@ -186,7 +199,9 @@ export const OrchestratorPanel = ({
   const runAction = useCallback(
     async (
       action: string,
-      handler: () => Promise<OrchestratorSnapshot | DispatchBatch>
+      handler: () => Promise<
+        OrchestratorSnapshot | DispatchBatch | ControlBatch
+      >
     ): Promise<void> => {
       setLoadingAction(action)
       setError(null)
@@ -239,6 +254,20 @@ export const OrchestratorPanel = ({
   const handleDispatch = useCallback((): void => {
     void runAction('dispatch', () => service.dispatchOnce())
   }, [runAction, service])
+
+  const handleStop = useCallback(
+    (issueId: string): void => {
+      void runAction(`stop:${issueId}`, () => service.stopRun(issueId))
+    },
+    [runAction, service]
+  )
+
+  const handleRetry = useCallback(
+    (issueId: string): void => {
+      void runAction(`retry:${issueId}`, () => service.retryIssue(issueId))
+    },
+    [runAction, service]
+  )
 
   const busy = loadingAction !== null
   const workflowDisplay = loadedWorkflowPath ?? 'No workflow loaded'
@@ -347,7 +376,13 @@ export const OrchestratorPanel = ({
           ) : (
             <div className="flex flex-col gap-2">
               {rows.map((row) => (
-                <QueueRowItem key={row.key} row={row} />
+                <QueueRowItem
+                  key={row.key}
+                  row={row}
+                  disabled={busy}
+                  onStop={handleStop}
+                  onRetry={handleRetry}
+                />
               ))}
             </div>
           )}
@@ -422,7 +457,17 @@ const IconButton = ({
   </button>
 )
 
-const QueueRowItem = ({ row }: { row: QueueRow }): ReactElement => (
+const QueueRowItem = ({
+  row,
+  disabled,
+  onStop,
+  onRetry,
+}: {
+  row: QueueRow
+  disabled: boolean
+  onStop: (issueId: string) => void
+  onRetry: (issueId: string) => void
+}): ReactElement => (
   <article className="rounded-lg bg-surface-container p-3">
     <div className="flex items-start justify-between gap-2">
       <div className="min-w-0">
@@ -446,7 +491,50 @@ const QueueRowItem = ({ row }: { row: QueueRow }): ReactElement => (
       {row.attemptNumber !== null && <span>Attempt {row.attemptNumber}</span>}
       {row.detail && <span className="truncate">{row.detail}</span>}
     </div>
+    {(row.canStop || row.canRetry) && (
+      <div className="mt-3 flex items-center gap-2">
+        {row.canStop && (
+          <RowActionButton
+            label={`Stop ${row.identifier}`}
+            icon="stop_circle"
+            disabled={disabled}
+            onClick={() => onStop(row.issueId)}
+          />
+        )}
+        {row.canRetry && (
+          <RowActionButton
+            label={`Retry ${row.identifier}`}
+            icon="replay"
+            disabled={disabled}
+            onClick={() => onRetry(row.issueId)}
+          />
+        )}
+      </div>
+    )}
   </article>
+)
+
+const RowActionButton = ({
+  label,
+  icon,
+  disabled,
+  onClick,
+}: {
+  label: string
+  icon: string
+  disabled: boolean
+  onClick: () => void
+}): ReactElement => (
+  <button
+    type="button"
+    aria-label={label}
+    title={label}
+    disabled={disabled}
+    onClick={onClick}
+    className="flex h-7 w-7 items-center justify-center rounded-md bg-surface-container-high text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    <span className="material-symbols-outlined text-sm">{icon}</span>
+  </button>
 )
 
 const StatusBadge = ({ status }: { status: RunStatus }): ReactElement => (

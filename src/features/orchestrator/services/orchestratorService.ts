@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type {
+  ControlBatch,
   DispatchBatch,
   OrchestratorEvent,
   OrchestratorSnapshot,
@@ -20,6 +21,8 @@ export interface OrchestratorService {
   refreshSnapshot(): Promise<OrchestratorSnapshot>
   setPaused(paused: boolean): Promise<OrchestratorSnapshot>
   dispatchOnce(): Promise<DispatchBatch>
+  stopRun(issueId: string): Promise<ControlBatch>
+  retryIssue(issueId: string): Promise<DispatchBatch>
   onEvent(callback: (event: OrchestratorEvent) => void): Promise<() => void>
 }
 
@@ -60,6 +63,26 @@ export class TauriOrchestratorService implements OrchestratorService {
       return await invoke<DispatchBatch>('dispatch_orchestrator_once')
     } catch (error) {
       throw commandError('dispatch orchestrator work', error)
+    }
+  }
+
+  async stopRun(issueId: string): Promise<ControlBatch> {
+    try {
+      return await invoke<ControlBatch>('stop_orchestrator_run', {
+        request: { issueId },
+      })
+    } catch (error) {
+      throw commandError('stop orchestrator run', error)
+    }
+  }
+
+  async retryIssue(issueId: string): Promise<DispatchBatch> {
+    try {
+      return await invoke<DispatchBatch>('retry_orchestrator_issue', {
+        request: { issueId },
+      })
+    } catch (error) {
+      throw commandError('retry orchestrator issue', error)
     }
   }
 
@@ -111,6 +134,36 @@ export class MockOrchestratorService implements OrchestratorService {
       failed: [],
       events: [],
     })
+  }
+
+  stopRun(issueId: string): Promise<ControlBatch> {
+    const running = this.snapshot.running.filter(
+      (run) => run.issueId !== issueId
+    )
+
+    const queue = this.snapshot.queue.map((entry) =>
+      entry.issue.id === issueId
+        ? { ...entry, status: 'stopped' as const }
+        : entry
+    )
+
+    this.snapshot = { ...this.snapshot, queue, running }
+
+    return Promise.resolve({
+      snapshot: this.snapshot,
+      events: [],
+    })
+  }
+
+  retryIssue(issueId: string): Promise<DispatchBatch> {
+    this.snapshot = {
+      ...this.snapshot,
+      retryQueue: this.snapshot.retryQueue.filter(
+        (entry) => entry.issueId !== issueId
+      ),
+    }
+
+    return this.dispatchOnce()
   }
 
   onEvent(callback: (event: OrchestratorEvent) => void): Promise<() => void> {

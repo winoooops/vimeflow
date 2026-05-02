@@ -34,11 +34,14 @@ const baseSnapshot: OrchestratorSnapshot = {
   running: [
     {
       runId: 'run-1234567890',
+      processId: 1234,
       issueId: 'issue-2',
       issueIdentifier: 'VIM-109',
       attemptNumber: 2,
       status: 'running',
       workspacePath: '/tmp/vimeflow/VIM-109',
+      stdoutLogPath: '/tmp/vimeflow/VIM-109/stdout.log',
+      stderrLogPath: '/tmp/vimeflow/VIM-109/stderr.log',
       startedAt: '2026-05-02T07:05:00Z',
       lastEvent: 'Agent started',
     },
@@ -95,6 +98,34 @@ const createService = (
           started: [],
           failed: [],
           events: [dispatchEvent],
+        })
+    ),
+    stopRun: vi.fn(
+      (): Promise<{
+        snapshot: OrchestratorSnapshot
+        events: OrchestratorEvent[]
+      }> =>
+        Promise.resolve({
+          snapshot: {
+            ...snapshot,
+            running: [],
+            queue: snapshot.queue.map((entry) =>
+              entry.issue.id === 'issue-2'
+                ? { ...entry, status: 'stopped' }
+                : entry
+            ),
+          },
+          events: [{ ...dispatchEvent, status: 'stopped' }],
+        })
+    ),
+    retryIssue: vi.fn(
+      (): Promise<DispatchBatch> =>
+        Promise.resolve({
+          snapshot: { ...snapshot, retryQueue: [] },
+          claimed: [],
+          started: [],
+          failed: [],
+          events: [{ ...dispatchEvent, status: 'claimed' }],
         })
     ),
     onEvent: vi.fn(
@@ -175,6 +206,25 @@ describe('OrchestratorPanel', () => {
 
     await screen.findByText('Agent running')
     expect(service.dispatchOnce).toHaveBeenCalledOnce()
+  })
+
+  test('stops running work and retries scheduled work from row actions', async (): Promise<void> => {
+    const service = createService()
+    const user = userEvent.setup()
+
+    render(<OrchestratorPanel service={service} />)
+
+    await user.type(
+      screen.getByRole('textbox', { name: /workflow path/i }),
+      '/repo/WORKFLOW.md'
+    )
+    await user.click(screen.getByRole('button', { name: 'Load' }))
+
+    await user.click(screen.getByRole('button', { name: 'Stop VIM-109' }))
+    await user.click(screen.getByRole('button', { name: 'Retry VIM-110' }))
+
+    expect(service.stopRun).toHaveBeenCalledWith('issue-2')
+    expect(service.retryIssue).toHaveBeenCalledWith('issue-3')
   })
 
   test('subscribes to orchestrator events and cleans up on unmount', async (): Promise<void> => {

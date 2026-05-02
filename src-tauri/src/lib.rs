@@ -9,16 +9,20 @@ use agent::{
     stop_transcript_watcher, AgentWatcherState, TranscriptState,
 };
 use filesystem::{list_dir, read_file, write_file};
-use git::{get_git_diff, git_status, watcher::{start_git_watcher, stop_git_watcher, GitWatcherState}};
+use git::{
+    get_git_diff, git_status,
+    watcher::{start_git_watcher, stop_git_watcher, GitWatcherState},
+};
 use orchestrator::{
     dispatch_orchestrator_once, load_orchestrator_workflow, refresh_orchestrator_snapshot,
-    set_orchestrator_paused, OrchestratorCommandState,
+    retry_orchestrator_issue, set_orchestrator_paused, stop_orchestrator_run,
+    OrchestratorCommandState,
 };
 use std::sync::Arc;
 use tauri::Manager;
 use terminal::{
-    cache::SessionCache, kill_pty, list_sessions, reorder_sessions, resize_pty,
-    set_active_session, spawn_pty, update_session_cwd, write_pty, PtyState,
+    cache::SessionCache, kill_pty, list_sessions, reorder_sessions, resize_pty, set_active_session,
+    spawn_pty, update_session_cwd, write_pty, PtyState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -34,7 +38,10 @@ pub fn run() {
             }
 
             // Initialize session cache in app_data_dir
-            let app_data_dir = app.path().app_data_dir().expect("failed to get app_data_dir");
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .expect("failed to get app_data_dir");
             let cache_path = app_data_dir.join("sessions.json");
 
             // E2E test mode: wipe the cache on every launch.
@@ -107,7 +114,9 @@ pub fn run() {
         load_orchestrator_workflow,
         refresh_orchestrator_snapshot,
         set_orchestrator_paused,
-        dispatch_orchestrator_once
+        dispatch_orchestrator_once,
+        stop_orchestrator_run,
+        retry_orchestrator_issue
     ]);
 
     #[cfg(feature = "e2e-test")]
@@ -136,6 +145,8 @@ pub fn run() {
         refresh_orchestrator_snapshot,
         set_orchestrator_paused,
         dispatch_orchestrator_once,
+        stop_orchestrator_run,
+        retry_orchestrator_issue,
         terminal::test_commands::list_active_pty_sessions
     ]);
 

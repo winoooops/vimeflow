@@ -6,10 +6,11 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::orchestrator::{
-    render_prompt, ActiveWork, AgentRun, AgentRunRequest, AgentRunner, AttemptTemplateContext,
-    OrchestratorEvent, OrchestratorIssue, OrchestratorSnapshot, OrchestratorState,
-    PromptTemplateContext, QueueIssue, RetryEntry, RunStatus, StateError, TrackerClient,
-    TrackerError, WorkflowDefinition, WorkspaceManager, WorkspacePlan, WorkspaceTemplateContext,
+    render_prompt, ActiveWork, AgentRun, AgentRunRequest, AgentRunner, AgentRunnerError,
+    AttemptTemplateContext, OrchestratorEvent, OrchestratorIssue, OrchestratorRun,
+    OrchestratorSnapshot, OrchestratorState, PromptTemplateContext, QueueIssue, RetryEntry,
+    RunStatus, StateError, TrackerClient, TrackerError, WorkflowDefinition, WorkspaceManager,
+    WorkspacePlan, WorkspaceTemplateContext,
 };
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -18,6 +19,10 @@ pub enum OrchestratorRuntimeError {
     Tracker(#[from] TrackerError),
     #[error(transparent)]
     State(#[from] StateError),
+    #[error(transparent)]
+    Runner(#[from] AgentRunnerError),
+    #[error("no orchestrator concurrency slots are available for issue: {issue_id}")]
+    NoAvailableSlots { issue_id: String },
     #[error("invalid orchestrator timestamp {value}: {message}")]
     InvalidTimestamp { value: String, message: String },
 }
@@ -37,6 +42,13 @@ pub struct DispatchBatch {
     pub claimed: Vec<QueueIssue>,
     pub started: Vec<DispatchedRun>,
     pub failed: Vec<DispatchFailure>,
+    pub events: Vec<OrchestratorEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ControlBatch {
+    pub snapshot: OrchestratorSnapshot,
     pub events: Vec<OrchestratorEvent>,
 }
 
@@ -129,6 +141,81 @@ where
         Ok(DispatchBatch {
             snapshot: self.state.snapshot(issues),
             claimed: claim_batch.claimed,
+            started,
+            failed,
+            events,
+        })
+    }
+
+    pub fn stop_run<R>(
+        &mut self,
+        runner: &R,
+        issue_id: &str,
+        timestamp: &str,
+    ) -> Result<ControlBatch, OrchestratorRuntimeError>
+    where
+        R: AgentRunner,
+    {
+        let run = self.state.running_run(issue_id)?;
+        runner.stop(&run)?;
+        self.state.release_issue(issue_id, RunStatus::Stopped);
+
+        let issues = self.tracker.fetch_issues()?;
+        let mut events = vec![self.stop_event(&issues, &run, timestamp)];
+        self.reconcile_ineligible_work(&issues, Some(timestamp), &mut events);
+
+        Ok(ControlBatch {
+            snapshot: self.state.snapshot(issues),
+            events,
+        })
+    }
+
+    pub fn retry_issue_now<R>(
+        &mut self,
+        workspace_manager: &WorkspaceManager,
+        runner: &R,
+        issue_id: &str,
+        timestamp: &str,
+    ) -> Result<DispatchBatch, OrchestratorRuntimeError>
+    where
+        R: AgentRunner,
+    {
+        let issues = self.tracker.fetch_issues()?;
+        let mut events = Vec::new();
+        self.reconcile_ineligible_work(&issues, Some(timestamp), &mut events);
+
+        self.state.retry_entry(issue_id)?;
+        let issue = issues
+            .iter()
+            .find(|issue| issue.id == issue_id && self.is_active_issue(issue))
+            .cloned()
+            .ok_or_else(|| StateError::IssueNotRetrying {
+                issue_id: issue_id.to_string(),
+            })?;
+        if self.available_slots() == 0 {
+            return Err(OrchestratorRuntimeError::NoAvailableSlots {
+                issue_id: issue_id.to_string(),
+            });
+        }
+
+        let claim = self.state.claim_retry(&issue)?;
+        events.push(self.retry_claim_event(&issue, &claim, timestamp));
+
+        let mut started = Vec::new();
+        let mut failed = Vec::new();
+        self.dispatch_claim(
+            &claim,
+            workspace_manager,
+            runner,
+            timestamp,
+            &mut started,
+            &mut failed,
+            &mut events,
+        )?;
+
+        Ok(DispatchBatch {
+            snapshot: self.state.snapshot(issues),
+            claimed: vec![claim],
             started,
             failed,
             events,
@@ -297,8 +384,11 @@ where
         self.state.mark_running(
             &issue.id,
             &run.run_id,
+            run.process_id,
             attempt_number,
             workspace.path.clone(),
+            run.stdout_log_path.clone(),
+            run.stderr_log_path.clone(),
             timestamp,
         )?;
         events.push(self.issue_event(
@@ -564,6 +654,30 @@ where
         }
     }
 
+    fn stop_event(
+        &self,
+        issues: &[OrchestratorIssue],
+        run: &OrchestratorRun,
+        timestamp: &str,
+    ) -> OrchestratorEvent {
+        let issue = issues.iter().find(|issue| issue.id == run.issue_id);
+
+        OrchestratorEvent {
+            timestamp: timestamp.to_string(),
+            workflow_path: self.workflow.path.clone(),
+            issue_id: run.issue_id.clone(),
+            issue_identifier: issue
+                .map(|issue| issue.identifier.clone())
+                .unwrap_or_else(|| run.issue_identifier.clone()),
+            run_id: Some(run.run_id.clone()),
+            attempt_number: Some(run.attempt_number),
+            status: RunStatus::Stopped,
+            workspace_path: Some(run.workspace_path.clone()),
+            message: Some("operator stopped agent run".to_string()),
+            error: None,
+        }
+    }
+
     fn issue_event(
         &self,
         issue: &OrchestratorIssue,
@@ -648,28 +762,34 @@ mod tests {
     #[derive(Debug, Clone)]
     struct RecordingRunner {
         requests: Rc<RefCell<Vec<AgentRunRequest>>>,
+        stopped_runs: Rc<RefCell<Vec<String>>>,
         result: Result<AgentRun, AgentRunnerError>,
+        stop_result: Result<(), AgentRunnerError>,
     }
 
     impl RecordingRunner {
         fn with_run(run_id: &str) -> Self {
             Self {
                 requests: Rc::new(RefCell::new(Vec::new())),
+                stopped_runs: Rc::new(RefCell::new(Vec::new())),
                 result: Ok(AgentRun {
                     run_id: run_id.to_string(),
                     process_id: Some(42),
                     stdout_log_path: None,
                     stderr_log_path: None,
                 }),
+                stop_result: Ok(()),
             }
         }
 
         fn with_error(message: &str) -> Self {
             Self {
                 requests: Rc::new(RefCell::new(Vec::new())),
+                stopped_runs: Rc::new(RefCell::new(Vec::new())),
                 result: Err(AgentRunnerError::Start {
                     message: message.to_string(),
                 }),
+                stop_result: Ok(()),
             }
         }
     }
@@ -678,6 +798,11 @@ mod tests {
         fn start(&self, request: AgentRunRequest) -> Result<AgentRun, AgentRunnerError> {
             self.requests.borrow_mut().push(request);
             self.result.clone()
+        }
+
+        fn stop(&self, run: &OrchestratorRun) -> Result<(), AgentRunnerError> {
+            self.stopped_runs.borrow_mut().push(run.run_id.clone());
+            self.stop_result.clone()
         }
     }
 
@@ -865,6 +990,54 @@ mod tests {
     }
 
     #[test]
+    fn stop_run_marks_running_work_stopped_and_calls_runner() {
+        let (_dir, workflow) = workflow_fixture(1);
+        let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
+        let tracker = StaticTracker::with_issues(vec![issue("issue-108", "#108", "open")]);
+        let runner = RecordingRunner::with_run("run-108");
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker);
+
+        runtime
+            .dispatch_ready(&workspace_manager, &runner, "2026-05-02T08:15:00Z")
+            .unwrap();
+        let batch = runtime
+            .stop_run(&runner, "issue-108", "2026-05-02T08:16:00Z")
+            .unwrap();
+
+        assert_eq!(runner.stopped_runs.borrow().as_slice(), ["run-108"]);
+        assert!(batch.snapshot.running.is_empty());
+        assert_eq!(batch.snapshot.queue[0].status, RunStatus::Stopped);
+        assert_eq!(runtime.in_flight_count(), 0);
+        assert_eq!(batch.events.len(), 1);
+        assert_eq!(batch.events[0].status, RunStatus::Stopped);
+        assert_eq!(batch.events[0].run_id.as_deref(), Some("run-108"));
+        assert_eq!(
+            batch.events[0].message.as_deref(),
+            Some("operator stopped agent run")
+        );
+    }
+
+    #[test]
+    fn stop_run_rejects_non_running_issue() {
+        let workflow = workflow_with_max_concurrent(1);
+        let tracker = StaticTracker::with_issues(vec![issue("issue-108", "#108", "open")]);
+        let runner = RecordingRunner::with_run("run-108");
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker);
+
+        let error = runtime
+            .stop_run(&runner, "issue-108", "2026-05-02T08:16:00Z")
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            OrchestratorRuntimeError::State(StateError::IssueNotRunning {
+                issue_id: "issue-108".to_string()
+            })
+        );
+        assert!(runner.stopped_runs.borrow().is_empty());
+    }
+
+    #[test]
     fn claim_ready_stops_running_work_when_issue_becomes_ineligible() {
         let (_dir, workflow) = workflow_fixture(1);
         let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
@@ -983,6 +1156,74 @@ mod tests {
             .events
             .iter()
             .any(|event| event.message.as_deref() == Some("retry claimed for dispatch")));
+    }
+
+    #[test]
+    fn retry_issue_now_dispatches_retry_before_due_time() {
+        let (_dir, workflow) = workflow_fixture(1);
+        let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
+        let tracker = StaticTracker::with_issues(vec![issue("issue-108", "#108", "open")]);
+        let failing_runner = RecordingRunner::with_error("codex missing");
+        let success_runner = RecordingRunner::with_run("run-108-manual-retry");
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker);
+
+        runtime
+            .dispatch_ready(&workspace_manager, &failing_runner, "2026-05-02T08:15:00Z")
+            .unwrap();
+        let retried = runtime
+            .retry_issue_now(
+                &workspace_manager,
+                &success_runner,
+                "issue-108",
+                "2026-05-02T08:15:05Z",
+            )
+            .unwrap();
+
+        assert_eq!(retried.claimed.len(), 1);
+        assert_eq!(retried.claimed[0].attempt_number, Some(2));
+        assert_eq!(retried.started.len(), 1);
+        assert_eq!(retried.started[0].run.run_id, "run-108-manual-retry");
+        assert!(retried.snapshot.retry_queue.is_empty());
+        assert_eq!(retried.snapshot.queue[0].status, RunStatus::Running);
+        assert!(retried
+            .events
+            .iter()
+            .any(|event| event.message.as_deref() == Some("retry claimed for dispatch")));
+    }
+
+    #[test]
+    fn retry_issue_now_respects_max_concurrent() {
+        let (_dir, workflow) = workflow_fixture(1);
+        let workspace_manager = WorkspaceManager::from_workflow(&workflow).unwrap();
+        let tracker = StaticTracker::with_issues(vec![
+            issue("issue-108", "#108", "open"),
+            issue("issue-109", "#109", "open"),
+        ]);
+        let failing_runner = RecordingRunner::with_error("codex missing");
+        let running_runner = RecordingRunner::with_run("run-109");
+        let mut runtime = OrchestratorRuntime::new(workflow, tracker);
+
+        runtime
+            .dispatch_ready(&workspace_manager, &failing_runner, "2026-05-02T08:15:00Z")
+            .unwrap();
+        runtime
+            .dispatch_ready(&workspace_manager, &running_runner, "2026-05-02T08:15:05Z")
+            .unwrap();
+        let error = runtime
+            .retry_issue_now(
+                &workspace_manager,
+                &running_runner,
+                "issue-108",
+                "2026-05-02T08:15:06Z",
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            OrchestratorRuntimeError::NoAvailableSlots {
+                issue_id: "issue-108".to_string()
+            }
+        );
     }
 
     #[test]
