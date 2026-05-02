@@ -423,13 +423,22 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
     // would just be a tiny memory leak — stop_git_watcher_inner consults
     // `cwd_to_toplevel` first so the stale entry can't cause incorrect
     // routing — but tidiness wins.
-    {
+    // Capture the prior pre-repo mapping (if any) but do NOT clean up
+    // `pre_repo_watchers` yet. The decision depends on which branch of
+    // `resolve_toplevel` we take below:
+    //   - repo-transition (Ok): also remove cwd from pre_repo_watchers,
+    //     dropping the bucket if empty. This is the stranded-subscriber
+    //     transition the round-3 finding asked about.
+    //   - still-pre-repo (Err): leave the pre_repo_watchers entry alone
+    //     so `start_pre_repo_watcher_inner` below can see and increment
+    //     its existing refcount instead of clobbering it to 1.
+    let prior_pre_repo_safe_cwd = {
         let mut pre_repo_map = state
             .cwd_to_safe_pre_repo
             .lock()
             .expect("failed to lock cwd_to_safe_pre_repo");
-        pre_repo_map.remove(cwd);
-    }
+        pre_repo_map.remove(cwd)
+    };
 
     // Try to resolve repo toplevel
     let toplevel = match resolve_toplevel(&safe_cwd) {
@@ -448,6 +457,29 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
             return start_pre_repo_watcher_inner(cwd, safe_cwd, app_handle, state);
         }
     };
+
+    // Repo-transition path. Only NOW can we safely clean up the prior
+    // `pre_repo_watchers` entry for this cwd: the subscriber is moving
+    // from pre-repo to repo, so any leftover subscriber row under the
+    // old safe_cwd would never be reached again (stop_git_watcher
+    // routes via `cwd_to_toplevel` once we register below). Doing this
+    // BEFORE `resolve_toplevel` would have been wrong for the still-
+    // pre-repo re-subscription case, where `start_pre_repo_watcher_inner`
+    // needs the existing refcount to bump rather than recreate from 1
+    // (caught by codex verify in v1 of this round as a HIGH issue —
+    // refcount loss on duplicate pre-repo subscriptions).
+    if let Some(old_safe_cwd) = prior_pre_repo_safe_cwd {
+        let mut pre_repo_watchers = state
+            .pre_repo_watchers
+            .lock()
+            .expect("failed to lock pre_repo_watchers");
+        if let Some(watcher) = pre_repo_watchers.get_mut(&old_safe_cwd) {
+            watcher.subscribers.remove(cwd);
+            if watcher.subscribers.is_empty() {
+                pre_repo_watchers.remove(&old_safe_cwd);
+            }
+        }
+    }
 
     // ── Phase 1: short check under lock A ─────────────────────────────
     //
