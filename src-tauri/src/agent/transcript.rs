@@ -1238,4 +1238,112 @@ mod tests {
 
         assert_eq!(extract_timestamp(&value), "2026-04-22T10:30:45.123Z");
     }
+
+    // is_user_prompt / is_non_empty_user_block — direct in-module coverage.
+    // The integration test at tests/transcript_turns.rs exercises these end
+    // to end through the watcher; these unit tests pin the predicate
+    // contract so a refactor can't silently regress the edge cases without
+    // standing up the Tauri mock harness.
+
+    #[test]
+    fn is_user_prompt_string_path_rejects_whitespace_only() {
+        assert!(!is_user_prompt(&Value::String("   ".into())));
+        assert!(!is_user_prompt(&Value::String("\n\t  \n".into())));
+    }
+
+    #[test]
+    fn is_user_prompt_string_path_rejects_empty_string() {
+        assert!(!is_user_prompt(&Value::String(String::new())));
+    }
+
+    #[test]
+    fn is_user_prompt_string_path_accepts_non_whitespace() {
+        assert!(is_user_prompt(&Value::String("hi".into())));
+    }
+
+    #[test]
+    fn is_user_prompt_array_path_empty_array_is_not_a_prompt() {
+        let content: Value = serde_json::from_str("[]").unwrap();
+        assert!(!is_user_prompt(&content));
+    }
+
+    #[test]
+    fn is_user_prompt_array_path_only_tool_result_is_not_a_prompt() {
+        let content: Value = serde_json::from_str(
+            r#"[{"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}]"#,
+        )
+        .unwrap();
+        assert!(!is_user_prompt(&content));
+    }
+
+    #[test]
+    fn is_user_prompt_array_path_whitespace_only_text_block_is_not_a_prompt() {
+        let content: Value =
+            serde_json::from_str(r#"[{"type":"text","text":"   "}]"#).unwrap();
+        assert!(!is_user_prompt(&content));
+    }
+
+    #[test]
+    fn is_user_prompt_array_path_mixed_tool_result_plus_text_is_a_prompt() {
+        let content: Value = serde_json::from_str(
+            r#"[{"type":"tool_result","tool_use_id":"toolu_1","content":"ok"},{"type":"text","text":"follow-up"}]"#,
+        )
+        .unwrap();
+        assert!(is_user_prompt(&content));
+    }
+
+    #[test]
+    fn is_user_prompt_neither_string_nor_array_is_not_a_prompt() {
+        // Object / number / null content shapes should fail closed.
+        let object: Value = serde_json::from_str(r#"{"key":"value"}"#).unwrap();
+        assert!(!is_user_prompt(&object));
+        assert!(!is_user_prompt(&Value::Null));
+        assert!(!is_user_prompt(&serde_json::json!(42)));
+    }
+
+    #[test]
+    fn is_non_empty_user_block_unknown_block_type_counts_as_content() {
+        // An unknown non-tool_result block type (e.g. image, document, or
+        // a future Claude block) is treated as content. Intentional default —
+        // documented here so a future contributor doesn't tighten this
+        // without thinking through the regression on, say, image messages.
+        let block: Value =
+            serde_json::from_str(r#"{"type":"image","source":{"type":"base64","data":"..."}}"#)
+                .unwrap();
+        assert!(is_non_empty_user_block(&block));
+    }
+
+    #[test]
+    fn is_non_empty_user_block_text_block_with_missing_text_field_is_not_content() {
+        // A `text` block without a `text` field, or with a non-string `text`
+        // value, fails the non-whitespace check and does not count as content.
+        let no_text: Value = serde_json::from_str(r#"{"type":"text"}"#).unwrap();
+        assert!(!is_non_empty_user_block(&no_text));
+
+        let non_string_text: Value =
+            serde_json::from_str(r#"{"type":"text","text":42}"#).unwrap();
+        assert!(!is_non_empty_user_block(&non_string_text));
+    }
+
+    #[test]
+    fn is_non_empty_user_block_block_with_missing_or_non_string_type_falls_through_to_content() {
+        // Blocks where the `type` field is absent or non-string take the
+        // unknown-block fall-through and count as content. This mirrors the
+        // image / document / future-Claude-block case (see
+        // is_non_empty_user_block_unknown_block_type_counts_as_content) —
+        // anything that is not explicitly `tool_result` and not an empty
+        // `text` block is permissive by default. Documenting the contract
+        // here so a future tightening (e.g. require an explicit allowlist
+        // of known content types) is a deliberate change, not silent drift.
+        let no_type: Value = serde_json::from_str("{}").unwrap();
+        assert!(is_non_empty_user_block(&no_type));
+
+        let non_string_type: Value =
+            serde_json::from_str(r#"{"type":42,"text":"hello"}"#).unwrap();
+        assert!(is_non_empty_user_block(&non_string_type));
+
+        let null_type: Value =
+            serde_json::from_str(r#"{"type":null,"text":"hello"}"#).unwrap();
+        assert!(is_non_empty_user_block(&null_type));
+    }
 }

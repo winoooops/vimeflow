@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 6
+ref_count: 7
 ---
 
 # Testing Gaps
@@ -133,3 +133,12 @@ filesystem scope restrictions).
 - **Finding:** The PR refactored `ActivityFooter` from a conditional-render pattern (no cell when `numTurns=0`) to an always-render pattern (`{n} turn|turns`). The pre-existing test `does not render a turns cell` was deleted and replaced with `renders singular turn label` (numTurns=1) plus a localized 1,234 case. No test exercised `numTurns=0` — the initial value of `createDefaultStatus().numTurns`, visible to users during the pre-activity window between agent detection and the first `agent-turn` replay event. Without a test, the contract was undocumented: a future contributor could re-add a `{numTurns > 0 && …}` guard thinking it's "what was meant" and silently regress the always-render intent.
 - **Fix:** Added `renders 0 turns during the pre-activity window before the first agent-turn event` test that locks the always-render-with-zero contract. The test comment also documents the alternative path: if the design intent is to hide the cell pre-activity, both the test and the component must change together — not one without the other.
 - **Commit:** _(see git log for the round-3 fix commit)_
+
+### 14. Pure predicates covered only by an integration test — edge cases unpinned
+
+- **Source:** github-claude | PR #122 round 4 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src-tauri/src/agent/transcript.rs`
+- **Finding:** `is_user_prompt` and `is_non_empty_user_block` had no in-module unit tests. Their behavior was exercised only by the integration test in `tests/transcript_turns.rs` (4–5 message shapes through a real Tauri mock app + watcher). Several edge cases were unverified by any test: whitespace-only string, empty string, empty array, all-tool_result array, mixed `tool_result + text`, unknown block type fallthrough, `text` block missing the `text` field, `text` block with non-string `text` value, block with no `type` field, block with non-string/null `type` field. Reliance on the heavy integration harness alone meant an edge-case regression would only surface when the Tauri mock app could be stood up — not in fast in-module test loops.
+- **Fix:** Added 11 unit tests directly in the existing `#[cfg(test)] mod tests`: 3 string-path tests (whitespace, empty, non-whitespace), 4 array-path tests (empty, only-tool_result, whitespace-only-text, mixed), 1 non-string-content shape, 1 unknown-block-type fallthrough, 1 text-block-missing-text-field, 1 missing/non-string/null `type` fallthrough. All 11 pass; total `agent::transcript::tests` now 38. Verify-cycle-3 caught a subgap (the `type`-field tests originally only covered explicit text-typed blocks); round-4 closes it with the explicit non-string/null type tests.
+- **Commit:** _(see git log for the round-4 fix commit, plus its codex-verify retry that closed the type-field subgap)_
