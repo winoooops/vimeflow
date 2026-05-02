@@ -955,6 +955,13 @@ fn upgrade_to_repo_watcher<R: tauri::Runtime>(
     // and failed subscribers are restored to a pre-repo watcher so they keep
     // a backend subscription and retry path.
     let mut errors: Vec<String> = Vec::new();
+    // Counts only per-subscriber upgrade failures from the loop below —
+    // distinct from `errors.len()`, which may also accumulate restore-path
+    // failures (state-machine-level lock poisoning) that are NOT
+    // subscriber failures. The error-format string uses this counter so
+    // the human-facing "N subscriber(s) failed to upgrade" message
+    // reflects subscriber failures only.
+    let mut subscriber_failures: usize = 0;
     let mut failed_subscribers: HashMap<String, u32> = HashMap::new();
     for (original_cwd, refcount) in subscribers {
         if refcount == 0 {
@@ -964,6 +971,7 @@ fn upgrade_to_repo_watcher<R: tauri::Runtime>(
         if let Err(e) = start_git_watcher_inner(&original_cwd, app_handle.clone(), &state) {
             errors.push(format!("{}: {}", original_cwd, e));
             failed_subscribers.insert(original_cwd, refcount);
+            subscriber_failures += 1;
             continue;
         }
 
@@ -1017,8 +1025,15 @@ fn upgrade_to_repo_watcher<R: tauri::Runtime>(
     if errors.is_empty() {
         Ok(())
     } else {
+        // Use the dedicated counter for the headline so the message
+        // matches reality: only `subscriber_failures` are upgrade
+        // failures whose subscribers need a retry. Other items in
+        // `errors` (post-upgrade state inconsistencies, restore-path
+        // failures) are surfaced in the trailing `errors.join("; ")`
+        // body but don't inflate the headline count.
         Err(format!(
-            "upgrade_to_repo_watcher: {} subscriber(s) failed to upgrade: {}",
+            "upgrade_to_repo_watcher: {} subscriber(s) failed to upgrade ({} total error(s)): {}",
+            subscriber_failures,
             errors.len(),
             errors.join("; ")
         ))
