@@ -12,14 +12,22 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(debug_assertions)]
 const DEBUG_LOG_NAME: &str = "vimeflow-debug.log";
 #[cfg(debug_assertions)]
-const ROTATED_DEBUG_LOG_NAME: &str = "vimeflow-debug.log.1";
-#[cfg(debug_assertions)]
 const MAX_DEBUG_LOG_BYTES: u64 = 1024 * 1024;
 
 /// Debug-only file logger. Compiles to a no-op in release builds.
 #[cfg(debug_assertions)]
 pub(crate) fn debug_log(tag: &str, msg: &str) {
-    if let Err(error) = append_debug_log(&debug_log_path(), tag, msg, MAX_DEBUG_LOG_BYTES) {
+    let Some(path) = debug_log_path() else {
+        // Fail-closed when no per-user data directory is available. The
+        // previous fallback to `std::env::temp_dir()` recreated a
+        // predictable shared-temp path (`<tmp>/vimeflow/logs/...`) that
+        // a local attacker could pre-seed with a symlink to redirect
+        // append writes — exactly the security regression this PR aims
+        // to remove. Better to drop debug output entirely than to write
+        // it to an attacker-controlled path.
+        return;
+    };
+    if let Err(error) = append_debug_log(&path, tag, msg, MAX_DEBUG_LOG_BYTES) {
         log::warn!("failed to write debug log: {}", error);
     }
 }
@@ -28,12 +36,8 @@ pub(crate) fn debug_log(tag: &str, msg: &str) {
 pub(crate) fn debug_log(_tag: &str, _msg: &str) {}
 
 #[cfg(debug_assertions)]
-fn debug_log_path() -> PathBuf {
-    debug_log_path_from_base(
-        dirs::data_local_dir()
-            .unwrap_or_else(std::env::temp_dir)
-            .as_path(),
-    )
+fn debug_log_path() -> Option<PathBuf> {
+    dirs::data_local_dir().map(|base| debug_log_path_from_base(base.as_path()))
 }
 
 #[cfg(debug_assertions)]
@@ -64,7 +68,20 @@ fn append_debug_log(path: &Path, tag: &str, msg: &str, max_bytes: u64) -> io::Re
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
 
-    writeln!(file, "[{secs}] [{tag}] {msg}")
+    // Sanitize newlines/CRs so a tag or msg containing embedded line
+    // terminators (e.g. a cwd with `\n` — POSIX paths permit any byte
+    // except NUL) can't inject phantom rows or break log-parsing
+    // tooling. Cosmetic protection only since the file is 0600 in a
+    // debug-only build, but the cost is trivial and the corrupted-tail
+    // failure mode is hard to diagnose otherwise.
+    let safe_tag = sanitize_for_log(tag);
+    let safe_msg = sanitize_for_log(msg);
+    writeln!(file, "[{secs}] [{safe_tag}] {safe_msg}")
+}
+
+#[cfg(debug_assertions)]
+fn sanitize_for_log(input: &str) -> String {
+    input.replace('\n', "\\n").replace('\r', "\\r")
 }
 
 #[cfg(debug_assertions)]
@@ -77,7 +94,11 @@ fn rotate_debug_log_if_needed(path: &Path, max_bytes: u64) -> io::Result<()> {
         return Ok(());
     }
 
-    let rotated_path = path.with_file_name(ROTATED_DEBUG_LOG_NAME);
+    // Derive the rotated name from the path itself rather than a
+    // separate constant — eliminates the silent-stale failure mode
+    // where renaming `DEBUG_LOG_NAME` would leave the rotated form
+    // pointing at the old name.
+    let rotated_path = path.with_extension("log.1");
     match fs::remove_file(&rotated_path) {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -114,6 +135,24 @@ mod tests {
 
         let content = fs::read_to_string(path).expect("failed to read debug log");
         assert!(content.contains("[pty] spawned"));
+    }
+
+    #[test]
+    fn append_debug_log_sanitizes_newlines_in_tag_and_msg() {
+        // POSIX paths can contain `\n`. A cwd embedded in `msg` could
+        // therefore inject phantom log lines. Sanitizer escapes both
+        // `\n` and `\r` so each call produces exactly one log line.
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = temp_dir.path().join("vimeflow-debug.log");
+
+        append_debug_log(&path, "ta\ng", "first\nsecond\rthird", MAX_DEBUG_LOG_BYTES)
+            .expect("failed to append debug log");
+
+        let content = fs::read_to_string(&path).expect("failed to read debug log");
+        // Exactly one trailing newline (from writeln!), no embedded
+        // newlines from the inputs.
+        assert_eq!(content.matches('\n').count(), 1);
+        assert!(content.contains("[ta\\ng] first\\nsecond\\rthird"));
     }
 
     #[test]
