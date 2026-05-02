@@ -10,6 +10,10 @@ import type {
   DiffHunk,
   DiffLine,
 } from './src/features/diff/types'
+import {
+  buildGitDiffArgs,
+  extractHunkPatch,
+} from './src/features/diff/services/gitPatch'
 
 const git = simpleGit()
 const repoRoot = process.cwd()
@@ -140,10 +144,11 @@ function gitApiPlugin(): Plugin {
             return
           }
 
-          // GET /api/git/diff?file=<path>&staged=<bool>
+          // GET /api/git/diff?file=<path>&staged=<bool>&base=<branch>
           if (pathname === '/api/git/diff' && req.method === 'GET') {
             const file = url.searchParams.get('file')
             const staged = url.searchParams.get('staged') === 'true'
+            const baseBranch = url.searchParams.get('base')
             const untrackedParam = url.searchParams.get('untracked')
 
             const untracked =
@@ -166,15 +171,12 @@ function gitApiPlugin(): Plugin {
               return
             }
 
-            // Always diff against the base branch to show all changes
-            let diff = ''
-
-            if (staged) {
-              diff = await git.diff(['--cached', '--', safePath])
-            } else {
-              // Diff against main to capture all committed + working tree changes
-              diff = await git.diff(['main', '--', safePath])
-            }
+            // Default to the working-tree diff so displayed hunk indexes match
+            // the hunk patches used by stage/discard. Branch comparison is an
+            // explicit read-only mode via `base=<branch>`.
+            let diff = await git.diff(
+              buildGitDiffArgs({ safePath, staged, baseBranch })
+            )
 
             // Handle untracked files — git diff won't show them
             if (!diff && untracked !== false) {
@@ -244,25 +246,32 @@ function gitApiPlugin(): Plugin {
 
             if (hunkIndex !== undefined) {
               // Stage a specific hunk by extracting the patch and applying it
-              const fullDiff = await git.diff(['--', safePath])
+              const fullDiff = await git.diff(
+                buildGitDiffArgs({ safePath, staged: false })
+              )
+              const patch = extractHunkPatch(fullDiff, hunkIndex)
 
-              if (fullDiff) {
-                const hunks = fullDiff.split(/(?=^@@\s)/m)
-                const header = hunks.shift() ?? ''
+              if (patch === null) {
+                res.writeHead(409, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({ error: 'Requested hunk no longer exists' })
+                )
 
-                if (hunkIndex < hunks.length) {
-                  const patch = header + hunks[hunkIndex]
-                  const { spawnSync } = await import('child_process')
+                return
+              }
 
-                  spawnSync('git', ['apply', '--cached', '-'], {
-                    input: patch,
-                    cwd: repoRoot,
-                  })
-                } else {
-                  await git.add(safePath)
-                }
-              } else {
-                await git.add(safePath)
+              const { spawnSync } = await import('child_process')
+
+              const result = spawnSync('git', ['apply', '--cached', '-'], {
+                input: patch,
+                cwd: repoRoot,
+              })
+
+              if (result.status !== 0) {
+                res.writeHead(409, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ error: 'Failed to stage hunk patch' }))
+
+                return
               }
             } else {
               await git.add(safePath)
@@ -340,25 +349,34 @@ function gitApiPlugin(): Plugin {
               await git.clean('f', ['--', safePath])
             } else if (hunkIndex !== undefined) {
               // Discard a specific hunk via reverse patch
-              const fullDiff = await git.diff(['--', safePath])
+              const fullDiff = await git.diff(
+                buildGitDiffArgs({ safePath, staged: false })
+              )
+              const patch = extractHunkPatch(fullDiff, hunkIndex)
 
-              if (fullDiff) {
-                const hunks = fullDiff.split(/(?=^@@\s)/m)
-                const header = hunks.shift() ?? ''
+              if (patch === null) {
+                res.writeHead(409, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({ error: 'Requested hunk no longer exists' })
+                )
 
-                if (hunkIndex < hunks.length) {
-                  const patch = header + hunks[hunkIndex]
-                  const { spawnSync } = await import('child_process')
+                return
+              }
 
-                  spawnSync('git', ['apply', '-R', '-'], {
-                    input: patch,
-                    cwd: repoRoot,
-                  })
-                } else {
-                  await git.checkout(['--', safePath])
-                }
-              } else {
-                await git.checkout(['--', safePath])
+              const { spawnSync } = await import('child_process')
+
+              const result = spawnSync('git', ['apply', '-R', '-'], {
+                input: patch,
+                cwd: repoRoot,
+              })
+
+              if (result.status !== 0) {
+                res.writeHead(409, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({ error: 'Failed to discard hunk patch' })
+                )
+
+                return
               }
             } else {
               // Full file discard — restore from HEAD

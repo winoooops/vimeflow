@@ -2,8 +2,8 @@
 id: git-operations
 category: correctness
 created: 2026-04-09
-last_updated: 2026-04-29
-ref_count: 2
+last_updated: 2026-05-02
+ref_count: 3
 ---
 
 # Git Operations
@@ -122,3 +122,12 @@ between display and mutation operations.
 - **Finding:** Step 6.5 stages `docs/reviews/CLAUDE.md` only when `INDEX_TOUCHED=1`. The flag was set when Step 6.3 created a new pattern (a new row appended to the index) but NOT when Step 6.2 appended an entry to an existing pattern (the row's Findings count + Last Updated also change). Result: an index with stale Findings counts and dates after every cycle that only touched existing patterns — a small but progressively-misleading drift.
 - **Fix:** Documented the invariant explicitly in `references/pattern-kb.md` § Step 6.4: "Set `INDEX_TOUCHED=1` whenever the index file is rewritten — Step 6.2 (appending to existing) AND Step 6.3 (creating new)." Updated SKILL.md § Step 6.5 to reference the invariant with a comment near the `[ "${INDEX_TOUCHED:-0}" -eq 1 ] && STAGED_FILES+=("docs/reviews/CLAUDE.md")` line.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 13. Displayed diff source diverged from hunk mutation source
+
+- **Source:** github-codex | issue #22 | 2026-05-02
+- **Severity:** HIGH
+- **File:** `vite.config.ts`
+- **Finding:** `/api/git/diff` displayed `git diff main -- <file>` while hunk stage/discard extracted patches from `git diff -- <file>`. Mixed committed plus uncommitted changes could shift hunk indexes and stage/discard the wrong patch.
+- **Fix:** Default `/api/git/diff` to the same working-tree diff source used by hunk mutations, keep branch comparison behind explicit `base=<branch>` mode, and reject stale hunk indexes instead of falling back to whole-file operations.
+- **Commit:** issue #22 fix PR
