@@ -127,10 +127,26 @@ const highlightStyle = HighlightStyle.define([
   { tag: t.string, color: colors.green },
 ])
 
+export const getDocumentCspNonce = (): string | null => {
+  if (typeof document === 'undefined') {
+    return null
+  }
+
+  const nonceElement = document.querySelector<HTMLElement>(
+    'script[nonce], style[nonce], link[nonce]'
+  )
+  const nonce = nonceElement?.nonce
+
+  return nonce && nonce.length > 0 ? nonce : null
+}
+
+const cspNonce = getDocumentCspNonce()
+
 /**
  * Combined Catppuccin Mocha theme extension for CodeMirror
  */
 export const catppuccinMocha: Extension = [
   theme,
   syntaxHighlighting(highlightStyle),
+  ...(cspNonce ? [EditorView.cspNonce.of(cspNonce)] : []),
 ]
