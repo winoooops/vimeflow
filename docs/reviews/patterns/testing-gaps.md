@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 18
+ref_count: 19
 ---
 
 # Testing Gaps
@@ -250,3 +250,12 @@ filesystem scope restrictions).
 - **Finding:** `buildGitDiffArgs` accepts both `staged: boolean` and `baseBranch?: string`. The implementation returns the staged form (`['--cached', ...]`) unconditionally when `staged` is true, regardless of whether `baseBranch` is also set — but no test exercised the combination, so the precedence was undocumented. A future maintainer asked to "support staged comparisons against a branch" could plausibly merge the two and would have no failing test to flag the behavior change. Same finding-class as #7 (uncovered guard branch) — multi-input decisions need explicit per-combination coverage, not just per-input.
 - **Fix:** Added a pinning test `staged: true takes precedence over baseBranch (no merge of the two)` asserting the staged form is returned even when both flags are set. Comment in the test documents that they're treated as mutually exclusive call shapes today; combining them would require updating this test, which makes the design choice explicit.
 - **Commit:** _(see git log for the round-2 fix commit)_
+
+### 27. Index-0 boundary on a shift-then-index helper untested while a mid-array index is
+
+- **Source:** github-claude | PR #130 round 3 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src/features/diff/services/gitPatch.test.ts`
+- **Finding:** `extractHunkPatch` calls `hunks.shift()` to drop the pre-`@@` header block, then returns `hunks[index]`. The positive test exercised index 1 (a mid-array hunk) and several null-return cases. Index 0 — the most sensitive boundary, where an off-by-one in `shift()` would surface — was not tested. A future refactor that removed the shift (or changed the split shape) would silently return the file-header block as the patch on index-0 calls; `git apply` would either fail or apply garbage. The mid-array test would still pass because `hunks[1]` (now the first real hunk in the regressed layout) would satisfy the existing assertions. Same finding-class as #7 — uncovered branch in a multi-step transform; a positive test for the index-0 path is the small explicit regression guard.
+- **Fix:** Added `extracts the first hunk (index 0) — the boundary case after shift()` test asserting the index-0 patch contains `@@ -1,2 +1,2 @@` and `+added first` (and excludes the second hunk's markers). No new fixture needed — the existing `diffText` already has two hunks. The comment documents WHY the index-0 case is the critical boundary so a future maintainer can't dismiss the test as redundant with the index-1 test.
+- **Commit:** _(see git log for the round-3 fix commit)_

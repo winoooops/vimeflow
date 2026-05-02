@@ -119,6 +119,24 @@ describe('extractHunkPatch', () => {
     expect(patch).not.toContain('+added first')
   })
 
+  test('extracts the first hunk (index 0) — the boundary case after shift()', () => {
+    // The implementation calls `hunks.shift()` to drop the
+    // pre-`@@` header block, so `hunks[0]` becomes the FIRST `@@`
+    // section. This test pins that boundary: if a future refactor
+    // removes the shift (or the split regex changes shape), index 0
+    // would silently return the file-header block as the patch and
+    // `git apply` would fail or apply garbage. The mid-array test
+    // above wouldn't catch that — `hunks[1]` would still look like
+    // a hunk in either layout.
+    const patch = extractHunkPatch(diffText, 0)
+
+    expect(patch).toContain('diff --git a/src/App.tsx b/src/App.tsx')
+    expect(patch).toContain('@@ -1,2 +1,2 @@')
+    expect(patch).toContain('+added first')
+    expect(patch).not.toContain('@@ -10,2 +10,2 @@')
+    expect(patch).not.toContain('+added second')
+  })
+
   test('returns null for stale or invalid hunk indexes', () => {
     expect(extractHunkPatch(diffText, 2)).toBeNull()
     expect(extractHunkPatch(diffText, -1)).toBeNull()
