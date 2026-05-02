@@ -10,6 +10,10 @@ use agent::{
 };
 use filesystem::{list_dir, read_file, write_file};
 use git::{get_git_diff, git_status, watcher::{start_git_watcher, stop_git_watcher, GitWatcherState}};
+use orchestrator::{
+    dispatch_orchestrator_once, load_orchestrator_workflow, refresh_orchestrator_snapshot,
+    set_orchestrator_paused, OrchestratorCommandState,
+};
 use std::sync::Arc;
 use tauri::Manager;
 use terminal::{
@@ -75,7 +79,8 @@ pub fn run() {
         .manage(PtyState::new())
         .manage(AgentWatcherState::new())
         .manage(TranscriptState::new())
-        .manage(GitWatcherState::new());
+        .manage(GitWatcherState::new())
+        .manage(OrchestratorCommandState::new());
 
     #[cfg(not(feature = "e2e-test"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -98,7 +103,11 @@ pub fn run() {
         git_status,
         get_git_diff,
         start_git_watcher,
-        stop_git_watcher
+        stop_git_watcher,
+        load_orchestrator_workflow,
+        refresh_orchestrator_snapshot,
+        set_orchestrator_paused,
+        dispatch_orchestrator_once
     ]);
 
     #[cfg(feature = "e2e-test")]
@@ -123,6 +132,10 @@ pub fn run() {
         get_git_diff,
         start_git_watcher,
         stop_git_watcher,
+        load_orchestrator_workflow,
+        refresh_orchestrator_snapshot,
+        set_orchestrator_paused,
+        dispatch_orchestrator_once,
         terminal::test_commands::list_active_pty_sessions
     ]);
 

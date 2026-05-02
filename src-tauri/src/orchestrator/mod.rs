@@ -1,3 +1,4 @@
+pub mod commands;
 pub mod runner;
 pub mod runtime;
 pub mod state;
@@ -5,6 +6,10 @@ pub mod tracker;
 pub mod workflow;
 pub mod workspace;
 
+pub use commands::{
+    dispatch_orchestrator_once, load_orchestrator_workflow, refresh_orchestrator_snapshot,
+    set_orchestrator_paused, OrchestratorCommandState,
+};
 pub use runner::{AgentRun, AgentRunRequest, AgentRunner, AgentRunnerError, CommandAgentRunner};
 pub use runtime::{
     ClaimBatch, DispatchBatch, DispatchFailure, DispatchedRun, OrchestratorRuntime,
