@@ -166,6 +166,7 @@ describe('DiffPanelContent', () => {
 
     expect(useGitStatusSpy).toHaveBeenCalledWith('/home/user/project', {
       watch: true,
+      enabled: true,
     })
 
     expect(useFileDiffSpy).toHaveBeenCalledWith(
@@ -174,6 +175,60 @@ describe('DiffPanelContent', () => {
       '/home/user/project',
       undefined
     )
+  })
+
+  test('uses external git status without starting an internal watcher', (): void => {
+    const mockFiles: ChangedFile[] = [
+      {
+        path: 'src/App.tsx',
+        status: 'modified',
+        insertions: 5,
+        deletions: 2,
+        staged: false,
+      },
+    ]
+
+    const useGitStatusSpy = vi
+      .spyOn(useGitStatusModule, 'useGitStatus')
+      .mockReturnValue({
+        files: [],
+        filesCwd: null,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: true,
+      })
+
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+      diff: {
+        filePath: 'src/App.tsx',
+        oldPath: 'src/App.tsx',
+        newPath: 'src/App.tsx',
+        hunks: [],
+      },
+      loading: false,
+      error: null,
+    })
+
+    render(
+      <DiffPanelContent
+        cwd="/repo"
+        gitStatus={{
+          files: mockFiles,
+          filesCwd: '/repo',
+          loading: false,
+          error: null,
+          refresh: vi.fn(),
+          idle: false,
+        }}
+      />
+    )
+
+    expect(useGitStatusSpy).toHaveBeenCalledWith('/repo', {
+      watch: true,
+      enabled: false,
+    })
+    expect(screen.getByTestId('diff-populated-state')).toBeInTheDocument()
   })
 
   describe('Controlled mode', () => {

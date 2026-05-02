@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-01
-ref_count: 10
+ref_count: 14
 ---
 
 # Testing Gaps
@@ -169,3 +169,48 @@ filesystem scope restrictions).
 - **Finding:** Round-2's regression test for the inner-loop stop_flag check (added in round-1 to fix a 10s thread-pin) asserted "no spurious emit fires when stop_flag is set mid-burst." But emit() in `spawn_trailing_debounce_thread` is reached only via the Timeout arm, which already independently guards against stop_flag. So an Ok-arm regression — the very thing the round-1 fix introduced — couldn't change the emit-side observation: the Timeout arm's own guard would still suppress the emit. The test verified a real property (no spurious teardown emit) but couldn't catch the regression it was named after. The actual production risk (resource pinning ≤300ms after teardown until the burst dries up) was unobservable from the channel side. Same finding-class as #6 (regression-guard test that didn't actually verify the property it claimed to guard) — round-3 is the second instance in this codebase where assertion-on-side-effect failed to catch the regression on the guarded path.
 - **Fix:** Restructured `spawn_trailing_debounce_thread` to return `(Sender<()>, Arc<AtomicBool>)`, where the bool is set from a `Drop` guard inside the spawn closure. The completion flag flips on every exit path (any return + panic), giving tests a direct observation of "thread really gone." Production caller ignores the flag (`let (tx, _completed) = ...`). The regression test now observes the flag with a `IDLE_CHECK_MS + 200ms` deadline; under the regressed path, the inner loop stays in `recv_timeout(delay)` per burst event and the deadline expires before the flag flips. Lesson: when a fix lives in branch X of a multi-branch decision, the regression test must observe a property that branch X uniquely affects — not a downstream side-effect that other branches independently produce.
 - **Commit:** _(see git log for the round-3 fix commit)_
+
+### 18. Idle-shaped hook mock + missing arg assertion masks `enabled: false` regression on lifted-state contract
+
+- **Source:** github-claude | PR #125 round 1 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src/features/workspace/WorkspaceView.subscription.test.tsx`
+- **Finding:** The subscription test mocked `useGitStatus` to return a constant `{ idle: true, ... }` shape regardless of the options object the parent passed. With `agentStatus.isActive = true` the production code computes `enabled: true` and starts a watcher; the mock returned the same idle-state object whether `enabled` was true or false. Worse: the test never called `expect(useGitStatusMock).toHaveBeenCalledWith(..., expect.objectContaining({ enabled: true }))`. A regression that passed `enabled: false` (e.g. an accidental flip of the activation OR-condition, or a misread of `agentStatus.isActive`) would still satisfy the existing reference-equality assertions on the captured props (panel + bottom drawer would each receive the same idle object). Watcher would never start in production; UI would show a permanent empty state. Same finding-class as #6 (regression-guard test that didn't actually verify the property it claimed to guard) — a reference-equality assertion is not a substitute for asserting the input that drives the mechanism.
+- **Fix:** Mock factory now reads `options.enabled` and returns `idle: !enabled`, mirroring the real hook's contract (idle iff disabled). Added a new test `WorkspaceView calls useGitStatus with enabled: true when an agent is active` that asserts `expect(useGitStatus).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ watch: true, enabled: true }))`. The pre-existing reference-equality test stays — they cover orthogonal contracts (one hook call vs. correct args).
+- **Commit:** _(see git log for the round-1 fix commit)_
+
+### 19. Lifted-state contract: child-test missing arg assertion + parent-test missing alternate-arm coverage
+
+- **Source:** github-claude | PR #125 round 2 | 2026-05-02
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/AgentStatusPanel.test.tsx`, `src/features/workspace/WorkspaceView.subscription.test.tsx`
+- **Finding:** Round-1 fixed the parent's `enabled: true` assertion (#18) but two related gaps remained: (a) `AgentStatusPanel.test.tsx`'s "uses shared git status when provided by the parent" test verified UI output but never asserted that the internal `useGitStatus` was called with `enabled: false` — the load-bearing watcher-deduplication invariant of the lifted-state refactor. The sibling `DiffPanelContent.test.tsx` already used `vi.spyOn(useGitStatusModule, 'useGitStatus')` correctly; AgentStatusPanel's mock was a plain factory with no spy reference. A regression that dropped `gitStatus === undefined &&` from the internal enabled condition would silently start two simultaneous watchers per cwd while every test stayed green. (b) The parent's round-1 `enabled: true` test only covered the `isActive` arm of the OR-condition (`agentStatus.isActive || bottomDrawerTab === 'diff'`); since `useAgentStatus` always returned `isActive: true`, the diff-tab arm was structurally impossible to exercise. Removing `|| bottomDrawerTab === 'diff'` would still satisfy the assertion. Both gaps follow the same theme as #18 (a lifted-state assertion that doesn't actually constrain the contract it's named after).
+- **Fix:** (a) Restructured `AgentStatusPanel.test.tsx` to import `* as useGitStatusModule` and call `vi.spyOn` on the test-by-test, asserting `expect(useGitStatusSpy).toHaveBeenCalledWith('/tmp/repo', expect.objectContaining({ enabled: false }))`. (b) Extended the BottomDrawer mock in `WorkspaceView.subscription.test.tsx` with a test-only "switch to diff" button bound to `onTabChange`, and added a sibling test using `vi.mocked(useAgentStatus).mockImplementation(() => idleAgentStatus)` so the agent stays idle across the tab-switch re-render. Codex verify v1 caught a `mockReturnValueOnce` bug here: the override only applied to the first render, letting the re-render fall back to the active default and passing the assertion via the wrong branch. v2 uses `mockImplementation` + `getMockImplementation` save-and-restore in a `finally` block.
+- **Commit:** _(see git log for the round-2 fix commit; v1→v2 codex-verify retry documented in `.harness-github-review/cycle-2-verify-result-v{1,2}.json`)_
+
+### 20. Inline `vi.spyOn` without `try/finally` leaks on assertion failure, polluting subsequent tests
+
+- **Source:** github-claude | PR #125 round 3 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/AgentStatusPanel.test.tsx`
+- **Finding:** Round-2 added an inline `const useGitStatusSpy = vi.spyOn(useGitStatusModule, 'useGitStatus')` to assert `enabled: false` was passed to the internal hook. The matching `useGitStatusSpy.mockRestore()` lived at the bottom of the test, with no try/finally guard. If `render()` or any `expect(...)` between the spy creation and the restore throws, `mockRestore()` is skipped and the spy permanently wraps the module export for the rest of the test file. The next test (`'renders ToolCallSummary and ActivityFeed inside the scrollable region'`) calls the same hook through the leaked spy, so call counts accumulate on a spy that nothing tracks. Worst case for `toHaveBeenCalled`-shape assertions later in the file: inflated totals → false positives. The module-level mock is a plain factory (not vi.fn), so the leaked spy can't be inspected or cleared without manual intervention. Same finding-class as #18+#19 (lifted-state assertions that don't constrain what they claim) only at the test-hygiene level: the cleanup invariant is named ("restore the spy") but not enforced by structure.
+- **Fix:** Wrapped the test body in `try { render + asserts } finally { useGitStatusSpy.mockRestore() }`. Cleanup now fires even if any assertion throws. Alternative considered: enable `restoreMocks: true` globally in `vitest.config.ts` — rejected for this PR because it would change behavior across the whole suite (every spy auto-restores), which is a separate refactor with its own review cycle.
+- **Commit:** _(see git log for the round-3 fix commit)_
+
+### 21. `toHaveBeenCalledWith` against accumulated mock history is vacuous unless `mockClear()` resets per-test
+
+- **Source:** github-claude | PR #125 round 4 | 2026-05-02
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.subscription.test.tsx`
+- **Finding:** `vi.fn()` mocks accumulate call history across tests by default. The round-1 assertion `expect(useGitStatus).toHaveBeenCalledWith(..., { enabled: true })` was structurally correct for the test's goal — but `tests 1+2 already triggered `useGitStatus({ enabled: true })`calls during their own renders. By the time the assertion executed, the mock's history already contained satisfying calls regardless of what the round-3 test's own render computed. A regression that flipped`enabled`to`false`in WorkspaceView's computation would leave the assertion green, defeating the round-1 fix entirely. Pairs with the prior round's test 4 which DID use mid-test`mockClear()` correctly — the discipline was named but not applied at the start of every test.
+- **Fix:** Added `vi.mocked(useGitStatus).mockClear()` to the test suite's `beforeEach` block alongside the existing prop-bag resets. Every test now starts with a fresh history, and `toHaveBeenCalledWith` assertions can only pass via the current test's render path.
+- **Commit:** _(see git log for the round-4 fix commit)_
+
+### 22. Pass-through prop forwarding: each render-site branch needs its own coverage
+
+- **Source:** github-claude | PR #125 round 4 | 2026-05-02
+- **Severity:** LOW
+- **File:** `src/features/workspace/components/BottomDrawer.test.tsx`
+- **Finding:** BottomDrawer accepts `gitStatus?` and forwards it to TWO `<DiffPanelContent>` render sites (controlled-with-selectedDiffFile branch and unselected-fallback branch). Round-1 added a single test covering the unselected branch. The selected-file branch — reachable when a user has opened a specific diff file — was not covered by any test in `BottomDrawer.test.tsx`, so a regression that dropped `gitStatus={gitStatus}` from that branch (e.g. during a selectedDiffFile ternary refactor) would silently re-introduce the duplicate-watcher IPC. Codex verify caught this in v1 of round 4. Same finding-class as #7 (uncovered guard branch on doc-change-plus-selection): a multi-branch decision needs coverage for each branch the regression-class can hit, not just the one the author thought about.
+- **Fix:** Split the round-1 test into two siblings — one rendering BottomDrawer without `selectedDiffFile` (unselected branch), one with a synthetic `selectedDiffFile` (controlled branch). Both assert `useGitStatus` was called with `enabled: false`. A regression dropping `gitStatus={gitStatus}` from EITHER `<DiffPanelContent>` render site is now caught.
+- **Commit:** _(see git log for the round-4 fix commit, plus the v1→v2 codex-verify retry that closed the second-branch gap)_

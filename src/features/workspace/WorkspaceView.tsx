@@ -13,6 +13,7 @@ import { createFileSystemService } from '../files/services/fileSystemService'
 import { createTerminalService } from '../terminal/services/terminalService'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
+import { useGitStatus } from '../diff/hooks/useGitStatus'
 import type { ChangedFile, SelectedDiffFile } from '../diff/types'
 
 const SIDEBAR_MIN = 240
@@ -60,6 +61,7 @@ export const WorkspaceView = (): ReactElement => {
   const activeSession = activeSessionId
     ? sessions.find((s) => s.id === activeSessionId)
     : undefined
+  const activeCwd = activeSession?.workingDirectory ?? '.'
 
   // File selection state.
   //
@@ -108,6 +110,11 @@ export const WorkspaceView = (): ReactElement => {
     useState<SelectedDiffFile | null>(null)
 
   const [isBottomDrawerCollapsed, setIsBottomDrawerCollapsed] = useState(false)
+
+  const gitStatus = useGitStatus(activeCwd, {
+    watch: true,
+    enabled: agentStatus.isActive || bottomDrawerTab === 'diff',
+  })
 
   // Open a file directly (no unsaved-changes guard). Errors were previously
   // swallowed via `void editorBuffer.openFile(...)`, leaving the user with
@@ -289,19 +296,21 @@ export const WorkspaceView = (): ReactElement => {
   // Handle opening a diff file from AgentStatusPanel
   const handleOpenDiff = useCallback(
     (file: ChangedFile): void => {
-      const cwd = activeSession?.workingDirectory ?? '.'
-
       setBottomDrawerTab('diff')
-      setSelectedDiffFile({ path: file.path, staged: file.staged, cwd })
+      setSelectedDiffFile({
+        path: file.path,
+        staged: file.staged,
+        cwd: activeCwd,
+      })
       setIsBottomDrawerCollapsed(false)
     },
-    [activeSession?.workingDirectory]
+    [activeCwd]
   )
 
   // Belt-and-suspenders: clear selection on cwd change
   useEffect(() => {
     setSelectedDiffFile(null)
-  }, [activeSession?.workingDirectory])
+  }, [activeCwd])
 
   return (
     <div
@@ -376,7 +385,8 @@ export const WorkspaceView = (): ReactElement => {
           }}
           isDirty={editorBuffer.isDirty}
           isLoading={editorBuffer.isLoading}
-          cwd={activeSession?.workingDirectory ?? '.'}
+          cwd={activeCwd}
+          gitStatus={gitStatus}
           activeTab={bottomDrawerTab}
           onTabChange={setBottomDrawerTab}
           isCollapsed={isBottomDrawerCollapsed}
@@ -411,7 +421,8 @@ export const WorkspaceView = (): ReactElement => {
       {/* Agent Status Panel — self-manages width (0↔280px) */}
       <AgentStatusPanel
         agentStatus={agentStatus}
-        cwd={activeSession?.workingDirectory ?? '.'}
+        cwd={activeCwd}
+        gitStatus={gitStatus}
         onOpenDiff={handleOpenDiff}
         onOpenFile={handleOpenTestFile}
       />

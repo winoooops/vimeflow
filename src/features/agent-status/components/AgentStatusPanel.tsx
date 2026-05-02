@@ -8,7 +8,10 @@ import { TestResults } from './TestResults'
 import { ActivityFooter } from './ActivityFooter'
 import { ActivityFeed } from './ActivityFeed'
 import { useActivityEvents } from '../hooks/useActivityEvents'
-import { useGitStatus } from '../../diff/hooks/useGitStatus'
+import {
+  useGitStatus,
+  type UseGitStatusReturn,
+} from '../../diff/hooks/useGitStatus'
 import { sumLines } from '../../diff/utils/sumLines'
 import type { ChangedFile } from '../../diff/types'
 
@@ -17,6 +20,7 @@ interface AgentStatusPanelProps {
   cwd: string
   onOpenDiff: (file: ChangedFile) => void
   onOpenFile?: (path: string) => void
+  gitStatus?: UseGitStatusReturn
 }
 
 export const AgentStatusPanel = ({
@@ -24,14 +28,18 @@ export const AgentStatusPanel = ({
   cwd,
   onOpenDiff,
   onOpenFile = undefined,
+  gitStatus = undefined,
 }: AgentStatusPanelProps): ReactElement => {
   const status = agentStatus
   const events = useActivityEvents(status)
 
-  const { files, filesCwd, loading, error, refresh, idle } = useGitStatus(cwd, {
+  const internalGitStatus = useGitStatus(cwd, {
     watch: true,
-    enabled: status.isActive,
+    enabled: gitStatus === undefined && status.isActive,
   })
+
+  const { files, filesCwd, loading, error, refresh, idle } =
+    gitStatus ?? internalGitStatus
 
   const filesAreFresh = filesCwd === cwd
 

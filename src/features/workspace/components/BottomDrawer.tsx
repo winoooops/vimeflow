@@ -3,6 +3,7 @@ import { CodeEditor } from '../../editor/components/CodeEditor'
 import { DiffPanelContent } from '../../diff/components/DiffPanelContent'
 import { useResizable } from '../hooks/useResizable'
 import type { SelectedDiffFile } from '../../diff/types'
+import type { UseGitStatusReturn } from '../../diff/hooks/useGitStatus'
 
 type TabType = 'editor' | 'diff'
 
@@ -46,6 +47,8 @@ interface BottomDrawerBaseProps {
   isLoading?: boolean
   /** Working directory for git commands (diff viewer) */
   cwd?: string
+  /** Optional shared git status from WorkspaceView */
+  gitStatus?: UseGitStatusReturn
 }
 
 type BottomDrawerProps = BottomDrawerBaseProps &
@@ -70,6 +73,7 @@ const BottomDrawer = ({
   isDirty = false,
   isLoading = false,
   cwd = '.',
+  gitStatus = undefined,
   activeTab: controlledActiveTab,
   onTabChange,
   isCollapsed: controlledIsCollapsed,
@@ -307,11 +311,12 @@ const BottomDrawer = ({
             {selectedDiffFile !== undefined ? (
               <DiffPanelContent
                 cwd={cwd}
+                gitStatus={gitStatus}
                 selectedFile={selectedDiffFile}
                 onSelectedFileChange={onSelectedDiffFileChange}
               />
             ) : (
-              <DiffPanelContent cwd={cwd} />
+              <DiffPanelContent cwd={cwd} gitStatus={gitStatus} />
             )}
           </div>
         )}

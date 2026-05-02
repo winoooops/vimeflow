@@ -266,6 +266,83 @@ describe('BottomDrawer', () => {
       expect(screen.getByTestId('diff-panel')).toBeInTheDocument()
     })
 
+    test('forwards parent-provided gitStatus to DiffPanelContent on the unselected-file render branch', () => {
+      // Pass-through-only behavior: BottomDrawer must hand the
+      // `gitStatus` prop to its `<DiffPanelContent>` render so
+      // DiffPanelContent's internal `useGitStatus` is called with
+      // `enabled: false` (the watcher-deduplication invariant of the
+      // lifted-state refactor). Endpoint-only coverage in
+      // `DiffPanelContent.test.tsx` would not catch a regression that
+      // dropped `gitStatus={gitStatus}` from this render site.
+      // (See companion test below for the selected-file branch.)
+      vi.mocked(useGitStatusModule.useGitStatus).mockClear()
+
+      const sharedGitStatus = {
+        files: [],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      }
+
+      render(
+        <BottomDrawer
+          selectedFilePath={null}
+          content=""
+          activeTab="diff"
+          onTabChange={vi.fn()}
+          gitStatus={sharedGitStatus}
+        />
+      )
+
+      // The internal useGitStatus inside DiffPanelContent must be
+      // disabled because the parent already supplies the subscription.
+      expect(vi.mocked(useGitStatusModule.useGitStatus)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ enabled: false })
+      )
+    })
+
+    test('forwards parent-provided gitStatus to DiffPanelContent on the selected-file render branch', () => {
+      // BottomDrawer.tsx has TWO <DiffPanelContent> render sites
+      // (controlled-with-selectedDiffFile and unselected fallback).
+      // The previous test covers the unselected branch; this one
+      // exercises the controlled branch so a regression dropping
+      // `gitStatus={gitStatus}` from EITHER site is caught.
+      vi.mocked(useGitStatusModule.useGitStatus).mockClear()
+
+      const sharedGitStatus = {
+        files: [],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      }
+
+      render(
+        <BottomDrawer
+          selectedFilePath={null}
+          content=""
+          activeTab="diff"
+          onTabChange={vi.fn()}
+          selectedDiffFile={{
+            path: 'src/test.ts',
+            staged: false,
+            cwd: '/repo',
+          }}
+          onSelectedDiffFileChange={vi.fn()}
+          gitStatus={sharedGitStatus}
+        />
+      )
+
+      expect(vi.mocked(useGitStatusModule.useGitStatus)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ enabled: false })
+      )
+    })
+
     test('uncontrolled fallback: activeTab works without controlled props', async () => {
       const user = userEvent.setup()
 
