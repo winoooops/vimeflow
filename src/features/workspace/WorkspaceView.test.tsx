@@ -75,6 +75,12 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
   },
 }))
 
+vi.mock('../orchestrator/components/OrchestratorPanel', () => ({
+  OrchestratorPanel: (): ReactElement => (
+    <div data-testid="orchestrator-panel" />
+  ),
+}))
+
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => ({
@@ -133,24 +139,27 @@ describe('WorkspaceView', () => {
     })
   })
 
-  test('renders all five zones (icon rail, sidebar, terminal, bottom drawer, agent status panel)', () => {
+  test('renders all six zones (icon rail, sidebar, terminal, bottom drawer, orchestrator, agent status panel)', () => {
     render(<WorkspaceView />)
 
     expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument() // BottomDrawer
+    expect(screen.getByTestId('orchestrator-panel')).toBeInTheDocument()
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
   })
 
-  test('applies correct grid layout with 4 columns (dynamic sidebar width)', () => {
+  test('applies correct grid layout with 5 columns (dynamic sidebar width)', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
 
     expect(container).toHaveClass('grid')
-    // Grid columns: 64px icon rail + dynamic sidebar + 1fr main + auto (panel self-manages width)
-    expect(container.style.gridTemplateColumns).toBe('64px 340px 1fr auto')
+    // Grid columns: icon rail + dynamic sidebar + main + orchestrator + agent panel
+    expect(container.style.gridTemplateColumns).toBe(
+      '64px 340px minmax(0, 1fr) 320px auto'
+    )
   })
 
   test('fills viewport height', () => {

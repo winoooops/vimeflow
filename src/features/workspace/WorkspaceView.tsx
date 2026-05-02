@@ -5,6 +5,7 @@ import { Sidebar } from './components/Sidebar'
 import { TerminalZone } from './components/TerminalZone'
 import BottomDrawer from './components/BottomDrawer'
 import { AgentStatusPanel } from '../agent-status/components/AgentStatusPanel'
+import { OrchestratorPanel } from '../orchestrator/components/OrchestratorPanel'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { useSessionManager } from './hooks/useSessionManager'
@@ -308,7 +309,7 @@ export const WorkspaceView = (): ReactElement => {
       data-testid="workspace-view"
       className="grid h-screen overflow-hidden"
       style={{
-        gridTemplateColumns: `64px ${sidebarWidth}px 1fr auto`,
+        gridTemplateColumns: `64px ${sidebarWidth}px minmax(0, 1fr) 320px auto`,
       }}
     >
       {/* Icon Rail - 64px */}
@@ -407,6 +408,8 @@ export const WorkspaceView = (): ReactElement => {
           </div>
         )}
       </div>
+
+      <OrchestratorPanel />
 
       {/* Agent Status Panel — self-manages width (0↔280px) */}
       <AgentStatusPanel

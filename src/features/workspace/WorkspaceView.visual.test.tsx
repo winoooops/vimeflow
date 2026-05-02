@@ -89,13 +89,15 @@ import { WorkspaceView } from './WorkspaceView'
  */
 
 describe('WorkspaceView - Visual Verification (Feature #20)', () => {
-  describe('Layout: 5-Zone Architecture (v2)', () => {
-    test('grid layout has correct zone widths (64px, 340px, 1fr, auto)', () => {
+  describe('Layout: 6-Zone Architecture (v3)', () => {
+    test('grid layout has correct zone widths (64px, 340px, minmax main, 320px, auto)', () => {
       render(<WorkspaceView />)
       const workspace = screen.getByTestId('workspace-view')
 
-      // Grid columns: 64px icon rail + 340px sidebar + 1fr main + auto (panel self-manages width)
-      expect(workspace.style.gridTemplateColumns).toBe('64px 340px 1fr auto')
+      // Grid columns: icon rail + sidebar + main + orchestrator + agent panel.
+      expect(workspace.style.gridTemplateColumns).toBe(
+        '64px 340px minmax(0, 1fr) 320px auto'
+      )
     })
 
     test('workspace uses full screen height', () => {
