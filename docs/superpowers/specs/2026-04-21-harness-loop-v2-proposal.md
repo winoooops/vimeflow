@@ -1,7 +1,7 @@
 # Harness Loop v2 — Workflow Proposal
 
 **Date:** 2026-04-21
-**Status:** Tiers 1-4 shipped on branch `docs/harness-loop-improvements`; Tier 5 deferred to its own spec. Paired retrospective: [2026-04-21 Activity Panel session](../../reviews/retrospectives/2026-04-21-activity-panel-harness-session.md)
+**Status:** Tiers 1-4 shipped on branch `docs/harness-loop-improvements`; Tier 5 design continued in [2026-05-02 Harness Visual Verification Design](./2026-05-02-harness-visual-verification-design.md). Paired retrospective: [2026-04-21 Activity Panel session](../../reviews/retrospectives/2026-04-21-activity-panel-harness-session.md)
 **Scope:** Changes to `/harness-plugin:loop` skill, the harness Python (`harness/*.py`), the prompt templates (`harness/prompts/*.md`), and the runbook (`harness/CLAUDE.md`).
 
 ## 1. Problem summary
