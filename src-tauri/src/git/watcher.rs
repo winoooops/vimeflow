@@ -26,7 +26,7 @@ use tauri::Emitter;
 
 use super::validate_cwd;
 
-/// Debounce interval — ignore events within 300ms of the last processed one
+/// Debounce interval — emit after filesystem events have been quiet for 300ms.
 const DEBOUNCE_MS: u64 = 300;
 
 /// Polling fallback interval — check for changes every 10 seconds
@@ -46,6 +46,40 @@ fn is_notify_not_found(error: &notify::Error) -> bool {
             &error.kind,
             notify::ErrorKind::Io(e) if e.kind() == std::io::ErrorKind::NotFound
         )
+}
+
+fn spawn_trailing_debounce_thread<F>(
+    stop_flag: Arc<AtomicBool>,
+    delay: Duration,
+    mut emit: F,
+) -> std::sync::mpsc::Sender<()>
+where
+    F: FnMut() + Send + 'static,
+{
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+
+    std::thread::spawn(move || {
+        while !stop_flag.load(Ordering::Relaxed) {
+            match rx.recv_timeout(Duration::from_millis(100)) {
+                Ok(()) => loop {
+                    match rx.recv_timeout(delay) {
+                        Ok(()) => continue,
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                            if !stop_flag.load(Ordering::Relaxed) {
+                                emit();
+                            }
+                            break;
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                    }
+                },
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+            }
+        }
+    });
+
+    tx
 }
 
 /// Run a `std::process::Command` synchronously with a deadline. On timeout,
@@ -412,22 +446,24 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
     let last_status_hash = Arc::new(Mutex::new(
         hash_git_status(&toplevel).ok(),
     ));
-    // Debounce timestamp starts as `None` so the FIRST real notify event
-    // always passes. Initializing to `Instant::now()` at construction
-    // (the previous revision) would swallow any filesystem change within
-    // the DEBOUNCE_MS window of watcher startup — visible as up-to-10s
-    // stale state when a fast agent edits files right after subscription
-    // (the 10s polling fallback is the only recovery). `None` ≡ "no prior
-    // event, always pass"; after the first match it becomes `Some(now)`.
-    let last_processed: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
     let stop_flag = Arc::new(AtomicBool::new(false));
+    let debounce_tx = {
+        let app_handle = app_handle.clone();
+        let state = state_clone.clone();
+        let toplevel = toplevel.clone();
+        let stop_flag = stop_flag.clone();
+
+        spawn_trailing_debounce_thread(
+            stop_flag,
+            Duration::from_millis(DEBOUNCE_MS),
+            move || emit_for_all_subscribers(&app_handle, &state, &toplevel),
+        )
+    };
 
     // Create notify watcher
     let notify_watcher = {
         let toplevel = toplevel.clone();
-        let app_handle = app_handle.clone();
-        let state = state_clone.clone();
-        let last_processed = last_processed.clone();
+        let debounce_tx = debounce_tx.clone();
 
         notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
             let event = match res {
@@ -450,22 +486,12 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
                 return;
             }
 
-            // Debounce
-            {
-                let mut last = last_processed
-                    .lock()
-                    .expect("failed to lock last_processed");
-                let now = Instant::now();
-                if let Some(prev) = *last {
-                    if now.duration_since(prev) < Duration::from_millis(DEBOUNCE_MS) {
-                        return;
-                    }
-                }
-                *last = Some(now);
+            if debounce_tx.send(()).is_err() {
+                log::debug!(
+                    "Git watcher debounce thread stopped for {}",
+                    toplevel.display()
+                );
             }
-
-            // Emit event for all subscribers
-            emit_for_all_subscribers(&app_handle, &state, &toplevel);
         })
         .map_err(|e| format!("Failed to create watcher: {}", e))?
     };
@@ -1018,7 +1044,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::process::Command;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{mpsc, Arc, Mutex};
     use tauri::Listener;
     use tempfile::TempDir;
 
@@ -1119,6 +1145,41 @@ mod tests {
         let error = notify::Error::new(notify::ErrorKind::MaxFilesWatch);
 
         assert!(!is_notify_not_found(&error));
+    }
+
+    #[test]
+    fn trailing_debounce_emits_once_after_final_burst_event() {
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let (emitted_tx, emitted_rx) = mpsc::channel::<()>();
+        let debounce_tx = spawn_trailing_debounce_thread(
+            stop_flag.clone(),
+            Duration::from_millis(60),
+            move || {
+                emitted_tx.send(()).expect("failed to record debounce emit");
+            },
+        );
+
+        debounce_tx.send(()).expect("failed to send first event");
+        std::thread::sleep(Duration::from_millis(20));
+        debounce_tx.send(()).expect("failed to send second event");
+        std::thread::sleep(Duration::from_millis(20));
+        debounce_tx.send(()).expect("failed to send third event");
+
+        assert!(
+            emitted_rx.recv_timeout(Duration::from_millis(25)).is_err(),
+            "debounce emitted before the burst went quiet"
+        );
+
+        emitted_rx
+            .recv_timeout(Duration::from_millis(300))
+            .expect("debounce should emit after quiet period");
+        assert!(
+            emitted_rx.recv_timeout(Duration::from_millis(100)).is_err(),
+            "burst should produce exactly one trailing emit"
+        );
+
+        stop_flag.store(true, Ordering::Relaxed);
+        drop(debounce_tx);
     }
 
     #[test]
