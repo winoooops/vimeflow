@@ -271,7 +271,7 @@ function gitApiPlugin(): Plugin {
               return
             }
 
-            if (hunkIndex !== undefined) {
+            if (typeof hunkIndex === 'number') {
               // Stage a specific hunk by extracting the patch and applying it
               const fullDiff = await git.diff(
                 buildGitDiffArgs({ safePath, staged: false })
@@ -312,6 +312,19 @@ function gitApiPlugin(): Plugin {
 
                 return
               }
+            } else if (hunkIndex !== undefined && hunkIndex !== null) {
+              // Reject malformed hunkIndex (string, boolean, etc.) with
+              // 400 instead of falling through to whole-file stage. The
+              // user clearly meant to stage a hunk but sent a non-number;
+              // silently doing something else would be surprising.
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(
+                JSON.stringify({
+                  error: 'Invalid hunkIndex: expected a number',
+                })
+              )
+
+              return
             } else {
               await git.add(safePath)
             }
@@ -408,7 +421,7 @@ function gitApiPlugin(): Plugin {
               // Staged new file — unstage then remove
               await git.reset(['HEAD', '--', safePath])
               await git.clean('f', ['--', safePath])
-            } else if (hunkIndex !== undefined) {
+            } else if (typeof hunkIndex === 'number') {
               // Discard a specific hunk via reverse patch
               const fullDiff = await git.diff(
                 buildGitDiffArgs({ safePath, staged: false })
@@ -445,6 +458,18 @@ function gitApiPlugin(): Plugin {
 
                 return
               }
+            } else if (hunkIndex !== undefined && hunkIndex !== null) {
+              // Same malformed-payload guard as /api/git/stage: reject
+              // non-number hunkIndex with 400 instead of falling through
+              // to whole-file discard.
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(
+                JSON.stringify({
+                  error: 'Invalid hunkIndex: expected a number',
+                })
+              )
+
+              return
             } else {
               // Full file discard — restore from HEAD
               await git.checkout(['--', safePath])
