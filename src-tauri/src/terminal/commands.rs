@@ -2,6 +2,7 @@
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::Read;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
@@ -266,6 +267,8 @@ pub async fn spawn_pty<R: tauri::Runtime>(
     let generation = state.next_generation();
     let ring = Arc::new(Mutex::new(RingBuffer::new(65536)));
     let read_ring = Arc::clone(&ring);
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let read_cancelled = Arc::clone(&cancelled);
     let session = ManagedSession {
         master: pty_pair.master,
         writer,
@@ -273,6 +276,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         cwd: cwd.to_string_lossy().to_string(),
         generation,
         ring,
+        cancelled,
     };
     if let Err((reason, mut rejected)) =
         state.try_insert(request.session_id.clone(), session, 64)
@@ -351,6 +355,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
             session_id,
             generation,
             read_ring,
+            read_cancelled,
         )) {
             log::error!("PTY output reader error: {}", e);
         }
@@ -422,12 +427,24 @@ pub fn kill_pty(
         Err(super::state::KillError::KillFailed(msg)) => {
             // Child may still be alive. Preserve PtyState + cache so a
             // retry can find the session, and surface the failure.
+            // IMPORTANT: must NOT touch the cancellation flag on this
+            // path — if we did, the still-alive child's next read would
+            // trip the flag and `remove_if_generation` would drop the
+            // session entry, orphaning the live process from app state.
             return Err(format!(
                 "kill_pty: failed to kill child for session {}: {}",
                 request.session_id, msg
             ));
         }
     }
+
+    // Signal the read loop to break out promptly even if the child ignores
+    // SIGTERM. Only set on the successful-kill / already-gone branches
+    // above so the `KillFailed` retry contract is preserved (a live child
+    // must not be cleaned up by the reader). Without this signal, an
+    // ignore-SIGTERM process would keep the read thread alive (and
+    // emitting `pty-data` for a removed session) until eventual EOF.
+    state.set_cancelled(&request.session_id);
 
     // Remove from state (no-op if NotPresent, the safe path above).
     state.remove(&request.session_id);
@@ -708,6 +725,7 @@ async fn read_pty_output<R: tauri::Runtime>(
     session_id: SessionId,
     generation: u64,
     ring: Arc<Mutex<RingBuffer>>,
+    cancelled: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     log::info!("Starting PTY output reader for session: {}", session_id);
 
@@ -743,6 +761,21 @@ async fn read_pty_output<R: tauri::Runtime>(
                 break;
             }
             Ok(n) => {
+                // Honor a `kill_pty`-driven cancellation BEFORE appending
+                // or emitting. Checking after emit would let the first
+                // post-kill chunk leak to the UI; checking here drops it
+                // along with any further data so the contract "no
+                // pty-data after kill_pty completes" holds. Ignore-SIGTERM
+                // children would otherwise keep the read thread alive
+                // indefinitely.
+                if cancelled.load(Ordering::Relaxed) {
+                    log::info!(
+                        "PTY session {} read loop exiting (cancelled by kill_pty)",
+                        session_id
+                    );
+                    break;
+                }
+
                 // Atomically: append to ring buffer, get chunk_start, drop the lock
                 let chunk_start = {
                     let mut ring = ring.lock().expect("ring poisoned");
@@ -1261,6 +1294,7 @@ mod tests {
             cwd: "/tmp".into(),
             generation: 0,
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
+            cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
 

@@ -53,7 +53,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                   | security       | 3        | 1    | 2026-04-20   |
 | [Preflight Checks](patterns/preflight-checks.md)                     | error-handling | 1        | 0    | 2026-04-20   |
 | [CSP Configuration](patterns/csp-configuration.md)                   | security       | 2        | 1    | 2026-04-09   |
-| [PTY Session Management](patterns/pty-session-management.md)         | backend        | 5        | 1    | 2026-04-09   |
+| [PTY Session Management](patterns/pty-session-management.md)         | backend        | 6        | 2    | 2026-05-02   |
 | [Git Operations](patterns/git-operations.md)                         | correctness    | 12       | 2    | 2026-04-29   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)         | editor         | 12       | 0    | 2026-04-11   |
 | [Error Surfacing](patterns/error-surfacing.md)                       | error-handling | 19       | 3    | 2026-04-30   |
