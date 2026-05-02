@@ -120,11 +120,6 @@ fn read_proc_cmdline(pid: u32) -> Option<Vec<String>> {
     }
 }
 
-#[cfg(test)]
-fn read_cmdline(pid: u32) -> Option<Vec<String>> {
-    ProcFsProcessSource.read_cmdline(pid)
-}
-
 /// Extract binary name from cmdline argv[0]
 ///
 /// Handles both absolute paths (/usr/bin/claude) and bare names (claude).
@@ -215,7 +210,7 @@ mod tests {
     #[test]
     fn reads_self_cmdline() {
         // /proc/self always exists and points to our own process
-        let cmdline = read_cmdline(std::process::id());
+        let cmdline = read_proc_cmdline(std::process::id());
         assert!(cmdline.is_some(), "Failed to read /proc/self/cmdline");
 
         let cmdline = cmdline.unwrap();
@@ -229,8 +224,30 @@ mod tests {
     #[test]
     fn handles_missing_pid_gracefully() {
         // PID 9999999 is unlikely to exist
-        let cmdline = read_cmdline(9999999);
+        let cmdline = read_proc_cmdline(9999999);
         assert!(cmdline.is_none(), "Should return None for missing PID");
+    }
+
+    #[test]
+    fn detects_agent_at_pty_root_via_exec() {
+        // Locks the `exec claude` contract documented in
+        // `collect_process_tree`'s comment: when the user runs
+        // `exec claude`, the shell process is replaced by the agent
+        // binary in-place, so the PTY's own root PID IS the agent.
+        // The detector must include the root in the candidate set
+        // (not just descendants) for this case to be detected at all.
+        let source = MockProcessSource {
+            children: HashMap::new(),
+            cmdlines: HashMap::from([(12, vec!["claude".to_string()])]),
+        };
+
+        let detected = detect_agent_with_source(12, &source);
+
+        assert!(
+            matches!(detected, Some((AgentType::ClaudeCode, 12))),
+            "expected detection at the PTY root PID for `exec claude`, got {:?}",
+            detected,
+        );
     }
 
     #[test]
