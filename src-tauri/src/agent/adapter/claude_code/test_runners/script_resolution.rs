@@ -7,6 +7,8 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::agent::adapter::json as adapter_json;
+
 const MAX_RECURSION_DEPTH: usize = 3;
 
 /// Returns Some(resolved_command_string) if the first two tokens are a known
@@ -36,7 +38,11 @@ pub fn resolve_alias(tokens: &[String], cwd: Option<&Path>) -> Option<String> {
     } else {
         // shell-words::join re-escapes any tokens with spaces or quotes
         // so the resulting string round-trips through tokenize cleanly.
-        Some(format!("{} {}", resolved, shell_words::join(leftover.iter())))
+        Some(format!(
+            "{} {}",
+            resolved,
+            shell_words::join(leftover.iter())
+        ))
     }
 }
 
@@ -65,10 +71,7 @@ fn resolve_recursive(script_name: &str, cwd: &Path, depth: usize) -> Option<Stri
     let pkg_path = cwd.join("package.json");
     let content = fs::read_to_string(&pkg_path).ok()?;
     let json: Value = serde_json::from_str(&content).ok()?;
-    let resolved = json
-        .get("scripts")
-        .and_then(|s| s.get(script_name))
-        .and_then(|v| v.as_str())?;
+    let resolved = adapter_json::str_at(&json, &["scripts", script_name])?;
 
     // If the resolved string itself is an npm-family alias, recurse.
     if let Some(tokens) = super::matcher::tokenize(resolved) {
@@ -131,10 +134,7 @@ mod tests {
 
     #[test]
     fn missing_cwd_returns_none() {
-        assert_eq!(
-            resolve_alias(&vec_of(&["npm", "test"]), None),
-            None
-        );
+        assert_eq!(resolve_alias(&vec_of(&["npm", "test"]), None), None);
     }
 
     #[test]

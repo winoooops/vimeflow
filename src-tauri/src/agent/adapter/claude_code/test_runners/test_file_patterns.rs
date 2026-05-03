@@ -10,10 +10,7 @@
 pub fn is_test_file(path: &str) -> bool {
     // Split on either separator so basename extraction and directory
     // checks below work regardless of OS path style.
-    let basename = path
-        .rsplit(|c| c == '/' || c == '\\')
-        .next()
-        .unwrap_or(path);
+    let basename = path.rsplit(['/', '\\']).next().unwrap_or(path);
 
     // TS/JS: *.test.{ts,tsx,js,jsx,mjs,cjs} and *.spec.{...}
     if let Some(stem_end) = basename.rfind('.') {
@@ -100,7 +97,9 @@ mod tests {
         // /tests/ heuristic. Now the rule restricts to .rs files. This
         // PR's own fixtures live under src-tauri/tests/fixtures/*.jsonl
         // and would have been mislabelled as test creations.
-        assert!(!is_test_file("src-tauri/tests/fixtures/transcript_vitest_pass.jsonl"));
+        assert!(!is_test_file(
+            "src-tauri/tests/fixtures/transcript_vitest_pass.jsonl"
+        ));
         assert!(!is_test_file("tests/fixtures/cases.json"));
         assert!(!is_test_file("crates/x/tests/snapshot.toml"));
         assert!(!is_test_file("tests/README.md"));

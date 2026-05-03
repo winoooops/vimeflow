@@ -51,11 +51,6 @@ const stopWatchers = async (workspaceSessionId: string): Promise<void> => {
   } catch {
     // Watcher may not be running — ignore
   }
-  try {
-    await invoke('stop_transcript_watcher', { sessionId: ptyId })
-  } catch {
-    // Transcript watcher may not be running — ignore
-  }
 }
 
 export const useAgentStatus = (sessionId: string | null): AgentStatus => {

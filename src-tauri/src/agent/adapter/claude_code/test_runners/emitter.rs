@@ -49,10 +49,10 @@ impl<R: Runtime> TestRunEmitter<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::test_runners::types::{TestRunStatus, TestRunSummary};
+    use crate::agent::adapter::claude_code::test_runners::types::{TestRunStatus, TestRunSummary};
     use std::sync::{Arc, Mutex};
-    use tauri::test::{mock_builder, MockRuntime};
     use tauri::Listener;
+    use tauri::test::{MockRuntime, mock_builder};
 
     fn snap(passed: u32) -> TestRunSnapshot {
         TestRunSnapshot {

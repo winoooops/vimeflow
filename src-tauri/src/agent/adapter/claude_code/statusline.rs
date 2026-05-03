@@ -4,7 +4,8 @@
 //! into typed `AgentStatusEvent` structs. Uses `serde_json::Value` for
 //! flexible parsing — gracefully handles partial/evolving JSON.
 
-use super::types::{
+use crate::agent::adapter::json;
+use crate::agent::types::{
     AgentStatusEvent, ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
 };
 
@@ -25,52 +26,30 @@ pub fn parse_statusline(session_id: &str, json: &str) -> Result<ParsedStatusline
     let value: serde_json::Value =
         serde_json::from_str(json).map_err(|e| format!("invalid JSON: {}", e))?;
 
-    let obj = value
-        .as_object()
-        .ok_or("statusline JSON is not an object")?;
+    if !value.is_object() {
+        return Err("statusline JSON is not an object".to_string());
+    }
 
     // Extract model info
-    let model = obj.get("model");
-    let model_id = model
-        .and_then(|m| m.get("id"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_string();
-    let model_display_name = model
-        .and_then(|m| m.get("display_name"))
-        .and_then(|v| v.as_str())
-        .unwrap_or(&model_id)
-        .to_string();
+    let model_id = json::str_or(&value, &["model", "id"], "unknown").to_string();
+    let model_display_name =
+        json::str_or(&value, &["model", "display_name"], &model_id).to_string();
 
     // Extract session ID and version
-    let agent_session_id = obj
-        .get("session_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let version = obj
-        .get("version")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let agent_session_id = json::str_or(&value, &["session_id"], "").to_string();
+    let version = json::str_or(&value, &["version"], "").to_string();
 
     // Extract context window
-    let cw = obj.get("context_window");
-    let context_window = parse_context_window(cw);
+    let context_window = parse_context_window(&value);
 
     // Extract cost metrics
-    let cost_obj = obj.get("cost");
-    let cost = parse_cost_metrics(cost_obj);
+    let cost = parse_cost_metrics(&value);
 
     // Extract rate limits
-    let rl = obj.get("rate_limits");
-    let rate_limits = parse_rate_limits(rl);
+    let rate_limits = parse_rate_limits(&value);
 
     // Extract transcript path
-    let transcript_path = obj
-        .get("transcript_path")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+    let transcript_path = json::str_at(&value, &["transcript_path"]).map(str::to_string);
 
     let event = AgentStatusEvent {
         session_id: session_id.to_string(),
@@ -90,7 +69,7 @@ pub fn parse_statusline(session_id: &str, json: &str) -> Result<ParsedStatusline
 }
 
 /// Parse context window fields from a JSON value
-fn parse_context_window(value: Option<&serde_json::Value>) -> ContextWindowStatus {
+fn parse_context_window(value: &serde_json::Value) -> ContextWindowStatus {
     let defaults = ContextWindowStatus {
         used_percentage: None,
         remaining_percentage: 100.0,
@@ -100,53 +79,48 @@ fn parse_context_window(value: Option<&serde_json::Value>) -> ContextWindowStatu
         current_usage: None,
     };
 
-    let Some(cw) = value.and_then(|v| v.as_object()) else {
+    if json::obj_at(value, &["context_window"]).is_none() {
         return defaults;
-    };
+    }
 
-    let used_percentage = cw.get("used_percentage").and_then(|v| v.as_f64());
+    let used_percentage = json::f64_at(value, &["context_window", "used_percentage"]);
 
-    let remaining_percentage = cw
-        .get("remaining_percentage")
-        .and_then(|v| v.as_f64())
+    let remaining_percentage = json::f64_at(value, &["context_window", "remaining_percentage"])
         .unwrap_or_else(|| used_percentage.map_or(100.0, |used| 100.0 - used));
 
-    let context_window_size = cw
-        .get("context_window_size")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
+    let context_window_size = json::u64_or(value, &["context_window", "context_window_size"], 0);
 
-    let total_input_tokens = cw
-        .get("total_input_tokens")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
+    let total_input_tokens = json::u64_or(value, &["context_window", "total_input_tokens"], 0);
 
-    let total_output_tokens = cw
-        .get("total_output_tokens")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
+    let total_output_tokens = json::u64_or(value, &["context_window", "total_output_tokens"], 0);
 
-    let current_usage = cw.get("current_usage").and_then(|cu| {
-        let cu_obj = cu.as_object()?;
-        Some(CurrentUsage {
-            input_tokens: cu_obj
-                .get("input_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-            output_tokens: cu_obj
-                .get("output_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-            cache_creation_input_tokens: cu_obj
-                .get("cache_creation_input_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-            cache_read_input_tokens: cu_obj
-                .get("cache_read_input_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-        })
-    });
+    let current_usage =
+        json::obj_at(value, &["context_window", "current_usage"]).map(|_| CurrentUsage {
+            input_tokens: json::u64_or(
+                value,
+                &["context_window", "current_usage", "input_tokens"],
+                0,
+            ),
+            output_tokens: json::u64_or(
+                value,
+                &["context_window", "current_usage", "output_tokens"],
+                0,
+            ),
+            cache_creation_input_tokens: json::u64_or(
+                value,
+                &[
+                    "context_window",
+                    "current_usage",
+                    "cache_creation_input_tokens",
+                ],
+                0,
+            ),
+            cache_read_input_tokens: json::u64_or(
+                value,
+                &["context_window", "current_usage", "cache_read_input_tokens"],
+                0,
+            ),
+        });
 
     // If used_percentage is null (before first API response), compute it
     // from total_input_tokens / context_window_size. Claude Code doesn't
@@ -175,7 +149,7 @@ fn parse_context_window(value: Option<&serde_json::Value>) -> ContextWindowStatu
 }
 
 /// Parse cost metrics from a JSON value
-fn parse_cost_metrics(value: Option<&serde_json::Value>) -> CostMetrics {
+fn parse_cost_metrics(value: &serde_json::Value) -> CostMetrics {
     let defaults = CostMetrics {
         total_cost_usd: 0.0,
         total_duration_ms: 0,
@@ -184,36 +158,21 @@ fn parse_cost_metrics(value: Option<&serde_json::Value>) -> CostMetrics {
         total_lines_removed: 0,
     };
 
-    let Some(cost) = value.and_then(|v| v.as_object()) else {
+    if json::obj_at(value, &["cost"]).is_none() {
         return defaults;
-    };
+    }
 
     CostMetrics {
-        total_cost_usd: cost
-            .get("total_cost_usd")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0),
-        total_duration_ms: cost
-            .get("total_duration_ms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
-        total_api_duration_ms: cost
-            .get("total_api_duration_ms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
-        total_lines_added: cost
-            .get("total_lines_added")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
-        total_lines_removed: cost
-            .get("total_lines_removed")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
+        total_cost_usd: json::f64_or(value, &["cost", "total_cost_usd"], 0.0),
+        total_duration_ms: json::u64_or(value, &["cost", "total_duration_ms"], 0),
+        total_api_duration_ms: json::u64_or(value, &["cost", "total_api_duration_ms"], 0),
+        total_lines_added: json::u64_or(value, &["cost", "total_lines_added"], 0),
+        total_lines_removed: json::u64_or(value, &["cost", "total_lines_removed"], 0),
     }
 }
 
 /// Parse rate limits from a JSON value
-fn parse_rate_limits(value: Option<&serde_json::Value>) -> RateLimits {
+fn parse_rate_limits(value: &serde_json::Value) -> RateLimits {
     let default_info = RateLimitInfo {
         used_percentage: 0.0,
         resets_at: 0,
@@ -224,37 +183,27 @@ fn parse_rate_limits(value: Option<&serde_json::Value>) -> RateLimits {
         seven_day: None,
     };
 
-    let Some(rl) = value.and_then(|v| v.as_object()) else {
+    if json::obj_at(value, &["rate_limits"]).is_none() {
         return defaults;
-    };
+    }
 
-    let five_hour = rl
-        .get("five_hour")
-        .and_then(|v| v.as_object())
-        .map(|fh| RateLimitInfo {
-            used_percentage: fh
-                .get("used_percentage")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0),
-            resets_at: fh.get("resets_at").and_then(|v| v.as_u64()).unwrap_or(0),
+    let five_hour = json::obj_at(value, &["rate_limits", "five_hour"])
+        .map(|_| RateLimitInfo {
+            used_percentage: json::f64_or(
+                value,
+                &["rate_limits", "five_hour", "used_percentage"],
+                0.0,
+            ),
+            resets_at: json::u64_or(value, &["rate_limits", "five_hour", "resets_at"], 0),
         })
         .unwrap_or(RateLimitInfo {
             used_percentage: 0.0,
             resets_at: 0,
         });
 
-    let seven_day = rl.get("seven_day").and_then(|v| {
-        if v.is_null() {
-            return None;
-        }
-        let sd = v.as_object()?;
-        Some(RateLimitInfo {
-            used_percentage: sd
-                .get("used_percentage")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0),
-            resets_at: sd.get("resets_at").and_then(|v| v.as_u64()).unwrap_or(0),
-        })
+    let seven_day = json::obj_at(value, &["rate_limits", "seven_day"]).map(|_| RateLimitInfo {
+        used_percentage: json::f64_or(value, &["rate_limits", "seven_day", "used_percentage"], 0.0),
+        resets_at: json::u64_or(value, &["rate_limits", "seven_day", "resets_at"], 0),
     });
 
     RateLimits {

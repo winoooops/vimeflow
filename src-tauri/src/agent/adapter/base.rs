@@ -5,7 +5,8 @@
 //! cross-platform file system notifications.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -13,8 +14,7 @@ use std::time::{Duration, Instant};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{Emitter, Manager};
 
-use super::statusline::parse_statusline;
-use super::transcript::{validate_transcript_path, TranscriptStartStatus, TranscriptState};
+use crate::agent::adapter::AgentAdapter;
 
 // ----------------------------------------------------------------------
 // Diagnostic logging (dev/debug builds only)
@@ -231,9 +231,169 @@ fn record_event_diag(
     }
 }
 
+/// Test-only public surface. Production code must use `AgentAdapter::start`.
+#[doc(hidden)]
+pub struct TranscriptHandle {
+    stop_flag: Arc<AtomicBool>,
+    join_handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl TranscriptHandle {
+    pub(crate) fn new(
+        stop_flag: Arc<AtomicBool>,
+        join_handle: std::thread::JoinHandle<()>,
+    ) -> Self {
+        Self {
+            stop_flag,
+            join_handle: Some(join_handle),
+        }
+    }
+
+    /// Signal the background thread to stop and wait for it to finish.
+    pub fn stop(mut self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.join_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl Drop for TranscriptHandle {
+    fn drop(&mut self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+    }
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TranscriptStartStatus {
+    Started,
+    Replaced,
+    AlreadyRunning,
+}
+
+struct TranscriptWatcher {
+    transcript_path: PathBuf,
+    cwd: Option<PathBuf>,
+    handle: TranscriptHandle,
+}
+
+/// Test-only public surface. Production code must use `AgentAdapter::start`.
+#[doc(hidden)]
+#[derive(Default, Clone)]
+pub struct TranscriptState {
+    watchers: Arc<Mutex<HashMap<String, TranscriptWatcher>>>,
+}
+
+impl TranscriptState {
+    pub fn new() -> Self {
+        Self {
+            watchers: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Start tailing when none is active, or switch to a newer transcript
+    /// path or workspace cwd.
+    pub fn start_or_replace<R: tauri::Runtime>(
+        &self,
+        adapter: Arc<dyn AgentAdapter<R>>,
+        app_handle: tauri::AppHandle<R>,
+        session_id: String,
+        transcript_path: PathBuf,
+        cwd: Option<PathBuf>,
+    ) -> Result<TranscriptStartStatus, String> {
+        {
+            let watchers = self.watchers.lock().expect("failed to lock watchers");
+            if let Some(current) = watchers.get(&session_id) {
+                if current.transcript_path == transcript_path && current.cwd == cwd {
+                    return Ok(TranscriptStartStatus::AlreadyRunning);
+                }
+            }
+        }
+
+        let mut new_handle = Some(adapter.tail_transcript(
+            app_handle,
+            session_id.clone(),
+            cwd.clone(),
+            transcript_path.clone(),
+        )?);
+
+        let (old_handle, status) = {
+            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+
+            if let Some(current) = watchers.get(&session_id) {
+                if current.transcript_path == transcript_path && current.cwd == cwd {
+                    (None, TranscriptStartStatus::AlreadyRunning)
+                } else {
+                    let old = watchers.insert(
+                        session_id,
+                        TranscriptWatcher {
+                            transcript_path: transcript_path.clone(),
+                            cwd: cwd.clone(),
+                            handle: new_handle
+                                .take()
+                                .expect("new transcript handle should be available"),
+                        },
+                    );
+
+                    (
+                        old.map(|watcher| watcher.handle),
+                        TranscriptStartStatus::Replaced,
+                    )
+                }
+            } else {
+                watchers.insert(
+                    session_id,
+                    TranscriptWatcher {
+                        transcript_path,
+                        cwd,
+                        handle: new_handle
+                            .take()
+                            .expect("new transcript handle should be available"),
+                    },
+                );
+
+                (None, TranscriptStartStatus::Started)
+            }
+        };
+
+        if let Some(handle) = new_handle {
+            handle.stop();
+        }
+
+        if let Some(handle) = old_handle {
+            handle.stop();
+        }
+
+        Ok(status)
+    }
+
+    /// Check if a session already has an active transcript watcher.
+    #[allow(dead_code)]
+    pub fn contains(&self, session_id: &str) -> bool {
+        let watchers = self.watchers.lock().expect("failed to lock watchers");
+        watchers.contains_key(session_id)
+    }
+
+    /// Stop tailing for the given session.
+    pub fn stop(&self, session_id: &str) -> Result<(), String> {
+        let handle = {
+            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+            watchers.remove(session_id)
+        };
+        match handle {
+            Some(watcher) => {
+                watcher.handle.stop();
+                Ok(())
+            }
+            None => Err(format!("No transcript watcher for session: {}", session_id)),
+        }
+    }
+}
+
 /// Handle to a running watcher — dropping it stops the watcher and polling thread
 pub struct WatcherHandle {
-    _watcher: RecommendedWatcher,
+    _watcher: Option<RecommendedWatcher>,
     /// Signals the polling fallback thread to exit
     stop_flag: Arc<AtomicBool>,
     /// Polling fallback thread. Stored so Drop can join after signalling
@@ -244,16 +404,20 @@ pub struct WatcherHandle {
     /// in the constructor — `cfg!()` on the read site alone left the
     /// allocation in release. Conditional struct fields are part of
     /// stable Rust.
-    #[cfg(debug_assertions)]
+    transcript_state: TranscriptState,
     session_id: String,
+    #[cfg(debug_assertions)]
+    session_id_for_log: String,
 }
 
 impl Drop for WatcherHandle {
     fn drop(&mut self) {
+        drop(self._watcher.take());
         self.stop_flag.store(true, Ordering::Relaxed);
         if let Some(handle) = self.join_handle.take() {
             let _ = handle.join();
         }
+        let _ = self.transcript_state.stop(&self.session_id);
         // `#[cfg(...)]` (attribute) on a statement, NOT `if cfg!(...)`
         // (runtime). The attribute physically removes both the
         // statement and the `self.session_id` access in release builds,
@@ -261,7 +425,7 @@ impl Drop for WatcherHandle {
         #[cfg(debug_assertions)]
         log::info!(
             "watcher.handle.dropped session={}",
-            short_sid(&self.session_id)
+            short_sid(&self.session_id_for_log)
         );
     }
 }
@@ -317,12 +481,13 @@ impl AgentWatcherState {
 /// pick up the new workspace immediately. Combined with
 /// `TranscriptState::start_or_replace`'s (transcript_path, cwd) identity
 /// check, a cwd change triggers a Replace of the tail thread.
-fn maybe_start_transcript(
-    app_handle: &tauri::AppHandle,
+fn maybe_start_transcript<R: tauri::Runtime>(
+    adapter: &Arc<dyn AgentAdapter<R>>,
+    app_handle: &tauri::AppHandle<R>,
     session_id: &str,
     transcript_path: &str,
 ) -> TxOutcome {
-    let canonical = match validate_transcript_path(transcript_path) {
+    let canonical = match adapter.validate_transcript(transcript_path) {
         Ok(path) => path,
         Err(e) => {
             log::warn!(
@@ -359,6 +524,7 @@ fn maybe_start_transcript(
 
     let ts = app_handle.state::<TranscriptState>();
     match ts.start_or_replace(
+        adapter.clone(),
         app_handle.clone(),
         session_id.to_string(),
         canonical.clone(),
@@ -400,8 +566,9 @@ fn maybe_start_transcript(
 /// CWD is intentionally NOT captured here. `maybe_start_transcript` queries
 /// PtyState fresh on every invocation so a `cd` mid-session updates the
 /// workspace seen by the test-runner parser.
-pub fn start_watching(
-    app_handle: tauri::AppHandle,
+fn start_watching<R: tauri::Runtime>(
+    adapter: Arc<dyn AgentAdapter<R>>,
+    app_handle: tauri::AppHandle<R>,
     session_id: String,
     status_file_path: PathBuf,
 ) -> Result<WatcherHandle, String> {
@@ -410,6 +577,7 @@ pub fn start_watching(
     let last_processed = Arc::new(Mutex::new(Instant::now()));
     let app_handle_for_poll = app_handle.clone();
     let stop_flag = Arc::new(AtomicBool::new(false));
+    let transcript_state_for_handle = app_handle.state::<TranscriptState>().inner().clone();
 
     // Diagnostic state — per-source timing for sources that fire
     // repeatedly (notify, poll), and a SHARED path history so the
@@ -425,6 +593,7 @@ pub fn start_watching(
 
     let notify_timing_for_cb = notify_timing.clone();
     let path_history_for_cb = path_history.clone();
+    let adapter_for_cb = adapter.clone();
 
     // Debounce interval — ignore events within 100ms of the last processed one
     let debounce_ms = 100;
@@ -479,14 +648,14 @@ pub fn start_watching(
             return;
         }
 
-        let (outcome, tx_path) = match parse_statusline(&sid, &contents) {
+        let (outcome, tx_path) = match adapter_for_cb.parse_status(&sid, &contents) {
             Ok(parsed) => {
                 if let Err(e) = app_handle.emit("agent-status", &parsed.event) {
                     log::error!("Failed to emit agent-status event: {}", e);
                 }
 
                 if let Some(ref path) = parsed.transcript_path {
-                    let outcome = maybe_start_transcript(&app_handle, &sid, path);
+                    let outcome = maybe_start_transcript(&adapter_for_cb, &app_handle, &sid, path);
                     (outcome, Some(path.clone()))
                 } else {
                     (TxOutcome::NoPath, None)
@@ -529,16 +698,22 @@ pub fn start_watching(
         let initial_sid = session_id.clone();
         let initial_path = status_file_path.clone();
         let initial_app = app_handle_for_poll.clone();
+        let initial_adapter = adapter.clone();
         let started = Instant::now();
         let mut outcome = TxOutcome::NoPath;
         let mut inline_tx_path: Option<String> = None;
         if let Ok(contents) = std::fs::read_to_string(&initial_path) {
             if !contents.trim().is_empty() {
-                match parse_statusline(&initial_sid, &contents) {
+                match initial_adapter.parse_status(&initial_sid, &contents) {
                     Ok(parsed) => {
                         let _ = initial_app.emit("agent-status", &parsed.event);
                         if let Some(ref path) = parsed.transcript_path {
-                            outcome = maybe_start_transcript(&initial_app, &initial_sid, path);
+                            outcome = maybe_start_transcript(
+                                &initial_adapter,
+                                &initial_app,
+                                &initial_sid,
+                                path,
+                            );
                             inline_tx_path = Some(path.clone());
                         }
                     }
@@ -570,6 +745,7 @@ pub fn start_watching(
         let poll_stop = stop_flag.clone();
         let poll_timing_for_thread = poll_timing.clone();
         let path_history_for_poll = path_history.clone();
+        let adapter_for_poll = adapter.clone();
         Some(std::thread::spawn(move || {
             while !poll_stop.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_secs(3));
@@ -600,11 +776,16 @@ pub fn start_watching(
                     *last = contents.clone();
                 }
 
-                let (outcome, tx_path) = match parse_statusline(&poll_sid, &contents) {
+                let (outcome, tx_path) = match adapter_for_poll.parse_status(&poll_sid, &contents) {
                     Ok(parsed) => {
                         let _ = poll_app.emit("agent-status", &parsed.event);
                         if let Some(ref path) = parsed.transcript_path {
-                            let outcome = maybe_start_transcript(&poll_app, &poll_sid, path);
+                            let outcome = maybe_start_transcript(
+                                &adapter_for_poll,
+                                &poll_app,
+                                &poll_sid,
+                                path,
+                            );
                             (outcome, Some(path.clone()))
                         } else {
                             (TxOutcome::NoPath, None)
@@ -633,48 +814,31 @@ pub fn start_watching(
     );
 
     Ok(WatcherHandle {
-        _watcher: watcher,
+        _watcher: Some(watcher),
         stop_flag,
         join_handle: poll_join_handle,
-        #[cfg(debug_assertions)]
+        transcript_state: transcript_state_for_handle,
         session_id: session_id.clone(),
+        #[cfg(debug_assertions)]
+        session_id_for_log: session_id.clone(),
     })
 }
 
-/// Start watching a statusline file (Tauri command).
-///
-/// The status file path is derived server-side from the PTY session's
-/// known CWD — the frontend only provides the session ID. This prevents
-/// path traversal attacks from crafted IPC calls.
-#[tauri::command]
-pub async fn start_agent_watcher(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, AgentWatcherState>,
-    pty_state: tauri::State<'_, crate::terminal::PtyState>,
+pub(crate) fn start_for<R: tauri::Runtime>(
+    adapter: Arc<dyn AgentAdapter<R>>,
+    app_handle: tauri::AppHandle<R>,
     session_id: String,
+    cwd: PathBuf,
+    state: AgentWatcherState,
 ) -> Result<(), String> {
-    // Derive the status file path from the PTY session's resolved CWD
-    let cwd = pty_state
-        .get_cwd(&session_id)
-        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
+    let source = adapter.status_source(&cwd, &session_id);
+    ensure_status_source_under_trust_root(&source.path, &source.trust_root)?;
 
-    let path = PathBuf::from(&cwd)
-        .join(".vimeflow")
-        .join("sessions")
-        .join(&session_id)
-        .join("status.json");
-
-    // Use the structured logger (already configured for the rest of this
-    // file) for startup diagnostics. The earlier ad-hoc debug-only file
-    // append was dropped: a fixed predictable temp path without O_EXCL
-    // follows symlinks, allowing a local actor on a shared system to
-    // redirect appends, and Linux's default umask 022 left the file
-    // world-readable. Run with RUST_LOG=debug to see these lines.
     log::debug!(
         "Watcher startup detail: session={}, cwd={}, path={}",
         session_id,
-        cwd,
-        path.display()
+        cwd.display(),
+        source.path.display()
     );
 
     // Stop any existing watcher for this session BEFORE counting active
@@ -687,28 +851,61 @@ pub async fn start_agent_watcher(
     log::info!(
         "Starting agent watcher: session={}, path={}, active_watchers={}",
         session_id,
-        path.display(),
+        source.path.display(),
         state.active_count(),
     );
 
-    let handle = start_watching(app_handle, session_id.clone(), path)?;
-    state.insert(session_id.clone(), handle);
+    let handle = start_watching(adapter, app_handle, session_id.clone(), source.path)?;
+    state.insert(session_id, handle);
 
     Ok(())
 }
 
-/// Stop watching a statusline file (Tauri command)
-#[tauri::command]
-pub async fn stop_agent_watcher(
-    state: tauri::State<'_, AgentWatcherState>,
-    session_id: String,
+fn ensure_status_source_under_trust_root(
+    status_path: &Path,
+    trust_root: &Path,
 ) -> Result<(), String> {
-    if state.remove(&session_id) {
-        log::info!("Stopped watching statusline for session {}", session_id);
-        Ok(())
-    } else {
-        Err(format!("No active watcher for session: {}", session_id))
+    let canonical_root = fs::canonicalize(trust_root)
+        .map_err(|e| format!("trust_root not resolvable: {}: {}", trust_root.display(), e))?;
+
+    let parent = status_path
+        .parent()
+        .ok_or_else(|| "status file path has no parent directory".to_string())?;
+
+    let mut probe = parent;
+    let canonical_ancestor = loop {
+        if probe.exists() {
+            break fs::canonicalize(probe)
+                .map_err(|e| format!("failed to canonicalize status ancestor: {}", e))?;
+        }
+
+        probe = probe
+            .parent()
+            .ok_or_else(|| format!("status path escapes filesystem root: {}", parent.display()))?;
+    };
+
+    if !canonical_ancestor.starts_with(&canonical_root) {
+        return Err(format!(
+            "status source path escapes trust_root: {} not under {}",
+            canonical_ancestor.display(),
+            canonical_root.display()
+        ));
     }
+
+    fs::create_dir_all(parent).map_err(|e| format!("failed to create status directory: {}", e))?;
+
+    let canonical_parent = fs::canonicalize(parent)
+        .map_err(|e| format!("failed to canonicalize status directory: {}", e))?;
+
+    if !canonical_parent.starts_with(&canonical_root) {
+        return Err(format!(
+            "status parent escapes trust_root after create: {} not under {}",
+            canonical_parent.display(),
+            canonical_root.display()
+        ));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -727,6 +924,167 @@ mod tests {
         assert!(!state.remove("nonexistent"));
     }
 
+    #[test]
+    fn transcript_state_contains_empty() {
+        let state = TranscriptState::new();
+        assert!(!state.contains("any-session"));
+    }
+
+    #[test]
+    fn transcript_state_replaces_changed_path() {
+        let app = tauri::test::mock_builder()
+            .build(tauri::generate_context!())
+            .expect("failed to build test app");
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let first_path = tmp.path().join("first.jsonl");
+        let second_path = tmp.path().join("second.jsonl");
+        std::fs::write(&first_path, "").expect("failed to write first transcript");
+        std::fs::write(&second_path, "").expect("failed to write second transcript");
+
+        let state = TranscriptState::new();
+        let session_id = "session-1".to_string();
+        let adapter: Arc<dyn AgentAdapter<tauri::test::MockRuntime>> =
+            Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
+
+        let first_status = state
+            .start_or_replace(
+                adapter.clone(),
+                app.handle().clone(),
+                session_id.clone(),
+                first_path.clone(),
+                None,
+            )
+            .expect("failed to start first transcript watcher");
+        assert_eq!(first_status, TranscriptStartStatus::Started);
+
+        let duplicate_status = state
+            .start_or_replace(
+                adapter.clone(),
+                app.handle().clone(),
+                session_id.clone(),
+                first_path,
+                None,
+            )
+            .expect("failed to check duplicate transcript watcher");
+        assert_eq!(duplicate_status, TranscriptStartStatus::AlreadyRunning);
+
+        let replaced_status = state
+            .start_or_replace(
+                adapter,
+                app.handle().clone(),
+                session_id.clone(),
+                second_path,
+                None,
+            )
+            .expect("failed to replace transcript watcher");
+        assert_eq!(replaced_status, TranscriptStartStatus::Replaced);
+
+        state.stop(&session_id).expect("failed to stop watcher");
+    }
+
+    #[test]
+    fn transcript_state_threads_cwd_through() {
+        let app = tauri::test::mock_builder()
+            .build(tauri::generate_context!())
+            .expect("failed to build test app");
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let transcript_path = tmp.path().join("t.jsonl");
+        std::fs::write(&transcript_path, "").expect("failed to write transcript");
+        let cwd = tmp.path().to_path_buf();
+
+        let state = TranscriptState::new();
+        let adapter: Arc<dyn AgentAdapter<tauri::test::MockRuntime>> =
+            Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
+
+        let status = state
+            .start_or_replace(
+                adapter,
+                app.handle().clone(),
+                "session-cwd".to_string(),
+                transcript_path,
+                Some(cwd),
+            )
+            .expect("failed to start watcher with cwd");
+        assert_eq!(status, TranscriptStartStatus::Started);
+
+        state.stop("session-cwd").expect("failed to stop watcher");
+    }
+
+    #[test]
+    fn transcript_state_replaces_when_only_cwd_changes() {
+        let app = tauri::test::mock_builder()
+            .build(tauri::generate_context!())
+            .expect("failed to build test app");
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let transcript_path = tmp.path().join("t.jsonl");
+        std::fs::write(&transcript_path, "").expect("failed to write transcript");
+        let cwd_a = tempfile::tempdir().expect("failed to create cwd_a");
+        let cwd_b = tempfile::tempdir().expect("failed to create cwd_b");
+
+        let state = TranscriptState::new();
+        let session_id = "session-cwd-change".to_string();
+        let adapter: Arc<dyn AgentAdapter<tauri::test::MockRuntime>> =
+            Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
+
+        let first = state
+            .start_or_replace(
+                adapter.clone(),
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path.clone(),
+                Some(cwd_a.path().to_path_buf()),
+            )
+            .expect("failed to start with cwd_a");
+        assert_eq!(first, TranscriptStartStatus::Started);
+
+        let same = state
+            .start_or_replace(
+                adapter.clone(),
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path.clone(),
+                Some(cwd_a.path().to_path_buf()),
+            )
+            .expect("failed to detect already-running");
+        assert_eq!(same, TranscriptStartStatus::AlreadyRunning);
+
+        let replaced = state
+            .start_or_replace(
+                adapter.clone(),
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path.clone(),
+                Some(cwd_b.path().to_path_buf()),
+            )
+            .expect("failed to replace on cwd change");
+        assert_eq!(replaced, TranscriptStartStatus::Replaced);
+
+        let replaced_to_none = state
+            .start_or_replace(
+                adapter,
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path,
+                None,
+            )
+            .expect("failed to replace on cwd to None transition");
+        assert_eq!(replaced_to_none, TranscriptStartStatus::Replaced);
+
+        state.stop(&session_id).expect("failed to stop watcher");
+    }
+
+    #[test]
+    fn transcript_handle_drop_sets_stop_flag() {
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let handle = std::thread::spawn(|| {});
+
+        {
+            let _handle = TranscriptHandle::new(Arc::clone(&stop_flag), handle);
+        }
+
+        assert!(stop_flag.load(Ordering::Relaxed));
+    }
+
     // -- PathHistory state machine ----------------------------------
     //
     // These tests cover all four arms of `PathHistory::observe` and act
@@ -743,7 +1101,10 @@ mod tests {
     fn path_history_first_observation_sets_path_and_repeat_1() {
         let mut h = PathHistory::default();
         let r = h.observe(Some("path-a"));
-        assert!(r.is_none(), "first observation must not report a path change");
+        assert!(
+            r.is_none(),
+            "first observation must not report a path change"
+        );
         assert_eq!(h.last_tx_path.as_deref(), Some("path-a"));
         assert_eq!(h.same_path_repeat, 1);
     }

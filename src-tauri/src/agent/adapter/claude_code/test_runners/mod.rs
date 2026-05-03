@@ -22,5 +22,4 @@ pub static RUNNERS: &[&TestRunner] = &[&vitest::VITEST, &cargo::CARGO_TEST];
 /// (`vitest.rs`, `cargo.rs`) and the snapshot builder (`build.rs`).
 /// Centralised here so a future pattern change (e.g. handling OSC sequences)
 /// is a one-line update instead of three.
-pub static ANSI_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap());
+pub static ANSI_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap());

@@ -3,9 +3,9 @@
 
 use std::path::Path;
 
+use super::RUNNERS;
 use super::script_resolution;
 use super::types::TestRunner;
-use super::RUNNERS;
 
 /// Tokenize a command string into shell-words, returning None if the input
 /// can't be parsed (e.g. unmatched quotes). None is treated as "no match"
@@ -25,7 +25,10 @@ pub fn strip_env_prefix(tokens: &[String]) -> &[String] {
         if let Some(eq) = t.find('=') {
             let key = &t[..eq];
             if !key.is_empty()
-                && key.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                && key
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
                 && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
             {
                 i += 1;
@@ -38,7 +41,7 @@ pub fn strip_env_prefix(tokens: &[String]) -> &[String] {
 }
 
 /// Take only the first command segment — split on &&, ;, ||, |.
-pub fn first_segment<'a>(tokens: &'a [String]) -> &'a [String] {
+pub fn first_segment(tokens: &[String]) -> &[String] {
     let separators = ["&&", "||", ";", "|"];
     for (i, t) in tokens.iter().enumerate() {
         if separators.contains(&t.as_str()) {
@@ -57,7 +60,7 @@ pub fn first_segment<'a>(tokens: &'a [String]) -> &'a [String] {
 /// The loop is bounded at 8 iterations to defend against pathological
 /// inputs (a long chain of wrappers, repeated tokenization round-trips).
 /// 8 comfortably exceeds any realistic composition.
-pub fn strip_wrappers<'a>(tokens: &'a [String]) -> &'a [String] {
+pub fn strip_wrappers(tokens: &[String]) -> &[String] {
     const MAX_ITERATIONS: usize = 8;
     let mut current = tokens;
     for _ in 0..MAX_ITERATIONS {
@@ -70,7 +73,7 @@ pub fn strip_wrappers<'a>(tokens: &'a [String]) -> &'a [String] {
     current
 }
 
-fn strip_one_wrapper<'a>(tokens: &'a [String]) -> &'a [String] {
+fn strip_one_wrapper(tokens: &[String]) -> &[String] {
     if tokens.is_empty() {
         return tokens;
     }
@@ -262,7 +265,10 @@ mod tests {
     fn match_command_finds_vitest() {
         let m = match_command("vitest run src/foo.test.ts", None).expect("should match");
         assert_eq!(m.runner.name, "vitest");
-        assert_eq!(m.stripped_tokens, vec_of(&["vitest", "run", "src/foo.test.ts"]));
+        assert_eq!(
+            m.stripped_tokens,
+            vec_of(&["vitest", "run", "src/foo.test.ts"])
+        );
     }
 
     #[test]
@@ -405,8 +411,8 @@ mod tests {
             r#"{"scripts": {"test": "vitest"}}"#,
         )
         .unwrap();
-        let m = match_command("npm test -- src/foo.test.ts", Some(dir.path()))
-            .expect("should match");
+        let m =
+            match_command("npm test -- src/foo.test.ts", Some(dir.path())).expect("should match");
         assert_eq!(m.runner.name, "vitest");
         assert_eq!(
             m.stripped_tokens,

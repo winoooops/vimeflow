@@ -1,12 +1,15 @@
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
-use vimeflow_lib::agent::transcript::TranscriptState;
+use tauri::test::MockRuntime;
+use vimeflow_lib::agent::adapter::AgentAdapter;
+use vimeflow_lib::agent::adapter::base::TranscriptState;
+use vimeflow_lib::agent::adapter::claude_code::ClaudeCodeAdapter;
 
 #[test]
 fn transcript_emits_turn_events_for_real_user_prompts_only() {
-    use tauri::test::mock_builder;
     use tauri::Listener;
+    use tauri::test::mock_builder;
 
     let app = mock_builder().build(tauri::generate_context!()).unwrap();
     let app_handle = app.handle().clone();
@@ -56,8 +59,10 @@ fn transcript_emits_turn_events_for_real_user_prompts_only() {
     .expect("write transcript fixture");
 
     let state = TranscriptState::new();
+    let adapter: Arc<dyn AgentAdapter<MockRuntime>> = Arc::new(ClaudeCodeAdapter);
     state
         .start_or_replace(
+            adapter,
             app_handle,
             "session-turns".to_string(),
             transcript_path,

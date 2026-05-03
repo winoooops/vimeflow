@@ -32,7 +32,10 @@ mod tests {
 
     #[test]
     fn parses_iso8601_no_fraction() {
-        assert_eq!(parse_iso8601_ms("2026-04-28T12:00:00Z"), Some(1777377600000));
+        assert_eq!(
+            parse_iso8601_ms("2026-04-28T12:00:00Z"),
+            Some(1777377600000)
+        );
     }
 
     #[test]

@@ -5,12 +5,15 @@
 
 use std::sync::{Arc, Mutex};
 
-use vimeflow_lib::agent::transcript::TranscriptState;
+use tauri::test::MockRuntime;
+use vimeflow_lib::agent::adapter::AgentAdapter;
+use vimeflow_lib::agent::adapter::base::TranscriptState;
+use vimeflow_lib::agent::adapter::claude_code::ClaudeCodeAdapter;
 
 #[test]
 fn replay_emits_only_latest_snapshot() {
-    use tauri::test::mock_builder;
     use tauri::Listener;
+    use tauri::test::mock_builder;
 
     let app = mock_builder().build(tauri::generate_context!()).unwrap();
     let app_handle = app.handle().clone();
@@ -22,6 +25,7 @@ fn replay_emits_only_latest_snapshot() {
     });
 
     let state = TranscriptState::new();
+    let adapter: Arc<dyn AgentAdapter<MockRuntime>> = Arc::new(ClaudeCodeAdapter);
     let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/transcript_vitest_replay.jsonl");
 
@@ -32,6 +36,7 @@ fn replay_emits_only_latest_snapshot() {
 
     state
         .start_or_replace(
+            adapter,
             app_handle,
             "session-replay".to_string(),
             fixture_path,

@@ -5,8 +5,8 @@ mod git;
 mod terminal;
 
 use agent::{
-    detect_agent_in_session, start_agent_watcher, start_transcript_watcher, stop_agent_watcher,
-    stop_transcript_watcher, AgentWatcherState, TranscriptState,
+    detect_agent_in_session, start_agent_watcher, stop_agent_watcher, AgentWatcherState,
+    TranscriptState,
 };
 use filesystem::{list_dir, read_file, write_file};
 use git::{get_git_diff, git_status, watcher::{start_git_watcher, stop_git_watcher, GitWatcherState}};
@@ -90,8 +90,6 @@ pub fn run() {
         detect_agent_in_session,
         start_agent_watcher,
         stop_agent_watcher,
-        start_transcript_watcher,
-        stop_transcript_watcher,
         list_dir,
         read_file,
         write_file,
@@ -114,8 +112,6 @@ pub fn run() {
         detect_agent_in_session,
         start_agent_watcher,
         stop_agent_watcher,
-        start_transcript_watcher,
-        stop_transcript_watcher,
         list_dir,
         read_file,
         write_file,

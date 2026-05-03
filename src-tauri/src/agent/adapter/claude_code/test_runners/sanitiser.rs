@@ -69,13 +69,19 @@ static OUTPUT_ONLY_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
 /// Sanitiser tuned for `command_preview`. Use this when displaying the
 /// reconstructed test command in the panel header.
 pub fn sanitize_for_command(input: &str) -> String {
-    apply_patterns(input, SHARED_PATTERNS.iter().chain(COMMAND_ONLY_PATTERNS.iter()))
+    apply_patterns(
+        input,
+        SHARED_PATTERNS.iter().chain(COMMAND_ONLY_PATTERNS.iter()),
+    )
 }
 
 /// Sanitiser tuned for `output_excerpt`. Use this for arbitrary captured
 /// stderr/stdout that may contain env-var dumps or unstructured output.
 pub fn sanitize_for_output(input: &str) -> String {
-    apply_patterns(input, SHARED_PATTERNS.iter().chain(OUTPUT_ONLY_PATTERNS.iter()))
+    apply_patterns(
+        input,
+        SHARED_PATTERNS.iter().chain(OUTPUT_ONLY_PATTERNS.iter()),
+    )
 }
 
 fn apply_patterns<'a>(input: &str, patterns: impl Iterator<Item = &'a Regex>) -> String {
@@ -104,8 +110,16 @@ mod tests {
         // Regression: previously `\b[A-Z][A-Z0-9_]{2,}=\S+` redacted these
         // unconditionally, leaving "[REDACTED] vitest run" in the header.
         let s = sanitize_for_command("NODE_ENV=test VITEST_POOL_ID=1 CI=true vitest run");
-        assert!(s.contains("NODE_ENV=test"), "NODE_ENV should be visible: {}", s);
-        assert!(s.contains("VITEST_POOL_ID=1"), "VITEST_POOL_ID should be visible: {}", s);
+        assert!(
+            s.contains("NODE_ENV=test"),
+            "NODE_ENV should be visible: {}",
+            s
+        );
+        assert!(
+            s.contains("VITEST_POOL_ID=1"),
+            "VITEST_POOL_ID should be visible: {}",
+            s
+        );
         assert!(s.contains("CI=true"), "CI should be visible: {}", s);
     }
 

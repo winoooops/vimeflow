@@ -3,9 +3,11 @@
 use std::path::{Component, Path};
 
 /// Returns Some(absolute_path_string) when:
-///   - label has no `..` path components (parent-dir traversal)
-///   - label is not absolute
-///   - the canonical resolved path is inside the canonical CWD
+///
+/// - label has no `..` path components (parent-dir traversal)
+/// - label is not absolute
+/// - the canonical resolved path is inside the canonical CWD
+///
 /// Returns None otherwise — the row will render non-clickable.
 ///
 /// We check `..` as an actual path COMPONENT, not as a substring, so legitimate
@@ -78,7 +80,10 @@ mod tests {
         let file = dir.path().join("reconnect..server.test.ts");
         fs::write(&file, "").unwrap();
         let resolved = resolve_group_path(dir.path(), "reconnect..server.test.ts");
-        assert!(resolved.is_some(), "should resolve a filename with .. characters");
+        assert!(
+            resolved.is_some(),
+            "should resolve a filename with .. characters"
+        );
         assert!(resolved.unwrap().contains("reconnect..server.test.ts"));
     }
 

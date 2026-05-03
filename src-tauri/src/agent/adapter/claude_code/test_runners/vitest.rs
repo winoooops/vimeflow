@@ -12,11 +12,11 @@ use std::path::Path;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+use super::ANSI_RE;
 use super::path_resolution::resolve_group_path_with_cwd_canonical;
 use super::types::{
     CapturedOutput, TestGroup, TestGroupKind, TestGroupStatus, TestRunSummary, TestRunner,
 };
-use super::ANSI_RE;
 
 pub static VITEST: TestRunner = TestRunner {
     name: "vitest",
@@ -37,10 +37,8 @@ fn vitest_matches(tokens: &[&str]) -> bool {
 //   Tests  47 passed | 2 failed | 1 skipped (50)
 //   Tests  no tests
 static TESTS_LINE_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r"(?m)^\s*Tests\s+(?:(\d+)\s+passed)?(?:.*?(\d+)\s+failed)?(?:.*?(\d+)\s+skipped)?",
-    )
-    .unwrap()
+    Regex::new(r"(?m)^\s*Tests\s+(?:(\d+)\s+passed)?(?:.*?(\d+)\s+failed)?(?:.*?(\d+)\s+skipped)?")
+        .unwrap()
 });
 
 // File rows: "✓ src/foo.test.ts (12)" or "✗ src/bar.test.ts (8 | 3 failed)"
@@ -54,9 +52,18 @@ fn vitest_parse_result(out: &CapturedOutput, cwd: &Path) -> Option<TestRunSummar
 
     // Pull summary counts from the Tests line.
     let caps = TESTS_LINE_RE.captures(&stripped)?;
-    let passed = caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
-    let failed = caps.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
-    let skipped = caps.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+    let passed = caps
+        .get(1)
+        .and_then(|m| m.as_str().parse().ok())
+        .unwrap_or(0);
+    let failed = caps
+        .get(2)
+        .and_then(|m| m.as_str().parse().ok())
+        .unwrap_or(0);
+    let skipped = caps
+        .get(3)
+        .and_then(|m| m.as_str().parse().ok())
+        .unwrap_or(0);
     let total = passed + failed + skipped;
 
     // Canonicalize CWD ONCE up front. resolve_group_path's per-call
@@ -73,7 +80,10 @@ fn vitest_parse_result(out: &CapturedOutput, cwd: &Path) -> Option<TestRunSummar
             break;
         }
         let icon = cap.get(1).map(|m| m.as_str()).unwrap_or("");
-        let label = cap.get(2).map(|m| m.as_str().to_string()).unwrap_or_default();
+        let label = cap
+            .get(2)
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default();
         let file_total: u32 = cap
             .get(3)
             .and_then(|m| m.as_str().parse().ok())
@@ -130,7 +140,10 @@ mod tests {
     use tempfile::tempdir;
 
     fn captured(content: &str) -> CapturedOutput {
-        CapturedOutput { content: content.to_string(), is_error: false }
+        CapturedOutput {
+            content: content.to_string(),
+            is_error: false,
+        }
     }
 
     #[test]
@@ -143,9 +156,7 @@ mod tests {
 
     #[test]
     fn parses_simple_pass_summary() {
-        let out = captured(
-            "Test Files  1 passed (1)\n     Tests  3 passed (3)\n",
-        );
+        let out = captured("Test Files  1 passed (1)\n     Tests  3 passed (3)\n");
         let s = vitest_parse_result(&out, &PathBuf::from("/tmp")).unwrap();
         assert_eq!(s.passed, 3);
         assert_eq!(s.failed, 0);
@@ -170,10 +181,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let foo = dir.path().join("foo.test.ts");
         fs::write(&foo, "").unwrap();
-        let out_str = format!(
-            "✓ foo.test.ts (12)\n✗ missing.test.ts (8 | 3 failed)\n     Tests  17 passed | 3 failed (20)\n"
-        );
-        let out = captured(&out_str);
+        let out_str = "✓ foo.test.ts (12)\n✗ missing.test.ts (8 | 3 failed)\n     Tests  17 passed | 3 failed (20)\n";
+        let out = captured(out_str);
         let s = vitest_parse_result(&out, dir.path()).unwrap();
         assert_eq!(s.groups.len(), 2);
         assert_eq!(s.groups[0].label, "foo.test.ts");
@@ -194,8 +203,7 @@ mod tests {
         // `passed: file_total, skipped: 0`, so the count badge read "3/3"
         // alongside the skip icon — contradictory. Now the file_total is
         // attributed to skipped instead.
-        let out_str =
-            "⊘ skipped.test.ts (3)\n     Tests  0 passed | 0 failed | 3 skipped (3)\n";
+        let out_str = "⊘ skipped.test.ts (3)\n     Tests  0 passed | 0 failed | 3 skipped (3)\n";
         let out = captured(out_str);
         let s = vitest_parse_result(&out, &PathBuf::from("/tmp")).unwrap();
         assert_eq!(s.groups.len(), 1);
@@ -209,9 +217,7 @@ mod tests {
 
     #[test]
     fn strips_ansi_before_parsing() {
-        let out = captured(
-            "\x1b[32m✓\x1b[0m foo.test.ts (12)\n     Tests  12 passed (12)\n",
-        );
+        let out = captured("\x1b[32m✓\x1b[0m foo.test.ts (12)\n     Tests  12 passed (12)\n");
         let s = vitest_parse_result(&out, &PathBuf::from("/tmp")).unwrap();
         assert_eq!(s.total, 12);
         assert_eq!(s.groups.len(), 1);
