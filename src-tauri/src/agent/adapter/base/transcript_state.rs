@@ -116,55 +116,42 @@ impl TranscriptState {
             }
         }
 
-        let mut new_handle = Some(adapter.tail_transcript(
+        let new_handle = adapter.tail_transcript(
             app_handle,
             session_id.clone(),
             cwd.clone(),
             transcript_path.clone(),
-        )?);
+        )?;
 
-        let (old_handle, status) = {
+        // The per-session gate guarantees no concurrent `start_or_replace`
+        // can have inserted between the check above and this insert.
+        // `stop()` also acquires the gate (Claude review on PR #152, F4),
+        // so it cannot have removed an entry mid-flight either. The
+        // pre-gate code re-checked `(transcript_path, cwd)` identity here
+        // and stopped the spare handle on a tie — that branch is now
+        // unreachable (F5), so it's removed. Outcome is determined purely
+        // by whether an entry already exists for this session: present →
+        // Replaced (different identity, since the early-return above
+        // handled the same-identity case under the same gate); absent →
+        // Started.
+        let old_handle = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
-
-            if let Some(current) = watchers.get(&session_id) {
-                if current.transcript_path == transcript_path && current.cwd == cwd {
-                    (None, TranscriptStartStatus::AlreadyRunning)
-                } else {
-                    let old = watchers.insert(
-                        session_id,
-                        TranscriptWatcher {
-                            transcript_path: transcript_path.clone(),
-                            cwd: cwd.clone(),
-                            handle: new_handle
-                                .take()
-                                .expect("new transcript handle should be available"),
-                        },
-                    );
-
-                    (
-                        old.map(|watcher| watcher.handle),
-                        TranscriptStartStatus::Replaced,
-                    )
-                }
-            } else {
-                watchers.insert(
-                    session_id,
-                    TranscriptWatcher {
-                        transcript_path,
-                        cwd,
-                        handle: new_handle
-                            .take()
-                            .expect("new transcript handle should be available"),
-                    },
-                );
-
-                (None, TranscriptStartStatus::Started)
-            }
+            let old = watchers.insert(
+                session_id,
+                TranscriptWatcher {
+                    transcript_path,
+                    cwd,
+                    handle: new_handle,
+                },
+            );
+            old.map(|watcher| watcher.handle)
         };
 
-        if let Some(handle) = new_handle {
-            handle.stop();
-        }
+        let status = if old_handle.is_some() {
+            TranscriptStartStatus::Replaced
+        } else {
+            TranscriptStartStatus::Started
+        };
 
         if let Some(handle) = old_handle {
             handle.stop();
@@ -182,22 +169,46 @@ impl TranscriptState {
 
     /// Stop tailing for the given session.
     pub fn stop(&self, session_id: &str) -> Result<(), String> {
+        // Acquire the per-session start gate before touching `watchers`
+        // (Claude review on PR #152, F4). Without this, an in-flight
+        // `start_or_replace` could be between its drop-watchers-lock /
+        // tail_transcript-spawn / re-acquire-watchers steps when stop()
+        // ran concurrently and removed the entry. `start_or_replace`
+        // would then insert the freshly-spawned T1 as `Started` even
+        // though `stop()` already ran — leaving T1 as a zombie tail
+        // thread with no owning `WatcherHandle` (the original handle
+        // whose Drop called us has already been dropped). Acquiring
+        // the gate here forces stop() to wait for any in-flight start
+        // to finish, so the entry stop() removes is exactly the entry
+        // start_or_replace just inserted — there is no zombie.
+        //
+        // Lock ordering: gate → watchers, matching `start_or_replace`.
+        //
+        // Intentionally do NOT remove this session's entry from
+        // `start_gates`. If we deleted the gate after releasing it, a
+        // subsequent `start_or_replace` would lookup the empty map
+        // slot, create a NEW gate, and enter `tail_transcript`
+        // concurrently with another already-in-flight start that still
+        // holds a clone of the OLD gate. Gates are ~56 bytes each
+        // (`String` key + `Arc<Mutex<()>>` value); leaving them for
+        // the session_id's lifetime is small enough that periodic
+        // cleanup isn't worth the lock-ordering complexity.
+        let gate = {
+            let mut gates = self
+                .start_gates
+                .lock()
+                .expect("failed to lock start_gates");
+            gates
+                .entry(session_id.to_string())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let _gate_guard = gate.lock().expect("failed to lock per-session start gate");
+
         let handle = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             watchers.remove(session_id)
         };
-        // Intentionally do NOT remove this session's entry from
-        // `start_gates`. If `stop()` deleted the gate without first
-        // acquiring it, a notify callback already inside
-        // `start_or_replace` would still hold a clone of the OLD gate's
-        // `Arc<Mutex<()>>`, and a subsequent restart would lookup the
-        // empty map slot, create a NEW gate, and enter `tail_transcript`
-        // concurrently with the in-flight start — reintroducing the
-        // duplicate-tailer race the gate was added to prevent (Codex
-        // verify cycle 2 follow-up to PR #152's F2). Gates are ~56 bytes
-        // each (`String` key + `Arc<Mutex<()>>` value); leaving them
-        // for the session_id's lifetime is small enough that periodic
-        // cleanup isn't worth the lock-ordering complexity.
         match handle {
             Some(watcher) => {
                 watcher.handle.stop();
