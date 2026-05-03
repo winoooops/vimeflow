@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -40,12 +40,30 @@ pub(crate) fn validate_transcript_path(
     }
 
     let path = PathBuf::from(transcript_path);
-    let canonical = fs::canonicalize(&path).map_err(|e| match path.try_exists() {
-        Ok(false) => ValidateTranscriptError::NotFound(path.clone()),
-        Ok(true) | Err(_) => ValidateTranscriptError::Other(format!(
+    let canonical = fs::canonicalize(&path).map_err(|e| {
+        // Classify directly from the canonicalize failure where the
+        // ErrorKind is authoritative (no second syscall = no TOCTOU
+        // window). Only `PermissionDenied` is ambiguous: Windows can
+        // return it for missing-but-unreadable parents, where the
+        // `try_exists()` fallback is the authoritative classifier.
+        // All other kinds (Interrupted, InvalidData, etc.) become
+        // `Other` directly. Claude review on PR #153, F5 (cycle-2
+        // narrowing followed by a cycle-2-retry tightening — codex
+        // flagged that the previous "fall back for all non-NotFound"
+        // shape only narrowed the race instead of eliminating it).
+        let kind = e.kind();
+        if kind == io::ErrorKind::NotFound {
+            return ValidateTranscriptError::NotFound(path.clone());
+        }
+        if kind == io::ErrorKind::PermissionDenied {
+            if let Ok(false) = path.try_exists() {
+                return ValidateTranscriptError::NotFound(path.clone());
+            }
+        }
+        ValidateTranscriptError::Other(format!(
             "invalid transcript path '{}': {}",
             transcript_path, e
-        )),
+        ))
     })?;
 
     if !canonical.is_file() {

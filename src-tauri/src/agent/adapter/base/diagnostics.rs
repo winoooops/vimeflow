@@ -13,6 +13,14 @@ pub(super) enum TxOutcome {
     Missing,
     OutsidePath,
     NotFile,
+    /// Transcript path failed validation BEFORE filesystem resolution
+    /// — currently triggered by null-byte detection in the input
+    /// string. Distinct from `NotFile` (path canonicalised but isn't
+    /// regular) and `OutsidePath` (canonical path escaped the trust
+    /// root) so log scrapers / SIEM rules can flag potentially
+    /// adversarial input separately from ordinary filesystem-state
+    /// misclassifications. Claude review on PR #153.
+    InvalidPath,
     StartFailed,
     NoPath,
     ParseError,
@@ -27,6 +35,7 @@ impl TxOutcome {
             Self::Missing => "missing",
             Self::OutsidePath => "outside_path",
             Self::NotFile => "not_file",
+            Self::InvalidPath => "invalid_path",
             Self::StartFailed => "start_failed",
             Self::NoPath => "no_path",
             Self::ParseError => "parse_error",

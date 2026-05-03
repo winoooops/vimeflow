@@ -155,8 +155,20 @@ fn maybe_start_transcript<R: tauri::Runtime>(
             return match e {
                 ValidateTranscriptError::NotFound(_) => TxOutcome::Missing,
                 ValidateTranscriptError::OutsideRoot { .. } => TxOutcome::OutsidePath,
+                // `InvalidPath` is potentially-adversarial input
+                // (currently null-byte injection), so it must NOT be
+                // collapsed into `NotFile`. `NotFile` covers the
+                // residual category of validation failures where the
+                // path is structurally well-formed but the resolved
+                // file isn't usable: `NotAFile` (canonical path is a
+                // directory or special file) and `Other` (e.g., the
+                // home-directory probe failed, or the path resolved to
+                // something we couldn't classify). Operators grepping
+                // logs for `tx_status=invalid_path` (see the
+                // diagnostics emitter format string) get the
+                // null-byte signal directly. Claude review on PR #153.
+                ValidateTranscriptError::InvalidPath(_) => TxOutcome::InvalidPath,
                 ValidateTranscriptError::NotAFile(_)
-                | ValidateTranscriptError::InvalidPath(_)
                 | ValidateTranscriptError::Other(_) => TxOutcome::NotFile,
             };
         }

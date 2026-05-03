@@ -74,10 +74,12 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   //     succeed for this session? Used to gate the exit-collapse path
   //     (only collapse if we ever showed an active agent).
   //   - `watcherStartedRef`: did `start_agent_watcher` invoke succeed?
-  //     Used to gate (a) re-invoking start_agent_watcher (avoid
-  //     duplicate watchers per detection poll) and (b) calling
-  //     stopWatchers on exit (skip the IPC if the watcher never
-  //     started).
+  //     Used to gate re-invoking `start_agent_watcher` (avoid duplicate
+  //     watchers per detection poll). Stop calls are NOT gated on this
+  //     ref — every cleanup path invokes `stopWatchers` unconditionally
+  //     (see F2 fix on PR #153). The ref reflects only the LAST local
+  //     start outcome, so a prior failed stop would lie and let a
+  //     stale-cwd backend watcher leak across session changes.
   //
   // The collapse path runs whenever the agent has been detected in the
   // past and is now gone, regardless of whether the backend watcher

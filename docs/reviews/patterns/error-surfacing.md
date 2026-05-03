@@ -214,3 +214,14 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** Watcher diagnostics classified transcript validation failures by matching the text `"access denied"` inside an adapter error string. That made the base watcher depend on Claude-specific wording and would silently misclassify outcomes if the adapter changed the message or another adapter returned different text.
 - **Fix:** Added `ValidateTranscriptError` with explicit variants for not found, outside root, not a file, invalid path, and other failures. Adapter validation now returns the typed error, and the watcher maps variants to `TxOutcome` without depending on message text.
 - **Commit:** _(pending on this branch)_
+
+---
+
+### 22. Distinct error variants collapsed into one diagnostic outcome — security-relevant signal lost in noise
+
+- **Source:** github-claude | PR #153 round 2 | 2026-05-03
+- **Severity:** LOW
+- **File:** `src-tauri/src/agent/adapter/base/watcher_runtime.rs`, `src-tauri/src/agent/adapter/base/diagnostics.rs`
+- **Finding:** Cycle-0 of this PR introduced `ValidateTranscriptError::InvalidPath` for null-byte injection (potentially-adversarial input) but mapped it to `TxOutcome::NotFile` in `maybe_start_transcript`'s match arm — the same outcome used for "canonical path resolved but isn't a regular file." SIEM rules / log scrapers keyed on `tx_status=not_file` couldn't distinguish "the user pointed at a directory" (mundane misconfiguration) from "the input contained a null byte" (injection probe). The typed-error fix from #21 was structurally correct, but the diagnostic-outcome enum it fed into didn't have a slot for the security-relevant variant, so the signal got compressed back into a generic bucket. Same finding-class as the original #21: a typed error becomes useless if the consumer's classification axis is too narrow.
+- **Fix:** Added a new `TxOutcome::InvalidPath` variant to `diagnostics.rs` (label `"invalid_path"`) and split the `match e` arm in `watcher_runtime.rs` so `ValidateTranscriptError::InvalidPath` maps to it directly. `NotAFile` and `Other` continue to map to `NotFile`. Updated the call-site comment to cite the actual diagnostic field name (`tx_status=invalid_path`, from the emitter's format string in `diagnostics.rs:147`) so future operators can grep precisely. The lesson: when adding a typed error variant for a security-relevant condition, ALSO check that every consumer's classification surface (log labels, metric tags, alert routing keys) can express the new distinction. A typed error that lands in a generic bucket on the consumer side gives the same false-positive rate as a stringly-typed error with a generic message — the security signal needs end-to-end variance to be actionable.
+- **Commit:** _(see git log for the cycle-2 fix commit on PR #153)_
