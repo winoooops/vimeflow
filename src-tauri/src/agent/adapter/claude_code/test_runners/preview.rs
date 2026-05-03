@@ -40,7 +40,11 @@ mod tests {
 
     #[test]
     fn applies_sanitiser() {
-        let p = build_command_preview(&vec_of(&["vitest", "--key", "sk_live_1234567890abcdef1234"]));
+        let p = build_command_preview(&vec_of(&[
+            "vitest",
+            "--key",
+            "sk_live_1234567890abcdef1234",
+        ]));
         assert!(!p.contains("sk_live_1234567890abcdef1234"));
         assert!(p.contains("[REDACTED]"));
     }

@@ -4,9 +4,10 @@
 //! into typed `AgentStatusEvent` structs. Uses `serde_json::Value` for
 //! flexible parsing — gracefully handles partial/evolving JSON.
 
-use super::types::{
+use crate::agent::types::{
     AgentStatusEvent, ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
 };
+use serde_json::Value;
 
 /// Parsed statusline result with the event and optional transcript path
 #[derive(Debug, Clone)]
@@ -22,55 +23,31 @@ pub struct ParsedStatusline {
 /// All fields are optional — gracefully handles partial/evolving JSON.
 /// Returns `Err` only if the input is not valid JSON at all.
 pub fn parse_statusline(session_id: &str, json: &str) -> Result<ParsedStatusline, String> {
-    let value: serde_json::Value =
-        serde_json::from_str(json).map_err(|e| format!("invalid JSON: {}", e))?;
+    let value: Value = serde_json::from_str(json).map_err(|e| format!("invalid JSON: {}", e))?;
 
-    let obj = value
-        .as_object()
-        .ok_or("statusline JSON is not an object")?;
+    if !value.is_object() {
+        return Err("statusline JSON is not an object".to_string());
+    }
 
     // Extract model info
-    let model = obj.get("model");
-    let model_id = model
-        .and_then(|m| m.get("id"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_string();
-    let model_display_name = model
-        .and_then(|m| m.get("display_name"))
-        .and_then(|v| v.as_str())
-        .unwrap_or(&model_id)
-        .to_string();
+    let model_id = model_id(&value);
+    let model_display_name = model_display_name(&value, &model_id);
 
     // Extract session ID and version
-    let agent_session_id = obj
-        .get("session_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let version = obj
-        .get("version")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let agent_session_id = agent_session_id(&value);
+    let version = version(&value);
 
     // Extract context window
-    let cw = obj.get("context_window");
-    let context_window = parse_context_window(cw);
+    let context_window = parse_context_window(&value);
 
     // Extract cost metrics
-    let cost_obj = obj.get("cost");
-    let cost = parse_cost_metrics(cost_obj);
+    let cost = parse_cost_metrics(&value);
 
     // Extract rate limits
-    let rl = obj.get("rate_limits");
-    let rate_limits = parse_rate_limits(rl);
+    let rate_limits = parse_rate_limits(&value);
 
     // Extract transcript path
-    let transcript_path = obj
-        .get("transcript_path")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+    let transcript_path = transcript_path(&value);
 
     let event = AgentStatusEvent {
         session_id: session_id.to_string(),
@@ -90,7 +67,7 @@ pub fn parse_statusline(session_id: &str, json: &str) -> Result<ParsedStatusline
 }
 
 /// Parse context window fields from a JSON value
-fn parse_context_window(value: Option<&serde_json::Value>) -> ContextWindowStatus {
+fn parse_context_window(value: &Value) -> ContextWindowStatus {
     let defaults = ContextWindowStatus {
         used_percentage: None,
         remaining_percentage: 100.0,
@@ -100,53 +77,22 @@ fn parse_context_window(value: Option<&serde_json::Value>) -> ContextWindowStatu
         current_usage: None,
     };
 
-    let Some(cw) = value.and_then(|v| v.as_object()) else {
+    if !has_context_window(value) {
         return defaults;
-    };
+    }
 
-    let used_percentage = cw.get("used_percentage").and_then(|v| v.as_f64());
+    let used_percentage = used_percentage(value);
 
-    let remaining_percentage = cw
-        .get("remaining_percentage")
-        .and_then(|v| v.as_f64())
+    let remaining_percentage = remaining_percentage(value)
         .unwrap_or_else(|| used_percentage.map_or(100.0, |used| 100.0 - used));
 
-    let context_window_size = cw
-        .get("context_window_size")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
+    let context_window_size = context_window_size(value);
 
-    let total_input_tokens = cw
-        .get("total_input_tokens")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
+    let total_input_tokens = total_input_tokens(value);
 
-    let total_output_tokens = cw
-        .get("total_output_tokens")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
+    let total_output_tokens = total_output_tokens(value);
 
-    let current_usage = cw.get("current_usage").and_then(|cu| {
-        let cu_obj = cu.as_object()?;
-        Some(CurrentUsage {
-            input_tokens: cu_obj
-                .get("input_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-            output_tokens: cu_obj
-                .get("output_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-            cache_creation_input_tokens: cu_obj
-                .get("cache_creation_input_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-            cache_read_input_tokens: cu_obj
-                .get("cache_read_input_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-        })
-    });
+    let current_usage = current_usage(value);
 
     // If used_percentage is null (before first API response), compute it
     // from total_input_tokens / context_window_size. Claude Code doesn't
@@ -175,7 +121,7 @@ fn parse_context_window(value: Option<&serde_json::Value>) -> ContextWindowStatu
 }
 
 /// Parse cost metrics from a JSON value
-fn parse_cost_metrics(value: Option<&serde_json::Value>) -> CostMetrics {
+fn parse_cost_metrics(value: &Value) -> CostMetrics {
     let defaults = CostMetrics {
         total_cost_usd: 0.0,
         total_duration_ms: 0,
@@ -184,36 +130,21 @@ fn parse_cost_metrics(value: Option<&serde_json::Value>) -> CostMetrics {
         total_lines_removed: 0,
     };
 
-    let Some(cost) = value.and_then(|v| v.as_object()) else {
+    if !has_cost(value) {
         return defaults;
-    };
+    }
 
     CostMetrics {
-        total_cost_usd: cost
-            .get("total_cost_usd")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0),
-        total_duration_ms: cost
-            .get("total_duration_ms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
-        total_api_duration_ms: cost
-            .get("total_api_duration_ms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
-        total_lines_added: cost
-            .get("total_lines_added")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
-        total_lines_removed: cost
-            .get("total_lines_removed")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
+        total_cost_usd: total_cost_usd(value),
+        total_duration_ms: total_duration_ms(value),
+        total_api_duration_ms: total_api_duration_ms(value),
+        total_lines_added: total_lines_added(value),
+        total_lines_removed: total_lines_removed(value),
     }
 }
 
 /// Parse rate limits from a JSON value
-fn parse_rate_limits(value: Option<&serde_json::Value>) -> RateLimits {
+fn parse_rate_limits(value: &Value) -> RateLimits {
     let default_info = RateLimitInfo {
         used_percentage: 0.0,
         resets_at: 0,
@@ -224,43 +155,228 @@ fn parse_rate_limits(value: Option<&serde_json::Value>) -> RateLimits {
         seven_day: None,
     };
 
-    let Some(rl) = value.and_then(|v| v.as_object()) else {
+    if !has_rate_limits(value) {
         return defaults;
-    };
+    }
 
-    let five_hour = rl
-        .get("five_hour")
-        .and_then(|v| v.as_object())
-        .map(|fh| RateLimitInfo {
-            used_percentage: fh
-                .get("used_percentage")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0),
-            resets_at: fh.get("resets_at").and_then(|v| v.as_u64()).unwrap_or(0),
-        })
-        .unwrap_or(RateLimitInfo {
-            used_percentage: 0.0,
-            resets_at: 0,
-        });
-
-    let seven_day = rl.get("seven_day").and_then(|v| {
-        if v.is_null() {
-            return None;
-        }
-        let sd = v.as_object()?;
-        Some(RateLimitInfo {
-            used_percentage: sd
-                .get("used_percentage")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0),
-            resets_at: sd.get("resets_at").and_then(|v| v.as_u64()).unwrap_or(0),
-        })
+    let five_hour = five_hour_rate_limit(value).unwrap_or(RateLimitInfo {
+        used_percentage: 0.0,
+        resets_at: 0,
     });
+
+    let seven_day = seven_day_rate_limit(value);
 
     RateLimits {
         five_hour,
         seven_day,
     }
+}
+
+fn model_id(value: &Value) -> String {
+    value
+        .get("model")
+        .and_then(|model| model.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+fn model_display_name(value: &Value, model_id: &str) -> String {
+    value
+        .get("model")
+        .and_then(|model| model.get("display_name"))
+        .and_then(Value::as_str)
+        .unwrap_or(model_id)
+        .to_string()
+}
+
+fn agent_session_id(value: &Value) -> String {
+    value
+        .get("session_id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string()
+}
+
+fn version(value: &Value) -> String {
+    value
+        .get("version")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string()
+}
+
+fn transcript_path(value: &Value) -> Option<String> {
+    value
+        .get("transcript_path")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn has_context_window(value: &Value) -> bool {
+    value.get("context_window").is_some_and(Value::is_object)
+}
+
+fn used_percentage(value: &Value) -> Option<f64> {
+    value
+        .get("context_window")
+        .and_then(|context_window| context_window.get("used_percentage"))
+        .and_then(Value::as_f64)
+}
+
+fn remaining_percentage(value: &Value) -> Option<f64> {
+    value
+        .get("context_window")
+        .and_then(|context_window| context_window.get("remaining_percentage"))
+        .and_then(Value::as_f64)
+}
+
+fn context_window_size(value: &Value) -> u64 {
+    value
+        .get("context_window")
+        .and_then(|context_window| context_window.get("context_window_size"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
+fn total_input_tokens(value: &Value) -> u64 {
+    value
+        .get("context_window")
+        .and_then(|context_window| context_window.get("total_input_tokens"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
+fn total_output_tokens(value: &Value) -> u64 {
+    value
+        .get("context_window")
+        .and_then(|context_window| context_window.get("total_output_tokens"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
+fn current_usage(value: &Value) -> Option<CurrentUsage> {
+    has_current_usage(value).then(|| CurrentUsage {
+        input_tokens: u64_or(
+            value,
+            &["context_window", "current_usage", "input_tokens"],
+            0,
+        ),
+        output_tokens: u64_or(
+            value,
+            &["context_window", "current_usage", "output_tokens"],
+            0,
+        ),
+        cache_creation_input_tokens: u64_or(
+            value,
+            &[
+                "context_window",
+                "current_usage",
+                "cache_creation_input_tokens",
+            ],
+            0,
+        ),
+        cache_read_input_tokens: u64_or(
+            value,
+            &["context_window", "current_usage", "cache_read_input_tokens"],
+            0,
+        ),
+    })
+}
+
+fn has_current_usage(value: &Value) -> bool {
+    value
+        .get("context_window")
+        .and_then(|context_window| context_window.get("current_usage"))
+        .is_some_and(Value::is_object)
+}
+
+fn has_cost(value: &Value) -> bool {
+    value.get("cost").is_some_and(Value::is_object)
+}
+
+fn total_cost_usd(value: &Value) -> f64 {
+    value
+        .get("cost")
+        .and_then(|cost| cost.get("total_cost_usd"))
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0)
+}
+
+fn total_duration_ms(value: &Value) -> u64 {
+    value
+        .get("cost")
+        .and_then(|cost| cost.get("total_duration_ms"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
+fn total_api_duration_ms(value: &Value) -> u64 {
+    value
+        .get("cost")
+        .and_then(|cost| cost.get("total_api_duration_ms"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
+fn total_lines_added(value: &Value) -> u64 {
+    value
+        .get("cost")
+        .and_then(|cost| cost.get("total_lines_added"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
+fn total_lines_removed(value: &Value) -> u64 {
+    value
+        .get("cost")
+        .and_then(|cost| cost.get("total_lines_removed"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
+fn has_rate_limits(value: &Value) -> bool {
+    value.get("rate_limits").is_some_and(Value::is_object)
+}
+
+fn five_hour_rate_limit(value: &Value) -> Option<RateLimitInfo> {
+    has_rate_limit_window(value, "five_hour").then(|| RateLimitInfo {
+        used_percentage: f64_or(value, &["rate_limits", "five_hour", "used_percentage"], 0.0),
+        resets_at: u64_or(value, &["rate_limits", "five_hour", "resets_at"], 0),
+    })
+}
+
+fn seven_day_rate_limit(value: &Value) -> Option<RateLimitInfo> {
+    has_rate_limit_window(value, "seven_day").then(|| RateLimitInfo {
+        used_percentage: f64_or(value, &["rate_limits", "seven_day", "used_percentage"], 0.0),
+        resets_at: u64_or(value, &["rate_limits", "seven_day", "resets_at"], 0),
+    })
+}
+
+fn has_rate_limit_window(value: &Value, window: &str) -> bool {
+    value
+        .get("rate_limits")
+        .and_then(|rate_limits| rate_limits.get(window))
+        .is_some_and(Value::is_object)
+}
+
+fn value_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
+    path.iter()
+        .try_fold(value, |current, key| current.get(*key))
+}
+
+fn f64_at(value: &Value, path: &[&str]) -> Option<f64> {
+    value_at(value, path).and_then(Value::as_f64)
+}
+
+fn u64_or(value: &Value, path: &[&str], default: u64) -> u64 {
+    value_at(value, path)
+        .and_then(Value::as_u64)
+        .unwrap_or(default)
+}
+
+fn f64_or(value: &Value, path: &[&str], default: f64) -> f64 {
+    f64_at(value, path).unwrap_or(default)
 }
 
 #[cfg(test)]

@@ -8,16 +8,17 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use tauri::Emitter;
 
-use super::types::{AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
-use crate::agent::test_runners::emitter::TestRunEmitter;
-use crate::agent::test_runners::matcher::{match_command, MatchedCommand};
+use super::test_runners::emitter::TestRunEmitter;
+use super::test_runners::matcher::{MatchedCommand, match_command};
+use crate::agent::adapter::base::TranscriptHandle;
+use crate::agent::types::{AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
 
 /// Poll interval for checking new transcript lines
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -65,174 +66,69 @@ struct InFlightToolCall {
 
 type InFlightToolCalls = HashMap<String, InFlightToolCall>;
 
-/// Handle returned by `start_tailing` to control the background watcher
-pub struct TranscriptHandle {
-    stop_flag: Arc<AtomicBool>,
-    join_handle: Option<std::thread::JoinHandle<()>>,
+fn line_type(value: &Value) -> &str {
+    value.get("type").and_then(Value::as_str).unwrap_or("")
 }
 
-struct TranscriptWatcher {
-    transcript_path: PathBuf,
-    /// Canonicalized workspace cwd captured when the tail_loop was spawned.
-    /// Load-bearing for the test-runner data flow (npm-script alias resolution
-    /// and per-file path resolution both consume this value inside the
-    /// spawned thread). Compared in `start_or_replace` so a same-transcript-
-    /// different-cwd start triggers a replace — without this check the tail
-    /// thread would keep using the stale snapshot and the test-runner parser
-    /// would resolve aliases / files against the wrong workspace.
-    cwd: Option<PathBuf>,
-    handle: TranscriptHandle,
+fn tool_block_type(item: &Value) -> &str {
+    line_type(item)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TranscriptStartStatus {
-    Started,
-    Replaced,
-    AlreadyRunning,
+fn tool_use_id(item: &Value) -> Option<&str> {
+    item.get("id").and_then(Value::as_str)
 }
 
-impl TranscriptHandle {
-    /// Signal the background thread to stop and wait for it to finish
-    pub fn stop(mut self) {
-        self.stop_flag.store(true, Ordering::Relaxed);
-        if let Some(handle) = self.join_handle.take() {
-            let _ = handle.join();
-        }
-    }
+fn tool_name(item: &Value) -> &str {
+    item.get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown")
 }
 
-impl Drop for TranscriptHandle {
-    fn drop(&mut self) {
-        self.stop_flag.store(true, Ordering::Relaxed);
+fn bash_command(item: &Value) -> Option<&str> {
+    if tool_name(item) != "Bash" {
+        return None;
     }
+
+    item.get("input")
+        .and_then(|input| input.get("command"))
+        .and_then(Value::as_str)
 }
 
-/// State shared across transcript watchers, keyed by session ID
-#[derive(Default, Clone)]
-pub struct TranscriptState {
-    watchers: Arc<Mutex<HashMap<String, TranscriptWatcher>>>,
+fn tool_file_path(item: &Value) -> Option<&str> {
+    item.get("input")
+        .and_then(|input| input.get("file_path"))
+        .and_then(Value::as_str)
 }
 
-impl TranscriptState {
-    pub fn new() -> Self {
-        Self {
-            watchers: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
+fn tool_result_id(value: &Value) -> Option<&str> {
+    value.get("tool_use_id").and_then(Value::as_str)
+}
 
-    /// Start tailing a transcript for the given session.
-    /// If a watcher exists for a different path, replace it after the new
-    /// watcher starts successfully.
-    pub fn start<R: tauri::Runtime>(
-        &self,
-        app_handle: tauri::AppHandle<R>,
-        session_id: String,
-        transcript_path: PathBuf,
-        cwd: Option<PathBuf>,
-    ) -> Result<(), String> {
-        let _ = self.start_or_replace(app_handle, session_id, transcript_path, cwd)?;
-        Ok(())
-    }
+fn tool_result_is_error(value: &Value) -> bool {
+    value
+        .get("is_error")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
 
-    /// Start tailing when none is active, or switch to a newer transcript path
-    /// or workspace cwd. The watcher identity is `(transcript_path, cwd)` —
-    /// either changing forces a replace so the tail thread runs against the
-    /// current workspace state.
-    pub fn start_or_replace<R: tauri::Runtime>(
-        &self,
-        app_handle: tauri::AppHandle<R>,
-        session_id: String,
-        transcript_path: PathBuf,
-        cwd: Option<PathBuf>,
-    ) -> Result<TranscriptStartStatus, String> {
-        {
-            let watchers = self.watchers.lock().expect("failed to lock watchers");
-            if let Some(current) = watchers.get(&session_id) {
-                if current.transcript_path == transcript_path && current.cwd == cwd {
-                    return Ok(TranscriptStartStatus::AlreadyRunning);
-                }
-            }
-        }
+fn text_block_type(block: &Value) -> Option<&str> {
+    block.get("type").and_then(Value::as_str)
+}
 
-        let mut new_handle = Some(start_tailing(
-            app_handle,
-            session_id.clone(),
-            transcript_path.clone(),
-            cwd.clone(),
-        )?);
+fn text_block_text(block: &Value) -> Option<&str> {
+    block.get("text").and_then(Value::as_str)
+}
 
-        let (old_handle, status) = {
-            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+fn input_file_path(input: &Value) -> Option<&str> {
+    input.get("file_path").and_then(Value::as_str)
+}
 
-            if let Some(current) = watchers.get(&session_id) {
-                if current.transcript_path == transcript_path && current.cwd == cwd {
-                    (None, TranscriptStartStatus::AlreadyRunning)
-                } else {
-                    let old = watchers.insert(
-                        session_id,
-                        TranscriptWatcher {
-                            transcript_path: transcript_path.clone(),
-                            cwd: cwd.clone(),
-                            handle: new_handle
-                                .take()
-                                .expect("new transcript handle should be available"),
-                        },
-                    );
+fn input_command(input: &Value) -> Option<&str> {
+    input.get("command").and_then(Value::as_str)
+}
 
-                    (
-                        old.map(|watcher| watcher.handle),
-                        TranscriptStartStatus::Replaced,
-                    )
-                }
-            } else {
-                watchers.insert(
-                    session_id,
-                    TranscriptWatcher {
-                        transcript_path,
-                        cwd,
-                        handle: new_handle
-                            .take()
-                            .expect("new transcript handle should be available"),
-                    },
-                );
-
-                (None, TranscriptStartStatus::Started)
-            }
-        };
-
-        if let Some(handle) = new_handle {
-            handle.stop();
-        }
-
-        if let Some(handle) = old_handle {
-            handle.stop();
-        }
-
-        Ok(status)
-    }
-
-    /// Check if a session already has an active transcript watcher
-    #[allow(dead_code)]
-    pub fn contains(&self, session_id: &str) -> bool {
-        let watchers = self.watchers.lock().expect("failed to lock watchers");
-        watchers.contains_key(session_id)
-    }
-
-    /// Stop tailing for the given session.
-    pub fn stop(&self, session_id: &str) -> Result<(), String> {
-        // Remove under the lock, join outside to avoid blocking other callers.
-        let handle = {
-            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
-            watchers.remove(session_id)
-        };
-        match handle {
-            Some(watcher) => {
-                watcher.handle.stop();
-                Ok(())
-            }
-            None => Err(format!("No transcript watcher for session: {}", session_id)),
-        }
-    }
+fn input_pattern(input: &Value) -> Option<&str> {
+    input.get("pattern").and_then(Value::as_str)
 }
 
 /// Start tailing a transcript JSONL file.
@@ -259,10 +155,7 @@ pub fn start_tailing<R: tauri::Runtime>(
         tail_loop(app_handle, session_id, cwd, file, stop_clone);
     });
 
-    Ok(TranscriptHandle {
-        stop_flag,
-        join_handle: Some(join_handle),
-    })
+    Ok(TranscriptHandle::new(stop_flag, join_handle))
 }
 
 /// Background loop that tails the transcript file
@@ -292,7 +185,11 @@ fn tail_loop<R: tauri::Runtime>(
     // Buffer for partial lines
     let mut line_buf = String::new();
 
-    while !stop_flag.load(Ordering::Relaxed) {
+    // Acquire pairs with the Release in `TranscriptHandle::stop` /
+    // `Drop` (Claude review on PR #152, F12) so the stop signal is
+    // observed promptly on weakly-ordered architectures. Same pattern
+    // applied to `WatcherHandle`'s stop_flag in F8.
+    while !stop_flag.load(Ordering::Acquire) {
         line_buf.clear();
         match reader.read_line(&mut line_buf) {
             Ok(0) => {
@@ -342,9 +239,7 @@ fn process_line<R: tauri::Runtime>(
         }
     };
 
-    let line_type = value.get("type").and_then(|t| t.as_str()).unwrap_or("");
-
-    match line_type {
+    match line_type(&value) {
         "assistant" => {
             process_assistant_message(&value, session_id, cwd, app_handle, in_flight);
         }
@@ -356,13 +251,7 @@ fn process_line<R: tauri::Runtime>(
         "tool_result" => {
             let timestamp = extract_timestamp(&value);
             process_tool_result(
-                &value,
-                session_id,
-                cwd,
-                app_handle,
-                emitter,
-                in_flight,
-                &timestamp,
+                &value, session_id, cwd, app_handle, emitter, in_flight, &timestamp,
             );
         }
         _ => {
@@ -380,8 +269,8 @@ fn process_line<R: tauri::Runtime>(
 fn extract_timestamp(value: &Value) -> String {
     value
         .get("timestamp")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+        .and_then(Value::as_str)
+        .map(str::to_string)
         .unwrap_or_else(now_iso8601)
 }
 
@@ -400,32 +289,20 @@ fn process_assistant_message<R: tauri::Runtime>(
     let timestamp = extract_timestamp(value);
 
     for item in content {
-        let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
-        if item_type != "tool_use" {
+        if tool_block_type(item) != "tool_use" {
             continue;
         }
 
-        let id = match item.get("id").and_then(|v| v.as_str()) {
+        let id = match tool_use_id(item) {
             Some(id) => id.to_string(),
             None => continue,
         };
 
-        let name = item
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown")
-            .to_string();
+        let name = tool_name(item).to_string();
 
         // Run the matcher BEFORE summarize_input truncates — the matcher
         // needs the full untruncated command to tokenize correctly.
-        let test_match = if name == "Bash" {
-            item.get("input")
-                .and_then(|v| v.get("command"))
-                .and_then(|v| v.as_str())
-                .and_then(|cmd| match_command(cmd, cwd))
-        } else {
-            None
-        };
+        let test_match = bash_command(item).and_then(|cmd| match_command(cmd, cwd));
 
         let args = summarize_input(item.get("input"));
 
@@ -434,10 +311,8 @@ fn process_assistant_message<R: tauri::Runtime>(
         // long workspace paths could otherwise drop the suffix that
         // makes a file recognizable as a test (e.g. `…ndle.test.ts`).
         let is_test_file = if matches!(name.as_str(), "Write" | "Edit") {
-            item.get("input")
-                .and_then(|v| v.get("file_path"))
-                .and_then(|v| v.as_str())
-                .map(crate::agent::test_runners::test_file_patterns::is_test_file)
+            tool_file_path(item)
+                .map(super::test_runners::test_file_patterns::is_test_file)
                 .unwrap_or(false)
         } else {
             false
@@ -494,13 +369,7 @@ fn process_user_message<R: tauri::Runtime>(
         for item in items {
             if is_tool_result_block(item) {
                 process_tool_result(
-                    item,
-                    session_id,
-                    cwd,
-                    app_handle,
-                    emitter,
-                    in_flight,
-                    &timestamp,
+                    item, session_id, cwd, app_handle, emitter, in_flight, &timestamp,
                 );
             }
         }
@@ -529,15 +398,12 @@ fn process_tool_result<R: tauri::Runtime>(
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
-    let tool_use_id = match value.get("tool_use_id").and_then(|v| v.as_str()) {
+    let tool_use_id = match tool_result_id(value) {
         Some(id) => id.to_string(),
         None => return,
     };
 
-    let is_error = value
-        .get("is_error")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let is_error = tool_result_is_error(value);
 
     // An orphaned tool_result — a tool_result whose parent tool_use was
     // never recorded in_flight — arrives most often when a Claude Code
@@ -558,10 +424,7 @@ fn process_tool_result<R: tauri::Runtime>(
     if let Some(matched) = call.test_match {
         // Pull the captured Bash output content.
         let content = extract_tool_result_content(value);
-        let captured = crate::agent::test_runners::types::CapturedOutput {
-            content,
-            is_error,
-        };
+        let captured = super::test_runners::types::CapturedOutput { content, is_error };
         // Build the snapshot only when we have a workspace cwd. Falling
         // back to `Path::new(".")` would canonicalise to the Tauri app
         // process's cwd — NOT the user's workspace — so test-file groups
@@ -570,8 +433,8 @@ fn process_tool_result<R: tauri::Runtime>(
         // the standard agent-tool-call event still fires below; only the
         // structured test-run snapshot is skipped.
         if let Some(cwd_ref) = cwd {
-            let snapshot = crate::agent::test_runners::build::maybe_build_snapshot(
-                crate::agent::test_runners::build::BuildArgs {
+            let snapshot = super::test_runners::build::maybe_build_snapshot(
+                super::test_runners::build::BuildArgs {
                     session_id,
                     matched: &matched,
                     started_at: &call.started_at_iso,
@@ -628,7 +491,7 @@ fn message_content(value: &Value) -> Option<&Value> {
 }
 
 fn is_tool_result_block(value: &Value) -> bool {
-    value.get("type").and_then(|t| t.as_str()) == Some("tool_result")
+    line_type(value) == "tool_result"
 }
 
 /// Whether a single content block represents real user content. `tool_result`
@@ -640,10 +503,8 @@ fn is_non_empty_user_block(item: &Value) -> bool {
     if is_tool_result_block(item) {
         return false;
     }
-    if item.get("type").and_then(|t| t.as_str()) == Some("text") {
-        return item
-            .get("text")
-            .and_then(|t| t.as_str())
+    if text_block_type(item) == Some("text") {
+        return text_block_text(item)
             .map(|s| !s.trim().is_empty())
             .unwrap_or(false);
     }
@@ -670,17 +531,17 @@ fn summarize_input(input: Option<&Value>) -> String {
     };
 
     // Try to extract file_path first (common across Read, Write, Edit)
-    if let Some(path) = input.get("file_path").and_then(|v| v.as_str()) {
+    if let Some(path) = input_file_path(input) {
         return truncate_string(path, MAX_ARGS_LEN);
     }
 
     // Try command (Bash tool)
-    if let Some(cmd) = input.get("command").and_then(|v| v.as_str()) {
+    if let Some(cmd) = input_command(input) {
         return truncate_string(cmd, MAX_ARGS_LEN);
     }
 
     // Try pattern (Grep tool)
-    if let Some(pat) = input.get("pattern").and_then(|v| v.as_str()) {
+    if let Some(pat) = input_pattern(input) {
         return truncate_string(&format!("pattern: {}", pat), MAX_ARGS_LEN);
     }
 
@@ -758,8 +619,8 @@ fn extract_tool_result_content(value: &Value) -> String {
     if let Some(arr) = raw.as_array() {
         let mut out = String::new();
         for block in arr {
-            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
-                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+            if text_block_type(block) == Some("text") {
+                if let Some(text) = text_block_text(block) {
                     out.push_str(text);
                     // Add a separator newline only if the block didn't
                     // already end with one — terminal output frequently
@@ -779,184 +640,9 @@ fn extract_tool_result_content(value: &Value) -> String {
     String::new()
 }
 
-// --- Tauri Commands ---
-
-/// Start watching a transcript JSONL file for tool call events.
-///
-/// `cwd` is NOT a renderer-supplied parameter. It is derived server-side
-/// from `PtyState::get_cwd(session_id)` so a compromised renderer can't
-/// influence which workspace the test-runner parser reads `package.json`
-/// from or resolves test-file paths against. If the session has no live
-/// PTY (and therefore no resolved CWD), script-alias resolution and
-/// per-file path resolution silently degrade — direct binary matches
-/// (`vitest`, `cargo test`) still work.
-#[tauri::command]
-pub async fn start_transcript_watcher(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, TranscriptState>,
-    pty_state: tauri::State<'_, crate::terminal::PtyState>,
-    session_id: String,
-    transcript_path: String,
-) -> Result<(), String> {
-    let path = validate_transcript_path(&transcript_path)?;
-    let cwd_path = pty_state.get_cwd(&session_id).map(PathBuf::from);
-    state.start(app_handle, session_id, path, cwd_path)
-}
-
-/// Stop watching a transcript JSONL file
-#[tauri::command]
-pub async fn stop_transcript_watcher(
-    state: tauri::State<'_, TranscriptState>,
-    session_id: String,
-) -> Result<(), String> {
-    state.stop(&session_id)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn transcript_state_contains_empty() {
-        let state = TranscriptState::new();
-        assert!(!state.contains("any-session"));
-    }
-
-    #[test]
-    fn transcript_state_replaces_changed_path() {
-        let app = tauri::test::mock_builder()
-            .build(tauri::generate_context!())
-            .expect("failed to build test app");
-        let tmp = tempfile::tempdir().expect("failed to create temp dir");
-        let first_path = tmp.path().join("first.jsonl");
-        let second_path = tmp.path().join("second.jsonl");
-        std::fs::write(&first_path, "").expect("failed to write first transcript");
-        std::fs::write(&second_path, "").expect("failed to write second transcript");
-
-        let state = TranscriptState::new();
-        let session_id = "session-1".to_string();
-
-        let first_status = state
-            .start_or_replace(app.handle().clone(), session_id.clone(), first_path.clone(), None)
-            .expect("failed to start first transcript watcher");
-        assert_eq!(first_status, TranscriptStartStatus::Started);
-
-        let duplicate_status = state
-            .start_or_replace(app.handle().clone(), session_id.clone(), first_path, None)
-            .expect("failed to check duplicate transcript watcher");
-        assert_eq!(duplicate_status, TranscriptStartStatus::AlreadyRunning);
-
-        let replaced_status = state
-            .start_or_replace(app.handle().clone(), session_id.clone(), second_path, None)
-            .expect("failed to replace transcript watcher");
-        assert_eq!(replaced_status, TranscriptStartStatus::Replaced);
-
-        state.stop(&session_id).expect("failed to stop watcher");
-    }
-
-    #[test]
-    fn transcript_state_threads_cwd_through() {
-        let app = tauri::test::mock_builder()
-            .build(tauri::generate_context!())
-            .expect("failed to build test app");
-        let tmp = tempfile::tempdir().expect("failed to create temp dir");
-        let transcript_path = tmp.path().join("t.jsonl");
-        std::fs::write(&transcript_path, "").expect("failed to write transcript");
-        let cwd = tmp.path().to_path_buf();
-
-        let state = TranscriptState::new();
-        let session_id = "session-cwd".to_string();
-
-        let status = state
-            .start_or_replace(
-                app.handle().clone(),
-                session_id.clone(),
-                transcript_path,
-                Some(cwd),
-            )
-            .expect("failed to start watcher with cwd");
-        assert_eq!(status, TranscriptStartStatus::Started);
-
-        state.stop(&session_id).expect("failed to stop watcher");
-    }
-
-    #[test]
-    fn transcript_state_replaces_when_only_cwd_changes() {
-        // Regression: same transcript path with a different cwd must
-        // trigger Replace so the tail thread runs against the new
-        // workspace. Previously start_or_replace ignored cwd in the
-        // identity check and silently kept the stale snapshot.
-        let app = tauri::test::mock_builder()
-            .build(tauri::generate_context!())
-            .expect("failed to build test app");
-        let tmp = tempfile::tempdir().expect("failed to create temp dir");
-        let transcript_path = tmp.path().join("t.jsonl");
-        std::fs::write(&transcript_path, "").expect("failed to write transcript");
-        let cwd_a = tempfile::tempdir().expect("failed to create cwd_a");
-        let cwd_b = tempfile::tempdir().expect("failed to create cwd_b");
-
-        let state = TranscriptState::new();
-        let session_id = "session-cwd-change".to_string();
-
-        let first = state
-            .start_or_replace(
-                app.handle().clone(),
-                session_id.clone(),
-                transcript_path.clone(),
-                Some(cwd_a.path().to_path_buf()),
-            )
-            .expect("failed to start with cwd_a");
-        assert_eq!(first, TranscriptStartStatus::Started);
-
-        // Same transcript path, same cwd → AlreadyRunning (not a change).
-        let same = state
-            .start_or_replace(
-                app.handle().clone(),
-                session_id.clone(),
-                transcript_path.clone(),
-                Some(cwd_a.path().to_path_buf()),
-            )
-            .expect("failed to detect already-running");
-        assert_eq!(same, TranscriptStartStatus::AlreadyRunning);
-
-        // Same transcript path, DIFFERENT cwd → must Replace.
-        let replaced = state
-            .start_or_replace(
-                app.handle().clone(),
-                session_id.clone(),
-                transcript_path.clone(),
-                Some(cwd_b.path().to_path_buf()),
-            )
-            .expect("failed to replace on cwd change");
-        assert_eq!(replaced, TranscriptStartStatus::Replaced);
-
-        // Same transcript path, cwd None → also distinct from Some(cwd_b).
-        let replaced_to_none = state
-            .start_or_replace(
-                app.handle().clone(),
-                session_id.clone(),
-                transcript_path,
-                None,
-            )
-            .expect("failed to replace on cwd → None transition");
-        assert_eq!(replaced_to_none, TranscriptStartStatus::Replaced);
-
-        state.stop(&session_id).expect("failed to stop watcher");
-    }
-
-    #[test]
-    fn transcript_handle_drop_sets_stop_flag() {
-        let stop_flag = Arc::new(AtomicBool::new(false));
-
-        {
-            let _handle = TranscriptHandle {
-                stop_flag: Arc::clone(&stop_flag),
-                join_handle: None,
-            };
-        }
-
-        assert!(stop_flag.load(Ordering::Relaxed));
-    }
 
     #[test]
     fn validate_transcript_path_rejects_path_outside_claude_root() {
@@ -1040,12 +726,12 @@ mod tests {
             // Should either fail to parse or produce a Value we can handle
             if let Ok(value) = result {
                 // These should not cause panics in extraction logic
-                let _ = value.get("type").and_then(|t| t.as_str());
+                let _ = line_type(&value);
                 let _ = value
                     .get("message")
                     .and_then(|m| m.get("content"))
                     .and_then(|c| c.as_array());
-                let _ = value.get("tool_use_id").and_then(|v| v.as_str());
+                let _ = tool_result_id(&value);
             }
         }
     }
@@ -1105,8 +791,31 @@ mod tests {
     fn truncate_string_long() {
         let long = "a".repeat(200);
         let result = truncate_string(&long, 100);
-        assert_eq!(result.len(), 100);
+        // truncate_string's contract is bounded by character count, not
+        // byte count — assert against `chars().count()` (Claude review
+        // on PR #152, F17). For all-ASCII inputs `len()` and
+        // `chars().count()` agree, so this also matches the previous
+        // assertion.
+        assert_eq!(result.chars().count(), 100);
         assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn truncate_string_long_cjk_respects_char_boundary() {
+        // Multi-byte UTF-8 input: each CJK char is 3 bytes. The byte
+        // length of the truncated string can significantly exceed
+        // max_len (97 chars × 3 bytes + 3 bytes for "..." = 294 bytes
+        // for max_len=100), but the char count must remain at the cap.
+        // Regression guard for F17: previously the test asserted
+        // `result.len() <= MAX_ARGS_LEN` (bytes), which would have
+        // passed for ASCII but given false assurance about CJK paths.
+        let cjk = "中".repeat(200);
+        let result = truncate_string(&cjk, 100);
+        assert_eq!(result.chars().count(), 100);
+        assert!(result.ends_with("..."));
+        // Byte length is unbounded by design — sanity check it's larger
+        // than max_len in chars, proving the char-count is the real cap.
+        assert!(result.len() > 100, "byte length should exceed char cap");
     }
 
     #[test]
@@ -1120,6 +829,46 @@ mod tests {
         assert_eq!(&ts[10..11], "T");
         assert_eq!(&ts[13..14], ":");
         assert_eq!(&ts[16..17], ":");
+    }
+
+    #[test]
+    fn days_to_date_pinned_dates() {
+        // Pinned-date regression guards for the hand-rolled Hinnant
+        // civil-calendar algorithm in `days_to_date` (Claude review on
+        // PR #152, F18). The shape-only `now_iso8601_format` test
+        // above can't catch off-by-one errors in leap-year accounting
+        // or the March-epoch offset; these assertions can. Each entry
+        // is `(days_since_unix_epoch, expected (year, month, day))`.
+        // Sources: Hinnant reference, https://howardhinnant.github.io/date_algorithms.html
+        let cases: [(u64, (u64, u64, u64)); 9] = [
+            // Unix epoch.
+            (0, (1970, 1, 1)),
+            // First leap day after the epoch.
+            (789, (1972, 2, 29)),
+            // Day after a leap day.
+            (790, (1972, 3, 1)),
+            // Year-2000 leap year (divisible by 400 — leap).
+            (11016, (2000, 2, 29)),
+            // Day after a year-2000 leap day.
+            (11017, (2000, 3, 1)),
+            // Year-2100 NON-leap (divisible by 100 but not 400 — not leap).
+            // 2100-02-28 = days_since_epoch 47540.
+            (47540, (2100, 2, 28)),
+            // Day after that — should be 2100-03-01, NOT 2100-02-29.
+            (47541, (2100, 3, 1)),
+            // Post-2038 sanity (32-bit-time-rollover-irrelevant for our u64).
+            (25339, (2039, 5, 18)),
+            // A round-millennium turnover.
+            (10957, (2000, 1, 1)),
+        ];
+        for (days, expected) in cases.iter() {
+            let got = days_to_date(*days);
+            assert_eq!(
+                got, *expected,
+                "days_to_date({}) = {:?}, expected {:?}",
+                days, got, expected
+            );
+        }
     }
 
     #[test]
@@ -1194,7 +943,8 @@ mod tests {
     // contract so future refactors can't silently regress it.
     #[test]
     fn extract_timestamp_uses_transcript_field_when_present() {
-        let line = r#"{"type":"assistant","timestamp":"2026-04-22T10:30:00Z","message":{"content":[]}}"#;
+        let line =
+            r#"{"type":"assistant","timestamp":"2026-04-22T10:30:00Z","message":{"content":[]}}"#;
         let value: Value = serde_json::from_str(line).unwrap();
 
         assert_eq!(extract_timestamp(&value), "2026-04-22T10:30:00Z");
@@ -1233,7 +983,8 @@ mod tests {
     fn extract_timestamp_preserves_full_iso_string_exactly() {
         // Sub-second precision and timezone offsets should pass through
         // untouched — the frontend parses whatever we emit.
-        let line = r#"{"type":"user","timestamp":"2026-04-22T10:30:45.123Z","message":{"content":[]}}"#;
+        let line =
+            r#"{"type":"user","timestamp":"2026-04-22T10:30:45.123Z","message":{"content":[]}}"#;
         let value: Value = serde_json::from_str(line).unwrap();
 
         assert_eq!(extract_timestamp(&value), "2026-04-22T10:30:45.123Z");
@@ -1278,8 +1029,7 @@ mod tests {
 
     #[test]
     fn is_user_prompt_array_path_whitespace_only_text_block_is_not_a_prompt() {
-        let content: Value =
-            serde_json::from_str(r#"[{"type":"text","text":"   "}]"#).unwrap();
+        let content: Value = serde_json::from_str(r#"[{"type":"text","text":"   "}]"#).unwrap();
         assert!(!is_user_prompt(&content));
     }
 
@@ -1320,8 +1070,7 @@ mod tests {
         let no_text: Value = serde_json::from_str(r#"{"type":"text"}"#).unwrap();
         assert!(!is_non_empty_user_block(&no_text));
 
-        let non_string_text: Value =
-            serde_json::from_str(r#"{"type":"text","text":42}"#).unwrap();
+        let non_string_text: Value = serde_json::from_str(r#"{"type":"text","text":42}"#).unwrap();
         assert!(!is_non_empty_user_block(&non_string_text));
     }
 
@@ -1338,12 +1087,10 @@ mod tests {
         let no_type: Value = serde_json::from_str("{}").unwrap();
         assert!(is_non_empty_user_block(&no_type));
 
-        let non_string_type: Value =
-            serde_json::from_str(r#"{"type":42,"text":"hello"}"#).unwrap();
+        let non_string_type: Value = serde_json::from_str(r#"{"type":42,"text":"hello"}"#).unwrap();
         assert!(is_non_empty_user_block(&non_string_type));
 
-        let null_type: Value =
-            serde_json::from_str(r#"{"type":null,"text":"hello"}"#).unwrap();
+        let null_type: Value = serde_json::from_str(r#"{"type":null,"text":"hello"}"#).unwrap();
         assert!(is_non_empty_user_block(&null_type));
     }
 }

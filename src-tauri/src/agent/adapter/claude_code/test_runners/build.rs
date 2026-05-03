@@ -6,14 +6,12 @@ use std::time::Duration;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+use super::ANSI_RE;
 use super::matcher::MatchedCommand;
 use super::preview::build_command_preview;
 use super::sanitiser::sanitize_for_output;
 use super::timestamps::compute_duration_ms;
-use super::types::{
-    CapturedOutput, TestRunSnapshot, TestRunStatus, TestRunSummary,
-};
-use super::ANSI_RE;
+use super::types::{CapturedOutput, TestRunSnapshot, TestRunStatus, TestRunSummary};
 
 const MAX_EXCERPT_LEN: usize = 240;
 
@@ -72,11 +70,7 @@ fn build_snapshot_with_summary(
         command_preview: build_command_preview(&args.matched.stripped_tokens),
         started_at: args.started_at.to_string(),
         finished_at: args.finished_at.to_string(),
-        duration_ms: compute_duration_ms(
-            args.started_at,
-            args.finished_at,
-            args.instant_fallback,
-        ),
+        duration_ms: compute_duration_ms(args.started_at, args.finished_at, args.instant_fallback),
         status,
         summary,
         output_excerpt,
@@ -112,7 +106,10 @@ fn extract_excerpt(content: &str) -> String {
         .lines()
         .find(|l| ERROR_HINT_RE.is_match(l) && !l.trim().is_empty());
     let chosen = preferred.unwrap_or_else(|| {
-        stripped.lines().find(|l| !l.trim().is_empty()).unwrap_or("")
+        stripped
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("")
     });
     let truncated: String = chosen.chars().take(MAX_EXCERPT_LEN).collect();
     sanitize_for_output(&truncated)
@@ -152,7 +149,13 @@ mod tests {
 
     #[test]
     fn derive_status_picks_fail_over_total() {
-        let s = TestRunSummary { passed: 5, failed: 1, skipped: 0, total: 6, groups: vec![] };
+        let s = TestRunSummary {
+            passed: 5,
+            failed: 1,
+            skipped: 0,
+            total: 6,
+            groups: vec![],
+        };
         assert_eq!(derive_status(Some(&s), false), TestRunStatus::Fail);
     }
 
@@ -164,7 +167,13 @@ mod tests {
 
     #[test]
     fn derive_status_picks_pass() {
-        let s = TestRunSummary { passed: 3, failed: 0, skipped: 0, total: 3, groups: vec![] };
+        let s = TestRunSummary {
+            passed: 3,
+            failed: 0,
+            skipped: 0,
+            total: 3,
+            groups: vec![],
+        };
         assert_eq!(derive_status(Some(&s), false), TestRunStatus::Pass);
     }
 
@@ -173,7 +182,13 @@ mod tests {
         // Regression: passed=0 with skipped>0 (and total>0) used to fall
         // through to Pass, painting a green badge while the aria-label
         // announced "0 of N passed". Now reuses NoTests (gray + "no tests").
-        let s = TestRunSummary { passed: 0, failed: 0, skipped: 3, total: 3, groups: vec![] };
+        let s = TestRunSummary {
+            passed: 0,
+            failed: 0,
+            skipped: 3,
+            total: 3,
+            groups: vec![],
+        };
         assert_eq!(derive_status(Some(&s), false), TestRunStatus::NoTests);
     }
 

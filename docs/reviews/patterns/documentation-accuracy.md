@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-04-30
-ref_count: 15
+last_updated: 2026-05-03
+ref_count: 17
 ---
 
 # Documentation Accuracy
@@ -393,3 +393,14 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** Round-1 added `!baseBranch.startsWith('-')` and `!baseBranch.includes('\0')` as defence-in-depth against git option injection and NUL-termination injection. Round-3 then narrowed `SAFE_BASE_BRANCH_REGEX` to `[a-zA-Z0-9_]` first-char + `[a-zA-Z0-9_/.-]*` trailing, which structurally excludes both vectors. The pre-checks survived as belt-and-braces but a reader scanning `isSafeBaseBranch` in isolation would conclude that the regex MUST permit `-`-prefix and NUL — the opposite of reality. Same finding-class as #6 / #36 — adjacent surface that misrepresents the downstream guarantee.
 - **Fix:** Removed the redundant `!startsWith('-')` and `!includes('\0')` checks. Expanded the comment block above `SAFE_BASE_BRANCH_REGEX` to spell out exactly which vectors the first-character class blocks. Kept `!includes('..')` with a "NOT redundant" rationale: the regex's trailing class permits a single `.`, but two-dot and three-dot ranges are sequences of permitted characters that change `git diff` semantics, so the explicit check is load-bearing. The lesson: when defence-in-depth and structural enforcement converge on the same vector, drop the soft check and document the structural enforcement at the regex.
 - **Commit:** _(see git log for the round-5 fix commit)_
+
+---
+
+### 43. "Test-only public surface" doc comment on production types misleads about lifecycle, risking silent gating breakage
+
+- **Source:** github-claude | PR #152 round 7 (cycle 9) | 2026-05-03
+- **Severity:** LOW
+- **File:** `src-tauri/src/agent/adapter/base/transcript_state.rs`
+- **Finding:** `TranscriptHandle` (the return type of the public `AgentAdapter::tail_transcript` trait method) and `TranscriptState` (the Tauri-managed singleton constructed once in `lib.rs:77` via `.manage(TranscriptState::new())`) both carried the doc comment `/// Test-only public surface. Production code must use AgentAdapter::start.` Both types are live in production. A future contributor reading "Test-only public surface" might gate them under `#[cfg(test)]`, silently breaking the `WatcherHandle::Drop` cascade and the managed-state registration. The damage would be silent at compile time (no test would fail; the wrong cfg would just remove the production paths). The first repair attempt collapsed both into the same comment claiming both were constructed through `AgentAdapter::start`, which was technically wrong for `TranscriptState` (it has its own `new()` registered with Tauri) — codex flagged this as a partial fix on the first verify pass.
+- **Fix:** Two differentiated comments, each accurately describing its own type's lifecycle. `TranscriptHandle`'s doc cites `pub(crate) fn new` as the production construction gate and explains that the type itself must remain `pub` because it appears in the publicly-visible `AgentAdapter::tail_transcript` trait signature. `TranscriptState`'s doc cites `lib.rs`'s `.manage(TranscriptState::new())` and the access path via `app_handle.state::<TranscriptState>()`, and warns against constructing ad hoc instances since the managed-state contract requires exactly one. The lesson: when a `pub` doc-comment exists primarily to discourage misuse, name the actual construction path AND the actual reason `pub` is required (trait-signature visibility vs. cross-module access vs. test harness vs. Tauri managed-state) — the wrong reason misleads more than no reason at all.
+- **Commit:** _(see git log for the cycle-9 fix commit)_
