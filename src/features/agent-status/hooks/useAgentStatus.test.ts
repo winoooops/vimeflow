@@ -119,6 +119,55 @@ describe('useAgentStatus', () => {
     })
   })
 
+  test('does not start backend watcher when detection resolves after unmount', async () => {
+    // F19 regression. `currentSessionIdRef` is only refreshed during
+    // render — unmount does NOT trigger a render, so a detection IPC
+    // that resolves after unmount would otherwise pass the stale guard
+    // (sid === currentSessionIdRef.current still). Without `isMountedRef`
+    // the post-unmount continuation would invoke `start_agent_watcher`
+    // and leak a backend watcher with no React-side cleanup path.
+    let resolveDetect: ((value: unknown) => void) | undefined
+
+    const invokeMock = vi.fn((cmd: string): Promise<unknown> => {
+      if (cmd === 'detect_agent_in_session') {
+        return new Promise((resolve) => {
+          resolveDetect = resolve
+        })
+      }
+
+      return Promise.resolve(null)
+    })
+    vi.mocked(invoke).mockImplementation(invokeMock as unknown as typeof invoke)
+
+    const { unmount } = renderHook(() => useAgentStatus('session-1'))
+
+    // Wait for the first detect call to be in-flight.
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('detect_agent_in_session', {
+        sessionId: 'pty-session-1',
+      })
+    })
+
+    // Unmount BEFORE the in-flight detect resolves.
+    unmount()
+
+    // Now resolve detection with a positive result. The post-unmount
+    // continuation must bail before invoking start_agent_watcher.
+    resolveDetect?.({
+      sessionId: 'pty-session-1',
+      agentType: 'claudeCode',
+      pid: 12345,
+    })
+
+    // Drain microtasks so the continuation has a chance to run.
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(invoke).not.toHaveBeenCalledWith('start_agent_watcher', {
+      sessionId: 'pty-session-1',
+    })
+  })
+
   test('always invokes stop_agent_watcher on unmount even if watcher never started', async () => {
     // Updated for F2 (Codex review on PR #153). The previous behavior
     // skipped the IPC when `watcherStartedRef.current === false`, but

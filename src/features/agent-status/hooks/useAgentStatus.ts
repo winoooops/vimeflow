@@ -106,21 +106,22 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // PTY id captured at start so cleanup stops the right backend watcher.
   const knownPtyIdRef = useRef<string | undefined>(undefined)
 
-  // Stale-detection guard: ref written SYNCHRONOUSLY during render so an
-  // in-flight `detect_agent_in_session` / `start_agent_watcher` IPC
-  // continuation (Promise microtask) sees the latest sessionId after the
-  // microtask drain that runs BEFORE React's commit-phase macro-task.
-  // `prevSessionIdRef` alone is insufficient because it's written inside
-  // the session-change `useEffect` body (commit-phase macro-task), and
-  // microtasks queued before commit observe its stale value. The
-  // assignment below runs at every render, so by the time any IPC
-  // continuation runs, `currentSessionIdRef.current === sessionId` is
-  // the most recently rendered sessionId. Detection compares its
-  // captured `sid` (closure) against this ref — under the race the
-  // captured `sid` is the OLD session id and the ref is the NEW one,
-  // so the guard fires reliably (Claude review on PR #153, F11).
+  // Stale-detection guard: written synchronously during render so IPC continuations see the latest sessionId.
   const currentSessionIdRef = useRef(sessionId)
   currentSessionIdRef.current = sessionId
+
+  // Mount guard for in-flight IPC continuations that resolve after unmount.
+  // Maintained by a dedicated [] effect (below) so the ref is reset to true
+  // when React StrictMode runs its mount→cleanup→remount cycle in dev.
+  const isMountedRef = useRef(true)
+
+  useEffect(() => {
+    isMountedRef.current = true
+
+    return (): void => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   // Track the collapse timeout so it can be cancelled if the agent
   // reappears before the 5s hold expires (e.g., brief detection gap).
@@ -169,11 +170,10 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         { sessionId: ptySessionId }
       )
 
-      // Use `currentSessionIdRef` (written synchronously during render)
-      // rather than `prevSessionIdRef` (written in the session-change
-      // useEffect macro-task) so this guard is race-free against the
-      // microtask/macro-task gap (F11, see ref declaration above).
-      if (currentSessionIdRef.current !== sid) {
+      // Drop stale results: session changed since this detection started,
+      // or the component unmounted (unmount doesn't re-render so the
+      // session-id ref can't catch that case alone).
+      if (!isMountedRef.current || currentSessionIdRef.current !== sid) {
         return
       }
 
@@ -215,14 +215,15 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
               sessionId: ptySessionId,
             })
 
-            // Race-safe stale check (F11) + Codex F14: pass the
-            // `ptySessionId` we captured at the START of this detection
-            // (line 133), so the stop IPC targets the right backend
-            // watcher even if the workspace→PTY mapping has since
-            // been unregistered (which would make `getPtySessionId(sid)`
-            // fall back to the workspace ID, sending stop to the
-            // wrong session and leaking the newly-started watcher).
-            if (currentSessionIdRef.current !== sid) {
+            // Stale-start cleanup also catches post-unmount races; pass
+            // the captured ptySessionId so stop targets the right watcher.
+            // ESLint can't see that `isMountedRef.current` is mutated by
+            // the dedicated mount-tracking effect's cleanup, nor that
+            // `currentSessionIdRef.current` is mutated each render — so
+            // it flags both halves as "unnecessary." Both checks ARE
+            // load-bearing across the await above.
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+            if (!isMountedRef.current || currentSessionIdRef.current !== sid) {
               void stopWatchers(sid, ptySessionId)
 
               return
@@ -531,19 +532,16 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // leaks the state setter across multi-session navigation).
   useEffect(
     () => (): void => {
+      // The dedicated `isMountedRef` effect above flips the ref to
+      // false on this same unmount and resets it to true on a
+      // StrictMode remount. Don't duplicate the flip here — doing so
+      // would race with the StrictMode remount-setup effect.
       if (collapseTimeoutRef.current) {
         clearTimeout(collapseTimeoutRef.current)
         collapseTimeoutRef.current = null
       }
       const sid = prevSessionIdRef.current
-      // Same-rationale as session-change cleanup: don't gate on
-      // `watcherStartedRef.current`, because it can lie when a prior
-      // stop failed (Codex review on PR #153). `stopWatchers`
-      // swallows errors, so the IPC is safe even when no watcher is
-      // running.
       if (sid) {
-        // Hook is unmounting; no further retry path exists, so no need
-        // to preserve `knownPtyIdRef` for a follow-up cleanup.
         watcherStartedRef.current = false
         void stopWatchers(sid, knownPtyIdRef.current)
         knownPtyIdRef.current = undefined

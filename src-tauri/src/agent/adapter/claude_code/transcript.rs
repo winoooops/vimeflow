@@ -704,33 +704,46 @@ fn cap_with_head_and_tail(content: &str) -> String {
         return content.to_string();
     }
 
-    // Reserve TOOL_RESULT_TAIL_LEN for the suffix; the prefix gets
-    // whatever is left. `saturating_sub` defends against future cap
-    // shrinkage that would make tail >= cap.
-    let head_target = MAX_TOOL_RESULT_CONTENT_LEN.saturating_sub(TOOL_RESULT_TAIL_LEN);
+    // Reserve room for the truncation marker (leading newline + marker
+    // + trailing newline). Clamp the effective tail size so
+    // `head + marker + tail ≤ MAX` is guaranteed even if the
+    // `TOOL_RESULT_TAIL_LEN` constant ever exceeds `MAX_TOOL_RESULT_CONTENT_LEN`.
+    let marker_budget = TOOL_RESULT_TRUNCATED_MARKER.len() + 2;
+    let max_tail_room = MAX_TOOL_RESULT_CONTENT_LEN.saturating_sub(marker_budget);
+    let effective_tail = TOOL_RESULT_TAIL_LEN.min(max_tail_room);
+    let head_target = MAX_TOOL_RESULT_CONTENT_LEN
+        .saturating_sub(effective_tail)
+        .saturating_sub(marker_budget);
+
     let mut head_end = head_target;
     while head_end > 0 && !content.is_char_boundary(head_end) {
         head_end -= 1;
     }
 
-    let mut tail_start = content.len().saturating_sub(TOOL_RESULT_TAIL_LEN);
+    let mut tail_start = content.len().saturating_sub(effective_tail);
     while tail_start < content.len() && !content.is_char_boundary(tail_start) {
         tail_start += 1;
     }
 
+    // After the clamp + char-boundary correction, head and tail
+    // windows can no longer overlap on any reachable input — keep a
+    // defensive fallback for safety, returning a tail-only slice
+    // that still respects the cap.
     if tail_start <= head_end {
-        // Head and tail windows overlap (defensive — shouldn't happen
-        // given the cap-vs-len check above, but keep the function total).
-        return content.to_string();
+        let fallback_len = effective_tail;
+        let mut tail_only_start = content.len().saturating_sub(fallback_len);
+        while tail_only_start < content.len() && !content.is_char_boundary(tail_only_start) {
+            tail_only_start += 1;
+        }
+        return content[tail_only_start..].to_string();
     }
 
-    // Build the result via slice copies — single allocation sized to
-    // exactly head + marker + tail. Avoids the prior `content.to_string()`
-    // + helper-internal new-String double allocation.
+    // Single allocation sized to exactly head + marker + tail.
     let head_slice = &content[..head_end];
     let tail_slice = &content[tail_start..];
     let needs_leading_newline = !head_slice.ends_with('\n');
-    let marker_extra = if needs_leading_newline { 1 } else { 0 } + TOOL_RESULT_TRUNCATED_MARKER.len() + 1;
+    let marker_extra =
+        if needs_leading_newline { 1 } else { 0 } + TOOL_RESULT_TRUNCATED_MARKER.len() + 1;
 
     let mut out = String::with_capacity(head_slice.len() + marker_extra + tail_slice.len());
     out.push_str(head_slice);
