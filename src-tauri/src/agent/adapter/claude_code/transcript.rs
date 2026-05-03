@@ -185,7 +185,11 @@ fn tail_loop<R: tauri::Runtime>(
     // Buffer for partial lines
     let mut line_buf = String::new();
 
-    while !stop_flag.load(Ordering::Relaxed) {
+    // Acquire pairs with the Release in `TranscriptHandle::stop` /
+    // `Drop` (Claude review on PR #152, F12) so the stop signal is
+    // observed promptly on weakly-ordered architectures. Same pattern
+    // applied to `WatcherHandle`'s stop_flag in F8.
+    while !stop_flag.load(Ordering::Acquire) {
         line_buf.clear();
         match reader.read_line(&mut line_buf) {
             Ok(0) => {

@@ -25,15 +25,18 @@ pub struct WatcherHandle {
     /// Polling fallback thread. Stored so Drop can join after signalling
     /// stop, rather than leaving the thread briefly detached.
     join_handle: Option<std::thread::JoinHandle<()>>,
-    /// Captured for diagnostic logging on drop. `#[cfg(debug_assertions)]`
-    /// gates the FIELD itself so release builds skip the `String::clone`
-    /// in the constructor — `cfg!()` on the read site alone left the
-    /// allocation in release. Conditional struct fields are part of
-    /// stable Rust.
+    /// Cloned `Arc` to the Tauri-managed `TranscriptState` — `Drop`
+    /// calls `transcript_state.stop(&self.session_id)` to cascade
+    /// transcript-tail teardown, replacing today's two-step
+    /// frontend-driven stop courtesy.
     transcript_state: TranscriptState,
+    /// Used by the `Drop` cascade AND the debug-build diagnostic log.
+    /// (Earlier revisions had a separate `session_id_for_log: String`
+    /// gated on `#[cfg(debug_assertions)]` — but the comment claiming
+    /// this saved a `String::clone` in release builds was wrong, since
+    /// `session_id` itself is always cloned into the struct. Removed
+    /// in cycle 6 per Claude review F13.)
     session_id: String,
-    #[cfg(debug_assertions)]
-    session_id_for_log: String,
 }
 
 impl Drop for WatcherHandle {
@@ -53,13 +56,13 @@ impl Drop for WatcherHandle {
         }
         let _ = self.transcript_state.stop(&self.session_id);
         // `#[cfg(...)]` (attribute) on a statement, NOT `if cfg!(...)`
-        // (runtime). The attribute physically removes both the
-        // statement and the `self.session_id` access in release builds,
-        // matching the field's `#[cfg(...)]` gate above.
+        // (runtime). The attribute physically removes the entire
+        // `log::info!(...)` call in release builds, so even the
+        // `short_sid` slice into `self.session_id` is compiled away.
         #[cfg(debug_assertions)]
         log::info!(
             "watcher.handle.dropped session={}",
-            short_sid(&self.session_id_for_log)
+            short_sid(&self.session_id)
         );
     }
 }
@@ -404,12 +407,19 @@ pub(super) fn start_watching<R: tauri::Runtime>(
         let poll_sid = session_id.clone();
         let poll_path = status_file_path.clone();
         let poll_app = app_handle_for_poll;
-        let poll_last = Arc::new(Mutex::new(String::new()));
         let poll_stop = stop_flag.clone();
         let poll_timing_for_thread = poll_timing.clone();
         let path_history_for_poll = path_history.clone();
         let adapter_for_poll = adapter.clone();
         Some(std::thread::spawn(move || {
+            // `poll_last` is the per-thread dedup buffer. Originally
+            // wrapped in `Arc<Mutex<String>>` by analogy with the other
+            // `Arc`-shared state in the spawn closure, but it is only
+            // touched here and never escapes the thread (Claude review
+            // on PR #152, F11). Plain `String` removes the heap
+            // allocation and per-poll-cycle atomic refcount traffic.
+            let mut poll_last = String::new();
+
             // Acquire pairs with the Release in `WatcherHandle::Drop` so
             // the stop signal is observed without arch-specific delay
             // (Claude review on PR #152, F8). `Relaxed` was sufficient
@@ -436,13 +446,10 @@ pub(super) fn start_watching<R: tauri::Runtime>(
                     _ => continue,
                 };
 
-                {
-                    let mut last = poll_last.lock().expect("lock");
-                    if *last == contents {
-                        continue;
-                    }
-                    *last = contents.clone();
+                if poll_last == contents {
+                    continue;
                 }
+                poll_last = contents.clone();
 
                 let (outcome, tx_path) = match adapter_for_poll.parse_status(&poll_sid, &contents) {
                     Ok(parsed) => {
@@ -487,8 +494,6 @@ pub(super) fn start_watching<R: tauri::Runtime>(
         join_handle: poll_join_handle,
         transcript_state: transcript_state_for_handle,
         session_id: session_id.clone(),
-        #[cfg(debug_assertions)]
-        session_id_for_log: session_id.clone(),
     })
 }
 

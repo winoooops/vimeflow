@@ -27,7 +27,12 @@ impl TranscriptHandle {
 
     /// Signal the background thread to stop and wait for it to finish.
     pub fn stop(mut self) {
-        self.stop_flag.store(true, Ordering::Relaxed);
+        // Release pairs with the Acquire load in the tail loop so the
+        // stop signal is observed promptly even on weakly-ordered
+        // architectures (Claude review on PR #152, F12 — consistency
+        // with the F8 fix that already promoted `WatcherHandle`'s
+        // stop_flag to Release/Acquire).
+        self.stop_flag.store(true, Ordering::Release);
         if let Some(handle) = self.join_handle.take() {
             let _ = handle.join();
         }
@@ -36,7 +41,8 @@ impl TranscriptHandle {
 
 impl Drop for TranscriptHandle {
     fn drop(&mut self) {
-        self.stop_flag.store(true, Ordering::Relaxed);
+        // See `stop()` above — Release for cross-thread visibility.
+        self.stop_flag.store(true, Ordering::Release);
     }
 }
 
