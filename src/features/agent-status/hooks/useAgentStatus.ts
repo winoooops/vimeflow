@@ -104,7 +104,12 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       // across the session-change boundary (Codex review on PR #153).
       const oldId = prevSessionIdRef.current
       if (oldId) {
-        watcherStartedRef.current = false
+        // Note: `watcherStartedRef.current = false` is unconditional
+        // a few lines below (always runs on the session-change path),
+        // so a pre-stop reset here is redundant. `stopWatchers` is
+        // fire-and-forget and reads no refs, so the order between
+        // "reset ref" and "invoke stop" doesn't affect correctness
+        // (Claude review on PR #153, F6).
         void stopWatchers(oldId)
       }
 
