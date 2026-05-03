@@ -39,7 +39,15 @@ pub struct WatcherHandle {
 impl Drop for WatcherHandle {
     fn drop(&mut self) {
         drop(self._watcher.take());
-        self.stop_flag.store(true, Ordering::Relaxed);
+        // Release-on-store / Acquire-on-load is the right pairing for
+        // a cross-thread stop signal — `Relaxed` provides atomicity but
+        // no ordering or visibility guarantee, so on weakly-ordered
+        // architectures (ARM/RISC-V) the polling thread could spin
+        // additional cycles before observing the flag (Claude review on
+        // PR #152, F8). The `join()` below provides post-stop ordering
+        // for any downstream state access, but doesn't help signal
+        // delivery latency.
+        self.stop_flag.store(true, Ordering::Release);
         if let Some(handle) = self.join_handle.take() {
             let _ = handle.join();
         }
@@ -402,9 +410,14 @@ pub(super) fn start_watching<R: tauri::Runtime>(
         let path_history_for_poll = path_history.clone();
         let adapter_for_poll = adapter.clone();
         Some(std::thread::spawn(move || {
-            while !poll_stop.load(Ordering::Relaxed) {
+            // Acquire pairs with the Release in `WatcherHandle::Drop` so
+            // the stop signal is observed without arch-specific delay
+            // (Claude review on PR #152, F8). `Relaxed` was sufficient
+            // on x86 in practice but technically non-compliant with the
+            // Rust memory model.
+            while !poll_stop.load(Ordering::Acquire) {
                 std::thread::sleep(std::time::Duration::from_secs(3));
-                if poll_stop.load(Ordering::Relaxed) {
+                if poll_stop.load(Ordering::Acquire) {
                     break;
                 }
 

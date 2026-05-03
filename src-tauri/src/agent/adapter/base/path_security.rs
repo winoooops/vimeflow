@@ -49,3 +49,134 @@ pub(super) fn ensure_status_source_under_trust_root(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // Symlink helper is Unix-only; the symlink-driven tests are gated
+    // with `#[cfg(unix)]` below so Windows `cargo test` still compiles.
+    // Same gating pattern as other test modules in this crate that use
+    // `std::os::unix::fs::symlink` (Codex verify cycle 5 follow-up).
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
+
+    /// Happy path: status path nested below trust root, all components
+    /// canonicalize under it, no symlinks involved. Directory creation
+    /// succeeds; both pre- and post-checks pass.
+    #[test]
+    fn status_path_nested_under_trust_root_succeeds() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let status = root
+            .path()
+            .join(".vimeflow")
+            .join("sessions")
+            .join("sid-1")
+            .join("status.json");
+        ensure_status_source_under_trust_root(&status, root.path()).expect("nested path");
+        assert!(status.parent().unwrap().exists(), "create_dir_all should run");
+    }
+
+    /// Status path resolves exactly TO the trust root's parent directory
+    /// (i.e. `..` traversal). The pre-check should refuse because the
+    /// deepest existing ancestor canonicalizes outside the root.
+    #[test]
+    fn parent_traversal_via_dotdot_rejected() {
+        let outer = tempfile::tempdir().expect("outer");
+        let trust = outer.path().join("workspace");
+        std::fs::create_dir(&trust).expect("create trust");
+        // Construct a path that uses .. to escape. canonicalize on the
+        // deepest existing ancestor (`outer`) resolves outside `trust`.
+        let escape = trust.join("..").join("escape").join("status.json");
+        let result = ensure_status_source_under_trust_root(&escape, &trust);
+        assert!(result.is_err(), "expected ../escape to be rejected");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("escapes trust_root"),
+            "expected escape diagnostic, got: {}",
+            msg
+        );
+    }
+
+    /// trust_root itself is a symlink pointing into a real directory.
+    /// canonicalization resolves through the symlink, so paths under
+    /// the symlink-target should still validate. The check operates on
+    /// canonical paths, so this is a sanity test that the symlink-as-
+    /// trust-root case doesn't false-reject.
+    #[cfg(unix)]
+    #[test]
+    fn trust_root_as_symlink_resolves_correctly() {
+        let outer = tempfile::tempdir().expect("outer");
+        let real = outer.path().join("real-workspace");
+        std::fs::create_dir(&real).expect("create real");
+        let link = outer.path().join("link-workspace");
+        symlink(&real, &link).expect("symlink");
+
+        // Use the symlink path as trust_root; status path is under the
+        // symlink as well, which canonicalizes through to the real dir.
+        let status = link.join(".vimeflow").join("sessions").join("s").join("status.json");
+        ensure_status_source_under_trust_root(&status, &link).expect("symlinked trust ok");
+    }
+
+    /// Pre-existing intermediate-directory symlink to outside the trust
+    /// root: covers the case where the path's deepest existing ancestor
+    /// is itself a symlink whose target is outside the trust root. The
+    /// **pre-check** (lines 17-27 of `ensure_status_source_under_trust_root`)
+    /// catches this — it canonicalizes the deepest existing ancestor and
+    /// asserts it `starts_with(canonical_root)`.
+    ///
+    /// **What this test does NOT cover:** the post-create recheck path
+    /// at lines 39-47. To exercise that path deterministically, the
+    /// pre-check must pass AND a symlink must be injected between the
+    /// `create_dir_all` and the post-create canonicalize — a single-
+    /// threaded test can't do that without function-level refactoring
+    /// (split into pre-check / create / post-check primitives) or a
+    /// fault-injection hook. Codex verify cycle 5 (follow-up to F10)
+    /// flagged this gap; deterministic post-create-recheck coverage
+    /// is tracked as a follow-up. The post-create branch IS still
+    /// load-bearing — it remains the only defense against an attacker
+    /// who wins the race between `create_dir_all` and the post-check —
+    /// and the production code's two-phase canonicalize implementation
+    /// exists exactly for this case. This test just doesn't exercise it.
+    #[cfg(unix)]
+    #[test]
+    fn intermediate_symlink_to_outside_rejected_by_pre_check() {
+        let outer = tempfile::tempdir().expect("outer");
+        let trust = outer.path().join("trust");
+        std::fs::create_dir(&trust).expect("create trust");
+        let outside = outer.path().join("outside");
+        std::fs::create_dir(&outside).expect("create outside");
+
+        symlink(&outside, trust.join(".vimeflow")).expect("plant symlink");
+
+        let status = trust
+            .join(".vimeflow")
+            .join("sessions")
+            .join("s")
+            .join("status.json");
+        let result = ensure_status_source_under_trust_root(&status, &trust);
+        assert!(result.is_err(), "expected symlink-out to be rejected");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("escapes trust_root"),
+            "expected escape diagnostic, got: {}",
+            msg
+        );
+    }
+
+    /// Trust root that doesn't exist: the function should fail in the
+    /// initial canonicalize, before doing anything else. This is the
+    /// caller-misuse path (start_for would have already validated cwd
+    /// from PtyState, but defense in depth here).
+    #[test]
+    fn missing_trust_root_returns_err() {
+        let outer = tempfile::tempdir().expect("outer");
+        let nonexistent_root = outer.path().join("does-not-exist");
+        let status = nonexistent_root.join("status.json");
+        let result = ensure_status_source_under_trust_root(&status, &nonexistent_root);
+        assert!(result.is_err(), "expected missing trust_root to be rejected");
+        assert!(
+            result.unwrap_err().contains("trust_root not resolvable"),
+            "expected resolvable diagnostic"
+        );
+    }
+}
