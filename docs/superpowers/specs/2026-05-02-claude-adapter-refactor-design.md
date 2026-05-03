@@ -261,6 +261,115 @@ pub enum TranscriptEffect {
 }
 ```
 
+### Shared parse primitives (`adapter/json.rs`)
+
+Today's `statusline.rs` repeats the same JSON-extraction pattern ~30 times across `parse_context_window` / `parse_cost_metrics` / `parse_rate_limits`:
+
+```rust
+let total_input_tokens = cw.get("total_input_tokens")
+    .and_then(|v| v.as_u64())
+    .unwrap_or(0);
+```
+
+Codex's adapter (Stage 2) would either duplicate that pattern or invent a slightly different one — both are bad. Stage 1 introduces a single generic-extraction module used by every adapter's parser:
+
+```rust
+// agent/adapter/json.rs
+
+use serde::de::DeserializeOwned;
+use serde_json::{Map, Value};
+
+/// Walk a path from the root, returning the value at the leaf if every
+/// hop exists. The path is a slice of `&str` keys; arrays are not in
+/// scope (no adapter parses array-keyed status today).
+pub fn navigate<'a>(v: &'a Value, path: &[&str]) -> Option<&'a Value> {
+    path.iter().try_fold(v, |acc, key| acc.get(*key))
+}
+
+/// Generic typed extraction. Calls `navigate` then deserializes via
+/// serde. Use this when the leaf shape is non-trivial (a nested struct).
+pub fn extract<T: DeserializeOwned>(v: &Value, path: &[&str]) -> Option<T> {
+    let leaf = navigate(v, path)?;
+    serde_json::from_value(leaf.clone()).ok()
+}
+
+/// Typed scalar accessors — skip the serde round-trip for hot paths
+/// (status events fire ~10/s under load). Each is a one-liner over
+/// `navigate` + `serde_json::Value::as_*`.
+pub fn u64_at(v: &Value, path: &[&str]) -> Option<u64> {
+    navigate(v, path).and_then(Value::as_u64)
+}
+
+pub fn f64_at(v: &Value, path: &[&str]) -> Option<f64> {
+    navigate(v, path).and_then(Value::as_f64)
+}
+
+pub fn str_at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a str> {
+    navigate(v, path).and_then(Value::as_str)
+}
+
+pub fn obj_at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a Map<String, Value>> {
+    navigate(v, path).and_then(Value::as_object)
+}
+
+/// Convenience for the dominant pattern: "extract or fall back to default".
+pub fn u64_or(v: &Value, path: &[&str], default: u64) -> u64 {
+    u64_at(v, path).unwrap_or(default)
+}
+
+pub fn f64_or(v: &Value, path: &[&str], default: f64) -> f64 {
+    f64_at(v, path).unwrap_or(default)
+}
+
+pub fn str_or<'a>(v: &'a Value, path: &[&str], default: &'a str) -> &'a str {
+    str_at(v, path).unwrap_or(default)
+}
+```
+
+After step 6 of the migration, `claude_code/statusline.rs::parse_context_window` collapses from:
+
+```rust
+let total_input_tokens = cw.get("total_input_tokens")
+    .and_then(|v| v.as_u64()).unwrap_or(0);
+let total_output_tokens = cw.get("total_output_tokens")
+    .and_then(|v| v.as_u64()).unwrap_or(0);
+let context_window_size = cw.get("context_window_size")
+    .and_then(|v| v.as_u64()).unwrap_or(0);
+// ... 4 more like this
+```
+
+to:
+
+```rust
+use crate::agent::adapter::json;
+
+let total_input_tokens = json::u64_or(&value, &["context_window", "total_input_tokens"], 0);
+let total_output_tokens = json::u64_or(&value, &["context_window", "total_output_tokens"], 0);
+let context_window_size = json::u64_or(&value, &["context_window", "context_window_size"], 0);
+```
+
+Stage 2's `codex/rollout.rs` consumes the **same primitives**, just with different paths into Codex's structure:
+
+```rust
+let total_tokens = json::u64_or(&v,
+    &["payload", "info", "total_token_usage", "total_tokens"], 0);
+let context_window = json::u64_or(&v,
+    &["payload", "info", "model_context_window"], 0);
+let primary_used = json::f64_or(&v,
+    &["payload", "rate_limits", "primary", "used_percent"], 0.0);
+```
+
+#### IDEA — Generic primitives as free fns vs. extraction methods on the trait
+
+- **Intent:** The user-facing concern was "the parse should be generic, not tightly coupled to specific operations." Two design choices satisfy that:
+  1. **Free fns in `adapter::json`** (chosen). Every adapter's parser internals consume `json::u64_or` etc. The trait surface stays narrow (one `parse_status` method per adapter); the deduplication is below the trait line.
+  2. **Decomposed extraction hooks on the trait** (rejected for Stage 1). Trait methods like `extract_context_window(&self, root) -> ContextWindowStatus`, with a default `parse_status` composing them. Forces every adapter to provide a value (or default) per logical group, harder to silently drop a field.
+- **Danger:** Free fns leave it to each adapter's discipline to actually USE them (an adapter could re-roll its own boilerplate). Mitigation: a CI-time grep / clippy-lint can flag direct `.and_then(|v| v.as_u64())` patterns inside `adapter/*/`. Easier: the spec includes a "no in-line `.and_then(|v| v.as_*())` chains in adapter parsers" item in the migration checklist for steps 6 and 7.
+- **Explain:** Stage 1's deep-module property comes from `AgentAdapter`. Adding more trait methods (option 2) widens the trait surface for an internal concern (parser dedup). The free-fn primitives deliver the same dedup benefit without growing the public abstraction. If Stage 2 reveals that adapters _consistently_ want to override individual sub-extractions (e.g. Codex needs a different `extract_model_id` policy than Claude across multiple snapshot types), then promoting these to trait methods becomes warranted — but that's evidence-driven evolution, not speculative widening today.
+- **Alternatives considered:**
+  - Builder API (`Json::from(v).at("a").at("b").as_u64()`). Rejected — extra type for a one-call-per-field pattern; the slice-of-keys form composes more naturally with `const` paths.
+  - `serde_path_to_error` or `jsonpath_lib` crate dependencies. Rejected — both are heavier than the ~50-line module above and obscure where the actual schema differences are. House-grown is small enough to read in one screen.
+
 ### Orchestration-internal types stay private
 
 These currently live in `watcher.rs` and `transcript.rs`. They move into `adapter/base.rs` (private, not in trait surface):
@@ -362,27 +471,28 @@ Run a Claude Code session under Vimeflow on a workspace with a JSONL transcript 
 
 Each step compiles and passes tests independently. PRs may bundle them or split them.
 
-1. **Add new module skeletons.** Create `agent/adapter/{mod.rs,base.rs,types.rs,claude_code/mod.rs}` empty/stub. Wire `agent/mod.rs` to declare `pub mod adapter;`. Build passes; nothing yet uses the new modules.
-2. **Move provider-hook types.** Add `StatusSource`, `ParsedStatus`, `TranscriptContext`, `TranscriptEffect`, `InFlightToolCall` (extracted from `transcript.rs:57-66`) to `adapter/types.rs`. Pure additions.
-3. **Define `trait AgentAdapter` skeleton in `adapter/mod.rs` with provider hooks only.** No `start`/`stop`/`for_type` yet — those live on the `impl dyn AgentAdapter` inherent block that lands in step 9, after `base::start_for` exists in step 8. Build passes; trait has no callers.
-4. **Move `agent/test_runners/` → `agent/adapter/claude_code/test_runners/`.** Update import paths in the moved files (relative `super::` references) and in `transcript.rs`'s import (still in old location). Build passes; tests pass unchanged.
-5. **Move `agent/statusline.rs` → `agent/adapter/claude_code/statusline.rs`.** Update import paths in the moved file's tests. Update `agent/mod.rs` to drop the `pub mod statusline;` declaration. Update `watcher.rs`'s import to `use crate::agent::adapter::claude_code::statusline::parse_statusline;` (temporary; goes away in step 8). Build passes; tests pass unchanged.
-6. **Move `agent/transcript.rs` → `agent/adapter/claude_code/transcript.rs`.** Same shape as step 5. `validate_transcript_path` stays `pub(crate)` for now so `watcher.rs` can still call it during the transitional period. Build passes; tests pass unchanged.
-7. **Implement `ClaudeCodeAdapter` in `adapter/claude_code/mod.rs`.** Each provider hook delegates to the (now-moved) `statusline::parse_statusline` / `transcript::validate_transcript_path` / etc. Add unit tests that verify delegation. Build passes; new tests pass.
-8. **Move watcher orchestration body into `adapter/base.rs`.** Verbatim from `watcher.rs:403-642` (`start_watching`), with the new signature `pub(crate) fn start_for(adapter: Arc<dyn AgentAdapter>, app: AppHandle, sid: String, cwd: PathBuf, state: AgentWatcherState) -> Result<WatcherHandle, String>`. Replace direct `parse_statusline` calls with `adapter.parse_status(...)`; replace `validate_transcript_path` calls with `adapter.validate_transcript(...)`; replace status-file-path construction with `adapter.status_source(cwd, sid).path`. The `TranscriptState`, `TxOutcome`, `EventTiming`, `PathHistory` types move with it as private items in `base.rs`. **Critical: this is the step that risks behavioral drift. Reviewer should diff `watcher.rs` (old) vs. `base.rs` (new) and confirm only the hook-call substitutions changed.**
-9. **Wire `start_agent_watcher` / `stop_agent_watcher` Tauri commands to use the adapter.** Move them from `watcher.rs` to `adapter/mod.rs`. The Tauri body becomes: `let adapter = <dyn AgentAdapter>::for_type(detected_type)?; let handle = adapter.start(app, sid, cwd, state.inner().clone())?; state.insert(sid, handle);`. Add the `impl dyn AgentAdapter { fn for_type(...), fn start(...), fn stop(...) }` inherent block.
-10. **Delete `agent/watcher.rs`.** Update `agent/mod.rs` re-exports.
-11. **Delete `start_transcript_watcher` / `stop_transcript_watcher` Tauri commands.** Update `lib.rs`'s `tauri::generate_handler![…]` list. Frontend `useAgentStatus.ts:53-58` deletion lands in the same commit.
-12. **Acceptance test pass.** Per "Acceptance test" above.
+1. **Add new module skeletons.** Create `agent/adapter/{mod.rs,base.rs,types.rs,json.rs,claude_code/mod.rs}` empty/stub. Wire `agent/mod.rs` to declare `pub mod adapter;`. Build passes; nothing yet uses the new modules.
+2. **Implement `adapter/json.rs`** with `navigate`, `extract<T>`, `u64_at` / `f64_at` / `str_at` / `obj_at`, and `u64_or` / `f64_or` / `str_or` per the "Shared parse primitives" section. Add unit tests covering: missing path, partial path (intermediate key absent), wrong-type leaf, default fallback, deep navigation. Build passes; tests pass.
+3. **Move provider-hook types.** Add `StatusSource`, `ParsedStatus`, `TranscriptContext`, `TranscriptEffect`, `InFlightToolCall` (extracted from `transcript.rs:57-66`) to `adapter/types.rs`. Pure additions.
+4. **Define `trait AgentAdapter` skeleton in `adapter/mod.rs` with provider hooks only.** No `start`/`stop`/`for_type` yet — those live on the `impl dyn AgentAdapter` inherent block that lands in step 10, after `base::start_for` exists in step 9. Build passes; trait has no callers.
+5. **Move `agent/test_runners/` → `agent/adapter/claude_code/test_runners/`.** Update import paths in the moved files (relative `super::` references) and in `transcript.rs`'s import (still in old location). Build passes; tests pass unchanged.
+6. **Move `agent/statusline.rs` → `agent/adapter/claude_code/statusline.rs` AND refactor its parsers to use `adapter::json` primitives.** Update import paths in the moved file's tests. Update `agent/mod.rs` to drop the `pub mod statusline;` declaration. Update `watcher.rs`'s import to `use crate::agent::adapter::claude_code::statusline::parse_statusline;` (temporary; goes away in step 9). Replace every `obj.get(...).and_then(|v| v.as_*()).unwrap_or(default)` chain with the equivalent `json::*_or(&v, &["..."], default)` call. **Acceptance check (mechanical):** `rg "and_then\(\|v\| v\.as_(u64|f64|str|object)\(\)\)" src-tauri/src/agent/adapter/` returns zero results. Build passes; tests pass unchanged (parser refactor is semantics-preserving).
+7. **Move `agent/transcript.rs` → `agent/adapter/claude_code/transcript.rs`.** Same shape as step 6. `validate_transcript_path` stays `pub(crate)` for now so `watcher.rs` can still call it during the transitional period. Note: `transcript.rs`'s parsers consume `serde_json::Value` directly via `value.get(...).and_then(|v| v.as_str())` etc — these uses also migrate to `adapter::json` primitives in the same commit. Build passes; tests pass unchanged.
+8. **Implement `ClaudeCodeAdapter` in `adapter/claude_code/mod.rs`.** Each provider hook delegates to the (now-moved) `statusline::parse_statusline` / `transcript::validate_transcript_path` / etc. Add unit tests that verify delegation. Build passes; new tests pass.
+9. **Move watcher orchestration body into `adapter/base.rs`.** Verbatim from `watcher.rs:403-642` (`start_watching`), with the new signature `pub(crate) fn start_for(adapter: Arc<dyn AgentAdapter>, app: AppHandle, sid: String, cwd: PathBuf, state: AgentWatcherState) -> Result<WatcherHandle, String>`. Replace direct `parse_statusline` calls with `adapter.parse_status(...)`; replace `validate_transcript_path` calls with `adapter.validate_transcript(...)`; replace status-file-path construction with `adapter.status_source(cwd, sid).path`. The `TranscriptState`, `TxOutcome`, `EventTiming`, `PathHistory` types move with it as private items in `base.rs`. **Critical: this is the step that risks behavioral drift. Reviewer should diff `watcher.rs` (old) vs. `base.rs` (new) and confirm only the hook-call substitutions changed.**
+10. **Wire `start_agent_watcher` / `stop_agent_watcher` Tauri commands to use the adapter.** Move them from `watcher.rs` to `adapter/mod.rs`. The Tauri body becomes: `let adapter = <dyn AgentAdapter>::for_type(detected_type)?; let handle = adapter.start(app, sid, cwd, state.inner().clone())?; state.insert(sid, handle);`. Add the `impl dyn AgentAdapter { fn for_type(...), fn start(...), fn stop(...) }` inherent block.
+11. **Delete `agent/watcher.rs`.** Update `agent/mod.rs` re-exports.
+12. **Delete `start_transcript_watcher` / `stop_transcript_watcher` Tauri commands.** Update `lib.rs`'s `tauri::generate_handler![…]` list. Frontend `useAgentStatus.ts:53-58` deletion lands in the same commit.
+13. **Acceptance test pass.** Per "Acceptance test" above.
 
 ## Risks
 
-### IDEA — Behavioral drift in step 8
+### IDEA — Behavioral drift in step 9
 
 - **Intent:** The watcher orchestration is dense (debounce + notify + WSL2 poll fallback + inline-init read + path-history diagnostics + transcript replay). Moving it into a generic function across a single PR commit risks subtle drift: a missed debounce reset, a swapped argument, a race in the polling thread spawn.
 - **Danger:** Drift is silent. The agent panel still lights up; events still fire. But e.g. a missed `last.lock()` reset could turn the 100ms debounce into 0ms and cause event storms under WSL2; a swapped `Mutex` lock order could deadlock during `WatcherHandle::Drop`.
-- **Explain:** Mitigation — step 8 is its own commit with no other changes. Reviewer must run a `diff -u` between the deleted `watcher.rs::start_watching` body and the new `base::start_for` body and confirm every change is one of: (a) parameter `&dyn AgentAdapter` substitution, (b) `parse_statusline(&sid, &c)` → `adapter.parse_status(&sid, &c)`, (c) `validate_transcript_path(p)` → `adapter.validate_transcript(p)`, (d) status-file-path construction → `adapter.status_source(cwd, sid).path`. No other changes are admissible in this commit.
-- **Alternatives considered:** Splitting step 8 across two commits (first introduce the generic free fn paralleling the existing one, then switch callers). Rejected — doubles the diff surface and creates a transient state where two parallel watchers could race if a test runs in between.
+- **Explain:** Mitigation — step 9 is its own commit with no other changes. Reviewer must run a `diff -u` between the deleted `watcher.rs::start_watching` body and the new `base::start_for` body and confirm every change is one of: (a) parameter `&dyn AgentAdapter` substitution, (b) `parse_statusline(&sid, &c)` → `adapter.parse_status(&sid, &c)`, (c) `validate_transcript_path(p)` → `adapter.validate_transcript(p)`, (d) status-file-path construction → `adapter.status_source(cwd, sid).path`. No other changes are admissible in this commit.
+- **Alternatives considered:** Splitting step 9 across two commits (first introduce the generic free fn paralleling the existing one, then switch callers). Rejected — doubles the diff surface and creates a transient state where two parallel watchers could race if a test runs in between.
 
 ### IDEA — `Err` (not `unimplemented!`) for non-Claude agents in `for_type`
 
