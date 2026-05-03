@@ -775,4 +775,81 @@ describe('useAgentStatus', () => {
     const { result } = renderHook(() => useAgentStatus('ws-default'))
     expect(result.current.testRun).toBeNull()
   })
+
+  test('panel collapses on agent exit even when start_agent_watcher failed', async () => {
+    // Regression test for F1 (Codex review on PR #152, escalated P2->P1
+    // across two cycles). Sequence:
+    //   1. detect_agent_in_session returns an agent → frontend sets
+    //      isActive: true.
+    //   2. start_agent_watcher throws (transient backend race —
+    //      detect_agent in start_agent_watcher returned None even
+    //      though the polled detect_agent_in_session succeeded).
+    //   3. Frontend's catch swallows; watcherStartedRef stays false.
+    //   4. Next 2s poll: detect_agent_in_session returns null
+    //      (agent really exited).
+    //   5. Pre-fix: collapse path early-returned because
+    //      `if (!watcherStartedRef.current) return` — panel stuck
+    //      in isActive: true forever.
+    //   6. Post-fix: collapse path is gated on `agentEverDetectedRef`,
+    //      which DID flip to true in step 1. Collapse fires after the
+    //      EXIT_HOLD_MS timeout, returning the panel to inactive.
+    const PTY_ID = 'pty-1'
+    vi.mocked(getPtySessionId).mockReturnValue(PTY_ID)
+
+    const invokeMock = vi.fn((cmd: string): Promise<unknown> => {
+      if (cmd === 'detect_agent_in_session') {
+        // First call returns an agent; subsequent calls return null.
+        const detectCalls = invokeMock.mock.calls.filter(
+          ([c]) => c === 'detect_agent_in_session'
+        ).length
+        if (detectCalls === 1) {
+          return Promise.resolve({
+            sessionId: PTY_ID,
+            agentType: 'claudeCode',
+            pid: 12345,
+          })
+        }
+
+        return Promise.resolve(null)
+      }
+      if (cmd === 'start_agent_watcher') {
+        // Simulate the transient race — backend re-detect missed.
+        return Promise.reject(
+          new Error('no agent detected in PTY session pty-1 (transient race)')
+        )
+      }
+
+      return Promise.resolve(null)
+    })
+    vi.mocked(invoke).mockImplementation(invokeMock as unknown as typeof invoke)
+
+    const { result } = renderHook(() => useAgentStatus('ws-1'))
+
+    // Step 1+2+3: first poll runs (subscribe useEffect fires it
+    // immediately after listeners attach). isActive flips to true,
+    // start_agent_watcher throws and is caught, watcherStartedRef
+    // stays false.
+    await vi.waitFor(() => {
+      expect(result.current.isActive).toBe(true)
+      expect(result.current.agentType).toBe('claude-code')
+    })
+
+    // Step 4: advance 2s for the next polling tick. Detection now
+    // returns null.
+    await act(async () => {
+      vi.advanceTimersByTime(2000)
+      await Promise.resolve()
+    })
+
+    // Step 5/6: panel should collapse after EXIT_HOLD_MS (5s). With
+    // the pre-fix behavior the early-return at the gate would prevent
+    // this; the post-fix exit path runs because agentEverDetectedRef
+    // is true.
+    await act(async () => {
+      vi.advanceTimersByTime(6000)
+      await Promise.resolve()
+    })
+
+    expect(result.current.isActive).toBe(false)
+  })
 })
