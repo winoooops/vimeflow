@@ -669,9 +669,21 @@ fn extract_tool_result_content(value: &Value) -> String {
                 if let Some(text) = text_block_text(block) {
                     content_truncated = append_capped_text(&mut out, text);
                     if content_truncated {
+                        // `.map(|t| !t.is_empty()).unwrap_or(false)` —
+                        // an empty-string text block (`"text": ""`,
+                        // which streaming-partial JSONL flushes can
+                        // emit) carries no content, so it must NOT
+                        // count as a skipped block when deciding
+                        // whether to append the `[output truncated]`
+                        // marker. Plain `.is_some()` would mis-fire on
+                        // those empty sentinels and produce a false
+                        // truncation marker (Claude review on PR #153,
+                        // F10).
                         blocks_skipped = iter.any(|b| {
                             text_block_type(b) == Some("text")
-                                && text_block_text(b).is_some()
+                                && text_block_text(b)
+                                    .map(|t| !t.is_empty())
+                                    .unwrap_or(false)
                         });
                         break;
                     }
@@ -689,13 +701,18 @@ fn extract_tool_result_content(value: &Value) -> String {
                             // Cap exactly hit by content; the LAST block
                             // itself wasn't truncated. Only flag the
                             // output as truncated if MORE text blocks
-                            // follow this one — otherwise the marker
-                            // would falsely claim content was dropped
-                            // when only the inter-block separator was
-                            // omitted.
+                            // with NON-EMPTY content follow this one —
+                            // otherwise the marker would falsely claim
+                            // content was dropped when only the
+                            // inter-block separator was omitted, OR
+                            // when the only remaining blocks are empty
+                            // sentinels (Claude review on PR #153,
+                            // F10).
                             blocks_skipped = iter.any(|b| {
                                 text_block_type(b) == Some("text")
-                                    && text_block_text(b).is_some()
+                                    && text_block_text(b)
+                                        .map(|t| !t.is_empty())
+                                        .unwrap_or(false)
                             });
                             break;
                         }
@@ -884,6 +901,34 @@ mod tests {
             "marker should appear when subsequent text blocks are skipped"
         );
         assert!(!content.contains("block-two-skipped"));
+    }
+
+    /// F10 regression (Claude review on PR #153). Streaming JSONL
+    /// flushes can emit `{"type":"text","text":""}` empty-string
+    /// sentinel blocks. Those carry no content, so they must NOT be
+    /// counted as "skipped blocks" when the cap is exactly hit on the
+    /// last meaningful block — otherwise the `[output truncated]`
+    /// marker fires falsely. The two `iter.any(...)` calls in
+    /// `extract_tool_result_content` now require the trailing block
+    /// to have non-empty text before counting it as skipped.
+    #[test]
+    fn extract_tool_result_content_no_marker_when_only_remaining_blocks_are_empty() {
+        let exactly_at_cap: String = "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN);
+        let value = serde_json::json!({
+            "content": [
+                { "type": "text", "text": exactly_at_cap },
+                { "type": "text", "text": "" },
+                { "type": "text", "text": "" }
+            ]
+        });
+
+        let content = extract_tool_result_content(&value);
+
+        assert_eq!(content.len(), MAX_TOOL_RESULT_CONTENT_LEN);
+        assert!(
+            !content.contains(TOOL_RESULT_TRUNCATED_MARKER),
+            "marker must not appear when the only remaining blocks are empty-string sentinels"
+        );
     }
 
     #[test]
