@@ -28,6 +28,17 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_ARGS_LEN: usize = 100;
 
 const MAX_TOOL_RESULT_CONTENT_LEN: usize = 256 * 1024;
+/// When truncating `tool_result` content that exceeds the cap, keep at
+/// least this many bytes from the END of the content. Test-runner
+/// parsers (`test_runners/cargo.rs`, `test_runners/vitest.rs`) look for
+/// summary lines at the END of test output (`test result: ok. ...`,
+/// `Tests N passed | M failed`, etc.). Head-only truncation would drop
+/// those summary lines and cause large successful test runs to parse
+/// as `None` → `maybe_build_snapshot` would skip the non-error case
+/// → successful test runs vanish from the UI. Tail size chosen at
+/// 64 KiB (~1/4 of cap) to comfortably hold a verbose test summary
+/// plus failure stack traces (Codex review on PR #153, F15).
+const TOOL_RESULT_TAIL_LEN: usize = 64 * 1024;
 const TOOL_RESULT_TRUNCATED_MARKER: &str = "[output truncated]";
 
 pub(crate) fn validate_transcript_path(
@@ -154,19 +165,6 @@ fn text_block_type(block: &Value) -> Option<&str> {
 
 fn text_block_text(block: &Value) -> Option<&str> {
     block.get("text").and_then(Value::as_str)
-}
-
-/// Whether `block` is a `{"type":"text", "text": "..."}` value carrying
-/// non-empty content. Used by `extract_tool_result_content` to decide
-/// whether trailing blocks count as "skipped" for the `[output truncated]`
-/// marker — empty-string sentinel blocks (which Claude Code's streaming
-/// JSONL emits on partial flushes) carry no content, so they must NOT
-/// count as skipped (Claude review on PR #153, F10 + F12).
-fn is_non_empty_text_block(block: &Value) -> bool {
-    text_block_type(block) == Some("text")
-        && text_block_text(block)
-            .map(|t| !t.is_empty())
-            .unwrap_or(false)
 }
 
 fn input_file_path(input: &Value) -> Option<&str> {
@@ -667,98 +665,133 @@ fn extract_tool_result_content(value: &Value) -> String {
         return capped_tool_result_content(s);
     }
     if let Some(arr) = raw.as_array() {
-        let mut out = String::new();
-        // Two distinct truncation signals so the marker isn't emitted on
-        // a separator-newline miss when the LAST text block exactly fills
-        // the cap (Claude review on PR #153). `content_truncated` means
-        // `append_capped_text` actually dropped bytes; `blocks_skipped`
-        // means we broke out of the loop with more text blocks ahead. The
-        // marker fires only if at least one of these is true.
+        // Walk the array's text blocks and assemble them into a single
+        // buffer, then apply head-and-tail truncation. Preserves trailing
+        // test-runner summary lines that head-only truncation would have
+        // dropped (Codex review on PR #153, F15). Empty-string sentinel
+        // blocks are skipped (cycle-6 F10).
         //
-        // The two `iter.any(...)` calls below both check whether any
-        // remaining block in the iterator counts as "non-empty text"
-        // (i.e. would have contributed real content if reached). The
-        // predicate was duplicated across both break branches and is
-        // now a named helper so any future refinement (e.g., excluding
-        // whitespace-only blocks) updates a single site (Claude review
-        // on PR #153, F12).
-        let mut content_truncated = false;
-        let mut blocks_skipped = false;
-        let mut iter = arr.iter();
-        while let Some(block) = iter.next() {
-            if text_block_type(block) == Some("text") {
-                if let Some(text) = text_block_text(block) {
-                    content_truncated = append_capped_text(&mut out, text);
-                    if content_truncated {
-                        blocks_skipped = iter.any(is_non_empty_text_block);
-                        break;
-                    }
-                    // Add a separator newline only if the block didn't
-                    // already end with one — terminal output frequently
-                    // does, and an unconditional `push('\n')` would
-                    // produce a double blank line at every block boundary
-                    // (the simple-string code path above doesn't add
-                    // anything, so this also brings the two paths into
-                    // alignment).
-                    if !out.ends_with('\n') {
-                        if out.len() < MAX_TOOL_RESULT_CONTENT_LEN {
-                            out.push('\n');
-                        } else {
-                            // Cap exactly hit by content; the LAST block
-                            // itself wasn't truncated. Only flag the
-                            // output as truncated if MORE text blocks
-                            // with NON-EMPTY content follow this one —
-                            // otherwise the marker would falsely claim
-                            // content was dropped when only the
-                            // inter-block separator was omitted, OR
-                            // when the only remaining blocks are empty
-                            // sentinels.
-                            blocks_skipped = iter.any(is_non_empty_text_block);
-                            break;
-                        }
-                    }
-                }
+        // Memory-bound: after each block append, if the running buffer
+        // exceeds `prune_threshold = 2 × (MAX + TAIL)`, drop the middle
+        // and reset to the head+tail shape. Combined with the
+        // per-block pre-cap below, peak `buf.len()` stays at
+        // ~`prune_threshold + memory_cap` ≈ 3 × (MAX + TAIL) per
+        // iteration, regardless of any single block's size.
+        // Without these guards a payload with many large blocks would
+        // materialise the entire combined output before truncation —
+        // a regression vs. the cycle-7 implementation that stopped
+        // appending once the cap was hit (Codex cycle-8 retry-2
+        // follow-up). The trade-off: we lose strict "preserve the
+        // literal last 64 KiB" semantics under pruning, since the
+        // tail window can drift earlier as new blocks arrive — but
+        // the FINAL `cap_with_head_and_tail` call re-prunes from the
+        // latest buffer, so the truly-last bytes (those of the last
+        // block we processed) survive.
+        let memory_cap = MAX_TOOL_RESULT_CONTENT_LEN + TOOL_RESULT_TAIL_LEN;
+        let prune_threshold = memory_cap * 2;
+        let mut buf = String::new();
+        for block in arr {
+            if text_block_type(block) != Some("text") {
+                continue;
+            }
+            let Some(text) = text_block_text(block) else {
+                continue;
+            };
+            if text.is_empty() {
+                continue;
+            }
+            if !buf.is_empty() && !buf.ends_with('\n') {
+                buf.push('\n');
+            }
+            // Pre-cap an oversized single block so push_str's growth
+            // doesn't force `buf` past prune_threshold by an
+            // unbounded amount. `cap_with_head_and_tail` returns the
+            // input unchanged when under cap (single allocation),
+            // and head+marker+tail otherwise (single allocation
+            // sized to exactly the result). Without this guard a
+            // single 100 MiB block would grow `buf` to 100 MiB
+            // before the post-append prune fired (Codex cycle-8
+            // retry-1 follow-up).
+            if text.len() > memory_cap {
+                let capped = cap_with_head_and_tail(text);
+                buf.push_str(&capped);
+            } else {
+                buf.push_str(text);
+            }
+            if buf.len() > prune_threshold {
+                buf = cap_with_head_and_tail(&buf);
             }
         }
-        if content_truncated || blocks_skipped {
-            append_truncated_marker(&mut out);
-        }
-        return out;
+        return cap_with_head_and_tail(&buf);
     }
     String::new()
 }
 
 fn capped_tool_result_content(content: &str) -> String {
+    cap_with_head_and_tail(content)
+}
+
+/// Apply the `MAX_TOOL_RESULT_CONTENT_LEN` cap to `content` using
+/// head-and-tail truncation: keep `MAX - TOOL_RESULT_TAIL_LEN` bytes
+/// from the start, then a `[output truncated]` marker, then the last
+/// `TOOL_RESULT_TAIL_LEN` bytes. Test-runner parsers look for summary
+/// lines at the END of test output, so head-only truncation would
+/// silently break test-snapshot emission for large but valid runs
+/// (Codex review on PR #153, F15).
+///
+/// Takes `&str` (not owned `String`) so callers don't have to clone
+/// before truncation — important for the simple-string call site
+/// where input arrives as `&str` from `Value::as_str` and the
+/// pre-refactor `to_string()` was a wasted full-size allocation
+/// (Codex cycle-8 retry-1 follow-up).
+///
+/// The marker intentionally omits a byte-count suffix: when used
+/// repeatedly during streaming pruning of array content, only the
+/// latest prune's count would be accurate, so reporting a count in
+/// the final marker would under-report the total bytes dropped across
+/// intermediate prunes.
+fn cap_with_head_and_tail(content: &str) -> String {
     if content.len() <= MAX_TOOL_RESULT_CONTENT_LEN {
         return content.to_string();
     }
 
-    let mut out = String::new();
-    let _ = append_capped_text(&mut out, content);
-    append_truncated_marker(&mut out);
-    out
-}
-
-fn append_capped_text(out: &mut String, text: &str) -> bool {
-    let remaining = MAX_TOOL_RESULT_CONTENT_LEN.saturating_sub(out.len());
-    if text.len() <= remaining {
-        out.push_str(text);
-        return false;
+    // Reserve TOOL_RESULT_TAIL_LEN for the suffix; the prefix gets
+    // whatever is left. `saturating_sub` defends against future cap
+    // shrinkage that would make tail >= cap.
+    let head_target = MAX_TOOL_RESULT_CONTENT_LEN.saturating_sub(TOOL_RESULT_TAIL_LEN);
+    let mut head_end = head_target;
+    while head_end > 0 && !content.is_char_boundary(head_end) {
+        head_end -= 1;
     }
 
-    let mut end = remaining;
-    while end > 0 && !text.is_char_boundary(end) {
-        end -= 1;
+    let mut tail_start = content.len().saturating_sub(TOOL_RESULT_TAIL_LEN);
+    while tail_start < content.len() && !content.is_char_boundary(tail_start) {
+        tail_start += 1;
     }
-    out.push_str(&text[..end]);
-    true
-}
 
-fn append_truncated_marker(out: &mut String) {
-    if !out.ends_with('\n') {
+    if tail_start <= head_end {
+        // Head and tail windows overlap (defensive — shouldn't happen
+        // given the cap-vs-len check above, but keep the function total).
+        return content.to_string();
+    }
+
+    // Build the result via slice copies — single allocation sized to
+    // exactly head + marker + tail. Avoids the prior `content.to_string()`
+    // + helper-internal new-String double allocation.
+    let head_slice = &content[..head_end];
+    let tail_slice = &content[tail_start..];
+    let needs_leading_newline = !head_slice.ends_with('\n');
+    let marker_extra = if needs_leading_newline { 1 } else { 0 } + TOOL_RESULT_TRUNCATED_MARKER.len() + 1;
+
+    let mut out = String::with_capacity(head_slice.len() + marker_extra + tail_slice.len());
+    out.push_str(head_slice);
+    if needs_leading_newline {
         out.push('\n');
     }
     out.push_str(TOOL_RESULT_TRUNCATED_MARKER);
+    out.push('\n');
+    out.push_str(tail_slice);
+    out
 }
 
 #[cfg(test)]
@@ -836,34 +869,56 @@ mod tests {
         assert!(content.contains(TOOL_RESULT_TRUNCATED_MARKER));
     }
 
+    /// Updated for F15 (Codex review on PR #153). The cycle-8 fix
+    /// switched from head-only truncation to head-and-tail truncation.
+    /// For a 2-block input where the FIRST block alone overflows the
+    /// cap, BOTH the first block's tail bytes AND the second block's
+    /// content land within the kept tail window — that's the whole
+    /// point of head-and-tail (test-runner summary lines at the END
+    /// must survive). Asserts: head marker (head window), tail marker
+    /// from FIRST block (tail window can include first-block tail
+    /// bytes when their position falls inside the kept-tail range),
+    /// and block-two-summary (last block's content always survives).
     #[test]
     fn extract_tool_result_content_caps_text_blocks() {
+        let head_marker = "HEAD-MARKER";
+        let block_one_tail_marker = "BLOCK-ONE-TAIL-MARKER";
+        let bulk = "x".repeat(MAX_TOOL_RESULT_CONTENT_LEN);
+        let combined = format!("{head_marker}\n{bulk}\n{block_one_tail_marker}");
         let value = serde_json::json!({
             "content": [
-                { "type": "text", "text": "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN + 1024) },
-                { "type": "text", "text": "should not be appended" }
+                { "type": "text", "text": &combined },
+                { "type": "text", "text": "block-two-summary" }
             ]
         });
 
         let content = extract_tool_result_content(&value);
 
         assert!(content.contains(TOOL_RESULT_TRUNCATED_MARKER));
-        assert!(!content.contains("should not be appended"));
+        assert!(
+            content.contains(head_marker),
+            "head marker must be preserved in the head window"
+        );
+        assert!(
+            content.contains(block_one_tail_marker),
+            "tail bytes from the FIRST oversized block must survive in the tail window — \
+             head-and-tail truncation must preserve content from the END of EARLIER blocks too, \
+             not just the last block (Codex cycle-8 deferred-LOW)"
+        );
+        assert!(
+            content.contains("block-two-summary"),
+            "second block must be preserved in the tail window (F15)"
+        );
     }
 
     /// F1 regression (Claude review on PR #153). When the LAST text
     /// block exactly fills `MAX_TOOL_RESULT_CONTENT_LEN` and does not
     /// end with `\n`, the pre-fix code emitted `[output truncated]`
-    /// even though no content was dropped — only the inter-block
-    /// separator newline was omitted. The post-fix code distinguishes
-    /// `content_truncated` (bytes dropped by `append_capped_text`)
-    /// from `blocks_skipped` (more text blocks ahead at break time)
-    /// and emits the marker only when at least one is true.
+    /// even though no content was dropped. With the cycle-8 head-and-tail
+    /// rewrite, exact-cap content is under the threshold for truncation
+    /// (`<=` not `<`), so it returns unchanged with no marker.
     #[test]
     fn extract_tool_result_content_no_marker_on_exact_cap_fill_last_block() {
-        // Block content with no trailing newline that exactly equals
-        // the cap. If it were the only text block, the marker MUST NOT
-        // be appended (no content was dropped, no blocks skipped).
         let exactly_at_cap: String = "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN);
         let value = serde_json::json!({
             "content": [
@@ -876,31 +931,49 @@ mod tests {
         assert_eq!(content.len(), MAX_TOOL_RESULT_CONTENT_LEN);
         assert!(
             !content.contains(TOOL_RESULT_TRUNCATED_MARKER),
-            "marker must not appear for an exact-cap fill on the last block"
+            "marker must not appear for an exact-cap fill"
         );
     }
 
-    /// Sibling regression to the above: when the FIRST block exactly
-    /// fills the cap (no trailing newline) AND a subsequent text block
-    /// exists, the marker MUST appear because that subsequent block
-    /// was skipped — `blocks_skipped` should be true.
+    /// F15 regression (Codex review on PR #153). Test-runner output
+    /// (cargo, vitest) puts summary lines at the END of the buffer.
+    /// Head-only truncation (the cycle-0–cycle-7 implementation)
+    /// would drop the summary, causing `maybe_build_snapshot` to skip
+    /// emitting non-error snapshots, so successful large test runs
+    /// silently vanished from the UI. Head-and-tail truncation
+    /// preserves the trailing summary line within the tail window.
     #[test]
-    fn extract_tool_result_content_marker_on_exact_cap_fill_with_subsequent_block() {
-        let exactly_at_cap: String = "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN);
+    fn extract_tool_result_content_preserves_tail_summary_for_test_runner_output() {
+        // Simulate a verbose test run: 350 KiB of output that ends
+        // with the kind of summary line cargo's parser keys on.
+        let summary_line = "test result: ok. 1234 passed; 0 failed; 0 ignored";
+        let bulk = "compiling...\n".repeat(30000); // ~30k * 13 bytes ≈ 390 KiB
+        let combined = format!("{bulk}\n{summary_line}\n");
+        assert!(combined.len() > MAX_TOOL_RESULT_CONTENT_LEN);
+
         let value = serde_json::json!({
-            "content": [
-                { "type": "text", "text": exactly_at_cap },
-                { "type": "text", "text": "block-two-skipped" }
-            ]
+            "content": &combined
         });
 
         let content = extract_tool_result_content(&value);
 
         assert!(
-            content.contains(TOOL_RESULT_TRUNCATED_MARKER),
-            "marker should appear when subsequent text blocks are skipped"
+            content.contains(summary_line),
+            "trailing summary line must survive truncation so test-runner parsers \
+             can emit non-error snapshots for large successful runs (F15). \
+             Got content of length {}, last 200 chars: {:?}",
+            content.len(),
+            &content[content.len().saturating_sub(200)..]
         );
-        assert!(!content.contains("block-two-skipped"));
+        assert!(
+            content.contains(TOOL_RESULT_TRUNCATED_MARKER),
+            "marker must appear when content exceeded the cap"
+        );
+        assert!(
+            content.len() <= MAX_TOOL_RESULT_CONTENT_LEN + 128,
+            "post-truncation length should be within ~MAX (plus marker), got {}",
+            content.len()
+        );
     }
 
     /// F10 regression (Claude review on PR #153). Streaming JSONL
