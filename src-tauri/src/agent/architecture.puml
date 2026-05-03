@@ -1,0 +1,258 @@
+@startuml architecture
+
+' ─────────────────────────────────────────────────────────────────────
+' Vimeflow agent module — Stage 1 architecture (Rust class diagram).
+' Generated alongside README.md; rerender with:
+'   java -jar plantuml.jar src-tauri/src/agent/architecture.puml
+' Spec: docs/superpowers/specs/2026-05-02-claude-adapter-refactor-design.md
+' ─────────────────────────────────────────────────────────────────────
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam dpi 150
+skinparam linetype ortho
+skinparam class {
+  BackgroundColor #FAFAD2
+  BorderColor #4A4A4A
+  ArrowColor #4A4A4A
+  FontName JetBrains Mono
+  AttributeFontName JetBrains Mono
+}
+skinparam interface {
+  BackgroundColor #FFE4E1
+  BorderColor #B22222
+}
+skinparam enum {
+  BackgroundColor #E0FFE0
+  BorderColor #2F4F2F
+}
+skinparam note {
+  BackgroundColor #F5F5DC
+  BorderColor #696969
+}
+
+title <b>AgentAdapter</b> — Stage 1 trait, impls, and lifecycle types\n(Rust class diagram; <<trait>> = trait, <<struct>> = struct, ..|> = `impl Trait for Struct`)
+
+' ────────────────────────────────────────────────────────────────────
+' USER-FACING SURFACE (inherent impl on the trait object)
+' ────────────────────────────────────────────────────────────────────
+
+class "impl<R: Runtime> dyn AgentAdapter<R>" as DynImpl <<inherent>> #LightCyan {
+  +for_type(t: AgentType) : Result<Arc<Self>, String>
+  +start(self: Arc<Self>, app: AppHandle<R>, sid: String, cwd: PathBuf, state: AgentWatcherState) : Result<(), String>
+  +stop(state: &AgentWatcherState, sid: &str) : bool
+}
+
+note right of DynImpl
+  <b>One call hides all complexity.</b>
+  Tauri command does:
+  ` let adapter = <dyn AgentAdapter<Wry>>::for_type(t)?;`
+  ` adapter.start(app, sid, cwd, state)?;`
+end note
+
+' ────────────────────────────────────────────────────────────────────
+' TRAIT CONTRACT (the abstraction)
+' ────────────────────────────────────────────────────────────────────
+
+interface "AgentAdapter<R: tauri::Runtime>" as AgentAdapter <<trait>> {
+  +agent_type(&self) : AgentType
+  +status_source(&self, cwd: &Path, sid: &str) : StatusSource
+  +parse_status(&self, sid: &str, raw: &str) : Result<ParsedStatus, String>
+  +validate_transcript(&self, raw: &str) : Result<PathBuf, String>
+  +tail_transcript(&self, app: AppHandle<R>, sid: String, cwd: Option<PathBuf>, path: PathBuf) : Result<TranscriptHandle, String>
+}
+
+note left of AgentAdapter
+  <b>Send + Sync + 'static</b>
+  Generic over `R: tauri::Runtime`
+  so production (Wry) and tests
+  (MockRuntime) share one trait.
+  Each impl is generic too:
+  `impl<R: Runtime> AgentAdapter<R> for X`
+end note
+
+DynImpl ..> AgentAdapter : exposes via inherent methods
+
+' ────────────────────────────────────────────────────────────────────
+' CONCRETE IMPLEMENTATIONS (Stage 1 has two)
+' ────────────────────────────────────────────────────────────────────
+
+class ClaudeCodeAdapter <<struct>> {
+}
+
+note bottom of ClaudeCodeAdapter
+  <b>Hooks delegate to:</b>
+  • statusline::parse_statusline
+  • transcript::validate_transcript_path
+  • transcript::start_tailing
+  • test_runners (via transcript)
+end note
+
+class NoOpAdapter <<struct>> {
+  -agent_type: AgentType
+  +new(t: AgentType) : Self
+}
+
+note bottom of NoOpAdapter
+  <b>Stage 1 fallback</b> for Codex /
+  Aider / Generic. status_source
+  returns Claude's path so the
+  watcher's start_for runs as
+  today's silent no-op (no events,
+  but exit-collapse works in the UI).
+  Stage 2 replaces the Codex arm
+  of `for_type` with `CodexAdapter`.
+end note
+
+ClaudeCodeAdapter ..|> AgentAdapter : impls
+NoOpAdapter ..|> AgentAdapter : impls
+
+' ────────────────────────────────────────────────────────────────────
+' PROVIDER-HOOK TYPES (returned from / consumed by trait methods)
+' ────────────────────────────────────────────────────────────────────
+
+class StatusSource <<struct>> {
+  +path: PathBuf
+  +trust_root: PathBuf
+}
+
+class ParsedStatus <<struct>> {
+  +event: AgentStatusEvent
+  +transcript_path: Option<String>
+}
+
+enum AgentType <<enum>> {
+  ClaudeCode
+  Codex
+  Aider
+  Generic
+}
+
+note right of StatusSource
+  trust_root enforced by
+  base::start_for via canonicalize
+  + starts_with check (defense in
+  depth against path traversal).
+end note
+
+AgentAdapter ..> StatusSource : returns
+AgentAdapter ..> ParsedStatus : returns
+AgentAdapter ..> AgentType : returns
+
+' ────────────────────────────────────────────────────────────────────
+' ORCHESTRATION (private, lives in agent::adapter::base)
+' ────────────────────────────────────────────────────────────────────
+
+class "base::start_for<R: Runtime>" as StartFor <<pub(crate) fn>> #FFEFD5 {
+  adapter: Arc<dyn AgentAdapter<R>>
+  app: AppHandle<R>
+  sid: String
+  cwd: PathBuf
+  state: AgentWatcherState
+  --
+  Result<(), String>
+}
+
+note right of StartFor
+  <b>The orchestration body.</b>
+  • debounce + notify watcher
+  • WSL2 polling fallback
+  • inline-init read
+  • path-history diagnostics
+  • transcript spawn via
+    `state.start_or_replace(adapter, …)`
+  • trust_root canonicalize-and-verify
+  • constructs `WatcherHandle` with
+    `_watcher: Some(watcher)`,
+    `transcript_state: state.clone()`,
+    `session_id: sid.clone()`
+end note
+
+DynImpl ..> StartFor : delegates
+
+' ────────────────────────────────────────────────────────────────────
+' LIFECYCLE TYPES (in base.rs; pub #[doc(hidden)] for tests)
+' ────────────────────────────────────────────────────────────────────
+
+class WatcherHandle <<struct>> #LightYellow {
+  -_watcher: Option<RecommendedWatcher>
+  -stop_flag: Arc<AtomicBool>
+  -join_handle: Option<JoinHandle>
+  -transcript_state: TranscriptState
+  -session_id: String
+  --
+  +Drop::drop(&mut self)
+  ' 1. drop(self._watcher.take()) — notify callbacks cease
+  ' 2. stop_flag + poll-thread join
+  ' 3. transcript_state.stop(&sid)
+}
+
+class AgentWatcherState <<struct>> #LightYellow {
+  -watchers: Arc<Mutex<HashMap<String, WatcherHandle>>>
+  +new() : Self
+  +insert(sid: String, h: WatcherHandle)
+  +remove(sid: &str) : bool
+}
+
+class TranscriptHandle <<struct>> #LightYellow {
+  -stop_flag: Arc<AtomicBool>
+  -join_handle: Option<JoinHandle>
+  --
+  +stop(self) ' joins
+  +Drop::drop(&mut self) ' signals only
+}
+
+class TranscriptState <<struct>> #LightYellow {
+  -watchers: Arc<Mutex<HashMap<String, TranscriptWatcher>>>
+  +new() : Self
+  +start_or_replace<R>(adapter, app, sid, path, cwd) : Result<TranscriptStartStatus, String>
+  +stop(sid: &str) : Result<(), String>
+}
+
+enum TranscriptStartStatus <<enum>> {
+  Started
+  Replaced
+  AlreadyRunning
+}
+
+note bottom of TranscriptState
+  Tauri-managed (`lib.rs:.manage(TranscriptState::new())`).
+  `start_or_replace` routes the spawn through
+  `adapter.tail_transcript(…)` — keeps base
+  uncoupled from any specific adapter.
+end note
+
+AgentWatcherState "1" *-- "*" WatcherHandle : owns
+TranscriptState "1" *-- "*" TranscriptHandle : owns (via TranscriptWatcher)
+WatcherHandle o-- TranscriptState : Arc-clone for Drop cascade
+TranscriptState ..> TranscriptStartStatus : returns
+
+StartFor ..> AgentWatcherState : inserts WatcherHandle
+StartFor ..> TranscriptState : routes via start_or_replace
+StartFor ..> AgentAdapter : calls hooks via &dyn
+
+AgentAdapter ..> TranscriptHandle : tail_transcript returns
+
+' ────────────────────────────────────────────────────────────────────
+' SHARED HELPER (consumed by every adapter's parsers)
+' ────────────────────────────────────────────────────────────────────
+
+class "agent::adapter::json" as JsonMod <<module>> #LightSteelBlue {
+  +navigate(v, path) : Option<&Value>
+  +extract<T: DeserializeOwned>(v, path) : Option<T>
+  +u64_at / f64_at / str_at / obj_at
+  +u64_or / f64_or / str_or
+}
+
+note bottom of JsonMod
+  Shared parse primitives. Each
+  adapter's parser internals
+  consume these — no duplicate
+  `obj.get(...).and_then(|v| v.as_*())`
+  chains across adapters.
+end note
+
+ClaudeCodeAdapter ..> JsonMod : uses (in statusline + transcript parsers)
+NoOpAdapter ..> JsonMod : (no parsing — but Stage 2 CodexAdapter will)
+
+@enduml
