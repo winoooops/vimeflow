@@ -6,7 +6,6 @@
 
 pub mod base;
 pub mod claude_code;
-pub mod json;
 pub mod types;
 
 use std::path::{Path, PathBuf};

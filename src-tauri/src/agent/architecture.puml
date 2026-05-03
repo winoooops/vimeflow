@@ -233,26 +233,4 @@ StartFor ..> AgentAdapter : calls hooks via &dyn
 
 AgentAdapter ..> TranscriptHandle : tail_transcript returns
 
-' ────────────────────────────────────────────────────────────────────
-' SHARED HELPER (consumed by every adapter's parsers)
-' ────────────────────────────────────────────────────────────────────
-
-class "agent::adapter::json" as JsonMod <<module>> #LightSteelBlue {
-  +navigate(v, path) : Option<&Value>
-  +extract<T: DeserializeOwned>(v, path) : Option<T>
-  +u64_at / f64_at / str_at / obj_at
-  +u64_or / f64_or / str_or
-}
-
-note bottom of JsonMod
-  Shared parse primitives. Each
-  adapter's parser internals
-  consume these — no duplicate
-  `obj.get(...).and_then(|v| v.as_*())`
-  chains across adapters.
-end note
-
-ClaudeCodeAdapter ..> JsonMod : uses (in statusline + transcript parsers)
-NoOpAdapter ..> JsonMod : (no parsing — but Stage 2 CodexAdapter will)
-
 @enduml

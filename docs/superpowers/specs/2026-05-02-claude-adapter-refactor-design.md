@@ -320,114 +320,43 @@ pub struct ParsedStatus {
 //  layer for lifecycle management only.)
 ````
 
-### Shared parse primitives (`adapter/json.rs`)
+### Claude parser JSON boundary
 
-Today's `statusline.rs` repeats the same JSON-extraction pattern ~30 times across `parse_context_window` / `parse_cost_metrics` / `parse_rate_limits`:
+The Stage 1 parser refactor deliberately keeps JSON extraction inside the Claude adapter rather than promoting it to a shared `agent::adapter::json` API. See `docs/decisions/2026-05-03-claude-parser-json-boundary.md`.
+
+Parser flow should prefer Claude-domain functions:
 
 ```rust
-let total_input_tokens = cw.get("total_input_tokens")
-    .and_then(|v| v.as_u64())
-    .unwrap_or(0);
+let test_match = bash_command(item).and_then(|cmd| match_command(cmd, cwd));
+
+let context_window = ContextWindowStatus {
+    total_input_tokens: total_input_tokens(value),
+    current_usage: current_usage(value),
+    // ...
+};
 ```
 
-Codex's adapter (Stage 2) would either duplicate that pattern or invent a slightly different one — both are bad. Stage 1 introduces a single generic-extraction module used by every adapter's parser:
+Those domain functions may use explicit JSON access when the shape is shallow:
 
 ```rust
-// agent/adapter/json.rs
-
-use serde::de::DeserializeOwned;
-use serde_json::{Map, Value};
-
-/// Walk a path from the root, returning the value at the leaf if every
-/// hop exists. The path is a slice of `&str` keys; arrays are not in
-/// scope (no adapter parses array-keyed status today).
-pub fn navigate<'a>(v: &'a Value, path: &[&str]) -> Option<&'a Value> {
-    path.iter().try_fold(v, |acc, key| acc.get(*key))
-}
-
-/// Generic typed extraction. Calls `navigate` then deserializes via
-/// serde. Use this when the leaf shape is non-trivial (a nested struct).
-pub fn extract<T: DeserializeOwned>(v: &Value, path: &[&str]) -> Option<T> {
-    let leaf = navigate(v, path)?;
-    serde_json::from_value(leaf.clone()).ok()
-}
-
-/// Typed scalar accessors — skip the serde round-trip for hot paths
-/// (status events fire ~10/s under load). Each is a one-liner over
-/// `navigate` + `serde_json::Value::as_*`.
-pub fn u64_at(v: &Value, path: &[&str]) -> Option<u64> {
-    navigate(v, path).and_then(Value::as_u64)
-}
-
-pub fn f64_at(v: &Value, path: &[&str]) -> Option<f64> {
-    navigate(v, path).and_then(Value::as_f64)
-}
-
-pub fn str_at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a str> {
-    navigate(v, path).and_then(Value::as_str)
-}
-
-pub fn obj_at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a Map<String, Value>> {
-    navigate(v, path).and_then(Value::as_object)
-}
-
-/// Convenience for the dominant pattern: "extract or fall back to default".
-pub fn u64_or(v: &Value, path: &[&str], default: u64) -> u64 {
-    u64_at(v, path).unwrap_or(default)
-}
-
-pub fn f64_or(v: &Value, path: &[&str], default: f64) -> f64 {
-    f64_at(v, path).unwrap_or(default)
-}
-
-pub fn str_or<'a>(v: &'a Value, path: &[&str], default: &'a str) -> &'a str {
-    str_at(v, path).unwrap_or(default)
+fn bash_command(item: &Value) -> Option<&str> {
+    item.get("input")
+        .and_then(|v| v.get("command"))
+        .and_then(Value::as_str)
 }
 ```
 
-After step 6 of the migration, `claude_code/statusline.rs::parse_context_window` collapses from:
+For repeated 3+ layer reads such as `context_window.current_usage.cache_creation_input_tokens`, the Claude parser may use small private helpers (for example `u64_or(value, &["context_window", "current_usage", "input_tokens"], 0)`). Those helpers are implementation details of `claude_code/statusline.rs` or a Claude-private parser module; they are not part of the adapter-level abstraction until a second adapter proves the same API is useful.
 
-```rust
-let total_input_tokens = cw.get("total_input_tokens")
-    .and_then(|v| v.as_u64()).unwrap_or(0);
-let total_output_tokens = cw.get("total_output_tokens")
-    .and_then(|v| v.as_u64()).unwrap_or(0);
-let context_window_size = cw.get("context_window_size")
-    .and_then(|v| v.as_u64()).unwrap_or(0);
-// ... 4 more like this
-```
+#### IDEA — Domain functions before generic JSON helpers
 
-to:
-
-```rust
-use crate::agent::adapter::json;
-
-let total_input_tokens = json::u64_or(&value, &["context_window", "total_input_tokens"], 0);
-let total_output_tokens = json::u64_or(&value, &["context_window", "total_output_tokens"], 0);
-let context_window_size = json::u64_or(&value, &["context_window", "context_window_size"], 0);
-```
-
-Stage 2's `codex/rollout.rs` consumes the **same primitives**, just with different paths into Codex's structure:
-
-```rust
-let total_tokens = json::u64_or(&v,
-    &["payload", "info", "total_token_usage", "total_tokens"], 0);
-let context_window = json::u64_or(&v,
-    &["payload", "info", "model_context_window"], 0);
-let primary_used = json::f64_or(&v,
-    &["payload", "rate_limits", "primary", "used_percent"], 0.0);
-```
-
-#### IDEA — Generic primitives as free fns vs. extraction methods on the trait
-
-- **Intent:** The user-facing concern was "the parse should be generic, not tightly coupled to specific operations." Two design choices satisfy that:
-  1. **Free fns in `adapter::json`** (chosen). Every adapter's parser internals consume `json::u64_or` etc. The trait surface stays narrow (one `parse_status` method per adapter); the deduplication is below the trait line.
-  2. **Decomposed extraction hooks on the trait** (rejected for Stage 1). Trait methods like `extract_context_window(&self, root) -> ContextWindowStatus`, with a default `parse_status` composing them. Forces every adapter to provide a value (or default) per logical group, harder to silently drop a field.
-- **Danger:** Free fns leave it to each adapter's discipline to actually USE them (an adapter could re-roll its own boilerplate). Mitigation: a CI-time grep / clippy-lint can flag direct `.and_then(|v| v.as_u64())` patterns inside `adapter/*/`. Easier: the spec includes a "no in-line `.and_then(|v| v.as_*())` chains in adapter parsers" item in the migration checklist for steps 6 and 7.
-- **Explain:** Stage 1's deep-module property comes from `AgentAdapter`. Adding more trait methods (option 2) widens the trait surface for an internal concern (parser dedup). The free-fn primitives deliver the same dedup benefit without growing the public abstraction. If Stage 2 reveals that adapters _consistently_ want to override individual sub-extractions (e.g. Codex needs a different `extract_model_id` policy than Claude across multiple snapshot types), then promoting these to trait methods becomes warranted — but that's evidence-driven evolution, not speculative widening today.
+- **Intent:** Keep the `AgentAdapter` surface deep while avoiding a premature shared JSON helper API. Parser main flows should read in Claude concepts, not path-query syntax. `bash_command(item)` communicates more than `json::str_at(item, &["input", "command"])`.
+- **Danger:** Removing shared helpers can reintroduce noisy `.get().and_then(...)` boilerplate. Mitigation: allow Claude-private helpers for repeated deep/defaulted fields, but call them behind domain functions so the main parser remains semantic.
+- **Explain:** Two-level JSON reads are often clearest when written explicitly. The path-slice helper (`try_fold` over `&["a", "b", "c"]`) becomes useful only when repetition or depth hides intent. Because Codex CLI is Stage 2 and not yet implemented, cross-provider helper reuse is not evidence-backed today.
 - **Alternatives considered:**
-  - Builder API (`Json::from(v).at("a").at("b").as_u64()`). Rejected — extra type for a one-call-per-field pattern; the slice-of-keys form composes more naturally with `const` paths.
-  - `serde_path_to_error` or `jsonpath_lib` crate dependencies. Rejected — both are heavier than the ~50-line module above and obscure where the actual schema differences are. House-grown is small enough to read in one screen.
+  - **Shared free fns in `adapter::json`.** Rejected after review because only Claude uses them and the module advertises a cross-adapter abstraction before the second adapter exists.
+  - **Raw `.get().and_then()` everywhere.** Rejected because statusline metrics contain many repeated nested numeric/default reads.
+  - **Trait extraction hooks.** Rejected because parser deduplication is below the trait line; adding hooks would widen the public adapter surface for an implementation detail.
 
 ### Visibility of orchestration-internal types
 
@@ -583,13 +512,13 @@ Run a Claude Code session under Vimeflow on a workspace with a JSONL transcript 
 
 Each step compiles and passes tests independently. PRs may bundle them or split them.
 
-1. **Add new module skeletons.** Create `agent/adapter/{mod.rs,base.rs,types.rs,json.rs,claude_code/mod.rs}` empty/stub. Wire `agent/mod.rs` to declare `pub mod adapter;`. Build passes; nothing yet uses the new modules.
-2. **Implement `adapter/json.rs`** with `navigate`, `extract<T>`, `u64_at` / `f64_at` / `str_at` / `obj_at`, and `u64_or` / `f64_or` / `str_or` per the "Shared parse primitives" section. Add unit tests covering: missing path, partial path (intermediate key absent), wrong-type leaf, default fallback, deep navigation. Build passes; tests pass.
+1. **Add new module skeletons.** Create `agent/adapter/{mod.rs,base.rs,types.rs,claude_code/mod.rs}` empty/stub. Wire `agent/mod.rs` to declare `pub mod adapter;`. Build passes; nothing yet uses the new modules.
+2. **Keep parser JSON helpers Claude-private.** Do not add shared `agent::adapter::json`. Any generic extraction helpers introduced during the move live under `claude_code/*` and are called behind domain functions, per "Claude parser JSON boundary". Build passes; tests pass.
 3. **Move provider-hook types.** Add `StatusSource`, `ParsedStatus` to `adapter/types.rs`. (`TranscriptHandle` moves to `adapter/base.rs` in step 9 alongside the rest of the transcript lifecycle. `InFlightToolCall` from `transcript.rs:57-66` stays inside `claude_code/transcript.rs` since transcript parsing is now per-adapter — Codex review Finding 3.) Pure additions; nothing yet uses them.
 4. **Define `trait AgentAdapter<R: tauri::Runtime>` skeleton in `adapter/mod.rs` with provider hooks only.** Trait is generic over `R` (Codex review Finding 4 — required so integration tests with `MockRuntime` and production with `Wry` can both target the same trait). Provider hooks include `tail_transcript(&self, app: AppHandle<R>, …)`. No `start`/`stop`/`for_type` yet — those live on the `impl<R: Runtime> dyn AgentAdapter<R>` inherent block that lands in step 11, after `base::start_for` exists in step 10. Build passes; trait has no callers.
 5. **Move `agent/test_runners/` → `agent/adapter/claude_code/test_runners/`.** Update import paths in the moved files (relative `super::` references) and in `transcript.rs`'s import (still in old location). Build passes; tests pass unchanged.
-6. **Move `agent/statusline.rs` → `agent/adapter/claude_code/statusline.rs` AND refactor its parsers to use `adapter::json` primitives.** Update import paths in the moved file's tests. Update `agent/mod.rs` to drop the `pub mod statusline;` declaration. Update `watcher.rs`'s import to `use crate::agent::adapter::claude_code::statusline::parse_statusline;` (temporary; goes away in step 10). Replace every `obj.get(...).and_then(|v| v.as_*()).unwrap_or(default)` chain with the equivalent `json::*_or(&v, &["..."], default)` call. **Acceptance check (mechanical):** `rg "and_then\(\|v\| v\.as_(u64|f64|str|object)\(\)\)" src-tauri/src/agent/adapter/` returns zero results. Build passes; tests pass unchanged (parser refactor is semantics-preserving).
-7. **Move `agent/transcript.rs` → `agent/adapter/claude_code/transcript.rs` (relocate-only — no API changes yet).** Move the file as a single unit: `TranscriptState`/`TranscriptHandle`/`TranscriptStartStatus` AND the per-line parsing (`tail_loop`, `process_line`, `process_assistant_message`, `process_tool_result`, `start_tailing`, `InFlightToolCall`, `TestRunEmitter` integration) all relocate together with their existing public API unchanged. The `serde_json::Value` consumers inside the parsers migrate to `adapter::json` primitives in this same commit (per the parser-dedup acceptance check from step 6).
+6. **Move `agent/statusline.rs` → `agent/adapter/claude_code/statusline.rs` AND refactor parser call sites to Claude-domain helpers.** Update import paths in the moved file's tests. Update `agent/mod.rs` to drop the `pub mod statusline;` declaration. Update `watcher.rs`'s import to `use crate::agent::adapter::claude_code::statusline::parse_statusline;` (temporary; goes away in step 10). Repeated deep/defaulted reads may use private helpers, but the parser flow should call semantic functions such as `total_input_tokens(value)` and `current_usage(value)`. Build passes; tests pass unchanged.
+7. **Move `agent/transcript.rs` → `agent/adapter/claude_code/transcript.rs` (relocate-only — no API changes yet).** Move the file as a single unit: `TranscriptState`/`TranscriptHandle`/`TranscriptStartStatus` AND the per-line parsing (`tail_loop`, `process_line`, `process_assistant_message`, `process_tool_result`, `start_tailing`, `InFlightToolCall`, `TestRunEmitter` integration) all relocate together with their existing public API unchanged. The `serde_json::Value` consumers inside the parsers migrate to Claude-domain helpers such as `line_type`, `tool_use_id`, `bash_command`, and `summarize_input`.
 
    To keep `lib.rs` and the integration tests compiling without a wide-blast-radius rewrite at this step, leave a transitional re-export shim at the old `agent/transcript.rs` path:
 

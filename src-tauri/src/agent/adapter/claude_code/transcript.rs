@@ -18,7 +18,6 @@ use tauri::Emitter;
 use super::test_runners::emitter::TestRunEmitter;
 use super::test_runners::matcher::{MatchedCommand, match_command};
 use crate::agent::adapter::base::TranscriptHandle;
-use crate::agent::adapter::json;
 use crate::agent::types::{AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
 
 /// Poll interval for checking new transcript lines
@@ -66,6 +65,71 @@ struct InFlightToolCall {
 }
 
 type InFlightToolCalls = HashMap<String, InFlightToolCall>;
+
+fn line_type(value: &Value) -> &str {
+    value.get("type").and_then(Value::as_str).unwrap_or("")
+}
+
+fn tool_block_type(item: &Value) -> &str {
+    line_type(item)
+}
+
+fn tool_use_id(item: &Value) -> Option<&str> {
+    item.get("id").and_then(Value::as_str)
+}
+
+fn tool_name(item: &Value) -> &str {
+    item.get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown")
+}
+
+fn bash_command(item: &Value) -> Option<&str> {
+    if tool_name(item) != "Bash" {
+        return None;
+    }
+
+    item.get("input")
+        .and_then(|input| input.get("command"))
+        .and_then(Value::as_str)
+}
+
+fn tool_file_path(item: &Value) -> Option<&str> {
+    item.get("input")
+        .and_then(|input| input.get("file_path"))
+        .and_then(Value::as_str)
+}
+
+fn tool_result_id(value: &Value) -> Option<&str> {
+    value.get("tool_use_id").and_then(Value::as_str)
+}
+
+fn tool_result_is_error(value: &Value) -> bool {
+    value
+        .get("is_error")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn text_block_type(block: &Value) -> Option<&str> {
+    block.get("type").and_then(Value::as_str)
+}
+
+fn text_block_text(block: &Value) -> Option<&str> {
+    block.get("text").and_then(Value::as_str)
+}
+
+fn input_file_path(input: &Value) -> Option<&str> {
+    input.get("file_path").and_then(Value::as_str)
+}
+
+fn input_command(input: &Value) -> Option<&str> {
+    input.get("command").and_then(Value::as_str)
+}
+
+fn input_pattern(input: &Value) -> Option<&str> {
+    input.get("pattern").and_then(Value::as_str)
+}
 
 /// Start tailing a transcript JSONL file.
 /// Reads from the beginning to catch up on missed tool calls.
@@ -171,9 +235,7 @@ fn process_line<R: tauri::Runtime>(
         }
     };
 
-    let line_type = json::str_or(&value, &["type"], "");
-
-    match line_type {
+    match line_type(&value) {
         "assistant" => {
             process_assistant_message(&value, session_id, cwd, app_handle, in_flight);
         }
@@ -201,7 +263,9 @@ fn process_line<R: tauri::Runtime>(
 /// (e.g. initial watch / batch catch-up) with the same "now", making the UI
 /// feed look as if everything happened at once.
 fn extract_timestamp(value: &Value) -> String {
-    json::str_at(value, &["timestamp"])
+    value
+        .get("timestamp")
+        .and_then(Value::as_str)
         .map(str::to_string)
         .unwrap_or_else(now_iso8601)
 }
@@ -221,25 +285,20 @@ fn process_assistant_message<R: tauri::Runtime>(
     let timestamp = extract_timestamp(value);
 
     for item in content {
-        let item_type = json::str_or(item, &["type"], "");
-        if item_type != "tool_use" {
+        if tool_block_type(item) != "tool_use" {
             continue;
         }
 
-        let id = match json::str_at(item, &["id"]) {
+        let id = match tool_use_id(item) {
             Some(id) => id.to_string(),
             None => continue,
         };
 
-        let name = json::str_or(item, &["name"], "unknown").to_string();
+        let name = tool_name(item).to_string();
 
         // Run the matcher BEFORE summarize_input truncates — the matcher
         // needs the full untruncated command to tokenize correctly.
-        let test_match = if name == "Bash" {
-            json::str_at(item, &["input", "command"]).and_then(|cmd| match_command(cmd, cwd))
-        } else {
-            None
-        };
+        let test_match = bash_command(item).and_then(|cmd| match_command(cmd, cwd));
 
         let args = summarize_input(item.get("input"));
 
@@ -248,7 +307,7 @@ fn process_assistant_message<R: tauri::Runtime>(
         // long workspace paths could otherwise drop the suffix that
         // makes a file recognizable as a test (e.g. `…ndle.test.ts`).
         let is_test_file = if matches!(name.as_str(), "Write" | "Edit") {
-            json::str_at(item, &["input", "file_path"])
+            tool_file_path(item)
                 .map(super::test_runners::test_file_patterns::is_test_file)
                 .unwrap_or(false)
         } else {
@@ -335,12 +394,12 @@ fn process_tool_result<R: tauri::Runtime>(
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
-    let tool_use_id = match json::str_at(value, &["tool_use_id"]) {
+    let tool_use_id = match tool_result_id(value) {
         Some(id) => id.to_string(),
         None => return,
     };
 
-    let is_error = json::bool_or(value, &["is_error"], false);
+    let is_error = tool_result_is_error(value);
 
     // An orphaned tool_result — a tool_result whose parent tool_use was
     // never recorded in_flight — arrives most often when a Claude Code
@@ -428,7 +487,7 @@ fn message_content(value: &Value) -> Option<&Value> {
 }
 
 fn is_tool_result_block(value: &Value) -> bool {
-    json::str_at(value, &["type"]) == Some("tool_result")
+    line_type(value) == "tool_result"
 }
 
 /// Whether a single content block represents real user content. `tool_result`
@@ -440,8 +499,8 @@ fn is_non_empty_user_block(item: &Value) -> bool {
     if is_tool_result_block(item) {
         return false;
     }
-    if json::str_at(item, &["type"]) == Some("text") {
-        return json::str_at(item, &["text"])
+    if text_block_type(item) == Some("text") {
+        return text_block_text(item)
             .map(|s| !s.trim().is_empty())
             .unwrap_or(false);
     }
@@ -468,17 +527,17 @@ fn summarize_input(input: Option<&Value>) -> String {
     };
 
     // Try to extract file_path first (common across Read, Write, Edit)
-    if let Some(path) = json::str_at(input, &["file_path"]) {
+    if let Some(path) = input_file_path(input) {
         return truncate_string(path, MAX_ARGS_LEN);
     }
 
     // Try command (Bash tool)
-    if let Some(cmd) = json::str_at(input, &["command"]) {
+    if let Some(cmd) = input_command(input) {
         return truncate_string(cmd, MAX_ARGS_LEN);
     }
 
     // Try pattern (Grep tool)
-    if let Some(pat) = json::str_at(input, &["pattern"]) {
+    if let Some(pat) = input_pattern(input) {
         return truncate_string(&format!("pattern: {}", pat), MAX_ARGS_LEN);
     }
 
@@ -556,8 +615,8 @@ fn extract_tool_result_content(value: &Value) -> String {
     if let Some(arr) = raw.as_array() {
         let mut out = String::new();
         for block in arr {
-            if json::str_at(block, &["type"]) == Some("text") {
-                if let Some(text) = json::str_at(block, &["text"]) {
+            if text_block_type(block) == Some("text") {
+                if let Some(text) = text_block_text(block) {
                     out.push_str(text);
                     // Add a separator newline only if the block didn't
                     // already end with one — terminal output frequently
@@ -663,12 +722,12 @@ mod tests {
             // Should either fail to parse or produce a Value we can handle
             if let Ok(value) = result {
                 // These should not cause panics in extraction logic
-                let _ = json::str_at(&value, &["type"]);
+                let _ = line_type(&value);
                 let _ = value
                     .get("message")
                     .and_then(|m| m.get("content"))
                     .and_then(|c| c.as_array());
-                let _ = json::str_at(&value, &["tool_use_id"]);
+                let _ = tool_result_id(&value);
             }
         }
     }

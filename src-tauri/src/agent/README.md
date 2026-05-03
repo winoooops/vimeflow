@@ -57,7 +57,6 @@ src-tauri/src/agent/
     │   ├── transcript_state.rs ← TranscriptState/Handle/StartStatus registry
     │   └── watcher_runtime.rs  ← notify watcher, inline read, polling fallback, WatcherHandle
     ├── types.rs             ← StatusSource, ParsedStatus
-    ├── json.rs              ← shared JSON-extraction primitives
     └── claude_code/
         ├── mod.rs           ← ClaudeCodeAdapter (impl AgentAdapter<R>)
         ├── statusline.rs    ← Claude's status.json parser
@@ -178,7 +177,7 @@ impl<R: tauri::Runtime> AgentAdapter<R> for ClaudeCodeAdapter {
 
 The Claude-Code-specific submodules under `adapter/claude_code/`:
 
-- **`statusline.rs`** — parses Claude's `status.json` schema (model, context window, cost, rate_limits with Anthropic's `five_hour` / `seven_day` shape). Uses `agent::adapter::json` primitives for extraction.
+- **`statusline.rs`** — parses Claude's `status.json` schema (model, context window, cost, rate_limits with Anthropic's `five_hour` / `seven_day` shape). Parser flow uses Claude-domain helpers first; repeated deep reads stay as Claude-private helpers.
 - **`transcript.rs`** — JSONL tail loop, per-line parser for Anthropic `tool_use` / `tool_result` blocks, `~/.claude` path validation, in-flight tool-call tracking, replay-aware `TestRunEmitter` lifecycle.
 - **`test_runners/`** — vitest / cargo-test command matchers and snapshot builders. Invoked from `transcript.rs`'s `process_assistant_message` when a Bash tool call is detected.
 
@@ -340,28 +339,22 @@ Tauri-managed via `lib.rs`'s `.manage(TranscriptState::new())`. **Visibility:** 
 
 ---
 
-## Shared parse primitives — `agent::adapter::json`
+## Claude parser JSON boundary
+
+There is intentionally no shared `agent::adapter::json` module. Only Claude uses JSON parser helpers today, so shared adapter-level helpers would be premature until Codex/Aider prove the same abstraction is useful.
+
+Claude parser flow should call domain functions first:
 
 ```rust
-pub fn navigate<'a>(v: &'a Value, path: &[&str]) -> Option<&'a Value>;
-pub fn extract<T: DeserializeOwned>(v: &Value, path: &[&str]) -> Option<T>;
-pub fn u64_at(v: &Value, path: &[&str]) -> Option<u64>;
-pub fn f64_at(v: &Value, path: &[&str]) -> Option<f64>;
-pub fn str_at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a str>;
-pub fn obj_at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a Map<String, Value>>;
-pub fn u64_or(v: &Value, path: &[&str], default: u64) -> u64;
-pub fn f64_or(v: &Value, path: &[&str], default: f64) -> f64;
-pub fn str_or<'a>(v: &'a Value, path: &[&str], default: &'a str) -> &'a str;
+let test_match = bash_command(item).and_then(|cmd| match_command(cmd, cwd));
+let context_window = ContextWindowStatus {
+    total_input_tokens: total_input_tokens(value),
+    current_usage: current_usage(value),
+    // ...
+};
 ```
 
-Used by every adapter's parser internals — no inline `obj.get(...).and_then(|v| v.as_*()).unwrap_or(default)` chains in `agent/adapter/*/`. `navigate` walks the path; `extract<T>` deserializes typed structs; the typed accessors skip the serde round-trip for hot paths (status events fire ~10×/s under load); the `*_or` variants supply defaults for the dominant pattern.
-
-The acceptance check that this dedup actually landed:
-
-```bash
-rg "and_then\(\|v\| v\.as_(u64|f64|str|object)\(\)\)" src-tauri/src/agent/adapter/
-# expected: zero matches
-```
+Inside those helpers, 1-2 level reads use explicit `.get().and_then(...)` because they show the JSON shape directly. Repeated 3+ level reads may use small Claude-private helpers. The decision is recorded in `docs/decisions/2026-05-03-claude-parser-json-boundary.md`.
 
 ---
 

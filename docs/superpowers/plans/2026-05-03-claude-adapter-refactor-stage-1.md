@@ -6,9 +6,11 @@
 
 **Architecture:** A `trait AgentAdapter<R: tauri::Runtime>` carries five provider hooks (`agent_type`, `status_source`, `parse_status`, `validate_transcript`, `tail_transcript`). The user-facing `for_type` / `start` / `stop` live on an `impl<R> dyn AgentAdapter<R>` inherent block. The watcher orchestration body lives in private `pub(crate) fn base::start_for<R>` and routes transcript spawns through `TranscriptState::start_or_replace(adapter, …)` so the registry owns lifecycle. `ClaudeCodeAdapter` implements the trait via the relocated `claude_code/` modules; `NoOpAdapter` covers Codex / Aider / Generic so today's silent-no-op UX survives unchanged.
 
-**Tech Stack:** Rust 2024 edition (Tauri 2.x backend), `notify` crate for filesystem watching, `serde_json::Value` for parser internals (wrapped behind `adapter::json` primitives), `tauri::test::mock_builder()` + `MockRuntime` for integration tests. TypeScript / React only for the single-line `useAgentStatus.ts` deletion in Task 13.
+**Tech Stack:** Rust 2024 edition (Tauri 2.x backend), `notify` crate for filesystem watching, `serde_json::Value` for Claude parser internals (wrapped behind Claude-domain helpers, not shared `adapter::json`), `tauri::test::mock_builder()` + `MockRuntime` for integration tests. TypeScript / React only for the single-line `useAgentStatus.ts` deletion in Task 13.
 
 **Spec:** `docs/superpowers/specs/2026-05-02-claude-adapter-refactor-design.md` — read before starting.
+
+**Revision note (2026-05-03):** The original plan introduced `agent::adapter::json` as a shared parser helper. That has been superseded by `docs/decisions/2026-05-03-claude-parser-json-boundary.md`: JSON extraction now stays Claude-private and parser flow should call domain helpers first. Historical task text below may still mention `adapter::json`; treat those instructions as replaced by the decision record and updated spec.
 
 ---
 
@@ -35,7 +37,6 @@ src-tauri/src/agent/                  src-tauri/src/agent/
 ├── test_runners/                     │   ├── mod.rs         (NEW: trait, factory, NoOpAdapter)
 ├── types.rs                          │   ├── base.rs        (NEW: orchestration + lifted TranscriptState)
 └── watcher.rs                        │   ├── types.rs       (NEW: provider-hook types)
-                                      │   ├── json.rs        (NEW: shared parse primitives)
                                       │   └── claude_code/
                                       │       ├── mod.rs     (NEW: ClaudeCodeAdapter impl)
                                       │       ├── statusline.rs    (was agent/statusline.rs)
@@ -57,7 +58,6 @@ src-tauri/src/agent/                  src-tauri/src/agent/
 - Create: `src-tauri/src/agent/adapter/mod.rs`
 - Create: `src-tauri/src/agent/adapter/base.rs`
 - Create: `src-tauri/src/agent/adapter/types.rs`
-- Create: `src-tauri/src/agent/adapter/json.rs`
 - Create: `src-tauri/src/agent/adapter/claude_code/mod.rs`
 - Modify: `src-tauri/src/agent/mod.rs` (add `pub mod adapter;`)
 
@@ -75,7 +75,6 @@ Then write each file with a single-line top doc-comment and nothing else:
 
 pub mod base;
 pub mod claude_code;
-pub mod json;
 pub mod types;
 ```
 
@@ -87,11 +86,6 @@ pub mod types;
 ```rust
 // src-tauri/src/agent/adapter/types.rs
 //! Provider-hook types — `StatusSource`, `ParsedStatus`.
-```
-
-```rust
-// src-tauri/src/agent/adapter/json.rs
-//! Shared JSON-extraction primitives consumed by every adapter's parsers.
 ```
 
 ```rust
@@ -117,286 +111,37 @@ Expected: 0 errors. Warnings about unused modules are fine — the contents land
 git add src-tauri/src/agent/adapter/ src-tauri/src/agent/mod.rs
 git commit -m "refactor(agent): scaffold adapter module tree
 
-Empty stubs for adapter/{mod,base,types,json}.rs and
+Empty stubs for adapter/{mod,base,types}.rs and
 adapter/claude_code/mod.rs. No callers yet; Task 2-13 fill the bodies."
 ```
 
 ---
 
-## Task 2: Implement `adapter/json.rs` Shared Parse Primitives (TDD)
+## Task 2: Record Claude Parser JSON Boundary
 
-**Goal:** A small set of generic JSON-extraction primitives that every adapter's parser will consume, replacing today's repeated `obj.get(...).and_then(|v| v.as_u64()).unwrap_or(0)` chains.
+**Goal:** Supersede the original shared `adapter/json.rs` plan with the accepted parser-boundary decision. Stage 1 should not add shared adapter-level JSON helpers before Codex/Aider schemas exist in implementation.
 
 **Files:**
 
-- Modify: `src-tauri/src/agent/adapter/json.rs`
+- Add: `docs/decisions/2026-05-03-claude-parser-json-boundary.md`
+- Modify: `docs/decisions/CLAUDE.md`
+- Modify: `docs/superpowers/specs/2026-05-02-claude-adapter-refactor-design.md`
 
-- [ ] **Step 1: Write the failing tests first.**
+- [ ] **Step 1: Add the decision record.**
 
-Replace `adapter/json.rs` contents with the test module below (the impls land in step 3):
+Document that Claude parser flow should call domain functions first, shallow reads may use explicit `.get().and_then(...)`, and repeated 3+ layer/defaulted reads may use Claude-private helpers.
 
-```rust
-//! Shared JSON-extraction primitives consumed by every adapter's parsers.
-//!
-//! Generic enough to apply across Claude's `status.json` schema and
-//! Codex's rollout-JSONL schema (Stage 2). See spec section "Shared
-//! parse primitives" for the rationale.
+- [ ] **Step 2: Update the spec.**
 
-use serde::de::DeserializeOwned;
-use serde_json::{Map, Value};
+Replace the shared `adapter::json` design with the Claude parser JSON boundary and make the migration checklist point at Claude-domain helpers.
 
-pub fn navigate<'a>(_v: &'a Value, _path: &[&str]) -> Option<&'a Value> {
-    unimplemented!()
-}
-
-pub fn extract<T: DeserializeOwned>(_v: &Value, _path: &[&str]) -> Option<T> {
-    unimplemented!()
-}
-
-pub fn u64_at(_v: &Value, _path: &[&str]) -> Option<u64> {
-    unimplemented!()
-}
-
-pub fn f64_at(_v: &Value, _path: &[&str]) -> Option<f64> {
-    unimplemented!()
-}
-
-pub fn str_at<'a>(_v: &'a Value, _path: &[&str]) -> Option<&'a str> {
-    unimplemented!()
-}
-
-pub fn obj_at<'a>(_v: &'a Value, _path: &[&str]) -> Option<&'a Map<String, Value>> {
-    unimplemented!()
-}
-
-pub fn u64_or(_v: &Value, _path: &[&str], _default: u64) -> u64 {
-    unimplemented!()
-}
-
-pub fn f64_or(_v: &Value, _path: &[&str], _default: f64) -> f64 {
-    unimplemented!()
-}
-
-pub fn str_or<'a>(_v: &'a Value, _path: &[&str], _default: &'a str) -> &'a str {
-    unimplemented!()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn fixture() -> Value {
-        json!({
-            "model": { "id": "claude-opus-4", "display_name": "Opus 4" },
-            "context_window": {
-                "used_percentage": 42.5,
-                "total_input_tokens": 12345,
-                "current_usage": { "input_tokens": 100 }
-            },
-            "transcript_path": "/tmp/x.jsonl",
-            "weird": null
-        })
-    }
-
-    // navigate
-
-    #[test]
-    fn navigate_single_key_present_returns_value() {
-        let v = fixture();
-        assert_eq!(navigate(&v, &["model"]).and_then(Value::as_object).is_some(), true);
-    }
-
-    #[test]
-    fn navigate_nested_key_present_returns_leaf() {
-        let v = fixture();
-        let leaf = navigate(&v, &["context_window", "current_usage", "input_tokens"]);
-        assert_eq!(leaf.and_then(Value::as_u64), Some(100));
-    }
-
-    #[test]
-    fn navigate_missing_intermediate_returns_none() {
-        let v = fixture();
-        assert!(navigate(&v, &["context_window", "absent", "input_tokens"]).is_none());
-    }
-
-    #[test]
-    fn navigate_missing_leaf_returns_none() {
-        let v = fixture();
-        assert!(navigate(&v, &["model", "absent"]).is_none());
-    }
-
-    #[test]
-    fn navigate_empty_path_returns_root() {
-        let v = fixture();
-        assert!(std::ptr::eq(navigate(&v, &[]).unwrap(), &v));
-    }
-
-    // typed scalar accessors
-
-    #[test]
-    fn u64_at_present_returns_some() {
-        let v = fixture();
-        assert_eq!(u64_at(&v, &["context_window", "total_input_tokens"]), Some(12345));
-    }
-
-    #[test]
-    fn u64_at_wrong_type_returns_none() {
-        let v = fixture();
-        // used_percentage is f64, not u64 — `as_u64` returns None
-        assert_eq!(u64_at(&v, &["context_window", "used_percentage"]), None);
-    }
-
-    #[test]
-    fn u64_at_missing_returns_none() {
-        let v = fixture();
-        assert_eq!(u64_at(&v, &["nope"]), None);
-    }
-
-    #[test]
-    fn f64_at_present_returns_some() {
-        let v = fixture();
-        assert_eq!(f64_at(&v, &["context_window", "used_percentage"]), Some(42.5));
-    }
-
-    #[test]
-    fn str_at_present_returns_some() {
-        let v = fixture();
-        assert_eq!(str_at(&v, &["model", "id"]), Some("claude-opus-4"));
-    }
-
-    #[test]
-    fn str_at_null_returns_none() {
-        let v = fixture();
-        assert_eq!(str_at(&v, &["weird"]), None);
-    }
-
-    #[test]
-    fn obj_at_present_returns_some() {
-        let v = fixture();
-        assert!(obj_at(&v, &["model"]).is_some());
-    }
-
-    // *_or defaults
-
-    #[test]
-    fn u64_or_present_returns_value() {
-        let v = fixture();
-        assert_eq!(u64_or(&v, &["context_window", "total_input_tokens"], 0), 12345);
-    }
-
-    #[test]
-    fn u64_or_missing_returns_default() {
-        let v = fixture();
-        assert_eq!(u64_or(&v, &["nope"], 999), 999);
-    }
-
-    #[test]
-    fn str_or_present_returns_value() {
-        let v = fixture();
-        assert_eq!(str_or(&v, &["model", "id"], "fallback"), "claude-opus-4");
-    }
-
-    #[test]
-    fn str_or_missing_returns_default() {
-        let v = fixture();
-        assert_eq!(str_or(&v, &["nope"], "fallback"), "fallback");
-    }
-
-    // generic extract<T>
-
-    #[test]
-    fn extract_typed_struct_round_trip() {
-        #[derive(serde::Deserialize, Debug, PartialEq)]
-        struct Model { id: String, display_name: String }
-
-        let v = fixture();
-        let m: Option<Model> = extract(&v, &["model"]);
-        assert_eq!(m, Some(Model {
-            id: "claude-opus-4".into(),
-            display_name: "Opus 4".into(),
-        }));
-    }
-
-    #[test]
-    fn extract_missing_returns_none() {
-        let v = fixture();
-        let m: Option<String> = extract(&v, &["absent"]);
-        assert_eq!(m, None);
-    }
-}
-```
-
-- [ ] **Step 2: Run the tests to verify they all fail with `unimplemented!`.**
+- [ ] **Step 3: Verify there is no shared parser module.**
 
 ```bash
-cd src-tauri && cargo test --lib agent::adapter::json::tests
+cd src-tauri && rg "pub mod json|adapter::json" src/agent/adapter
 ```
 
-Expected: every test fails with `not implemented` panic or compile-fine-but-runtime-panic.
-
-- [ ] **Step 3: Implement the bodies.**
-
-Replace the `unimplemented!()` stubs with real implementations:
-
-```rust
-pub fn navigate<'a>(v: &'a Value, path: &[&str]) -> Option<&'a Value> {
-    path.iter().try_fold(v, |acc, key| acc.get(*key))
-}
-
-pub fn extract<T: DeserializeOwned>(v: &Value, path: &[&str]) -> Option<T> {
-    let leaf = navigate(v, path)?;
-    serde_json::from_value(leaf.clone()).ok()
-}
-
-pub fn u64_at(v: &Value, path: &[&str]) -> Option<u64> {
-    navigate(v, path).and_then(Value::as_u64)
-}
-
-pub fn f64_at(v: &Value, path: &[&str]) -> Option<f64> {
-    navigate(v, path).and_then(Value::as_f64)
-}
-
-pub fn str_at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a str> {
-    navigate(v, path).and_then(Value::as_str)
-}
-
-pub fn obj_at<'a>(v: &'a Value, path: &[&str]) -> Option<&'a Map<String, Value>> {
-    navigate(v, path).and_then(Value::as_object)
-}
-
-pub fn u64_or(v: &Value, path: &[&str], default: u64) -> u64 {
-    u64_at(v, path).unwrap_or(default)
-}
-
-pub fn f64_or(v: &Value, path: &[&str], default: f64) -> f64 {
-    f64_at(v, path).unwrap_or(default)
-}
-
-pub fn str_or<'a>(v: &'a Value, path: &[&str], default: &'a str) -> &'a str {
-    str_at(v, path).unwrap_or(default)
-}
-```
-
-- [ ] **Step 4: Run the tests to verify they pass.**
-
-```bash
-cd src-tauri && cargo test --lib agent::adapter::json::tests
-```
-
-Expected: all 16 tests pass.
-
-- [ ] **Step 5: Commit.**
-
-```bash
-git add src-tauri/src/agent/adapter/json.rs
-git commit -m "feat(agent/adapter): add shared JSON-extraction primitives
-
-navigate / extract<T> / typed accessors (u64_at, f64_at, str_at,
-obj_at) and *_or default variants. Tested against missing paths,
-wrong-type leaves, null leaves, and a typed struct round-trip.
-Used by every adapter's parser internals (Tasks 6, 7, 8, future Stage 2)."
-```
+Expected: zero matches in Rust source.
 
 ---
 
@@ -496,7 +241,6 @@ Replace `adapter/mod.rs` contents:
 
 pub mod base;
 pub mod claude_code;
-pub mod json;
 pub mod types;
 
 use std::path::{Path, PathBuf};
@@ -680,9 +424,9 @@ in the relocated module's internal references."
 
 ---
 
-## Task 6: Move `agent/statusline.rs` and Refactor Parsers to Use `adapter/json` Primitives
+## Task 6: Move `agent/statusline.rs` and Refactor Parsers to Claude-Domain Helpers
 
-**Goal:** Relocate `statusline.rs` AND eliminate the ~30 duplicate `obj.get(...).and_then(|v| v.as_*()).unwrap_or(default)` chains by routing them through `adapter::json::*_or` helpers. Mechanical except for the chains.
+**Goal:** Relocate `statusline.rs` AND keep the main parser flow in Claude-domain language. Shallow reads may use explicit `.get().and_then(...)`; repeated deep/defaulted reads should sit behind Claude-private helpers.
 
 **Files:**
 
@@ -719,31 +463,40 @@ Change to:
 use crate::agent::adapter::claude_code::statusline::parse_statusline;
 ```
 
-- [ ] **Step 5: Refactor the moved file's parsers to use `adapter::json` primitives.**
+- [ ] **Step 5: Refactor the moved file's parsers to use Claude-domain helpers.**
 
-Open `src-tauri/src/agent/adapter/claude_code/statusline.rs`. At the top of the file, add:
-
-```rust
-use crate::agent::adapter::json;
-```
-
-Then walk through `parse_context_window`, `parse_cost_metrics`, `parse_rate_limits`, and replace every chain of the form:
+Open `src-tauri/src/agent/adapter/claude_code/statusline.rs`. Walk through `parse_context_window`, `parse_cost_metrics`, and `parse_rate_limits`, and move field extraction behind semantic helpers.
 
 ```rust
-let total_input_tokens = cw.get("total_input_tokens")
-    .and_then(|v| v.as_u64())
-    .unwrap_or(0);
+let context_window = ContextWindowStatus {
+    total_input_tokens: total_input_tokens(value),
+    current_usage: current_usage(value),
+    // ...
+};
 ```
 
-with:
+Inside domain helpers, shallow reads can stay explicit:
 
 ```rust
-let total_input_tokens = json::u64_or(value, &["context_window", "total_input_tokens"], 0);
+fn model_id(value: &Value) -> String {
+    value
+        .get("model")
+        .and_then(|model| model.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or("unknown")
+        .to_string()
+}
 ```
 
-(Note the path is rooted at the top-level `value` because `json::*_or` takes a slice from root, not a sub-object.)
+Repeated 3+ layer/defaulted reads may use Claude-private helpers:
 
-Apply analogous transformations for `f64`, `str`, and `obj` accessors. The parser's logic is preserved; only the extraction primitives change.
+```rust
+fn total_input_tokens(value: &Value) -> u64 {
+    u64_or(value, &["context_window", "total_input_tokens"], 0)
+}
+```
+
+Parser semantics are preserved; only the extraction boundary changes.
 
 - [ ] **Step 6: Run the mechanical acceptance check.**
 
@@ -773,12 +526,11 @@ Expected: all green.
 
 ```bash
 git add -A
-git commit -m "refactor(agent/adapter): move statusline.rs + use json primitives
+git commit -m "refactor(agent/adapter): move statusline.rs + domain parser helpers
 
-Relocates statusline.rs under adapter/claude_code/ and replaces
-~30 inline obj.get().and_then().unwrap_or() chains with
-adapter::json::*_or calls. Parser semantics unchanged; tests pass
-under the new path."
+Relocates statusline.rs under adapter/claude_code/ and keeps
+Claude status JSON extraction behind semantic helper functions.
+Parser semantics unchanged; tests pass under the new path."
 ```
 
 ---
@@ -793,7 +545,7 @@ under the new path."
 - Create: `src-tauri/src/agent/transcript.rs` (transitional shim — deleted in Task 9)
 - Modify: `src-tauri/src/agent/mod.rs` (no change needed; `pub use transcript::TranscriptState` still resolves through the shim)
 - Modify: `src-tauri/src/agent/adapter/claude_code/mod.rs` (add `pub mod transcript;`)
-- Modify: `src-tauri/src/agent/adapter/claude_code/transcript.rs` (refactor parsers to `adapter::json`; remove the temporary `TranscriptHandle` stub from `base.rs`)
+- Modify: `src-tauri/src/agent/adapter/claude_code/transcript.rs` (refactor parsers to Claude-domain helpers; remove the temporary `TranscriptHandle` stub from `base.rs`)
 - Modify: `src-tauri/src/agent/adapter/base.rs` (remove temporary stub)
 - Modify: `src-tauri/src/agent/watcher.rs` (update transcript import path — temporary)
 - Modify: `src-tauri/tests/transcript_*.rs` (4 files — import-only edit at this step)
@@ -863,12 +615,12 @@ For each hit, fix:
 
 Run `cargo check` after each batch to catch path errors early.
 
-- [ ] **Step 6: Refactor the relocated transcript.rs's parsers to use `adapter::json` primitives.**
+- [ ] **Step 6: Refactor the relocated transcript.rs's parsers to use Claude-domain helpers.**
 
-Same pattern as Task 6, applied to `process_assistant_message`, `process_user_message`, `process_tool_result`, and helpers. Add `use crate::agent::adapter::json;` at the top, then replace `value.get("…").and_then(|v| v.as_*())` chains with `json::*_at` / `json::*_or`. The acceptance-check `rg` should now also pass for transcript.rs:
+Same pattern as Task 6, applied to `process_assistant_message`, `process_user_message`, `process_tool_result`, and helpers. Prefer names such as `line_type`, `tool_use_id`, `bash_command`, `tool_file_path`, and `tool_result_is_error` so call sites express Claude transcript concepts instead of JSON path syntax. Shallow helper bodies can use direct `.get().and_then(...)`.
 
 ```bash
-cd src-tauri && rg "and_then\(\|v\| v\.as_(u64|f64|str|object)\(\)\)" src/agent/adapter/claude_code/transcript.rs
+cd src-tauri && rg "adapter::json|json::" src/agent/adapter/claude_code/transcript.rs
 ```
 
 Expected: zero matches.
@@ -924,10 +676,10 @@ Expected: all green. Behavior unchanged.
 
 ```bash
 git add -A
-git commit -m "refactor(agent/adapter): move transcript.rs + json primitives
+git commit -m "refactor(agent/adapter): move transcript.rs + domain parser helpers
 
 Relocates transcript.rs under adapter/claude_code/, refactors its
-serde_json::Value extraction chains to use adapter::json primitives,
+serde_json::Value extraction chains behind Claude-domain helpers,
 and adds a transitional re-export shim at agent/transcript.rs so
 lib.rs and integration tests keep resolving (shim deleted in Task 9
 when TranscriptState/Handle/StartStatus lift to adapter::base).
@@ -2330,7 +2082,7 @@ Walking through the spec's sections to confirm coverage:
 - **File / module layout** — Tasks 1-7 effect the moves; Tasks 11-12 finalize.
 - **Trait surface (5 hooks)** — Task 4 declares; Task 8 implements.
 - **Provider-hook types (`StatusSource`, `ParsedStatus`)** — Task 3.
-- **Shared parse primitives (`adapter/json.rs`)** — Task 2 with TDD; Tasks 6+7 consume them.
+- **Claude parser JSON boundary** — Task 2 records the decision; Tasks 6+7 use Claude-domain helpers instead of shared adapter-level JSON primitives.
 - **Visibility (`pub` module, `pub #[doc(hidden)]` for test surface)** — Task 9 lifts with the right markers.
 - **Factory + `NoOpAdapter`** — Task 8 (NoOpAdapter struct + impl); Task 11 (factory body in `for_type`).
 - **Tauri command surface** — Tasks 11-13.

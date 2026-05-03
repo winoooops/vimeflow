@@ -7,8 +7,6 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::agent::adapter::json as adapter_json;
-
 const MAX_RECURSION_DEPTH: usize = 3;
 
 /// Returns Some(resolved_command_string) if the first two tokens are a known
@@ -71,7 +69,7 @@ fn resolve_recursive(script_name: &str, cwd: &Path, depth: usize) -> Option<Stri
     let pkg_path = cwd.join("package.json");
     let content = fs::read_to_string(&pkg_path).ok()?;
     let json: Value = serde_json::from_str(&content).ok()?;
-    let resolved = adapter_json::str_at(&json, &["scripts", script_name])?;
+    let resolved = package_script(&json, script_name)?;
 
     // If the resolved string itself is an npm-family alias, recurse.
     if let Some(tokens) = super::matcher::tokenize(resolved) {
@@ -82,6 +80,12 @@ fn resolve_recursive(script_name: &str, cwd: &Path, depth: usize) -> Option<Stri
         }
     }
     Some(resolved.to_string())
+}
+
+fn package_script<'a>(json: &'a Value, script_name: &str) -> Option<&'a str> {
+    json.get("scripts")
+        .and_then(|scripts| scripts.get(script_name))
+        .and_then(Value::as_str)
 }
 
 #[cfg(test)]
