@@ -43,7 +43,7 @@ The reviewer should be able to verify these without running the code:
 5. `TxOutcome` labels remain stable (logged via `record_event_diag`) — these are observable in `Vimeflow.log`.
 6. The `inline-init` → `notify` → `poll-fallback` source taxonomy in diagnostic logs remains intact, including the shared `PathHistory` semantics that detect speculative→resolved path flips across sources.
 7. `TestRunEmitter::finish_replay` is still called exactly once on the first EOF of the transcript tail loop (`transcript.rs:301`).
-8. **Stage 1 NEW invariant (replaces the deleted `stop_transcript_watcher` IPC):** dropping `WatcherHandle` for a session atomically (a) signals the polling thread to stop and joins it, AND (b) calls `TranscriptState::stop(&session_id)` on the adapter's transcript registry, which signals the tail thread's `stop_flag` and joins. This cascade replaces the frontend-driven "stop watcher then stop transcript" two-step that exists today (`useAgentStatus.ts:53-58`). Verifiable by a unit test that constructs a `WatcherHandle`, calls `Drop`, and asserts the `TranscriptHandle`'s `stop_flag` is set.
+8. **Stage 1 NEW invariant (replaces the deleted `stop_transcript_watcher` IPC):** dropping `WatcherHandle` for a session, in this exact order, (a) drops the inner notify watcher first so no further callbacks can fire, (b) signals the polling thread's `stop_flag` and joins it, (c) calls `TranscriptState::stop(&session_id)` on the registry, signaling the tail thread's `stop_flag` and joining. The order is load-bearing: a notify callback that fires after step (c) would call `state.start_or_replace(...)` and restart the tailer (Codex review third-pass Finding 1). This cascade replaces the frontend-driven "stop watcher then stop transcript" two-step that exists today (`useAgentStatus.ts:53-58`). Verifiable by a unit test that constructs a `WatcherHandle` against a `MockAdapter`, calls `Drop`, and asserts both the polling thread joined and the `TranscriptHandle`'s `stop_flag` is set, with no late-callback-driven restart in a 100ms hold-after window.
 9. Existing tests pass with the minimum-necessary edits. Specifically:
    - Unit `#[cfg(test)]` blocks in `agent/statusline.rs`, `agent/transcript.rs`, `agent/watcher.rs`, `agent/detector.rs`, `agent/test_runners/*`: bodies stay 1:1; only the `super::*` import paths change as the modules relocate.
    - Integration tests under `src-tauri/tests/transcript_*`: change their `use vimeflow_lib::agent::transcript::TranscriptState;` import to `use vimeflow_lib::agent::adapter::base::TranscriptState;`, AND add an `Arc<dyn AgentAdapter<MockRuntime>>` argument to each `state.start_or_replace(...)` call (Codex review Finding 1 — `TranscriptState::start_or_replace` must take an adapter so it can call `adapter.tail_transcript` rather than the old direct call to `claude_code::transcript::start_tailing`). The four files affected: `transcript_vitest_e2e.rs:30-31`, `transcript_vitest_replay.rs:34-35`, `transcript_turns.rs:60-61`, `transcript_cargo_e2e.rs:30-31`. Each adds one line constructing the adapter, and threads it through the existing call. Test logic and assertions stay identical.
@@ -160,11 +160,13 @@ pub use transcript::{start_transcript_watcher, stop_transcript_watcher, Transcri
 pub use watcher::{start_agent_watcher, stop_agent_watcher, AgentWatcherState};
 
 // after
+pub use adapter::base::TranscriptState;  // still Tauri-managed via lib.rs:77
 pub use adapter::{start_agent_watcher, stop_agent_watcher, AgentWatcherState};
 pub use commands::detect_agent_in_session;
-// TranscriptState becomes private to adapter::base (no longer Tauri-managed)
 // start/stop_transcript_watcher commands deleted (see Tauri Command Surface)
 ```
+
+**Why `TranscriptState` is still re-exported from `agent`** (Codex review third-pass Finding 2): `src-tauri/src/lib.rs:8-9` imports `TranscriptState` from `agent::{...}` and registers it with Tauri at line 77 via `.manage(TranscriptState::new())`. It must remain reachable from `lib.rs` for the application to compile and to keep the registry shared across PTY sessions. The user-facing IPC surface still doesn't expose it (no Tauri command takes or returns `TranscriptState`); it's an internal piece of managed state, accessed via `app_handle.state::<TranscriptState>()` inside `base::start_for` and via `tauri::State<'_, TranscriptState>` parameters where needed. Re-exporting from `agent` keeps `lib.rs`'s import path stable across the refactor — `lib.rs` doesn't need to know that `TranscriptState` now physically lives under `adapter::base`.
 
 ## Trait Surface
 
@@ -492,7 +494,7 @@ No other frontend changes. Bindings under `src/bindings/` are auto-generated fro
 ### What survives unchanged
 
 - All unit tests in `agent/statusline.rs`, `agent/transcript.rs`, `agent/test_runners/*`. They move with their module; their test bodies are 1:1.
-- Integration tests `src-tauri/tests/transcript_*.rs` — four files (`transcript_vitest_e2e.rs`, `transcript_vitest_replay.rs`, `transcript_turns.rs`, `transcript_cargo_e2e.rs`) drive `TranscriptState::new()` directly to isolate transcript-parsing assertions from watcher orchestration. Their import path updates from `vimeflow_lib::agent::transcript::TranscriptState` to `vimeflow_lib::agent::adapter::base::TranscriptState` — that's the only edit; test bodies stay identical (Codex review Finding 2). `TranscriptStartStatus`, `TranscriptHandle`, and the `start_or_replace` semantics they exercise are preserved verbatim under the new path.
+- Integration tests `src-tauri/tests/transcript_*.rs` — four files (`transcript_vitest_e2e.rs`, `transcript_vitest_replay.rs`, `transcript_turns.rs`, `transcript_cargo_e2e.rs`) drive `TranscriptState::new()` directly to isolate transcript-parsing assertions from watcher orchestration. Each file gets **two** edits and no others: (1) import path changes from `vimeflow_lib::agent::transcript::TranscriptState` to `vimeflow_lib::agent::adapter::base::TranscriptState`; (2) one new line constructing `let adapter: Arc<dyn AgentAdapter<MockRuntime>> = Arc::new(ClaudeCodeAdapter)` before the `state.start_or_replace(...)` call, plus passing `adapter` as the new first argument to that call (Codex review first-pass Finding 1 + third-pass Finding 4 — `start_or_replace` takes the adapter so it can route to `adapter.tail_transcript` rather than directly to Claude-specific `start_tailing`, and earlier spec text incorrectly claimed "import-only" edits). Test logic, fixtures, and assertions stay 1:1; `TranscriptStartStatus`, `TranscriptHandle`, and the replace/already-running semantics are preserved verbatim.
 
 ### What's new
 
@@ -568,11 +570,13 @@ Each step compiles and passes tests independently. PRs may bundle them or split 
    - inline `start_tailing(...)` → `adapter.tail_transcript(...)` (Finding 3).
    - `TxOutcome`, `EventTiming`, `PathHistory` move with `start_for` as private items. (`TranscriptState` / `TranscriptHandle` / `TranscriptStartStatus` already landed in `base.rs` in step 7.)
 
-   `WatcherHandle` gains two new fields and a Drop hook (Codex review Finding 2):
+   `WatcherHandle` gains the transcript-cascade fields, plus a critical change to `_watcher`'s type so the Drop body can shut down notify callbacks **before** the transcript registry is asked to stop (Codex review third-pass Finding 1):
 
    ```rust
    pub struct WatcherHandle {
-       _watcher: RecommendedWatcher,
+       // NEW: was `RecommendedWatcher`. Wrapped in `Option` so Drop
+       // can take + drop it explicitly BEFORE the cascade — see below.
+       _watcher: Option<RecommendedWatcher>,
        stop_flag: Arc<AtomicBool>,
        join_handle: Option<JoinHandle<()>>,
        transcript_state: TranscriptState,  // NEW: cloned Arc-share with the registry
@@ -583,11 +587,31 @@ Each step compiles and passes tests independently. PRs may bundle them or split 
 
    impl Drop for WatcherHandle {
        fn drop(&mut self) {
+           // ORDER MATTERS — Rust drops fields AFTER the explicit Drop
+           // body. If we left `_watcher` to implicit cleanup, notify
+           // callbacks could keep firing throughout the body, including
+           // while we're trying to stop the transcript. A late callback
+           // would call adapter.parse_status → maybe_start_transcript →
+           // TranscriptState::start_or_replace, restarting the tailer
+           // we just stopped. So we tear down in this order:
+           //
+           //   1. Drop `_watcher` first → notify worker thread joins,
+           //      no further callbacks can fire.
+           //   2. Set stop_flag and join the polling thread.
+           //   3. Stop the transcript registry for this session.
+           //
+           // Once we reach step 3, no source can spawn a new transcript
+           // tail for this session, so the registry stop is final.
+           drop(self._watcher.take());
+
            self.stop_flag.store(true, Ordering::Relaxed);
            if let Some(h) = self.join_handle.take() { let _ = h.join(); }
+
            // NEW: cascade to transcript tail (replaces today's
-           // frontend-side stop_transcript_watcher courtesy call)
+           // frontend-side stop_transcript_watcher courtesy call).
+           // Safe to call now that no notify callback can race.
            let _ = self.transcript_state.stop(&self.session_id);
+
            #[cfg(debug_assertions)]
            log::info!("watcher.handle.dropped session={}",
                       short_sid(&self.session_id_for_log));
@@ -595,7 +619,7 @@ Each step compiles and passes tests independently. PRs may bundle them or split 
    }
    ```
 
-   `start_for` constructs the `WatcherHandle` with the `TranscriptState` clone wired in. The Tauri-managed `TranscriptState` instance (registered with `app.manage(...)` at startup) is the single shared registry; `WatcherHandle` holds a clone (`TranscriptState` is `Clone` because its inner `Arc<Mutex<HashMap>>` clones cheaply).
+   `start_for` constructs the `WatcherHandle` with `_watcher: Some(...)` and the `TranscriptState` clone wired in. The Tauri-managed `TranscriptState` instance (registered with `app.manage(TranscriptState::new())` at startup — see `lib.rs:77`, which keeps managing it under the new path) is the single shared registry; `WatcherHandle` holds a clone (`TranscriptState` is `Clone` because its inner `Arc<Mutex<HashMap>>` clones cheaply).
 
    **Critical: this is the step that risks behavioral drift. Reviewer should diff `watcher.rs` (old) vs. `base.rs` (new) and confirm every change is one of: (a) hook substitutions listed above, (b) state-lifecycle wrapping into `start_for`, (c) `tail_transcript` delegation, (d) trust_root canonicalize-and-verify, (e) `WatcherHandle::Drop` cascade. No silent behavioral edits.**
 
@@ -638,11 +662,56 @@ Each step compiles and passes tests independently. PRs may bundle them or split 
 - **Explain:** Mitigation — step 9 is its own commit with no other changes. Reviewer must run a `diff -u` between the deleted `watcher.rs::{start_agent_watcher,start_watching}` bodies and the new `base::start_for` body and confirm every change is one of:
   1. `parse_statusline(&sid, &c)` → `adapter.parse_status(&sid, &c)`
   2. `validate_transcript_path(p)` → `adapter.validate_transcript(p)`
-  3. status-file-path construction → `let src = adapter.status_source(cwd, sid)` plus a NEW `canonicalize` + `starts_with(&src.trust_root)` check before `create_dir_all` (Finding 5 — without this, `trust_root` is documented defense-in-depth but never enforced)
+  3. status-file-path construction → `let src = adapter.status_source(cwd, sid)` plus a NEW trust-root verification step (Finding 5). The verification handles the first-run case where `<cwd>/.vimeflow/sessions/<sid>` may not yet exist (Codex review third-pass Finding 3 — `fs::canonicalize` on a missing path returns Err, which would break every fresh session). Procedure: canonicalize `src.trust_root` first (always exists — it's the workspace cwd), then walk up `src.path`'s ancestors to find the deepest _existing_ prefix, canonicalize that prefix, and assert it `starts_with(canonical_trust_root)` BEFORE `create_dir_all`. After `create_dir_all` succeeds, re-canonicalize the now-existing parent and re-verify under `canonical_trust_root` — the second check catches symlink escapes that the lexical-ancestor probe could miss (e.g. an attacker plants a symlink at `<cwd>/.vimeflow` between detection and creation; the post-create canonicalize sees through the symlink). Sketch:
+
+     ```rust
+     // 1. trust_root preexists; this canonicalize must succeed.
+     let canonical_root = fs::canonicalize(&src.trust_root)
+         .map_err(|e| format!("trust_root not resolvable: {}: {}",
+                              src.trust_root.display(), e))?;
+     // 2. Pre-create: walk up to the deepest existing ancestor of
+     //    src.path's parent and canonicalize it. Reject before mkdir
+     //    so a malicious adapter can't trick base into creating
+     //    directories outside the workspace.
+     let parent = src.path.parent()
+         .ok_or_else(|| "status path has no parent".to_string())?;
+     let resolved_ancestor = {
+         let mut probe = parent;
+         loop {
+             if probe.exists() {
+                 break fs::canonicalize(probe)
+                     .map_err(|e| format!("ancestor canonicalize failed: {}", e))?;
+             }
+             probe = probe.parent().ok_or_else(|| {
+                 format!("status path escapes filesystem root: {}",
+                         parent.display())
+             })?;
+         }
+     };
+     if !resolved_ancestor.starts_with(&canonical_root) {
+         return Err(format!(
+             "status source path escapes trust_root: {} not under {}",
+             resolved_ancestor.display(), canonical_root.display(),
+         ));
+     }
+     // 3. Now safe to mkdir + watch (existing logic).
+     fs::create_dir_all(parent)?;
+     // 4. Post-create: catches any symlink race between (2) and now.
+     let canonical_parent = fs::canonicalize(parent)
+         .map_err(|e| format!("post-create canonicalize failed: {}", e))?;
+     if !canonical_parent.starts_with(&canonical_root) {
+         return Err(format!(
+             "status parent escapes trust_root after create: {} not under {}",
+             canonical_parent.display(), canonical_root.display(),
+         ));
+     }
+     ```
+
   4. inline `transcript::start_tailing(app, sid, path, cwd)` → routed through `state.start_or_replace(adapter.clone(), app, sid, path, cwd)` which now itself calls `adapter.tail_transcript(...)` (Finding 3); the watcher does NOT call `tail_transcript` directly — the lifecycle goes through `TranscriptState`
   5. wrapping the previous `start_agent_watcher` body's `state.remove(&sid)` + active-count log + `state.insert(sid, handle)` flow into the new `start_for` body so the adapter owns lifecycle (Finding 4)
-  6. NEW: adding `transcript_state: TranscriptState` and `session_id: String` fields to `WatcherHandle`, plus the `Drop` cascade `self.transcript_state.stop(&self.session_id)` (Finding 2) — this is genuinely new behavior, intended: it's what makes step 12's removal of `stop_transcript_watcher` safe. Without it, dropping a watcher would leak the transcript thread.
+  6. NEW: changing `_watcher: RecommendedWatcher` to `_watcher: Option<RecommendedWatcher>`, adding `transcript_state: TranscriptState` and `session_id: String` fields, and reordering the `Drop` body to (a) `drop(self._watcher.take())` first so notify callbacks cease, (b) signal+join the polling thread, (c) call `self.transcript_state.stop(&self.session_id)` last (Codex review third-pass Finding 1 + earlier Finding 2). Without the explicit `_watcher` drop at the start, late notify callbacks could call `state.start_or_replace(...)` AFTER the cascade ran, restarting the very tailer we tried to stop — Rust's implicit field-drop runs _after_ the Drop body, so leaving `_watcher` to implicit cleanup is the bug. This is genuinely new behavior, intended: it's what makes step 12's removal of `stop_transcript_watcher` safe.
      No other changes are admissible in this commit.
+
 - **Alternatives considered:** Splitting step 9 across two commits (first introduce the generic free fn paralleling the existing one, then switch callers). Rejected — doubles the diff surface and creates a transient state where two parallel watchers could race if a test runs in between.
 
 ### IDEA — `Err` (not `unimplemented!`) for non-Claude agents in `for_type`
