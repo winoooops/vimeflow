@@ -26,6 +26,11 @@ const AGENT_TYPE_MAP = {
   generic: 'generic',
 } as const
 
+const isKnownAgentType = (
+  value: string
+): value is keyof typeof AGENT_TYPE_MAP =>
+  Object.prototype.hasOwnProperty.call(AGENT_TYPE_MAP, value)
+
 const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
   isActive: false,
   agentType: null,
@@ -90,7 +95,8 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
     if (prevSessionIdRef.current !== sessionId) {
       // Clean up watchers for the old session
       const oldId = prevSessionIdRef.current
-      if (oldId) {
+      if (oldId && watcherStartedRef.current) {
+        watcherStartedRef.current = false
         void stopWatchers(oldId)
       }
 
@@ -121,6 +127,10 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         { sessionId: ptySessionId }
       )
 
+      if (prevSessionIdRef.current !== sid) {
+        return
+      }
+
       if (result) {
         // Cancel any pending collapse timeout — agent is (still) running
         if (collapseTimeoutRef.current) {
@@ -128,14 +138,21 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
           collapseTimeoutRef.current = null
         }
 
-        const agentKey = result.agentType as keyof typeof AGENT_TYPE_MAP
-        const mapped = AGENT_TYPE_MAP[agentKey] as AgentStatus['agentType']
+        const agentKey = result.agentType as string
 
-        setStatus((prev) => ({
-          ...prev,
-          isActive: true,
-          agentType: mapped,
-        }))
+        const mapped = isKnownAgentType(agentKey)
+          ? AGENT_TYPE_MAP[agentKey]
+          : 'generic'
+
+        setStatus((prev) =>
+          prev.sessionId === sid
+            ? {
+                ...prev,
+                isActive: true,
+                agentType: mapped,
+              }
+            : prev
+        )
         agentEverDetectedRef.current = true
 
         // Start the status-line file watcher (only once).
@@ -151,6 +168,13 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
             await invoke('start_agent_watcher', {
               sessionId: ptySessionId,
             })
+
+            if (prevSessionIdRef.current !== sid) {
+              void stopWatchers(sid)
+
+              return
+            }
+
             watcherStartedRef.current = true
           } catch {
             // Watcher may fail if bridge files weren't generated, or the
@@ -459,7 +483,8 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         collapseTimeoutRef.current = null
       }
       const sid = prevSessionIdRef.current
-      if (sid) {
+      if (sid && watcherStartedRef.current) {
+        watcherStartedRef.current = false
         void stopWatchers(sid)
       }
     },

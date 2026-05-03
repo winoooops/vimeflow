@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-05-02
-ref_count: 4
+last_updated: 2026-05-03
+ref_count: 5
 ---
 
 # Error Surfacing
@@ -205,3 +205,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** Both stage and discard endpoints checked `result.status !== 0` after `spawnSync('git', ['apply', ...], { input: patch, cwd: repoRoot })` and returned a generic 409 with `'Failed to stage hunk patch'` / `'Failed to discard hunk patch'`. Because `encoding` wasn't set, `result.stderr` was a Buffer, so even a `.toString()` would have been an extra step the author skipped. Net effect: every `git apply` failure (`error: patch does not apply`, `corrupt patch at line N`, context mismatch) became a content-free 409 the developer had to reproduce in a terminal to diagnose. Same finding-class as #1 / #3 — error swallowed at boundary, downstream consumer left to guess.
 - **Fix:** Added `encoding: 'utf-8'` to the `spawnSync` options so `result.stderr` is a string by construction. The 409 body now carries `{ error: '...', detail: result.stderr ?? '' }`. Same change applied symmetrically to both endpoints. No security concern: this is a Vite dev-server endpoint operating on the local repo; the stderr content comes from local git.
 - **Commit:** _(see git log for the round-1 fix commit)_
+
+### 21. String-matched validation errors create hidden module coupling
+
+- **Source:** github-claude | PR #152 post-merge review | 2026-05-03
+- **Severity:** HIGH
+- **File:** `src-tauri/src/agent/adapter/base/watcher_runtime.rs`, `src-tauri/src/agent/adapter/types.rs`
+- **Finding:** Watcher diagnostics classified transcript validation failures by matching the text `"access denied"` inside an adapter error string. That made the base watcher depend on Claude-specific wording and would silently misclassify outcomes if the adapter changed the message or another adapter returned different text.
+- **Fix:** Added `ValidateTranscriptError` with explicit variants for not found, outside root, not a file, invalid path, and other failures. Adapter validation now returns the typed error, and the watcher maps variants to `TxOutcome` without depending on message text.
+- **Commit:** _(pending on this branch)_

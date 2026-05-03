@@ -8,16 +8,17 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use tauri::Emitter;
 
 use super::test_runners::emitter::TestRunEmitter;
-use super::test_runners::matcher::{MatchedCommand, match_command};
+use super::test_runners::matcher::{match_command, MatchedCommand};
 use crate::agent::adapter::base::TranscriptHandle;
+use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::types::{AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
 
 /// Poll interval for checking new transcript lines
@@ -26,30 +27,48 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// Maximum length for the args summary string
 const MAX_ARGS_LEN: usize = 100;
 
-pub(crate) fn validate_transcript_path(transcript_path: &str) -> Result<PathBuf, String> {
-    let path = PathBuf::from(transcript_path);
-    let canonical = fs::canonicalize(&path)
-        .map_err(|e| format!("invalid transcript path '{}': {}", transcript_path, e))?;
+const MAX_TOOL_RESULT_CONTENT_LEN: usize = 256 * 1024;
+const TOOL_RESULT_TRUNCATED_MARKER: &str = "[output truncated]";
 
-    if !canonical.is_file() {
-        return Err(format!("not a transcript file: {}", canonical.display()));
+pub(crate) fn validate_transcript_path(
+    transcript_path: &str,
+) -> Result<PathBuf, ValidateTranscriptError> {
+    if transcript_path.bytes().any(|b| b == 0) {
+        return Err(ValidateTranscriptError::InvalidPath(
+            "transcript path contains null byte".to_string(),
+        ));
     }
 
-    let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
+    let path = PathBuf::from(transcript_path);
+    let canonical = fs::canonicalize(&path).map_err(|e| match path.try_exists() {
+        Ok(false) => ValidateTranscriptError::NotFound(path.clone()),
+        Ok(true) | Err(_) => ValidateTranscriptError::Other(format!(
+            "invalid transcript path '{}': {}",
+            transcript_path, e
+        )),
+    })?;
+
+    if !canonical.is_file() {
+        return Err(ValidateTranscriptError::NotAFile(canonical));
+    }
+
+    let home = dirs::home_dir().ok_or_else(|| {
+        ValidateTranscriptError::Other("cannot determine home directory".to_string())
+    })?;
     let claude_root = home.join(".claude");
     let claude_root = fs::canonicalize(&claude_root).map_err(|e| {
-        format!(
+        ValidateTranscriptError::Other(format!(
             "cannot resolve Claude transcript root '{}': {}",
             claude_root.display(),
             e
-        )
+        ))
     })?;
 
     if !canonical.starts_with(&claude_root) {
-        return Err(format!(
-            "access denied: transcript path is outside Claude directory: {}",
-            canonical.display()
-        ));
+        return Err(ValidateTranscriptError::OutsideRoot {
+            path: canonical,
+            root: claude_root,
+        });
     }
 
     Ok(canonical)
@@ -614,14 +633,18 @@ fn extract_tool_result_content(value: &Value) -> String {
         None => return String::new(),
     };
     if let Some(s) = raw.as_str() {
-        return s.to_string();
+        return capped_tool_result_content(s);
     }
     if let Some(arr) = raw.as_array() {
         let mut out = String::new();
+        let mut truncated = false;
         for block in arr {
             if text_block_type(block) == Some("text") {
                 if let Some(text) = text_block_text(block) {
-                    out.push_str(text);
+                    truncated |= append_capped_text(&mut out, text);
+                    if truncated {
+                        break;
+                    }
                     // Add a separator newline only if the block didn't
                     // already end with one — terminal output frequently
                     // does, and an unconditional `push('\n')` would
@@ -630,14 +653,55 @@ fn extract_tool_result_content(value: &Value) -> String {
                     // anything, so this also brings the two paths into
                     // alignment).
                     if !out.ends_with('\n') {
-                        out.push('\n');
+                        if out.len() < MAX_TOOL_RESULT_CONTENT_LEN {
+                            out.push('\n');
+                        } else {
+                            truncated = true;
+                            break;
+                        }
                     }
                 }
             }
         }
+        if truncated {
+            append_truncated_marker(&mut out);
+        }
         return out;
     }
     String::new()
+}
+
+fn capped_tool_result_content(content: &str) -> String {
+    if content.len() <= MAX_TOOL_RESULT_CONTENT_LEN {
+        return content.to_string();
+    }
+
+    let mut out = String::new();
+    let _ = append_capped_text(&mut out, content);
+    append_truncated_marker(&mut out);
+    out
+}
+
+fn append_capped_text(out: &mut String, text: &str) -> bool {
+    let remaining = MAX_TOOL_RESULT_CONTENT_LEN.saturating_sub(out.len());
+    if text.len() <= remaining {
+        out.push_str(text);
+        return false;
+    }
+
+    let mut end = remaining;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    out.push_str(&text[..end]);
+    true
+}
+
+fn append_truncated_marker(out: &mut String) {
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(TOOL_RESULT_TRUNCATED_MARKER);
 }
 
 #[cfg(test)]
@@ -657,6 +721,17 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_transcript_path_rejects_null_byte() {
+        let result = validate_transcript_path("/home/user/.claude/x.jsonl\0../../etc/passwd");
+
+        assert!(matches!(
+            result,
+            Err(ValidateTranscriptError::InvalidPath(message))
+                if message.contains("null byte")
+        ));
     }
 
     #[test]
@@ -690,6 +765,33 @@ mod tests {
         let value: Value = serde_json::from_str(line).unwrap();
 
         assert!(value["is_error"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn extract_tool_result_content_caps_simple_string() {
+        let value = serde_json::json!({
+            "content": "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN + 1024)
+        });
+
+        let content = extract_tool_result_content(&value);
+
+        assert!(content.len() < MAX_TOOL_RESULT_CONTENT_LEN + 1024);
+        assert!(content.contains(TOOL_RESULT_TRUNCATED_MARKER));
+    }
+
+    #[test]
+    fn extract_tool_result_content_caps_text_blocks() {
+        let value = serde_json::json!({
+            "content": [
+                { "type": "text", "text": "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN + 1024) },
+                { "type": "text", "text": "should not be appended" }
+            ]
+        });
+
+        let content = extract_tool_result_content(&value);
+
+        assert!(content.contains(TOOL_RESULT_TRUNCATED_MARKER));
+        assert!(!content.contains("should not be appended"));
     }
 
     #[test]

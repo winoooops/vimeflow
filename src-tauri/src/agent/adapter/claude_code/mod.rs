@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 
 use tauri::AppHandle;
 
-use crate::agent::adapter::AgentAdapter;
 use crate::agent::adapter::base::TranscriptHandle;
-use crate::agent::adapter::types::{ParsedStatus, StatusSource};
+use crate::agent::adapter::types::{ParsedStatus, StatusSource, ValidateTranscriptError};
+use crate::agent::adapter::AgentAdapter;
 use crate::agent::types::AgentType;
 
 pub mod statusline;
@@ -39,7 +39,7 @@ impl<R: tauri::Runtime> AgentAdapter<R> for ClaudeCodeAdapter {
         })
     }
 
-    fn validate_transcript(&self, raw: &str) -> Result<PathBuf, String> {
+    fn validate_transcript(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError> {
         transcript::validate_transcript_path(raw)
     }
 

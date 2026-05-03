@@ -6,22 +6,23 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
 use std::time::Instant;
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{Emitter, Manager};
 
-use super::diagnostics::{EventTiming, PathHistory, TxOutcome, record_event_diag, short_sid};
+use super::diagnostics::{record_event_diag, short_sid, EventTiming, PathHistory, TxOutcome};
 use super::transcript_state::{TranscriptStartStatus, TranscriptState};
+use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::adapter::AgentAdapter;
 
 /// Handle to a running watcher — dropping it stops the watcher and polling thread
 pub struct WatcherHandle {
     _watcher: Option<RecommendedWatcher>,
     /// Signals the polling fallback thread to exit
-    stop_flag: Arc<AtomicBool>,
+    poll_stop: Arc<(Mutex<bool>, Condvar)>,
     /// Polling fallback thread. Stored so Drop can join after signalling
     /// stop, rather than leaving the thread briefly detached.
     join_handle: Option<std::thread::JoinHandle<()>>,
@@ -42,15 +43,12 @@ pub struct WatcherHandle {
 impl Drop for WatcherHandle {
     fn drop(&mut self) {
         drop(self._watcher.take());
-        // Release-on-store / Acquire-on-load is the right pairing for
-        // a cross-thread stop signal — `Relaxed` provides atomicity but
-        // no ordering or visibility guarantee, so on weakly-ordered
-        // architectures (ARM/RISC-V) the polling thread could spin
-        // additional cycles before observing the flag (Claude review on
-        // PR #152, F8). The `join()` below provides post-stop ordering
-        // for any downstream state access, but doesn't help signal
-        // delivery latency.
-        self.stop_flag.store(true, Ordering::Release);
+        let (lock, wake) = &*self.poll_stop;
+        {
+            let mut stopped = lock.lock().expect("failed to lock poll stop flag");
+            *stopped = true;
+            wake.notify_one();
+        }
         if let Some(handle) = self.join_handle.take() {
             let _ = handle.join();
         }
@@ -154,24 +152,12 @@ fn maybe_start_transcript<R: tauri::Runtime>(
                 session_id,
                 e
             );
-            // Classify the failure for diagnostic logs. The
-            // missing-file case uses `Path::exists()` for
-            // platform-neutrality — Linux's "No such file or
-            // directory" string is forwarded by
-            // `validate_transcript_path`, but Windows reports a
-            // different OS-localized message for ENOENT (and other
-            // platforms vary too). `Path::exists()` returns false
-            // uniformly across platforms for a non-existent path, so
-            // it's the right primary signal. The "access denied"
-            // substring is a CUSTOM string from
-            // `validate_transcript_path` (not OS-localized), so it's
-            // safe to substring-match.
-            return if !std::path::Path::new(transcript_path).exists() {
-                TxOutcome::Missing
-            } else if e.contains("access denied") {
-                TxOutcome::OutsidePath
-            } else {
-                TxOutcome::NotFile
+            return match e {
+                ValidateTranscriptError::NotFound(_) => TxOutcome::Missing,
+                ValidateTranscriptError::OutsideRoot { .. } => TxOutcome::OutsidePath,
+                ValidateTranscriptError::NotAFile(_)
+                | ValidateTranscriptError::InvalidPath(_)
+                | ValidateTranscriptError::Other(_) => TxOutcome::NotFile,
             };
         }
     };
@@ -235,7 +221,7 @@ pub(super) fn start_watching<R: tauri::Runtime>(
     let sid = session_id.clone();
     let last_processed = Arc::new(Mutex::new(Instant::now()));
     let app_handle_for_poll = app_handle.clone();
-    let stop_flag = Arc::new(AtomicBool::new(false));
+    let poll_stop = Arc::new((Mutex::new(false), Condvar::new()));
     let transcript_state_for_handle = app_handle.state::<TranscriptState>().inner().clone();
 
     // Diagnostic state — per-source timing for sources that fire
@@ -253,6 +239,7 @@ pub(super) fn start_watching<R: tauri::Runtime>(
     let notify_timing_for_cb = notify_timing.clone();
     let path_history_for_cb = path_history.clone();
     let adapter_for_cb = adapter.clone();
+    let last_processed_for_cb = last_processed.clone();
 
     // Debounce interval — ignore events within 100ms of the last processed one
     let debounce_ms = 100;
@@ -284,7 +271,9 @@ pub(super) fn start_watching<R: tauri::Runtime>(
 
         // Debounce: skip if processed too recently
         {
-            let mut last = last_processed.lock().expect("failed to lock debounce");
+            let mut last = last_processed_for_cb
+                .lock()
+                .expect("failed to lock debounce");
             let now = Instant::now();
             if now.duration_since(*last).as_millis() < debounce_ms {
                 return;
@@ -370,6 +359,7 @@ pub(super) fn start_watching<R: tauri::Runtime>(
         let mut inline_tx_path: Option<String> = None;
         if let Ok(contents) = std::fs::read_to_string(&initial_path) {
             if !contents.trim().is_empty() {
+                *last_processed.lock().expect("failed to lock debounce") = Instant::now();
                 match initial_adapter.parse_status(&initial_sid, &contents) {
                     Ok(parsed) => {
                         let _ = initial_app.emit("agent-status", &parsed.event);
@@ -413,7 +403,7 @@ pub(super) fn start_watching<R: tauri::Runtime>(
         let poll_sid = session_id.clone();
         let poll_path = status_file_path.clone();
         let poll_app = app_handle_for_poll;
-        let poll_stop = stop_flag.clone();
+        let poll_stop = poll_stop.clone();
         let poll_timing_for_thread = poll_timing.clone();
         let path_history_for_poll = path_history.clone();
         let adapter_for_poll = adapter.clone();
@@ -426,16 +416,16 @@ pub(super) fn start_watching<R: tauri::Runtime>(
             // allocation and per-poll-cycle atomic refcount traffic.
             let mut poll_last = String::new();
 
-            // Acquire pairs with the Release in `WatcherHandle::Drop` so
-            // the stop signal is observed without arch-specific delay
-            // (Claude review on PR #152, F8). `Relaxed` was sufficient
-            // on x86 in practice but technically non-compliant with the
-            // Rust memory model.
-            while !poll_stop.load(Ordering::Acquire) {
-                std::thread::sleep(std::time::Duration::from_secs(3));
-                if poll_stop.load(Ordering::Acquire) {
+            loop {
+                let (lock, wake) = &*poll_stop;
+                let stopped = lock.lock().expect("failed to lock poll stop flag");
+                let (stopped, _) = wake
+                    .wait_timeout_while(stopped, Duration::from_secs(3), |stopped| !*stopped)
+                    .expect("failed to wait on poll stop flag");
+                if *stopped {
                     break;
                 }
+                drop(stopped);
 
                 // Capture `started` BEFORE the read so `total` covers file
                 // I/O the same way the notify and inline sources do —
@@ -503,7 +493,7 @@ pub(super) fn start_watching<R: tauri::Runtime>(
 
     Ok(WatcherHandle {
         _watcher: Some(watcher),
-        stop_flag,
+        poll_stop,
         join_handle: poll_join_handle,
         transcript_state: transcript_state_for_handle,
         session_id: session_id.clone(),

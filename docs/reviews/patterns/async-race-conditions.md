@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-05-03
-ref_count: 7
+ref_count: 8
 ---
 
 # Async Race Conditions
@@ -253,3 +253,21 @@ prevent showing previous data.
 - **Fix:** Reordered the critical section to (lock-extract-old → release lock → stop-old (joining the thread) → spawn-new → lock-insert-new → release lock). Per-session gate already serialises `start_or_replace` and `stop` per session, so the gap between extract and re-insert is invisible to other callers (#22 ensured `stop` acquires the gate). Added a regression test (`replace_on_cwd_change_stops_old_before_spawning_new`) using a custom mock adapter that records the order of `tail_transcript` calls AND the order of stop-flag flips on returned handles; asserts `stop(A)` precedes `spawn(B)` in the recorded event log. Documented the trade-off: a `tail_transcript` failure now leaves the session with no watcher (regression vs. previous behaviour where old survived) — intentional for the cwd-change case (the old cwd is no longer the correct routing context, so a failed swap should fail loudly rather than silently keep a stale-cwd tailer alive).
 - **Lesson:** The "no lock held across blocking join" invariant is necessary but not sufficient — it prevents lock-vs-Drop deadlocks, but doesn't prevent activation-before-teardown overlap. When replacing one long-lived background thread with another, ALSO ensure the old thread is fully joined before the new one starts emitting events for the same logical resource. The key question to ask while designing the lock-release order: "during the unlocked window, is anything observable to readers?" If the unlocked window contains a SPAWN (which immediately starts emitting) AND a STOP (which is in-flight), readers see both threads' output during the overlap. The fix is to put the stop entirely before the spawn — even if it costs an extra lock acquisition for the insert. Code-review heuristic: any "extract-or-insert + outside-lock cleanup" pattern should be examined for whether the new resource is observable before the old resource is fully torn down.
 - **Commit:** _(see git log for the cycle-10 fix commit on PR #152)_
+
+### 26. Polling fallback sleeps through watcher drop, blocking teardown for one full interval
+
+- **Source:** github-claude | PR #152 post-merge review | 2026-05-03
+- **Severity:** HIGH
+- **File:** `src-tauri/src/agent/adapter/base/watcher_runtime.rs`
+- **Finding:** `WatcherHandle::Drop` signalled the statusline polling fallback with an atomic flag, but the polling thread spent most of its life inside `sleep(Duration::from_secs(3))`. Drop then joined the thread, so teardown could block for almost the full polling interval even though the stop signal had already been set.
+- **Fix:** Replaced the atomic sleep loop with `Arc<(Mutex<bool>, Condvar)>`. Drop sets the stop flag and wakes the condvar before joining, so the polling thread exits immediately instead of waiting for the timeout. The inline initial-read path now also updates the debounce timestamp so a notify event for the same status content does not immediately replay it.
+- **Commit:** _(pending on this branch)_
+
+### 27. Agent detection results can outlive their session
+
+- **Source:** github-claude | PR #152 post-merge review | 2026-05-03
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** An in-flight `detect_agent_in_session` promise could resolve after `sessionId` changed and still mark the old result active on the new session. Cleanup also called `stop_agent_watcher` on unmount/session change even when `start_agent_watcher` had never succeeded, creating noisy stop calls against sessions with no watcher.
+- **Fix:** Re-check `prevSessionIdRef.current` after the detection await and discard stale results. Gate cleanup on `watcherStartedRef.current`, reset that ref when cleanup runs, and keep the activation `setStatus` scoped to the same session id. Added hook regressions for stale detection, unknown backend agent types, and cleanup before/after watcher start.
+- **Commit:** _(pending on this branch)_
