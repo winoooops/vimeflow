@@ -662,31 +662,9 @@ fn extract_tool_result_content(value: &Value) -> String {
         None => return String::new(),
     };
     if let Some(s) = raw.as_str() {
-        return capped_tool_result_content(s);
+        return cap_with_head_and_tail(s);
     }
     if let Some(arr) = raw.as_array() {
-        // Walk the array's text blocks and assemble them into a single
-        // buffer, then apply head-and-tail truncation. Preserves trailing
-        // test-runner summary lines that head-only truncation would have
-        // dropped (Codex review on PR #153, F15). Empty-string sentinel
-        // blocks are skipped (cycle-6 F10).
-        //
-        // Memory-bound: after each block append, if the running buffer
-        // exceeds `prune_threshold = 2 × (MAX + TAIL)`, drop the middle
-        // and reset to the head+tail shape. Combined with the
-        // per-block pre-cap below, peak `buf.len()` stays at
-        // ~`prune_threshold + memory_cap` ≈ 3 × (MAX + TAIL) per
-        // iteration, regardless of any single block's size.
-        // Without these guards a payload with many large blocks would
-        // materialise the entire combined output before truncation —
-        // a regression vs. the cycle-7 implementation that stopped
-        // appending once the cap was hit (Codex cycle-8 retry-2
-        // follow-up). The trade-off: we lose strict "preserve the
-        // literal last 64 KiB" semantics under pruning, since the
-        // tail window can drift earlier as new blocks arrive — but
-        // the FINAL `cap_with_head_and_tail` call re-prunes from the
-        // latest buffer, so the truly-last bytes (those of the last
-        // block we processed) survive.
         let memory_cap = MAX_TOOL_RESULT_CONTENT_LEN + TOOL_RESULT_TAIL_LEN;
         let prune_threshold = memory_cap * 2;
         let mut buf = String::new();
@@ -703,15 +681,8 @@ fn extract_tool_result_content(value: &Value) -> String {
             if !buf.is_empty() && !buf.ends_with('\n') {
                 buf.push('\n');
             }
-            // Pre-cap an oversized single block so push_str's growth
-            // doesn't force `buf` past prune_threshold by an
-            // unbounded amount. `cap_with_head_and_tail` returns the
-            // input unchanged when under cap (single allocation),
-            // and head+marker+tail otherwise (single allocation
-            // sized to exactly the result). Without this guard a
-            // single 100 MiB block would grow `buf` to 100 MiB
-            // before the post-append prune fired (Codex cycle-8
-            // retry-1 follow-up).
+            // Pre-cap an oversized block so push_str can't grow `buf`
+            // unbounded before the post-append prune fires.
             if text.len() > memory_cap {
                 let capped = cap_with_head_and_tail(text);
                 buf.push_str(&capped);
@@ -727,29 +698,7 @@ fn extract_tool_result_content(value: &Value) -> String {
     String::new()
 }
 
-fn capped_tool_result_content(content: &str) -> String {
-    cap_with_head_and_tail(content)
-}
-
-/// Apply the `MAX_TOOL_RESULT_CONTENT_LEN` cap to `content` using
-/// head-and-tail truncation: keep `MAX - TOOL_RESULT_TAIL_LEN` bytes
-/// from the start, then a `[output truncated]` marker, then the last
-/// `TOOL_RESULT_TAIL_LEN` bytes. Test-runner parsers look for summary
-/// lines at the END of test output, so head-only truncation would
-/// silently break test-snapshot emission for large but valid runs
-/// (Codex review on PR #153, F15).
-///
-/// Takes `&str` (not owned `String`) so callers don't have to clone
-/// before truncation — important for the simple-string call site
-/// where input arrives as `&str` from `Value::as_str` and the
-/// pre-refactor `to_string()` was a wasted full-size allocation
-/// (Codex cycle-8 retry-1 follow-up).
-///
-/// The marker intentionally omits a byte-count suffix: when used
-/// repeatedly during streaming pruning of array content, only the
-/// latest prune's count would be accurate, so reporting a count in
-/// the final marker would under-report the total bytes dropped across
-/// intermediate prunes.
+/// Cap content at `MAX_TOOL_RESULT_CONTENT_LEN` bytes via head-and-tail truncation.
 fn cap_with_head_and_tail(content: &str) -> String {
     if content.len() <= MAX_TOOL_RESULT_CONTENT_LEN {
         return content.to_string();

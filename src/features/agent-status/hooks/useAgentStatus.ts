@@ -103,6 +103,8 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // longer leave the panel stuck.
   const agentEverDetectedRef = useRef(false)
   const watcherStartedRef = useRef(false)
+  // PTY id captured at start so cleanup stops the right backend watcher.
+  const knownPtyIdRef = useRef<string | undefined>(undefined)
 
   // Stale-detection guard: ref written SYNCHRONOUSLY during render so an
   // in-flight `detect_agent_in_session` / `start_agent_watcher` IPC
@@ -136,18 +138,13 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       // across the session-change boundary (Codex review on PR #153).
       const oldId = prevSessionIdRef.current
       if (oldId) {
-        // Note: `watcherStartedRef.current = false` is unconditional
-        // a few lines below (always runs on the session-change path),
-        // so a pre-stop reset here is redundant. `stopWatchers` is
-        // fire-and-forget and reads no refs, so the order between
-        // "reset ref" and "invoke stop" doesn't affect correctness
-        // (Claude review on PR #153, F6).
-        void stopWatchers(oldId)
+        void stopWatchers(oldId, knownPtyIdRef.current)
       }
 
       prevSessionIdRef.current = sessionId
       agentEverDetectedRef.current = false
       watcherStartedRef.current = false
+      knownPtyIdRef.current = undefined
       if (collapseTimeoutRef.current) {
         clearTimeout(collapseTimeoutRef.current)
         collapseTimeoutRef.current = null
@@ -231,6 +228,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
               return
             }
 
+            knownPtyIdRef.current = ptySessionId
             watcherStartedRef.current = true
           } catch {
             // Watcher may fail if bridge files weren't generated, or the
@@ -247,16 +245,11 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         }
         agentEverDetectedRef.current = false
 
-        // Stop the backend watcher unconditionally. `stopWatchers`
-        // suppresses errors, so an IPC against a never-started watcher
-        // is a harmless no-op. We deliberately do NOT gate on
-        // `watcherStartedRef.current` here: that ref reflects only the
-        // last LOCAL start outcome, and a prior failed stop would leave
-        // it false while the backend watcher is still alive. Always
-        // calling stop ensures retry on the next exit path (Codex
-        // review on PR #153).
         watcherStartedRef.current = false
-        void stopWatchers(sid)
+        // Do not clear `knownPtyIdRef` here: stopWatchers is fire-and-forget
+        // with swallowed errors. If this attempt fails transiently, the
+        // session-change cleanup must still have the captured PTY id to retry.
+        void stopWatchers(sid, knownPtyIdRef.current)
 
         // Hold final state for 5s, then collapse. Runs regardless of
         // watcherStartedRef — that's the F1 fix: a transient
@@ -549,8 +542,11 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       // swallows errors, so the IPC is safe even when no watcher is
       // running.
       if (sid) {
+        // Hook is unmounting; no further retry path exists, so no need
+        // to preserve `knownPtyIdRef` for a follow-up cleanup.
         watcherStartedRef.current = false
-        void stopWatchers(sid)
+        void stopWatchers(sid, knownPtyIdRef.current)
+        knownPtyIdRef.current = undefined
       }
     },
     []
