@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-01
+last_updated: 2026-05-03
 ref_count: 20
 ---
 
@@ -268,3 +268,25 @@ filesystem scope restrictions).
 - **Finding:** PR #131 added rename-metadata parsing (`rename from`/`rename to` header pair) AND symmetric copy-metadata parsing (`copy from`/`copy to`) in the same `or_else` arm. The new test only exercised the rename fixture; the structurally-identical copy branch had no parallel fixture, so an edge-case regression in copy-header parsing (e.g. casing, whitespace, future git format change) would silently produce `old_path: None` / `new_path: None` with no failing assertion. Same finding-class as #7 (uncovered guard branch) — adding a sibling case to a multi-branch decision needs sibling test coverage.
 - **Fix:** Added `test_parse_git_diff_copy_metadata` that mirrors the rename test exactly except for the header verbs (`copy from`/`copy to`) and fixture file names (`template.txt` → `copy.txt`). Same assertions on `old_path`, `new_path`, hunk count, and stable hunk id.
 - **Commit:** _(see git log for the round-1 fix commit)_
+
+---
+
+### 29. Test asserts byte length where function contract is char count: false assurance for multi-byte UTF-8
+
+- **Source:** github-claude | PR #152 round 7 (cycle 9) | 2026-05-03
+- **Severity:** LOW
+- **File:** `src-tauri/src/agent/adapter/claude_code/transcript.rs`
+- **Finding:** `truncate_string` enforces the invariant `output.chars().count() <= max_len` (it uses `chars().count()` for the length check and `char_indices().nth(...)` for the cut point — UTF-8 char-boundary safe). The existing test `truncate_string_long` asserted `result.len() <= MAX_ARGS_LEN`, which measures bytes. For all-ASCII inputs the two assertions agree, so the test passed; but for multi-byte UTF-8 input (CJK paths, emoji file names) the byte length of the truncated string can significantly exceed `MAX_ARGS_LEN` (97 three-byte CJK chars + `"..."` = 294 bytes for `max_len = 100`) while the function still correctly enforces its char-count contract. No functional breakage today, but the test gives false assurance that a byte budget is respected — a future caller assuming a byte cap (storage limit, log-line cap) would be silently misled by a green CI.
+- **Fix:** Changed the assertion to `result.chars().count() == 100` (still passes for ASCII because `len()` and `chars().count()` agree there) and added `truncate_string_long_cjk_respects_char_boundary` that drives `truncate_string` with a 200-CJK-char input, asserts `chars().count() == 100`, and explicitly proves byte length exceeds the char cap (`assert!(result.len() > 100, ...)`) so future regressions to byte-based logic are caught. The lesson: when a function's contract is expressed in one unit (chars), the test must measure in that unit; a "natural" `len()` on the result silently picks the wrong unit and shipping it gives false assurance.
+- **Commit:** _(see git log for the cycle-9 fix commit)_
+
+---
+
+### 30. Hand-rolled calendar algorithm with shape-only test: no regression signal for off-by-one in leap-year accounting
+
+- **Source:** github-claude | PR #152 round 7 (cycle 9) | 2026-05-03
+- **Severity:** LOW
+- **File:** `src-tauri/src/agent/adapter/claude_code/transcript.rs`
+- **Finding:** `now_iso8601()` formats UTC timestamps via a bespoke `days_to_date` algorithm (the Hinnant civil-calendar formula) rather than depending on `chrono`/`time`. The function is invoked as a fallback when a transcript JSONL line has no `timestamp` field, and its output flows directly into `AgentToolCallEvent.timestamp` and the UI activity feed. The existing `now_iso8601_format` test validated only the output shape — length 20, `Z` suffix, separator positions — but asserted no specific calendar dates. An off-by-one in the leap-year accounting (`year % 400 == 0` vs. `year % 100 == 0` vs. `year % 4 == 0`) or the March-epoch offset would produce silently wrong timestamps with no regression signal. The Hinnant algorithm is mathematically sound, but hand-rolled calendar math warrants pinned-date assertions that future edits cannot regress.
+- **Fix:** Added `days_to_date_pinned_dates` test with 9 cases covering the boundary conditions where leap-year accounting most often drifts: Unix epoch (`1970-01-01`), 1972's first leap day (`789 → 1972-02-29`) and the day after, year-2000 leap day (`11016 → 2000-02-29` — divisible by 400 ⇒ leap) plus the day after, year-2100 non-leap (`47540 → 2100-02-28`, `47541 → 2100-03-01` — divisible by 100 but not 400 ⇒ not leap), a post-2038 sanity check (`25339 → 2039-05-18`), and a millennium turnover (`10957 → 2000-01-01`). Expected values were cross-checked against Python's `datetime.date(1970,1,1) + timedelta(days=N)`. The first attempt at this test had two off-by-one expected values (`11017 → 2000-02-29` instead of `11016`, and `25324 → 2039-05-18` instead of `25339`); the cross-check caught both before commit. The lesson: shape-only tests for hand-rolled calendar/date math are insufficient — pin specific dates (epoch, leap days, century non-leap, post-2038), AND cross-check expected values against an authoritative library before asserting them, because a wrong-but-self-consistent expected value gives a confident green that masks a wrong implementation.
+- **Commit:** _(see git log for the cycle-9 fix commit)_

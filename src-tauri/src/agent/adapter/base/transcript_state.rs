@@ -7,7 +7,14 @@ use std::sync::{Arc, Mutex};
 
 use crate::agent::adapter::AgentAdapter;
 
-/// Test-only public surface. Production code must use `AgentAdapter::start`.
+/// Internal lifecycle type — created by adapter `tail_transcript`
+/// implementations (e.g., `claude_code::transcript::start_tailing` via
+/// `TranscriptHandle::new`, which is `pub(crate)`) and owned by
+/// `TranscriptState`'s internal `TranscriptWatcher` map. The type
+/// itself must remain `pub` because it appears in the
+/// `AgentAdapter::tail_transcript` trait signature, which is publicly
+/// visible from `agent::adapter::mod`. Construction is gated to the
+/// crate via `pub(crate) fn new`; do not bypass that path.
 #[doc(hidden)]
 pub struct TranscriptHandle {
     stop_flag: Arc<AtomicBool>,
@@ -60,7 +67,17 @@ struct TranscriptWatcher {
     handle: TranscriptHandle,
 }
 
-/// Test-only public surface. Production code must use `AgentAdapter::start`.
+/// Tauri-managed registry of in-flight transcript tailers, one per
+/// session. Constructed once at app startup in `lib.rs` via
+/// `.manage(TranscriptState::new())` and accessed via
+/// `app_handle.state::<TranscriptState>()` from `WatcherHandle::Drop`,
+/// `AgentAdapter::start`, and adapter `tail_transcript` impls. `pub` is
+/// for Tauri's managed-state machinery (it requires `'static` types
+/// reachable from outside the defining module) and for direct
+/// instantiation in `#[cfg(test)]` integration tests under
+/// `src-tauri/tests/transcript_*.rs`; do not construct ad hoc instances
+/// in production code paths — there must be exactly one registered with
+/// the app.
 #[doc(hidden)]
 #[derive(Default, Clone)]
 pub struct TranscriptState {

@@ -791,8 +791,31 @@ mod tests {
     fn truncate_string_long() {
         let long = "a".repeat(200);
         let result = truncate_string(&long, 100);
-        assert_eq!(result.len(), 100);
+        // truncate_string's contract is bounded by character count, not
+        // byte count — assert against `chars().count()` (Claude review
+        // on PR #152, F17). For all-ASCII inputs `len()` and
+        // `chars().count()` agree, so this also matches the previous
+        // assertion.
+        assert_eq!(result.chars().count(), 100);
         assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn truncate_string_long_cjk_respects_char_boundary() {
+        // Multi-byte UTF-8 input: each CJK char is 3 bytes. The byte
+        // length of the truncated string can significantly exceed
+        // max_len (97 chars × 3 bytes + 3 bytes for "..." = 294 bytes
+        // for max_len=100), but the char count must remain at the cap.
+        // Regression guard for F17: previously the test asserted
+        // `result.len() <= MAX_ARGS_LEN` (bytes), which would have
+        // passed for ASCII but given false assurance about CJK paths.
+        let cjk = "中".repeat(200);
+        let result = truncate_string(&cjk, 100);
+        assert_eq!(result.chars().count(), 100);
+        assert!(result.ends_with("..."));
+        // Byte length is unbounded by design — sanity check it's larger
+        // than max_len in chars, proving the char-count is the real cap.
+        assert!(result.len() > 100, "byte length should exceed char cap");
     }
 
     #[test]
@@ -806,6 +829,46 @@ mod tests {
         assert_eq!(&ts[10..11], "T");
         assert_eq!(&ts[13..14], ":");
         assert_eq!(&ts[16..17], ":");
+    }
+
+    #[test]
+    fn days_to_date_pinned_dates() {
+        // Pinned-date regression guards for the hand-rolled Hinnant
+        // civil-calendar algorithm in `days_to_date` (Claude review on
+        // PR #152, F18). The shape-only `now_iso8601_format` test
+        // above can't catch off-by-one errors in leap-year accounting
+        // or the March-epoch offset; these assertions can. Each entry
+        // is `(days_since_unix_epoch, expected (year, month, day))`.
+        // Sources: Hinnant reference, https://howardhinnant.github.io/date_algorithms.html
+        let cases: [(u64, (u64, u64, u64)); 9] = [
+            // Unix epoch.
+            (0, (1970, 1, 1)),
+            // First leap day after the epoch.
+            (789, (1972, 2, 29)),
+            // Day after a leap day.
+            (790, (1972, 3, 1)),
+            // Year-2000 leap year (divisible by 400 — leap).
+            (11016, (2000, 2, 29)),
+            // Day after a year-2000 leap day.
+            (11017, (2000, 3, 1)),
+            // Year-2100 NON-leap (divisible by 100 but not 400 — not leap).
+            // 2100-02-28 = days_since_epoch 47540.
+            (47540, (2100, 2, 28)),
+            // Day after that — should be 2100-03-01, NOT 2100-02-29.
+            (47541, (2100, 3, 1)),
+            // Post-2038 sanity (32-bit-time-rollover-irrelevant for our u64).
+            (25339, (2039, 5, 18)),
+            // A round-millennium turnover.
+            (10957, (2000, 1, 1)),
+        ];
+        for (days, expected) in cases.iter() {
+            let got = days_to_date(*days);
+            assert_eq!(
+                got, *expected,
+                "days_to_date({}) = {:?}, expected {:?}",
+                days, got, expected
+            );
+        }
     }
 
     #[test]
