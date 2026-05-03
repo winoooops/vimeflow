@@ -430,14 +430,24 @@ pub(super) fn start_watching<R: tauri::Runtime>(
 
             loop {
                 let (lock, wake) = &*poll_stop;
-                let stopped = lock.lock().expect("failed to lock poll stop flag");
-                let (stopped, _) = wake
-                    .wait_timeout_while(stopped, Duration::from_secs(3), |stopped| !*stopped)
+                // Three distinct bindings on adjacent lines, all named
+                // `stopped` in earlier revisions, was hard to read —
+                // the pre-wait guard, the predicate closure's `&mut bool`
+                // parameter, and the post-wait guard had different types
+                // and lifetimes. Rename so the role of each binding is
+                // unambiguous: `pre_wait_guard` is consumed by
+                // wait_timeout_while; `flag` is the predicate's view of
+                // the inner bool; `stop_guard` is the re-acquired guard
+                // we check + explicitly drop before the file I/O below
+                // (Claude review on PR #153, F9).
+                let pre_wait_guard = lock.lock().expect("failed to lock poll stop flag");
+                let (stop_guard, _) = wake
+                    .wait_timeout_while(pre_wait_guard, Duration::from_secs(3), |flag| !*flag)
                     .expect("failed to wait on poll stop flag");
-                if *stopped {
+                if *stop_guard {
                     break;
                 }
-                drop(stopped);
+                drop(stop_guard);
 
                 // Capture `started` BEFORE the read so `total` covers file
                 // I/O the same way the notify and inline sources do —
