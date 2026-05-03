@@ -638,6 +638,57 @@ mod tests {
         assert!((event.context_window.remaining_percentage - 0.0).abs() < f64::EPSILON);
     }
 
+    /// F13 regression (Claude review on PR #153). When `used_percentage`
+    /// is null AND counts are zero (no computed fallback), the
+    /// `unwrap_or_else(|| clamp_percentage(remaining_percentage))` raw
+    /// fallback path takes over. This is the path most likely to receive
+    /// adversarial / partial-flush data, so it must clamp negatives and
+    /// over-100 values to the [0, 100] range.
+    #[test]
+    fn clamps_raw_remaining_percentage_when_no_computed_fallback() {
+        // Negative `remaining_percentage` with no computed value (null
+        // `used_percentage` AND zero counts) → must clamp to 0.0.
+        let json_below = r#"{
+            "context_window": {
+                "used_percentage": null,
+                "remaining_percentage": -50.0,
+                "context_window_size": 0,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0
+            }
+        }"#;
+        let event = &parse_statusline("pty-raw-below", json_below)
+            .expect("parse_statusline should succeed")
+            .event;
+        assert_eq!(event.context_window.used_percentage, None);
+        assert!(
+            (event.context_window.remaining_percentage - 0.0).abs() < f64::EPSILON,
+            "negative raw remaining_percentage must clamp to 0.0, got {}",
+            event.context_window.remaining_percentage
+        );
+
+        // Over-100 `remaining_percentage` on the same fallback path →
+        // must clamp to 100.0.
+        let json_above = r#"{
+            "context_window": {
+                "used_percentage": null,
+                "remaining_percentage": 150.0,
+                "context_window_size": 0,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0
+            }
+        }"#;
+        let event = &parse_statusline("pty-raw-above", json_above)
+            .expect("parse_statusline should succeed")
+            .event;
+        assert_eq!(event.context_window.used_percentage, None);
+        assert!(
+            (event.context_window.remaining_percentage - 100.0).abs() < f64::EPSILON,
+            "over-100 raw remaining_percentage must clamp to 100.0, got {}",
+            event.context_window.remaining_percentage
+        );
+    }
+
     #[test]
     fn model_display_name_falls_back_to_id() {
         let json = r#"{"model": {"id": "claude-opus-4-20250514"}}"#;

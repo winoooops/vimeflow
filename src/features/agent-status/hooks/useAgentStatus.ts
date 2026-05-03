@@ -48,9 +48,25 @@ const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
   testRun: null,
 })
 
-/** Stop all agent watchers for a given session (best-effort, logs on failure) */
-const stopWatchers = async (workspaceSessionId: string): Promise<void> => {
-  const ptyId = getPtySessionId(workspaceSessionId) ?? workspaceSessionId
+/**
+ * Stop all agent watchers for a given session (best-effort, logs on failure).
+ *
+ * `knownPtyId` is the PTY session ID captured at the time the watcher was
+ * started. Pass it whenever the call site has it, because by the time a
+ * stale-start cleanup fires the workspace→PTY mapping may already be
+ * unregistered — `getPtySessionId(workspaceSessionId)` would then fall back
+ * to the workspace ID and the backend `stop_agent_watcher` IPC would target
+ * the wrong session, leaking the newly-started backend watcher (Codex review
+ * on PR #153, F14). When `knownPtyId` is omitted (session-change /
+ * detection-loop / unmount cleanup paths), the workspace→PTY lookup is the
+ * best available source.
+ */
+const stopWatchers = async (
+  workspaceSessionId: string,
+  knownPtyId?: string
+): Promise<void> => {
+  const ptyId =
+    knownPtyId ?? getPtySessionId(workspaceSessionId) ?? workspaceSessionId
   try {
     await invoke('stop_agent_watcher', { sessionId: ptyId })
   } catch {
@@ -87,6 +103,22 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // longer leave the panel stuck.
   const agentEverDetectedRef = useRef(false)
   const watcherStartedRef = useRef(false)
+
+  // Stale-detection guard: ref written SYNCHRONOUSLY during render so an
+  // in-flight `detect_agent_in_session` / `start_agent_watcher` IPC
+  // continuation (Promise microtask) sees the latest sessionId after the
+  // microtask drain that runs BEFORE React's commit-phase macro-task.
+  // `prevSessionIdRef` alone is insufficient because it's written inside
+  // the session-change `useEffect` body (commit-phase macro-task), and
+  // microtasks queued before commit observe its stale value. The
+  // assignment below runs at every render, so by the time any IPC
+  // continuation runs, `currentSessionIdRef.current === sessionId` is
+  // the most recently rendered sessionId. Detection compares its
+  // captured `sid` (closure) against this ref — under the race the
+  // captured `sid` is the OLD session id and the ref is the NEW one,
+  // so the guard fires reliably (Claude review on PR #153, F11).
+  const currentSessionIdRef = useRef(sessionId)
+  currentSessionIdRef.current = sessionId
 
   // Track the collapse timeout so it can be cancelled if the agent
   // reappears before the 5s hold expires (e.g., brief detection gap).
@@ -140,7 +172,11 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         { sessionId: ptySessionId }
       )
 
-      if (prevSessionIdRef.current !== sid) {
+      // Use `currentSessionIdRef` (written synchronously during render)
+      // rather than `prevSessionIdRef` (written in the session-change
+      // useEffect macro-task) so this guard is race-free against the
+      // microtask/macro-task gap (F11, see ref declaration above).
+      if (currentSessionIdRef.current !== sid) {
         return
       }
 
@@ -182,8 +218,15 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
               sessionId: ptySessionId,
             })
 
-            if (prevSessionIdRef.current !== sid) {
-              void stopWatchers(sid)
+            // Race-safe stale check (F11) + Codex F14: pass the
+            // `ptySessionId` we captured at the START of this detection
+            // (line 133), so the stop IPC targets the right backend
+            // watcher even if the workspace→PTY mapping has since
+            // been unregistered (which would make `getPtySessionId(sid)`
+            // fall back to the workspace ID, sending stop to the
+            // wrong session and leaking the newly-started watcher).
+            if (currentSessionIdRef.current !== sid) {
+              void stopWatchers(sid, ptySessionId)
 
               return
             }

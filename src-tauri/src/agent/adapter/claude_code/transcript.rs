@@ -156,6 +156,19 @@ fn text_block_text(block: &Value) -> Option<&str> {
     block.get("text").and_then(Value::as_str)
 }
 
+/// Whether `block` is a `{"type":"text", "text": "..."}` value carrying
+/// non-empty content. Used by `extract_tool_result_content` to decide
+/// whether trailing blocks count as "skipped" for the `[output truncated]`
+/// marker — empty-string sentinel blocks (which Claude Code's streaming
+/// JSONL emits on partial flushes) carry no content, so they must NOT
+/// count as skipped (Claude review on PR #153, F10 + F12).
+fn is_non_empty_text_block(block: &Value) -> bool {
+    text_block_type(block) == Some("text")
+        && text_block_text(block)
+            .map(|t| !t.is_empty())
+            .unwrap_or(false)
+}
+
 fn input_file_path(input: &Value) -> Option<&str> {
     input.get("file_path").and_then(Value::as_str)
 }
@@ -661,6 +674,14 @@ fn extract_tool_result_content(value: &Value) -> String {
         // `append_capped_text` actually dropped bytes; `blocks_skipped`
         // means we broke out of the loop with more text blocks ahead. The
         // marker fires only if at least one of these is true.
+        //
+        // The two `iter.any(...)` calls below both check whether any
+        // remaining block in the iterator counts as "non-empty text"
+        // (i.e. would have contributed real content if reached). The
+        // predicate was duplicated across both break branches and is
+        // now a named helper so any future refinement (e.g., excluding
+        // whitespace-only blocks) updates a single site (Claude review
+        // on PR #153, F12).
         let mut content_truncated = false;
         let mut blocks_skipped = false;
         let mut iter = arr.iter();
@@ -669,22 +690,7 @@ fn extract_tool_result_content(value: &Value) -> String {
                 if let Some(text) = text_block_text(block) {
                     content_truncated = append_capped_text(&mut out, text);
                     if content_truncated {
-                        // `.map(|t| !t.is_empty()).unwrap_or(false)` —
-                        // an empty-string text block (`"text": ""`,
-                        // which streaming-partial JSONL flushes can
-                        // emit) carries no content, so it must NOT
-                        // count as a skipped block when deciding
-                        // whether to append the `[output truncated]`
-                        // marker. Plain `.is_some()` would mis-fire on
-                        // those empty sentinels and produce a false
-                        // truncation marker (Claude review on PR #153,
-                        // F10).
-                        blocks_skipped = iter.any(|b| {
-                            text_block_type(b) == Some("text")
-                                && text_block_text(b)
-                                    .map(|t| !t.is_empty())
-                                    .unwrap_or(false)
-                        });
+                        blocks_skipped = iter.any(is_non_empty_text_block);
                         break;
                     }
                     // Add a separator newline only if the block didn't
@@ -706,14 +712,8 @@ fn extract_tool_result_content(value: &Value) -> String {
                             // content was dropped when only the
                             // inter-block separator was omitted, OR
                             // when the only remaining blocks are empty
-                            // sentinels (Claude review on PR #153,
-                            // F10).
-                            blocks_skipped = iter.any(|b| {
-                                text_block_type(b) == Some("text")
-                                    && text_block_text(b)
-                                        .map(|t| !t.is_empty())
-                                        .unwrap_or(false)
-                            });
+                            // sentinels.
+                            blocks_skipped = iter.any(is_non_empty_text_block);
                             break;
                         }
                     }
