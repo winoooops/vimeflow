@@ -50,7 +50,12 @@ src-tauri/src/agent/
 │
 └── adapter/
     ├── mod.rs               ← trait AgentAdapter<R>, impl<R> dyn AgentAdapter<R>, NoOpAdapter, Tauri commands
-    ├── base.rs              ← orchestration (start_for<R>, WatcherHandle, AgentWatcherState, TranscriptState/Handle/StartStatus)
+    ├── base/
+    │   ├── mod.rs           ← thin orchestration facade (start_for<R>, re-exports)
+    │   ├── diagnostics.rs   ← watcher.event / slow_event / tx_path_change support types
+    │   ├── path_security.rs ← StatusSource trust_root enforcement
+    │   ├── transcript_state.rs ← TranscriptState/Handle/StartStatus registry
+    │   └── watcher_runtime.rs  ← notify watcher, inline read, polling fallback, WatcherHandle
     ├── types.rs             ← StatusSource, ParsedStatus
     ├── json.rs              ← shared JSON-extraction primitives
     └── claude_code/
@@ -238,18 +243,17 @@ pub(crate) fn start_for<R: tauri::Runtime>(
 ) -> Result<(), String>
 ```
 
-Lives in `adapter/base.rs`. **Private (`pub(crate)`) — production callers never see it; they go through `<dyn AgentAdapter<R>>::start`, which delegates here.**
+Lives in `adapter/base/mod.rs`. **Private (`pub(crate)`) — production callers never see it; they go through `<dyn AgentAdapter<R>>::start`, which delegates here.**
 
-Responsibilities (≈700 lines):
+`base/mod.rs` stays intentionally small. It resolves the adapter's `StatusSource`, delegates trust-root checks to `base/path_security.rs`, removes any existing watcher for the session, logs the active-watcher count, delegates runtime construction to `base/watcher_runtime.rs`, then inserts the resulting `WatcherHandle` into `AgentWatcherState`.
 
-1. Resolve `StatusSource` from the adapter, canonicalize `trust_root`, walk to deepest existing ancestor of `src.path`, assert under `trust_root`. `create_dir_all` the parent. Re-canonicalize and re-assert.
-2. Stop any existing watcher for `session_id` and log the active-watcher count (after the remove, so the leak signal is honest).
-3. Build the `notify` watcher with a 100ms debounce; filter events on the target file.
-4. Spawn a polling-fallback thread (3s interval) — covers WSL2's inotify gaps and atomic-write rename patterns.
-5. Run an **inline-init read** before returning — handles the race where the status file is written before the frontend calls `start_agent_watcher`.
-6. Emit per-event diagnostic logs (`watcher.event` / `watcher.slow_event` / `watcher.tx_path_change`) shaped by the private `EventTiming` / `PathHistory` / `TxOutcome` types. These show up in `Vimeflow.log` and are the primary debugging surface when the watcher mis-behaves.
-7. When `parse_status` yields a transcript path, route the spawn through `state.start_or_replace(adapter.clone(), …)` — the registry owns the `(transcript_path, cwd)` identity check, the `Replaced` / `AlreadyRunning` short-circuit, and the previous-handle cleanup.
-8. Construct the `WatcherHandle` with `_watcher: Some(...)`, `transcript_state: state.clone()`, `session_id: sid.clone()` so its `Drop` can cascade. Insert into `AgentWatcherState`.
+The runtime details are split by responsibility:
+
+1. `base/path_security.rs` canonicalizes `trust_root`, walks to the deepest existing ancestor of `src.path`, asserts under `trust_root`, creates the parent, then re-canonicalizes and re-asserts.
+2. `base/watcher_runtime.rs` builds the `notify` watcher with a 100ms debounce, filters events on the target file, performs the inline-init read, and spawns the 3s polling fallback for WSL2/inotify gaps and atomic-write rename patterns.
+3. `base/diagnostics.rs` owns `watcher.event` / `watcher.slow_event` / `watcher.tx_path_change` support types: `EventTiming`, `PathHistory`, and `TxOutcome`.
+4. `base/transcript_state.rs` owns the transcript registry. When `parse_status` yields a transcript path, the watcher runtime routes through `TranscriptState::start_or_replace(adapter.clone(), …)`, which owns the `(transcript_path, cwd)` identity check, `Replaced` / `AlreadyRunning` short-circuit, and previous-handle cleanup.
+5. `base/watcher_runtime.rs` constructs the `WatcherHandle` with `_watcher: Some(...)`, `transcript_state: state.clone()`, and `session_id: sid.clone()` so its `Drop` can cascade.
 
 ---
 
