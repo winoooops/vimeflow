@@ -70,16 +70,38 @@ impl AgentWatcherState {
         }
     }
 
-    /// Insert a watcher for a session, stopping any existing watcher
+    /// Insert a watcher for a session, stopping any existing watcher.
+    ///
+    /// Scope the lock guard to a nested block so the evicted
+    /// `WatcherHandle` (if any) drops AFTER the watchers mutex is
+    /// released. `WatcherHandle::Drop` joins the polling thread, which
+    /// can sleep up to 3 seconds — holding the mutex across that wait
+    /// would block any concurrent `insert` / `remove` / `active_count`
+    /// for the same duration. Same fix that was already in
+    /// `TranscriptState::stop` (Claude review on PR #152, F7).
     pub fn insert(&self, session_id: String, handle: WatcherHandle) {
-        let mut watchers = self.watchers.lock().expect("failed to lock watchers");
-        watchers.insert(session_id, handle);
+        let _displaced = {
+            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+            watchers.insert(session_id, handle)
+        };
+        // `_displaced: Option<WatcherHandle>` drops here, after the
+        // guard above is gone. If non-None, its `Drop` joins the poll
+        // thread without holding the mutex.
     }
 
-    /// Remove and stop a watcher for a session
+    /// Remove and stop a watcher for a session.
+    ///
+    /// Same lock-vs-Drop concern as `insert` — scope the guard so the
+    /// removed `WatcherHandle` drops outside the mutex (Claude review
+    /// on PR #152, F7).
     pub fn remove(&self, session_id: &str) -> bool {
-        let mut watchers = self.watchers.lock().expect("failed to lock watchers");
-        watchers.remove(session_id).is_some()
+        let handle = {
+            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+            watchers.remove(session_id)
+        };
+        handle.is_some()
+        // `handle: Option<WatcherHandle>` drops at end of function,
+        // after the lock guard above has already gone out of scope.
     }
 
     /// Check if a session has an active watcher
