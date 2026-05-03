@@ -1,11 +1,14 @@
 use std::sync::{Arc, Mutex};
 
-use vimeflow_lib::agent::transcript::TranscriptState;
+use tauri::test::MockRuntime;
+use vimeflow_lib::agent::adapter::AgentAdapter;
+use vimeflow_lib::agent::adapter::base::TranscriptState;
+use vimeflow_lib::agent::adapter::claude_code::ClaudeCodeAdapter;
 
 #[test]
 fn cargo_mixed_fixture_emits_test_run_with_groups() {
-    use tauri::test::mock_builder;
     use tauri::Listener;
+    use tauri::test::mock_builder;
 
     let app = mock_builder().build(tauri::generate_context!()).unwrap();
     let app_handle = app.handle().clone();
@@ -17,6 +20,7 @@ fn cargo_mixed_fixture_emits_test_run_with_groups() {
     });
 
     let state = TranscriptState::new();
+    let adapter: Arc<dyn AgentAdapter<MockRuntime>> = Arc::new(ClaudeCodeAdapter);
     let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/transcript_cargo_mixed.jsonl");
 
@@ -28,6 +32,7 @@ fn cargo_mixed_fixture_emits_test_run_with_groups() {
 
     state
         .start_or_replace(
+            adapter,
             app_handle,
             "session-cargo".to_string(),
             fixture_path,

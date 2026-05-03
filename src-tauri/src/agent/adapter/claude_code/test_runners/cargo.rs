@@ -17,10 +17,10 @@ use std::path::Path;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+use super::ANSI_RE;
 use super::types::{
     CapturedOutput, TestGroup, TestGroupKind, TestGroupStatus, TestRunSummary, TestRunner,
 };
-use super::ANSI_RE;
 
 pub static CARGO_TEST: TestRunner = TestRunner {
     name: "cargo",
@@ -38,19 +38,16 @@ fn cargo_matches(tokens: &[&str]) -> bool {
 // we sum across all of them.
 //   test result: ok. 47 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out
 static SUMMARY_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r"(?m)test result:\s+\w+\.\s+(\d+)\s+passed;\s+(\d+)\s+failed;\s+(\d+)\s+ignored",
-    )
-    .unwrap()
+    Regex::new(r"(?m)test result:\s+\w+\.\s+(\d+)\s+passed;\s+(\d+)\s+failed;\s+(\d+)\s+ignored")
+        .unwrap()
 });
 
 // Individual test outcome lines:
 //   test foo::bar::test_x ... ok
 //   test foo::bar::test_y ... FAILED
 //   test foo::bar::test_z ... ignored
-static TEST_LINE_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?m)^test\s+([\w:]+)\s+\.\.\.\s+(ok|FAILED|ignored)\s*$").unwrap()
-});
+static TEST_LINE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?m)^test\s+([\w:]+)\s+\.\.\.\s+(ok|FAILED|ignored)\s*$").unwrap());
 
 fn cargo_parse_result(out: &CapturedOutput, _cwd: &Path) -> Option<TestRunSummary> {
     let stripped = ANSI_RE.replace_all(&out.content, "").to_string();
@@ -64,9 +61,18 @@ fn cargo_parse_result(out: &CapturedOutput, _cwd: &Path) -> Option<TestRunSummar
         // Use saturating_add — bare `+=` would panic in debug and wrap
         // silently in release if a workspace had implausibly many test
         // binaries. Saturating clamps at u32::MAX with no extra cost.
-        let p: u32 = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
-        let f: u32 = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
-        let s: u32 = cap.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+        let p: u32 = cap
+            .get(1)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(0);
+        let f: u32 = cap
+            .get(2)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(0);
+        let s: u32 = cap
+            .get(3)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(0);
         passed = passed.saturating_add(p);
         failed = failed.saturating_add(f);
         skipped = skipped.saturating_add(s);
@@ -141,7 +147,10 @@ mod tests {
     use std::path::PathBuf;
 
     fn captured(content: &str) -> CapturedOutput {
-        CapturedOutput { content: content.to_string(), is_error: false }
+        CapturedOutput {
+            content: content.to_string(),
+            is_error: false,
+        }
     }
 
     #[test]
@@ -161,7 +170,7 @@ test mycrate::tests::test_a ... ok
 test mycrate::tests::test_b ... ok
 test mycrate::tests::test_c ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n"
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n",
         );
         let s = cargo_parse_result(&out, &PathBuf::from("/tmp")).unwrap();
         assert_eq!(s.passed, 3);
@@ -182,7 +191,7 @@ test mycrate::a::test_x ... ok
 test mycrate::a::test_y ... FAILED
 test mycrate::b::test_z ... ignored
 
-test result: FAILED. 1 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out\n"
+test result: FAILED. 1 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out\n",
         );
         let s = cargo_parse_result(&out, &PathBuf::from("/tmp")).unwrap();
         assert_eq!(s.passed, 1);
@@ -202,7 +211,7 @@ test result: FAILED. 1 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out\n
     fn sums_multiple_summary_lines() {
         let out = captured(
             "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
-test result: ok. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n"
+test result: ok. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n",
         );
         let s = cargo_parse_result(&out, &PathBuf::from("/tmp")).unwrap();
         assert_eq!(s.passed, 8);

@@ -51,11 +51,6 @@ const stopWatchers = async (workspaceSessionId: string): Promise<void> => {
   } catch {
     // Watcher may not be running — ignore
   }
-  try {
-    await invoke('stop_transcript_watcher', { sessionId: ptyId })
-  } catch {
-    // Transcript watcher may not be running — ignore
-  }
 }
 
 export const useAgentStatus = (sessionId: string | null): AgentStatus => {
@@ -64,8 +59,26 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   )
   const prevSessionIdRef = useRef<string | null>(sessionId)
 
-  // Track whether the watcher has been started for this session so we
-  // don't start duplicate watchers on every poll hit.
+  // Two refs with distinct semantics — DO NOT collapse them. Collapsing
+  // them was the source of the F1 panel-stuck bug Codex flagged twice
+  // on PR #152: a transient detection failure on the backend leaves
+  // `watcherStartedRef` false, so the exit-collapse `else` branch
+  // early-returns and the panel stays in `isActive: true` forever.
+  //
+  //   - `agentEverDetectedRef`: did detect_agent_in_session ever
+  //     succeed for this session? Used to gate the exit-collapse path
+  //     (only collapse if we ever showed an active agent).
+  //   - `watcherStartedRef`: did `start_agent_watcher` invoke succeed?
+  //     Used to gate (a) re-invoking start_agent_watcher (avoid
+  //     duplicate watchers per detection poll) and (b) calling
+  //     stopWatchers on exit (skip the IPC if the watcher never
+  //     started).
+  //
+  // The collapse path runs whenever the agent has been detected in the
+  // past and is now gone, regardless of whether the backend watcher
+  // start succeeded — so transient `start_agent_watcher` failures no
+  // longer leave the panel stuck.
+  const agentEverDetectedRef = useRef(false)
   const watcherStartedRef = useRef(false)
 
   // Track the collapse timeout so it can be cancelled if the agent
@@ -82,6 +95,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       }
 
       prevSessionIdRef.current = sessionId
+      agentEverDetectedRef.current = false
       watcherStartedRef.current = false
       if (collapseTimeoutRef.current) {
         clearTimeout(collapseTimeoutRef.current)
@@ -122,10 +136,16 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
           isActive: true,
           agentType: mapped,
         }))
+        agentEverDetectedRef.current = true
 
         // Start the status-line file watcher (only once).
         // The path is derived server-side from the PTY session's CWD —
         // the frontend only sends the session ID (prevents path traversal).
+        // If start_agent_watcher fails (transient backend detection
+        // miss), `watcherStartedRef` stays false and we retry on the
+        // next poll. The exit-collapse path is gated on
+        // `agentEverDetectedRef`, NOT this ref, so a stuck-failed start
+        // no longer leaves the panel active forever.
         if (!watcherStartedRef.current) {
           try {
             await invoke('start_agent_watcher', {
@@ -133,19 +153,30 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
             })
             watcherStartedRef.current = true
           } catch {
-            // Watcher may fail if bridge files weren't generated — retry next poll
+            // Watcher may fail if bridge files weren't generated, or the
+            // backend's re-detect raced with agent exit — retry next poll.
           }
         }
       } else {
-        // Agent exited — stop watchers if they were running.
-        if (!watcherStartedRef.current) {
+        // Agent exited (or was never detected this session). Only run
+        // the collapse path if we actually showed an active agent at
+        // some point — otherwise we'd schedule a no-op timeout from
+        // every "no agent yet" poll.
+        if (!agentEverDetectedRef.current) {
           return
         }
-        watcherStartedRef.current = false
-        void stopWatchers(sid)
+        agentEverDetectedRef.current = false
 
-        // Hold final state for 5s, then collapse.
-        // Store the timeout ID so it can be cancelled if the agent restarts.
+        // Stop the backend watcher only if it actually started. Skip
+        // the IPC otherwise (it would error with "no active watcher").
+        if (watcherStartedRef.current) {
+          watcherStartedRef.current = false
+          void stopWatchers(sid)
+        }
+
+        // Hold final state for 5s, then collapse. Runs regardless of
+        // watcherStartedRef — that's the F1 fix: a transient
+        // start_agent_watcher failure no longer blocks collapse.
         collapseTimeoutRef.current = setTimeout(() => {
           collapseTimeoutRef.current = null
           setStatus((prev) =>
