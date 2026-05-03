@@ -383,7 +383,13 @@ pub(super) fn start_watching<R: tauri::Runtime>(
                             inline_tx_path = Some(path.clone());
                         }
                     }
-                    Err(_) => {
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to parse statusline for session {} \
+                             (inline-init): {}",
+                            initial_sid,
+                            e
+                        );
                         outcome = TxOutcome::ParseError;
                     }
                 }
@@ -466,7 +472,14 @@ pub(super) fn start_watching<R: tauri::Runtime>(
                             (TxOutcome::NoPath, None)
                         }
                     }
-                    Err(_) => (TxOutcome::ParseError, None),
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to parse statusline for session {} (poll): {}",
+                            poll_sid,
+                            e
+                        );
+                        (TxOutcome::ParseError, None)
+                    }
                 };
 
                 record_event_diag(
