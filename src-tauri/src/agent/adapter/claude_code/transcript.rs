@@ -637,12 +637,24 @@ fn extract_tool_result_content(value: &Value) -> String {
     }
     if let Some(arr) = raw.as_array() {
         let mut out = String::new();
-        let mut truncated = false;
-        for block in arr {
+        // Two distinct truncation signals so the marker isn't emitted on
+        // a separator-newline miss when the LAST text block exactly fills
+        // the cap (Claude review on PR #153). `content_truncated` means
+        // `append_capped_text` actually dropped bytes; `blocks_skipped`
+        // means we broke out of the loop with more text blocks ahead. The
+        // marker fires only if at least one of these is true.
+        let mut content_truncated = false;
+        let mut blocks_skipped = false;
+        let mut iter = arr.iter();
+        while let Some(block) = iter.next() {
             if text_block_type(block) == Some("text") {
                 if let Some(text) = text_block_text(block) {
-                    truncated |= append_capped_text(&mut out, text);
-                    if truncated {
+                    content_truncated = append_capped_text(&mut out, text);
+                    if content_truncated {
+                        blocks_skipped = iter.any(|b| {
+                            text_block_type(b) == Some("text")
+                                && text_block_text(b).is_some()
+                        });
                         break;
                     }
                     // Add a separator newline only if the block didn't
@@ -656,14 +668,24 @@ fn extract_tool_result_content(value: &Value) -> String {
                         if out.len() < MAX_TOOL_RESULT_CONTENT_LEN {
                             out.push('\n');
                         } else {
-                            truncated = true;
+                            // Cap exactly hit by content; the LAST block
+                            // itself wasn't truncated. Only flag the
+                            // output as truncated if MORE text blocks
+                            // follow this one — otherwise the marker
+                            // would falsely claim content was dropped
+                            // when only the inter-block separator was
+                            // omitted.
+                            blocks_skipped = iter.any(|b| {
+                                text_block_type(b) == Some("text")
+                                    && text_block_text(b).is_some()
+                            });
                             break;
                         }
                     }
                 }
             }
         }
-        if truncated {
+        if content_truncated || blocks_skipped {
             append_truncated_marker(&mut out);
         }
         return out;
@@ -792,6 +814,58 @@ mod tests {
 
         assert!(content.contains(TOOL_RESULT_TRUNCATED_MARKER));
         assert!(!content.contains("should not be appended"));
+    }
+
+    /// F1 regression (Claude review on PR #153). When the LAST text
+    /// block exactly fills `MAX_TOOL_RESULT_CONTENT_LEN` and does not
+    /// end with `\n`, the pre-fix code emitted `[output truncated]`
+    /// even though no content was dropped — only the inter-block
+    /// separator newline was omitted. The post-fix code distinguishes
+    /// `content_truncated` (bytes dropped by `append_capped_text`)
+    /// from `blocks_skipped` (more text blocks ahead at break time)
+    /// and emits the marker only when at least one is true.
+    #[test]
+    fn extract_tool_result_content_no_marker_on_exact_cap_fill_last_block() {
+        // Block content with no trailing newline that exactly equals
+        // the cap. If it were the only text block, the marker MUST NOT
+        // be appended (no content was dropped, no blocks skipped).
+        let exactly_at_cap: String = "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN);
+        let value = serde_json::json!({
+            "content": [
+                { "type": "text", "text": exactly_at_cap }
+            ]
+        });
+
+        let content = extract_tool_result_content(&value);
+
+        assert_eq!(content.len(), MAX_TOOL_RESULT_CONTENT_LEN);
+        assert!(
+            !content.contains(TOOL_RESULT_TRUNCATED_MARKER),
+            "marker must not appear for an exact-cap fill on the last block"
+        );
+    }
+
+    /// Sibling regression to the above: when the FIRST block exactly
+    /// fills the cap (no trailing newline) AND a subsequent text block
+    /// exists, the marker MUST appear because that subsequent block
+    /// was skipped — `blocks_skipped` should be true.
+    #[test]
+    fn extract_tool_result_content_marker_on_exact_cap_fill_with_subsequent_block() {
+        let exactly_at_cap: String = "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN);
+        let value = serde_json::json!({
+            "content": [
+                { "type": "text", "text": exactly_at_cap },
+                { "type": "text", "text": "block-two-skipped" }
+            ]
+        });
+
+        let content = extract_tool_result_content(&value);
+
+        assert!(
+            content.contains(TOOL_RESULT_TRUNCATED_MARKER),
+            "marker should appear when subsequent text blocks are skipped"
+        );
+        assert!(!content.contains("block-two-skipped"));
     }
 
     #[test]

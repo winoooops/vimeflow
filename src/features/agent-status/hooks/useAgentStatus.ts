@@ -93,9 +93,15 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // Reset state when sessionId changes
   useEffect(() => {
     if (prevSessionIdRef.current !== sessionId) {
-      // Clean up watchers for the old session
+      // Clean up watchers for the old session. We always invoke
+      // `stopWatchers` (which suppresses errors) rather than gating on
+      // `watcherStartedRef.current`, because the ref reflects only the
+      // last LOCAL start outcome — if a prior `stop_agent_watcher`
+      // failed transiently, the ref reads false but the BACKEND watcher
+      // is still alive. Skipping stop here would leak that watcher
+      // across the session-change boundary (Codex review on PR #153).
       const oldId = prevSessionIdRef.current
-      if (oldId && watcherStartedRef.current) {
+      if (oldId) {
         watcherStartedRef.current = false
         void stopWatchers(oldId)
       }
@@ -191,12 +197,16 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         }
         agentEverDetectedRef.current = false
 
-        // Stop the backend watcher only if it actually started. Skip
-        // the IPC otherwise (it would error with "no active watcher").
-        if (watcherStartedRef.current) {
-          watcherStartedRef.current = false
-          void stopWatchers(sid)
-        }
+        // Stop the backend watcher unconditionally. `stopWatchers`
+        // suppresses errors, so an IPC against a never-started watcher
+        // is a harmless no-op. We deliberately do NOT gate on
+        // `watcherStartedRef.current` here: that ref reflects only the
+        // last LOCAL start outcome, and a prior failed stop would leave
+        // it false while the backend watcher is still alive. Always
+        // calling stop ensures retry on the next exit path (Codex
+        // review on PR #153).
+        watcherStartedRef.current = false
+        void stopWatchers(sid)
 
         // Hold final state for 5s, then collapse. Runs regardless of
         // watcherStartedRef — that's the F1 fix: a transient
@@ -483,7 +493,12 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         collapseTimeoutRef.current = null
       }
       const sid = prevSessionIdRef.current
-      if (sid && watcherStartedRef.current) {
+      // Same-rationale as session-change cleanup: don't gate on
+      // `watcherStartedRef.current`, because it can lie when a prior
+      // stop failed (Codex review on PR #153). `stopWatchers`
+      // swallows errors, so the IPC is safe even when no watcher is
+      // running.
+      if (sid) {
         watcherStartedRef.current = false
         void stopWatchers(sid)
       }

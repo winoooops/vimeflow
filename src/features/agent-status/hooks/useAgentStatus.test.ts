@@ -119,7 +119,14 @@ describe('useAgentStatus', () => {
     })
   })
 
-  test('does not stop watcher on unmount if watcher never started', async () => {
+  test('always invokes stop_agent_watcher on unmount even if watcher never started', async () => {
+    // Updated for F2 (Codex review on PR #153). The previous behavior
+    // skipped the IPC when `watcherStartedRef.current === false`, but
+    // that ref reflects only the LAST local start outcome — if a prior
+    // `stop_agent_watcher` failed transiently it lies, leaving the
+    // backend watcher alive. The new contract: cleanup paths always
+    // call stop; `stopWatchers` swallows the resulting "no active
+    // watcher" error so the IPC is harmless when no watcher exists.
     const { unmount } = renderHook(() => useAgentStatus('session-1'))
 
     await vi.waitFor(() => {
@@ -130,8 +137,10 @@ describe('useAgentStatus', () => {
 
     unmount()
 
-    expect(invoke).not.toHaveBeenCalledWith('stop_agent_watcher', {
-      sessionId: 'pty-session-1',
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
     })
   })
 
@@ -640,7 +649,12 @@ describe('useAgentStatus', () => {
     })
   })
 
-  test('does not stop watchers when sessionId changes before watcher starts', async () => {
+  test('always invokes stop_agent_watcher when sessionId changes even if watcher never started', async () => {
+    // Updated for F2 (Codex review on PR #153). Same rationale as the
+    // unmount cleanup test above: the cleanup IPC is unconditional now
+    // because `watcherStartedRef.current` cannot be trusted after a
+    // failed stop. `stopWatchers` swallows the resulting "no active
+    // watcher" error.
     const { rerender } = renderHook(
       ({ id }: { id: string | null }) => useAgentStatus(id),
       { initialProps: { id: 'session-1' } }
@@ -654,8 +668,10 @@ describe('useAgentStatus', () => {
 
     rerender({ id: 'session-2' })
 
-    expect(invoke).not.toHaveBeenCalledWith('stop_agent_watcher', {
-      sessionId: 'pty-session-1',
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
     })
   })
 
