@@ -796,13 +796,17 @@ describe('useAgentStatus', () => {
     const PTY_ID = 'pty-1'
     vi.mocked(getPtySessionId).mockReturnValue(PTY_ID)
 
+    // F20 (Claude review, PR #152): track detect_agent_in_session calls via a
+    // closure variable rather than introspecting `invokeMock.mock.calls` inside
+    // the implementation. The latter relies on Vitest recording calls BEFORE
+    // invoking the implementation — an implementation detail, not a contract.
+    let detectCallCount = 0
+
     const invokeMock = vi.fn((cmd: string): Promise<unknown> => {
       if (cmd === 'detect_agent_in_session') {
+        detectCallCount += 1
         // First call returns an agent; subsequent calls return null.
-        const detectCalls = invokeMock.mock.calls.filter(
-          ([c]) => c === 'detect_agent_in_session'
-        ).length
-        if (detectCalls === 1) {
+        if (detectCallCount === 1) {
           return Promise.resolve({
             sessionId: PTY_ID,
             agentType: 'claudeCode',

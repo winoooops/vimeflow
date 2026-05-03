@@ -130,13 +130,46 @@ impl TranscriptState {
         };
         let _gate_guard = gate.lock().expect("failed to lock per-session start gate");
 
-        {
-            let watchers = self.watchers.lock().expect("failed to lock watchers");
+        // Extract any old watcher BEFORE spawning the new tail thread, so
+        // the old thread is fully joined before the new one starts emitting
+        // events for this session_id. The previous order (spawn → insert
+        // (capturing old) → stop old outside the lock) created a
+        // ~POLL_INTERVAL (500 ms) overlap window during which both tail
+        // threads were live; on the cwd-change Replaced path (same
+        // transcript_path, different cwd) the new thread replays all events
+        // from byte 0 while the old thread still drains its read buffer,
+        // producing duplicate `agent-tool-call` and `agent-turn` events that
+        // inflate `recentToolCalls` and aggregate counters in the frontend
+        // (which has no toolUseId-level dedup). Claude review on PR #152, F19.
+        //
+        // Lock-ordering remains gate → watchers; the watchers mutex is never
+        // held across the blocking `handle.stop()` join. Between extracting
+        // and re-inserting the entry the map has no row for this session_id
+        // for ~500 ms, but the per-session gate ensures no concurrent
+        // `start_or_replace` or `stop()` for this session can observe that
+        // gap (both acquire the gate first, F4).
+        //
+        // Trade-off: if `adapter.tail_transcript` fails AFTER the old
+        // watcher is stopped, the caller gets the error AND the session is
+        // left with no active watcher. Previously (spawn-first order) a
+        // tail_transcript failure preserved the old watcher. The new
+        // behaviour is intentional for the Replaced path: a cwd change
+        // means the old cwd is no longer the correct routing context, so a
+        // failed swap should fail loudly rather than silently keep a
+        // stale-cwd tailer alive.
+        let old_handle = {
+            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             if let Some(current) = watchers.get(&session_id) {
                 if current.transcript_path == transcript_path && current.cwd == cwd {
                     return Ok(TranscriptStartStatus::AlreadyRunning);
                 }
             }
+            watchers.remove(&session_id).map(|watcher| watcher.handle)
+        };
+
+        let had_old = old_handle.is_some();
+        if let Some(handle) = old_handle {
+            handle.stop();
         }
 
         let new_handle = adapter.tail_transcript(
@@ -149,17 +182,14 @@ impl TranscriptState {
         // The per-session gate guarantees no concurrent `start_or_replace`
         // can have inserted between the check above and this insert.
         // `stop()` also acquires the gate (Claude review on PR #152, F4),
-        // so it cannot have removed an entry mid-flight either. The
-        // pre-gate code re-checked `(transcript_path, cwd)` identity here
-        // and stopped the spare handle on a tie — that branch is now
-        // unreachable (F5), so it's removed. Outcome is determined purely
-        // by whether an entry already exists for this session: present →
-        // Replaced (different identity, since the early-return above
-        // handled the same-identity case under the same gate); absent →
-        // Started.
-        let old_handle = {
+        // so it cannot have removed an entry mid-flight either. Outcome is
+        // determined by whether the pre-spawn extract found an entry:
+        // present → Replaced (different identity, since the early-return
+        // above handled the same-identity case under the same gate);
+        // absent → Started.
+        {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
-            let old = watchers.insert(
+            watchers.insert(
                 session_id,
                 TranscriptWatcher {
                     transcript_path,
@@ -167,20 +197,13 @@ impl TranscriptState {
                     handle: new_handle,
                 },
             );
-            old.map(|watcher| watcher.handle)
-        };
+        }
 
-        let status = if old_handle.is_some() {
+        Ok(if had_old {
             TranscriptStartStatus::Replaced
         } else {
             TranscriptStartStatus::Started
-        };
-
-        if let Some(handle) = old_handle {
-            handle.stop();
-        }
-
-        Ok(status)
+        })
     }
 
     /// Check if a session already has an active transcript watcher.
@@ -405,5 +428,163 @@ mod tests {
         }
 
         assert!(stop_flag.load(Ordering::Relaxed));
+    }
+
+    /// Regression test for F19 — start_or_replace on the cwd-change
+    /// Replaced path must fully stop the old tail thread BEFORE spawning
+    /// the new one. The pre-fix order was (spawn-new → insert → stop-old),
+    /// which left both threads live for ~POLL_INTERVAL (500 ms) and
+    /// produced duplicate `agent-tool-call` / `agent-turn` events on the
+    /// frontend.
+    ///
+    /// The invariant is observed via a custom adapter that records the
+    /// order of `tail_transcript` calls AND the order of stop-flag flips
+    /// on the handles it returns. After two `start_or_replace` calls (cwd
+    /// A then cwd B on the same transcript_path), the recorded sequence
+    /// must be: `spawn(A)`, `stop(A)`, `spawn(B)` — NOT `spawn(A)`,
+    /// `spawn(B)`, `stop(A)`.
+    ///
+    /// Claude review on PR #152, F19.
+    #[test]
+    fn replace_on_cwd_change_stops_old_before_spawning_new() {
+        use std::sync::Mutex;
+
+        struct OrderingAdapter {
+            events: Arc<Mutex<Vec<String>>>,
+            stop_flags: Arc<Mutex<Vec<Arc<AtomicBool>>>>,
+        }
+
+        impl<R: tauri::Runtime> AgentAdapter<R> for OrderingAdapter {
+            fn agent_type(&self) -> crate::agent::types::AgentType {
+                crate::agent::types::AgentType::ClaudeCode
+            }
+
+            fn status_source(
+                &self,
+                _cwd: &std::path::Path,
+                _session_id: &str,
+            ) -> crate::agent::adapter::types::StatusSource {
+                unreachable!("status_source not exercised in this test")
+            }
+
+            fn parse_status(
+                &self,
+                _session_id: &str,
+                _raw: &str,
+            ) -> Result<crate::agent::adapter::types::ParsedStatus, String> {
+                unreachable!("parse_status not exercised in this test")
+            }
+
+            fn validate_transcript(&self, _raw: &str) -> Result<PathBuf, String> {
+                unreachable!("validate_transcript not exercised in this test")
+            }
+
+            fn tail_transcript(
+                &self,
+                _app: tauri::AppHandle<R>,
+                _session_id: String,
+                cwd: Option<PathBuf>,
+                _transcript_path: PathBuf,
+            ) -> Result<TranscriptHandle, String> {
+                let cwd_label = cwd
+                    .as_deref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "<none>".to_string());
+                self.events
+                    .lock()
+                    .expect("events lock")
+                    .push(format!("spawn({})", cwd_label));
+
+                let stop_flag = Arc::new(AtomicBool::new(false));
+                let stop_clone = Arc::clone(&stop_flag);
+                let events_clone = Arc::clone(&self.events);
+                let cwd_for_thread = cwd_label.clone();
+                self.stop_flags
+                    .lock()
+                    .expect("stop_flags lock")
+                    .push(Arc::clone(&stop_flag));
+
+                // The mock thread polls the stop flag and records when it
+                // observes the stop. Real adapters do real I/O here; the
+                // poll cadence below is deliberately tight so the test
+                // doesn't pad runtime.
+                let join_handle = std::thread::spawn(move || {
+                    while !stop_clone.load(Ordering::Acquire) {
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                    events_clone
+                        .lock()
+                        .expect("events lock in mock thread")
+                        .push(format!("stop({})", cwd_for_thread));
+                });
+
+                Ok(TranscriptHandle::new(stop_flag, join_handle))
+            }
+        }
+
+        let app = tauri::test::mock_builder()
+            .build(tauri::generate_context!())
+            .expect("failed to build test app");
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let transcript_path = tmp.path().join("t.jsonl");
+        std::fs::write(&transcript_path, "").expect("failed to write transcript");
+        let cwd_a = tempfile::tempdir().expect("failed to create cwd_a");
+        let cwd_b = tempfile::tempdir().expect("failed to create cwd_b");
+
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let stop_flags = Arc::new(Mutex::new(Vec::<Arc<AtomicBool>>::new()));
+        let adapter: Arc<dyn AgentAdapter<tauri::test::MockRuntime>> =
+            Arc::new(OrderingAdapter {
+                events: Arc::clone(&events),
+                stop_flags: Arc::clone(&stop_flags),
+            });
+
+        let state = TranscriptState::new();
+        let session_id = "session-f19".to_string();
+
+        state
+            .start_or_replace(
+                adapter.clone(),
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path.clone(),
+                Some(cwd_a.path().to_path_buf()),
+            )
+            .expect("failed to start with cwd_a");
+
+        state
+            .start_or_replace(
+                adapter,
+                app.handle().clone(),
+                session_id.clone(),
+                transcript_path,
+                Some(cwd_b.path().to_path_buf()),
+            )
+            .expect("failed to replace with cwd_b");
+
+        state.stop(&session_id).expect("failed to stop watcher");
+
+        // After `state.stop()` returns, the second handle's `stop()` has
+        // joined the thread, so both `stop(A)` and `stop(B)` events are
+        // guaranteed to be in the log (the mock thread pushes the stop
+        // event before exiting; `handle.stop()` waits for that exit).
+        let recorded = events.lock().expect("events lock").clone();
+        // The invariant: stop(A) appears BEFORE spawn(B). Pre-fix order
+        // (spawn-then-stop) would have produced spawn(A), spawn(B),
+        // stop(A), stop(B). Post-fix order produces spawn(A), stop(A),
+        // spawn(B), stop(B).
+        let spawn_b_idx = recorded
+            .iter()
+            .position(|e| e.starts_with("spawn(") && e.contains(cwd_b.path().to_str().unwrap()))
+            .expect("spawn(B) must appear in event log");
+        let stop_a_idx = recorded
+            .iter()
+            .position(|e| e.starts_with("stop(") && e.contains(cwd_a.path().to_str().unwrap()))
+            .expect("stop(A) must appear in event log");
+        assert!(
+            stop_a_idx < spawn_b_idx,
+            "F19 regression: expected stop(A) before spawn(B); got events {:?}",
+            recorded
+        );
     }
 }
