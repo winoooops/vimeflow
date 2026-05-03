@@ -86,6 +86,15 @@ note bottom of ClaudeCodeAdapter
   • transcript::validate_transcript_path
   • transcript::start_tailing
   • test_runners (via transcript)
+
+  <b>JSON parsing is Claude-private</b>
+  (domain helpers like `bash_command(item)`,
+  `total_input_tokens(value)`, plus small
+  Claude-private path helpers for repeated
+  3+ deep reads). No shared adapter::json
+  module — see decision record at
+  docs/decisions/2026-05-03-claude-parser-
+  json-boundary.md.
 end note
 
 class NoOpAdapter <<struct>> {
@@ -140,7 +149,8 @@ AgentAdapter ..> ParsedStatus : returns
 AgentAdapter ..> AgentType : returns
 
 ' ────────────────────────────────────────────────────────────────────
-' ORCHESTRATION (private, lives in agent::adapter::base)
+' ORCHESTRATION (private; thin facade in base/mod.rs delegates to
+' base/{diagnostics,path_security,transcript_state,watcher_runtime}.rs)
 ' ────────────────────────────────────────────────────────────────────
 
 class "base::start_for<R: Runtime>" as StartFor <<pub(crate) fn>> #FFEFD5 {
@@ -154,24 +164,30 @@ class "base::start_for<R: Runtime>" as StartFor <<pub(crate) fn>> #FFEFD5 {
 }
 
 note right of StartFor
-  <b>The orchestration body.</b>
-  • debounce + notify watcher
-  • WSL2 polling fallback
-  • inline-init read
-  • path-history diagnostics
-  • transcript spawn via
-    `state.start_or_replace(adapter, …)`
-  • trust_root canonicalize-and-verify
-  • constructs `WatcherHandle` with
-    `_watcher: Some(watcher)`,
-    `transcript_state: state.clone()`,
-    `session_id: sid.clone()`
+  <b>Thin facade in base/mod.rs.</b> Orchestrates by delegating:
+  • <i>path_security</i> — trust_root canonicalize-and-verify
+  • <i>watcher_runtime</i> — notify watcher + WSL2 polling fallback
+    + inline-init read + WatcherHandle construction
+  • <i>diagnostics</i> — watcher.event / slow_event / tx_path_change
+  • <i>transcript_state</i> — TranscriptState::start_or_replace
+    (which calls `adapter.tail_transcript(…)`)
+
+  WatcherHandle gets `_watcher: Some(watcher)`,
+  `transcript_state: state.clone()`,
+  `session_id: sid.clone()` so its Drop cascade works.
 end note
 
 DynImpl ..> StartFor : delegates
 
 ' ────────────────────────────────────────────────────────────────────
-' LIFECYCLE TYPES (in base.rs; pub #[doc(hidden)] for tests)
+' LIFECYCLE TYPES (in agent::adapter::base/, split across files;
+' pub #[doc(hidden)] for tests)
+'
+' base/mod.rs            — orchestration facade + start_for<R>
+' base/diagnostics.rs    — TxOutcome, EventTiming, PathHistory
+' base/path_security.rs  — trust_root canonicalize + verify
+' base/transcript_state.rs — TranscriptState/Handle/StartStatus
+' base/watcher_runtime.rs — notify watcher, poll fallback, WatcherHandle
 ' ────────────────────────────────────────────────────────────────────
 
 class WatcherHandle <<struct>> #LightYellow {

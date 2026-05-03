@@ -341,20 +341,34 @@ Tauri-managed via `lib.rs`'s `.manage(TranscriptState::new())`. **Visibility:** 
 
 ## Claude parser JSON boundary
 
-There is intentionally no shared `agent::adapter::json` module. Only Claude uses JSON parser helpers today, so shared adapter-level helpers would be premature until Codex/Aider prove the same abstraction is useful.
+There is intentionally **no** shared `agent::adapter::json` module. Only Claude uses JSON parser helpers today, so shared adapter-level helpers would be premature until Codex / Aider prove the same abstraction is useful.
 
-Claude parser flow should call domain functions first:
+Parser flow calls **domain functions** first — the call site reads as Claude concepts, not JSON paths:
 
 ```rust
+// transcript.rs — extract a Bash tool_use's command field
+fn bash_command(item: &Value) -> Option<&str> { … }
+
 let test_match = bash_command(item).and_then(|cmd| match_command(cmd, cwd));
+
+// statusline.rs — domain accessors over the context_window subtree
+fn total_input_tokens(value: &Value) -> u64 { … }
+fn current_usage(value: &Value) -> Option<CurrentUsage> { … }
+
 let context_window = ContextWindowStatus {
     total_input_tokens: total_input_tokens(value),
     current_usage: current_usage(value),
-    // ...
+    // …
 };
 ```
 
-Inside those helpers, 1-2 level reads use explicit `.get().and_then(...)` because they show the JSON shape directly. Repeated 3+ level reads may use small Claude-private helpers. The decision is recorded in `docs/decisions/2026-05-03-claude-parser-json-boundary.md`.
+Inside those domain helpers:
+
+- **1-2 level reads** use explicit `.get().and_then(...)` because the JSON shape is right there in the code.
+- **3+ deep, repeated** reads use small **Claude-private** path helpers (`f64_at`, `u64_or`, `f64_or` in `claude_code/statusline.rs:368-378`). They're free fns inside `claude_code/statusline.rs` — not exported, not promoted to `adapter::json`, not visible to other adapters.
+- Generic `at` / `_or` helpers stay implementation details of the Claude parser. Promote them to `adapter::json` (or whatever) only after Codex's parser actually demonstrates the same shape is useful.
+
+Full rationale and rejected alternatives in [`docs/decisions/2026-05-03-claude-parser-json-boundary.md`](../../../docs/decisions/2026-05-03-claude-parser-json-boundary.md).
 
 ---
 
@@ -370,5 +384,6 @@ Inside those helpers, 1-2 level reads use explicit `.get().and_then(...)` becaus
 
 - **`docs/superpowers/specs/2026-05-02-claude-adapter-refactor-design.md`** — the design spec (architectural decisions, rationale, IDEA blocks).
 - **`docs/superpowers/plans/2026-05-03-claude-adapter-refactor-stage-1.md`** — the implementation plan (14 tasks, 91 bite-sized steps, exact code).
+- **`docs/decisions/2026-05-03-claude-parser-json-boundary.md`** — why parser helpers stay Claude-private until a second adapter exists.
 - **`rules/common/design-philosophy.md`** — the deep-module / interface-discipline principles this design is grounded in.
 - **`rules/rust/patterns.md`** — Tauri command shape, managed state, event system.
