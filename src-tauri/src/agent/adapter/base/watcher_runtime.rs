@@ -304,14 +304,21 @@ pub(super) fn start_watching<R: tauri::Runtime>(
         );
     })
     .map_err(|e| format!("failed to create watcher: {}", e))?;
-    // Watch the parent directory (notify watches directories, not individual files)
+    // Watch the parent directory (notify watches directories, not individual
+    // files). The directory is guaranteed to exist and to have passed the
+    // canonicalize-and-verify trust-root check by `path_security::
+    // ensure_status_source_under_trust_root`, the only path that reaches
+    // this function (Claude review on PR #152, F3 — removed a redundant
+    // create_dir_all that re-did path_security's work). If `start_watching`
+    // is ever promoted to `pub` and gains a caller that bypasses
+    // `start_for`, that caller is responsible for invoking
+    // `ensure_status_source_under_trust_root` first; do NOT add a defensive
+    // create_dir_all here, because it would create the directory without
+    // the post-create symlink-race re-canonicalize check that
+    // `path_security` performs.
     let parent_dir = status_file_path
         .parent()
         .ok_or_else(|| "status file path has no parent directory".to_string())?;
-
-    // Create the parent directory if it does not exist
-    std::fs::create_dir_all(parent_dir)
-        .map_err(|e| format!("failed to create status directory: {}", e))?;
 
     watcher
         .watch(parent_dir, RecursiveMode::NonRecursive)

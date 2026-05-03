@@ -59,12 +59,21 @@ struct TranscriptWatcher {
 #[derive(Default, Clone)]
 pub struct TranscriptState {
     watchers: Arc<Mutex<HashMap<String, TranscriptWatcher>>>,
+    /// Per-session "start gate" — held across `tail_transcript` so the
+    /// notify callback and the 3s poll thread can't both pass the
+    /// AlreadyRunning check, both spawn, and both emit duplicate
+    /// `agent-tool-call` / `agent-turn` events from byte 0 of the
+    /// JSONL before the loser's thread is stopped (Claude review on
+    /// PR #152, F2). Different sessions still spawn concurrently
+    /// because each session has its own `Arc<Mutex<()>>`.
+    start_gates: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
 }
 
 impl TranscriptState {
     pub fn new() -> Self {
         Self {
             watchers: Arc::new(Mutex::new(HashMap::new())),
+            start_gates: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -78,6 +87,26 @@ impl TranscriptState {
         transcript_path: PathBuf,
         cwd: Option<PathBuf>,
     ) -> Result<TranscriptStartStatus, String> {
+        // Acquire (or lazily create) the per-session start gate so only
+        // one start_or_replace call per session can be inside the
+        // check + spawn + insert critical section at a time. Without
+        // this, the notify callback and 3s poll thread can both pass
+        // the AlreadyRunning check, both call adapter.tail_transcript,
+        // and both emit events from byte 0 of the JSONL during the
+        // tens-of-ms thread-spawn window before the loser's handle is
+        // stopped (Claude review on PR #152, F2).
+        let gate = {
+            let mut gates = self
+                .start_gates
+                .lock()
+                .expect("failed to lock start_gates");
+            gates
+                .entry(session_id.clone())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let _gate_guard = gate.lock().expect("failed to lock per-session start gate");
+
         {
             let watchers = self.watchers.lock().expect("failed to lock watchers");
             if let Some(current) = watchers.get(&session_id) {
@@ -157,6 +186,18 @@ impl TranscriptState {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             watchers.remove(session_id)
         };
+        // Intentionally do NOT remove this session's entry from
+        // `start_gates`. If `stop()` deleted the gate without first
+        // acquiring it, a notify callback already inside
+        // `start_or_replace` would still hold a clone of the OLD gate's
+        // `Arc<Mutex<()>>`, and a subsequent restart would lookup the
+        // empty map slot, create a NEW gate, and enter `tail_transcript`
+        // concurrently with the in-flight start — reintroducing the
+        // duplicate-tailer race the gate was added to prevent (Codex
+        // verify cycle 2 follow-up to PR #152's F2). Gates are ~56 bytes
+        // each (`String` key + `Arc<Mutex<()>>` value); leaving them
+        // for the session_id's lifetime is small enough that periodic
+        // cleanup isn't worth the lock-ordering complexity.
         match handle {
             Some(watcher) => {
                 watcher.handle.stop();
