@@ -45,7 +45,8 @@ The reviewer should be able to verify these without running the code:
 7. `TestRunEmitter::finish_replay` is still called exactly once on the first EOF of the transcript tail loop (`transcript.rs:301`).
 8. **Stage 1 NEW invariant (replaces the deleted `stop_transcript_watcher` IPC):** dropping `WatcherHandle` for a session, in this exact order, (a) drops the inner notify watcher first so no further callbacks can fire, (b) signals the polling thread's `stop_flag` and joins it, (c) calls `TranscriptState::stop(&session_id)` on the registry, signaling the tail thread's `stop_flag` and joining. The order is load-bearing: a notify callback that fires after step (c) would call `state.start_or_replace(...)` and restart the tailer (Codex review third-pass Finding 1). This cascade replaces the frontend-driven "stop watcher then stop transcript" two-step that exists today (`useAgentStatus.ts:53-58`). Verifiable by a unit test that constructs a `WatcherHandle` against a `MockAdapter`, calls `Drop`, and asserts both the polling thread joined and the `TranscriptHandle`'s `stop_flag` is set, with no late-callback-driven restart in a 100ms hold-after window.
 9. Existing tests pass with the minimum-necessary edits. Specifically:
-   - Unit `#[cfg(test)]` blocks in `agent/statusline.rs`, `agent/transcript.rs`, `agent/watcher.rs`, `agent/detector.rs`, `agent/test_runners/*`: bodies stay 1:1; only the `super::*` import paths change as the modules relocate.
+   - Unit `#[cfg(test)]` blocks in `agent/statusline.rs`, `agent/watcher.rs`, `agent/detector.rs`, `agent/test_runners/*`: bodies stay 1:1; only the `super::*` import paths change as the modules relocate.
+   - Unit `#[cfg(test)]` block in `agent/transcript.rs`: most tests stay 1:1 with relocation. **Carve-out** (Codex review fifth-pass Finding 2 — earlier wording incorrectly said all transcript tests stay 1:1): the `TranscriptState`-driving tests — `transcript_state_replaces_changed_path`, `transcript_state_threads_cwd_through`, `transcript_state_replaces_when_only_cwd_changes` (six `start_or_replace` call sites at `transcript.rs:840/845/850/871/902/913`) — move with `TranscriptState` itself into `adapter/base.rs`'s `#[cfg(test)] mod tests` block in step 9, and each call site gains the new `adapter: Arc<dyn AgentAdapter<MockRuntime>>` first argument. `transcript_handle_drop_sets_stop_flag` moves to `base.rs` along with `TranscriptHandle`; `validate_transcript_path_rejects_path_outside_claude_root` stays in `claude_code/transcript.rs`.
    - Integration tests under `src-tauri/tests/transcript_*`: change their `use vimeflow_lib::agent::transcript::TranscriptState;` import to `use vimeflow_lib::agent::adapter::base::TranscriptState;`, AND add an `Arc<dyn AgentAdapter<MockRuntime>>` argument to each `state.start_or_replace(...)` call (Codex review Finding 1 — `TranscriptState::start_or_replace` must take an adapter so it can call `adapter.tail_transcript` rather than the old direct call to `claude_code::transcript::start_tailing`). The four files affected: `transcript_vitest_e2e.rs:30-31`, `transcript_vitest_replay.rs:34-35`, `transcript_turns.rs:60-61`, `transcript_cargo_e2e.rs:30-31`. Each adds one line constructing the adapter, and threads it through the existing call. Test logic and assertions stay identical.
 
 A passing test suite plus matching `Vimeflow.log` lines for a representative Claude session is the acceptance bar.
@@ -206,8 +207,13 @@ pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
     /// including in-flight tool-call tracking, turn counting, and
     /// the replay-aware `TestRunEmitter` lifecycle (buffer during
     /// initial catch-up read, flush latest snapshot on first EOF,
-    /// emit live thereafter). Returns a handle whose `Drop` signals
-    /// stop and joins the tail thread.
+    /// emit live thereafter). Returns a `TranscriptHandle` whose
+    /// `Drop` only signals the tail thread to stop on its next poll
+    /// (sets `stop_flag`); explicit `TranscriptHandle::stop(self)`
+    /// also joins the thread. This matches today's behavior at
+    /// `transcript.rs:94-108` — Stage 1 preserves it (Codex review
+    /// fifth-pass Finding 3 — earlier doc incorrectly claimed Drop
+    /// joins, which would be a behavioral change).
     fn tail_transcript(
         &self,
         app: AppHandle<R>,
@@ -237,17 +243,22 @@ Each concrete impl is generic over `R` (`impl<R: Runtime> AgentAdapter<R> for Cl
 // in a free fn that accepts `Arc<dyn AgentAdapter<R>>`).
 
 impl<R: tauri::Runtime> dyn AgentAdapter<R> {
-/// Construct the adapter for a detected agent type. Returns `Err`
-/// for agents not yet implemented; the Tauri command surfaces this
-/// as a watcher-startup failure (`useAgentStatus.ts:135-138` already
-/// handles it gracefully).
+/// Construct the adapter for a detected agent type. For agents not
+/// yet implemented in Stage 1 (Codex / Aider / Generic), this
+/// returns a `NoOpAdapter` whose `status_source` points at the
+/// same path Claude uses (`<cwd>/.vimeflow/sessions/<sid>/status.json`)
+/// so the watcher starts successfully — no statusline.sh writes
+/// there under non-Claude agents, so no events ever fire, but the
+/// frontend's exit-collapse gate (`useAgentStatus.ts:139-154`,
+/// keyed off `watcherStartedRef.current`) keeps working when the
+/// agent process exits. Stage 2 replaces the `Codex` arm with a
+/// real `CodexAdapter`. (Codex review fifth-pass Finding 1 — see
+/// the IDEA block on `NoOpAdapter` below for why returning `Err`
+/// breaks the UI for unsupported agents.)
 pub fn for_type(agent_type: AgentType) -> Result<Arc<Self>, String> {
 match agent_type {
 AgentType::ClaudeCode => Ok(Arc::new(ClaudeCodeAdapter)),
-other => Err(format!(
-"agent type {:?} not yet supported by AgentAdapter",
-other,
-)),
+other => Ok(Arc::new(NoOpAdapter::new(other))),
 }
 }
 
@@ -448,7 +459,50 @@ These currently live in `watcher.rs` and `transcript.rs`. They move into `adapte
 
 ### Factory
 
-`for_type` is shown above in the `impl<R: tauri::Runtime> dyn AgentAdapter<R>` inherent block. The error path is intentional and Stage-1-correct: today, `start_agent_watcher` invoked under a non-Claude detected agent already does nothing useful (no `status.json` exists at the Claude-shaped path; the watcher polls it forever and emits zero events). Returning `Err` here makes that silent no-op explicit at the `Result` boundary so the frontend can react. Stage 2 turns the `Codex` arm into `Ok(Arc::new(CodexAdapter::new()))`; until then, attempting to start a Codex watcher fails fast with a clear diagnostic.
+`for_type` is shown above in the `impl<R: tauri::Runtime> dyn AgentAdapter<R>` inherent block. The `NoOpAdapter` fallback for non-Claude agents preserves Stage 0's user-visible behavior — the watcher starts, no events fire, and when the agent process exits the frontend's existing `watcherStartedRef.current`-keyed collapse path runs naturally. Stage 2 replaces the `Codex` arm with a real `CodexAdapter::new(...)`.
+
+`NoOpAdapter` itself is a small struct in `adapter/mod.rs`:
+
+```rust
+pub(crate) struct NoOpAdapter {
+    agent_type: AgentType,
+}
+
+impl NoOpAdapter {
+    pub fn new(agent_type: AgentType) -> Self { Self { agent_type } }
+}
+
+impl<R: tauri::Runtime> AgentAdapter<R> for NoOpAdapter {
+    fn agent_type(&self) -> AgentType { self.agent_type }
+
+    /// Same path Claude uses, so the watcher's create_dir_all + watch
+    /// behavior matches today's "start succeeds, no events" no-op for
+    /// non-Claude agents. trust_root is the workspace cwd.
+    fn status_source(&self, cwd: &Path, sid: &str) -> StatusSource {
+        StatusSource {
+            path: cwd.join(".vimeflow").join("sessions").join(sid).join("status.json"),
+            trust_root: cwd.to_path_buf(),
+        }
+    }
+
+    // Hooks below are reachable only if a non-Claude agent somehow
+    // wrote the Claude-shaped status.json — should not happen in
+    // production. Return Err so the watcher logs and skips, matching
+    // today's parse-failure path.
+    fn parse_status(&self, _: &str, _: &str) -> Result<ParsedStatus, String> {
+        Err(format!("{:?} has no parser; statusline write was unexpected",
+                    self.agent_type))
+    }
+    fn validate_transcript(&self, _: &str) -> Result<PathBuf, String> {
+        Err(format!("{:?} has no transcript validator", self.agent_type))
+    }
+    fn tail_transcript(
+        &self, _: AppHandle<R>, _: String, _: Option<PathBuf>, _: PathBuf,
+    ) -> Result<TranscriptHandle, String> {
+        Err(format!("{:?} has no transcript tailer", self.agent_type))
+    }
+}
+```
 
 ## Tauri Command Surface
 
@@ -493,7 +547,8 @@ No other frontend changes. Bindings under `src/bindings/` are auto-generated fro
 
 ### What survives unchanged
 
-- All unit tests in `agent/statusline.rs`, `agent/transcript.rs`, `agent/test_runners/*`. They move with their module; their test bodies are 1:1.
+- All unit tests in `agent/statusline.rs`, `agent/test_runners/*`, and most of `agent/transcript.rs`. They move with their module; their test bodies are 1:1.
+- **Carve-out for the `TranscriptState`-driving unit tests** (Codex review fifth-pass Finding 2): the three tests in `agent/transcript.rs`'s `#[cfg(test)]` block that drive `state.start_or_replace(...)` — `transcript_state_replaces_changed_path`, `transcript_state_threads_cwd_through`, `transcript_state_replaces_when_only_cwd_changes` — move with `TranscriptState` into `adapter/base.rs`'s test block in step 9, and each `start_or_replace` call gains the new `adapter` argument. Test bodies are NOT 1:1 for these three; logic and assertions stay identical, but the call signature changes by one parameter. `transcript_handle_drop_sets_stop_flag` moves to `base.rs` along with `TranscriptHandle`; `validate_transcript_path_rejects_path_outside_claude_root` stays in `claude_code/transcript.rs`.
 - Integration tests `src-tauri/tests/transcript_*.rs` — four files (`transcript_vitest_e2e.rs`, `transcript_vitest_replay.rs`, `transcript_turns.rs`, `transcript_cargo_e2e.rs`) drive `TranscriptState::new()` directly to isolate transcript-parsing assertions from watcher orchestration. Each file gets **two** edits and no others: (1) import path changes from `vimeflow_lib::agent::transcript::TranscriptState` to `vimeflow_lib::agent::adapter::base::TranscriptState`; (2) one new line constructing `let adapter: Arc<dyn AgentAdapter<MockRuntime>> = Arc::new(ClaudeCodeAdapter)` before the `state.start_or_replace(...)` call, plus passing `adapter` as the new first argument to that call (Codex review first-pass Finding 1 + third-pass Finding 4 — `start_or_replace` takes the adapter so it can route to `adapter.tail_transcript` rather than directly to Claude-specific `start_tailing`, and earlier spec text incorrectly claimed "import-only" edits). Test logic, fixtures, and assertions stay 1:1; `TranscriptStartStatus`, `TranscriptHandle`, and the replace/already-running semantics are preserved verbatim.
 
 ### What's new
@@ -722,14 +777,16 @@ impl Drop for WatcherHandle {
 
 - **Alternatives considered:** Splitting step 10 across two commits (first introduce the generic free fn paralleling the existing one, then switch callers). Rejected — doubles the diff surface and creates a transient state where two parallel watchers could race if a test runs in between.
 
-### IDEA — `Err` (not `unimplemented!`) for non-Claude agents in `for_type`
+### IDEA — `NoOpAdapter` for non-Claude agents in `for_type`
 
-- **Intent:** Today, `start_agent_watcher` for a non-Claude detected agent silently no-ops (no `status.json` exists at the Claude-shaped path; the watcher polls forever and emits zero events). Stage 1 must not regress this into a panic.
-- **Danger:** A factory that panics (`unimplemented!`) for `AgentType::Codex` would crash the backend whenever a user runs `codex` under Vimeflow during the Stage-1 → Stage-2 window. That window is the entire point of staging the work; a panic erases the value.
-- **Explain:** The factory therefore returns `Result<Arc<Self>, String>` and yields `Err(format!("agent type {:?} not yet supported", other))` for every variant except `ClaudeCode`. The Tauri command propagates the `Err` to the frontend, which already handles watcher-startup failure as a no-op at `useAgentStatus.ts:135-138` (the `try { … } catch { /* retry next poll */ }` branch). User-visible behavior under a Codex session: detection still lights up the agent as `'codex'` in the UI (existing behavior), but the status panel stays in its inactive state — same as today.
+- **Intent:** Today, `start_agent_watcher` for a non-Claude detected agent silently no-ops at the Tauri level — the watcher starts, watches the never-written `<cwd>/.vimeflow/sessions/<sid>/status.json` path, and emits no events; the frontend's `watcherStartedRef.current` flips to `true`, and the exit-collapse path runs naturally when the process dies. Stage 1 must preserve that exit-collapse behavior, **not** just preserve the no-events behavior.
+- **Danger:** Two paths for unsupported agents looked equivalent at first; only one actually preserves Stage 0:
+  - **Panic via `unimplemented!`.** Crashes the backend whenever a user runs `codex` under Vimeflow during the Stage-1 → Stage-2 window. Rejected.
+  - **Return `Err` from `for_type`.** Looked clean — the Tauri catch at `useAgentStatus.ts:135-138` already swallows watcher-start errors. But this **regresses the UI** (Codex review fifth-pass Finding 1): `watcherStartedRef.current` never flips to `true` because `start_agent_watcher` failed. When the agent later exits, the early-return at `useAgentStatus.ts:141-143` skips the collapse. The status panel stays in `isActive: true` indefinitely. Rejected.
+- **Explain:** The factory returns `Ok(Arc::new(NoOpAdapter::new(other)))` for every variant except `ClaudeCode`. `NoOpAdapter` is a tiny struct (one `AgentType` field) whose hooks (a) return Claude's status-source path so the watcher creates the same directory and watches the same file Claude does, and (b) return `Err` from `parse_status` / `validate_transcript` / `tail_transcript` because those should never be called (no statusline.sh writes to the file under non-Claude agents). User-visible behavior under a Codex session: detection lights up the agent as `'codex'`; the status panel stays inactive (no events fire); when Codex exits, detection-driven collapse runs and the panel returns to its inactive state — **identical** to Stage 0.
 - **Alternatives considered:**
-  - Panic via `unimplemented!`. Rejected per Danger above.
-  - Return a `NoOpAdapter` for unsupported variants (an adapter whose hooks all return empty). Rejected — adds dead code that has to be maintained. The `Err` path expresses the same semantics with no extra code.
+  - **Frontend change: rework the `useAgentStatus.ts` collapse gate** to track "agent ever detected" separately from "watcher started." Honest but violates the Stage 1 "no frontend contract changes" non-goal; defer to Stage 2 if the dual-ref shape becomes worth cleaning up. Rejected for Stage 1.
+  - **Use `ClaudeCodeAdapter` for all agents during Stage 1.** Zero new code, but semantically misleading (`agent_type()` would lie about which agent it represents). Rejected — `NoOpAdapter` is the same size and honest about what it represents.
 
 ### IDEA — Pre-existing 1349-line `transcript.rs`
 
