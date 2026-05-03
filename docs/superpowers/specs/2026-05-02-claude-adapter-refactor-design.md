@@ -27,7 +27,7 @@ Introduce an `AgentAdapter` trait that owns the entire watcher pipeline as a dee
 ## Non-Goals
 
 - **No `CodexAdapter`.** That is Stage 2 in a separate spec.
-- **No frontend changes.** `AgentStatusEvent` / `AgentToolCallEvent` / `AgentTurnEvent` IPC contracts stay identical. `useAgentStatus.ts` is not touched.
+- **No frontend contract changes.** `AgentStatusEvent` / `AgentToolCallEvent` / `AgentTurnEvent` IPC payloads stay byte-identical. The Tauri command surface narrows by two — `start_transcript_watcher` and `stop_transcript_watcher` are removed — which forces exactly one frontend deletion: the `invoke('stop_transcript_watcher', …)` call in `useAgentStatus.ts:53-58`. That's the only `useAgentStatus.ts` edit; no React state, no event handling, no rendering changes.
 - **No behavioral change.** Debounce intervals, polling fallback (3s), transcript-path validation rules, the Anthropic JSONL parser, the WSL2 race fix, the `EventTiming` / `PathHistory` diagnostic logging — all preserved.
 - **No simultaneous file-size cleanup.** `transcript.rs` is currently 1349 lines (over the 800 budget in `rules/CLAUDE.md`). The Stage 1 work _moves_ it but does not split it. Splitting is C-scope tech debt, called out in "Open Questions".
 - **No new Tauri commands.** The IPC surface narrows (see "Tauri Command Surface"); no commands are added.
@@ -72,8 +72,9 @@ A passing test suite plus matching `Vimeflow.log` lines for a representative Cla
 │         -> Result<ParsedStatus, String>                  │
 │     fn validate_transcript(&self, raw_path)              │
 │         -> Result<PathBuf, String>                       │
-│     fn parse_transcript_line(&self, line, ctx)           │
-│         -> Vec<TranscriptEffect>                         │
+│     fn tail_transcript(&self, app, sid, cwd, path)       │
+│         -> Result<TranscriptHandle, String>              │
+│     // ↑ adapter OWNS the tail loop incl. TestRunEmitter │
 └──────────────────────────────────────────────────────────┘
                      │
                      ▼
@@ -100,7 +101,7 @@ A passing test suite plus matching `Vimeflow.log` lines for a representative Cla
 └──────────────────────────────────────────────────────────┘
 ```
 
-The trait is the deep-module facade; `base.rs` is the body. From outside the `agent::adapter` module, only `AgentAdapter::for_type(...)`, `.start(...)`, `.stop(...)`, and `.agent_type(...)` are callable. Everything else (debounce timing, polling fallback, transcript discovery, JSONL tailing, in-flight tool-call tracking) is private.
+The trait is the deep-module facade; `base.rs` is the body. From **production** code outside the `agent::adapter` module, only `AgentAdapter::for_type(...)`, `.start(...)`, `.stop(...)`, and `.agent_type(...)` are part of the user-facing surface — Tauri commands and any future production caller use only these. Test infrastructure (`TranscriptState`, `TranscriptHandle`, `TranscriptStartStatus`) stays `pub` at `adapter::base::*` so the four `tests/transcript_*.rs` integration tests continue driving the tailer directly; that surface is `#[doc(hidden)]` and carries a doc-comment forbidding production use (Codex review Finding 2). Everything else — debounce timing, polling fallback details, JSONL tailing, in-flight tool-call tracking, `TxOutcome`/`EventTiming`/`PathHistory` diagnostics — is genuinely private.
 
 ### Rust shape: provider-hook trait + inherent impl on `dyn` + private free helper
 
@@ -185,15 +186,33 @@ pub trait AgentAdapter: Send + Sync + 'static {
     /// MUST canonicalize and reject symlinks-out via `fs::canonicalize`.
     fn validate_transcript(&self, raw: &str) -> Result<PathBuf, String>;
 
-    /// Parse one JSONL line from the transcript stream and return
-    /// zero-or-more typed effects (tool-call started/done, turn observed,
-    /// test-run snapshot). Stateful across calls via `ctx`, which holds
-    /// in-flight tool calls, turn count, and tail-thread cwd.
-    fn parse_transcript_line(
+    /// Tail this provider's transcript and emit Tauri events as new
+    /// lines arrive. The adapter owns the tail loop end-to-end —
+    /// including in-flight tool-call tracking, turn counting, and
+    /// the replay-aware `TestRunEmitter` lifecycle (buffer during
+    /// initial catch-up read, flush latest snapshot on first EOF,
+    /// emit live thereafter). Returns a handle whose `Drop` signals
+    /// stop and joins the tail thread.
+    ///
+    /// Why this is per-adapter rather than a shared loop: today's
+    /// transcript parser at `transcript.rs:269-325` carries
+    /// `process_line(line, sid, cwd, app, &mut emitter, &mut in_flight,
+    /// &mut num_turns)` — seven arguments wired to a stateful
+    /// `TestRunEmitter` whose contract (`emitter.submit(...)` during
+    /// replay, `emitter.finish_replay()` at first EOF) is intrinsic
+    /// to the parsing logic. Splitting parser from tail loop would
+    /// either leak the emitter into the trait surface or force a
+    /// heavyweight per-line callback contract that buys nothing
+    /// because Codex's rollout-JSONL parser will be structurally
+    /// different anyway (one file is both status + transcript, no
+    /// `~/.claude` jail, distinct tool-result schema).
+    fn tail_transcript(
         &self,
-        line: &str,
-        ctx: &mut TranscriptContext,
-    ) -> Vec<TranscriptEffect>;
+        app: AppHandle,
+        session_id: String,
+        cwd: Option<PathBuf>,
+        transcript_path: PathBuf,
+    ) -> Result<TranscriptHandle, String>;
 }
 
 // ─── User-facing surface — inherent methods on the trait object ──────
@@ -205,19 +224,31 @@ pub trait AgentAdapter: Send + Sync + 'static {
 // so the body has to live in a free fn that accepts `Arc<dyn AgentAdapter>`).
 
 impl dyn AgentAdapter {
-    /// Start the watcher pipeline for this session. Idempotent — inserts
-    /// into `state`, replacing any existing handle for the sid.
+    /// Start the watcher pipeline for this session. Owns the full
+    /// lifecycle: removes any pre-existing handle for `session_id`,
+    /// logs the active-watcher count, builds the new pipeline, and
+    /// inserts the resulting `WatcherHandle` into `state`. The Tauri
+    /// command does not interact with `state` directly — that's the
+    /// "deep module" property: one call replaces the entire current
+    /// `start_agent_watcher` body's state-management dance
+    /// (`watcher.rs:680-697`).
+    ///
+    /// Returns `Ok(())` on success. The watcher runs until either
+    /// `stop` is called or the matching `WatcherHandle` is dropped
+    /// from `state` (e.g. by a subsequent `start` for the same sid).
     pub fn start(
         self: Arc<Self>,
         app: AppHandle,
         session_id: String,
         cwd: PathBuf,
         state: AgentWatcherState,
-    ) -> Result<WatcherHandle, String> {
+    ) -> Result<(), String> {
         crate::agent::adapter::base::start_for(self, app, session_id, cwd, state)
     }
 
-    /// Stop the watcher pipeline for this session.
+    /// Stop the watcher pipeline for this session. Returns `true`
+    /// when a handle was removed, `false` when no watcher was
+    /// running for the sid.
     pub fn stop(state: &AgentWatcherState, session_id: &str) -> bool {
         state.remove(session_id)
     }
@@ -242,23 +273,15 @@ pub struct ParsedStatus {
     pub transcript_path: Option<String>,
 }
 
-/// Stateful context threaded through `parse_transcript_line` calls within
-/// a single tail thread.
-pub struct TranscriptContext {
-    /// In-flight tool calls keyed by tool_use_id (or provider-specific id).
-    pub in_flight: HashMap<String, InFlightToolCall>,
-    /// Real-user-prompt count, monotonic per transcript file.
-    pub num_turns: u32,
-    /// Workspace cwd at tail-thread spawn time. Used by test-runner
-    /// matchers for path resolution.
-    pub cwd: Option<PathBuf>,
-}
-
-pub enum TranscriptEffect {
-    ToolCall(AgentToolCallEvent),
-    Turn(AgentTurnEvent),
-    TestRun(TestRunSnapshot),
-}
+// (No `TranscriptContext` / `TranscriptEffect` types — Codex review
+//  Finding 3 surfaced that decomposing transcript parsing into a
+//  per-line trait method would either leak `TestRunEmitter` /
+//  `in_flight` / `num_turns` into the trait surface or force a
+//  per-line callback contract that buys nothing (Codex's rollout
+//  JSONL is structurally different from Claude's transcript). Each
+//  adapter therefore owns its tail loop end-to-end via
+//  `tail_transcript`, returning a `TranscriptHandle` to the base
+//  layer for lifecycle management only.)
 ```
 
 ### Shared parse primitives (`adapter/json.rs`)
@@ -370,15 +393,29 @@ let primary_used = json::f64_or(&v,
   - Builder API (`Json::from(v).at("a").at("b").as_u64()`). Rejected — extra type for a one-call-per-field pattern; the slice-of-keys form composes more naturally with `const` paths.
   - `serde_path_to_error` or `jsonpath_lib` crate dependencies. Rejected — both are heavier than the ~50-line module above and obscure where the actual schema differences are. House-grown is small enough to read in one screen.
 
-### Orchestration-internal types stay private
+### Visibility of orchestration-internal types
 
-These currently live in `watcher.rs` and `transcript.rs`. They move into `adapter/base.rs` (private, not in trait surface):
+These currently live in `watcher.rs` and `transcript.rs`. They move into `adapter/base.rs` and split by visibility:
+
+**Private** (truly internal — never reached from outside `agent::adapter::base`):
 
 - `TxOutcome` — log classification for `record_event_diag`.
 - `EventTiming` — per-source timing state.
 - `PathHistory` — speculative→resolved transcript-path tracking.
-- `WatcherHandle` — already opaque from outside; stays so.
-- `TranscriptState`, `TranscriptHandle`, `TranscriptStartStatus` — collapse into `base.rs` as private. The current `pub` exposure was only because `watcher.rs` and `transcript.rs` were sibling modules; under the new layout they're sibling submodules of `base`.
+
+**Crate-internal infrastructure with `pub` visibility, kept reachable for integration tests** (Codex review Finding 2):
+
+- `WatcherHandle` — opaque externally but stays `pub` so `AgentWatcherState` can store it.
+- `TranscriptState`, `TranscriptHandle`, `TranscriptStartStatus` — stay `pub` at `agent::adapter::base::*`. They are not part of the user-facing IPC surface (Tauri commands don't take or return them), but four integration tests under `src-tauri/tests/transcript_*` import `TranscriptState` directly to drive the tailer end-to-end (e.g. `tests/transcript_vitest_e2e.rs:7`, `tests/transcript_vitest_replay.rs:8`, `tests/transcript_turns.rs:4`, `tests/transcript_cargo_e2e.rs:3`). Those imports change path under the refactor — `vimeflow_lib::agent::transcript::TranscriptState` → `vimeflow_lib::agent::adapter::base::TranscriptState` — but the test logic stays identical.
+
+#### IDEA — Why `TranscriptState` stays `pub` rather than being hidden behind the adapter
+
+- **Intent:** The deep-module property targets the _user-facing IPC surface_ (Tauri commands + frontend). Test-driving infrastructure is a different audience with a different contract; keeping it reachable via `pub` is consistent with how `tokio::runtime::Runtime` stays public even though most apps use the higher-level `tokio::spawn`.
+- **Danger:** Future code outside the adapter module could grow a dependency on `TranscriptState`'s internals, defeating the abstraction. Mitigation: a `// Test-only public surface — production code MUST use AgentAdapter::start instead` doc-comment on each `pub` item, plus a one-line `#[doc(hidden)]` to keep them out of generated docs.
+- **Explain:** The alternative — rewriting all four integration tests to drive `<dyn AgentAdapter>::start()` end-to-end — is doable but would change what those tests actually verify. They were written specifically to drive `TranscriptState` directly so the assertions can isolate transcript-parsing behavior from watcher-orchestration behavior. Forcing them through `start()` collapses two test scopes into one and makes regressions harder to localize.
+- **Alternatives considered:**
+  - Make the types `pub(crate)` and put the integration tests inside `src-tauri/src/agent/adapter/base.rs` as `#[cfg(test)]`. Rejected — the existing tests use fixture files at `src-tauri/tests/fixtures/`, which only the integration-tests crate can reach via `CARGO_MANIFEST_DIR`. Moving the tests breaks that path.
+  - Add a separate `pub(crate) fn test_drive_transcript(...)` helper for tests only. Rejected — adds a parallel surface that exists only for tests, violating "make invalid states unrepresentable" by inviting confusion about which API is canonical.
 
 ### Factory
 
@@ -448,14 +485,14 @@ No other frontend changes. Bindings under `src/bindings/` are auto-generated fro
 ### What survives unchanged
 
 - All unit tests in `agent/statusline.rs`, `agent/transcript.rs`, `agent/test_runners/*`. They move with their module; their test bodies are 1:1.
-- Integration tests `src-tauri/tests/transcript_*.rs` — exercise the transcript tailer end-to-end through Tauri's mock app handle. They keep working because the `TranscriptState` semantics they test (start/replace/already-running) become semantics of `base::start_for` instead, with the same observable `TranscriptStartStatus` enum visible inside `base`.
+- Integration tests `src-tauri/tests/transcript_*.rs` — four files (`transcript_vitest_e2e.rs`, `transcript_vitest_replay.rs`, `transcript_turns.rs`, `transcript_cargo_e2e.rs`) drive `TranscriptState::new()` directly to isolate transcript-parsing assertions from watcher orchestration. Their import path updates from `vimeflow_lib::agent::transcript::TranscriptState` to `vimeflow_lib::agent::adapter::base::TranscriptState` — that's the only edit; test bodies stay identical (Codex review Finding 2). `TranscriptStartStatus`, `TranscriptHandle`, and the `start_or_replace` semantics they exercise are preserved verbatim under the new path.
 
 ### What's new
 
 - `agent/adapter/base.rs` gets a `MockAdapter` test impl (in `#[cfg(test)] mod tests`) that records hook invocations. Tests cover:
   - `start_for` calls `status_source` exactly once at startup.
   - `start_for` calls `parse_status` on every notify event after debounce.
-  - `start_for` calls `parse_transcript_line` for each tail-thread line.
+  - `start_for` calls `adapter.tail_transcript(...)` exactly once when `parse_status` returns a transcript path, and the returned `TranscriptHandle` is held inside `TranscriptState`'s registry.
   - Polling fallback fires every 3s in WSL2 (env-flagged) or by mock clock injection.
   - `WatcherHandle::Drop` joins the poll thread and the transcript tail thread.
 - `agent/adapter/claude_code/mod.rs` gets a `ClaudeCodeAdapter` test that verifies each provider hook delegates correctly. These are thin tests — the heavy lifting still lives in the moved `statusline.rs` / `transcript.rs` test suites.
@@ -473,14 +510,56 @@ Each step compiles and passes tests independently. PRs may bundle them or split 
 
 1. **Add new module skeletons.** Create `agent/adapter/{mod.rs,base.rs,types.rs,json.rs,claude_code/mod.rs}` empty/stub. Wire `agent/mod.rs` to declare `pub mod adapter;`. Build passes; nothing yet uses the new modules.
 2. **Implement `adapter/json.rs`** with `navigate`, `extract<T>`, `u64_at` / `f64_at` / `str_at` / `obj_at`, and `u64_or` / `f64_or` / `str_or` per the "Shared parse primitives" section. Add unit tests covering: missing path, partial path (intermediate key absent), wrong-type leaf, default fallback, deep navigation. Build passes; tests pass.
-3. **Move provider-hook types.** Add `StatusSource`, `ParsedStatus`, `TranscriptContext`, `TranscriptEffect`, `InFlightToolCall` (extracted from `transcript.rs:57-66`) to `adapter/types.rs`. Pure additions.
+3. **Move provider-hook types.** Add `StatusSource`, `ParsedStatus` to `adapter/types.rs`. (`TranscriptHandle` moves to `adapter/base.rs` in step 7 alongside the rest of the transcript lifecycle. `InFlightToolCall` from `transcript.rs:57-66` stays inside `claude_code/transcript.rs` since transcript parsing is now per-adapter — Codex review Finding 3.) Pure additions; nothing yet uses them.
 4. **Define `trait AgentAdapter` skeleton in `adapter/mod.rs` with provider hooks only.** No `start`/`stop`/`for_type` yet — those live on the `impl dyn AgentAdapter` inherent block that lands in step 10, after `base::start_for` exists in step 9. Build passes; trait has no callers.
 5. **Move `agent/test_runners/` → `agent/adapter/claude_code/test_runners/`.** Update import paths in the moved files (relative `super::` references) and in `transcript.rs`'s import (still in old location). Build passes; tests pass unchanged.
 6. **Move `agent/statusline.rs` → `agent/adapter/claude_code/statusline.rs` AND refactor its parsers to use `adapter::json` primitives.** Update import paths in the moved file's tests. Update `agent/mod.rs` to drop the `pub mod statusline;` declaration. Update `watcher.rs`'s import to `use crate::agent::adapter::claude_code::statusline::parse_statusline;` (temporary; goes away in step 9). Replace every `obj.get(...).and_then(|v| v.as_*()).unwrap_or(default)` chain with the equivalent `json::*_or(&v, &["..."], default)` call. **Acceptance check (mechanical):** `rg "and_then\(\|v\| v\.as_(u64|f64|str|object)\(\)\)" src-tauri/src/agent/adapter/` returns zero results. Build passes; tests pass unchanged (parser refactor is semantics-preserving).
-7. **Move `agent/transcript.rs` → `agent/adapter/claude_code/transcript.rs`.** Same shape as step 6. `validate_transcript_path` stays `pub(crate)` for now so `watcher.rs` can still call it during the transitional period. Note: `transcript.rs`'s parsers consume `serde_json::Value` directly via `value.get(...).and_then(|v| v.as_str())` etc — these uses also migrate to `adapter::json` primitives in the same commit. Build passes; tests pass unchanged.
-8. **Implement `ClaudeCodeAdapter` in `adapter/claude_code/mod.rs`.** Each provider hook delegates to the (now-moved) `statusline::parse_statusline` / `transcript::validate_transcript_path` / etc. Add unit tests that verify delegation. Build passes; new tests pass.
-9. **Move watcher orchestration body into `adapter/base.rs`.** Verbatim from `watcher.rs:403-642` (`start_watching`), with the new signature `pub(crate) fn start_for(adapter: Arc<dyn AgentAdapter>, app: AppHandle, sid: String, cwd: PathBuf, state: AgentWatcherState) -> Result<WatcherHandle, String>`. Replace direct `parse_statusline` calls with `adapter.parse_status(...)`; replace `validate_transcript_path` calls with `adapter.validate_transcript(...)`; replace status-file-path construction with `adapter.status_source(cwd, sid).path`. The `TranscriptState`, `TxOutcome`, `EventTiming`, `PathHistory` types move with it as private items in `base.rs`. **Critical: this is the step that risks behavioral drift. Reviewer should diff `watcher.rs` (old) vs. `base.rs` (new) and confirm only the hook-call substitutions changed.**
-10. **Wire `start_agent_watcher` / `stop_agent_watcher` Tauri commands to use the adapter.** Move them from `watcher.rs` to `adapter/mod.rs`. The Tauri body becomes: `let adapter = <dyn AgentAdapter>::for_type(detected_type)?; let handle = adapter.start(app, sid, cwd, state.inner().clone())?; state.insert(sid, handle);`. Add the `impl dyn AgentAdapter { fn for_type(...), fn start(...), fn stop(...) }` inherent block.
+7. **Move `agent/transcript.rs` → `agent/adapter/claude_code/transcript.rs` AND extract shared lifecycle types into `adapter/base.rs`.** This step does three things atomically so integration tests stay green:
+   1. Move the per-line parsing logic (`tail_loop`, `process_line`, `process_assistant_message`, `process_tool_result`, `start_tailing`, the `InFlightToolCall` struct, the `TestRunEmitter` integration) into `adapter/claude_code/transcript.rs`.
+   2. Lift `TranscriptState`, `TranscriptHandle`, `TranscriptStartStatus` out of the file and place them in `adapter/base.rs` as `pub` items with `#[doc(hidden)]` (per Finding 2). They're shared lifecycle infrastructure, not Claude-specific.
+   3. Update the four integration tests' imports in one commit:
+      - `tests/transcript_vitest_e2e.rs:7`
+      - `tests/transcript_vitest_replay.rs:8`
+      - `tests/transcript_turns.rs:4`
+      - `tests/transcript_cargo_e2e.rs:3`
+        Each changes `use vimeflow_lib::agent::transcript::TranscriptState;` → `use vimeflow_lib::agent::adapter::base::TranscriptState;`. Test bodies stay identical.
+
+   `validate_transcript_path` stays `pub(crate)` inside `claude_code/transcript.rs` for now so `watcher.rs` can still call it during the transitional period (goes away in step 9). `transcript.rs`'s parsers that consume `serde_json::Value` directly via `value.get(...).and_then(|v| v.as_str())` migrate to `adapter::json` primitives in this same commit (per Finding 2's parser-dedup acceptance check). Build passes; integration tests pass under their new import path; nothing else changes.
+
+8. **Implement `ClaudeCodeAdapter` in `adapter/claude_code/mod.rs`.** Each provider hook delegates to the (now-moved) Claude logic:
+   - `agent_type` → `AgentType::ClaudeCode`
+   - `status_source(cwd, sid)` → `StatusSource { path: <cwd>/.vimeflow/sessions/<sid>/status.json, trust_root: <cwd> }`
+   - `parse_status(sid, raw)` → `statusline::parse_statusline(sid, raw)`
+   - `validate_transcript(raw)` → `transcript::validate_transcript_path(raw)` (the `~/.claude` jail logic)
+   - `tail_transcript(app, sid, cwd, path)` → wraps the existing `transcript::start_tailing(app, sid, path, cwd)`, returning the resulting `TranscriptHandle` (Finding 3 — the entire `tail_loop`, `process_line`, `TestRunEmitter` lifecycle stays inside `claude_code/transcript.rs` unchanged)
+     Add unit tests that verify each hook's delegation contract. Build passes; new tests pass.
+9. **Move watcher orchestration body into `adapter/base.rs`.** Verbatim from `watcher.rs:403-642` (`start_watching`) and the surrounding `start_agent_watcher` Tauri command body (`watcher.rs:649-697`, the state.remove + log + start_watching + state.insert flow), with the new signature `pub(crate) fn start_for(adapter: Arc<dyn AgentAdapter>, app: AppHandle, sid: String, cwd: PathBuf, state: AgentWatcherState) -> Result<(), String>` (Codex review Finding 4 — adapter owns the full state lifecycle). Replace direct `parse_statusline` calls with `adapter.parse_status(...)`; replace `validate_transcript_path` calls with `adapter.validate_transcript(...)`; replace status-file-path construction with `adapter.status_source(cwd, sid).path`. The `TxOutcome`, `EventTiming`, `PathHistory` types move with it as private items in `base.rs`. (`TranscriptState` / `TranscriptHandle` / `TranscriptStartStatus` already landed in `base.rs` in step 7, so they're already addressable here.) The transcript-tailer call site changes from the previous inline `start_tailing(...)` to `adapter.tail_transcript(...)` — a single delegated call (Finding 3). **Critical: this is the step that risks behavioral drift. Reviewer should diff `watcher.rs` (old) vs. `base.rs` (new) and confirm every change is one of: (a) hook-call substitution per the IDEA below, (b) state-lifecycle wrapping into `start_for`, (c) `tail_transcript` delegation. No silent behavioral edits.**
+10. **Wire `start_agent_watcher` / `stop_agent_watcher` Tauri commands to use the adapter.** Move them from `watcher.rs` to `adapter/mod.rs`. The IPC contract for `start_agent_watcher` stays unchanged — it still receives only `session_id` plus the managed `AgentWatcherState` and `PtyState`. **The agent type is re-detected on the backend** (Codex review Finding 1) — the frontend's separate `detect_agent_in_session` poll is not the source of truth for which adapter to build. Concretely:
+
+    ```rust
+    #[tauri::command]
+    pub async fn start_agent_watcher(
+        app_handle: tauri::AppHandle,
+        state: tauri::State<'_, AgentWatcherState>,
+        pty_state: tauri::State<'_, crate::terminal::PtyState>,
+        session_id: String,
+    ) -> Result<(), String> {
+        let cwd = pty_state.get_cwd(&session_id)
+            .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
+        let pid = pty_state.get_pid(&session_id)
+            .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
+        let agent_type = detect_agent(pid)
+            .map(|(t, _pid)| t)
+            .ok_or_else(|| format!(
+                "no agent detected in PTY session {}", session_id
+            ))?;
+        let adapter = <dyn AgentAdapter>::for_type(agent_type)?;
+        adapter.start(app_handle, session_id, PathBuf::from(cwd), (*state).clone())
+    }
+    ```
+
+    Re-running detection on the backend rather than trusting a frontend-supplied `agent_type` parameter avoids a TOCTOU window between detection and watcher start (the agent could exit and a different one start in the same PTY) and matches `rules/rust/patterns.md`'s "validate all inputs on the Rust side — the frontend is untrusted." Also add the `impl dyn AgentAdapter { fn for_type(...), fn start(...), fn stop(...) }` inherent block in `adapter/mod.rs`.
+
 11. **Delete `agent/watcher.rs`.** Update `agent/mod.rs` re-exports.
 12. **Delete `start_transcript_watcher` / `stop_transcript_watcher` Tauri commands.** Update `lib.rs`'s `tauri::generate_handler![…]` list. Frontend `useAgentStatus.ts:53-58` deletion lands in the same commit.
 13. **Acceptance test pass.** Per "Acceptance test" above.
@@ -491,7 +570,13 @@ Each step compiles and passes tests independently. PRs may bundle them or split 
 
 - **Intent:** The watcher orchestration is dense (debounce + notify + WSL2 poll fallback + inline-init read + path-history diagnostics + transcript replay). Moving it into a generic function across a single PR commit risks subtle drift: a missed debounce reset, a swapped argument, a race in the polling thread spawn.
 - **Danger:** Drift is silent. The agent panel still lights up; events still fire. But e.g. a missed `last.lock()` reset could turn the 100ms debounce into 0ms and cause event storms under WSL2; a swapped `Mutex` lock order could deadlock during `WatcherHandle::Drop`.
-- **Explain:** Mitigation — step 9 is its own commit with no other changes. Reviewer must run a `diff -u` between the deleted `watcher.rs::start_watching` body and the new `base::start_for` body and confirm every change is one of: (a) parameter `&dyn AgentAdapter` substitution, (b) `parse_statusline(&sid, &c)` → `adapter.parse_status(&sid, &c)`, (c) `validate_transcript_path(p)` → `adapter.validate_transcript(p)`, (d) status-file-path construction → `adapter.status_source(cwd, sid).path`. No other changes are admissible in this commit.
+- **Explain:** Mitigation — step 9 is its own commit with no other changes. Reviewer must run a `diff -u` between the deleted `watcher.rs::{start_agent_watcher,start_watching}` bodies and the new `base::start_for` body and confirm every change is one of:
+  1. `parse_statusline(&sid, &c)` → `adapter.parse_status(&sid, &c)`
+  2. `validate_transcript_path(p)` → `adapter.validate_transcript(p)`
+  3. status-file-path construction → `adapter.status_source(cwd, sid).path`
+  4. inline `transcript::start_tailing(app, sid, path, cwd)` → `adapter.tail_transcript(app, sid, cwd, path)`
+  5. wrapping the previous `start_agent_watcher` body's `state.remove(&sid)` + active-count log + `state.insert(sid, handle)` flow into the new `start_for` body so the adapter owns lifecycle (Finding 4)
+     No other changes are admissible in this commit.
 - **Alternatives considered:** Splitting step 9 across two commits (first introduce the generic free fn paralleling the existing one, then switch callers). Rejected — doubles the diff surface and creates a transient state where two parallel watchers could race if a test runs in between.
 
 ### IDEA — `Err` (not `unimplemented!`) for non-Claude agents in `for_type`
