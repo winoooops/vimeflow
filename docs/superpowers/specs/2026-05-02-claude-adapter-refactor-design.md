@@ -473,7 +473,14 @@ impl NoOpAdapter {
 }
 
 impl<R: tauri::Runtime> AgentAdapter<R> for NoOpAdapter {
-    fn agent_type(&self) -> AgentType { self.agent_type }
+    fn agent_type(&self) -> AgentType { self.agent_type.clone() }
+    // ↑ `.clone()` because AgentType currently derives only `Clone`,
+    //   not `Copy` (`agent/types.rs:6`). Returning `self.agent_type`
+    //   directly from `&self` would move out of a shared reference and
+    //   fail to compile (Codex review sixth-pass Finding 1). The Clone
+    //   is ~free for a unit-variant enum. ClaudeCodeAdapter's hook is
+    //   unaffected because it returns the literal `AgentType::ClaudeCode`
+    //   rather than a stored field.
 
     /// Same path Claude uses, so the watcher's create_dir_all + watch
     /// behavior matches today's "start succeeds, no events" no-op for
