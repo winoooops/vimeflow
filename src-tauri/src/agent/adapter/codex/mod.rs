@@ -5,7 +5,7 @@ mod parser;
 mod transcript;
 
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use tauri::AppHandle;
 
@@ -20,12 +20,14 @@ use self::locator::{CodexSessionLocator, CompositeLocator, LocatorError};
 
 pub struct CodexAdapter {
     locator_cache: OnceLock<CompositeLocator>,
+    resolved_rollout_path: Mutex<Option<PathBuf>>,
 }
 
 impl CodexAdapter {
     pub fn new() -> Self {
         Self {
             locator_cache: OnceLock::new(),
+            resolved_rollout_path: Mutex::new(None),
         }
     }
 
@@ -54,10 +56,17 @@ impl<R: tauri::Runtime> AgentAdapter<R> for CodexAdapter {
 
     fn status_source(&self, ctx: &BindContext<'_>) -> Result<StatusSource, BindError> {
         match self.locator().resolve_rollout(ctx) {
-            Ok(location) => Ok(StatusSource {
-                path: location.rollout_path,
-                trust_root: Self::codex_home(),
-            }),
+            Ok(location) => {
+                let rollout_path = location.rollout_path;
+                if let Ok(mut slot) = self.resolved_rollout_path.lock() {
+                    *slot = Some(rollout_path.clone());
+                }
+
+                Ok(StatusSource {
+                    path: rollout_path,
+                    trust_root: Self::codex_home(),
+                })
+            }
             Err(LocatorError::NotYetReady) => Err(BindError::Pending(
                 "codex session row not yet committed".to_string(),
             )),
@@ -68,21 +77,27 @@ impl<R: tauri::Runtime> AgentAdapter<R> for CodexAdapter {
     }
 
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
-        parser::parse_rollout(session_id, raw)
+        let transcript_path = self
+            .resolved_rollout_path
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().map(|path| path.to_string_lossy().to_string()));
+
+        parser::parse_rollout(session_id, raw, transcript_path)
     }
 
-    fn validate_transcript(&self, _raw: &str) -> Result<PathBuf, ValidateTranscriptError> {
-        transcript::validate_transcript()
+    fn validate_transcript(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError> {
+        transcript::validate_transcript_path(raw)
     }
 
     fn tail_transcript(
         &self,
-        _app: AppHandle<R>,
-        _session_id: String,
-        _cwd: Option<PathBuf>,
-        _transcript_path: PathBuf,
+        app: AppHandle<R>,
+        session_id: String,
+        cwd: Option<PathBuf>,
+        transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String> {
-        transcript::tail_transcript()
+        transcript::start_tailing(app, session_id, transcript_path, cwd)
     }
 }
 
@@ -105,21 +120,35 @@ mod adapter_tests {
     }
 
     #[test]
-    fn validate_transcript_returns_v1_stub_err() {
+    fn parse_status_includes_resolved_rollout_path_when_available() {
         let adapter = CodexAdapter::new();
-        let err =
-            <CodexAdapter as AgentAdapter<MockRuntime>>::validate_transcript(&adapter, "/tmp/t")
-                .expect_err("transcript tailing is still a stub");
-
-        match err {
-            ValidateTranscriptError::Other(message) => {
-                assert!(
-                    message.contains("not yet implemented"),
-                    "stub message changed: {}",
-                    message
-                );
-            }
-            other => panic!("expected Other variant, got {:?}", other),
+        {
+            let mut slot = adapter
+                .resolved_rollout_path
+                .lock()
+                .expect("resolved rollout path lock");
+            *slot = Some(PathBuf::from("/tmp/codex-rollout.jsonl"));
         }
+        let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
+"#;
+
+        let parsed =
+            <CodexAdapter as AgentAdapter<MockRuntime>>::parse_status(&adapter, "pty-1", raw)
+                .expect("minimal codex status parses");
+
+        assert_eq!(
+            parsed.transcript_path.as_deref(),
+            Some("/tmp/codex-rollout.jsonl")
+        );
+    }
+
+    #[test]
+    fn validate_transcript_rejects_outside_codex_root() {
+        let adapter = CodexAdapter::new();
+        assert!(
+            <CodexAdapter as AgentAdapter<MockRuntime>>::validate_transcript(&adapter, "/tmp/t")
+                .is_err(),
+            "path outside ~/.codex should be rejected"
+        );
     }
 }

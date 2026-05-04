@@ -6,7 +6,11 @@ use crate::agent::types::{
 };
 use serde_json::Value;
 
-pub fn parse_rollout(session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
+pub fn parse_rollout(
+    session_id: &str,
+    raw: &str,
+    transcript_path: Option<String>,
+) -> Result<ParsedStatus, String> {
     let mut state = CodexFoldState::default();
     let lines: Vec<&str> = raw.split('\n').collect();
     let trailing_complete = raw.ends_with('\n');
@@ -31,7 +35,7 @@ pub fn parse_rollout(session_id: &str, raw: &str) -> Result<ParsedStatus, String
 
     Ok(ParsedStatus {
         event: state.into_event(session_id),
-        transcript_path: None,
+        transcript_path,
     })
 }
 
@@ -285,7 +289,7 @@ mod tests {
     #[test]
     fn parses_minimal_single_turn() {
         let raw = fixture("rollout-minimal.jsonl");
-        let parsed = parse_rollout("pty-test", &raw).expect("happy path");
+        let parsed = parse_rollout("pty-test", &raw, None).expect("happy path");
         let event = parsed.event;
 
         assert_eq!(event.session_id, "pty-test");
@@ -337,7 +341,7 @@ mod tests {
     #[test]
     fn long_session_uses_last_token_usage_not_lifetime() {
         let raw = fixture("rollout-long-session.jsonl");
-        let parsed = parse_rollout("pty-long", &raw).expect("long session");
+        let parsed = parse_rollout("pty-long", &raw, None).expect("long session");
         let event = parsed.event;
         let used = event
             .context_window
@@ -357,7 +361,7 @@ mod tests {
     #[test]
     fn token_count_info_null_preserves_prior_context() {
         let raw = fixture("rollout-info-null.jsonl");
-        let parsed = parse_rollout("pty-info-null", &raw).expect("info-null");
+        let parsed = parse_rollout("pty-info-null", &raw, None).expect("info-null");
         let event = parsed.event;
 
         assert_eq!(event.context_window.total_input_tokens, 1000);
@@ -368,14 +372,14 @@ mod tests {
     #[test]
     fn multi_turn_sums_durations() {
         let raw = fixture("rollout-multi-turn.jsonl");
-        let parsed = parse_rollout("pty-multi", &raw).expect("multi-turn");
+        let parsed = parse_rollout("pty-multi", &raw, None).expect("multi-turn");
         assert_eq!(parsed.event.cost.total_duration_ms, 60000);
     }
 
     #[test]
     fn incomplete_trailing_line_dropped_silently() {
         let raw = fixture("rollout-incomplete-trail.jsonl");
-        let parsed = parse_rollout("pty-trail", &raw).expect("incomplete trail");
+        let parsed = parse_rollout("pty-trail", &raw, None).expect("incomplete trail");
 
         assert_eq!(parsed.event.cost.total_duration_ms, 0);
         assert_eq!(parsed.event.model_id, "gpt-5.4");
@@ -384,7 +388,7 @@ mod tests {
     #[test]
     fn malformed_mid_line_skipped_with_warn() {
         let raw = fixture("rollout-malformed-mid.jsonl");
-        let parsed = parse_rollout("pty-malformed", &raw).expect("malformed mid");
+        let parsed = parse_rollout("pty-malformed", &raw, None).expect("malformed mid");
 
         assert_eq!(parsed.event.agent_session_id, "sess-malformed");
         assert_eq!(parsed.event.model_id, "gpt-5.4");
@@ -394,13 +398,13 @@ mod tests {
     fn task_started_fallback_for_context_window_size() {
         let raw = r#"{"timestamp":"...","type":"event_msg","payload":{"type":"task_started","model_context_window":128000}}
 "#;
-        let parsed = parse_rollout("pty-fallback", raw).expect("task_started fallback");
+        let parsed = parse_rollout("pty-fallback", raw, None).expect("task_started fallback");
         assert_eq!(parsed.event.context_window.context_window_size, 128000);
     }
 
     #[test]
     fn empty_rollout_returns_defaults() {
-        let parsed = parse_rollout("pty-empty", "").expect("empty rollout");
+        let parsed = parse_rollout("pty-empty", "", None).expect("empty rollout");
         assert_eq!(parsed.event.model_id, "unknown");
         assert_eq!(parsed.event.context_window.context_window_size, 0);
         assert!(parsed.event.context_window.used_percentage.is_none());
@@ -411,7 +415,23 @@ mod tests {
     fn unknown_event_type_ignored_without_error() {
         let raw = r#"{"timestamp":"...","type":"future_event_kind","payload":{"hello":"world"}}
 "#;
-        let parsed = parse_rollout("pty-unknown", raw).expect("unknown event kind");
+        let parsed = parse_rollout("pty-unknown", raw, None).expect("unknown event kind");
         assert_eq!(parsed.event.model_id, "unknown");
+    }
+
+    #[test]
+    fn includes_transcript_path_when_provided() {
+        let raw = fixture("rollout-minimal.jsonl");
+        let parsed = parse_rollout(
+            "pty-test",
+            &raw,
+            Some("/home/user/.codex/sessions/rollout.jsonl".to_string()),
+        )
+        .expect("happy path");
+
+        assert_eq!(
+            parsed.transcript_path.as_deref(),
+            Some("/home/user/.codex/sessions/rollout.jsonl")
+        );
     }
 }
