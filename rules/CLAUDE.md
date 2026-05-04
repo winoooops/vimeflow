@@ -32,6 +32,7 @@ Each directory contains files covering the same topics:
 | `security.md`             | Secrets, input validation, scanning tools                                                                                                                             |
 | `hooks.md`                | PreToolUse/PostToolUse hooks for formatters and linters                                                                                                               |
 | `git-workflow.md`         | Commit format, PR process (common only)                                                                                                                               |
+| `pr-scope.md`             | PR scope discipline — one PR answers one question; drive-by formatting and unrelated improvements split into separate PRs (common only)                               |
 | `development-workflow.md` | Full pipeline: research → plan → TDD → review → commit (common only)                                                                                                  |
 | `performance.md`          | Profiling, caching, bundle size (common only)                                                                                                                         |
 | `code-review.md`          | Review triggers, severity levels, agent delegation (common only)                                                                                                      |
