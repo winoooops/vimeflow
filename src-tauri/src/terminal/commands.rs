@@ -257,6 +257,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         generation,
         ring,
         cancelled,
+        started_at: std::time::SystemTime::now(),
     };
     if let Err((reason, mut rejected)) =
         state.try_insert(request.session_id.clone(), session, 64)
@@ -1275,6 +1276,7 @@ mod tests {
             generation: 0,
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),
+            started_at: std::time::SystemTime::now(),
         }
     }
 
