@@ -92,9 +92,8 @@ mod display_tests {
     /// future edits to `Display` should preserve it.
     #[test]
     fn display_invalid_path_has_stable_security_prefix() {
-        let e = ValidateTranscriptError::InvalidPath(
-            "transcript path contains null byte".to_string(),
-        );
+        let e =
+            ValidateTranscriptError::InvalidPath("transcript path contains null byte".to_string());
         assert_eq!(
             e.to_string(),
             "invalid transcript path: transcript path contains null byte"

@@ -6,12 +6,12 @@ use std::time::Duration;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use super::ANSI_RE;
 use super::matcher::MatchedCommand;
 use super::preview::build_command_preview;
 use super::sanitiser::sanitize_for_output;
 use super::timestamps::compute_duration_ms;
 use super::types::{CapturedOutput, TestRunSnapshot, TestRunStatus, TestRunSummary};
+use super::ANSI_RE;
 
 const MAX_EXCERPT_LEN: usize = 240;
 

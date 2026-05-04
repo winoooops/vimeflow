@@ -6,6 +6,7 @@
 
 pub mod base;
 pub mod claude_code;
+pub mod codex;
 pub mod types;
 
 use std::path::PathBuf;
@@ -21,6 +22,7 @@ use crate::agent::types::AgentType;
 use crate::terminal::PtyState;
 use base::TranscriptHandle;
 use claude_code::ClaudeCodeAdapter;
+use codex::CodexAdapter;
 use types::{BindContext, BindError, ParsedStatus, StatusSource, ValidateTranscriptError};
 
 /// Provider hooks for one CLI coding agent.
@@ -46,6 +48,7 @@ impl<R: tauri::Runtime> dyn AgentAdapter<R> {
     pub fn for_type(agent_type: AgentType) -> Result<Arc<Self>, String> {
         match agent_type {
             AgentType::ClaudeCode => Ok(Arc::new(ClaudeCodeAdapter)),
+            AgentType::Codex => Ok(Arc::new(CodexAdapter::new())),
             other => Ok(Arc::new(NoOpAdapter::new(other))),
         }
     }
@@ -217,5 +220,18 @@ mod noop_tests {
             <NoOpAdapter as AgentAdapter<MockRuntime>>::parse_status(&adapter, "sid", "{}")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn for_type_returns_real_codex_adapter() {
+        let adapter = <dyn AgentAdapter<MockRuntime>>::for_type(AgentType::Codex)
+            .expect("codex adapter should construct");
+        let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
+"#;
+
+        let parsed = adapter
+            .parse_status("pty-codex", raw)
+            .expect("real codex adapter should parse rollout JSONL");
+        assert_eq!(parsed.event.agent_session_id, "sess");
     }
 }

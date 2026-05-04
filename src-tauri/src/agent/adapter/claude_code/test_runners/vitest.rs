@@ -12,11 +12,11 @@ use std::path::Path;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use super::ANSI_RE;
 use super::path_resolution::resolve_group_path_with_cwd_canonical;
 use super::types::{
     CapturedOutput, TestGroup, TestGroupKind, TestGroupStatus, TestRunSummary, TestRunner,
 };
+use super::ANSI_RE;
 
 pub static VITEST: TestRunner = TestRunner {
     name: "vitest",

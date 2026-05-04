@@ -40,10 +40,7 @@ pub fn detect_agent(pid: u32) -> Option<(AgentType, u32)> {
     detect_agent_with_source(pid, &ProcFsProcessSource)
 }
 
-fn detect_agent_with_source<S: ProcessSource>(
-    pid: u32,
-    source: &S,
-) -> Option<(AgentType, u32)> {
+fn detect_agent_with_source<S: ProcessSource>(pid: u32, source: &S) -> Option<(AgentType, u32)> {
     // Check the PTY root plus its descendants. Including the root handles
     // shells that have been replaced with `exec claude`.
     for candidate_pid in collect_process_tree(pid, source) {
@@ -167,11 +164,7 @@ mod tests {
     #[test]
     fn detects_only_agent_inside_pty_process_tree() {
         let source = MockProcessSource {
-            children: HashMap::from([
-                (10, vec![11]),
-                (11, vec![12]),
-                (20, vec![21]),
-            ]),
+            children: HashMap::from([(10, vec![11]), (11, vec![12]), (20, vec![21])]),
             cmdlines: HashMap::from([
                 (10, vec!["bash".to_string()]),
                 (11, vec!["sh".to_string()]),
@@ -183,19 +176,13 @@ mod tests {
 
         let detected = detect_agent_with_source(10, &source);
 
-        assert!(matches!(
-            detected,
-            Some((AgentType::ClaudeCode, 12))
-        ));
+        assert!(matches!(detected, Some((AgentType::ClaudeCode, 12))));
     }
 
     #[test]
     fn ignores_agent_outside_pty_process_tree() {
         let source = MockProcessSource {
-            children: HashMap::from([
-                (10, vec![11]),
-                (20, vec![21]),
-            ]),
+            children: HashMap::from([(10, vec![11]), (20, vec![21])]),
             cmdlines: HashMap::from([
                 (10, vec!["bash".to_string()]),
                 (11, vec!["python".to_string()]),

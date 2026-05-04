@@ -14,8 +14,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::agent::adapter::types::{BindContext, BindError, StatusSource};
 use crate::agent::adapter::AgentAdapter;
-use crate::agent::adapter::types::{BindContext, BindError, ParsedStatus, StatusSource, ValidateTranscriptError};
 
 pub use transcript_state::{TranscriptHandle, TranscriptStartStatus, TranscriptState};
 pub use watcher_runtime::{AgentWatcherState, WatcherHandle};
@@ -32,7 +32,8 @@ pub(crate) fn start_for<R: tauri::Runtime>(
     pty_start: std::time::SystemTime,
     state: AgentWatcherState,
 ) -> Result<(), String> {
-    let source = resolve_status_source_with_retry(adapter.as_ref(), &session_id, &cwd, pid, pty_start)?;
+    let source =
+        resolve_status_source_with_retry(adapter.as_ref(), &session_id, &cwd, pid, pty_start)?;
     path_security::ensure_status_source_under_trust_root(&source.path, &source.trust_root)?;
 
     log::debug!(
@@ -107,6 +108,8 @@ mod start_for_retry_tests {
     use tauri::test::{mock_builder, MockRuntime};
     use tauri::AppHandle;
 
+    use crate::agent::adapter::types::{ParsedStatus, ValidateTranscriptError};
+
     struct PendingThenOkAdapter {
         calls: AtomicUsize,
         flip_after: usize,
@@ -179,7 +182,11 @@ mod start_for_retry_tests {
         );
         let elapsed = started.elapsed();
 
-        assert!(result.is_ok(), "start_for should succeed after retries: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "start_for should succeed after retries: {:?}",
+            result
+        );
         assert!(
             elapsed < Duration::from_millis(900),
             "retry budget exceeded: {:?}",

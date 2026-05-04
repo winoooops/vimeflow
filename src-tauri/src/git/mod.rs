@@ -637,7 +637,10 @@ pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
     if !cached_diff_output.status.success() {
         let stderr = String::from_utf8_lossy(&cached_diff_output.stderr);
         return Err(if stderr.trim().is_empty() {
-            format!("git diff --cached failed with exit code {}", cached_diff_output.status)
+            format!(
+                "git diff --cached failed with exit code {}",
+                cached_diff_output.status
+            )
         } else {
             format!("git diff --cached failed: {}", stderr.trim())
         });
@@ -778,7 +781,10 @@ async fn get_untracked_diff(toplevel: &Path, file: &str) -> Result<String, Strin
     if exit_code != 0 && exit_code != 1 {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(if stderr.trim().is_empty() {
-            format!("git diff --no-index failed with exit code {}", output.status)
+            format!(
+                "git diff --no-index failed with exit code {}",
+                output.status
+            )
         } else {
             format!("git diff --no-index failed: {}", stderr.trim())
         });
@@ -799,10 +805,7 @@ async fn get_untracked_diff(toplevel: &Path, file: &str) -> Result<String, Strin
 /// `+N / -N` badge would never render for untracked rows — even though
 /// the row click now successfully shows the full-content diff in the
 /// viewer via `get_untracked_diff`.
-async fn get_untracked_numstat(
-    toplevel: &Path,
-    file: &str,
-) -> Result<Option<(u32, u32)>, String> {
+async fn get_untracked_numstat(toplevel: &Path, file: &str) -> Result<Option<(u32, u32)>, String> {
     let file_abs = toplevel.join(file);
 
     let mut cmd = Command::new("git");
@@ -831,11 +834,7 @@ async fn get_untracked_numstat(
     // First record has shape `<ins>\t<del>\t<path>\0`. We only care about the
     // first two fields; the path is the absolute one we passed in so there's
     // nothing useful to parse from it.
-    let first_record: &[u8] = output
-        .stdout
-        .split(|&b| b == b'\0')
-        .next()
-        .unwrap_or(&[]);
+    let first_record: &[u8] = output.stdout.split(|&b| b == b'\0').next().unwrap_or(&[]);
     let parts: Vec<&[u8]> = first_record.split(|&b| b == b'\t').collect();
 
     if parts.len() < 2 {
@@ -1409,8 +1408,7 @@ copy to copy.txt
             .expect("git add failed");
 
         // Modify again unstaged (adds line 4)
-        fs::write(&file, "line 1\nline 2\nline 3\nline 4\n")
-            .expect("failed to write");
+        fs::write(&file, "line 1\nline 2\nline 3\nline 4\n").expect("failed to write");
 
         // Now we have MM: staged +1 line, unstaged +1 line
         let repo_str = repo_path.to_string_lossy().to_string();
@@ -1617,8 +1615,7 @@ copy to copy.txt
         fs::write(&untracked, "alpha\nbeta\ngamma\n").expect("failed to write");
 
         let repo_str = repo_path.to_string_lossy().to_string();
-        let result =
-            get_git_diff(repo_str, "untracked.txt".to_string(), false, Some(true)).await;
+        let result = get_git_diff(repo_str, "untracked.txt".to_string(), false, Some(true)).await;
 
         assert!(
             result.is_ok(),
