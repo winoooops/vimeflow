@@ -19,6 +19,7 @@ pub use base::AgentWatcherState;
 
 use crate::agent::detector::detect_agent;
 use crate::agent::types::AgentType;
+use crate::terminal::types::SessionId;
 use crate::terminal::PtyState;
 use base::TranscriptHandle;
 use claude_code::ClaudeCodeAdapter;
@@ -134,31 +135,44 @@ pub async fn start_agent_watcher(
     pty_state: tauri::State<'_, PtyState>,
     session_id: String,
 ) -> Result<(), String> {
-    let cwd = pty_state
-        .get_cwd(&session_id)
-        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
-
-    let pid = pty_state
-        .get_pid(&session_id)
-        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
-
-    let pty_start = pty_state
-        .get_started_at(&session_id)
-        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
-
-    let agent_type = detect_agent(pid)
-        .map(|(agent_type, _)| agent_type)
-        .ok_or_else(|| format!("no agent detected in PTY session {}", session_id))?;
+    let (cwd, _shell_pid, pty_start, agent_type, agent_pid) =
+        resolve_bind_inputs(&pty_state, &session_id, detect_agent)?;
 
     let adapter = <dyn AgentAdapter<tauri::Wry>>::for_type(agent_type)?;
     adapter.start(
         app_handle,
         session_id,
         PathBuf::from(cwd),
-        pid,
+        agent_pid,
         pty_start,
         (*state).clone(),
     )
+}
+
+fn resolve_bind_inputs<F>(
+    pty_state: &PtyState,
+    session_id: &SessionId,
+    detect: F,
+) -> Result<(String, u32, std::time::SystemTime, AgentType, u32), String>
+where
+    F: FnOnce(u32) -> Option<(AgentType, u32)>,
+{
+    let cwd = pty_state
+        .get_cwd(session_id)
+        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
+
+    let shell_pid = pty_state
+        .get_pid(session_id)
+        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
+
+    let pty_start = pty_state
+        .get_started_at(session_id)
+        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
+
+    let (agent_type, agent_pid) = detect(shell_pid)
+        .ok_or_else(|| format!("no agent detected in PTY session {}", session_id))?;
+
+    Ok((cwd, shell_pid, pty_start, agent_type, agent_pid))
 }
 
 /// Stop watching an agent status source.
@@ -178,6 +192,9 @@ pub async fn stop_agent_watcher(
 #[cfg(test)]
 mod noop_tests {
     use super::*;
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
     use tauri::test::MockRuntime;
 
     #[test]
@@ -233,5 +250,50 @@ mod noop_tests {
             .parse_status("pty-codex", raw)
             .expect("real codex adapter should parse rollout JSONL");
         assert_eq!(parsed.event.agent_session_id, "sess");
+    }
+
+    fn make_test_session() -> crate::terminal::state::ManagedSession {
+        let pty_system = native_pty_system();
+        let pty_pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let child = pty_pair
+            .slave
+            .spawn_command(CommandBuilder::new("/bin/true"))
+            .expect("spawn");
+        let writer = pty_pair.master.take_writer().expect("take_writer");
+
+        crate::terminal::state::ManagedSession {
+            master: pty_pair.master,
+            writer,
+            child,
+            cwd: "/tmp/workspace".into(),
+            generation: 0,
+            ring: Arc::new(Mutex::new(crate::terminal::state::RingBuffer::new(64))),
+            cancelled: Arc::new(AtomicBool::new(false)),
+            started_at: std::time::SystemTime::UNIX_EPOCH,
+        }
+    }
+
+    #[test]
+    fn resolve_bind_inputs_uses_detected_agent_pid_not_shell_pid() {
+        let state = PtyState::new();
+        let session_id = "sid".to_string();
+        state
+            .try_insert(session_id.clone(), make_test_session(), 64)
+            .unwrap_or_else(|_| panic!("insert session"));
+
+        let (_cwd, shell_pid, _pty_start, agent_type, agent_pid) =
+            resolve_bind_inputs(&state, &session_id, |_| Some((AgentType::Codex, 4242)))
+                .expect("bind inputs");
+
+        assert!(matches!(agent_type, AgentType::Codex));
+        assert_ne!(shell_pid, agent_pid);
+        assert_eq!(agent_pid, 4242);
     }
 }
