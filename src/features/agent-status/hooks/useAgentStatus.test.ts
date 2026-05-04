@@ -823,6 +823,55 @@ describe('useAgentStatus', () => {
     expect(result.current.agentType).toBe('claude-code')
   })
 
+  test('does not invoke start_agent_watcher again while a prior start is in flight', async () => {
+    let resolveStart: (() => void) | undefined
+
+    vi.mocked(invoke).mockImplementation(((cmd: string) => {
+      if (cmd === 'detect_agent_in_session') {
+        return Promise.resolve({
+          sessionId: 'pty-session-1',
+          agentType: 'claudeCode',
+          pid: 123,
+        })
+      }
+
+      if (cmd === 'start_agent_watcher') {
+        return new Promise((resolve) => {
+          resolveStart = (): void => {
+            resolve(null)
+          }
+        })
+      }
+
+      return Promise.resolve(null)
+    }) as unknown as typeof invoke)
+
+    renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('start_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
+    })
+
+    await act(async () => {
+      vi.advanceTimersByTime(2000)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const startCalls = vi
+      .mocked(invoke)
+      .mock.calls.filter(([cmd]) => cmd === 'start_agent_watcher')
+
+    expect(startCalls).toHaveLength(1)
+
+    await act(async () => {
+      resolveStart?.()
+      await Promise.resolve()
+    })
+  })
+
   test('falls back to generic for unknown backend agent type', async () => {
     vi.mocked(invoke).mockImplementation(((cmd: string) => {
       if (cmd === 'detect_agent_in_session') {

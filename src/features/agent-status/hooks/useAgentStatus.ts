@@ -103,6 +103,16 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // longer leave the panel stuck.
   const agentEverDetectedRef = useRef(false)
   const watcherStartedRef = useRef(false)
+  // Distinct from watcherStartedRef: this guards the await window while
+  // start_agent_watcher is in flight. Without it, overlapping detection
+  // polls can both observe watcherStartedRef=false and both invoke start,
+  // causing backend watcher churn and repeated transcript replays when the
+  // user switches rapidly between sessions.
+  const watcherStartInFlightRef = useRef(false)
+  // Monotonic generation for invalidating stale watcher-start completions.
+  // Increment on session changes and agent-exit transitions so an old
+  // start_agent_watcher resolve cannot "win" after the session moved on.
+  const watcherStartGenerationRef = useRef(0)
   // PTY id captured at start so cleanup stops the right backend watcher.
   const knownPtyIdRef = useRef<string | undefined>(undefined)
 
@@ -145,6 +155,8 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       prevSessionIdRef.current = sessionId
       agentEverDetectedRef.current = false
       watcherStartedRef.current = false
+      watcherStartInFlightRef.current = false
+      watcherStartGenerationRef.current += 1
       knownPtyIdRef.current = undefined
       if (collapseTimeoutRef.current) {
         clearTimeout(collapseTimeoutRef.current)
@@ -209,7 +221,9 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         // next poll. The exit-collapse path is gated on
         // `agentEverDetectedRef`, NOT this ref, so a stuck-failed start
         // no longer leaves the panel active forever.
-        if (!watcherStartedRef.current) {
+        if (!watcherStartedRef.current && !watcherStartInFlightRef.current) {
+          const startGeneration = ++watcherStartGenerationRef.current
+          watcherStartInFlightRef.current = true
           try {
             await invoke('start_agent_watcher', {
               sessionId: ptySessionId,
@@ -219,21 +233,33 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
             // the captured ptySessionId so stop targets the right watcher.
             // ESLint can't see that `isMountedRef.current` is mutated by
             // the dedicated mount-tracking effect's cleanup, nor that
-            // `currentSessionIdRef.current` is mutated each render — so
-            // it flags both halves as "unnecessary." Both checks ARE
+            // `currentSessionIdRef.current` / `agentEverDetectedRef.current`
+            // / `watcherStartGenerationRef.current` are mutated by other
+            // async paths — so it flags these checks as "unnecessary."
+            // They ARE
             // load-bearing across the await above.
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-            if (!isMountedRef.current || currentSessionIdRef.current !== sid) {
+            /* eslint-disable @typescript-eslint/no-unnecessary-condition */
+            if (
+              !isMountedRef.current ||
+              currentSessionIdRef.current !== sid ||
+              !agentEverDetectedRef.current ||
+              watcherStartGenerationRef.current !== startGeneration
+            ) {
               void stopWatchers(sid, ptySessionId)
 
               return
             }
+            /* eslint-enable @typescript-eslint/no-unnecessary-condition */
 
             knownPtyIdRef.current = ptySessionId
             watcherStartedRef.current = true
           } catch {
             // Watcher may fail if bridge files weren't generated, or the
             // backend's re-detect raced with agent exit — retry next poll.
+          } finally {
+            if (watcherStartGenerationRef.current === startGeneration) {
+              watcherStartInFlightRef.current = false
+            }
           }
         }
       } else {
@@ -247,6 +273,8 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         agentEverDetectedRef.current = false
 
         watcherStartedRef.current = false
+        watcherStartInFlightRef.current = false
+        watcherStartGenerationRef.current += 1
         // Do not clear `knownPtyIdRef` here: stopWatchers is fire-and-forget
         // with swallowed errors. If this attempt fails transiently, the
         // session-change cleanup must still have the captured PTY id to retry.
@@ -543,6 +571,8 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       const sid = prevSessionIdRef.current
       if (sid) {
         watcherStartedRef.current = false
+        watcherStartInFlightRef.current = false
+        watcherStartGenerationRef.current += 1
         void stopWatchers(sid, knownPtyIdRef.current)
         knownPtyIdRef.current = undefined
       }
