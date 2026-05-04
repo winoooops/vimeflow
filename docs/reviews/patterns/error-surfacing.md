@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-05-02
-ref_count: 4
+last_updated: 2026-05-03
+ref_count: 5
 ---
 
 # Error Surfacing
@@ -205,3 +205,45 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** Both stage and discard endpoints checked `result.status !== 0` after `spawnSync('git', ['apply', ...], { input: patch, cwd: repoRoot })` and returned a generic 409 with `'Failed to stage hunk patch'` / `'Failed to discard hunk patch'`. Because `encoding` wasn't set, `result.stderr` was a Buffer, so even a `.toString()` would have been an extra step the author skipped. Net effect: every `git apply` failure (`error: patch does not apply`, `corrupt patch at line N`, context mismatch) became a content-free 409 the developer had to reproduce in a terminal to diagnose. Same finding-class as #1 / #3 — error swallowed at boundary, downstream consumer left to guess.
 - **Fix:** Added `encoding: 'utf-8'` to the `spawnSync` options so `result.stderr` is a string by construction. The 409 body now carries `{ error: '...', detail: result.stderr ?? '' }`. Same change applied symmetrically to both endpoints. No security concern: this is a Vite dev-server endpoint operating on the local repo; the stderr content comes from local git.
 - **Commit:** _(see git log for the round-1 fix commit)_
+
+### 21. String-matched validation errors create hidden module coupling
+
+- **Source:** github-claude | PR #152 post-merge review | 2026-05-03
+- **Severity:** HIGH
+- **File:** `src-tauri/src/agent/adapter/base/watcher_runtime.rs`, `src-tauri/src/agent/adapter/types.rs`
+- **Finding:** Watcher diagnostics classified transcript validation failures by matching the text `"access denied"` inside an adapter error string. That made the base watcher depend on Claude-specific wording and would silently misclassify outcomes if the adapter changed the message or another adapter returned different text.
+- **Fix:** Added `ValidateTranscriptError` with explicit variants for not found, outside root, not a file, invalid path, and other failures. Adapter validation now returns the typed error, and the watcher maps variants to `TxOutcome` without depending on message text.
+- **Commit:** _(pending on this branch)_
+
+---
+
+### 22. Distinct error variants collapsed into one diagnostic outcome — security-relevant signal lost in noise
+
+- **Source:** github-claude | PR #153 round 2 | 2026-05-03
+- **Severity:** LOW
+- **File:** `src-tauri/src/agent/adapter/base/watcher_runtime.rs`, `src-tauri/src/agent/adapter/base/diagnostics.rs`
+- **Finding:** Cycle-0 of this PR introduced `ValidateTranscriptError::InvalidPath` for null-byte injection (potentially-adversarial input) but mapped it to `TxOutcome::NotFile` in `maybe_start_transcript`'s match arm — the same outcome used for "canonical path resolved but isn't a regular file." SIEM rules / log scrapers keyed on `tx_status=not_file` couldn't distinguish "the user pointed at a directory" (mundane misconfiguration) from "the input contained a null byte" (injection probe). The typed-error fix from #21 was structurally correct, but the diagnostic-outcome enum it fed into didn't have a slot for the security-relevant variant, so the signal got compressed back into a generic bucket. Same finding-class as the original #21: a typed error becomes useless if the consumer's classification axis is too narrow.
+- **Fix:** Added a new `TxOutcome::InvalidPath` variant to `diagnostics.rs` (label `"invalid_path"`) and split the `match e` arm in `watcher_runtime.rs` so `ValidateTranscriptError::InvalidPath` maps to it directly. `NotAFile` and `Other` continue to map to `NotFile`. Updated the call-site comment to cite the actual diagnostic field name (`tx_status=invalid_path`, from the emitter's format string in `diagnostics.rs:147`) so future operators can grep precisely. The lesson: when adding a typed error variant for a security-relevant condition, ALSO check that every consumer's classification surface (log labels, metric tags, alert routing keys) can express the new distinction. A typed error that lands in a generic bucket on the consumer side gives the same false-positive rate as a stringly-typed error with a generic message — the security signal needs end-to-end variance to be actionable.
+- **Commit:** _(see git log for the cycle-2 fix commit on PR #153)_
+
+---
+
+### 23. `Display` impl OR-pattern collapses security-relevant variant with generic one — log-only consumers blind to the signal
+
+- **Source:** github-claude | PR #153 round 3 | 2026-05-03
+- **Severity:** LOW
+- **File:** `src-tauri/src/agent/adapter/types.rs`
+- **Finding:** `ValidateTranscriptError`'s `Display` impl had `Self::InvalidPath(message) | Self::Other(message) => f.write_str(message)` — both variants emitted the bare message text. The structured signal at the `tx_status=invalid_path` layer (from #22) was correct, but `log::warn!("{}", e)` calls and any `.to_string()`-based consumers saw IDENTICAL output for the security variant and the generic-failure variant. SIEM patterns keying on Display output had no structural marker for adversarial input, and would silently break if the inner `InvalidPath` message wording changed. The structured-vs-textual split exists because not every consumer reads the structured channel — log scrapers and console-grep workflows ARE the structural channel for many ops teams. Same finding-class as #22, one layer deeper: a structurally-distinct enum loses its distinction at the most-consumed surface (Display).
+- **Fix:** Split the OR-pattern into two distinct arms. `Self::InvalidPath(msg) => write!(f, "invalid transcript path: {}", msg)` adds a stable structural prefix that survives inner-message rewordings. `Self::Other(msg) => f.write_str(msg)` keeps the pre-existing bare-message form for backward compat with prior log consumers. Added 4 unit tests pinning the format: prefix-present for InvalidPath, bare-message for Other, distinguishable Display output between them, and unchanged formatting for the other variants (NotFound, OutsideRoot). The lesson: when adding a security-relevant enum variant, audit ALL public-impl trait implementations for OR-patterns that erase the new distinction — `Display`, `Debug`, `Serialize`, `Hash`, etc. The OR-pattern is idiomatic Rust when variants have the same payload, but "same payload" is not "same semantics" — security variants need their own arm with their own format. Pin the format with tests so future Display refactors can't silently regress the structural marker.
+- **Commit:** _(see git log for the cycle-3 fix commit on PR #153)_
+
+---
+
+### 24. Head-only truncation drops downstream-parser-relevant trailing content (test-runner summary lines)
+
+- **Source:** github-codex-connector | PR #153 round 8 | 2026-05-03
+- **Severity:** P1
+- **File:** `src-tauri/src/agent/adapter/claude_code/transcript.rs`
+- **Finding:** Cycle-0 of this PR introduced `MAX_TOOL_RESULT_CONTENT_LEN` capping for `tool_result` content with HEAD-only truncation: `[output truncated]` was appended after the first 256 KiB and everything beyond was dropped. The downstream consumers — `test_runners/cargo.rs` and `test_runners/vitest.rs` — look for SUMMARY lines (`test result: ok. ...`, `Tests N passed | M failed`) that test runners emit at the END of their output. Verbose runs that exceeded 256 KiB had the summary truncated → parsers returned `None` → `maybe_build_snapshot` skipped emitting the non-error snapshot → successful test runs vanished from the UI. A user surfacing log truncation as a behavioral feature ("output too long, see fewer details") shipped a behavioral REGRESSION ("test results vanish") because the truncation strategy was incompatible with downstream parsers.
+- **Fix:** Switched to head-and-tail truncation. New constant `TOOL_RESULT_TAIL_LEN = 64 KiB`; new helper `cap_with_head_and_tail(&str) -> String` that keeps `MAX - TAIL` from the start, a `[output truncated]` marker, and the last `TAIL` bytes — char-boundary corrected. Refactored both call sites: simple-string content goes through it directly (no clone), array-content path concatenates blocks while pruning the middle when buffer exceeds `2 × (MAX + TAIL)` (Codex-flagged memory regression in retry-1, fixed in retry-2). Added regression test that builds 390+ KiB of test-output simulation ending with `"test result: ok. 1234 passed; 0 failed; 0 ignored"` and asserts the summary line survives. The lesson: when adding a defensive truncation cap to user-facing content, audit ALL downstream consumers that key off SPECIFIC positions in the content (start, middle, end). Head-only truncation is a sensible default for "show user the start of a long thing", but downstream parsers that look for trailing structure are silently broken by it. Either preserve the trailing window, or change the parser-input shape to be position-independent. Code-review heuristic: any "cap content to N bytes" PR should run grep across the codebase for `parse(.*content)` / `extract.*last.*line` patterns and verify whether those consumers still work post-truncation.
+- **Commit:** _(see git log for the cycle-8 fix commit on PR #153)_

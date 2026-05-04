@@ -26,6 +26,11 @@ const AGENT_TYPE_MAP = {
   generic: 'generic',
 } as const
 
+const isKnownAgentType = (
+  value: string
+): value is keyof typeof AGENT_TYPE_MAP =>
+  Object.prototype.hasOwnProperty.call(AGENT_TYPE_MAP, value)
+
 const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
   isActive: false,
   agentType: null,
@@ -43,9 +48,25 @@ const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
   testRun: null,
 })
 
-/** Stop all agent watchers for a given session (best-effort, logs on failure) */
-const stopWatchers = async (workspaceSessionId: string): Promise<void> => {
-  const ptyId = getPtySessionId(workspaceSessionId) ?? workspaceSessionId
+/**
+ * Stop all agent watchers for a given session (best-effort, logs on failure).
+ *
+ * `knownPtyId` is the PTY session ID captured at the time the watcher was
+ * started. Pass it whenever the call site has it, because by the time a
+ * stale-start cleanup fires the workspace→PTY mapping may already be
+ * unregistered — `getPtySessionId(workspaceSessionId)` would then fall back
+ * to the workspace ID and the backend `stop_agent_watcher` IPC would target
+ * the wrong session, leaking the newly-started backend watcher (Codex review
+ * on PR #153, F14). When `knownPtyId` is omitted (session-change /
+ * detection-loop / unmount cleanup paths), the workspace→PTY lookup is the
+ * best available source.
+ */
+const stopWatchers = async (
+  workspaceSessionId: string,
+  knownPtyId?: string
+): Promise<void> => {
+  const ptyId =
+    knownPtyId ?? getPtySessionId(workspaceSessionId) ?? workspaceSessionId
   try {
     await invoke('stop_agent_watcher', { sessionId: ptyId })
   } catch {
@@ -69,10 +90,12 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   //     succeed for this session? Used to gate the exit-collapse path
   //     (only collapse if we ever showed an active agent).
   //   - `watcherStartedRef`: did `start_agent_watcher` invoke succeed?
-  //     Used to gate (a) re-invoking start_agent_watcher (avoid
-  //     duplicate watchers per detection poll) and (b) calling
-  //     stopWatchers on exit (skip the IPC if the watcher never
-  //     started).
+  //     Used to gate re-invoking `start_agent_watcher` (avoid duplicate
+  //     watchers per detection poll). Stop calls are NOT gated on this
+  //     ref — every cleanup path invokes `stopWatchers` unconditionally
+  //     (see F2 fix on PR #153). The ref reflects only the LAST local
+  //     start outcome, so a prior failed stop would lie and let a
+  //     stale-cwd backend watcher leak across session changes.
   //
   // The collapse path runs whenever the agent has been detected in the
   // past and is now gone, regardless of whether the backend watcher
@@ -80,6 +103,25 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // longer leave the panel stuck.
   const agentEverDetectedRef = useRef(false)
   const watcherStartedRef = useRef(false)
+  // PTY id captured at start so cleanup stops the right backend watcher.
+  const knownPtyIdRef = useRef<string | undefined>(undefined)
+
+  // Stale-detection guard: written synchronously during render so IPC continuations see the latest sessionId.
+  const currentSessionIdRef = useRef(sessionId)
+  currentSessionIdRef.current = sessionId
+
+  // Mount guard for in-flight IPC continuations that resolve after unmount.
+  // Maintained by a dedicated [] effect (below) so the ref is reset to true
+  // when React StrictMode runs its mount→cleanup→remount cycle in dev.
+  const isMountedRef = useRef(true)
+
+  useEffect(() => {
+    isMountedRef.current = true
+
+    return (): void => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   // Track the collapse timeout so it can be cancelled if the agent
   // reappears before the 5s hold expires (e.g., brief detection gap).
@@ -88,15 +130,22 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // Reset state when sessionId changes
   useEffect(() => {
     if (prevSessionIdRef.current !== sessionId) {
-      // Clean up watchers for the old session
+      // Clean up watchers for the old session. We always invoke
+      // `stopWatchers` (which suppresses errors) rather than gating on
+      // `watcherStartedRef.current`, because the ref reflects only the
+      // last LOCAL start outcome — if a prior `stop_agent_watcher`
+      // failed transiently, the ref reads false but the BACKEND watcher
+      // is still alive. Skipping stop here would leak that watcher
+      // across the session-change boundary (Codex review on PR #153).
       const oldId = prevSessionIdRef.current
       if (oldId) {
-        void stopWatchers(oldId)
+        void stopWatchers(oldId, knownPtyIdRef.current)
       }
 
       prevSessionIdRef.current = sessionId
       agentEverDetectedRef.current = false
       watcherStartedRef.current = false
+      knownPtyIdRef.current = undefined
       if (collapseTimeoutRef.current) {
         clearTimeout(collapseTimeoutRef.current)
         collapseTimeoutRef.current = null
@@ -121,6 +170,13 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         { sessionId: ptySessionId }
       )
 
+      // Drop stale results: session changed since this detection started,
+      // or the component unmounted (unmount doesn't re-render so the
+      // session-id ref can't catch that case alone).
+      if (!isMountedRef.current || currentSessionIdRef.current !== sid) {
+        return
+      }
+
       if (result) {
         // Cancel any pending collapse timeout — agent is (still) running
         if (collapseTimeoutRef.current) {
@@ -128,14 +184,21 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
           collapseTimeoutRef.current = null
         }
 
-        const agentKey = result.agentType as keyof typeof AGENT_TYPE_MAP
-        const mapped = AGENT_TYPE_MAP[agentKey] as AgentStatus['agentType']
+        const agentKey = result.agentType as string
 
-        setStatus((prev) => ({
-          ...prev,
-          isActive: true,
-          agentType: mapped,
-        }))
+        const mapped = isKnownAgentType(agentKey)
+          ? AGENT_TYPE_MAP[agentKey]
+          : 'generic'
+
+        setStatus((prev) =>
+          prev.sessionId === sid
+            ? {
+                ...prev,
+                isActive: true,
+                agentType: mapped,
+              }
+            : prev
+        )
         agentEverDetectedRef.current = true
 
         // Start the status-line file watcher (only once).
@@ -151,6 +214,22 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
             await invoke('start_agent_watcher', {
               sessionId: ptySessionId,
             })
+
+            // Stale-start cleanup also catches post-unmount races; pass
+            // the captured ptySessionId so stop targets the right watcher.
+            // ESLint can't see that `isMountedRef.current` is mutated by
+            // the dedicated mount-tracking effect's cleanup, nor that
+            // `currentSessionIdRef.current` is mutated each render — so
+            // it flags both halves as "unnecessary." Both checks ARE
+            // load-bearing across the await above.
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+            if (!isMountedRef.current || currentSessionIdRef.current !== sid) {
+              void stopWatchers(sid, ptySessionId)
+
+              return
+            }
+
+            knownPtyIdRef.current = ptySessionId
             watcherStartedRef.current = true
           } catch {
             // Watcher may fail if bridge files weren't generated, or the
@@ -167,12 +246,11 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         }
         agentEverDetectedRef.current = false
 
-        // Stop the backend watcher only if it actually started. Skip
-        // the IPC otherwise (it would error with "no active watcher").
-        if (watcherStartedRef.current) {
-          watcherStartedRef.current = false
-          void stopWatchers(sid)
-        }
+        watcherStartedRef.current = false
+        // Do not clear `knownPtyIdRef` here: stopWatchers is fire-and-forget
+        // with swallowed errors. If this attempt fails transiently, the
+        // session-change cleanup must still have the captured PTY id to retry.
+        void stopWatchers(sid, knownPtyIdRef.current)
 
         // Hold final state for 5s, then collapse. Runs regardless of
         // watcherStartedRef — that's the F1 fix: a transient
@@ -454,13 +532,19 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // leaks the state setter across multi-session navigation).
   useEffect(
     () => (): void => {
+      // The dedicated `isMountedRef` effect above flips the ref to
+      // false on this same unmount and resets it to true on a
+      // StrictMode remount. Don't duplicate the flip here — doing so
+      // would race with the StrictMode remount-setup effect.
       if (collapseTimeoutRef.current) {
         clearTimeout(collapseTimeoutRef.current)
         collapseTimeoutRef.current = null
       }
       const sid = prevSessionIdRef.current
       if (sid) {
-        void stopWatchers(sid)
+        watcherStartedRef.current = false
+        void stopWatchers(sid, knownPtyIdRef.current)
+        knownPtyIdRef.current = undefined
       }
     },
     []

@@ -13,6 +13,14 @@ pub(super) enum TxOutcome {
     Missing,
     OutsidePath,
     NotFile,
+    /// Transcript path failed validation BEFORE filesystem resolution
+    /// — currently triggered by null-byte detection in the input
+    /// string. Distinct from `NotFile` (path canonicalised but isn't
+    /// regular) and `OutsidePath` (canonical path escaped the trust
+    /// root) so log scrapers / SIEM rules can flag potentially
+    /// adversarial input separately from ordinary filesystem-state
+    /// misclassifications. Claude review on PR #153.
+    InvalidPath,
     StartFailed,
     NoPath,
     ParseError,
@@ -27,6 +35,7 @@ impl TxOutcome {
             Self::Missing => "missing",
             Self::OutsidePath => "outside_path",
             Self::NotFile => "not_file",
+            Self::InvalidPath => "invalid_path",
             Self::StartFailed => "start_failed",
             Self::NoPath => "no_path",
             Self::ParseError => "parse_error",
@@ -278,14 +287,53 @@ mod tests {
 
     #[test]
     fn tx_outcome_label_covers_every_variant() {
-        assert_eq!(TxOutcome::Started.label(), "started");
-        assert_eq!(TxOutcome::Replaced.label(), "replaced");
-        assert_eq!(TxOutcome::AlreadyRunning.label(), "already_running");
-        assert_eq!(TxOutcome::Missing.label(), "missing");
-        assert_eq!(TxOutcome::OutsidePath.label(), "outside_path");
-        assert_eq!(TxOutcome::NotFile.label(), "not_file");
-        assert_eq!(TxOutcome::StartFailed.label(), "start_failed");
-        assert_eq!(TxOutcome::NoPath.label(), "no_path");
-        assert_eq!(TxOutcome::ParseError.label(), "parse_error");
+        // Compile-time enforcement: `expected_label` below is an
+        // exhaustive match. Adding a new `TxOutcome` variant without
+        // an arm here produces a compile error, so the contributor
+        // is forced to acknowledge the new variant and supply its
+        // expected label. Rust has no built-in "iter all variants of
+        // enum X" without a proc-macro like `strum::EnumIter`, so the
+        // `outcomes` list below remains manually populated — but the
+        // exhaustive match is enough to put a new variant on the
+        // contributor's radar at compile time. They will then add the
+        // variant to `outcomes` so it gets exercised by the assertion
+        // loop (cycle-4 retry-1 of Claude review on PR #153, F8).
+        fn expected_label(outcome: TxOutcome) -> &'static str {
+            match outcome {
+                TxOutcome::Started => "started",
+                TxOutcome::Replaced => "replaced",
+                TxOutcome::AlreadyRunning => "already_running",
+                TxOutcome::Missing => "missing",
+                TxOutcome::OutsidePath => "outside_path",
+                TxOutcome::NotFile => "not_file",
+                TxOutcome::InvalidPath => "invalid_path",
+                TxOutcome::StartFailed => "start_failed",
+                TxOutcome::NoPath => "no_path",
+                TxOutcome::ParseError => "parse_error",
+            }
+        }
+
+        let outcomes = [
+            TxOutcome::Started,
+            TxOutcome::Replaced,
+            TxOutcome::AlreadyRunning,
+            TxOutcome::Missing,
+            TxOutcome::OutsidePath,
+            TxOutcome::NotFile,
+            TxOutcome::InvalidPath,
+            TxOutcome::StartFailed,
+            TxOutcome::NoPath,
+            TxOutcome::ParseError,
+        ];
+
+        for outcome in outcomes.iter().copied() {
+            assert_eq!(
+                outcome.label(),
+                expected_label(outcome),
+                "label() for {:?} should be {:?}",
+                outcome,
+                expected_label(outcome)
+            );
+        }
     }
 }

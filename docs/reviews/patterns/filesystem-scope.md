@@ -2,8 +2,8 @@
 id: filesystem-scope
 category: security
 created: 2026-04-09
-last_updated: 2026-04-29
-ref_count: 2
+last_updated: 2026-05-03
+ref_count: 3
 ---
 
 # Filesystem Scope
@@ -200,3 +200,12 @@ enumerate sensitive directories without scope restrictions.
 - **Finding:** `OpenOptions::new().create(true).append(true).open("/tmp/vimeflow-debug.log")` follows symlinks on Unix. A local actor on a shared system (cloud dev VMs, Codespaces, Gitpod) can pre-create the path as a symlink to redirect appends. Linux's default umask 022 also leaves the file world-readable. The block was inside `cfg(debug_assertions)` so debug builds shipped with this. Logged values include workspace paths and session IDs.
 - **Fix:** Drop the file-log block entirely; use the existing structured `log::debug!` macro (already configured for the rest of the file). Run with `RUST_LOG=debug` to see startup diagnostics.
 - **Commit:** `ea6b1ea fix(agent): round-5 review findings — security, polish, runner coverage`
+
+### 21. Transcript path validation needs explicit invalid-path and threat-model boundaries
+
+- **Source:** github-claude | PR #152 post-merge review | 2026-05-03
+- **Severity:** MEDIUM
+- **File:** `src-tauri/src/agent/adapter/claude_code/transcript.rs`, `src-tauri/src/agent/adapter/base/path_security.rs`
+- **Finding:** Transcript path validation built a `PathBuf` from raw statusline text without first rejecting embedded null bytes, and the path-security helper documented its two-phase canonicalize/create/check flow without stating the accepted single-user desktop threat model. That left future maintainers unsure whether the residual same-user TOCTOU window was intentional or overlooked.
+- **Fix:** Reject null bytes before path conversion, keep transcript files scoped under canonical `~/.claude`, and document the helper as a best-effort single-user desktop guard. The comment now calls out that fd-pinned traversal or `cap-std`-style APIs are required if the threat model expands to shared writable roots or hostile same-user races.
+- **Commit:** _(pending on this branch)_

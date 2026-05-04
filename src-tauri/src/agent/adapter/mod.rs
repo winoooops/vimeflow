@@ -20,7 +20,7 @@ use crate::agent::types::AgentType;
 use crate::terminal::PtyState;
 use base::TranscriptHandle;
 use claude_code::ClaudeCodeAdapter;
-use types::{ParsedStatus, StatusSource};
+use types::{ParsedStatus, StatusSource, ValidateTranscriptError};
 
 /// Provider hooks for one CLI coding agent.
 pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
@@ -30,7 +30,7 @@ pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
 
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String>;
 
-    fn validate_transcript(&self, raw: &str) -> Result<PathBuf, String>;
+    fn validate_transcript(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError>;
 
     fn tail_transcript(
         &self,
@@ -98,11 +98,11 @@ impl<R: tauri::Runtime> AgentAdapter<R> for NoOpAdapter {
         ))
     }
 
-    fn validate_transcript(&self, _: &str) -> Result<PathBuf, String> {
-        Err(format!(
+    fn validate_transcript(&self, _: &str) -> Result<PathBuf, ValidateTranscriptError> {
+        Err(ValidateTranscriptError::Other(format!(
             "{:?} adapter has no transcript validator",
             self.agent_type
-        ))
+        )))
     }
 
     fn tail_transcript(

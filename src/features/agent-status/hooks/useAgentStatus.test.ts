@@ -119,6 +119,110 @@ describe('useAgentStatus', () => {
     })
   })
 
+  test('does not start backend watcher when detection resolves after unmount', async () => {
+    // F19 regression. `currentSessionIdRef` is only refreshed during
+    // render — unmount does NOT trigger a render, so a detection IPC
+    // that resolves after unmount would otherwise pass the stale guard
+    // (sid === currentSessionIdRef.current still). Without `isMountedRef`
+    // the post-unmount continuation would invoke `start_agent_watcher`
+    // and leak a backend watcher with no React-side cleanup path.
+    let resolveDetect: ((value: unknown) => void) | undefined
+
+    const invokeMock = vi.fn((cmd: string): Promise<unknown> => {
+      if (cmd === 'detect_agent_in_session') {
+        return new Promise((resolve) => {
+          resolveDetect = resolve
+        })
+      }
+
+      return Promise.resolve(null)
+    })
+    vi.mocked(invoke).mockImplementation(invokeMock as unknown as typeof invoke)
+
+    const { unmount } = renderHook(() => useAgentStatus('session-1'))
+
+    // Wait for the first detect call to be in-flight.
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('detect_agent_in_session', {
+        sessionId: 'pty-session-1',
+      })
+    })
+
+    // Unmount BEFORE the in-flight detect resolves.
+    unmount()
+
+    // Now resolve detection with a positive result. The post-unmount
+    // continuation must bail before invoking start_agent_watcher.
+    resolveDetect?.({
+      sessionId: 'pty-session-1',
+      agentType: 'claudeCode',
+      pid: 12345,
+    })
+
+    // Drain microtasks so the continuation has a chance to run.
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(invoke).not.toHaveBeenCalledWith('start_agent_watcher', {
+      sessionId: 'pty-session-1',
+    })
+  })
+
+  test('always invokes stop_agent_watcher on unmount even if watcher never started', async () => {
+    // Updated for F2 (Codex review on PR #153). The previous behavior
+    // skipped the IPC when `watcherStartedRef.current === false`, but
+    // that ref reflects only the LAST local start outcome — if a prior
+    // `stop_agent_watcher` failed transiently it lies, leaving the
+    // backend watcher alive. The new contract: cleanup paths always
+    // call stop; `stopWatchers` swallows the resulting "no active
+    // watcher" error so the IPC is harmless when no watcher exists.
+    const { unmount } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBeGreaterThanOrEqual(
+        1
+      )
+    })
+
+    unmount()
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
+    })
+  })
+
+  test('stops watcher on unmount after watcher starts', async () => {
+    vi.mocked(invoke).mockImplementation(((cmd: string) => {
+      if (cmd === 'detect_agent_in_session') {
+        return Promise.resolve({
+          sessionId: 'pty-session-1',
+          agentType: 'claudeCode',
+          pid: 123,
+        })
+      }
+
+      return Promise.resolve(null)
+    }) as unknown as typeof invoke)
+
+    const { unmount } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('start_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
+    })
+
+    unmount()
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
+    })
+  })
+
   test('filters status events by sessionId', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 
@@ -594,7 +698,12 @@ describe('useAgentStatus', () => {
     })
   })
 
-  test('stops watchers when sessionId changes', async () => {
+  test('always invokes stop_agent_watcher when sessionId changes even if watcher never started', async () => {
+    // Updated for F2 (Codex review on PR #153). Same rationale as the
+    // unmount cleanup test above: the cleanup IPC is unconditional now
+    // because `watcherStartedRef.current` cannot be trusted after a
+    // failed stop. `stopWatchers` swallows the resulting "no active
+    // watcher" error.
     const { rerender } = renderHook(
       ({ id }: { id: string | null }) => useAgentStatus(id),
       { initialProps: { id: 'session-1' } }
@@ -608,8 +717,39 @@ describe('useAgentStatus', () => {
 
     rerender({ id: 'session-2' })
 
-    // Should have attempted to stop watchers for old session
-    // getPtySessionId mock maps 'session-1' → 'pty-session-1'
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
+    })
+  })
+
+  test('stops watchers when sessionId changes after watcher starts', async () => {
+    vi.mocked(invoke).mockImplementation(((cmd: string) => {
+      if (cmd === 'detect_agent_in_session') {
+        return Promise.resolve({
+          sessionId: 'pty-session-1',
+          agentType: 'claudeCode',
+          pid: 123,
+        })
+      }
+
+      return Promise.resolve(null)
+    }) as unknown as typeof invoke)
+
+    const { rerender } = renderHook(
+      ({ id }: { id: string | null }) => useAgentStatus(id),
+      { initialProps: { id: 'session-1' } }
+    )
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('start_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
+    })
+
+    rerender({ id: 'session-2' })
+
     await vi.waitFor(() => {
       expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
         sessionId: 'pty-session-1',
@@ -646,6 +786,141 @@ describe('useAgentStatus', () => {
     // The hook should have set isActive once and not re-triggered
     expect(result.current.isActive).toBe(true)
     expect(result.current.agentType).toBe('claude-code')
+  })
+
+  test('falls back to generic for unknown backend agent type', async () => {
+    vi.mocked(invoke).mockImplementation(((cmd: string) => {
+      if (cmd === 'detect_agent_in_session') {
+        return Promise.resolve({
+          sessionId: 'pty-session-1',
+          agentType: 'futureAgent',
+          pid: 123,
+        })
+      }
+
+      return Promise.resolve(null)
+    }) as unknown as typeof invoke)
+
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(result.current.isActive).toBe(true)
+      expect(result.current.agentType).toBe('generic')
+    })
+  })
+
+  test('ignores stale detection result after session switch', async () => {
+    let resolveOldDetection:
+      | ((value: {
+          sessionId: string
+          agentType: 'claudeCode'
+          pid: number
+        }) => void)
+      | undefined
+
+    vi.mocked(invoke).mockImplementation(((cmd: string, args?: unknown) => {
+      const payload = args as { sessionId?: string } | undefined
+
+      if (
+        cmd === 'detect_agent_in_session' &&
+        payload?.sessionId === 'pty-session-1'
+      ) {
+        return new Promise((resolve) => {
+          resolveOldDetection = resolve
+        })
+      }
+
+      if (cmd === 'detect_agent_in_session') {
+        return Promise.resolve(null)
+      }
+
+      return Promise.resolve(null)
+    }) as unknown as typeof invoke)
+
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string | null }) => useAgentStatus(id),
+      { initialProps: { id: 'session-1' } }
+    )
+
+    await vi.waitFor(() => {
+      expect(resolveOldDetection).toBeDefined()
+    })
+
+    rerender({ id: 'session-2' })
+
+    await act(async () => {
+      resolveOldDetection?.({
+        sessionId: 'pty-session-1',
+        agentType: 'claudeCode',
+        pid: 123,
+      })
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessionId).toBe('session-2')
+    expect(result.current.isActive).toBe(false)
+    expect(invoke).not.toHaveBeenCalledWith('start_agent_watcher', {
+      sessionId: 'pty-session-1',
+    })
+  })
+
+  test('stops stale watcher if session switches while watcher start is in flight', async () => {
+    let resolveStart: (() => void) | undefined
+
+    vi.mocked(invoke).mockImplementation(((cmd: string, args?: unknown) => {
+      const payload = args as { sessionId?: string } | undefined
+
+      if (
+        cmd === 'detect_agent_in_session' &&
+        payload?.sessionId === 'pty-session-1'
+      ) {
+        return Promise.resolve({
+          sessionId: 'pty-session-1',
+          agentType: 'claudeCode',
+          pid: 123,
+        })
+      }
+
+      if (
+        cmd === 'start_agent_watcher' &&
+        payload?.sessionId === 'pty-session-1'
+      ) {
+        return new Promise((resolve) => {
+          resolveStart = (): void => {
+            resolve(null)
+          }
+        })
+      }
+
+      if (cmd === 'detect_agent_in_session') {
+        return Promise.resolve(null)
+      }
+
+      return Promise.resolve(null)
+    }) as unknown as typeof invoke)
+
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string | null }) => useAgentStatus(id),
+      { initialProps: { id: 'session-1' } }
+    )
+
+    await vi.waitFor(() => {
+      expect(resolveStart).toBeDefined()
+    })
+
+    rerender({ id: 'session-2' })
+
+    await act(async () => {
+      resolveStart?.()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessionId).toBe('session-2')
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
+    })
   })
 
   test('attaches test-run listener BEFORE invoking start_agent_watcher', async () => {

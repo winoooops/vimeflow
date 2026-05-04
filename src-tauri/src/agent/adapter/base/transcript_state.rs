@@ -119,10 +119,7 @@ impl TranscriptState {
         // tens-of-ms thread-spawn window before the loser's handle is
         // stopped (Claude review on PR #152, F2).
         let gate = {
-            let mut gates = self
-                .start_gates
-                .lock()
-                .expect("failed to lock start_gates");
+            let mut gates = self.start_gates.lock().expect("failed to lock start_gates");
             gates
                 .entry(session_id.clone())
                 .or_insert_with(|| Arc::new(Mutex::new(())))
@@ -240,10 +237,7 @@ impl TranscriptState {
         // the session_id's lifetime is small enough that periodic
         // cleanup isn't worth the lock-ordering complexity.
         let gate = {
-            let mut gates = self
-                .start_gates
-                .lock()
-                .expect("failed to lock start_gates");
+            let mut gates = self.start_gates.lock().expect("failed to lock start_gates");
             gates
                 .entry(session_id.to_string())
                 .or_insert_with(|| Arc::new(Mutex::new(())))
@@ -475,7 +469,11 @@ mod tests {
                 unreachable!("parse_status not exercised in this test")
             }
 
-            fn validate_transcript(&self, _raw: &str) -> Result<PathBuf, String> {
+            fn validate_transcript(
+                &self,
+                _raw: &str,
+            ) -> Result<PathBuf, crate::agent::adapter::types::ValidateTranscriptError>
+            {
                 unreachable!("validate_transcript not exercised in this test")
             }
 
@@ -533,11 +531,10 @@ mod tests {
 
         let events = Arc::new(Mutex::new(Vec::<String>::new()));
         let stop_flags = Arc::new(Mutex::new(Vec::<Arc<AtomicBool>>::new()));
-        let adapter: Arc<dyn AgentAdapter<tauri::test::MockRuntime>> =
-            Arc::new(OrderingAdapter {
-                events: Arc::clone(&events),
-                stop_flags: Arc::clone(&stop_flags),
-            });
+        let adapter: Arc<dyn AgentAdapter<tauri::test::MockRuntime>> = Arc::new(OrderingAdapter {
+            events: Arc::clone(&events),
+            stop_flags: Arc::clone(&stop_flags),
+        });
 
         let state = TranscriptState::new();
         let session_id = "session-f19".to_string();

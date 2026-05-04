@@ -6,18 +6,19 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use tauri::Emitter;
 
 use super::test_runners::emitter::TestRunEmitter;
-use super::test_runners::matcher::{MatchedCommand, match_command};
+use super::test_runners::matcher::{match_command, MatchedCommand};
 use crate::agent::adapter::base::TranscriptHandle;
+use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::types::{AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
 
 /// Poll interval for checking new transcript lines
@@ -26,30 +27,77 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// Maximum length for the args summary string
 const MAX_ARGS_LEN: usize = 100;
 
-pub(crate) fn validate_transcript_path(transcript_path: &str) -> Result<PathBuf, String> {
-    let path = PathBuf::from(transcript_path);
-    let canonical = fs::canonicalize(&path)
-        .map_err(|e| format!("invalid transcript path '{}': {}", transcript_path, e))?;
+const MAX_TOOL_RESULT_CONTENT_LEN: usize = 256 * 1024;
+/// When truncating `tool_result` content that exceeds the cap, keep at
+/// least this many bytes from the END of the content. Test-runner
+/// parsers (`test_runners/cargo.rs`, `test_runners/vitest.rs`) look for
+/// summary lines at the END of test output (`test result: ok. ...`,
+/// `Tests N passed | M failed`, etc.). Head-only truncation would drop
+/// those summary lines and cause large successful test runs to parse
+/// as `None` → `maybe_build_snapshot` would skip the non-error case
+/// → successful test runs vanish from the UI. Tail size chosen at
+/// 64 KiB (~1/4 of cap) to comfortably hold a verbose test summary
+/// plus failure stack traces (Codex review on PR #153, F15).
+const TOOL_RESULT_TAIL_LEN: usize = 64 * 1024;
+const TOOL_RESULT_TRUNCATED_MARKER: &str = "[output truncated]";
 
-    if !canonical.is_file() {
-        return Err(format!("not a transcript file: {}", canonical.display()));
+pub(crate) fn validate_transcript_path(
+    transcript_path: &str,
+) -> Result<PathBuf, ValidateTranscriptError> {
+    if transcript_path.bytes().any(|b| b == 0) {
+        return Err(ValidateTranscriptError::InvalidPath(
+            "transcript path contains null byte".to_string(),
+        ));
     }
 
-    let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
+    let path = PathBuf::from(transcript_path);
+    let canonical = fs::canonicalize(&path).map_err(|e| {
+        // Classify directly from the canonicalize failure where the
+        // ErrorKind is authoritative (no second syscall = no TOCTOU
+        // window). Only `PermissionDenied` is ambiguous: Windows can
+        // return it for missing-but-unreadable parents, where the
+        // `try_exists()` fallback is the authoritative classifier.
+        // All other kinds (Interrupted, InvalidData, etc.) become
+        // `Other` directly. Claude review on PR #153, F5 (cycle-2
+        // narrowing followed by a cycle-2-retry tightening — codex
+        // flagged that the previous "fall back for all non-NotFound"
+        // shape only narrowed the race instead of eliminating it).
+        let kind = e.kind();
+        if kind == io::ErrorKind::NotFound {
+            return ValidateTranscriptError::NotFound(path.clone());
+        }
+        if kind == io::ErrorKind::PermissionDenied {
+            if let Ok(false) = path.try_exists() {
+                return ValidateTranscriptError::NotFound(path.clone());
+            }
+        }
+        ValidateTranscriptError::Other(format!(
+            "invalid transcript path '{}': {}",
+            transcript_path, e
+        ))
+    })?;
+
+    if !canonical.is_file() {
+        return Err(ValidateTranscriptError::NotAFile(canonical));
+    }
+
+    let home = dirs::home_dir().ok_or_else(|| {
+        ValidateTranscriptError::Other("cannot determine home directory".to_string())
+    })?;
     let claude_root = home.join(".claude");
     let claude_root = fs::canonicalize(&claude_root).map_err(|e| {
-        format!(
+        ValidateTranscriptError::Other(format!(
             "cannot resolve Claude transcript root '{}': {}",
             claude_root.display(),
             e
-        )
+        ))
     })?;
 
     if !canonical.starts_with(&claude_root) {
-        return Err(format!(
-            "access denied: transcript path is outside Claude directory: {}",
-            canonical.display()
-        ));
+        return Err(ValidateTranscriptError::OutsideRoot {
+            path: canonical,
+            root: claude_root,
+        });
     }
 
     Ok(canonical)
@@ -614,30 +662,98 @@ fn extract_tool_result_content(value: &Value) -> String {
         None => return String::new(),
     };
     if let Some(s) = raw.as_str() {
-        return s.to_string();
+        return cap_with_head_and_tail(s);
     }
     if let Some(arr) = raw.as_array() {
-        let mut out = String::new();
+        let memory_cap = MAX_TOOL_RESULT_CONTENT_LEN + TOOL_RESULT_TAIL_LEN;
+        let prune_threshold = memory_cap * 2;
+        let mut buf = String::new();
         for block in arr {
-            if text_block_type(block) == Some("text") {
-                if let Some(text) = text_block_text(block) {
-                    out.push_str(text);
-                    // Add a separator newline only if the block didn't
-                    // already end with one — terminal output frequently
-                    // does, and an unconditional `push('\n')` would
-                    // produce a double blank line at every block boundary
-                    // (the simple-string code path above doesn't add
-                    // anything, so this also brings the two paths into
-                    // alignment).
-                    if !out.ends_with('\n') {
-                        out.push('\n');
-                    }
-                }
+            if text_block_type(block) != Some("text") {
+                continue;
+            }
+            let Some(text) = text_block_text(block) else {
+                continue;
+            };
+            if text.is_empty() {
+                continue;
+            }
+            if !buf.is_empty() && !buf.ends_with('\n') {
+                buf.push('\n');
+            }
+            // Pre-cap an oversized block so push_str can't grow `buf`
+            // unbounded before the post-append prune fires.
+            if text.len() > memory_cap {
+                let capped = cap_with_head_and_tail(text);
+                buf.push_str(&capped);
+            } else {
+                buf.push_str(text);
+            }
+            if buf.len() > prune_threshold {
+                buf = cap_with_head_and_tail(&buf);
             }
         }
-        return out;
+        return cap_with_head_and_tail(&buf);
     }
     String::new()
+}
+
+/// Cap content at `MAX_TOOL_RESULT_CONTENT_LEN` bytes via head-and-tail truncation.
+fn cap_with_head_and_tail(content: &str) -> String {
+    if content.len() <= MAX_TOOL_RESULT_CONTENT_LEN {
+        return content.to_string();
+    }
+
+    // Reserve room for the truncation marker (leading newline + marker
+    // + trailing newline). Clamp the effective tail size so
+    // `head + marker + tail ≤ MAX` is guaranteed even if the
+    // `TOOL_RESULT_TAIL_LEN` constant ever exceeds `MAX_TOOL_RESULT_CONTENT_LEN`.
+    let marker_budget = TOOL_RESULT_TRUNCATED_MARKER.len() + 2;
+    let max_tail_room = MAX_TOOL_RESULT_CONTENT_LEN.saturating_sub(marker_budget);
+    let effective_tail = TOOL_RESULT_TAIL_LEN.min(max_tail_room);
+    let head_target = MAX_TOOL_RESULT_CONTENT_LEN
+        .saturating_sub(effective_tail)
+        .saturating_sub(marker_budget);
+
+    let mut head_end = head_target;
+    while head_end > 0 && !content.is_char_boundary(head_end) {
+        head_end -= 1;
+    }
+
+    let mut tail_start = content.len().saturating_sub(effective_tail);
+    while tail_start < content.len() && !content.is_char_boundary(tail_start) {
+        tail_start += 1;
+    }
+
+    // After the clamp + char-boundary correction, head and tail
+    // windows can no longer overlap on any reachable input — keep a
+    // defensive fallback for safety, returning a tail-only slice
+    // that still respects the cap.
+    if tail_start <= head_end {
+        let fallback_len = effective_tail;
+        let mut tail_only_start = content.len().saturating_sub(fallback_len);
+        while tail_only_start < content.len() && !content.is_char_boundary(tail_only_start) {
+            tail_only_start += 1;
+        }
+        return content[tail_only_start..].to_string();
+    }
+
+    // Single allocation sized to exactly head + marker + tail.
+    let head_slice = &content[..head_end];
+    let tail_slice = &content[tail_start..];
+    let needs_leading_newline = !head_slice.ends_with('\n');
+    let marker_extra =
+        if needs_leading_newline { 1 } else { 0 } + TOOL_RESULT_TRUNCATED_MARKER.len() + 1;
+
+    let mut out = String::with_capacity(head_slice.len() + marker_extra + tail_slice.len());
+    out.push_str(head_slice);
+    if needs_leading_newline {
+        out.push('\n');
+    }
+    out.push_str(TOOL_RESULT_TRUNCATED_MARKER);
+    out.push('\n');
+    out.push_str(tail_slice);
+    out
 }
 
 #[cfg(test)]
@@ -657,6 +773,17 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_transcript_path_rejects_null_byte() {
+        let result = validate_transcript_path("/home/user/.claude/x.jsonl\0../../etc/passwd");
+
+        assert!(matches!(
+            result,
+            Err(ValidateTranscriptError::InvalidPath(message))
+                if message.contains("null byte")
+        ));
     }
 
     #[test]
@@ -690,6 +817,153 @@ mod tests {
         let value: Value = serde_json::from_str(line).unwrap();
 
         assert!(value["is_error"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn extract_tool_result_content_caps_simple_string() {
+        let value = serde_json::json!({
+            "content": "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN + 1024)
+        });
+
+        let content = extract_tool_result_content(&value);
+
+        assert!(content.len() < MAX_TOOL_RESULT_CONTENT_LEN + 1024);
+        assert!(content.contains(TOOL_RESULT_TRUNCATED_MARKER));
+    }
+
+    /// Updated for F15 (Codex review on PR #153). The cycle-8 fix
+    /// switched from head-only truncation to head-and-tail truncation.
+    /// For a 2-block input where the FIRST block alone overflows the
+    /// cap, BOTH the first block's tail bytes AND the second block's
+    /// content land within the kept tail window — that's the whole
+    /// point of head-and-tail (test-runner summary lines at the END
+    /// must survive). Asserts: head marker (head window), tail marker
+    /// from FIRST block (tail window can include first-block tail
+    /// bytes when their position falls inside the kept-tail range),
+    /// and block-two-summary (last block's content always survives).
+    #[test]
+    fn extract_tool_result_content_caps_text_blocks() {
+        let head_marker = "HEAD-MARKER";
+        let block_one_tail_marker = "BLOCK-ONE-TAIL-MARKER";
+        let bulk = "x".repeat(MAX_TOOL_RESULT_CONTENT_LEN);
+        let combined = format!("{head_marker}\n{bulk}\n{block_one_tail_marker}");
+        let value = serde_json::json!({
+            "content": [
+                { "type": "text", "text": &combined },
+                { "type": "text", "text": "block-two-summary" }
+            ]
+        });
+
+        let content = extract_tool_result_content(&value);
+
+        assert!(content.contains(TOOL_RESULT_TRUNCATED_MARKER));
+        assert!(
+            content.contains(head_marker),
+            "head marker must be preserved in the head window"
+        );
+        assert!(
+            content.contains(block_one_tail_marker),
+            "tail bytes from the FIRST oversized block must survive in the tail window — \
+             head-and-tail truncation must preserve content from the END of EARLIER blocks too, \
+             not just the last block (Codex cycle-8 deferred-LOW)"
+        );
+        assert!(
+            content.contains("block-two-summary"),
+            "second block must be preserved in the tail window (F15)"
+        );
+    }
+
+    /// F1 regression (Claude review on PR #153). When the LAST text
+    /// block exactly fills `MAX_TOOL_RESULT_CONTENT_LEN` and does not
+    /// end with `\n`, the pre-fix code emitted `[output truncated]`
+    /// even though no content was dropped. With the cycle-8 head-and-tail
+    /// rewrite, exact-cap content is under the threshold for truncation
+    /// (`<=` not `<`), so it returns unchanged with no marker.
+    #[test]
+    fn extract_tool_result_content_no_marker_on_exact_cap_fill_last_block() {
+        let exactly_at_cap: String = "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN);
+        let value = serde_json::json!({
+            "content": [
+                { "type": "text", "text": exactly_at_cap }
+            ]
+        });
+
+        let content = extract_tool_result_content(&value);
+
+        assert_eq!(content.len(), MAX_TOOL_RESULT_CONTENT_LEN);
+        assert!(
+            !content.contains(TOOL_RESULT_TRUNCATED_MARKER),
+            "marker must not appear for an exact-cap fill"
+        );
+    }
+
+    /// F15 regression (Codex review on PR #153). Test-runner output
+    /// (cargo, vitest) puts summary lines at the END of the buffer.
+    /// Head-only truncation (the cycle-0–cycle-7 implementation)
+    /// would drop the summary, causing `maybe_build_snapshot` to skip
+    /// emitting non-error snapshots, so successful large test runs
+    /// silently vanished from the UI. Head-and-tail truncation
+    /// preserves the trailing summary line within the tail window.
+    #[test]
+    fn extract_tool_result_content_preserves_tail_summary_for_test_runner_output() {
+        // Simulate a verbose test run: 350 KiB of output that ends
+        // with the kind of summary line cargo's parser keys on.
+        let summary_line = "test result: ok. 1234 passed; 0 failed; 0 ignored";
+        let bulk = "compiling...\n".repeat(30000); // ~30k * 13 bytes ≈ 390 KiB
+        let combined = format!("{bulk}\n{summary_line}\n");
+        assert!(combined.len() > MAX_TOOL_RESULT_CONTENT_LEN);
+
+        let value = serde_json::json!({
+            "content": &combined
+        });
+
+        let content = extract_tool_result_content(&value);
+
+        assert!(
+            content.contains(summary_line),
+            "trailing summary line must survive truncation so test-runner parsers \
+             can emit non-error snapshots for large successful runs (F15). \
+             Got content of length {}, last 200 chars: {:?}",
+            content.len(),
+            &content[content.len().saturating_sub(200)..]
+        );
+        assert!(
+            content.contains(TOOL_RESULT_TRUNCATED_MARKER),
+            "marker must appear when content exceeded the cap"
+        );
+        assert!(
+            content.len() <= MAX_TOOL_RESULT_CONTENT_LEN + 128,
+            "post-truncation length should be within ~MAX (plus marker), got {}",
+            content.len()
+        );
+    }
+
+    /// F10 regression (Claude review on PR #153). Streaming JSONL
+    /// flushes can emit `{"type":"text","text":""}` empty-string
+    /// sentinel blocks. Those carry no content, so they must NOT be
+    /// counted as "skipped blocks" when the cap is exactly hit on the
+    /// last meaningful block — otherwise the `[output truncated]`
+    /// marker fires falsely. The two `iter.any(...)` calls in
+    /// `extract_tool_result_content` now require the trailing block
+    /// to have non-empty text before counting it as skipped.
+    #[test]
+    fn extract_tool_result_content_no_marker_when_only_remaining_blocks_are_empty() {
+        let exactly_at_cap: String = "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN);
+        let value = serde_json::json!({
+            "content": [
+                { "type": "text", "text": exactly_at_cap },
+                { "type": "text", "text": "" },
+                { "type": "text", "text": "" }
+            ]
+        });
+
+        let content = extract_tool_result_content(&value);
+
+        assert_eq!(content.len(), MAX_TOOL_RESULT_CONTENT_LEN);
+        assert!(
+            !content.contains(TOOL_RESULT_TRUNCATED_MARKER),
+            "marker must not appear when the only remaining blocks are empty-string sentinels"
+        );
     }
 
     #[test]

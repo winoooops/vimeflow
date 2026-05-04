@@ -3,6 +3,19 @@
 use std::fs;
 use std::path::Path;
 
+/// Ensure the adapter status source stays under the caller's trust root.
+///
+/// Threat model: Vimeflow is a single-user desktop app, so this protects
+/// against accidental path escape and same-user symlink substitution in the
+/// workspace tree. Safe `std::fs` has no portable `openat`/`O_NOFOLLOW`
+/// directory-creation API, so the function uses a best-effort two-phase
+/// check: canonicalize the deepest existing ancestor before `create_dir_all`,
+/// then canonicalize the created parent again after creation. A same-user
+/// attacker that wins the tiny replacement window can cause `create_dir_all`
+/// to create directories outside `trust_root`, but the post-create check
+/// aborts before Vimeflow watches or reads from that path. Multi-user or
+/// shared-volume deployments should revisit this with fd-pinned traversal
+/// such as `cap-std`.
 pub(super) fn ensure_status_source_under_trust_root(
     status_path: &Path,
     trust_root: &Path,
@@ -73,7 +86,10 @@ mod tests {
             .join("sid-1")
             .join("status.json");
         ensure_status_source_under_trust_root(&status, root.path()).expect("nested path");
-        assert!(status.parent().unwrap().exists(), "create_dir_all should run");
+        assert!(
+            status.parent().unwrap().exists(),
+            "create_dir_all should run"
+        );
     }
 
     /// Status path resolves exactly TO the trust root's parent directory
@@ -113,7 +129,11 @@ mod tests {
 
         // Use the symlink path as trust_root; status path is under the
         // symlink as well, which canonicalizes through to the real dir.
-        let status = link.join(".vimeflow").join("sessions").join("s").join("status.json");
+        let status = link
+            .join(".vimeflow")
+            .join("sessions")
+            .join("s")
+            .join("status.json");
         ensure_status_source_under_trust_root(&status, &link).expect("symlinked trust ok");
     }
 
@@ -173,7 +193,10 @@ mod tests {
         let nonexistent_root = outer.path().join("does-not-exist");
         let status = nonexistent_root.join("status.json");
         let result = ensure_status_source_under_trust_root(&status, &nonexistent_root);
-        assert!(result.is_err(), "expected missing trust_root to be rejected");
+        assert!(
+            result.is_err(),
+            "expected missing trust_root to be rejected"
+        );
         assert!(
             result.unwrap_err().contains("trust_root not resolvable"),
             "expected resolvable diagnostic"

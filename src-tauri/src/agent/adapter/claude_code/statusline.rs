@@ -98,17 +98,19 @@ fn parse_context_window(value: &Value) -> ContextWindowStatus {
     // from total_input_tokens / context_window_size. Claude Code doesn't
     // emit used_percentage during the loading phase (skills, MCPs, CLAUDE.md)
     // but it does report total_input_tokens which reflects system prompt size.
-    let computed_percentage = used_percentage.or_else(|| {
-        if context_window_size > 0 && total_input_tokens > 0 {
-            Some((total_input_tokens as f64 / context_window_size as f64) * 100.0)
-        } else {
-            None
-        }
-    });
+    let computed_percentage = used_percentage
+        .or_else(|| {
+            if context_window_size > 0 && total_input_tokens > 0 {
+                Some((total_input_tokens as f64 / context_window_size as f64) * 100.0)
+            } else {
+                None
+            }
+        })
+        .map(clamp_percentage);
 
     let computed_remaining = computed_percentage
-        .map(|used| 100.0 - used)
-        .unwrap_or(remaining_percentage);
+        .map(|used| clamp_percentage(100.0 - used))
+        .unwrap_or_else(|| clamp_percentage(remaining_percentage));
 
     ContextWindowStatus {
         used_percentage: computed_percentage,
@@ -118,6 +120,10 @@ fn parse_context_window(value: &Value) -> ContextWindowStatus {
         total_output_tokens,
         current_usage,
     }
+}
+
+fn clamp_percentage(value: f64) -> f64 {
+    value.clamp(0.0, 100.0)
 }
 
 /// Parse cost metrics from a JSON value
@@ -593,6 +599,94 @@ mod tests {
         let event = &result.unwrap().event;
         assert_eq!(event.context_window.used_percentage, Some(30.0));
         assert!((event.context_window.remaining_percentage - 70.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn clamps_context_window_percentages() {
+        let json = r#"{
+            "context_window": {
+                "used_percentage": 150.0,
+                "remaining_percentage": -50.0,
+                "context_window_size": 200000,
+                "total_input_tokens": 300000,
+                "total_output_tokens": 0
+            }
+        }"#;
+        let result = parse_statusline("pty-clamp", json);
+        assert!(result.is_ok());
+
+        let event = &result.unwrap().event;
+        assert_eq!(event.context_window.used_percentage, Some(100.0));
+        assert!((event.context_window.remaining_percentage - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn clamps_computed_context_window_percentage() {
+        let json = r#"{
+            "context_window": {
+                "used_percentage": null,
+                "context_window_size": 200000,
+                "total_input_tokens": 300000,
+                "total_output_tokens": 0
+            }
+        }"#;
+        let result = parse_statusline("pty-computed-clamp", json);
+        assert!(result.is_ok());
+
+        let event = &result.unwrap().event;
+        assert_eq!(event.context_window.used_percentage, Some(100.0));
+        assert!((event.context_window.remaining_percentage - 0.0).abs() < f64::EPSILON);
+    }
+
+    /// F13 regression (Claude review on PR #153). When `used_percentage`
+    /// is null AND counts are zero (no computed fallback), the
+    /// `unwrap_or_else(|| clamp_percentage(remaining_percentage))` raw
+    /// fallback path takes over. This is the path most likely to receive
+    /// adversarial / partial-flush data, so it must clamp negatives and
+    /// over-100 values to the [0, 100] range.
+    #[test]
+    fn clamps_raw_remaining_percentage_when_no_computed_fallback() {
+        // Negative `remaining_percentage` with no computed value (null
+        // `used_percentage` AND zero counts) → must clamp to 0.0.
+        let json_below = r#"{
+            "context_window": {
+                "used_percentage": null,
+                "remaining_percentage": -50.0,
+                "context_window_size": 0,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0
+            }
+        }"#;
+        let event = &parse_statusline("pty-raw-below", json_below)
+            .expect("parse_statusline should succeed")
+            .event;
+        assert_eq!(event.context_window.used_percentage, None);
+        assert!(
+            (event.context_window.remaining_percentage - 0.0).abs() < f64::EPSILON,
+            "negative raw remaining_percentage must clamp to 0.0, got {}",
+            event.context_window.remaining_percentage
+        );
+
+        // Over-100 `remaining_percentage` on the same fallback path →
+        // must clamp to 100.0.
+        let json_above = r#"{
+            "context_window": {
+                "used_percentage": null,
+                "remaining_percentage": 150.0,
+                "context_window_size": 0,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0
+            }
+        }"#;
+        let event = &parse_statusline("pty-raw-above", json_above)
+            .expect("parse_statusline should succeed")
+            .event;
+        assert_eq!(event.context_window.used_percentage, None);
+        assert!(
+            (event.context_window.remaining_percentage - 100.0).abs() < f64::EPSILON,
+            "over-100 raw remaining_percentage must clamp to 100.0, got {}",
+            event.context_window.remaining_percentage
+        );
     }
 
     #[test]
