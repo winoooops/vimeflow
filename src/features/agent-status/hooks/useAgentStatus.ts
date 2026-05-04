@@ -356,7 +356,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
               : prev.contextWindow,
             cost: p.cost
               ? {
-                  totalCostUsd: p.cost.totalCostUsd,
+                  totalCostUsd: p.cost.totalCostUsd ?? null,
                   totalDurationMs: Number(p.cost.totalDurationMs),
                   totalApiDurationMs: Number(p.cost.totalApiDurationMs),
                   totalLinesAdded: Number(p.cost.totalLinesAdded),

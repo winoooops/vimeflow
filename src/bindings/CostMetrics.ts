@@ -5,9 +5,9 @@
  */
 export type CostMetrics = {
   /**
-   * Total cost in USD
+   * Total cost in USD. `None` means the agent does not expose cost.
    */
-  totalCostUsd: number
+  totalCostUsd?: number
   /**
    * Total session duration in milliseconds
    */

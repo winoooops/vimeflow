@@ -129,7 +129,7 @@ fn clamp_percentage(value: f64) -> f64 {
 /// Parse cost metrics from a JSON value
 fn parse_cost_metrics(value: &Value) -> CostMetrics {
     let defaults = CostMetrics {
-        total_cost_usd: 0.0,
+        total_cost_usd: None,
         total_duration_ms: 0,
         total_api_duration_ms: 0,
         total_lines_added: 0,
@@ -141,7 +141,7 @@ fn parse_cost_metrics(value: &Value) -> CostMetrics {
     }
 
     CostMetrics {
-        total_cost_usd: total_cost_usd(value),
+        total_cost_usd: Some(total_cost_usd(value)),
         total_duration_ms: total_duration_ms(value),
         total_api_duration_ms: total_api_duration_ms(value),
         total_lines_added: total_lines_added(value),
@@ -460,7 +460,7 @@ mod tests {
         assert_eq!(cu.cache_read_input_tokens, 200);
 
         // Cost
-        assert!((event.cost.total_cost_usd - 0.42).abs() < f64::EPSILON);
+        assert_eq!(event.cost.total_cost_usd, Some(0.42));
         assert_eq!(event.cost.total_duration_ms, 120000);
         assert_eq!(event.cost.total_api_duration_ms, 45000);
         assert_eq!(event.cost.total_lines_added, 150);
@@ -497,8 +497,31 @@ mod tests {
         assert!((event.context_window.remaining_percentage - 100.0).abs() < f64::EPSILON);
         assert_eq!(event.context_window.context_window_size, 0);
         assert!(event.context_window.current_usage.is_none());
-        assert!((event.cost.total_cost_usd).abs() < f64::EPSILON);
+        assert_eq!(event.cost.total_cost_usd, None);
         assert!(parsed.transcript_path.is_none());
+    }
+
+    #[test]
+    fn parse_cost_metrics_returns_none_when_cost_block_missing() {
+        let json = r#"{}"#;
+        let result = parse_statusline("pty-cost-none", json).expect("empty object parses");
+        assert_eq!(result.event.cost.total_cost_usd, None);
+    }
+
+    #[test]
+    fn parse_cost_metrics_returns_some_zero_when_field_missing() {
+        let json = r#"{ "cost": { "total_duration_ms": 100 } }"#;
+        let result =
+            parse_statusline("pty-cost-zero", json).expect("cost block without field parses");
+        assert_eq!(result.event.cost.total_cost_usd, Some(0.0));
+    }
+
+    #[test]
+    fn parse_cost_metrics_returns_some_value_when_field_present() {
+        let json = r#"{ "cost": { "total_cost_usd": 0.42 } }"#;
+        let result =
+            parse_statusline("pty-cost-value", json).expect("cost block with field parses");
+        assert_eq!(result.event.cost.total_cost_usd, Some(0.42));
     }
 
     #[test]
@@ -576,7 +599,7 @@ mod tests {
         assert!(result.is_ok());
 
         let event = &result.unwrap().event;
-        assert!((event.cost.total_cost_usd - 1.23).abs() < f64::EPSILON);
+        assert_eq!(event.cost.total_cost_usd, Some(1.23));
         assert_eq!(event.cost.total_duration_ms, 0);
         assert_eq!(event.cost.total_api_duration_ms, 0);
         assert_eq!(event.cost.total_lines_added, 0);

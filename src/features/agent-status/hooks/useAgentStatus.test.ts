@@ -334,6 +334,41 @@ describe('useAgentStatus', () => {
     expect(result.current.contextWindow?.currentUsage).toBeNull()
   })
 
+  test('preserves null totalCostUsd through normalization', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: null,
+        modelDisplayName: null,
+        version: null,
+        agentSessionId: null,
+        contextWindow: null,
+        cost: {
+          totalCostUsd: null,
+          totalDurationMs: 2500,
+          totalApiDurationMs: 1200,
+          totalLinesAdded: 0,
+          totalLinesRemoved: 0,
+        },
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.cost).toEqual({
+      totalCostUsd: null,
+      totalDurationMs: 2500,
+      totalApiDurationMs: 1200,
+      totalLinesAdded: 0,
+      totalLinesRemoved: 0,
+    })
+  })
+
   test('narrows bigint currentUsage tokens to number at the hook boundary', async () => {
     // The wire payload from Tauri carries `bigint` for each u64 token count
     // (see CurrentUsage binding). The hook MUST narrow these to `number` so

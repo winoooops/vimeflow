@@ -1,5 +1,4 @@
 import type { ContextWindowStatus } from '../../../bindings/ContextWindowStatus'
-import type { CostMetrics } from '../../../bindings/CostMetrics'
 import type { RateLimits } from '../../../bindings/RateLimits'
 
 // Re-export bindings, but NOT AgentStatusEvent — we override it below
@@ -23,6 +22,16 @@ export interface AgentStatusEvent {
   contextWindow: ContextWindowStatus | null
   cost: CostMetrics | null
   rateLimits: RateLimits | null
+}
+
+// Runtime-accurate override for CostMetrics. Rust Option<f64> serializes to
+// null, but ts-rs generates a required field.
+export interface CostMetrics {
+  totalCostUsd: number | null
+  totalDurationMs: number
+  totalApiDurationMs: number
+  totalLinesAdded: number
+  totalLinesRemoved: number
 }
 
 export interface AgentStatus {
@@ -104,7 +113,7 @@ export interface ContextWindowState {
 }
 
 export interface CostState {
-  totalCostUsd: number
+  totalCostUsd: number | null
   totalDurationMs: number
   totalApiDurationMs: number
   totalLinesAdded: number

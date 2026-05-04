@@ -31,6 +31,10 @@ describe('formatCost', () => {
   test('formats 1.5 as "$1.50"', () => {
     expect(formatCost(1.5)).toBe('$1.50')
   })
+
+  test('formats null as em dash', () => {
+    expect(formatCost(null)).toBe('—')
+  })
 })
 
 describe('formatApiTime', () => {
@@ -94,6 +98,35 @@ describe('BudgetMetrics', () => {
     expect(screen.getByText('94.7k')).toBeInTheDocument()
     expect(screen.getByText('Tokens Out')).toBeInTheDocument()
     expect(screen.getByText('1.5k')).toBeInTheDocument()
+  })
+
+  test('renders em dash for null totalCostUsd in API key variant', () => {
+    render(
+      <BudgetMetrics
+        cost={makeCost({ totalCostUsd: null })}
+        rateLimits={null}
+        totalInputTokens={0}
+        totalOutputTokens={0}
+      />
+    )
+
+    expect(screen.getByText('Cost')).toBeInTheDocument()
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
+  })
+
+  test('subscriber variant ignores null totalCostUsd', () => {
+    render(
+      <BudgetMetrics
+        cost={makeCost({ totalCostUsd: null, totalApiDurationMs: 5000 })}
+        rateLimits={makeRateLimits()}
+        totalInputTokens={1000}
+        totalOutputTokens={200}
+      />
+    )
+
+    expect(screen.queryByText('Cost')).not.toBeInTheDocument()
+    expect(screen.getByText('5.0s')).toBeInTheDocument()
   })
 
   test('renders fallback when neither cost nor rateLimits provided', () => {
