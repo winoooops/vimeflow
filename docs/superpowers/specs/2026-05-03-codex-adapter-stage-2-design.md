@@ -292,14 +292,15 @@ Both queries gated by `pty_start`:
    ```sql
    SELECT thread_id
    FROM logs
-   WHERE process_uuid LIKE 'pid:' || ? || ':%'
+   WHERE process_uuid LIKE 'pid:' || :pid || ':%'
      AND thread_id IS NOT NULL
-     AND (ts > ?1 OR (ts = ?1 AND ts_nanos >= ?2))   -- pty_start as (secs, nanos)
+     AND (ts > :pty_start_secs
+          OR (ts = :pty_start_secs AND ts_nanos >= :pty_start_nanos))
    ORDER BY ts DESC, ts_nanos DESC
    LIMIT 1;
    ```
 
-   `?1` is `pty_start_secs` (Unix seconds), `?2` is `pty_start_nanos` (nanoseconds within that second). Binding `pty_start` in milliseconds will return zero rows because `logs.ts` is in seconds — the comment in earlier drafts of this spec was wrong; the verified unit is seconds.
+   Three bound parameters, all named, all distinct: `:pid` (codex u32), `:pty_start_secs` (i64 Unix seconds), `:pty_start_nanos` (i64 nanos within that second). **Do not mix anonymous `?` with numbered `?N` placeholders** — in SQLite, anonymous `?` aliases to the next sequential numbered slot starting at 1, which collides with `?1` in the timestamp tuple and binds the PID predicate to the wrong value. Either use named placeholders as shown, or numbered consistently (e.g. `?1` for PID, `?2`/`?3` for the tuple). Binding `pty_start` in milliseconds will return zero rows because `logs.ts` is in seconds — the comment in earlier drafts of this spec was wrong; the verified unit is seconds.
 
    Zero rows → `LocatorError::NotYetReady`. (Codex hasn't flushed its first log entry; caller retries.)
 
