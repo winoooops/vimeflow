@@ -27,6 +27,42 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
 
 #### Added
 
+- Codex Adapter Stage 2 — `CodexAdapter` lands behind the existing
+  `AgentAdapter` trait so a PTY running `codex` populates the same status
+  panel as a Claude session: model, context window (driven by
+  `last_token_usage`, not lifetime totals), 5h/7d rate limits, and
+  durations. SQLite-primary session locator (schema-driven `logs` /
+  `threads` discovery, named-placeholder tuple comparison on
+  `(ts, ts_nanos) >= pty_start`) with FS-scan fallback. New rusqlite
+  bundled dep. `cost.total_cost_usd` becomes `Option<f64>` (Rust → null on
+  the wire → frontend override `number | null` → `BudgetMetrics` renders
+  `'—'` for null in `ApiKeyVariant`). `ManagedSession.started_at` +
+  `PtyState::get_started_at` added so the locator can gate on PTY start
+  time. `BindContext { session_id, cwd, pid, pty_start }` and `BindError
+{ Pending, Fatal }` added to `agent/adapter/types.rs`;
+  `AgentAdapter::status_source` becomes fallible; `base::start_for` runs a
+  bounded retry on `Pending` (5 × 100ms = 500ms total, well under
+  `DETECTION_POLL_MS=2000`). Spec:
+  [`docs/superpowers/specs/2026-05-03-codex-adapter-stage-2-design.md`](docs/superpowers/specs/2026-05-03-codex-adapter-stage-2-design.md);
+  plan:
+  [`docs/superpowers/plans/2026-05-04-codex-adapter-stage-2.md`](docs/superpowers/plans/2026-05-04-codex-adapter-stage-2.md).
+  - **Scope expansion documented in
+    [`docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md`](docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md):**
+    the spec's three locked rules (no transcript tailer in v1; `/proc`
+    verifier-only; `BindContext.pid` = shell PID) were all relaxed
+    during implementation. The transcript tailer landed in v1 and
+    reuses `claude_code/test_runners/*` to emit
+    `AgentToolCallEvent` / `AgentTurnEvent` / test-run signals;
+    `/proc/<pid>/fd/*` and `/proc/<pid>/cmdline` contribute Linux
+    fast-paths when the SQLite logs query returns no rows (every fd
+    candidate is round-tripped through `threads.rollout_path` for
+    multi-fd disambiguation); `BindContext.pid` is now the detected
+    agent PID via `detect_agent`, not the shell PID, because Codex's
+    `logs.process_uuid` indexes by the codex child PID.
+  - Six rollout JSONL fixtures under
+    `src-tauri/tests/fixtures/codex/` pin the spec's locked parser
+    rules (last_token_usage source, info-null partial update,
+    incomplete-trailing-line silent drop, malformed-mid warn).
 - README hero gif (`docs/media/hero-init.gif`) plus four static screenshots
   in `docs/media/`: workspace overview, agent status sidebar close-up, git
   diff viewer, and editor with vim mode. The hero recording (spawn `claude` →

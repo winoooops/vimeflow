@@ -1,9 +1,10 @@
 # Agent Adapter Abstraction — Stage 2: Codex Adapter
 
 **Date:** 2026-05-03
-**Status:** Draft, ready for review
+**Status:** Implemented (with documented scope expansion).
 **Scope:** Implement `CodexAdapter` against the `AgentAdapter` trait introduced in Stage 1 (`docs/superpowers/specs/2026-05-02-claude-adapter-refactor-design.md`, PRs #152, #153). Plus a deferred refactor pass to extract genuinely-shared parser helpers across both adapters once duplication is observed.
 **Predecessor ADR:** `docs/decisions/2026-05-03-claude-parser-json-boundary.md` — explicitly defers cross-adapter helper promotion until "another adapter proves the abstraction is useful". Step 2 of this spec is that proof.
+**Amended by:** `docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md` — the implementation expanded past three of this spec's locked rules (Codex transcript tailer, `/proc`-as-chooser, `BindContext.pid` semantics). Where this spec and that ADR conflict, the ADR wins for those three items only; the rest of this spec stands.
 
 ---
 
@@ -29,7 +30,7 @@ A separate, deferred Step 2 captures the cross-adapter parser-helper refactor th
 ## Non-Goals
 
 - **No `codex app-server` JSON-RPC integration.** That is the right long-term path if Vimeflow ever wants to _launch_ codex itself, but our model is "user types `codex` into a PTY we host", so we observe — we don't drive. Noted as future direction; out of scope for this work.
-- **No Codex transcript tailer in v1.** `tail_transcript` returns an explicit not-implemented error. Concretely: no `AgentTurnEvent` (turn count stays 0 for codex sessions), no `AgentToolCallEvent` (activity feed stays empty), no test-runner detection. The status-bar metrics — model, context window, rate limits, durations — work; activity-feed parity is a follow-up spec.
+- **~~No Codex transcript tailer in v1.~~** **Superseded by `docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md` — the transcript tailer landed in v1.** It re-uses `claude_code/test_runners/*` to emit `AgentToolCallEvent` / `AgentTurnEvent` and test-run signals via `process_response_item` (function_call / custom_tool_call / function_call_output / custom_tool_call_output) and `process_event_msg` (user_message → AgentTurnEvent; exec_command_end + patch_apply_end → AgentToolCallEvent). See the ADR for the rationale and lifecycle invariants.
 - **No frontend redesign.** The status panel renders the same `AgentStatus` type. The only frontend changes are (a) handling a new `cost.totalCostUsd: number | null` shape and (b) preserving the null through state instead of coercing to `0`.
 - **No premature shared parser module.** Per the 2026-05-03 ADR, generic JSON helpers stay private to each adapter for v1. Step 2 of this spec is the explicit follow-up that decides what (if anything) to promote.
 - **No agent-bind-error event.** Existing frontend retry on `start_agent_watcher` failure (every 2000ms via `DETECTION_POLL_MS`) is sufficient for v1 attach failures. A new event would mean new bindings, listener wiring, stale-session filtering, UI state, and tests — none of which produces user-visible behavior beyond what the existing retry already delivers.
@@ -120,7 +121,7 @@ Two SQLite DBs in `~/.codex/` track session metadata:
 ### Sources to ignore
 
 - `~/.codex/session_index.jsonl` — observed updated April 30, 2026 even though active sessions on May 2/3 existed. The index is only written for certain interactive flows (thread-naming) and is unreliable as a live signal.
-- `/proc/<pid>/fd/*` as the chooser — one live codex PID can hold multiple historical rollout JSONL files open simultaneously. Linux `/proc` is fine as a _verifier_ for a chosen rollout, never as the chooser.
+- `/proc/<pid>/fd/*` as the **sole** chooser — one live codex PID can hold multiple historical rollout JSONL files open simultaneously, so the fd list cannot be trusted on its own. **Amended by `docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md`:** `/proc` _may_ contribute candidates **only when the SQLite primary `logs` query returns no rows**, AND every `/proc`-supplied path is round-tripped through `threads WHERE rollout_path = ?` to confirm a real thread row owns it. Multi-fd disambiguation falls out of the SQLite cross-check, not from trusting the fd list.
 
 ## Architecture
 
@@ -319,9 +320,17 @@ Both queries gated by `pty_start`:
 
 The SQLite primary path therefore has only one `Unresolved`-shaped failure mode, and it lives in the FS fallback (multiple rollout candidates that cwd can't disambiguate). The primary path itself emits only `NotYetReady` (zero rows on either query) or `Fatal` (I/O error during open/query).
 
-### Optional Linux verifier (not chooser)
+### Linux fast-paths (`/proc`-driven)
 
-If `cfg!(target_os = "linux")` and `/proc/<ctx.pid>/fd/*` is readable, walk the file descriptors and confirm the resolved `rollout_path` is among them. Mismatch → `log::warn!` with both paths, but trust the SQLite answer. This is purely a diagnostic — the locator's choice is not changed by `/proc`.
+**Amended by `docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md`** — the original "verifier-only" rule turned out to be too narrow under realistic codex bootstrap timing. The implementation runs three layered fast-paths on Linux **only when the SQLite logs query returns zero rows**:
+
+1. **`resume_thread_id_from_proc(proc_root, pid)`** — read `/proc/<pid>/cmdline`, parse a `codex resume <id>` argv pattern, and bind directly via that thread_id (skipping the logs query but still cross-checking with the threads table).
+2. **`resolve_from_proc_fds(...)`** — walk `/proc/<pid>/fd/*` symlinks, filter to paths under `~/.codex/sessions/`, and **for each candidate path query `threads WHERE rollout_path = ?`**. The SQLite cross-check is the disambiguator: a stale fd whose path no longer corresponds to a thread row is rejected. Multi-fd codex processes don't bind to the wrong rollout because the threads table has the canonical mapping.
+3. **`resolve_recent_state_candidate(...)`** — scan `threads` ordered by `updated_at_ms DESC` with optional cwd matching as the final fallback before FS-scan.
+
+The fast-paths exist because Codex commits its rollout file open and the `threads` row before (often well before) the corresponding `logs` row arrives. The original spec's 500ms `start_for` retry budget couldn't cover that gap without overlapping the frontend's 2000ms detection re-poll. See the ADR for the full reasoning.
+
+`/proc` results without a SQLite cross-check still must not be returned. The original "never as chooser" rule survives in spirit: the chooser is `threads.rollout_path`; `/proc` only narrows the candidate set.
 
 ### FS-scan fallback
 
@@ -525,7 +534,9 @@ pub struct ManagedSession {
 }
 ```
 
-Set at the spawn site (immediately before/after the construction of the read-loop task). Add `pub fn get_started_at(&self, session_id: &str) -> Option<SystemTime>` on `PtyState`. `start_agent_watcher` (`src-tauri/src/agent/adapter/mod.rs:124-144`) builds the `BindContext` from `pty_state.get_cwd(sid)`, `get_pid(sid)`, and `get_started_at(sid)`.
+Set at the spawn site (immediately before/after the construction of the read-loop task). Add `pub fn get_started_at(&self, session_id: &str) -> Option<SystemTime>` on `PtyState`.
+
+`start_agent_watcher` (`src-tauri/src/agent/adapter/mod.rs:124-144`) builds the `BindContext` from `pty_state.get_cwd(sid)`, `pty_state.get_started_at(sid)`, and **the detected agent PID returned by `detect_agent(shell_pid)`** — _not_ `pty_state.get_pid(sid)` (which returns the shell PID). **Amended by `docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md`:** Codex's `logs.process_uuid` indexes by the codex child PID, not the shell PID at the PTY root, so binding with the shell PID would always return zero rows. The implementation extracts a `resolve_bind_inputs` helper that performs detection and threads the agent PID into `BindContext.pid`.
 
 Backward-compatible: pure backend addition, no IPC bump.
 

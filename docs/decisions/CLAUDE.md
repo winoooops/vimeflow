@@ -10,10 +10,11 @@ This file is an index. Each linked record is self-contained. Read only what you 
 
 ## Records
 
-| Date       | Decision                                                                   | Status   |
-| ---------- | -------------------------------------------------------------------------- | -------- |
-| 2026-05-03 | [Claude parser JSON boundary](./2026-05-03-claude-parser-json-boundary.md) | Accepted |
-| 2026-04-22 | [Tooltip library: `@floating-ui/react`](./2026-04-22-tooltip-library.md)   | Accepted |
+| Date       | Decision                                                                                       | Status   |
+| ---------- | ---------------------------------------------------------------------------------------------- | -------- |
+| 2026-05-04 | [Codex adapter Stage 2 scope expansion](./2026-05-04-codex-adapter-stage-2-scope-expansion.md) | Accepted |
+| 2026-05-03 | [Claude parser JSON boundary](./2026-05-03-claude-parser-json-boundary.md)                     | Accepted |
+| 2026-04-22 | [Tooltip library: `@floating-ui/react`](./2026-04-22-tooltip-library.md)                       | Accepted |
 
 ## Adding a record
 

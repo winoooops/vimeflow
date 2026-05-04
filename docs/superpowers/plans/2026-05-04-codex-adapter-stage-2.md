@@ -614,6 +614,8 @@ this path; Claude sessions remain unaffected."
 
 **Goal:** Add the new types to `agent/adapter/types.rs`. The trait change in Task 6 consumes them.
 
+> **Implementation note (2026-05-04):** `BindContext.pid` is the **detected agent PID** returned by `detect_agent`, NOT `pty_state.get_pid(sid)` (the shell PID at the PTY root). Codex's `logs.process_uuid` indexes by the codex child PID; binding with the shell PID always returns zero rows. Task 6 / Task 15's `start_agent_watcher` updates extract a `resolve_bind_inputs` helper that runs detection and threads the agent PID into `BindContext`. See `docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md`.
+
 **Files:**
 
 - Modify: `src-tauri/src/agent/adapter/types.rs`
@@ -1233,6 +1235,8 @@ the next detection poll."
 ## Task 8: Codex module skeleton
 
 **Goal:** Empty new files registered with the build, stubs only. Subsequent tasks fill the bodies.
+
+> **Implementation note (2026-05-04):** `transcript.rs` shipped a real tailer rather than the stub originally planned here. See `docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md` for the scope-expansion rationale and Task 14's note for the post-stub state.
 
 **Files:**
 
@@ -2688,6 +2692,8 @@ tree."
 ## Task 14: `CodexAdapter` trait impl
 
 **Goal:** Replace the `CodexAdapter` placeholder with the real implementation that wires `CompositeLocator` + `parse_rollout` into the `AgentAdapter` trait.
+
+> **Implementation note (2026-05-04):** `transcript.rs` was specified as a v1 stub here (`validate_transcript` and `tail_transcript` returning Err). The shipped implementation replaced both with a real tailer that reuses `claude_code/test_runners/*` to emit `AgentToolCallEvent` / `AgentTurnEvent` / test-run signals. As a side effect, `CodexAdapter` gained a `Mutex<Option<PathBuf>>` field (`resolved_rollout_path`) shared between `status_source` (writer) and `parse_status` (reader) so the tailer can fire — `parse_status` is no longer a pure function of `(sid, raw)` for Codex. The lifecycle invariant (status_source runs before parse_status on the same `Arc<CodexAdapter>` instance) holds by construction because each attach gets its own instance via `<dyn AgentAdapter>::for_type(Codex)`. See `docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md`.
 
 **Files:**
 
