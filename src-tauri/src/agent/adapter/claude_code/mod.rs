@@ -1,11 +1,13 @@
 //! Claude Code adapter implementation.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use tauri::AppHandle;
 
 use crate::agent::adapter::base::TranscriptHandle;
-use crate::agent::adapter::types::{ParsedStatus, StatusSource, ValidateTranscriptError};
+use crate::agent::adapter::types::{
+    BindContext, BindError, ParsedStatus, StatusSource, ValidateTranscriptError,
+};
 use crate::agent::adapter::AgentAdapter;
 use crate::agent::types::AgentType;
 
@@ -20,15 +22,16 @@ impl<R: tauri::Runtime> AgentAdapter<R> for ClaudeCodeAdapter {
         AgentType::ClaudeCode
     }
 
-    fn status_source(&self, cwd: &Path, session_id: &str) -> StatusSource {
-        StatusSource {
-            path: cwd
+    fn status_source(&self, ctx: &BindContext<'_>) -> Result<StatusSource, BindError> {
+        Ok(StatusSource {
+            path: ctx
+                .cwd
                 .join(".vimeflow")
                 .join("sessions")
-                .join(session_id)
+                .join(ctx.session_id)
                 .join("status.json"),
-            trust_root: cwd.to_path_buf(),
-        }
+            trust_root: ctx.cwd.to_path_buf(),
+        })
     }
 
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
@@ -70,11 +73,18 @@ mod tests {
 
     #[test]
     fn status_source_returns_claude_path_under_cwd() {
+        use std::time::SystemTime;
+
         let adapter = ClaudeCodeAdapter;
         let cwd = PathBuf::from("/tmp/ws");
-        let src = <ClaudeCodeAdapter as AgentAdapter<MockRuntime>>::status_source(
-            &adapter, &cwd, "sess-1",
-        );
+        let ctx = BindContext {
+            session_id: "sess-1",
+            cwd: &cwd,
+            pid: 0,
+            pty_start: SystemTime::UNIX_EPOCH,
+        };
+        let src = <ClaudeCodeAdapter as AgentAdapter<MockRuntime>>::status_source(&adapter, &ctx)
+            .expect("claude status source is infallible");
         assert_eq!(
             src.path,
             cwd.join(".vimeflow")

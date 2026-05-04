@@ -8,8 +8,9 @@ pub mod base;
 pub mod claude_code;
 pub mod types;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use tauri::AppHandle;
 
@@ -20,13 +21,13 @@ use crate::agent::types::AgentType;
 use crate::terminal::PtyState;
 use base::TranscriptHandle;
 use claude_code::ClaudeCodeAdapter;
-use types::{ParsedStatus, StatusSource, ValidateTranscriptError};
+use types::{BindContext, BindError, ParsedStatus, StatusSource, ValidateTranscriptError};
 
 /// Provider hooks for one CLI coding agent.
 pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
     fn agent_type(&self) -> AgentType;
 
-    fn status_source(&self, cwd: &Path, session_id: &str) -> StatusSource;
+    fn status_source(&self, ctx: &BindContext<'_>) -> Result<StatusSource, BindError>;
 
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String>;
 
@@ -54,9 +55,11 @@ impl<R: tauri::Runtime> dyn AgentAdapter<R> {
         app: AppHandle<R>,
         session_id: String,
         cwd: PathBuf,
+        pid: u32,
+        pty_start: SystemTime,
         state: AgentWatcherState,
     ) -> Result<(), String> {
-        base::start_for(self, app, session_id, cwd, state)
+        base::start_for(self, app, session_id, cwd, pid, pty_start, state)
     }
 
     pub fn stop(state: &AgentWatcherState, session_id: &str) -> bool {
@@ -80,15 +83,16 @@ impl<R: tauri::Runtime> AgentAdapter<R> for NoOpAdapter {
         self.agent_type.clone()
     }
 
-    fn status_source(&self, cwd: &Path, session_id: &str) -> StatusSource {
-        StatusSource {
-            path: cwd
+    fn status_source(&self, ctx: &BindContext<'_>) -> Result<StatusSource, BindError> {
+        Ok(StatusSource {
+            path: ctx
+                .cwd
                 .join(".vimeflow")
                 .join("sessions")
-                .join(session_id)
+                .join(ctx.session_id)
                 .join("status.json"),
-            trust_root: cwd.to_path_buf(),
-        }
+            trust_root: ctx.cwd.to_path_buf(),
+        })
     }
 
     fn parse_status(&self, _: &str, _: &str) -> Result<ParsedStatus, String> {
@@ -135,12 +139,23 @@ pub async fn start_agent_watcher(
         .get_pid(&session_id)
         .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
 
+    let pty_start = pty_state
+        .get_started_at(&session_id)
+        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
+
     let agent_type = detect_agent(pid)
         .map(|(agent_type, _)| agent_type)
         .ok_or_else(|| format!("no agent detected in PTY session {}", session_id))?;
 
     let adapter = <dyn AgentAdapter<tauri::Wry>>::for_type(agent_type)?;
-    adapter.start(app_handle, session_id, PathBuf::from(cwd), (*state).clone())
+    adapter.start(
+        app_handle,
+        session_id,
+        PathBuf::from(cwd),
+        pid,
+        pty_start,
+        (*state).clone(),
+    )
 }
 
 /// Stop watching an agent status source.
@@ -173,9 +188,18 @@ mod noop_tests {
 
     #[test]
     fn status_source_uses_claude_shaped_path() {
+        use std::time::SystemTime;
+
         let adapter = NoOpAdapter::new(AgentType::Aider);
         let cwd = PathBuf::from("/tmp/ws");
-        let src = <NoOpAdapter as AgentAdapter<MockRuntime>>::status_source(&adapter, &cwd, "sid");
+        let ctx = BindContext {
+            session_id: "sid",
+            cwd: &cwd,
+            pid: 0,
+            pty_start: SystemTime::UNIX_EPOCH,
+        };
+        let src = <NoOpAdapter as AgentAdapter<MockRuntime>>::status_source(&adapter, &ctx)
+            .expect("noop adapter always resolves a status source");
         assert_eq!(
             src.path,
             cwd.join(".vimeflow")

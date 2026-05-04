@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::agent::adapter::AgentAdapter;
+use crate::agent::adapter::types::BindContext;
 
 pub use transcript_state::{TranscriptHandle, TranscriptStartStatus, TranscriptState};
 pub use watcher_runtime::{AgentWatcherState, WatcherHandle};
@@ -23,9 +24,17 @@ pub(crate) fn start_for<R: tauri::Runtime>(
     app_handle: tauri::AppHandle<R>,
     session_id: String,
     cwd: PathBuf,
+    pid: u32,
+    pty_start: std::time::SystemTime,
     state: AgentWatcherState,
 ) -> Result<(), String> {
-    let source = adapter.status_source(&cwd, &session_id);
+    let ctx = BindContext {
+        session_id: &session_id,
+        cwd: &cwd,
+        pid,
+        pty_start,
+    };
+    let source = adapter.status_source(&ctx).map_err(|e| e.to_string())?;
     path_security::ensure_status_source_under_trust_root(&source.path, &source.trust_root)?;
 
     log::debug!(

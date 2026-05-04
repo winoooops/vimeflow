@@ -1,6 +1,7 @@
 //! Provider-hook types used by `AgentAdapter` implementations.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use crate::agent::types::AgentStatusEvent;
 
@@ -15,6 +16,31 @@ pub struct ParsedStatus {
     pub event: AgentStatusEvent,
     pub transcript_path: Option<String>,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct BindContext<'a> {
+    pub session_id: &'a str,
+    pub cwd: &'a Path,
+    pub pid: u32,
+    pub pty_start: SystemTime,
+}
+
+#[derive(Debug, Clone)]
+pub enum BindError {
+    Pending(String),
+    Fatal(String),
+}
+
+impl std::fmt::Display for BindError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pending(reason) => write!(f, "bind pending: {}", reason),
+            Self::Fatal(reason) => write!(f, "bind fatal: {}", reason),
+        }
+    }
+}
+
+impl std::error::Error for BindError {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidateTranscriptError {
@@ -105,5 +131,17 @@ mod display_tests {
         let s = outside.to_string();
         assert!(s.starts_with("transcript path is outside Claude directory: "));
         assert!(s.contains(" not under "));
+    }
+
+    #[test]
+    fn bind_error_display_pending_format() {
+        let e = BindError::Pending("logs row not yet committed".to_string());
+        assert_eq!(e.to_string(), "bind pending: logs row not yet committed");
+    }
+
+    #[test]
+    fn bind_error_display_fatal_format() {
+        let e = BindError::Fatal("permission denied on ~/.codex".to_string());
+        assert_eq!(e.to_string(), "bind fatal: permission denied on ~/.codex");
     }
 }
