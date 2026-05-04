@@ -415,10 +415,18 @@ Frontend override + null rendering land in the next commit."
 
 - [ ] **Step 1: Write the failing test for null rendering.**
 
+**Variant routing context:** `BudgetMetrics` (currently `BudgetMetrics.tsx:133-166`) routes to one of three variants based on which props are present:
+
+- `SubscriberVariant` (when `rateLimits` is non-null) — no Cost cell. Shows rate-limit bars + API Time + Tokens. Renders for Claude Pro/Team **and all Codex sessions** (Codex always provides `rate_limits`).
+- `ApiKeyVariant` (when `rateLimits` is null AND `cost` is non-null) — **the only variant that renders a Cost cell.** Used by Claude API-key auth.
+- `FallbackVariant` (when both null) — tokens only.
+
+So the null-cost handling targets `ApiKeyVariant` only. The crash scenario this prevents: a Claude API-key user on a pre-first-response session where the cost block hasn't been written yet, so `cost.totalCostUsd === null`. SubscriberVariant has no Cost cell to render, so Codex sessions don't need any null-rendering work — but ApiKeyVariant's `formatCost(cost.totalCostUsd)` would throw on null without this fix.
+
 Open `src/features/agent-status/components/BudgetMetrics.test.tsx` and add:
 
 ```typescript
-test('renders cost as em-dash when totalCostUsd is null', () => {
+test('ApiKeyVariant renders cost as em-dash when totalCostUsd is null', () => {
   const cost = {
     totalCostUsd: null,
     totalDurationMs: 0,
@@ -429,19 +437,19 @@ test('renders cost as em-dash when totalCostUsd is null', () => {
   render(
     <BudgetMetrics
       cost={cost}
-      rateLimits={{ fiveHour: { usedPercentage: 0, resetsAt: 0 } }}
+      rateLimits={null} // ← null routes to ApiKeyVariant (cost is non-null object)
       totalInputTokens={0}
       totalOutputTokens={0}
     />
   )
-  // Cost is rendered into a MetricCell; the value should not include
-  // a dollar sign or numeric value when null.
-  const dollar = screen.queryByText(/\$/)
-  expect(dollar).toBeNull()
+  // ApiKeyVariant renders a Cost cell. With null totalCostUsd it
+  // should show '—', not crash on `(null).toFixed(2)`.
+  expect(screen.getByText('Cost')).toBeInTheDocument()
   expect(screen.getByText('—')).toBeInTheDocument()
+  expect(screen.queryByText(/\$/)).toBeNull()
 })
 
-test('renders cost with dollar sign when totalCostUsd is a number', () => {
+test('ApiKeyVariant renders cost with dollar sign when totalCostUsd is a number', () => {
   const cost = {
     totalCostUsd: 0.42,
     totalDurationMs: 0,
@@ -452,16 +460,39 @@ test('renders cost with dollar sign when totalCostUsd is a number', () => {
   render(
     <BudgetMetrics
       cost={cost}
-      rateLimits={{ fiveHour: { usedPercentage: 0, resetsAt: 0 } }}
+      rateLimits={null}
       totalInputTokens={0}
       totalOutputTokens={0}
     />
   )
-  expect(screen.getByText(/\$0\.42/)).toBeInTheDocument()
+  expect(screen.getByText('$0.42')).toBeInTheDocument()
+})
+
+test('SubscriberVariant unaffected by null totalCostUsd (codex path)', () => {
+  // Codex sessions always go through SubscriberVariant — rateLimits
+  // is always present and there's no Cost cell to render. The null
+  // totalCostUsd MUST NOT crash this render.
+  const cost = {
+    totalCostUsd: null,
+    totalDurationMs: 0,
+    totalApiDurationMs: 5000,
+    totalLinesAdded: 0,
+    totalLinesRemoved: 0,
+  }
+  render(
+    <BudgetMetrics
+      cost={cost}
+      rateLimits={{ fiveHour: { usedPercentage: 8.0, resetsAt: 1777848985 } }}
+      totalInputTokens={1000}
+      totalOutputTokens={200}
+    />
+  )
+  // No Cost cell in SubscriberVariant.
+  expect(screen.queryByText('Cost')).toBeNull()
+  // API Time still renders (uses totalApiDurationMs, not totalCostUsd).
+  expect(screen.getByText(/5\.0s/)).toBeInTheDocument()
 })
 ```
-
-The exact prop shape must match the existing `BudgetMetrics` API; if your local file shows different prop names than `cost`/`rateLimits`/`totalInputTokens`/`totalOutputTokens`, adapt the test to those.
 
 - [ ] **Step 2: Run tests to verify they fail.**
 
@@ -513,16 +544,30 @@ totalCostUsd: p.cost.totalCostUsd ?? null,
 
 Rationale: `null ?? null === null` and `0.42 ?? null === 0.42`, so we preserve the runtime shape verbatim instead of coercing. Do **not** wrap with `Number(...)` — `Number(null) === 0`, which is exactly the bug we're fixing.
 
-- [ ] **Step 5: Update `BudgetMetrics.tsx` to render null.**
+- [ ] **Step 5: Update `formatCost` in `BudgetMetrics.tsx` to handle null.**
 
-Find the cost cell. There are two variants in this file (`Default` and `ApiKeyVariant` per the file structure observed earlier). For each, the `cost?.totalCostUsd` accessor needs to short-circuit to `'—'` when null. Pattern:
+Only `ApiKeyVariant` renders the Cost cell (currently `BudgetMetrics.tsx:108`). `SubscriberVariant` and `FallbackVariant` do not, so they need no changes. The smallest correct fix is to widen `formatCost`'s parameter type and handle null inside it.
+
+Update the exported `formatCost` helper at `BudgetMetrics.tsx:12`:
 
 ```typescript
-const formatCostUsd = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '—' : `$${value.toFixed(2)}`
+// Before
+export const formatCost = (usd: number): string => `$${usd.toFixed(2)}`
+
+// After
+export const formatCost = (usd: number | null): string =>
+  usd === null ? '—' : `$${usd.toFixed(2)}`
 ```
 
-Add this helper near the existing `formatApiTime` / `formatTokens` helpers in the file. Then replace the cost rendering — wherever a cost MetricCell currently reads `cost?.totalCostUsd`, route it through `formatCostUsd`.
+`ApiKeyVariant`'s call site (`value={formatCost(cost.totalCostUsd)}`) now type-checks against `cost.totalCostUsd: number | null` from the override (Step 3). No call-site edit beyond this signature change.
+
+Verify there are no other `formatCost` consumers that would break under the wider type:
+
+```bash
+grep -rn "formatCost" src/
+```
+
+If a consumer passes a guaranteed-non-null `number`, it still type-checks (assignable to `number | null`). If a consumer asserted a return string of length > 1 or similar, audit those — none exist today, but the grep is the gate.
 
 - [ ] **Step 6: Run BudgetMetrics tests to verify they pass.**
 
@@ -670,14 +715,17 @@ can gate SQLite queries; BindError separates transient Pending
 
 ---
 
-## Task 6: Make `AgentAdapter::status_source` fallible
+## Task 6: Make `AgentAdapter::status_source` fallible (no retry yet)
 
-**Goal:** Change the trait signature to take `&BindContext` and return `Result<StatusSource, BindError>`. Update Claude's impl, the NoOp impl, and any tests.
+**Goal:** Change the trait signature to take `&BindContext` and return `Result<StatusSource, BindError>`. Update Claude's impl, the NoOp impl, the `start_agent_watcher` Tauri command, the inherent `start`, AND `base::start_for`'s signature — all in one coherent commit so the workspace compiles cleanly at the end. `start_for`'s body just calls `adapter.status_source(&ctx)?` once and proceeds (no retry); the bounded retry loop on `BindError::Pending` lands in Task 7 as a body-only change.
+
+This task and Task 7 are intentionally split this way so each task ends in a green workspace. Combining them into one commit is also fine — but doing them across two commits with the trait change in one and the matching `base::start_for` change deferred to the second would leave Task 6 in a guaranteed compile-broken state.
 
 **Files:**
 
 - Modify: `src-tauri/src/agent/adapter/mod.rs`
 - Modify: `src-tauri/src/agent/adapter/claude_code/mod.rs`
+- Modify: `src-tauri/src/agent/adapter/base/mod.rs`
 
 - [ ] **Step 1: Update the trait declaration.**
 
@@ -789,16 +837,58 @@ pub fn start(
     session_id: String,
     cwd: PathBuf,
     pid: u32,
-    pty_start: SystemTime,
+    pty_start: std::time::SystemTime,
     state: AgentWatcherState,
 ) -> Result<(), String> {
     base::start_for(self, app, session_id, cwd, pid, pty_start, state)
 }
 ```
 
-`base::start_for` itself is updated in Task 7.
+- [ ] **Step 5: Update `base::start_for` signature to accept `pid` + `pty_start`.**
 
-- [ ] **Step 5: Update existing `noop_tests` for the new signature.**
+In `src-tauri/src/agent/adapter/base/mod.rs`, find the existing `start_for` (currently at line 21):
+
+```rust
+// Before
+pub(crate) fn start_for<R: tauri::Runtime>(
+    adapter: Arc<dyn AgentAdapter<R>>,
+    app_handle: tauri::AppHandle<R>,
+    session_id: String,
+    cwd: PathBuf,
+    state: AgentWatcherState,
+) -> Result<(), String> {
+    let source = adapter.status_source(&cwd, &session_id);
+    path_security::ensure_status_source_under_trust_root(&source.path, &source.trust_root)?;
+    // ... rest unchanged
+}
+
+// After (this task — no retry yet)
+pub(crate) fn start_for<R: tauri::Runtime>(
+    adapter: Arc<dyn AgentAdapter<R>>,
+    app_handle: tauri::AppHandle<R>,
+    session_id: String,
+    cwd: PathBuf,
+    pid: u32,
+    pty_start: std::time::SystemTime,
+    state: AgentWatcherState,
+) -> Result<(), String> {
+    let ctx = crate::agent::adapter::types::BindContext {
+        session_id: &session_id,
+        cwd: &cwd,
+        pid,
+        pty_start,
+    };
+    let source = adapter
+        .status_source(&ctx)
+        .map_err(|e| format!("{}", e))?;
+    path_security::ensure_status_source_under_trust_root(&source.path, &source.trust_root)?;
+    // ... rest of existing body unchanged ...
+}
+```
+
+The body change is minimal: build the `BindContext`, call the now-fallible `status_source`, surface any `BindError` as `Err(String)`. The `BindError` Display impl from Task 5 produces `"bind pending: ..."` / `"bind fatal: ..."` strings. Task 7 will replace the single-call site with a bounded retry loop.
+
+- [ ] **Step 6: Update existing `noop_tests` for the new signature.**
 
 In the existing `#[cfg(test)] mod noop_tests` block in `adapter/mod.rs`:
 
@@ -827,18 +917,20 @@ fn status_source_uses_claude_shaped_path() {
 }
 ```
 
-- [ ] **Step 6: Run all tests.**
+- [ ] **Step 7: Run all tests.**
 
 ```bash
 cd src-tauri && cargo test --workspace --all-features
 ```
 
-Expected: PASS. Any compile errors are call sites of the old `status_source(cwd, sid)` shape — update them to build a `BindContext` and unwrap the `Result`.
+Expected: PASS. Any remaining compile errors are call sites of the old `status_source(cwd, sid)` shape elsewhere — update them to build a `BindContext` and unwrap the `Result`. Existing tests that construct a `BindContext` directly (e.g. the `noop_tests::status_source_uses_claude_shaped_path` test from Step 6 above) are pinned by this task; tests that drive `start_for` integration must now pass `pid` + `pty_start`.
 
-- [ ] **Step 7: Commit.**
+- [ ] **Step 8: Commit.**
 
 ```bash
-git add src-tauri/src/agent/adapter/mod.rs src-tauri/src/agent/adapter/claude_code/mod.rs
+git add src-tauri/src/agent/adapter/mod.rs \
+        src-tauri/src/agent/adapter/claude_code/mod.rs \
+        src-tauri/src/agent/adapter/base/mod.rs
 git commit -m "refactor(agent/adapter): status_source takes BindContext, returns Result
 
 Trait surface change. Claude's impl ignores pid/pty_start and is
@@ -1006,30 +1098,40 @@ mod start_for_retry_tests {
 cd src-tauri && cargo test --lib start_for_retry_tests
 ```
 
-Expected: compile errors — `start_for` doesn't accept `pid`/`pty_start` parameters yet.
+Expected: the `start_for_retries_on_pending_then_succeeds_under_budget` test FAILS at runtime — Task 6 left `start_for`'s body calling `status_source` exactly once, so the first `Pending` error returns `Err(...)` instead of retrying. The `start_for_returns_err_when_pending_budget_exhausted` test may pass for the wrong reason (single-call also returns Err), but the wall-clock assertion (`elapsed < 900ms`) is still meaningful — without a retry loop the call returns immediately, well under budget.
 
-- [ ] **Step 3: Update `start_for` signature and body.**
+- [ ] **Step 3: Replace the single-call body with the retry loop.**
 
-Replace `start_for` in `agent/adapter/base/mod.rs`:
+In `agent/adapter/base/mod.rs`, the `start_for` signature is unchanged from Task 6. Only the body changes — wrap the `status_source` call in a bounded retry. Add the imports + constants near the top of the file alongside existing imports:
 
 ```rust
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
-use crate::agent::adapter::types::{BindContext, BindError};
+use crate::agent::adapter::types::BindError;
 
 const BIND_RETRY_INTERVAL_MS: u64 = 100;
 const BIND_RETRY_MAX_ATTEMPTS: u32 = 5;
+```
 
+Then replace the body of `start_for` (signature unchanged from Task 6):
+
+```rust
 pub(crate) fn start_for<R: tauri::Runtime>(
     adapter: Arc<dyn AgentAdapter<R>>,
     app_handle: tauri::AppHandle<R>,
     session_id: String,
     cwd: PathBuf,
     pid: u32,
-    pty_start: SystemTime,
+    pty_start: std::time::SystemTime,
     state: AgentWatcherState,
 ) -> Result<(), String> {
-    let source = resolve_status_source_with_retry(adapter.as_ref(), &session_id, &cwd, pid, pty_start)?;
+    let source = resolve_status_source_with_retry(
+        adapter.as_ref(),
+        &session_id,
+        &cwd,
+        pid,
+        pty_start,
+    )?;
     path_security::ensure_status_source_under_trust_root(&source.path, &source.trust_root)?;
 
     log::debug!(
@@ -1064,9 +1166,9 @@ fn resolve_status_source_with_retry<R: tauri::Runtime>(
     session_id: &str,
     cwd: &std::path::Path,
     pid: u32,
-    pty_start: SystemTime,
+    pty_start: std::time::SystemTime,
 ) -> Result<crate::agent::adapter::types::StatusSource, String> {
-    let ctx = BindContext {
+    let ctx = crate::agent::adapter::types::BindContext {
         session_id,
         cwd,
         pid,
@@ -1615,7 +1717,7 @@ v1. Fixture covers the single-turn happy path."
 {"timestamp":"2026-05-03T21:56:50.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":500,"output_tokens":200,"reasoning_output_tokens":50,"total_tokens":1200},"last_token_usage":{"input_tokens":1000,"cached_input_tokens":500,"output_tokens":200,"reasoning_output_tokens":50,"total_tokens":1200},"model_context_window":258400},"rate_limits":{"limit_id":"codex","primary":{"used_percent":3.6,"window_minutes":300,"resets_at":1777848985}}}}
 ```
 
-The first `token_count` has `info: null` and only `rate_limits`; the second has both. Folded result must show: rate_limits = the _second_ (last-write-wins), context_window from the second.
+The first `token_count` has `info: null` and only `rate_limits`; the second has both. Folded result must show: rate*limits = the \_second* (last-write-wins), context_window from the second.
 
 But the test below pins the _partial-update rule_ — i.e. the first event's rate_limits must NOT zero out the context window state. Order the events to verify correctly:
 
