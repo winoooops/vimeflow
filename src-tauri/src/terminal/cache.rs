@@ -212,8 +212,8 @@ impl SessionCache {
             .parent()
             .ok_or_else(|| "cache path has no parent".to_string())?;
         fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
-        let mut tmp =
-            tempfile::NamedTempFile::new_in(parent).map_err(|e| format!("create tempfile: {e}"))?;
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)
+            .map_err(|e| format!("create tempfile: {e}"))?;
         let bytes = serde_json::to_vec_pretty(data).map_err(|e| format!("serialize: {e}"))?;
         tmp.write_all(&bytes).map_err(|e| format!("write: {e}"))?;
         tmp.persist(&self.path)

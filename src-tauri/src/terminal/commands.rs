@@ -259,7 +259,9 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         cancelled,
         started_at: std::time::SystemTime::now(),
     };
-    if let Err((reason, mut rejected)) = state.try_insert(request.session_id.clone(), session, 64) {
+    if let Err((reason, mut rejected)) =
+        state.try_insert(request.session_id.clone(), session, 64)
+    {
         // Reap the child whose session we couldn't insert. portable_pty's
         // Child::Drop does not kill the process by default — we must call
         // kill explicitly so spawn_pty's failure path doesn't leak the
@@ -539,7 +541,10 @@ pub fn list_sessions(
         .filter(|info| {
             // Only the freshly reconciled ones; sessions already exited in
             // the cache snapshot don't change anything.
-            snapshot.sessions.get(&info.id).is_some_and(|c| !c.exited)
+            snapshot
+                .sessions
+                .get(&info.id)
+                .is_some_and(|c| !c.exited)
         })
         .map(|info| info.id.clone())
         .collect();
@@ -677,7 +682,10 @@ pub fn update_session_cwd(
     let path = std::fs::canonicalize(std::path::PathBuf::from(&request.cwd))
         .map_err(|e| format!("invalid cwd: {e}"))?;
     if !path.is_dir() {
-        return Err(format!("invalid cwd: not a directory: {}", path.display()));
+        return Err(format!(
+            "invalid cwd: not a directory: {}",
+            path.display()
+        ));
     }
     let canonical_cwd = path.to_string_lossy().to_string();
 
@@ -808,7 +816,6 @@ mod tests {
     use tempfile::TempDir;
 
     // Helper to create a test app handle
-    #[allow(dead_code)]
     fn create_test_app() -> tauri::App<MockRuntime> {
         let state = PtyState::new();
         mock_builder()
@@ -1070,13 +1077,7 @@ mod tests {
         };
 
         // First spawn should succeed
-        let result1 = spawn_pty(
-            handle.clone(),
-            state.clone(),
-            cache.clone(),
-            request.clone(),
-        )
-        .await;
+        let result1 = spawn_pty(handle.clone(), state.clone(), cache.clone(), request.clone()).await;
         assert!(result1.is_ok(), "first spawn should succeed");
 
         // Second spawn with same ID should fail
@@ -1214,10 +1215,7 @@ mod tests {
         };
 
         let result = kill_pty(state.clone(), cache.clone(), request);
-        assert!(
-            result.is_ok(),
-            "kill_pty should be idempotent for missing session"
-        );
+        assert!(result.is_ok(), "kill_pty should be idempotent for missing session");
     }
 
     /// Fake `Child` whose `kill()` returns an `io::Error` — exercises the
@@ -1414,7 +1412,8 @@ mod tests {
         let kill_request = KillPtyRequest {
             session_id: "session-1".to_string(),
         };
-        kill_pty(state.clone(), cache.clone(), kill_request).expect("kill_pty should succeed");
+        kill_pty(state.clone(), cache.clone(), kill_request)
+            .expect("kill_pty should succeed");
 
         // Verify session-1 is removed from session_order and sessions map
         let snap_after = cache.snapshot();
@@ -1475,16 +1474,14 @@ mod tests {
         // Verify session-1 is active
         let snap_before = cache.snapshot();
         assert_eq!(snap_before.active_session_id.as_deref(), Some("session-1"));
-        assert_eq!(
-            snap_before.session_order,
-            vec!["session-1", "session-2", "session-3"]
-        );
+        assert_eq!(snap_before.session_order, vec!["session-1", "session-2", "session-3"]);
 
         // Kill session-1 (the active session)
         let kill_request = KillPtyRequest {
             session_id: "session-1".to_string(),
         };
-        kill_pty(state.clone(), cache.clone(), kill_request).expect("kill_pty should succeed");
+        kill_pty(state.clone(), cache.clone(), kill_request)
+            .expect("kill_pty should succeed");
 
         // Verify active_session_id is unresolved until the frontend persists
         // its selected same-position neighbor via set_active_session.
@@ -1542,10 +1539,7 @@ mod tests {
             .sessions
             .get("eof-test")
             .expect("session should still be in cache after exit");
-        assert!(
-            entry.exited,
-            "cache entry should be marked exited after EOF"
-        );
+        assert!(entry.exited, "cache entry should be marked exited after EOF");
     }
 
     #[tokio::test]
@@ -1836,7 +1830,11 @@ mod tests {
             .unwrap();
         }
 
-        set_active_session(cache.clone(), SetActiveSessionRequest { id: "b".into() }).unwrap();
+        set_active_session(
+            cache.clone(),
+            SetActiveSessionRequest { id: "b".into() },
+        )
+        .unwrap();
 
         assert_eq!(cache.snapshot().active_session_id.as_deref(), Some("b"));
 
@@ -1856,8 +1854,10 @@ mod tests {
         let (app, _temp_dir) = create_test_app_with_cache();
         let cache = app.handle().state::<Arc<SessionCache>>();
 
-        let result =
-            set_active_session(cache.clone(), SetActiveSessionRequest { id: "nope".into() });
+        let result = set_active_session(
+            cache.clone(),
+            SetActiveSessionRequest { id: "nope".into() },
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown session"));
     }
@@ -1924,7 +1924,10 @@ mod tests {
             cache.clone(),
             SpawnPtyRequest {
                 session_id: "only".into(),
-                cwd: std::env::current_dir().unwrap().to_string_lossy().into(),
+                cwd: std::env::current_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into(),
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
@@ -2124,8 +2127,9 @@ mod tests {
         use std::thread;
 
         let temp_dir = TempDir::new().expect("temp");
-        let cache =
-            StdArc::new(SessionCache::load(temp_dir.path().join("sessions.json")).expect("load"));
+        let cache = StdArc::new(
+            SessionCache::load(temp_dir.path().join("sessions.json")).expect("load"),
+        );
 
         // Seed two sessions, "a" and "b", in a known order.
         let cache_seed = StdArc::clone(&cache);
@@ -2231,7 +2235,8 @@ mod tests {
     #[test]
     fn mutate_rolls_back_on_err() {
         let temp_dir = TempDir::new().expect("temp");
-        let cache = SessionCache::load(temp_dir.path().join("sessions.json")).expect("load");
+        let cache =
+            SessionCache::load(temp_dir.path().join("sessions.json")).expect("load");
 
         cache
             .mutate(|d| {
@@ -2359,10 +2364,7 @@ mod tests {
         .await;
 
         // 1. spawn_pty must surface the cache failure to the caller.
-        assert!(
-            result.is_err(),
-            "spawn_pty should fail when cache.mutate fails"
-        );
+        assert!(result.is_err(), "spawn_pty should fail when cache.mutate fails");
         let err = result.unwrap_err();
         assert!(
             err.contains("failed to write cache"),

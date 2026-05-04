@@ -1,14 +1,14 @@
 use std::sync::{Arc, Mutex};
 
 use tauri::test::MockRuntime;
+use vimeflow_lib::agent::adapter::AgentAdapter;
 use vimeflow_lib::agent::adapter::base::TranscriptState;
 use vimeflow_lib::agent::adapter::claude_code::ClaudeCodeAdapter;
-use vimeflow_lib::agent::adapter::AgentAdapter;
 
 #[test]
 fn cargo_mixed_fixture_emits_test_run_with_groups() {
-    use tauri::test::mock_builder;
     use tauri::Listener;
+    use tauri::test::mock_builder;
 
     let app = mock_builder().build(tauri::generate_context!()).unwrap();
     let app_handle = app.handle().clone();

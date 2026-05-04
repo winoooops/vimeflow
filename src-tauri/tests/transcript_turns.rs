@@ -2,14 +2,14 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
 use tauri::test::MockRuntime;
+use vimeflow_lib::agent::adapter::AgentAdapter;
 use vimeflow_lib::agent::adapter::base::TranscriptState;
 use vimeflow_lib::agent::adapter::claude_code::ClaudeCodeAdapter;
-use vimeflow_lib::agent::adapter::AgentAdapter;
 
 #[test]
 fn transcript_emits_turn_events_for_real_user_prompts_only() {
-    use tauri::test::mock_builder;
     use tauri::Listener;
+    use tauri::test::mock_builder;
 
     let app = mock_builder().build(tauri::generate_context!()).unwrap();
     let app_handle = app.handle().clone();

@@ -15,5 +15,5 @@ pub use types::{AgentDetectedEvent, AgentDisconnectedEvent, AgentType};
 
 // Re-export Tauri commands
 pub use adapter::base::TranscriptState;
-pub use adapter::{start_agent_watcher, stop_agent_watcher, AgentWatcherState};
+pub use adapter::{AgentWatcherState, start_agent_watcher, stop_agent_watcher};
 pub use commands::detect_agent_in_session;

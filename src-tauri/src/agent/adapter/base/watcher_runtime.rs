@@ -168,9 +168,8 @@ fn maybe_start_transcript<R: tauri::Runtime>(
                 // diagnostics emitter format string) get the
                 // null-byte signal directly. Claude review on PR #153.
                 ValidateTranscriptError::InvalidPath(_) => TxOutcome::InvalidPath,
-                ValidateTranscriptError::NotAFile(_) | ValidateTranscriptError::Other(_) => {
-                    TxOutcome::NotFile
-                }
+                ValidateTranscriptError::NotAFile(_)
+                | ValidateTranscriptError::Other(_) => TxOutcome::NotFile,
             };
         }
     };
