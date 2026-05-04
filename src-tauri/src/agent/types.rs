@@ -90,8 +90,13 @@ pub struct ContextWindowStatus {
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)] // Used by frontend and future sub-specs
 pub struct CostMetrics {
-    /// Total cost in USD. `None` means the agent does not expose cost.
-    #[cfg_attr(test, ts(optional))]
+    /// Total cost in USD. `None` means the agent does not expose cost
+    /// (e.g. Codex). Serializes to JSON `null`, never absent — so the
+    /// ts-rs binding intentionally omits `ts(optional)` and the
+    /// runtime-accurate frontend override in
+    /// `src/features/agent-status/types/index.ts` types it as
+    /// `number | null` (not `number?: number`, which would falsely
+    /// suggest the field could be missing).
     pub total_cost_usd: Option<f64>,
     /// Total session duration in milliseconds
     pub total_duration_ms: u64,

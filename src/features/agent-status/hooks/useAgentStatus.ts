@@ -245,7 +245,39 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
               !agentEverDetectedRef.current ||
               watcherStartGenerationRef.current !== startGeneration
             ) {
-              void stopWatchers(sid, ptySessionId)
+              // Skip stopWatchers ONLY when a newer start for the SAME
+              // sid has already succeeded. In that narrow case the
+              // newer registrant owns the backend watcher's lifecycle —
+              // and `stop_agent_watcher` is keyed only by session ID,
+              // so issuing stop here would tear down the newer
+              // generation's still-active watcher.
+              //
+              // On every other path (sid switch, unmount, agent exit,
+              // or our own bumped gen with no newer success yet) the
+              // stop MUST fire, because:
+              //   • Sid switch: backend watcher for the OLD sid only
+              //     gets stopped via this branch. The sid-change
+              //     useEffect's `stopWatchers(oldId, knownPtyIdRef)`
+              //     can't help when `knownPtyIdRef` is still unset
+              //     (start hadn't completed at the time of switch).
+              //   • Unmount: same reason — the unmount cleanup runs
+              //     while knownPtyIdRef is still undefined. Only this
+              //     branch still has the captured `ptySessionId`.
+              //   • Agent exit: the exit path resets `watcherStartedRef`
+              //     to false, so the "newer succeeded" condition is
+              //     correctly false and stop fires.
+              //
+              // The three conjuncts together (sid match + gen mismatch
+              // + watcherStartedRef true) precisely identify the
+              // codex-flagged "stale older start landed after a newer
+              // same-sid registrant succeeded" case and nothing else.
+              const newerSameSidSucceeded =
+                currentSessionIdRef.current === sid &&
+                watcherStartGenerationRef.current !== startGeneration &&
+                watcherStartedRef.current
+              if (!newerSameSidSucceeded) {
+                void stopWatchers(sid, ptySessionId)
+              }
 
               return
             }

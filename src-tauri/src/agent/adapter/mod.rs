@@ -139,14 +139,28 @@ pub async fn start_agent_watcher(
         resolve_bind_inputs(&pty_state, &session_id, detect_agent)?;
 
     let adapter = <dyn AgentAdapter<tauri::Wry>>::for_type(agent_type)?;
-    adapter.start(
-        app_handle,
-        session_id,
-        PathBuf::from(cwd),
-        agent_pid,
-        pty_start,
-        (*state).clone(),
-    )
+    let owned_state = (*state).clone();
+    let cwd_path = PathBuf::from(cwd);
+    // `adapter.start(...)` walks into `base::start_for`, which calls
+    // `resolve_status_source_with_retry`. The retry uses
+    // `std::thread::sleep` (up to 5 × 100 ms = 500 ms) and
+    // `path_security::ensure_status_source_under_trust_root` does
+    // synchronous `canonicalize` filesystem I/O. Running that on a
+    // tokio worker thread starves other futures scheduled on the same
+    // worker; mirror the pattern at `src/git/watcher.rs:399` and hop
+    // onto the blocking pool so the async thread returns immediately.
+    tokio::task::spawn_blocking(move || {
+        adapter.start(
+            app_handle,
+            session_id,
+            cwd_path,
+            agent_pid,
+            pty_start,
+            owned_state,
+        )
+    })
+    .await
+    .map_err(|e| format!("start_agent_watcher task panicked: {}", e))?
 }
 
 fn resolve_bind_inputs<F>(

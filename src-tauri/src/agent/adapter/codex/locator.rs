@@ -53,10 +53,10 @@ pub(super) fn discover_db(
             continue;
         };
 
-        if !name.ends_with(".sqlite")
-            || name.ends_with(".sqlite-wal")
-            || name.ends_with(".sqlite-shm")
-        {
+        // `*.sqlite-wal` and `*.sqlite-shm` are SQLite WAL sidecars, but
+        // they don't end with `.sqlite`, so this single suffix check
+        // already excludes them.
+        if !name.ends_with(".sqlite") {
             continue;
         }
 
