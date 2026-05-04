@@ -255,7 +255,10 @@ pub enum LocatorError {
     NotYetReady,
     /// SQLite was reachable but couldn't resolve a unique rollout.
     Unresolved(String),
-    /// SQLite + FS fallback both failed permanently.
+    /// SQLite primary AND FS fallback both failed permanently. The
+    /// locator only emits this after exhausting the fallback chain;
+    /// a missing schema (no DB candidate for `logs` or `threads`) is
+    /// a schema-drift signal that triggers FS fallback, not Fatal.
     Fatal(String),
 }
 ```
@@ -275,7 +278,7 @@ Discovery rules:
 2. For each candidate, open read-only and inspect schema (`SELECT name FROM sqlite_master WHERE type='table'`).
 3. Group candidates by which named port they satisfy.
 4. **Tie-break within a port:** prefer the highest numeric suffix in the filename (e.g. `logs_3` > `logs_2`). Files with no numeric suffix sort lowest. Ties beyond that resolve by newest mtime.
-5. If no candidate satisfies a port → `LocatorError::Fatal("no codex DB with `<table>` table")`. (Schema drift case; FS fallback will run.)
+5. If no candidate satisfies a port → discovery returns `Ok(None)` for that port (a schema-drift signal — the table name has likely been renamed in a newer codex CLI). The caller (`SqliteFirstLocator::resolve_rollout`) catches the missing-port signal and dispatches to FS fallback rather than failing. `LocatorError::Fatal` only fires after FS fallback also exhausts (see "Fatal precedence" at the end of this section).
 
 Discovery results are cached for the lifetime of the adapter instance (the user is unlikely to upgrade codex CLI mid-session). A future improvement could re-discover on stale-cache signals; v1 just resolves once per `status_source` call which is rare enough.
 
@@ -317,12 +320,16 @@ If `cfg!(target_os = "linux")` and `/proc/<ctx.pid>/fd/*` is readable, walk the 
 
 ### FS-scan fallback
 
-Engaged only when DB discovery returns zero candidates for either port (schema drift on a future codex version). Algorithm:
+Engaged when DB discovery returns `Ok(None)` for either port (schema drift on a future codex version where the `logs` or `threads` table names have changed). Algorithm:
 
 1. List `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` for today's date and yesterday's date (clock-skew tolerance).
 2. Filter to files whose mtime ≥ `pty_start`.
 3. For each remaining file, peek the first line and parse it as `session_meta`. Keep only files where `session_meta.cwd == ctx.cwd`. (`cwd` is treated as advisory — see "Edge cases" below.)
 4. If exactly one file remains → return `RolloutLocation { rollout_path, thread_id: session_meta.id, state_updated_at_ms: 0 }`. If multiple → `LocatorError::Unresolved("multiple rollout candidates after FS scan")`. If zero → `LocatorError::NotYetReady`.
+
+### Fatal precedence
+
+`LocatorError::Fatal` is reserved for the case where BOTH the SQLite primary path AND the FS fallback have permanently failed (e.g. SQLite errors that aren't schema-drift, plus an FS scan that returns multiple-or-zero candidates with no transient signal). A missing-schema signal alone never produces `Fatal` — it always routes to FS fallback first.
 
 ### Versioning safety
 
@@ -384,31 +391,39 @@ fold_event(state, value):
 
 `CodexFoldState` is a small struct holding the latest values for each tracked field. `absorb_*` methods are deep-but-private; `into_event` produces the final `AgentStatusEvent`.
 
+**`absorb_token_count` — null-info rule.** Real codex rollouts emit `{"type":"token_count","info":null,"rate_limits":...}` for early-session events (verified live, May 3 2026). The fold MUST handle this as a partial update:
+
+- When `payload.info` is `null` (or missing): fold `payload.rate_limits` only; **preserve all existing context-window / token-count fields unchanged**. Do NOT zero them out — that would erase prior accumulated state on a partial event.
+- When `payload.info` is present but `payload.rate_limits` is null/missing: fold `info` only; preserve prior `rate_limits` state.
+- When both are present: fold both.
+
+The rule is the same for any event in the rollout: a null sub-field is a partial update, not a reset signal.
+
 ### Field-by-field projection
 
-| `AgentStatusEvent` field                                   | Source in rollout                                                                                                          | Note                                                                                                           |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `session_id`                                               | `ctx.session_id` (PTY id)                                                                                                  | Threaded through the parser.                                                                                   |
-| `agent_session_id`                                         | `session_meta.id`                                                                                                          |                                                                                                                |
-| `model_id`                                                 | `turn_context.model` (latest)                                                                                              | E.g. `"gpt-5.4"`.                                                                                              |
-| `model_display_name`                                       | same as `model_id`                                                                                                         | Codex has no display_name field.                                                                               |
-| `version`                                                  | `session_meta.cli_version`                                                                                                 | E.g. `"0.128.0"`.                                                                                              |
-| `context_window.context_window_size`                       | `event_msg.token_count.info.model_context_window`                                                                          | Latest `token_count` wins.                                                                                     |
-| `context_window.total_input_tokens`                        | `info.total_token_usage.input_tokens`                                                                                      |                                                                                                                |
-| `context_window.total_output_tokens`                       | `info.total_token_usage.output_tokens`                                                                                     |                                                                                                                |
-| `context_window.used_percentage`                           | computed: `clamp(total_tokens / model_context_window * 100, 0, 100)` where `total_tokens = total_token_usage.total_tokens` | `None` until first `token_count`.                                                                              |
-| `context_window.remaining_percentage`                      | `clamp(100 - used_percentage, 0, 100)`                                                                                     | Default `100.0` when no token_count yet.                                                                       |
-| `context_window.current_usage.input_tokens`                | `info.last_token_usage.input_tokens`                                                                                       |                                                                                                                |
-| `context_window.current_usage.output_tokens`               | `info.last_token_usage.output_tokens`                                                                                      |                                                                                                                |
-| `context_window.current_usage.cache_creation_input_tokens` | always `0`                                                                                                                 | Codex doesn't separate creation; report 0.                                                                     |
-| `context_window.current_usage.cache_read_input_tokens`     | `info.last_token_usage.cached_input_tokens`                                                                                |                                                                                                                |
-| `cost.total_cost_usd`                                      | always `None`                                                                                                              | Q2a: IPC type changes to `Option<f64>`.                                                                        |
-| `cost.total_duration_ms`                                   | sum of `event_msg.task_complete.duration_ms`                                                                               |                                                                                                                |
-| `cost.total_api_duration_ms`                               | same as `total_duration_ms`                                                                                                | Codex doesn't separate; report total under both. May be polished in a follow-up.                               |
-| `cost.total_lines_added` / `total_lines_removed`           | always `0`                                                                                                                 | Frontend `ActivityFooter` sources from git-diff watcher (`AgentStatusPanel.tsx:104-105`); zeroes are harmless. |
-| `rate_limits.five_hour.used_percentage`                    | `token_count.rate_limits.primary.used_percent`                                                                             |                                                                                                                |
-| `rate_limits.five_hour.resets_at`                          | `token_count.rate_limits.primary.resets_at`                                                                                |                                                                                                                |
-| `rate_limits.seven_day`                                    | `token_count.rate_limits.secondary` mapped same way; `None` when absent                                                    |                                                                                                                |
+| `AgentStatusEvent` field                                   | Source in rollout                                                                                                                                       | Note                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_id`                                               | `ctx.session_id` (PTY id)                                                                                                                               | Threaded through the parser.                                                                                                                                                                                                                                                                                         |
+| `agent_session_id`                                         | `session_meta.id`                                                                                                                                       |                                                                                                                                                                                                                                                                                                                      |
+| `model_id`                                                 | `turn_context.model` (latest)                                                                                                                           | E.g. `"gpt-5.4"`.                                                                                                                                                                                                                                                                                                    |
+| `model_display_name`                                       | same as `model_id`                                                                                                                                      | Codex has no display_name field.                                                                                                                                                                                                                                                                                     |
+| `version`                                                  | `session_meta.cli_version`                                                                                                                              | E.g. `"0.128.0"`.                                                                                                                                                                                                                                                                                                    |
+| `context_window.context_window_size`                       | latest `event_msg.token_count.info.model_context_window`; fallback to latest `event_msg.task_started.model_context_window` if `info` hasn't arrived yet | Latest non-null source wins. `task_started` fallback covers the early window before the first `token_count.info`.                                                                                                                                                                                                    |
+| `context_window.total_input_tokens`                        | `info.last_token_usage.input_tokens`                                                                                                                    | **NOT lifetime.** `last_token_usage` reflects the most recent API call's input — closest match for "what's currently in context", which is what `ContextBucket.tsx:80,90` renders as "CURRENT CONTEXT". `total_token_usage` is lifetime spend across all turns and would pin the gauge at 100% on long sessions.     |
+| `context_window.total_output_tokens`                       | `info.last_token_usage.output_tokens`                                                                                                                   | Same reasoning — last turn's output, not lifetime.                                                                                                                                                                                                                                                                   |
+| `context_window.used_percentage`                           | computed: `clamp(last_token_usage.total_tokens / context_window_size * 100, 0, 100)`                                                                    | `None` until first `token_count.info`. Uses `last_token_usage` (current-context approximation), not lifetime totals.                                                                                                                                                                                                 |
+| `context_window.remaining_percentage`                      | `clamp(100 - used_percentage, 0, 100)`                                                                                                                  | Default `100.0` when no `token_count.info` yet.                                                                                                                                                                                                                                                                      |
+| `context_window.current_usage.input_tokens`                | `info.last_token_usage.input_tokens`                                                                                                                    | Same source as `total_input_tokens`; redundant by design — both reflect "what was in context for the last API call".                                                                                                                                                                                                 |
+| `context_window.current_usage.output_tokens`               | `info.last_token_usage.output_tokens`                                                                                                                   |                                                                                                                                                                                                                                                                                                                      |
+| `context_window.current_usage.cache_creation_input_tokens` | always `0`                                                                                                                                              | Codex doesn't separate creation; report 0.                                                                                                                                                                                                                                                                           |
+| `context_window.current_usage.cache_read_input_tokens`     | `info.last_token_usage.cached_input_tokens`                                                                                                             |                                                                                                                                                                                                                                                                                                                      |
+| `cost.total_cost_usd`                                      | always `None`                                                                                                                                           | Q2a: IPC type changes to `Option<f64>`.                                                                                                                                                                                                                                                                              |
+| `cost.total_duration_ms`                                   | sum of `event_msg.task_complete.duration_ms`                                                                                                            |                                                                                                                                                                                                                                                                                                                      |
+| `cost.total_api_duration_ms`                               | always `0`                                                                                                                                              | Codex doesn't expose API-only timing. `BudgetMetrics.tsx:85` renders this as a distinct "API Time" cell, so aliasing total runtime here would print a wrong number to the user. Emitting `0` is the truthful v1 choice. A follow-up may bump the IPC to `Option<u64>` so the UI can render `"—"` instead of `"0ms"`. |
+| `cost.total_lines_added` / `total_lines_removed`           | always `0`                                                                                                                                              | Frontend `ActivityFooter` sources from git-diff watcher (`AgentStatusPanel.tsx:104-105`); zeroes are harmless.                                                                                                                                                                                                       |
+| `rate_limits.five_hour.used_percentage`                    | `token_count.rate_limits.primary.used_percent`                                                                                                          |                                                                                                                                                                                                                                                                                                                      |
+| `rate_limits.five_hour.resets_at`                          | `token_count.rate_limits.primary.resets_at`                                                                                                             |                                                                                                                                                                                                                                                                                                                      |
+| `rate_limits.seven_day`                                    | `token_count.rate_limits.secondary` mapped same way; `None` when absent                                                                                 |                                                                                                                                                                                                                                                                                                                      |
 
 ### Defaults before any `token_count` arrives
 
@@ -585,10 +600,14 @@ Unlikely to share:
 `codex/parser.rs`:
 
 - Empty rollout (only `session_meta`) → all defaults; `model_id = "unknown"`.
-- Single complete turn (`session_meta` + `turn_context` + `task_started` + `token_count` + `task_complete`) → expected `AgentStatusEvent` field-by-field.
-- Multiple turns → `total_duration_ms` is the sum; latest `token_count` wins for totals.
+- Single complete turn (`session_meta` + `turn_context` + `task_started` + `token_count` + `task_complete`) → expected `AgentStatusEvent` field-by-field; context-window fields driven by `last_token_usage`, NOT `total_token_usage`.
+- Multiple turns → `total_duration_ms` is the sum; latest `token_count.info` wins for context fields; `total_api_duration_ms` stays `0`.
+- **Long-running session regression** — replay a rollout where `total_token_usage.total_tokens > model_context_window` (lifetime exceeds context size); assert `used_percentage` reflects `last_token_usage`-derived percentage, not 100%. Pins the fix for issue #1.
 - `seven_day = null` in `rate_limits` → `seven_day: None`.
 - `used_percentage` clamped to `[0, 100]` when computed token ratio overshoots.
+- **`token_count.info = null`** → rate_limits absorbed; context-window/token fields unchanged from prior state. Pins the partial-update rule. Fixture `rollout-info-null.jsonl` covers this case explicitly.
+- **`token_count.rate_limits = null`** (or missing) with `info` present → context-window absorbed; rate_limits unchanged from prior state.
+- **`context_window_size` fallback** — rollout with `task_started.model_context_window` present but no `token_count.info` yet → `context_window_size` resolves to the `task_started` value.
 - Incomplete trailing line (no terminating `\n`) → silently dropped; parser succeeds; no warn log.
 - Malformed non-final line (line ends in `\n` but not valid JSON) → `warn!` emitted; line skipped; subsequent lines parsed normally.
 - Unknown event types (forward-compat) → ignored without warn.
@@ -599,14 +618,15 @@ Unlikely to share:
 - When multiple candidates contain the table: highest numeric suffix wins; newest mtime breaks suffix ties.
 - `logs` query returns newest `thread_id` for the codex pid since `pty_start`. PID-only matches below `pty_start` are filtered out.
 - `state` query: `thread_id → (rollout_path, cwd, updated_at_ms)` round trips.
-- Cold-start race: query returns 0 rows → `LocatorError::NotYetReady`; row appears mid-retry → resolves Ok within the budget.
-- Pending exhausted → final `BindError::Pending` propagates from locator.
-- Schema drift (target table missing from all candidates) → falls through to FS scan.
+- Cold-start race: SQLite query returns 0 rows → `LocatorError::NotYetReady`; row appears mid-retry → resolves Ok on subsequent call.
+- Schema drift: target table missing from all candidates → discovery returns `Ok(None)`; locator dispatches to FS fallback (does NOT return Fatal).
+- FS fallback exhausted: zero matching rollouts AND no transient signal → `LocatorError::Fatal`. (Pure exhaustion test; `start_for` retry is exercised at the orchestration layer below.)
 
 `codex/mod.rs` (`CodexAdapter` impl):
 
 - `status_source(ctx)` happy path returns `Ok(StatusSource { path: rollout_path, trust_root: ~/.codex })`.
-- `status_source(ctx)` propagates `BindError::Pending` from locator.
+- `status_source(ctx)` maps `LocatorError::NotYetReady` → `BindError::Pending`.
+- `status_source(ctx)` maps `LocatorError::Unresolved | Fatal` → `BindError::Fatal`.
 - `parse_status` delegates to parser; `transcript_path` always `None` for v1.
 - `validate_transcript` returns `Err(ValidateTranscriptError::Other("codex transcript tailer not yet implemented"))` — explicit v1 stub, asserted in test.
 - `tail_transcript` returns the same shaped `Err`. Never invoked in production because `parse_status` emits `transcript_path: None`, but the no-op behavior is pinned by test.
@@ -632,6 +652,8 @@ Add `src-tauri/tests/fixtures/codex/`:
 
 - `rollout-minimal.jsonl` — ≤5 lines, 1 turn.
 - `rollout-multi-turn.jsonl` — ≥30 lines, 5+ turns; mix of events with `seven_day` present and absent.
+- `rollout-long-session.jsonl` — accumulated `total_token_usage.total_tokens` exceeds `model_context_window`; pins the issue-#1 regression that the gauge is driven by `last_token_usage`, not lifetime totals.
+- `rollout-info-null.jsonl` — at least one `event_msg.token_count` event with `payload.info: null`; pins the partial-update rule.
 - `rollout-incomplete-trail.jsonl` — last line missing terminating `\n`.
 - `rollout-malformed-mid.jsonl` — one bad-JSON line surrounded by valid lines.
 
@@ -670,7 +692,7 @@ Tests load each fixture, run `parse_rollout`, and assert the resulting `AgentSta
 None blocking. Items to revisit during implementation:
 
 - Final visual treatment for `BudgetMetrics` when `totalCostUsd === null` — dim the row vs. hide it vs. show "—". Decided in PR with screenshots.
-- Whether `total_api_duration_ms` should be left at zero for codex rather than mirroring `total_duration_ms`. Spec defaults to "report total under both" because zero would visually claim "no API time was used", which is misleading.
+- Whether `total_api_duration_ms` should be bumped to `Option<u64>` so the UI can render "—" for codex sessions instead of `"0ms"`. v1 emits `0` (the truthful answer per the field projection table) and the UI's "API Time" cell will read `0ms` for codex; if testers find that distracting, the IPC bump is straightforward and is tracked as a follow-up.
 
 ## References
 
