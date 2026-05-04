@@ -4,6 +4,7 @@ use portable_pty::{Child, MasterPty};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use super::types::SessionId;
 
@@ -84,6 +85,8 @@ pub struct ManagedSession {
     /// The Arc is shared with the read thread; `kill_pty` flips the flag
     /// before the session entry is removed from `PtyState`.
     pub cancelled: Arc<AtomicBool>,
+    /// Wall-clock time the PTY session was created.
+    pub started_at: SystemTime,
 }
 
 /// Thread-safe PTY session state
@@ -239,6 +242,12 @@ impl PtyState {
     pub fn get_cwd(&self, session_id: &SessionId) -> Option<String> {
         let sessions = self.sessions.lock().expect("failed to lock sessions");
         sessions.get(session_id).map(|s| s.cwd.clone())
+    }
+
+    /// Wall-clock time this session's PTY was spawned.
+    pub fn get_started_at(&self, session_id: &SessionId) -> Option<SystemTime> {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        sessions.get(session_id).map(|s| s.started_at)
     }
 
     /// List all active PTY session IDs (E2E test-only)
@@ -465,6 +474,7 @@ mod tests {
             generation: 0,
             ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),
+            started_at: SystemTime::now(),
         }
     }
 
@@ -536,7 +546,37 @@ mod tests {
             generation: 0,
             ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),
+            started_at: SystemTime::now(),
         }
+    }
+
+    #[test]
+    fn managed_session_started_at_recorded_at_construction() {
+        let before = SystemTime::now();
+        let session = make_test_session();
+        let after = SystemTime::now();
+
+        assert!(session.started_at >= before);
+        assert!(session.started_at <= after);
+    }
+
+    #[test]
+    fn get_started_at_returns_some_after_insert() {
+        let state = PtyState::new();
+        let sid = "test-sid".to_string();
+        let started_at = SystemTime::now();
+        let mut session = make_test_session();
+        session.started_at = started_at;
+
+        state.insert(sid.clone(), session);
+
+        assert_eq!(state.get_started_at(&sid), Some(started_at));
+    }
+
+    #[test]
+    fn get_started_at_returns_none_for_unknown_session() {
+        let state = PtyState::new();
+        assert!(state.get_started_at(&"missing".to_string()).is_none());
     }
 
     #[test]

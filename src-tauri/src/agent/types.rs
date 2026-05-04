@@ -90,8 +90,8 @@ pub struct ContextWindowStatus {
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)] // Used by frontend and future sub-specs
 pub struct CostMetrics {
-    /// Total cost in USD
-    pub total_cost_usd: f64,
+    /// Total cost in USD. `None` for codex (no cost surface).
+    pub total_cost_usd: Option<f64>,
     /// Total session duration in milliseconds
     pub total_duration_ms: u64,
     /// Total API call duration in milliseconds

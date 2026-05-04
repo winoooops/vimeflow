@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-03
+last_updated: 2026-05-04
 ref_count: 8
 ---
 
@@ -338,3 +338,14 @@ prevent showing previous data.
 - **Finding:** Cycle-7's #30 fix introduced `currentSessionIdRef` written synchronously during render to defeat the microtask/macro-task gap that let post-detect IPC continuations apply stale state across session changes. Cycle-10's Claude review (F19) flagged that this fix has a critical scope limitation: `currentSessionIdRef` is updated only DURING render. Unmount does NOT trigger a render, so after unmount cleanup runs, `currentSessionIdRef.current` still holds the last-rendered `sessionId`. An in-flight `detect_agent_in_session` that resolves with `sid === currentSessionIdRef.current` (still the unmounted session) passes both stale guards, finds `watcherStartedRef.current === false` (cleared by unmount cleanup), and invokes `start_agent_watcher` — leaking a backend watcher with no React-side cleanup path. The first repair attempt added `isMountedRef = useRef(true)` flipped to `false` in unmount cleanup. Codex verify retry-0 immediately flagged a NEW HIGH: `useRef(true)` is initialized once per hook instance, not per mount. React StrictMode's dev mount→cleanup→remount cycle runs cleanup once on initial mount; without resetting the ref, every subsequent detection in dev permanently bails. The first fix introduced a second bug while closing the first.
 - **Fix:** Cycle-10 retry-1 owns `isMountedRef` from a dedicated `useEffect(() => { isMountedRef.current = true; return () => { isMountedRef.current = false } }, [])`. Setup runs on mount AND on StrictMode remount; cleanup runs on real unmount AND on StrictMode's mid-cycle teardown. Both detection guards now check `!isMountedRef.current || currentSessionIdRef.current !== sid`. Added regression test that holds the detect promise pending, unmounts, then resolves positive — asserts `start_agent_watcher` is never invoked. The lesson: render-time-written refs ARE race-free against microtask/macrotask gaps for session-change races, but they cannot protect unmount races because unmount doesn't re-render. Mount-tracking refs need their own dedicated `useEffect([])` whose setup AND cleanup form a balanced pair — anything else fails StrictMode's "is it idempotent?" check. Code-review heuristic: when a hook references `componentWillUnmount`-style cleanup state (`isMounted`, `cancelled`, `aborted`), prefer the dedicated-effect pattern over inlining the flip into another effect's cleanup. The dedicated effect makes the StrictMode-correctness invariant local and visible.
 - **Commit:** _(see git log for the cycle-10 fix commit on PR #153)_
+
+---
+
+### 34. Stale `start_agent_watcher` resolution tore down newer same-sid watcher
+
+- **Source:** github-codex-connector | PR #154 round 1 | 2026-05-04
+- **Severity:** P1
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** When `start_agent_watcher` was invoked twice for the same sid (e.g. an exit/re-detect cycle where the agent briefly disappears and re-spawns), the older invocation's await could resolve AFTER the newer one had already registered a backend watcher. The stale-guard branch unconditionally called `stopWatchers(sid, ptySessionId)`. Because `stop_agent_watcher` is keyed only by session ID on the backend, that stop tore down the _current_ (newer) watcher — silencing status / tool-call events until the next detection poll restarted it.
+- **Fix:** Gate the stop on `!newerSameSidSucceeded` where `newerSameSidSucceeded = (currentSessionIdRef.current === sid) && (watcherStartGenerationRef.current !== startGeneration) && watcherStartedRef.current`. The three conjuncts identify "newer same-sid registrant succeeded" and only that case. On every other bail path (sid switch, unmount, agent exit, our own bumped-gen with no successor) the stop must still fire — sid-switch and unmount cleanups can't help when `knownPtyIdRef` is still unset, so the stale-resolution branch is the only place that has the captured `ptySessionId`. The lesson: when a backend resource is keyed by a coarse-grained ID (sid) but the frontend can have multiple parallel registrants for that same ID over time, the stale-cleanup path must distinguish "newer registrant for SAME ID exists" (skip stop) from "different ID" (always stop) — using a ref triple `(id-match, generation-bumped, success-flag-set)` rather than any one of them alone.
+- **Commit:** _(see git log for the round-1 fix commit on PR #154)_

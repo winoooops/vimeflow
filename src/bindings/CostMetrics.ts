@@ -5,9 +5,9 @@
  */
 export type CostMetrics = {
   /**
-   * Total cost in USD
+   * Total cost in USD. `None` for codex (no cost surface).
    */
-  totalCostUsd: number
+  totalCostUsd: number | null
   /**
    * Total session duration in milliseconds
    */

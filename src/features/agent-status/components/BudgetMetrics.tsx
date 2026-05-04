@@ -9,7 +9,8 @@ export interface BudgetMetricsProps {
   totalOutputTokens: number
 }
 
-export const formatCost = (usd: number): string => `$${usd.toFixed(2)}`
+export const formatCost = (usd: number | null): string =>
+  usd === null ? '—' : `$${usd.toFixed(2)}`
 
 export const formatApiTime = (ms: number): string =>
   `${(ms / 1000).toFixed(1)}s`

@@ -6,10 +6,12 @@
 
 pub mod base;
 pub mod claude_code;
+pub mod codex;
 pub mod types;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use tauri::AppHandle;
 
@@ -17,16 +19,18 @@ pub use base::AgentWatcherState;
 
 use crate::agent::detector::detect_agent;
 use crate::agent::types::AgentType;
+use crate::terminal::types::SessionId;
 use crate::terminal::PtyState;
 use base::TranscriptHandle;
 use claude_code::ClaudeCodeAdapter;
-use types::{ParsedStatus, StatusSource, ValidateTranscriptError};
+use codex::CodexAdapter;
+use types::{BindContext, BindError, ParsedStatus, StatusSource, ValidateTranscriptError};
 
 /// Provider hooks for one CLI coding agent.
 pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
     fn agent_type(&self) -> AgentType;
 
-    fn status_source(&self, cwd: &Path, session_id: &str) -> StatusSource;
+    fn status_source(&self, ctx: &BindContext<'_>) -> Result<StatusSource, BindError>;
 
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String>;
 
@@ -45,6 +49,7 @@ impl<R: tauri::Runtime> dyn AgentAdapter<R> {
     pub fn for_type(agent_type: AgentType) -> Result<Arc<Self>, String> {
         match agent_type {
             AgentType::ClaudeCode => Ok(Arc::new(ClaudeCodeAdapter)),
+            AgentType::Codex => Ok(Arc::new(CodexAdapter::new())),
             other => Ok(Arc::new(NoOpAdapter::new(other))),
         }
     }
@@ -54,9 +59,11 @@ impl<R: tauri::Runtime> dyn AgentAdapter<R> {
         app: AppHandle<R>,
         session_id: String,
         cwd: PathBuf,
+        pid: u32,
+        pty_start: SystemTime,
         state: AgentWatcherState,
     ) -> Result<(), String> {
-        base::start_for(self, app, session_id, cwd, state)
+        base::start_for(self, app, session_id, cwd, pid, pty_start, state)
     }
 
     pub fn stop(state: &AgentWatcherState, session_id: &str) -> bool {
@@ -80,15 +87,16 @@ impl<R: tauri::Runtime> AgentAdapter<R> for NoOpAdapter {
         self.agent_type.clone()
     }
 
-    fn status_source(&self, cwd: &Path, session_id: &str) -> StatusSource {
-        StatusSource {
-            path: cwd
+    fn status_source(&self, ctx: &BindContext<'_>) -> Result<StatusSource, BindError> {
+        Ok(StatusSource {
+            path: ctx
+                .cwd
                 .join(".vimeflow")
                 .join("sessions")
-                .join(session_id)
+                .join(ctx.session_id)
                 .join("status.json"),
-            trust_root: cwd.to_path_buf(),
-        }
+            trust_root: ctx.cwd.to_path_buf(),
+        })
     }
 
     fn parse_status(&self, _: &str, _: &str) -> Result<ParsedStatus, String> {
@@ -127,20 +135,58 @@ pub async fn start_agent_watcher(
     pty_state: tauri::State<'_, PtyState>,
     session_id: String,
 ) -> Result<(), String> {
-    let cwd = pty_state
-        .get_cwd(&session_id)
-        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
-
-    let pid = pty_state
-        .get_pid(&session_id)
-        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
-
-    let agent_type = detect_agent(pid)
-        .map(|(agent_type, _)| agent_type)
-        .ok_or_else(|| format!("no agent detected in PTY session {}", session_id))?;
+    let (cwd, _shell_pid, pty_start, agent_type, agent_pid) =
+        resolve_bind_inputs(&pty_state, &session_id, detect_agent)?;
 
     let adapter = <dyn AgentAdapter<tauri::Wry>>::for_type(agent_type)?;
-    adapter.start(app_handle, session_id, PathBuf::from(cwd), (*state).clone())
+    let owned_state = (*state).clone();
+    let cwd_path = PathBuf::from(cwd);
+    // `adapter.start(...)` walks into `base::start_for`, which calls
+    // `resolve_status_source_with_retry`. The retry uses
+    // `std::thread::sleep` (up to 5 × 100 ms = 500 ms) and
+    // `path_security::ensure_status_source_under_trust_root` does
+    // synchronous `canonicalize` filesystem I/O. Running that on a
+    // tokio worker thread starves other futures scheduled on the same
+    // worker; mirror the pattern at `src/git/watcher.rs:399` and hop
+    // onto the blocking pool so the async thread returns immediately.
+    tokio::task::spawn_blocking(move || {
+        adapter.start(
+            app_handle,
+            session_id,
+            cwd_path,
+            agent_pid,
+            pty_start,
+            owned_state,
+        )
+    })
+    .await
+    .map_err(|e| format!("start_agent_watcher task panicked: {}", e))?
+}
+
+fn resolve_bind_inputs<F>(
+    pty_state: &PtyState,
+    session_id: &SessionId,
+    detect: F,
+) -> Result<(String, u32, std::time::SystemTime, AgentType, u32), String>
+where
+    F: FnOnce(u32) -> Option<(AgentType, u32)>,
+{
+    let cwd = pty_state
+        .get_cwd(session_id)
+        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
+
+    let shell_pid = pty_state
+        .get_pid(session_id)
+        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
+
+    let pty_start = pty_state
+        .get_started_at(session_id)
+        .ok_or_else(|| format!("PTY session not found: {}", session_id))?;
+
+    let (agent_type, agent_pid) = detect(shell_pid)
+        .ok_or_else(|| format!("no agent detected in PTY session {}", session_id))?;
+
+    Ok((cwd, shell_pid, pty_start, agent_type, agent_pid))
 }
 
 /// Stop watching an agent status source.
@@ -160,6 +206,9 @@ pub async fn stop_agent_watcher(
 #[cfg(test)]
 mod noop_tests {
     use super::*;
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
     use tauri::test::MockRuntime;
 
     #[test]
@@ -173,9 +222,18 @@ mod noop_tests {
 
     #[test]
     fn status_source_uses_claude_shaped_path() {
+        use std::time::SystemTime;
+
         let adapter = NoOpAdapter::new(AgentType::Aider);
         let cwd = PathBuf::from("/tmp/ws");
-        let src = <NoOpAdapter as AgentAdapter<MockRuntime>>::status_source(&adapter, &cwd, "sid");
+        let ctx = BindContext {
+            session_id: "sid",
+            cwd: &cwd,
+            pid: 0,
+            pty_start: SystemTime::UNIX_EPOCH,
+        };
+        let src = <NoOpAdapter as AgentAdapter<MockRuntime>>::status_source(&adapter, &ctx)
+            .expect("noop adapter always resolves a status source");
         assert_eq!(
             src.path,
             cwd.join(".vimeflow")
@@ -193,5 +251,63 @@ mod noop_tests {
             <NoOpAdapter as AgentAdapter<MockRuntime>>::parse_status(&adapter, "sid", "{}")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn for_type_returns_real_codex_adapter() {
+        let adapter = <dyn AgentAdapter<MockRuntime>>::for_type(AgentType::Codex)
+            .expect("codex adapter should construct");
+        let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
+"#;
+
+        let parsed = adapter
+            .parse_status("pty-codex", raw)
+            .expect("real codex adapter should parse rollout JSONL");
+        assert_eq!(parsed.event.agent_session_id, "sess");
+    }
+
+    fn make_test_session() -> crate::terminal::state::ManagedSession {
+        let pty_system = native_pty_system();
+        let pty_pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let child = pty_pair
+            .slave
+            .spawn_command(CommandBuilder::new("/bin/true"))
+            .expect("spawn");
+        let writer = pty_pair.master.take_writer().expect("take_writer");
+
+        crate::terminal::state::ManagedSession {
+            master: pty_pair.master,
+            writer,
+            child,
+            cwd: "/tmp/workspace".into(),
+            generation: 0,
+            ring: Arc::new(Mutex::new(crate::terminal::state::RingBuffer::new(64))),
+            cancelled: Arc::new(AtomicBool::new(false)),
+            started_at: std::time::SystemTime::UNIX_EPOCH,
+        }
+    }
+
+    #[test]
+    fn resolve_bind_inputs_uses_detected_agent_pid_not_shell_pid() {
+        let state = PtyState::new();
+        let session_id = "sid".to_string();
+        state
+            .try_insert(session_id.clone(), make_test_session(), 64)
+            .unwrap_or_else(|_| panic!("insert session"));
+
+        let (_cwd, shell_pid, _pty_start, agent_type, agent_pid) =
+            resolve_bind_inputs(&state, &session_id, |_| Some((AgentType::Codex, 4242)))
+                .expect("bind inputs");
+
+        assert!(matches!(agent_type, AgentType::Codex));
+        assert_ne!(shell_pid, agent_pid);
+        assert_eq!(agent_pid, 4242);
     }
 }
