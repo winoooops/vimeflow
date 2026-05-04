@@ -280,7 +280,7 @@ Discovery rules:
 4. **Tie-break within a port:** prefer the highest numeric suffix in the filename (e.g. `logs_3` > `logs_2`). Files with no numeric suffix sort lowest. Ties beyond that resolve by newest mtime.
 5. If no candidate satisfies a port → discovery returns `Ok(None)` for that port (a schema-drift signal — the table name has likely been renamed in a newer codex CLI). The caller (`SqliteFirstLocator::resolve_rollout`) catches the missing-port signal and dispatches to FS fallback rather than failing. `LocatorError::Fatal` only fires after FS fallback also exhausts (see "Fatal precedence" at the end of this section).
 
-Discovery results are cached for the lifetime of the adapter instance (the user is unlikely to upgrade codex CLI mid-session). A future improvement could re-discover on stale-cache signals; v1 just resolves once per `status_source` call which is rare enough.
+**Discovery is memoized per `CodexAdapter` instance.** Concretely: a `OnceLock<DiscoveredDbs>` field on the adapter struct, populated on first call from `status_source`; subsequent calls (e.g. inside `start_for`'s retry loop on a cold-start race) reuse the cached handles. Each call to `<dyn AgentAdapter<R>>::for_type(AgentType::Codex)` constructs a fresh `Arc<CodexAdapter>`, so the cache scope is "one attach" — across attaches, discovery re-runs against a new instance. This is intentional for v1: it keeps the cache state local (no shared `Arc<DbCache>` or process-global lazy_static), avoids cross-session staleness questions, and the per-attach scan is ~a few ms. A future optimization could promote discovery to a Tauri-managed shared cache if profiling shows the per-attach cost to be material; v1 explicitly does not.
 
 ### Primary bind path
 
