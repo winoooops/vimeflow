@@ -287,17 +287,19 @@ Discovery results are cached for the lifetime of the adapter instance (the user 
 Both queries gated by `pty_start`:
 
 1. Open `codex_logs_db` read-only.
-2. Query the newest `thread_id` for the codex pid since `pty_start`. Sketch (exact column names verified at implementation time):
+2. Query the newest `thread_id` for the codex pid since `pty_start`. The `logs` table stores time as `ts INTEGER` (Unix **seconds**) plus `ts_nanos INTEGER` (subsecond nanoseconds), with a composite index `idx_logs_ts(ts DESC, ts_nanos DESC, id DESC)`. Convert `pty_start: SystemTime` via `duration_since(UNIX_EPOCH)` to `(secs: i64, nanos: i64)` and gate the query with a tuple comparison so the same-second / nanosecond-precision case is handled correctly:
 
    ```sql
    SELECT thread_id
    FROM logs
    WHERE process_uuid LIKE 'pid:' || ? || ':%'
      AND thread_id IS NOT NULL
-     AND ts >= ?           -- pty_start as ms-since-epoch
+     AND (ts > ?1 OR (ts = ?1 AND ts_nanos >= ?2))   -- pty_start as (secs, nanos)
    ORDER BY ts DESC, ts_nanos DESC
    LIMIT 1;
    ```
+
+   `?1` is `pty_start_secs` (Unix seconds), `?2` is `pty_start_nanos` (nanoseconds within that second). Binding `pty_start` in milliseconds will return zero rows because `logs.ts` is in seconds — the comment in earlier drafts of this spec was wrong; the verified unit is seconds.
 
    Zero rows → `LocatorError::NotYetReady`. (Codex hasn't flushed its first log entry; caller retries.)
 
@@ -329,7 +331,16 @@ Engaged when DB discovery returns `Ok(None)` for either port (schema drift on a 
 
 ### Fatal precedence
 
-`LocatorError::Fatal` is reserved for the case where BOTH the SQLite primary path AND the FS fallback have permanently failed (e.g. SQLite errors that aren't schema-drift, plus an FS scan that returns multiple-or-zero candidates with no transient signal). A missing-schema signal alone never produces `Fatal` — it always routes to FS fallback first.
+`LocatorError::Fatal` is reserved for non-retryable structural failures, NOT for transient zero-match conditions. The decision tree:
+
+- Empty result on SQLite (zero rows) → `NotYetReady` (codex hasn't committed yet).
+- Empty result on FS scan (zero matches after cwd/mtime filter) → `NotYetReady` (rollout file not on disk yet).
+- Schema drift (no DB candidate has the target table) → routes to FS fallback; never Fatal on its own.
+- SQLite I/O error that isn't schema-drift (permission denied, corruption) → `Fatal`.
+- FS I/O error during scan (permission denied, unreadable file) → `Fatal`.
+- FS scan finds multiple matching rollouts → `LocatorError::Unresolved` (not Fatal — bind-ambiguity, distinct from a structural failure).
+
+A missing-schema signal alone never produces `Fatal` — it always routes to FS fallback first. A zero-match result alone never produces `Fatal` — it's always `NotYetReady` and the orchestration layer decides exhaustion via `start_for`'s retry budget.
 
 ### Versioning safety
 
@@ -620,7 +631,9 @@ Unlikely to share:
 - `state` query: `thread_id → (rollout_path, cwd, updated_at_ms)` round trips.
 - Cold-start race: SQLite query returns 0 rows → `LocatorError::NotYetReady`; row appears mid-retry → resolves Ok on subsequent call.
 - Schema drift: target table missing from all candidates → discovery returns `Ok(None)`; locator dispatches to FS fallback (does NOT return Fatal).
-- FS fallback exhausted: zero matching rollouts AND no transient signal → `LocatorError::Fatal`. (Pure exhaustion test; `start_for` retry is exercised at the orchestration layer below.)
+- **FS fallback zero matches → `NotYetReady`** (not Fatal). Locking the algorithm rule at line ~328: an empty `~/.codex/sessions/YYYY/MM/DD/` directory or zero rollouts past the `pty_start`/cwd filter is transient — the codex process simply hasn't written its first event yet. `start_for`'s retry budget covers the wait.
+- **FS fallback I/O error → `LocatorError::Fatal`.** Permission denied on `~/.codex/sessions`, an unreadable rollout file, or any non-retryable filesystem error during the scan. This is the only path through the FS fallback that emits Fatal.
+- **SQLite I/O error → `LocatorError::Fatal`.** Open errors that aren't `NoSuchTable` (e.g. permission denied, corrupt DB) bypass schema-drift handling and surface as Fatal directly.
 
 `codex/mod.rs` (`CodexAdapter` impl):
 
