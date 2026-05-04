@@ -16,7 +16,7 @@
 
 </div>
 
-> A Tauri desktop app that unifies terminal sessions, file explorer, code editor, and git diff into a single workspace — purpose-built for AI coding agents like Claude Code.
+> A Tauri desktop app that unifies terminal sessions, file explorer, code editor, and git diff into a single workspace — purpose-built for AI coding agents like Claude Code and Codex.
 
 Vimeflow is a **CLI coding agent control plane** built with Tauri 2 (Rust + React/TypeScript). It gives you one window to manage terminal sessions where AI agents work, browse files, review diffs, and edit code — all with vim-style keybindings and a dark atmospheric UI.
 
@@ -48,21 +48,23 @@ A 4-zone grid layout inspired by IDE + terminal multiplexer patterns:
 
 ### Agent Status Sidebar (Phase 4 — Latest)
 
-Real-time agent observability panel that auto-detects running AI coding agents in terminal sessions:
+Real-time agent observability panel that auto-detects running AI coding agents in terminal sessions. Supports **Claude Code** and **Codex** (since [#154](https://github.com/winoooops/vimeflow/pull/154)) with one shared frontend:
 
-- **Rust backend** — `src-tauri/src/agent/` module with agent detector (process tree polling), statusline file watcher (`notify` crate), and transcript JSONL parser for tool call tracking
-- **Statusline bridge** — per-session shell script pipes Claude Code's statusline JSON to a watched file; Rust parses and emits Tauri events (`agent-detected`, `agent-status`, `agent-tool-call`, `agent-disconnected`)
-- **Frontend panel** — `src/features/agent-status/` with `useAgentStatus` hook subscribing to Tauri events, plus components: StatusCard (identity + model badge), BudgetMetrics (adaptive API key vs subscriber layout), ContextBucket (fill gauge + progress bar), ToolCallSummary (aggregated chips), RecentToolCalls, FilesChanged, TestResults, and ActivityFooter
+- **`AgentAdapter` trait** — `src-tauri/src/agent/adapter/` defines a single trait (`status_source` / `parse_status` / `validate_transcript` / `tail_transcript`) that each agent's adapter implements; the watcher pipeline, frontend events, and panel UI are agent-agnostic
+- **Claude Code adapter** (`adapter/claude_code/`) — per-session shell script pipes Claude's statusline JSON to a watched file; the adapter parses it and emits Tauri events (`agent-detected`, `agent-status`, `agent-tool-call`, `agent-disconnected`)
+- **Codex adapter** (`adapter/codex/`) — schema-driven SQLite locator over `~/.codex/*.sqlite` (logs DB → thread_id, threads DB → rollout JSONL path) with `/proc`-driven Linux fast-paths and FS-scan fallback; fold `event_msg.token_count` into the same `AgentStatusEvent` shape Claude emits
+- **Rust backend orchestration** — `src-tauri/src/agent/` adds the agent detector (process tree polling), the `base::start_for` watcher driver (file-change notify + polling fallback), and per-adapter transcript JSONL tailers for tool-call / turn / test-run signals
+- **Frontend panel** — `src/features/agent-status/` with `useAgentStatus` hook subscribing to the Tauri event bus, plus components: StatusCard (identity + model badge), BudgetMetrics (adaptive ApiKey/Subscriber/Fallback layout — Codex sessions render Subscriber with rate-limit bars; Claude API-key sessions render the Cost cell), ContextBucket (fill gauge + progress bar driven by `last_token_usage` for Codex, `total_input_tokens` for Claude), ToolCallSummary (aggregated chips), RecentToolCalls, FilesChanged, TestResults, and ActivityFooter
 - **Auto-collapse** — panel is 0px when no agent detected, animates to 280px on detection, holds final state for 5s after disconnect
-- **ts-rs type codegen** — Rust types exported to `src/bindings/` for type-safe frontend consumption
+- **ts-rs type codegen** — Rust types exported to `src/bindings/` for type-safe frontend consumption (`CostMetrics.totalCostUsd: number | null` distinguishes Codex's no-cost surface from Claude's reported cost)
 
-Design spec: [`docs/superpowers/specs/2026-04-12-agent-status-sidebar/`](docs/superpowers/specs/2026-04-12-agent-status-sidebar/CLAUDE.md)
+Design specs: [`2026-04-12-agent-status-sidebar/`](docs/superpowers/specs/2026-04-12-agent-status-sidebar/CLAUDE.md) (panel) · [`2026-05-02-claude-adapter-refactor-design.md`](docs/superpowers/specs/2026-05-02-claude-adapter-refactor-design.md) (trait abstraction, Stage 1) · [`2026-05-03-codex-adapter-stage-2-design.md`](docs/superpowers/specs/2026-05-03-codex-adapter-stage-2-design.md) (Codex adapter, Stage 2) · [`2026-05-04-codex-adapter-stage-2-scope-expansion.md`](docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md) (ratified deviations)
 
 <p align="center">
   <img src="docs/media/agent-status-sidebar.png" alt="Agent Status Sidebar — Current Context gauge, Token Cache block, Activity feed, Files Changed, Tests panel" width="280" />
 </p>
 
-<p align="center"><sub>Right panel close-up — Context gauge, Token Cache, Activity feed, Files Changed, and Tests panel populated by a live Claude Code session.</sub></p>
+<p align="center"><sub>Right panel close-up — Context gauge, Token Cache, Activity feed, Files Changed, and Tests panel. Driven by either a Claude Code or Codex session via the shared <code>AgentAdapter</code> trait.</sub></p>
 
 ### Feature Modules
 
@@ -73,7 +75,7 @@ Design spec: [`docs/superpowers/specs/2026-04-12-agent-status-sidebar/`](docs/su
 | **diff**            | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard)                                      |
 | **files**           | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop                                             |
 | **command-palette** | Vim-style `:` palette (global shortcut, fuzzy match, namespace drill-in) — built-in command registry shipping incrementally |
-| **agent-status**    | Real-time agent observability panel (statusline bridge + transcript parsing)                                                |
+| **agent-status**    | Real-time agent observability panel — multi-agent (Claude Code + Codex) via the `AgentAdapter` trait                        |
 | **workspace**       | Layout shell composing all zones above                                                                                      |
 
 ![Editor with vim mode — `:w` typed, status bar shows -- NORMAL --](docs/media/editor-vim.png)

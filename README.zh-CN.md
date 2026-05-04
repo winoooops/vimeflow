@@ -16,7 +16,7 @@
 
 </div>
 
-> 一个 Tauri 桌面应用，将终端会话、文件浏览器、代码编辑器和 Git Diff 统一到一个工作空间 — 专为 Claude Code 等 AI 编码代理打造。
+> 一个 Tauri 桌面应用，将终端会话、文件浏览器、代码编辑器和 Git Diff 统一到一个工作空间 — 专为 Claude Code、Codex 等 AI 编码代理打造。
 
 Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + React/TypeScript）构建。它在一个窗口内管理 AI 代理工作的终端会话、浏览文件、审查 Diff 和编辑代码 — 全部配备 Vim 风格快捷键和暗色氛围 UI。
 
@@ -48,21 +48,23 @@ Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + Re
 
 ### 代理状态侧边栏（第 4 阶段 — 最新）
 
-实时代理可观察性面板，自动检测终端会话中运行的 AI 编码代理：
+实时代理可观察性面板，自动检测终端会话中运行的 AI 编码代理。自 [#154](https://github.com/winoooops/vimeflow/pull/154) 起同时支持 **Claude Code** 与 **Codex**，共用一套前端：
 
-- **Rust 后端** — `src-tauri/src/agent/` 模块包含代理检测器（进程树轮询）、statusline 文件监听器（`notify` crate）和 JSONL transcript 解析器用于工具调用跟踪
-- **Statusline 桥接** — 每会话 shell 脚本将 Claude Code 的 statusline JSON 输出到被监听文件；Rust 解析并通过 Tauri 事件发送（`agent-detected`、`agent-status`、`agent-tool-call`、`agent-disconnected`）
-- **前端面板** — `src/features/agent-status/` 包含订阅 Tauri 事件的 `useAgentStatus` hook，以及组件：StatusCard（身份 + 模型徽章）、BudgetMetrics（自适应 API Key / 订阅者布局）、ContextBucket（填充仪表 + 进度条）、ToolCallSummary（聚合芯片）、RecentToolCalls、FilesChanged、TestResults 和 ActivityFooter
+- **`AgentAdapter` trait** — `src-tauri/src/agent/adapter/` 定义统一接口（`status_source` / `parse_status` / `validate_transcript` / `tail_transcript`），每种代理各自实现；监听管道、前端事件与面板 UI 与具体代理无关
+- **Claude Code 适配器**（`adapter/claude_code/`）— 每会话 shell 脚本把 Claude 的 statusline JSON 写入被监听文件；适配器解析后通过 Tauri 事件发送（`agent-detected`、`agent-status`、`agent-tool-call`、`agent-disconnected`）
+- **Codex 适配器**（`adapter/codex/`）— 基于 schema 探测的 SQLite 定位器扫描 `~/.codex/*.sqlite`（logs DB → thread_id，threads DB → rollout JSONL 路径），辅以 Linux `/proc` 快速路径与 FS 扫描回退；将 `event_msg.token_count` 折叠为与 Claude 一致的 `AgentStatusEvent` 形状
+- **Rust 后端编排** — `src-tauri/src/agent/` 提供代理检测器（进程树轮询）、`base::start_for` 监听驱动（notify 文件变更 + 轮询回退），以及各适配器的 transcript JSONL tailer（用于工具调用 / 轮次 / 测试运行信号）
+- **前端面板** — `src/features/agent-status/` 包含订阅 Tauri 事件总线的 `useAgentStatus` hook，以及组件：StatusCard（身份 + 模型徽章）、BudgetMetrics（自适应 ApiKey / Subscriber / Fallback 布局 — Codex 会话渲染 Subscriber 显示速率限额条；Claude API-key 会话渲染 Cost 单元）、ContextBucket（填充仪表 + 进度条；Codex 由 `last_token_usage` 驱动，Claude 由 `total_input_tokens` 驱动）、ToolCallSummary（聚合芯片）、RecentToolCalls、FilesChanged、TestResults 和 ActivityFooter
 - **自动折叠** — 未检测到代理时面板为 0px，检测到时动画展开到 280px，断开后保留最终状态 5 秒
-- **ts-rs 类型代码生成** — Rust 类型自动导出到 `src/bindings/`，前端可类型安全消费
+- **ts-rs 类型代码生成** — Rust 类型自动导出到 `src/bindings/`，前端可类型安全消费（`CostMetrics.totalCostUsd: number | null` 用以区分 Codex 不暴露 cost 的语义与 Claude 上报的实际花费）
 
-设计规格：[`docs/superpowers/specs/2026-04-12-agent-status-sidebar/`](docs/superpowers/specs/2026-04-12-agent-status-sidebar/CLAUDE.md)
+设计规格：[`2026-04-12-agent-status-sidebar/`](docs/superpowers/specs/2026-04-12-agent-status-sidebar/CLAUDE.md)（面板）· [`2026-05-02-claude-adapter-refactor-design.md`](docs/superpowers/specs/2026-05-02-claude-adapter-refactor-design.md)（trait 抽象，Stage 1）· [`2026-05-03-codex-adapter-stage-2-design.md`](docs/superpowers/specs/2026-05-03-codex-adapter-stage-2-design.md)（Codex 适配器，Stage 2）· [`2026-05-04-codex-adapter-stage-2-scope-expansion.md`](docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md)（已记录的偏离）
 
 <p align="center">
   <img src="docs/media/agent-status-sidebar.png" alt="代理状态侧边栏 — 上下文计量器、Token 缓存、活动事件流、变更文件、测试面板" width="280" />
 </p>
 
-<p align="center"><sub>右侧面板特写 — 上下文计量器、Token 缓存、活动事件流、变更文件和测试面板，由实时 Claude Code 会话填充。</sub></p>
+<p align="center"><sub>右侧面板特写 — 上下文计量器、Token 缓存、活动事件流、变更文件和测试面板。可由 Claude Code 或 Codex 会话经共享 <code>AgentAdapter</code> trait 驱动。</sub></p>
 
 ### 功能模块
 
@@ -73,7 +75,7 @@ Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + Re
 | **diff**            | Lazygit 风格 Git Diff 查看器（并排 + 统一视图，hunk 导航，暂存/丢弃）                 |
 | **files**           | 文件浏览树，面包屑导航，Git 状态徽章（M/A/D/U），拖放支持                             |
 | **command-palette** | Vim 风格 `:` 命令面板（全局快捷键、模糊匹配、命名空间下钻）— 内置命令注册表陆续交付中 |
-| **agent-status**    | 实时代理可观察性面板（statusline 桥接 + transcript 解析）                             |
+| **agent-status**    | 实时代理可观察性面板 — 通过 `AgentAdapter` trait 同时支持 Claude Code 与 Codex        |
 | **workspace**       | 组合以上所有区域的布局外壳                                                            |
 
 ![编辑器与 Vim 模式 — 输入 `:w`，状态栏显示 -- NORMAL --](docs/media/editor-vim.png)

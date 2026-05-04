@@ -1,6 +1,14 @@
 # `agent` — Vimeflow Backend Agent Module
 
-This module owns everything that detects a CLI coding agent inside a PTY session, extracts its status / transcript / tool-call data, and emits Tauri events the frontend agent panel listens for. After the **Stage 1 refactor** (spec at `docs/superpowers/specs/2026-05-02-claude-adapter-refactor-design.md`, plan at `docs/superpowers/plans/2026-05-03-claude-adapter-refactor-stage-1.md`), the design is centred on a single `AgentAdapter<R>` trait that lets each supported agent (Claude Code today, Codex / Aider / etc. later) plug into a shared watcher pipeline.
+This module owns everything that detects a CLI coding agent inside a PTY session, extracts its status / transcript / tool-call data, and emits Tauri events the frontend agent panel listens for. The design is centred on a single `AgentAdapter<R>` trait that lets each supported agent plug into a shared watcher pipeline.
+
+**Supported today:** Claude Code (Stage 1, [#152](https://github.com/winoooops/vimeflow/pull/152)) and Codex (Stage 2, [#154](https://github.com/winoooops/vimeflow/pull/154)). Aider / etc. are future stages — adding a new adapter is purely additive against the trait.
+
+Stage history:
+
+- Stage 1 — `2026-05-02-claude-adapter-refactor-design.md` introduces the trait and migrates Claude behind it.
+- Stage 2 — `2026-05-03-codex-adapter-stage-2-design.md` adds `CodexAdapter` against the trait.
+- Stage 2 scope expansion — `docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md` ratifies three implementation deviations (transcript tailer landed in v1, `/proc` upgraded from verifier to fallback chooser, `BindContext.pid` is the detected agent PID).
 
 This README is the **interface map**. For _why_ the design is shaped the way it is, read the spec; for _how_ to implement the refactor, read the plan; the README is the reference you pull up when you want to know "what does the trait look like, who implements it, and which type goes where."
 
@@ -56,12 +64,17 @@ src-tauri/src/agent/
     │   ├── path_security.rs ← StatusSource trust_root enforcement
     │   ├── transcript_state.rs ← TranscriptState/Handle/StartStatus registry
     │   └── watcher_runtime.rs  ← notify watcher, inline read, polling fallback, WatcherHandle
-    ├── types.rs             ← StatusSource, ParsedStatus
-    └── claude_code/
-        ├── mod.rs           ← ClaudeCodeAdapter (impl AgentAdapter<R>)
-        ├── statusline.rs    ← Claude's status.json parser
-        ├── transcript.rs    ← Claude's JSONL tail loop + per-line parsing
-        └── test_runners/    ← vitest / cargo-test parser ecosystem
+    ├── types.rs             ← StatusSource, ParsedStatus, BindContext, BindError, ValidateTranscriptError
+    ├── claude_code/
+    │   ├── mod.rs           ← ClaudeCodeAdapter (impl AgentAdapter<R>)
+    │   ├── statusline.rs    ← Claude's status.json parser
+    │   ├── transcript.rs    ← Claude's JSONL tail loop + per-line parsing
+    │   └── test_runners/    ← vitest / cargo-test parser ecosystem
+    └── codex/
+        ├── mod.rs           ← CodexAdapter (impl AgentAdapter<R>); per-attach Mutex<Option<PathBuf>> threads the rollout path from status_source to the transcript tailer
+        ├── locator.rs       ← CodexSessionLocator: schema-driven SQLite discovery (logs DB → thread_id, threads DB → rollout_path) + Linux /proc fast-paths (resume cmdline, fd cohort, recent state) + FS-scan fallback
+        ├── parser.rs        ← Codex rollout JSONL fold: session_meta + turn_context + event_msg.{task_started, task_complete, token_count} → AgentStatusEvent (driven by last_token_usage, not lifetime totals)
+        └── transcript.rs    ← Codex rollout JSONL tail loop; reuses claude_code/test_runners/* to emit AgentToolCallEvent / AgentTurnEvent / test-run signals
 ```
 
 ---
@@ -76,7 +89,13 @@ Everything outside `agent::adapter::*` interacts with the agent module through t
 pub fn for_type(agent_type: AgentType) -> Result<Arc<Self>, String>
 ```
 
-Constructs the right adapter for a detected agent type. Returns `Arc<dyn AgentAdapter<R>>`. Stage 1 returns `ClaudeCodeAdapter` for `AgentType::ClaudeCode` and `NoOpAdapter::new(t)` for everything else; Stage 2 replaces the `Codex` arm with `CodexAdapter`.
+Constructs the right adapter for a detected agent type. Returns `Arc<dyn AgentAdapter<R>>`:
+
+- `AgentType::ClaudeCode` → `ClaudeCodeAdapter`
+- `AgentType::Codex` → `CodexAdapter::new()`
+- everything else → `NoOpAdapter::new(t)` (returns errors from `parse_status` / `validate_transcript` / `tail_transcript`; `status_source` returns a `.vimeflow/sessions/{sid}/status.json` placeholder)
+
+> **Follow-up tracking:** issue [#156](https://github.com/winoooops/vimeflow/issues/156) collapses `BindContext` and the central retry into `CodexAdapter::new(pid, pty_start)`. After that lands, `for_type` becomes `for_attach(ctx)` and the Claude impl drops the unused `ctx` parameter from `status_source`.
 
 ### `<dyn AgentAdapter<R>>::start`
 
@@ -86,11 +105,15 @@ pub fn start(
     app: AppHandle<R>,
     session_id: String,
     cwd: PathBuf,
+    pid: u32,
+    pty_start: SystemTime,
     state: AgentWatcherState,
 ) -> Result<(), String>
 ```
 
 Starts the watcher pipeline for a PTY session. **Owns the full lifecycle:** removes any pre-existing handle for `session_id`, logs the active-watcher count, builds the new pipeline, inserts the resulting `WatcherHandle` into `state`. The Tauri command never touches `state` directly — that's the deep-module property.
+
+`pid` is the detected agent PID (returned by `detector::detect_agent`), not the shell PID at the PTY root — Codex's `logs.process_uuid` indexes by the codex child PID. `pty_start` is captured at PTY spawn (`ManagedSession.started_at`) so the logs query can filter out PID-reuse and stale-loaded-thread matches. Both arguments are passed through to the adapter as fields of `BindContext` (delegated through `base::start_for` → `resolve_status_source_with_retry` → `adapter.status_source(&ctx)`). Claude's impl ignores them; Codex's locator depends on them.
 
 ### `<dyn AgentAdapter<R>>::stop`
 
