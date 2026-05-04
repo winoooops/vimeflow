@@ -310,12 +310,14 @@ Both queries gated by `pty_start`:
    ```sql
    SELECT id, rollout_path, cwd, updated_at_ms
    FROM threads
-   WHERE id = ?;
+   WHERE id = :thread_id;
    ```
 
-   Zero rows → `LocatorError::Unresolved(...)`. (DB is reachable but the thread row is missing — unique-failed bind, do not silently FS-fallback.)
+   Zero rows → `LocatorError::NotYetReady`. Codex commits the `logs` row before the corresponding `threads` row during session bootstrap, so a window exists where step 2 returns Ok but step 4 returns nothing. This is a race-transient just like the empty-logs case; `start_for`'s retry budget covers it. **Do not return `Unresolved` here** — that maps to `BindError::Fatal` and would short-circuit the retry loop.
 
 5. Return `RolloutLocation { rollout_path, thread_id, state_updated_at_ms }`.
+
+The SQLite primary path therefore has only one `Unresolved`-shaped failure mode, and it lives in the FS fallback (multiple rollout candidates that cwd can't disambiguate). The primary path itself emits only `NotYetReady` (zero rows on either query) or `Fatal` (I/O error during open/query).
 
 ### Optional Linux verifier (not chooser)
 
@@ -334,7 +336,7 @@ Engaged when DB discovery returns `Ok(None)` for either port (schema drift on a 
 
 `LocatorError::Fatal` is reserved for non-retryable structural failures, NOT for transient zero-match conditions. The decision tree:
 
-- Empty result on SQLite (zero rows) → `NotYetReady` (codex hasn't committed yet).
+- Empty result on SQLite (zero rows on either the logs query OR the threads query) → `NotYetReady`. The logs/threads rows are committed in sequence during codex bootstrap, so either being missing is transient — `start_for`'s retry budget covers the gap.
 - Empty result on FS scan (zero matches after cwd/mtime filter) → `NotYetReady` (rollout file not on disk yet).
 - Schema drift (no DB candidate has the target table) → routes to FS fallback; never Fatal on its own.
 - SQLite I/O error that isn't schema-drift (permission denied, corruption) → `Fatal`.
