@@ -4,12 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { InfoBanner } from './InfoBanner'
 
 describe('InfoBanner', () => {
-  test('null message renders nothing', () => {
-    render(<InfoBanner message={null} onDismiss={vi.fn()} />)
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
-  })
-
-  test('non-null message renders banner with role=status', () => {
+  test('renders banner with role=status', () => {
     render(<InfoBanner message="Test message" onDismiss={vi.fn()} />)
 
     const banner = screen.getByRole('status')

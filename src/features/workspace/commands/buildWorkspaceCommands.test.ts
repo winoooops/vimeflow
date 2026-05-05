@@ -403,7 +403,11 @@ describe('buildWorkspaceCommands - failure modes', () => {
     )
   })
 
-  test(':goto with negative shows invalid position message', () => {
+  // Negative-sign and decimal-point inputs fall through to fuzzy name
+  // matching (so a session named "-1" or "1.5" stays reachable). When no
+  // session matches, the user sees the standard "No tab matching X"
+  // message — same UX as any other non-matching name query.
+  test(':goto with negative input falls through to fuzzy match', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,
       activeSessionId: 'session-1',
@@ -417,12 +421,11 @@ describe('buildWorkspaceCommands - failure modes', () => {
     const gotoCmd = commands.find((c) => c.id === 'goto')
 
     gotoCmd?.execute?.('-1')
-    expect(notifyInfo).toHaveBeenCalledWith(
-      'Position must be a positive integer'
-    )
+    expect(notifyInfo).toHaveBeenCalledWith("No tab matching '-1'")
+    expect(setActiveSessionId).not.toHaveBeenCalled()
   })
 
-  test(':goto with decimal shows invalid position message', () => {
+  test(':goto with decimal input falls through to fuzzy match', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,
       activeSessionId: 'session-1',
@@ -436,16 +439,15 @@ describe('buildWorkspaceCommands - failure modes', () => {
     const gotoCmd = commands.find((c) => c.id === 'goto')
 
     gotoCmd?.execute?.('1.5')
-    expect(notifyInfo).toHaveBeenCalledWith(
-      'Position must be a positive integer'
-    )
+    expect(notifyInfo).toHaveBeenCalledWith("No tab matching '1.5'")
+    expect(setActiveSessionId).not.toHaveBeenCalled()
   })
 
-  // C7-2 pin: `Number.isInteger(1.0)` returns true, so without the explicit
-  // decimal-point check `:goto 1.0` would silently navigate to position 1.
-  // The integer-with-trailing-decimal forms must be treated as invalid
-  // input, matching :goto 1.5 / 2.5.
-  test(':goto with N.0 form rejects as invalid (does not silently navigate)', () => {
+  // `:goto 1.0` falls through to fuzzy-name matching (the position regex
+  // is positive-integer-only). When no session matches, the standard
+  // "No tab matching" message fires — the input does NOT silently
+  // navigate to position 1, which was the C7-2 concern.
+  test(':goto with N.0 form falls through to fuzzy match (does not silently navigate)', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,
       activeSessionId: 'session-1',
@@ -460,9 +462,36 @@ describe('buildWorkspaceCommands - failure modes', () => {
 
     gotoCmd?.execute?.('1.0')
     expect(setActiveSessionId).not.toHaveBeenCalled()
-    expect(notifyInfo).toHaveBeenCalledWith(
-      'Position must be a positive integer'
-    )
+    expect(notifyInfo).toHaveBeenCalledWith("No tab matching '1.0'")
+  })
+
+  // C11-1 pin: a session named with a number-like string ("-1", "1.5",
+  // "2.0") MUST be reachable via :goto by exact-name fuzzy match. The
+  // previous regex matched these inputs and trapped them in the
+  // position-validation branch, so such tabs were unreachable.
+  test(':goto reaches a session whose name looks like a number', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [
+        ...mockSessions,
+        { id: 'session-neg', name: '-1' },
+        { id: 'session-dec', name: '1.5' },
+      ],
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const gotoCmd = commands.find((c) => c.id === 'goto')
+
+    gotoCmd?.execute?.('-1')
+    expect(setActiveSessionId).toHaveBeenCalledWith('session-neg')
+
+    setActiveSessionId.mockClear()
+    gotoCmd?.execute?.('1.5')
+    expect(setActiveSessionId).toHaveBeenCalledWith('session-dec')
   })
 
   // C7-1 pin: `:goto 1` against an empty session list emits the same

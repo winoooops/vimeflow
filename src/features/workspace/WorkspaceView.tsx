@@ -17,7 +17,10 @@ import { createTerminalService } from '../terminal/services/terminalService'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
-import { buildWorkspaceCommands } from './commands/buildWorkspaceCommands'
+import {
+  buildWorkspaceCommands,
+  WORKSPACE_TAB_KEYS,
+} from './commands/buildWorkspaceCommands'
 import type { ChangedFile, SelectedDiffFile } from '../diff/types'
 
 const SIDEBAR_MIN = 240
@@ -52,12 +55,15 @@ export const WorkspaceView = (): ReactElement => {
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
 
-  // Narrow signature: id+name only. Activity updates (tool calls, file
-  // changes) bump `sessions` identity but no command body reads activity,
-  // so rebuilding on every PTY data tick is wasted work. Use JSON.stringify
-  // (not hand-joined separators) so a name containing `:` or `|` cannot
-  // collide with a different session set's signature.
-  const sessionsSignature = JSON.stringify(sessions.map((s) => [s.id, s.name]))
+  // Activity updates (tool calls, file changes) bump `sessions` identity
+  // but no command body reads activity, so rebuilding on every PTY data
+  // tick is wasted work. Walk the same key list that defines `WorkspaceTab`
+  // — adding a key there automatically extends this signature so the memo
+  // rebuilds whenever a newly-readable field actually changes. JSON
+  // encoding is collision-free regardless of separator characters in names.
+  const sessionsSignature = JSON.stringify(
+    sessions.map((s) => WORKSPACE_TAB_KEYS.map((k) => s[k]))
+  )
 
   const workspaceCommands = useMemo(
     () =>

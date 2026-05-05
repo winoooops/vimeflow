@@ -2,11 +2,18 @@ import type { Session } from '../types'
 import type { Command } from '../../command-palette/registry/types'
 import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
 
-// Narrow slice — id+name are the only fields any command body reads.
-// Enforcing the type at the boundary means a future command cannot quietly
-// start reading `status` / `activity` / `workingDirectory` and inherit
-// stale closures from the workspace's narrowed memo signature.
-export type WorkspaceTab = Pick<Session, 'id' | 'name'>
+// Single source of truth for which Session fields a workspace command may
+// read. `WorkspaceTab` derives its shape from this list, and the workspace's
+// memo signature in `WorkspaceView.tsx` walks the same list to build its
+// dep value. Adding a field here automatically widens both — so a future
+// command that needs (e.g.) `workingDirectory` cannot silently inherit a
+// stale closure: the type permits the read AND the signature triggers a
+// memo rebuild on changes to that field.
+export const WORKSPACE_TAB_KEYS = ['id', 'name'] as const
+
+export type WorkspaceTabKey = (typeof WORKSPACE_TAB_KEYS)[number]
+
+export type WorkspaceTab = Pick<Session, WorkspaceTabKey>
 
 export interface WorkspaceCommandDeps {
   sessions: WorkspaceTab[]
@@ -151,23 +158,22 @@ export const buildWorkspaceCommands = (
           return
         }
 
-        // Try numeric position (1-indexed). Digit-prefixed names like
-        // "1alpha" must still be reachable by name.
-        const isPositionLike = /^-?\d+(?:\.\d+)?$/.test(trimmed)
+        // Numeric position branch: only POSITIVE-INTEGER strings (e.g. "1",
+        // "42") qualify. Negative-sign / decimal-point inputs ("-1", "1.5",
+        // "1.0") fall through to fuzzy-name matching below — that's how a
+        // user can reach a session whose name happens to look like a
+        // number. Digit-prefixed names like "1alpha" already fall through
+        // because the `\d+` regex demands an end anchor with no other
+        // characters. `:goto 0` still matches the regex and is rejected by
+        // the `position < 1` guard, preserving the "Position must be a
+        // positive integer" message for the zero case (which has no fuzzy
+        // analogue).
+        const isPositionLike = /^\d+$/.test(trimmed)
 
         if (isPositionLike) {
           const position = Number(trimmed)
 
-          // `Number.isInteger(1.0)` is `true`, so the explicit decimal-point
-          // check is what catches `:goto 1.0` / `:goto 2.0` and routes them
-          // to the same error path as `:goto 1.5`. Without this check, those
-          // inputs would silently navigate to the integer position, masking
-          // typos.
-          if (
-            position < 1 ||
-            !Number.isInteger(position) ||
-            trimmed.includes('.')
-          ) {
+          if (position < 1) {
             notifyInfo('Position must be a positive integer')
 
             return
