@@ -543,3 +543,5 @@ Several behaviors are non-obvious and must have their own assertions, not just "
 - **No visual / snapshot tests for the info banner.** Visual treatment is documented in Section 5; behavior is tested above. Adding snapshot tests would lock down design choices that may legitimately move.
 - **No E2E (wdio) coverage.** The integration tests at the React-Testing-Library layer cover the cross-component contracts. A wdio pass is appropriate when the implementation lands but is not part of this spec's must-have list.
 - **No performance assertions.** The `useMemo` filter step is described qualitatively as "essentially free"; benchmark tests would over-specify what is currently a non-issue.
+
+<!-- codex-reviewed: 2026-05-05T08:40:54Z -->
