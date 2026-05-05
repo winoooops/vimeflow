@@ -594,6 +594,64 @@ describe('useCommandPalette', () => {
       consoleInfoSpy.mockRestore()
     })
 
+    test('passes namespace child token as args to leaf command', () => {
+      const execute = vi.fn()
+
+      const commands: Command[] = [
+        {
+          id: 'open',
+          label: ':open',
+          icon: 'folder',
+          children: [
+            {
+              id: 'open-filename',
+              label: '<filename>',
+              icon: 'description',
+              execute,
+            },
+          ],
+        },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':open')
+      })
+
+      const openIndex = result.current.filteredResults.findIndex(
+        (cmd) => cmd.id === 'open'
+      )
+
+      expect(openIndex).not.toBe(-1)
+
+      act(() => {
+        result.current.selectIndex(openIndex)
+        result.current.executeSelected()
+      })
+
+      expect(result.current.state.currentNamespace?.id).toBe('open')
+
+      act(() => {
+        result.current.setQuery(':file')
+      })
+
+      const filenameIndex = result.current.filteredResults.findIndex(
+        (cmd) => cmd.id === 'open-filename'
+      )
+
+      expect(filenameIndex).not.toBe(-1)
+
+      act(() => {
+        result.current.selectIndex(filenameIndex)
+        result.current.executeSelected()
+      })
+
+      expect(execute).toHaveBeenCalledWith('file')
+      expect(result.current.state.isOpen).toBe(false)
+    })
+
     test('does not execute when selectedIndex is out of bounds', () => {
       const { result } = renderHook(() => useCommandPalette())
 

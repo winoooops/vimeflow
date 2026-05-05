@@ -192,10 +192,22 @@ export const useCommandPalette = (
 
     // If it's a leaf, execute it
     if (selected.execute) {
-      selected.execute(parsedQuery.args)
+      const executionArgs =
+        state.currentNamespace !== null && parsedQuery.args.length === 0
+          ? parsedQuery.verbToken.replace(/^:/, '')
+          : parsedQuery.args
+
+      selected.execute(executionArgs)
       close()
     }
-  }, [clampedSelectedIndex, filteredResults, parsedQuery.args, close])
+  }, [
+    clampedSelectedIndex,
+    filteredResults,
+    parsedQuery.args,
+    parsedQuery.verbToken,
+    state.currentNamespace,
+    close,
+  ])
 
   // Global keyboard listener
   useEffect(() => {
