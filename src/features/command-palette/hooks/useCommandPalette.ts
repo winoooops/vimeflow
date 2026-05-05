@@ -148,7 +148,7 @@ export const useCommandPalette = (
         selectedIndex: newIndex,
       }
     })
-  }, [filteredResults.length])
+  }, [filteredResults])
 
   const navigateDown = useCallback((): void => {
     if (filteredResults.length === 0) {
@@ -169,7 +169,7 @@ export const useCommandPalette = (
         selectedIndex: newIndex,
       }
     })
-  }, [filteredResults.length])
+  }, [filteredResults])
 
   const executeSelected = useCallback((): void => {
     if (clampedSelectedIndex < 0) {
