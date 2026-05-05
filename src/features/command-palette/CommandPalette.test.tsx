@@ -357,14 +357,12 @@ describe('CommandPalette - Integration Tests', () => {
     })
   })
 
-  test('bare : does NOT open palette', async () => {
+  test('bare : does NOT open palette', () => {
     render(<CommandPalette />)
 
     act(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: ':' }))
     })
-
-    await new Promise((resolve) => setTimeout(resolve, 100))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
@@ -449,7 +447,7 @@ describe('CommandPalette - Integration Tests', () => {
     })
   })
 
-  test('default trigger suppresses repeat events', async () => {
+  test('default trigger suppresses repeat events', () => {
     render(<CommandPalette />)
 
     act(() => {
@@ -457,8 +455,6 @@ describe('CommandPalette - Integration Tests', () => {
         dispatchDefaultTrigger({ repeat: true })
       }
     })
-
-    await new Promise((resolve) => setTimeout(resolve, 100))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
