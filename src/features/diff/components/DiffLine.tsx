@@ -85,7 +85,7 @@ export const DiffLine = ({
 
   return (
     <div
-      className={`flex min-w-full w-max font-mono text-sm hover:bg-surface-bright/20 transition-colors ${lineTypeClass} ${focusClass}`}
+      className={`flex min-w-max font-mono text-sm hover:bg-surface-bright/20 transition-colors ${lineTypeClass} ${focusClass}`}
       onContextMenu={handleContextMenu}
     >
       {/* Old line number gutter */}
