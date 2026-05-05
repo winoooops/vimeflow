@@ -192,9 +192,18 @@ export const useCommandPalette = (
 
     // If it's a leaf, execute it
     if (selected.execute) {
+      // Inside a namespace, the user's typed input is the value (the
+      // verbToken is what they're picking, not a verb to strip). We must
+      // reconstruct the full post-`:` text so values containing spaces
+      // (e.g. a filename like `my file.ts`) reach the handler intact.
+      // Without this, `parseQuery` would split on the first space and
+      // pass only the trailing token, silently truncating the input.
       const executionArgs =
-        state.currentNamespace !== null && parsedQuery.args.length === 0
-          ? parsedQuery.verbToken.replace(/^:/, '')
+        state.currentNamespace !== null
+          ? (
+              parsedQuery.verbToken +
+              (parsedQuery.args.length > 0 ? ' ' + parsedQuery.args : '')
+            ).replace(/^:/, '')
           : parsedQuery.args
 
       selected.execute(executionArgs)
