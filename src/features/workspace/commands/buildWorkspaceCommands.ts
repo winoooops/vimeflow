@@ -2,8 +2,14 @@ import type { Session } from '../types'
 import type { Command } from '../../command-palette/registry/types'
 import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
 
+// Narrow slice — id+name are the only fields any command body reads.
+// Enforcing the type at the boundary means a future command cannot quietly
+// start reading `status` / `activity` / `workingDirectory` and inherit
+// stale closures from the workspace's narrowed memo signature.
+export type WorkspaceTab = Pick<Session, 'id' | 'name'>
+
 export interface WorkspaceCommandDeps {
-  sessions: Session[]
+  sessions: WorkspaceTab[]
   activeSessionId: string | null
   createSession: () => void
   removeSession: (id: string) => void
@@ -131,6 +137,16 @@ export const buildWorkspaceCommands = (
           return
         }
 
+        // Empty-list short-circuit covers BOTH the numeric and the name path.
+        // Without it, `:goto 1` against zero sessions would emit the
+        // less-helpful "No tab at position 1" while `:goto foo` correctly
+        // emits "No open sessions" — same root cause, two different messages.
+        if (sessions.length === 0) {
+          notifyInfo('No open sessions')
+
+          return
+        }
+
         // Try numeric position (1-indexed). Digit-prefixed names like
         // "1alpha" must still be reachable by name.
         const isPositionLike = /^-?\d+(?:\.\d+)?$/.test(trimmed)
@@ -138,7 +154,16 @@ export const buildWorkspaceCommands = (
         if (isPositionLike) {
           const position = Number(trimmed)
 
-          if (position < 1 || !Number.isInteger(position)) {
+          // `Number.isInteger(1.0)` is `true`, so the explicit decimal-point
+          // check is what catches `:goto 1.0` / `:goto 2.0` and routes them
+          // to the same error path as `:goto 1.5`. Without this check, those
+          // inputs would silently navigate to the integer position, masking
+          // typos.
+          if (
+            position < 1 ||
+            !Number.isInteger(position) ||
+            trimmed.includes('.')
+          ) {
             notifyInfo('Position must be a positive integer')
 
             return
@@ -155,14 +180,8 @@ export const buildWorkspaceCommands = (
           return
         }
 
-        if (sessions.length === 0) {
-          notifyInfo('No open sessions')
-
-          return
-        }
-
         const match = sessions.reduce<{
-          session: Session | null
+          session: WorkspaceTab | null
           score: number
         }>(
           (best, session) => {

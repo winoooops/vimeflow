@@ -1,75 +1,14 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { buildWorkspaceCommands } from './buildWorkspaceCommands'
-import type { Session } from '../types'
+import {
+  buildWorkspaceCommands,
+  type WorkspaceTab,
+} from './buildWorkspaceCommands'
 
 describe('buildWorkspaceCommands - happy paths', () => {
-  const mockSessions: Session[] = [
-    {
-      id: 'session-1',
-      projectId: 'proj-1',
-      name: 'main',
-      status: 'running',
-      workingDirectory: '/home/user/project',
-      agentType: 'claude-code',
-      createdAt: '2024-01-01T00:00:00Z',
-      lastActivityAt: '2024-01-01T00:00:00Z',
-      activity: {
-        fileChanges: [],
-        toolCalls: [],
-        testResults: [],
-        contextWindow: { used: 0, total: 200000, percentage: 0, emoji: '😊' },
-        usage: {
-          sessionDuration: 0,
-          turnCount: 0,
-          messages: { sent: 0, limit: 200 },
-          tokens: { input: 0, output: 0, total: 0 },
-        },
-      },
-    },
-    {
-      id: 'session-2',
-      projectId: 'proj-1',
-      name: 'feature-branch',
-      status: 'running',
-      workingDirectory: '/home/user/project',
-      agentType: 'claude-code',
-      createdAt: '2024-01-01T01:00:00Z',
-      lastActivityAt: '2024-01-01T01:00:00Z',
-      activity: {
-        fileChanges: [],
-        toolCalls: [],
-        testResults: [],
-        contextWindow: { used: 0, total: 200000, percentage: 0, emoji: '😊' },
-        usage: {
-          sessionDuration: 0,
-          turnCount: 0,
-          messages: { sent: 0, limit: 200 },
-          tokens: { input: 0, output: 0, total: 0 },
-        },
-      },
-    },
-    {
-      id: 'session-3',
-      projectId: 'proj-1',
-      name: 'bugfix',
-      status: 'running',
-      workingDirectory: '/home/user/project',
-      agentType: 'claude-code',
-      createdAt: '2024-01-01T02:00:00Z',
-      lastActivityAt: '2024-01-01T02:00:00Z',
-      activity: {
-        fileChanges: [],
-        toolCalls: [],
-        testResults: [],
-        contextWindow: { used: 0, total: 200000, percentage: 0, emoji: '😊' },
-        usage: {
-          sessionDuration: 0,
-          turnCount: 0,
-          messages: { sent: 0, limit: 200 },
-          tokens: { input: 0, output: 0, total: 0 },
-        },
-      },
-    },
+  const mockSessions: WorkspaceTab[] = [
+    { id: 'session-1', name: 'main' },
+    { id: 'session-2', name: 'feature-branch' },
+    { id: 'session-3', name: 'bugfix' },
   ]
 
   let createSession: ReturnType<typeof vi.fn>
@@ -340,6 +279,12 @@ describe('buildWorkspaceCommands - happy paths', () => {
 })
 
 describe('buildWorkspaceCommands - failure modes', () => {
+  const mockSessions: WorkspaceTab[] = [
+    { id: 'session-1', name: 'main' },
+    { id: 'session-2', name: 'feature-branch' },
+    { id: 'session-3', name: 'bugfix' },
+  ]
+
   let createSession: ReturnType<typeof vi.fn>
   let removeSession: ReturnType<typeof vi.fn>
   let renameSession: ReturnType<typeof vi.fn>
@@ -359,30 +304,7 @@ describe('buildWorkspaceCommands - failure modes', () => {
       sessions: [
         {
           id: 'session-1',
-          projectId: 'proj-1',
           name: 'main',
-          status: 'running',
-          workingDirectory: '/home/user',
-          agentType: 'claude-code',
-          createdAt: '2024-01-01T00:00:00Z',
-          lastActivityAt: '2024-01-01T00:00:00Z',
-          activity: {
-            fileChanges: [],
-            toolCalls: [],
-            testResults: [],
-            contextWindow: {
-              used: 0,
-              total: 200000,
-              percentage: 0,
-              emoji: '😊',
-            },
-            usage: {
-              sessionDuration: 0,
-              turnCount: 0,
-              messages: { sent: 0, limit: 200 },
-              tokens: { input: 0, output: 0, total: 0 },
-            },
-          },
         },
       ],
       activeSessionId: null,
@@ -423,30 +345,7 @@ describe('buildWorkspaceCommands - failure modes', () => {
       sessions: [
         {
           id: 'session-1',
-          projectId: 'proj-1',
           name: 'main',
-          status: 'running',
-          workingDirectory: '/home/user',
-          agentType: 'claude-code',
-          createdAt: '2024-01-01T00:00:00Z',
-          lastActivityAt: '2024-01-01T00:00:00Z',
-          activity: {
-            fileChanges: [],
-            toolCalls: [],
-            testResults: [],
-            contextWindow: {
-              used: 0,
-              total: 200000,
-              percentage: 0,
-              emoji: '😊',
-            },
-            usage: {
-              sessionDuration: 0,
-              turnCount: 0,
-              messages: { sent: 0, limit: 200 },
-              tokens: { input: 0, output: 0, total: 0 },
-            },
-          },
         },
       ],
       activeSessionId: 'session-1',
@@ -481,10 +380,14 @@ describe('buildWorkspaceCommands - failure modes', () => {
     expect(notifyInfo).toHaveBeenCalledWith('Usage: :goto <position or name>')
   })
 
+  // The position-validation branch only runs when sessions is non-empty
+  // (the C7-1 hoisted guard short-circuits the empty case to "No open
+  // sessions"). These tests pass mockSessions to exercise the
+  // positive-integer-only contract in isolation.
   test(':goto with zero shows invalid position message', () => {
     const commands = buildWorkspaceCommands({
-      sessions: [],
-      activeSessionId: null,
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
       createSession,
       removeSession,
       renameSession,
@@ -502,8 +405,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
 
   test(':goto with negative shows invalid position message', () => {
     const commands = buildWorkspaceCommands({
-      sessions: [],
-      activeSessionId: null,
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
       createSession,
       removeSession,
       renameSession,
@@ -521,8 +424,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
 
   test(':goto with decimal shows invalid position message', () => {
     const commands = buildWorkspaceCommands({
-      sessions: [],
-      activeSessionId: null,
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
       createSession,
       removeSession,
       renameSession,
@@ -538,35 +441,56 @@ describe('buildWorkspaceCommands - failure modes', () => {
     )
   })
 
+  // C7-2 pin: `Number.isInteger(1.0)` returns true, so without the explicit
+  // decimal-point check `:goto 1.0` would silently navigate to position 1.
+  // The integer-with-trailing-decimal forms must be treated as invalid
+  // input, matching :goto 1.5 / 2.5.
+  test(':goto with N.0 form rejects as invalid (does not silently navigate)', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const gotoCmd = commands.find((c) => c.id === 'goto')
+
+    gotoCmd?.execute?.('1.0')
+    expect(setActiveSessionId).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith(
+      'Position must be a positive integer'
+    )
+  })
+
+  // C7-1 pin: `:goto 1` against an empty session list emits the same
+  // "No open sessions" message as the name path, instead of the
+  // less-helpful "No tab at position 1".
+  test(':goto with numeric input against empty sessions shows "No open sessions"', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [],
+      activeSessionId: null,
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const gotoCmd = commands.find((c) => c.id === 'goto')
+
+    gotoCmd?.execute?.('1')
+    expect(notifyInfo).toHaveBeenCalledWith('No open sessions')
+  })
+
   test(':goto with out-of-range position shows message', () => {
     const commands = buildWorkspaceCommands({
       sessions: [
         {
           id: 'session-1',
-          projectId: 'proj-1',
           name: 'main',
-          status: 'running',
-          workingDirectory: '/home/user',
-          agentType: 'claude-code',
-          createdAt: '2024-01-01T00:00:00Z',
-          lastActivityAt: '2024-01-01T00:00:00Z',
-          activity: {
-            fileChanges: [],
-            toolCalls: [],
-            testResults: [],
-            contextWindow: {
-              used: 0,
-              total: 200000,
-              percentage: 0,
-              emoji: '😊',
-            },
-            usage: {
-              sessionDuration: 0,
-              turnCount: 0,
-              messages: { sent: 0, limit: 200 },
-              tokens: { input: 0, output: 0, total: 0 },
-            },
-          },
         },
       ],
       activeSessionId: 'session-1',
@@ -588,30 +512,7 @@ describe('buildWorkspaceCommands - failure modes', () => {
       sessions: [
         {
           id: 'session-1',
-          projectId: 'proj-1',
           name: 'main',
-          status: 'running',
-          workingDirectory: '/home/user',
-          agentType: 'claude-code',
-          createdAt: '2024-01-01T00:00:00Z',
-          lastActivityAt: '2024-01-01T00:00:00Z',
-          activity: {
-            fileChanges: [],
-            toolCalls: [],
-            testResults: [],
-            contextWindow: {
-              used: 0,
-              total: 200000,
-              percentage: 0,
-              emoji: '😊',
-            },
-            usage: {
-              sessionDuration: 0,
-              turnCount: 0,
-              messages: { sent: 0, limit: 200 },
-              tokens: { input: 0, output: 0, total: 0 },
-            },
-          },
         },
       ],
       activeSessionId: 'session-1',
@@ -654,57 +555,11 @@ describe('buildWorkspaceCommands - failure modes', () => {
       sessions: [
         {
           id: 'session-1',
-          projectId: 'proj-1',
           name: 'main',
-          status: 'running',
-          workingDirectory: '/home/user',
-          agentType: 'claude-code',
-          createdAt: '2024-01-01T00:00:00Z',
-          lastActivityAt: '2024-01-01T00:00:00Z',
-          activity: {
-            fileChanges: [],
-            toolCalls: [],
-            testResults: [],
-            contextWindow: {
-              used: 0,
-              total: 200000,
-              percentage: 0,
-              emoji: '😊',
-            },
-            usage: {
-              sessionDuration: 0,
-              turnCount: 0,
-              messages: { sent: 0, limit: 200 },
-              tokens: { input: 0, output: 0, total: 0 },
-            },
-          },
         },
         {
           id: 'session-2',
-          projectId: 'proj-1',
           name: 'feature',
-          status: 'running',
-          workingDirectory: '/home/user',
-          agentType: 'claude-code',
-          createdAt: '2024-01-01T01:00:00Z',
-          lastActivityAt: '2024-01-01T01:00:00Z',
-          activity: {
-            fileChanges: [],
-            toolCalls: [],
-            testResults: [],
-            contextWindow: {
-              used: 0,
-              total: 200000,
-              percentage: 0,
-              emoji: '😊',
-            },
-            usage: {
-              sessionDuration: 0,
-              turnCount: 0,
-              messages: { sent: 0, limit: 200 },
-              tokens: { input: 0, output: 0, total: 0 },
-            },
-          },
         },
       ],
       activeSessionId: 'stale-id',
@@ -726,57 +581,11 @@ describe('buildWorkspaceCommands - failure modes', () => {
       sessions: [
         {
           id: 'session-1',
-          projectId: 'proj-1',
           name: 'main',
-          status: 'running',
-          workingDirectory: '/home/user',
-          agentType: 'claude-code',
-          createdAt: '2024-01-01T00:00:00Z',
-          lastActivityAt: '2024-01-01T00:00:00Z',
-          activity: {
-            fileChanges: [],
-            toolCalls: [],
-            testResults: [],
-            contextWindow: {
-              used: 0,
-              total: 200000,
-              percentage: 0,
-              emoji: '😊',
-            },
-            usage: {
-              sessionDuration: 0,
-              turnCount: 0,
-              messages: { sent: 0, limit: 200 },
-              tokens: { input: 0, output: 0, total: 0 },
-            },
-          },
         },
         {
           id: 'session-2',
-          projectId: 'proj-1',
           name: 'feature',
-          status: 'running',
-          workingDirectory: '/home/user',
-          agentType: 'claude-code',
-          createdAt: '2024-01-01T01:00:00Z',
-          lastActivityAt: '2024-01-01T01:00:00Z',
-          activity: {
-            fileChanges: [],
-            toolCalls: [],
-            testResults: [],
-            contextWindow: {
-              used: 0,
-              total: 200000,
-              percentage: 0,
-              emoji: '😊',
-            },
-            usage: {
-              sessionDuration: 0,
-              turnCount: 0,
-              messages: { sent: 0, limit: 200 },
-              tokens: { input: 0, output: 0, total: 0 },
-            },
-          },
         },
       ],
       activeSessionId: 'stale-id',
