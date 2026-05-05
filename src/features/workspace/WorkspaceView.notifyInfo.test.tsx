@@ -3,6 +3,25 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { WorkspaceView } from './WorkspaceView'
 
+vi.mock('../agent-status/hooks/useAgentStatus', () => ({
+  useAgentStatus: vi.fn(() => ({
+    isActive: false,
+    agentType: null,
+    modelId: null,
+    modelDisplayName: null,
+    version: null,
+    sessionId: null,
+    agentSessionId: null,
+    contextWindow: null,
+    cost: null,
+    rateLimits: null,
+    numTurns: 0,
+    toolCalls: { total: 0, byType: {}, active: null },
+    recentToolCalls: [],
+    testRun: null,
+  })),
+}))
+
 describe('WorkspaceView × notifyInfo banner', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true })

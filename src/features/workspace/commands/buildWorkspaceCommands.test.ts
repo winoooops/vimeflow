@@ -261,6 +261,30 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(setActiveSessionId).toHaveBeenCalledWith('session-3')
   })
 
+  test(':goto command treats digit-prefixed nonnumeric text as a name', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [
+        ...mockSessions,
+        {
+          ...mockSessions[0],
+          id: 'session-4',
+          name: '1alpha',
+        },
+      ],
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const gotoCmd = commands.find((c) => c.id === 'goto')
+
+    gotoCmd?.execute?.('1alpha')
+    expect(setActiveSessionId).toHaveBeenCalledWith('session-4')
+  })
+
   test(':split-horizontal stub shows not-implemented message', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,

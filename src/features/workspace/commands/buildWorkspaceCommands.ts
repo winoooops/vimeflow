@@ -127,23 +127,26 @@ export const buildWorkspaceCommands = (
           return
         }
 
-        // Try numeric (1-indexed)
-        const num = parseInt(trimmed, 10)
+        // Try numeric position (1-indexed). Digit-prefixed names like
+        // "1alpha" must still be reachable by name.
+        const isPositionLike = /^-?\d+(?:\.\d+)?$/.test(trimmed)
 
-        if (!isNaN(num)) {
-          if (num < 1 || !Number.isInteger(parseFloat(trimmed))) {
+        if (isPositionLike) {
+          const position = Number(trimmed)
+
+          if (position < 1 || !Number.isInteger(position)) {
             notifyInfo('Position must be a positive integer')
 
             return
           }
 
-          if (num > sessions.length) {
-            notifyInfo(`No tab at position ${num}`)
+          if (position > sessions.length) {
+            notifyInfo(`No tab at position ${position}`)
 
             return
           }
 
-          setActiveSessionId(sessions[num - 1].id)
+          setActiveSessionId(sessions[position - 1].id)
 
           return
         }
