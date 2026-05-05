@@ -94,6 +94,8 @@ export const buildWorkspaceCommands = (
       icon: 'arrow_forward',
       execute: (): void => {
         if (sessions.length === 0) {
+          notifyInfo('No open sessions')
+
           return
         }
 
@@ -110,6 +112,8 @@ export const buildWorkspaceCommands = (
       icon: 'arrow_back',
       execute: (): void => {
         if (sessions.length === 0) {
+          notifyInfo('No open sessions')
+
           return
         }
 

@@ -601,4 +601,44 @@ describe('buildWorkspaceCommands - failure modes', () => {
     prevCmd?.execute?.('')
     expect(setActiveSessionId).toHaveBeenCalledWith('session-2')
   })
+
+  // C9-1 pin: :next / :previous on an empty session list emit the same
+  // "No open sessions" message as :goto, instead of silently no-oping.
+  // Without this signal a user with zero tabs sees the palette close with
+  // no acknowledgement.
+  test(':next with no sessions shows "No open sessions"', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [],
+      activeSessionId: null,
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const nextCmd = commands.find((c) => c.id === 'next')
+
+    nextCmd?.execute?.('')
+    expect(notifyInfo).toHaveBeenCalledWith('No open sessions')
+    expect(setActiveSessionId).not.toHaveBeenCalled()
+  })
+
+  test(':previous with no sessions shows "No open sessions"', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [],
+      activeSessionId: null,
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const prevCmd = commands.find((c) => c.id === 'previous')
+
+    prevCmd?.execute?.('')
+    expect(notifyInfo).toHaveBeenCalledWith('No open sessions')
+    expect(setActiveSessionId).not.toHaveBeenCalled()
+  })
 })
