@@ -9,25 +9,8 @@ import { defaultCommands } from '../data/defaultCommands'
 import { getAllLeaves, traverseNamespace } from '../registry/commandTree'
 import { parseQuery } from '../registry/parseQuery'
 
-const isInputElement = (element: Element | null): boolean => {
-  if (!element) {
-    return false
-  }
-
-  const tagName = element.tagName.toLowerCase()
-  if (tagName === 'input' || tagName === 'textarea') {
-    return true
-  }
-
-  // Check for contenteditable
-  if (element.hasAttribute('contenteditable')) {
-    const value = element.getAttribute('contenteditable')
-
-    return value === 'true' || value === ''
-  }
-
-  return false
-}
+const isPaletteToggle = (event: KeyboardEvent): boolean =>
+  event.ctrlKey && !event.metaKey && !event.altKey && event.key === ':'
 
 export const useCommandPalette = (
   commands: Command[] = defaultCommands
@@ -217,15 +200,24 @@ export const useCommandPalette = (
   // Global keyboard listener
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      // Open palette on ':' (only when no input is focused and palette is closed)
-      if (event.key === ':' && !state.isOpen) {
-        // Skip if user is typing in another input
-        if (isInputElement(document.activeElement)) {
+      // Toggle palette on Ctrl+: (capture-phase listener)
+      if (isPaletteToggle(event)) {
+        // Suppress repeat events
+        if (event.repeat) {
+          event.preventDefault()
+          event.stopPropagation()
+
           return
         }
 
         event.preventDefault()
-        open()
+        event.stopPropagation()
+
+        if (state.isOpen) {
+          close()
+        } else {
+          open()
+        }
 
         return
       }
@@ -260,10 +252,10 @@ export const useCommandPalette = (
       }
     }
 
-    document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('keydown', handleKeyDown, { capture: true })
 
     return (): void => {
-      document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
   }, [
     state.isOpen,

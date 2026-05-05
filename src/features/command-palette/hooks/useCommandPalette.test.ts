@@ -62,14 +62,18 @@ describe('useCommandPalette', () => {
     })
   })
 
-  describe('keyboard trigger - ":" key', () => {
-    test('opens palette when ":" pressed and no input focused', async () => {
+  describe('keyboard trigger - Ctrl+:', () => {
+    test('opens palette when Ctrl+: is pressed', async () => {
       const { result } = renderHook(() => useCommandPalette())
 
       expect(result.current.state.isOpen).toBe(false)
 
       act(() => {
-        const event = new KeyboardEvent('keydown', { key: ':' })
+        const event = new KeyboardEvent('keydown', {
+          key: ':',
+          ctrlKey: true,
+          bubbles: true,
+        })
         document.dispatchEvent(event)
       })
 
@@ -78,13 +82,9 @@ describe('useCommandPalette', () => {
       })
     })
 
-    test('suppresses ":" when input element is focused', async () => {
+    test('does not open palette when bare : is pressed', async () => {
       const { result } = renderHook(() => useCommandPalette())
-      const input = document.createElement('input')
-      document.body.appendChild(input)
-      input.focus()
 
-      expect(document.activeElement).toBe(input)
       expect(result.current.state.isOpen).toBe(false)
 
       act(() => {
@@ -97,82 +97,26 @@ describe('useCommandPalette', () => {
       })
     })
 
-    test('suppresses ":" when textarea is focused', async () => {
-      const { result } = renderHook(() => useCommandPalette())
-      const textarea = document.createElement('textarea')
-      document.body.appendChild(textarea)
-      textarea.focus()
-
-      expect(document.activeElement).toBe(textarea)
-      expect(result.current.state.isOpen).toBe(false)
-
-      act(() => {
-        const event = new KeyboardEvent('keydown', { key: ':' })
-        document.dispatchEvent(event)
-      })
-
-      await waitFor(() => {
-        expect(result.current.state.isOpen).toBe(false)
-      })
-    })
-
-    test('suppresses ":" when contenteditable element is focused', async () => {
-      const { result } = renderHook(() => useCommandPalette())
-      const div = document.createElement('div')
-      div.setAttribute('contenteditable', 'true')
-      document.body.appendChild(div)
-      div.focus()
-
-      expect(document.activeElement).toBe(div)
-      expect(result.current.state.isOpen).toBe(false)
-
-      act(() => {
-        const event = new KeyboardEvent('keydown', { key: ':' })
-        document.dispatchEvent(event)
-      })
-
-      await waitFor(() => {
-        expect(result.current.state.isOpen).toBe(false)
-      })
-    })
-
-    test('suppresses ":" when contenteditable="" element is focused', async () => {
-      const { result } = renderHook(() => useCommandPalette())
-      const div = document.createElement('div')
-      div.setAttribute('contenteditable', '')
-      document.body.appendChild(div)
-      div.focus()
-
-      expect(document.activeElement).toBe(div)
-      expect(result.current.state.isOpen).toBe(false)
-
-      act(() => {
-        const event = new KeyboardEvent('keydown', { key: ':' })
-        document.dispatchEvent(event)
-      })
-
-      await waitFor(() => {
-        expect(result.current.state.isOpen).toBe(false)
-      })
-    })
-
-    test('does not open when already open', async () => {
+    test('toggles palette closed when Ctrl+: pressed while open', async () => {
       const { result } = renderHook(() => useCommandPalette())
 
       act(() => {
         result.current.open()
-        result.current.setQuery(':test')
       })
 
-      const queryBeforeKeypress = result.current.state.query
+      expect(result.current.state.isOpen).toBe(true)
 
       act(() => {
-        const event = new KeyboardEvent('keydown', { key: ':' })
+        const event = new KeyboardEvent('keydown', {
+          key: ':',
+          ctrlKey: true,
+          bubbles: true,
+        })
         document.dispatchEvent(event)
       })
 
       await waitFor(() => {
-        expect(result.current.state.query).toBe(queryBeforeKeypress)
+        expect(result.current.state.isOpen).toBe(false)
       })
     })
   })
@@ -559,7 +503,8 @@ describe('useCommandPalette', () => {
 
       expect(removeEventListenerSpy).toHaveBeenCalledWith(
         'keydown',
-        expect.any(Function)
+        expect.any(Function),
+        { capture: true }
       )
 
       removeEventListenerSpy.mockRestore()

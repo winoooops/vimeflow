@@ -17,11 +17,15 @@ describe('CommandPalette - Integration Tests', () => {
     expect(dialog).not.toBeInTheDocument()
   })
 
-  test('opens palette when : key is pressed', async () => {
+  test('opens palette when Ctrl+: is pressed (legacy test)', async () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
 
       document.dispatchEvent(event)
     })
@@ -37,7 +41,11 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
 
       document.dispatchEvent(event)
     })
@@ -56,7 +64,11 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
 
       document.dispatchEvent(event)
     })
@@ -76,7 +88,11 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
 
       document.dispatchEvent(event)
     })
@@ -103,7 +119,11 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
 
       document.dispatchEvent(event)
     })
@@ -129,7 +149,11 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
 
       document.dispatchEvent(event)
     })
@@ -159,7 +183,11 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
 
       document.dispatchEvent(event)
     })
@@ -216,7 +244,11 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
 
       document.dispatchEvent(event)
     })
@@ -263,7 +295,11 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
 
       document.dispatchEvent(event)
     })
@@ -303,7 +339,11 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
 
       document.dispatchEvent(event)
     })
@@ -321,7 +361,11 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
 
       document.dispatchEvent(event)
     })
@@ -337,7 +381,11 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
 
       document.dispatchEvent(event)
     })
@@ -357,7 +405,11 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
 
       document.dispatchEvent(event)
     })
@@ -366,6 +418,215 @@ describe('CommandPalette - Integration Tests', () => {
       const dialog = screen.getByRole('dialog')
 
       expect(dialog).toHaveClass('z-[100]')
+    })
+  })
+
+  // Feature 4: Ctrl+: trigger tests
+  test('opens palette when Ctrl+: is pressed', async () => {
+    render(<CommandPalette />)
+
+    act(() => {
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
+
+      document.dispatchEvent(event)
+    })
+
+    await waitFor(() => {
+      const dialog = screen.getByRole('dialog')
+
+      expect(dialog).toBeInTheDocument()
+    })
+  })
+
+  test('bare : does NOT open palette', async () => {
+    render(<CommandPalette />)
+
+    act(() => {
+      const event = new KeyboardEvent('keydown', { key: ':' })
+
+      document.dispatchEvent(event)
+    })
+
+    // Wait a bit to ensure it doesn't open
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    const dialog = screen.queryByRole('dialog')
+
+    expect(dialog).not.toBeInTheDocument()
+  })
+
+  test('Ctrl+: toggles palette closed when already open', async () => {
+    render(<CommandPalette />)
+
+    // Open first
+    act(() => {
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
+
+      document.dispatchEvent(event)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    // Toggle close
+    act(() => {
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
+
+      document.dispatchEvent(event)
+    })
+
+    await waitFor(() => {
+      const dialog = screen.queryByRole('dialog')
+
+      expect(dialog).not.toBeInTheDocument()
+    })
+  })
+
+  test('Ctrl+: calls preventDefault and stopPropagation when opening', async () => {
+    render(<CommandPalette />)
+
+    const mockPreventDefault = vi.fn()
+    const mockStopPropagation = vi.fn()
+
+    act(() => {
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
+
+      Object.defineProperty(event, 'preventDefault', {
+        value: mockPreventDefault,
+      })
+
+      Object.defineProperty(event, 'stopPropagation', {
+        value: mockStopPropagation,
+      })
+
+      document.dispatchEvent(event)
+    })
+
+    await waitFor(() => {
+      expect(mockPreventDefault).toHaveBeenCalled()
+      expect(mockStopPropagation).toHaveBeenCalled()
+    })
+  })
+
+  test('Ctrl+: calls preventDefault and stopPropagation when closing', async () => {
+    render(<CommandPalette />)
+
+    // Open first
+    act(() => {
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
+
+      document.dispatchEvent(event)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    const mockPreventDefault = vi.fn()
+    const mockStopPropagation = vi.fn()
+
+    act(() => {
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
+
+      Object.defineProperty(event, 'preventDefault', {
+        value: mockPreventDefault,
+      })
+
+      Object.defineProperty(event, 'stopPropagation', {
+        value: mockStopPropagation,
+      })
+
+      document.dispatchEvent(event)
+    })
+
+    await waitFor(() => {
+      expect(mockPreventDefault).toHaveBeenCalled()
+      expect(mockStopPropagation).toHaveBeenCalled()
+    })
+  })
+
+  test('Ctrl+: suppresses repeat events', async () => {
+    render(<CommandPalette />)
+
+    // Fire multiple repeat events
+    act(() => {
+      for (let i = 0; i < 5; i++) {
+        const event = new KeyboardEvent('keydown', {
+          key: ':',
+          ctrlKey: true,
+          repeat: true,
+          bubbles: true,
+        })
+
+        document.dispatchEvent(event)
+      }
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    // Should not have opened from repeat events
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  test('capture-phase listener wins over child stopPropagation', async () => {
+    const ChildWithStopPropagation = (): React.ReactElement => {
+      const handleKeyDown = (e: React.KeyboardEvent): void => {
+        if (e.key === ':' && e.ctrlKey) {
+          e.stopPropagation()
+        }
+      }
+
+      return <div onKeyDown={handleKeyDown} data-testid="child-div" />
+    }
+
+    render(
+      <>
+        <CommandPalette />
+        <ChildWithStopPropagation />
+      </>
+    )
+
+    const childDiv = screen.getByTestId('child-div')
+
+    act(() => {
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+      })
+
+      childDiv.dispatchEvent(event)
+    })
+
+    await waitFor(() => {
+      const dialog = screen.getByRole('dialog')
+
+      expect(dialog).toBeInTheDocument()
     })
   })
 })
