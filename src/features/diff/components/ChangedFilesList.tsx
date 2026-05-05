@@ -7,6 +7,16 @@ export interface ChangedFilesListProps {
   onSelectFile: (file: ChangedFile) => void
 }
 
+const getDisplayName = (path: string): string => {
+  const trimmedPath = path.replace(/\/+$/u, '')
+
+  if (trimmedPath.length === 0) {
+    return path
+  }
+
+  return trimmedPath.split('/').pop() ?? trimmedPath
+}
+
 /**
  * Get the appropriate icon for a file based on its extension.
  */
@@ -57,7 +67,7 @@ export const ChangedFilesList = ({
         const isActive =
           selectedFile?.path === file.path &&
           selectedFile.staged === file.staged
-        const fileName = file.path.split('/').pop() ?? file.path
+        const fileName = getDisplayName(file.path)
         const icon = getFileIcon(fileName)
 
         return (

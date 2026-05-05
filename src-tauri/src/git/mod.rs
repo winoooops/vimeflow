@@ -571,13 +571,19 @@ pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
     // Canonicalize and validate toplevel is under $HOME
     let canonical_toplevel = validate_cwd(toplevel_path)?;
 
-    // Run git status and numstat commands from toplevel
+    // Run git status and numstat commands from toplevel.
+    //
+    // `--untracked-files=all` is load-bearing for file-oriented UIs like the
+    // diff sidebar. Without it, Git collapses an untracked directory tree to a
+    // single `?? dir/` row, which is not diffable and renders as a blank label
+    // in basename-only views (`split('/').pop()` on a trailing slash => "").
     let mut status_cmd = Command::new("git");
     status_cmd
         .arg("-C")
         .arg(&canonical_toplevel)
         .arg("status")
         .arg("--porcelain=v1")
+        .arg("--untracked-files=all")
         .arg("-z")
         .env("GIT_TERMINAL_PROMPT", "0");
 
@@ -637,7 +643,10 @@ pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
     if !cached_diff_output.status.success() {
         let stderr = String::from_utf8_lossy(&cached_diff_output.stderr);
         return Err(if stderr.trim().is_empty() {
-            format!("git diff --cached failed with exit code {}", cached_diff_output.status)
+            format!(
+                "git diff --cached failed with exit code {}",
+                cached_diff_output.status
+            )
         } else {
             format!("git diff --cached failed: {}", stderr.trim())
         });
@@ -778,7 +787,10 @@ async fn get_untracked_diff(toplevel: &Path, file: &str) -> Result<String, Strin
     if exit_code != 0 && exit_code != 1 {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(if stderr.trim().is_empty() {
-            format!("git diff --no-index failed with exit code {}", output.status)
+            format!(
+                "git diff --no-index failed with exit code {}",
+                output.status
+            )
         } else {
             format!("git diff --no-index failed: {}", stderr.trim())
         });
@@ -799,10 +811,7 @@ async fn get_untracked_diff(toplevel: &Path, file: &str) -> Result<String, Strin
 /// `+N / -N` badge would never render for untracked rows — even though
 /// the row click now successfully shows the full-content diff in the
 /// viewer via `get_untracked_diff`.
-async fn get_untracked_numstat(
-    toplevel: &Path,
-    file: &str,
-) -> Result<Option<(u32, u32)>, String> {
+async fn get_untracked_numstat(toplevel: &Path, file: &str) -> Result<Option<(u32, u32)>, String> {
     let file_abs = toplevel.join(file);
 
     let mut cmd = Command::new("git");
@@ -831,11 +840,7 @@ async fn get_untracked_numstat(
     // First record has shape `<ins>\t<del>\t<path>\0`. We only care about the
     // first two fields; the path is the absolute one we passed in so there's
     // nothing useful to parse from it.
-    let first_record: &[u8] = output
-        .stdout
-        .split(|&b| b == b'\0')
-        .next()
-        .unwrap_or(&[]);
+    let first_record: &[u8] = output.stdout.split(|&b| b == b'\0').next().unwrap_or(&[]);
     let parts: Vec<&[u8]> = first_record.split(|&b| b == b'\t').collect();
 
     if parts.len() < 2 {
@@ -1409,8 +1414,7 @@ copy to copy.txt
             .expect("git add failed");
 
         // Modify again unstaged (adds line 4)
-        fs::write(&file, "line 1\nline 2\nline 3\nline 4\n")
-            .expect("failed to write");
+        fs::write(&file, "line 1\nline 2\nline 3\nline 4\n").expect("failed to write");
 
         // Now we have MM: staged +1 line, unstaged +1 line
         let repo_str = repo_path.to_string_lossy().to_string();
@@ -1595,6 +1599,49 @@ copy to copy.txt
     }
 
     #[tokio::test]
+    async fn test_git_status_untracked_directory_expands_to_individual_files() {
+        // Regression test: the diff sidebar is file-oriented, so `git_status`
+        // must enumerate untracked files inside directories instead of
+        // returning a single `?? dir/` placeholder row.
+        use std::fs;
+        use std::process::Command;
+
+        let tmp = home_tempdir();
+        let repo_path = tmp.path();
+
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git init failed");
+
+        let session_dir = repo_path.join(".vimeflow").join("sessions").join("abc");
+        fs::create_dir_all(&session_dir).expect("mkdir failed");
+        fs::write(session_dir.join("bashrc"), "export PS1='$ '\n").expect("write failed");
+        fs::write(session_dir.join("init.sh"), "#!/usr/bin/env bash\n").expect("write failed");
+
+        let repo_str = repo_path.to_string_lossy().to_string();
+        let result = git_status(repo_str).await;
+
+        assert!(result.is_ok(), "git_status should succeed");
+        let files = result.unwrap();
+        let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+
+        assert!(
+            paths.contains(&".vimeflow/sessions/abc/bashrc"),
+            "untracked file inside directory should be listed individually"
+        );
+        assert!(
+            paths.contains(&".vimeflow/sessions/abc/init.sh"),
+            "second untracked file inside directory should be listed individually"
+        );
+        assert!(
+            !paths.contains(&".vimeflow/"),
+            "collapsed untracked directory placeholder should not appear"
+        );
+    }
+
+    #[tokio::test]
     async fn test_get_git_diff_untracked_file_returns_all_added() {
         // An untracked file (never staged, never committed) produces zero
         // output from plain `git diff -- <file>`. The fallback via
@@ -1617,8 +1664,7 @@ copy to copy.txt
         fs::write(&untracked, "alpha\nbeta\ngamma\n").expect("failed to write");
 
         let repo_str = repo_path.to_string_lossy().to_string();
-        let result =
-            get_git_diff(repo_str, "untracked.txt".to_string(), false, Some(true)).await;
+        let result = get_git_diff(repo_str, "untracked.txt".to_string(), false, Some(true)).await;
 
         assert!(
             result.is_ok(),

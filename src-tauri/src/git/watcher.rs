@@ -313,7 +313,8 @@ fn resolve_toplevel(cwd: &std::path::Path) -> Result<PathBuf, String> {
     Ok(PathBuf::from(toplevel))
 }
 
-/// Hash the current `git status --porcelain=v1 -z` output.
+/// Hash the current `git status --porcelain=v1 -z --untracked-files=all`
+/// output.
 ///
 /// Used by the polling fallback as the change-detection signal. Unlike
 /// HEAD-only comparison (which only moves on commit/checkout), this
@@ -326,6 +327,7 @@ fn hash_git_status(toplevel: &Path) -> Result<u64, String> {
         .arg(toplevel)
         .arg("status")
         .arg("--porcelain=v1")
+        .arg("--untracked-files=all")
         .arg("-z")
         .env("GIT_TERMINAL_PROMPT", "0");
 
@@ -399,11 +401,9 @@ pub async fn start_git_watcher(
     // blocking pool via `spawn_blocking` so the async thread returns
     // immediately and the sync inner can take as long as it needs.
     let owned_state = state.inner().clone();
-    tokio::task::spawn_blocking(move || {
-        start_git_watcher_inner(&cwd, app_handle, &owned_state)
-    })
-    .await
-    .map_err(|e| format!("start_git_watcher task panicked: {}", e))?
+    tokio::task::spawn_blocking(move || start_git_watcher_inner(&cwd, app_handle, &owned_state))
+        .await
+        .map_err(|e| format!("start_git_watcher task panicked: {}", e))?
 }
 
 /// Synchronous core of `start_git_watcher`. Called by both the Tauri command and
@@ -519,9 +519,7 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
 
     // ── Phase 2: build watcher state OUTSIDE locks ────────────────────
     let state_clone = state.clone();
-    let last_status_hash = Arc::new(Mutex::new(
-        hash_git_status(&toplevel).ok(),
-    ));
+    let last_status_hash = Arc::new(Mutex::new(hash_git_status(&toplevel).ok()));
     let stop_flag = Arc::new(AtomicBool::new(false));
     let debounce_tx = {
         let app_handle = app_handle.clone();
@@ -770,7 +768,9 @@ fn start_pre_repo_watcher_inner<R: tauri::Runtime>(
     app_handle: tauri::AppHandle<R>,
     state: &GitWatcherState,
 ) -> Result<(), String> {
-    let mut pre_repo_watchers = state.pre_repo_watchers.lock()
+    let mut pre_repo_watchers = state
+        .pre_repo_watchers
+        .lock()
         .map_err(|e| format!("Failed to lock pre_repo_watchers: {}", e))?;
 
     if let Some(watcher) = pre_repo_watchers.get_mut(&safe_cwd) {
@@ -962,7 +962,9 @@ fn upgrade_to_repo_watcher<R: tauri::Runtime>(
     // Collect the subscribers (original-cwd → refcount) from the pre-repo
     // entry and drop it.
     let subscribers: HashMap<String, u32> = {
-        let mut pre_repo_watchers = state.pre_repo_watchers.lock()
+        let mut pre_repo_watchers = state
+            .pre_repo_watchers
+            .lock()
             .map_err(|e| format!("Failed to lock pre_repo_watchers: {}", e))?;
 
         if let Some(mut watcher) = pre_repo_watchers.remove(&safe_cwd) {
@@ -1050,12 +1052,9 @@ fn upgrade_to_repo_watcher<R: tauri::Runtime>(
         }
     }
 
-    if let Err(e) = restore_pre_repo_subscribers(
-        safe_cwd,
-        failed_subscribers,
-        app_handle.clone(),
-        &state,
-    ) {
+    if let Err(e) =
+        restore_pre_repo_subscribers(safe_cwd, failed_subscribers, app_handle.clone(), &state)
+    {
         errors.push(format!("failed to restore failed subscribers: {}", e));
     }
 
@@ -1205,7 +1204,10 @@ fn emit_for_all_subscribers<R: tauri::Runtime>(
     toplevel: &std::path::Path,
 ) {
     let cwds: Vec<String> = {
-        let repo_watchers = state.repo_watchers.lock().expect("failed to lock repo_watchers");
+        let repo_watchers = state
+            .repo_watchers
+            .lock()
+            .expect("failed to lock repo_watchers");
 
         if let Some(watcher) = repo_watchers.get(toplevel) {
             // Subscriber keys are the frontend's original cwd strings — emit
@@ -1222,10 +1224,7 @@ fn emit_for_all_subscribers<R: tauri::Runtime>(
 }
 
 /// Emit a git-status-changed event
-fn emit_git_status_changed<R: tauri::Runtime>(
-    app_handle: &tauri::AppHandle<R>,
-    cwds: Vec<String>,
-) {
+fn emit_git_status_changed<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>, cwds: Vec<String>) {
     let payload = GitStatusChangedPayload { cwds };
 
     if let Err(e) = app_handle.emit("git-status-changed", payload) {
@@ -1337,11 +1336,7 @@ mod tests {
 
         let temp = create_temp_repo();
         let cwd = temp.path().to_string_lossy().to_string();
-        let missing_cwd = temp
-            .path()
-            .join("missing")
-            .to_string_lossy()
-            .to_string();
+        let missing_cwd = temp.path().join("missing").to_string_lossy().to_string();
         let safe_cwd = validate_cwd(&cwd).expect("cwd should validate");
         let state = GitWatcherState::new();
         let mut subscribers = HashMap::new();
@@ -1438,10 +1433,7 @@ mod tests {
 
     #[test]
     fn notify_not_found_classifier_matches_io_not_found() {
-        let error = notify::Error::io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "gone",
-        ));
+        let error = notify::Error::io(std::io::Error::new(std::io::ErrorKind::NotFound, "gone"));
 
         assert!(is_notify_not_found(&error));
     }
@@ -1612,21 +1604,29 @@ mod tests {
         fs::create_dir(temp.path().join("tests")).expect("failed to create tests");
 
         // Create .gitignore to ignore a directory
-        fs::write(temp.path().join(".gitignore"), "ignored/\n").expect("failed to write .gitignore");
+        fs::write(temp.path().join(".gitignore"), "ignored/\n")
+            .expect("failed to write .gitignore");
         fs::create_dir(temp.path().join("ignored")).expect("failed to create ignored");
 
         let dirs = enumerate_dirs(temp.path());
 
         // Should include root, src, src/components, tests, but NOT ignored
-        let dir_names: Vec<_> = dirs.iter()
+        let dir_names: Vec<_> = dirs
+            .iter()
             .map(|p| p.file_name().and_then(|n| n.to_str()).unwrap_or(""))
             .collect();
 
         assert!(dirs.iter().any(|p| p == temp.path()), "should include root");
         assert!(dir_names.contains(&"src"), "should include src");
-        assert!(dir_names.contains(&"components"), "should include components");
+        assert!(
+            dir_names.contains(&"components"),
+            "should include components"
+        );
         assert!(dir_names.contains(&"tests"), "should include tests");
-        assert!(!dir_names.contains(&"ignored"), "should NOT include ignored");
+        assert!(
+            !dir_names.contains(&"ignored"),
+            "should NOT include ignored"
+        );
         // Regression guard for the .git/ exclusion — without `.filter_entry`
         // on the WalkBuilder, enumerate_dirs would recurse into `.git/`
         // and its subdirs (objects/, refs/, logs/ etc.), causing spurious
@@ -1660,10 +1660,7 @@ mod tests {
         // Create an untracked file — hash must change (HEAD didn't move)
         fs::write(repo.join("untracked.txt"), "hello\n").expect("write failed");
         let h1 = hash_git_status(repo).expect("h1 failed");
-        assert_ne!(
-            h1, h0,
-            "hash must change when untracked file is created"
-        );
+        assert_ne!(h1, h0, "hash must change when untracked file is created");
 
         // Stage the file — hash must change again (HEAD still didn't move)
         Command::new("git")
@@ -1692,6 +1689,28 @@ mod tests {
         assert_ne!(
             h4, h3,
             "hash must change when a tracked file is edited (previous HEAD-only poll missed this)"
+        );
+    }
+
+    #[test]
+    fn test_hash_git_status_detects_second_file_inside_existing_untracked_directory() {
+        // Regression test: without `--untracked-files=all`, Git collapses an
+        // untracked directory to `?? dir/`, so adding another file under that
+        // same directory does NOT change the status output hash.
+        let temp = create_temp_repo();
+        let repo = temp.path();
+
+        let dir = repo.join(".vimeflow").join("sessions").join("abc");
+        fs::create_dir_all(&dir).expect("mkdir failed");
+        fs::write(dir.join("bashrc"), "hello\n").expect("write failed");
+        let h1 = hash_git_status(repo).expect("h1 failed");
+
+        fs::write(dir.join("init.sh"), "#!/usr/bin/env bash\n").expect("write failed");
+        let h2 = hash_git_status(repo).expect("h2 failed");
+
+        assert_ne!(
+            h2, h1,
+            "hash must change when another untracked file appears inside an existing untracked directory"
         );
     }
 }

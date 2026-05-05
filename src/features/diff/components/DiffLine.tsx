@@ -32,7 +32,7 @@ export const DiffLine = ({
   // Parse content with highlights
   const renderContentWithHighlights = (): ReactElement => {
     if (highlights.length === 0) {
-      return <>{content.slice(1)}</>
+      return <>{content}</>
     }
 
     const highlightClass =
@@ -85,7 +85,7 @@ export const DiffLine = ({
 
   return (
     <div
-      className={`flex font-mono text-sm hover:bg-surface-bright/20 transition-colors ${lineTypeClass} ${focusClass}`}
+      className={`flex min-w-full w-max font-mono text-sm hover:bg-surface-bright/20 transition-colors ${lineTypeClass} ${focusClass}`}
       onContextMenu={handleContextMenu}
     >
       {/* Old line number gutter */}
@@ -104,7 +104,9 @@ export const DiffLine = ({
       </div>
 
       {/* Content with word highlights */}
-      <div className="flex-1 font-mono">{renderContentWithHighlights()}</div>
+      <div className="whitespace-pre font-mono" style={{ tabSize: 2 }}>
+        {renderContentWithHighlights()}
+      </div>
     </div>
   )
 }

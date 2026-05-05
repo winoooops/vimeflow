@@ -226,7 +226,7 @@ export const DiffPanelContent = ({
   return (
     <div
       data-testid="diff-populated-state"
-      className="flex h-full min-h-0 overflow-hidden"
+      className="flex h-full w-full min-h-0 min-w-0 flex-1 overflow-hidden"
     >
       {/* Left: Changed files list (~240px fixed) */}
       <div className="w-60 shrink-0 border-r border-white/5 overflow-y-auto">
@@ -251,7 +251,7 @@ export const DiffPanelContent = ({
           because `git diff -- <file>` returned empty. The backend now
           falls back to `git diff --no-index /dev/null <file>` so untracked
           files render as an all-added diff in the normal DiffViewer. */}
-      <div className="flex-1 min-w-0 overflow-hidden">
+      <div className="flex min-w-0 flex-1 overflow-hidden">
         {diffError ? (
           <div
             className="flex h-full items-center justify-center text-error"

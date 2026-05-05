@@ -16,10 +16,10 @@ const UnifiedDiffView = ({
   focusedLineIndex,
   onLineClick = undefined,
 }: UnifiedDiffViewProps): ReactElement => (
-  <div className="flex flex-col h-full overflow-hidden">
+  <div className="flex h-full w-full min-w-0 flex-col overflow-hidden">
     <div
       data-testid="unified-pane"
-      className="thin-scrollbar overflow-y-auto flex-1 font-code text-xs"
+      className="thin-scrollbar min-w-0 flex-1 overflow-auto font-code text-xs"
     >
       {diff.hunks.map((hunk, hunkIndex) => {
         let lineIndex = 0

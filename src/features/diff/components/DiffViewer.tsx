@@ -18,7 +18,7 @@ export const DiffViewer = ({
   focusedLineIndex,
   onLineClick = undefined,
 }: DiffViewerProps): ReactElement => (
-  <div className="h-full overflow-auto">
+  <div className="h-full w-full min-w-0 overflow-auto">
     {viewMode === 'split' ? (
       <SplitDiffView
         diff={fileDiff}
