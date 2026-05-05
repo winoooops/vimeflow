@@ -14,7 +14,7 @@ const getDisplayName = (path: string): string => {
     return path
   }
 
-  return trimmedPath.split('/').pop() ?? trimmedPath
+  return trimmedPath.split('/').pop()!
 }
 
 /**
