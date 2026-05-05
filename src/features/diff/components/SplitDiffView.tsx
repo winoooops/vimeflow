@@ -30,10 +30,12 @@ const SplitDiffView = ({
 
     const handleLeftScroll = (): void => {
       rightPane.scrollTop = leftPane.scrollTop
+      rightPane.scrollLeft = leftPane.scrollLeft
     }
 
     const handleRightScroll = (): void => {
       leftPane.scrollTop = rightPane.scrollTop
+      leftPane.scrollLeft = rightPane.scrollLeft
     }
 
     leftPane.addEventListener('scroll', handleLeftScroll)
