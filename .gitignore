@@ -62,6 +62,7 @@ __pycache__/
 # Harness runtime files (generated per iteration, not source)
 app_spec.md
 feature_list.json
+.feature_list_stamp.json
 claude-progress.txt
 harness/prompts/app_spec.md
 harness/.env
