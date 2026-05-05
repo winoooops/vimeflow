@@ -2761,3 +2761,5 @@ After codex review of the plan and any approved iterations land, the user will c
 
 1. **Subagent-Driven** — fresh subagent per task, review between tasks (recommended for higher-risk tasks like Task 4's listener changes).
 2. **Inline Execution** — execute tasks in this session with checkpoints.
+
+<!-- codex-reviewed: 2026-05-05T09:39:31Z -->
