@@ -13,5 +13,17 @@ export interface CommandPaletteState {
   query: string
   selectedIndex: number
   currentNamespace: Command | null
+}
+
+export interface UseCommandPaletteReturn {
+  state: CommandPaletteState
   filteredResults: Command[]
+  clampedSelectedIndex: number
+  open: () => void
+  close: () => void
+  setQuery: (query: string) => void
+  selectIndex: (index: number) => void
+  executeSelected: () => void
+  navigateUp: () => void
+  navigateDown: () => void
 }

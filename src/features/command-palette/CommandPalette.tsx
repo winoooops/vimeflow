@@ -6,7 +6,14 @@ import { CommandResults } from './components/CommandResults'
 import { CommandFooter } from './components/CommandFooter'
 
 export const CommandPalette = (): ReactElement | null => {
-  const { state, close, setQuery, selectIndex } = useCommandPalette()
+  const {
+    state,
+    filteredResults,
+    clampedSelectedIndex,
+    close,
+    setQuery,
+    selectIndex,
+  } = useCommandPalette()
 
   return (
     <AnimatePresence>
@@ -44,8 +51,8 @@ export const CommandPalette = (): ReactElement | null => {
               value={state.query}
               onChange={setQuery}
               activeDescendantId={
-                state.filteredResults[state.selectedIndex]
-                  ? `command-${state.filteredResults[state.selectedIndex].id}`
+                clampedSelectedIndex >= 0
+                  ? `command-${filteredResults[clampedSelectedIndex].id}`
                   : undefined
               }
             />
@@ -55,8 +62,8 @@ export const CommandPalette = (): ReactElement | null => {
 
             {/* Results */}
             <CommandResults
-              filteredResults={state.filteredResults}
-              selectedIndex={state.selectedIndex}
+              filteredResults={filteredResults}
+              selectedIndex={clampedSelectedIndex}
               onSelect={selectIndex}
             />
 

@@ -1,19 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { Command, CommandPaletteState } from '../types'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type {
+  Command,
+  CommandPaletteState,
+  UseCommandPaletteReturn,
+} from '../registry/types'
 import { fuzzyMatch } from '../registry/fuzzyMatch'
 import { defaultCommands } from '../data/defaultCommands'
 import { getAllLeaves, traverseNamespace } from '../registry/commandTree'
-
-interface UseCommandPaletteReturn {
-  state: CommandPaletteState
-  open: () => void
-  close: () => void
-  setQuery: (query: string) => void
-  selectIndex: (index: number) => void
-  executeSelected: () => void
-  navigateUp: () => void
-  navigateDown: () => void
-}
+import { parseQuery } from '../registry/parseQuery'
 
 const isInputElement = (element: Element | null): boolean => {
   if (!element) {
@@ -41,22 +35,26 @@ export const useCommandPalette = (): UseCommandPaletteReturn => {
     query: ':',
     selectedIndex: 0,
     currentNamespace: null,
-    filteredResults: [],
   })
 
-  // Filter commands based on query
+  // Parse query into verb and args
+  const parsedQuery = useMemo(() => parseQuery(state.query), [state.query])
+
+  // Filter commands based on verb token only
   const filterCommands = useCallback(
-    (query: string, namespace: Command | null): Command[] => {
+    (verbToken: string, namespace: Command | null): Command[] => {
       const searchSpace = namespace
         ? (traverseNamespace(namespace) ?? [])
         : defaultCommands
 
-      if (!query || query === ':') {
+      if (!verbToken || verbToken === ':') {
         return searchSpace
       }
 
       // Remove ':' prefix for matching
-      const cleanQuery = query.startsWith(':') ? query.slice(1) : query
+      const cleanVerb = verbToken.startsWith(':')
+        ? verbToken.slice(1)
+        : verbToken
 
       // Get all searchable commands (namespaces + leaves)
       const allCommands = [...searchSpace]
@@ -67,8 +65,8 @@ export const useCommandPalette = (): UseCommandPaletteReturn => {
       const scored = allCommands
         .map((cmd) => {
           const score = cmd.match
-            ? cmd.match(cleanQuery)
-            : fuzzyMatch(cleanQuery, cmd.label.replace(':', ''))
+            ? cmd.match(cleanVerb)
+            : fuzzyMatch(cleanVerb, cmd.label.replace(':', ''))
 
           return { cmd, score }
         })
@@ -91,6 +89,21 @@ export const useCommandPalette = (): UseCommandPaletteReturn => {
     []
   )
 
+  // Derive filtered results from verb token
+  const filteredResults = useMemo(
+    () => filterCommands(parsedQuery.verbToken, state.currentNamespace),
+    [parsedQuery.verbToken, state.currentNamespace, filterCommands]
+  )
+
+  // Clamp selectedIndex to valid range
+  const clampedSelectedIndex = useMemo((): number => {
+    if (filteredResults.length === 0) {
+      return -1
+    }
+
+    return Math.min(state.selectedIndex, filteredResults.length - 1)
+  }, [state.selectedIndex, filteredResults.length])
+
   const open = useCallback((): void => {
     setState((prev) => ({
       ...prev,
@@ -98,9 +111,8 @@ export const useCommandPalette = (): UseCommandPaletteReturn => {
       query: ':',
       selectedIndex: 0,
       currentNamespace: null,
-      filteredResults: filterCommands(':', null),
     }))
-  }, [filterCommands])
+  }, [])
 
   const close = useCallback((): void => {
     setState((prev) => ({
@@ -109,25 +121,16 @@ export const useCommandPalette = (): UseCommandPaletteReturn => {
       query: ':',
       selectedIndex: 0,
       currentNamespace: null,
-      filteredResults: [],
     }))
   }, [])
 
-  const setQuery = useCallback(
-    (query: string): void => {
-      setState((prev) => {
-        const filteredResults = filterCommands(query, prev.currentNamespace)
-
-        return {
-          ...prev,
-          query,
-          selectedIndex: 0,
-          filteredResults,
-        }
-      })
-    },
-    [filterCommands]
-  )
+  const setQuery = useCallback((query: string): void => {
+    setState((prev) => ({
+      ...prev,
+      query,
+      selectedIndex: 0,
+    }))
+  }, [])
 
   const selectIndex = useCallback((index: number): void => {
     setState((prev) => ({
@@ -137,42 +140,53 @@ export const useCommandPalette = (): UseCommandPaletteReturn => {
   }, [])
 
   const navigateUp = useCallback((): void => {
-    setState((prev) => {
-      const newIndex =
-        prev.selectedIndex <= 0
-          ? prev.filteredResults.length - 1
-          : prev.selectedIndex - 1
-
-      return {
-        ...prev,
-        selectedIndex: newIndex,
-      }
-    })
-  }, [])
-
-  const navigateDown = useCallback((): void => {
-    setState((prev) => {
-      const newIndex =
-        prev.selectedIndex >= prev.filteredResults.length - 1
-          ? 0
-          : prev.selectedIndex + 1
-
-      return {
-        ...prev,
-        selectedIndex: newIndex,
-      }
-    })
-  }, [])
-
-  const executeSelected = useCallback((): void => {
-    if (
-      state.selectedIndex < 0 ||
-      state.selectedIndex >= state.filteredResults.length
-    ) {
+    if (filteredResults.length === 0) {
       return
     }
 
-    const selected = state.filteredResults[state.selectedIndex]
+    setState((prev) => {
+      const currentClamped = Math.min(
+        prev.selectedIndex,
+        filteredResults.length - 1
+      )
+
+      const newIndex =
+        currentClamped <= 0 ? filteredResults.length - 1 : currentClamped - 1
+
+      return {
+        ...prev,
+        selectedIndex: newIndex,
+      }
+    })
+  }, [filteredResults.length])
+
+  const navigateDown = useCallback((): void => {
+    if (filteredResults.length === 0) {
+      return
+    }
+
+    setState((prev) => {
+      const currentClamped = Math.min(
+        prev.selectedIndex,
+        filteredResults.length - 1
+      )
+
+      const newIndex =
+        currentClamped >= filteredResults.length - 1 ? 0 : currentClamped + 1
+
+      return {
+        ...prev,
+        selectedIndex: newIndex,
+      }
+    })
+  }, [filteredResults.length])
+
+  const executeSelected = useCallback((): void => {
+    if (clampedSelectedIndex < 0) {
+      return
+    }
+
+    const selected = filteredResults[clampedSelectedIndex]
 
     // If it's a namespace, drill into it
     if (selected.children && selected.children.length > 0) {
@@ -181,7 +195,6 @@ export const useCommandPalette = (): UseCommandPaletteReturn => {
         currentNamespace: selected,
         query: ':',
         selectedIndex: 0,
-        filteredResults: filterCommands(':', selected),
       }))
 
       return
@@ -189,19 +202,10 @@ export const useCommandPalette = (): UseCommandPaletteReturn => {
 
     // If it's a leaf, execute it
     if (selected.execute) {
-      const args = state.query.startsWith(':')
-        ? state.query.slice(1)
-        : state.query
-      selected.execute(args)
+      selected.execute(parsedQuery.args)
       close()
     }
-  }, [
-    state.filteredResults,
-    state.selectedIndex,
-    state.query,
-    filterCommands,
-    close,
-  ])
+  }, [clampedSelectedIndex, filteredResults, parsedQuery.args, close])
 
   // Global keyboard listener
   useEffect(() => {
@@ -266,6 +270,8 @@ export const useCommandPalette = (): UseCommandPaletteReturn => {
 
   return {
     state,
+    filteredResults,
+    clampedSelectedIndex,
     open,
     close,
     setQuery,

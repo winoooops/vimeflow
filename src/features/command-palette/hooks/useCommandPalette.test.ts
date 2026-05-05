@@ -20,7 +20,8 @@ describe('useCommandPalette', () => {
       expect(result.current.state.query).toBe(':')
       expect(result.current.state.selectedIndex).toBe(0)
       expect(result.current.state.currentNamespace).toBe(null)
-      expect(result.current.state.filteredResults).toEqual([])
+      // filteredResults is derived from query ':' so it shows all default commands
+      expect(result.current.filteredResults.length).toBeGreaterThan(0)
     })
   })
 
@@ -35,7 +36,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(true)
       expect(result.current.state.query).toBe(':')
       expect(result.current.state.selectedIndex).toBe(0)
-      expect(result.current.state.filteredResults.length).toBeGreaterThan(0)
+      expect(result.current.filteredResults.length).toBeGreaterThan(0)
     })
 
     test('close() resets state', () => {
@@ -55,7 +56,8 @@ describe('useCommandPalette', () => {
       expect(result.current.state.query).toBe(':')
       expect(result.current.state.selectedIndex).toBe(0)
       expect(result.current.state.currentNamespace).toBe(null)
-      expect(result.current.state.filteredResults).toEqual([])
+      // filteredResults is derived from query ':' so it shows all default commands
+      expect(result.current.filteredResults.length).toBeGreaterThan(0)
     })
   })
 
@@ -280,7 +282,7 @@ describe('useCommandPalette', () => {
         result.current.open()
       })
 
-      const lastIndex = result.current.state.filteredResults.length - 1
+      const lastIndex = result.current.filteredResults.length - 1
 
       act(() => {
         result.current.selectIndex(lastIndex)
@@ -327,7 +329,7 @@ describe('useCommandPalette', () => {
 
       expect(result.current.state.selectedIndex).toBe(0)
 
-      const lastIndex = result.current.state.filteredResults.length - 1
+      const lastIndex = result.current.filteredResults.length - 1
 
       act(() => {
         const event = new KeyboardEvent('keydown', { key: 'ArrowUp' })
@@ -372,7 +374,7 @@ describe('useCommandPalette', () => {
       })
 
       // Find and select the :help command
-      const helpIndex = result.current.state.filteredResults.findIndex(
+      const helpIndex = result.current.filteredResults.findIndex(
         (cmd) => cmd.id === 'help'
       )
 
@@ -404,7 +406,7 @@ describe('useCommandPalette', () => {
       })
 
       // Find the :open namespace
-      const openIndex = result.current.state.filteredResults.findIndex(
+      const openIndex = result.current.filteredResults.findIndex(
         (cmd) => cmd.id === 'open'
       )
 
@@ -413,7 +415,7 @@ describe('useCommandPalette', () => {
           result.current.selectIndex(openIndex)
         })
 
-        const selectedCommand = result.current.state.filteredResults[openIndex]
+        const selectedCommand = result.current.filteredResults[openIndex]
 
         const hasChildren =
           selectedCommand.children && selectedCommand.children.length > 0
@@ -440,7 +442,7 @@ describe('useCommandPalette', () => {
         result.current.setQuery(':nonexistent')
       })
 
-      expect(result.current.state.filteredResults.length).toBe(0)
+      expect(result.current.filteredResults.length).toBe(0)
 
       act(() => {
         const event = new KeyboardEvent('keydown', { key: 'Enter' })
@@ -452,19 +454,25 @@ describe('useCommandPalette', () => {
       })
     })
 
-    test('Enter does nothing when selectedIndex out of bounds', async () => {
+    test('Enter does nothing when clampedSelectedIndex is -1 (empty results)', async () => {
       const { result } = renderHook(() => useCommandPalette())
 
       act(() => {
         result.current.open()
-        result.current.selectIndex(999)
+        // Set query to something that produces no results
+        result.current.setQuery(':xyz-no-match-query')
       })
+
+      // Verify we have no results and clampedSelectedIndex is -1
+      expect(result.current.filteredResults.length).toBe(0)
+      expect(result.current.clampedSelectedIndex).toBe(-1)
 
       act(() => {
         const event = new KeyboardEvent('keydown', { key: 'Enter' })
         document.dispatchEvent(event)
       })
 
+      // Palette should stay open because there's nothing to execute
       await waitFor(() => {
         expect(result.current.state.isOpen).toBe(true)
       })
@@ -479,15 +487,15 @@ describe('useCommandPalette', () => {
         result.current.open()
       })
 
-      const initialResultsCount = result.current.state.filteredResults.length
+      const initialResultsCount = result.current.filteredResults.length
 
       act(() => {
         result.current.setQuery(':op')
       })
 
       expect(result.current.state.query).toBe(':op')
-      expect(result.current.state.filteredResults.length).toBeGreaterThan(0)
-      expect(result.current.state.filteredResults.length).toBeLessThanOrEqual(
+      expect(result.current.filteredResults.length).toBeGreaterThan(0)
+      expect(result.current.filteredResults.length).toBeLessThanOrEqual(
         initialResultsCount
       )
     })
@@ -516,13 +524,13 @@ describe('useCommandPalette', () => {
         result.current.open()
       })
 
-      const allCommandsCount = result.current.state.filteredResults.length
+      const allCommandsCount = result.current.filteredResults.length
 
       act(() => {
         result.current.setQuery(':')
       })
 
-      expect(result.current.state.filteredResults.length).toBe(allCommandsCount)
+      expect(result.current.filteredResults.length).toBe(allCommandsCount)
     })
 
     test('query filters commands based on fuzzy match score', () => {
@@ -533,7 +541,7 @@ describe('useCommandPalette', () => {
         result.current.setQuery(':help')
       })
 
-      const hasHelpCommand = result.current.state.filteredResults.some((cmd) =>
+      const hasHelpCommand = result.current.filteredResults.some((cmd) =>
         cmd.label.toLowerCase().includes('help')
       )
 
@@ -623,7 +631,7 @@ describe('useCommandPalette', () => {
         result.current.setQuery(':new')
       })
 
-      const newIndex = result.current.state.filteredResults.findIndex(
+      const newIndex = result.current.filteredResults.findIndex(
         (cmd) => cmd.id === 'new'
       )
 
