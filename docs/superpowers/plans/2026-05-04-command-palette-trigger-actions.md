@@ -214,20 +214,26 @@ const [state, setState] = useState<CommandPaletteState>({
 })
 ```
 
-Add a `filteredResults` derivation right after `setState` is declared. Replace the existing `filterCommands` callback's contents with a pure helper that takes its inputs explicitly (no closure over `state`):
+Add a `filteredResults` derivation right after `setState` is declared. Replace the existing `filterCommands` callback so it filters against the **verb token only** (per spec §4 — `:rename foo` must filter as if the user typed `:rename`, while `foo` is preserved as the args for dispatch). Add an import for `parseQuery` at the top of `useCommandPalette.ts`:
+
+```typescript
+import { parseQuery } from '../registry/parseQuery'
+```
+
+Then inside the hook body:
 
 ```typescript
 const filterCommands = useCallback(
-  (query: string, namespace: Command | null): Command[] => {
+  (verbToken: string, namespace: Command | null): Command[] => {
     const searchSpace = namespace
       ? (traverseNamespace(namespace) ?? [])
       : defaultCommands
 
-    if (!query || query === ':') {
+    if (!verbToken || verbToken === ':') {
       return searchSpace
     }
 
-    const cleanQuery = query.startsWith(':') ? query.slice(1) : query
+    const cleanVerb = verbToken.startsWith(':') ? verbToken.slice(1) : verbToken
     const allCommands = [...searchSpace]
     const leaves = getAllLeaves(searchSpace)
     allCommands.push(...leaves)
@@ -235,8 +241,8 @@ const filterCommands = useCallback(
     const scored = allCommands
       .map((cmd) => {
         const score = cmd.match
-          ? cmd.match(cleanQuery)
-          : fuzzyMatch(cleanQuery, cmd.label.replace(':', ''))
+          ? cmd.match(cleanVerb)
+          : fuzzyMatch(cleanVerb, cmd.label.replace(':', ''))
 
         return { cmd, score }
       })
@@ -258,9 +264,11 @@ const filterCommands = useCallback(
   []
 )
 
+const parsedQuery = useMemo(() => parseQuery(state.query), [state.query])
+
 const filteredResults = useMemo(
-  () => filterCommands(state.query, state.currentNamespace),
-  [filterCommands, state.query, state.currentNamespace]
+  () => filterCommands(parsedQuery.verbToken, state.currentNamespace),
+  [filterCommands, parsedQuery.verbToken, state.currentNamespace]
 )
 
 const clampedSelectedIndex =
@@ -268,6 +276,8 @@ const clampedSelectedIndex =
     ? -1
     : Math.min(state.selectedIndex, filteredResults.length - 1)
 ```
+
+The split here is load-bearing: typing `:rename foo` produces `parsedQuery.verbToken = ':rename'`, so the `:rename` command stays highlighted while the user types its argument. The args portion (`'foo'`) is consumed by `executeSelected` in Step 4.
 
 - [ ] **Step 3: Update `setQuery` and `open` / `close` to stop touching `filteredResults`**
 
@@ -330,14 +340,13 @@ const executeSelected = useCallback((): void => {
   }
 
   if (selected.execute) {
-    const args = state.query.startsWith(':')
-      ? state.query.slice(1)
-      : state.query
-    selected.execute(args)
+    selected.execute(parsedQuery.args)
     close()
   }
-}, [filteredResults, clampedSelectedIndex, state.query, close])
+}, [filteredResults, clampedSelectedIndex, parsedQuery.args, close])
 ```
+
+The dispatch now passes only the `args` portion of the parsed query — typing `:rename foo` calls `execute('foo')`, not `execute('rename foo')`. Zero-arg commands like `:close` receive `''` and ignore it.
 
 - [ ] **Step 5: Update `navigateUp` / `navigateDown` to base off `clampedSelectedIndex`**
 
@@ -436,6 +445,16 @@ Expected: some tests fail because they reference `state.filteredResults`. We wil
 - [ ] **Step 10: Update `useCommandPalette.test.ts` to read top-level fields**
 
 Open `src/features/command-palette/hooks/useCommandPalette.test.ts`. Replace every read of `result.current.state.filteredResults` with `result.current.filteredResults`, and every read of `result.current.state.selectedIndex` (when used to verify highlighted item) with `result.current.clampedSelectedIndex`. (Reads of `state.selectedIndex` for raw-cursor assertions stay as-is.)
+
+**Important behavior change to migrate around:** with the new `useMemo` derivation, `filteredResults` is computed every render regardless of `isOpen` — and the existing `filterCommands` returns the full `defaultCommands` list whenever `query === ':'`. So tests that previously asserted "`filteredResults` is empty when the palette is closed" will fail under the new model. Migrate them like this:
+
+| Old assertion                                                                         | New assertion                                                                                                                                                   |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `expect(result.current.state.filteredResults).toEqual([])` (when closed)              | Either drop the assertion (it was checking internal cache state, not user-visible behavior), or replace with `expect(result.current.state.isOpen).toBe(false)`. |
+| `expect(screen.queryByRole('dialog')).not.toBeInTheDocument()` (when closed)          | Unchanged — this checks the user-visible contract and still passes.                                                                                             |
+| `expect(result.current.state.filteredResults.length).toBeGreaterThan(0)` (after open) | `expect(result.current.filteredResults.length).toBeGreaterThan(0)` — same intent, top-level read.                                                               |
+
+Walking each assertion this way keeps the test suite aligned with the new contract: state is what `useState` holds, derived values are computed every render, and the user-visible truth is what the DOM shows.
 
 If you find the test file does not exist or has different shape, check it first via `Read` before editing.
 
@@ -2139,6 +2158,164 @@ describe('WorkspaceView × CommandPalette integration', () => {
       ).toBeInTheDocument()
     })
   })
+
+  // Helper: type a verb into the palette and press Enter.
+  const dispatchPaletteVerb = async (
+    user: ReturnType<typeof userEvent.setup>,
+    verb: string
+  ): Promise<void> => {
+    openPalette()
+    await waitFor(() => screen.getByRole('dialog'))
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    await user.clear(input)
+    await user.type(input, verb)
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    })
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  }
+
+  test(':close removes the active tab', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    // Wait for at least one auto-created tab plus a manual one (so :close has
+    // a non-zero target without dropping us to zero tabs).
+    await waitFor(() => {
+      expect(screen.getAllByTestId('terminal-pane').length).toBeGreaterThan(0)
+    })
+    await dispatchPaletteVerb(user, ':new')
+    await waitFor(() => {
+      expect(screen.getAllByTestId('terminal-pane').length).toBe(2)
+    })
+
+    await dispatchPaletteVerb(user, ':close')
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('terminal-pane').length).toBe(1)
+    })
+  })
+
+  test(':rename foo renames the active tab', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('terminal-pane').length).toBeGreaterThan(0)
+    })
+
+    await dispatchPaletteVerb(user, ':rename my-renamed-tab')
+
+    // Tab name appears in the tab bar button aria-label
+    // ("🤖 my-renamed-tab" per TerminalZone.tsx).
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /my-renamed-tab/ })
+      ).toBeInTheDocument()
+    })
+  })
+
+  test(':next and :previous cycle through tabs with wrap', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    // Create three tabs total (one auto + two via :new).
+    await waitFor(() => {
+      expect(screen.getAllByTestId('terminal-pane').length).toBeGreaterThan(0)
+    })
+    await dispatchPaletteVerb(user, ':new')
+    await dispatchPaletteVerb(user, ':new')
+    await waitFor(() => {
+      expect(screen.getAllByTestId('terminal-pane').length).toBe(3)
+    })
+
+    // Capture initial active session id from the active terminal-pane.
+    const activePaneId = (): string =>
+      document
+        .querySelector('[data-testid="terminal-pane"]:not(.hidden)')
+        ?.getAttribute('data-session-id') ?? ''
+
+    const initial = activePaneId()
+    expect(initial).not.toBe('')
+
+    await dispatchPaletteVerb(user, ':next')
+    await waitFor(() => {
+      expect(activePaneId()).not.toBe(initial)
+    })
+
+    await dispatchPaletteVerb(user, ':previous')
+    await waitFor(() => {
+      expect(activePaneId()).toBe(initial)
+    })
+  })
+
+  test(':goto 2 jumps to the second tab (1-indexed)', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('terminal-pane').length).toBeGreaterThan(0)
+    })
+    await dispatchPaletteVerb(user, ':new')
+    await dispatchPaletteVerb(user, ':new')
+    await waitFor(() => {
+      expect(screen.getAllByTestId('terminal-pane').length).toBe(3)
+    })
+
+    // Read sessionIds in tab-order from the rendered panes.
+    const panes = screen.getAllByTestId('terminal-pane')
+    const secondSessionId = panes[1].getAttribute('data-session-id')
+    expect(secondSessionId).toBeTruthy()
+
+    await dispatchPaletteVerb(user, ':goto 2')
+
+    await waitFor(() => {
+      const visiblePane = document.querySelector(
+        '[data-testid="terminal-pane"]:not(.hidden)'
+      )
+      expect(visiblePane?.getAttribute('data-session-id')).toBe(
+        secondSessionId
+      )
+    })
+  })
+
+  test(':goto <name> fuzzy-matches the tab name', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('terminal-pane').length).toBeGreaterThan(0)
+    })
+    await dispatchPaletteVerb(user, ':new')
+    await waitFor(() => {
+      expect(screen.getAllByTestId('terminal-pane').length).toBe(2)
+    })
+
+    // Rename the second (most-recently-created) tab to a known string,
+    // then jump to a different tab, then :goto by name.
+    await dispatchPaletteVerb(user, ':rename uniqueton')
+
+    // Switch away so :goto is observable as a real switch.
+    await dispatchPaletteVerb(user, ':next')
+
+    await dispatchPaletteVerb(user, ':goto uniq')
+
+    await waitFor(() => {
+      const visiblePane = document.querySelector(
+        '[data-testid="terminal-pane"]:not(.hidden)'
+      )
+      // Tab strip button text contains the renamed string.
+      expect(
+        screen.getByRole('button', { name: /uniqueton/ })
+      ).toBeInTheDocument()
+      // Active pane should match the renamed tab.
+      expect(visiblePane).toBeTruthy()
+    })
+  })
 })
 ```
 
@@ -2345,25 +2522,30 @@ describe('useCommandPalette stale-closure regression', () => {
     expect(secondExecute).toHaveBeenCalledTimes(1)
   })
 
-  test('clampedSelectedIndex stays valid after results shrink', () => {
-    const commands: Command[] = [
-      { id: 'a', label: ':apple', icon: 's', execute: vi.fn() },
-      { id: 'b', label: ':apricot', icon: 's', execute: vi.fn() },
-      { id: 'c', label: ':banana', icon: 's', execute: vi.fn() },
-      { id: 'd', label: ':blueberry', icon: 's', execute: vi.fn() },
-      { id: 'e', label: ':cherry', icon: 's', execute: vi.fn() },
+  test('clampedSelectedIndex stays valid after commands prop shrinks the result list', () => {
+    const longCommands: Command[] = [
+      { id: 'a', label: ':alpha', icon: 's', execute: vi.fn() },
+      { id: 'b', label: ':bravo', icon: 's', execute: vi.fn() },
+      { id: 'c', label: ':charlie', icon: 's', execute: vi.fn() },
+      { id: 'd', label: ':delta', icon: 's', execute: vi.fn() },
+      { id: 'e', label: ':echo', icon: 's', execute: vi.fn() },
+    ]
+    const shortCommands: Command[] = [
+      { id: 'a', label: ':alpha', icon: 's', execute: vi.fn() },
+      { id: 'b', label: ':bravo', icon: 's', execute: vi.fn() },
     ]
 
-    const { result } = renderHook(() => useCommandPalette(commands))
+    const { result, rerender } = renderHook(
+      ({ commands }: { commands: Command[] }) => useCommandPalette(commands),
+      { initialProps: { commands: longCommands } }
+    )
 
     act(() => {
       result.current.open()
     })
-
-    // Results contain 5 entries with the default ":" query; index 0 selected.
     expect(result.current.filteredResults.length).toBe(5)
 
-    // Move cursor to position 3.
+    // Move the cursor to raw selectedIndex = 3.
     act(() => {
       result.current.navigateDown()
       result.current.navigateDown()
@@ -2371,14 +2553,46 @@ describe('useCommandPalette stale-closure regression', () => {
     })
     expect(result.current.state.selectedIndex).toBe(3)
 
-    // Type a query that filters to just 2 results.
-    act(() => {
-      result.current.setQuery(':ap')
-    })
+    // Shrink via the commands prop, NOT via setQuery (which would reset
+    // selectedIndex to 0 and trivially pass this test). Goal: keep the raw
+    // cursor at 3 while filteredResults drops to length 2 — that is the
+    // exact regression clampedSelectedIndex protects against.
+    rerender({ commands: shortCommands })
 
-    // Now filteredResults shrunk; selectedIndex was reset to 0 by setQuery.
     expect(result.current.filteredResults.length).toBe(2)
+    expect(result.current.state.selectedIndex).toBe(3)
+    expect(result.current.clampedSelectedIndex).toBe(1)
+    expect(
+      result.current.filteredResults[result.current.clampedSelectedIndex]
+    ).toBeDefined()
+  })
+
+  test('clampedSelectedIndex is -1 when commands shrinks to empty', () => {
+    const someCommands: Command[] = [
+      { id: 'a', label: ':alpha', icon: 's', execute: vi.fn() },
+    ]
+
+    const { result, rerender } = renderHook(
+      ({ commands }: { commands: Command[] }) => useCommandPalette(commands),
+      { initialProps: { commands: someCommands } }
+    )
+
+    act(() => {
+      result.current.open()
+    })
     expect(result.current.clampedSelectedIndex).toBe(0)
+
+    rerender({ commands: [] })
+
+    expect(result.current.filteredResults.length).toBe(0)
+    expect(result.current.clampedSelectedIndex).toBe(-1)
+
+    // Enter must be a no-op when the result list is empty.
+    act(() => {
+      result.current.executeSelected()
+    })
+    // No assertion needed besides "did not throw"; mocks were not called
+    // because there were no commands to dispatch.
   })
 })
 ```
@@ -2525,19 +2739,7 @@ You should see a clean, conventional-commit history of approximately 11 commits,
 
 **3. Type / signature consistency:**
 
-- `parseQuery(query: string): ParsedQuery` — used in Task 1. Not currently consumed by any other task because Section 4 of the spec keeps the existing `filterCommands` cleanQuery logic (it strips `:` from labels). The grammar is available for future use by individual command `match` overrides if needed; the spec does not require it to be wired into `useCommandPalette`'s filter step. (This is a deliberate scope reduction: the spec's parseQuery example is illustrative — the actual existing `filterCommands` already handles `:rename foo` matching `:rename` via fuzzyMatch substring scoring, so a minimal change keeps the patch surface smaller. The `args` portion is passed through to `execute(args)` because the existing `executeSelected` extracts `state.query.slice(1)` — which is verbToken+args together. Task 7's `:rename` and `:goto` execute closures use `args.trim()` to discard the verb prefix that arrives in their args string.)
-
-  **Note for the implementer:** If during implementation you find that `:rename foo` is dropped from `filteredResults` because fuzzyMatch scores it as 0, switch the `:rename` and `:goto` commands to supply explicit `match` overrides that consume the leading verb token via `parseQuery`:
-
-  ```typescript
-  match: (query: string) => {
-    const { verbToken } = parseQuery(query)
-    return fuzzyMatch(verbToken.replace(/^:/, ''), 'rename')
-  }
-  ```
-
-  Add this only if integration tests in Task 10 reveal the issue. Otherwise the simpler path is preferred.
-
+- `parseQuery(query: string): ParsedQuery` — defined in Task 1, consumed in Task 2 (the filter step uses `parsedQuery.verbToken`; `executeSelected` passes `parsedQuery.args` to `execute`). This wiring is load-bearing: without it, `:rename foo` would filter against the literal string `rename foo` (likely scoring zero against `rename` and disappearing from results) and dispatch the wrong string to the handler. Tasks 7 and 8 rely on `:rename`'s `execute` receiving only the name argument, not the verb-plus-args concatenation.
 - `WorkspaceCommandDeps` — defined in Task 7, consumed by Task 9.
 - `UseNotifyInfoReturn` — defined in Task 5, consumed by Task 9.
 - `Command` interface — unchanged. `execute?` is optional in the type; all eight new commands supply it.
