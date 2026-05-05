@@ -52,6 +52,11 @@ export const WorkspaceView = (): ReactElement => {
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
 
+  // Narrow signature: id+name only. Activity updates (tool calls, file
+  // changes) bump `sessions` identity but no command body reads activity,
+  // so rebuilding on every PTY data tick is wasted work.
+  const sessionsSignature = sessions.map((s) => `${s.id}:${s.name}`).join('|')
+
   const workspaceCommands = useMemo(
     () =>
       buildWorkspaceCommands({
@@ -63,8 +68,12 @@ export const WorkspaceView = (): ReactElement => {
         setActiveSessionId,
         notifyInfo,
       }),
+    // sessionsSignature captures every field the closures read; activity-only
+    // changes keep the signature stable so the memo (and downstream
+    // filteredResults / handler refs) do not churn during agent I/O.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      sessions,
+      sessionsSignature,
       activeSessionId,
       createSession,
       removeSession,

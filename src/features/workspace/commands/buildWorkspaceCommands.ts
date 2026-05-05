@@ -155,6 +155,12 @@ export const buildWorkspaceCommands = (
           return
         }
 
+        if (sessions.length === 0) {
+          notifyInfo('No open sessions')
+
+          return
+        }
+
         const match = sessions.reduce<{
           session: Session | null
           score: number

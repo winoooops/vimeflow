@@ -628,6 +628,27 @@ describe('buildWorkspaceCommands - failure modes', () => {
     expect(notifyInfo).toHaveBeenCalledWith("No tab matching 'nonexistent'")
   })
 
+  test(':goto with name against empty sessions shows "No open sessions"', () => {
+    // Pinning Claude r6 finding C6-3: with sessions.length === 0 the
+    // generic "No tab matching X" message is misleading (it implies tabs
+    // exist but none match). The empty-list branch emits a distinct
+    // message that matches the user's actual situation.
+    const commands = buildWorkspaceCommands({
+      sessions: [],
+      activeSessionId: null,
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const gotoCmd = commands.find((c) => c.id === 'goto')
+
+    gotoCmd?.execute?.('main')
+    expect(notifyInfo).toHaveBeenCalledWith('No open sessions')
+  })
+
   test(':next with stale active id selects first session', () => {
     const commands = buildWorkspaceCommands({
       sessions: [

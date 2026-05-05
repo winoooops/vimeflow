@@ -342,6 +342,47 @@ describe('useCommandPalette', () => {
       consoleInfoSpy.mockRestore()
     })
 
+    test('Enter closes palette unconditionally — even when execute is a no-op', () => {
+      // Pinning Claude r6 finding C6-2: executeSelected always calls close()
+      // after `selected.execute()`, regardless of what execute does. Some
+      // workspace commands (e.g. :close on no active tab, :rename with empty
+      // args) are effectively no-ops that emit notifyInfo and return; the
+      // palette must still close so the user sees the banner instead of
+      // a stuck open palette. Without this pin, a future change could add
+      // a conditional close() and silently break that contract.
+      const noopExecute = vi.fn()
+
+      const commands: Command[] = [
+        {
+          id: 'noop',
+          label: ':noop',
+          icon: 'block',
+          execute: noopExecute,
+        },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':noop')
+      })
+
+      const idx = result.current.filteredResults.findIndex(
+        (cmd) => cmd.id === 'noop'
+      )
+
+      expect(idx).not.toBe(-1)
+
+      act(() => {
+        result.current.selectIndex(idx)
+        result.current.executeSelected()
+      })
+
+      expect(noopExecute).toHaveBeenCalled()
+      expect(result.current.state.isOpen).toBe(false)
+    })
+
     test('Enter drills into namespace command', async () => {
       const { result } = renderHook(() => useCommandPalette())
 
