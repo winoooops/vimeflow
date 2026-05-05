@@ -655,10 +655,10 @@ describe('useCommandPalette', () => {
     test('preserves space-containing input for namespace child commands', () => {
       // Pinning the regression Claude flagged on PR #159 round 3:
       // `parseQuery` splits on the first space, so a namespace value
-      // like `:filename foo bar.ts` would land as verbToken=':filename' /
+      // like `:filename foo bar.ts` would land as commandVerb=':filename' /
       // args='foo bar.ts'. Without the namespace-aware reconstruction,
       // the leaf would only see 'foo bar.ts' — silently truncating the
-      // verbToken portion of the user's input. The executeSelected branch
+      // commandVerb portion of the user's input. The executeSelected branch
       // must rebuild the full post-`:` text inside a namespace context so
       // values that span the verb/args split stay intact end-to-end.
       const execute = vi.fn()
@@ -672,7 +672,7 @@ describe('useCommandPalette', () => {
             {
               id: 'open-filename',
               // Non-bracket label so fuzzy-match scores well against the
-              // typed verbToken in this test (the bracket variant in
+              // typed commandVerb in this test (the bracket variant in
               // defaultCommands is harder to drive deterministically).
               label: 'filename',
               icon: 'description',

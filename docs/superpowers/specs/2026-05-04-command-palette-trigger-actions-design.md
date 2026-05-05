@@ -271,7 +271,7 @@ The palette adds a single helper used by both the filter step and the dispatch s
 ```typescript
 // src/features/command-palette/registry/parseQuery.ts
 export interface ParsedQuery {
-  verbToken: string // includes the leading ':' if present
+  commandVerb: string // includes the leading ':' if present
   args: string // trimmed remainder, '' when no args
 }
 
@@ -279,28 +279,28 @@ export const parseQuery = (query: string): ParsedQuery => {
   const trimmed = query.trim()
   const spaceIdx = trimmed.indexOf(' ')
   if (spaceIdx === -1) {
-    return { verbToken: trimmed, args: '' }
+    return { commandVerb: trimmed, args: '' }
   }
   return {
-    verbToken: trimmed.slice(0, spaceIdx),
+    commandVerb: trimmed.slice(0, spaceIdx),
     args: trimmed.slice(spaceIdx + 1).trim(),
   }
 }
 ```
 
-Filter step uses `verbToken` only:
+Filter step uses `commandVerb` only:
 
 ```typescript
-const { verbToken } = parseQuery(query)
+const { commandVerb } = parseQuery(query)
 const filteredResults = useMemo(
-  () => filterCommands(verbToken, currentNamespace, commands),
-  [verbToken, currentNamespace, commands]
+  () => filterCommands(commandVerb, currentNamespace, commands),
+  [commandVerb, currentNamespace, commands]
 )
 ```
 
 Effects:
 
-- Typing `:rename foo` produces `verbToken = ':rename'` and `args = 'foo'`. The filter uses `:rename`, so the `:rename` command stays selected while the user types its argument.
+- Typing `:rename foo` produces `commandVerb = ':rename'` and `args = 'foo'`. The filter uses `:rename`, so the `:rename` command stays selected while the user types its argument.
 - Pressing Enter passes `args` (here, `'foo'`) to the selected command's `execute`. The command body never re-parses the verb.
 - For zero-arg commands, `args === ''`. Typing `:close foo` is therefore tolerated and the trailing token is ignored: `filterCommands(':close', …)` selects `tab-close`, and `tab-close.execute('foo')` discards the argument string. This matches vim ex-command tolerance and removes a class of "extra-args" error paths the user never asked for.
 

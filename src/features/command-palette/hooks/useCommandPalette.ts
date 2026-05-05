@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   Command,
   CommandPaletteState,
@@ -28,7 +28,7 @@ export const useCommandPalette = (
   // Filter commands based on verb token only
   const filterCommands = useCallback(
     (
-      verbToken: string,
+      commandVerb: string,
       namespace: Command | null,
       commandsList: Command[]
     ): Command[] => {
@@ -36,14 +36,14 @@ export const useCommandPalette = (
         ? (traverseNamespace(namespace) ?? [])
         : commandsList
 
-      if (!verbToken || verbToken === ':') {
+      if (!commandVerb || commandVerb === ':') {
         return searchSpace
       }
 
       // Remove ':' prefix for matching
-      const cleanVerb = verbToken.startsWith(':')
-        ? verbToken.slice(1)
-        : verbToken
+      const cleanVerb = commandVerb.startsWith(':')
+        ? commandVerb.slice(1)
+        : commandVerb
 
       // Get all searchable commands (namespaces + leaves)
       const allCommands = [...searchSpace]
@@ -81,8 +81,8 @@ export const useCommandPalette = (
   // Derive filtered results from verb token
   const filteredResults = useMemo(
     () =>
-      filterCommands(parsedQuery.verbToken, state.currentNamespace, commands),
-    [parsedQuery.verbToken, state.currentNamespace, commands, filterCommands]
+      filterCommands(parsedQuery.commandVerb, state.currentNamespace, commands),
+    [parsedQuery.commandVerb, state.currentNamespace, commands, filterCommands]
   )
 
   // Clamp selectedIndex to valid range
@@ -193,7 +193,7 @@ export const useCommandPalette = (
     // If it's a leaf, execute it
     if (selected.execute) {
       // Inside a namespace, the user's typed input is the value (the
-      // verbToken is what they're picking, not a verb to strip). We must
+      // commandVerb is what they're picking, not a verb to strip). We must
       // reconstruct the full post-`:` text so values containing spaces
       // (e.g. a filename like `my file.ts`) reach the handler intact.
       // Without this, `parseQuery` would split on the first space and
@@ -201,7 +201,7 @@ export const useCommandPalette = (
       const executionArgs =
         state.currentNamespace !== null
           ? (
-              parsedQuery.verbToken +
+              parsedQuery.commandVerb +
               (parsedQuery.args.length > 0 ? ' ' + parsedQuery.args : '')
             ).replace(/^:/, '')
           : parsedQuery.args
@@ -213,12 +213,43 @@ export const useCommandPalette = (
     clampedSelectedIndex,
     filteredResults,
     parsedQuery.args,
-    parsedQuery.verbToken,
+    parsedQuery.commandVerb,
     state.currentNamespace,
     close,
   ])
 
-  // Global keyboard listener
+  // Latest-value refs read by the global keydown listener. The listener is
+  // registered ONCE (via the empty-deps effect below) and reads through these
+  // refs so its closure always sees the freshest state and callbacks. Without
+  // this indirection, putting `state.isOpen` / `navigateUp` / etc. in the
+  // listener effect's dep array would tear down and re-attach the
+  // capture-phase listener on every keystroke (since `filteredResults` —
+  // and therefore the navigate callbacks — re-derive on every character via
+  // `parseQuery`). The transient gap between `removeEventListener` and the
+  // re-attach could swallow a keypress under concurrent-mode preemption, and
+  // the per-keystroke addEventListener churn is unnecessary work.
+  const stateRef = useRef(state)
+
+  const handlersRef = useRef({
+    open,
+    close,
+    navigateUp,
+    navigateDown,
+    executeSelected,
+  })
+
+  useEffect(() => {
+    stateRef.current = state
+    handlersRef.current = {
+      open,
+      close,
+      navigateUp,
+      navigateDown,
+      executeSelected,
+    }
+  })
+
+  // Global keyboard listener — registered once for the hook's lifetime.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       // Toggle palette on Ctrl+: (capture-phase listener)
@@ -234,39 +265,39 @@ export const useCommandPalette = (
         event.preventDefault()
         event.stopPropagation()
 
-        if (state.isOpen) {
-          close()
+        if (stateRef.current.isOpen) {
+          handlersRef.current.close()
         } else {
-          open()
+          handlersRef.current.open()
         }
 
         return
       }
 
       // Handle keyboard navigation when palette is open
-      if (state.isOpen) {
+      if (stateRef.current.isOpen) {
         switch (event.key) {
           case 'Escape':
             event.preventDefault()
-            close()
+            handlersRef.current.close()
             break
           case 'ArrowUp':
             event.preventDefault()
-            navigateUp()
+            handlersRef.current.navigateUp()
             break
           case 'ArrowDown':
             event.preventDefault()
-            navigateDown()
+            handlersRef.current.navigateDown()
             break
           case 'Enter':
             event.preventDefault()
-            executeSelected()
+            handlersRef.current.executeSelected()
             break
           case 'Backspace':
             // Close on backspace when query is empty ':'
-            if (state.query === ':') {
+            if (stateRef.current.query === ':') {
               event.preventDefault()
-              close()
+              handlersRef.current.close()
             }
             break
         }
@@ -278,15 +309,7 @@ export const useCommandPalette = (
     return (): void => {
       document.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
-  }, [
-    state.isOpen,
-    state.query,
-    open,
-    close,
-    navigateUp,
-    navigateDown,
-    executeSelected,
-  ])
+  }, [])
 
   return {
     state,

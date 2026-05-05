@@ -423,7 +423,7 @@ export const WorkspaceView = (): ReactElement => {
           onSelectedDiffFileChange={setSelectedDiffFile}
         />
 
-        {(fileError ?? infoMessage) !== null && (
+        {(fileError !== null || infoMessage !== null) && (
           <div className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2">
             {/* File error banner — surfaces failures from direct file open
                 (openFileSafely) and vim :w saves (handleVimSave). Rendered at

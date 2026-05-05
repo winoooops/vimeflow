@@ -12,6 +12,27 @@ export interface WorkspaceCommandDeps {
   notifyInfo: (message: string) => void
 }
 
+/**
+ * Build the workspace's command-palette command list.
+ *
+ * Pure function: takes the live `useSessionManager` API surface (sessions
+ * + lifecycle callbacks) plus a `notifyInfo` channel and returns the
+ * eight verb-keyed commands the palette dispatches against — the six
+ * functional tab verbs (`:new`, `:close`, `:rename`, `:next`, `:previous`,
+ * `:goto`) plus the two split-pane stubs (`:split-horizontal`,
+ * `:split-vertical`). Each command's `execute` closure captures the
+ * dependencies passed in, so the caller (typically `WorkspaceView`)
+ * should re-invoke this builder inside a `useMemo` over the relevant
+ * session-manager state to keep the closures in sync with the latest
+ * tab list and active session.
+ *
+ * Pulled out of `WorkspaceView` so the failure-mode logic for each verb
+ * is unit-testable in isolation against mocked deps, without rendering
+ * the workspace shell. See `buildWorkspaceCommands.test.ts` for the
+ * failure-mode contracts and `Section 5` of the design spec
+ * (`docs/superpowers/specs/2026-05-04-command-palette-trigger-actions-design.md`)
+ * for the authoritative behavior table.
+ */
 export const buildWorkspaceCommands = (
   deps: WorkspaceCommandDeps
 ): Command[] => {
