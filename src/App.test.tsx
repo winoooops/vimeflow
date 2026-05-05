@@ -15,13 +15,6 @@ vi.mock('./features/workspace/WorkspaceView', () => {
   }
 })
 
-// Mock CommandPalette to keep tests focused on App composition
-vi.mock('./features/command-palette/CommandPalette', () => ({
-  CommandPalette: (): ReactElement => (
-    <div data-testid="command-palette">Mocked CommandPalette</div>
-  ),
-}))
-
 describe('App', () => {
   test('renders without crashing', () => {
     render(<App />)
@@ -31,11 +24,6 @@ describe('App', () => {
   test('renders WorkspaceView as primary component', () => {
     render(<App />)
     expect(screen.getByTestId('workspace-view')).toBeInTheDocument()
-  })
-
-  test('renders CommandPalette as overlay', () => {
-    render(<App />)
-    expect(screen.getByTestId('command-palette')).toBeInTheDocument()
   })
 
   test('is an arrow-function component', () => {

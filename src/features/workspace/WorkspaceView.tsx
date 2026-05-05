@@ -6,14 +6,18 @@ import { TerminalZone } from './components/TerminalZone'
 import BottomDrawer from './components/BottomDrawer'
 import { AgentStatusPanel } from '../agent-status/components/AgentStatusPanel'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
+import { InfoBanner } from './components/InfoBanner'
+import { CommandPalette } from '../command-palette/CommandPalette'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { useSessionManager } from './hooks/useSessionManager'
 import { useResizable } from './hooks/useResizable'
+import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
 import { createTerminalService } from '../terminal/services/terminalService'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
+import { buildWorkspaceCommands } from './commands/buildWorkspaceCommands'
 import type { ChangedFile, SelectedDiffFile } from '../diff/types'
 
 const SIDEBAR_MIN = 240
@@ -45,6 +49,30 @@ export const WorkspaceView = (): ReactElement => {
     loading,
     notifyPaneReady,
   } = useSessionManager(terminalService)
+
+  const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
+
+  const workspaceCommands = useMemo(
+    () =>
+      buildWorkspaceCommands({
+        sessions,
+        activeSessionId,
+        createSession,
+        removeSession,
+        renameSession,
+        setActiveSessionId,
+        notifyInfo,
+      }),
+    [
+      sessions,
+      activeSessionId,
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    ]
+  )
 
   const agentStatus = useAgentStatus(activeSessionId)
 
@@ -416,6 +444,14 @@ export const WorkspaceView = (): ReactElement => {
             </button>
           </div>
         )}
+
+        {/* Info banner — surfaces workspace command failures (no active tab,
+            invalid goto args, etc.). Positioned at top of main area. */}
+        {infoMessage && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 max-w-2xl">
+            <InfoBanner message={infoMessage} onDismiss={dismiss} />
+          </div>
+        )}
       </div>
 
       {/* Agent Status Panel — self-manages width (0↔280px) */}
@@ -444,6 +480,9 @@ export const WorkspaceView = (): ReactElement => {
 
       {/* Drag overlay — prevents iframes/xterm from stealing mouse events */}
       {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
+
+      {/* Command Palette — workspace-scoped command dispatcher */}
+      <CommandPalette commands={workspaceCommands} />
     </div>
   )
 }
