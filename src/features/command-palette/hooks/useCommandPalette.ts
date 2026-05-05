@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import type {
   Command,
   CommandPaletteState,
@@ -218,16 +225,7 @@ export const useCommandPalette = (
     close,
   ])
 
-  // Latest-value refs read by the global keydown listener. The listener is
-  // registered ONCE (via the empty-deps effect below) and reads through these
-  // refs so its closure always sees the freshest state and callbacks. Without
-  // this indirection, putting `state.isOpen` / `navigateUp` / etc. in the
-  // listener effect's dep array would tear down and re-attach the
-  // capture-phase listener on every keystroke (since `filteredResults` —
-  // and therefore the navigate callbacks — re-derive on every character via
-  // `parseQuery`). The transient gap between `removeEventListener` and the
-  // re-attach could swallow a keypress under concurrent-mode preemption, and
-  // the per-keystroke addEventListener churn is unnecessary work.
+  // Refs let the once-registered capture-phase listener always read the latest handlers without re-attaching.
   const stateRef = useRef(state)
 
   const handlersRef = useRef({
@@ -238,7 +236,8 @@ export const useCommandPalette = (
     executeSelected,
   })
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) closes the commit→effect gap where a capture-phase keydown could read stale refs.
+  useLayoutEffect(() => {
     stateRef.current = state
     handlersRef.current = {
       open,
