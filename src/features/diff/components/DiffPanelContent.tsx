@@ -254,7 +254,7 @@ export const DiffPanelContent = ({
       <div className="flex min-w-0 flex-1 overflow-hidden">
         {diffError ? (
           <div
-            className="flex h-full items-center justify-center text-error"
+            className="flex h-full w-full items-center justify-center text-error"
             role="alert"
           >
             <div className="text-center space-y-2">
@@ -264,7 +264,7 @@ export const DiffPanelContent = ({
           </div>
         ) : diffLoading ? (
           <div
-            className="flex h-full items-center justify-center text-on-surface-variant"
+            className="flex h-full w-full items-center justify-center text-on-surface-variant"
             role="status"
             aria-live="polite"
           >
