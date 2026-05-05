@@ -29,7 +29,9 @@ const isInputElement = (element: Element | null): boolean => {
   return false
 }
 
-export const useCommandPalette = (): UseCommandPaletteReturn => {
+export const useCommandPalette = (
+  commands: Command[] = defaultCommands
+): UseCommandPaletteReturn => {
   const [state, setState] = useState<CommandPaletteState>({
     isOpen: false,
     query: ':',
@@ -42,10 +44,14 @@ export const useCommandPalette = (): UseCommandPaletteReturn => {
 
   // Filter commands based on verb token only
   const filterCommands = useCallback(
-    (verbToken: string, namespace: Command | null): Command[] => {
+    (
+      verbToken: string,
+      namespace: Command | null,
+      commandsList: Command[]
+    ): Command[] => {
       const searchSpace = namespace
         ? (traverseNamespace(namespace) ?? [])
-        : defaultCommands
+        : commandsList
 
       if (!verbToken || verbToken === ':') {
         return searchSpace
@@ -91,8 +97,9 @@ export const useCommandPalette = (): UseCommandPaletteReturn => {
 
   // Derive filtered results from verb token
   const filteredResults = useMemo(
-    () => filterCommands(parsedQuery.verbToken, state.currentNamespace),
-    [parsedQuery.verbToken, state.currentNamespace, filterCommands]
+    () =>
+      filterCommands(parsedQuery.verbToken, state.currentNamespace, commands),
+    [parsedQuery.verbToken, state.currentNamespace, commands, filterCommands]
   )
 
   // Clamp selectedIndex to valid range

@@ -4,8 +4,15 @@ import { useCommandPalette } from './hooks/useCommandPalette'
 import { CommandInput } from './components/CommandInput'
 import { CommandResults } from './components/CommandResults'
 import { CommandFooter } from './components/CommandFooter'
+import type { Command } from './registry/types'
 
-export const CommandPalette = (): ReactElement | null => {
+export interface CommandPaletteProps {
+  commands?: Command[]
+}
+
+export const CommandPalette = ({
+  commands,
+}: CommandPaletteProps = {}): ReactElement | null => {
   const {
     state,
     filteredResults,
@@ -13,7 +20,7 @@ export const CommandPalette = (): ReactElement | null => {
     close,
     setQuery,
     selectIndex,
-  } = useCommandPalette()
+  } = useCommandPalette(commands)
 
   return (
     <AnimatePresence>
