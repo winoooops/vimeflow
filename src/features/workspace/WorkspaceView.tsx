@@ -54,8 +54,10 @@ export const WorkspaceView = (): ReactElement => {
 
   // Narrow signature: id+name only. Activity updates (tool calls, file
   // changes) bump `sessions` identity but no command body reads activity,
-  // so rebuilding on every PTY data tick is wasted work.
-  const sessionsSignature = sessions.map((s) => `${s.id}:${s.name}`).join('|')
+  // so rebuilding on every PTY data tick is wasted work. Use JSON.stringify
+  // (not hand-joined separators) so a name containing `:` or `|` cannot
+  // collide with a different session set's signature.
+  const sessionsSignature = JSON.stringify(sessions.map((s) => [s.id, s.name]))
 
   const workspaceCommands = useMemo(
     () =>
