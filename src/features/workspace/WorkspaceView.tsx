@@ -423,33 +423,36 @@ export const WorkspaceView = (): ReactElement => {
           onSelectedDiffFileChange={setSelectedDiffFile}
         />
 
-        {/* File error banner — surfaces failures from direct file open
-            (openFileSafely) and vim :w saves (handleVimSave). Rendered at
-            the top of the main area so the user always sees what went wrong. */}
-        {fileError && (
-          <div
-            role="alert"
-            className="absolute top-2 left-1/2 -translate-x-1/2 z-40 max-w-2xl px-4 py-2 rounded-lg bg-error/20 border border-error/40 text-sm text-error font-inter backdrop-blur-sm flex items-center gap-3 shadow-lg"
-          >
-            <span className="flex-1">{fileError}</span>
-            <button
-              type="button"
-              aria-label="Dismiss error"
-              onClick={() => {
-                setFileError(null)
-              }}
-              className="text-error hover:text-on-surface transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-        )}
+        {(fileError ?? infoMessage) !== null && (
+          <div className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2">
+            {/* File error banner — surfaces failures from direct file open
+                (openFileSafely) and vim :w saves (handleVimSave). Rendered at
+                the top of the main area so the user always sees what went wrong. */}
+            {fileError && (
+              <div
+                role="alert"
+                className="flex items-center gap-3 rounded-lg bg-error/20 px-4 py-2 font-inter text-sm text-error shadow-lg backdrop-blur-sm"
+              >
+                <span className="flex-1">{fileError}</span>
+                <button
+                  type="button"
+                  aria-label="Dismiss error"
+                  onClick={() => {
+                    setFileError(null)
+                  }}
+                  className="text-error transition-colors hover:text-on-surface"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
-        {/* Info banner — surfaces workspace command failures (no active tab,
-            invalid goto args, etc.). Positioned at top of main area. */}
-        {infoMessage && (
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 max-w-2xl">
-            <InfoBanner message={infoMessage} onDismiss={dismiss} />
+            {/* Info banner — surfaces workspace command failures (no active tab,
+                invalid goto args, etc.). Stacked below file errors so command
+                feedback never obscures file-operation failures. */}
+            {infoMessage && (
+              <InfoBanner message={infoMessage} onDismiss={dismiss} />
+            )}
           </div>
         )}
       </div>
