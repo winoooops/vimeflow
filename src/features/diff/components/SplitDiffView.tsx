@@ -28,15 +28,29 @@ const SplitDiffView = ({
       return
     }
 
-    const handleLeftScroll = (): void => {
-      rightPane.scrollTop = leftPane.scrollTop
-      rightPane.scrollLeft = leftPane.scrollLeft
+    // Re-entrance guard: programmatic scrollTop/scrollLeft writes dispatch
+    // the peer's scroll event on the next tick, so reset via rAF instead of
+    // synchronously to actually swallow the cross-fired event. Without this
+    // guard, panes with different scroll heights (always true here — left
+    // shows context+removed, right shows context+added) snap back when the
+    // taller pane scrolls past the shorter pane's max.
+
+    let syncing = false
+
+    const sync = (source: HTMLDivElement, target: HTMLDivElement): void => {
+      if (syncing) {
+        return
+      }
+      syncing = true
+      target.scrollTop = source.scrollTop
+      target.scrollLeft = source.scrollLeft
+      requestAnimationFrame(() => {
+        syncing = false
+      })
     }
 
-    const handleRightScroll = (): void => {
-      leftPane.scrollTop = rightPane.scrollTop
-      leftPane.scrollLeft = rightPane.scrollLeft
-    }
+    const handleLeftScroll = (): void => sync(leftPane, rightPane)
+    const handleRightScroll = (): void => sync(rightPane, leftPane)
 
     leftPane.addEventListener('scroll', handleLeftScroll)
     rightPane.addEventListener('scroll', handleRightScroll)
