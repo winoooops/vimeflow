@@ -44,9 +44,14 @@ export const buildWorkspaceCommands = (
       icon: 'close',
       execute: (): void => {
         const idx = findActiveIndex()
-        if (idx >= 0) {
-          removeSession(sessions[idx].id)
+
+        if (idx === -1) {
+          notifyInfo('No active tab to close')
+
+          return
         }
+
+        removeSession(sessions[idx].id)
       },
     },
     {
@@ -56,9 +61,20 @@ export const buildWorkspaceCommands = (
       icon: 'edit',
       execute: (args: string): void => {
         const idx = findActiveIndex()
-        if (idx >= 0 && args.trim()) {
-          renameSession(sessions[idx].id, args.trim())
+
+        if (idx === -1) {
+          notifyInfo('No active tab to rename')
+
+          return
         }
+
+        const trimmed = args.trim()
+
+        if (!trimmed) {
+          return
+        }
+
+        renameSession(sessions[idx].id, trimmed)
       },
     },
     {
@@ -105,10 +121,28 @@ export const buildWorkspaceCommands = (
       execute: (args: string): void => {
         const trimmed = args.trim()
 
+        if (!trimmed) {
+          notifyInfo('Usage: :goto <position or name>')
+
+          return
+        }
+
         // Try numeric (1-indexed)
         const num = parseInt(trimmed, 10)
 
-        if (!isNaN(num) && num >= 1 && num <= sessions.length) {
+        if (!isNaN(num)) {
+          if (num < 1 || !Number.isInteger(parseFloat(trimmed))) {
+            notifyInfo('Position must be a positive integer')
+
+            return
+          }
+
+          if (num > sessions.length) {
+            notifyInfo(`No tab at position ${num}`)
+
+            return
+          }
+
           setActiveSessionId(sessions[num - 1].id)
 
           return
@@ -118,9 +152,14 @@ export const buildWorkspaceCommands = (
         const match = sessions.find((s) =>
           s.name.toLowerCase().includes(trimmed.toLowerCase())
         )
+
         if (match) {
           setActiveSessionId(match.id)
+
+          return
         }
+
+        notifyInfo(`No tab matching '${trimmed}'`)
       },
     },
     {

@@ -297,3 +297,437 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(notifyInfo).toHaveBeenCalledWith('Split panes not yet implemented')
   })
 })
+
+describe('buildWorkspaceCommands - failure modes', () => {
+  let createSession: ReturnType<typeof vi.fn>
+  let removeSession: ReturnType<typeof vi.fn>
+  let renameSession: ReturnType<typeof vi.fn>
+  let setActiveSessionId: ReturnType<typeof vi.fn>
+  let notifyInfo: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    createSession = vi.fn()
+    removeSession = vi.fn()
+    renameSession = vi.fn()
+    setActiveSessionId = vi.fn()
+    notifyInfo = vi.fn()
+  })
+
+  test(':close with no active tab shows message', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'proj-1',
+          name: 'main',
+          status: 'running',
+          workingDirectory: '/home/user',
+          agentType: 'claude-code',
+          createdAt: '2024-01-01T00:00:00Z',
+          lastActivityAt: '2024-01-01T00:00:00Z',
+          activity: {
+            fileChanges: [],
+            toolCalls: [],
+            testResults: [],
+            contextWindow: {
+              used: 0,
+              total: 200000,
+              percentage: 0,
+              emoji: '😊',
+            },
+            usage: {
+              sessionDuration: 0,
+              turnCount: 0,
+              messages: { sent: 0, limit: 200 },
+              tokens: { input: 0, output: 0, total: 0 },
+            },
+          },
+        },
+      ],
+      activeSessionId: null,
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const closeCmd = commands.find((c) => c.id === 'close')
+
+    closeCmd?.execute?.('')
+    expect(notifyInfo).toHaveBeenCalledWith('No active tab to close')
+    expect(removeSession).not.toHaveBeenCalled()
+  })
+
+  test(':rename with no active tab shows message', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [],
+      activeSessionId: null,
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renameCmd = commands.find((c) => c.id === 'rename')
+
+    renameCmd?.execute?.('new-name')
+    expect(notifyInfo).toHaveBeenCalledWith('No active tab to rename')
+    expect(renameSession).not.toHaveBeenCalled()
+  })
+
+  test(':rename with whitespace-only args is silent no-op', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'proj-1',
+          name: 'main',
+          status: 'running',
+          workingDirectory: '/home/user',
+          agentType: 'claude-code',
+          createdAt: '2024-01-01T00:00:00Z',
+          lastActivityAt: '2024-01-01T00:00:00Z',
+          activity: {
+            fileChanges: [],
+            toolCalls: [],
+            testResults: [],
+            contextWindow: {
+              used: 0,
+              total: 200000,
+              percentage: 0,
+              emoji: '😊',
+            },
+            usage: {
+              sessionDuration: 0,
+              turnCount: 0,
+              messages: { sent: 0, limit: 200 },
+              tokens: { input: 0, output: 0, total: 0 },
+            },
+          },
+        },
+      ],
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renameCmd = commands.find((c) => c.id === 'rename')
+
+    renameCmd?.execute?.('   ')
+    expect(renameSession).not.toHaveBeenCalled()
+    expect(notifyInfo).not.toHaveBeenCalled()
+  })
+
+  test(':goto with no args shows usage message', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [],
+      activeSessionId: null,
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const gotoCmd = commands.find((c) => c.id === 'goto')
+
+    gotoCmd?.execute?.('')
+    expect(notifyInfo).toHaveBeenCalledWith('Usage: :goto <position or name>')
+  })
+
+  test(':goto with zero shows invalid position message', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [],
+      activeSessionId: null,
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const gotoCmd = commands.find((c) => c.id === 'goto')
+
+    gotoCmd?.execute?.('0')
+    expect(notifyInfo).toHaveBeenCalledWith(
+      'Position must be a positive integer'
+    )
+  })
+
+  test(':goto with negative shows invalid position message', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [],
+      activeSessionId: null,
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const gotoCmd = commands.find((c) => c.id === 'goto')
+
+    gotoCmd?.execute?.('-1')
+    expect(notifyInfo).toHaveBeenCalledWith(
+      'Position must be a positive integer'
+    )
+  })
+
+  test(':goto with decimal shows invalid position message', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [],
+      activeSessionId: null,
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const gotoCmd = commands.find((c) => c.id === 'goto')
+
+    gotoCmd?.execute?.('1.5')
+    expect(notifyInfo).toHaveBeenCalledWith(
+      'Position must be a positive integer'
+    )
+  })
+
+  test(':goto with out-of-range position shows message', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'proj-1',
+          name: 'main',
+          status: 'running',
+          workingDirectory: '/home/user',
+          agentType: 'claude-code',
+          createdAt: '2024-01-01T00:00:00Z',
+          lastActivityAt: '2024-01-01T00:00:00Z',
+          activity: {
+            fileChanges: [],
+            toolCalls: [],
+            testResults: [],
+            contextWindow: {
+              used: 0,
+              total: 200000,
+              percentage: 0,
+              emoji: '😊',
+            },
+            usage: {
+              sessionDuration: 0,
+              turnCount: 0,
+              messages: { sent: 0, limit: 200 },
+              tokens: { input: 0, output: 0, total: 0 },
+            },
+          },
+        },
+      ],
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const gotoCmd = commands.find((c) => c.id === 'goto')
+
+    gotoCmd?.execute?.('99')
+    expect(notifyInfo).toHaveBeenCalledWith('No tab at position 99')
+  })
+
+  test(':goto with no name match shows message', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'proj-1',
+          name: 'main',
+          status: 'running',
+          workingDirectory: '/home/user',
+          agentType: 'claude-code',
+          createdAt: '2024-01-01T00:00:00Z',
+          lastActivityAt: '2024-01-01T00:00:00Z',
+          activity: {
+            fileChanges: [],
+            toolCalls: [],
+            testResults: [],
+            contextWindow: {
+              used: 0,
+              total: 200000,
+              percentage: 0,
+              emoji: '😊',
+            },
+            usage: {
+              sessionDuration: 0,
+              turnCount: 0,
+              messages: { sent: 0, limit: 200 },
+              tokens: { input: 0, output: 0, total: 0 },
+            },
+          },
+        },
+      ],
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const gotoCmd = commands.find((c) => c.id === 'goto')
+
+    gotoCmd?.execute?.('nonexistent')
+    expect(notifyInfo).toHaveBeenCalledWith("No tab matching 'nonexistent'")
+  })
+
+  test(':next with stale active id selects first session', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'proj-1',
+          name: 'main',
+          status: 'running',
+          workingDirectory: '/home/user',
+          agentType: 'claude-code',
+          createdAt: '2024-01-01T00:00:00Z',
+          lastActivityAt: '2024-01-01T00:00:00Z',
+          activity: {
+            fileChanges: [],
+            toolCalls: [],
+            testResults: [],
+            contextWindow: {
+              used: 0,
+              total: 200000,
+              percentage: 0,
+              emoji: '😊',
+            },
+            usage: {
+              sessionDuration: 0,
+              turnCount: 0,
+              messages: { sent: 0, limit: 200 },
+              tokens: { input: 0, output: 0, total: 0 },
+            },
+          },
+        },
+        {
+          id: 'session-2',
+          projectId: 'proj-1',
+          name: 'feature',
+          status: 'running',
+          workingDirectory: '/home/user',
+          agentType: 'claude-code',
+          createdAt: '2024-01-01T01:00:00Z',
+          lastActivityAt: '2024-01-01T01:00:00Z',
+          activity: {
+            fileChanges: [],
+            toolCalls: [],
+            testResults: [],
+            contextWindow: {
+              used: 0,
+              total: 200000,
+              percentage: 0,
+              emoji: '😊',
+            },
+            usage: {
+              sessionDuration: 0,
+              turnCount: 0,
+              messages: { sent: 0, limit: 200 },
+              tokens: { input: 0, output: 0, total: 0 },
+            },
+          },
+        },
+      ],
+      activeSessionId: 'stale-id',
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const nextCmd = commands.find((c) => c.id === 'next')
+
+    nextCmd?.execute?.('')
+    expect(setActiveSessionId).toHaveBeenCalledWith('session-1')
+  })
+
+  test(':previous with stale active id selects last session', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'proj-1',
+          name: 'main',
+          status: 'running',
+          workingDirectory: '/home/user',
+          agentType: 'claude-code',
+          createdAt: '2024-01-01T00:00:00Z',
+          lastActivityAt: '2024-01-01T00:00:00Z',
+          activity: {
+            fileChanges: [],
+            toolCalls: [],
+            testResults: [],
+            contextWindow: {
+              used: 0,
+              total: 200000,
+              percentage: 0,
+              emoji: '😊',
+            },
+            usage: {
+              sessionDuration: 0,
+              turnCount: 0,
+              messages: { sent: 0, limit: 200 },
+              tokens: { input: 0, output: 0, total: 0 },
+            },
+          },
+        },
+        {
+          id: 'session-2',
+          projectId: 'proj-1',
+          name: 'feature',
+          status: 'running',
+          workingDirectory: '/home/user',
+          agentType: 'claude-code',
+          createdAt: '2024-01-01T01:00:00Z',
+          lastActivityAt: '2024-01-01T01:00:00Z',
+          activity: {
+            fileChanges: [],
+            toolCalls: [],
+            testResults: [],
+            contextWindow: {
+              used: 0,
+              total: 200000,
+              percentage: 0,
+              emoji: '😊',
+            },
+            usage: {
+              sessionDuration: 0,
+              turnCount: 0,
+              messages: { sent: 0, limit: 200 },
+              tokens: { input: 0, output: 0, total: 0 },
+            },
+          },
+        },
+      ],
+      activeSessionId: 'stale-id',
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const prevCmd = commands.find((c) => c.id === 'previous')
+
+    prevCmd?.execute?.('')
+    expect(setActiveSessionId).toHaveBeenCalledWith('session-2')
+  })
+})
