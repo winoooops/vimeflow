@@ -28,13 +28,29 @@ const SplitDiffView = ({
       return
     }
 
-    const handleLeftScroll = (): void => {
-      rightPane.scrollTop = leftPane.scrollTop
+    // Re-entrance guard: programmatic scrollTop/scrollLeft writes dispatch
+    // the peer's scroll event on the next tick, so reset via rAF instead of
+    // synchronously to actually swallow the cross-fired event. Without this
+    // guard, panes with different scroll heights (always true here — left
+    // shows context+removed, right shows context+added) snap back when the
+    // taller pane scrolls past the shorter pane's max.
+
+    let syncing = false
+
+    const sync = (source: HTMLDivElement, target: HTMLDivElement): void => {
+      if (syncing) {
+        return
+      }
+      syncing = true
+      target.scrollTop = source.scrollTop
+      target.scrollLeft = source.scrollLeft
+      requestAnimationFrame(() => {
+        syncing = false
+      })
     }
 
-    const handleRightScroll = (): void => {
-      leftPane.scrollTop = rightPane.scrollTop
-    }
+    const handleLeftScroll = (): void => sync(leftPane, rightPane)
+    const handleRightScroll = (): void => sync(rightPane, leftPane)
 
     leftPane.addEventListener('scroll', handleLeftScroll)
     rightPane.addEventListener('scroll', handleRightScroll)
@@ -48,9 +64,9 @@ const SplitDiffView = ({
   const fileName = diff.filePath.split('/').pop() ?? diff.filePath
 
   return (
-    <div className="grid grid-cols-2 gap-px h-full">
+    <div className="grid h-full w-full min-w-0 grid-cols-2 gap-px">
       {/* Before pane (left) */}
-      <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex h-full min-w-0 flex-col overflow-hidden">
         <div className="sticky top-0 z-10 flex items-center gap-2 bg-surface-container-highest/70 backdrop-blur-sm px-4 py-2 border-b border-outline-variant/10">
           <span className="material-symbols-outlined text-[1rem] text-on-surface-variant">
             history
@@ -63,7 +79,7 @@ const SplitDiffView = ({
         <div
           ref={leftPaneRef}
           data-testid="before-pane"
-          className="thin-scrollbar overflow-y-auto flex-1 font-code text-xs"
+          className="thin-scrollbar min-w-0 flex-1 overflow-auto font-code text-xs"
         >
           {diff.hunks.map((hunk, hunkIndex) => {
             let lineIndex = 0
@@ -103,7 +119,7 @@ const SplitDiffView = ({
       </div>
 
       {/* After pane (right) */}
-      <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex h-full min-w-0 flex-col overflow-hidden">
         <div className="sticky top-0 z-10 flex items-center gap-2 bg-surface-container-highest/70 backdrop-blur-sm px-4 py-2 border-b border-outline-variant/10">
           <span className="material-symbols-outlined text-[1rem] text-on-surface-variant">
             edit
@@ -116,7 +132,7 @@ const SplitDiffView = ({
         <div
           ref={rightPaneRef}
           data-testid="after-pane"
-          className="thin-scrollbar overflow-y-auto flex-1 font-code text-xs"
+          className="thin-scrollbar min-w-0 flex-1 overflow-auto font-code text-xs"
         >
           {diff.hunks.map((hunk, hunkIndex) => {
             let lineIndex = 0

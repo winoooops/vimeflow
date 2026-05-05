@@ -11,7 +11,7 @@ describe('DiffLine', () => {
     const line: DiffLineType = {
       type: 'added',
       newLineNumber: 42,
-      content: '  const newFeature = true',
+      content: 'const newFeature = true',
       highlights: [],
     }
 
@@ -38,7 +38,7 @@ describe('DiffLine', () => {
     const line: DiffLineType = {
       type: 'removed',
       oldLineNumber: 15,
-      content: '  const oldFeature = false',
+      content: 'const oldFeature = false',
       highlights: [],
     }
 
@@ -66,7 +66,7 @@ describe('DiffLine', () => {
       type: 'context',
       oldLineNumber: 10,
       newLineNumber: 10,
-      content: '  unchanged code',
+      content: 'unchanged code',
       highlights: [],
     }
 
@@ -84,6 +84,26 @@ describe('DiffLine', () => {
     const lineElement = screen.getByText('unchanged code').closest('div')
     expect(lineElement).not.toHaveClass('diff-added')
     expect(lineElement).not.toHaveClass('diff-removed')
+  })
+
+  test('preserves leading whitespace and tabs in code content', () => {
+    const line: DiffLineType = {
+      type: 'context',
+      oldLineNumber: 10,
+      newLineNumber: 10,
+      content: '\t  unchanged code',
+      highlights: [],
+    }
+
+    const { container } = render(
+      <DiffLine line={line} onRightClick={mockOnRightClick} />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const contentDiv = container.querySelector('.whitespace-pre')
+    expect(contentDiv).toBeInTheDocument()
+    expect(contentDiv?.textContent).toBe('\t  unchanged code')
+    expect(contentDiv).toHaveStyle({ tabSize: '2' })
   })
 
   test('renders word-level highlights for added lines', () => {
@@ -106,7 +126,7 @@ describe('DiffLine', () => {
 
     // Verify the content div contains the full text
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const contentDiv = container.querySelector('.flex-1.font-mono')
+    const contentDiv = container.querySelector('.whitespace-pre.font-mono')
     expect(contentDiv?.textContent).toBe('  const value = newValue')
   })
 
@@ -130,7 +150,7 @@ describe('DiffLine', () => {
 
     // Verify the content div contains the full text
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const contentDiv = container.querySelector('.flex-1.font-mono')
+    const contentDiv = container.querySelector('.whitespace-pre.font-mono')
     expect(contentDiv?.textContent).toBe('  const value = oldValue')
   })
 
@@ -151,7 +171,7 @@ describe('DiffLine', () => {
 
     // Verify the content div contains the full text
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const contentDiv = container.querySelector('.flex-1.font-mono')
+    const contentDiv = container.querySelector('.whitespace-pre.font-mono')
     expect(contentDiv?.textContent).toBe('  const foo = bar + baz')
 
     // Check for multiple highlights
@@ -243,7 +263,7 @@ describe('DiffLine', () => {
     const line: DiffLineType = {
       type: 'added',
       newLineNumber: 42,
-      content: '  new line',
+      content: 'new line',
       highlights: [],
     }
 
@@ -265,7 +285,7 @@ describe('DiffLine', () => {
     const line: DiffLineType = {
       type: 'removed',
       oldLineNumber: 15,
-      content: '  removed line',
+      content: 'removed line',
       highlights: [],
     }
 

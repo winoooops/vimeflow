@@ -186,9 +186,9 @@ describe('SplitDiffView', () => {
     // Both panes should have scroll handlers attached
     expect(panes.length).toBe(2)
 
-    // Check for overflow-y-auto on panes
+    // Check for overflow-auto on panes
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const scrollablePanes = container.querySelectorAll('.overflow-y-auto')
+    const scrollablePanes = container.querySelectorAll('.overflow-auto')
 
     expect(scrollablePanes.length).toBeGreaterThanOrEqual(2)
   })

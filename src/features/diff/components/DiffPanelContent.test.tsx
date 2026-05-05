@@ -139,7 +139,9 @@ describe('DiffPanelContent', () => {
     expect(layout).toBeInTheDocument()
     expect(layout).toHaveClass('flex')
     expect(layout).toHaveClass('h-full')
+    expect(layout).toHaveClass('w-full')
     expect(layout).toHaveClass('min-h-0')
+    expect(layout).toHaveClass('min-w-0')
   })
 
   test('passes cwd to useGitStatus and useFileDiff hooks', (): void => {

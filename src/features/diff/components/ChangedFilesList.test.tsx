@@ -204,6 +204,26 @@ describe('ChangedFilesList', () => {
     expect(fileName).toHaveClass('truncate')
   })
 
+  test('renders a trailing-slash path label without collapsing to blank', () => {
+    const directoryLikePath: ChangedFile[] = [
+      {
+        path: '.vimeflow/',
+        status: 'untracked',
+        staged: false,
+      },
+    ]
+
+    render(
+      <ChangedFilesList
+        files={directoryLikePath}
+        selectedFile={null}
+        onSelectFile={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('.vimeflow')).toBeInTheDocument()
+  })
+
   test('renders empty state when no files', () => {
     render(
       <ChangedFilesList files={[]} selectedFile={null} onSelectFile={vi.fn()} />

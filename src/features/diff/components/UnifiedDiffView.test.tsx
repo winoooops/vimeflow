@@ -198,7 +198,7 @@ describe('UnifiedDiffView', () => {
     expect(screen.getByText("import React from 'react'")).toBeInTheDocument()
   })
 
-  test('applies overflow-y-auto for scrolling', () => {
+  test('applies overflow-auto for scrolling', () => {
     const { container } = render(
       <UnifiedDiffView
         diff={mockFileDiff}
@@ -208,7 +208,7 @@ describe('UnifiedDiffView', () => {
     )
 
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const scrollablePane = container.querySelector('.overflow-y-auto')
+    const scrollablePane = container.querySelector('.overflow-auto')
 
     expect(scrollablePane).toBeInTheDocument()
   })
@@ -243,7 +243,8 @@ describe('UnifiedDiffView', () => {
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     const pane = container.querySelector('[data-testid="unified-pane"]')
 
-    expect(pane).toHaveClass('overflow-y-auto')
+    expect(pane).toHaveClass('overflow-auto')
+    expect(pane).toHaveClass('min-w-0')
   })
 
   test('passes correct line indices to focus calculation', () => {
