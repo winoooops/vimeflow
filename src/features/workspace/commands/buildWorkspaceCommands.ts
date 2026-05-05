@@ -72,6 +72,8 @@ export const buildWorkspaceCommands = (
         const trimmed = args.trim()
 
         if (!trimmed) {
+          notifyInfo('Usage: :rename <name>')
+
           return
         }
 

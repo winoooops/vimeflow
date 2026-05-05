@@ -427,13 +427,13 @@ This collapses two failure cases into one branch — `idx === -1` whenever `acti
 
 ### `:rename` failure modes
 
-| State (after `idx` resolution)                                    | Behavior                                                                                                                                                                                   |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `idx === -1`                                                      | `notifyInfo('No active tab to rename')`; do not call `renameSession`.                                                                                                                      |
-| `idx >= 0`, args empty or whitespace-only after `parseQuery` trim | No-op; do not call `renameSession`. (`useSessionManager.renameSession` itself already early-returns on empty trim, so this is a defensive clarification — the user simply sees no change.) |
-| `idx >= 0`, args present                                          | `renameSession(sessions[idx].id, args)`.                                                                                                                                                   |
+| State (after `idx` resolution)                                    | Behavior                                                              |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `idx === -1`                                                      | `notifyInfo('No active tab to rename')`; do not call `renameSession`. |
+| `idx >= 0`, args empty or whitespace-only after `parseQuery` trim | `notifyInfo('Usage: :rename <name>')`; do not call `renameSession`.   |
+| `idx >= 0`, args present                                          | `renameSession(sessions[idx].id, args)`.                              |
 
-No `notifyInfo` is emitted for the empty-args case because the user is mid-typing — interrupting their input flow with a banner would be more annoying than the no-op.
+The empty-args case emits `notifyInfo` for parity with `:goto`'s empty-args branch and because `executeSelected` always invokes `close()` after `execute()` returns — meaning by the time this branch fires, the user has pressed Enter and the palette is dismissed, so they are no longer mid-typing. A silent close would leave them with no signal that the args were missing; the usage banner gives them an explicit hint to retry.
 
 ### `:next` / `:previous` failure modes
 

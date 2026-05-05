@@ -418,7 +418,7 @@ describe('buildWorkspaceCommands - failure modes', () => {
     expect(renameSession).not.toHaveBeenCalled()
   })
 
-  test(':rename with whitespace-only args is silent no-op', () => {
+  test(':rename with whitespace-only args shows usage message', () => {
     const commands = buildWorkspaceCommands({
       sessions: [
         {
@@ -461,7 +461,7 @@ describe('buildWorkspaceCommands - failure modes', () => {
 
     renameCmd?.execute?.('   ')
     expect(renameSession).not.toHaveBeenCalled()
-    expect(notifyInfo).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith('Usage: :rename <name>')
   })
 
   test(':goto with no args shows usage message', () => {
