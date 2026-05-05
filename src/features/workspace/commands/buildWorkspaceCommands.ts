@@ -1,5 +1,6 @@
 import type { Session } from '../types'
 import type { Command } from '../../command-palette/registry/types'
+import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
 
 export interface WorkspaceCommandDeps {
   sessions: Session[]
@@ -151,13 +152,24 @@ export const buildWorkspaceCommands = (
           return
         }
 
-        // Try name match (case-insensitive substring)
-        const match = sessions.find((s) =>
-          s.name.toLowerCase().includes(trimmed.toLowerCase())
+        const match = sessions.reduce<{
+          session: Session | null
+          score: number
+        }>(
+          (best, session) => {
+            const score = fuzzyMatch(trimmed, session.name)
+
+            if (score > best.score) {
+              return { session, score }
+            }
+
+            return best
+          },
+          { session: null, score: 0 }
         )
 
-        if (match) {
-          setActiveSessionId(match.id)
+        if (match.session) {
+          setActiveSessionId(match.session.id)
 
           return
         }

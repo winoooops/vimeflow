@@ -244,6 +244,23 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(setActiveSessionId).toHaveBeenCalledWith('session-2')
   })
 
+  test(':goto command supports fuzzy abbreviation matching', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const gotoCmd = commands.find((c) => c.id === 'goto')
+
+    gotoCmd?.execute?.('fb')
+    expect(setActiveSessionId).toHaveBeenCalledWith('session-2')
+  })
+
   test(':goto command with partial name match', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,
