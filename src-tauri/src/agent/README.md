@@ -64,7 +64,7 @@ src-tauri/src/agent/
     │   ├── path_security.rs ← StatusSource trust_root enforcement
     │   ├── transcript_state.rs ← TranscriptState/Handle/StartStatus registry
     │   └── watcher_runtime.rs  ← notify watcher, inline read, polling fallback, WatcherHandle
-    ├── types.rs             ← StatusSource, ParsedStatus, BindContext, BindError, ValidateTranscriptError
+    ├── types.rs             ← StatusSource, ParsedStatus, ValidateTranscriptError
     ├── claude_code/
     │   ├── mod.rs           ← ClaudeCodeAdapter (impl AgentAdapter<R>)
     │   ├── statusline.rs    ← Claude's status.json parser
@@ -83,19 +83,23 @@ src-tauri/src/agent/
 
 Everything outside `agent::adapter::*` interacts with the agent module through three calls — that's it.
 
-### `<dyn AgentAdapter<R>>::for_type`
+### `<dyn AgentAdapter<R>>::for_attach`
 
 ```rust
-pub fn for_type(agent_type: AgentType) -> Result<Arc<Self>, String>
+pub fn for_attach(
+    agent_type: AgentType,
+    pid: u32,
+    pty_start: SystemTime,
+) -> Result<Arc<Self>, String>
 ```
 
 Constructs the right adapter for a detected agent type. Returns `Arc<dyn AgentAdapter<R>>`:
 
-- `AgentType::ClaudeCode` → `ClaudeCodeAdapter`
-- `AgentType::Codex` → `CodexAdapter::new()`
-- everything else → `NoOpAdapter::new(t)` (returns errors from `parse_status` / `validate_transcript` / `tail_transcript`; `status_source` returns a `.vimeflow/sessions/{sid}/status.json` placeholder)
+- `AgentType::ClaudeCode` → `ClaudeCodeAdapter` (`pid`/`pty_start` discarded)
+- `AgentType::Codex` → `CodexAdapter::new(pid, pty_start)`
+- everything else → `NoOpAdapter::new(t)` (returns errors from `parse_status` / `validate_transcript` / `tail_transcript`; `status_source` returns a `.vimeflow/sessions/{sid}/status.json` placeholder; `pid`/`pty_start` discarded)
 
-> **Follow-up tracking:** issue [#156](https://github.com/winoooops/vimeflow/issues/156) collapses `BindContext` and the central retry into `CodexAdapter::new(pid, pty_start)`. After that lands, `for_type` becomes `for_attach(ctx)` and the Claude impl drops the unused `ctx` parameter from `status_source`.
+> **Resolved 2026-05-05** by [`docs/superpowers/specs/2026-05-05-codex-adapter-trait-simplification-design.md`](../../../docs/superpowers/specs/2026-05-05-codex-adapter-trait-simplification-design.md) (issue [#156](https://github.com/winoooops/vimeflow/issues/156)): `BindContext` is now private to `codex/`, the old bind error type is deleted, the trait method is `status_source(cwd, sid) -> Result<_, String>`, and codex's cold-start retry lives inside `CodexAdapter::status_source` via the `retry_locator` helper.
 
 ### `<dyn AgentAdapter<R>>::start`
 
@@ -105,15 +109,13 @@ pub fn start(
     app: AppHandle<R>,
     session_id: String,
     cwd: PathBuf,
-    pid: u32,
-    pty_start: SystemTime,
     state: AgentWatcherState,
 ) -> Result<(), String>
 ```
 
 Starts the watcher pipeline for a PTY session. **Owns the full lifecycle:** removes any pre-existing handle for `session_id`, logs the active-watcher count, builds the new pipeline, inserts the resulting `WatcherHandle` into `state`. The Tauri command never touches `state` directly — that's the deep-module property.
 
-`pid` is the detected agent PID (returned by `detector::detect_agent`), not the shell PID at the PTY root — Codex's `logs.process_uuid` indexes by the codex child PID. `pty_start` is captured at PTY spawn (`ManagedSession.started_at`) so the logs query can filter out PID-reuse and stale-loaded-thread matches. Both arguments are passed through to the adapter as fields of `BindContext` (delegated through `base::start_for` → `resolve_status_source_with_retry` → `adapter.status_source(&ctx)`). Claude's impl ignores them; Codex's locator depends on them.
+`pid` is the detected agent PID (returned by `detector::detect_agent`), not the shell PID at the PTY root — Codex's `logs.process_uuid` indexes by the codex child PID. `pty_start` is captured at PTY spawn (`ManagedSession.started_at`) so the logs query can filter out PID-reuse and stale-loaded-thread matches. Both arguments are stored on `CodexAdapter` at construction (`CodexAdapter::new(pid, pty_start)` via the `for_attach(agent_type, pid, pty_start)` factory). The codex adapter wraps them in a private `BindContext` for its locator on each `status_source` call. `base::start_for` invokes `adapter.status_source(cwd, session_id)` once and codex's internal retry lives in `retry_locator` (5 attempts, 4 × 100ms inter-attempt sleeps, 400ms sleep budget on full exhaustion). Claude's impl ignores these fields — Claude's `status_source(cwd, sid)` is infallible.
 
 ### `<dyn AgentAdapter<R>>::stop`
 
@@ -144,7 +146,7 @@ Backend re-runs detection (`pty_state.get_pid` + `detector::detect_agent`) so th
 ```rust
 pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
     fn agent_type(&self) -> AgentType;
-    fn status_source(&self, cwd: &Path, session_id: &str) -> StatusSource;
+    fn status_source(&self, cwd: &Path, session_id: &str) -> Result<StatusSource, String>;
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String>;
     fn validate_transcript(&self, raw: &str) -> Result<PathBuf, String>;
     fn tail_transcript(
@@ -159,13 +161,13 @@ pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
 
 Each method is a "provider hook" — every concrete adapter implements all five. The trait is generic over `R: tauri::Runtime` so production (`R = Wry`) and `tauri::test::mock_builder()`-driven integration tests (`R = MockRuntime`) share a single contract.
 
-| Hook                  | Returns                             | Responsibility                                                                                         |
-| --------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `agent_type`          | `AgentType`                         | Self-identification — used in logs and event payloads.                                                 |
-| `status_source`       | `StatusSource { path, trust_root }` | Where the agent writes its status snapshot, plus the trust root the path must canonicalize under.      |
-| `parse_status`        | `Result<ParsedStatus, String>`      | Parse one status snapshot into the typed `AgentStatusEvent` IPC payload. Optional transcript path.     |
-| `validate_transcript` | `Result<PathBuf, String>`           | Canonicalize and reject any transcript path outside this provider's trust root.                        |
-| `tail_transcript`     | `Result<TranscriptHandle, String>`  | Spawn the per-line tail loop end-to-end — including in-flight tool-call tracking and `TestRunEmitter`. |
+| Hook                  | Returns                            | Responsibility                                                                                                                       |
+| --------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `agent_type`          | `AgentType`                        | Self-identification — used in logs and event payloads.                                                                               |
+| `status_source`       | `Result<StatusSource, String>`     | Where the agent writes its status snapshot, plus the trust root the path must canonicalize under. Failures surface as `Err(String)`. |
+| `parse_status`        | `Result<ParsedStatus, String>`     | Parse one status snapshot into the typed `AgentStatusEvent` IPC payload. Optional transcript path.                                   |
+| `validate_transcript` | `Result<PathBuf, String>`          | Canonicalize and reject any transcript path outside this provider's trust root.                                                      |
+| `tail_transcript`     | `Result<TranscriptHandle, String>` | Spawn the per-line tail loop end-to-end — including in-flight tool-call tracking and `TestRunEmitter`.                               |
 
 `TranscriptHandle::Drop` only signals stop (sets `stop_flag`); explicit `TranscriptHandle::stop(self)` joins. This matches today's `transcript.rs:94-108` behavior — Stage 1 preserves it.
 
@@ -180,11 +182,11 @@ Stateless struct (zero fields). Each hook delegates to a sibling module under `c
 ```rust
 impl<R: tauri::Runtime> AgentAdapter<R> for ClaudeCodeAdapter {
     fn agent_type(&self) -> AgentType { AgentType::ClaudeCode }
-    fn status_source(&self, cwd, sid) -> StatusSource {
-        StatusSource {
+    fn status_source(&self, cwd, sid) -> Result<StatusSource, String> {
+        Ok(StatusSource {
             path: cwd.join(".vimeflow/sessions").join(sid).join("status.json"),
             trust_root: cwd.to_path_buf(),
-        }
+        })
     }
     fn parse_status(&self, sid, raw) -> Result<ParsedStatus, String> {
         statusline::parse_statusline(sid, raw)  // shaped to ParsedStatus
@@ -215,13 +217,13 @@ pub(crate) struct NoOpAdapter {
 
 impl<R: tauri::Runtime> AgentAdapter<R> for NoOpAdapter {
     fn agent_type(&self) -> AgentType { self.agent_type.clone() }
-    fn status_source(&self, cwd, sid) -> StatusSource {
+    fn status_source(&self, cwd, sid) -> Result<StatusSource, String> {
         // Same path Claude uses → watcher's create_dir_all + watch
         // matches today's silent-no-op UX for unsupported agents.
-        StatusSource {
+        Ok(StatusSource {
             path: cwd.join(".vimeflow/sessions").join(sid).join("status.json"),
             trust_root: cwd.to_path_buf(),
-        }
+        })
     }
     fn parse_status(&self, _, _) -> Result<ParsedStatus, String>  { Err("…no status parser".into()) }
     fn validate_transcript(&self, _) -> Result<PathBuf, String>    { Err("…no transcript validator".into()) }
@@ -229,7 +231,7 @@ impl<R: tauri::Runtime> AgentAdapter<R> for NoOpAdapter {
 }
 ```
 
-**Why this exists:** if `for_type` returned `Err` for unsupported variants, the frontend's exit-collapse path (`useAgentStatus.ts:139-154`, gated on `watcherStartedRef.current`) would never run after a Codex / Aider session exits — the panel would stay in `isActive: true` indefinitely. `NoOpAdapter` returns Claude's status path so the watcher starts successfully (no events ever fire because nothing writes to that path under non-Claude agents), `watcherStartedRef.current` flips to `true`, and exit-collapse runs naturally. See spec IDEA "NoOpAdapter for non-Claude agents in for_type" for the full rationale.
+**Why this exists:** if `for_attach` returned `Err` for unsupported variants, the frontend's exit-collapse path (`useAgentStatus.ts:139-154`, gated on `watcherStartedRef.current`) would never run after a Codex / Aider session exits — the panel would stay in `isActive: true` indefinitely. `NoOpAdapter` returns Claude's status path so the watcher starts successfully (no events ever fire because nothing writes to that path under non-Claude agents), `watcherStartedRef.current` flips to `true`, and exit-collapse runs naturally. See spec IDEA "NoOpAdapter for non-Claude agents in for_attach" for the full rationale.
 
 ---
 
@@ -397,7 +399,7 @@ Full rationale and rejected alternatives in [`docs/decisions/2026-05-03-claude-p
 
 ## Detection (agent-agnostic)
 
-`detector.rs` is shared across every adapter — it inspects the PTY process tree and matches the bare binary name (`claude`, `codex`, `aider`) against `AgentType` variants. No adapter-specific logic; the result feeds `<dyn AgentAdapter<R>>::for_type`.
+`detector.rs` is shared across every adapter — it inspects the PTY process tree and matches the bare binary name (`claude`, `codex`, `aider`) against `AgentType` variants. No adapter-specific logic; the result feeds `<dyn AgentAdapter<R>>::for_attach`.
 
 `commands.rs::detect_agent_in_session` is the Tauri command the frontend polls every 2s.
 

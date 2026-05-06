@@ -455,11 +455,9 @@ mod tests {
 
             fn status_source(
                 &self,
-                _ctx: &crate::agent::adapter::types::BindContext<'_>,
-            ) -> Result<
-                crate::agent::adapter::types::StatusSource,
-                crate::agent::adapter::types::BindError,
-            > {
+                _cwd: &std::path::Path,
+                _session_id: &str,
+            ) -> Result<crate::agent::adapter::types::StatusSource, String> {
                 unreachable!("status_source not exercised in this test")
             }
 

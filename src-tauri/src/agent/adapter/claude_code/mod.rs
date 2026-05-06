@@ -1,13 +1,11 @@
 //! Claude Code adapter implementation.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tauri::AppHandle;
 
 use crate::agent::adapter::base::TranscriptHandle;
-use crate::agent::adapter::types::{
-    BindContext, BindError, ParsedStatus, StatusSource, ValidateTranscriptError,
-};
+use crate::agent::adapter::types::{ParsedStatus, StatusSource, ValidateTranscriptError};
 use crate::agent::adapter::AgentAdapter;
 use crate::agent::types::AgentType;
 
@@ -22,15 +20,14 @@ impl<R: tauri::Runtime> AgentAdapter<R> for ClaudeCodeAdapter {
         AgentType::ClaudeCode
     }
 
-    fn status_source(&self, ctx: &BindContext<'_>) -> Result<StatusSource, BindError> {
+    fn status_source(&self, cwd: &Path, session_id: &str) -> Result<StatusSource, String> {
         Ok(StatusSource {
-            path: ctx
-                .cwd
+            path: cwd
                 .join(".vimeflow")
                 .join("sessions")
-                .join(ctx.session_id)
+                .join(session_id)
                 .join("status.json"),
-            trust_root: ctx.cwd.to_path_buf(),
+            trust_root: cwd.to_path_buf(),
         })
     }
 
@@ -73,18 +70,12 @@ mod tests {
 
     #[test]
     fn status_source_returns_claude_path_under_cwd() {
-        use std::time::SystemTime;
-
         let adapter = ClaudeCodeAdapter;
         let cwd = PathBuf::from("/tmp/ws");
-        let ctx = BindContext {
-            session_id: "sess-1",
-            cwd: &cwd,
-            pid: 0,
-            pty_start: SystemTime::UNIX_EPOCH,
-        };
-        let src = <ClaudeCodeAdapter as AgentAdapter<MockRuntime>>::status_source(&adapter, &ctx)
-            .expect("claude status source is infallible");
+        let src = <ClaudeCodeAdapter as AgentAdapter<MockRuntime>>::status_source(
+            &adapter, &cwd, "sess-1",
+        )
+        .expect("claude status source is infallible");
         assert_eq!(
             src.path,
             cwd.join(".vimeflow")
