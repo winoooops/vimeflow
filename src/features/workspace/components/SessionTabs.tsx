@@ -72,13 +72,21 @@ const SessionTab = ({
     <div
       role="tab"
       aria-selected={isActive}
+      tabIndex={isActive ? 0 : -1}
       data-testid="session-tab"
       data-session-id={session.id}
       data-active={isActive}
       onClick={() => onSelect(session.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect(session.id)
+        }
+      }}
       className={`
         relative flex h-[30px] min-w-[130px] max-w-[220px] cursor-pointer items-center gap-2
-        rounded-t-lg border border-transparent pl-3 pr-2 transition-colors
+        rounded-t-lg border border-transparent pl-3 pr-2 outline-none transition-colors
+        focus-visible:ring-2 focus-visible:ring-primary/50
         ${
           isActive
             ? '-mb-px bg-surface border-outline-variant/30'

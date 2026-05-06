@@ -136,6 +136,36 @@ describe('SessionTabs', () => {
     expect(onNew).toHaveBeenCalledTimes(1)
   })
 
+  test('keyboard activation: Enter/Space on a focused tab calls onSelect', async () => {
+    const onSelect = vi.fn()
+    const user = userEvent.setup()
+
+    const sessions = [
+      buildSession({ id: 'a', name: 'auth' }),
+      buildSession({ id: 'b', name: 'tests' }),
+    ]
+    renderTabs(sessions, 'a', { onSelect })
+
+    const inactiveTab = screen.getAllByRole('tab')[1]
+    inactiveTab.focus()
+    await user.keyboard('{Enter}')
+    expect(onSelect).toHaveBeenLastCalledWith('b')
+
+    await user.keyboard(' ')
+    expect(onSelect).toHaveBeenLastCalledWith('b')
+  })
+
+  test('only the active tab carries tabIndex=0 (roving focus)', () => {
+    const sessions = [
+      buildSession({ id: 'a', name: 'auth' }),
+      buildSession({ id: 'b', name: 'tests' }),
+    ]
+    renderTabs(sessions, 'a')
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs[0]).toHaveAttribute('tabindex', '0')
+    expect(tabs[1]).toHaveAttribute('tabindex', '-1')
+  })
+
   test('renders a status pip alongside the running session title', () => {
     const sessions = [buildSession({ id: 'a', status: 'running' })]
     renderTabs(sessions, 'a')

@@ -249,7 +249,7 @@ const RecentSessionRow = ({
       data-session-id={session.id}
       data-active={isActive}
       className={`
-        relative mb-1 rounded-lg px-3 py-2 transition-colors
+        group relative mb-1 rounded-lg px-3 py-2 transition-colors
         ${
           isActive
             ? 'bg-primary/10 text-on-surface'
