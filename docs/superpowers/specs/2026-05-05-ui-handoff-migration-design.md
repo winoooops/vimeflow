@@ -75,7 +75,7 @@ Steps 1–9 mirror handoff §9 verbatim. Step 10 is added by this spec to close 
 
 - `colors.primary-deep: '#57377f'` — deep-purple companion to `primary`. (Handoff `secondary.container`. Renamed because existing `secondary-container: '#124988'` is azure and stays for backward compat until cleanup.)
 - `colors.on-surface-muted: '#8a8299'` — no existing analogue.
-- `colors.warning: '#ff94a5'` — alias to existing `tertiary` value.
+- `colors.warning: '#fab387'` — amber. Matches the prototype's StatusDot `awaiting` state (handoff §4.2). Distinct from existing `tertiary: '#ff94a5'` (pink), which the prototype uses for `errored`.
 - `colors.syn.{keyword, string, fn, var, comment, type, tag}` — Catppuccin syntax subset for terminal/code rendering.
 - `fontSize.{vf-2xs, vf-xs, vf-sm, vf-base, vf-lg, vf-xl, vf-2xl}` — handoff scale under `vf` namespace so existing `text-base` etc. keep current sizes during migration.
 - `borderRadius.{pane, tab, chip, pill, modal}` — semantic radii.

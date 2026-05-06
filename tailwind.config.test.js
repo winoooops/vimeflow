@@ -82,9 +82,13 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
     })
 
     test('has mono font family (JetBrains Mono with ui-monospace fallback)', () => {
-      // Updated per handoff §6: adds `ui-monospace` as a fallback before the
-      // generic monospace family. No consumer behavior change (browsers fall
-      // through unknown family names); aligns with handoff design tokens.
+      // Updated per handoff §6: adds `ui-monospace` (CSS Fonts Level 4
+      // generic keyword, supported by every Tauri-targeted engine) before
+      // the generic `monospace` family. On systems without JetBrains Mono
+      // installed, browsers now use `ui-monospace` — the OS-preferred
+      // monospace face — instead of the generic `monospace` fallback.
+      // JetBrains Mono is still preferred when present, so environments
+      // that load it are unaffected.
       expect(tailwindConfig.theme.extend.fontFamily.mono).toEqual([
         'JetBrains Mono',
         'ui-monospace',
@@ -115,7 +119,9 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
     test('colors expose primary-deep / on-surface-muted / warning', () => {
       expect(colors['primary-deep']).toBe('#57377f')
       expect(colors['on-surface-muted']).toBe('#8a8299')
-      expect(colors.warning).toBe('#ff94a5')
+      // warning is amber (matches prototype StatusDot awaiting), not pink —
+      // pink is `tertiary` / errored in the prototype.
+      expect(colors.warning).toBe('#fab387')
     })
 
     test('colors.syn exposes Catppuccin syntax subset', () => {

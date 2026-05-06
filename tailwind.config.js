@@ -72,7 +72,11 @@ export default {
         // Old tokens above remain untouched until step 10 cleanup.
         'primary-deep': '#57377f',
         'on-surface-muted': '#8a8299',
-        warning: '#ff94a5',
+        // warning: amber, matching the handoff prototype's StatusDot usage
+        // (`awaiting` state in §4.2). Distinct from `tertiary: '#ff94a5'`,
+        // which the prototype reserves for `errored`. Same value as
+        // `syn.type` — intentional; semantic context disambiguates.
+        warning: '#fab387',
         syn: {
           keyword: '#cba6f7',
           string: '#a6e3a1',
