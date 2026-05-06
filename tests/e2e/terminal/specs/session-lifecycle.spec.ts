@@ -28,8 +28,9 @@ describe('Terminal session lifecycle', () => {
     // Baseline: useSessionManager boots with one default session.
     await waitForCount(1, 'default session never became active')
 
-    // Click "New tab".
-    await clickBySelector('button[aria-label="New tab"]')
+    // Click the SessionTabs "+" button (aria-label="New session" since
+    // step 3 replaced TerminalZone's legacy tab-bar).
+    await clickBySelector('button[aria-label="New session"]')
     await waitForCount(2, 'new tab did not register a second PTY session')
 
     // Close the *second* session by its frontend name. useSessionManager

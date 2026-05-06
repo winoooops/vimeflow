@@ -42,15 +42,15 @@ const getSessionLabel = async (sessionId: string): Promise<string | null> =>
     const pane = document.querySelector<HTMLElement>(
       `[data-testid="terminal-pane"][data-session-id="${id}"]`
     )
-    // Find the corresponding tab button by walking from the pane's session
-    // to the tabbar (workspace session name === tab aria-label minus emoji).
-    const buttons = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('button[aria-label^="🤖 "]')
-    )
     if (!pane) return null
-    // We don't actually need the label to match the pane — tab order is
-    // deterministic, so return the last button's label as the newest tab.
-    return buttons[buttons.length - 1]?.getAttribute('aria-label') ?? null
+    // SessionTabs (step 3) exposes each tab as `<div role="tab" data-session-id>`;
+    // we identify the most recently spawned tab by document order.
+    const tabs = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-testid="session-tab"][data-session-id]'
+      )
+    )
+    return tabs[tabs.length - 1]?.getAttribute('data-session-id') ?? null
   }, sessionId)
 
 describe('Multi-tab terminal isolation', () => {
@@ -82,8 +82,8 @@ describe('Multi-tab terminal isolation', () => {
       { timeout: 15_000, timeoutMsg: 'marker A never landed in session 1' }
     )
 
-    // Spawn session 2.
-    await clickBySelector('button[aria-label="New tab"]')
+    // Spawn session 2 via the SessionTabs "+" button.
+    await clickBySelector('button[aria-label="New session"]')
     await browser.waitUntil(async () => (await allSessionIds()).length === 2, {
       timeout: 10_000,
       timeoutMsg: 'second session did not mount',
