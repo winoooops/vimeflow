@@ -217,17 +217,43 @@ describe('SessionTabs', () => {
     expect(tabs[1]).toHaveAttribute('tabindex', '-1')
   })
 
-  test('inactive tab close button is removed from the natural Tab order', () => {
-    // Roving tabindex must extend to interactive descendants — otherwise
-    // Tab navigation lands on close buttons of tabs the user can't see.
+  test('close buttons are always tabIndex=-1 (single Tab stop in tablist)', () => {
+    // WAI-ARIA tabs §3.27: the entire tablist is exactly one Tab stop.
+    // Interactive descendants (close X) are reached via Delete/Backspace
+    // on the focused tab, not via Tab. Both active AND inactive close
+    // buttons must be tabIndex=-1 so Tab passes through to the tabpanel.
     const sessions = [
       buildSession({ id: 'a', name: 'auth' }),
       buildSession({ id: 'b', name: 'tests' }),
     ]
     renderTabs(sessions, 'a')
     const closeBtns = screen.getAllByRole('button', { name: /^Close / })
-    expect(closeBtns[0]).toHaveAttribute('tabindex', '0')
+    expect(closeBtns[0]).toHaveAttribute('tabindex', '-1')
     expect(closeBtns[1]).toHaveAttribute('tabindex', '-1')
+  })
+
+  test('Delete on the focused tab calls onClose (browser-tab convention)', async () => {
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+    const sessions = [buildSession({ id: 'a', name: 'auth' })]
+    renderTabs(sessions, 'a', { onClose })
+
+    const tab = screen.getByRole('tab')
+    tab.focus()
+    await user.keyboard('{Delete}')
+    expect(onClose).toHaveBeenCalledWith('a')
+  })
+
+  test('Backspace on the focused tab also calls onClose', async () => {
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+    const sessions = [buildSession({ id: 'a', name: 'auth' })]
+    renderTabs(sessions, 'a', { onClose })
+
+    const tab = screen.getByRole('tab')
+    tab.focus()
+    await user.keyboard('{Backspace}')
+    expect(onClose).toHaveBeenCalledWith('a')
   })
 
   test('renders a status pip alongside the running session title', () => {

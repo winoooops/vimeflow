@@ -1,7 +1,7 @@
 import {
   useState,
-  useRef,
   useEffect,
+  useRef,
   useCallback,
   type ReactElement,
 } from 'react'
@@ -13,6 +13,7 @@ import { FileExplorer } from './panels/FileExplorer'
 import { SidebarStatusHeader } from './SidebarStatusHeader'
 import { StatusDot } from './StatusDot'
 import { formatRelativeTime } from '../../agent-status/utils/relativeTime'
+import { useRenameState } from '../hooks/useRenameState'
 import { pickNextVisibleSessionId } from '../utils/pickNextVisibleSessionId'
 
 export interface SidebarProps {
@@ -94,25 +95,15 @@ const SessionRow = ({
   onRemove = undefined,
   onRename = undefined,
 }: SessionRowProps): ReactElement => {
-  const [isEditing, setIsEditing] = useState(false)
-  const [editValue, setEditValue] = useState(session.name)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus()
-      inputRef.current.select()
-    }
-  }, [isEditing])
-
-  const commitRename = (): void => {
-    setIsEditing(false)
-    if (editValue.trim().length > 0 && editValue.trim() !== session.name) {
-      onRename?.(session.id, editValue.trim())
-    } else {
-      setEditValue(session.name)
-    }
-  }
+  const {
+    isEditing,
+    editValue,
+    setEditValue,
+    inputRef,
+    beginEdit,
+    commitRename,
+    cancelRename,
+  } = useRenameState(session, onRename)
 
   const { added, removed } = sessionLineDelta(session)
   const subtitle = sessionSubtitle(session)
@@ -178,8 +169,7 @@ const SessionRow = ({
                   commitRename()
                 }
                 if (e.key === 'Escape') {
-                  setEditValue(session.name)
-                  setIsEditing(false)
+                  cancelRename()
                 }
               }}
               className="pointer-events-auto min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[13px] font-semibold text-on-surface outline-none ring-1 ring-primary"
@@ -202,8 +192,7 @@ const SessionRow = ({
                   return
                 }
                 e.stopPropagation()
-                setEditValue(session.name)
-                setIsEditing(true)
+                beginEdit()
               }}
             >
               {session.name}
@@ -245,8 +234,7 @@ const SessionRow = ({
             type="button"
             onClick={(e) => {
               e.stopPropagation()
-              setEditValue(session.name)
-              setIsEditing(true)
+              beginEdit()
             }}
             className="rounded p-0.5 text-on-surface-variant/60 transition-colors hover:bg-surface-container-high hover:text-on-surface"
             aria-label="Rename session"
@@ -281,25 +269,15 @@ const RecentSessionRow = ({
   onRemove = undefined,
   onRename = undefined,
 }: SessionRowProps): ReactElement => {
-  const [isEditing, setIsEditing] = useState(false)
-  const [editValue, setEditValue] = useState(session.name)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus()
-      inputRef.current.select()
-    }
-  }, [isEditing])
-
-  const commitRename = (): void => {
-    setIsEditing(false)
-    if (editValue.trim().length > 0 && editValue.trim() !== session.name) {
-      onRename?.(session.id, editValue.trim())
-    } else {
-      setEditValue(session.name)
-    }
-  }
+  const {
+    isEditing,
+    editValue,
+    setEditValue,
+    inputRef,
+    beginEdit,
+    commitRename,
+    cancelRename,
+  } = useRenameState(session, onRename)
 
   const { added, removed } = sessionLineDelta(session)
   const subtitle = sessionSubtitle(session)
@@ -348,8 +326,7 @@ const RecentSessionRow = ({
                   commitRename()
                 }
                 if (e.key === 'Escape') {
-                  setEditValue(session.name)
-                  setIsEditing(false)
+                  cancelRename()
                 }
               }}
               className="pointer-events-auto min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[12.5px] text-on-surface outline-none ring-1 ring-primary"
@@ -369,8 +346,7 @@ const RecentSessionRow = ({
                   return
                 }
                 e.stopPropagation()
-                setEditValue(session.name)
-                setIsEditing(true)
+                beginEdit()
               }}
             >
               {session.name}
@@ -406,8 +382,7 @@ const RecentSessionRow = ({
             type="button"
             onClick={(e) => {
               e.stopPropagation()
-              setEditValue(session.name)
-              setIsEditing(true)
+              beginEdit()
             }}
             className="rounded p-0.5 text-on-surface-variant/60 transition-colors hover:bg-surface-container-high hover:text-on-surface"
             aria-label="Rename session"

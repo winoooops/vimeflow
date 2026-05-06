@@ -37,14 +37,18 @@ const allSessionIds = async (): Promise<string[]> =>
     return Array.from(seen)
   })
 
-const getSessionLabel = async (sessionId: string): Promise<string | null> =>
+// Returns the data-session-id of the latest spawned tab (document
+// order), or null if the supplied sessionId has no terminal-pane in
+// the DOM. Renamed from `getSessionLabel` to reflect what it actually
+// returns — an opaque session id, not a human-readable label.
+const getLatestSessionTabId = async (
+  sessionId: string
+): Promise<string | null> =>
   browser.execute((id: string) => {
     const pane = document.querySelector<HTMLElement>(
       `[data-testid="terminal-pane"][data-session-id="${id}"]`
     )
     if (!pane) return null
-    // SessionTabs (step 3) exposes each tab as `<div role="tab" data-session-id>`;
-    // we identify the most recently spawned tab by document order.
     const tabs = Array.from(
       document.querySelectorAll<HTMLElement>(
         '[data-testid="session-tab"][data-session-id]'
@@ -137,8 +141,9 @@ describe('Multi-tab terminal isolation', () => {
     expect(s2).toContain(markerB)
     expect(s2).not.toContain(markerA)
 
-    // `getSessionLabel` is exercised to confirm the helper doesn't throw,
-    // but we don't assert on its value — tab naming is ephemeral.
-    void (await getSessionLabel(session2Id))
+    // `getLatestSessionTabId` is exercised to confirm the helper
+    // doesn't throw, but we don't assert on its value — tab id is
+    // ephemeral.
+    void (await getLatestSessionTabId(session2Id))
   })
 })

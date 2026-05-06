@@ -136,13 +136,21 @@ const SessionTab = ({
     if (e.target !== e.currentTarget) {
       return
     }
-    // Enter / Space activate the focused tab. Arrow-key cycling between
-    // tabs intentionally not handled here — see the global-keybinding
-    // stub note in SessionTabs above. Without that, in practice xterm
-    // owns focus and the tab strip is mouse-driven.
+    // Enter / Space activate the focused tab. Delete / Backspace close
+    // it — same convention as browser tab bars (Cmd+W) and matches the
+    // WAI-ARIA tabs pattern where the close button is reachable via
+    // keyboard shortcut on the focused tab, not as a separate Tab stop.
+    // Arrow-key cycling intentionally not handled here — see the
+    // global-keybinding stub note in SessionTabs above.
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       onSelect(session.id)
+
+      return
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault()
+      onClose(session.id)
     }
   }
 
@@ -207,13 +215,12 @@ const SessionTab = ({
       )}
       <button
         type="button"
-        // Roving tabindex includes interactive descendants. Without
-        // tabIndex=-1 here, native <button> keeps tabIndex=0 and Tab
-        // navigation lands on close buttons of inactive tabs the user
-        // can't see — risk of dismissing the wrong session. Tracks
-        // isFocusEntryPoint (not isActive) so the null-active fallback
-        // also exposes the close button on the first visible tab.
-        tabIndex={isFocusEntryPoint ? 0 : -1}
+        // WAI-ARIA tabs §3.27: the entire tablist is one Tab stop;
+        // interactive descendants are reached via shortcut, not Tab.
+        // Always tabIndex=-1 so Tab passes through to the tabpanel
+        // below. Keyboard close lives on the parent tab div via
+        // Delete/Backspace handling in handleKeyDown above.
+        tabIndex={-1}
         onClick={(e) => {
           e.stopPropagation()
           onClose(session.id)
