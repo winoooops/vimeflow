@@ -34,20 +34,14 @@ describe('StatusBar', () => {
   test('renders version sourced from package.json', () => {
     render(<StatusBar />)
 
-    // __APP_VERSION__ is injected by both vite.config.ts and
-    // vitest.config.ts via `define`, sourced from package.json.
-    // Asserting the semver shape keeps the test stable across version
-    // bumps while still proving the placeholder string was replaced.
+    // Anchored regex survives package.json version bumps without test churn.
     expect(screen.getByText(/^v\d+\.\d+\.\d+$/)).toBeInTheDocument()
   })
 
   test('exposes contentinfo landmark for assistive navigation', () => {
     render(<StatusBar />)
 
-    // <footer> directly inside the body (not nested in <section>/<article>)
-    // has implicit role="contentinfo". Landmark navigation in screen
-    // readers (VoiceOver/NVDA) skips between roles, so the persistent
-    // status bar must be reachable that way.
+    // <footer> outside sectioning element → implicit role="contentinfo".
     expect(screen.getByRole('contentinfo')).toHaveAccessibleName('App status')
   })
 })

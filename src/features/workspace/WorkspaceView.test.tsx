@@ -150,8 +150,6 @@ describe('WorkspaceView', () => {
     const container = screen.getByTestId('workspace-view')
 
     expect(container).toHaveClass('grid')
-    // Grid columns per handoff §3: 48px icon rail + dynamic sidebar (272px
-    // default) + 1fr main + auto (AgentStatusPanel self-manages width).
     expect(container.style.gridTemplateColumns).toBe('48px 272px 1fr auto')
   })
 
@@ -284,8 +282,7 @@ describe('WorkspaceView', () => {
 
     const workspaceView = screen.getByTestId('workspace-view')
 
-    // Main workspace container (3rd child in grid: icon rail, sidebar wrapper,
-    // main wrapper, agent status panel) should use flex-col.
+    // 3rd grid child = main wrapper (after icon rail, sidebar wrapper).
     const mainWorkspace = workspaceView.children[2] as HTMLElement
     expect(mainWorkspace).toHaveClass('flex')
     expect(mainWorkspace).toHaveClass('flex-col')
@@ -367,8 +364,7 @@ describe('WorkspaceView', () => {
     const statusBar = screen.getByTestId('status-bar')
 
     expect(statusBar).toBeInTheDocument()
-    // Status bar lives inside main column so icon rail + sidebar fill the
-    // full viewport height (handoff §3 / §4.9).
+    // Inside main column → icon rail + sidebar fill full viewport height.
     expect(mainWorkspace.contains(statusBar)).toBe(true)
   })
 

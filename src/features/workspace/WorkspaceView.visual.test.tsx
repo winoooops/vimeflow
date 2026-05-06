@@ -95,8 +95,6 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       render(<WorkspaceView />)
       const workspace = screen.getByTestId('workspace-view')
 
-      // Handoff §3: 48px icon rail + 272px sidebar + 1fr main + auto
-      // (AgentStatusPanel still self-manages 0↔280px until step 6).
       expect(workspace.style.gridTemplateColumns).toBe('48px 272px 1fr auto')
     })
 
