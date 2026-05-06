@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access --
+/* eslint-disable @typescript-eslint/no-unsafe-member-access --
    tailwind.config.js is plain CommonJS-style ESM under bundler resolution.
    tsconfig.json has no `allowJs`, so the default import is typed `any`.
    The test asserts runtime shape via Vitest matchers, which is sufficient
@@ -6,6 +6,11 @@
    migrate the config to .ts; until then, scope the unsafe-* relaxations to
    this single test file. */
 
+import { test, expect } from 'vitest'
+// @ts-expect-error -- tailwind.config.js is plain JS with no accompanying
+// .d.ts; tsconfig.json has no allowJs (its include is scoped to src). Implicit
+// 'any' for the imported config is the documented trade-off until step 10 may
+// migrate tailwind.config to TypeScript.
 import config from '../../tailwind.config.js'
 
 const colors = config.theme.extend.colors as Record<string, unknown>
