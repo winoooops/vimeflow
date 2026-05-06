@@ -53,6 +53,15 @@ export const SessionTabs = ({
     onClose(sessionId)
     if (nextId !== undefined) {
       onSelect(nextId)
+      // WAI-ARIA Tabs Pattern §4.4.3: after a keyboard close, focus must
+      // move to the newly-selected tab. Removing the close button drops
+      // DOM focus to <body>; queueMicrotask defers until React has
+      // committed the re-render so the new active tab exists in the DOM.
+      // No-op for mouse closes (the focused element was already the
+      // close button, not body).
+      queueMicrotask(() => {
+        document.getElementById(`session-tab-${nextId}`)?.focus()
+      })
     }
   }
 
@@ -126,6 +135,13 @@ const SessionTab = ({
     <div
       id={`session-tab-${session.id}`}
       role="tab"
+      // Without an explicit name, the ARIA accessible-name algorithm
+      // accumulates labels from descendants — the StatusDot's `Status
+      // running` and the close button's `Close <name>` would both fold
+      // into the tab's announced name. Setting aria-label here pins the
+      // computed name to just the session name; descendants stay
+      // independently focusable with their own labels.
+      aria-label={session.name}
       aria-selected={isActive}
       aria-controls={`session-panel-${session.id}`}
       tabIndex={isActive ? 0 : -1}

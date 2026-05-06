@@ -61,11 +61,22 @@ const STATE_PILL_LABEL: Record<Session['status'], string> = {
   errored: 'errored',
 }
 
+// Bright pills — Active group rows. Vivid bg + saturated text.
 const STATE_PILL_TONE: Record<Session['status'], string> = {
   running: 'text-success bg-success/10',
   paused: 'text-warning bg-warning/10',
   completed: 'text-success-muted bg-success-muted/10',
   errored: 'text-error bg-error/15',
+}
+
+// Dim pills — Recent group rows. Lower bg opacity + softer text so the
+// row reads as historical chrome rather than competing with the Active
+// group above.
+const STATE_PILL_TONE_DIM: Record<Session['status'], string> = {
+  running: 'text-success/70 bg-success/5',
+  paused: 'text-warning/70 bg-warning/5',
+  completed: 'text-success-muted/70 bg-success-muted/5',
+  errored: 'text-error/80 bg-error/8',
 }
 
 interface SessionRowProps {
@@ -176,7 +187,9 @@ const SessionRow = ({
               {session.name}
             </span>
           )}
-          <span className="shrink-0 font-mono text-[10px] text-on-surface-variant/70">
+          {/* Hide on hover so the absolute-positioned edit/close
+              actions in the top-right corner don't overlap it. */}
+          <span className="shrink-0 font-mono text-[10px] text-on-surface-variant/70 transition-opacity group-hover:opacity-0">
             {formatRelativeTime(session.lastActivityAt)}
           </span>
         </span>
@@ -235,16 +248,33 @@ const SessionRow = ({
   )
 }
 
-// Recent rows are read-only — no rename. Narrowing the prop type makes
-// that contract explicit instead of advertising a no-op `onRename`.
-type RecentSessionRowProps = Omit<SessionRowProps, 'onRename'>
-
 const RecentSessionRow = ({
   session,
   isActive,
   onSessionClick,
   onRemove = undefined,
-}: RecentSessionRowProps): ReactElement => {
+  onRename = undefined,
+}: SessionRowProps): ReactElement => {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editValue, setEditValue] = useState(session.name)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [isEditing])
+
+  const commitRename = (): void => {
+    setIsEditing(false)
+    if (editValue.trim().length > 0 && editValue.trim() !== session.name) {
+      onRename?.(session.id, editValue.trim())
+    } else {
+      setEditValue(session.name)
+    }
+  }
+
   const { added, removed } = sessionLineDelta(session)
   const subtitle = sessionSubtitle(session)
 
@@ -275,46 +305,97 @@ const RecentSessionRow = ({
         aria-label={session.name}
       >
         <span className="flex items-center gap-2">
-          <StatusDot status={session.status} />
-          <span className="min-w-0 flex-1 truncate font-label text-[12.5px] text-on-surface-variant">
-            {session.name}
-          </span>
-          <span className="shrink-0 font-mono text-[10px] text-on-surface-variant/70">
+          <StatusDot status={session.status} size={6} dim />
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  commitRename()
+                }
+                if (e.key === 'Escape') {
+                  setEditValue(session.name)
+                  setIsEditing(false)
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[12.5px] text-on-surface outline-none ring-1 ring-primary"
+              aria-label="Rename session"
+            />
+          ) : (
+            <span
+              className={`min-w-0 flex-1 truncate font-label text-[12.5px] ${isActive ? 'text-on-surface' : 'text-on-surface-variant/60'}`}
+              onDoubleClick={(e) => {
+                if (!onRename) {
+                  return
+                }
+                e.stopPropagation()
+                setEditValue(session.name)
+                setIsEditing(true)
+              }}
+            >
+              {session.name}
+            </span>
+          )}
+          {/* Same hover treatment as Active rows — the remove button
+              in the top-right shares horizontal space with this. */}
+          <span className="shrink-0 font-mono text-[10px] text-on-surface-variant/50 transition-opacity group-hover:opacity-0">
             {formatRelativeTime(session.lastActivityAt)}
           </span>
         </span>
         <span className="flex items-center gap-2 pl-[15px] font-mono text-[10px]">
           <span
             data-testid="state-pill"
-            className={`rounded-full px-1.5 py-px uppercase tracking-wide ${STATE_PILL_TONE[session.status]}`}
+            className={`rounded-full px-1.5 py-px uppercase tracking-wide ${STATE_PILL_TONE_DIM[session.status]}`}
           >
             {STATE_PILL_LABEL[session.status]}
           </span>
           {(added > 0 || removed > 0) && (
-            <span className="text-on-surface-variant/70">
-              <span className="text-success">+{added}</span>{' '}
-              <span className="text-error">-{removed}</span>
+            <span className="text-on-surface-variant/50">
+              <span className="text-success/70">+{added}</span>{' '}
+              <span className="text-error/70">-{removed}</span>
             </span>
           )}
-          <span className="ml-auto truncate font-label text-[10.5px] text-on-surface-variant/70">
+          <span className="ml-auto truncate font-label text-[10.5px] text-on-surface-variant/50">
             {subtitle}
           </span>
         </span>
       </button>
-      {onRemove && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onRemove(session.id)
-          }}
-          className="absolute right-2 top-2 rounded p-0.5 text-on-surface-variant/40 opacity-0 transition-all hover:bg-error/20 hover:text-error group-hover:opacity-100"
-          aria-label="Remove session"
-          title="Remove"
-        >
-          <span className="material-symbols-outlined text-sm">close</span>
-        </button>
-      )}
+      <div className="absolute right-2 top-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        {onRename && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setEditValue(session.name)
+              setIsEditing(true)
+            }}
+            className="rounded p-0.5 text-on-surface-variant/60 transition-colors hover:bg-surface-container-high hover:text-on-surface"
+            aria-label="Rename session"
+            title="Rename"
+          >
+            <span className="material-symbols-outlined text-sm">edit</span>
+          </button>
+        )}
+        {onRemove && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRemove(session.id)
+            }}
+            className="rounded p-0.5 text-on-surface-variant/40 transition-colors hover:bg-error/20 hover:text-error"
+            aria-label="Remove session"
+            title="Remove"
+          >
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
+        )}
+      </div>
     </li>
   )
 }
@@ -459,8 +540,16 @@ export const Sidebar = ({
           axis="y"
           values={activeGroup}
           onReorder={(reordered) => {
-            // Preserve order of recent sessions; only the active subset reorders.
-            onReorderSessions?.([...reordered, ...recentGroup])
+            // Recompute Recent inside the callback — vimeflow runs AI
+            // agents that can complete a task mid-drag, flipping a
+            // running session to completed. The closure-captured
+            // `recentGroup` would either drop that session or land it in
+            // the wrong slice; reading from `sessions` here is always
+            // current.
+            const freshRecent = sessions.filter(
+              (s) => s.status === 'completed' || s.status === 'errored'
+            )
+            onReorderSessions?.([...reordered, ...freshRecent])
           }}
           className="flex flex-col px-2"
           data-testid="session-list"
@@ -497,6 +586,7 @@ export const Sidebar = ({
                   isActive={session.id === activeSessionId}
                   onSessionClick={onSessionClick}
                   onRemove={handleRemoveSession}
+                  onRename={onRenameSession}
                 />
               ))}
             </ul>

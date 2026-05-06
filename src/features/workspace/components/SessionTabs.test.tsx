@@ -66,6 +66,15 @@ describe('SessionTabs', () => {
     expect(tab).toHaveAttribute('aria-controls', 'session-panel-sess-x')
   })
 
+  test('tab has explicit aria-label so descendant labels do not pollute its name', () => {
+    // Without aria-label on the tab, ARIA name computation accumulates
+    // descendant labels — the close button's "Close <name>" and the
+    // StatusDot's "Status running" would both fold into the tab's
+    // computed name. An explicit aria-label pins it to just session.name.
+    renderTabs([buildSession({ id: 'a', name: 'auth refactor' })], 'a')
+    expect(screen.getByRole('tab')).toHaveAccessibleName('auth refactor')
+  })
+
   test('tablist owns ONLY tab children (WAI-ARIA §3.27)', () => {
     // The "+" button and trailing flex spacer must live OUTSIDE the
     // tablist so screen readers don't iterate them in the arrow-key
@@ -237,6 +246,40 @@ describe('SessionTabs', () => {
     expect(
       screen.getByRole('button', { name: 'New session' })
     ).toBeInTheDocument()
+  })
+
+  test('keyboard close moves DOM focus to the new active tab (WAI-ARIA §4.4.3)', async () => {
+    // Without focus restoration, the browser drops focus to <body> when
+    // the close button is removed mid-render. Keyboard users would have
+    // to re-Tab into the strip after every close.
+    const onSelect = vi.fn()
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+
+    const sessions = [
+      buildSession({ id: 'a', name: 'auth' }),
+      buildSession({ id: 'b', name: 'tests' }),
+    ]
+    renderTabs(sessions, 'a', { onSelect, onClose })
+
+    const tabs = screen.getAllByRole('tab')
+
+    const closeBtn = within(tabs[0]).getByRole('button', {
+      name: /^Close auth/,
+    })
+    closeBtn.focus()
+    await user.keyboard('{Enter}')
+
+    expect(onClose).toHaveBeenCalledWith('a')
+    expect(onSelect).toHaveBeenCalledWith('b')
+    // Wait a microtask for the queueMicrotask focus call.
+    await new Promise<void>((resolve) => {
+      queueMicrotask(resolve)
+    })
+    // The renderer mock leaves 'a' in the tablist (onClose is a vi.fn());
+    // verifying focus by id avoids that mismatch — the new active tab is
+    // 'b' regardless of what the parent does with the closed session.
+    expect(screen.getByRole('tab', { name: 'tests' })).toHaveFocus()
   })
 
   test('closing the active tab pre-selects the next VISIBLE tab', async () => {
