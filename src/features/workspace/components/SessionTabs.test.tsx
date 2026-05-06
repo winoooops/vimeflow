@@ -212,4 +212,61 @@ describe('SessionTabs', () => {
     expect(tabs[0]).toHaveTextContent('just exited')
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
   })
+
+  test('ArrowRight on the active tab cycles selection to the next tab', async () => {
+    const onSelect = vi.fn()
+    const user = userEvent.setup()
+
+    const sessions = [
+      buildSession({ id: 'a', name: 'auth' }),
+      buildSession({ id: 'b', name: 'tests' }),
+      buildSession({ id: 'c', name: 'docs' }),
+    ]
+    renderTabs(sessions, 'a', { onSelect })
+
+    const activeTab = screen.getAllByRole('tab')[0]
+    activeTab.focus()
+    await user.keyboard('{ArrowRight}')
+    expect(onSelect).toHaveBeenLastCalledWith('b')
+  })
+
+  test('ArrowLeft on the active tab wraps to the last tab', async () => {
+    const onSelect = vi.fn()
+    const user = userEvent.setup()
+
+    const sessions = [
+      buildSession({ id: 'a', name: 'auth' }),
+      buildSession({ id: 'b', name: 'tests' }),
+      buildSession({ id: 'c', name: 'docs' }),
+    ]
+    renderTabs(sessions, 'a', { onSelect })
+
+    const activeTab = screen.getAllByRole('tab')[0]
+    activeTab.focus()
+    await user.keyboard('{ArrowLeft}')
+    expect(onSelect).toHaveBeenLastCalledWith('c')
+  })
+
+  test('Enter on a focused close button closes that tab without re-selecting', async () => {
+    // Cycle-3 P2: child key events were bubbling to the parent tab
+    // handler, so Enter on the close X also called onSelect and
+    // prevented the close. Now: tab handler ignores bubbled keys.
+    const onSelect = vi.fn()
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+
+    renderTabs([buildSession({ id: 'a', name: 'auth' })], 'a', {
+      onSelect,
+      onClose,
+    })
+
+    const closeBtn = within(screen.getByRole('tab')).getByRole('button', {
+      name: /close auth/i,
+    })
+    closeBtn.focus()
+    await user.keyboard('{Enter}')
+
+    expect(onClose).toHaveBeenCalledWith('a')
+    expect(onSelect).not.toHaveBeenCalled()
+  })
 })

@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { useRef, type KeyboardEvent, type ReactElement } from 'react'
 import type { Session } from '../types'
 import { agentForSession } from '../utils/agentForSession'
 import { StatusDot } from './StatusDot'
@@ -29,6 +29,30 @@ export const SessionTabs = ({
     (s) => isOpenStatus(s) || s.id === activeSessionId
   )
 
+  const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+
+  const registerTab = (id: string, el: HTMLDivElement | null): void => {
+    if (el === null) {
+      tabRefs.current.delete(id)
+    } else {
+      tabRefs.current.set(id, el)
+    }
+  }
+
+  const focusTabAtOffset = (currentId: string, offset: number): void => {
+    const ids = open.map((s) => s.id)
+    const idx = ids.indexOf(currentId)
+    if (idx === -1 || ids.length === 0) {
+      return
+    }
+    const nextIdx = (idx + offset + ids.length) % ids.length
+    const nextId = ids[nextIdx]
+    onSelect(nextId)
+    // Roving-focus pattern: move DOM focus to the newly-selected tab so
+    // arrow-key navigation reads naturally to assistive tech.
+    queueMicrotask(() => tabRefs.current.get(nextId)?.focus())
+  }
+
   return (
     <div
       data-testid="session-tabs"
@@ -43,6 +67,8 @@ export const SessionTabs = ({
           isActive={session.id === activeSessionId}
           onSelect={onSelect}
           onClose={onClose}
+          onArrow={focusTabAtOffset}
+          registerRef={registerTab}
         />
       ))}
       <button
@@ -64,6 +90,8 @@ interface SessionTabProps {
   isActive: boolean
   onSelect: (sessionId: string) => void
   onClose: (sessionId: string) => void
+  onArrow: (currentId: string, offset: number) => void
+  registerRef: (id: string, el: HTMLDivElement | null) => void
 }
 
 const SessionTab = ({
@@ -71,11 +99,37 @@ const SessionTab = ({
   isActive,
   onSelect,
   onClose,
+  onArrow,
+  registerRef,
 }: SessionTabProps): ReactElement => {
   const agent = agentForSession(session)
 
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    // Don't react to keys that bubbled from a focused descendant (close X).
+    if (e.target !== e.currentTarget) {
+      return
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onSelect(session.id)
+
+      return
+    }
+    if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      onArrow(session.id, 1)
+
+      return
+    }
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      onArrow(session.id, -1)
+    }
+  }
+
   return (
     <div
+      ref={(el) => registerRef(session.id, el)}
       role="tab"
       aria-selected={isActive}
       tabIndex={isActive ? 0 : -1}
@@ -83,12 +137,7 @@ const SessionTab = ({
       data-session-id={session.id}
       data-active={isActive}
       onClick={() => onSelect(session.id)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onSelect(session.id)
-        }
-      }}
+      onKeyDown={handleKeyDown}
       className={`
         relative flex h-[30px] min-w-[130px] max-w-[220px] cursor-pointer items-center gap-2
         rounded-t-lg border border-transparent pl-3 pr-2 outline-none transition-colors
