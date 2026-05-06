@@ -492,17 +492,25 @@ use std::time::SystemTime;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct BindContext<'a> {
-    pub(super) session_id: &'a str,
     pub(super) cwd: &'a Path,
     pub(super) pid: u32,
     pub(super) pty_start: SystemTime,
 }
 ```
 
-Field shape and `Copy`/`Clone` semantics match the deleted public type
-verbatim, so `codex/locator.rs` body changes are minimal — only the import
-path moves (`use crate::agent::adapter::types::BindContext` →
-`use super::types::BindContext`).
+Field shape narrows from the deleted public type: `session_id` is dropped
+because the codex locator never reads it (verified via
+`grep -rn 'ctx.session_id\|\.session_id' codex/locator.rs` returning zero
+matches). Carrying it would trigger `cargo clippy --all-targets -- -D
+warnings` to flag dead-code on the field. The trait method still receives
+`session_id`; the codex impl binds it to `_session_id` to mark intentional
+non-use.
+
+`codex/locator.rs` body changes are minimal — only the import path moves
+(`use crate::agent::adapter::types::BindContext` →
+`use super::types::BindContext`). Method signatures still take
+`&BindContext<'_>`; the dropped field is invisible to them because they
+never accessed it.
 
 Visibility is `pub(super)`, restricting the struct to the `codex/` module
 tree. External callers cannot construct or observe it.
@@ -733,10 +741,12 @@ impl<R: tauri::Runtime> AgentAdapter<R> for CodexAdapter {
     fn status_source(
         &self,
         cwd: &Path,
-        session_id: &str,
+        _session_id: &str,
     ) -> Result<StatusSource, String> {
+        // `session_id` is part of the trait contract (Claude / NoOp use it)
+        // but the codex locator never reads it — bind to `_session_id` to
+        // satisfy `-D warnings`.
         let ctx = BindContext {
-            session_id,
             cwd,
             pid: self.pid,
             pty_start: self.pty_start,
@@ -760,7 +770,7 @@ impl<R: tauri::Runtime> AgentAdapter<R> for CodexAdapter {
 
 The `BindContext` constructed inside `status_source` uses the adapter's
 stored `pid`/`pty_start` for the codex-only fields and the trait-method
-params for `cwd`/`session_id`. The `&ctx` reference is captured by the
+`cwd` param for the cwd field. The `&ctx` reference is captured by the
 closure passed to `retry_locator`.
 
 Mutex update of `resolved_rollout_path` happens once on success, identical
@@ -955,7 +965,17 @@ being added to the no-retry branches.
 **`status_source_tests`** — covers the new `(cwd, sid)` trait-method
 signature on `CodexAdapter`. Uses `CodexAdapter::with_home` (Section 3.2,
 `#[cfg(test)]` constructor) to inject a tempdir-backed codex home so the
-test isolates from the user's real `~/.codex`:
+test isolates from the user's real `~/.codex`.
+
+The SQLite seeding helper is **duplicated inline** inside
+`status_source_tests` (~30 LOC) rather than extracted into a shared
+fixtures module. Rationale: only two places need the helper today
+(`locator::tests` and these new `status_source_tests`); a shared module
+would touch one more file (`codex/locator.rs` or a new
+`codex/test_fixtures.rs`) and expand the PR scope. If a third call site
+emerges later, promote the helper at that point. The locator-side tests
+keep their existing private helper unchanged; the adapter-side tests
+carry an inline copy.
 
 ```rust
 #[cfg(test)]
@@ -966,13 +986,17 @@ mod status_source_tests {
     /// Seeds a tempdir with the SQLite logs/threads schema + a thread row
     /// for the given (pid, pty_start) pointing at a writable rollout
     /// path. Returns the rollout path so the test can assert it.
-    /// Existing helpers in `locator::tests::fixtures` model what to
-    /// reuse / extract into a shared test module here.
+    ///
+    /// Inline duplicate of the helper used in `locator::tests`; the two
+    /// copies should stay in sync. If a third call site emerges, promote
+    /// to a shared `codex/test_fixtures.rs` module then.
     fn seed_codex_home_with_thread(
         codex_home: &Path,
         pid: u32,
         pty_start: SystemTime,
-    ) -> PathBuf { /* ... */ }
+    ) -> PathBuf { /* ~30 LOC: open sqlite, create logs+threads tables,
+                       insert a row with thread_id pointing at a fresh
+                       rollout-*.jsonl under codex_home/sessions/... */ }
 
     #[test]
     fn status_source_returns_resolved_rollout_on_happy_path() {
@@ -1314,8 +1338,10 @@ answers "what does issue #156 say to do?":
 - The 1 added Rust file (`codex/types.rs`) is named in Section 3.1.
 - The 1 added doc file (the new ADR) is named in Section 5.1 and is
   required by issue #156's acceptance criteria.
-- The 2 modified doc files are the standard amendment shape from the
-  2026-05-04 ADR pattern.
+- The 3 modified doc files are: the Stage 2 spec (Section 5.2 supersede
+  markers), `docs/decisions/CLAUDE.md` (mechanical index update for the
+  new ADR), and `src-tauri/src/agent/README.md` (Section 5.3 line-targeted
+  updates). All three are forced consequences of the refactor.
 
 Out of scope, explicitly listed here so the PR review can rule them out at
 a glance:
