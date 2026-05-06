@@ -2065,3 +2065,5 @@ git diff -w --stat main..HEAD
 ```
 
 Expected: whitespace-stripped delta close to the regular delta. Any large gap is a formatting drive-by — surface and revert before opening the PR.
+
+<!-- codex-reviewed: 2026-05-06T05:22:40Z -->
