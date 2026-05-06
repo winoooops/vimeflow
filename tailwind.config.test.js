@@ -81,9 +81,13 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
       ])
     })
 
-    test('has mono font family (JetBrains Mono)', () => {
+    test('has mono font family (JetBrains Mono with ui-monospace fallback)', () => {
+      // Updated per handoff §6: adds `ui-monospace` as a fallback before the
+      // generic monospace family. No consumer behavior change (browsers fall
+      // through unknown family names); aligns with handoff design tokens.
       expect(tailwindConfig.theme.extend.fontFamily.mono).toEqual([
         'JetBrains Mono',
+        'ui-monospace',
         'monospace',
       ])
     })
