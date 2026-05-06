@@ -6,14 +6,21 @@ import { TerminalZone } from './components/TerminalZone'
 import BottomDrawer from './components/BottomDrawer'
 import { AgentStatusPanel } from '../agent-status/components/AgentStatusPanel'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
+import { InfoBanner } from './components/InfoBanner'
+import { CommandPalette } from '../command-palette/CommandPalette'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { useSessionManager } from './hooks/useSessionManager'
 import { useResizable } from './hooks/useResizable'
+import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
 import { createTerminalService } from '../terminal/services/terminalService'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
+import {
+  buildWorkspaceCommands,
+  WORKSPACE_TAB_KEYS,
+} from './commands/buildWorkspaceCommands'
 import type { ChangedFile, SelectedDiffFile } from '../diff/types'
 
 const SIDEBAR_MIN = 240
@@ -45,6 +52,44 @@ export const WorkspaceView = (): ReactElement => {
     loading,
     notifyPaneReady,
   } = useSessionManager(terminalService)
+
+  const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
+
+  // Activity updates (tool calls, file changes) bump `sessions` identity
+  // but no command body reads activity, so rebuilding on every PTY data
+  // tick is wasted work. Walk the same key list that defines `WorkspaceTab`
+  // — adding a key there automatically extends this signature so the memo
+  // rebuilds whenever a newly-readable field actually changes. JSON
+  // encoding is collision-free regardless of separator characters in names.
+  const sessionsSignature = JSON.stringify(
+    sessions.map((s) => WORKSPACE_TAB_KEYS.map((k) => s[k]))
+  )
+
+  const workspaceCommands = useMemo(
+    () =>
+      buildWorkspaceCommands({
+        sessions,
+        activeSessionId,
+        createSession,
+        removeSession,
+        renameSession,
+        setActiveSessionId,
+        notifyInfo,
+      }),
+    // sessionsSignature captures every field the closures read; activity-only
+    // changes keep the signature stable so the memo (and downstream
+    // filteredResults / handler refs) do not churn during agent I/O.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      sessionsSignature,
+      activeSessionId,
+      createSession,
+      removeSession,
+      renameSession,
+      setActiveSessionId,
+      notifyInfo,
+    ]
+  )
 
   const agentStatus = useAgentStatus(activeSessionId)
 
@@ -395,25 +440,36 @@ export const WorkspaceView = (): ReactElement => {
           onSelectedDiffFileChange={setSelectedDiffFile}
         />
 
-        {/* File error banner — surfaces failures from direct file open
-            (openFileSafely) and vim :w saves (handleVimSave). Rendered at
-            the top of the main area so the user always sees what went wrong. */}
-        {fileError && (
-          <div
-            role="alert"
-            className="absolute top-2 left-1/2 -translate-x-1/2 z-40 max-w-2xl px-4 py-2 rounded-lg bg-error/20 border border-error/40 text-sm text-error font-inter backdrop-blur-sm flex items-center gap-3 shadow-lg"
-          >
-            <span className="flex-1">{fileError}</span>
-            <button
-              type="button"
-              aria-label="Dismiss error"
-              onClick={() => {
-                setFileError(null)
-              }}
-              className="text-error hover:text-on-surface transition-colors"
-            >
-              ✕
-            </button>
+        {(fileError !== null || infoMessage !== null) && (
+          <div className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2">
+            {/* File error banner — surfaces failures from direct file open
+                (openFileSafely) and vim :w saves (handleVimSave). Rendered at
+                the top of the main area so the user always sees what went wrong. */}
+            {fileError && (
+              <div
+                role="alert"
+                className="flex items-center gap-3 rounded-lg bg-error/20 px-4 py-2 font-inter text-sm text-error shadow-lg backdrop-blur-sm"
+              >
+                <span className="flex-1">{fileError}</span>
+                <button
+                  type="button"
+                  aria-label="Dismiss error"
+                  onClick={() => {
+                    setFileError(null)
+                  }}
+                  className="text-error transition-colors hover:text-on-surface"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Info banner — surfaces workspace command failures (no active tab,
+                invalid goto args, etc.). Stacked below file errors so command
+                feedback never obscures file-operation failures. */}
+            {infoMessage && (
+              <InfoBanner message={infoMessage} onDismiss={dismiss} />
+            )}
           </div>
         )}
       </div>
@@ -444,6 +500,9 @@ export const WorkspaceView = (): ReactElement => {
 
       {/* Drag overlay — prevents iframes/xterm from stealing mouse events */}
       {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
+
+      {/* Command Palette — workspace-scoped command dispatcher */}
+      <CommandPalette commands={workspaceCommands} />
     </div>
   )
 }

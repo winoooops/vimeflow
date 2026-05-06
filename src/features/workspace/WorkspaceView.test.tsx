@@ -497,6 +497,64 @@ describe('WorkspaceView', () => {
     ).toBeInTheDocument()
   })
 
+  test('stacks command info below file errors', async () => {
+    const user = userEvent.setup()
+
+    const openFileMock = vi
+      .fn()
+      .mockRejectedValue(new Error('permission denied'))
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: null,
+      originalContent: '',
+      currentContent: '',
+      isDirty: false,
+      isLoading: false,
+      openFile: openFileMock,
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+
+    const onOpenFile = capturedAgentStatusPanelProps.onOpenFile
+    expect(onOpenFile).toBeDefined()
+
+    act(() => {
+      onOpenFile?.('/abs/src/fail.test.ts')
+    })
+
+    const alert = await screen.findByRole('alert')
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: ':',
+          ctrlKey: true,
+          bubbles: true,
+        })
+      )
+    })
+
+    await screen.findByRole('dialog', { name: /command palette/i })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    await user.clear(input)
+    await user.type(input, ':goto 99')
+    await user.keyboard('{Enter}')
+
+    const status = await screen.findByRole('status')
+    const stack = alert.parentElement
+
+    expect(stack).toBe(status.parentElement)
+    expect(stack).toHaveClass('flex-col', 'gap-2')
+    expect(Array.from(stack?.children ?? [])).toEqual([alert, status])
+  })
+
   test('lifts useAgentStatus and forwards the latest activeSessionId', async () => {
     render(<WorkspaceView />)
 

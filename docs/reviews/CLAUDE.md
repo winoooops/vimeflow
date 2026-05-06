@@ -38,7 +38,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                              | Category       | Findings | Refs | Last Updated |
 | -------------------------------------------------------------------- | -------------- | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security       | 21       | 3    | 2026-05-03   |
-| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns | 7        | 2    | 2026-05-01   |
+| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns | 8        | 2    | 2026-05-05   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns | 2        | 3    | 2026-04-14   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform | 2        | 1    | 2026-04-10   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality   | 4        | 0    | 2026-04-12   |

@@ -3,9 +3,31 @@ import { describe, test, expect, vi, afterEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import { CommandPalette } from './CommandPalette'
 
+// Default-trigger init the palette listens for (Ctrl+: today). Defined
+// once here so tests describe BEHAVIOR ("default trigger opens the palette"),
+// not the specific keystroke. If the trigger ever changes, this is the
+// single place to update — every test below dispatches via the helper.
+const DEFAULT_TRIGGER_INIT: KeyboardEventInit = {
+  key: ':',
+  ctrlKey: true,
+  bubbles: true,
+}
+
+const dispatchDefaultTrigger = (
+  overrides: KeyboardEventInit = {}
+): KeyboardEvent => {
+  const event = new KeyboardEvent('keydown', {
+    ...DEFAULT_TRIGGER_INIT,
+    ...overrides,
+  })
+
+  document.dispatchEvent(event)
+
+  return event
+}
+
 describe('CommandPalette - Integration Tests', () => {
   afterEach(() => {
-    // Clean up any lingering event listeners
     vi.restoreAllMocks()
   })
 
@@ -17,29 +39,11 @@ describe('CommandPalette - Integration Tests', () => {
     expect(dialog).not.toBeInTheDocument()
   })
 
-  test('opens palette when : key is pressed', async () => {
-    render(<CommandPalette />)
-
-    act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
-
-      document.dispatchEvent(event)
-    })
-
-    await waitFor(() => {
-      const dialog = screen.getByRole('dialog')
-
-      expect(dialog).toBeInTheDocument()
-    })
-  })
-
   test('dialog has correct accessibility attributes', async () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
-
-      document.dispatchEvent(event)
+      dispatchDefaultTrigger()
     })
 
     await waitFor(() => {
@@ -56,9 +60,7 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
-
-      document.dispatchEvent(event)
+      dispatchDefaultTrigger()
     })
 
     await waitFor(() => {
@@ -76,9 +78,7 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
-
-      document.dispatchEvent(event)
+      dispatchDefaultTrigger()
     })
 
     await waitFor(() => {
@@ -103,9 +103,7 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
-
-      document.dispatchEvent(event)
+      dispatchDefaultTrigger()
     })
 
     await waitFor(() => {
@@ -129,9 +127,7 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
-
-      document.dispatchEvent(event)
+      dispatchDefaultTrigger()
     })
 
     await waitFor(() => {
@@ -142,10 +138,8 @@ describe('CommandPalette - Integration Tests', () => {
       name: 'Command palette search',
     })
 
-    // Input starts with ':'
     expect(input).toHaveValue(':')
 
-    // Fire Backspace event directly on input
     fireEvent.keyDown(input, { key: 'Backspace' })
 
     await waitFor(() => {
@@ -159,9 +153,7 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
-
-      document.dispatchEvent(event)
+      dispatchDefaultTrigger()
     })
 
     await waitFor(() => {
@@ -174,16 +166,12 @@ describe('CommandPalette - Integration Tests', () => {
       expect(results.length).toBeGreaterThan(0)
     })
 
-    // First item should be selected initially
     let firstResult = screen.getAllByRole('option')[0]
 
     expect(firstResult).toHaveAttribute('aria-selected', 'true')
 
-    // Press ArrowDown
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: 'ArrowDown' })
-
-      document.dispatchEvent(event)
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
     })
 
     await waitFor(() => {
@@ -192,11 +180,8 @@ describe('CommandPalette - Integration Tests', () => {
       expect(secondResult).toHaveAttribute('aria-selected', 'true')
     })
 
-    // Press ArrowUp to go back
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: 'ArrowUp' })
-
-      document.dispatchEvent(event)
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }))
     })
 
     await waitFor(() => {
@@ -216,9 +201,7 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
-
-      document.dispatchEvent(event)
+      dispatchDefaultTrigger()
     })
 
     await waitFor(() => {
@@ -263,9 +246,7 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
-
-      document.dispatchEvent(event)
+      dispatchDefaultTrigger()
     })
 
     await waitFor(() => {
@@ -303,9 +284,7 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
-
-      document.dispatchEvent(event)
+      dispatchDefaultTrigger()
     })
 
     await waitFor(() => {
@@ -321,9 +300,7 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
-
-      document.dispatchEvent(event)
+      dispatchDefaultTrigger()
     })
 
     await waitFor(() => {
@@ -337,9 +314,7 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
-
-      document.dispatchEvent(event)
+      dispatchDefaultTrigger()
     })
 
     await waitFor(() => {
@@ -357,15 +332,159 @@ describe('CommandPalette - Integration Tests', () => {
     render(<CommandPalette />)
 
     act(() => {
-      const event = new KeyboardEvent('keydown', { key: ':' })
-
-      document.dispatchEvent(event)
+      dispatchDefaultTrigger()
     })
 
     await waitFor(() => {
       const dialog = screen.getByRole('dialog')
 
       expect(dialog).toHaveClass('z-[100]')
+    })
+  })
+
+  // Trigger contract — behavior of the default keydown trigger.
+  test('opens palette when default trigger is pressed', async () => {
+    render(<CommandPalette />)
+
+    act(() => {
+      dispatchDefaultTrigger()
+    })
+
+    await waitFor(() => {
+      const dialog = screen.getByRole('dialog')
+
+      expect(dialog).toBeInTheDocument()
+    })
+  })
+
+  test('bare : does NOT open palette', () => {
+    render(<CommandPalette />)
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: ':' }))
+    })
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  test('default trigger toggles palette closed when already open', async () => {
+    render(<CommandPalette />)
+
+    act(() => {
+      dispatchDefaultTrigger()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    act(() => {
+      dispatchDefaultTrigger()
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+
+  test('default trigger calls preventDefault and stopPropagation when opening', async () => {
+    render(<CommandPalette />)
+
+    const mockPreventDefault = vi.fn()
+    const mockStopPropagation = vi.fn()
+
+    act(() => {
+      const event = new KeyboardEvent('keydown', DEFAULT_TRIGGER_INIT)
+
+      Object.defineProperty(event, 'preventDefault', {
+        value: mockPreventDefault,
+      })
+
+      Object.defineProperty(event, 'stopPropagation', {
+        value: mockStopPropagation,
+      })
+
+      document.dispatchEvent(event)
+    })
+
+    await waitFor(() => {
+      expect(mockPreventDefault).toHaveBeenCalled()
+      expect(mockStopPropagation).toHaveBeenCalled()
+    })
+  })
+
+  test('default trigger calls preventDefault and stopPropagation when closing', async () => {
+    render(<CommandPalette />)
+
+    act(() => {
+      dispatchDefaultTrigger()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    const mockPreventDefault = vi.fn()
+    const mockStopPropagation = vi.fn()
+
+    act(() => {
+      const event = new KeyboardEvent('keydown', DEFAULT_TRIGGER_INIT)
+
+      Object.defineProperty(event, 'preventDefault', {
+        value: mockPreventDefault,
+      })
+
+      Object.defineProperty(event, 'stopPropagation', {
+        value: mockStopPropagation,
+      })
+
+      document.dispatchEvent(event)
+    })
+
+    await waitFor(() => {
+      expect(mockPreventDefault).toHaveBeenCalled()
+      expect(mockStopPropagation).toHaveBeenCalled()
+    })
+  })
+
+  test('default trigger suppresses repeat events', () => {
+    render(<CommandPalette />)
+
+    act(() => {
+      for (let i = 0; i < 5; i++) {
+        dispatchDefaultTrigger({ repeat: true })
+      }
+    })
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  test('capture-phase listener wins over child stopPropagation', async () => {
+    const ChildWithStopPropagation = (): React.ReactElement => {
+      const handleKeyDown = (e: React.KeyboardEvent): void => {
+        if (e.key === ':' && e.ctrlKey) {
+          e.stopPropagation()
+        }
+      }
+
+      return <div onKeyDown={handleKeyDown} data-testid="child-div" />
+    }
+
+    render(
+      <>
+        <CommandPalette />
+        <ChildWithStopPropagation />
+      </>
+    )
+
+    act(() => {
+      screen
+        .getByTestId('child-div')
+        .dispatchEvent(new KeyboardEvent('keydown', DEFAULT_TRIGGER_INIT))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
   })
 })

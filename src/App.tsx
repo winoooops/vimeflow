@@ -1,12 +1,6 @@
 import type { ReactElement } from 'react'
-import { CommandPalette } from './features/command-palette/CommandPalette'
 import { WorkspaceView } from './features/workspace/WorkspaceView'
 
-const App = (): ReactElement => (
-  <>
-    <WorkspaceView />
-    <CommandPalette />
-  </>
-)
+const App = (): ReactElement => <WorkspaceView />
 
 export default App
