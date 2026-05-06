@@ -5,6 +5,7 @@
 **Scope:** Implement `CodexAdapter` against the `AgentAdapter` trait introduced in Stage 1 (`docs/superpowers/specs/2026-05-02-claude-adapter-refactor-design.md`, PRs #152, #153). Plus a deferred refactor pass to extract genuinely-shared parser helpers across both adapters once duplication is observed.
 **Predecessor ADR:** `docs/decisions/2026-05-03-claude-parser-json-boundary.md` — explicitly defers cross-adapter helper promotion until "another adapter proves the abstraction is useful". Step 2 of this spec is that proof.
 **Amended by:** `docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md` — the implementation expanded past three of this spec's locked rules (Codex transcript tailer, `/proc`-as-chooser, `BindContext.pid` semantics). Where this spec and that ADR conflict, the ADR wins for those three items only; the rest of this spec stands.
+**Amended further by:** `docs/decisions/2026-05-05-codex-adapter-trait-simplification.md` — the trait signature change at "Architecture > Trait signature change" and the `start_for` retry rules at "Architecture > `start_for` retry loop" are superseded. The codex-adapter-internal retry, the `(cwd, sid)` trait method, and the `for_attach(agent_type, pid, pty_start)` factory replace those rules. Everything else in this spec stands.
 
 ---
 
@@ -211,6 +212,8 @@ pub enum BindError {
 
 ### Trait signature change
 
+> _Superseded by [`docs/decisions/2026-05-05-codex-adapter-trait-simplification.md`](../../decisions/2026-05-05-codex-adapter-trait-simplification.md) — the trait method is now `(cwd: &Path, session_id: &str) -> Result<StatusSource, String>`. The discussion below describes the Stage 2 surface as shipped; the current surface is in the [2026-05-05 spec](./2026-05-05-codex-adapter-trait-simplification-design.md)._
+
 ```rust
 // Before (Stage 1)
 fn status_source(&self, cwd: &Path, session_id: &str) -> StatusSource;
@@ -222,6 +225,8 @@ fn status_source(&self, ctx: &BindContext) -> Result<StatusSource, BindError>;
 `ClaudeCodeAdapter::status_source` and `NoOpAdapter::status_source` ignore `pid` and `pty_start`, always return `Ok(...)`. The change is mechanical for those two impls.
 
 ### `start_for` retry loop
+
+> _Superseded by [`docs/decisions/2026-05-05-codex-adapter-trait-simplification.md`](../../decisions/2026-05-05-codex-adapter-trait-simplification.md) — the retry now lives inside `CodexAdapter::status_source` (helper: `retry_locator`). `base::start_for` has zero retry code post-2026-05-05._
 
 `base::start_for` switches from one synchronous `adapter.status_source(...)` call to a bounded retry on `BindError::Pending`:
 
@@ -550,8 +555,11 @@ Backend (Rust):
 
 - `src-tauri/src/agent/types.rs` — `CostMetrics.total_cost_usd: Option<f64>`.
 - `src-tauri/src/agent/adapter/types.rs` — add `BindContext`, `BindError`.
+  - _Post-2026-05-05: both types are deleted. `BindContext` lives privately in `agent/adapter/codex/types.rs`; `BindError` is gone (trait method returns `Result<_, String>`). See the [trait simplification spec](./2026-05-05-codex-adapter-trait-simplification-design.md)._
 - `src-tauri/src/agent/adapter/mod.rs` — trait sig update; `start_for` retry on Pending; `start_agent_watcher` builds `BindContext` from `PtyState`.
+  - _Post-2026-05-05 mechanics differ; see [`docs/superpowers/specs/2026-05-05-codex-adapter-trait-simplification-design.md`](./2026-05-05-codex-adapter-trait-simplification-design.md)._
 - `src-tauri/src/agent/adapter/base/mod.rs` — `start_for` retry loop, error propagation.
+  - _Post-2026-05-05 mechanics differ; the retry moves into `CodexAdapter`. See the [trait simplification spec](./2026-05-05-codex-adapter-trait-simplification-design.md)._
 - `src-tauri/src/agent/adapter/claude_code/mod.rs` — `status_source` impl signature update (still infallible Ok).
 - `src-tauri/src/agent/adapter/claude_code/statusline.rs` — `parse_cost_metrics` returns `Option<f64>` for missing cost block.
 - `src-tauri/src/agent/adapter/codex/mod.rs` — new: `CodexAdapter` impl.

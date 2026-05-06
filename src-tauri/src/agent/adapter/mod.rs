@@ -9,7 +9,7 @@ pub mod claude_code;
 pub mod codex;
 pub mod types;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -24,13 +24,13 @@ use crate::terminal::PtyState;
 use base::TranscriptHandle;
 use claude_code::ClaudeCodeAdapter;
 use codex::CodexAdapter;
-use types::{BindContext, BindError, ParsedStatus, StatusSource, ValidateTranscriptError};
+use types::{ParsedStatus, StatusSource, ValidateTranscriptError};
 
 /// Provider hooks for one CLI coding agent.
 pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
     fn agent_type(&self) -> AgentType;
 
-    fn status_source(&self, ctx: &BindContext<'_>) -> Result<StatusSource, BindError>;
+    fn status_source(&self, cwd: &Path, session_id: &str) -> Result<StatusSource, String>;
 
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String>;
 
@@ -46,10 +46,14 @@ pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
 }
 
 impl<R: tauri::Runtime> dyn AgentAdapter<R> {
-    pub fn for_type(agent_type: AgentType) -> Result<Arc<Self>, String> {
+    pub fn for_attach(
+        agent_type: AgentType,
+        pid: u32,
+        pty_start: SystemTime,
+    ) -> Result<Arc<Self>, String> {
         match agent_type {
             AgentType::ClaudeCode => Ok(Arc::new(ClaudeCodeAdapter)),
-            AgentType::Codex => Ok(Arc::new(CodexAdapter::new())),
+            AgentType::Codex => Ok(Arc::new(CodexAdapter::new(pid, pty_start))),
             other => Ok(Arc::new(NoOpAdapter::new(other))),
         }
     }
@@ -59,11 +63,9 @@ impl<R: tauri::Runtime> dyn AgentAdapter<R> {
         app: AppHandle<R>,
         session_id: String,
         cwd: PathBuf,
-        pid: u32,
-        pty_start: SystemTime,
         state: AgentWatcherState,
     ) -> Result<(), String> {
-        base::start_for(self, app, session_id, cwd, pid, pty_start, state)
+        base::start_for(self, app, session_id, cwd, state)
     }
 
     pub fn stop(state: &AgentWatcherState, session_id: &str) -> bool {
@@ -87,15 +89,14 @@ impl<R: tauri::Runtime> AgentAdapter<R> for NoOpAdapter {
         self.agent_type.clone()
     }
 
-    fn status_source(&self, ctx: &BindContext<'_>) -> Result<StatusSource, BindError> {
+    fn status_source(&self, cwd: &Path, session_id: &str) -> Result<StatusSource, String> {
         Ok(StatusSource {
-            path: ctx
-                .cwd
+            path: cwd
                 .join(".vimeflow")
                 .join("sessions")
-                .join(ctx.session_id)
+                .join(session_id)
                 .join("status.json"),
-            trust_root: ctx.cwd.to_path_buf(),
+            trust_root: cwd.to_path_buf(),
         })
     }
 
@@ -138,26 +139,21 @@ pub async fn start_agent_watcher(
     let (cwd, _shell_pid, pty_start, agent_type, agent_pid) =
         resolve_bind_inputs(&pty_state, &session_id, detect_agent)?;
 
-    let adapter = <dyn AgentAdapter<tauri::Wry>>::for_type(agent_type)?;
+    let adapter = <dyn AgentAdapter<tauri::Wry>>::for_attach(agent_type, agent_pid, pty_start)?;
     let owned_state = (*state).clone();
     let cwd_path = PathBuf::from(cwd);
     // `adapter.start(...)` walks into `base::start_for`, which calls
-    // `resolve_status_source_with_retry`. The retry uses
-    // `std::thread::sleep` (up to 5 × 100 ms = 500 ms) and
+    // `adapter.status_source(...)`. For codex sessions, that call runs a
+    // bounded retry (up to 5 attempts × 100 ms inter-attempt sleeps)
+    // using `std::thread::sleep` because codex commits its `logs` row
+    // ~300ms after the rollout file opens.
     // `path_security::ensure_status_source_under_trust_root` does
-    // synchronous `canonicalize` filesystem I/O. Running that on a
+    // synchronous `canonicalize` filesystem I/O. Running either on a
     // tokio worker thread starves other futures scheduled on the same
     // worker; mirror the pattern at `src/git/watcher.rs:399` and hop
     // onto the blocking pool so the async thread returns immediately.
     tokio::task::spawn_blocking(move || {
-        adapter.start(
-            app_handle,
-            session_id,
-            cwd_path,
-            agent_pid,
-            pty_start,
-            owned_state,
-        )
+        adapter.start(app_handle, session_id, cwd_path, owned_state)
     })
     .await
     .map_err(|e| format!("start_agent_watcher task panicked: {}", e))?
@@ -222,17 +218,9 @@ mod noop_tests {
 
     #[test]
     fn status_source_uses_claude_shaped_path() {
-        use std::time::SystemTime;
-
         let adapter = NoOpAdapter::new(AgentType::Aider);
         let cwd = PathBuf::from("/tmp/ws");
-        let ctx = BindContext {
-            session_id: "sid",
-            cwd: &cwd,
-            pid: 0,
-            pty_start: SystemTime::UNIX_EPOCH,
-        };
-        let src = <NoOpAdapter as AgentAdapter<MockRuntime>>::status_source(&adapter, &ctx)
+        let src = <NoOpAdapter as AgentAdapter<MockRuntime>>::status_source(&adapter, &cwd, "sid")
             .expect("noop adapter always resolves a status source");
         assert_eq!(
             src.path,
@@ -254,9 +242,13 @@ mod noop_tests {
     }
 
     #[test]
-    fn for_type_returns_real_codex_adapter() {
-        let adapter = <dyn AgentAdapter<MockRuntime>>::for_type(AgentType::Codex)
-            .expect("codex adapter should construct");
+    fn for_attach_returns_real_codex_adapter() {
+        let adapter = <dyn AgentAdapter<MockRuntime>>::for_attach(
+            AgentType::Codex,
+            12345,
+            SystemTime::UNIX_EPOCH,
+        )
+        .expect("codex adapter should construct");
         let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
 "#;
 

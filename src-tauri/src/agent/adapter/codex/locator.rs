@@ -1,6 +1,6 @@
 //! Codex session locator.
 
-use crate::agent::adapter::types::BindContext;
+use super::types::BindContext;
 use chrono::{Datelike, Duration as ChronoDuration, Local};
 use rusqlite::{named_params, Connection, OpenFlags};
 use serde_json::Value;
@@ -758,7 +758,6 @@ mod sqlite_first_tests {
 
     fn ctx<'a>(cwd: &'a Path, pid: u32, pty_start: SystemTime) -> BindContext<'a> {
         BindContext {
-            session_id: "sid-test",
             cwd,
             pid,
             pty_start,
@@ -996,7 +995,6 @@ mod fs_fallback_tests {
 
     fn ctx<'a>(cwd: &'a Path, pty_start: SystemTime) -> BindContext<'a> {
         BindContext {
-            session_id: "sid",
             cwd,
             pid: 0,
             pty_start,
