@@ -144,7 +144,7 @@ describe('Sidebar', () => {
     expect(screen.queryByText('System Idle')).not.toBeInTheDocument()
   })
 
-  test('renders "Active Sessions" header with add button', () => {
+  test('renders "Active" group header with add button', () => {
     render(
       <Sidebar
         sessions={mockSessions}
@@ -154,10 +154,29 @@ describe('Sidebar', () => {
       />
     )
 
-    expect(screen.getByText('Active Sessions')).toBeInTheDocument()
+    // Handoff §4.2 sub-header: "ACTIVE" / "RECENT" in JetBrains Mono uppercase.
+    expect(screen.getByTestId('session-group-active')).toHaveTextContent(
+      'Active'
+    )
+
     expect(
       screen.getByRole('button', { name: 'Add session' })
     ).toBeInTheDocument()
+  })
+
+  test('renders "Recent" group header when completed/errored sessions exist', () => {
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
+      />
+    )
+
+    expect(screen.getByTestId('session-group-recent')).toHaveTextContent(
+      'Recent'
+    )
   })
 
   test('add session button changes color on hover', () => {
@@ -193,7 +212,7 @@ describe('Sidebar', () => {
     expect(mockOnNewInstance).toHaveBeenCalledOnce()
   })
 
-  test('renders all sessions', () => {
+  test('renders running/paused sessions in Active list, completed in Recent', () => {
     render(
       <Sidebar
         sessions={mockSessions}
@@ -203,18 +222,23 @@ describe('Sidebar', () => {
       />
     )
 
-    // The active session's name now also renders in the SidebarStatusHeader
-    // (idle state), so query within the session list to avoid duplicate
-    // matches on the active session's name.
-    const sessionList = screen.getByTestId('session-list')
-    expect(within(sessionList).getByText('auth middleware')).toBeInTheDocument()
-    expect(within(sessionList).getByText('fix: login bug')).toBeInTheDocument()
+    // Active group: sess-1 (running) + sess-2 (paused).
+    const activeList = screen.getByTestId('session-list')
+    expect(within(activeList).getByText('auth middleware')).toBeInTheDocument()
+    expect(within(activeList).getByText('fix: login bug')).toBeInTheDocument()
+
+    // Recent group: sess-3 (completed) lives here, NOT in the active list.
+    const recentList = screen.getByTestId('recent-list')
     expect(
-      within(sessionList).getByText('refactor: api layer')
+      within(recentList).getByText('refactor: api layer')
     ).toBeInTheDocument()
+
+    expect(
+      within(activeList).queryByText('refactor: api layer')
+    ).not.toBeInTheDocument()
   })
 
-  test('active session has smart_toy icon', () => {
+  test('each session row carries a StatusDot reflecting its status', () => {
     render(
       <Sidebar
         sessions={mockSessions}
@@ -224,13 +248,22 @@ describe('Sidebar', () => {
       />
     )
 
-    const activeSession = screen.getByRole('button', {
-      name: 'auth middleware',
-    })
-    expect(within(activeSession).getByText('smart_toy')).toBeInTheDocument()
+    const list = screen.getByTestId('session-list')
+
+    const runningRow = within(list).getByText('auth middleware').closest('li')!
+    expect(within(runningRow).getByTestId('status-dot')).toHaveAttribute(
+      'data-status',
+      'running'
+    )
+
+    const pausedRow = within(list).getByText('fix: login bug').closest('li')!
+    expect(within(pausedRow).getByTestId('status-dot')).toHaveAttribute(
+      'data-status',
+      'paused'
+    )
   })
 
-  test('inactive sessions have schedule icon', () => {
+  test('active row paints lavender-tinted background per handoff §4.2', () => {
     render(
       <Sidebar
         sessions={mockSessions}
@@ -240,28 +273,14 @@ describe('Sidebar', () => {
       />
     )
 
-    const inactiveSession = screen.getByRole('button', {
-      name: 'fix: login bug',
-    })
-    expect(within(inactiveSession).getByText('schedule')).toBeInTheDocument()
-  })
+    const list = screen.getByTestId('session-list')
 
-  test('active session item has surface-container-high styling', () => {
-    render(
-      <Sidebar
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-        agentStatus={inactiveAgentStatus}
-      />
-    )
-
-    const activeButton = screen.getByRole('button', {
-      name: 'auth middleware',
-    })
-    const listItem = activeButton.closest('li')!
-    expect(listItem.className).toContain('bg-surface-container-high')
-    expect(listItem.className).toContain('text-on-surface')
+    const activeRow = within(list).getByText('auth middleware').closest('li')!
+    expect(activeRow.className).toContain('bg-primary/10')
+    expect(activeRow.className).toContain('text-on-surface')
+    const accent = activeRow.querySelector('[aria-hidden="true"]')
+    expect(accent).not.toBeNull()
+    expect(accent?.className).toContain('bg-primary-container')
   })
 
   test('inactive session items have on-surface-variant styling', () => {
@@ -313,7 +332,7 @@ describe('Sidebar', () => {
     expect(sidebar).toHaveClass('bg-surface-container-low')
   })
 
-  test('renders empty state when no sessions', () => {
+  test('renders empty state when no active sessions', () => {
     render(
       <Sidebar
         sessions={[]}
@@ -323,7 +342,9 @@ describe('Sidebar', () => {
       />
     )
 
-    expect(screen.getByText('No sessions')).toBeInTheDocument()
+    expect(screen.getByTestId('active-empty')).toHaveTextContent(
+      'No active sessions'
+    )
   })
 
   test('renders FileExplorer section', () => {

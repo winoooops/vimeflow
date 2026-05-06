@@ -36,7 +36,9 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => ({
-    spawn: vi.fn().mockResolvedValue({ sessionId: 'new-id', pid: 999 }),
+    spawn: vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'new-id', pid: 999, cwd: '~' }),
     write: vi.fn().mockResolvedValue(undefined),
     resize: vi.fn().mockResolvedValue(undefined),
     kill: vi.fn().mockResolvedValue(undefined),
@@ -124,13 +126,17 @@ describe('WorkspaceView Integration Tests', () => {
       // Wait for second session to appear
       await screen.findByRole('button', { name: 'session 2' })
 
-      // Get session buttons from sidebar (session list contains buttons)
+      // Each row now carries hover-only edit/remove buttons in addition to
+      // the main click target. Filter by `session N` aria-label so the
+      // index is stable regardless of the per-row chrome count.
       const sessionList = within(sidebar).getByTestId('session-list')
-      const sessionButtons = within(sessionList).getAllByRole('button')
+
+      const sessionButtons = within(sessionList).getAllByRole('button', {
+        name: /^session \d+$/,
+      })
 
       expect(sessionButtons.length).toBeGreaterThan(1)
 
-      // Click first session (second is already active after creation)
       const firstSession = sessionButtons[1]
       await user.click(firstSession)
 
@@ -168,13 +174,14 @@ describe('WorkspaceView Integration Tests', () => {
       // Wait for second session to appear
       await screen.findByRole('button', { name: 'session 2' })
 
-      // Get all session buttons from session list
       const sessionList = within(sidebar).getByTestId('session-list')
-      const sessionButtons = within(sessionList).getAllByRole('button')
+
+      const sessionButtons = within(sessionList).getAllByRole('button', {
+        name: /^session \d+$/,
+      })
 
       expect(sessionButtons.length).toBeGreaterThan(1)
 
-      // Click first session button (second is already active after creation)
       await user.click(sessionButtons[1])
 
       // Agent Status Panel should be present (content comes in sub-specs 5-7)

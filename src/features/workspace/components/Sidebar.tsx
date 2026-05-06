@@ -11,6 +11,8 @@ import type { FileNode } from '../../files/types'
 import type { AgentStatus } from '../../agent-status/types'
 import { FileExplorer } from './panels/FileExplorer'
 import { SidebarStatusHeader } from './SidebarStatusHeader'
+import { StatusDot } from './StatusDot'
+import { formatRelativeTime } from '../../agent-status/utils/relativeTime'
 
 export interface SidebarProps {
   sessions: Session[]
@@ -29,7 +31,43 @@ const FILE_EXPLORER_MIN = 100
 const FILE_EXPLORER_MAX = 500
 const FILE_EXPLORER_DEFAULT = 320
 
-interface SessionItemProps {
+const sessionSubtitle = (session: Session): string => {
+  if (session.currentAction !== undefined && session.currentAction !== '') {
+    return session.currentAction
+  }
+  const parts = session.workingDirectory.split('/').filter(Boolean)
+
+  return parts.length > 0 ? parts[parts.length - 1] : session.workingDirectory
+}
+
+const sessionLineDelta = (
+  session: Session
+): { added: number; removed: number } => {
+  let added = 0
+  let removed = 0
+  for (const change of session.activity.fileChanges) {
+    added += change.linesAdded
+    removed += change.linesRemoved
+  }
+
+  return { added, removed }
+}
+
+const STATE_PILL_LABEL: Record<Session['status'], string> = {
+  running: 'running',
+  paused: 'awaiting',
+  completed: 'completed',
+  errored: 'errored',
+}
+
+const STATE_PILL_TONE: Record<Session['status'], string> = {
+  running: 'text-success bg-success/10',
+  paused: 'text-warning bg-warning/10',
+  completed: 'text-success-muted bg-success-muted/10',
+  errored: 'text-error bg-error/15',
+}
+
+interface SessionRowProps {
   session: Session
   isActive: boolean
   onSessionClick: (id: string) => void
@@ -37,13 +75,13 @@ interface SessionItemProps {
   onRename?: (id: string, name: string) => void
 }
 
-const SessionItem = ({
+const SessionRow = ({
   session,
   isActive,
   onSessionClick,
   onRemove = undefined,
   onRename = undefined,
-}: SessionItemProps): ReactElement => {
+}: SessionRowProps): ReactElement => {
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(session.name)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -64,17 +102,23 @@ const SessionItem = ({
     }
   }
 
+  const { added, removed } = sessionLineDelta(session)
+  const subtitle = sessionSubtitle(session)
+
   return (
     <Reorder.Item
       value={session}
       id={session.id}
+      data-testid="session-row"
+      data-session-id={session.id}
+      data-active={isActive}
       className={`
-        flex items-center gap-2 rounded-md px-3 py-2
-        text-left transition-colors relative group cursor-grab active:cursor-grabbing
+        relative mb-1 cursor-grab rounded-lg px-3 py-2.5 transition-colors
+        active:cursor-grabbing group
         ${
           isActive
-            ? 'bg-surface-container-high text-on-surface'
-            : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+            ? 'bg-primary/10 text-on-surface'
+            : 'text-on-surface-variant hover:bg-on-surface/[0.04]'
         }
       `}
       whileDrag={{
@@ -84,52 +128,82 @@ const SessionItem = ({
       }}
       layout="position"
     >
-      {/* Click target */}
+      {isActive && (
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-2 left-0 w-0.5 rounded-r bg-primary-container"
+        />
+      )}
+
       <button
         type="button"
         onClick={() => onSessionClick(session.id)}
-        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        className="flex w-full flex-col gap-1 text-left"
         aria-label={session.name}
       >
-        <span className="material-symbols-outlined text-base shrink-0">
-          {isActive ? 'smart_toy' : 'schedule'}
-        </span>
-        {isEditing ? (
-          <input
-            ref={inputRef}
-            type="text"
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                commitRename()
-              }
-              if (e.key === 'Escape') {
+        <span className="flex items-center gap-2">
+          <StatusDot status={session.status} />
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  commitRename()
+                }
+                if (e.key === 'Escape') {
+                  setEditValue(session.name)
+                  setIsEditing(false)
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[13px] font-semibold text-on-surface outline-none ring-1 ring-primary"
+              aria-label="Rename session"
+            />
+          ) : (
+            <span
+              className="min-w-0 flex-1 truncate font-label text-[13px] font-semibold text-on-surface"
+              onDoubleClick={(e) => {
+                e.stopPropagation()
                 setEditValue(session.name)
-                setIsEditing(false)
-              }
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className="min-w-0 flex-1 truncate rounded bg-slate-700 px-1 font-label text-sm font-medium text-on-surface outline-none ring-1 ring-primary"
-            aria-label="Rename session"
-          />
-        ) : (
-          <span
-            className="min-w-0 flex-1 truncate font-label text-sm"
-            onDoubleClick={(e) => {
-              e.stopPropagation()
-              setEditValue(session.name)
-              setIsEditing(true)
-            }}
-          >
-            {session.name}
+                setIsEditing(true)
+              }}
+            >
+              {session.name}
+            </span>
+          )}
+          <span className="shrink-0 font-mono text-[10px] text-on-surface-variant/70">
+            {formatRelativeTime(session.lastActivityAt)}
           </span>
-        )}
+        </span>
+
+        <span className="block truncate pl-[15px] font-label text-[11.5px] text-on-surface-variant">
+          {subtitle}
+        </span>
+
+        <span className="flex items-center gap-2 pl-[15px] font-mono text-[10px]">
+          <span
+            data-testid="state-pill"
+            className={`rounded-full px-1.5 py-px uppercase tracking-wide ${STATE_PILL_TONE[session.status]}`}
+          >
+            {STATE_PILL_LABEL[session.status]}
+          </span>
+          {(added > 0 || removed > 0) && (
+            <span
+              data-testid="line-delta"
+              className="text-on-surface-variant/70"
+            >
+              <span className="text-success">+{added}</span>{' '}
+              <span className="text-error">-{removed}</span>
+            </span>
+          )}
+        </span>
       </button>
 
-      {/* Action buttons — visible on hover */}
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="absolute right-2 top-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
         <button
           type="button"
           onClick={(e) => {
@@ -137,7 +211,7 @@ const SessionItem = ({
             setEditValue(session.name)
             setIsEditing(true)
           }}
-          className="rounded p-0.5 text-on-surface/40 transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          className="rounded p-0.5 text-on-surface-variant/60 transition-colors hover:bg-surface-container-high hover:text-on-surface"
           aria-label="Rename session"
           title="Rename"
         >
@@ -149,7 +223,7 @@ const SessionItem = ({
             e.stopPropagation()
             onRemove?.(session.id)
           }}
-          className="rounded p-0.5 text-on-surface/40 transition-colors hover:bg-red-900/50 hover:text-red-400"
+          className="rounded p-0.5 text-on-surface-variant/60 transition-colors hover:bg-error/20 hover:text-error"
           aria-label="Remove session"
           title="Remove"
         >
@@ -159,6 +233,95 @@ const SessionItem = ({
     </Reorder.Item>
   )
 }
+
+const RecentSessionRow = ({
+  session,
+  isActive,
+  onSessionClick,
+  onRemove = undefined,
+}: SessionRowProps): ReactElement => {
+  const { added, removed } = sessionLineDelta(session)
+  const subtitle = sessionSubtitle(session)
+
+  return (
+    <li
+      data-testid="recent-session-row"
+      data-session-id={session.id}
+      data-active={isActive}
+      className={`
+        relative mb-1 rounded-lg px-3 py-2 transition-colors
+        ${
+          isActive
+            ? 'bg-primary/10 text-on-surface'
+            : 'text-on-surface-variant hover:bg-on-surface/[0.04]'
+        }
+      `}
+    >
+      {isActive && (
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-2 left-0 w-0.5 rounded-r bg-primary-container"
+        />
+      )}
+      <button
+        type="button"
+        onClick={() => onSessionClick(session.id)}
+        className="flex w-full flex-col gap-0.5 text-left"
+        aria-label={session.name}
+      >
+        <span className="flex items-center gap-2">
+          <StatusDot status={session.status} />
+          <span className="min-w-0 flex-1 truncate font-label text-[12.5px] text-on-surface-variant">
+            {session.name}
+          </span>
+          <span className="shrink-0 font-mono text-[10px] text-on-surface-variant/70">
+            {formatRelativeTime(session.lastActivityAt)}
+          </span>
+        </span>
+        <span className="flex items-center gap-2 pl-[15px] font-mono text-[10px]">
+          <span
+            data-testid="state-pill"
+            className={`rounded-full px-1.5 py-px uppercase tracking-wide ${STATE_PILL_TONE[session.status]}`}
+          >
+            {STATE_PILL_LABEL[session.status]}
+          </span>
+          {(added > 0 || removed > 0) && (
+            <span className="text-on-surface-variant/70">
+              <span className="text-success">+{added}</span>{' '}
+              <span className="text-error">-{removed}</span>
+            </span>
+          )}
+          <span className="ml-auto truncate font-label text-[10.5px] text-on-surface-variant/70">
+            {subtitle}
+          </span>
+        </span>
+      </button>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onRemove(session.id)
+          }}
+          className="absolute right-2 top-2 rounded p-0.5 text-on-surface-variant/40 opacity-0 transition-all hover:bg-error/20 hover:text-error group-hover:opacity-100"
+          aria-label="Remove session"
+          title="Remove"
+        >
+          <span className="material-symbols-outlined text-sm">close</span>
+        </button>
+      )}
+    </li>
+  )
+}
+
+const GroupHeader = ({ label }: { label: string }): ReactElement => (
+  <h3
+    data-testid={`session-group-${label.toLowerCase()}`}
+    className="px-3 pb-1 pt-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-on-surface-variant/70"
+  >
+    {label}
+  </h3>
+)
 
 export const Sidebar = ({
   sessions,
@@ -193,7 +356,6 @@ export const Sidebar = ({
     }
 
     const handleMouseMove = (e: MouseEvent): void => {
-      // Dragging up (negative delta) should increase explorer height
       const delta = startY.current - e.clientY
 
       const newHeight = Math.round(
@@ -218,6 +380,14 @@ export const Sidebar = ({
     }
   }, [isDraggingSplit])
 
+  const activeGroup = sessions.filter(
+    (s) => s.status === 'running' || s.status === 'paused'
+  )
+
+  const recentGroup = sessions.filter(
+    (s) => s.status === 'completed' || s.status === 'errored'
+  )
+
   return (
     <div
       className="flex h-full w-full flex-col bg-surface-container-low"
@@ -232,15 +402,12 @@ export const Sidebar = ({
         />
       </div>
 
-      {/* Sessions section header */}
-      <div className="flex items-center justify-between px-4 pb-1 pt-2">
-        <h2 className="font-label text-xs font-semibold uppercase tracking-wider text-on-surface/50">
-          Active Sessions
-        </h2>
+      <div className="flex items-center justify-between px-3 pb-1 pt-2">
+        <GroupHeader label="Active" />
         <button
           type="button"
           onClick={onNewInstance}
-          className="material-symbols-outlined text-base text-on-surface/50 transition-colors hover:text-primary"
+          className="material-symbols-outlined text-base text-on-surface-variant/60 transition-colors hover:text-primary"
           aria-label="Add session"
           title="Add session"
         >
@@ -248,22 +415,27 @@ export const Sidebar = ({
         </button>
       </div>
 
-      {/* Session list — takes remaining space above file explorer */}
       <Reorder.Group
         axis="y"
-        values={sessions}
-        onReorder={(reordered) => onReorderSessions?.(reordered)}
-        className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-1"
+        values={activeGroup}
+        onReorder={(reordered) => {
+          // Preserve order of recent sessions; only the active subset reorders.
+          onReorderSessions?.([...reordered, ...recentGroup])
+        }}
+        className="flex flex-col overflow-y-auto px-2"
         data-testid="session-list"
         layoutScroll
       >
-        {sessions.length === 0 ? (
-          <div className="px-3 py-4 text-center text-sm text-on-surface/50">
-            No sessions
+        {activeGroup.length === 0 ? (
+          <div
+            data-testid="active-empty"
+            className="px-3 py-3 text-center font-label text-xs text-on-surface-variant/50"
+          >
+            No active sessions
           </div>
         ) : (
-          sessions.map((session) => (
-            <SessionItem
+          activeGroup.map((session) => (
+            <SessionRow
               key={session.id}
               session={session}
               isActive={session.id === activeSessionId}
@@ -275,7 +447,23 @@ export const Sidebar = ({
         )}
       </Reorder.Group>
 
-      {/* Resize handle — between sessions and file explorer */}
+      {recentGroup.length > 0 && (
+        <>
+          <GroupHeader label="Recent" />
+          <ul data-testid="recent-list" className="flex flex-col px-2 pb-1">
+            {recentGroup.map((session) => (
+              <RecentSessionRow
+                key={session.id}
+                session={session}
+                isActive={session.id === activeSessionId}
+                onSessionClick={onSessionClick}
+                onRemove={onRemoveSession}
+              />
+            ))}
+          </ul>
+        </>
+      )}
+
       <div
         data-testid="explorer-resize-handle"
         role="separator"
@@ -290,12 +478,10 @@ export const Sidebar = ({
         `}
       />
 
-      {/* File Explorer — resizable height */}
       <div style={{ height: explorerHeight }} className="shrink-0">
         <FileExplorer cwd={activeCwd} onFileSelect={onFileSelect} />
       </div>
 
-      {/* New Instance button */}
       <div className="p-3">
         <button
           type="button"
@@ -308,7 +494,6 @@ export const Sidebar = ({
         </button>
       </div>
 
-      {/* Drag overlay — prevents xterm from stealing mouse events */}
       {isDraggingSplit && (
         <div className="fixed inset-0 z-50 cursor-row-resize" />
       )}

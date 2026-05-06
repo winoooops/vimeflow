@@ -39,7 +39,9 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => ({
-    spawn: vi.fn().mockResolvedValue({ sessionId: 'new-id', pid: 999 }),
+    spawn: vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'new-id', pid: 999, cwd: '~' }),
     write: vi.fn().mockResolvedValue(undefined),
     resize: vi.fn().mockResolvedValue(undefined),
     kill: vi.fn().mockResolvedValue(undefined),
