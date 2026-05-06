@@ -113,7 +113,7 @@ const SessionRow = ({
       data-session-id={session.id}
       data-active={isActive}
       className={`
-        relative mb-1 cursor-grab rounded-lg px-3 py-2.5 transition-colors
+        relative mb-1 cursor-grab rounded-xl px-3 py-2.5 transition-colors
         active:cursor-grabbing group
         ${
           isActive
@@ -249,7 +249,7 @@ const RecentSessionRow = ({
       data-session-id={session.id}
       data-active={isActive}
       className={`
-        group relative mb-1 rounded-lg px-3 py-2 transition-colors
+        group relative mb-1 rounded-xl px-3 py-2 transition-colors
         ${
           isActive
             ? 'bg-primary/10 text-on-surface'
