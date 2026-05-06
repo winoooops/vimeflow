@@ -24,16 +24,20 @@ describe('StatusBar', () => {
     expect(bar).toHaveClass('border-t')
   })
 
-  test('renders placeholder brand mark in lavender', () => {
+  test('renders product brand mark in lavender', () => {
     render(<StatusBar />)
 
-    const brand = screen.getByText('obsidian-cli')
+    const brand = screen.getByText('vimeflow')
     expect(brand).toHaveClass('text-primary-container')
   })
 
-  test('renders placeholder version label', () => {
+  test('renders version sourced from package.json', () => {
     render(<StatusBar />)
 
-    expect(screen.getByText('v0.9.4')).toBeInTheDocument()
+    // __APP_VERSION__ is injected by both vite.config.ts and
+    // vitest.config.ts via `define`, sourced from package.json.
+    // Asserting the semver shape keeps the test stable across version
+    // bumps while still proving the placeholder string was replaced.
+    expect(screen.getByText(/^v\d+\.\d+\.\d+$/)).toBeInTheDocument()
   })
 })

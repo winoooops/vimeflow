@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-03
+last_updated: 2026-05-06
 ref_count: 17
 ---
 
@@ -449,3 +449,14 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** Project CLAUDE.md is explicit: "Never write multi-paragraph docstrings or multi-line comment blocks — one short line max" and "Don't reference the current task, fix, or callers." Across PR #152 + PR #153's iterative review cycles (8 rounds × multiple findings each), inline comments accumulated `(Claude review on PR #152, F2)` / `(Codex cycle-8 retry-1 follow-up)` / "the cycle-7 implementation that..." rationales. Each individual citation seemed reasonable in isolation, but the cumulative effect was paragraphs of historical PR/cycle context inline in production code. Specifically: `watcher_runtime.rs` had a 10-line condvar-loop comment from F9; `transcript.rs` had ~22 lines of memory-bound rationale from F15 retries; `cap_with_head_and_tail` had ~18 lines of doc citing F15. Future readers see PR-citation noise that has no meaning outside the merged context.
 - **Fix:** Trimmed each block to a single-line descriptive comment with no PR/cycle/finding citations. Variable names + the diff history carry the context that PR descriptions should explain. The first attempt (cycle-9 retry-0) trimmed the largest blocks but left several 2-3 line "F15"-citing fragments — codex flagged the residual blocks as still-violating the rule. Cycle-9 retry-1 collapsed every touched comment to a single declarative sentence: e.g., `// pre_wait_guard consumed by wait_timeout_while; stop_guard must drop before file I/O.` The lesson: comment-style discipline is binary — "one short line max" admits no edge cases, including review-fix attribution. Each fix-cycle comment that survives the merge becomes permanent rot. PR descriptions, commit messages, and the pattern KB are the right places for citation; inline comments are for explaining WHY the code is doing what it does, not WHO asked for it. Code-review heuristic: any inline comment with `PR #N`, `F<n>`, `cycle <n>`, or `retry-<n>` is a smell — collapse to a single line that describes the invariant, not the history.
 - **Commit:** _(see git log for the cycle-9 fix commit on PR #153)_
+
+---
+
+### 48. Placeholder UI text drifts from authoritative spec sources (package.json version + design-system brand mark)
+
+- **Source:** github-claude + github-human | PR #173 round 1 | 2026-05-06
+- **Severity:** LOW (Claude × 2) + MEDIUM (human inline)
+- **File:** `src/features/workspace/components/StatusBar.tsx`
+- **Finding:** Step 2 of the UI handoff migration mounted a placeholder `StatusBar` with two stand-in strings: brand mark `obsidian-cli` (an internal codename for "The Obsidian Lens" design system) and version `v0.9.4` (a fabricated number unrelated to `package.json`'s actual `0.1.0`). Both diverged from authoritative sources — `UNIFIED.md` line 51 specifies `vimeflow` as the brand, and `package.json` is the version source of truth. A developer or QA tester running the app between step 2 and step 9's real-content landing would see fabricated text that looks intentional. The human reviewer flagged the same lines: "use the app name and actual version in this case." Same finding-class as #2 (broken design-reference path) and #3 (wrong dev server port) — placeholder text that _looks_ plausible is more dangerous than text that _looks_ placeholder, because nobody hunts it down.
+- **Fix:** Replaced `obsidian-cli` → `vimeflow` (matches `UNIFIED.md`). Wired the version slot to `__APP_VERSION__`, a Vite-/Vitest-injected build-time constant sourced from `package.json` via `define` in both `vite.config.ts` and `vitest.config.ts`; declared the global in `src/vite-env.d.ts`. Updated the test to assert the v-prefixed semver shape with a regex (`/^v\d+\.\d+\.\d+$/`) so it survives version bumps without churn. The lesson: a placeholder that exists for ~7 PRs is long enough that "looks plausible" is the same as "is wrong" — wire even temporary slots to their real source when the source is one line of build config away. Code-review heuristic: any UI string that mirrors a value already present in `package.json` / `Cargo.toml` / a design spec MD file should be sourced from that file at build time, not retyped.
+- **Commit:** _(see git log for the cycle-1 fix commit on PR #173)_
