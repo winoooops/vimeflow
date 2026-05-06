@@ -36,6 +36,16 @@ jobs:
           SCHEMA=$(jq -c . .github/codex/codex-output-schema.json)
           echo "json=$SCHEMA" >> "$GITHUB_OUTPUT"
 
+      # Workaround for anthropics/claude-code-action@v1: the bundled
+      # native installer prints "✔ Claude Code successfully installed!"
+      # but skips placing the binary when ~/.local/bin/ does not yet
+      # exist on the runner. The SDK then fails with
+      # "ReferenceError: Claude Code native binary not found at
+      # /home/runner/.local/bin/claude". Pre-creating the directory
+      # gives the installer a destination it actually writes to.
+      - name: Pre-create ~/.local/bin so the Claude Code installer can place the binary
+        run: mkdir -p ~/.local/bin
+
       - name: Run Claude review
         id: claude
         uses: anthropics/claude-code-action@v1
