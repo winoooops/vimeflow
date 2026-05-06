@@ -212,6 +212,11 @@ const SessionTab = ({
       )}
       <button
         type="button"
+        // Roving tabindex includes interactive descendants. Without
+        // tabIndex=-1 here, native <button> keeps tabIndex=0 and Tab
+        // navigation lands on close buttons of inactive tabs the user
+        // can't see — risk of dismissing the wrong session.
+        tabIndex={isActive ? 0 : -1}
         onClick={(e) => {
           e.stopPropagation()
           onClose(session.id)

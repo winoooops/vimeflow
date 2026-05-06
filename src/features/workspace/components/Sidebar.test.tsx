@@ -501,6 +501,24 @@ describe('Sidebar', () => {
     expect(onRemoveSession).toHaveBeenCalledWith('A')
   })
 
+  test('without onRemoveSession, the remove button is hidden on Recent rows', () => {
+    // RecentSessionRow gates the remove button on `onRemove` truthiness;
+    // when Sidebar receives no onRemoveSession, handleRemoveSession is
+    // undefined too — so neither selection nor removal can fire.
+    render(
+      <Sidebar
+        sessions={mockSessions}
+        activeSessionId="sess-3"
+        onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
+      />
+    )
+    const recentList = screen.getByTestId('recent-list')
+    expect(
+      within(recentList).queryByRole('button', { name: 'Remove session' })
+    ).toBeNull()
+  })
+
   test('Active + Recent groups share a single scroll region', () => {
     // Sharing a scroll region means a long Recent group can't push
     // FileExplorer / New Instance below the fixed sidebar height.

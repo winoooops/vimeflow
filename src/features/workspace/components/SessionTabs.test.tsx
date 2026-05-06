@@ -194,6 +194,19 @@ describe('SessionTabs', () => {
     expect(tabs[1]).toHaveAttribute('tabindex', '-1')
   })
 
+  test('inactive tab close button is removed from the natural Tab order', () => {
+    // Roving tabindex must extend to interactive descendants — otherwise
+    // Tab navigation lands on close buttons of tabs the user can't see.
+    const sessions = [
+      buildSession({ id: 'a', name: 'auth' }),
+      buildSession({ id: 'b', name: 'tests' }),
+    ]
+    renderTabs(sessions, 'a')
+    const closeBtns = screen.getAllByRole('button', { name: /^Close / })
+    expect(closeBtns[0]).toHaveAttribute('tabindex', '0')
+    expect(closeBtns[1]).toHaveAttribute('tabindex', '-1')
+  })
+
   test('renders a status pip alongside the running session title', () => {
     const sessions = [buildSession({ id: 'a', status: 'running' })]
     renderTabs(sessions, 'a')

@@ -402,16 +402,23 @@ export const Sidebar = ({
   // (so it lives in `recentGroup`, not `activeGroup`), the helper still
   // produces the visually adjacent tab in the strip — matching what the
   // tab strip's own close button does for the same scenario.
-  const handleRemoveSession = (id: string): void => {
-    const nextId =
-      id === activeSessionId
-        ? pickNextVisibleSessionId(sessions, id, activeSessionId)
-        : undefined
-    onRemoveSession?.(id)
-    if (nextId !== undefined) {
-      onSessionClick(nextId)
-    }
-  }
+  //
+  // Early-return when `onRemoveSession` is undefined so this wrapper
+  // stays a true no-op. Otherwise the trailing onSessionClick(nextId)
+  // would silently switch the active session without removing the
+  // intended one — a latent bug for callers that omit the prop.
+  const handleRemoveSession = onRemoveSession
+    ? (id: string): void => {
+        const nextId =
+          id === activeSessionId
+            ? pickNextVisibleSessionId(sessions, id, activeSessionId)
+            : undefined
+        onRemoveSession(id)
+        if (nextId !== undefined) {
+          onSessionClick(nextId)
+        }
+      }
+    : undefined
 
   return (
     <div
