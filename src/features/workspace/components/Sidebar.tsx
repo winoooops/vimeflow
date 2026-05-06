@@ -5,7 +5,7 @@ import {
   useCallback,
   type ReactElement,
 } from 'react'
-import { Reorder } from 'framer-motion'
+import { motion, Reorder } from 'framer-motion'
 import type { Session } from '../types'
 import type { FileNode } from '../../files/types'
 import type { AgentStatus } from '../../agent-status/types'
@@ -415,9 +415,10 @@ export const Sidebar = ({
         </button>
       </div>
 
-      <div
+      <motion.div
         data-testid="session-scroll"
         className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+        layoutScroll
       >
         <Reorder.Group
           axis="y"
@@ -428,7 +429,6 @@ export const Sidebar = ({
           }}
           className="flex flex-col px-2"
           data-testid="session-list"
-          layoutScroll
         >
           {activeGroup.length === 0 ? (
             <div
@@ -467,7 +467,7 @@ export const Sidebar = ({
             </ul>
           </>
         )}
-      </div>
+      </motion.div>
 
       <div
         data-testid="explorer-resize-handle"
