@@ -1671,6 +1671,48 @@ Insert a new line directly after it:
 **Amended further by:** `docs/decisions/2026-05-05-codex-adapter-trait-simplification.md` — the trait signature change at "Architecture > Trait signature change" and the `start_for` retry rules at "Architecture > `start_for` retry loop" are superseded. The codex-adapter-internal retry, the `(cwd, sid)` trait method, and the `for_attach(agent_type, pid, pty_start)` factory replace those rules. Everything else in this spec stands.
 ```
 
+- [ ] **Step 4a: Append post-2026-05-05 notes to Stage 2 spec File touch list rows**
+
+In `docs/superpowers/specs/2026-05-03-codex-adapter-stage-2-design.md`, find the "File touch list (step 1 only)" section (around line 549). Several rows describe Stage 2 deltas to files this refactor also touches. Append a one-line italicised note under the affected rows pointing readers at the post-2026-05-05 spec.
+
+For the `mod.rs` row, after:
+
+```markdown
+- `src-tauri/src/agent/adapter/mod.rs` — trait sig update; `start_for` retry on Pending; `start_agent_watcher` builds `BindContext` from `PtyState`.
+```
+
+Insert (no replacement; append a continuation line indented 2 spaces):
+
+```markdown
+- _Post-2026-05-05 mechanics differ; see [`docs/superpowers/specs/2026-05-05-codex-adapter-trait-simplification-design.md`](./2026-05-05-codex-adapter-trait-simplification-design.md)._
+```
+
+Same shape under the `base/mod.rs` row, after:
+
+```markdown
+- `src-tauri/src/agent/adapter/base/mod.rs` — `start_for` retry loop, error propagation.
+```
+
+Append:
+
+```markdown
+- _Post-2026-05-05 mechanics differ; the retry moves into `CodexAdapter`. See the [trait simplification spec](./2026-05-05-codex-adapter-trait-simplification-design.md)._
+```
+
+And under the `types.rs` row, after:
+
+```markdown
+- `src-tauri/src/agent/adapter/types.rs` — add `BindContext`, `BindError`.
+```
+
+Append:
+
+```markdown
+- _Post-2026-05-05: both types are deleted. `BindContext` lives privately in `agent/adapter/codex/types.rs`; `BindError` is gone (trait method returns `Result<_, String>`). See the [trait simplification spec](./2026-05-05-codex-adapter-trait-simplification-design.md).\_
+```
+
+The Stage 2 row text itself stays — it's a historical record of what Stage 2 added; the appended note tells readers where the current contract lives. This is the "File touch list rows" amendment mandated by spec section 5.2.
+
 - [ ] **Step 4: Add inline supersede markers to Stage 2 spec sections**
 
 In `docs/superpowers/specs/2026-05-03-codex-adapter-stage-2-design.md`, find the "Trait signature change" subsection (around line 213). It starts with the subheading `### Trait signature change`. Insert this italicised note immediately after the heading, before the existing prose:
@@ -1685,11 +1727,11 @@ Find the `start_for` retry loop subsection (around line 225, heading `### \`star
 > _Superseded by [`docs/decisions/2026-05-05-codex-adapter-trait-simplification.md`](../../decisions/2026-05-05-codex-adapter-trait-simplification.md) — the retry now lives inside `CodexAdapter::status_source` (helper: `retry_locator`). `base::start_for` has zero retry code post-2026-05-05._
 ```
 
-- [ ] **Step 5: Update `src-tauri/src/agent/README.md` lines 67, 98, 116**
+- [ ] **Step 5: Update `src-tauri/src/agent/README.md` (sweep all stale references)**
 
-In `src-tauri/src/agent/README.md`:
+The README has stale references to the pre-refactor contract beyond the three lines flagged in spec section 5.3. The plan expands the sweep to keep the README consistent with the post-2026-05-05 contract — line numbers approximate; locate by anchor text.
 
-(a) Line 67 — file-tree comment for `types.rs`. Find:
+**(a) Line ~67 — file-tree comment for `types.rs`.** Find:
 
 ```
     ├── types.rs             ← StatusSource, ParsedStatus, BindContext, BindError, ValidateTranscriptError
@@ -1701,19 +1743,75 @@ Replace with:
     ├── types.rs             ← StatusSource, ParsedStatus, ValidateTranscriptError
 ```
 
-(b) Line 98 — follow-up tracking blockquote. Find:
+**(b) Lines ~86-99 — `<dyn AgentAdapter<R>>::for_type` heading + code block + bullets + follow-up blockquote.** Find the entire section starting at the heading and ending at the blockquote:
 
-```markdown
+````markdown
+### `<dyn AgentAdapter<R>>::for_type`
+
+```rust
+pub fn for_type(agent_type: AgentType) -> Result<Arc<Self>, String>
+```
+
+Constructs the right adapter for a detected agent type. Returns `Arc<dyn AgentAdapter<R>>`:
+
+- `AgentType::ClaudeCode` → `ClaudeCodeAdapter`
+- `AgentType::Codex` → `CodexAdapter::new()`
+- everything else → `NoOpAdapter::new(t)` (returns errors from `parse_status` / `validate_transcript` / `tail_transcript`; `status_source` returns a `.vimeflow/sessions/{sid}/status.json` placeholder)
+
 > **Follow-up tracking:** issue [#156](https://github.com/winoooops/vimeflow/issues/156) collapses `BindContext` and the central retry into `CodexAdapter::new(pid, pty_start)`. After that lands, `for_type` becomes `for_attach(ctx)` and the Claude impl drops the unused `ctx` parameter from `status_source`.
+````
+
+Replace with:
+
+````markdown
+### `<dyn AgentAdapter<R>>::for_attach`
+
+```rust
+pub fn for_attach(
+    agent_type: AgentType,
+    pid: u32,
+    pty_start: SystemTime,
+) -> Result<Arc<Self>, String>
+```
+
+Constructs the right adapter for a detected agent type. Returns `Arc<dyn AgentAdapter<R>>`:
+
+- `AgentType::ClaudeCode` → `ClaudeCodeAdapter` (`pid`/`pty_start` discarded)
+- `AgentType::Codex` → `CodexAdapter::new(pid, pty_start)`
+- everything else → `NoOpAdapter::new(t)` (returns errors from `parse_status` / `validate_transcript` / `tail_transcript`; `status_source` returns a `.vimeflow/sessions/{sid}/status.json` placeholder; `pid`/`pty_start` discarded)
+
+> **Resolved 2026-05-05** by [`docs/superpowers/specs/2026-05-05-codex-adapter-trait-simplification-design.md`](../../docs/superpowers/specs/2026-05-05-codex-adapter-trait-simplification-design.md) (issue [#156](https://github.com/winoooops/vimeflow/issues/156)): `BindContext` is now private to `codex/`, `BindError` is deleted, the trait method is `status_source(cwd, sid) -> Result<_, String>`, and codex's cold-start retry lives inside `CodexAdapter::status_source` via the `retry_locator` helper.
+````
+
+**(c) Lines ~102-112 — `<dyn AgentAdapter<R>>::start` code block.** Find:
+
+```rust
+pub fn start(
+    self: Arc<Self>,
+    app: AppHandle<R>,
+    session_id: String,
+    cwd: PathBuf,
+    pid: u32,
+    pty_start: SystemTime,
+    state: AgentWatcherState,
+) -> Result<(), String>
 ```
 
 Replace with:
 
-```markdown
-> **Resolved 2026-05-05** by [`docs/superpowers/specs/2026-05-05-codex-adapter-trait-simplification-design.md`](../../docs/superpowers/specs/2026-05-05-codex-adapter-trait-simplification-design.md) (issue [#156](https://github.com/winoooops/vimeflow/issues/156)): `BindContext` is now private to `codex/`, `BindError` is deleted, the trait method is `status_source(cwd, sid) -> Result<_, String>`, and codex's cold-start retry lives inside `CodexAdapter::status_source` via the `retry_locator` helper.
+```rust
+pub fn start(
+    self: Arc<Self>,
+    app: AppHandle<R>,
+    session_id: String,
+    cwd: PathBuf,
+    state: AgentWatcherState,
+) -> Result<(), String>
 ```
 
-(c) Line 116 — description of the bind flow. Find:
+(Drops `pid` and `pty_start` parameters — these now live on `CodexAdapter` from `for_attach`.)
+
+**(d) Line ~116 — bind-flow description.** Find:
 
 ```markdown
 `pid` is the detected agent PID (returned by `detector::detect_agent`), not the shell PID at the PTY root — Codex's `logs.process_uuid` indexes by the codex child PID. `pty_start` is captured at PTY spawn (`ManagedSession.started_at`) so the logs query can filter out PID-reuse and stale-loaded-thread matches. Both arguments are passed through to the adapter as fields of `BindContext` (delegated through `base::start_for` → `resolve_status_source_with_retry` → `adapter.status_source(&ctx)`). Claude's impl ignores them; Codex's locator depends on them.
@@ -1725,7 +1823,123 @@ Replace with:
 `pid` is the detected agent PID (returned by `detector::detect_agent`), not the shell PID at the PTY root — Codex's `logs.process_uuid` indexes by the codex child PID. `pty_start` is captured at PTY spawn (`ManagedSession.started_at`) so the logs query can filter out PID-reuse and stale-loaded-thread matches. Both arguments are stored on `CodexAdapter` at construction (`CodexAdapter::new(pid, pty_start)` via the `for_attach(agent_type, pid, pty_start)` factory). The codex adapter wraps them in a private `BindContext` for its locator on each `status_source` call. `base::start_for` invokes `adapter.status_source(cwd, session_id)` once and codex's internal retry lives in `retry_locator` (5 attempts, 4 × 100ms inter-attempt sleeps, 400ms sleep budget on full exhaustion). Claude's impl ignores these fields — Claude's `status_source(cwd, sid)` is infallible.
 ```
 
-(Line 11 — the scope-expansion ADR pointer — stays unchanged. It's a historical reference that remains accurate.)
+**(e) Line ~147 — trait declaration in "The trait (provider hooks)" section.** Find:
+
+```rust
+    fn status_source(&self, cwd: &Path, session_id: &str) -> StatusSource;
+```
+
+Replace with:
+
+```rust
+    fn status_source(&self, cwd: &Path, session_id: &str) -> Result<StatusSource, String>;
+```
+
+**(f) Line ~165 — `status_source` row in the trait-hook table.** Find:
+
+```markdown
+| `status_source` | `StatusSource { path, trust_root }` | Where the agent writes its status snapshot, plus the trust root the path must canonicalize under. |
+```
+
+Replace with:
+
+```markdown
+| `status_source` | `Result<StatusSource, String>` | Where the agent writes its status snapshot, plus the trust root the path must canonicalize under. Failures (codex bind retry exhausted; codex locator fatal) surface as `Err(String)`. |
+```
+
+**(g) Lines ~183-188 — `ClaudeCodeAdapter::status_source` example body.** Find inside the `impl ... for ClaudeCodeAdapter` code block:
+
+```rust
+    fn status_source(&self, cwd, sid) -> StatusSource {
+        StatusSource {
+            path: cwd.join(".vimeflow/sessions").join(sid).join("status.json"),
+            trust_root: cwd.to_path_buf(),
+        }
+    }
+```
+
+Replace with:
+
+```rust
+    fn status_source(&self, cwd, sid) -> Result<StatusSource, String> {
+        Ok(StatusSource {
+            path: cwd.join(".vimeflow/sessions").join(sid).join("status.json"),
+            trust_root: cwd.to_path_buf(),
+        })
+    }
+```
+
+**(h) Lines ~218-225 — `NoOpAdapter::status_source` example body.** Find inside the `impl ... for NoOpAdapter` code block:
+
+```rust
+    fn status_source(&self, cwd, sid) -> StatusSource {
+        // Same path Claude uses → watcher's create_dir_all + watch
+        // matches today's silent-no-op UX for unsupported agents.
+        StatusSource {
+            path: cwd.join(".vimeflow/sessions").join(sid).join("status.json"),
+            trust_root: cwd.to_path_buf(),
+        }
+    }
+```
+
+Replace with:
+
+```rust
+    fn status_source(&self, cwd, sid) -> Result<StatusSource, String> {
+        // Same path Claude uses → watcher's create_dir_all + watch
+        // matches today's silent-no-op UX for unsupported agents.
+        Ok(StatusSource {
+            path: cwd.join(".vimeflow/sessions").join(sid).join("status.json"),
+            trust_root: cwd.to_path_buf(),
+        })
+    }
+```
+
+**(i) Line ~232 — "Why this exists" prose for NoOpAdapter.** Two `for_type` mentions to update. Find:
+
+```markdown
+**Why this exists:** if `for_type` returned `Err` for unsupported variants, the frontend's exit-collapse path (`useAgentStatus.ts:139-154`, gated on `watcherStartedRef.current`) would never run after a Codex / Aider session exits — the panel would stay in `isActive: true` indefinitely. `NoOpAdapter` returns Claude's status path so the watcher starts successfully (no events ever fire because nothing writes to that path under non-Claude agents), `watcherStartedRef.current` flips to `true`, and exit-collapse runs naturally. See spec IDEA "NoOpAdapter for non-Claude agents in for_type" for the full rationale.
+```
+
+Replace with:
+
+```markdown
+**Why this exists:** if `for_attach` returned `Err` for unsupported variants, the frontend's exit-collapse path (`useAgentStatus.ts:139-154`, gated on `watcherStartedRef.current`) would never run after a Codex / Aider session exits — the panel would stay in `isActive: true` indefinitely. `NoOpAdapter` returns Claude's status path so the watcher starts successfully (no events ever fire because nothing writes to that path under non-Claude agents), `watcherStartedRef.current` flips to `true`, and exit-collapse runs naturally. See spec IDEA "NoOpAdapter for non-Claude agents in for_attach" for the full rationale.
+```
+
+**(j) Line ~400 — detector dispatch reference.** Find:
+
+```markdown
+`detector.rs` is shared across every adapter — it inspects the PTY process tree and matches the bare binary name (`claude`, `codex`, `aider`) against `AgentType` variants. No adapter-specific logic; the result feeds `<dyn AgentAdapter<R>>::for_type`.
+```
+
+Replace with:
+
+```markdown
+`detector.rs` is shared across every adapter — it inspects the PTY process tree and matches the bare binary name (`claude`, `codex`, `aider`) against `AgentType` variants. No adapter-specific logic; the result feeds `<dyn AgentAdapter<R>>::for_attach`.
+```
+
+(Line ~11 — the scope-expansion ADR pointer — stays unchanged. It's a historical reference that remains accurate. Line ~60's file-tree comment for `mod.rs` also stays; the description still applies post-refactor.)
+
+After the sweep, run sanity greps:
+
+```bash
+grep -n 'for_type\b' src-tauri/src/agent/README.md
+```
+
+Expected: no matches.
+
+```bash
+grep -n 'BindError' src-tauri/src/agent/README.md
+```
+
+Expected: no matches.
+
+```bash
+grep -n 'status_source.*-> StatusSource\b' src-tauri/src/agent/README.md
+```
+
+Expected: no matches (all four `status_source` mentions now show `Result<StatusSource, String>`).
 
 - [ ] **Step 6: Verify links resolve and prose reads correctly**
 
@@ -1741,19 +1955,24 @@ git add docs/decisions/2026-05-05-codex-adapter-trait-simplification.md \
 git commit -m "docs: add 2026-05-05 trait-simplification ADR + amend Stage 2 spec
 
 New ADR records the decision to collapse BindContext + retry into
-CodexAdapter (issue #156). Index updated. Stage 2 spec gains an
-'Amended further by' header pointer plus inline supersede notes on
-the trait-signature-change and start_for-retry-loop subsections.
+CodexAdapter (issue #156). decisions/CLAUDE.md index updated.
 
-agent/README.md lines 67, 98, 116 updated to describe the
-post-2026-05-05 flow: trait method is (cwd, sid) -> Result<_, String>,
-codex's pid/pty_start/codex_home live on CodexAdapter, retry_locator
-helper handles the cold-start race. Line 11's scope-expansion ADR
-pointer is a historical record and stays.
+Stage 2 spec gains an 'Amended further by' header pointer, inline
+supersede notes on the trait-signature-change and start_for-retry-loop
+subsections, plus continuation lines under three File touch list rows
+(mod.rs, base/mod.rs, types.rs) so future readers find the current
+contract via the post-2026-05-05 spec.
 
-Historical docs (CHANGELOG.md/.zh-CN.md, scope-expansion ADR, Stage 2
-plan) are deliberately not edited — their references describe past
-state, not current state.
+agent/README.md updated across nine line-targeted edits (file-tree
+types row; for_attach section incl. heading + signature; start
+section signature; bind-flow paragraph; trait declaration; hook
+table row; ClaudeCodeAdapter and NoOpAdapter examples; NoOp
+'Why this exists' paragraph; detector dispatch reference). Line 11
+historical pointer + line 60 file-tree mod.rs description stay.
+
+Historical docs (CHANGELOG.md/.zh-CN.md, scope-expansion ADR,
+Stage 2 plan) are deliberately not edited — their references
+describe past state, not current state.
 
 Issue #156. See spec section 5.
 
@@ -1814,6 +2033,15 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
 Expected: no warnings.
 
+- [ ] **Run formatting checks**
+
+```bash
+cargo fmt --check --manifest-path src-tauri/Cargo.toml
+npm run format:check
+```
+
+Expected: both commands succeed with no output (or "All matched files use Prettier code style!" for the JS side). The pre-commit hook (lint-staged + prettier) handles incremental formatting on staged files, but per `rules/rust/hooks.md` `cargo fmt --check` is the authoritative Rust-side gate; CI runs `npm run format:check` for the workspace-wide check.
+
 - [ ] **Manual end-to-end check**
 
 Per spec section 4.5:
@@ -1830,7 +2058,7 @@ Per spec section 4.5:
 git diff --stat main..HEAD
 ```
 
-Expected: only the 11 files in the spec's File touch list (Section 6.2) — 7 modified Rust + 1 added Rust + 1 added doc + 3 modified docs. If any other file appears, audit and either justify in the PR description or split into a separate `chore(fmt):` commit per the PR-scope rule (PR #155).
+Expected: only the 12 files in the spec's File touch list (Section 6.2) — 7 modified Rust + 1 added Rust + 1 added doc + 3 modified docs = 12 total. If any other file appears, audit and either justify in the PR description or split into a separate `chore(fmt):` commit per the PR-scope rule (PR #155).
 
 ```bash
 git diff -w --stat main..HEAD
