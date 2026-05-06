@@ -111,11 +111,19 @@ export default {
         'vf-2xl': ['28px', { lineHeight: '32px' }],
       },
       borderRadius: {
+        // Existing tokens use rem so they scale with the root font size.
         DEFAULT: '0.25rem',
         md: '0.75rem',
         lg: '1rem',
         xl: '1.5rem',
         full: '9999px',
+        // Handoff additive tokens use px intentionally — the prototype is
+        // pixel-perfect against Figma and the design relies on device-
+        // pixel anchoring (e.g., `tab: '8px'` matches the 8px corner in
+        // the screenshots regardless of OS text-scaling). Mixing units
+        // with the rem tokens above is a deliberate trade-off: rem
+        // tokens remain accessibility-friendly, px tokens lock the
+        // Obsidian Lens chrome to the exact handoff geometry.
         pane: '10px',
         // tab: 8px corner radius. Compose at the call site: use
         // `rounded-t-tab` for the asymmetric top-rounded tab shape per

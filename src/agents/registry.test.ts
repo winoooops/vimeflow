@@ -19,6 +19,7 @@ test('every agent has the required fields with correct shapes', () => {
     expect(a.accentDim).toMatch(/^rgb\(/)
     expect(a.accentSoft).toMatch(/^rgb\(/)
     expect(a.onAccent).toMatch(/^#[0-9a-f]{6}$/i)
+    expect(a.model === null || typeof a.model === 'string').toBe(true)
   }
 })
 

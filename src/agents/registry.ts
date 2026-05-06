@@ -1,3 +1,15 @@
+interface AgentDef {
+  id: string
+  name: string
+  short: string
+  glyph: string
+  model: string | null
+  accent: string
+  accentDim: string
+  accentSoft: string
+  onAccent: string
+}
+
 export const AGENTS = {
   claude: {
     id: 'claude',
@@ -43,7 +55,7 @@ export const AGENTS = {
     accentSoft: 'rgb(240 198 116 / 0.30)',
     onAccent: '#2a1f08',
   },
-} as const
+} as const satisfies Record<string, AgentDef>
 
 export type AgentId = keyof typeof AGENTS
 
