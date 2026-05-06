@@ -34,7 +34,7 @@ export const AGENTS = {
   },
   shell: {
     id: 'shell',
-    name: 'shell',
+    name: 'Shell',
     short: 'SHELL',
     glyph: '$',
     model: null,

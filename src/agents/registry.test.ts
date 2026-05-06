@@ -12,6 +12,7 @@ test('every agent has the required fields with correct shapes', () => {
     const a = AGENTS[id]
     expect(a.id).toBe(id)
     expect(typeof a.name).toBe('string')
+    expect(a.name[0]).toBe(a.name[0]?.toUpperCase())
     expect(a.short).toMatch(/^[A-Z]+$/)
     expect(a.glyph).toHaveLength(1)
     expect(a.accent).toMatch(/^#[0-9a-f]{6}$/i)
@@ -42,9 +43,10 @@ test('gemini is azure', () => {
   expect(AGENTS.gemini.model).toBe('gemini-2.5')
 })
 
-test('shell is yellow with null model', () => {
+test('shell is yellow with null model and title-cased name', () => {
   expect(AGENTS.shell.accent).toBe('#f0c674')
   expect(AGENTS.shell.short).toBe('SHELL')
   expect(AGENTS.shell.glyph).toBe('$')
   expect(AGENTS.shell.model).toBeNull()
+  expect(AGENTS.shell.name).toBe('Shell')
 })

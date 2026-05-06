@@ -107,6 +107,12 @@ export default {
         xl: '1.5rem',
         full: '9999px',
         pane: '10px',
+        // tab: full-shorthand value. Use `rounded-tab` only — directional
+        // variants (`rounded-t-tab`, `rounded-tl-tab`, etc.) generate
+        // invalid CSS (`border-top-left-radius: 8px 8px 0 0`) which
+        // browsers silently discard. Tailwind quirk: multi-value
+        // shorthand works for the compound `border-radius` property but
+        // not for its four longhand siblings.
         tab: '8px 8px 0 0',
         chip: '6px',
         pill: '999px',
