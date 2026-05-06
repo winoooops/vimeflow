@@ -147,13 +147,24 @@ const SessionRow = ({
         />
       )}
 
+      {/* Click-to-activate button covers the whole row as an absolute
+          background layer. The foreground content (rendered as plain
+          divs/spans) sits above with `pointer-events-none` so clicks
+          fall through to this button — except for interactive bits
+          (rename input, hover buttons) which opt back in via
+          `pointer-events-auto`. This avoids nesting the rename
+          <input> inside <button>, which the HTML spec forbids and
+          Firefox/Safari mishandle for keyboard focus. */}
       <button
         type="button"
         onClick={() => onSessionClick(session.id)}
-        className="flex w-full flex-col gap-1 text-left"
         aria-label={session.name}
-      >
-        <span className="flex items-center gap-2">
+        className="absolute inset-0 rounded-[8px]"
+        tabIndex={isEditing ? -1 : 0}
+      />
+
+      <div className="pointer-events-none relative flex flex-col gap-1">
+        <div className="flex items-center gap-2">
           <StatusDot status={session.status} />
           {isEditing ? (
             <input
@@ -171,13 +182,17 @@ const SessionRow = ({
                   setIsEditing(false)
                 }
               }}
-              onClick={(e) => e.stopPropagation()}
-              className="min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[13px] font-semibold text-on-surface outline-none ring-1 ring-primary"
+              className="pointer-events-auto min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[13px] font-semibold text-on-surface outline-none ring-1 ring-primary"
               aria-label="Rename session"
             />
           ) : (
+            // Span opts back into pointer events for double-click rename.
+            // Without an explicit onClick, single clicks would NOT bubble
+            // to the sibling absolute button (the button is no longer an
+            // ancestor) — primary row activation would silently break.
             <span
-              className="min-w-0 flex-1 truncate font-label text-[13px] font-semibold text-on-surface"
+              className="pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[13px] font-semibold text-on-surface"
+              onClick={() => onSessionClick(session.id)}
               onDoubleClick={(e) => {
                 e.stopPropagation()
                 setEditValue(session.name)
@@ -192,13 +207,13 @@ const SessionRow = ({
           <span className="shrink-0 font-mono text-[10px] text-on-surface-variant/70 transition-opacity group-hover:opacity-0">
             {formatRelativeTime(session.lastActivityAt)}
           </span>
-        </span>
+        </div>
 
-        <span className="block truncate pl-[15px] font-label text-[11.5px] text-on-surface-variant">
+        <div className="block truncate pl-[15px] font-label text-[11.5px] text-on-surface-variant">
           {subtitle}
-        </span>
+        </div>
 
-        <span className="flex items-center gap-2 pl-[15px] font-mono text-[10px]">
+        <div className="flex items-center gap-2 pl-[15px] font-mono text-[10px]">
           <span
             data-testid="state-pill"
             className={`rounded-full px-1.5 py-px uppercase tracking-wide ${STATE_PILL_TONE[session.status]}`}
@@ -214,10 +229,10 @@ const SessionRow = ({
               <span className="text-error">-{removed}</span>
             </span>
           )}
-        </span>
-      </button>
+        </div>
+      </div>
 
-      <div className="absolute right-2 top-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="pointer-events-auto absolute right-2 top-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
         <button
           type="button"
           onClick={(e) => {
@@ -298,13 +313,17 @@ const RecentSessionRow = ({
           className="absolute inset-y-2 left-0 w-0.5 rounded-r bg-primary-container"
         />
       )}
+      {/* Same overlay pattern as SessionRow — see HTML-validity comment
+          there. <input> can't legally nest inside <button>. */}
       <button
         type="button"
         onClick={() => onSessionClick(session.id)}
-        className="flex w-full flex-col gap-0.5 text-left"
         aria-label={session.name}
-      >
-        <span className="flex items-center gap-2">
+        className="absolute inset-0 rounded-[8px]"
+        tabIndex={isEditing ? -1 : 0}
+      />
+      <div className="pointer-events-none relative flex flex-col gap-0.5">
+        <div className="flex items-center gap-2">
           <StatusDot status={session.status} size={6} dim />
           {isEditing ? (
             <input
@@ -322,13 +341,15 @@ const RecentSessionRow = ({
                   setIsEditing(false)
                 }
               }}
-              onClick={(e) => e.stopPropagation()}
-              className="min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[12.5px] text-on-surface outline-none ring-1 ring-primary"
+              className="pointer-events-auto min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[12.5px] text-on-surface outline-none ring-1 ring-primary"
               aria-label="Rename session"
             />
           ) : (
+            // Same activation+rename split as SessionRow above —
+            // sibling-button overlay needs an explicit onClick here.
             <span
-              className={`min-w-0 flex-1 truncate font-label text-[12.5px] ${isActive ? 'text-on-surface' : 'text-on-surface-variant/60'}`}
+              className={`pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[12.5px] ${isActive ? 'text-on-surface' : 'text-on-surface-variant/60'}`}
+              onClick={() => onSessionClick(session.id)}
               onDoubleClick={(e) => {
                 if (!onRename) {
                   return
@@ -346,8 +367,8 @@ const RecentSessionRow = ({
           <span className="shrink-0 font-mono text-[10px] text-on-surface-variant/50 transition-opacity group-hover:opacity-0">
             {formatRelativeTime(session.lastActivityAt)}
           </span>
-        </span>
-        <span className="flex items-center gap-2 pl-[15px] font-mono text-[10px]">
+        </div>
+        <div className="flex items-center gap-2 pl-[15px] font-mono text-[10px]">
           <span
             data-testid="state-pill"
             className={`rounded-full px-1.5 py-px uppercase tracking-wide ${STATE_PILL_TONE_DIM[session.status]}`}
@@ -363,9 +384,9 @@ const RecentSessionRow = ({
           <span className="ml-auto truncate font-label text-[10.5px] text-on-surface-variant/50">
             {subtitle}
           </span>
-        </span>
-      </button>
-      <div className="absolute right-2 top-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        </div>
+      </div>
+      <div className="pointer-events-auto absolute right-2 top-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
         {onRename && (
           <button
             type="button"
@@ -555,12 +576,15 @@ export const Sidebar = ({
           data-testid="session-list"
         >
           {activeGroup.length === 0 ? (
-            <div
+            // Reorder.Group renders as <ul>; HTML requires <li> children
+            // (or <script>/<template>). A bare <div> here is parsed in
+            // quirks mode and breaks list-counting in screen readers.
+            <li
               data-testid="active-empty"
               className="px-3 py-3 text-center font-label text-xs text-on-surface-variant/50"
             >
               No active sessions
-            </div>
+            </li>
           ) : (
             activeGroup.map((session) => (
               <SessionRow
