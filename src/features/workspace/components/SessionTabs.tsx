@@ -31,12 +31,11 @@ export const SessionTabs = ({
   )
 
   // STUB: tab cycling between sessions belongs on a global keybinding
-  // (e.g. Cmd+Shift+] / [) routed through the command palette. While
-  // xterm.js holds focus inside the terminal, in-component arrow-key
-  // handlers on the tab divs never fire — the user can't Tab into the
-  // strip without first leaving the terminal. The previous attempt at
-  // ArrowLeft/Right within SessionTabs was removed for this reason.
-  // See issue tracker for the global-keybinding follow-up.
+  // (Cmd+Shift+] / [) routed through the command palette — see #177.
+  // xterm.js holds focus inside the terminal, so in-component
+  // arrow-key handlers on the tab divs never fire; the user can't
+  // Tab into the strip without leaving the terminal first. The
+  // previous in-component handler was removed for that reason.
 
   const handleClose = (sessionId: string): void => {
     // useSessionManager.removeSession picks its fallback by full-sessions
