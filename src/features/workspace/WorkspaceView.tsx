@@ -361,140 +361,135 @@ export const WorkspaceView = (): ReactElement => {
   return (
     <div
       data-testid="workspace-view"
-      className="flex h-screen flex-col overflow-hidden"
+      className="grid h-screen overflow-hidden"
+      style={{
+        gridTemplateColumns: `48px ${sidebarWidth}px 1fr auto`,
+      }}
     >
-      <div
-        data-testid="workspace-grid"
-        className="grid min-h-0 flex-1"
-        style={{
-          gridTemplateColumns: `48px ${sidebarWidth}px 1fr auto`,
-        }}
-      >
-        <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
 
-        {/* Sidebar - resizable */}
-        <div className="relative flex h-full">
-          <Sidebar
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            activeCwd={activeSession?.workingDirectory ?? '~'}
-            onSessionClick={setActiveSessionId}
-            onNewInstance={createSession}
-            onRemoveSession={removeSession}
-            onRenameSession={renameSession}
-            onReorderSessions={reorderSessions}
-            onFileSelect={handleFileSelect}
-            agentStatus={agentStatus}
-          />
+      {/* Sidebar - resizable */}
+      <div className="relative flex h-full">
+        <Sidebar
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          activeCwd={activeSession?.workingDirectory ?? '~'}
+          onSessionClick={setActiveSessionId}
+          onNewInstance={createSession}
+          onRemoveSession={removeSession}
+          onRenameSession={renameSession}
+          onReorderSessions={reorderSessions}
+          onFileSelect={handleFileSelect}
+          agentStatus={agentStatus}
+        />
 
-          {/* Resize handle */}
-          <div
-            data-testid="sidebar-resize-handle"
-            role="separator"
-            aria-orientation="vertical"
-            aria-valuenow={sidebarWidth}
-            aria-valuemin={SIDEBAR_MIN}
-            aria-valuemax={SIDEBAR_MAX}
-            onMouseDown={handleMouseDown}
-            className={`
+        {/* Resize handle */}
+        <div
+          data-testid="sidebar-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuenow={sidebarWidth}
+          aria-valuemin={SIDEBAR_MIN}
+          aria-valuemax={SIDEBAR_MAX}
+          onMouseDown={handleMouseDown}
+          className={`
             absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize
             transition-colors hover:bg-primary/50
             ${isDragging ? 'bg-primary/70' : 'bg-transparent'}
           `}
-          />
-        </div>
-
-        {/* Main workspace area - TerminalZone + BottomDrawer.
-          `relative` establishes a containing block so the fileError
-          banner's `absolute` positioning is scoped to this column
-          rather than climbing to the viewport. */}
-        <div className="relative flex flex-col overflow-hidden">
-          {/* Session tabs strip — placeholder for step 3 (handoff §4.3, 38px). */}
-          <div
-            data-testid="session-tabs-strip"
-            className="h-[38px] shrink-0 border-b border-outline-variant/20 bg-surface-container-lowest"
-            aria-hidden="true"
-          />
-
-          <TerminalZone
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            onSessionChange={setActiveSessionId}
-            onNewTab={createSession}
-            onCloseTab={removeSession}
-            onSessionCwdChange={updateSessionCwd}
-            restoreData={restoreData}
-            loading={loading}
-            onPaneReady={notifyPaneReady}
-            onSessionRestart={restartSession}
-            service={terminalService}
-          />
-
-          {/* Bottom Drawer - Editor + Diff Viewer */}
-          <BottomDrawer
-            selectedFilePath={editorBuffer.filePath}
-            content={editorBuffer.currentContent}
-            onContentChange={editorBuffer.updateContent}
-            onSave={() => {
-              void handleVimSave()
-            }}
-            isDirty={editorBuffer.isDirty}
-            isLoading={editorBuffer.isLoading}
-            cwd={activeCwd}
-            gitStatus={gitStatus}
-            activeTab={bottomDrawerTab}
-            onTabChange={setBottomDrawerTab}
-            isCollapsed={isBottomDrawerCollapsed}
-            onCollapsedChange={setIsBottomDrawerCollapsed}
-            selectedDiffFile={selectedDiffFile}
-            onSelectedDiffFileChange={setSelectedDiffFile}
-          />
-
-          {(fileError !== null || infoMessage !== null) && (
-            <div className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2">
-              {/* File error banner — surfaces failures from direct file open
-                (openFileSafely) and vim :w saves (handleVimSave). Rendered at
-                the top of the main area so the user always sees what went wrong. */}
-              {fileError && (
-                <div
-                  role="alert"
-                  className="flex items-center gap-3 rounded-lg bg-error/20 px-4 py-2 font-inter text-sm text-error shadow-lg backdrop-blur-sm"
-                >
-                  <span className="flex-1">{fileError}</span>
-                  <button
-                    type="button"
-                    aria-label="Dismiss error"
-                    onClick={() => {
-                      setFileError(null)
-                    }}
-                    className="text-error transition-colors hover:text-on-surface"
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
-
-              {/* Info banner — surfaces workspace command failures (no active tab,
-                invalid goto args, etc.). Stacked below file errors so command
-                feedback never obscures file-operation failures. */}
-              {infoMessage && (
-                <InfoBanner message={infoMessage} onDismiss={dismiss} />
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Agent Status Panel — self-manages width (0↔280px) */}
-        <AgentStatusPanel
-          agentStatus={agentStatus}
-          cwd={activeCwd}
-          gitStatus={gitStatus}
-          onOpenDiff={handleOpenDiff}
-          onOpenFile={handleOpenTestFile}
         />
       </div>
 
-      <StatusBar />
+      {/* Main workspace area - TerminalZone + BottomDrawer.
+          `relative` establishes a containing block so the fileError
+          banner's `absolute` positioning is scoped to this column
+          rather than climbing to the viewport. */}
+      <div className="relative flex flex-col overflow-hidden">
+        {/* Session tabs strip — placeholder for step 3 (handoff §4.3, 38px). */}
+        <div
+          data-testid="session-tabs-strip"
+          className="h-[38px] shrink-0 border-b border-outline-variant/20 bg-surface-container-lowest"
+          aria-hidden="true"
+        />
+
+        <TerminalZone
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSessionChange={setActiveSessionId}
+          onNewTab={createSession}
+          onCloseTab={removeSession}
+          onSessionCwdChange={updateSessionCwd}
+          restoreData={restoreData}
+          loading={loading}
+          onPaneReady={notifyPaneReady}
+          onSessionRestart={restartSession}
+          service={terminalService}
+        />
+
+        {/* Bottom Drawer - Editor + Diff Viewer */}
+        <BottomDrawer
+          selectedFilePath={editorBuffer.filePath}
+          content={editorBuffer.currentContent}
+          onContentChange={editorBuffer.updateContent}
+          onSave={() => {
+            void handleVimSave()
+          }}
+          isDirty={editorBuffer.isDirty}
+          isLoading={editorBuffer.isLoading}
+          cwd={activeCwd}
+          gitStatus={gitStatus}
+          activeTab={bottomDrawerTab}
+          onTabChange={setBottomDrawerTab}
+          isCollapsed={isBottomDrawerCollapsed}
+          onCollapsedChange={setIsBottomDrawerCollapsed}
+          selectedDiffFile={selectedDiffFile}
+          onSelectedDiffFileChange={setSelectedDiffFile}
+        />
+
+        {(fileError !== null || infoMessage !== null) && (
+          <div className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2">
+            {/* File error banner — surfaces failures from direct file open
+                (openFileSafely) and vim :w saves (handleVimSave). Rendered at
+                the top of the main area so the user always sees what went wrong. */}
+            {fileError && (
+              <div
+                role="alert"
+                className="flex items-center gap-3 rounded-lg bg-error/20 px-4 py-2 font-inter text-sm text-error shadow-lg backdrop-blur-sm"
+              >
+                <span className="flex-1">{fileError}</span>
+                <button
+                  type="button"
+                  aria-label="Dismiss error"
+                  onClick={() => {
+                    setFileError(null)
+                  }}
+                  className="text-error transition-colors hover:text-on-surface"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Info banner — surfaces workspace command failures (no active tab,
+                invalid goto args, etc.). Stacked below file errors so command
+                feedback never obscures file-operation failures. */}
+            {infoMessage && (
+              <InfoBanner message={infoMessage} onDismiss={dismiss} />
+            )}
+          </div>
+        )}
+
+        <StatusBar />
+      </div>
+
+      {/* Agent Status Panel — self-manages width (0↔280px) */}
+      <AgentStatusPanel
+        agentStatus={agentStatus}
+        cwd={activeCwd}
+        gitStatus={gitStatus}
+        onOpenDiff={handleOpenDiff}
+        onOpenFile={handleOpenTestFile}
+      />
 
       {/* Unsaved Changes Dialog — shows the CURRENTLY dirty file, not the
           destination the user is switching to. */}

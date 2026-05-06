@@ -226,9 +226,8 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       render(<WorkspaceView />)
 
       const workspace = screen.getByTestId('workspace-view')
-      const grid = screen.getByTestId('workspace-grid')
 
-      expect(grid).toHaveClass('grid')
+      expect(workspace).toHaveClass('grid')
       expect(workspace).toHaveClass('h-screen')
     })
 
