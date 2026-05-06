@@ -66,19 +66,60 @@ export default {
         'inverse-surface': '#e3e0f7',
         'inverse-on-surface': '#2f2f40',
         'inverse-primary': '#704f98',
+
+        // Handoff additive tokens — additive-only migration per
+        // docs/superpowers/specs/2026-05-05-ui-handoff-migration-design.md.
+        // Old tokens above remain untouched until step 10 cleanup.
+        'primary-deep': '#57377f',
+        'on-surface-muted': '#8a8299',
+        warning: '#ff94a5',
+        syn: {
+          keyword: '#cba6f7',
+          string: '#a6e3a1',
+          fn: '#89b4fa',
+          var: '#f5e0dc',
+          comment: '#6c7086',
+          type: '#fab387',
+          tag: '#f38ba8',
+        },
       },
       fontFamily: {
         headline: ['Manrope', 'sans-serif'],
         body: ['Inter', 'sans-serif'],
         label: ['Inter', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+        sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+        display: ['Instrument Sans', 'Manrope', 'system-ui'],
+      },
+      fontSize: {
+        'vf-2xs': ['10px', { lineHeight: '14px' }],
+        'vf-xs': ['10.5px', { lineHeight: '15px' }],
+        'vf-sm': ['11.5px', { lineHeight: '16px' }],
+        'vf-base': ['13px', { lineHeight: '19px' }],
+        'vf-lg': ['16px', { lineHeight: '22px' }],
+        'vf-xl': ['20px', { lineHeight: '26px' }],
+        'vf-2xl': ['28px', { lineHeight: '32px' }],
       },
       borderRadius: {
         DEFAULT: '0.25rem',
-        md: '0.75rem', // Buttons/Inputs per design spec
-        lg: '1rem', // Cards/Secondary Panels per design spec
-        xl: '1.5rem', // Windows/Main Panels per design spec
+        md: '0.75rem',
+        lg: '1rem',
+        xl: '1.5rem',
         full: '9999px',
+        pane: '10px',
+        tab: '8px 8px 0 0',
+        chip: '6px',
+        pill: '999px',
+        modal: '12px',
+      },
+      boxShadow: {
+        'pane-focus':
+          '0 0 0 6px rgb(203 166 247 / 0.16), 0 8px 32px rgb(0 0 0 / 0.35)',
+        modal: '0 24px 80px rgb(0 0 0 / 0.5)',
+        'pip-glow': '0 0 4px currentColor',
+      },
+      transitionTimingFunction: {
+        pane: 'cubic-bezier(0.32, 0.72, 0, 1)',
       },
     },
   },
