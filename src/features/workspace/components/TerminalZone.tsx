@@ -107,12 +107,25 @@ export const TerminalZone = ({
             mode = 'attach'
           }
 
+          // SessionTabs.open keeps a tab for running/paused sessions OR
+          // the active session — completed/errored non-active sessions
+          // exist as panels here but have no corresponding tab id, so
+          // aria-labelledby would point at a non-existent element. Only
+          // wire the linkage when the panel actually has a visible tab
+          // (= isActive OR open status). Hidden panels stay aria-clean.
+          const hasVisibleTab =
+            isActive ||
+            session.status === 'running' ||
+            session.status === 'paused'
+
           return (
             <div
               key={session.id}
               id={`session-panel-${session.id}`}
               role="tabpanel"
-              aria-labelledby={`session-tab-${session.id}`}
+              aria-labelledby={
+                hasVisibleTab ? `session-tab-${session.id}` : undefined
+              }
               data-testid="terminal-pane"
               data-session-id={session.id}
               data-cwd={session.workingDirectory}

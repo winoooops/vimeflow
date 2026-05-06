@@ -194,6 +194,9 @@ const SessionRow = ({
               className="pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[13px] font-semibold text-on-surface"
               onClick={() => onSessionClick(session.id)}
               onDoubleClick={(e) => {
+                if (!onRename) {
+                  return
+                }
                 e.stopPropagation()
                 setEditValue(session.name)
                 setIsEditing(true)
