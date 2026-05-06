@@ -81,9 +81,17 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
       ])
     })
 
-    test('has mono font family (JetBrains Mono)', () => {
+    test('has mono font family (JetBrains Mono with ui-monospace fallback)', () => {
+      // Updated per handoff §6: adds `ui-monospace` (CSS Fonts Level 4
+      // generic keyword, supported by every Tauri-targeted engine) before
+      // the generic `monospace` family. On systems without JetBrains Mono
+      // installed, browsers now use `ui-monospace` — the OS-preferred
+      // monospace face — instead of the generic `monospace` fallback.
+      // JetBrains Mono is still preferred when present, so environments
+      // that load it are unaffected.
       expect(tailwindConfig.theme.extend.fontFamily.mono).toEqual([
         'JetBrains Mono',
+        'ui-monospace',
         'monospace',
       ])
     })
@@ -100,6 +108,94 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
 
     test('has xl radius for windows (1.5rem)', () => {
       expect(tailwindConfig.theme.extend.borderRadius.xl).toBe('1.5rem')
+    })
+  })
+
+  // Handoff additive tokens — added per
+  // docs/superpowers/specs/2026-05-05-ui-handoff-migration-design.md.
+  // These tokens are net-new; existing tokens above remain untouched
+  // until step 10 cleanup of the migration.
+  describe('Handoff Additive Tokens (handoff §6)', () => {
+    test('colors expose primary-deep / on-surface-muted / warning', () => {
+      expect(colors['primary-deep']).toBe('#57377f')
+      expect(colors['on-surface-muted']).toBe('#8a8299')
+      // warning is amber (matches prototype StatusDot awaiting), not pink —
+      // pink is `tertiary` / errored in the prototype.
+      expect(colors.warning).toBe('#fab387')
+    })
+
+    test('colors.syn exposes Catppuccin syntax subset', () => {
+      expect(colors.syn).toMatchObject({
+        keyword: '#cba6f7',
+        string: '#a6e3a1',
+        fn: '#89b4fa',
+        var: '#f5e0dc',
+        comment: '#6c7086',
+        type: '#fab387',
+        tag: '#f38ba8',
+      })
+    })
+
+    test('fontFamily.sans / .display match handoff', () => {
+      expect(tailwindConfig.theme.extend.fontFamily.sans).toEqual([
+        'Inter',
+        'ui-sans-serif',
+        'system-ui',
+      ])
+
+      expect(tailwindConfig.theme.extend.fontFamily.display).toEqual([
+        'Instrument Sans',
+        'Manrope',
+        'system-ui',
+      ])
+    })
+
+    test('fontSize.vf-* matches handoff scale', () => {
+      const fs = tailwindConfig.theme.extend.fontSize
+      expect(fs['vf-2xs']).toEqual(['10px', { lineHeight: '14px' }])
+      expect(fs['vf-xs']).toEqual(['10.5px', { lineHeight: '15px' }])
+      expect(fs['vf-sm']).toEqual(['11.5px', { lineHeight: '16px' }])
+      expect(fs['vf-base']).toEqual(['13px', { lineHeight: '19px' }])
+      expect(fs['vf-lg']).toEqual(['16px', { lineHeight: '22px' }])
+      expect(fs['vf-xl']).toEqual(['20px', { lineHeight: '26px' }])
+      expect(fs['vf-2xl']).toEqual(['28px', { lineHeight: '32px' }])
+    })
+
+    test('borderRadius exposes handoff named keys (pane/tab/chip/pill/modal)', () => {
+      expect(tailwindConfig.theme.extend.borderRadius).toMatchObject({
+        pane: '10px',
+        // tab is a single-value (`'8px'`) rather than the handoff's
+        // shorthand (`'8px 8px 0 0'`) so directional utilities like
+        // `rounded-t-tab` emit valid CSS. Consumers use `rounded-t-tab`
+        // for the top-rounded tab shape.
+        tab: '8px',
+        chip: '6px',
+        pill: '999px',
+        modal: '12px',
+      })
+    })
+
+    test('boxShadow exposes pane-focus / modal / pip-glow', () => {
+      expect(tailwindConfig.theme.extend.boxShadow).toMatchObject({
+        'pane-focus':
+          '0 0 0 6px rgb(203 166 247 / 0.16), 0 8px 32px rgb(0 0 0 / 0.35)',
+        modal: '0 24px 80px rgb(0 0 0 / 0.5)',
+        'pip-glow': '0 0 4px currentColor',
+      })
+    })
+
+    test('transitionTimingFunction.pane exposes handoff cubic-bezier', () => {
+      expect(tailwindConfig.theme.extend.transitionTimingFunction.pane).toBe(
+        'cubic-bezier(0.32, 0.72, 0, 1)'
+      )
+    })
+
+    test('existing tokens remain untouched (additive-only invariant)', () => {
+      expect(colors.primary).toBe('#e2c7ff')
+      expect(colors['surface-container']).toBe('#1e1e2e')
+      expect(colors.tertiary).toBe('#ff94a5')
+      expect(colors['surface-tint']).toBe('#d9b9ff')
+      expect(colors['secondary-container']).toBe('#124988')
     })
   })
 })

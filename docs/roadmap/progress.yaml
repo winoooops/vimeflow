@@ -837,3 +837,40 @@ phases:
         status: pending
         commit: null
         pr: null
+  - id: ui-handoff-migration
+    name: 'UI Handoff Migration (handoff §9 + token cleanup)'
+    status: pending
+    blocked_by: []
+    specs:
+      - docs/superpowers/specs/2026-05-05-ui-handoff-migration-design.md
+    steps:
+      - id: ui-s1
+        name: 'Tokens + agents registry'
+        status: pending
+      - id: ui-s2
+        name: 'App shell layout (proportions + status bar + session-tab strip)'
+        status: pending
+      - id: ui-s3
+        name: 'Sidebar sessions list + browser-style session tabs'
+        status: pending
+      - id: ui-s4
+        name: 'Single TerminalPane (handoff §4.6)'
+        status: pending
+      - id: ui-s5
+        name: 'SplitView grid (5 layouts) + LayoutSwitcher + ⌘1-4 / ⌘\ shortcuts'
+        status: pending
+      - id: ui-s6
+        name: 'Activity panel (handoff §4.7)'
+        status: pending
+      - id: ui-s7
+        name: 'Bottom panel restyle (handoff §4.8)'
+        status: pending
+      - id: ui-s8
+        name: 'Command palette restyle + keyboard shortcuts (handoff §4.10)'
+        status: pending
+      - id: ui-s9
+        name: 'Polish (transitions, ContextSmiley, RelTime, activity collapse rail, status bar)'
+        status: pending
+      - id: ui-s10
+        name: 'Token cleanup (delete deprecated, codemod text-vf-* → text-*)'
+        status: pending

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Vimeflow · Obsidian Lens</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined"
+      rel="stylesheet"
+    />
+
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+        background: #0d0d1c;
+      }
+      body {
+        font-family: 'Inter', system-ui, sans-serif;
+        color: #e3e0f7;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+      }
+
+      /* Subtle noise texture on deepest surface (Obsidian Lens aesthetic) */
+      .vf-aesthetic-obsidian .vf-root::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        background-image:
+          radial-gradient(
+            1200px circle at 10% -10%,
+            rgba(203, 166, 247, 0.06),
+            transparent 45%
+          ),
+          radial-gradient(
+            900px circle at 100% 100%,
+            rgba(168, 200, 255, 0.035),
+            transparent 50%
+          );
+      }
+
+      .vf-aesthetic-editorial .vf-root {
+        background: #141422;
+      }
+      .vf-aesthetic-editorial {
+        --vf-display-font: 'Fraunces', Georgia, serif;
+      }
+      .vf-aesthetic-editorial * {
+        letter-spacing: -0.005em;
+      }
+      .vf-aesthetic-editorial button,
+      .vf-aesthetic-editorial .vf-display {
+        font-family: var(--vf-display-font) !important;
+      }
+
+      .vf-aesthetic-dense *:not(.material-symbols-outlined) {
+        line-height: 1.35 !important;
+      }
+
+      /* Scrollbars */
+      .vf-scroll::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      .vf-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .vf-scroll::-webkit-scrollbar-thumb {
+        background: rgba(74, 68, 79, 0.35);
+        border-radius: 8px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+      .vf-scroll::-webkit-scrollbar-thumb:hover {
+        background: rgba(203, 166, 247, 0.35);
+        background-clip: padding-box;
+        border: 2px solid transparent;
+      }
+
+      /* Input resets */
+      input[type='range'] {
+        -webkit-appearance: none;
+        appearance: none;
+        height: 4px;
+        background: rgba(74, 68, 79, 0.5);
+        border-radius: 999px;
+        outline: none;
+      }
+      input[type='range']::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        background: #e2c7ff;
+        border: 2px solid #1e1e2e;
+        box-shadow:
+          0 0 0 1px rgba(203, 166, 247, 0.5),
+          0 0 10px rgba(203, 166, 247, 0.3);
+        cursor: pointer;
+      }
+      input[type='range']::-moz-range-thumb {
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        background: #e2c7ff;
+        border: 2px solid #1e1e2e;
+        cursor: pointer;
+      }
+
+      /* Animations */
+      @keyframes vfPulse {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.55;
+          transform: scale(0.85);
+        }
+      }
+      @keyframes vfCursorBlink {
+        0%,
+        48% {
+          opacity: 1;
+        }
+        50%,
+        98% {
+          opacity: 0;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+      @keyframes vfFadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(-6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes vfSlideUp {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .vf-cursor {
+        animation: vfCursorBlink 1.1s steps(1) infinite;
+      }
+
+      button {
+        font-family: inherit;
+      }
+      kbd {
+        font-family: inherit;
+      }
+
+      ::selection {
+        background: rgba(203, 166, 247, 0.3);
+        color: #e3e0f7;
+      }
+    </style>
+
+    <!-- React + Babel -->
+    <script
+      src="https://unpkg.com/react@18.3.1/umd/react.development.js"
+      integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
+      integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+      integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- Tokens + data (plain JS) -->
+    <script src="src/tokens.js"></script>
+    <script src="src/data.js"></script>
+    <script src="src/agents.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- Components (load order matters: primitives → shell/activity/views/overlays → app) -->
+    <script type="text/babel" src="src/primitives.jsx"></script>
+    <script type="text/babel" src="src/shell.jsx"></script>
+    <script type="text/babel" src="src/activity.jsx"></script>
+    <script type="text/babel" src="src/views.jsx"></script>
+    <script type="text/babel" src="src/splitview.jsx"></script>
+    <script type="text/babel" src="src/overlays.jsx"></script>
+    <script type="text/babel" src="src/app.jsx"></script>
+  </body>
+</html>
