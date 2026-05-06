@@ -415,54 +415,59 @@ export const Sidebar = ({
         </button>
       </div>
 
-      <Reorder.Group
-        axis="y"
-        values={activeGroup}
-        onReorder={(reordered) => {
-          // Preserve order of recent sessions; only the active subset reorders.
-          onReorderSessions?.([...reordered, ...recentGroup])
-        }}
-        className="flex flex-col overflow-y-auto px-2"
-        data-testid="session-list"
-        layoutScroll
+      <div
+        data-testid="session-scroll"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto"
       >
-        {activeGroup.length === 0 ? (
-          <div
-            data-testid="active-empty"
-            className="px-3 py-3 text-center font-label text-xs text-on-surface-variant/50"
-          >
-            No active sessions
-          </div>
-        ) : (
-          activeGroup.map((session) => (
-            <SessionRow
-              key={session.id}
-              session={session}
-              isActive={session.id === activeSessionId}
-              onSessionClick={onSessionClick}
-              onRemove={onRemoveSession}
-              onRename={onRenameSession}
-            />
-          ))
-        )}
-      </Reorder.Group>
-
-      {recentGroup.length > 0 && (
-        <>
-          <GroupHeader label="Recent" />
-          <ul data-testid="recent-list" className="flex flex-col px-2 pb-1">
-            {recentGroup.map((session) => (
-              <RecentSessionRow
+        <Reorder.Group
+          axis="y"
+          values={activeGroup}
+          onReorder={(reordered) => {
+            // Preserve order of recent sessions; only the active subset reorders.
+            onReorderSessions?.([...reordered, ...recentGroup])
+          }}
+          className="flex flex-col px-2"
+          data-testid="session-list"
+          layoutScroll
+        >
+          {activeGroup.length === 0 ? (
+            <div
+              data-testid="active-empty"
+              className="px-3 py-3 text-center font-label text-xs text-on-surface-variant/50"
+            >
+              No active sessions
+            </div>
+          ) : (
+            activeGroup.map((session) => (
+              <SessionRow
                 key={session.id}
                 session={session}
                 isActive={session.id === activeSessionId}
                 onSessionClick={onSessionClick}
                 onRemove={onRemoveSession}
+                onRename={onRenameSession}
               />
-            ))}
-          </ul>
-        </>
-      )}
+            ))
+          )}
+        </Reorder.Group>
+
+        {recentGroup.length > 0 && (
+          <>
+            <GroupHeader label="Recent" />
+            <ul data-testid="recent-list" className="flex flex-col px-2 pb-1">
+              {recentGroup.map((session) => (
+                <RecentSessionRow
+                  key={session.id}
+                  session={session}
+                  isActive={session.id === activeSessionId}
+                  onSessionClick={onSessionClick}
+                  onRemove={onRemoveSession}
+                />
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
 
       <div
         data-testid="explorer-resize-handle"

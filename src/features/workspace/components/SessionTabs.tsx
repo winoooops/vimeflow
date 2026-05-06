@@ -21,7 +21,13 @@ export const SessionTabs = ({
   onClose,
   onNew,
 }: SessionTabsProps): ReactElement => {
-  const open = sessions.filter(isOpenStatus)
+  // Keep the active session in the strip even after its PTY exits (status
+  // flips to completed/errored): TerminalZone shows the Restart pane and
+  // useSessionManager keeps activeSessionId pointing at it. Dropping the
+  // tab would leave the visible pane with no selected tab.
+  const open = sessions.filter(
+    (s) => isOpenStatus(s) || s.id === activeSessionId
+  )
 
   return (
     <div

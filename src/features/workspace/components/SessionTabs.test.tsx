@@ -186,7 +186,7 @@ describe('SessionTabs', () => {
     expect(within(tab).getByText('$')).toBeInTheDocument()
   })
 
-  test('with no open sessions, only the + button renders', () => {
+  test('with no open sessions and no active id, only the + button renders', () => {
     const sessions = [
       buildSession({ id: 'a', status: 'completed' }),
       buildSession({ id: 'b', status: 'errored' }),
@@ -196,5 +196,20 @@ describe('SessionTabs', () => {
     expect(
       screen.getByRole('button', { name: 'New session' })
     ).toBeInTheDocument()
+  })
+
+  test('keeps the active session in the strip even after its PTY exits', () => {
+    // useSessionManager keeps activeSessionId on a session whose PTY
+    // exited so TerminalZone can show the Restart pane. Dropping that
+    // tab would leave the visible pane with no selected tab.
+    const sessions = [
+      buildSession({ id: 'a', status: 'completed', name: 'just exited' }),
+      buildSession({ id: 'b', status: 'running', name: 'still alive' }),
+    ]
+    renderTabs(sessions, 'a')
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs).toHaveLength(2)
+    expect(tabs[0]).toHaveTextContent('just exited')
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
   })
 })

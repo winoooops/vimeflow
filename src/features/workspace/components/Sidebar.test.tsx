@@ -460,7 +460,9 @@ describe('Sidebar', () => {
     })
   })
 
-  test('session list is scrollable', () => {
+  test('Active + Recent groups share a single scroll region', () => {
+    // Sharing a scroll region means a long Recent group can't push
+    // FileExplorer / New Instance below the fixed sidebar height.
     render(
       <Sidebar
         sessions={mockSessions}
@@ -470,7 +472,12 @@ describe('Sidebar', () => {
       />
     )
 
-    const sessionList = screen.getByTestId('session-list')
-    expect(sessionList).toHaveClass('overflow-y-auto')
+    const scroll = screen.getByTestId('session-scroll')
+    expect(scroll).toHaveClass('overflow-y-auto')
+    expect(scroll).toHaveClass('flex-1')
+    expect(scroll).toHaveClass('min-h-0')
+
+    expect(scroll).toContainElement(screen.getByTestId('session-list'))
+    expect(scroll).toContainElement(screen.getByTestId('recent-list'))
   })
 })
