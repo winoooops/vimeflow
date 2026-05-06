@@ -84,11 +84,11 @@ Write `docs/roadmap/ui-update-roadmap.md` containing exactly:
 
 **Goal.** Extend `tailwind.config.js` with the handoff §6 design tokens (additive only) and add `src/agents/registry.ts` per handoff §6's TypeScript snippet.
 
-**Files.** `tailwind.config.js`, `src/agents/registry.ts`, `tailwind.config.test.ts` (new).
+**Files.** `tailwind.config.js`, `src/agents/registry.ts`, `src/lib/tailwindConfig.test.ts` (new).
 
 **DoD.** New tokens present and asserted by test; existing classes unchanged in value; agents registry exported with `AgentId` keyof-type; `npm run lint`, `npm run test`, `npm run type-check` all green.
 
-**Risks.** None to runtime — no consumer in this step. Test-discovery risk if vitest doesn't pick up the root-level `tailwind.config.test.ts`; mitigated by current vitest config (no exclusion for `tailwind.*`).
+**Risks.** None to runtime — no consumer in this step. Test lives under `src/lib/` so ESLint's `parserOptions.projectService` (scoped to `tsconfig.json`'s `src` include) parses it; importing `../../tailwind.config.js` works under Vite's bundler resolution.
 
 ## Step 2 — App shell layout
 
@@ -215,46 +215,48 @@ Expected: see the last existing phase's last step. The new phase appends as a si
 
 - [ ] **Step 2: Append the new phase**
 
-Append the following YAML block to the end of `docs/roadmap/progress.yaml` (preserve trailing newline conventions of the existing file):
+The block must land at 2-space indent (sibling of existing `- id: phase-1`, etc., under the top-level `phases:` mapping). Run this command verbatim — the bash heredoc preserves the leading 2-space indentation, and a `bash` code fence (unlike `yaml`) is not reformatted by Prettier:
 
-```yaml
-- id: ui-handoff-migration
-  name: 'UI Handoff Migration (handoff §9 + token cleanup)'
-  status: pending
-  blocked_by: []
-  specs:
-    - docs/superpowers/specs/2026-05-05-ui-handoff-migration-design.md
-  steps:
-    - id: ui-s1
-      name: 'Tokens + agents registry'
-      status: pending
-    - id: ui-s2
-      name: 'App shell layout (proportions + status bar + session-tab strip)'
-      status: pending
-    - id: ui-s3
-      name: 'Sidebar sessions list + browser-style session tabs'
-      status: pending
-    - id: ui-s4
-      name: 'Single TerminalPane (handoff §4.6)'
-      status: pending
-    - id: ui-s5
-      name: 'SplitView grid (5 layouts) + LayoutSwitcher + ⌘1-4 / ⌘\ shortcuts'
-      status: pending
-    - id: ui-s6
-      name: 'Activity panel (handoff §4.7)'
-      status: pending
-    - id: ui-s7
-      name: 'Bottom panel restyle (handoff §4.8)'
-      status: pending
-    - id: ui-s8
-      name: 'Command palette restyle + keyboard shortcuts (handoff §4.10)'
-      status: pending
-    - id: ui-s9
-      name: 'Polish (transitions, ContextSmiley, RelTime, activity collapse rail, status bar)'
-      status: pending
-    - id: ui-s10
-      name: 'Token cleanup (delete deprecated, codemod text-vf-* → text-*)'
-      status: pending
+```bash
+cat >> docs/roadmap/progress.yaml <<'EOF'
+  - id: ui-handoff-migration
+    name: 'UI Handoff Migration (handoff §9 + token cleanup)'
+    status: pending
+    blocked_by: []
+    specs:
+      - docs/superpowers/specs/2026-05-05-ui-handoff-migration-design.md
+    steps:
+      - id: ui-s1
+        name: 'Tokens + agents registry'
+        status: pending
+      - id: ui-s2
+        name: 'App shell layout (proportions + status bar + session-tab strip)'
+        status: pending
+      - id: ui-s3
+        name: 'Sidebar sessions list + browser-style session tabs'
+        status: pending
+      - id: ui-s4
+        name: 'Single TerminalPane (handoff §4.6)'
+        status: pending
+      - id: ui-s5
+        name: 'SplitView grid (5 layouts) + LayoutSwitcher + ⌘1-4 / ⌘\ shortcuts'
+        status: pending
+      - id: ui-s6
+        name: 'Activity panel (handoff §4.7)'
+        status: pending
+      - id: ui-s7
+        name: 'Bottom panel restyle (handoff §4.8)'
+        status: pending
+      - id: ui-s8
+        name: 'Command palette restyle + keyboard shortcuts (handoff §4.10)'
+        status: pending
+      - id: ui-s9
+        name: 'Polish (transitions, ContextSmiley, RelTime, activity collapse rail, status bar)'
+        status: pending
+      - id: ui-s10
+        name: 'Token cleanup (delete deprecated, codemod text-vf-* → text-*)'
+        status: pending
+EOF
 ```
 
 - [ ] **Step 3: Verify YAML parses**
@@ -315,17 +317,17 @@ Expected: `chore: scaffold ui-update tracking + import handoff bundle` is the la
 
 **Files:**
 
-- Create: `tailwind.config.test.ts` (project root)
+- Create: `src/lib/tailwindConfig.test.ts`
 - Modify: `tailwind.config.js` (project root)
 
 Additive entries only. Existing tokens stay untouched.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tailwind.config.test.ts` with exactly this content:
+Create `src/lib/tailwindConfig.test.ts` with exactly this content. The file lives under `src/` so ESLint's `parserOptions.projectService` (scoped to `tsconfig.json`'s `src` include) parses it correctly:
 
 ```ts
-import config from './tailwind.config.js'
+import config from '../../tailwind.config.js'
 
 const colors = config.theme.extend.colors as Record<string, unknown>
 const fontFamily = config.theme.extend.fontFamily as Record<string, unknown>
@@ -411,7 +413,7 @@ test('existing tokens remain untouched', () => {
 - [ ] **Step 2: Run test, verify it fails**
 
 ```bash
-npx vitest run tailwind.config.test.ts
+npx vitest run src/lib/tailwindConfig.test.ts
 ```
 
 Expected: every test except `existing tokens remain untouched` fails with `expected ... to match object { ... }` — the new keys don't exist yet.
@@ -500,7 +502,7 @@ Add new `boxShadow` and `transitionTimingFunction` blocks (siblings of `borderRa
 - [ ] **Step 4: Run test, verify it passes**
 
 ```bash
-npx vitest run tailwind.config.test.ts
+npx vitest run src/lib/tailwindConfig.test.ts
 ```
 
 Expected: all 7 `test(...)` blocks pass.
@@ -516,7 +518,7 @@ Expected: clean exit. If `tailwind.config.js` has a syntax error, ESLint will re
 - [ ] **Step 6: Stage and commit**
 
 ```bash
-git add tailwind.config.js tailwind.config.test.ts
+git add tailwind.config.js src/lib/tailwindConfig.test.ts
 git commit -m "$(cat <<'EOF'
 feat(tokens): add handoff design tokens to tailwind config
 
@@ -716,7 +718,7 @@ EOF
 npm run test 2>&1 | tail -10
 ```
 
-Expected: `Test Files  117 passed (117)` (one more than the 116 baseline because `tailwind.config.test.ts` and `src/agents/registry.test.ts` were added; `tailwind.config.test.ts` is one file, registry is another, so 116 + 2 = 118 — adjust expected count once the run completes; the absolute number doesn't matter as long as all pass).
+Expected: file count is the prior baseline + 2 (one for `src/lib/tailwindConfig.test.ts`, one for `src/agents/registry.test.ts`). The absolute number doesn't matter — what matters is that every file passes.
 
 - [ ] **Step 2: Lint + type-check**
 
@@ -756,7 +758,7 @@ Don't push without explicit user instruction. The pre-push hook (`vitest run`) w
 - ✅ `docs/roadmap/ui-update-roadmap.md` exists with §9 + step 10 narrative.
 - ✅ `docs/roadmap/progress.yaml` has `ui-handoff-migration` phase with 10 pending steps.
 - ✅ `tailwind.config.js` has all handoff §6 additive token entries.
-- ✅ `tailwind.config.test.ts` asserts the new keys and protects existing values.
+- ✅ `src/lib/tailwindConfig.test.ts` asserts the new keys and protects existing values.
 - ✅ `src/agents/registry.ts` exports `AGENTS` + `AgentId` + `Agent` types.
 - ✅ `src/agents/registry.test.ts` covers all four agents.
 - ✅ `npm run lint`, `npm run test`, `npm run type-check` all green.
