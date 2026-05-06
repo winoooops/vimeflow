@@ -405,7 +405,6 @@ export const WorkspaceView = (): ReactElement => {
           banner's `absolute` positioning is scoped to this column
           rather than climbing to the viewport. */}
       <div className="relative flex flex-col overflow-hidden">
-        {/* Session tabs strip — placeholder for step 3 (handoff §4.3, 38px). */}
         <div
           data-testid="session-tabs-strip"
           className="h-[38px] shrink-0 border-b border-outline-variant/20 bg-surface-container-lowest"

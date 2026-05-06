@@ -340,7 +340,7 @@ describe('WorkspaceView', () => {
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
   })
 
-  test('uses handoff §3 grid proportions (48 / 272 / flex / auto)', () => {
+  test('uses handoff §3 grid proportions (48px / 272px / 1fr / auto)', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
@@ -348,6 +348,7 @@ describe('WorkspaceView', () => {
     expect(container.style.gridTemplateColumns).toContain('48px')
     expect(container.style.gridTemplateColumns).toContain('272px')
     expect(container.style.gridTemplateColumns).toContain('1fr')
+    expect(container.style.gridTemplateColumns).toContain('auto')
   })
 
   test('mounts session-tabs strip placeholder above terminal zone', () => {
