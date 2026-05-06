@@ -1371,3 +1371,5 @@ literally:
    Whitespace-stripped delta should match the regular delta closely; any
    gap is a formatting drive-by to drop.
 4. Drive-by formatting → separate commit / PR.
+
+<!-- codex-reviewed: 2026-05-06T04:24:57Z -->
