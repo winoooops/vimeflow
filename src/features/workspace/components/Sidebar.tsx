@@ -14,7 +14,10 @@ import { SidebarStatusHeader } from './SidebarStatusHeader'
 import { StatusDot } from './StatusDot'
 import { formatRelativeTime } from '../../agent-status/utils/relativeTime'
 import { useRenameState } from '../hooks/useRenameState'
-import { pickNextVisibleSessionId } from '../utils/pickNextVisibleSessionId'
+import {
+  isOpenSessionStatus,
+  pickNextVisibleSessionId,
+} from '../utils/pickNextVisibleSessionId'
 
 export interface SidebarProps {
   sessions: Session[]
@@ -150,6 +153,7 @@ const SessionRow = ({
         type="button"
         onClick={() => onSessionClick(session.id)}
         aria-label={session.name}
+        data-role="activate"
         className="absolute inset-0 rounded-[8px]"
         tabIndex={isEditing ? -1 : 0}
       />
@@ -308,6 +312,7 @@ const RecentSessionRow = ({
         type="button"
         onClick={() => onSessionClick(session.id)}
         aria-label={session.name}
+        data-role="activate"
         className="absolute inset-0 rounded-[8px]"
         tabIndex={isEditing ? -1 : 0}
       />
@@ -476,13 +481,12 @@ export const Sidebar = ({
     }
   }, [isDraggingSplit])
 
-  const activeGroup = sessions.filter(
-    (s) => s.status === 'running' || s.status === 'paused'
-  )
-
-  const recentGroup = sessions.filter(
-    (s) => s.status === 'completed' || s.status === 'errored'
-  )
+  // Active = open statuses (running/paused) per the canonical predicate
+  // in pickNextVisibleSessionId.ts. Recent = the complement so any
+  // future non-open status (e.g. `suspended`) lands in Recent rather
+  // than being silently dropped from both groups.
+  const activeGroup = sessions.filter((s) => isOpenSessionStatus(s.status))
+  const recentGroup = sessions.filter((s) => !isOpenSessionStatus(s.status))
 
   // Mirror SessionTabs.handleClose using the shared visible-order helper.
   // useSessionManager.removeSession uses `flushSync` internally to apply
@@ -514,9 +518,13 @@ export const Sidebar = ({
         if (nextId !== undefined) {
           onSessionClick(nextId)
           queueMicrotask(() => {
+            // Target the overlay activation button explicitly via
+            // data-role rather than `button[aria-label]` so the
+            // selector survives a future DOM reordering that puts the
+            // hover Rename/Remove buttons above the overlay.
             document
               .querySelector<HTMLElement>(
-                `[data-session-id="${nextId}"] button[aria-label]`
+                `[data-session-id="${nextId}"] [data-role="activate"]`
               )
               ?.focus()
           })
@@ -563,16 +571,11 @@ export const Sidebar = ({
           axis="y"
           values={activeGroup}
           onReorder={(reordered) => {
-            // Recompute Recent inside the callback — vimeflow runs AI
-            // agents that can complete a task mid-drag, flipping a
-            // running session to completed. The closure-captured
-            // `recentGroup` would either drop that session or land it in
-            // the wrong slice; reading from `sessions` here is always
-            // current.
-            const freshRecent = sessions.filter(
-              (s) => s.status === 'completed' || s.status === 'errored'
-            )
-            onReorderSessions?.([...reordered, ...freshRecent])
+            // Preserve Recent ordering — only the Active subset reorders.
+            // `recentGroup` is captured at render time alongside `sessions`;
+            // both are equally fresh on this callback, so using the
+            // precomputed group keeps the diff minimal.
+            onReorderSessions?.([...reordered, ...recentGroup])
           }}
           className="flex flex-col px-2"
           data-testid="session-list"

@@ -69,7 +69,10 @@ export const TerminalZone = ({
         </div>
       ) : sessions.length === 0 ? (
         <div className="flex h-full items-center justify-center font-mono text-on-surface/60">
-          <p>No active session. Click + to create a new terminal.</p>
+          <p>
+            No active session. Click + in the session tab bar above to create
+            one.
+          </p>
         </div>
       ) : (
         // Render all sessions but hide inactive ones to keep PTY sessions alive.

@@ -164,7 +164,7 @@ describe('TerminalZone', () => {
 
     // Should show placeholder instead
     expect(
-      screen.getByText(/no active session.*click \+ to create a new terminal/i)
+      screen.getByText(/no active session.*click \+ in the session tab bar/i)
     ).toBeInTheDocument()
   })
 
