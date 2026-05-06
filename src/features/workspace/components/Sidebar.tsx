@@ -228,7 +228,7 @@ const SessionRow = ({
         </div>
       </div>
 
-      <div className="pointer-events-auto absolute right-2 top-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="pointer-events-auto absolute right-2 top-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
         {onRename && (
           <button
             type="button"
@@ -376,7 +376,7 @@ const RecentSessionRow = ({
           </span>
         </div>
       </div>
-      <div className="pointer-events-auto absolute right-2 top-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="pointer-events-auto absolute right-2 top-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
         {onRename && (
           <button
             type="button"

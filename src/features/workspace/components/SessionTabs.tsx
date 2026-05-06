@@ -2,7 +2,7 @@ import { type KeyboardEvent, type ReactElement } from 'react'
 import type { Session } from '../types'
 import { agentForSession } from '../utils/agentForSession'
 import {
-  isOpenSessionStatus,
+  getVisibleSessions,
   pickNextVisibleSessionId,
 } from '../utils/pickNextVisibleSessionId'
 import { StatusDot } from './StatusDot'
@@ -22,13 +22,11 @@ export const SessionTabs = ({
   onClose,
   onNew,
 }: SessionTabsProps): ReactElement => {
-  // Keep the active session in the strip even after its PTY exits (status
-  // flips to completed/errored): TerminalZone shows the Restart pane and
-  // useSessionManager keeps activeSessionId pointing at it. Dropping the
-  // tab would leave the visible pane with no selected tab.
-  const open = sessions.filter(
-    (s) => isOpenSessionStatus(s.status) || s.id === activeSessionId
-  )
+  // Single source of truth for "what's visible in the strip" — see
+  // `getVisibleSessions` for the predicate. Both this component and
+  // `pickNextVisibleSessionId` consume it so the visible-set can't
+  // drift between render and close-navigation.
+  const open = getVisibleSessions(sessions, activeSessionId)
 
   // STUB: tab cycling between sessions belongs on a global keybinding
   // (Cmd+Shift+] / [) routed through the command palette — see #177.
@@ -53,12 +51,13 @@ export const SessionTabs = ({
     onClose(sessionId)
     if (nextId !== undefined) {
       onSelect(nextId)
-      // WAI-ARIA Tabs Pattern §4.4.3: after a keyboard close, focus must
-      // move to the newly-selected tab. Removing the close button drops
-      // DOM focus to <body>; queueMicrotask defers until React has
-      // committed the re-render so the new active tab exists in the DOM.
-      // No-op for mouse closes (the focused element was already the
-      // close button, not body).
+      // WAI-ARIA Tabs Pattern §4.4.3: after a close, focus must move
+      // to the newly-selected tab. Removing the close button drops
+      // DOM focus to <body> regardless of input method — the close
+      // button briefly holds focus from mousedown too — so this fires
+      // for both mouse and keyboard closes. queueMicrotask defers
+      // until React has committed the re-render so the new active tab
+      // exists in the DOM.
       queueMicrotask(() => {
         document.getElementById(`session-tab-${nextId}`)?.focus()
       })
