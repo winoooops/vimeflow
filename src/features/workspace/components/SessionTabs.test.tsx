@@ -203,6 +203,20 @@ describe('SessionTabs', () => {
     expect(tabs[1]).toHaveAttribute('tabindex', '-1')
   })
 
+  test('null activeSessionId falls back to the first visible tab (roving entry)', () => {
+    // Without the fallback, every tab gets tabIndex=-1 and keyboard
+    // users skip the entire tablist. The strip must always have one
+    // entry point as long as `open` is non-empty.
+    const sessions = [
+      buildSession({ id: 'a', name: 'auth' }),
+      buildSession({ id: 'b', name: 'tests' }),
+    ]
+    renderTabs(sessions, null)
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs[0]).toHaveAttribute('tabindex', '0')
+    expect(tabs[1]).toHaveAttribute('tabindex', '-1')
+  })
+
   test('inactive tab close button is removed from the natural Tab order', () => {
     // Roving tabindex must extend to interactive descendants — otherwise
     // Tab navigation lands on close buttons of tabs the user can't see.
@@ -306,6 +320,14 @@ describe('SessionTabs', () => {
     // Visible-order next tab is 'A' (B is filtered out of the strip).
     expect(onSelect).toHaveBeenCalledWith('A')
     expect(onClose).toHaveBeenCalledWith('C')
+    // Order matters: useSessionManager.removeSession uses flushSync
+    // internally and applies its own setActiveSessionId mid-call. If
+    // onSelect ran first, that flushSync would overwrite our visible-
+    // order pick. Locking the contract so a refactor can't silently
+    // re-introduce the bug.
+    expect(onClose.mock.invocationCallOrder[0]).toBeLessThan(
+      onSelect.mock.invocationCallOrder[0]
+    )
   })
 
   test('closing an inactive tab does NOT change selection', async () => {

@@ -77,11 +77,18 @@ export const SessionTabs = ({
         aria-label="Open sessions"
         className="flex items-end gap-0.5"
       >
-        {open.map((session) => (
+        {open.map((session, idx) => (
           <SessionTab
             key={session.id}
             session={session}
             isActive={session.id === activeSessionId}
+            // Roving-tabindex entry point: when activeSessionId is null
+            // (transient on initial mount), fall back to the first
+            // visible tab so keyboard users still have a focus stop.
+            isFocusEntryPoint={
+              session.id === activeSessionId ||
+              (activeSessionId === null && idx === 0)
+            }
             onSelect={onSelect}
             onClose={handleClose}
           />
@@ -104,6 +111,13 @@ export const SessionTabs = ({
 interface SessionTabProps {
   session: Session
   isActive: boolean
+  /**
+   * Drives `tabIndex=0` for the roving-focus entry point. Equal to
+   * `isActive` in the steady state; differs only when `activeSessionId`
+   * is null and we fall back to the first visible tab so the keyboard
+   * still has a way into the tablist.
+   */
+  isFocusEntryPoint: boolean
   onSelect: (sessionId: string) => void
   onClose: (sessionId: string) => void
 }
@@ -111,6 +125,7 @@ interface SessionTabProps {
 const SessionTab = ({
   session,
   isActive,
+  isFocusEntryPoint,
   onSelect,
   onClose,
 }: SessionTabProps): ReactElement => {
@@ -144,7 +159,7 @@ const SessionTab = ({
       aria-label={session.name}
       aria-selected={isActive}
       aria-controls={`session-panel-${session.id}`}
-      tabIndex={isActive ? 0 : -1}
+      tabIndex={isFocusEntryPoint ? 0 : -1}
       data-testid="session-tab"
       data-session-id={session.id}
       data-active={isActive}
@@ -195,8 +210,10 @@ const SessionTab = ({
         // Roving tabindex includes interactive descendants. Without
         // tabIndex=-1 here, native <button> keeps tabIndex=0 and Tab
         // navigation lands on close buttons of inactive tabs the user
-        // can't see — risk of dismissing the wrong session.
-        tabIndex={isActive ? 0 : -1}
+        // can't see — risk of dismissing the wrong session. Tracks
+        // isFocusEntryPoint (not isActive) so the null-active fallback
+        // also exposes the close button on the first visible tab.
+        tabIndex={isFocusEntryPoint ? 0 : -1}
         onClick={(e) => {
           e.stopPropagation()
           onClose(session.id)
