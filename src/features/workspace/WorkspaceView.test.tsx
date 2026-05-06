@@ -147,11 +147,12 @@ describe('WorkspaceView', () => {
   test('applies correct grid layout with 4 columns (dynamic sidebar width)', () => {
     render(<WorkspaceView />)
 
-    const container = screen.getByTestId('workspace-view')
+    const grid = screen.getByTestId('workspace-grid')
 
-    expect(container).toHaveClass('grid')
-    // Grid columns: 64px icon rail + dynamic sidebar + 1fr main + auto (panel self-manages width)
-    expect(container.style.gridTemplateColumns).toBe('64px 340px 1fr auto')
+    expect(grid).toHaveClass('grid')
+    // Grid columns per handoff §3: 48px icon rail + dynamic sidebar (272px
+    // default) + 1fr main + auto (AgentStatusPanel self-manages width).
+    expect(grid.style.gridTemplateColumns).toBe('48px 272px 1fr auto')
   })
 
   test('fills viewport height', () => {
@@ -281,10 +282,11 @@ describe('WorkspaceView', () => {
   test('main workspace area uses flex-col layout', () => {
     render(<WorkspaceView />)
 
-    const workspaceView = screen.getByTestId('workspace-view')
+    const grid = screen.getByTestId('workspace-grid')
 
-    // Main workspace container (3rd child in grid) should use flex-col
-    const mainWorkspace = workspaceView.children[2] as HTMLElement
+    // Main workspace container (3rd child in grid: icon rail, sidebar wrapper,
+    // main wrapper, agent status panel) should use flex-col.
+    const mainWorkspace = grid.children[2] as HTMLElement
     expect(mainWorkspace).toHaveClass('flex')
     expect(mainWorkspace).toHaveClass('flex-col')
   })
@@ -341,16 +343,26 @@ describe('WorkspaceView', () => {
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
   })
 
-  test('uses updated grid layout with sidebar 340px and auto panel column', () => {
+  test('uses handoff §3 grid proportions (48 / 272 / flex / auto)', () => {
     render(<WorkspaceView />)
 
-    const container = screen.getByTestId('workspace-view')
+    const grid = screen.getByTestId('workspace-grid')
 
-    // Grid should be: 64px (icon rail) + 340px (sidebar) + 1fr (main) + 360px (activity)
-    // Note: Default sidebar width is still 256px (not changed until Feature 20)
-    // But this test verifies the grid template can accept 340px
-    expect(container.style.gridTemplateColumns).toContain('64px')
-    expect(container.style.gridTemplateColumns).toContain('1fr')
+    expect(grid.style.gridTemplateColumns).toContain('48px')
+    expect(grid.style.gridTemplateColumns).toContain('272px')
+    expect(grid.style.gridTemplateColumns).toContain('1fr')
+  })
+
+  test('mounts session-tabs strip placeholder above terminal zone', () => {
+    render(<WorkspaceView />)
+
+    expect(screen.getByTestId('session-tabs-strip')).toBeInTheDocument()
+  })
+
+  test('mounts global StatusBar below the workspace grid', () => {
+    render(<WorkspaceView />)
+
+    expect(screen.getByTestId('status-bar')).toBeInTheDocument()
   })
 
   test('file selection: no dialog when no file is currently open', async () => {

@@ -5,13 +5,13 @@ import { IconRail } from './IconRail'
 import { mockNavigationItems, mockSettingsItem } from '../data/mockNavigation'
 
 describe('IconRail', () => {
-  test('renders with 64px width', () => {
+  test('renders with 48px width', () => {
     render(
       <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
     )
 
     const rail = screen.getByTestId('icon-rail')
-    expect(rail).toHaveClass('w-16') // 64px (16 * 4 = 64)
+    expect(rail).toHaveClass('w-12') // 48px (12 * 4 = 48) — handoff §3
   })
 
   test('uses bg-surface with border-r border-white/5', () => {
