@@ -40,4 +40,14 @@ describe('StatusBar', () => {
     // bumps while still proving the placeholder string was replaced.
     expect(screen.getByText(/^v\d+\.\d+\.\d+$/)).toBeInTheDocument()
   })
+
+  test('exposes contentinfo landmark for assistive navigation', () => {
+    render(<StatusBar />)
+
+    // <footer> directly inside the body (not nested in <section>/<article>)
+    // has implicit role="contentinfo". Landmark navigation in screen
+    // readers (VoiceOver/NVDA) skips between roles, so the persistent
+    // status bar must be reachable that way.
+    expect(screen.getByRole('contentinfo')).toHaveAccessibleName('App status')
+  })
 })
