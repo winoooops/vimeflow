@@ -10,7 +10,7 @@ describe('StatusBar', () => {
     expect(bar).toHaveClass('h-6')
   })
 
-  test('uses surface-container-lowest background per handoff §4.9', () => {
+  test('uses surface-container-lowest background', () => {
     render(<StatusBar />)
 
     const bar = screen.getByTestId('status-bar')

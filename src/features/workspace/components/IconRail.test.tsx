@@ -11,7 +11,7 @@ describe('IconRail', () => {
     )
 
     const rail = screen.getByTestId('icon-rail')
-    expect(rail).toHaveClass('w-12') // 48px (12 * 4 = 48) — handoff §3
+    expect(rail).toHaveClass('w-12') // 48px (12 * 4 = 48)
   })
 
   test('uses bg-surface with border-r border-white/5', () => {

@@ -340,7 +340,7 @@ describe('WorkspaceView', () => {
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
   })
 
-  test('uses handoff §3 grid proportions (48px / 272px / 1fr / auto)', () => {
+  test('grid columns: icon-rail 48px, sidebar 272px, main 1fr, activity auto', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
