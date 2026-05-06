@@ -233,31 +233,35 @@ const SessionRow = ({
       </div>
 
       <div className="pointer-events-auto absolute right-2 top-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            setEditValue(session.name)
-            setIsEditing(true)
-          }}
-          className="rounded p-0.5 text-on-surface-variant/60 transition-colors hover:bg-surface-container-high hover:text-on-surface"
-          aria-label="Rename session"
-          title="Rename"
-        >
-          <span className="material-symbols-outlined text-sm">edit</span>
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onRemove?.(session.id)
-          }}
-          className="rounded p-0.5 text-on-surface-variant/60 transition-colors hover:bg-error/20 hover:text-error"
-          aria-label="Remove session"
-          title="Remove"
-        >
-          <span className="material-symbols-outlined text-sm">close</span>
-        </button>
+        {onRename && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setEditValue(session.name)
+              setIsEditing(true)
+            }}
+            className="rounded p-0.5 text-on-surface-variant/60 transition-colors hover:bg-surface-container-high hover:text-on-surface"
+            aria-label="Rename session"
+            title="Rename"
+          >
+            <span className="material-symbols-outlined text-sm">edit</span>
+          </button>
+        )}
+        {onRemove && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRemove(session.id)
+            }}
+            className="rounded p-0.5 text-on-surface-variant/60 transition-colors hover:bg-error/20 hover:text-error"
+            aria-label="Remove session"
+            title="Remove"
+          >
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
+        )}
       </div>
     </Reorder.Item>
   )
