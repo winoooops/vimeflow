@@ -35,6 +35,15 @@ export const useRenameState = (
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(session.name)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  // Prevents double-firing onRename when Enter is pressed: the keydown
+  // handler calls commitRename, which queues setIsEditing(false). React
+  // batches that, but on flush the input unmounts → browser fires
+  // focusout synchronously → React's onBlur listener re-enters
+  // commitRename. Without this ref both paths see the same stale
+  // closure (trimmed !== session.name) and onRename fires twice with
+  // identical args. Reset on every begin/cancel so the next rename
+  // session starts clean.
+  const committedRef = useRef(false)
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -47,11 +56,16 @@ export const useRenameState = (
     if (!onRename) {
       return
     }
+    committedRef.current = false
     setEditValue(session.name)
     setIsEditing(true)
   }
 
   const commitRename = (): void => {
+    if (committedRef.current) {
+      return
+    }
+    committedRef.current = true
     setIsEditing(false)
     const trimmed = editValue.trim()
     if (trimmed.length > 0 && trimmed !== session.name) {
@@ -62,6 +76,7 @@ export const useRenameState = (
   }
 
   const cancelRename = (): void => {
+    committedRef.current = false
     setEditValue(session.name)
     setIsEditing(false)
   }

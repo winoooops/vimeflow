@@ -498,6 +498,12 @@ export const Sidebar = ({
   // stays a true no-op. Otherwise the trailing onSessionClick(nextId)
   // would silently switch the active session without removing the
   // intended one — a latent bug for callers that omit the prop.
+  //
+  // Focus restoration: removing the focused remove button drops DOM
+  // focus to <body>; queueMicrotask defers until React commits the
+  // re-render, then lands focus on the new active row's overlay
+  // activation button. Mirrors SessionTabs.handleClose §4.4.3 behavior
+  // for keyboard users who navigate via group-focus-within.
   const handleRemoveSession = onRemoveSession
     ? (id: string): void => {
         const nextId =
@@ -507,6 +513,13 @@ export const Sidebar = ({
         onRemoveSession(id)
         if (nextId !== undefined) {
           onSessionClick(nextId)
+          queueMicrotask(() => {
+            document
+              .querySelector<HTMLElement>(
+                `[data-session-id="${nextId}"] button[aria-label]`
+              )
+              ?.focus()
+          })
         }
       }
     : undefined

@@ -108,6 +108,57 @@ describe('useRenameState', () => {
     expect(result.current.editValue).toBe('auth')
   })
 
+  test('commitRename fires onRename only once even when called twice (Enter then onBlur)', () => {
+    // Enter keydown commits → setIsEditing(false) → input unmounts →
+    // browser fires focusout → onBlur → commitRename re-enters. The
+    // second call must be a no-op so onRename isn't double-fired with
+    // the same args (matters when onRename does an IPC).
+    const onRename = vi.fn()
+
+    const { result } = renderHook(() =>
+      useRenameState(buildSession('auth'), onRename)
+    )
+    act(() => {
+      result.current.beginEdit()
+      result.current.setEditValue('new')
+    })
+
+    act(() => {
+      result.current.commitRename()
+      // Simulate the trailing onBlur after the input unmounts.
+      result.current.commitRename()
+    })
+    expect(onRename).toHaveBeenCalledTimes(1)
+    expect(onRename).toHaveBeenCalledWith('sess-1', 'new')
+  })
+
+  test('beginEdit resets the committed flag for a fresh rename session', () => {
+    const onRename = vi.fn()
+
+    const { result } = renderHook(() =>
+      useRenameState(buildSession('auth'), onRename)
+    )
+    act(() => {
+      result.current.beginEdit()
+      result.current.setEditValue('new1')
+    })
+
+    act(() => {
+      result.current.commitRename()
+    })
+
+    act(() => {
+      result.current.beginEdit()
+      result.current.setEditValue('new2')
+    })
+
+    act(() => {
+      result.current.commitRename()
+    })
+    expect(onRename).toHaveBeenCalledTimes(2)
+    expect(onRename).toHaveBeenLastCalledWith('sess-1', 'new2')
+  })
+
   test('cancelRename exits editing without firing onRename and reverts edit value', () => {
     const onRename = vi.fn()
 
