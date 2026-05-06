@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 import simpleGit from 'simple-git'
 import { parse as parseDiffText } from 'diff2html'
 import { fileApiPlugin } from './vite-plugin-files'
+import packageJson from './package.json' with { type: 'json' }
 import type {
   ChangedFile,
   FileDiff,
@@ -588,6 +589,9 @@ function readBody(
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), gitApiPlugin(), fileApiPlugin()],
+  define: {
+    __APP_VERSION__: JSON.stringify(packageJson.version),
+  },
   server: {
     watch: {
       ignored: [

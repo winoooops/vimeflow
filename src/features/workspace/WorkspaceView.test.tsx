@@ -150,8 +150,7 @@ describe('WorkspaceView', () => {
     const container = screen.getByTestId('workspace-view')
 
     expect(container).toHaveClass('grid')
-    // Grid columns: 64px icon rail + dynamic sidebar + 1fr main + auto (panel self-manages width)
-    expect(container.style.gridTemplateColumns).toBe('64px 340px 1fr auto')
+    expect(container.style.gridTemplateColumns).toBe('48px 272px 1fr auto')
   })
 
   test('fills viewport height', () => {
@@ -283,7 +282,7 @@ describe('WorkspaceView', () => {
 
     const workspaceView = screen.getByTestId('workspace-view')
 
-    // Main workspace container (3rd child in grid) should use flex-col
+    // 3rd grid child = main wrapper (after icon rail, sidebar wrapper).
     const mainWorkspace = workspaceView.children[2] as HTMLElement
     expect(mainWorkspace).toHaveClass('flex')
     expect(mainWorkspace).toHaveClass('flex-col')
@@ -341,16 +340,39 @@ describe('WorkspaceView', () => {
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
   })
 
-  test('uses updated grid layout with sidebar 340px and auto panel column', () => {
+  test('grid columns: icon-rail 48px, sidebar 272px, main 1fr, activity auto', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
 
-    // Grid should be: 64px (icon rail) + 340px (sidebar) + 1fr (main) + 360px (activity)
-    // Note: Default sidebar width is still 256px (not changed until Feature 20)
-    // But this test verifies the grid template can accept 340px
-    expect(container.style.gridTemplateColumns).toContain('64px')
+    expect(container.style.gridTemplateColumns).toContain('48px')
+    expect(container.style.gridTemplateColumns).toContain('272px')
     expect(container.style.gridTemplateColumns).toContain('1fr')
+    expect(container.style.gridTemplateColumns).toContain('auto')
+  })
+
+  test('mounts session-tabs strip placeholder above terminal zone', () => {
+    render(<WorkspaceView />)
+
+    const strip = screen.getByTestId('session-tabs-strip')
+    const terminal = screen.getByTestId('terminal-zone')
+
+    expect(strip).toBeInTheDocument()
+    expect(
+      strip.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
+  test('mounts StatusBar inside the main column (right of rail/sidebar)', () => {
+    render(<WorkspaceView />)
+
+    const workspaceView = screen.getByTestId('workspace-view')
+    const mainWorkspace = workspaceView.children[2] as HTMLElement
+    const statusBar = screen.getByTestId('status-bar')
+
+    expect(statusBar).toBeInTheDocument()
+    // Inside main column → icon rail + sidebar fill full viewport height.
+    expect(mainWorkspace.contains(statusBar)).toBe(true)
   })
 
   test('file selection: no dialog when no file is currently open', async () => {

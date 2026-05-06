@@ -109,7 +109,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
     // Mock useResizable
     const { useResizable } = await import('./hooks/useResizable')
     vi.mocked(useResizable).mockReturnValue({
-      size: 340,
+      size: 272,
       isDragging: false,
       handleMouseDown: vi.fn(),
       adjustBy: vi.fn(),

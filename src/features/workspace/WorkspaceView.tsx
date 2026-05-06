@@ -2,6 +2,7 @@ import type { ReactElement } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IconRail } from './components/IconRail'
 import { Sidebar } from './components/Sidebar'
+import { StatusBar } from './components/StatusBar'
 import { TerminalZone } from './components/TerminalZone'
 import BottomDrawer from './components/BottomDrawer'
 import { AgentStatusPanel } from '../agent-status/components/AgentStatusPanel'
@@ -25,7 +26,7 @@ import type { ChangedFile, SelectedDiffFile } from '../diff/types'
 
 const SIDEBAR_MIN = 240
 const SIDEBAR_MAX = 560
-const SIDEBAR_DEFAULT = 340
+const SIDEBAR_DEFAULT = 272
 
 export const WorkspaceView = (): ReactElement => {
   // Round 4, Finding 1 (codex P1): one terminal service per WorkspaceView
@@ -362,10 +363,9 @@ export const WorkspaceView = (): ReactElement => {
       data-testid="workspace-view"
       className="grid h-screen overflow-hidden"
       style={{
-        gridTemplateColumns: `64px ${sidebarWidth}px 1fr auto`,
+        gridTemplateColumns: `48px ${sidebarWidth}px 1fr auto`,
       }}
     >
-      {/* Icon Rail - 64px */}
       <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
 
       {/* Sidebar - resizable */}
@@ -405,7 +405,12 @@ export const WorkspaceView = (): ReactElement => {
           banner's `absolute` positioning is scoped to this column
           rather than climbing to the viewport. */}
       <div className="relative flex flex-col overflow-hidden">
-        {/* Terminal Zone - takes remaining space */}
+        <div
+          data-testid="session-tabs-strip"
+          className="h-[38px] shrink-0 border-b border-outline-variant/20 bg-surface-container-lowest"
+          aria-hidden="true"
+        />
+
         <TerminalZone
           sessions={sessions}
           activeSessionId={activeSessionId}
@@ -472,6 +477,8 @@ export const WorkspaceView = (): ReactElement => {
             )}
           </div>
         )}
+
+        <StatusBar />
       </div>
 
       {/* Agent Status Panel — self-manages width (0↔280px) */}

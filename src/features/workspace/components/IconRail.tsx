@@ -12,7 +12,7 @@ export const IconRail = ({
   settingsItem,
 }: IconRailProps): ReactElement => (
   <div
-    className="relative flex h-full w-16 flex-col items-center justify-between bg-surface border-r border-white/5 py-3"
+    className="relative flex h-full w-12 flex-col items-center justify-between bg-surface border-r border-white/5 py-3"
     data-testid="icon-rail"
   >
     <div className="flex w-full flex-col items-center gap-3">
