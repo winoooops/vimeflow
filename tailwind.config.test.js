@@ -164,7 +164,11 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
     test('borderRadius exposes handoff named keys (pane/tab/chip/pill/modal)', () => {
       expect(tailwindConfig.theme.extend.borderRadius).toMatchObject({
         pane: '10px',
-        tab: '8px 8px 0 0',
+        // tab is a single-value (`'8px'`) rather than the handoff's
+        // shorthand (`'8px 8px 0 0'`) so directional utilities like
+        // `rounded-t-tab` emit valid CSS. Consumers use `rounded-t-tab`
+        // for the top-rounded tab shape.
+        tab: '8px',
         chip: '6px',
         pill: '999px',
         modal: '12px',

@@ -70,6 +70,12 @@ export default {
         // Handoff additive tokens — additive-only migration per
         // docs/superpowers/specs/2026-05-05-ui-handoff-migration-design.md.
         // Old tokens above remain untouched until step 10 cleanup.
+        //
+        // primary-deep is the handoff's semantic name for the deep-purple
+        // companion to `primary` / `primary-container`. Same hex value as
+        // existing `on-primary-container` (#57377f) and `on-primary-fixed-
+        // variant` — they're text-on-surface roles; primary-deep is a fill
+        // role. Step 10 cleanup consolidates the duplicates.
         'primary-deep': '#57377f',
         'on-surface-muted': '#8a8299',
         // warning: amber, matching the handoff prototype's StatusDot usage
@@ -111,13 +117,15 @@ export default {
         xl: '1.5rem',
         full: '9999px',
         pane: '10px',
-        // tab: full-shorthand value. Use `rounded-tab` only — directional
-        // variants (`rounded-t-tab`, `rounded-tl-tab`, etc.) generate
-        // invalid CSS (`border-top-left-radius: 8px 8px 0 0`) which
-        // browsers silently discard. Tailwind quirk: multi-value
-        // shorthand works for the compound `border-radius` property but
-        // not for its four longhand siblings.
-        tab: '8px 8px 0 0',
+        // tab: 8px corner radius. Compose at the call site: use
+        // `rounded-t-tab` for the asymmetric top-rounded tab shape per
+        // handoff §4.3. Stored as a single-value token (not the
+        // handoff's `'8px 8px 0 0'` shorthand) because Tailwind generates
+        // directional `rounded-t-tab` / `-b-` / `-l-` / `-r-` utilities,
+        // and multi-value shorthand emits invalid CSS for those longhand
+        // properties. Single-value form keeps `rounded-t-tab` and the
+        // other directional variants valid.
+        tab: '8px',
         chip: '6px',
         pill: '999px',
         modal: '12px',
