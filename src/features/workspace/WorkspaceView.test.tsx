@@ -2,7 +2,7 @@
 /* eslint-disable vitest/expect-expect */
 import type { ReactElement } from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceView } from './WorkspaceView'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
@@ -184,20 +184,16 @@ describe('WorkspaceView', () => {
     ).toBeInTheDocument()
   })
 
-  test('passes active session to TerminalZone', async () => {
+  test('SessionTabs reflects the active session selection', async () => {
     render(<WorkspaceView />)
 
-    // Wait for session to load
     await screen.findByRole('button', { name: 'session 1' })
 
-    const terminalZone = screen.getByTestId('terminal-zone')
-
-    // TerminalZone should render tab bar with at least one session tab
-    const tabBar = terminalZone.querySelector('[data-testid="tab-bar"]')
-    expect(tabBar).toBeInTheDocument()
-
-    const sessionTabs = tabBar?.querySelectorAll('button[aria-label^="🤖"]')
-    expect(sessionTabs?.length).toBeGreaterThan(0)
+    const tabs = within(screen.getByTestId('session-tabs')).getAllByRole('tab')
+    expect(tabs.length).toBeGreaterThan(0)
+    expect(
+      tabs.some((tab) => tab.getAttribute('aria-selected') === 'true')
+    ).toBe(true)
   })
 
   test('renders AgentStatusPanel', () => {

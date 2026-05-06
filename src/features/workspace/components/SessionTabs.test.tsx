@@ -198,6 +198,52 @@ describe('SessionTabs', () => {
     ).toBeInTheDocument()
   })
 
+  test('closing the active tab pre-selects the next VISIBLE tab', async () => {
+    // Without pre-select, useSessionManager's fallback can land on a
+    // hidden completed/errored session that sits between two open
+    // ones in the underlying sessions array. Pre-select keeps the
+    // selection on a tab the user can actually see.
+    const onSelect = vi.fn()
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+
+    const sessions = [
+      buildSession({ id: 'C', status: 'running', name: 'first' }),
+      buildSession({ id: 'B', status: 'completed', name: 'hidden recent' }),
+      buildSession({ id: 'A', status: 'running', name: 'last' }),
+    ]
+    renderTabs(sessions, 'C', { onSelect, onClose })
+
+    const closeC = within(screen.getAllByRole('tab')[0]).getByRole('button', {
+      name: /close first/i,
+    })
+    await user.click(closeC)
+
+    // Visible-order next tab is 'A' (B is filtered out of the strip).
+    expect(onSelect).toHaveBeenCalledWith('A')
+    expect(onClose).toHaveBeenCalledWith('C')
+  })
+
+  test('closing an inactive tab does NOT change selection', async () => {
+    const onSelect = vi.fn()
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+
+    const sessions = [
+      buildSession({ id: 'a', name: 'auth' }),
+      buildSession({ id: 'b', name: 'tests' }),
+    ]
+    renderTabs(sessions, 'a', { onSelect, onClose })
+
+    const closeB = within(screen.getAllByRole('tab')[1]).getByRole('button', {
+      name: /close tests/i,
+    })
+    await user.click(closeB)
+
+    expect(onClose).toHaveBeenCalledWith('b')
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
   test('keeps the active session in the strip even after its PTY exits', () => {
     // useSessionManager keeps activeSessionId on a session whose PTY
     // exited so TerminalZone can show the Restart pane. Dropping that

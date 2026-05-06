@@ -236,11 +236,11 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(terminalContent.className).toContain('bg-surface')
     })
 
-    test('Terminal Zone tab bar uses Level 0.5 surface (surface-container-lowest)', () => {
+    test('SessionTabs strip uses Level 0.5 surface (surface-container-lowest)', () => {
       render(<WorkspaceView />)
-      const tabBar = screen.getByTestId('tab-bar')
+      const tabs = screen.getByTestId('session-tabs')
 
-      expect(tabBar.className).toContain('bg-surface-container-lowest')
+      expect(tabs.className).toContain('bg-surface-container-lowest')
     })
 
     test('Agent Status Panel uses surface-container background', () => {
@@ -298,7 +298,6 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
 
       expect(screen.getByTestId('session-tabs')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-      expect(screen.getByTestId('tab-bar')).toBeInTheDocument()
       expect(screen.getByTestId('bottom-drawer')).toBeInTheDocument()
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })

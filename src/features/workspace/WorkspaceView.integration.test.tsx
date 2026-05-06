@@ -140,20 +140,18 @@ describe('WorkspaceView Integration Tests', () => {
       const firstSession = sessionButtons[1]
       await user.click(firstSession)
 
-      // Terminal zone should update its active session
-      const tabBar = within(terminalZone).getByTestId('tab-bar')
-
-      // The active session tab should have visual indicator
-      const sessionTabs = within(tabBar).getAllByRole('button', {
-        name: /^🤖/,
-      })
-
-      // At least one tab wrapper should have the active styling (class is on parent div)
-      const hasActiveTab = sessionTabs.some((tab) =>
-        tab.parentElement?.classList.contains('border-b-primary')
+      // SessionTabs (above the terminal zone) should reflect the click.
+      const tabs = within(screen.getByTestId('session-tabs')).getAllByRole(
+        'tab'
       )
 
+      const hasActiveTab = tabs.some(
+        (tab) => tab.getAttribute('aria-selected') === 'true'
+      )
       expect(hasActiveTab).toBe(true)
+      // Terminal zone is still mounted (sanity check) — its panes follow
+      // activeSessionId via the same useSessionManager hook.
+      expect(terminalZone).toBeInTheDocument()
     })
 
     test('clicking session updates agent status panel', async (): Promise<void> => {
@@ -192,28 +190,23 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      // Wait for initial session to load
       await screen.findByRole('button', { name: 'session 1' })
 
       const sidebar = screen.getByTestId('sidebar')
-      const terminalZone = screen.getByTestId('terminal-zone')
 
-      // Click the session
       const sessionList = within(sidebar).getByTestId('session-list')
-      const sessionButtons = within(sessionList).getAllByRole('button')
+
+      const sessionButtons = within(sessionList).getAllByRole('button', {
+        name: /^session \d+$/,
+      })
 
       await user.click(sessionButtons[0])
 
-      // Terminal should update
-      const tabBar = within(terminalZone).getByTestId('tab-bar')
+      const tabs = within(screen.getByTestId('session-tabs')).getAllByRole(
+        'tab'
+      )
+      expect(tabs.length).toBeGreaterThan(0)
 
-      const sessionTabs = within(tabBar).getAllByRole('button', {
-        name: /^🤖/,
-      })
-
-      expect(sessionTabs.length).toBeGreaterThan(0)
-
-      // Agent Status Panel should be present
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
   })

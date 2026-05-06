@@ -53,6 +53,23 @@ export const SessionTabs = ({
     queueMicrotask(() => tabRefs.current.get(nextId)?.focus())
   }
 
+  const handleClose = (sessionId: string): void => {
+    // If we're closing the active tab, pre-select the next visible tab
+    // BEFORE delegating to onClose. useSessionManager.removeSession
+    // otherwise picks the fallback by full-sessions-index, which can
+    // land on a hidden completed/errored session (between two open
+    // ones in the underlying array) and leave the strip showing a
+    // selection the user can't see.
+    if (sessionId === activeSessionId && open.length > 1) {
+      const ids = open.map((s) => s.id)
+      const idx = ids.indexOf(sessionId)
+      // Prefer the tab to the right; wrap to left when closing the last.
+      const nextId = idx === ids.length - 1 ? ids[idx - 1] : ids[idx + 1]
+      onSelect(nextId)
+    }
+    onClose(sessionId)
+  }
+
   return (
     <div
       data-testid="session-tabs"
@@ -66,7 +83,7 @@ export const SessionTabs = ({
           session={session}
           isActive={session.id === activeSessionId}
           onSelect={onSelect}
-          onClose={onClose}
+          onClose={handleClose}
           onArrow={focusTabAtOffset}
           registerRef={registerTab}
         />
