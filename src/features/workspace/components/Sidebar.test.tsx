@@ -460,6 +460,47 @@ describe('Sidebar', () => {
     })
   })
 
+  test('removing the active session pre-selects the next visible Active row', async () => {
+    // Mirrors SessionTabs.handleClose: useSessionManager's full-sessions
+    // index fallback can land on a Recent (completed/errored) session
+    // sandwiched between two running ones. Pre-selecting from the
+    // visible Active group keeps selection on a tab the user can see.
+    const onSessionClick = vi.fn()
+    const onRemoveSession = vi.fn()
+    const user = userEvent.setup()
+
+    const sessions: Session[] = [
+      { ...mockSessions[0], id: 'A', status: 'running', name: 'first-active' },
+      // sess-3 in mockSessions is `completed` — between two actives in array
+      // order — so the manager's full-index fallback would land on it.
+      mockSessions[2],
+      { ...mockSessions[1], id: 'B', status: 'running', name: 'second-active' },
+    ]
+
+    render(
+      <Sidebar
+        sessions={sessions}
+        activeSessionId="A"
+        onSessionClick={onSessionClick}
+        onRemoveSession={onRemoveSession}
+        agentStatus={inactiveAgentStatus}
+      />
+    )
+
+    const list = screen.getByTestId('session-list')
+    const activeRow = within(list).getByText('first-active').closest('li')!
+
+    const removeBtn = within(activeRow).getByRole('button', {
+      name: 'Remove session',
+    })
+
+    await user.click(removeBtn)
+
+    // Pre-selected the next VISIBLE active (B), not the in-between Recent.
+    expect(onSessionClick).toHaveBeenCalledWith('B')
+    expect(onRemoveSession).toHaveBeenCalledWith('A')
+  })
+
   test('Active + Recent groups share a single scroll region', () => {
     // Sharing a scroll region means a long Recent group can't push
     // FileExplorer / New Instance below the fixed sidebar height.

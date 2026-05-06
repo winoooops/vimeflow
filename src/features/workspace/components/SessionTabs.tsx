@@ -78,21 +78,28 @@ export const SessionTabs = ({
   return (
     <div
       data-testid="session-tabs"
-      role="tablist"
-      aria-label="Open sessions"
       className="flex h-[38px] shrink-0 items-end gap-0.5 border-b border-outline-variant/25 bg-surface-container-lowest px-2"
     >
-      {open.map((session) => (
-        <SessionTab
-          key={session.id}
-          session={session}
-          isActive={session.id === activeSessionId}
-          onSelect={onSelect}
-          onClose={handleClose}
-          onArrow={focusTabAtOffset}
-          registerRef={registerTab}
-        />
-      ))}
+      {/* WAI-ARIA 1.2 §3.27 requires `tablist` to own only `tab` children.
+          Keeping the `+` button and the spacer outside the tablist boundary
+          so screen readers don't iterate them in the arrow-key cycle. */}
+      <div
+        role="tablist"
+        aria-label="Open sessions"
+        className="flex items-end gap-0.5"
+      >
+        {open.map((session) => (
+          <SessionTab
+            key={session.id}
+            session={session}
+            isActive={session.id === activeSessionId}
+            onSelect={onSelect}
+            onClose={handleClose}
+            onArrow={focusTabAtOffset}
+            registerRef={registerTab}
+          />
+        ))}
+      </div>
       <button
         type="button"
         onClick={onNew}

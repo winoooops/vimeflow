@@ -82,7 +82,7 @@ export const TerminalZone = ({
           const restore = restoreData?.get(session.id)
 
           // Rules (status-first, round 3 Finding 3 / codex P2):
-          //  - status === 'completed' (cached or just-Exited) →
+          //  - Exited statuses (completed OR errored) →
           //    'awaiting-restart'. Render a Restart button; do NOT
           //    auto-spawn. Status check wins over restoreData because
           //    round-2 F1 made restoreData get seeded for every session
@@ -91,12 +91,17 @@ export const TerminalZone = ({
           //    restoreData-first precedence, a shell that terminates
           //    after mount stayed in 'attach' mode forever — the new
           //    Restart UX was unreachable until a full reload.
+          //    Errored peers completed in the SessionStatus union (both
+          //    are visible in the Sidebar Recent group + retained in the
+          //    SessionTabs strip when active) so both must route here;
+          //    skipping errored leaves a zombie attach or silent respawn
+          //    on a dead PTY.
           //  - Has restoreData → 'attach'. Covers Alive restored sessions
           //    AND newly-created sessions (createSession seeds an empty
           //    restoreData slot so the pane attaches instead of spawning).
           //  - Otherwise → 'spawn' (legacy fallback).
           let mode: TerminalPaneMode = 'spawn'
-          if (session.status === 'completed') {
+          if (session.status === 'completed' || session.status === 'errored') {
             mode = 'awaiting-restart'
           } else if (restore) {
             mode = 'attach'

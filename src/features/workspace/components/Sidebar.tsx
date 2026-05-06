@@ -113,7 +113,7 @@ const SessionRow = ({
       data-session-id={session.id}
       data-active={isActive}
       className={`
-        relative mb-1 cursor-grab rounded-xl px-3 py-2.5 transition-colors
+        relative mb-1 cursor-grab rounded-[8px] px-3 py-2.5 transition-colors
         active:cursor-grabbing group
         ${
           isActive
@@ -249,7 +249,7 @@ const RecentSessionRow = ({
       data-session-id={session.id}
       data-active={isActive}
       className={`
-        group relative mb-1 rounded-xl px-3 py-2 transition-colors
+        group relative mb-1 rounded-[8px] px-3 py-2 transition-colors
         ${
           isActive
             ? 'bg-primary/10 text-on-surface'
@@ -388,6 +388,22 @@ export const Sidebar = ({
     (s) => s.status === 'completed' || s.status === 'errored'
   )
 
+  // Mirror SessionTabs.handleClose: when the user removes the active
+  // session from the sidebar, pre-select the next visible Active session
+  // before delegating to onRemoveSession. Otherwise useSessionManager's
+  // full-sessions-index fallback can land on a Recent (completed/errored)
+  // session, surfacing it as the active selection in the SessionTabs strip
+  // even though the user just asked to remove a running tab.
+  const handleRemoveSession = (id: string): void => {
+    if (id === activeSessionId && activeGroup.length > 1) {
+      const ids = activeGroup.map((s) => s.id)
+      const idx = ids.indexOf(id)
+      const nextId = idx === ids.length - 1 ? ids[idx - 1] : ids[idx + 1]
+      onSessionClick(nextId)
+    }
+    onRemoveSession?.(id)
+  }
+
   return (
     <div
       className="flex h-full w-full flex-col bg-surface-container-low"
@@ -402,7 +418,10 @@ export const Sidebar = ({
         />
       </div>
 
-      <div className="flex items-center justify-between px-3 pb-1 pt-2">
+      {/* GroupHeader carries its own px-3/pt-2/pb-1; outer flex row only
+          adds the right-side gutter for the Add button so the Active
+          label stays horizontally aligned with the Recent label below. */}
+      <div className="flex items-center justify-between pr-3">
         <GroupHeader label="Active" />
         <button
           type="button"
@@ -444,7 +463,7 @@ export const Sidebar = ({
                 session={session}
                 isActive={session.id === activeSessionId}
                 onSessionClick={onSessionClick}
-                onRemove={onRemoveSession}
+                onRemove={handleRemoveSession}
                 onRename={onRenameSession}
               />
             ))
@@ -461,7 +480,7 @@ export const Sidebar = ({
                   session={session}
                   isActive={session.id === activeSessionId}
                   onSessionClick={onSessionClick}
-                  onRemove={onRemoveSession}
+                  onRemove={handleRemoveSession}
                 />
               ))}
             </ul>

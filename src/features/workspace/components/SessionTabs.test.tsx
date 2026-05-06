@@ -59,6 +59,27 @@ describe('SessionTabs', () => {
     expect(screen.getByRole('tablist')).toHaveAccessibleName('Open sessions')
   })
 
+  test('tablist owns ONLY tab children (WAI-ARIA §3.27)', () => {
+    // The "+" button and trailing flex spacer must live OUTSIDE the
+    // tablist so screen readers don't iterate them in the arrow-key
+    // cycle as fourth/fifth tabs.
+    renderTabs(
+      [
+        buildSession({ id: 'a', name: 'auth' }),
+        buildSession({ id: 'b', name: 'tests' }),
+      ],
+      'a'
+    )
+    const tablist = screen.getByRole('tablist')
+    const newSessionBtn = screen.getByRole('button', { name: 'New session' })
+
+    expect(within(tablist).getAllByRole('tab')).toHaveLength(2)
+    expect(
+      within(tablist).queryByRole('button', { name: 'New session' })
+    ).toBeNull()
+    expect(tablist.contains(newSessionBtn)).toBe(false)
+  })
+
   test('renders one tab per open session (running + paused)', () => {
     const sessions: Session[] = [
       buildSession({ id: 'a', status: 'running', name: 'auth' }),
