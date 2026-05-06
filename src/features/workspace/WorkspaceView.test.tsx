@@ -354,7 +354,13 @@ describe('WorkspaceView', () => {
   test('mounts session-tabs strip placeholder above terminal zone', () => {
     render(<WorkspaceView />)
 
-    expect(screen.getByTestId('session-tabs-strip')).toBeInTheDocument()
+    const strip = screen.getByTestId('session-tabs-strip')
+    const terminal = screen.getByTestId('terminal-zone')
+
+    expect(strip).toBeInTheDocument()
+    expect(
+      strip.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
   })
 
   test('mounts StatusBar inside the main column (right of rail/sidebar)', () => {
