@@ -49,8 +49,8 @@ This is a multi-PR **migration**, not a green-field build. Tauri backend untouch
 
 Two paired files, matching existing `tauri-migration-roadmap.md` ↔ `progress.yaml` convention:
 
-- **`docs/roadmap/ui-update-roadmap.md`** (new) — human narrative. One section per §9 step with: goal, files touched, DoD bullets, risks.
-- **`docs/roadmap/progress.yaml`** (extend) — append a new phase `ui-handoff-migration` with 9 steps, statuses (`pending|in_progress|done|blocked`), and PR/commit linkage on landing.
+- **`docs/roadmap/ui-update-roadmap.md`** (new) — human narrative. One section per migration step (1–10) with: goal, files touched, DoD bullets, risks.
+- **`docs/roadmap/progress.yaml`** (extend) — append a new phase `ui-handoff-migration` with 10 steps (1–9 from handoff §9, plus step 10 token cleanup added by this spec), statuses (`pending|in_progress|done|blocked`), and PR/commit linkage on landing.
 
 ### Module decomposition (handoff §9, plus step 10 cleanup)
 
