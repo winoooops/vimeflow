@@ -1,6 +1,10 @@
 import { useRef, type KeyboardEvent, type ReactElement } from 'react'
 import type { Session } from '../types'
 import { agentForSession } from '../utils/agentForSession'
+import {
+  isOpenSessionStatus,
+  pickNextVisibleSessionId,
+} from '../utils/pickNextVisibleSessionId'
 import { StatusDot } from './StatusDot'
 
 export interface SessionTabsProps {
@@ -10,9 +14,6 @@ export interface SessionTabsProps {
   onClose: (sessionId: string) => void
   onNew: () => void
 }
-
-const isOpenStatus = (s: Session): boolean =>
-  s.status === 'running' || s.status === 'paused'
 
 export const SessionTabs = ({
   sessions,
@@ -26,7 +27,7 @@ export const SessionTabs = ({
   // useSessionManager keeps activeSessionId pointing at it. Dropping the
   // tab would leave the visible pane with no selected tab.
   const open = sessions.filter(
-    (s) => isOpenStatus(s) || s.id === activeSessionId
+    (s) => isOpenSessionStatus(s.status) || s.id === activeSessionId
   )
 
   const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map())
@@ -60,18 +61,15 @@ export const SessionTabs = ({
     // useSessionManager.removeSession picks its fallback by full-sessions
     // index, which can land on a hidden completed/errored session sitting
     // between two visible ones in the underlying array. We override with
-    // the visible next-tab id from `open`. Order matters: onClose runs
-    // first so removeSession can do its work (kill IPC, drop from list,
-    // pick its own fallback); the trailing onSelect then overrides the
-    // selection to a tab the user can actually see. This way an onClose
-    // failure cannot strand the selection on a removed id.
-    let nextId: string | undefined
-    if (sessionId === activeSessionId && open.length > 1) {
-      const ids = open.map((s) => s.id)
-      const idx = ids.indexOf(sessionId)
-      // Prefer the tab to the right; wrap to left when closing the last.
-      nextId = idx === ids.length - 1 ? ids[idx - 1] : ids[idx + 1]
-    }
+    // the visible next-tab id. Order matters: onClose runs first so
+    // removeSession can do its work (kill IPC, drop from list, pick its
+    // own fallback); the trailing onSelect then overrides the selection
+    // to a tab the user can actually see. This way an onClose failure
+    // cannot strand the selection on a removed id.
+    const nextId =
+      sessionId === activeSessionId
+        ? pickNextVisibleSessionId(sessions, sessionId, activeSessionId)
+        : undefined
     onClose(sessionId)
     if (nextId !== undefined) {
       onSelect(nextId)

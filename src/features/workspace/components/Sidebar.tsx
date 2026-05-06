@@ -13,6 +13,7 @@ import { FileExplorer } from './panels/FileExplorer'
 import { SidebarStatusHeader } from './SidebarStatusHeader'
 import { StatusDot } from './StatusDot'
 import { formatRelativeTime } from '../../agent-status/utils/relativeTime'
+import { pickNextVisibleSessionId } from '../utils/pickNextVisibleSessionId'
 
 export interface SidebarProps {
   sessions: Session[]
@@ -234,12 +235,16 @@ const SessionRow = ({
   )
 }
 
+// Recent rows are read-only — no rename. Narrowing the prop type makes
+// that contract explicit instead of advertising a no-op `onRename`.
+type RecentSessionRowProps = Omit<SessionRowProps, 'onRename'>
+
 const RecentSessionRow = ({
   session,
   isActive,
   onSessionClick,
   onRemove = undefined,
-}: SessionRowProps): ReactElement => {
+}: RecentSessionRowProps): ReactElement => {
   const { added, removed } = sessionLineDelta(session)
   const subtitle = sessionSubtitle(session)
 
@@ -388,21 +393,20 @@ export const Sidebar = ({
     (s) => s.status === 'completed' || s.status === 'errored'
   )
 
-  // Mirror SessionTabs.handleClose: when the user removes the active
-  // session from the sidebar, override the manager's fallback to a
-  // visible Active row. Order matters: useSessionManager.removeSession
-  // uses `flushSync` internally to apply its own setActiveSessionId
-  // mid-call, so any pre-selection we queue BEFORE the remove is wiped
-  // out by the synchronous fallback. We have to remove first, then
-  // override with the visible-order next id — same ordering as
-  // SessionTabs.handleClose for the same reason.
+  // Mirror SessionTabs.handleClose using the shared visible-order helper.
+  // useSessionManager.removeSession uses `flushSync` internally to apply
+  // its own setActiveSessionId mid-call, so we must remove first and
+  // override the selection afterward. Routing through the shared helper
+  // (instead of computing next-id from `activeGroup` only) covers the
+  // exited-active case: when the active session is completed/errored
+  // (so it lives in `recentGroup`, not `activeGroup`), the helper still
+  // produces the visually adjacent tab in the strip — matching what the
+  // tab strip's own close button does for the same scenario.
   const handleRemoveSession = (id: string): void => {
-    let nextId: string | undefined
-    if (id === activeSessionId && activeGroup.length > 1) {
-      const ids = activeGroup.map((s) => s.id)
-      const idx = ids.indexOf(id)
-      nextId = idx === ids.length - 1 ? ids[idx - 1] : ids[idx + 1]
-    }
+    const nextId =
+      id === activeSessionId
+        ? pickNextVisibleSessionId(sessions, id, activeSessionId)
+        : undefined
     onRemoveSession?.(id)
     if (nextId !== undefined) {
       onSessionClick(nextId)
