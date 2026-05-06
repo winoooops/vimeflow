@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent, type ReactElement } from 'react'
+import { type KeyboardEvent, type ReactElement } from 'react'
 import type { Session } from '../types'
 import { agentForSession } from '../utils/agentForSession'
 import {
@@ -30,32 +30,13 @@ export const SessionTabs = ({
     (s) => isOpenSessionStatus(s.status) || s.id === activeSessionId
   )
 
-  const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-
-  const registerTab = (id: string, el: HTMLDivElement | null): void => {
-    if (el === null) {
-      tabRefs.current.delete(id)
-    } else {
-      tabRefs.current.set(id, el)
-    }
-  }
-
-  const focusTabAtOffset = (currentId: string, offset: number): void => {
-    const ids = open.map((s) => s.id)
-    const idx = ids.indexOf(currentId)
-    if (idx === -1 || ids.length === 0) {
-      return
-    }
-    const nextIdx = (idx + offset + ids.length) % ids.length
-    const nextId = ids[nextIdx]
-    // Manual-activation pattern (WAI-ARIA tabs): ArrowLeft/Right move DOM
-    // focus only — they do NOT change `activeSessionId`. Activation
-    // happens explicitly on Enter/Space (handled in SessionTab below).
-    // This keeps the visible terminal pane stable while a keyboard user
-    // is scanning adjacent tab labels with the screen reader; switching
-    // mid-scan would tear down the live xterm and reattach.
-    tabRefs.current.get(nextId)?.focus()
-  }
+  // STUB: tab cycling between sessions belongs on a global keybinding
+  // (e.g. Cmd+Shift+] / [) routed through the command palette. While
+  // xterm.js holds focus inside the terminal, in-component arrow-key
+  // handlers on the tab divs never fire — the user can't Tab into the
+  // strip without first leaving the terminal. The previous attempt at
+  // ArrowLeft/Right within SessionTabs was removed for this reason.
+  // See issue tracker for the global-keybinding follow-up.
 
   const handleClose = (sessionId: string): void => {
     // useSessionManager.removeSession picks its fallback by full-sessions
@@ -82,8 +63,7 @@ export const SessionTabs = ({
       className="flex h-[38px] shrink-0 items-end gap-0.5 border-b border-outline-variant/25 bg-surface-container-lowest px-2"
     >
       {/* WAI-ARIA 1.2 §3.27 requires `tablist` to own only `tab` children.
-          Keeping the `+` button and the spacer outside the tablist boundary
-          so screen readers don't iterate them in the arrow-key cycle. */}
+          Keeping the `+` button and the spacer outside the tablist boundary. */}
       <div
         role="tablist"
         aria-label="Open sessions"
@@ -96,8 +76,6 @@ export const SessionTabs = ({
             isActive={session.id === activeSessionId}
             onSelect={onSelect}
             onClose={handleClose}
-            onArrow={focusTabAtOffset}
-            registerRef={registerTab}
           />
         ))}
       </div>
@@ -120,8 +98,6 @@ interface SessionTabProps {
   isActive: boolean
   onSelect: (sessionId: string) => void
   onClose: (sessionId: string) => void
-  onArrow: (currentId: string, offset: number) => void
-  registerRef: (id: string, el: HTMLDivElement | null) => void
 }
 
 const SessionTab = ({
@@ -129,37 +105,26 @@ const SessionTab = ({
   isActive,
   onSelect,
   onClose,
-  onArrow,
-  registerRef,
 }: SessionTabProps): ReactElement => {
   const agent = agentForSession(session)
 
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
-    // Don't react to keys that bubbled from a focused descendant (close X).
+    // Ignore key events that bubbled from a focused descendant (close X).
     if (e.target !== e.currentTarget) {
       return
     }
+    // Enter / Space activate the focused tab. Arrow-key cycling between
+    // tabs intentionally not handled here — see the global-keybinding
+    // stub note in SessionTabs above. Without that, in practice xterm
+    // owns focus and the tab strip is mouse-driven.
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       onSelect(session.id)
-
-      return
-    }
-    if (e.key === 'ArrowRight') {
-      e.preventDefault()
-      onArrow(session.id, 1)
-
-      return
-    }
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault()
-      onArrow(session.id, -1)
     }
   }
 
   return (
     <div
-      ref={(el) => registerRef(session.id, el)}
       id={`session-tab-${session.id}`}
       role="tab"
       aria-selected={isActive}
