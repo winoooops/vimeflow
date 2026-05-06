@@ -110,6 +110,9 @@ export const TerminalZone = ({
           return (
             <div
               key={session.id}
+              id={`session-panel-${session.id}`}
+              role="tabpanel"
+              aria-labelledby={`session-tab-${session.id}`}
               data-testid="terminal-pane"
               data-session-id={session.id}
               data-cwd={session.workingDirectory}

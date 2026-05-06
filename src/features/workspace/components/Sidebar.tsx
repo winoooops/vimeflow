@@ -389,19 +389,24 @@ export const Sidebar = ({
   )
 
   // Mirror SessionTabs.handleClose: when the user removes the active
-  // session from the sidebar, pre-select the next visible Active session
-  // before delegating to onRemoveSession. Otherwise useSessionManager's
-  // full-sessions-index fallback can land on a Recent (completed/errored)
-  // session, surfacing it as the active selection in the SessionTabs strip
-  // even though the user just asked to remove a running tab.
+  // session from the sidebar, override the manager's fallback to a
+  // visible Active row. Order matters: useSessionManager.removeSession
+  // uses `flushSync` internally to apply its own setActiveSessionId
+  // mid-call, so any pre-selection we queue BEFORE the remove is wiped
+  // out by the synchronous fallback. We have to remove first, then
+  // override with the visible-order next id — same ordering as
+  // SessionTabs.handleClose for the same reason.
   const handleRemoveSession = (id: string): void => {
+    let nextId: string | undefined
     if (id === activeSessionId && activeGroup.length > 1) {
       const ids = activeGroup.map((s) => s.id)
       const idx = ids.indexOf(id)
-      const nextId = idx === ids.length - 1 ? ids[idx - 1] : ids[idx + 1]
-      onSessionClick(nextId)
+      nextId = idx === ids.length - 1 ? ids[idx - 1] : ids[idx + 1]
     }
     onRemoveSession?.(id)
+    if (nextId !== undefined) {
+      onSessionClick(nextId)
+    }
   }
 
   return (

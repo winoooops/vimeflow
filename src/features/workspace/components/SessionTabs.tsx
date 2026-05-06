@@ -47,10 +47,13 @@ export const SessionTabs = ({
     }
     const nextIdx = (idx + offset + ids.length) % ids.length
     const nextId = ids[nextIdx]
-    onSelect(nextId)
-    // Roving-focus pattern: move DOM focus to the newly-selected tab so
-    // arrow-key navigation reads naturally to assistive tech.
-    queueMicrotask(() => tabRefs.current.get(nextId)?.focus())
+    // Manual-activation pattern (WAI-ARIA tabs): ArrowLeft/Right move DOM
+    // focus only — they do NOT change `activeSessionId`. Activation
+    // happens explicitly on Enter/Space (handled in SessionTab below).
+    // This keeps the visible terminal pane stable while a keyboard user
+    // is scanning adjacent tab labels with the screen reader; switching
+    // mid-scan would tear down the live xterm and reattach.
+    tabRefs.current.get(nextId)?.focus()
   }
 
   const handleClose = (sessionId: string): void => {
@@ -159,8 +162,10 @@ const SessionTab = ({
   return (
     <div
       ref={(el) => registerRef(session.id, el)}
+      id={`session-tab-${session.id}`}
       role="tab"
       aria-selected={isActive}
+      aria-controls={`session-panel-${session.id}`}
       tabIndex={isActive ? 0 : -1}
       data-testid="session-tab"
       data-session-id={session.id}

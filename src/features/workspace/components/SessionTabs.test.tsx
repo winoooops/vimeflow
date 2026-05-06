@@ -59,6 +59,13 @@ describe('SessionTabs', () => {
     expect(screen.getByRole('tablist')).toHaveAccessibleName('Open sessions')
   })
 
+  test('each tab carries aria-controls + id pointing at its TerminalZone panel', () => {
+    renderTabs([buildSession({ id: 'sess-x' })], 'sess-x')
+    const tab = screen.getByRole('tab')
+    expect(tab).toHaveAttribute('id', 'session-tab-sess-x')
+    expect(tab).toHaveAttribute('aria-controls', 'session-panel-sess-x')
+  })
+
   test('tablist owns ONLY tab children (WAI-ARIA §3.27)', () => {
     // The "+" button and trailing flex spacer must live OUTSIDE the
     // tablist so screen readers don't iterate them in the arrow-key
@@ -280,7 +287,9 @@ describe('SessionTabs', () => {
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
   })
 
-  test('ArrowRight on the active tab cycles selection to the next tab', async () => {
+  test('ArrowRight moves DOM focus only — does not switch the active session', async () => {
+    // Manual-activation pattern (WAI-ARIA tabs): arrow keys move focus
+    // for scanning; Enter/Space commits the activation.
     const onSelect = vi.fn()
     const user = userEvent.setup()
 
@@ -291,13 +300,15 @@ describe('SessionTabs', () => {
     ]
     renderTabs(sessions, 'a', { onSelect })
 
-    const activeTab = screen.getAllByRole('tab')[0]
-    activeTab.focus()
+    const tabs = screen.getAllByRole('tab')
+    tabs[0].focus()
     await user.keyboard('{ArrowRight}')
-    expect(onSelect).toHaveBeenLastCalledWith('b')
+
+    expect(tabs[1]).toHaveFocus()
+    expect(onSelect).not.toHaveBeenCalled()
   })
 
-  test('ArrowLeft on the active tab wraps to the last tab', async () => {
+  test('ArrowLeft wraps focus to the last tab without activating it', async () => {
     const onSelect = vi.fn()
     const user = userEvent.setup()
 
@@ -308,10 +319,30 @@ describe('SessionTabs', () => {
     ]
     renderTabs(sessions, 'a', { onSelect })
 
-    const activeTab = screen.getAllByRole('tab')[0]
-    activeTab.focus()
+    const tabs = screen.getAllByRole('tab')
+    tabs[0].focus()
     await user.keyboard('{ArrowLeft}')
-    expect(onSelect).toHaveBeenLastCalledWith('c')
+
+    expect(tabs[2]).toHaveFocus()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  test('Enter on a focused inactive tab activates it (manual activation)', async () => {
+    const onSelect = vi.fn()
+    const user = userEvent.setup()
+
+    const sessions = [
+      buildSession({ id: 'a', name: 'auth' }),
+      buildSession({ id: 'b', name: 'tests' }),
+    ]
+    renderTabs(sessions, 'a', { onSelect })
+
+    const tabs = screen.getAllByRole('tab')
+    // Simulate user arrow-keying to inactive tab and pressing Enter.
+    tabs[1].focus()
+    await user.keyboard('{Enter}')
+
+    expect(onSelect).toHaveBeenCalledWith('b')
   })
 
   test('Enter on a focused close button closes that tab without re-selecting', async () => {
