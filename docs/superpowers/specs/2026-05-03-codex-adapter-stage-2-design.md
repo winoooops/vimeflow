@@ -555,7 +555,7 @@ Backend (Rust):
 
 - `src-tauri/src/agent/types.rs` — `CostMetrics.total_cost_usd: Option<f64>`.
 - `src-tauri/src/agent/adapter/types.rs` — add `BindContext`, `BindError`.
-  - _Post-2026-05-05: both types are deleted. `BindContext` lives privately in `agent/adapter/codex/types.rs`; `BindError` is gone (trait method returns `Result<_, String>`). See the [trait simplification spec](./2026-05-05-codex-adapter-trait-simplification-design.md)._
+  - _Post-2026-05-05: both types are deleted. `BindContext` lives privately in `agent/adapter/codex/types.rs`; `BindError` is gone (trait method returns `Result<_, String>`). See the [trait simplification spec](./2026-05-05-codex-adapter-trait-simplification-design.md).\_
 - `src-tauri/src/agent/adapter/mod.rs` — trait sig update; `start_for` retry on Pending; `start_agent_watcher` builds `BindContext` from `PtyState`.
   - _Post-2026-05-05 mechanics differ; see [`docs/superpowers/specs/2026-05-05-codex-adapter-trait-simplification-design.md`](./2026-05-05-codex-adapter-trait-simplification-design.md)._
 - `src-tauri/src/agent/adapter/base/mod.rs` — `start_for` retry loop, error propagation.

@@ -161,13 +161,13 @@ pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
 
 Each method is a "provider hook" — every concrete adapter implements all five. The trait is generic over `R: tauri::Runtime` so production (`R = Wry`) and `tauri::test::mock_builder()`-driven integration tests (`R = MockRuntime`) share a single contract.
 
-| Hook                  | Returns                             | Responsibility                                                                                         |
-| --------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `agent_type`          | `AgentType`                         | Self-identification — used in logs and event payloads.                                                 |
-| `status_source`       | `Result<StatusSource, String>`      | Where the agent writes its status snapshot, plus the trust root the path must canonicalize under. Failures surface as `Err(String)`. |
-| `parse_status`        | `Result<ParsedStatus, String>`      | Parse one status snapshot into the typed `AgentStatusEvent` IPC payload. Optional transcript path.     |
-| `validate_transcript` | `Result<PathBuf, String>`           | Canonicalize and reject any transcript path outside this provider's trust root.                        |
-| `tail_transcript`     | `Result<TranscriptHandle, String>`  | Spawn the per-line tail loop end-to-end — including in-flight tool-call tracking and `TestRunEmitter`. |
+| Hook                  | Returns                            | Responsibility                                                                                                                       |
+| --------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `agent_type`          | `AgentType`                        | Self-identification — used in logs and event payloads.                                                                               |
+| `status_source`       | `Result<StatusSource, String>`     | Where the agent writes its status snapshot, plus the trust root the path must canonicalize under. Failures surface as `Err(String)`. |
+| `parse_status`        | `Result<ParsedStatus, String>`     | Parse one status snapshot into the typed `AgentStatusEvent` IPC payload. Optional transcript path.                                   |
+| `validate_transcript` | `Result<PathBuf, String>`          | Canonicalize and reject any transcript path outside this provider's trust root.                                                      |
+| `tail_transcript`     | `Result<TranscriptHandle, String>` | Spawn the per-line tail loop end-to-end — including in-flight tool-call tracking and `TestRunEmitter`.                               |
 
 `TranscriptHandle::Drop` only signals stop (sets `stop_flag`); explicit `TranscriptHandle::stop(self)` joins. This matches today's `transcript.rs:94-108` behavior — Stage 1 preserves it.
 
