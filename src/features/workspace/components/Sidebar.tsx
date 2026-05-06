@@ -191,6 +191,10 @@ const SessionRow = ({
             // to the sibling absolute button (the button is no longer an
             // ancestor) — primary row activation would silently break.
             <span
+              // aria-hidden so AT doesn't announce the name twice — the
+              // sibling overlay button already carries aria-label=name.
+              // Subtitle / state pill / line-delta stay traversable.
+              aria-hidden="true"
               className="pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[13px] font-semibold text-on-surface"
               onClick={() => onSessionClick(session.id)}
               onDoubleClick={(e) => {
@@ -355,6 +359,9 @@ const RecentSessionRow = ({
             // Same activation+rename split as SessionRow above —
             // sibling-button overlay needs an explicit onClick here.
             <span
+              // Same aria-hidden as SessionRow above — overlay button
+              // owns the name announcement, span owns visual+rename.
+              aria-hidden="true"
               className={`pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[12.5px] ${isActive ? 'text-on-surface' : 'text-on-surface-variant/60'}`}
               onClick={() => onSessionClick(session.id)}
               onDoubleClick={(e) => {
