@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-05-06
-ref_count: 2
+ref_count: 3
 ---
 
 # Accessibility
@@ -134,3 +134,14 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The new `StatusBar` placeholder rendered its container as a `<div>` with no ARIA landmark. Persistent bottom chrome is the canonical use case for `role="contentinfo"` (or the implicit landmark on `<footer>`); without it, VoiceOver/NVDA users navigating by landmark cannot reach or skip over the bar, and screen-reader users have no programmatic anchor to identify the region. A "placeholder until step 9" rationale was wrong — the container element is what step 9 inherits, and removing landmarks gives downstream developers a div-only baseline that they then have to retrofit. Same finding-class as #5 (button-styled spans), #6 (drag handle missing role), #11 (focus restoration) — structural a11y omissions on otherwise-correct interactive scaffolding.
 - **Fix:** Swapped the outer `<div>` for `<footer>` with `aria-label="App status"`. `<footer>` directly inside the workspace root (not nested in `<section>`/`<article>`) carries the implicit `role="contentinfo"`, so the bar now appears in landmark navigation. Added a sibling test asserting `getByRole('contentinfo')` resolves with the explicit accessible name. Code-review heuristic: any persistent layout strip — top bar, bottom bar, side rail — should ship with its semantic landmark on day one, not deferred to a "polish" pass; the landmark is part of the scaffolding, not styling.
 - **Commit:** _(see git log for the cycle-2 fix commit on PR #173)_
+
+---
+
+### 14. Focus restoration via raw template-literal CSS attribute selector — silent break or `SyntaxError` on hostile session ids
+
+- **Source:** github-claude | PR #174 round 15 | 2026-05-06
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/Sidebar.tsx`
+- **Finding:** `Sidebar.handleRemoveSession` queued a `queueMicrotask` that called `document.querySelector(`[data-session-id="${nextId}"] [data-role="activate"]`)` to restore keyboard focus after closing a session. `nextId` was interpolated raw into a CSS attribute-selector string. The current session-id schema is UUID-only, so no real input today corrupts the selector — but the invariant lived implicitly in the caller, not enforced by the focus-restoration code. A future schema change (e.g. accepting a user-chosen alias as the session id) that allows `"` or `]` would either silently no-op (`querySelector` returns `null` → focus lands on `<body>`) or throw `SyntaxError` from inside the microtask, which is uncaught and observably breaks keyboard nav. Same finding-class as #11 (focus restoration) — focus-management code paths must enforce their own invariants because the symptom (focus on `<body>`) is invisible until a real keyboard user notices.
+- **Fix:** Mirrored the `SessionTabs` pattern (`document.getElementById(`session-tab-${nextId}`)`). Both `SessionRow` and `RecentSessionRow` now render their absolute-overlay activation `<button>` with an explicit `id={`sidebar-activate-${session.id}`}`, and `handleRemoveSession` switched to `document.getElementById(`sidebar-activate-${nextId}`)`. `getElementById` treats its argument as a plain DOMString — no parsing, no escaping, no dependency on session-id character class. The two parallel focus-restoration paths in the workspace now use the same lookup mechanism (consistency that's easier to maintain than two mechanisms). Code-review heuristic: when interpolating any non-static value into a `querySelector` argument, prefer `getElementById` (or wrap with `CSS.escape`) — the security/correctness flavor of "untrusted-string-into-parser" applies to DOM selectors the same way it applies to SQL/shell, even when the current input class is "safe" by accident.
+- **Commit:** _(see git log for the cycle-15 fix commit on PR #174)_

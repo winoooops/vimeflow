@@ -153,6 +153,7 @@ const SessionRow = ({
         type="button"
         onClick={() => onSessionClick(session.id)}
         aria-label={session.name}
+        id={`sidebar-activate-${session.id}`}
         data-role="activate"
         className="absolute inset-0 rounded-[8px]"
         tabIndex={isEditing ? -1 : 0}
@@ -312,6 +313,7 @@ const RecentSessionRow = ({
         type="button"
         onClick={() => onSessionClick(session.id)}
         aria-label={session.name}
+        id={`sidebar-activate-${session.id}`}
         data-role="activate"
         className="absolute inset-0 rounded-[8px]"
         tabIndex={isEditing ? -1 : 0}
@@ -518,15 +520,15 @@ export const Sidebar = ({
         if (nextId !== undefined) {
           onSessionClick(nextId)
           queueMicrotask(() => {
-            // Target the overlay activation button explicitly via
-            // data-role rather than `button[aria-label]` so the
-            // selector survives a future DOM reordering that puts the
-            // hover Rename/Remove buttons above the overlay.
-            document
-              .querySelector<HTMLElement>(
-                `[data-session-id="${nextId}"] [data-role="activate"]`
-              )
-              ?.focus()
+            // Mirror SessionTabs' `getElementById('session-tab-...')`
+            // pattern: the overlay button carries
+            // `id="sidebar-activate-${session.id}"`, so id-based lookup
+            // is both consistent across the two strips AND avoids the
+            // CSS-attribute-selector escaping path entirely. A session
+            // id containing `"` or `]` would otherwise corrupt the
+            // selector and either silently fail (`querySelector` →
+            // null) or throw `SyntaxError`.
+            document.getElementById(`sidebar-activate-${nextId}`)?.focus()
           })
         }
       }
