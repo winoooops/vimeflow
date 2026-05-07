@@ -76,7 +76,15 @@ export const useRenameState = (
   }
 
   const cancelRename = (): void => {
-    committedRef.current = false
+    // Mark this session committed so the trailing onBlur (fired
+    // synchronously by the browser when React unmounts the input on
+    // the next render) cannot re-enter commitRename and call onRename
+    // with the user's typed text — which would silently rename the
+    // session despite the Escape intent. beginEdit unconditionally
+    // resets this back to false, so subsequent rename sessions stay
+    // unaffected. The previous `false` here disarmed the guard for the
+    // *current* session's lingering blur, which was the bug.
+    committedRef.current = true
     setEditValue(session.name)
     setIsEditing(false)
   }

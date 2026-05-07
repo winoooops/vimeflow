@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-05-06
-ref_count: 3
+ref_count: 4
 ---
 
 # Accessibility
@@ -145,3 +145,21 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** `Sidebar.handleRemoveSession` queued a `queueMicrotask` that called `document.querySelector(`[data-session-id="${nextId}"] [data-role="activate"]`)` to restore keyboard focus after closing a session. `nextId` was interpolated raw into a CSS attribute-selector string. The current session-id schema is UUID-only, so no real input today corrupts the selector — but the invariant lived implicitly in the caller, not enforced by the focus-restoration code. A future schema change (e.g. accepting a user-chosen alias as the session id) that allows `"` or `]` would either silently no-op (`querySelector` returns `null` → focus lands on `<body>`) or throw `SyntaxError` from inside the microtask, which is uncaught and observably breaks keyboard nav. Same finding-class as #11 (focus restoration) — focus-management code paths must enforce their own invariants because the symptom (focus on `<body>`) is invisible until a real keyboard user notices.
 - **Fix:** Mirrored the `SessionTabs` pattern (`document.getElementById(`session-tab-${nextId}`)`). Both `SessionRow` and `RecentSessionRow` now render their absolute-overlay activation `<button>` with an explicit `id={`sidebar-activate-${session.id}`}`, and `handleRemoveSession` switched to `document.getElementById(`sidebar-activate-${nextId}`)`. `getElementById` treats its argument as a plain DOMString — no parsing, no escaping, no dependency on session-id character class. The two parallel focus-restoration paths in the workspace now use the same lookup mechanism (consistency that's easier to maintain than two mechanisms). Code-review heuristic: when interpolating any non-static value into a `querySelector` argument, prefer `getElementById` (or wrap with `CSS.escape`) — the security/correctness flavor of "untrusted-string-into-parser" applies to DOM selectors the same way it applies to SQL/shell, even when the current input class is "safe" by accident.
 - **Commit:** _(see git log for the cycle-15 fix commit on PR #174)_
+
+### 15. E2E helper still used raw `${id}` CSS attribute selector after the same cycle fixed it in production code
+
+- **Source:** github-claude | PR #174 round 16 | 2026-05-06
+- **Severity:** LOW
+- **File:** `tests/e2e/terminal/specs/multi-tab-isolation.spec.ts`
+- **Finding:** Cycle 15 fixed `Sidebar.handleRemoveSession`'s raw attribute-selector interpolation by switching to `getElementById` (finding #14 above). The directly analogous helper `getLatestSessionTabId` in the e2e spec — `document.querySelector(`[data-testid="terminal-pane"][data-session-id="${id}"]`)` — was not updated in the same pass. Same correctness invariant: a session id containing `"` or `]` corrupts the selector and either silently returns null OR throws `SyntaxError` from inside `browser.execute` (producing a cryptic test-infrastructure failure rather than an assertion failure). The risk is theoretical today (UUIDs only) but the asymmetry — production is hardened, test infra isn't — is itself a code-smell.
+- **Fix:** Switched to `document.getElementById(`session-panel-${id}`)`. `TerminalZone` already renders every panel wrapper as `id="session-panel-${session.id}"`(added in earlier cycles for`aria-labelledby`linkage), so no production-side change was required. Code-review heuristic: when a production fix moves untrusted-string-into-parser to a safer alternative, scan the WHOLE codebase (especially`tests/`) for the same pattern in the same cycle — review-fix scope is per-finding, but pattern propagation is per-file-class.
+- **Commit:** _(see git log for the cycle-16 fix commit on PR #174)_
+
+### 16. SessionTab `aria-label` did not reflect status change when active session exited (silent on running→completed/errored)
+
+- **Source:** github-claude | PR #174 round 16 | 2026-05-06
+- **Severity:** LOW
+- **File:** `src/features/workspace/components/SessionTabs.tsx`
+- **Finding:** When an active running session exits, its tab stays visible per the "exited active keeps its tab" contract (so the Restart pane in the tabpanel below remains reachable), but the live-status pip is intentionally hidden — and the tab's `aria-label={session.name}` is unchanged. Sighted users see the pip vanish silently with no replacement glyph. Screen-reader users navigating the tablist hear `'auth, tab'` before AND after the session exited and would never know the session needs restart until they Tab into the panel — violating WCAG 2.1 SC 4.1.3 (Status Messages, AA), which requires programmatic exposure of status changes.
+- **Fix:** `aria-label` is now `${session.name} (ended)` for completed and errored statuses; running and paused remain `session.name` only. Zero visual change (the pip-hidden behavior is preserved as the visual heartbeat-only-for-live-sessions pattern). Added a regression test asserting both completed and errored variants of an active tab produce the suffixed accessible name. Code-review heuristic: when an interactive element survives a state transition that hides its only feedback affordance, the alternate state needs a programmatic substitute (`aria-label` suffix, `aria-live` region, etc.) — "silent retention" is an accessibility regression even when the element technically still exists.
+- **Commit:** _(see git log for the cycle-16 fix commit on PR #174)_

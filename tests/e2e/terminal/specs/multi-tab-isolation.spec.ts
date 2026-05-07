@@ -45,9 +45,14 @@ const getLatestSessionTabId = async (
   sessionId: string
 ): Promise<string | null> =>
   browser.execute((id: string) => {
-    const pane = document.querySelector<HTMLElement>(
-      `[data-testid="terminal-pane"][data-session-id="${id}"]`
-    )
+    // Mirror cycle-15's id-based lookup pattern in Sidebar.tsx (and
+    // SessionTabs.tsx originally): every TerminalZone panel is rendered
+    // with `id="session-panel-${session.id}"`, so getElementById keeps
+    // session ids out of the CSS-attribute parser entirely. Same
+    // correctness invariant as docs/reviews/patterns/accessibility.md
+    // finding #14 — applies here too even if the runtime symptom would
+    // surface inside `browser.execute` rather than at user-facing focus.
+    const pane = document.getElementById(`session-panel-${id}`)
     if (!pane) return null
     const tabs = Array.from(
       document.querySelectorAll<HTMLElement>(

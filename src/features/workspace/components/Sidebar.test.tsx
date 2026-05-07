@@ -539,4 +539,51 @@ describe('Sidebar', () => {
     expect(scroll).toContainElement(screen.getByTestId('session-list'))
     expect(scroll).toContainElement(screen.getByTestId('recent-list'))
   })
+
+  test('subtitle renders the last 2 segments of the cwd, normalizing Windows backslashes', () => {
+    // Tauri can hand back native path separators; on Windows that means
+    // `C:\Users\alice\my-repo`. After normalizing `\` → `/`, we want the
+    // last TWO segments joined by `/` — so `C:\Users\alice\my-repo` reads
+    // as `alice/my-repo`. The 2-segment rule also handles the shallow
+    // case `/home/will` (renders `home/will` rather than collapsing
+    // aggressively to `will`).
+    const winSession: Session = {
+      ...mockSessions[0],
+      id: 'sess-win',
+      name: 'win path',
+      currentAction: undefined,
+      workingDirectory: 'C:\\Users\\alice\\my-repo',
+    }
+    render(
+      <Sidebar
+        sessions={[winSession]}
+        activeSessionId="sess-win"
+        onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
+      />
+    )
+    expect(screen.getByText('alice/my-repo')).toBeInTheDocument()
+    expect(screen.queryByText(winSession.workingDirectory)).toBeNull()
+  })
+
+  test('subtitle renders 2-segment POSIX cwd as parent/basename (shallow path)', () => {
+    // Per user direction: `/home/will` should show `home/will`, not just
+    // `will`. The basename-only collapse loses too much context.
+    const posixSession: Session = {
+      ...mockSessions[0],
+      id: 'sess-posix',
+      name: 'posix shallow',
+      currentAction: undefined,
+      workingDirectory: '/home/will',
+    }
+    render(
+      <Sidebar
+        sessions={[posixSession]}
+        activeSessionId="sess-posix"
+        onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
+      />
+    )
+    expect(screen.getByText('home/will')).toBeInTheDocument()
+  })
 })

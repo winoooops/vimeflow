@@ -40,9 +40,26 @@ const sessionSubtitle = (session: Session): string => {
   if (session.currentAction !== undefined && session.currentAction !== '') {
     return session.currentAction
   }
-  const parts = session.workingDirectory.split('/').filter(Boolean)
+  // Normalize Windows `\` to `/` first — Tauri can hand back native
+  // separators (e.g. `C:\Users\alice\repo`), and a `/`-only split would
+  // collapse the whole path to one segment and render the full path
+  // instead of the basename.
+  const normalized = session.workingDirectory.replace(/\\/g, '/')
+  const parts = normalized.split('/').filter(Boolean)
+  // Show the last two segments (parent/basename) so a shallow cwd like
+  // `/home/will` reads as `home/will` instead of just `will` (which
+  // collapses too aggressively to be meaningful) and a deeper cwd like
+  // `/home/will/projects/Vimeflow` reads as `projects/Vimeflow`. One
+  // segment when the path only has one. Empty falls back to the raw
+  // path string so the subtitle line is never empty.
+  if (parts.length === 0) {
+    return session.workingDirectory
+  }
+  if (parts.length === 1) {
+    return parts[0]
+  }
 
-  return parts.length > 0 ? parts[parts.length - 1] : session.workingDirectory
+  return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`
 }
 
 const sessionLineDelta = (
@@ -378,7 +395,12 @@ const RecentSessionRow = ({
               <span className="text-error/70">-{removed}</span>
             </span>
           )}
-          <span className="ml-auto truncate font-label text-[10.5px] text-on-surface-variant/50">
+          {/* Right-aligned subtitle competes for the same horizontal
+              slot as the absolute-positioned hover buttons (rename +
+              remove sit at top-right). Hide on hover so the buttons
+              don't visually overlap the cwd text. Same pattern as the
+              timestamp span above and the Active row's timestamp. */}
+          <span className="ml-auto truncate font-label text-[10.5px] text-on-surface-variant/50 transition-opacity group-hover:opacity-0">
             {subtitle}
           </span>
         </div>

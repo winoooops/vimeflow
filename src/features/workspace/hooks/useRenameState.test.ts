@@ -177,4 +177,32 @@ describe('useRenameState', () => {
     expect(result.current.editValue).toBe('auth')
     expect(onRename).not.toHaveBeenCalled()
   })
+
+  test('cancelRename then a trailing commitRename (stale onBlur after Escape) does NOT fire onRename', () => {
+    // Real-DOM repro: pressing Escape calls cancelRename → setIsEditing(false)
+    // → React unmounts the input on flush → browser fires native blur on the
+    // detached node → React dispatches the synthetic onBlur with the
+    // previous render's commitRename closure, which still captures the
+    // user's typed editValue. cancelRename must arm committedRef so that
+    // stale callback no-ops; otherwise onRename(id, userTypedText) fires
+    // and silently renames the session despite the Escape intent. jsdom
+    // does not fire native blur on DOM removal, so we simulate the
+    // post-cancel commitRename call directly.
+    const onRename = vi.fn()
+
+    const { result } = renderHook(() =>
+      useRenameState(buildSession('auth'), onRename)
+    )
+    act(() => {
+      result.current.beginEdit()
+      result.current.setEditValue('mid-edit')
+    })
+
+    act(() => {
+      result.current.cancelRename()
+      result.current.commitRename()
+    })
+    expect(onRename).not.toHaveBeenCalled()
+    expect(result.current.editValue).toBe('auth')
+  })
 })

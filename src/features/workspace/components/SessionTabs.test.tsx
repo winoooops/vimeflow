@@ -75,6 +75,50 @@ describe('SessionTabs', () => {
     expect(screen.getByRole('tab')).toHaveAccessibleName('auth refactor')
   })
 
+  test('exited active tab appends "(ended)" to the accessible name so screen-reader users hear the status change', () => {
+    // The live-status pip is hidden for exited sessions to keep the
+    // "heartbeat only for live sessions" visual language. Without the
+    // accessible-name suffix, keyboard-only users would hear the same
+    // "auth refactor, tab" before AND after the session exited and
+    // would not know the session needs a restart until they Tab into
+    // the panel below. Per getVisibleSessions, an exited session keeps
+    // a tab only when it is the active session — that's exactly the
+    // 'active session just exited' case Claude flagged.
+    const { rerender } = renderTabs(
+      [
+        buildSession({
+          id: 'a',
+          name: 'completed-session',
+          status: 'completed',
+        }),
+      ],
+      'a'
+    )
+    expect(screen.getByRole('tab')).toHaveAccessibleName(
+      'completed-session (ended)'
+    )
+
+    rerender(
+      <SessionTabs
+        sessions={[
+          buildSession({
+            id: 'a',
+            name: 'errored-session',
+            status: 'errored',
+          }),
+        ]}
+        activeSessionId="a"
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+        onNew={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('tab')).toHaveAccessibleName(
+      'errored-session (ended)'
+    )
+  })
+
   test('tablist owns ONLY tab children (WAI-ARIA §3.27)', () => {
     // The "+" button and trailing flex spacer must live OUTSIDE the
     // tablist so screen readers don't iterate them in the arrow-key

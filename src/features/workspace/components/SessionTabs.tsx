@@ -162,8 +162,20 @@ const SessionTab = ({
       // running` and the close button's `Close <name>` would both fold
       // into the tab's announced name. Setting aria-label here pins the
       // computed name to just the session name; descendants stay
-      // independently focusable with their own labels.
-      aria-label={session.name}
+      // independently focusable with their own labels. Exited sessions
+      // (completed | errored) keep their tab so the Restart pane stays
+      // reachable, but the live-status pip is intentionally hidden — so
+      // sighted parity is delivered visually by the Restart pane in the
+      // tabpanel, while screen-reader parity is delivered by appending
+      // `(ended)` to the tab's accessible name. Without this suffix
+      // keyboard-only users would hear the same tab label before and
+      // after the session exited and would not know the session needs a
+      // restart until they Tab into the panel.
+      aria-label={
+        session.status === 'completed' || session.status === 'errored'
+          ? `${session.name} (ended)`
+          : session.name
+      }
       aria-selected={isActive}
       aria-controls={`session-panel-${session.id}`}
       tabIndex={isFocusEntryPoint ? 0 : -1}
