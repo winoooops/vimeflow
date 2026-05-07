@@ -121,15 +121,9 @@ vi.mock('../diff/hooks/useGitStatus', () => ({
   ),
 }))
 
-const capturedSidebarProps: { agentStatus?: AgentStatus } = {}
-
 const capturedPanelProps: { agentStatus?: AgentStatus; gitStatus?: unknown } =
   {}
 const capturedBottomDrawerProps: { gitStatus?: unknown } = {}
-
-interface MockSidebarProps {
-  agentStatus?: AgentStatus
-}
 
 interface MockPanelProps {
   agentStatus?: AgentStatus
@@ -142,12 +136,8 @@ interface MockBottomDrawerProps {
   onTabChange?: (tab: 'editor' | 'diff') => void
 }
 
-vi.mock('./components/Sidebar', () => ({
-  Sidebar: ({ agentStatus = undefined }: MockSidebarProps): ReactElement => {
-    capturedSidebarProps.agentStatus = agentStatus
-
-    return <div data-testid="sidebar-mock" />
-  },
+vi.mock('../../components/sidebar/Sidebar', () => ({
+  Sidebar: (): ReactElement => <div data-testid="sidebar-mock" />,
 }))
 
 vi.mock('../agent-status/components/AgentStatusPanel', () => ({
@@ -188,7 +178,6 @@ vi.mock('./components/BottomDrawer', () => ({
 
 describe('WorkspaceView lifted-subscription contract', () => {
   beforeEach(() => {
-    capturedSidebarProps.agentStatus = undefined
     capturedPanelProps.agentStatus = undefined
     capturedPanelProps.gitStatus = undefined
     capturedBottomDrawerProps.gitStatus = undefined
@@ -201,24 +190,14 @@ describe('WorkspaceView lifted-subscription contract', () => {
     vi.mocked(useGitStatus).mockClear()
   })
 
-  test('Sidebar and AgentStatusPanel receive agentStatus from a single hook call', async () => {
+  test('AgentStatusPanel receives agentStatus', async () => {
     render(<WorkspaceView />)
 
     // Wait for the children to be rendered with their props captured.
     await screen.findByTestId('sidebar-mock')
     await screen.findByTestId('agent-status-panel-mock')
 
-    expect(capturedSidebarProps.agentStatus).toBeDefined()
     expect(capturedPanelProps.agentStatus).toBeDefined()
-
-    // Reference equality. Because the useAgentStatus mock above returns
-    // a FRESH object per call (the factory runs anew each invocation),
-    // two separate hook calls would yield two distinct objects, and
-    // `toBe` would fail. A single hook call shared by both children
-    // yields the same object reference and `toBe` passes.
-    expect(capturedSidebarProps.agentStatus).toBe(
-      capturedPanelProps.agentStatus
-    )
   })
 
   test('AgentStatusPanel and BottomDrawer receive one shared git status object', async () => {

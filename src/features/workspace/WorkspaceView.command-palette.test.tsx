@@ -21,7 +21,7 @@ vi.mock('./components/IconRail', () => ({
   IconRail: (): ReactElement => <div data-testid="icon-rail" />,
 }))
 
-vi.mock('./components/Sidebar', () => ({
+vi.mock('../../components/sidebar/Sidebar', () => ({
   Sidebar: (): ReactElement => <div data-testid="sidebar" />,
 }))
 

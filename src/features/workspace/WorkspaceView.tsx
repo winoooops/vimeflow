@@ -2,7 +2,10 @@ import type { ReactElement } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IconRail } from './components/IconRail'
 import { SessionTabs } from './components/SessionTabs'
-import { Sidebar } from './components/Sidebar'
+import { Sidebar } from '../../components/sidebar/Sidebar'
+import { SidebarStatusHeader } from './components/SidebarStatusHeader'
+import { FileExplorer } from './components/panels/FileExplorer'
+import { List } from './sessions/components/List'
 import { StatusBar } from './components/StatusBar'
 import { TerminalZone } from './components/TerminalZone'
 import BottomDrawer from './components/BottomDrawer'
@@ -372,16 +375,42 @@ export const WorkspaceView = (): ReactElement => {
       {/* Sidebar - resizable */}
       <div className="relative flex h-full">
         <Sidebar
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          activeCwd={activeSession?.workingDirectory ?? '~'}
-          onSessionClick={setActiveSessionId}
-          onNewInstance={createSession}
-          onRemoveSession={removeSession}
-          onRenameSession={renameSession}
-          onReorderSessions={reorderSessions}
-          onFileSelect={handleFileSelect}
-          agentStatus={agentStatus}
+          header={
+            <SidebarStatusHeader
+              status={agentStatus}
+              activeSessionName={
+                sessions.find((s) => s.id === activeSessionId)?.name ?? null
+              }
+            />
+          }
+          content={
+            <List
+              sessions={sessions}
+              activeSessionId={activeSessionId}
+              onSessionClick={setActiveSessionId}
+              onNewInstance={createSession}
+              onRemoveSession={removeSession}
+              onRenameSession={renameSession}
+              onReorderSessions={reorderSessions}
+            />
+          }
+          bottomPane={
+            <FileExplorer
+              cwd={activeSession?.workingDirectory ?? '~'}
+              onFileSelect={handleFileSelect}
+            />
+          }
+          footer={
+            <button
+              type="button"
+              onClick={createSession}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-primary to-secondary py-2.5 font-label text-sm font-bold text-on-primary shadow-lg shadow-primary/10 transition-all hover:shadow-xl hover:shadow-primary/20"
+              aria-label="New Instance"
+            >
+              <span className="material-symbols-outlined text-lg">bolt</span>
+              <span>New Instance</span>
+            </button>
+          }
         />
 
         {/* Resize handle */}
