@@ -5,7 +5,7 @@ import {
   useCallback,
   type ReactElement,
 } from 'react'
-import { motion, Reorder } from 'framer-motion'
+import { motion } from 'framer-motion'
 import type { Session } from '../types'
 import type { FileNode } from '../../files/types'
 import type { AgentStatus } from '../../agent-status/types'
@@ -16,6 +16,7 @@ import {
   pickNextVisibleSessionId,
 } from '../utils/pickNextVisibleSessionId'
 import { Card } from '../sessions/components/Card'
+import { Group } from '../sessions/components/Group'
 
 export interface SidebarProps {
   sessions: Session[]
@@ -33,15 +34,6 @@ export interface SidebarProps {
 const FILE_EXPLORER_MIN = 100
 const FILE_EXPLORER_MAX = 500
 const FILE_EXPLORER_DEFAULT = 320
-
-const GroupHeader = ({ label }: { label: string }): ReactElement => (
-  <h3
-    data-testid={`session-group-${label.toLowerCase()}`}
-    className="px-3 pb-1 pt-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-on-surface-variant/70"
-  >
-    {label}
-  </h3>
-)
 
 export const Sidebar = ({
   sessions,
@@ -178,30 +170,29 @@ export const Sidebar = ({
         />
       </div>
 
-      {/* GroupHeader carries its own px-3/pt-2/pb-1; outer flex row only
-          adds the right-side gutter for the Add button so the Active
-          label stays horizontally aligned with the Recent label below. */}
-      <div className="flex items-center justify-between pr-3">
-        <GroupHeader label="Active" />
-        <button
-          type="button"
-          onClick={onNewInstance}
-          className="material-symbols-outlined text-base text-on-surface-variant/60 transition-colors hover:text-primary"
-          aria-label="Add session"
-          title="Add session"
-        >
-          add
-        </button>
-      </div>
+      <Group.Header
+        label="Active"
+        headerAction={
+          <button
+            type="button"
+            onClick={onNewInstance}
+            className="material-symbols-outlined text-base text-on-surface-variant/60 transition-colors hover:text-primary"
+            aria-label="Add session"
+            title="Add session"
+          >
+            add
+          </button>
+        }
+      />
 
       <motion.div
         data-testid="session-scroll"
         className="flex min-h-0 flex-1 flex-col overflow-y-auto"
         layoutScroll
       >
-        <Reorder.Group
-          axis="y"
-          values={activeGroup}
+        <Group
+          variant="active"
+          sessions={activeGroup}
           onReorder={(reordered) => {
             // Preserve Recent ordering — only the Active subset reorders.
             // Read recentGroup via the ref (synced every render in the
@@ -211,38 +202,32 @@ export const Sidebar = ({
             // session.
             onReorderSessions?.([...reordered, ...recentGroupRef.current])
           }}
-          className="flex flex-col px-2"
-          data-testid="session-list"
-        >
-          {activeGroup.length === 0 ? (
-            // Reorder.Group renders as <ul>; HTML requires <li> children
-            // (or <script>/<template>). A bare <div> here is parsed in
-            // quirks mode and breaks list-counting in screen readers.
+          emptyState={
             <li
               data-testid="active-empty"
               className="px-3 py-3 text-center font-label text-xs text-on-surface-variant/50"
             >
               No active sessions
             </li>
-          ) : (
-            activeGroup.map((session) => (
-              <Card
-                key={session.id}
-                session={session}
-                variant="active"
-                isActive={session.id === activeSessionId}
-                onClick={onSessionClick}
-                onRemove={handleRemoveSession}
-                onRename={onRenameSession}
-              />
-            ))
-          )}
-        </Reorder.Group>
+          }
+        >
+          {activeGroup.map((session) => (
+            <Card
+              key={session.id}
+              session={session}
+              variant="active"
+              isActive={session.id === activeSessionId}
+              onClick={onSessionClick}
+              onRemove={handleRemoveSession}
+              onRename={onRenameSession}
+            />
+          ))}
+        </Group>
 
         {recentGroup.length > 0 && (
           <>
-            <GroupHeader label="Recent" />
-            <ul data-testid="recent-list" className="flex flex-col px-2 pb-1">
+            <Group.Header label="Recent" />
+            <Group variant="recent" sessions={recentGroup}>
               {recentGroup.map((session) => (
                 <Card
                   key={session.id}
@@ -254,7 +239,7 @@ export const Sidebar = ({
                   onRename={onRenameSession}
                 />
               ))}
-            </ul>
+            </Group>
           </>
         )}
       </motion.div>
