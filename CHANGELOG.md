@@ -23,6 +23,22 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
 
 ## [Unreleased]
 
+### UI Handoff Migration
+
+#### Added
+
+- Handoff design tokens and `src/agents/registry.ts` landed as the first
+  additive UI migration step.
+  ([#171](https://github.com/winoooops/vimeflow/pull/171), `38af7ab`)
+- Handoff app shell proportions, status bar, and session-tab strip landed
+  while preserving the existing Tauri terminal integrations.
+  ([#173](https://github.com/winoooops/vimeflow/pull/173), `266b3a0`)
+- Sidebar session rows and browser-style session tabs were restyled and wired
+  to `useSessionManager`; the roadmap now tracks step 4, Single TerminalPane,
+  as the next handoff step.
+  ([#174](https://github.com/winoooops/vimeflow/pull/174), `ab1b888`) —
+  patterns: [Documentation Accuracy](docs/reviews/patterns/documentation-accuracy.md)
+
 ### Phase 4 — Agent Status Sidebar
 
 #### Added

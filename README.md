@@ -36,17 +36,22 @@ Full xterm.js terminal integrated with a Tauri Rust PTY backend:
 - ResizeObserver + FitAddon for responsive terminal sizing
 - WebGL renderer with Catppuccin Mocha theme
 
-### Workspace Layout (Phase 2)
+### Workspace Shell (Phase 2 + UI Handoff Steps 1-3)
 
-A 4-zone grid layout inspired by IDE + terminal multiplexer patterns:
+A terminal-first workspace inspired by IDE + terminal multiplexer patterns:
 
 - **Icon Rail** — project avatars and navigation
-- **Sidebar** — session list with status indicators
+- **Sidebar** — handoff-styled session list with status indicators, subtitles, state pills, and line deltas
+- **Session Tabs** — browser-style tabs wired to `useSessionManager`
 - **Terminal Zone** — primary workspace area (xterm.js terminals)
+- **Bottom Drawer** — editor and diff panels under the terminal zone
 - **Agent Activity Panel** — status, metrics, collapsible sections
 - **Context Switcher** — Files / Editor / Diff tabs in a top tab bar
+- **Status Bar** — compact workspace status row
 
-### Agent Status Sidebar (Phase 4 — Latest)
+Current UI handoff progress is tracked in [`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml): steps 1-3 are done (`#171`, `#173`, `#174`); the single `TerminalPane` handoff step is next.
+
+### Agent Status Sidebar (Phase 4)
 
 Real-time agent observability panel that auto-detects running AI coding agents in terminal sessions. Supports **Claude Code** and **Codex** (since [#154](https://github.com/winoooops/vimeflow/pull/154)) with one shared frontend:
 
@@ -84,7 +89,7 @@ Design specs: [`2026-04-12-agent-status-sidebar/`](docs/superpowers/specs/2026-0
 
 ### Quality
 
-- **1399 tests** passing (plus 3 skipped, 1402 total) with **~91% coverage**
+- Vitest + Testing Library coverage across frontend/domain modules, plus Rust tests for backend modules
 - Accessibility-first test queries (`getByRole` over `getByText`)
 - Pre-commit hooks: ESLint + Prettier on staged files
 - Commit-msg hook: conventional commits via commitlint
@@ -122,18 +127,18 @@ Full spec: [`docs/design/DESIGN.md`](docs/design/DESIGN.md)
 ## Quick Start
 
 ```bash
-# Prerequisites: Node >= 24, Rust toolchain
+# Prerequisites: Node >= 22 (Node 24 via .nvmrc for CI parity), Rust toolchain
 nvm use                          # Uses .nvmrc
 
 # Frontend only (no Tauri backend)
 npm install
-npm run dev                      # Vite dev server at localhost:1420
+npm run dev                      # Vite dev server at localhost:5173
 
 # Full desktop app (requires Rust)
 npm run tauri:dev                # Tauri + Rust backend
 
 # Tests
-npm test                         # 1399 tests (+3 skipped)
+npm test                         # Vitest suite
 npx vitest run src/path/file.test.tsx  # Single file
 
 # Quality
@@ -197,14 +202,17 @@ docs/design/DESIGN.md       # UI design system (single source of truth)
 
 src/
 ├── features/
+│   ├── workspace/          # Workspace shell, session tabs/sidebar, bottom drawer
 │   ├── terminal/           # xterm.js + TauriTerminalService IPC bridge
 │   ├── editor/             # Tabbed code editor with CodeMirror 6 + vim mode
 │   ├── diff/               # Lazygit-style diff viewer
 │   ├── files/              # File explorer tree
 │   ├── command-palette/    # Vim-style command palette
-│   ├── agent-status/       # Real-time agent observability panel
-│   └── workspace/          # 4-zone layout shell
-├── components/layout/      # Shared layout (IconRail, Sidebar, TopTabBar, ContextPanel)
+│   └── agent-status/       # Real-time agent observability panel
+├── components/             # Shared primitives (Tooltip)
+├── hooks/                  # Shared React hooks
+├── agents/                 # Agent metadata registry
+├── bindings/               # Generated Rust -> TypeScript types
 └── test/                   # Vitest setup
 
 src-tauri/
@@ -236,14 +244,15 @@ The harness (`harness/`) is a Python loop that spawns `claude -p` per role — i
 
 ## Roadmap
 
-| Phase    | Status  | Description                                             |
-| -------- | ------- | ------------------------------------------------------- |
-| Phase 1  | Done    | Tauri scaffold, Rust compilation, CI green              |
-| Phase 2  | Done    | Workspace layout shell (4-zone grid, all components)    |
-| Phase 3  | Done    | Terminal core (xterm.js + Tauri PTY IPC)                |
-| Phase 4  | Done    | Agent status sidebar (detection, statusline bridge, UI) |
-| Phase 5  | Next    | Session management + Zustand state                      |
-| Phase 6+ | Planned | Real git ops, AI agent output streaming, drag-and-drop  |
+| Phase      | Status      | Description                                                      |
+| ---------- | ----------- | ---------------------------------------------------------------- |
+| Phase 1    | Done        | Tauri scaffold, Rust compilation, CI green                       |
+| Phase 2    | Done        | Workspace layout shell (4-zone grid, all components)             |
+| Phase 3    | Done        | Terminal core (xterm.js + Tauri PTY IPC)                         |
+| Phase 4    | Done        | Agent status sidebar (detection, statusline bridge, UI)          |
+| UI Handoff | In progress | Steps 1-3 done: tokens/registry, app shell, sidebar/session tabs |
+| Phase 5    | Planned     | Session management + persistence/state                           |
+| Phase 6+   | Planned     | Remaining watcher, context-panel, usage, and desktop polish work |
 
 Progress tracked in [`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml).
 

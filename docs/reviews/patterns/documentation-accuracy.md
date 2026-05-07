@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-06
-ref_count: 17
+last_updated: 2026-05-07
+ref_count: 18
 ---
 
 # Documentation Accuracy
