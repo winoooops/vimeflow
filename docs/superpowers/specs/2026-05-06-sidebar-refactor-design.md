@@ -1356,3 +1356,5 @@ This spec is a structural refactor with zero behavior change beyond preserving P
 - **Compound component** — a React pattern where a parent component carries static sub-components as properties (e.g., `Group.Header`). Used here to keep the header and body of a group as separate JSX siblings while sharing a module + import statement.
 - **`recentGroupRef` mirror pattern** — the synchronous ref-write inside `List`'s render body that lets framer-motion's `onReorder` closure read the current `recentGroup` rather than a stale capture from a prior render.
 - **Activation overlay button** — the absolute-positioned `<button>` that covers each card; clicking anywhere on the card (except the rename input or hover actions) routes through this button. Solves the HTML-validity problem of nesting an `<input>` inside a `<button>`.
+
+<!-- codex-reviewed: 2026-05-07T10:15:02Z -->
