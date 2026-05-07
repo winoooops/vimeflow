@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-05
-ref_count: 2
+last_updated: 2026-05-07
+ref_count: 4
 ---
 
 # React Lifecycle
@@ -87,3 +87,21 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** `navigateUp` and `navigateDown` close over `filteredResults` (the full array reference) but declared only `filteredResults.length` in their `useCallback` dep arrays. Currently harmless because both callbacks only read `filteredResults.length` inside their bodies, but `react-hooks/exhaustive-deps` would flag the missing dep, and any future contributor adding item-level access (e.g. reading `filteredResults[index]` to compute the next highlight) would silently inherit a stale-closure bug — the array reference baked into the closure would lag behind the latest `useMemo` result whenever `filteredResults` rebuilt with the same length.
 - **Fix:** Replaced `[filteredResults.length]` with `[filteredResults]` in both callbacks. Re-creation cost is negligible for these small closures, and the dep now matches what the callback actually closes over, so a future item-level read inherits no stale-closure surprise.
 - **Commit:** _(see git log for the round-1 fix commit)_
+
+### 9. `cancelRename` reset of double-fire guard re-enables stale post-Escape `onBlur` to fire `onRename` with user-typed text
+
+- **Source:** github-claude | PR #174 round 16 | 2026-05-06
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/hooks/useRenameState.ts`
+- **Finding:** The committedRef double-fire guard (introduced in cycle 13 to block the trailing onBlur after Enter→commit unmounts the input) was being RESET to `false` in `cancelRename` so that the next rename session could begin clean. But Escape calls `cancelRename` synchronously inside `onKeyDown`, queuing `setIsEditing(false)` → React batches and unmounts the input on flush → the browser fires native `blur` on the detached input → React dispatches the synthetic `onBlur` using the **previous render's** `commitRename` closure, which still captures the user's typed `editValue`. With `committedRef = false` the guard does NOT fire, `commitRename` runs, finds `trimmed !== session.name`, and calls `onRename(id, userTypedText)` — silently renaming the session despite the explicit Escape intent. The existing double-fire test calls `commitRename()` twice directly, NOT `cancelRename()` then `commitRename()`, and jsdom does not fire native blur on DOM removal, so the regression was invisible until a Claude review caught it by static analysis of the closure capture.
+- **Fix:** Set `committedRef.current = true` in `cancelRename` (single character). The "next rename session starts clean" invariant is preserved because `beginEdit` already unconditionally resets the guard to `false` — that's what makes a fresh rename session work, not the reset in cancel. Added regression test that simulates the Escape+stale-blur path by calling `cancelRename()` then `commitRename()` and asserting `onRename` was not invoked. Code-review heuristic: a guard ref that protects against stale-closure re-entry must be armed by _both_ commit AND cancel paths, NOT just commit; future-state cleanup belongs in `beginEdit` (the "I'm starting a fresh editing session" gesture), not in the cancel/commit terminal states.
+- **Commit:** _(see git log for the cycle-16 fix commit on PR #174)_
+
+### 10. Framer Motion `onReorder` inline closure captures stale `recentGroup` slice across mid-drag re-renders
+
+- **Source:** github-claude | PR #174 round 17 | 2026-05-07
+- **Severity:** LOW
+- **File:** `src/features/workspace/components/Sidebar.tsx`
+- **Finding:** `Reorder.Group`'s `onReorder` callback was an inline arrow closing over `recentGroup` computed at render time. The drag-and-drop machinery in Framer Motion can dispatch the callback across multiple frames during a single drag; if a session transitions from `running` to `completed` mid-drag, React re-renders Sidebar with a fresh `recentGroup` slice but Framer Motion may keep dispatching the _original_ closure that captured the pre-transition `recentGroup`. The resulting `onReorderSessions([...reordered, ...staleRecentGroup])` either drops or duplicates the just-transitioned session for one frame, and a session-store that persists eagerly could write the stale array to disk before the next render's correction arrives. The bug is invisible in steady-state testing because session status transitions are rare during drags, but it's a real cross-frame closure freshness issue.
+- **Fix:** Mirrored `recentGroup` into a ref synced via render-body assignment (`recentGroupRef.current = recentGroup` runs every render — cheaper than `useEffect` and runs synchronously, which is the standard React pattern for "always-latest" refs that don't need the commit-phase deferral). The `onReorder` callback now reads `recentGroupRef.current` instead of the closure-captured `recentGroup`. Code-review heuristic: any callback registered with a third-party machinery that may retain it across re-renders (drag-and-drop, gesture recognizers, intersection observers) must read mutable state through a ref, not through the closure-captured render-time snapshot — the closure freshness depends on whether the third-party re-subscribes on each render, which is an implementation detail you usually can't guarantee.
+- **Commit:** _(see git log for the cycle-17 fix commit on PR #174)_

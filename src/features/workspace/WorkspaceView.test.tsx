@@ -2,7 +2,7 @@
 /* eslint-disable vitest/expect-expect */
 import type { ReactElement } from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceView } from './WorkspaceView'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
@@ -79,7 +79,9 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => ({
-    spawn: vi.fn().mockResolvedValue({ sessionId: 'new-id', pid: 999 }),
+    spawn: vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'new-id', pid: 999, cwd: '~' }),
     write: vi.fn().mockResolvedValue(undefined),
     resize: vi.fn().mockResolvedValue(undefined),
     kill: vi.fn().mockResolvedValue(undefined),
@@ -182,20 +184,16 @@ describe('WorkspaceView', () => {
     ).toBeInTheDocument()
   })
 
-  test('passes active session to TerminalZone', async () => {
+  test('SessionTabs reflects the active session selection', async () => {
     render(<WorkspaceView />)
 
-    // Wait for session to load
     await screen.findByRole('button', { name: 'session 1' })
 
-    const terminalZone = screen.getByTestId('terminal-zone')
-
-    // TerminalZone should render tab bar with at least one session tab
-    const tabBar = terminalZone.querySelector('[data-testid="tab-bar"]')
-    expect(tabBar).toBeInTheDocument()
-
-    const sessionTabs = tabBar?.querySelectorAll('button[aria-label^="🤖"]')
-    expect(sessionTabs?.length).toBeGreaterThan(0)
+    const tabs = within(screen.getByTestId('session-tabs')).getAllByRole('tab')
+    expect(tabs.length).toBeGreaterThan(0)
+    expect(
+      tabs.some((tab) => tab.getAttribute('aria-selected') === 'true')
+    ).toBe(true)
   })
 
   test('renders AgentStatusPanel', () => {
@@ -222,12 +220,12 @@ describe('WorkspaceView', () => {
   test('defaults to first session as active', async () => {
     render(<WorkspaceView />)
 
-    // Default session should have active styling on the list item wrapper
     const firstSession = await screen.findByRole('button', {
       name: 'session 1',
     })
     const listItem = firstSession.closest('li')!
-    expect(listItem.className).toContain('bg-surface-container-high')
+    // Active row uses lavender-tinted background per handoff §4.2.
+    expect(listItem.className).toContain('bg-primary/10')
     expect(listItem.className).toContain('text-on-surface')
   })
 
@@ -297,35 +295,24 @@ describe('WorkspaceView', () => {
   })
 
   test('handles session switching', async () => {
-    // Test that creating a second session and clicking it switches active
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    // Wait for initial session to load from listSessions
     const firstSession = await screen.findByRole('button', {
       name: 'session 1',
     })
-    expect(firstSession.closest('li')!.className).toContain(
-      'bg-surface-container-high'
-    )
+    expect(firstSession.closest('li')!.className).toContain('bg-primary/10')
 
-    // Create a second session via the New Instance button
     const newInstanceButton = screen.getByRole('button', {
       name: 'New Instance',
     })
     await user.click(newInstanceButton)
 
-    // New session should now be active, first should not
     const secondSession = await screen.findByRole('button', {
       name: 'session 2',
     })
-    expect(secondSession.closest('li')!.className).toContain(
-      'bg-surface-container-high'
-    )
-
-    expect(firstSession.closest('li')!.className).not.toContain(
-      'bg-surface-container-high'
-    )
+    expect(secondSession.closest('li')!.className).toContain('bg-primary/10')
+    expect(firstSession.closest('li')!.className).not.toContain('bg-primary/10')
   })
 
   test('handles empty sessions gracefully without crashing', () => {
@@ -351,15 +338,15 @@ describe('WorkspaceView', () => {
     expect(container.style.gridTemplateColumns).toContain('auto')
   })
 
-  test('mounts session-tabs strip placeholder above terminal zone', () => {
+  test('mounts SessionTabs above terminal zone', () => {
     render(<WorkspaceView />)
 
-    const strip = screen.getByTestId('session-tabs-strip')
+    const tabs = screen.getByTestId('session-tabs')
     const terminal = screen.getByTestId('terminal-zone')
 
-    expect(strip).toBeInTheDocument()
+    expect(tabs).toBeInTheDocument()
     expect(
-      strip.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
+      tabs.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
   })
 

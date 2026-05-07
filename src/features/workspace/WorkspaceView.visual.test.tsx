@@ -35,7 +35,9 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => ({
-    spawn: vi.fn().mockResolvedValue({ sessionId: 'new-id', pid: 999 }),
+    spawn: vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'new-id', pid: 999, cwd: '~' }),
     write: vi.fn().mockResolvedValue(undefined),
     resize: vi.fn().mockResolvedValue(undefined),
     kill: vi.fn().mockResolvedValue(undefined),
@@ -234,11 +236,11 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(terminalContent.className).toContain('bg-surface')
     })
 
-    test('Terminal Zone tab bar uses Level 0.5 surface (surface-container-lowest)', () => {
+    test('SessionTabs strip uses Level 0.5 surface (surface-container-lowest)', () => {
       render(<WorkspaceView />)
-      const tabBar = screen.getByTestId('tab-bar')
+      const tabs = screen.getByTestId('session-tabs')
 
-      expect(tabBar.className).toContain('bg-surface-container-lowest')
+      expect(tabs.className).toContain('bg-surface-container-lowest')
     })
 
     test('Agent Status Panel uses surface-container background', () => {
@@ -289,22 +291,14 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
     test('all 5 zones render with correct structure (v2)', () => {
       render(<WorkspaceView />)
 
-      // Icon Rail (navigation bookmarks)
       expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
-
-      // Sidebar with sessions and file explorer
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
-      // Text is "Active Sessions"
-      expect(screen.getByText('Active Sessions')).toBeInTheDocument()
+      // Active group header replaces the prior "Active Sessions" copy.
+      expect(screen.getByTestId('session-group-active')).toBeInTheDocument()
 
-      // Terminal Zone with tab bar
+      expect(screen.getByTestId('session-tabs')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-      expect(screen.getByTestId('tab-bar')).toBeInTheDocument()
-
-      // Bottom Drawer with Editor/Diff tabs
       expect(screen.getByTestId('bottom-drawer')).toBeInTheDocument()
-
-      // Agent Activity panel
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
 

@@ -37,20 +37,29 @@ const allSessionIds = async (): Promise<string[]> =>
     return Array.from(seen)
   })
 
-const getSessionLabel = async (sessionId: string): Promise<string | null> =>
+// Returns the data-session-id of the latest spawned tab (document
+// order), or null if the supplied sessionId has no terminal-pane in
+// the DOM. Renamed from `getSessionLabel` to reflect what it actually
+// returns — an opaque session id, not a human-readable label.
+const getLatestSessionTabId = async (
+  sessionId: string
+): Promise<string | null> =>
   browser.execute((id: string) => {
-    const pane = document.querySelector<HTMLElement>(
-      `[data-testid="terminal-pane"][data-session-id="${id}"]`
-    )
-    // Find the corresponding tab button by walking from the pane's session
-    // to the tabbar (workspace session name === tab aria-label minus emoji).
-    const buttons = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('button[aria-label^="🤖 "]')
-    )
+    // Mirror cycle-15's id-based lookup pattern in Sidebar.tsx (and
+    // SessionTabs.tsx originally): every TerminalZone panel is rendered
+    // with `id="session-panel-${session.id}"`, so getElementById keeps
+    // session ids out of the CSS-attribute parser entirely. Same
+    // correctness invariant as docs/reviews/patterns/accessibility.md
+    // finding #14 — applies here too even if the runtime symptom would
+    // surface inside `browser.execute` rather than at user-facing focus.
+    const pane = document.getElementById(`session-panel-${id}`)
     if (!pane) return null
-    // We don't actually need the label to match the pane — tab order is
-    // deterministic, so return the last button's label as the newest tab.
-    return buttons[buttons.length - 1]?.getAttribute('aria-label') ?? null
+    const tabs = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-testid="session-tab"][data-session-id]'
+      )
+    )
+    return tabs[tabs.length - 1]?.getAttribute('data-session-id') ?? null
   }, sessionId)
 
 describe('Multi-tab terminal isolation', () => {
@@ -82,8 +91,8 @@ describe('Multi-tab terminal isolation', () => {
       { timeout: 15_000, timeoutMsg: 'marker A never landed in session 1' }
     )
 
-    // Spawn session 2.
-    await clickBySelector('button[aria-label="New tab"]')
+    // Spawn session 2 via the SessionTabs "+" button.
+    await clickBySelector('button[aria-label="New session"]')
     await browser.waitUntil(async () => (await allSessionIds()).length === 2, {
       timeout: 10_000,
       timeoutMsg: 'second session did not mount',
@@ -137,8 +146,9 @@ describe('Multi-tab terminal isolation', () => {
     expect(s2).toContain(markerB)
     expect(s2).not.toContain(markerA)
 
-    // `getSessionLabel` is exercised to confirm the helper doesn't throw,
-    // but we don't assert on its value — tab naming is ephemeral.
-    void (await getSessionLabel(session2Id))
+    // `getLatestSessionTabId` is exercised to confirm the helper
+    // doesn't throw, but we don't assert on its value — tab id is
+    // ephemeral.
+    void (await getLatestSessionTabId(session2Id))
   })
 })

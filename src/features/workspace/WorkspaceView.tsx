@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IconRail } from './components/IconRail'
+import { SessionTabs } from './components/SessionTabs'
 import { Sidebar } from './components/Sidebar'
 import { StatusBar } from './components/StatusBar'
 import { TerminalZone } from './components/TerminalZone'
@@ -405,18 +406,17 @@ export const WorkspaceView = (): ReactElement => {
           banner's `absolute` positioning is scoped to this column
           rather than climbing to the viewport. */}
       <div className="relative flex flex-col overflow-hidden">
-        <div
-          data-testid="session-tabs-strip"
-          className="h-[38px] shrink-0 border-b border-outline-variant/20 bg-surface-container-lowest"
-          aria-hidden="true"
+        <SessionTabs
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSelect={setActiveSessionId}
+          onClose={removeSession}
+          onNew={createSession}
         />
 
         <TerminalZone
           sessions={sessions}
           activeSessionId={activeSessionId}
-          onSessionChange={setActiveSessionId}
-          onNewTab={createSession}
-          onCloseTab={removeSession}
           onSessionCwdChange={updateSessionCwd}
           restoreData={restoreData}
           loading={loading}

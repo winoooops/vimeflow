@@ -36,7 +36,9 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => ({
-    spawn: vi.fn().mockResolvedValue({ sessionId: 'new-id', pid: 999 }),
+    spawn: vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'new-id', pid: 999, cwd: '~' }),
     write: vi.fn().mockResolvedValue(undefined),
     resize: vi.fn().mockResolvedValue(undefined),
     kill: vi.fn().mockResolvedValue(undefined),
@@ -124,30 +126,32 @@ describe('WorkspaceView Integration Tests', () => {
       // Wait for second session to appear
       await screen.findByRole('button', { name: 'session 2' })
 
-      // Get session buttons from sidebar (session list contains buttons)
+      // Each row now carries hover-only edit/remove buttons in addition to
+      // the main click target. Filter by `session N` aria-label so the
+      // index is stable regardless of the per-row chrome count.
       const sessionList = within(sidebar).getByTestId('session-list')
-      const sessionButtons = within(sessionList).getAllByRole('button')
+
+      const sessionButtons = within(sessionList).getAllByRole('button', {
+        name: /^session \d+$/,
+      })
 
       expect(sessionButtons.length).toBeGreaterThan(1)
 
-      // Click first session (second is already active after creation)
       const firstSession = sessionButtons[1]
       await user.click(firstSession)
 
-      // Terminal zone should update its active session
-      const tabBar = within(terminalZone).getByTestId('tab-bar')
-
-      // The active session tab should have visual indicator
-      const sessionTabs = within(tabBar).getAllByRole('button', {
-        name: /^🤖/,
-      })
-
-      // At least one tab wrapper should have the active styling (class is on parent div)
-      const hasActiveTab = sessionTabs.some((tab) =>
-        tab.parentElement?.classList.contains('border-b-primary')
+      // SessionTabs (above the terminal zone) should reflect the click.
+      const tabs = within(screen.getByTestId('session-tabs')).getAllByRole(
+        'tab'
       )
 
+      const hasActiveTab = tabs.some(
+        (tab) => tab.getAttribute('aria-selected') === 'true'
+      )
       expect(hasActiveTab).toBe(true)
+      // Terminal zone is still mounted (sanity check) — its panes follow
+      // activeSessionId via the same useSessionManager hook.
+      expect(terminalZone).toBeInTheDocument()
     })
 
     test('clicking session updates agent status panel', async (): Promise<void> => {
@@ -168,13 +172,14 @@ describe('WorkspaceView Integration Tests', () => {
       // Wait for second session to appear
       await screen.findByRole('button', { name: 'session 2' })
 
-      // Get all session buttons from session list
       const sessionList = within(sidebar).getByTestId('session-list')
-      const sessionButtons = within(sessionList).getAllByRole('button')
+
+      const sessionButtons = within(sessionList).getAllByRole('button', {
+        name: /^session \d+$/,
+      })
 
       expect(sessionButtons.length).toBeGreaterThan(1)
 
-      // Click first session button (second is already active after creation)
       await user.click(sessionButtons[1])
 
       // Agent Status Panel should be present (content comes in sub-specs 5-7)
@@ -185,28 +190,23 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      // Wait for initial session to load
       await screen.findByRole('button', { name: 'session 1' })
 
       const sidebar = screen.getByTestId('sidebar')
-      const terminalZone = screen.getByTestId('terminal-zone')
 
-      // Click the session
       const sessionList = within(sidebar).getByTestId('session-list')
-      const sessionButtons = within(sessionList).getAllByRole('button')
+
+      const sessionButtons = within(sessionList).getAllByRole('button', {
+        name: /^session \d+$/,
+      })
 
       await user.click(sessionButtons[0])
 
-      // Terminal should update
-      const tabBar = within(terminalZone).getByTestId('tab-bar')
+      const tabs = within(screen.getByTestId('session-tabs')).getAllByRole(
+        'tab'
+      )
+      expect(tabs.length).toBeGreaterThan(0)
 
-      const sessionTabs = within(tabBar).getAllByRole('button', {
-        name: /^🤖/,
-      })
-
-      expect(sessionTabs.length).toBeGreaterThan(0)
-
-      // Agent Status Panel should be present
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
   })
