@@ -3695,3 +3695,5 @@ These are tracked separately. Linked in the spec's §"Out of scope (deferred to 
 - **#177** — Global keybinding for session-tab cycling (Cmd+Shift+]/[).
 - **#179** — Tab Delete/Backspace close binding migration to a global keyboard shortcut. `Tab.tsx`'s onKeyDown carries an inline comment referencing this issue.
 - **#180** — Keyboard adjustment for the explorer split-resize separator (a11y). `useResizable.adjustBy(±step)` is already exposed.
+
+<!-- codex-reviewed: 2026-05-07T10:42:47Z -->
