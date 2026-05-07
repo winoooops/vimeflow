@@ -1,7 +1,7 @@
 import { type ReactElement, useState } from 'react'
 import { CodeEditor } from '../../editor/components/CodeEditor'
 import { DiffPanelContent } from '../../diff/components/DiffPanelContent'
-import { useResizable } from '../hooks/useResizable'
+import { useResizable } from '../../../hooks/useResizable'
 import type { SelectedDiffFile } from '../../diff/types'
 import type { UseGitStatusReturn } from '../../diff/hooks/useGitStatus'
 

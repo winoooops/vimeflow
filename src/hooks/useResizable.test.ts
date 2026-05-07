@@ -191,4 +191,20 @@ describe('useResizable', () => {
 
     expect(result.current.size).toBe(500)
   })
+
+  test('initial value above max is clamped on mount', () => {
+    const { result } = renderHook(() =>
+      useResizable({ initial: 600, min: 100, max: 500 })
+    )
+
+    expect(result.current.size).toBe(500)
+  })
+
+  test('initial value below min is clamped on mount', () => {
+    const { result } = renderHook(() =>
+      useResizable({ initial: 50, min: 100, max: 500 })
+    )
+
+    expect(result.current.size).toBe(100)
+  })
 })
