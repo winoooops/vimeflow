@@ -7,6 +7,7 @@ import {
   isOpenSessionStatus,
   pickNextVisibleSessionId,
 } from '../../utils/pickNextVisibleSessionId'
+import { mediateReorder } from '../utils/mediateReorder'
 
 export interface ListProps {
   sessions: Session[]
@@ -122,8 +123,12 @@ export const List = ({
             // outer component body) so a mid-drag status transition that
             // re-renders Sidebar can't leave Framer Motion holding a
             // stale closure that drops or duplicates the just-transitioned
-            // session.
-            onReorderSessions?.([...reordered, ...recentGroupRef.current])
+            // session. The concat lives in `mediateReorder` (with its own
+            // unit test) so the production path and the test path share
+            // one implementation.
+            onReorderSessions?.(
+              mediateReorder(reordered, recentGroupRef.current)
+            )
           }}
           emptyState={
             <li
