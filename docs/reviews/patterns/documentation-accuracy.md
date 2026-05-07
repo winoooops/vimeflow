@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-06
-ref_count: 17
+last_updated: 2026-05-07
+ref_count: 18
 ---
 
 # Documentation Accuracy
@@ -493,3 +493,23 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** Cycle 4 added pattern #50 explicitly naming `handoff §<n>` as a task-reference smell. Three other instances of the same token survived the four prior fix cycles because the regex in each fix was scoped narrowly to the lines flagged by that cycle's review: (a) `WorkspaceView.test.tsx:343` test name `'uses handoff §3 grid proportions ...'`, (b) `StatusBar.test.tsx:13` test name `'uses surface-container-lowest background per handoff §4.9'`, (c) `IconRail.test.tsx:14` inline comment `// 48px (12 * 4 = 48) — handoff §3`. The cleanest possible repro of pattern #50 is having an instance of it in the same PR that adds the pattern to the KB.
 - **Fix:** Renamed each call site to a self-documenting alternative that drops the spec coordinate: (a) `'grid columns: icon-rail 48px, sidebar 272px, main 1fr, activity auto'`, (b) `'uses surface-container-lowest background'`, (c) `// 48px (12 * 4 = 48)`. The lesson: when adding a rule to the pattern KB, **`grep` the diff being shipped** for the smell token immediately, not just the lines a reviewer flagged. Code-review heuristic: every commit that touches `docs/reviews/patterns/` should be preceded by a `rg <smell-token>` over the staged diff to catch other violations the reviewer hasn't seen yet.
 - **Commit:** _(see git log for the cycle-5 fix commit on PR #173)_
+
+---
+
+### 52. Roadmap phase renumbering updated summary surfaces but missed body headings
+
+- **Source:** github-claude | PR #183 round 1 | 2026-05-07
+- **Severity:** LOW
+- **File:** `docs/roadmap/tauri-migration-roadmap.md`
+- **Finding:** The docs-sync PR added Agent Status Sidebar as completed Phase 4 and renumbered the dependency graph plus timeline table, but the body section headers still named Session Management as Phase 4 through Desktop Polish as Phase 9. The footer also still referenced "Phase 7–9 parallel work." A reader following the table to Phase 8 Context Panels would land on a `## Phase 7` heading.
+- **Fix:** Added a brief Phase 4 Agent Status Sidebar section, renumbered the remaining body headings to Phase 5–10, updated Desktop Polish's parallel-phase note, and corrected the footer to "Phase 9–10 parallel work." Lesson: when a numbered roadmap table changes, grep every `^## Phase` heading and footer/cross-reference in the same file before committing.
+- **Commit:** same commit as this entry
+
+### 53. Completed-step roadmap note retained a planned test path after Files list was corrected
+
+- **Source:** github-claude | PR #183 round 1 | 2026-05-07
+- **Severity:** LOW
+- **File:** `docs/roadmap/ui-update-roadmap.md`
+- **Finding:** The Step 1 Files list was updated to the actual landed locations (`tailwind.config.test.js`, `src/agents/registry.test.ts`), but the Risks paragraph still justified the original planned `src/lib/` test location. The contradiction made a completed step look as if it expected a different file layout.
+- **Fix:** Replaced the obsolete `src/lib/` risk note with the actual landed test locations. Lesson: once a planned roadmap step is marked done, prospective "Risks" text should be rewritten as implemented-state evidence or removed.
+- **Commit:** same commit as this entry
