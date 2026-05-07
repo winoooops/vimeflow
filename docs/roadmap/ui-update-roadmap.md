@@ -18,7 +18,7 @@ Step 4, Single TerminalPane, is next.
 
 **DoD.** New tokens present and asserted by test; existing classes unchanged in value; agents registry exported with `AgentId` keyof-type; handoff prototype/screenshots checked in; `npm run lint`, `npm run test`, `npm run type-check` all green.
 
-**Risks.** None to runtime — no consumer in this step. Test lives under `src/lib/` so ESLint's `parserOptions.projectService` (scoped to `tsconfig.json`'s `src` include) parses it; importing `../../tailwind.config.js` works under Vite's bundler resolution.
+**Risks.** None to runtime — no consumer in this step. Tests landed in `tailwind.config.test.js` and `src/agents/registry.test.ts`, matching the implemented file layout.
 
 ## Step 2 — App shell layout (done)
 

@@ -111,7 +111,17 @@ Integrate xterm.js with a Rust-side PTY via Tauri. Replace the terminal zone pla
 
 ---
 
-## Phase 4: Session Management + State
+## Phase 4: Agent Status Sidebar
+
+**Status: Done** — see `docs/roadmap/progress.yaml` for the landed
+Claude Code / Codex adapter work and verification evidence.
+
+The original 2026-04 roadmap did not include this phase as a separate section;
+it shipped as the agent-observability track before session persistence.
+
+---
+
+## Phase 5: Session Management + State
 
 **Scope: Medium | Est: 5–7 days | Blocked by: Phase 3**
 
@@ -150,7 +160,7 @@ src/stores/
 
 ---
 
-## Phase 5: File Watcher + Agent Activity Panel
+## Phase 6: File Watcher + Agent Activity Panel
 
 **Scope: Medium | Est: 5–7 days | Blocked by: Phase 4**
 
@@ -180,7 +190,7 @@ Wire the Agent Activity sidebar (built as static shell in Phase 2) to real data 
 
 ---
 
-## Phase 6: Terminal Parser + Agent Adapters
+## Phase 7: Terminal Parser + Agent Adapters
 
 **Scope: Medium | Est: 4–6 days | Blocked by: Phase 5**
 
@@ -212,7 +222,7 @@ Parse Claude Code's terminal output to extract structured data: tool calls, test
 
 ---
 
-## Phase 7: Context Panel Integration
+## Phase 8: Context Panel Integration
 
 **Scope: Medium | Est: 4–6 days | Blocked by: Phase 4**
 
@@ -240,7 +250,7 @@ Wire the existing Files Explorer, Code Editor, and Git Diff views to Tauri IPC, 
 
 ---
 
-## Phase 8: Usage Metrics
+## Phase 9: Usage Metrics
 
 **Scope: Small | Est: 2–3 days | Blocked by: Phase 6**
 
@@ -265,9 +275,9 @@ Wire real usage data into the Agent Activity panel.
 
 ---
 
-## Phase 9: Desktop Polish
+## Phase 10: Desktop Polish
 
-**Scope: Medium | Est: 4–6 days | Parallel with Phase 8**
+**Scope: Medium | Est: 4–6 days | Parallel with Phase 9**
 
 - Window state persistence (`tauri-plugin-window-state`)
 - Native menu bar (platform-specific)
@@ -356,4 +366,4 @@ Phase 9  Phase 10   (parallel)
 | 9. Usage Metrics              | Small  | 2-3       | Pending         | Context window, billing data          |
 | 10. Desktop Polish            | Medium | 4-6       | Pending         | Tray, menus, auto-update, fonts       |
 
-**Total: ~36–54 days** (critical path ~28–40 days with Phase 7–9 parallel work)
+**Total: ~36–54 days** (critical path ~28–40 days with Phase 9–10 parallel work)
