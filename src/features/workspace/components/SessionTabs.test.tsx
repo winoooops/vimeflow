@@ -236,6 +236,31 @@ describe('SessionTabs', () => {
     expect(onSelect).toHaveBeenLastCalledWith('b')
   })
 
+  test('clicking the already-active tab does NOT call onSelect (no redundant IPC + no rollback interference)', async () => {
+    // WorkspaceView's onSelect bridges to setActiveSession(IPC). A
+    // redundant call for the already-active tab adds a round-trip AND
+    // can interfere with useSessionManager's request-supersession
+    // rollback under transient failures (a later no-op request can
+    // supersede an earlier real switch).
+    const onSelect = vi.fn()
+    const user = userEvent.setup()
+
+    const sessions = [
+      buildSession({ id: 'a', name: 'auth' }),
+      buildSession({ id: 'b', name: 'tests' }),
+    ]
+    renderTabs(sessions, 'a', { onSelect })
+
+    const activeTab = screen.getAllByRole('tab')[0]
+    await user.click(activeTab)
+    expect(onSelect).not.toHaveBeenCalled()
+
+    activeTab.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
   test('only the active tab carries tabIndex=0 (roving focus)', () => {
     const sessions = [
       buildSession({ id: 'a', name: 'auth' }),

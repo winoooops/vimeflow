@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-04
-ref_count: 8
+last_updated: 2026-05-07
+ref_count: 9
 ---
 
 # Async Race Conditions
@@ -349,3 +349,12 @@ prevent showing previous data.
 - **Finding:** When `start_agent_watcher` was invoked twice for the same sid (e.g. an exit/re-detect cycle where the agent briefly disappears and re-spawns), the older invocation's await could resolve AFTER the newer one had already registered a backend watcher. The stale-guard branch unconditionally called `stopWatchers(sid, ptySessionId)`. Because `stop_agent_watcher` is keyed only by session ID on the backend, that stop tore down the _current_ (newer) watcher — silencing status / tool-call events until the next detection poll restarted it.
 - **Fix:** Gate the stop on `!newerSameSidSucceeded` where `newerSameSidSucceeded = (currentSessionIdRef.current === sid) && (watcherStartGenerationRef.current !== startGeneration) && watcherStartedRef.current`. The three conjuncts identify "newer same-sid registrant succeeded" and only that case. On every other bail path (sid switch, unmount, agent exit, our own bumped-gen with no successor) the stop must still fire — sid-switch and unmount cleanups can't help when `knownPtyIdRef` is still unset, so the stale-resolution branch is the only place that has the captured `ptySessionId`. The lesson: when a backend resource is keyed by a coarse-grained ID (sid) but the frontend can have multiple parallel registrants for that same ID over time, the stale-cleanup path must distinguish "newer registrant for SAME ID exists" (skip stop) from "different ID" (always stop) — using a ref triple `(id-match, generation-bumped, success-flag-set)` rather than any one of them alone.
 - **Commit:** _(see git log for the round-1 fix commit on PR #154)_
+
+### 35. SessionTab fired redundant `setActiveSession` IPC on already-active tab click — interfered with `useSessionManager` request-supersession rollback
+
+- **Source:** github-codex-connector | PR #174 round 19 | 2026-05-07
+- **Severity:** P2
+- **File:** `src/features/workspace/components/SessionTabs.tsx`
+- **Finding:** `SessionTab` dispatched `onSelect(session.id)` on EVERY pointer click and Enter/Space keypress, regardless of whether the tab was already the active tab. `WorkspaceView` bridges `onSelect` to `setActiveSessionId`, which always issues `service.setActiveSession(...)` — so each idle click on the active tab became a redundant Tauri IPC round-trip. Worse: `useSessionManager` uses the request-supersession pattern (a later request supersedes an earlier in-flight one for transient-failure rollback). A no-op same-id "switch" would supersede a real prior switch attempt, and if the real one transiently failed, the rollback machinery would skip it — leaving the displayed selection out of sync with the backend. Hard to repro without simulated transient IPC failure, but the fix is one guard.
+- **Fix:** Added `if (!isActive)` guard before `onSelect(session.id)` in BOTH activation paths (`onClick` and `handleKeyDown` for Enter/Space). Inactive-tab activation still dispatches normally; close-fallback selection from `SessionTabs.handleClose` is unaffected because it calls the parent `onSelect(nextId)` directly, bypassing the per-tab activation handlers. Comments at both call sites cite the IPC bridge AND the request-supersession rationale so future maintainers don't strip the guard for "clarity". Added regression test asserting click + Enter + Space on the already-active tab all leave `onSelect` un-called. Code-review heuristic: any UI activation gesture that dispatches an IPC must check whether the gesture changes state — the cost of "always dispatch and let downstream debounce" is invisible in steady-state but compounds with retry/supersession patterns under failure.
+- **Commit:** _(see git log for the cycle-19 fix commit on PR #174)_

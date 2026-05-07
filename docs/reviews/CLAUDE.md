@@ -47,7 +47,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal       | 3        | 1    | 2026-04-09   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality   | 51       | 17   | 2026-05-06   |
 | [Accessibility](patterns/accessibility.md)                           | a11y           | 17       | 5    | 2026-05-07   |
-| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns | 34       | 8    | 2026-05-04   |
+| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns | 35       | 9    | 2026-05-07   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend        | 1        | 0    | 2026-05-04   |
 | [Command Injection](patterns/command-injection.md)                   | security       | 7        | 3    | 2026-05-02   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)             | security       | 15       | 2    | 2026-04-20   |

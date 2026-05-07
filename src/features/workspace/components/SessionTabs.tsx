@@ -161,7 +161,15 @@ const SessionTab = ({
     // global-keybinding stub note in SessionTabs above.
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
-      onSelect(session.id)
+      // Skip the no-op reselection when the focused tab is already
+      // active. WorkspaceView's onSelect bridges to
+      // setActiveSession(IPC); a redundant call adds an unnecessary
+      // round-trip AND can interfere with useSessionManager's
+      // request-supersession rollback (a later no-op request can
+      // supersede an earlier real switch under transient failures).
+      if (!isActive) {
+        onSelect(session.id)
+      }
 
       return
     }
@@ -200,7 +208,14 @@ const SessionTab = ({
       data-testid="session-tab"
       data-session-id={session.id}
       data-active={isActive}
-      onClick={() => onSelect(session.id)}
+      onClick={() => {
+        // Mirror the keyboard-activation guard in handleKeyDown:
+        // clicking the already-active tab is a no-op user-intent and
+        // must NOT trigger a redundant setActiveSession IPC.
+        if (!isActive) {
+          onSelect(session.id)
+        }
+      }}
       onKeyDown={handleKeyDown}
       className={`
         relative flex h-[30px] min-w-[130px] max-w-[220px] cursor-pointer items-center gap-2
