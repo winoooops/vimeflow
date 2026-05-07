@@ -1039,12 +1039,15 @@ describe('Card — active variant', () => {
     expect(screen.getByTestId('session-row')).toBeInTheDocument()
   })
 
-  test('renders status dot at default size', () => {
+  test('renders StatusDot reflecting session.status', () => {
     renderActiveCard(session({ status: 'running' }))
-    // StatusDot's component renders a span with role="status" or a
-    // data attribute — adjust selector if StatusDot uses a different
-    // hook. The smoke is: a status-bearing element is present.
-    expect(screen.getByTestId('session-row')).toBeInTheDocument()
+    // StatusDot exposes data-testid="status-dot" (verified at
+    // src/features/workspace/components/StatusDot.tsx:40). Asserting
+    // its presence guards against Card accidentally dropping the dot
+    // — the previous draft of this test only checked session-row
+    // existence, which would pass even if Card removed StatusDot
+    // entirely.
+    expect(screen.getByTestId('status-dot')).toBeInTheDocument()
   })
 
   test('renders state pill with bright tone class for the status', () => {
@@ -2165,16 +2168,110 @@ describe('List — null activeSessionId', () => {
 })
 ```
 
-The mid-drag transition guard test (called out in spec §"List" test surface) requires inspecting framer-motion's Reorder.Group `onReorder` callback. JSDOM cannot dispatch a real drag, so the test must reach into the rendered Reorder.Group's React props OR mock `framer-motion`. Both are brittle in this test file. The spec's recommended approach is to add the test as a `// SKIP — pending mock strategy` placeholder in this phase and revisit if/when a mid-drag bug is observed; the `mediateReorder.test.ts` tests already cover the data transformation correctness. If you can implement the test cleanly with the available tooling, do so; otherwise leave a comment in `List.test.tsx`:
+Add the mid-drag transition guard as a real test. JSDOM can't dispatch a real drag, but `vi.mock('framer-motion')` can replace `Reorder.Group` with a `<ul>` that exposes its `onReorder` prop on a global capture so the test can invoke it synthetically. Add this BEFORE the existing `describe` blocks at the top of `List.test.tsx`:
 
-```ts
-// TODO(#178): Mid-drag transition guard. JSDOM can't dispatch real
-// drag events; mocking framer-motion is invasive. The data
-// transformation is covered by mediateReorder.test.ts. The
-// recentGroupRef synchronous-mirror invariant is observable only
-// via integration testing — file a follow-up if a regression
-// surfaces.
+```tsx
+// Captured framer-motion onReorder callbacks per Reorder.Group instance.
+// The mock below pushes each render's onReorder into this array; tests
+// pull out the most recent (post-render) callback and invoke it.
+const reorderCalls: Array<(sessions: Session[]) => void> = []
+
+vi.mock('framer-motion', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('framer-motion')>()
+  return {
+    ...actual,
+    Reorder: {
+      ...actual.Reorder,
+      Group: ({
+        children,
+        onReorder,
+        ...props
+      }: {
+        children: React.ReactNode
+        onReorder: (sessions: Session[]) => void
+        [key: string]: unknown
+      }): React.ReactElement => {
+        reorderCalls.push(onReorder)
+        // Render as a plain <ul> so children (Reorder.Item → <li>) are
+        // valid HTML; drop framer-only props (axis, values, layoutScroll).
+        const { axis, values, layoutScroll, ...domProps } = props
+        return <ul {...domProps}>{children}</ul>
+      },
+      Item: ({
+        children,
+        ...props
+      }: {
+        children: React.ReactNode
+        [key: string]: unknown
+      }): React.ReactElement => {
+        const { value, layout, whileDrag, ...domProps } = props
+        return <li {...domProps}>{children}</li>
+      },
+    },
+    motion: actual.motion,
+  }
+})
+
+// Reset captures between tests.
+beforeEach(() => {
+  reorderCalls.length = 0
+})
 ```
+
+Then add the test inside the existing `describe('List — group split', ...)` block (or in a new `describe('List — mid-drag transition guard', ...)` at file scope):
+
+```tsx
+describe('List — mid-drag transition guard', () => {
+  test('onReorderSessions receives [...reorderedActive, ...recent] using the POST-transition recent (not a stale closure capture)', () => {
+    const onReorderSessions = vi.fn()
+    const a = session('a', 'running')
+    const b = session('b', 'running')
+
+    const { rerender } = render(
+      <List
+        sessions={[a, b]}
+        activeSessionId="a"
+        onSessionClick={() => {}}
+        onReorderSessions={onReorderSessions}
+      />
+    )
+
+    // Capture the onReorder framer-motion received during the FIRST render.
+    // At this point recentGroup is empty.
+    expect(reorderCalls).toHaveLength(1)
+    const capturedOnReorder = reorderCalls[0]
+
+    // Re-render with B transitioned to completed: active=[a], recent=[b'].
+    const bCompleted = { ...b, status: 'completed' as const }
+    rerender(
+      <List
+        sessions={[a, bCompleted]}
+        activeSessionId="a"
+        onSessionClick={() => {}}
+        onReorderSessions={onReorderSessions}
+      />
+    )
+
+    // Now invoke the OLD onReorder callback (simulating framer-motion
+    // firing onReorder mid-drag-but-post-transition) with a permutation
+    // of the LATEST active values.
+    capturedOnReorder([a])
+
+    // The bubbled array MUST include the post-transition recent
+    // ([bCompleted]), not the stale empty array captured at first
+    // render. recentGroupRef.current was synchronously mirrored on the
+    // second render, so the closure reading it sees the live value.
+    expect(onReorderSessions).toHaveBeenCalledTimes(1)
+    const bubbled = onReorderSessions.mock.calls[0][0] as Session[]
+    expect(bubbled).toHaveLength(2)
+    expect(bubbled[0].id).toBe('a')
+    expect(bubbled[1].id).toBe('b')
+    expect(bubbled[1].status).toBe('completed')
+  })
+})
+```
+
+The mock surfaces `Reorder.Group` and `Reorder.Item` as plain `<ul>` / `<li>` and captures the `onReorder` callback for direct invocation. `motion` and other framer exports pass through untouched (`motion.div` with `layoutScroll` still works for the scroll wrapper). If your `vi.mock` factory shape needs adjustment for framer-motion's specific export structure, check `node_modules/framer-motion/dist/types.d.ts` for the actual `Reorder` namespace shape.
 
 - [ ] **Step 2: Run the new tests**
 
@@ -2218,9 +2315,9 @@ import { List } from '../sessions/components/List'
 
 Inside `Sidebar.tsx`:
 
-- Remove imports: `useRef`, `Card`, `Group`, `motion`, `pickNextVisibleSessionId`, `isOpenSessionStatus` — all migrated into `List`. Keep `useState`, `useEffect`, `useCallback` (still needed for the resize handle state).
+- Remove imports: `Card`, `Group`, `motion`, `pickNextVisibleSessionId`, `isOpenSessionStatus` — all migrated into `List`. KEEP `useState`, `useEffect`, `useCallback`, AND `useRef` (still needed for the FileExplorer split-resize state — `startY` / `startHeight` / `explorerHeight` / `isDraggingSplit` stay in Sidebar.tsx until Phase 6 moves the chrome to `src/components/sidebar/`).
 - Remove the `activeGroup` and `recentGroup` derivations.
-- Remove the `recentGroupRef` declaration.
+- Remove the `recentGroupRef` declaration. The `startY` / `startHeight` refs for the FileExplorer split STAY (used by `handleSplitMouseDown` and the `useEffect` that wires document-level mousemove/mouseup listeners).
 - Remove the `handleRemoveSession` definition (now lives in `List`).
 
 - [ ] **Step 4: Clean prop pass-through**
@@ -2278,25 +2375,23 @@ Delete from `Sidebar.test.tsx`:
 
 Each is covered by `subtitle.test.ts` (Phase 1).
 
-- [ ] **Step 4: Delete obsolete tests**
+- [ ] **Step 4: Tests that stay in `Sidebar.test.tsx` for this phase**
 
-Delete from `Sidebar.test.tsx`:
+The following tests REMAIN in `Sidebar.test.tsx` until Phase 6 (when Sidebar moves and FileExplorer + New Instance leave the chrome):
 
-- `renders FileExplorer section` (line ~350) — Sidebar no longer mounts FileExplorer (Phase 6 moves it to the `bottomPane` slot via WorkspaceView).
-
-The `New Instance` button tests (lines ~364, 384, 401, 422) currently still pass because the button is still inside `Sidebar.tsx` at this phase. They will be migrated / deleted in Phase 6 when the button moves to WorkspaceView's footer slot. KEEP them for this phase.
+- `renders FileExplorer section` (line ~350) — Sidebar still mounts FileExplorer at this phase. KEEP for now; Phase 6 deletes it.
+- 4 `New Instance` button tests (lines ~364, 384, 401, 422) — button is still inside Sidebar.tsx. KEEP; Phase 6 migrates to WorkspaceView.
 
 - [ ] **Step 5: Verify what's left in `Sidebar.test.tsx`**
 
-After Steps 1-4, `Sidebar.test.tsx` should contain ~7 tests:
+After Steps 1-3 (deletions for List + Card + subtitle), `Sidebar.test.tsx` should contain ~7 tests:
 
-- `renders with full width (sized by parent grid)`
-- `renders the sidebar status header in the top slot`
-- `renders FileExplorer section` — wait, this was deleted in Step 4. Update: ~6 tests.
-- 4 New-Instance tests (kept; will be migrated next phase)
-- `renders with full width` + `renders the sidebar status header` = 2 chrome tests
+- `renders with full width (sized by parent grid)` (chrome smoke)
+- `renders the sidebar status header in the top slot` (header smoke)
+- `renders FileExplorer section` (will move/delete in Phase 6)
+- 4 `New Instance` button tests (will move/delete in Phase 6)
 
-So ~6 tests remain. They will all be reshaped or migrated in Phase 6.
+So ~7 tests remain. The split goes deeper in Phase 6.
 
 ```bash
 grep -cE "^\s+test\(" src/features/workspace/components/Sidebar.test.tsx
@@ -2344,9 +2439,9 @@ Test redistribution this phase:
 - 6 Sidebar.test.tsx tests move conceptually to Card.test.tsx
   (already covered by the per-variant matrix in Phase 3).
 - 3 subtitle tests already live in subtitle.test.ts (Phase 1).
-- 1 obsolete (renders FileExplorer section) deleted.
+- The `renders FileExplorer section` test STAYS in Phase 5 (Sidebar still mounts FileExplorer); Phase 6 will delete it when FileExplorer moves to the bottomPane slot.
 
-Sidebar.test.tsx shrinks to ~6 chrome tests — the rest is
+Sidebar.test.tsx shrinks to ~7 chrome tests — the rest is
 covered by List/Card/Group/subtitle co-located tests.
 
 Refs: docs/superpowers/specs/2026-05-06-sidebar-refactor-design.md (§"Workspace session module — List", §"Test redistribution map")
@@ -2773,15 +2868,49 @@ npm run type-check
 
 Expected: clean.
 
-### Task 6.5: Delete the old Sidebar files
+### Task 6.5: Migrate residual Sidebar.test.tsx tests, then delete the old files
 
-- [ ] **Step 1: Delete the old source + test**
+The OLD `src/features/workspace/components/Sidebar.test.tsx` still has ~7 tests after Phase 5. They redistribute:
+
+| Test (in old Sidebar.test.tsx)                              | Destination                                                                            |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `renders with full width`                                   | DELETE — chrome smoke replaced by the new `Sidebar.test.tsx`'s slot composition tests. |
+| `renders the sidebar status header in the top slot`         | DELETE — replaced by `Sidebar.test.tsx`'s `header` slot fixture test (Task 6.2).       |
+| `renders FileExplorer section`                              | DELETE — Sidebar no longer mounts FileExplorer.                                        |
+| `renders "New Instance" button at bottom`                   | DELETE — replaced by `Sidebar.test.tsx`'s `footer` slot fixture test (Task 6.2).       |
+| `"New Instance" button has bolt icon`                       | DELETE — visual-class smoke; not load-bearing.                                         |
+| `calls onNewInstance when "New Instance" button is clicked` | MIGRATE to `WorkspaceView.test.tsx` (the gradient button now lives there).             |
+| `"New Instance" button has shadow effects`                  | DELETE — visual-class smoke; not load-bearing.                                         |
+
+- [ ] **Step 1: Migrate the New Instance click test to `WorkspaceView.test.tsx`**
+
+Open `src/features/workspace/WorkspaceView.test.tsx`. Add a test that asserts clicking the New Instance gradient button calls `createSession`. The button now lives in WorkspaceView's `Sidebar.footer` slot. A starter:
+
+```tsx
+test('clicking the New Instance gradient button calls createSession', async () => {
+  // The test setup likely already mocks useSessionManager / its createSession
+  // dependency. If it does, capture the mock and assert it's called.
+  // Otherwise, render WorkspaceView, find the button by aria-label, click it.
+  const user = userEvent.setup()
+  // ... existing render setup ...
+  const newInstanceBtn = screen.getByRole('button', { name: 'New Instance' })
+  await user.click(newInstanceBtn)
+  // Adjust assertion to match WorkspaceView.test.tsx's existing
+  // capture pattern for createSession (the test file likely already
+  // captures it via vi.mock on useSessionManager or similar).
+  expect(/* the captured createSession mock */).toHaveBeenCalled()
+})
+```
+
+If the existing WorkspaceView.test.tsx setup doesn't expose a clean way to assert on `createSession` (the hook's internals are deeply mocked), an alternative is to assert the click triggers the existing observable side-effect (a new tab / pane appearing) rather than asserting on the mock directly. Match what surrounding tests do.
+
+- [ ] **Step 2: Delete the old source + test**
 
 ```bash
 git rm src/features/workspace/components/Sidebar.tsx src/features/workspace/components/Sidebar.test.tsx
 ```
 
-- [ ] **Step 2: Confirm no lingering references**
+- [ ] **Step 3: Confirm no lingering references**
 
 ```bash
 grep -rn "from.*['\"]\..*components/Sidebar['\"]" src --include="*.tsx" --include="*.ts"
@@ -2940,13 +3069,27 @@ import type { Session } from '../../types'
 
 Replace every `<SessionTabs ... />` and every reference to the symbol `SessionTabs` with `Tabs` throughout the test file.
 
-- [ ] **Step 5: Type-check**
+- [ ] **Step 5: Bump WorkspaceView's import in lockstep with the move**
+
+The source file moved + the symbol renamed; `WorkspaceView.tsx` still imports the old path. Update it now (NOT in a later task) so type-check stays clean throughout Phase 7. In `src/features/workspace/WorkspaceView.tsx`:
+
+```ts
+// Before:
+import { SessionTabs } from './components/SessionTabs'
+
+// After:
+import { Tabs } from './sessions/components/Tabs'
+```
+
+In the JSX, replace `<SessionTabs ... />` with `<Tabs ... />` (props unchanged).
+
+- [ ] **Step 6: Type-check**
 
 ```bash
 npm run type-check
 ```
 
-Expected: errors point to `WorkspaceView.tsx` (still importing the old path). That's fixed in Task 7.4.
+Expected: clean. Source move + symbol rename + WorkspaceView import bump all in lockstep means the tree compiles end-to-end.
 
 ### Task 7.2: Extract `Tab.tsx` leaf
 
@@ -3130,31 +3273,11 @@ import { Tab } from './Tab'
 npm run type-check
 ```
 
-Expected: clean (Tabs.tsx, Tab.tsx, Tabs.test.tsx all type-check). WorkspaceView still has the old import — fixed next.
+Expected: clean (Tabs.tsx, Tab.tsx, Tabs.test.tsx all type-check; WorkspaceView's import was bumped in Task 7.1 Step 5 — already in lockstep).
 
-### Task 7.3: Update WorkspaceView's import
+### Task 7.3: (Removed — WorkspaceView's import bump is part of Task 7.1)
 
-- [ ] **Step 1: Bump import + symbol**
-
-In `src/features/workspace/WorkspaceView.tsx`:
-
-```ts
-// Before:
-import { SessionTabs } from './components/SessionTabs'
-
-// After:
-import { Tabs } from './sessions/components/Tabs'
-```
-
-In the JSX, replace `<SessionTabs ... />` with `<Tabs ... />` (props are unchanged).
-
-- [ ] **Step 2: Type-check**
-
-```bash
-npm run type-check
-```
-
-Expected: clean.
+The original draft separated the WorkspaceView import bump into Task 7.3, but that left the type-check broken between Tasks 7.1 and 7.3. Task 7.1 Step 5 now performs the import bump in lockstep with the source move, so this task is a no-op and the plan proceeds to Task 7.4.
 
 ### Task 7.4: Create `Tab.test.tsx`
 
