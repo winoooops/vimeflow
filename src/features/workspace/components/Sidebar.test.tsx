@@ -586,4 +586,33 @@ describe('Sidebar', () => {
     )
     expect(screen.getByText('home/will')).toBeInTheDocument()
   })
+
+  test('subtitle falls back to "~" when workingDirectory is empty (race-window safety)', () => {
+    // During the brief window after session creation but before the first
+    // OSC 7 cwd report from Tauri, `workingDirectory` may be seeded as
+    // empty string. The fallback comment promises "never empty"; without
+    // the `|| '~'` guard the raw empty string would render an invisible
+    // subtitle div and a visible gap in the row. `~` is the conventional
+    // shell display for an unknown/home cwd.
+    const emptyCwdSession: Session = {
+      ...mockSessions[0],
+      id: 'sess-empty',
+      name: 'empty cwd',
+      currentAction: undefined,
+      workingDirectory: '',
+    }
+    render(
+      <Sidebar
+        sessions={[emptyCwdSession]}
+        activeSessionId="sess-empty"
+        onSessionClick={mockOnSessionClick}
+        agentStatus={inactiveAgentStatus}
+      />
+    )
+    // `~` also appears in the SidebarStatusHeader's activeCwd display
+    // (default prop). Scope the assertion to the actual session row to
+    // confirm the subtitle line — not the header — rendered the fallback.
+    const row = screen.getByTestId('session-row')
+    expect(within(row).getByText('~')).toBeInTheDocument()
+  })
 })

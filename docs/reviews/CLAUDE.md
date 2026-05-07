@@ -40,7 +40,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security       | 21       | 3    | 2026-05-03   |
 | [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns | 10       | 4    | 2026-05-07   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns | 2        | 3    | 2026-04-14   |
-| [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform | 3        | 2    | 2026-05-06   |
+| [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform | 4        | 3    | 2026-05-07   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality   | 4        | 0    | 2026-04-12   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality   | 2        | 0    | 2026-05-04   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing        | 36       | 20   | 2026-05-03   |

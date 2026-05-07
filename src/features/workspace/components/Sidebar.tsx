@@ -52,8 +52,15 @@ const sessionSubtitle = (session: Session): string => {
   // `/home/will/projects/Vimeflow` reads as `projects/Vimeflow`. One
   // segment when the path only has one. Empty falls back to the raw
   // path string so the subtitle line is never empty.
+  // The empty-string case (workingDirectory === '') falls through to
+  // `||` so the subtitle line is truly never empty — without this the
+  // raw `workingDirectory` ('') would be returned, the comment's
+  // "never empty" claim would lie, and an empty subtitle div would
+  // render between the title and the state pill (a visible gap during
+  // the brief race window after session creation but before the first
+  // OSC 7 cwd report).
   if (parts.length === 0) {
-    return session.workingDirectory
+    return session.workingDirectory || '~'
   }
   if (parts.length === 1) {
     return parts[0]
