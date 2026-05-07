@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IconRail } from './components/IconRail'
-import { SessionTabs } from './components/SessionTabs'
+import { Tabs } from './sessions/components/Tabs'
 import { Sidebar } from '../../components/sidebar/Sidebar'
 import { SidebarStatusHeader } from './components/SidebarStatusHeader'
 import { FileExplorer } from './components/panels/FileExplorer'
@@ -435,7 +435,7 @@ export const WorkspaceView = (): ReactElement => {
           banner's `absolute` positioning is scoped to this column
           rather than climbing to the viewport. */}
       <div className="relative flex flex-col overflow-hidden">
-        <SessionTabs
+        <Tabs
           sessions={sessions}
           activeSessionId={activeSessionId}
           onSelect={setActiveSessionId}
