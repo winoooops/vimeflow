@@ -235,7 +235,7 @@ All slots except `content` are optional. A slot's wrapper renders only when the 
 - **Initial-height clamping.** `useResizable` clamps `initial` to `[min, max]` on mount via `useState(() => Math.round(Math.min(max, Math.max(min, initial))))`. This is a 3-line fix to the hook (currently `useState(initial)`); it benefits all four `useResizable` consumers (Sidebar bottom-pane, sidebar width in WorkspaceView, BottomDrawer height, future) and prevents `aria-valuenow` from briefly reflecting an out-of-range value before the first drag.
 - **Scroll ownership.** Sidebar provides BOUNDED vertical space for the `content` slot via `<div className="flex min-h-0 flex-1 flex-col">{content}</div>`. Sidebar does NOT apply `overflow-y-auto` and does NOT depend on `framer-motion`. The `content` slot's caller (`List` in this PR) is responsible for its own scroll element — including `motion.div` with `layoutScroll` for framer-motion's drag-while-scrolled support. This keeps Sidebar's chrome layer framer-motion-free while preserving today's drag behavior. (Full detail in §"Workspace session module — `List`".)
 - **Drag overlay.** While dragging, a viewport-covering `<div className="fixed inset-0 z-50 cursor-row-resize" />` suppresses iframe / xterm mouse events (preserves the existing pattern from PR #174).
-- **Resize handle a11y.** `role="separator"`, `aria-orientation="horizontal"`, `aria-valuenow`/`aria-valuemin`/`aria-valuemax` reflect the live size. Mouse-driven via `useResizable.handleMouseDown`. Keyboard-driven adjustment (arrow keys via `useResizable.adjustBy(±step)`) is deferred to a follow-up.
+- **Resize handle a11y.** `role="separator"`, `aria-orientation="horizontal"`, `aria-valuenow`/`aria-valuemin`/`aria-valuemax` reflect the live size. Mouse-driven via `useResizable.handleMouseDown`. Keyboard-driven adjustment (arrow keys via `useResizable.adjustBy(±step)`) is deferred — see #180. Pre-existing gap inherited from PR #174; this refactor preserves the gap rather than introducing a new one.
 
 ### What Sidebar does NOT do
 
@@ -364,8 +364,8 @@ export const Card = ({
   variant,
   isActive,
   onClick,
-  onRemove,
-  onRename,
+  onRemove = undefined,
+  onRename = undefined,
 }: CardProps): ReactElement => {
   const {
     isEditing,
@@ -554,7 +554,7 @@ The discriminated union enforces at the type level that Active groups receive an
 ```tsx
 const GroupHeader = ({
   label,
-  headerAction,
+  headerAction = undefined,
 }: GroupHeaderProps): ReactElement => (
   <div className="flex items-center justify-between pr-3">
     <h3
@@ -568,7 +568,10 @@ const GroupHeader = ({
 )
 
 const GroupBody = (props: GroupProps): ReactElement => {
-  const { sessions, variant, emptyState, children } = props
+  // `emptyState` is optional on GroupProps; rest-destructure with explicit
+  // default-undefined to match the project's `react/require-default-props`
+  // convention even inside a body that pulls from `props`.
+  const { sessions, variant, emptyState = undefined, children } = props
   const showEmpty = sessions.length === 0
   const items = showEmpty ? emptyState : children
   const containerClass =
@@ -676,10 +679,10 @@ export const List = ({
   sessions,
   activeSessionId,
   onSessionClick,
-  onNewInstance,
-  onRemoveSession,
-  onRenameSession,
-  onReorderSessions,
+  onNewInstance = undefined,
+  onRemoveSession = undefined,
+  onRenameSession = undefined,
+  onReorderSessions = undefined,
 }: ListProps): ReactElement => {
   const activeGroup = sessions.filter((s) => isOpenSessionStatus(s.status))
   const recentGroup = sessions.filter((s) => !isOpenSessionStatus(s.status))
@@ -795,6 +798,18 @@ export const List = ({
 - Generic `Sidebar` is framer-motion-free (Decision per §Sidebar API).
 - `layoutScroll` is required for framer-motion to compute drag positions correctly when the parent scroll position changes (the cards inside the Active group use `Reorder.Item` with `layout="position"`; without `layoutScroll`, dragging while the list is scrolled produces stutter).
 - Putting the wrapper on `List`'s outer element keeps drag behavior identical to PR #174 while moving the wrapper out of the chrome.
+
+### Mid-drag transition invariant (why `mediateReorder` doesn't dedup)
+
+A reasonable concern: if a session transitions `running → completed` while the user is mid-drag, could the bubbled array end up with duplicates or drops? The answer is no, given three properties that hold simultaneously:
+
+1. **Framer-motion's `Reorder.Group.values` is reactive.** When the `values` prop changes (because `activeGroup` shrinks after a status transition removes the transitioning session), framer-motion reconciles immediately. The next `onReorder` it fires carries a permutation of the LATEST `values` — not a stale copy.
+2. **`recentGroupRef.current` is mirrored synchronously every render.** The line `recentGroupRef.current = recentGroup` runs in `List`'s render body, before any commit. By the time framer-motion calls `onReorder` (always post-commit), `recentGroupRef.current` already reflects the post-transition `recentGroup`.
+3. **Refs share identity across renders.** Even if framer-motion is holding a closure over an `onReorder` from a previous render, that closure reads `recentGroupRef.current` — and `current` is the live, just-mutated value. There is no stale capture.
+
+Combine the three: `onReorder(reorderedActive)` always fires with `reorderedActive` ⊆ the post-transition `activeGroup`, and `recentGroupRef.current` is the post-transition `recentGroup`. Concatenation `[...reorderedActive, ...recentGroupRef.current]` produces the post-transition full sessions array. The transitioned session appears exactly once — in `recent` — never duplicated.
+
+This is the algorithmic justification for `mediateReorder` being a pure 2-argument concatenation (no dedup, no filter). Adding a defensive dedup (e.g., by `session.id`) would mask a future bug where one of the three properties breaks; clarity and correctness are better served by making the invariant explicit and trusting it. The "Mid-drag transition guard" test in `List.test.tsx` exercises exactly the framer-motion-reactive-values + ref-mirror seam to keep the guarantee verified.
 
 ### Test surface (`List.test.tsx`) — integration tests
 
@@ -1262,7 +1277,7 @@ The PR is mergeable when ALL of the following hold:
 - [ ] `npm run lint` passes (zero warnings, zero errors) on the final commit AND on every intermediate commit.
 - [ ] `npm run type-check` passes on every commit.
 - [ ] `npm run test` (Vitest) passes; all 25+31 pre-existing tests have a destination per the redistribution map.
-- [ ] The pre-push hook (`vitest run`) passes.
+- [ ] The pre-push hook (which runs `npm test`, defined as `vitest --passWithNoTests`) passes.
 - [ ] Test count summary matches §"Test count summary" within ±2 (small drift OK; large drift means a test got dropped silently).
 - [ ] No `console.log` in committed code (`no-console: error` per `eslint.config.js`).
 - [ ] No `any` types added to public APIs in the new modules.
@@ -1310,12 +1325,13 @@ This spec is a structural refactor with zero behavior change beyond preserving P
 
 ### Tracked follow-ups
 
-| Issue | Title (paraphrased)                                                      | Relationship to this PR                                                                                                                 |
-| ----- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| #175  | SESSIONS / FILES / CONTEXT three-tab switcher in the sidebar             | The new named-slot Sidebar API is designed so #175 can swap the `content` slot without touching `Sidebar.tsx`.                          |
-| #176  | Double scrollbar in the FileExplorer area                                | Independent — affects the FileExplorer that this PR moves into the `bottomPane` slot but does not modify.                               |
-| #177  | Global keybinding for session-tab cycling (Cmd+Shift+]/[)                | Independent — covers the arrow-key cycling stub mentioned in `Tabs.tsx`.                                                                |
-| #179  | Migrate Tab Delete/Backspace close binding to a global keyboard shortcut | Filed during this spec's clarifying-question pass. `Tab.tsx` preserves the current binding and adds an inline comment referencing #179. |
+| Issue | Title (paraphrased)                                                      | Relationship to this PR                                                                                                                                                                                                |
+| ----- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #175  | SESSIONS / FILES / CONTEXT three-tab switcher in the sidebar             | The new named-slot Sidebar API is designed so #175 can swap the `content` slot without touching `Sidebar.tsx`.                                                                                                         |
+| #176  | Double scrollbar in the FileExplorer area                                | Independent — affects the FileExplorer that this PR moves into the `bottomPane` slot but does not modify.                                                                                                              |
+| #177  | Global keybinding for session-tab cycling (Cmd+Shift+]/[)                | Independent — covers the arrow-key cycling stub mentioned in `Tabs.tsx`.                                                                                                                                               |
+| #179  | Migrate Tab Delete/Backspace close binding to a global keyboard shortcut | Filed during this spec's clarifying-question pass. `Tab.tsx` preserves the current binding and adds an inline comment referencing #179.                                                                                |
+| #180  | Keyboard adjustment for the explorer split-resize separator (a11y)       | Filed during this spec's whole-spec codex review. Pre-existing gap inherited from PR #174; the new `Sidebar` preserves it verbatim. `useResizable.adjustBy(±step)` is already exposed for the eventual implementation. |
 
 ### Items deliberately NOT in this PR (no follow-up needed yet)
 
