@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-05-06
-ref_count: 4
+last_updated: 2026-05-07
+ref_count: 5
 ---
 
 # Accessibility
@@ -163,3 +163,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** When an active running session exits, its tab stays visible per the "exited active keeps its tab" contract (so the Restart pane in the tabpanel below remains reachable), but the live-status pip is intentionally hidden — and the tab's `aria-label={session.name}` is unchanged. Sighted users see the pip vanish silently with no replacement glyph. Screen-reader users navigating the tablist hear `'auth, tab'` before AND after the session exited and would never know the session needs restart until they Tab into the panel — violating WCAG 2.1 SC 4.1.3 (Status Messages, AA), which requires programmatic exposure of status changes.
 - **Fix:** `aria-label` is now `${session.name} (ended)` for completed and errored statuses; running and paused remain `session.name` only. Zero visual change (the pip-hidden behavior is preserved as the visual heartbeat-only-for-live-sessions pattern). Added a regression test asserting both completed and errored variants of an active tab produce the suffixed accessible name. Code-review heuristic: when an interactive element survives a state transition that hides its only feedback affordance, the alternate state needs a programmatic substitute (`aria-label` suffix, `aria-live` region, etc.) — "silent retention" is an accessibility regression even when the element technically still exists.
 - **Commit:** _(see git log for the cycle-16 fix commit on PR #174)_
+
+### 17. Roving-tabindex condition only handled the `null` activeSessionId case — stale non-null id after `flushSync` left the entire tablist with `tabIndex=-1` for one frame
+
+- **Source:** github-claude | PR #174 round 17 | 2026-05-07
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/SessionTabs.tsx`
+- **Finding:** `useSessionManager.removeSession` calls `flushSync` internally, producing an intermediate React commit where `sessions` has dropped the removed session but `activeSessionId` still holds its (now-stale) id. `getVisibleSessions` cannot include the removed id (no longer in `sessions`), so every visible tab evaluates `id === activeSessionId` as false — and the `activeSessionId === null` guard does not fire either because the id is non-null-but-stale. All visible tabs receive `tabIndex=-1`, the WAI-ARIA roving-focus invariant collapses, and the tablist becomes keyboard-unreachable for that render frame. The bug is invisible when React batches the close+select state updates into one render; only the `flushSync` path surfaces it. Same finding-class as #11 (focus restoration) — focus-management code paths must enforce their own invariants because the symptom (focus on `<body>`, no focusable tab) is invisible until a real keyboard user notices.
+- **Fix:** Computed `hasFocusMatch = open.some(s => s.id === activeSessionId)` once at the SessionTabs body. Changed `isFocusEntryPoint` from `id === activeSessionId || (activeSessionId === null && idx === 0)` to `id === activeSessionId || (!hasFocusMatch && idx === 0)`. The new condition collapses three roving-focus cases (initial null, fresh-load no-active, stale flushSync) to a single first-tab fallback; exactly one tab always carries `tabIndex=0` when `open` is non-empty. Added a regression test asserting that a non-null but stale `activeSessionId` still leaves the first visible tab as the entry point. Code-review heuristic: roving-tabindex fallbacks must key on "no tab matches activeSessionId" (a _visible-set property_), NOT on "activeSessionId is null" (a _raw-state property_) — the former covers the latter and also covers the stale-id case that the latter misses.
+- **Commit:** _(see git log for the cycle-17 fix commit on PR #174)_

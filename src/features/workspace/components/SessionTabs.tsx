@@ -28,6 +28,19 @@ export const SessionTabs = ({
   // drift between render and close-navigation.
   const open = getVisibleSessions(sessions, activeSessionId)
 
+  // useSessionManager.removeSession uses `flushSync` internally to apply
+  // its own setActiveSessionId mid-call. There is an intermediate React
+  // commit where `sessions` has dropped the removed session but
+  // `activeSessionId` still holds its id; `getVisibleSessions` cannot
+  // include the removed id (no longer in `sessions`), so without this
+  // fallback every visible tab evaluates `id === activeSessionId` as
+  // false → all tabs get tabIndex=-1 → tablist is keyboard-unreachable
+  // for that frame. The `activeSessionId === null` guard does not fire
+  // either because the id is non-null-but-stale. Compute once per
+  // render and use as a tie-breaker so exactly one tab always carries
+  // tabIndex=0 — the WAI-ARIA roving-focus invariant.
+  const hasFocusMatch = open.some((s) => s.id === activeSessionId)
+
   // STUB: tab cycling between sessions belongs on a global keybinding
   // (Cmd+Shift+] / [) routed through the command palette — see #177.
   // xterm.js holds focus inside the terminal, so in-component
@@ -81,12 +94,17 @@ export const SessionTabs = ({
             key={session.id}
             session={session}
             isActive={session.id === activeSessionId}
-            // Roving-tabindex entry point: when activeSessionId is null
-            // (transient on initial mount), fall back to the first
-            // visible tab so keyboard users still have a focus stop.
+            // Roving-tabindex entry point. Three cases that all collapse
+            // to the same "first visible tab carries tabIndex=0" rule
+            // when no tab matches activeSessionId:
+            //   1. Initial mount: activeSessionId === null.
+            //   2. Sessions list loaded but no active selected yet.
+            //   3. Stale activeSessionId after `flushSync` removeSession
+            //      — the id refers to a session that's already been
+            //      dropped from `sessions`, so nothing in `open` matches.
+            // hasFocusMatch is the single check that covers all three.
             isFocusEntryPoint={
-              session.id === activeSessionId ||
-              (activeSessionId === null && idx === 0)
+              session.id === activeSessionId || (!hasFocusMatch && idx === 0)
             }
             onSelect={onSelect}
             onClose={handleClose}

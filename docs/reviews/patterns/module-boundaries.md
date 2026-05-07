@@ -2,8 +2,8 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-05-06
-ref_count: 0
+last_updated: 2026-05-07
+ref_count: 1
 ---
 
 # Module Boundaries
@@ -42,3 +42,12 @@ Don't widen the coupling by adding a second importer.
 - **Finding:** New `StatusBar.tsx` shipped with both `export const StatusBar` and `export default StatusBar` — the latter was dead code (the sole consumer `WorkspaceView.tsx` uses the named import) and inconsistent with sibling components in the same directory: `IconRail` and `Sidebar` are named-only, while `BottomDrawer` is default-only. Adding both forms invites future contributors to follow either convention, multiplying the inconsistency over time. Some bundler tree-shaking paths also treat re-exported defaults differently, so the dual form has a small additional cost. Note (1-line stretch): this fits the broader "module boundaries" theme — what a file exports is part of its module shape, and shape inconsistency across siblings is a coupling smell similar to #1's cross-component utility import.
 - **Fix:** Dropped `export default StatusBar`. Pattern is now: workspace-level chrome (`IconRail`, `Sidebar`, `StatusBar`) ships named-only; legacy components like `BottomDrawer` keep their default export until a future migration normalises. Code-review heuristic: when a new file lands in a directory, scan sibling files for export shape and match — not "support both forms defensively."
 - **Commit:** _(see git log for the cycle-1 fix commit on PR #173)_
+
+### 3. `TerminalZone` re-implemented `getVisibleSessions`'s open-status check inline instead of importing the canonical predicate
+
+- **Source:** github-claude | PR #174 round 17 | 2026-05-07
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/TerminalZone.tsx`
+- **Finding:** `TerminalZone` decided whether to wire `aria-labelledby` on each panel by recomputing `isActive || status === 'running' || status === 'paused'` inline. The exact same predicate (modulo the `isActive` half) lives in `pickNextVisibleSessionId.ts` as `isOpenSessionStatus`, which `Sidebar` and `SessionTabs` both consume. Today the two are equivalent, but the moment `isOpenSessionStatus` is widened (e.g. to admit a future `suspended` status), `TerminalZone`'s `hasVisibleTab` would silently lag — panels for the new status would emit `aria-labelledby={undefined}` even though `SessionTabs` would render a visible tab for them, breaking the WAI-ARIA tablist↔tabpanel linkage with no build error and no test failure. Same finding-class as #2 above (sibling-shape mismatch is a coupling smell) but the consequence here is functional, not stylistic.
+- **Fix:** Imported `isOpenSessionStatus` from `../utils/pickNextVisibleSessionId`. Replaced the inline three-line OR with `isActive || isOpenSessionStatus(session.status)`. Updated the comment to state the canonical-predicate consumption rationale ("a future non-open status auto-flows into both visibility surfaces without TerminalZone needing a separate update"). Code-review heuristic: when two files in the same feature directory implement the same predicate inline, ONE of them should host the helper and the other(s) should consume it — and reviewers should flag the duplicate the moment the second copy lands, not after a status-set extension surfaces the drift.
+- **Commit:** _(see git log for the cycle-17 fix commit on PR #174)_

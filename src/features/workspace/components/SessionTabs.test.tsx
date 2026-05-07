@@ -261,6 +261,24 @@ describe('SessionTabs', () => {
     expect(tabs[1]).toHaveAttribute('tabindex', '-1')
   })
 
+  test('stale (non-null) activeSessionId after flushSync removeSession also falls back to the first visible tab', () => {
+    // Repro: useSessionManager.removeSession uses flushSync; there's an
+    // intermediate React commit where `sessions` has dropped the removed
+    // session but `activeSessionId` still holds its (now-stale) id. No
+    // visible tab matches activeSessionId, AND the `null` guard does
+    // not fire (id is non-null-but-stale). Without the hasFocusMatch
+    // tie-breaker, every tab gets tabIndex=-1 → tablist becomes
+    // keyboard-unreachable for that frame.
+    const sessions = [
+      buildSession({ id: 'a', name: 'auth' }),
+      buildSession({ id: 'b', name: 'tests' }),
+    ]
+    renderTabs(sessions, 'just-removed-session-x')
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs[0]).toHaveAttribute('tabindex', '0')
+    expect(tabs[1]).toHaveAttribute('tabindex', '-1')
+  })
+
   test('close buttons are always tabIndex=-1 (single Tab stop in tablist)', () => {
     // WAI-ARIA tabs §3.27: the entire tablist is exactly one Tab stop.
     // Interactive descendants (close X) are reached via Delete/Backspace

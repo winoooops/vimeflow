@@ -512,6 +512,19 @@ export const Sidebar = ({
   const activeGroup = sessions.filter((s) => isOpenSessionStatus(s.status))
   const recentGroup = sessions.filter((s) => !isOpenSessionStatus(s.status))
 
+  // Mirror `recentGroup` into a ref synchronously on every render so
+  // Framer Motion's `onReorder` callback (which can be invoked mid-drag
+  // across multiple frames) reads the current value rather than the
+  // closure-captured one. Without this ref, a session that transitions
+  // to `completed` mid-drag re-renders Sidebar with a fresh recentGroup
+  // but Framer Motion may keep dispatching the original onReorder
+  // closure that captured the pre-transition recentGroup; the resulting
+  // `[...reordered, ...staleRecentGroup]` would either drop or
+  // duplicate the newly-completed session for one frame, and a
+  // session-store that persists eagerly could write the stale array.
+  const recentGroupRef = useRef(recentGroup)
+  recentGroupRef.current = recentGroup
+
   // Mirror SessionTabs.handleClose using the shared visible-order helper.
   // useSessionManager.removeSession uses `flushSync` internally to apply
   // its own setActiveSessionId mid-call, so we must remove first and
@@ -596,10 +609,12 @@ export const Sidebar = ({
           values={activeGroup}
           onReorder={(reordered) => {
             // Preserve Recent ordering — only the Active subset reorders.
-            // `recentGroup` is captured at render time alongside `sessions`;
-            // both are equally fresh on this callback, so using the
-            // precomputed group keeps the diff minimal.
-            onReorderSessions?.([...reordered, ...recentGroup])
+            // Read recentGroup via the ref (synced every render in the
+            // outer component body) so a mid-drag status transition that
+            // re-renders Sidebar can't leave Framer Motion holding a
+            // stale closure that drops or duplicates the just-transitioned
+            // session.
+            onReorderSessions?.([...reordered, ...recentGroupRef.current])
           }}
           className="flex flex-col px-2"
           data-testid="session-list"

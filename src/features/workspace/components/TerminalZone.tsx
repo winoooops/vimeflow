@@ -10,6 +10,7 @@ import type {
   PaneEventHandler,
   NotifyPaneReadyResult,
 } from '../hooks/useSessionManager'
+import { isOpenSessionStatus } from '../utils/pickNextVisibleSessionId'
 
 export interface TerminalZoneProps {
   sessions: Session[]
@@ -116,10 +117,12 @@ export const TerminalZone = ({
           // aria-labelledby would point at a non-existent element. Only
           // wire the linkage when the panel actually has a visible tab
           // (= isActive OR open status). Hidden panels stay aria-clean.
-          const hasVisibleTab =
-            isActive ||
-            session.status === 'running' ||
-            session.status === 'paused'
+          // Use the canonical `isOpenSessionStatus` predicate from the
+          // utility (same source as Sidebar's Active/Recent grouping)
+          // so a future non-open status (e.g. `suspended`) auto-flows
+          // into both visibility surfaces without TerminalZone needing
+          // a separate update.
+          const hasVisibleTab = isActive || isOpenSessionStatus(session.status)
 
           return (
             <div

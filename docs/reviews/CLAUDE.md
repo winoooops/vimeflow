@@ -38,7 +38,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                              | Category       | Findings | Refs | Last Updated |
 | -------------------------------------------------------------------- | -------------- | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security       | 21       | 3    | 2026-05-03   |
-| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns | 9        | 3    | 2026-05-06   |
+| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns | 10       | 4    | 2026-05-07   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns | 2        | 3    | 2026-04-14   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform | 3        | 2    | 2026-05-06   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality   | 4        | 0    | 2026-04-12   |
@@ -46,7 +46,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing        | 36       | 20   | 2026-05-03   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal       | 3        | 1    | 2026-04-09   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality   | 51       | 17   | 2026-05-06   |
-| [Accessibility](patterns/accessibility.md)                           | a11y           | 16       | 4    | 2026-05-06   |
+| [Accessibility](patterns/accessibility.md)                           | a11y           | 17       | 5    | 2026-05-07   |
 | [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns | 34       | 8    | 2026-05-04   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend        | 1        | 0    | 2026-05-04   |
 | [Command Injection](patterns/command-injection.md)                   | security       | 7        | 3    | 2026-05-02   |
@@ -61,5 +61,5 @@ When appending findings to a pattern file, label the source so future readers ca
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files          | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                         | review-process | 5        | 0    | 2026-04-12   |
 | [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing    | 9        | 1    | 2026-04-19   |
-| [Module Boundaries](patterns/module-boundaries.md)                   | code-quality   | 2        | 0    | 2026-05-06   |
+| [Module Boundaries](patterns/module-boundaries.md)                   | code-quality   | 3        | 1    | 2026-05-07   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality   | 7        | 2    | 2026-05-02   |
