@@ -1,8 +1,11 @@
 import type { ReactElement } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IconRail } from './components/IconRail'
-import { SessionTabs } from './components/SessionTabs'
-import { Sidebar } from './components/Sidebar'
+import { Tabs } from './sessions/components/Tabs'
+import { Sidebar } from '../../components/sidebar/Sidebar'
+import { SidebarStatusHeader } from './components/SidebarStatusHeader'
+import { FileExplorer } from './components/panels/FileExplorer'
+import { List } from './sessions/components/List'
 import { StatusBar } from './components/StatusBar'
 import { TerminalZone } from './components/TerminalZone'
 import BottomDrawer from './components/BottomDrawer'
@@ -12,7 +15,7 @@ import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { useSessionManager } from './hooks/useSessionManager'
-import { useResizable } from './hooks/useResizable'
+import { useResizable } from '../../hooks/useResizable'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
 import { createTerminalService } from '../terminal/services/terminalService'
@@ -372,16 +375,40 @@ export const WorkspaceView = (): ReactElement => {
       {/* Sidebar - resizable */}
       <div className="relative flex h-full">
         <Sidebar
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          activeCwd={activeSession?.workingDirectory ?? '~'}
-          onSessionClick={setActiveSessionId}
-          onNewInstance={createSession}
-          onRemoveSession={removeSession}
-          onRenameSession={renameSession}
-          onReorderSessions={reorderSessions}
-          onFileSelect={handleFileSelect}
-          agentStatus={agentStatus}
+          header={
+            <SidebarStatusHeader
+              status={agentStatus}
+              activeSessionName={activeSession?.name ?? null}
+            />
+          }
+          content={
+            <List
+              sessions={sessions}
+              activeSessionId={activeSessionId}
+              onSessionClick={setActiveSessionId}
+              onNewInstance={createSession}
+              onRemoveSession={removeSession}
+              onRenameSession={renameSession}
+              onReorderSessions={reorderSessions}
+            />
+          }
+          bottomPane={
+            <FileExplorer
+              cwd={activeSession?.workingDirectory ?? '~'}
+              onFileSelect={handleFileSelect}
+            />
+          }
+          footer={
+            <button
+              type="button"
+              onClick={createSession}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-primary to-secondary py-2.5 font-label text-sm font-bold text-on-primary shadow-lg shadow-primary/10 transition-all hover:shadow-xl hover:shadow-primary/20"
+              aria-label="New Instance"
+            >
+              <span className="material-symbols-outlined text-lg">bolt</span>
+              <span>New Instance</span>
+            </button>
+          }
         />
 
         {/* Resize handle */}
@@ -406,7 +433,7 @@ export const WorkspaceView = (): ReactElement => {
           banner's `absolute` positioning is scoped to this column
           rather than climbing to the viewport. */}
       <div className="relative flex flex-col overflow-hidden">
-        <SessionTabs
+        <Tabs
           sessions={sessions}
           activeSessionId={activeSessionId}
           onSelect={setActiveSessionId}

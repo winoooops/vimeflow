@@ -239,6 +239,29 @@ describe('WorkspaceView', () => {
     expect(fileExplorer).toBeInTheDocument()
   })
 
+  test('clicking the New Instance gradient button creates a new session', async () => {
+    const user = userEvent.setup()
+
+    render(<WorkspaceView />)
+
+    // The mock terminal service's listSessions returns one seed session
+    // (id 'sess-1', cwd '~') which renders as 'session 1' (per the
+    // tabName helper in useSessionManager — cwd '~' falls back to
+    // 'session ${index + 1}').
+    await screen.findByRole('button', { name: 'session 1' })
+
+    const newInstanceBtn = screen.getByRole('button', { name: 'New Instance' })
+    await user.click(newInstanceBtn)
+
+    // After clicking, the spawn() mock resolves with a new sessionId
+    // and useSessionManager appends a new Session at index 1, with
+    // tabName(cwd='~', index=1) = 'session 2'. Asserting the new row
+    // appears proves createSession was wired through end-to-end —
+    // a regression of the onClick handler being dropped (e.g. during
+    // a future Sidebar.footer slot refactor) would fail this test.
+    await screen.findByRole('button', { name: 'session 2' })
+  })
+
   test('handles navigation item clicks', () => {
     render(<WorkspaceView />)
 

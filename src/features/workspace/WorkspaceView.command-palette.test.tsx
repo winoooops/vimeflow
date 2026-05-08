@@ -8,7 +8,7 @@ import type { Session } from './types'
 
 // Mock all WorkspaceView dependencies
 vi.mock('./hooks/useSessionManager')
-vi.mock('./hooks/useResizable')
+vi.mock('../../hooks/useResizable')
 vi.mock('./hooks/useNotifyInfo')
 vi.mock('../agent-status/hooks/useAgentStatus')
 vi.mock('../diff/hooks/useGitStatus')
@@ -21,7 +21,7 @@ vi.mock('./components/IconRail', () => ({
   IconRail: (): ReactElement => <div data-testid="icon-rail" />,
 }))
 
-vi.mock('./components/Sidebar', () => ({
+vi.mock('../../components/sidebar/Sidebar', () => ({
   Sidebar: (): ReactElement => <div data-testid="sidebar" />,
 }))
 
@@ -107,7 +107,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
     vi.mocked(useSessionManager).mockReturnValue(mockSessionManager)
 
     // Mock useResizable
-    const { useResizable } = await import('./hooks/useResizable')
+    const { useResizable } = await import('../../hooks/useResizable')
     vi.mocked(useResizable).mockReturnValue({
       size: 272,
       isDragging: false,

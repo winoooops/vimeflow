@@ -121,15 +121,9 @@ vi.mock('../diff/hooks/useGitStatus', () => ({
   ),
 }))
 
-const capturedSidebarProps: { agentStatus?: AgentStatus } = {}
-
 const capturedPanelProps: { agentStatus?: AgentStatus; gitStatus?: unknown } =
   {}
 const capturedBottomDrawerProps: { gitStatus?: unknown } = {}
-
-interface MockSidebarProps {
-  agentStatus?: AgentStatus
-}
 
 interface MockPanelProps {
   agentStatus?: AgentStatus
@@ -142,11 +136,34 @@ interface MockBottomDrawerProps {
   onTabChange?: (tab: 'editor' | 'diff') => void
 }
 
-vi.mock('./components/Sidebar', () => ({
-  Sidebar: ({ agentStatus = undefined }: MockSidebarProps): ReactElement => {
-    capturedSidebarProps.agentStatus = agentStatus
+interface MockSidebarProps {
+  header?: React.ReactNode
+}
 
-    return <div data-testid="sidebar-mock" />
+// Render the `header` slot through so a mocked SidebarStatusHeader can
+// receive its `status` prop. Other slots (content, bottomPane, footer)
+// are intentionally dropped — this test only cares about the
+// agent-status flow into the header.
+vi.mock('../../components/sidebar/Sidebar', () => ({
+  Sidebar: ({ header = undefined }: MockSidebarProps): ReactElement => (
+    <div data-testid="sidebar-mock">{header}</div>
+  ),
+}))
+
+const capturedStatusHeaderProps: { status?: AgentStatus } = {}
+
+interface MockSidebarStatusHeaderProps {
+  status?: AgentStatus
+  activeSessionName?: string | null
+}
+
+vi.mock('./components/SidebarStatusHeader', () => ({
+  SidebarStatusHeader: ({
+    status = undefined,
+  }: MockSidebarStatusHeaderProps): ReactElement => {
+    capturedStatusHeaderProps.status = status
+
+    return <div data-testid="sidebar-status-header-mock" />
   },
 }))
 
@@ -188,10 +205,10 @@ vi.mock('./components/BottomDrawer', () => ({
 
 describe('WorkspaceView lifted-subscription contract', () => {
   beforeEach(() => {
-    capturedSidebarProps.agentStatus = undefined
     capturedPanelProps.agentStatus = undefined
     capturedPanelProps.gitStatus = undefined
     capturedBottomDrawerProps.gitStatus = undefined
+    capturedStatusHeaderProps.status = undefined
     // Clear the mock between tests so `toHaveBeenCalledWith` assertions
     // see only the calls from THIS test's render. Without this,
     // accumulated history from earlier tests can satisfy the assertion
@@ -201,22 +218,43 @@ describe('WorkspaceView lifted-subscription contract', () => {
     vi.mocked(useGitStatus).mockClear()
   })
 
-  test('Sidebar and AgentStatusPanel receive agentStatus from a single hook call', async () => {
+  test('AgentStatusPanel receives agentStatus', async () => {
     render(<WorkspaceView />)
 
     // Wait for the children to be rendered with their props captured.
     await screen.findByTestId('sidebar-mock')
     await screen.findByTestId('agent-status-panel-mock')
 
-    expect(capturedSidebarProps.agentStatus).toBeDefined()
     expect(capturedPanelProps.agentStatus).toBeDefined()
+  })
 
-    // Reference equality. Because the useAgentStatus mock above returns
-    // a FRESH object per call (the factory runs anew each invocation),
-    // two separate hook calls would yield two distinct objects, and
-    // `toBe` would fail. A single hook call shared by both children
-    // yields the same object reference and `toBe` passes.
-    expect(capturedSidebarProps.agentStatus).toBe(
+  test('SidebarStatusHeader and AgentStatusPanel receive the same agentStatus object reference (single-subscription invariant)', async () => {
+    // Single-hook-call invariant: WorkspaceView must call useAgentStatus
+    // ONCE per render and pass the SAME object reference down to both
+    // AgentStatusPanel (direct prop) and SidebarStatusHeader (via the
+    // Sidebar.header slot). The mock returns a fresh object per call
+    // (lines 80-82 above), so reference equality across the two consumers
+    // proves they were sourced from one shared call site (i.e.
+    // WorkspaceView.tsx:99).
+    //
+    // If a future change adds a second useAgentStatus() call inside
+    // SidebarStatusHeader (or anywhere else in the tree below
+    // WorkspaceView), the two consumers would receive DIFFERENT objects
+    // from the per-call fresh mock — and `toBe` would fail. This guards
+    // against duplicate Tauri event listeners and stale-state divergence.
+    //
+    // Originally this invariant was guarded via a Sidebar prop capture.
+    // After #178 made Sidebar content-agnostic, the prop went away —
+    // this assertion re-establishes the coverage at the new boundary
+    // (the SidebarStatusHeader mounted in the header slot). See PR #182
+    // Claude review (cycle-3 [MEDIUM]) for the full rationale.
+    render(<WorkspaceView />)
+    await screen.findByTestId('sidebar-status-header-mock')
+    await screen.findByTestId('agent-status-panel-mock')
+
+    expect(capturedStatusHeaderProps.status).toBeDefined()
+    expect(capturedPanelProps.agentStatus).toBeDefined()
+    expect(capturedStatusHeaderProps.status).toBe(
       capturedPanelProps.agentStatus
     )
   })

@@ -35,7 +35,12 @@ export const useResizable = ({
   direction = 'horizontal',
   invert = false,
 }: UseResizableOptions): UseResizableResult => {
-  const [size, setSize] = useState(initial)
+  // Clamp `initial` on mount so an out-of-range default doesn't briefly
+  // surface (in ARIA attributes, in the rendered size) before the first
+  // drag triggers the mousemove handler's clamp.
+  const [size, setSize] = useState(() =>
+    Math.round(Math.min(max, Math.max(min, initial)))
+  )
   const [isDragging, setIsDragging] = useState(false)
   const startPos = useRef(0)
   const startSize = useRef(0)
