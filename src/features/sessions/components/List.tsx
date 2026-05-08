@@ -6,7 +6,7 @@ import { Group } from './Group'
 import {
   isOpenSessionStatus,
   pickNextVisibleSessionId,
-} from '../../workspace/utils/pickNextVisibleSessionId'
+} from '../utils/pickNextVisibleSessionId'
 import { mediateReorder } from '../utils/mediateReorder'
 
 export interface ListProps {

@@ -1,10 +1,10 @@
 import { type ReactElement } from 'react'
 import type { Session } from '../types'
-import { agentForSession } from '../../workspace/utils/agentForSession'
+import { agentForSession } from '../utils/agentForSession'
 import {
   getVisibleSessions,
   pickNextVisibleSessionId,
-} from '../../workspace/utils/pickNextVisibleSessionId'
+} from '../utils/pickNextVisibleSessionId'
 import { Tab } from './Tab'
 
 export interface TabsProps {

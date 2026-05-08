@@ -1,5 +1,5 @@
 import { AGENTS, type Agent, type AgentId } from '../../../agents/registry'
-import type { Session } from '../../sessions/types'
+import type { Session } from '../types'
 
 const AGENT_BY_SESSION_TYPE: Record<Session['agentType'], AgentId> = {
   'claude-code': 'claude',

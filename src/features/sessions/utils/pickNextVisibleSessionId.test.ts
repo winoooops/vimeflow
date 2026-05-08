@@ -3,7 +3,7 @@ import {
   isOpenSessionStatus,
   pickNextVisibleSessionId,
 } from './pickNextVisibleSessionId'
-import type { Session, SessionStatus } from '../../sessions/types'
+import type { Session, SessionStatus } from '../types'
 
 const buildSession = (id: string, status: SessionStatus): Session => ({
   id,

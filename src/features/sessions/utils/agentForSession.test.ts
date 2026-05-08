@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import { agentForSession } from './agentForSession'
 import { AGENTS } from '../../../agents/registry'
-import type { Session } from '../../sessions/types'
+import type { Session } from '../types'
 
 const baseSession: Omit<Session, 'agentType'> = {
   id: 's1',

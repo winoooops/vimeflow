@@ -3,11 +3,11 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { WorkspaceView } from './WorkspaceView'
-import type { SessionManager } from './hooks/useSessionManager'
+import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { Session } from '../sessions/types'
 
 // Mock all WorkspaceView dependencies
-vi.mock('./hooks/useSessionManager')
+vi.mock('../sessions/hooks/useSessionManager')
 vi.mock('../../hooks/useResizable')
 vi.mock('./hooks/useNotifyInfo')
 vi.mock('../agent-status/hooks/useAgentStatus')
@@ -103,7 +103,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
     }
 
     // Mock useSessionManager
-    const { useSessionManager } = await import('./hooks/useSessionManager')
+    const { useSessionManager } =
+      await import('../sessions/hooks/useSessionManager')
     vi.mocked(useSessionManager).mockReturnValue(mockSessionManager)
 
     // Mock useResizable
