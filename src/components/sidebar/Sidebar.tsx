@@ -1,9 +1,14 @@
-import type { ReactElement, ReactNode } from 'react'
+import type { KeyboardEvent, ReactElement, ReactNode } from 'react'
 import { useResizable } from '../../hooks/useResizable'
 
 const BOTTOM_PANE_DEFAULT = 320
 const BOTTOM_PANE_MIN = 100
 const BOTTOM_PANE_MAX = 500
+
+// Arrow-key adjustment step (px). PageUp/PageDown use the larger step.
+// Both follow the WAI-ARIA Splitter pattern (interactive separator).
+const ARROW_STEP = 8
+const PAGE_STEP = 40
 
 export interface SidebarProps {
   /** Top fixed-height region. */
@@ -42,6 +47,7 @@ export const Sidebar = ({
     size: bottomHeight,
     isDragging,
     handleMouseDown,
+    adjustBy,
   } = useResizable({
     initial: bottomPaneInitialHeight,
     min: bottomPaneMinHeight,
@@ -49,6 +55,44 @@ export const Sidebar = ({
     direction: 'vertical',
     invert: true,
   })
+
+  // Keyboard adjustment for the WAI-ARIA splitter (closes #180).
+  // ArrowUp grows the bottom pane (consistent with the mouse `invert: true`
+  // semantic where dragging up grows the pane); ArrowDown shrinks. Home /
+  // End jump to min / max; PageUp / PageDown apply a larger step. Each
+  // arm calls preventDefault so the page-scroll default doesn't fire while
+  // the separator owns focus.
+  const handleSeparatorKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    switch (e.key) {
+      case 'ArrowUp':
+        e.preventDefault()
+        adjustBy(ARROW_STEP)
+        break
+      case 'ArrowDown':
+        e.preventDefault()
+        adjustBy(-ARROW_STEP)
+        break
+      case 'PageUp':
+        e.preventDefault()
+        adjustBy(PAGE_STEP)
+        break
+      case 'PageDown':
+        e.preventDefault()
+        adjustBy(-PAGE_STEP)
+        break
+      case 'Home':
+        e.preventDefault()
+        adjustBy(bottomPaneMinHeight - bottomHeight)
+        break
+      case 'End':
+        e.preventDefault()
+        adjustBy(bottomPaneMaxHeight - bottomHeight)
+        break
+      default:
+        // Other keys propagate normally.
+        break
+    }
+  }
 
   // The slot-rendering rule: a slot's wrapper renders only when the
   // prop is not `null`, `undefined`, or `false`. `0` and `''` are
@@ -74,9 +118,14 @@ export const Sidebar = ({
             aria-valuenow={bottomHeight}
             aria-valuemin={bottomPaneMinHeight}
             aria-valuemax={bottomPaneMaxHeight}
+            aria-label="Resize bottom pane"
+            tabIndex={0}
             onMouseDown={handleMouseDown}
+            onKeyDown={handleSeparatorKeyDown}
             className={`
-              h-1 shrink-0 cursor-row-resize transition-colors hover:bg-primary/50
+              h-1 shrink-0 cursor-row-resize transition-colors
+              hover:bg-primary/50 focus-visible:bg-primary/70
+              focus-visible:outline-none
               ${isDragging ? 'bg-primary/70' : 'border-t border-white/5'}
             `}
           />

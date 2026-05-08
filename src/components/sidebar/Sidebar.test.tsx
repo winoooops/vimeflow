@@ -109,3 +109,104 @@ describe('Sidebar — resize handle', () => {
     expect(handle).toHaveAttribute('aria-valuenow', '500')
   })
 })
+
+describe('Sidebar — separator keyboard a11y (closes #180)', () => {
+  // Imports lazy-loaded so the slot-composition tests above don't pay
+  // the userEvent setup cost. Keep the new keyboard tests grouped.
+  test('separator is focusable (tabIndex=0) and exposes aria-label', () => {
+    render(<Sidebar content={<div>C</div>} bottomPane={<div>B</div>} />)
+    const handle = screen.getByTestId('explorer-resize-handle')
+    expect(handle).toHaveAttribute('tabindex', '0')
+    expect(handle).toHaveAttribute('aria-label', 'Resize bottom pane')
+  })
+
+  test('ArrowUp grows the bottom pane (mirrors mouse drag-up semantics)', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default
+    const user = userEvent.setup()
+    render(
+      <Sidebar
+        content={<div>C</div>}
+        bottomPane={<div>B</div>}
+        bottomPaneInitialHeight={300}
+      />
+    )
+    const handle = screen.getByTestId('explorer-resize-handle')
+    handle.focus()
+    expect(handle).toHaveAttribute('aria-valuenow', '300')
+    await user.keyboard('{ArrowUp}')
+    expect(handle).toHaveAttribute('aria-valuenow', '308')
+  })
+
+  test('ArrowDown shrinks the bottom pane', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default
+    const user = userEvent.setup()
+    render(
+      <Sidebar
+        content={<div>C</div>}
+        bottomPane={<div>B</div>}
+        bottomPaneInitialHeight={300}
+      />
+    )
+    const handle = screen.getByTestId('explorer-resize-handle')
+    handle.focus()
+    await user.keyboard('{ArrowDown}')
+    expect(handle).toHaveAttribute('aria-valuenow', '292')
+  })
+
+  test('Home and End jump to min and max', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default
+    const user = userEvent.setup()
+    render(
+      <Sidebar
+        content={<div>C</div>}
+        bottomPane={<div>B</div>}
+        bottomPaneInitialHeight={300}
+        bottomPaneMinHeight={100}
+        bottomPaneMaxHeight={500}
+      />
+    )
+    const handle = screen.getByTestId('explorer-resize-handle')
+    handle.focus()
+    await user.keyboard('{Home}')
+    expect(handle).toHaveAttribute('aria-valuenow', '100')
+    await user.keyboard('{End}')
+    expect(handle).toHaveAttribute('aria-valuenow', '500')
+  })
+
+  test('PageUp and PageDown apply the larger 40px step', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default
+    const user = userEvent.setup()
+    render(
+      <Sidebar
+        content={<div>C</div>}
+        bottomPane={<div>B</div>}
+        bottomPaneInitialHeight={300}
+      />
+    )
+    const handle = screen.getByTestId('explorer-resize-handle')
+    handle.focus()
+    await user.keyboard('{PageUp}')
+    expect(handle).toHaveAttribute('aria-valuenow', '340')
+    await user.keyboard('{PageDown}')
+    expect(handle).toHaveAttribute('aria-valuenow', '300')
+  })
+
+  test('keyboard adjustment clamps at min/max boundaries', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default
+    const user = userEvent.setup()
+    render(
+      <Sidebar
+        content={<div>C</div>}
+        bottomPane={<div>B</div>}
+        bottomPaneInitialHeight={100}
+        bottomPaneMinHeight={100}
+        bottomPaneMaxHeight={500}
+      />
+    )
+    const handle = screen.getByTestId('explorer-resize-handle')
+    handle.focus()
+    // Already at min — ArrowDown must not go below.
+    await user.keyboard('{ArrowDown}')
+    expect(handle).toHaveAttribute('aria-valuenow', '100')
+  })
+})

@@ -87,6 +87,18 @@ export const Tabs = ({
       <div
         role="tablist"
         aria-label="Open sessions"
+        // Arrow-key cycling between tabs is required by WAI-ARIA Tabs
+        // §3.27, but cannot be hosted on the tablist itself — xterm.js
+        // holds keyboard focus inside the terminal pane, so an
+        // in-component arrow handler would never fire. The proper fix
+        // is the global Cmd+Shift+]/[ shortcut tracked in #177; in the
+        // meantime the gap is a known architectural constraint, not a
+        // forgotten requirement. We do NOT advertise the future
+        // shortcut via `aria-keyshortcuts` because the WAI-ARIA spec
+        // requires `aria-keyshortcuts` to name shortcuts that are
+        // currently active — pre-announcing #177's binding before it
+        // lands would mislead AT users into trying a non-functional
+        // shortcut.
         className="flex items-end gap-0.5"
       >
         {open.map((session, idx) => (
