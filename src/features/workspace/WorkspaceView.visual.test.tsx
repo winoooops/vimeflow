@@ -74,6 +74,8 @@ vi.mock('../terminal/services/terminalService', () => ({
 // eslint-disable-next-line import/first
 import { render, screen } from '@testing-library/react'
 // eslint-disable-next-line import/first
+import userEvent from '@testing-library/user-event'
+// eslint-disable-next-line import/first
 import { WorkspaceView } from './WorkspaceView'
 
 /**
@@ -302,14 +304,17 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
 
-    test('bottom drawer has Editor/Diff tabs, sidebar has file explorer (v2)', () => {
+    test('bottom drawer has Editor/Diff tabs, FILES tab has file explorer (v2)', async () => {
+      const user = userEvent.setup()
       render(<WorkspaceView />)
 
       // Editor and Diff Viewer tabs are in bottom drawer
       expect(screen.getByText('Editor')).toBeInTheDocument()
       expect(screen.getByText('Diff Viewer')).toBeInTheDocument()
 
-      // File Explorer is in sidebar
+      await user.click(screen.getByRole('button', { name: 'FILES' }))
+
+      // File Explorer is in the sidebar's FILES tab.
       expect(screen.getByText('File Explorer')).toBeInTheDocument()
     })
 

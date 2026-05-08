@@ -3,9 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IconRail } from './components/IconRail'
 import { Tabs } from '../sessions/components/Tabs'
 import { Sidebar } from '../../components/sidebar/Sidebar'
+import {
+  SidebarTabs,
+  type SidebarTabItem,
+} from '../../components/sidebar/SidebarTabs'
 import { SidebarStatusHeader } from './components/SidebarStatusHeader'
-import { FileExplorer } from './components/panels/FileExplorer'
-import { List } from '../sessions/components/List'
+import { FilesView } from './components/FilesView'
+import { SessionsView } from './components/SessionsView'
 import { StatusBar } from './components/StatusBar'
 import { TerminalZone } from './components/TerminalZone'
 import BottomDrawer from './components/BottomDrawer'
@@ -16,6 +20,7 @@ import { CommandPalette } from '../command-palette/CommandPalette'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
 import { useResizable } from '../../hooks/useResizable'
+import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
 import { createTerminalService } from '../terminal/services/terminalService'
@@ -31,6 +36,11 @@ import type { ChangedFile, SelectedDiffFile } from '../diff/types'
 const SIDEBAR_MIN = 240
 const SIDEBAR_MAX = 560
 const SIDEBAR_DEFAULT = 272
+
+const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
+  { id: 'sessions', label: 'SESSIONS' },
+  { id: 'files', label: 'FILES' },
+]
 
 export const WorkspaceView = (): ReactElement => {
   // Round 4, Finding 1 (codex P1): one terminal service per WorkspaceView
@@ -59,6 +69,7 @@ export const WorkspaceView = (): ReactElement => {
   } = useSessionManager(terminalService)
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
+  const { activeTab, setActiveTab } = useSidebarTab()
 
   // Activity updates (tool calls, file changes) bump `sessions` identity
   // but no command body reads activity, so rebuilding on every PTY data
@@ -112,6 +123,12 @@ export const WorkspaceView = (): ReactElement => {
     ? sessions.find((s) => s.id === activeSessionId)
     : undefined
   const activeCwd = activeSession?.workingDirectory ?? '.'
+  // Distinct fallback for the FILES-tab file explorer: when no session
+  // is active, browse from `~` (home) rather than `.` (process cwd).
+  // `activeCwd` defaults to `.` because git/diff/agent-status all need a
+  // valid working directory in the running process; the file explorer
+  // is a navigation surface where `~` is the more useful starting point.
+  const fileExplorerCwd = activeSession?.workingDirectory ?? '~'
 
   // File selection state.
   //
@@ -382,32 +399,28 @@ export const WorkspaceView = (): ReactElement => {
             />
           }
           content={
-            <List
-              sessions={sessions}
-              activeSessionId={activeSessionId}
-              onSessionClick={setActiveSessionId}
-              onNewInstance={createSession}
-              onRemoveSession={removeSession}
-              onRenameSession={renameSession}
-              onReorderSessions={reorderSessions}
-            />
-          }
-          bottomPane={
-            <FileExplorer
-              cwd={activeSession?.workingDirectory ?? '~'}
-              onFileSelect={handleFileSelect}
-            />
-          }
-          footer={
-            <button
-              type="button"
-              onClick={createSession}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-primary to-secondary py-2.5 font-label text-sm font-bold text-on-primary shadow-lg shadow-primary/10 transition-all hover:shadow-xl hover:shadow-primary/20"
-              aria-label="New Instance"
-            >
-              <span className="material-symbols-outlined text-lg">bolt</span>
-              <span>New Instance</span>
-            </button>
+            <div className="flex h-full min-h-0 flex-col">
+              <SidebarTabs<SidebarTab>
+                tabs={SIDEBAR_TAB_ITEMS}
+                activeId={activeTab}
+                onChange={setActiveTab}
+              />
+              <SessionsView
+                hidden={activeTab !== 'sessions'}
+                sessions={sessions}
+                activeSessionId={activeSessionId}
+                onSessionClick={setActiveSessionId}
+                onCreateSession={createSession}
+                onRemoveSession={removeSession}
+                onRenameSession={renameSession}
+                onReorderSessions={reorderSessions}
+              />
+              <FilesView
+                hidden={activeTab !== 'files'}
+                cwd={fileExplorerCwd}
+                onFileSelect={handleFileSelect}
+              />
+            </div>
           }
         />
 

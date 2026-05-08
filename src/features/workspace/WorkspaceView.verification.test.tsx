@@ -78,6 +78,8 @@ vi.mock('../terminal/services/terminalService', () => ({
 // eslint-disable-next-line import/first
 import { render, screen } from '@testing-library/react'
 // eslint-disable-next-line import/first
+import userEvent from '@testing-library/user-event'
+// eslint-disable-next-line import/first
 import { WorkspaceView } from './WorkspaceView'
 
 describe('Feature 23: Final Phase 2 Verification', () => {
@@ -153,11 +155,14 @@ describe('Feature 23: Final Phase 2 Verification', () => {
     })
   })
 
-  describe('4. Sidebar has file explorer and bottom drawer has Editor/Diff', () => {
-    test('sidebar displays file explorer', () => {
+  describe('4. Sidebar FILES tab has file explorer and bottom drawer has Editor/Diff', () => {
+    test('sidebar FILES tab displays file explorer', async () => {
+      const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      // File explorer should be in sidebar
+      await user.click(screen.getByRole('button', { name: 'FILES' }))
+
+      // File explorer should be in the sidebar FILES tab.
       expect(screen.getByText('File Explorer')).toBeInTheDocument()
     })
 
