@@ -58,7 +58,7 @@ export const SidebarTabs = <TId extends string = string>({
         >
           {isActive && (
             <span
-              aria-hidden
+              aria-hidden="true"
               data-testid="sidebar-tabs-accent"
               className="absolute bottom-2 left-1 top-2 w-0.5 rounded-sm bg-primary-container"
             />
