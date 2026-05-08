@@ -37,11 +37,15 @@ export const SidebarTabs = <TId extends string = string>({
           onClick={() => {
             onChange(item.id)
           }}
-          className={`relative py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors ${
+          // `pl-3` is on every tab (not only the active one) so the accent
+          // bar appears in place without shifting the label horizontally
+          // on selection. The bar's `left-1` (4 px) sits inside the 12 px
+          // padding region — clearance is `pl-3 - left-1 - w-0.5` ≈ 6 px
+          // before the first glyph.
+          className={`relative py-1 pl-3 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors ${
             isActive
-              ? 'pl-3 text-primary-container'
-              : // §4.2 inactive color #6c7086 has no UI/surface token.
-                'cursor-pointer text-[#6c7086] hover:text-on-surface-variant'
+              ? 'text-primary-container'
+              : 'cursor-pointer text-on-surface-muted hover:text-on-surface-variant'
           }`}
         >
           {isActive && (
