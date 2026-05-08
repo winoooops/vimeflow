@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import type { SessionStatus } from '../../sessions/types'
+import type { SessionStatus } from '../types'
 
 export interface StatusDotProps {
   status: SessionStatus
