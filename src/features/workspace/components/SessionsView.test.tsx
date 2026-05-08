@@ -34,23 +34,29 @@ describe('SessionsView', () => {
     expect(onCreateSession).toHaveBeenCalledTimes(1)
   })
 
-  test('hidden prop applies to the testid root', () => {
+  test('hidden=true applies the `hidden` Tailwind utility class on the testid root', () => {
     render(<SessionsView {...baseProps} hidden />)
 
-    expect(screen.getByTestId('sessions-view')).toHaveAttribute('hidden')
+    const root = screen.getByTestId('sessions-view')
+    expect(root).toHaveClass('hidden')
+    expect(root).not.toHaveClass('flex')
   })
 
-  test('hidden=false omits the hidden attribute', () => {
+  test('hidden=false applies the `flex` utility instead', () => {
     const hidden = false as const
 
     render(<SessionsView {...baseProps} hidden={hidden} />)
 
-    expect(screen.getByTestId('sessions-view')).not.toHaveAttribute('hidden')
+    const root = screen.getByTestId('sessions-view')
+    expect(root).toHaveClass('flex')
+    expect(root).not.toHaveClass('hidden')
   })
 
-  test('hidden defaults to false', () => {
+  test('hidden defaults to false (flex applied)', () => {
     render(<SessionsView {...baseProps} />)
 
-    expect(screen.getByTestId('sessions-view')).not.toHaveAttribute('hidden')
+    const root = screen.getByTestId('sessions-view')
+    expect(root).toHaveClass('flex')
+    expect(root).not.toHaveClass('hidden')
   })
 })

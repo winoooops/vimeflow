@@ -41,23 +41,29 @@ describe('FilesView', () => {
     )
   })
 
-  test('hidden prop applies to the testid root', () => {
+  test('hidden=true applies the `hidden` Tailwind utility class on the testid root', () => {
     render(<FilesView cwd="~" onFileSelect={vi.fn()} hidden />)
 
-    expect(screen.getByTestId('files-view')).toHaveAttribute('hidden')
+    const root = screen.getByTestId('files-view')
+    expect(root).toHaveClass('hidden')
+    expect(root).not.toHaveClass('flex')
   })
 
-  test('hidden=false omits the hidden attribute', () => {
+  test('hidden=false applies the `flex` utility instead', () => {
     const hidden = false as const
 
     render(<FilesView cwd="~" onFileSelect={vi.fn()} hidden={hidden} />)
 
-    expect(screen.getByTestId('files-view')).not.toHaveAttribute('hidden')
+    const root = screen.getByTestId('files-view')
+    expect(root).toHaveClass('flex')
+    expect(root).not.toHaveClass('hidden')
   })
 
-  test('hidden defaults to false', () => {
+  test('hidden defaults to false (flex applied)', () => {
     render(<FilesView cwd="~" onFileSelect={vi.fn()} />)
 
-    expect(screen.getByTestId('files-view')).not.toHaveAttribute('hidden')
+    const root = screen.getByTestId('files-view')
+    expect(root).toHaveClass('flex')
+    expect(root).not.toHaveClass('hidden')
   })
 })

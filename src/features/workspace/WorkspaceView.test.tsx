@@ -263,18 +263,25 @@ describe('WorkspaceView', () => {
 
     expect(screen.getByTestId('sessions-view')).toBeInTheDocument()
     expect(screen.getByTestId('files-view')).toBeInTheDocument()
-    expect(screen.getByTestId('sessions-view')).not.toHaveAttribute('hidden')
-    expect(screen.getByTestId('files-view')).toHaveAttribute('hidden')
+    // Visibility is conveyed via the `hidden` / `flex` Tailwind utility
+    // classes, not the HTML `hidden` attribute — see SessionsView /
+    // FilesView for the Tailwind-v4 cascade-layer rationale.
+    expect(screen.getByTestId('sessions-view')).toHaveClass('flex')
+    expect(screen.getByTestId('sessions-view')).not.toHaveClass('hidden')
+    expect(screen.getByTestId('files-view')).toHaveClass('hidden')
+    expect(screen.getByTestId('files-view')).not.toHaveClass('flex')
   })
 
-  test('clicking FILES toggles the hidden attribute on each view', async () => {
+  test('clicking FILES toggles the visibility classes on each view', async () => {
     const user = userEvent.setup()
 
     render(<WorkspaceView />)
     await user.click(screen.getByRole('button', { name: 'FILES' }))
 
-    expect(screen.getByTestId('sessions-view')).toHaveAttribute('hidden')
-    expect(screen.getByTestId('files-view')).not.toHaveAttribute('hidden')
+    expect(screen.getByTestId('sessions-view')).toHaveClass('hidden')
+    expect(screen.getByTestId('sessions-view')).not.toHaveClass('flex')
+    expect(screen.getByTestId('files-view')).toHaveClass('flex')
+    expect(screen.getByTestId('files-view')).not.toHaveClass('hidden')
   })
 
   test('Sidebar footer slot is suppressed in WorkspaceView', () => {
@@ -305,7 +312,8 @@ describe('WorkspaceView', () => {
 
     const filesViewAfter = screen.getByTestId('files-view')
     expect(filesViewAfter).toBe(filesViewBefore)
-    expect(filesViewAfter).not.toHaveAttribute('hidden')
+    expect(filesViewAfter).toHaveClass('flex')
+    expect(filesViewAfter).not.toHaveClass('hidden')
   })
 
   test('clicking the New Instance gradient button creates a new session', async () => {

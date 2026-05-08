@@ -23,9 +23,16 @@ export const SessionsView = ({
   onRenameSession,
   onReorderSessions,
 }: SessionsViewProps): ReactElement => (
+  // Tailwind v4 puts utilities in a higher cascade layer than `@layer base`
+  // (where Preflight's `[hidden] { display: none }` lives), so a hardcoded
+  // `flex` utility on the same element silently overrides the HTML `hidden`
+  // attribute and both panels render simultaneously. Conditionally toggle
+  // between the `hidden` and `flex` utilities (both in the utilities layer)
+  // so display behavior reliably tracks the prop. `display: none` also
+  // hides the subtree from the accessibility tree, so we don't need a
+  // separate `aria-hidden`.
   <div
-    hidden={hidden}
-    className="flex min-h-0 flex-1 flex-col"
+    className={`min-h-0 flex-1 flex-col ${hidden ? 'hidden' : 'flex'}`}
     data-testid="sessions-view"
   >
     <List
@@ -45,7 +52,9 @@ export const SessionsView = ({
       aria-label="New Instance"
       data-testid="sessions-view-new-instance"
     >
-      <span className="material-symbols-outlined text-lg">bolt</span>
+      <span className="material-symbols-outlined text-lg" aria-hidden="true">
+        bolt
+      </span>
       <span>New Instance</span>
     </button>
   </div>
