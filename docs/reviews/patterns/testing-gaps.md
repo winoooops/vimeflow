@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-03
+last_updated: 2026-05-08
 ref_count: 20
 ---
 
@@ -356,3 +356,25 @@ filesystem scope restrictions).
 - **Finding:** Cycle-6's F10 fix introduced a 4-line predicate `text_block_type(b) == Some("text") && text_block_text(b).map(|t| !t.is_empty()).unwrap_or(false)` and inlined it into TWO `iter.any(...)` calls inside `extract_tool_result_content` — one for the content-truncated break path, one for the cap-exactly-hit break path. Both call sites set `blocks_skipped` from the predicate's verdict. Future edits to the "what counts as a skippable block" semantic — e.g. excluding whitespace-only blocks, or excluding content-text blocks during interleaved tool-use blocks — would update only one site. The resulting asymmetry would manifest as non-deterministic `[output truncated]` markers depending on whether the cap was hit mid-block (path 1) or exactly at an inter-block boundary (path 2) — hard to reproduce, hard to debug, and slow to detect.
 - **Fix:** Extracted the predicate as a free `fn is_non_empty_text_block(block: &Value) -> bool` near the existing `text_block_*` helpers. Both `iter.any(...)` calls now reference the helper as a function pointer (`iter.any(is_non_empty_text_block)`), making the call sites compact and future edits a single-site change. The lesson: when the same predicate appears at 2+ call sites with the same `blocks_skipped`-style downstream effect, extract it BEFORE the second site is written — or as a follow-up cleanup at the next refactor. Code-review heuristic: any closure body identical to (or shape-compatible with) another closure in the same function is a refactor smell, especially when the behavior would silently diverge under semantic drift.
 - **Commit:** _(see git log for the cycle-7 fix commit on PR #153)_
+
+---
+
+### 37. Lifted-state invariant lost coverage when a captured-prop assertion was deleted instead of re-expressed at the new boundary
+
+- **Source:** github-claude | PR #182 round 3 | 2026-05-08
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.subscription.test.tsx`
+- **Finding:** PR #182's Phase 6 made `Sidebar` content-agnostic with named slots — `agentStatus` is no longer a Sidebar prop. The cycle-1 mock rewrite correctly dropped the now-vacuous `capturedSidebarProps.agentStatus = agentStatus` capture and the 2 dependent assertions. But the original test used those captures + `toBe` reference equality to enforce a SINGLE-HOOK-CALL invariant: WorkspaceView must call `useAgentStatus()` once per render and pass the SAME object reference down to BOTH child consumers. The mock's per-call fresh-object behavior makes `toBe` fail iff a second `useAgentStatus()` call exists in the tree (e.g. `SidebarStatusHeader` calling it internally). After the deletion, this invariant became unguarded — a future change adding a second call would silently pass tests, doubling Tauri event listeners and creating stale-state divergence. Same finding-class as #18+#19 (lifted-state assertions whose constraint was named but not enforced) at the architecture-boundary level: the new architecture's prop wiring needed a re-expressed test, not a deleted one.
+- **Fix:** Mock `Sidebar` to render its `header` slot through (so child `SidebarStatusHeader` actually mounts), mock `SidebarStatusHeader` to capture its `status` prop into `capturedStatusHeaderProps`, then assert `capturedStatusHeaderProps.status === capturedPanelProps.agentStatus` via `toBe`. Reference equality across the two consumers proves the value came from one shared call site (WorkspaceView.tsx:99). The lesson: when a refactor changes WHERE a value reaches a consumer (prop on parent → prop on grandchild via slot), the invariant test must follow the wiring — deleting the assertion because "the prop moved" is fine for the assertion's literal subject but loses the invariant the assertion was protecting. Code-review heuristic: when a refactor PR drops a `toBe` reference-equality assertion, ask "what invariant did it enforce" and "where does that invariant now live in the new wiring" BEFORE accepting the deletion. The reference-equality check is structurally rare in unit tests; encountering one being deleted should trigger an architecture-level review.
+- **Commit:** _(see git log for the cycle-3 fix commit on PR #182)_
+
+---
+
+### 38. New PR-level smoke test ships with a tautological assertion that always passes
+
+- **Source:** github-claude | PR #182 round 3 | 2026-05-08
+- **Severity:** LOW
+- **File:** `src/features/workspace/WorkspaceView.test.tsx`
+- **Finding:** PR #182's cycle-1 added a `clicking the New Instance gradient button creates a new session` test whose only post-click assertions were `await screen.findByTestId('workspace-view')` (the testid is on `WorkspaceView`'s outer `<div>` and is present BEFORE the click) and `expect(newInstanceBtn).toBeInTheDocument()` (the button is rendered unconditionally; clicking it cannot remove it from the DOM). The test was named for an observable session-creation effect but its assertions only checked for STABILITY of pre-existing markup. If the gradient button's `onClick={createSession}` binding were dropped (e.g. during a future Sidebar.footer slot refactor), the test would still pass — silently regressing the new-session-creation flow. Same finding-class as #19 (assertion that doesn't constrain what it claims) at the new-feature-test level.
+- **Fix:** Replaced both vacuous assertions with `await screen.findByRole('button', { name: 'session 2' })`. Per `useSessionManager.tabName('~', 1)`, a successful `createSession` call appends a new Session at index 1 with cwd `'~'`, which renders as a `'session 2'` activation button. If the click handler is disconnected, the new row never appears and `findByRole` times out → real failure. The lesson: when adding a smoke test for a wired-callback button, the post-click assertion must observe a state change that DEPENDS on the callback being invoked — `toBeInTheDocument` on stable elements doesn't satisfy that. Code-review heuristic: any new test whose `findBy*` / `getBy*` assertion targets an element that was queryable BEFORE the user-action is suspect; the assertion must target an element introduced by the action.
+- **Commit:** _(see git log for the cycle-3 fix commit on PR #182)_
