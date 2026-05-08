@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-05-07
+last_updated: 2026-05-08
 ref_count: 5
 ---
 
@@ -172,3 +172,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** `useSessionManager.removeSession` calls `flushSync` internally, producing an intermediate React commit where `sessions` has dropped the removed session but `activeSessionId` still holds its (now-stale) id. `getVisibleSessions` cannot include the removed id (no longer in `sessions`), so every visible tab evaluates `id === activeSessionId` as false — and the `activeSessionId === null` guard does not fire either because the id is non-null-but-stale. All visible tabs receive `tabIndex=-1`, the WAI-ARIA roving-focus invariant collapses, and the tablist becomes keyboard-unreachable for that render frame. The bug is invisible when React batches the close+select state updates into one render; only the `flushSync` path surfaces it. Same finding-class as #11 (focus restoration) — focus-management code paths must enforce their own invariants because the symptom (focus on `<body>`, no focusable tab) is invisible until a real keyboard user notices.
 - **Fix:** Computed `hasFocusMatch = open.some(s => s.id === activeSessionId)` once at the SessionTabs body. Changed `isFocusEntryPoint` from `id === activeSessionId || (activeSessionId === null && idx === 0)` to `id === activeSessionId || (!hasFocusMatch && idx === 0)`. The new condition collapses three roving-focus cases (initial null, fresh-load no-active, stale flushSync) to a single first-tab fallback; exactly one tab always carries `tabIndex=0` when `open` is non-empty. Added a regression test asserting that a non-null but stale `activeSessionId` still leaves the first visible tab as the entry point. Code-review heuristic: roving-tabindex fallbacks must key on "no tab matches activeSessionId" (a _visible-set property_), NOT on "activeSessionId is null" (a _raw-state property_) — the former covers the latter and also covers the stale-id case that the latter misses.
 - **Commit:** _(see git log for the cycle-17 fix commit on PR #174)_
+
+### 18. Optional callback prop produces a focusable interactive button that no-ops when the callback is undefined
+
+- **Source:** github-claude | PR #182 round 2 | 2026-05-08
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/sessions/components/List.tsx`
+- **Finding:** `List` accepts `onNewInstance?: () => void` and unconditionally renders an `Add session` `<button onClick={onNewInstance}>` in the Active group's `headerAction` slot. When a consumer omits `onNewInstance` (it is typed optional), `onClick={undefined}` is set on a fully-visible, fully-focusable button — it renders, accepts focus, appears interactive, and silently no-ops on click and keyboard activation. Screen readers announce it as an interactive control. Same finding-class as #8 (BottomDrawer collapse button is a dead interactive control): when an interactive element survives a state where its underlying behavior is absent, the alternate state needs either programmatic suppression (don't render) or a programmatic disabled signal (`disabled` attribute, `aria-disabled` + visual treatment). Visible-focusable-noop is the worst of the three options: it claims an interactive role the user can never exercise.
+- **Fix:** Gated the `headerAction` ternary on `onNewInstance` presence — `headerAction={onNewInstance ? <button onClick={onNewInstance} ...>add</button> : undefined}`. Matches the pattern already used elsewhere in the same file for `onRemoveSession` / `onRenameSession` callbacks. Added a regression test asserting `screen.queryByRole('button', { name: 'Add session' })` returns null when `onNewInstance` is omitted. Code-review heuristic: when a component prop is `optional callback`, every UI affordance whose behavior the callback supplies must be conditionally rendered on the callback's presence — `onClick={undefined}` is legal React and produces no type error, so the lint and type-check passes hide the API-contract bug.
+- **Commit:** _(see git log for the cycle-2 fix commit on PR #182)_

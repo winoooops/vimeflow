@@ -378,9 +378,7 @@ export const WorkspaceView = (): ReactElement => {
           header={
             <SidebarStatusHeader
               status={agentStatus}
-              activeSessionName={
-                sessions.find((s) => s.id === activeSessionId)?.name ?? null
-              }
+              activeSessionName={activeSession?.name ?? null}
             />
           }
           content={

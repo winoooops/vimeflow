@@ -200,6 +200,25 @@ describe('List', () => {
     expect(mockOnNewInstance).toHaveBeenCalledOnce()
   })
 
+  test('add session button is NOT rendered when onNewInstance is undefined', () => {
+    // Regression guard: the Group.Header headerAction must be suppressed
+    // when no callback is supplied — otherwise the button renders, accepts
+    // focus, and silently no-ops on click. See PR #182 Claude review,
+    // cycle 2 [MEDIUM] finding.
+    render(
+      <List
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        // intentionally NOT passing onNewInstance
+      />
+    )
+
+    expect(
+      screen.queryByRole('button', { name: 'Add session' })
+    ).not.toBeInTheDocument()
+  })
+
   test('removing active session pre-selects next visible Active row', async () => {
     const onSessionClick = vi.fn()
     const onRemoveSession = vi.fn()

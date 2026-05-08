@@ -97,15 +97,17 @@ export const List = ({
       <Group.Header
         label="Active"
         headerAction={
-          <button
-            type="button"
-            onClick={onNewInstance}
-            className="material-symbols-outlined text-base text-on-surface-variant/60 transition-colors hover:text-primary"
-            aria-label="Add session"
-            title="Add session"
-          >
-            add
-          </button>
+          onNewInstance ? (
+            <button
+              type="button"
+              onClick={onNewInstance}
+              className="material-symbols-outlined text-base text-on-surface-variant/60 transition-colors hover:text-primary"
+              aria-label="Add session"
+              title="Add session"
+            >
+              add
+            </button>
+          ) : undefined
         }
       />
 
