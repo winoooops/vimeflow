@@ -1,12 +1,12 @@
 import { useRef, type ReactElement } from 'react'
 import { motion } from 'framer-motion'
-import type { Session } from '../../types'
+import type { Session } from '../types'
 import { Card } from './Card'
 import { Group } from './Group'
 import {
   isOpenSessionStatus,
   pickNextVisibleSessionId,
-} from '../../utils/pickNextVisibleSessionId'
+} from '../utils/pickNextVisibleSessionId'
 import { mediateReorder } from '../utils/mediateReorder'
 
 export interface ListProps {

@@ -1,4 +1,4 @@
-import type { Session } from '../types'
+import type { Session } from '../../sessions/types'
 import type { Command } from '../../command-palette/registry/types'
 import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
 

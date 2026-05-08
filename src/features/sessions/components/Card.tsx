@@ -1,9 +1,9 @@
 import { type ReactElement } from 'react'
 import { Reorder } from 'framer-motion'
-import type { Session } from '../../types'
-import { StatusDot } from '../../components/StatusDot'
-import { useRenameState } from '../../hooks/useRenameState'
-import { formatRelativeTime } from '../../../agent-status/utils/relativeTime'
+import type { Session } from '../types'
+import { StatusDot } from './StatusDot'
+import { useRenameState } from '../hooks/useRenameState'
+import { formatRelativeTime } from '../../agent-status/utils/relativeTime'
 import {
   STATE_PILL_LABEL,
   STATE_PILL_TONE,

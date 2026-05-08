@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import type { Session } from '../types'
+import type { Session } from '../../sessions/types'
 import {
   TerminalPane,
   type TerminalPaneMode,
@@ -9,8 +9,8 @@ import type {
   RestoreData,
   PaneEventHandler,
   NotifyPaneReadyResult,
-} from '../hooks/useSessionManager'
-import { isOpenSessionStatus } from '../utils/pickNextVisibleSessionId'
+} from '../../sessions/hooks/useSessionManager'
+import { isOpenSessionStatus } from '../../sessions/utils/pickNextVisibleSessionId'
 
 export interface TerminalZoneProps {
   sessions: Session[]

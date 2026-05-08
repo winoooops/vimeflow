@@ -3,7 +3,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { List } from './List'
-import type { Session } from '../../types'
+import type { Session } from '../types'
 
 const mockSessions: Session[] = [
   {
@@ -250,6 +250,14 @@ describe('List', () => {
 
     expect(onSessionClick).toHaveBeenCalledWith('B')
     expect(onRemoveSession).toHaveBeenCalledWith('A')
+    // Lock the call order: handleRemoveSession in List.tsx fires
+    // onRemoveSession(id) BEFORE onSessionClick(nextId) so the
+    // flushSync inside useSessionManager.removeSession can apply its
+    // setActiveSessionId without racing the explicit override here.
+    // Mirrors the same invariant Tabs.test.tsx enforces for the strip.
+    expect(onRemoveSession.mock.invocationCallOrder[0]).toBeLessThan(
+      onSessionClick.mock.invocationCallOrder[0]
+    )
   })
 
   test('without onRemoveSession, remove buttons are hidden', () => {

@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import { mediateReorder } from './mediateReorder'
-import type { Session } from '../../types'
+import type { Session } from '../types'
 
 const session = (id: string): Session => ({ id }) as unknown as Session
 

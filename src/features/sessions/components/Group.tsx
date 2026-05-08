@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode } from 'react'
 import { Reorder } from 'framer-motion'
-import type { Session } from '../../types'
+import type { Session } from '../types'
 
 export interface GroupHeaderProps {
   label: string
@@ -49,7 +49,12 @@ const GroupBody = ({
   const containerTestId = variant === 'active' ? 'session-list' : 'recent-list'
 
   if (variant === 'active') {
-    const { onReorder } = rest as { onReorder: (sessions: Session[]) => void }
+    // TS doesn't narrow ...rest through the discriminant check, so we
+    // must cast. Tying the cast to Extract<GroupProps, { variant: 'active' }>
+    // keeps it tethered to the real union shape — if a third variant ever
+    // adds an onReorder-like prop with a different signature, the cast
+    // fails at this site rather than silently misapplying downstream.
+    const { onReorder } = rest as Extract<GroupProps, { variant: 'active' }>
 
     return (
       <Reorder.Group
