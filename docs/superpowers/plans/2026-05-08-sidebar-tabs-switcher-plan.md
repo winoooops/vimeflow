@@ -70,11 +70,7 @@ Create `src/hooks/useSidebarTab.test.ts`:
 ```ts
 import { describe, test, expect } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import {
-  useSidebarTab,
-  DEFAULT_SIDEBAR_TAB,
-  type SidebarTab,
-} from './useSidebarTab'
+import { useSidebarTab, DEFAULT_SIDEBAR_TAB } from './useSidebarTab'
 
 describe('useSidebarTab', () => {
   test('default initial value is sessions', () => {
@@ -110,13 +106,10 @@ describe('useSidebarTab', () => {
     })
     expect(result.current.activeTab).toBe('sessions')
   })
-
-  // Compile-time gate — uncommenting should produce a TS error.
-  // (Not asserted here; documented for the implementer.)
-  // const t: SidebarTab = 'foobar' // TS2322 if uncommented.
-  // void t
 })
 ```
+
+> **Compile-time gate (manual sanity, not in the test file).** `SidebarTab` is intentionally a string-literal union, so `setActiveTab('foobar')` should error at compile time. Verify by typing the bad call into `useSidebarTab.ts` momentarily and running `npx tsc -b` — expect `TS2322`. Remove the experiment before committing. We don't keep this in the test file because it would either be commented-out (creating an unused-import lint failure) or use a `// @ts-expect-error` directive (which adds noise for a property TypeScript already enforces in production code).
 
 - [ ] **Step 2: Run the test — expect failure**
 
@@ -421,13 +414,13 @@ export const SidebarTabs = <TId extends string = string>({
           type="button"
           aria-pressed={isActive}
           onClick={() => onChange(item.id)}
-          className={`relative font-mono text-[11px] uppercase tracking-[0.08em] font-semibold transition-colors ${
+          className={`relative py-1 font-mono text-[11px] uppercase tracking-[0.08em] font-semibold transition-colors ${
             isActive
               ? 'pl-3 text-primary-container'
               : // §4.2 spec inactive color #6c7086 has no UI/surface token in
                 // tailwind.config.js; the editor.syn.comment token shares the
                 // hex but is for code highlighting (wrong category for chrome).
-                'py-1 text-[#6c7086] hover:text-on-surface-variant cursor-pointer'
+                'text-[#6c7086] hover:text-on-surface-variant cursor-pointer'
           }`}
         >
           {isActive && (
@@ -664,16 +657,46 @@ git commit -m "feat(sidebar): add SessionsView wrapper composing List + New Inst
 Create `src/features/workspace/components/FilesView.test.tsx`:
 
 ```tsx
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { FilesView } from './FilesView'
+import { FileExplorer } from './panels/FileExplorer'
+
+// Mock FileExplorer so we can assert FilesView's only contract:
+// forwarding `cwd` and `onFileSelect`. Spec §3 explicitly calls for
+// mocking FileExplorer at this test boundary.
+vi.mock('./panels/FileExplorer', () => ({
+  FileExplorer: vi.fn(() => <div data-testid="file-explorer-mock" />),
+}))
+
+const FileExplorerMock = vi.mocked(FileExplorer)
 
 describe('FilesView', () => {
-  test('renders FileExplorer with the cwd label', () => {
+  beforeEach(() => {
+    FileExplorerMock.mockClear()
+  })
+
+  test('mounts FileExplorer inside the testid root', () => {
     render(<FilesView cwd="~" onFileSelect={vi.fn()} />)
     expect(screen.getByTestId('files-view')).toBeInTheDocument()
-    // FileExplorer renders its own data-testid="file-explorer".
-    expect(screen.getByTestId('file-explorer')).toBeInTheDocument()
+    expect(screen.getByTestId('file-explorer-mock')).toBeInTheDocument()
+  })
+
+  test('forwards cwd to FileExplorer', () => {
+    render(<FilesView cwd="/some/deep/path" onFileSelect={vi.fn()} />)
+    expect(FileExplorerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: '/some/deep/path' }),
+      expect.anything()
+    )
+  })
+
+  test('forwards onFileSelect to FileExplorer', () => {
+    const onFileSelect = vi.fn()
+    render(<FilesView cwd="~" onFileSelect={onFileSelect} />)
+    expect(FileExplorerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ onFileSelect }),
+      expect.anything()
+    )
   })
 
   test('hidden prop applies to the testid root', () => {
@@ -692,6 +715,8 @@ describe('FilesView', () => {
   })
 })
 ```
+
+The test file uses `vi.mock` (hoisted to the top by Vitest), so the `FileExplorer` import below the mock resolves to the mocked version. `vi.mocked()` casts the import to a typed mock for `toHaveBeenCalledWith` assertions. The mocked FileExplorer renders `data-testid="file-explorer-mock"` so the "mounts inside" test works without depending on FileExplorer's real markup.
 
 - [ ] **Step 2: Run the test — expect failure**
 
@@ -738,7 +763,7 @@ export const FilesView = ({
 npx vitest run src/features/workspace/components/FilesView.test.tsx
 ```
 
-Expected: 4 tests pass.
+Expected: 6 tests pass.
 
 - [ ] **Step 5: Lint + type-check**
 
@@ -871,17 +896,34 @@ npx eslint src/features/workspace/WorkspaceView.tsx
 
 Expected: clean. If type errors surface, the most likely cause is a stale `List` / `FileExplorer` reference still in the file — search for them and remove.
 
-- [ ] **Step 5: Run the WorkspaceView tests — expect SOME failures**
+- [ ] **Step 5: PROACTIVE audit — search test files for FileExplorer references**
+
+Don't wait for failures — `getByTestId('file-explorer')` and `querySelector` style queries find hidden DOM, so a stale "FileExplorer is rendered" assertion might still pass after the wiring change while the user-visible behavior has changed. Run a proactive grep over the WorkspaceView test files:
+
+```bash
+grep -nE "file-explorer|FileExplorer|treeitem|file-tree-node|sidebar-footer-wrapper|explorer-resize-handle" \
+  src/features/workspace/WorkspaceView*.test.tsx
+```
+
+For EVERY hit, classify it as one of:
+
+1. **Asserts presence of FileExplorer / its children:** must add a FILES-tab-click prelude (`await user.click(screen.getByRole('button', { name: 'FILES' }))`) BEFORE the assertion.
+2. **Interacts with FileExplorer (click, keyboard):** same prelude.
+3. **Asserts the "+ New Instance" button via the old `Sidebar.footer` testid (`sidebar-footer-wrapper`):** rewrite to `queryByTestId('sidebar-footer-wrapper')` and assert `null` (the slot is now suppressed); query the button via `getByRole('button', { name: 'New Instance' })` instead.
+4. **Asserts the bottom-pane resize handle (`explorer-resize-handle`):** rewrite to `queryByTestId('explorer-resize-handle')` and assert `null`.
+5. **Coincidental match (mention in a comment, etc.):** no change.
+
+Make the audit change BEFORE running tests — the next step's test run is the verification that the audit is complete.
+
+- [ ] **Step 6: Run the WorkspaceView tests — expect all pass**
 
 ```bash
 npx vitest run src/features/workspace/WorkspaceView
 ```
 
-Expected: some tests will fail (these are the tests that asserted FileExplorer visibility on initial render — they need to click FILES first now). Capture the list of failing tests; you'll fix them in Step 6.
+Expected: every WorkspaceView test file green. If any test fails, the proactive audit missed an assertion — re-classify per Step 5 and fix.
 
-- [ ] **Step 6: Audit + fix existing WorkspaceView tests**
-
-For EACH failing test, decide:
+For EACH still-failing test (if any), decide:
 
 **If the test queries / clicks / asserts on FileExplorer** (role queries inside the file tree, `userEvent.click` on file rows, `getByTestId('file-explorer')`, "is visible" assertions):
 
@@ -916,7 +958,7 @@ npx vitest run src/features/workspace/WorkspaceView
 
 Iterate until all pre-existing tests pass.
 
-- [ ] **Step 7: Add new WorkspaceView tests for the tabs wiring**
+- [ ] **Step 7: Add new WorkspaceView tests for the tabs wiring + state preservation**
 
 Append the following tests to `src/features/workspace/WorkspaceView.test.tsx` (inside the existing `describe('WorkspaceView', ...)` block):
 
@@ -964,6 +1006,23 @@ test('bottom-pane resize handle is gone (no Sidebar.bottomPane prop)', () => {
   render(<WorkspaceView />)
   expect(screen.queryByTestId('explorer-resize-handle')).not.toBeInTheDocument()
 })
+
+test('FilesView remains mounted across SESSIONS↔FILES toggles (state preserved per spec §6)', async () => {
+  const user = userEvent.setup()
+  render(<WorkspaceView />)
+  // Capture the FilesView DOM node BEFORE any tab interaction. React keeps
+  // the same node mounted across `hidden` toggles, so reference equality
+  // post-toggle proves the component (and its useFileTree state) survived.
+  const filesViewBefore = screen.getByTestId('files-view')
+
+  await user.click(screen.getByRole('button', { name: 'FILES' }))
+  await user.click(screen.getByRole('button', { name: 'SESSIONS' }))
+  await user.click(screen.getByRole('button', { name: 'FILES' }))
+
+  const filesViewAfter = screen.getByTestId('files-view')
+  expect(filesViewAfter).toBe(filesViewBefore)
+  expect(filesViewAfter).not.toHaveAttribute('hidden')
+})
 ```
 
 - [ ] **Step 8: Run the WorkspaceView tests — expect all pass**
@@ -972,7 +1031,7 @@ test('bottom-pane resize handle is gone (no Sidebar.bottomPane prop)', () => {
 npx vitest run src/features/workspace/WorkspaceView
 ```
 
-Expected: every WorkspaceView test file green, including the 5 new tests.
+Expected: every WorkspaceView test file green, including the 6 new tests.
 
 - [ ] **Step 9: Run the full project test suite + lint + type-check**
 
@@ -1124,19 +1183,19 @@ Before declaring the plan complete, the plan author runs this list:
 
 **1. Spec coverage:** every spec section has at least one task implementing it.
 
-| Spec section                                            | Task                                  |
-| ------------------------------------------------------- | ------------------------------------- |
-| §1 Goal 1 (`SidebarTabs` component)                     | Task 2                                |
-| §1 Goal 2 (`useSidebarTab` hook)                        | Task 1                                |
-| §1 Goal 3 (SessionsView/FilesView in `Sidebar.content`) | Tasks 3, 4, 5                         |
-| §1 Goal 4 (cross-tab state via `hidden`)                | Tasks 3, 4, 5 (Step 7 test 3)         |
-| §1 Goal 5 (no functional regression; test audit)        | Task 5 (Step 6), Task 6               |
-| §3 Scope / Non-goals                                    | Plan header "Out of scope" line       |
-| §4 SidebarTabs API + a11y + tests                       | Task 2                                |
-| §5 useSidebarTab API + tests                            | Task 1                                |
-| §6 WorkspaceView wiring + view components               | Tasks 3, 4, 5                         |
-| §7 Single-PR/single-commit + verify gate                | Task 6 + plan note about squash-merge |
-| §8 Future work                                          | not implemented (by design)           |
+| Spec section                                            | Task                                                                                                                                   |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| §1 Goal 1 (`SidebarTabs` component)                     | Task 2                                                                                                                                 |
+| §1 Goal 2 (`useSidebarTab` hook)                        | Task 1                                                                                                                                 |
+| §1 Goal 3 (SessionsView/FilesView in `Sidebar.content`) | Tasks 3, 4, 5                                                                                                                          |
+| §1 Goal 4 (cross-tab state via `hidden`)                | Tasks 3, 4, 5 (Step 7 — toggle test + state-preservation test asserting DOM-node reference equality across SESSIONS↔FILES round-trips) |
+| §1 Goal 5 (no functional regression; test audit)        | Task 5 (Step 6), Task 6                                                                                                                |
+| §3 Scope / Non-goals                                    | Plan header "Out of scope" line                                                                                                        |
+| §4 SidebarTabs API + a11y + tests                       | Task 2                                                                                                                                 |
+| §5 useSidebarTab API + tests                            | Task 1                                                                                                                                 |
+| §6 WorkspaceView wiring + view components               | Tasks 3, 4, 5                                                                                                                          |
+| §7 Single-PR/single-commit + verify gate                | Task 6 + plan note about squash-merge                                                                                                  |
+| §8 Future work                                          | not implemented (by design)                                                                                                            |
 
 **2. Placeholder scan:** no `TBD`, `TODO`, `FIXME`, `// implement later`, "appropriate error handling", or "similar to Task N" in the plan. Plan author has run `grep -nE "TODO|FIXME|TBD|implement later|similar to Task" docs/superpowers/plans/2026-05-08-sidebar-tabs-switcher-plan.md` and verified zero matches.
 
