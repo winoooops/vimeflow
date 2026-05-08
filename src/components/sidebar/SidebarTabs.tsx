@@ -20,8 +20,16 @@ export const SidebarTabs = <TId extends string = string>({
   'aria-label': ariaLabel = 'Sidebar tabs',
   'data-testid': testId = 'sidebar-tabs',
 }: SidebarTabsProps<TId>): ReactElement => (
+  // role="group" — NOT "toolbar" or "tablist". Both of those imply a
+  // keyboard contract (toolbar: arrow-key roving; tablist: arrow + Home/
+  // End + tabpanel linkage) that v1 deliberately doesn't ship (see spec
+  // §3 Out of scope + §8 Future work). `role="group"` carries no
+  // keyboard expectation, so AT users get an honest signal: the
+  // `aria-label` names the group and `aria-pressed` on each button
+  // conveys the active state. Upgrade to `toolbar` (or strict `tablist`)
+  // when arrow-key navigation lands.
   <div
-    role="toolbar"
+    role="group"
     aria-label={ariaLabel}
     data-testid={testId}
     className="flex flex-row items-center gap-4 px-3 py-2"

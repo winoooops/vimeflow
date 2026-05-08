@@ -123,6 +123,12 @@ export const WorkspaceView = (): ReactElement => {
     ? sessions.find((s) => s.id === activeSessionId)
     : undefined
   const activeCwd = activeSession?.workingDirectory ?? '.'
+  // Distinct fallback for the FILES-tab file explorer: when no session
+  // is active, browse from `~` (home) rather than `.` (process cwd).
+  // `activeCwd` defaults to `.` because git/diff/agent-status all need a
+  // valid working directory in the running process; the file explorer
+  // is a navigation surface where `~` is the more useful starting point.
+  const fileExplorerCwd = activeSession?.workingDirectory ?? '~'
 
   // File selection state.
   //
@@ -411,7 +417,7 @@ export const WorkspaceView = (): ReactElement => {
               />
               <FilesView
                 hidden={activeTab !== 'files'}
-                cwd={activeSession?.workingDirectory ?? '~'}
+                cwd={fileExplorerCwd}
                 onFileSelect={handleFileSelect}
               />
             </div>

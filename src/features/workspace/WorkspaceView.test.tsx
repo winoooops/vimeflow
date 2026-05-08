@@ -240,11 +240,11 @@ describe('WorkspaceView', () => {
     expect(fileExplorer).toBeInTheDocument()
   })
 
-  test('initial render shows SidebarTabs toolbar with SESSIONS active', () => {
+  test('initial render shows SidebarTabs group with SESSIONS active', () => {
     render(<WorkspaceView />)
 
     expect(
-      screen.getByRole('toolbar', { name: 'Sidebar tabs' })
+      screen.getByRole('group', { name: 'Sidebar tabs' })
     ).toBeInTheDocument()
 
     expect(screen.getByRole('button', { name: 'SESSIONS' })).toHaveAttribute(

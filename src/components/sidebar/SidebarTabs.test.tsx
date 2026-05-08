@@ -101,12 +101,12 @@ describe('SidebarTabs', () => {
     expect(onChange).toHaveBeenCalledWith('sessions')
   })
 
-  test('container has role="toolbar" and default aria-label', () => {
+  test('container has role="group" and default aria-label', () => {
     render(
       <SidebarTabs<Tab> tabs={TABS} activeId="sessions" onChange={vi.fn()} />
     )
 
-    expect(screen.getByRole('toolbar')).toHaveAttribute(
+    expect(screen.getByRole('group')).toHaveAttribute(
       'aria-label',
       'Sidebar tabs'
     )
@@ -122,7 +122,7 @@ describe('SidebarTabs', () => {
       />
     )
 
-    expect(screen.getByRole('toolbar')).toHaveAttribute(
+    expect(screen.getByRole('group')).toHaveAttribute(
       'aria-label',
       'Project navigation'
     )
