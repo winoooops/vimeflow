@@ -1,7 +1,7 @@
 import { type ReactElement, type KeyboardEvent } from 'react'
-import type { Session } from '../../types'
-import type { Agent } from '../../../../agents/registry'
-import { StatusDot } from '../../components/StatusDot'
+import type { Session } from '../../workspace/types'
+import type { Agent } from '../../../agents/registry'
+import { StatusDot } from '../../workspace/components/StatusDot'
 
 export interface TabProps {
   session: Session

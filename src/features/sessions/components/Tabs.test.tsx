@@ -2,7 +2,7 @@ import { describe, test, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Tabs } from './Tabs'
-import type { Session } from '../../types'
+import type { Session } from '../../workspace/types'
 
 const buildSession = (overrides: Partial<Session> = {}): Session => ({
   id: 'sess-1',

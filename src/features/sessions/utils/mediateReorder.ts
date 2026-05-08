@@ -1,4 +1,4 @@
-import type { Session } from '../../types'
+import type { Session } from '../../workspace/types'
 
 /**
  * Pure helper used by `List.handleActiveReorder` to bubble a full

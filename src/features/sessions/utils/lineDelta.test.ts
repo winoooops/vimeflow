@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import { lineDelta } from './lineDelta'
-import type { Session } from '../../types'
+import type { Session } from '../../workspace/types'
 
 const sessionWith = (
   fileChanges: Session['activity']['fileChanges']

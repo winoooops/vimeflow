@@ -1,4 +1,4 @@
-import type { Session } from '../../types'
+import type { Session } from '../../workspace/types'
 
 export const STATE_PILL_LABEL: Record<Session['status'], string> = {
   running: 'running',

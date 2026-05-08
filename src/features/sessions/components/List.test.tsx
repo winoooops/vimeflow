@@ -3,7 +3,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { List } from './List'
-import type { Session } from '../../types'
+import type { Session } from '../../workspace/types'
 
 const mockSessions: Session[] = [
   {
