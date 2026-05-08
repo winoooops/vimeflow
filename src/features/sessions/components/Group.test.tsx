@@ -2,7 +2,7 @@
 import { describe, test, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import { Group } from './Group'
-import type { Session } from '../../workspace/types'
+import type { Session } from '../types'
 
 const session = (id: string, status: Session['status'] = 'running'): Session =>
   ({ id, name: id, status }) as unknown as Session

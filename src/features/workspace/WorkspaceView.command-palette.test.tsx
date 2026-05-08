@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from './hooks/useSessionManager'
-import type { Session } from './types'
+import type { Session } from '../sessions/types'
 
 // Mock all WorkspaceView dependencies
 vi.mock('./hooks/useSessionManager')

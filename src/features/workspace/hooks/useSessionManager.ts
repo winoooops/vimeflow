@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
-import type { Session, AgentActivity } from '../types'
+import type { Session, AgentActivity } from '../../sessions/types'
 import type { SessionList, SessionInfo } from '../../../bindings'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import {

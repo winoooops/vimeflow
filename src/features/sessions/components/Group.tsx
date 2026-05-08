@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode } from 'react'
 import { Reorder } from 'framer-motion'
-import type { Session } from '../../workspace/types'
+import type { Session } from '../types'
 
 export interface GroupHeaderProps {
   label: string

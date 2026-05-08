@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import type { Session } from '../types'
+import type { Session } from '../../sessions/types'
 
 export interface UseRenameStateReturn {
   /** Whether the row is currently in rename mode. */

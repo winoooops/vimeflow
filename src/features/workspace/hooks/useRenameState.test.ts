@@ -1,7 +1,7 @@
 import { describe, test, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useRenameState } from './useRenameState'
-import type { Session } from '../types'
+import type { Session } from '../../sessions/types'
 
 const buildSession = (name = 'auth'): Session => ({
   id: 'sess-1',

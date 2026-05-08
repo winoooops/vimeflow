@@ -2,7 +2,7 @@ import { describe, test, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Tab } from './Tab'
-import type { Session } from '../../workspace/types'
+import type { Session } from '../types'
 import { AGENTS } from '../../../agents/registry'
 
 const session = (id: string, status: Session['status'] = 'running'): Session =>

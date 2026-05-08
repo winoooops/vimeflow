@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react'
 import { Reorder } from 'framer-motion'
-import type { Session } from '../../workspace/types'
+import type { Session } from '../types'
 import { StatusDot } from '../../workspace/components/StatusDot'
 import { useRenameState } from '../../workspace/hooks/useRenameState'
 import { formatRelativeTime } from '../../agent-status/utils/relativeTime'

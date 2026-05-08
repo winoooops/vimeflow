@@ -1,4 +1,4 @@
-import type { Session } from '../../workspace/types'
+import type { Session } from '../types'
 
 export const subtitle = (session: Session): string => {
   if (session.currentAction !== undefined && session.currentAction !== '') {

@@ -1,4 +1,4 @@
-import type { Session, SessionStatus } from '../types'
+import type { Session, SessionStatus } from '../../sessions/types'
 
 const OPEN_STATUSES: ReadonlySet<SessionStatus> = new Set(['running', 'paused'])
 

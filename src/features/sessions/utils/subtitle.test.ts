@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import { subtitle } from './subtitle'
-import type { Session } from '../../workspace/types'
+import type { Session } from '../types'
 
 const sessionWith = (
   workingDirectory: string,

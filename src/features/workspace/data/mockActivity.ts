@@ -1,4 +1,9 @@
-import type { AgentActivity, FileChange, ToolCall, TestResult } from '../types'
+import type {
+  AgentActivity,
+  FileChange,
+  ToolCall,
+  TestResult,
+} from '../../sessions/types'
 
 // File changes for active session (running)
 const activeFileChanges: FileChange[] = [

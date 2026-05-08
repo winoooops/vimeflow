@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import type { Session } from '../types'
+import type { Session } from '../../sessions/types'
 import {
   TerminalPane,
   type TerminalPaneMode,

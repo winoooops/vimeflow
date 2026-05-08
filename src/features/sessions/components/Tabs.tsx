@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react'
-import type { Session } from '../../workspace/types'
+import type { Session } from '../types'
 import { agentForSession } from '../../workspace/utils/agentForSession'
 import {
   getVisibleSessions,

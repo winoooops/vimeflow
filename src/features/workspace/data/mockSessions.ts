@@ -1,4 +1,4 @@
-import type { Session } from '../types'
+import type { Session } from '../../sessions/types'
 import { mockAgentActivity } from './mockActivity'
 
 export const mockSessions: Session[] = [

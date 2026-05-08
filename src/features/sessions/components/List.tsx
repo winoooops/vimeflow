@@ -1,6 +1,6 @@
 import { useRef, type ReactElement } from 'react'
 import { motion } from 'framer-motion'
-import type { Session } from '../../workspace/types'
+import type { Session } from '../types'
 import { Card } from './Card'
 import { Group } from './Group'
 import {

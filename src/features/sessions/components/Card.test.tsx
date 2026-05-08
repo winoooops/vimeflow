@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Reorder } from 'framer-motion'
 import { Card, type CardProps } from './Card'
-import type { Session } from '../../workspace/types'
+import type { Session } from '../types'
 
 const session = (overrides: Partial<Session> = {}): Session =>
   ({
