@@ -61,7 +61,7 @@ describe('Card — active variant', () => {
   test('renders StatusDot reflecting session.status', () => {
     renderActiveCard(session({ status: 'running' }))
     // StatusDot exposes data-testid="status-dot" (verified at
-    // src/features/workspace/components/StatusDot.tsx:40). Asserting
+    // src/features/sessions/components/StatusDot.tsx:40). Asserting
     // its presence guards against Card accidentally dropping the dot
     // — the previous draft of this test only checked session-row
     // existence, which would pass even if Card removed StatusDot
