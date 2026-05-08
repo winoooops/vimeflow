@@ -95,17 +95,26 @@ export const Sidebar = ({
   }
 
   // The slot-rendering rule: a slot's wrapper renders only when the
-  // prop is not `null`, `undefined`, or `false`. `0` and `''` are
-  // valid ReactNode values that DO render.
+  // prop is "real content." `null`, `undefined`, `false`, AND `true` are
+  // all suppressed — the first three are React's "render nothing"
+  // sentinels, and `true` (the value the JSX boolean-shorthand
+  // `<Sidebar header>` passes for `header`) renders nothing visible
+  // either, so wrapping `{true}` in a padded div would create a phantom
+  // ~20 px gap with no content. `0` and `''` are valid ReactNode values
+  // that DO render text — they go through the wrapper.
   const renderSlot = (slot: ReactNode): boolean =>
-    slot !== null && slot !== undefined && slot !== false
+    slot !== null && slot !== undefined && slot !== false && slot !== true
 
   return (
     <div
       className="flex h-full w-full flex-col bg-surface-container-low"
       data-testid={testId}
     >
-      {renderSlot(header) && <div className="px-3 pb-2 pt-3">{header}</div>}
+      {renderSlot(header) && (
+        <div data-testid="sidebar-header-wrapper" className="px-3 pb-2 pt-3">
+          {header}
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col">{content}</div>
 
@@ -135,7 +144,11 @@ export const Sidebar = ({
         </>
       )}
 
-      {renderSlot(footer) && <div className="p-3">{footer}</div>}
+      {renderSlot(footer) && (
+        <div data-testid="sidebar-footer-wrapper" className="p-3">
+          {footer}
+        </div>
+      )}
 
       {isDragging && <div className="fixed inset-0 z-50 cursor-row-resize" />}
     </div>

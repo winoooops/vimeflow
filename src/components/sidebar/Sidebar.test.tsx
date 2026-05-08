@@ -53,20 +53,50 @@ describe('Sidebar — slot absence semantics', () => {
     ).not.toBeInTheDocument()
   })
 
-  test('null/undefined/false header all suppress the header wrapper', () => {
+  test('null/undefined/false/true header all suppress the header wrapper (no phantom padded div)', () => {
+    // Asserts on the WRAPPER's presence (data-testid="sidebar-header-wrapper")
+    // rather than the inner probe — the wrapper is the dangerous artifact
+    // when a slot prop is "no content." Querying only the inner probe
+    // (an earlier draft of this test) gave a false sense of safety: the
+    // probe is absent for every "no content" value, but the padded wrapper
+    // can still render a phantom ~20 px gap with empty `{value}`.
     const { rerender } = render(
       <Sidebar
         content={<div>C</div>}
         header={<div data-testid="header-probe">H</div>}
       />
     )
+    expect(screen.getByTestId('sidebar-header-wrapper')).toBeInTheDocument()
     expect(screen.getByTestId('header-probe')).toBeInTheDocument()
 
     rerender(<Sidebar header={null} content={<div>C</div>} />)
-    expect(screen.queryByTestId('header-probe')).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('sidebar-header-wrapper')
+    ).not.toBeInTheDocument()
 
+    rerender(<Sidebar header={undefined} content={<div>C</div>} />)
+    expect(
+      screen.queryByTestId('sidebar-header-wrapper')
+    ).not.toBeInTheDocument()
+
+    // Boolean-typed variable to bypass `react/jsx-boolean-value` (which
+    // rejects literal `={false}` in JSX); the runtime value is what
+    // matters for this test, not the literal source form.
+    const falseValue = false as const
+    rerender(<Sidebar header={falseValue} content={<div>C</div>} />)
+    expect(
+      screen.queryByTestId('sidebar-header-wrapper')
+    ).not.toBeInTheDocument()
+
+    // The JSX boolean-shorthand <Sidebar header /> passes header={true}.
+    // `true` is a valid ReactNode that React renders as nothing visible —
+    // wrapping `{true}` in a padded div would create a phantom layout gap.
+    // The renderSlot predicate must filter `true` alongside the other
+    // "no content" sentinels.
     rerender(<Sidebar header content={<div>C</div>} />)
-    expect(screen.queryByTestId('header-probe')).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('sidebar-header-wrapper')
+    ).not.toBeInTheDocument()
   })
 
   test("0 and '' DO render their wrapper (valid ReactNodes)", () => {
