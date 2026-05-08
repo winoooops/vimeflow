@@ -234,9 +234,78 @@ describe('WorkspaceView', () => {
 
     const sidebar = screen.getByTestId('sidebar')
 
-    // FileExplorer should be rendered (no more context switcher)
+    // FileExplorer remains mounted behind the FILES tab so its local tree
+    // state survives tab switches.
     const fileExplorer = sidebar.querySelector('[data-testid="file-explorer"]')
     expect(fileExplorer).toBeInTheDocument()
+  })
+
+  test('initial render shows SidebarTabs toolbar with SESSIONS active', () => {
+    render(<WorkspaceView />)
+
+    expect(
+      screen.getByRole('toolbar', { name: 'Sidebar tabs' })
+    ).toBeInTheDocument()
+
+    expect(screen.getByRole('button', { name: 'SESSIONS' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+
+    expect(screen.getByRole('button', { name: 'FILES' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
+  })
+
+  test('both sidebar tab views are mounted on initial render', () => {
+    render(<WorkspaceView />)
+
+    expect(screen.getByTestId('sessions-view')).toBeInTheDocument()
+    expect(screen.getByTestId('files-view')).toBeInTheDocument()
+    expect(screen.getByTestId('sessions-view')).not.toHaveAttribute('hidden')
+    expect(screen.getByTestId('files-view')).toHaveAttribute('hidden')
+  })
+
+  test('clicking FILES toggles the hidden attribute on each view', async () => {
+    const user = userEvent.setup()
+
+    render(<WorkspaceView />)
+    await user.click(screen.getByRole('button', { name: 'FILES' }))
+
+    expect(screen.getByTestId('sessions-view')).toHaveAttribute('hidden')
+    expect(screen.getByTestId('files-view')).not.toHaveAttribute('hidden')
+  })
+
+  test('Sidebar footer slot is suppressed in WorkspaceView', () => {
+    render(<WorkspaceView />)
+
+    expect(
+      screen.queryByTestId('sidebar-footer-wrapper')
+    ).not.toBeInTheDocument()
+  })
+
+  test('bottom-pane resize handle is gone in WorkspaceView', () => {
+    render(<WorkspaceView />)
+
+    expect(
+      screen.queryByTestId('explorer-resize-handle')
+    ).not.toBeInTheDocument()
+  })
+
+  test('FilesView remains mounted across SESSIONS and FILES toggles', async () => {
+    const user = userEvent.setup()
+
+    render(<WorkspaceView />)
+    const filesViewBefore = screen.getByTestId('files-view')
+
+    await user.click(screen.getByRole('button', { name: 'FILES' }))
+    await user.click(screen.getByRole('button', { name: 'SESSIONS' }))
+    await user.click(screen.getByRole('button', { name: 'FILES' }))
+
+    const filesViewAfter = screen.getByTestId('files-view')
+    expect(filesViewAfter).toBe(filesViewBefore)
+    expect(filesViewAfter).not.toHaveAttribute('hidden')
   })
 
   test('clicking the New Instance gradient button creates a new session', async () => {
@@ -389,6 +458,7 @@ describe('WorkspaceView', () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
+    await user.click(screen.getByRole('button', { name: 'FILES' }))
     const fileExplorer = screen.getByTestId('file-explorer')
 
     // Click a file node (files have data-node-id)
@@ -414,6 +484,7 @@ describe('WorkspaceView', () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
+    await user.click(screen.getByRole('button', { name: 'FILES' }))
     const fileExplorer = screen.getByTestId('file-explorer')
 
     // Click first file

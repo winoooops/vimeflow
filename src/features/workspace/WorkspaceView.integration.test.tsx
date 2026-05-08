@@ -97,6 +97,12 @@ const createMockUseVimMode =
   (): ReturnType<typeof useVimModeModule.useVimMode> =>
     'NORMAL'
 
+type User = ReturnType<typeof userEvent.setup>
+
+const switchToFilesTab = async (user: User): Promise<void> => {
+  await user.click(screen.getByRole('button', { name: 'FILES' }))
+}
+
 /**
  * Integration tests for WorkspaceView
  *
@@ -310,6 +316,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      await switchToFilesTab(user)
       const sidebar = screen.getByTestId('sidebar')
 
       // Wait for FileTree to load
@@ -342,6 +349,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      await switchToFilesTab(user)
       const sidebar = screen.getByTestId('sidebar')
 
       // Wait for FileTree to load
@@ -375,6 +383,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      await switchToFilesTab(user)
       const sidebar = screen.getByTestId('sidebar')
 
       // Wait for FileTree to load
@@ -429,6 +438,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      await switchToFilesTab(user)
       const sidebar = screen.getByTestId('sidebar')
 
       // Wait for FileTree to load
@@ -479,6 +489,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      await switchToFilesTab(user)
       const sidebar = screen.getByTestId('sidebar')
 
       // Wait for FileTree
@@ -530,6 +541,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      await switchToFilesTab(user)
       const sidebar = screen.getByTestId('sidebar')
 
       await waitFor(() => {
@@ -596,6 +608,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      await switchToFilesTab(user)
       const sidebar = screen.getByTestId('sidebar')
 
       await waitFor(() => {
@@ -661,6 +674,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      await switchToFilesTab(user)
       const sidebar = screen.getByTestId('sidebar')
 
       await waitFor(() => {
@@ -738,6 +752,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      await switchToFilesTab(user)
       const sidebar = screen.getByTestId('sidebar')
 
       // Wait for FileTree to load
@@ -800,6 +815,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      await switchToFilesTab(user)
       const sidebar = screen.getByTestId('sidebar')
 
       // Wait for FileTree to load
@@ -859,6 +875,7 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
+      await switchToFilesTab(user)
       const sidebar = screen.getByTestId('sidebar')
 
       // Wait for FileTree to load
