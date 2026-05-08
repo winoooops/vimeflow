@@ -22,6 +22,22 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
 
 ## [Unreleased]
 
+### UI Handoff 迁移
+
+#### Added
+
+- Handoff 设计 tokens 与 `src/agents/registry.ts` 作为第一步增量 UI 迁移
+  落地。
+  ([#171](https://github.com/winoooops/vimeflow/pull/171), `38af7ab`)
+- Handoff 应用外壳比例、状态栏、会话标签条已落地，同时保留现有 Tauri
+  终端集成。
+  ([#173](https://github.com/winoooops/vimeflow/pull/173), `266b3a0`)
+- 侧边栏会话行与浏览器风格会话标签已完成视觉迁移，并接入
+  `useSessionManager`；路线图现在将第 4 步 Single TerminalPane 标记为下一
+  个 handoff 步骤。
+  ([#174](https://github.com/winoooops/vimeflow/pull/174), `ab1b888`) —
+  patterns: [Documentation Accuracy](docs/reviews/patterns/documentation-accuracy.md)
+
 ### 第 4 阶段 — 代理状态侧边栏
 
 #### Added

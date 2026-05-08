@@ -1,140 +1,135 @@
-# VIBM Setup Guide
+# Vimeflow Setup Guide
 
-This guide documents the manual steps needed to complete the CI/CD infrastructure setup.
+This guide covers the current local setup for the Tauri desktop app, frontend
+tooling, git hooks, and CI parity checks.
 
 ## Prerequisites
 
-- **Node.js 24+** - Install via [nvm](https://github.com/nvm-sh/nvm) or from [nodejs.org](https://nodejs.org/)
-- **Git** - For version control
-- **Rust** (optional, for future Tauri development) - Install from [rustup.rs](https://rustup.rs/)
+- **Node.js >=22** - `package.json` permits Node 22+, while CI and `.nvmrc`
+  use Node 24. Prefer `nvm use` before installing dependencies.
+- **Rust stable** - required for `src-tauri/`, `cargo test`, Tauri dev, and
+  binding generation.
+- **Git** - required for hooks, Vite dev git APIs, and PR workflow.
+- **Linux system packages** - required for Tauri build/test on Linux:
+  `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libappindicator3-dev`,
+  `librsvg2-dev`, and `patchelf`.
 
-## Setup Steps
-
-### 1. Initialize Git Repository
-
-```bash
-git init
-```
-
-### 2. Make Scripts Executable
+## Install
 
 ```bash
-chmod +x init.sh
-chmod +x .husky/pre-commit
-chmod +x .husky/commit-msg
-chmod +x .husky/pre-push
-```
-
-### 3. Install Dependencies
-
-```bash
-npm install
-```
-
-This will install all devDependencies listed in `package.json`:
-
-- Husky 9 (git hooks)
-- lint-staged 15 (pre-commit checks)
-- commitlint 19 (commit message validation)
-- Prettier 3 (code formatting)
-- ESLint 9 (code linting)
-- TypeScript 5 (type checking)
-- Vitest 3 (testing)
-- And all ESLint plugins
-
-### 4. Initialize Husky
-
-```bash
+nvm use
+npm ci
 npm run prepare
 ```
 
-This sets up the git hooks in the `.husky/` directory.
+`npm run prepare` installs Husky hooks from `.husky/`.
 
-### 5. Verify Installation
+## Verify Local Setup
 
-Run the following commands to ensure everything is set up correctly:
+Run the same core gates that `ci-checks.yml` runs:
 
 ```bash
-# Check linting works
 npm run lint
-
-# Check formatting
 npm run format:check
-
-# Check TypeScript configuration (will error if no TS files exist yet)
 npm run type-check
-
-# Run tests (will pass with no tests for now)
 npm test
+cd src-tauri && cargo test
 ```
 
-### 6. Create Initial Commit
+When Rust types exported to `src/bindings/` change, also run:
 
 ```bash
-git add .
-git commit -m "chore: initial CI/CD infrastructure setup"
+npm run generate:bindings
 ```
 
-This will trigger the pre-commit and commit-msg hooks for the first time.
+For desktop build parity:
 
-## What's Been Set Up
+```bash
+npm run build
+npm run tauri:build
+```
 
-### Configuration Files
+For E2E parity, install `tauri-driver` and run the WebdriverIO suites:
 
-- `package.json` - Node 24+, all scripts, all devDependencies
-- `.nvmrc` - Node version 24
-- `.npmrc` - engine-strict=true
-- `.prettierrc` - Prettier configuration (no semis, single quotes)
-- `.prettierignore` - Ignore patterns
-- `lint-staged.config.js` - Pre-commit checks configuration
-- `commitlint.config.mjs` - Conventional commits configuration
-- `eslint.config.js` - ESLint flat config
-- `cspell.config.yaml` - Spell check configuration
+```bash
+cargo install tauri-driver
+npm run test:e2e:build
+npm run test:e2e:all
+```
 
-### Git Hooks (.husky/)
+## Development Commands
 
-- `pre-commit` - Runs lint-staged (ESLint, TypeScript, Prettier)
-- `commit-msg` - Validates commit message format
-- `pre-push` - Runs all tests
+```bash
+npm run dev          # Vite dev server at localhost:5173
+npm run tauri:dev    # Tauri shell + Rust backend
+npm run lint         # ESLint
+npm run format       # Prettier write
+npm run type-check   # tsc -b
+npm test             # Vitest
+```
 
-### GitHub Actions Workflows (.github/workflows/)
+`npm run tauri:dev` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` for Linux/Wayland
+WebKitGTK stability.
 
-- `ci-checks.yml` - Code quality and unit tests (runs on feature branches)
-- `tauri-build.yml` - Cross-platform Tauri builds (runs on main branch, src-tauri/ changes only)
+## What Is Configured
 
-### Utility Scripts
+### Project Tooling
 
-- `init.sh` - Environment initialization script
-- `feature_list.json` - Autonomous development roadmap
+- `package.json` - npm scripts, ESM mode, dependencies
+- `.nvmrc` - Node 24 for CI parity
+- `.npmrc` - `engine-strict=true`
+- `.prettierrc` / `.prettierignore` - formatting rules
+- `eslint.config.js` - flat ESLint config with TypeScript, React, Vitest,
+  Testing Library, import, promise, regex, and CSpell rules
+- `cspell.config.yaml` - project dictionary
+- `commitlint.config.mjs` - conventional commit enforcement
+
+### Git Hooks
+
+- `.husky/pre-commit` - lint-staged checks on staged files
+- `.husky/commit-msg` - commitlint
+- `.husky/pre-push` - Vitest run
+
+### GitHub Actions
+
+- `.github/workflows/ci-checks.yml` - lint, format check, type check, Vitest,
+  Rust tests, and generated binding verification
+- `.github/workflows/tauri-build.yml` - macOS, Windows, and Ubuntu Tauri builds
+  for app-affecting changes
+- `.github/workflows/e2e.yml` - Linux WebdriverIO + tauri-driver smoke suites
+  for app-affecting changes
+- `.github/workflows/claude-review.yml` - Claude Code PR review
+- `.github/workflows/codex-review.yml.disabled` - historical Codex workflow,
+  disabled because of quota pressure
 
 ## Troubleshooting
 
-### Husky hooks not running
-
-If git hooks aren't executing:
+### Husky hooks are not running
 
 ```bash
 npm run prepare
 git config core.hooksPath .husky
 ```
 
-### ESLint errors
+### Vite and Tauri use different ports
 
-The project has `eslint.config.js` already. If you see errors about missing plugins, ensure you ran `npm install`.
+The Tauri config points at `http://localhost:5173`, matching Vite's default
+port. If Vite falls back to another port because 5173 is occupied, stop the
+conflicting process before running `npm run tauri:dev`.
 
-### TypeScript errors
+### Linux Tauri build fails with missing WebKitGTK packages
 
-TypeScript configuration requires `tsconfig.json`. If you see errors, ensure the TS config files exist.
+Install the Linux packages listed under prerequisites. The GitHub Actions
+workflows are the authoritative package list for CI.
 
-### Prettier conflicts with ESLint
+### Generated bindings are out of date
 
-The `eslint-config-prettier` package is installed to disable conflicting ESLint rules.
+Run:
 
-## Next Steps
+```bash
+npm run generate:bindings
+git diff -- src/bindings
+```
 
-After completing this setup:
-
-1. **Verify all checks pass**: Run `npm run lint`, `npm run format:check`, `npm test`
-2. **Test git hooks**: Make a test commit to verify hooks trigger
-3. **Review feature_list.json**: See the full development roadmap
-4. **Start development**: Use the harness (`harness/CLAUDE.md`) or implement manually
+Commit the resulting `src/bindings/*.ts` changes with the Rust type changes
+that caused them.

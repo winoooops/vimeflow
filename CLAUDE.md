@@ -8,9 +8,9 @@ This file is intentionally minimal — it is an **index, not a reference**. Each
 
 ## What This Project Is
 
-Vimeflow is a **CLI coding agent control plane** — a Tauri desktop application (Rust backend + React/TypeScript frontend) that unifies terminal sessions (AI coding agents like Claude Code), file explorer, code editor, and git diff into one window.
+Vimeflow is a **CLI coding agent control plane** — a Tauri desktop application (Rust backend + React/TypeScript frontend) that unifies terminal sessions for AI coding agents, file explorer, code editor, git diff, command palette, and live agent observability in one window.
 
-**Phase: Early implementation** — CI/CD tooling, design system, and layout shell are established. Pivoting from chat-based UI to terminal-first agent workspace. Tauri/Rust backend exists (`src-tauri/`) with terminal PTY and filesystem commands.
+**Current state** — the chat-first UI has been removed. The Tauri/Rust backend exists under `src-tauri/` with terminal PTY, filesystem, git, and Claude Code / Codex agent adapter modules. The frontend workspace shell is active, and the UI handoff migration has landed steps 1-3 (tokens/agent registry, shell layout, sidebar session rows, browser-style session tabs). Track live status in `docs/roadmap/progress.yaml`.
 
 ## Commands
 
@@ -29,25 +29,39 @@ npm run review:fix      # Interactive review-fix loop (fetch → fix → push �
 # Plugin skills: /harness-plugin:review (local), /harness-plugin:github-review (cloud PR), /harness-plugin:loop (agent loop)
 ```
 
-Node >= 24 (see `.nvmrc`). ESM-only (`"type": "module"`).
+`package.json` permits Node >=22; use Node 24 from `.nvmrc` for CI parity. ESM-only (`"type": "module"`).
 
 ## Architecture
 
 ```
 src/
 ├── main.tsx                    # React entry point
-├── App.tsx                     # Root component, renders ChatView
+├── App.tsx                     # Root component, renders WorkspaceView
 ├── index.css                   # Tailwind + global styles
-├── components/layout/          # Shared layout shells (IconRail, Sidebar, TopTabBar, ContextPanel)
-├── features/chat/              # Chat feature module
-│   ├── ChatView.tsx            # Page assembly — composes layout + chat components
-│   ├── components/             # Chat-specific components (MessageThread, MessageInput, AgentMessage, etc.)
-│   ├── data/mockMessages.ts    # Mock conversation data
-│   └── types/index.ts          # Chat domain types (Message, Conversation, etc.)
+├── components/                 # Shared primitives, e.g. Tooltip
+├── agents/                     # Agent metadata registry for UI handoff work
+├── hooks/                      # Shared React hooks promoted out of features
+├── bindings/                   # Generated Rust -> TypeScript types
+├── features/
+│   ├── workspace/              # Workspace assembly, shell components, session state
+│   ├── terminal/               # xterm.js + Tauri terminal service
+│   ├── agent-status/           # Live Claude Code / Codex observability panel
+│   ├── files/                  # File explorer data/services/components
+│   ├── editor/                 # CodeMirror editor, file buffers, vim mode
+│   ├── diff/                   # Git status/diff viewer
+│   └── command-palette/        # Vim-style command palette
 └── test/setup.ts               # Vitest setup (jsdom, testing-library matchers)
+
+src-tauri/
+├── src/
+│   ├── terminal/               # PTY commands, cache, bridge, state
+│   ├── filesystem/             # List/read/write commands with scope validation
+│   ├── git/                    # Git status/diff/watch support
+│   └── agent/                  # Agent detector and Claude Code / Codex adapters
+└── tests/                      # Rust integration fixtures and transcript tests
 ```
 
-**Feature-based organization**: code lives under `src/features/<name>/` with co-located components, types, and data. Shared layout components live in `src/components/layout/`.
+**Feature-based organization**: code lives under `src/features/<name>/` with co-located components, types, and data. Cross-feature primitives live in `src/components/`, and current workspace composition lives in `src/features/workspace/WorkspaceView.tsx`.
 
 **Test co-location**: every `.tsx`/`.ts` file has a sibling `.test.tsx`/`.test.ts` file.
 
@@ -120,7 +134,7 @@ mkdir -p ~/.claude/commands
 
 cat > ~/.claude/commands/harness-loop.md << 'EOF'
 ---
-description: Launch the VIBM autonomous development harness
+description: Launch the Vimeflow autonomous development harness
 ---
 Use the Skill tool to invoke `harness-plugin:loop`.
 EOF

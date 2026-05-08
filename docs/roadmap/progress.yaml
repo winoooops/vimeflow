@@ -3,28 +3,27 @@
 # Source: docs/roadmap/tauri-migration-roadmap.md
 # Schema: phase → steps → dod (definition of done)
 # Status values: pending | in_progress | done | blocked
-# Revised: 2026-05-01 — README hero gif + feature gallery landed; cross-phase work since #70 noted; Phase 4 D6 manually verified via demo recording.
+# Revised: 2026-05-07 — UI handoff steps 1-3 landed; docs synchronized with current source tree and CI.
 
-version: 7
-updated: '2026-05-01'
+version: 8
+updated: '2026-05-07'
 roadmap: docs/roadmap/tauri-migration-roadmap.md
 changelog:
   en: CHANGELOG.md
   zh-CN: CHANGELOG.zh-CN.md
 notes: >-
-  Phase 3 (Terminal Core) done. Phase 4 (Agent Status Sidebar) effectively
-  feature-complete — D1-D5 merged (PRs #49, #57, #60, #63, #70) and D6
-  manually verified via the README hero gif (docs/media/hero-init.gif),
-  recorded against a real Claude Code session. Several items in Phases 5-7
-  shipped out-of-order during Phase 4: Files Changed wired to live git
-  state (#86), Activity feed unified into a typed event stream (#80),
-  Tests panel surfacing Claude Code test runs (#109), PTY reattach with
-  cursor-replay protocol (#107), Tooltip primitive (#83), StatusCard
-  relocated to sidebar header (#120), Token Cache block (#115). Phase 5
-  remains the next deliberate roadmap step (Zustand session store).
-  Bilingual CHANGELOG.md / CHANGELOG.zh-CN.md continues as the linear
-  timeline paired with docs/reviews/. README.md / README.zh-CN.md now
-  embed a hero gif and a 4-image feature gallery (docs/media/).
+  Phase 3 (Terminal Core) and Phase 4 (Agent Status Sidebar) are done.
+  Phase 4 D6 was manually verified via docs/media/hero-init.gif, recorded
+  against a real Claude Code session. Several later-roadmap capabilities
+  shipped out-of-order during Phase 4: Files Changed from live git state
+  (#86), typed Activity feed (#80), Claude Code test-run surfacing (#109),
+  PTY reattach with cursor replay (#107), Tooltip primitive (#83),
+  StatusCard in the sidebar header (#120), Token Cache block (#115), and
+  Codex adapter support (#154). UI handoff migration is now the active
+  visual track: steps 1-3 landed in #171, #173, and #174; step 4
+  (single TerminalPane) is next. Bilingual CHANGELOG.md /
+  CHANGELOG.zh-CN.md continues as the linear timeline paired with
+  docs/reviews/.
 
 phases:
   - id: phase-1
@@ -839,23 +838,30 @@ phases:
         pr: null
   - id: ui-handoff-migration
     name: 'UI Handoff Migration (handoff §9 + token cleanup)'
-    status: pending
+    status: in_progress
     blocked_by: []
     specs:
       - docs/superpowers/specs/2026-05-05-ui-handoff-migration-design.md
     steps:
       - id: ui-s1
         name: 'Tokens + agents registry'
-        status: pending
+        status: done
+        commit: 38af7ab
+        pr: 171
       - id: ui-s2
         name: 'App shell layout (proportions + status bar + session-tab strip)'
-        status: pending
+        status: done
+        commit: 266b3a0
+        pr: 173
       - id: ui-s3
         name: 'Sidebar sessions list + browser-style session tabs'
-        status: pending
+        status: done
+        commit: ab1b888
+        pr: 174
       - id: ui-s4
         name: 'Single TerminalPane (handoff §4.6)'
         status: pending
+        notes: 'Next active handoff step after #174.'
       - id: ui-s5
         name: 'SplitView grid (5 layouts) + LayoutSwitcher + ⌘1-4 / ⌘\ shortcuts'
         status: pending

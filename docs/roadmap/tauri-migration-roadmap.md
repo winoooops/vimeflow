@@ -2,6 +2,9 @@
 
 > Created: 2026-04-06
 > Revised: 2026-04-07 — pivoted from chat manager to CLI agent workspace
+> Status note: 2026-05-07 — this file preserves the original migration plan.
+> Use `docs/roadmap/progress.yaml` for live status and
+> `docs/roadmap/ui-update-roadmap.md` for the active UI handoff track.
 > Design spec: docs/superpowers/specs/2026-04-06-cli-agent-workspace-design.md
 > Change log: CHANGELOG.md / CHANGELOG.zh-CN.md (linear timeline, paired with docs/reviews/)
 
@@ -13,16 +16,17 @@ Replaces the previous 6-phase chat-based roadmap. The core change: the primary w
 
 ## Current State
 
-| Component           | Status                                                           |
-| ------------------- | ---------------------------------------------------------------- |
-| Tauri scaffold      | **Done** — `src-tauri/` bootstrapped, CI green (PR #27)          |
-| Chat view           | UI shell + mock data — **deprecated, to be removed**             |
-| Diff view           | Wired — real git ops via Vite API plugin (`/api/git/*`)          |
-| Editor view         | Wired — file tree + content via Vite API plugin (`/api/files/*`) |
-| Command Palette     | UI shell + mock commands                                         |
-| Agent Workspace     | Design spec complete, Stitch mockup approved (PR #29)            |
-| Terminal (xterm.js) | Not yet implemented                                              |
-| State management    | None — prop drilling + `useState` in `App.tsx`                   |
+| Component           | Status                                                                           |
+| ------------------- | -------------------------------------------------------------------------------- |
+| Tauri scaffold      | **Done** — `src-tauri/` is the active Rust backend                               |
+| Chat view           | **Removed** — project pivoted to terminal-first agent workspace                  |
+| Terminal (xterm.js) | **Done** — Tauri PTY bridge, xterm.js, multi-tab sessions, resize/replay support |
+| Agent status panel  | **Done** — Claude Code and Codex adapters feed the shared frontend panel         |
+| Diff view           | Wired — Vite dev API fallback plus Tauri git/watch integration                   |
+| Editor view         | Wired — CodeMirror editor, vim mode, file buffers, Tauri/Vite file services      |
+| Command Palette     | Wired — fuzzy registry, Ctrl+: trigger, workspace tab actions                    |
+| UI handoff          | **In progress** — steps 1-3 merged; step 4 Single TerminalPane is next           |
+| State management    | Pending — session persistence/store remains on the future roadmap                |
 
 ---
 
@@ -107,7 +111,17 @@ Integrate xterm.js with a Rust-side PTY via Tauri. Replace the terminal zone pla
 
 ---
 
-## Phase 4: Session Management + State
+## Phase 4: Agent Status Sidebar
+
+**Status: Done** — see `docs/roadmap/progress.yaml` for the landed
+Claude Code / Codex adapter work and verification evidence.
+
+The original 2026-04 roadmap did not include this phase as a separate section;
+it shipped as the agent-observability track before session persistence.
+
+---
+
+## Phase 5: Session Management + State
 
 **Scope: Medium | Est: 5–7 days | Blocked by: Phase 3**
 
@@ -146,7 +160,7 @@ src/stores/
 
 ---
 
-## Phase 5: File Watcher + Agent Activity Panel
+## Phase 6: File Watcher + Agent Activity Panel
 
 **Scope: Medium | Est: 5–7 days | Blocked by: Phase 4**
 
@@ -176,7 +190,7 @@ Wire the Agent Activity sidebar (built as static shell in Phase 2) to real data 
 
 ---
 
-## Phase 6: Terminal Parser + Agent Adapters
+## Phase 7: Terminal Parser + Agent Adapters
 
 **Scope: Medium | Est: 4–6 days | Blocked by: Phase 5**
 
@@ -208,7 +222,7 @@ Parse Claude Code's terminal output to extract structured data: tool calls, test
 
 ---
 
-## Phase 7: Context Panel Integration
+## Phase 8: Context Panel Integration
 
 **Scope: Medium | Est: 4–6 days | Blocked by: Phase 4**
 
@@ -236,7 +250,7 @@ Wire the existing Files Explorer, Code Editor, and Git Diff views to Tauri IPC, 
 
 ---
 
-## Phase 8: Usage Metrics
+## Phase 9: Usage Metrics
 
 **Scope: Small | Est: 2–3 days | Blocked by: Phase 6**
 
@@ -261,9 +275,9 @@ Wire real usage data into the Agent Activity panel.
 
 ---
 
-## Phase 9: Desktop Polish
+## Phase 10: Desktop Polish
 
-**Scope: Medium | Est: 4–6 days | Parallel with Phase 8**
+**Scope: Medium | Est: 4–6 days | Parallel with Phase 9**
 
 - Window state persistence (`tauri-plugin-window-state`)
 - Native menu bar (platform-specific)
@@ -281,23 +295,28 @@ Wire real usage data into the Agent Activity panel.
 Phase 1: Tauri Scaffold ✅
     │
     ▼
-Phase 2: Workspace Layout Shell ← NEXT
+Phase 2: Workspace Layout Shell ✅
     │
     ▼
-Phase 3: Terminal Core
+Phase 3: Terminal Core ✅
     │
     ▼
-Phase 4: Session Management + State ───────┐
+Phase 4: Agent Status Sidebar ✅
+    │
+    ├───────────────► UI Handoff Migration ← ACTIVE
+    │
+    ▼
+Phase 5: Session Management + State ───────┐
     │                                       │
     ▼                                       ▼
-Phase 5: File Watcher + Activity    Phase 7: Context Panels
+Phase 6: File Watcher + Activity    Phase 8: Context Panels
     │
     ▼
-Phase 6: Terminal Parser
+Phase 7: Terminal Parser
     │
     ├────────┬──────────┐
     ▼        ▼          ▼
-Phase 8  Phase 9    (parallel)
+Phase 9  Phase 10   (parallel)
 ```
 
 ---
@@ -309,8 +328,8 @@ Phase 8  Phase 9    (parallel)
 | Layout first    | Static shell before backend wiring      | Validate design, get visual feedback early, unblock parallel UI |
 | Terminal        | xterm.js + portable-pty                 | De facto standard; matches Termio's stack                       |
 | PTY management  | One PTY per terminal tab                | Simple lifecycle; Rust owns spawn/kill                          |
-| State mgmt      | Zustand in Phase 4                      | After terminal works but before complex UI                      |
-| Agent parsing   | Adapter pattern per agent CLI           | Claude Code first; extensible to Codex, Aider                   |
+| State mgmt      | Store/persistence on the future roadmap | Current sessions are still managed inside workspace hooks       |
+| Agent parsing   | Adapter pattern per agent CLI           | Claude Code and Codex share the same frontend event shape       |
 | File watching   | Rust `notify` → Tauri events            | Agent-agnostic; works regardless of which process changes files |
 | Context panels  | Sidebar (260px) + full-width overlay    | Compact view in sidebar; expand for detailed work               |
 | Session model   | Project → Sessions → Terminals          | Discord-like hierarchy; familiar mental model                   |
@@ -333,16 +352,18 @@ Phase 8  Phase 9    (parallel)
 
 ## Timeline Summary
 
-| Phase                         | Scope  | Est. Days | Status   | Key Deliverable                       |
-| ----------------------------- | ------ | --------- | -------- | ------------------------------------- |
-| 1. Tauri Scaffold             | Medium | 3–5       | **Done** | Native window + CI green              |
-| 2. Workspace Layout Shell     | Medium | 4–6       | Next     | 4-zone layout, mock data              |
-| 3. Terminal Core              | Large  | 5–8       | Pending  | xterm.js + PTY working                |
-| 4. Session Management + State | Medium | 5–7       | Pending  | Projects, sessions, Zustand           |
-| 5. File Watcher + Activity    | Medium | 5–7       | Pending  | Agent Activity panel, real-time files |
-| 6. Terminal Parser            | Medium | 4–6       | Pending  | Claude Code output → structured data  |
-| 7. Context Panels             | Medium | 4–6       | Pending  | Files/Editor/Diff wired to sessions   |
-| 8. Usage Metrics              | Small  | 2–3       | Pending  | Context window, billing data          |
-| 9. Desktop Polish             | Medium | 4–6       | Pending  | Tray, menus, auto-update, fonts       |
+| Phase                         | Scope  | Est. Days | Status          | Key Deliverable                       |
+| ----------------------------- | ------ | --------- | --------------- | ------------------------------------- |
+| 1. Tauri Scaffold             | Medium | 3-5       | **Done**        | Native window + CI green              |
+| 2. Workspace Layout Shell     | Medium | 4-6       | **Done**        | Workspace shell, mock data            |
+| 3. Terminal Core              | Large  | 5-8       | **Done**        | xterm.js + PTY working                |
+| 4. Agent Status Sidebar       | Medium | 5-7       | **Done**        | Agent detection/status/activity panel |
+| UI Handoff Migration          | Large  | 10 steps  | **In progress** | Handoff visual + behavior migration   |
+| 5. Session Management + State | Medium | 5-7       | Pending         | Projects, sessions, persistence/store |
+| 6. File Watcher + Activity    | Medium | 5-7       | Pending         | Agent Activity panel, real-time files |
+| 7. Terminal Parser            | Medium | 4-6       | Pending         | Agent output -> structured data       |
+| 8. Context Panels             | Medium | 4-6       | Pending         | Files/Editor/Diff wired to sessions   |
+| 9. Usage Metrics              | Small  | 2-3       | Pending         | Context window, billing data          |
+| 10. Desktop Polish            | Medium | 4-6       | Pending         | Tray, menus, auto-update, fonts       |
 
-**Total: ~36–54 days** (critical path ~28–40 days with Phase 7–9 parallel work)
+**Total: ~36–54 days** (critical path ~28–40 days with Phase 9–10 parallel work)

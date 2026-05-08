@@ -4,28 +4,44 @@ Project context for OpenAI Codex code review.
 
 ## Project
 
-Vimeflow is a Tauri desktop application (Rust backend + React/TypeScript frontend) for managing conversations with AI coding agents.
+Vimeflow is a Tauri desktop application (Rust backend + React/TypeScript frontend) for managing terminal-first AI coding agent workspaces.
 
-**Phase:** Early implementation. The Tauri/Rust backend (`src-tauri/`) does not exist yet — current focus is frontend.
+**Current state:** The Tauri/Rust backend exists under `src-tauri/` with PTY, filesystem, git, and agent-observability modules. The frontend is a workspace shell with terminal sessions, file/editor/diff panels, command palette, and the agent status panel. The UI handoff migration is in progress; see `docs/roadmap/progress.yaml`.
 
 ## Architecture
 
 ```
 src/
 ├── main.tsx                    # React entry point
-├── App.tsx                     # Root component
+├── App.tsx                     # Root component, renders WorkspaceView
 ├── index.css                   # Tailwind + global styles
-├── components/layout/          # Shared layout shells
-└── features/chat/              # Chat feature module
-    ├── ChatView.tsx            # Page assembly
-    ├── components/             # Chat-specific components
-    ├── data/mockMessages.ts    # Mock conversation data
-    └── types/index.ts          # Chat domain types
+├── components/                 # Shared primitives, e.g. Tooltip
+├── agents/                     # Agent metadata registry for UI handoff work
+├── hooks/                      # Shared React hooks promoted out of features
+├── bindings/                   # Generated Rust -> TypeScript types
+├── features/
+│   ├── workspace/              # Workspace assembly, shell components, session state
+│   ├── terminal/               # xterm.js + Tauri terminal service
+│   ├── agent-status/           # Live Claude Code / Codex observability panel
+│   ├── files/                  # File explorer data/services/components
+│   ├── editor/                 # CodeMirror editor, file buffers, vim mode
+│   ├── diff/                   # Git status/diff viewer
+│   └── command-palette/        # Vim-style command palette
+└── test/setup.ts               # Vitest setup
+
+src-tauri/
+├── src/
+│   ├── terminal/               # PTY commands, cache, bridge, state
+│   ├── filesystem/             # List/read/write commands with scope validation
+│   ├── git/                    # Git status/diff/watch support
+│   └── agent/                  # Agent detector and Claude Code / Codex adapters
+└── tests/                      # Rust integration fixtures and transcript tests
 ```
 
 - **Feature-based organization**: code lives under `src/features/<name>/` with co-located components, types, and data
 - **Test co-location**: every `.tsx`/`.ts` file has a sibling `.test.tsx`/`.test.ts`
-- **Shared layout**: `src/components/layout/` for cross-feature layout shells
+- **Generated bindings**: Rust `ts-rs` exports live in `src/bindings/`; use `npm run generate:bindings` after Rust type changes
+- **Workspace shell**: current top-level UI composition lives in `src/features/workspace/WorkspaceView.tsx`
 
 ## Code Style
 
@@ -49,8 +65,10 @@ Quick reference: no semicolons, single quotes, trailing commas (es5), arrow-func
 **For complete design specifications**, read:
 
 - `DESIGN.md` — color palette, typography, layout, critical design rules, interaction patterns
+- `docs/design/UNIFIED.md` — current authoritative UI contract for the handoff migration
 - `docs/design/DESIGN.md` — full design system spec
-- `docs/design/chat_or_main/` — chat screen mockup and reference HTML
+- `docs/design/handoff/` — current UI handoff screenshots and prototype
+- `docs/design/agent_workspace/` — workspace screen mockup and reference HTML
 - `docs/design/code_editor/` — code editor screen
 - `docs/design/files_explorer/` — files explorer screen
 - `docs/design/git_diff/` — git diff viewer screen

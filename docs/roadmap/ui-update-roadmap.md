@@ -4,17 +4,23 @@
 
 10 sequential steps land the existing `WorkspaceView` onto the handoff visual + behavioural spec while keeping all Tauri integrations intact. Steps 1–9 mirror handoff §9 verbatim; step 10 is a token-cleanup pass that closes the additive-token strategy.
 
-## Step 1 — Tokens + agents registry
+**Status (2026-05-07).** Steps 1-3 are merged on `main`:
+tokens + agents registry ([#171](https://github.com/winoooops/vimeflow/pull/171), `38af7ab`),
+app shell layout ([#173](https://github.com/winoooops/vimeflow/pull/173), `266b3a0`),
+and sidebar sessions + browser-style tabs ([#174](https://github.com/winoooops/vimeflow/pull/174), `ab1b888`).
+Step 4, Single TerminalPane, is next.
+
+## Step 1 — Tokens + agents registry (done)
 
 **Goal.** Extend `tailwind.config.js` with the handoff §6 design tokens (additive only) and add `src/agents/registry.ts` per handoff §6's TypeScript snippet.
 
-**Files.** `tailwind.config.js`, `src/agents/registry.ts`, `src/lib/tailwindConfig.test.ts` (new).
+**Files.** `tailwind.config.js`, `tailwind.config.test.js`, `src/agents/registry.ts`, `src/agents/registry.test.ts`, `docs/design/handoff/`.
 
-**DoD.** New tokens present and asserted by test; existing classes unchanged in value; agents registry exported with `AgentId` keyof-type; `npm run lint`, `npm run test`, `npm run type-check` all green.
+**DoD.** New tokens present and asserted by test; existing classes unchanged in value; agents registry exported with `AgentId` keyof-type; handoff prototype/screenshots checked in; `npm run lint`, `npm run test`, `npm run type-check` all green.
 
-**Risks.** None to runtime — no consumer in this step. Test lives under `src/lib/` so ESLint's `parserOptions.projectService` (scoped to `tsconfig.json`'s `src` include) parses it; importing `../../tailwind.config.js` works under Vite's bundler resolution.
+**Risks.** None to runtime — no consumer in this step. Tests landed in `tailwind.config.test.js` and `src/agents/registry.test.ts`, matching the implemented file layout.
 
-## Step 2 — App shell layout
+## Step 2 — App shell layout (done)
 
 **Goal.** Adjust `WorkspaceView`'s grid to handoff §3 proportions (48 / 272 / flex / 284), mount a 38px session-tab strip placeholder above the existing TerminalZone, mount a 24px status bar below the BottomDrawer.
 
@@ -24,7 +30,7 @@
 
 **Risks.** Sidebar resizable behaviour: handoff says fixed 272px. We keep resizable, seed from 272px. If review pushes back, drop resizing in step 3.
 
-## Step 3 — Sidebar sessions list + session tabs
+## Step 3 — Sidebar sessions list + session tabs (done)
 
 **Goal.** Restyle sidebar sessions list per §4.2; replace placeholder session-tab strip with browser-style tabs per §4.3 wired to `useSessionManager`.
 
@@ -34,7 +40,7 @@
 
 **Risks.** Negative-margin trick on active tab can clip — verify in browser before merge.
 
-## Step 4 — Single TerminalPane
+## Step 4 — Single TerminalPane (next)
 
 **Goal.** Replace existing TerminalPane with handoff §4.6 spec (collapsible header, scroll body, input footer, focus ring) wired to one PTY.
 
