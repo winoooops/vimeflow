@@ -1209,4 +1209,4 @@ Before declaring the plan complete, the plan author runs this list:
 
 ---
 
-<!-- codex-reviewed: false -->
+<!-- codex-reviewed: 2026-05-08T10:48:43Z -->
