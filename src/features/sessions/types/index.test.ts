@@ -10,7 +10,11 @@ import type {
 
 describe('Session Types', () => {
   describe('SessionStatus', () => {
-    test('defines valid session status values', () => {
+    test('union covers exactly the four documented states', () => {
+      // Snapshot the union — adding/removing a member without updating
+      // this test fails the comparison, forcing a deliberate decision.
+      // The previous .toBeTruthy() loop passed for any non-empty string,
+      // so a widening to `string` would have gone unnoticed.
       const validStatuses: SessionStatus[] = [
         'running',
         'paused',
@@ -18,9 +22,9 @@ describe('Session Types', () => {
         'errored',
       ]
 
-      validStatuses.forEach((status) => {
-        expect(status).toBeTruthy()
-      })
+      expect(new Set(validStatuses)).toEqual(
+        new Set(['running', 'paused', 'completed', 'errored'])
+      )
     })
   })
 
@@ -108,7 +112,11 @@ describe('Session Types', () => {
   })
 
   describe('ContextWindowStatus', () => {
-    test('emoji reflects percentage correctly', () => {
+    // No percentage→emoji mapping exists — emoji is a free field the
+    // backend populates. This test only exercises that the four emoji
+    // literals in the union are accepted by the type. A real mapping
+    // test belongs in whichever utility eventually computes the emoji.
+    test('accepts all four emoji literals from the union', () => {
       const fresh: ContextWindowStatus = {
         used: 50000,
         total: 200000,

@@ -43,7 +43,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform | 4        | 3    | 2026-05-07   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality   | 4        | 0    | 2026-04-12   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality   | 2        | 0    | 2026-05-04   |
-| [Testing Gaps](patterns/testing-gaps.md)                             | testing        | 39       | 20   | 2026-05-08   |
+| [Testing Gaps](patterns/testing-gaps.md)                             | testing        | 43       | 20   | 2026-05-08   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal       | 3        | 1    | 2026-04-09   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality   | 53       | 18   | 2026-05-07   |
 | [Accessibility](patterns/accessibility.md)                           | a11y           | 20       | 6    | 2026-05-08   |

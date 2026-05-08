@@ -389,3 +389,45 @@ filesystem scope restrictions).
 - **Finding:** The Sidebar's `renderSlot` predicate excluded `null`/`undefined`/`false` but not `true`. JSX boolean shorthand `<Sidebar header />` passes `header={true}` (`true` IS a valid `ReactNode` in TypeScript's typing), which satisfied the predicate's three checks → wrapper rendered around `{true}` (rendered by React as no visible output) → phantom ~20 px padded div above the session list. The accompanying test "null/undefined/false header all suppress the header wrapper" gave a FALSE SENSE OF SAFETY: it queried the inner probe element's absence (which is always absent for any "no content" header value) but never asserted on the OUTER wrapper. The wrapper could render a phantom padded div with no content and the test would still pass. Same finding-class as #19 + #38 (assertions that name the right invariant but don't actually constrain it): the test's name promised "wrapper suppression" but the assertion checked an artifact downstream of the wrapper (the inner probe).
 - **Fix:** Added `data-testid="sidebar-header-wrapper"` and `data-testid="sidebar-footer-wrapper"` to the slot wrapper divs in `Sidebar.tsx`. Tightened the test to query the wrapper testid (not the inner probe), and explicitly added an `<Sidebar header />` (JSX boolean shorthand → `header={true}`) case + a `header={undefined}` case alongside the original null/false cases. The runtime fix added `slot !== true` to the `renderSlot` predicate. Code-review heuristic: when a test asserts that a wrapper element is suppressed, query for the WRAPPER, not for any inner content — the inner content's absence is a downstream effect that may be true regardless of wrapper presence (especially when the "no content" value renders as nothing-visible). The test must observe the structural artifact whose absence is the actual invariant.
 - **Commit:** _(see git log for the cycle-5 fix commit on PR #182)_
+
+### 40. List test asserts both calls but not their order — flushSync ordering invariant left unenforced
+
+- **Source:** github-claude | PR #184 cycle 1 | 2026-05-08
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/List.test.tsx`
+- **Finding:** `handleRemoveSession` in `List.tsx` fires `onRemoveSession(id)` BEFORE `onSessionClick(nextId)` — the order is load-bearing because `useSessionManager.removeSession` uses `flushSync` internally; reversing the calls would let `flushSync`'s `setActiveSessionId` race the explicit override. `Tabs.test.tsx` locks the same invariant via `expect(onClose.mock.invocationCallOrder[0]).toBeLessThan(onSelect.mock.invocationCallOrder[0])`. The analogous List test (`'removing active session pre-selects next visible Active row'`) only asserted `.toHaveBeenCalledWith(...)` for both mocks — would still pass even if a future refactor swapped the call order. Same family as #6 (regression-guard test that didn't actually verify the property it claimed): the test name promised an invariant the assertion didn't enforce.
+- **Fix:** Added `expect(onRemoveSession.mock.invocationCallOrder[0]).toBeLessThan(onSessionClick.mock.invocationCallOrder[0])` after the existing call assertions, mirroring `Tabs.test.tsx` exactly. Code-review heuristic: when two callbacks must fire in a specific order for correctness, the test MUST assert `invocationCallOrder` — counting calls or asserting `toHaveBeenCalledWith` doesn't observe the order.
+- **Commit:** _(see git log for the cycle-1 fix commit on PR #184)_
+
+---
+
+### 41. SessionStatus union test loops `.toBeTruthy()` — non-empty strings always pass, no discrimination
+
+- **Source:** github-claude | PR #184 cycle 1 | 2026-05-08
+- **Severity:** LOW
+- **File:** `src/features/sessions/types/index.test.ts`
+- **Finding:** The `'defines valid session status values'` test iterated over a `SessionStatus[]` and called `expect(status).toBeTruthy()` on each. Every non-empty string is truthy, so the assertion has zero discriminating power — the test would still pass if `SessionStatus` were widened to `string`, or if the type were deleted and replaced with `any`. The TypeScript array assignment is the real check; the runtime loop adds nothing. Same family as #19 / #38 / #39 (assertions named for an invariant they don't actually enforce), specialized to type-snapshot tests.
+- **Fix:** Replaced the `.forEach(toBeTruthy)` loop with a Set comparison: `expect(new Set(validStatuses)).toEqual(new Set(['running', 'paused', 'completed', 'errored']))`. Adding or removing a member of `SessionStatus` without updating both the array and the literal Set fails the comparison, forcing a deliberate update. Renamed the test to `'union covers exactly the four documented states'` so the actual scope is on the tin. Code-review heuristic: a `forEach` + `toBeTruthy` over typed string literals is a smell; convert to a Set/array equality against an inline literal so widening the type immediately fails.
+- **Commit:** _(see git log for the cycle-1 fix commit on PR #184)_
+
+---
+
+### 42. ContextWindowStatus emoji test name implied a percentage→emoji mapping that doesn't exist
+
+- **Source:** github-claude | PR #184 cycle 1 | 2026-05-08
+- **Severity:** LOW
+- **File:** `src/features/sessions/types/index.test.ts`
+- **Finding:** The `'emoji reflects percentage correctly'` test constructed four `ContextWindowStatus` fixtures with manually-assigned `emoji` + `percentage` values, then asserted each emoji equals itself (`expect(fresh.emoji).toBe('😊')`). No derivation function is under test — `emoji` is a free field the backend populates independently of `percentage`. An object with `{ percentage: 95, emoji: '😊' }` is valid TypeScript and would pass. The test name misled future maintainers about what is and isn't covered. Same family as #19 / #38 / #41: assertions whose name promised a mapping/invariant they don't enforce.
+- **Fix:** Renamed the test to `'accepts all four emoji literals from the union'` and added a `describe`-level comment acknowledging there's no percentage→emoji derivation to test — when one lands, that derivation deserves its own unit test calling the derivation function. Kept the literal acceptance as a TypeScript compile-time gate. Code-review heuristic: when test naming reads "X reflects Y", the body must invoke the X-from-Y derivation function; if it only asserts literals, the name should describe acceptance, not derivation.
+- **Commit:** _(see git log for the cycle-1 fix commit on PR #184)_
+
+---
+
+### 43. Discriminated-union rest-prop cast widens the variant — future drift wouldn't surface at the cast site
+
+- **Source:** github-claude | PR #184 cycle 1 | 2026-05-08
+- **Severity:** LOW
+- **File:** `src/features/sessions/components/Group.tsx`
+- **Finding:** Inside `if (variant === 'active')`, the component extracted `onReorder` via `rest as { onReorder: (sessions: Session[]) => void }`. The cast was necessary because TypeScript doesn't narrow `...rest` through a discriminant check, but it was wider than the actual narrowed type — the literal shape isn't tethered to `GroupProps`. If a third union variant were added to `GroupProps` with a different `onReorder`-shaped prop, the cast would silently apply the `'active'` signature to the wrong variant; type errors would surface only at downstream call sites, not at the cast itself. Same family as #33 (enum-variant exhaustiveness gap): a code-quality finding about future drift not being caught at the surface where it originates.
+- **Fix:** Tightened the cast to `rest as Extract<GroupProps, { variant: 'active' }>` so it stays tethered to the real union shape. A future variant change that breaks compatibility now fails type-check at this cast site instead of at a downstream call site. Added a comment explaining the tether. Code-review heuristic: when narrowing-through-rest forces a cast inside a discriminated-union branch, use `Extract<UnionType, { tag: 'value' }>` rather than an ad-hoc shape literal — it stays in lockstep with the union's evolution.
+- **Commit:** _(see git log for the cycle-1 fix commit on PR #184)_
