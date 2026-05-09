@@ -165,7 +165,6 @@ export const List = ({
             type="button"
             onClick={onCreateSession}
             className="flex w-full items-center justify-center gap-1.5 rounded-[8px] border border-outline-variant/40 bg-transparent px-3 py-2 font-label text-xs font-semibold text-on-surface-variant transition-colors hover:bg-on-surface/[0.04] hover:text-on-surface focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container"
-            aria-label="new session"
             data-testid="sessions-list-new-session"
           >
             <span
