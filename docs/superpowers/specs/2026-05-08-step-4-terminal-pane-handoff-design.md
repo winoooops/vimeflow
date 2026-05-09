@@ -820,3 +820,5 @@ The work lands as a single PR (#163). Suggested commit slicing within that PR fo
 - Sibling pattern reference (`Tab.tsx` consuming agent registry): `src/features/sessions/components/Tab.tsx`
 - Rules: `rules/typescript/coding-style/CLAUDE.md`, `rules/typescript/testing/CLAUDE.md`, `rules/common/coding-style/CLAUDE.md`
 - Roadmap entry: `docs/roadmap/progress.yaml` (`ui-handoff-migration / ui-s4`)
+
+<!-- codex-reviewed: 2026-05-09T03:26:07Z -->
