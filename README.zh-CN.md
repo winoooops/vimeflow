@@ -149,7 +149,7 @@ npm run type-check               # tsc -b
 
 ### Lifeline 插件安装
 
-自主开发工作流现在由抽离后的 [Lifeline Claude Code 插件](https://github.com/winoooops/lifeline)提供，不再由本仓库内置脚本提供。Lifeline 提供 `/lifeline:planner`、`/lifeline:loop`、`/lifeline:review`、`/lifeline:request-pr`、`/lifeline:upsource-review` 和 `/lifeline:approve-pr`。
+自主开发工作流由专用的 [Lifeline Claude Code 插件](https://github.com/winoooops/lifeline)提供。Lifeline 是完整独立的工作流插件，提供 `/lifeline:planner`、`/lifeline:loop`、`/lifeline:review`、`/lifeline:request-pr`、`/lifeline:upsource-review` 和 `/lifeline:approve-pr`。
 
 ```bash
 # 1. 注册 Lifeline marketplace（一次性）
@@ -208,11 +208,11 @@ rules/                      # 分层开发标准（通用 + TS + Rust）
 传统项目由人类编写代码，AI 辅助。Vimeflow 反转了这一模式：
 
 1. **人类编写规格说明** — 产品需求、设计系统、开发规则
-2. **Lifeline 构建功能** — 抽离后的插件将规格分解为功能列表并逐步实现
+2. **Lifeline 构建功能** — 专用插件将规格分解为功能列表并逐步实现
 3. **专业代理审查工作** — 10 个 AI 代理分别负责规划、TDD、代码审查、安全和文档
 4. **规则管控一切** — 分层规则系统（通用层 + 语言特定层）确保一致性，无需人工逐次提交干预
 
-旧的仓库内 harness 已抽离到 Lifeline。Vimeflow 本地使用说明见 [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup)，插件运行手册见 <https://github.com/winoooops/lifeline>。
+Lifeline 是 Vimeflow AI 原生开发循环的专用工作流插件。Vimeflow 本地使用说明见 [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup)，插件运行手册见 <https://github.com/winoooops/lifeline>。
 
 ## 路线图
 

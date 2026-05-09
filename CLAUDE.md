@@ -110,7 +110,7 @@ This file covers what you need to start working. For deeper topics, read the lin
 
 ## Lifeline Plugin Setup
 
-The autonomous workflow is no longer vendored in this repository. Install the extracted Lifeline Claude Code plugin from <https://github.com/winoooops/lifeline>:
+Install the dedicated Lifeline Claude Code plugin from <https://github.com/winoooops/lifeline>:
 
 ```bash
 # 1. Register the marketplace (one-time)
@@ -123,7 +123,7 @@ The autonomous workflow is no longer vendored in this repository. Install the ex
 /reload-plugins
 ```
 
-Available skills: `/lifeline:planner`, `/lifeline:loop`, `/lifeline:review`, `/lifeline:request-pr`, `/lifeline:upsource-review`, and `/lifeline:approve-pr`. Lifeline installs its own Python orchestrator into the Claude plugin cache; this repo intentionally does not contain `harness/`, `.claude-plugin/`, or `plugins/harness/`.
+Available skills: `/lifeline:planner`, `/lifeline:loop`, `/lifeline:review`, `/lifeline:request-pr`, `/lifeline:upsource-review`, and `/lifeline:approve-pr`. Lifeline is self-contained and installs its Python orchestrator into the Claude plugin cache; this repo keeps only project-local usage notes.
 
 ### Autocomplete Workaround
 

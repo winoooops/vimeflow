@@ -176,7 +176,7 @@ The variable is harmless on macOS (no WebKitGTK) but the inline shell syntax doe
 
 ### Lifeline Plugin Setup
 
-The autonomous development workflow is provided by the extracted [Lifeline Claude Code plugin](https://github.com/winoooops/lifeline), not by vendored scripts in this repo. Lifeline provides `/lifeline:planner`, `/lifeline:loop`, `/lifeline:review`, `/lifeline:request-pr`, `/lifeline:upsource-review`, and `/lifeline:approve-pr`.
+The autonomous development workflow is provided by the dedicated [Lifeline Claude Code plugin](https://github.com/winoooops/lifeline). Lifeline provides `/lifeline:planner`, `/lifeline:loop`, `/lifeline:review`, `/lifeline:request-pr`, `/lifeline:upsource-review`, and `/lifeline:approve-pr`.
 
 ```bash
 # 1. Register the Lifeline marketplace (one-time)
@@ -235,11 +235,11 @@ rules/                      # Hierarchical dev standards (common + TS + Rust)
 Traditional projects have humans write code and AI assist. Vimeflow inverts this:
 
 1. **Humans write specs** — product requirements, design system, development rules
-2. **Lifeline builds features** — the extracted plugin decomposes specs into a feature list and implements them incrementally
+2. **Lifeline builds features** — the dedicated plugin decomposes specs into a feature list and implements them incrementally
 3. **Specialized agents review the work** — 10 AI agents handle planning, TDD, code review, security, and documentation
 4. **Rules govern everything** — a hierarchical rule system (common + language-specific) ensures consistency without human intervention per commit
 
-The old in-repo harness has been extracted into Lifeline. See [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup) for Vimeflow-specific usage notes and <https://github.com/winoooops/lifeline> for the plugin runbook.
+Lifeline is the dedicated workflow plugin for Vimeflow's AI-native development loop. See [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup) for Vimeflow-specific usage notes and <https://github.com/winoooops/lifeline> for the plugin runbook.
 
 ## Roadmap
 
