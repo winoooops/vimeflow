@@ -19,34 +19,22 @@ describe('Footer', () => {
     expect(screen.getByText('>')).toBeInTheDocument()
   })
 
-  test('input is readOnly, tabIndex={-1}, and aria-hidden', () => {
-    render(<Footer {...baseProps} />)
-
-    const input = screen.getByDisplayValue('')
-
-    expect(input).toHaveAttribute('readonly')
-    expect(input).toHaveAttribute('tabindex', '-1')
-    expect(input).toHaveAttribute('aria-hidden', 'true')
-  })
-
   test('placeholder when blurred shows click-to-focus cue', () => {
     render(<Footer {...baseProps} />)
 
-    expect(
-      screen.getByPlaceholderText(/click to focus claude/i)
-    ).toBeInTheDocument()
+    expect(screen.getByText('click to focus claude')).toBeInTheDocument()
   })
 
   test('placeholder when focused and paused shows paused', () => {
     render(<Footer {...baseProps} isFocused isPaused pipStatus="paused" />)
 
-    expect(screen.getByPlaceholderText('paused')).toBeInTheDocument()
+    expect(screen.getByText('paused')).toBeInTheDocument()
   })
 
   test('placeholder when focused and running shows message cue', () => {
     render(<Footer {...baseProps} isFocused />)
 
-    expect(screen.getByPlaceholderText(/message claude/i)).toBeInTheDocument()
+    expect(screen.getByText('message claude...')).toBeInTheDocument()
   })
 
   test('placeholder override replaces derivation', () => {
@@ -57,7 +45,9 @@ describe('Footer', () => {
       />
     )
 
-    expect(screen.getByPlaceholderText(/session ended/i)).toBeInTheDocument()
+    expect(
+      screen.getByText('session ended — restart to resume claude')
+    ).toBeInTheDocument()
   })
 
   test('clicking focus button fires onClickFocus', () => {

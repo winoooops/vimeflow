@@ -64,4 +64,15 @@ describe('HeaderMetadata', () => {
     expect(screen.getByText('−12')).toBeInTheDocument()
     expect(screen.getByText('5m ago')).toBeInTheDocument()
   })
+
+  test('omits delta segment and leading separator when deltas are zero', () => {
+    const { container } = render(
+      <HeaderMetadata branch={null} added={0} removed={0} session={session} />
+    )
+
+    expect(screen.queryByText('+0')).not.toBeInTheDocument()
+    expect(screen.queryByText('−0')).not.toBeInTheDocument()
+    expect(screen.getByText('5m ago')).toBeInTheDocument()
+    expect(container).not.toHaveTextContent('·')
+  })
 })

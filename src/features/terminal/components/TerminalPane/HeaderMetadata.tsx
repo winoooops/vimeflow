@@ -14,20 +14,32 @@ export const HeaderMetadata = ({
   added,
   removed,
   session,
-}: HeaderMetadataProps): ReactElement => (
-  <>
-    {branch && (
-      <>
-        <span className="text-outline-variant/60">·</span>
-        <span className="min-w-0 truncate text-on-surface-muted">{branch}</span>
-      </>
-    )}
-    <span className="text-outline-variant/60">·</span>
-    <span className="text-success">+{added}</span>
-    <span className="text-error">−{removed}</span>
-    <span className="text-outline-variant/60">·</span>
-    <span className="whitespace-nowrap text-on-surface-muted">
-      {formatRelativeTime(session.lastActivityAt)}
-    </span>
-  </>
-)
+}: HeaderMetadataProps): ReactElement => {
+  const hasBranch = branch !== null && branch.length > 0
+  const hasDeltas = added > 0 || removed > 0
+  const hasLeadingMetadata = hasBranch || hasDeltas
+
+  return (
+    <>
+      {hasBranch && (
+        <>
+          <span className="text-outline-variant/60">·</span>
+          <span className="min-w-0 truncate text-on-surface-muted">
+            {branch}
+          </span>
+        </>
+      )}
+      {hasDeltas && (
+        <>
+          <span className="text-outline-variant/60">·</span>
+          <span className="text-success">+{added}</span>
+          <span className="text-error">−{removed}</span>
+        </>
+      )}
+      {hasLeadingMetadata && <span className="text-outline-variant/60">·</span>}
+      <span className="whitespace-nowrap text-on-surface-muted">
+        {formatRelativeTime(session.lastActivityAt)}
+      </span>
+    </>
+  )
+}

@@ -131,9 +131,7 @@ describe('TerminalPane index', () => {
     )
 
     expect(screen.getByText('CODEX')).toBeInTheDocument()
-    expect(
-      screen.getByPlaceholderText(/click to focus codex/i)
-    ).toBeInTheDocument()
+    expect(screen.getByText(/click to focus codex/i)).toBeInTheDocument()
   })
 
   test('generic sessions render shell footer copy', () => {
@@ -145,9 +143,7 @@ describe('TerminalPane index', () => {
     )
 
     expect(screen.getByText('SHELL')).toBeInTheDocument()
-    expect(
-      screen.getByPlaceholderText(/click to focus shell/i)
-    ).toBeInTheDocument()
+    expect(screen.getByText(/click to focus shell/i)).toBeInTheDocument()
   })
 
   test('Header shows line changes from git status files', () => {
@@ -186,7 +182,7 @@ describe('TerminalPane index', () => {
     )
 
     expect(
-      screen.getByPlaceholderText(/session ended — restart to resume claude/i)
+      screen.getByText(/session ended — restart to resume claude/i)
     ).toBeInTheDocument()
   })
 })

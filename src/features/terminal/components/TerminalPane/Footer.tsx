@@ -53,14 +53,9 @@ export const Footer = ({
         className="flex min-w-0 flex-1 cursor-text items-center gap-2 border-0 bg-transparent p-0 text-left font-mono text-[11px]"
       >
         <span style={{ color: agent.accent }}>{'>'}</span>
-        <input
-          readOnly
-          tabIndex={-1}
-          aria-hidden="true"
-          value=""
-          placeholder={text}
-          className="min-w-0 flex-1 border-0 bg-transparent text-on-surface outline-none placeholder:text-on-surface-muted"
-        />
+        <span className="min-w-0 flex-1 truncate text-on-surface-muted">
+          {text}
+        </span>
       </button>
     </div>
   )
