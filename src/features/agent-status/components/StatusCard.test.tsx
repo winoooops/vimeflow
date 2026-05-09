@@ -121,7 +121,7 @@ describe('StatusCard', () => {
       />
     )
 
-    expect(screen.getByTestId('agent-status-card')).toHaveClass('h-44')
+    expect(screen.getByTestId('agent-status-card')).toHaveClass('min-h-44')
     expect(screen.getByText('Claude Code')).toHaveClass(
       'shrink-0',
       'whitespace-nowrap'
@@ -139,7 +139,7 @@ describe('StatusCard', () => {
       />
     )
 
-    expect(screen.getByTestId('agent-status-card')).toHaveClass('h-44')
+    expect(screen.getByTestId('agent-status-card')).toHaveClass('min-h-44')
     expect(screen.getByText('Codex')).toHaveClass(
       'shrink-0',
       'whitespace-nowrap'

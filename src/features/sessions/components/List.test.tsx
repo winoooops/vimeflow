@@ -95,7 +95,7 @@ describe('List', () => {
     mockOnCreateSession.mockClear()
   })
 
-  test('renders new session ghost button inside scroll container', () => {
+  test('renders new session ghost button below the scroll area so it stays visible when sessions overflow', () => {
     render(
       <List
         sessions={mockSessions}
@@ -120,7 +120,7 @@ describe('List', () => {
       'sessions-list-new-session'
     )
     expect(newSessionButton).toHaveClass('w-full')
-    expect(scroll).toContainElement(newSessionButton)
+    expect(scroll).not.toContainElement(newSessionButton)
     expect(
       screen.queryByRole('button', { name: 'Add session' })
     ).not.toBeInTheDocument()

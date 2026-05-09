@@ -72,7 +72,7 @@ export const StatusCard = ({
   return (
     <div
       data-testid="agent-status-card"
-      className="flex h-44 flex-col gap-3 overflow-hidden rounded-xl bg-surface-container-high p-3"
+      className="flex min-h-44 flex-col gap-3 rounded-xl bg-surface-container-high p-3"
     >
       {/* Agent identity row */}
       <div className="flex items-center gap-2.5">
