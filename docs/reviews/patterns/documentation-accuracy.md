@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-07
-ref_count: 18
+last_updated: 2026-05-09
+ref_count: 19
 ---
 
 # Documentation Accuracy
@@ -522,3 +522,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** `terminalCache` (module-level Map) was originally documented as "allows terminals to persist when switching between sessions". That claim predates `TerminalZone`'s always-render-with-CSS-hidden design — Body never unmounts on a tab switch (it's just `display: none`-d), so the cache hit/miss branch in the mount effect never fires. The cache's actual current consumers are: (a) the imperative `focusTerminal()` handle, (b) tests, and (c) the public `clearTerminalCache` / `disposeTerminalSession` API surface preserved per the step-4 migration spec. The misleading comment risked future contributors assuming Body could be unmounted/remounted mid-session with the cache preserving state, leading to incorrect refactors. The original behavioral claim was simply stale.
 - **Fix:** Updated the comment to accurately describe what the cache serves now: focusTerminal + public API + tests. Documented that "Body's stable mount" is what makes tab switching work, NOT the cache. Did NOT refactor the Map to a useRef (Claude's "Alternative") because tests, integration tests, and external imports of the cache symbols would all break — the code-shape is preserved for backwards compat. Code-review heuristic: when a "P2 Fix" or similar comment names a defense for a class of bug that no longer applies (because the surrounding architecture changed), updating the comment to match current reality is a valid (and often preferable) fix — the underlying code may be doing useful work for different reasons. Don't refactor away code whose only sin is an outdated comment.
 - **Commit:** _(see git log for the cycle-5 fix commit on PR #190)_
+
+### 55. Test comment cross-references another file's docstring instead of standing on its own
+
+- **Source:** github-claude | PR #195 cycle 1 | 2026-05-09
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/AgentStatusPanel.test.tsx`
+- **Finding:** A test-side comment justifying the `overflow-x-clip` assertion read `// see List.tsx:session-scroll for the WebKitGTK phantom-gutter rationale`. The pointer was correct on the day it was written but encodes two future-rot risks: (a) `List.tsx` may rename / move / restructure, breaking the breadcrumb silently because no test references the file by symbol; (b) a reader looking at the test in isolation has no local explanation and may delete the assertion thinking it is redundant. Same finding-class as #50 / #51 (task-reference smells), generalized: any inline comment that points OUT of the current file at all — to a sibling file, an issue, a PR, a "see also" — is rot-prone. Self-contained or absent are the only safe options.
+- **Fix:** Dropped the comment entirely. The class assertions (`thin-scrollbar`, `overflow-x-clip`, `min-h-0`) are self-documenting — the production-side comment in `AgentStatusPanel.tsx` carries the WHY, and that comment is co-located with the code it explains. Code-review heuristic: when justifying a non-obvious assertion in a test, prefer a one-line inline reason that names the platform / spec-quirk directly (e.g. `// CSS spec coerces overflow-x:visible → auto when y is auto`); if the production file already carries that reason, the test does not need to repeat it OR point at it. The pointer form fails closed over time; inline-or-nothing fails open.
+- **Commit:** _(see git log for the cycle-1 fix commit on PR #195)_
