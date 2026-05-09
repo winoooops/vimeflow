@@ -13,7 +13,7 @@ export interface ListProps {
   sessions: Session[]
   activeSessionId: string | null
   onSessionClick: (sessionId: string) => void
-  onNewInstance?: () => void
+  onCreateSession?: () => void
   onRemoveSession?: (sessionId: string) => void
   onRenameSession?: (sessionId: string, name: string) => void
   onReorderSessions?: (sessions: Session[]) => void
@@ -23,7 +23,7 @@ export const List = ({
   sessions,
   activeSessionId,
   onSessionClick,
-  onNewInstance = undefined,
+  onCreateSession = undefined,
   onRemoveSession = undefined,
   onRenameSession = undefined,
   onReorderSessions = undefined,
@@ -94,22 +94,7 @@ export const List = ({
 
   return (
     <>
-      <Group.Header
-        label="Active"
-        headerAction={
-          onNewInstance ? (
-            <button
-              type="button"
-              onClick={onNewInstance}
-              className="material-symbols-outlined text-base text-on-surface-variant/60 transition-colors hover:text-primary"
-              aria-label="Add session"
-              title="Add session"
-            >
-              add
-            </button>
-          ) : undefined
-        }
-      />
+      <Group.Header label="Active" />
 
       <motion.div
         data-testid="session-scroll"
@@ -172,6 +157,26 @@ export const List = ({
             </Group>
           </>
         )}
+
+        {onCreateSession ? (
+          <div className="mt-auto px-2 pb-2 pt-2">
+            <button
+              type="button"
+              onClick={onCreateSession}
+              className="flex w-full items-center justify-center gap-1.5 rounded-[8px] border border-outline-variant/40 bg-transparent px-3 py-2 font-label text-xs font-semibold text-on-surface-variant transition-colors hover:bg-on-surface/[0.04] hover:text-on-surface focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container"
+              aria-label="new session"
+              data-testid="sessions-list-new-session"
+            >
+              <span
+                className="material-symbols-outlined text-base"
+                aria-hidden="true"
+              >
+                add
+              </span>
+              <span>new session</span>
+            </button>
+          </div>
+        ) : null}
       </motion.div>
     </>
   )

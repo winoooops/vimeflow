@@ -72,7 +72,7 @@ export const StatusCard = ({
   return (
     <div
       data-testid="agent-status-card"
-      className="flex flex-col gap-3 rounded-xl bg-surface-container-high p-3"
+      className="flex h-44 flex-col gap-3 overflow-hidden rounded-xl bg-surface-container-high p-3"
     >
       {/* Agent identity row */}
       <div className="flex items-center gap-2.5">
@@ -80,15 +80,15 @@ export const StatusCard = ({
         <div className="h-8 w-8 shrink-0 rounded-lg bg-gradient-to-br from-primary-container to-secondary" />
 
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <div className="flex items-center gap-2">
-            <span className="font-headline text-sm font-[800] text-on-surface">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 whitespace-nowrap font-headline text-sm font-[800] text-on-surface">
               {agentNames[agentType]}
             </span>
             {displayModel ? (
               <Tooltip content={displayModel} placement="bottom">
                 <span
                   tabIndex={0}
-                  className="truncate font-mono text-[10px] text-outline outline-none focus-visible:ring-1 focus-visible:ring-primary-container"
+                  className="min-w-0 flex-1 truncate font-mono text-[10px] text-outline outline-none focus-visible:ring-1 focus-visible:ring-primary-container"
                 >
                   {displayModel}
                 </span>

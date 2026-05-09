@@ -316,7 +316,7 @@ describe('WorkspaceView', () => {
     expect(filesViewAfter).not.toHaveClass('hidden')
   })
 
-  test('clicking the New Instance gradient button creates a new session', async () => {
+  test('clicking the new session ghost button creates a new session', async () => {
     const user = userEvent.setup()
 
     render(<WorkspaceView />)
@@ -327,8 +327,10 @@ describe('WorkspaceView', () => {
     // 'session ${index + 1}').
     await screen.findByRole('button', { name: 'session 1' })
 
-    const newInstanceBtn = screen.getByRole('button', { name: 'New Instance' })
-    await user.click(newInstanceBtn)
+    const newSessionButton = screen.getByRole('button', {
+      name: 'new session',
+    })
+    await user.click(newSessionButton)
 
     // After clicking, the spawn() mock resolves with a new sessionId
     // and useSessionManager appends a new Session at index 1, with
@@ -403,10 +405,10 @@ describe('WorkspaceView', () => {
     })
     expect(firstSession.closest('li')!.className).toContain('bg-primary/10')
 
-    const newInstanceButton = screen.getByRole('button', {
-      name: 'New Instance',
+    const newSessionButton = screen.getByRole('button', {
+      name: 'new session',
     })
-    await user.click(newInstanceButton)
+    await user.click(newSessionButton)
 
     const secondSession = await screen.findByRole('button', {
       name: 'session 2',
