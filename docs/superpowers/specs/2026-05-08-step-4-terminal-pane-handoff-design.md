@@ -27,7 +27,7 @@ Multi-pane layout (SplitView grid + LayoutSwitcher + ⌘1–4 / ⌘\) is **step 
 
 1. Match handoff §4.6 visually pixel-for-pixel: header (collapsible) + scroll body + input footer + focus ring + agent identity chip + status pip.
 2. Status pip tracks **PTY health** (from `useTerminal` `status: 'idle' | 'running' | 'exited' | 'error'`), distinct from `Session.status`.
-3. Preserve existing exports — `TerminalPane` named export plus `terminalCache` / `clearTerminalCache` / `disposeTerminalSession` / `TerminalPaneMode` / `TerminalPaneProps`. **Additive prop additions only**: `TerminalPaneProps` gains a new required `session: Session` so chrome can read `name`, `agentType`, `status`, and `lastActivityAt`. `TerminalZone.tsx` already has the session in scope — single-line forward. `useSessionManager.ts` is untouched.
+3. Preserve existing exports — `TerminalPane` named export plus `terminalCache` / `clearTerminalCache` / `disposeTerminalSession` / `TerminalPaneMode` / `TerminalPaneProps`. **No production-consumer churn beyond a one-line additive update in `TerminalZone.tsx`**: `TerminalPaneProps` gains two new required props — `session: Session` (chrome data source) and `isActive: boolean` (gates per-pane git IPC) — both already in `TerminalZone`'s scope. `useSessionManager.ts` is untouched. Tests pinned at the old `TerminalPane.tsx` path are migrated to the new `TerminalPane/{index,Body,RestartAffordance}.test.tsx` files as part of this PR (see §6 + §7).
 4. Keep all existing behavior: PTY spawn / attach / awaiting-restart, OSC 7 cwd tracking, ResizeObserver-driven fit, `restoreData` replay, `notifyPaneReady` drain.
 
 **Non-goals.**
@@ -136,6 +136,11 @@ export interface TerminalPaneProps {
 
   // NEW — session source for chrome (name, agentType, status, lastActivityAt)
   session: Session
+
+  // NEW — gates per-pane git IPC (useGitBranch + useGitStatus) so hidden
+  // panes don't burn IPC. TerminalZone already computes this:
+  //   isActive={session.id === activeSessionId}
+  isActive: boolean
 
   // RESERVED for step 5; not wired this PR
   onClose?: (sessionId: string) => void
@@ -300,6 +305,11 @@ The mapping lives in a small util (`TerminalPane/ptyStatusToSessionStatus.ts`) s
 ```ts
 // src/features/diff/hooks/useGitBranch.ts
 
+export interface UseGitBranchOptions {
+  /** Enable/disable the hook entirely — when false, returns empty state with no IPC. Mirrors useGitStatus's enabled gate. */
+  enabled?: boolean
+}
+
 export interface UseGitBranchReturn {
   branch: string | null // null while loading, when cwd is invalid, or on error
   loading: boolean
@@ -308,10 +318,13 @@ export interface UseGitBranchReturn {
   idle: boolean // mirrors useGitStatus.idle — short-circuits IPC for `.`/`~` fallbacks
 }
 
-export const useGitBranch: (cwd: string) => UseGitBranchReturn
+export const useGitBranch: (
+  cwd: string,
+  options?: UseGitBranchOptions
+) => UseGitBranchReturn
 ```
 
-Backed by a new `git_branch(cwd: String) -> Result<String, String>` Tauri command in `src-tauri/src/git/mod.rs`. **Implemented via the `git` CLI** (matching the rest of `src-tauri/src/git/mod.rs`, which uses `Command::new("git")` exclusively — `git2`/libgit2 is NOT a dependency in `src-tauri/Cargo.toml`). Specifically: `git -C <cwd> symbolic-ref --short HEAD`, trimmed; returns the branch name even in unborn repos (no commits yet). On detached HEAD, `symbolic-ref` exits non-zero; the command catches that and returns the empty string (which the hook treats as null). The command must be added to **both** `generate_handler![...]` lists in `src-tauri/src/lib.rs` (the test-build and prod-build branches) and re-exported from `git::mod` alongside the existing `git_status` / `get_git_diff`. Header renders branch as a dim grey label; falls back to omitting the segment when `branch` is null or empty.
+Backed by a new `git_branch(cwd: String) -> Result<String, String>` Tauri command in `src-tauri/src/git/mod.rs`. **Implemented via the `git` CLI** (matching the rest of `src-tauri/src/git/mod.rs`, which uses `Command::new("git")` exclusively — `git2`/libgit2 is NOT a dependency in `src-tauri/Cargo.toml`). Path-scope safety: the command MUST start with `let safe_cwd = validate_cwd(&cwd)?;`, mirroring `git_status` and `get_git_diff` — without this, a renderer-supplied `cwd` could escape the home-scope sandbox. After validation: `git -C <safe_cwd> symbolic-ref --short HEAD`, trimmed; returns the branch name even in unborn repos (no commits yet). On detached HEAD, `symbolic-ref` exits non-zero; the command catches that and returns the empty string (which the hook treats as null). The command must be added to **both** `generate_handler![...]` lists in `src-tauri/src/lib.rs` (the test-build and prod-build branches) and re-exported from `git::mod` alongside the existing `git_status` / `get_git_diff`. Header renders branch as a dim grey label; falls back to omitting the segment when `branch` is null or empty.
 
 ## §3 Data flow
 
@@ -325,6 +338,7 @@ Single direction: `WorkspaceView` → `TerminalZone` → `TerminalPane/index.tsx
 | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `session: Session`                                                                           | `TerminalZone` (already in scope from `sessions.map(...)`) | Title (`session.name`), agent (via `agentForSession`), pip in awaiting-restart (`session.status`), RelTime (`session.lastActivityAt`), branch + ±changes hook input (`session.workingDirectory`) |
 | `cwd: string`                                                                                | TerminalZone — `session.workingDirectory`                  | Body's `useTerminal({ cwd })`. Kept distinct from `session.workingDirectory` for the OSC 7 cwd-update flow that doesn't mutate `Session` until `onCwdChange` fires.                              |
+| `isActive: boolean`                                                                          | TerminalZone — `session.id === activeSessionId`            | Gates per-pane git IPC (`useGitBranch`, `useGitStatus`) so hidden panes don't fire requests. Single-pane today: `true` for the active session, `false` for everyone else.                        |
 | `mode`, `restoredFrom`, `service`, `shell`, `env`, `onCwdChange`, `onPaneReady`, `onRestart` | TerminalZone (unchanged)                                   | Body's `useTerminal()` (live panes); `<RestartAffordance>` (awaiting-restart)                                                                                                                    |
 | `onClose?`                                                                                   | Reserved for step 5 — unset in step 4                      | Header (rendered only when defined)                                                                                                                                                              |
 
@@ -345,9 +359,24 @@ const isPaused = pipStatus === 'paused' // Footer placeholder cue
 
 const [isCollapsed, setIsCollapsed] = useState(false) // header collapse, per-pane local (Q8)
 
-const { branch } = useGitBranch(session.workingDirectory)
-const { files } = useGitStatus(session.workingDirectory)
-const { added, removed } = aggregateLineDelta(files) // pure util in TerminalPane/aggregateLineDelta.ts
+// Both hooks are gated on `isActive` so hidden (display:none) panes don't
+// fire IPC. `enabled` is the existing useGitStatus convention; useGitBranch
+// mirrors it.
+const { branch } = useGitBranch(session.workingDirectory, {
+  enabled: isActive,
+})
+const { files, filesCwd } = useGitStatus(session.workingDirectory, {
+  enabled: isActive,
+})
+
+// Freshness guard: useGitStatus retains the previous cwd's `files` while a
+// new cwd's fetch is in flight. Only aggregate when filesCwd matches the
+// session's current cwd to avoid showing stale ±counts after a rename or
+// session-switch.
+const isFresh = filesCwd === session.workingDirectory
+const { added, removed } = isFresh
+  ? aggregateLineDelta(files) // pure util in TerminalPane/aggregateLineDelta.ts
+  : { added: 0, removed: 0 }
 
 const containerRef = useRef<HTMLDivElement>(null)
 const bodyRef = useRef<BodyHandle>(null)
@@ -645,6 +674,10 @@ Body-replacement styling:
 - Title: `font-mono text-sm` `Session exited.`
 - Button: pill, `rounded-pill bg-surface-container px-3 py-1.5 font-label text-sm hover:bg-surface-container/80 focus-visible:ring-2`. Glyph `↻` (Material Symbol `restart_alt`) + label `Restart`. Focus-visible ring uses `agent.accent` at 50% opacity.
 - Timestamp: `text-xs text-on-surface/50`. Rendered as `<span>ended {formatRelativeTime(exitedAt)}</span>` — single-span seam so step 9 polish can swap the inner string for a `<RelTime>` component without touching parent layout.
+
+### Footer focusability
+
+The decorative `<input>` element in `Footer.tsx` is **`readOnly` AND `tabIndex={-1}` AND `aria-hidden="true"`**. Without `tabIndex={-1}`, browsers still let users tab to a `readOnly` input — a dead focus target with no editable purpose. Removing it from the tab order matches the prototype's intent (decorative chrome, not an interactive surface) without departing from the prototype's DOM structure.
 
 ### Behavior
 
