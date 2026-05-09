@@ -86,7 +86,10 @@ describe('Tab — ARIA', () => {
 
   test('close button is always tabIndex=-1', () => {
     renderTab()
-    const close = screen.getByRole('button', { name: /Close /i })
+    // Inactive tabs hide the close from a11y (aria-hidden=true). Query
+    // by aria-label directly since role + name cannot pierce nested
+    // aria-hidden in testing-library's a11y resolver.
+    const close = screen.getByLabelText(/Close /i)
     expect(close).toHaveAttribute('tabindex', '-1')
   })
 })
@@ -137,7 +140,7 @@ describe('Tab — keyboard', () => {
     const onSelect = vi.fn()
     const onClose = vi.fn()
     renderTab({ onSelect, onClose })
-    const close = screen.getByRole('button', { name: /Close /i })
+    const close = screen.getByLabelText(/Close /i)
     close.focus()
     await userEvent.keyboard('{Enter}')
     // The onClose IS called via the close button's own click (bubble),
@@ -164,8 +167,10 @@ describe('Tab — click', () => {
   test('close button calls onClose with stopPropagation (does not also fire onSelect)', async () => {
     const onSelect = vi.fn()
     const onClose = vi.fn()
-    renderTab({ session: session('X'), onSelect, onClose })
-    await userEvent.click(screen.getByRole('button', { name: /Close /i }))
+    // Active so the button is interactive (not aria-hidden) — the
+    // hover-reveal path on inactive tabs is verified separately.
+    renderTab({ session: session('X'), isActive: true, onSelect, onClose })
+    await userEvent.click(screen.getByRole('button', { name: /Close X/i }))
     expect(onClose).toHaveBeenCalledWith('X')
     expect(onSelect).not.toHaveBeenCalled()
   })
@@ -177,11 +182,14 @@ describe('Tab — visual', () => {
     expect(screen.getByText(AGENTS.claude.glyph)).toBeInTheDocument()
   })
 
-  test('active tab border uses the agent accent', () => {
+  test('active tab uses bg-surface (no agent-color gradient — handoff §4.3)', () => {
     renderTab({ isActive: true, agent: AGENTS.codex })
-    expect(screen.getByRole('tab')).toHaveStyle({
-      borderColor: AGENTS.codex.accentSoft,
-    })
+    const tab = screen.getByRole('tab')
+    // The active state uses plain `bg-surface` — agent identity comes
+    // through via the chip + the 2px top stripe, NOT a gradient bg
+    // washing the whole tab in agent color.
+    expect(tab.className).toContain('bg-surface')
+    expect(tab.style.background).toBe('')
   })
 
   test('active accent stripe rendered iff isActive', () => {
@@ -221,5 +229,39 @@ describe('Tab — visual', () => {
     )
 
     expect(screen.queryByLabelText(/^Status/)).not.toBeInTheDocument()
+  })
+
+  test('inactive tab close button starts hidden (opacity-0 + pointer-events-none + aria-hidden)', () => {
+    renderTab({ isActive: false })
+    const close = screen.getByLabelText(/Close /i)
+    expect(close.className).toContain('opacity-0')
+    expect(close.className).toContain('pointer-events-none')
+    expect(close).toHaveAttribute('aria-hidden', 'true')
+    expect(close).toHaveAttribute('data-active', 'false')
+  })
+
+  test('active tab close button is visible (data-active=true drives reveal)', () => {
+    renderTab({ isActive: true })
+    const close = screen.getByRole('button', { name: /Close /i })
+    expect(close).toHaveAttribute('data-active', 'true')
+    // class string still carries opacity-0 base + the data-[active=true]
+    // override; we verify the override class is wired so Tailwind can apply it.
+    expect(close.className).toContain('data-[active=true]:opacity-100')
+    expect(close).toHaveAttribute('aria-hidden', 'false')
+  })
+
+  test('hover-reveal class string on close button (visual verification covers the actual hover)', () => {
+    // jsdom does not drive :hover natively; verify the Tailwind selector
+    // is wired so a tauri:dev visual check is the source of truth.
+    renderTab({ isActive: false })
+    const close = screen.getByLabelText(/Close /i)
+    expect(close.className).toContain('group-hover:opacity-100')
+    expect(close.className).toContain('group-hover:pointer-events-auto')
+  })
+
+  test('title is rendered at 12.5px per handoff §4.3', () => {
+    renderTab({ session: session('hello') })
+    const title = screen.getByText('hello')
+    expect(title.className).toContain('text-[12.5px]')
   })
 })

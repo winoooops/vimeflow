@@ -1,8 +1,4 @@
-import {
-  type ReactElement,
-  type KeyboardEvent,
-  type CSSProperties,
-} from 'react'
+import { type ReactElement, type KeyboardEvent } from 'react'
 import type { Session } from '../types'
 import type { Agent } from '../../../agents/registry'
 import { StatusDot } from './StatusDot'
@@ -58,13 +54,6 @@ export const Tab = ({
     }
   }
 
-  const activeChromeStyle: CSSProperties | undefined = isActive
-    ? {
-        background: `linear-gradient(180deg, ${agent.accentDim}, rgba(18, 18, 33, 0.96))`,
-        borderColor: agent.accentSoft,
-      }
-    : undefined
-
   return (
     <div
       id={`session-tab-${session.id}`}
@@ -80,20 +69,22 @@ export const Tab = ({
       data-testid="session-tab"
       data-session-id={session.id}
       data-active={isActive}
-      style={activeChromeStyle}
       onClick={() => {
         if (!isActive) {
           onSelect(session.id)
         }
       }}
       onKeyDown={handleKeyDown}
+      // `group` enables hover-reveal of the close button per handoff
+      // §4.3 — close × is invisible on inactive tabs, visible on hover
+      // or when the tab is active.
       className={`
-        relative flex h-[30px] min-w-[130px] max-w-[220px] cursor-pointer items-center gap-2
+        group relative flex h-[30px] min-w-[130px] max-w-[220px] cursor-pointer items-center gap-2
         rounded-t-lg border border-transparent pl-3 pr-2 outline-none transition-colors
         focus-visible:ring-2 focus-visible:ring-primary/50
         ${
           isActive
-            ? '-mb-px bg-surface border-outline-variant/30'
+            ? '-mb-px border-outline-variant/30 bg-surface'
             : 'hover:bg-on-surface/[0.025]'
         }
       `}
@@ -114,7 +105,7 @@ export const Tab = ({
       </span>
       <span
         className={`
-          min-w-0 flex-1 truncate font-mono text-[11px]
+          min-w-0 flex-1 truncate font-mono text-[12.5px]
           ${isActive ? 'font-medium text-on-surface' : 'text-on-surface-variant'}
         `}
       >
@@ -132,12 +123,25 @@ export const Tab = ({
         // WAI-ARIA tabs §3.27: tablist is one Tab stop; descendants
         // reached via shortcut. Always tabIndex=-1.
         tabIndex={-1}
+        // When invisible, hide from a11y tree (screen reader users still
+        // close via Delete/Backspace on the focused tab). pointer-events
+        // disabled so an off-screen click can't dispatch close.
+        aria-hidden={!isActive}
+        data-active={isActive}
         onClick={(e) => {
           e.stopPropagation()
           onClose(session.id)
         }}
         aria-label={`Close ${session.name}`}
-        className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/[0.06] hover:text-on-surface"
+        className="
+          flex h-4 w-4 shrink-0 items-center justify-center rounded
+          text-on-surface-variant/70 transition-opacity
+          opacity-0 pointer-events-none
+          group-hover:opacity-100 group-hover:pointer-events-auto
+          group-focus-within:opacity-100 group-focus-within:pointer-events-auto
+          data-[active=true]:opacity-100 data-[active=true]:pointer-events-auto
+          hover:bg-on-surface/[0.06] hover:text-on-surface
+        "
       >
         <span className="material-symbols-outlined text-[11px]">close</span>
       </button>

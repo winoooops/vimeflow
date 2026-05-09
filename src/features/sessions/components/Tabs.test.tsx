@@ -262,9 +262,12 @@ describe('Tabs', () => {
     ]
     renderTabs(sessions, 'a', { onSelect, onClose })
 
-    const closeB = within(screen.getAllByRole('tab')[1]).getByRole('button', {
-      name: /close tests/i,
-    })
+    // Inactive tabs hide the close button via aria-hidden; getByLabelText
+    // pierces that mask while role+name does not in testing-library's
+    // a11y resolver. The hover-reveal class is verified separately.
+    const closeB = within(screen.getAllByRole('tab')[1]).getByLabelText(
+      /close tests/i
+    )
     await user.click(closeB)
 
     expect(onClose).toHaveBeenCalledWith('b')
