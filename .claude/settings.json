@@ -39,7 +39,7 @@
           },
           {
             "type": "command",
-            "command": "jq -r '.tool_input.skill // \"\"' | grep -qE '^harness-plugin:(loop|review|github-review)$' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Before running harness workflows, consult docs/harness/CLAUDE.md — the bilingual index that links to the authoritative runbook (harness/CLAUDE.md), review knowledge base (docs/reviews/CLAUDE.md), security model, and design spec.\"}}' || true"
+            "command": "jq -r '.tool_input.skill // \"\"' | grep -qE '^lifeline:(planner|loop|review|request-pr|upsource-review|approve-pr)$' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Before running Lifeline workflows, consult docs/lifeline/CLAUDE.md for the project-local usage notes and https://github.com/winoooops/lifeline for the plugin runbook.\"}}' || true"
           }
         ]
       }

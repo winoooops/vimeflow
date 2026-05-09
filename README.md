@@ -20,7 +20,7 @@
 
 Vimeflow is a **CLI coding agent control plane** built with Tauri 2 (Rust + React/TypeScript). It gives you one window to manage terminal sessions where AI agents work, browse files, review diffs, and edit code — all with vim-style keybindings and a dark atmospheric UI.
 
-But the product is only half the story. This repository is also a testbed for **harness-engineered, AI-native development**: an autonomous agent loop builds features from specification, governed by layered rules and specialized agents.
+But the product is only half the story. This repository is also a testbed for **Lifeline-driven, AI-native development**: an autonomous agent loop builds features from specification, governed by layered rules and specialized agents.
 
 ## What's Built
 
@@ -174,24 +174,24 @@ The `tauri:dev` script sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`. WebKitGTK's DMA-
 
 The variable is harmless on macOS (no WebKitGTK) but the inline shell syntax does not work on Windows `cmd.exe`. If Windows support is needed, swap in [`cross-env`](https://www.npmjs.com/package/cross-env).
 
-### Harness Plugin Setup
+### Lifeline Plugin Setup
 
-The autonomous development harness is distributed as a local Claude Code plugin with three skills: `/harness-plugin:loop` (agent loop), `/harness-plugin:review` (local Codex review), and `/harness-plugin:github-review` (PR review fix).
+The autonomous development workflow is provided by the extracted [Lifeline Claude Code plugin](https://github.com/winoooops/lifeline), not by vendored scripts in this repo. Lifeline provides `/lifeline:planner`, `/lifeline:loop`, `/lifeline:review`, `/lifeline:request-pr`, `/lifeline:upsource-review`, and `/lifeline:approve-pr`.
 
 ```bash
-# 1. Add the project's local marketplace (one-time)
-/plugin marketplace add .
+# 1. Register the Lifeline marketplace (one-time)
+/plugin marketplace add winoooops/lifeline
 
-# 2. Install the harness plugin
-/plugin install harness-plugin@harness
+# 2. Install the plugin
+/plugin install lifeline@lifeline
 
 # 3. Reload to activate
 /reload-plugins
 ```
 
-The marketplace is defined at `.claude-plugin/marketplace.json` and the plugin source lives at `plugins/harness/`. After installation, skills are cached at `~/.claude/plugins/cache/harness/` and persist across sessions.
+After installation, Lifeline is cached under Claude Code's plugin cache and persists across sessions. Project-local notes live in [`docs/lifeline/CLAUDE.md`](docs/lifeline/CLAUDE.md).
 
-> Plugin skills don't appear in `/` autocomplete due to a [known Claude Code bug](https://github.com/anthropics/claude-code/issues/18949). See [`CLAUDE.md`](CLAUDE.md#harness-plugin-setup) for the optional autocomplete workaround (thin command wrappers in `~/.claude/commands/`).
+> Plugin skills don't appear in `/` autocomplete due to a [known Claude Code bug](https://github.com/anthropics/claude-code/issues/18949). See [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup) for the optional autocomplete workaround.
 
 ## Repository Structure
 
@@ -228,7 +228,6 @@ src-tauri/
 
 agents/                     # 10 specialized AI agent definitions
 rules/                      # Hierarchical dev standards (common + TS + Rust)
-harness/                    # Autonomous dev loop (Python; spawns `claude -p` per role, SDK fallback)
 ```
 
 ## The AI-Native Development Process
@@ -236,11 +235,11 @@ harness/                    # Autonomous dev loop (Python; spawns `claude -p` pe
 Traditional projects have humans write code and AI assist. Vimeflow inverts this:
 
 1. **Humans write specs** — product requirements, design system, development rules
-2. **An autonomous harness builds features** — a two-agent loop (Initializer + Coder) decomposes specs into a feature list and implements them incrementally
+2. **Lifeline builds features** — the extracted plugin decomposes specs into a feature list and implements them incrementally
 3. **Specialized agents review the work** — 10 AI agents handle planning, TDD, code review, security, and documentation
 4. **Rules govern everything** — a hierarchical rule system (common + language-specific) ensures consistency without human intervention per commit
 
-The harness (`harness/`) is a Python loop that spawns `claude -p` per role — it inherits the user's Claude Code CLI auth (no `ANTHROPIC_API_KEY` required on the default path). The SDK is preserved as an opt-in fallback (`--client sdk`). See [`docs/harness/CLAUDE.md`](docs/harness/CLAUDE.md) for the bilingual overview and [`harness/CLAUDE.md`](harness/CLAUDE.md) for the full reference.
+The old in-repo harness has been extracted into Lifeline. See [`docs/lifeline/CLAUDE.md`](docs/lifeline/CLAUDE.md) for Vimeflow-specific usage notes and <https://github.com/winoooops/lifeline> for the plugin runbook.
 
 ## Roadmap
 

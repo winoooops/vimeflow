@@ -77,8 +77,8 @@ jobs:
           sandbox: read-only
           # gpt-5.2-codex rejects verbosity=low (only supports 'medium'); also
           # not available with ChatGPT-account auth. gpt-5.4 works for both
-          # API-key and ChatGPT auth modes — same model the local harness
-          # uses (see harness/review.py).
+          # API-key and ChatGPT auth modes. Lifeline's local review skill does
+          # not require this disabled workflow.
           model: gpt-5.4
           safety-strategy: drop-sudo
 

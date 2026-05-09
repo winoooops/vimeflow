@@ -5,29 +5,29 @@
 1. **`main` branch is sacred** — never commit directly to `main`. The primary checkout is allowed (and expected) to be on a feature branch during active work.
 2. **Main agent works on a feature branch in the primary checkout** — the interactive Claude Code agent checks out `feat/<name>` (or `fix/`, `refactor/`, etc.) in the primary checkout and commits there. It does **not** create a worktree for itself.
    - **Why:** the user runs the Vimeflow app from the primary checkout and watches the diff viewer live. Edits inside `.claude/worktrees/` are invisible to that view because the diff viewer only reflects its own cwd's working tree.
-3. **Subagents and harness always use a worktree** — any autonomous or parallel agent (`/harness-plugin:loop`, dispatched parallel agents) must be fully isolated under `.claude/worktrees/<branch>/` so it does not fight the user or the main agent for the working tree.
+3. **Subagents and Lifeline runs use a worktree** — any autonomous or parallel agent (`/lifeline:loop`, dispatched parallel agents) must be fully isolated under `.claude/worktrees/<branch>/` so it does not fight the user or the main agent for the working tree.
 4. **Read-only tasks skip branching** — research, exploration, and answering questions can happen on `main` in the primary checkout. No branch needed.
 5. **Git commands start with `git`** — always invoke git as the first token in the command (e.g., `git push`, not `ENV=val git push` or `cd repo && git push`). This ensures the PreToolUse hook can reliably detect and guard git operations. This framework is designed for agents, not humans — compound shell expressions are unnecessary.
 
 ## Who Works Where
 
-| Actor                               | Location                      | Branch                        |
-| ----------------------------------- | ----------------------------- | ----------------------------- |
-| Interactive main agent              | Primary checkout (repo root)  | Feature branch (never `main`) |
-| `/harness-plugin:loop` (autonomous) | `.claude/worktrees/<branch>/` | Feature branch                |
-| Dispatched parallel subagents       | `.claude/worktrees/<branch>/` | Feature branch                |
-| Read-only research                  | Primary checkout              | `main` is fine                |
+| Actor                         | Location                      | Branch                        |
+| ----------------------------- | ----------------------------- | ----------------------------- |
+| Interactive main agent        | Primary checkout (repo root)  | Feature branch (never `main`) |
+| `/lifeline:loop` (autonomous) | `.claude/worktrees/<branch>/` | Feature branch                |
+| Dispatched parallel subagents | `.claude/worktrees/<branch>/` | Feature branch                |
+| Read-only research            | Primary checkout              | `main` is fine                |
 
 ## Worktree Location
 
-All subagent/harness worktrees live under `.claude/worktrees/` (gitignored, local-only):
+All subagent and Lifeline worktrees live under `.claude/worktrees/` (gitignored, local-only):
 
 ```
 Vimeflow/                          ← primary checkout (main agent works here on feat/* branch)
 ├── .claude/
 │   ├── skills/                    ← tracked in git (pushed to repo)
 │   └── worktrees/                 ← gitignored (local-only)
-│       ├── feat-harness-retry/    ← harness loop's full checkout
+│       ├── feat-lifeline-retry/   ← Lifeline loop's full checkout
 │       └── refactor-parallel-a/   ← dispatched subagent's full checkout
 ├── src/
 └── ...
@@ -47,7 +47,7 @@ git checkout -b feat/<name>
 
 Do **not** run `EnterWorktree` reflexively at the start of an interactive task. Check out a feature branch instead so the user's diff viewer reflects your live edits.
 
-### Subagent / harness — dedicated worktree
+### Subagent / Lifeline — dedicated worktree
 
 ```bash
 # From the primary checkout
@@ -56,13 +56,13 @@ cd .claude/worktrees/<branch-name>
 npm install
 ```
 
-Or use Claude Code's built-in: `EnterWorktree` (creates under `.claude/worktrees/` by default). This path applies to `/harness-plugin:loop` and any parallel dispatched agents.
+Or use Claude Code's built-in: `EnterWorktree` (creates under `.claude/worktrees/` by default). This path applies to `/lifeline:loop` and any parallel dispatched agents.
 
 ### ACTIVE
 
 Agent works normally — edit, commit, push, create PR. Whether this happens in the primary checkout (main agent) or a linked worktree (subagent), the PR lifecycle is the same.
 
-**Once a PR is created, the agent stays on that branch (or in that worktree) until the PR is resolved.** Do not switch back to `main` between creating the PR and the PR being merged or closed. This ensures review-fix cycles (`/harness-plugin:github-review`) happen in the correct working directory without branch switching.
+**Once a PR is created, the agent stays on that branch (or in that worktree) until the PR is resolved.** Do not switch back to `main` between creating the PR and the PR being merged or closed. This ensures review-fix cycles (`/lifeline:upsource-review`) happen in the correct working directory without branch switching.
 
 The PR lifecycle (primary checkout or linked worktree):
 
@@ -84,7 +84,7 @@ git pull
 git branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
 ```
 
-**Subagent / harness (linked worktree):**
+**Subagent / Lifeline (linked worktree):**
 
 ```bash
 # From the primary checkout
@@ -180,7 +180,7 @@ Two hooks support the worktree workflow:
 | Hook               | Type        | Script                               | Purpose                                                                               |
 | ------------------ | ----------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
 | Block main commits | PreToolUse  | `scripts/hooks/block-main-commit.sh` | Prevents `git commit`/`git push` when the `main` branch is checked out (any worktree) |
-| Post-push review   | PostToolUse | `scripts/hooks/post-push-review.sh`  | After `git push` or `gh pr create`, triggers `/harness-plugin:github-review`          |
+| Post-push review   | PostToolUse | `scripts/hooks/post-push-review.sh`  | After `git push` or `gh pr create`, prompts `/lifeline:upsource-review`               |
 
 To register both hooks, add to `.claude/settings.local.json`:
 

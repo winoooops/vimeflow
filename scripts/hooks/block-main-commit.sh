@@ -8,7 +8,7 @@
 #
 # Policy (see rules/common/worktrees.md):
 #   - Main agent works on a feature branch in the primary checkout.
-#   - Subagents / harness work on a feature branch in a linked worktree.
+#   - Subagents / Lifeline runs work on a feature branch in a linked worktree.
 #   - Nobody commits to `main`, ever.
 #
 # Hook input (JSON on stdin) contains the tool parameters.
@@ -135,7 +135,7 @@ fi
 
 if [ "$current_branch" = "main" ]; then
   echo "BLOCKED: Cannot commit/push while on 'main'. Check out a feature branch first: git checkout -b feat/<name>" >&2
-  echo "        (Subagents / harness should create a worktree: git worktree add .claude/worktrees/<branch> -b <branch>)" >&2
+  echo "        (Subagents / Lifeline runs should create a worktree: git worktree add .claude/worktrees/<branch> -b <branch>)" >&2
   exit 2
 fi
 
