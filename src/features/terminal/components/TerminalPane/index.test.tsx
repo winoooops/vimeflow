@@ -119,8 +119,16 @@ describe('TerminalPane index', () => {
     expect(screen.getByText('CLAUDE')).toBeInTheDocument()
   })
 
-  test('activeAgentType overrides stale session agent for active pane chrome', () => {
-    render(<TerminalPane {...baseProps} activeAgentType="codex" />)
+  test('chrome reflects session.agentType directly (no override prop)', () => {
+    // The activeAgentType prop chain was retired; chrome reads
+    // agentForSession(session) so detection writes flow through
+    // Session.agentType (single source of truth).
+    render(
+      <TerminalPane
+        {...baseProps}
+        session={{ ...session, agentType: 'codex' }}
+      />
+    )
 
     expect(screen.getByText('CODEX')).toBeInTheDocument()
     expect(
@@ -128,12 +136,11 @@ describe('TerminalPane index', () => {
     ).toBeInTheDocument()
   })
 
-  test('generic sessions render shell footer copy when no agent is detected', () => {
+  test('generic sessions render shell footer copy', () => {
     render(
       <TerminalPane
         {...baseProps}
         session={{ ...session, agentType: 'generic' }}
-        activeAgentType={null}
       />
     )
 

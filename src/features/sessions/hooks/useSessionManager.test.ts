@@ -1886,6 +1886,114 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].agentType).toBe('codex')
   })
 
+  test('updateSessionAgentType returns prev reference for unknown id (no re-render)', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const before = result.current.sessions
+    act(() => result.current.updateSessionAgentType('does-not-exist', 'codex'))
+
+    expect(result.current.sessions).toBe(before)
+  })
+
+  test('updateSessionAgentType returns prev reference when value unchanged', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.updateSessionAgentType('s1', 'codex'))
+    const after1 = result.current.sessions
+    act(() => result.current.updateSessionAgentType('s1', 'codex'))
+
+    expect(result.current.sessions).toBe(after1)
+  })
+
+  test('restartSession seeds agentType to generic on the new session entry', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 's2',
+      pid: 2,
+      cwd: '/tmp',
+    })
+    service.kill = vi.fn().mockResolvedValue(undefined)
+    service.reorderSessions = vi.fn().mockResolvedValue(undefined)
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Stamp a non-generic agentType so the reset is observable.
+    act(() => result.current.updateSessionAgentType('s1', 'claude-code'))
+    expect(result.current.sessions[0].agentType).toBe('claude-code')
+
+    await act(async () => {
+      result.current.restartSession('s1')
+      // wait for the spawn-first sequence to complete + flushSync apply
+      await vi.waitFor(
+        () => {
+          expect(result.current.sessions[0].id).toBe('s2')
+        },
+        { timeout: 1000 }
+      )
+    })
+
+    expect(result.current.sessions[0].agentType).toBe('generic')
+  })
+
   // F2 regression: events fired AFTER listSessions resolves but BEFORE the
   // pane attaches its live listener must still reach the pane via the
   // notifyPaneReady drain. Without this, the previous code stopped buffering

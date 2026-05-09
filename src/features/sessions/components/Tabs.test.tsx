@@ -36,14 +36,12 @@ const renderTabs = (
     onSelect: (id: string) => void
     onClose: (id: string) => void
     onNew: () => void
-    activeAgentType: Session['agentType'] | null
   }> = {}
 ): ReturnType<typeof render> =>
   render(
     <Tabs
       sessions={sessions}
       activeSessionId={activeSessionId}
-      activeAgentType={handlers.activeAgentType}
       onSelect={handlers.onSelect ?? vi.fn()}
       onClose={handlers.onClose ?? vi.fn()}
       onNew={handlers.onNew ?? vi.fn()}
@@ -116,24 +114,29 @@ describe('Tabs', () => {
     expect(tabs[1]).toHaveAttribute('tabindex', '-1')
   })
 
-  test('uses the live active agent type for active tab chrome', () => {
+  test('renders agent chrome from session.agentType (no override path)', () => {
+    // The bridge in WorkspaceView writes detection results into
+    // Session.agentType; Tabs reads agentForSession(session) directly,
+    // no activeAgentType prop override. Verifies the single-source
+    // contract — different sessions render different agent chips
+    // based on their own agentType, regardless of which is active.
     const sessions = [
-      buildSession({ id: 'a', name: 'live shell', agentType: 'generic' }),
-      buildSession({ id: 'b', name: 'idle shell', agentType: 'generic' }),
+      buildSession({ id: 'a', name: 'codex tab', agentType: 'codex' }),
+      buildSession({
+        id: 'b',
+        name: 'shell tab',
+        agentType: 'generic',
+      }),
     ]
-    renderTabs(sessions, 'a', { activeAgentType: 'codex' })
+    renderTabs(sessions, 'a')
 
-    const activeTab = screen.getByRole('tab', { name: 'live shell' })
-    const inactiveTab = screen.getByRole('tab', { name: 'idle shell' })
+    const activeTab = screen.getByRole('tab', { name: 'codex tab' })
+    const inactiveTab = screen.getByRole('tab', { name: 'shell tab' })
 
     expect(within(activeTab).getByText(AGENTS.codex.glyph)).toBeInTheDocument()
     expect(
       within(inactiveTab).getByText(AGENTS.shell.glyph)
     ).toBeInTheDocument()
-
-    expect(activeTab).toHaveStyle({
-      borderColor: AGENTS.codex.accentSoft,
-    })
   })
 
   test('null activeSessionId falls back to the first visible tab (roving entry)', () => {

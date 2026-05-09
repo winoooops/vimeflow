@@ -37,7 +37,6 @@ export interface TerminalPaneProps {
   onRestart?: (sessionId: string) => void
   session: Session
   isActive: boolean
-  activeAgentType?: Session['agentType'] | null
   onClose?: (sessionId: string) => void
 }
 
@@ -60,14 +59,9 @@ export const TerminalPane = ({
   onRestart = undefined,
   session,
   isActive,
-  activeAgentType = undefined,
   onClose = undefined,
 }: TerminalPaneProps): ReactElement => {
-  const chromeSession =
-    isActive && activeAgentType
-      ? { ...session, agentType: activeAgentType }
-      : session
-  const agent = agentForSession(chromeSession)
+  const agent = agentForSession(session)
   const containerRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<BodyHandle>(null)
   const [ptyStatus, setPtyStatus] = useState<PtyStatus>('idle')
@@ -161,7 +155,7 @@ export const TerminalPane = ({
     >
       <Header
         agent={agent}
-        session={chromeSession}
+        session={session}
         pipStatus={pipStatus}
         branch={branch}
         added={added}

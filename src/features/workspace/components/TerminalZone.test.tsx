@@ -45,7 +45,6 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
       onRestart,
       session,
       isActive,
-      activeAgentType,
     }: TerminalPaneProps): ReactElement => (
       <div
         data-testid="terminal-pane-mock"
@@ -55,7 +54,7 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
         data-mode={mode}
         data-session-name={session.name}
         data-is-active={isActive ? 'true' : 'false'}
-        data-active-agent-type={activeAgentType ?? ''}
+        data-session-agent-type={session.agentType}
       >
         Mocked TerminalPane
         {/* Expose the onRestart wiring so tests can assert TerminalZone
@@ -167,8 +166,15 @@ describe('TerminalZone', () => {
     expect(activeMockPane).toHaveAttribute('data-cwd', '~')
   })
 
-  test('passes live agent type only to the active TerminalPane', () => {
-    render(<TerminalZone {...defaultProps} activeAgentType="codex" />)
+  test('passes session.agentType through to each TerminalPane', () => {
+    // Bridge in WorkspaceView writes detection results into
+    // Session.agentType; TerminalZone forwards the session as-is.
+    // No more activeAgentType override path.
+    const sessionsWithAgents = defaultProps.sessions.map((session, idx) => ({
+      ...session,
+      agentType: idx === 0 ? ('codex' as const) : ('generic' as const),
+    }))
+    render(<TerminalZone {...defaultProps} sessions={sessionsWithAgents} />)
 
     const mockPanes = screen.getAllByTestId('terminal-pane-mock')
 
@@ -180,8 +186,11 @@ describe('TerminalZone', () => {
       (pane) => pane.getAttribute('data-session-id') === 'sess-2'
     )
 
-    expect(activeMockPane).toHaveAttribute('data-active-agent-type', 'codex')
-    expect(inactiveMockPane).toHaveAttribute('data-active-agent-type', '')
+    expect(activeMockPane).toHaveAttribute('data-session-agent-type', 'codex')
+    expect(inactiveMockPane).toHaveAttribute(
+      'data-session-agent-type',
+      'generic'
+    )
   })
 
   test('does not render TerminalPane when no sessions exist', () => {

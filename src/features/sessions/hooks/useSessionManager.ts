@@ -1059,6 +1059,15 @@ export const useSessionManager = (
               status: 'running',
               // workingDirectory unchanged — restart preserves cwd by spec
               lastActivityAt: new Date().toISOString(),
+              // Reset agentType to 'generic' on restart so the new session
+              // starts from a known baseline. Without this, a stale agent
+              // from before the exit can leak into the new session: the
+              // detector returns None for shell-only PTYs, the bridge
+              // ignores isActive=false, and Session.agentType would stay
+              // whatever was last detected. Fresh-spawn parity: the new
+              // tab is yellow until detection picks up the actual agent
+              // (~tens to hundreds of ms after subscription attaches).
+              agentType: 'generic',
             }
 
             // Capture the post-restart order for outer-scope IPC fire.
