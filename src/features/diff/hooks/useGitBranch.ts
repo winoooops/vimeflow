@@ -14,8 +14,25 @@ export interface UseGitBranchReturn {
   idle: boolean
 }
 
-const isValidCwd = (cwd: string): boolean =>
-  cwd !== '.' && cwd !== '~' && cwd.length > 0
+const isValidCwd = (cwd: string): boolean => {
+  if (cwd.length === 0) {
+    return false
+  }
+
+  if (cwd.startsWith('/')) {
+    return true
+  }
+
+  if (/^[A-Za-z]:[\\/]/.test(cwd)) {
+    return true
+  }
+
+  if (cwd.startsWith('\\\\')) {
+    return true
+  }
+
+  return false
+}
 
 export const useGitBranch = (
   cwd = '.',

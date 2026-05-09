@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import { AGENTS } from '../../../../agents/registry'
 import { Footer } from './Footer'
@@ -59,11 +60,22 @@ describe('Footer', () => {
     expect(screen.getByPlaceholderText(/session ended/i)).toBeInTheDocument()
   })
 
-  test('clicking footer container fires onClickFocus', () => {
+  test('clicking focus button fires onClickFocus', () => {
     const onClickFocus = vi.fn()
 
     render(<Footer {...baseProps} onClickFocus={onClickFocus} />)
-    fireEvent.click(screen.getByTestId('terminal-pane-footer'))
+    fireEvent.click(screen.getByRole('button', { name: 'Focus terminal' }))
+
+    expect(onClickFocus).toHaveBeenCalledTimes(1)
+  })
+
+  test('pressing Enter on focus button fires onClickFocus', async () => {
+    const onClickFocus = vi.fn()
+    const user = userEvent.setup()
+
+    render(<Footer {...baseProps} onClickFocus={onClickFocus} />)
+    screen.getByRole('button', { name: 'Focus terminal' }).focus()
+    await user.keyboard('{Enter}')
 
     expect(onClickFocus).toHaveBeenCalledTimes(1)
   })

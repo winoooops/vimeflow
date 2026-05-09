@@ -199,8 +199,9 @@ describe('Tabs', () => {
 
     const tabs = screen.getAllByRole('tab')
 
-    // Close button is aria-hidden — query by label, not role.
-    const closeBtn = within(tabs[0]).getByTestId('close-tab-button')
+    const closeBtn = within(tabs[0]).getByRole('button', {
+      name: 'Close auth',
+    })
     closeBtn.focus()
     await user.keyboard('{Enter}')
 
@@ -262,12 +263,11 @@ describe('Tabs', () => {
     ]
     renderTabs(sessions, 'a', { onSelect, onClose })
 
-    // Inactive tabs hide the close button via aria-hidden + pointer-events-none
-    // — getByLabelText/getByRole can't reach it. data-testid sidesteps both.
-    // fireEvent bypasses pointer-events-none for the click-handler test.
-    const closeB = within(screen.getAllByRole('tab')[1]).getByTestId(
-      'close-tab-button'
-    )
+    // Inactive tabs visually hide the close button with pointer-events-none.
+    // fireEvent bypasses that CSS for the click-handler test.
+    const closeB = within(screen.getAllByRole('tab')[1]).getByRole('button', {
+      name: 'Close tests',
+    })
     fireEvent.click(closeB)
 
     expect(onClose).toHaveBeenCalledWith('b')

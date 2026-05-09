@@ -123,19 +123,11 @@ export const Tab = ({
         // WAI-ARIA tabs §3.27: tablist is one Tab stop; descendants
         // reached via shortcut. Always tabIndex=-1.
         tabIndex={-1}
-        // Always hidden from the a11y tree — the button is decorative
-        // chrome that only appears on hover/focus-within. Keyboard users
-        // close the focused tab via Delete/Backspace (handled in
-        // handleKeyDown above), which doesn't depend on this button
-        // being focusable. group-focus-within reveals the button when
-        // the tab itself receives keyboard focus, so sighted keyboard
-        // users still see the close affordance during tab navigation.
-        // aria-hidden="true" removes this element from the a11y tree, so
-        // an aria-label here would be silently ignored. The button has no
-        // accessible name by design — keyboard users close via
-        // Delete/Backspace on the focused tab (see handleKeyDown above).
-        // data-testid is for vitest queries (no a11y semantics).
-        aria-hidden="true"
+        // AT-visible (aria-label set). Visual hover-reveal via opacity
+        // classes is independent of AT visibility per WCAG 2.1.1.
+        // Keyboard close via Delete/Backspace on the focused tab remains
+        // the primary keyboard path.
+        aria-label={`Close ${session.name}`}
         data-testid="close-tab-button"
         onClick={(e) => {
           e.stopPropagation()

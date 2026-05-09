@@ -966,6 +966,7 @@ pub async fn git_branch(cwd: String) -> Result<String, String> {
     cmd.arg("-C")
         .arg(&safe_cwd)
         .arg("symbolic-ref")
+        .arg("-q")
         .arg("--short")
         .arg("HEAD")
         .env("GIT_TERMINAL_PROMPT", "0");
@@ -981,12 +982,12 @@ pub async fn git_branch(cwd: String) -> Result<String, String> {
     }
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("not a git repository") {
-        return Err("not a git repository".to_string());
+    if stderr.trim().is_empty() {
+        // Detached HEAD has no symbolic ref; the frontend treats empty as no branch.
+        return Ok(String::new());
     }
 
-    // Detached HEAD has no symbolic ref; the frontend treats empty as no branch.
-    Ok(String::new())
+    Err(format!("git_branch: {stderr}"))
 }
 
 #[cfg(test)]
@@ -1658,6 +1659,33 @@ copy to copy.txt
         let tmp = home_tempdir();
         let path = tmp.path().to_string_lossy().to_string();
 
+        let result = git_branch(path).await;
+
+        assert!(result.is_err(), "expected error, got {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_git_branch_returns_error_for_non_detached_git_failure() {
+        use std::fs;
+        use std::process::Command;
+
+        let tmp = home_tempdir();
+        let repo_path = tmp.path();
+        let init_out = Command::new("git")
+            .args(["init", "--initial-branch=main"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git init failed");
+        assert!(
+            init_out.status.success(),
+            "git init must succeed: {}",
+            String::from_utf8_lossy(&init_out.stderr)
+        );
+
+        fs::write(repo_path.join(".git").join("config"), "[core\n")
+            .expect("failed to corrupt git config");
+
+        let path = repo_path.to_string_lossy().to_string();
         let result = git_branch(path).await;
 
         assert!(result.is_err(), "expected error, got {:?}", result);

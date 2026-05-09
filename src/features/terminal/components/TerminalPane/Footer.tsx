@@ -40,22 +40,28 @@ export const Footer = ({
   return (
     <div
       data-testid="terminal-pane-footer"
-      onClick={(event) => {
-        event.stopPropagation()
-        onClickFocus()
-      }}
       className="flex shrink-0 items-center gap-2 border-t border-outline-variant/20 bg-surface-container-lowest/55 px-3.5 py-1.5 font-mono text-[11px]"
     >
       <StatusDot status={pipStatus} size={6} aria-label={`pty ${pipStatus}`} />
-      <span style={{ color: agent.accent }}>{'>'}</span>
-      <input
-        readOnly
-        tabIndex={-1}
-        aria-hidden="true"
-        value=""
-        placeholder={text}
-        className="min-w-0 flex-1 border-0 bg-transparent text-on-surface outline-none placeholder:text-on-surface-muted"
-      />
+      <button
+        type="button"
+        aria-label="Focus terminal"
+        onClick={(event) => {
+          event.stopPropagation()
+          onClickFocus()
+        }}
+        className="flex min-w-0 flex-1 cursor-text items-center gap-2 border-0 bg-transparent p-0 text-left font-mono text-[11px]"
+      >
+        <span style={{ color: agent.accent }}>{'>'}</span>
+        <input
+          readOnly
+          tabIndex={-1}
+          aria-hidden="true"
+          value=""
+          placeholder={text}
+          className="min-w-0 flex-1 border-0 bg-transparent text-on-surface outline-none placeholder:text-on-surface-muted"
+        />
+      </button>
     </div>
   )
 }

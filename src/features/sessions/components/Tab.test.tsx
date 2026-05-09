@@ -86,11 +86,9 @@ describe('Tab — ARIA', () => {
 
   test('close button is always tabIndex=-1', () => {
     renderTab()
-    // Inactive tabs hide the close from a11y (aria-hidden=true). Query
-    // by aria-label directly since role + name cannot pierce nested
-    // aria-hidden in testing-library's a11y resolver.
-    const close = screen.getByTestId('close-tab-button')
+    const close = screen.getByRole('button', { name: 'Close a' })
     expect(close).toHaveAttribute('tabindex', '-1')
+    expect(close).toHaveAttribute('aria-label', 'Close a')
   })
 })
 
@@ -235,12 +233,12 @@ describe('Tab — visual', () => {
     expect(screen.queryByLabelText(/^Status/)).not.toBeInTheDocument()
   })
 
-  test('close button starts hidden on inactive tabs (opacity-0 + pointer-events-none + aria-hidden)', () => {
+  test('close button starts visually hidden on inactive tabs but keeps its accessible name', () => {
     renderTab({ isActive: false })
     const close = screen.getByTestId('close-tab-button')
     expect(close.className).toContain('opacity-0')
     expect(close.className).toContain('pointer-events-none')
-    expect(close).toHaveAttribute('aria-hidden', 'true')
+    expect(close.getAttribute('aria-label')).toMatch(/Close /i)
   })
 
   test('close button starts hidden on active tabs too (revealed only on hover/focus)', () => {
@@ -252,7 +250,7 @@ describe('Tab — visual', () => {
     const close = screen.getByTestId('close-tab-button')
     expect(close.className).toContain('opacity-0')
     expect(close.className).toContain('pointer-events-none')
-    expect(close).toHaveAttribute('aria-hidden', 'true')
+    expect(close.getAttribute('aria-label')).toMatch(/Close /i)
   })
 
   test('hover + focus-within reveal class strings on close button (visual verification covers the actual hover)', () => {

@@ -28,6 +28,18 @@ describe('useGitBranch', () => {
     expect(invoke).not.toHaveBeenCalled()
   })
 
+  test.each(['', './foo', '../bar', 'session/1'])(
+    'returns idle state for relative cwd `%s`',
+    (cwd) => {
+      const { result } = renderHook(() => useGitBranch(cwd))
+
+      expect(result.current.idle).toBe(true)
+      expect(result.current.branch).toBeNull()
+      expect(result.current.loading).toBe(false)
+      expect(invoke).not.toHaveBeenCalled()
+    }
+  )
+
   test('returns idle state when enabled=false', () => {
     const { result } = renderHook(() =>
       useGitBranch('/home/user/repo', { enabled: false })
