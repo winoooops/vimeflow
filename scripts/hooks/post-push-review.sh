@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-# Extract the bash command from the tool input.
+# Read the bash command from the tool input.
 # Claude Code passes the full hook context with tool params nested under tool_input.
 command=$(jq -r '.tool_input.command // .command // empty' 2>/dev/null || echo "")
 if [ -z "$command" ]; then
@@ -23,7 +23,7 @@ if echo "$command" | grep -qE '^\s*gh\s+pr\s+create'; then
 fi
 
 # Check for git push
-# Extract the git subcommand, skipping flags and their values.
+# Read the git subcommand, skipping flags and their values.
 # Handles: git -C /path push, git -c key=val push, git --git-dir=/x push, etc.
 subcmd=""
 skip_next=false

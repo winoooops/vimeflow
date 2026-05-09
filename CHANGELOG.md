@@ -120,11 +120,11 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
 
 #### Changed
 
-- Replaced the in-repo autonomous harness, local `harness-plugin`
-  marketplace, and old review helper scripts with the dedicated Lifeline
-  Claude Code plugin workflow. Root docs now keep project-local Lifeline
-  setup notes in `README.md`, `README.zh-CN.md`, and `CLAUDE.md`; no
-  separate Lifeline docs under `docs/` are shipped.
+- Adopted the dedicated Lifeline Claude Code plugin workflow for autonomous
+  agent loops and review cycles, and removed the in-repo harness, local
+  `harness-plugin` marketplace, and old review helper scripts. Root docs now
+  keep project-local Lifeline setup notes in `README.md`, `README.zh-CN.md`,
+  and `CLAUDE.md`; no separate Lifeline docs under `docs/` are shipped.
   ([#188](https://github.com/winoooops/vimeflow/pull/188), `68a5501`) —
   patterns: [Documentation Accuracy](docs/reviews/patterns/documentation-accuracy.md).
 - `/harness-plugin:github-review` rewritten to consume `chatgpt-codex-connector`

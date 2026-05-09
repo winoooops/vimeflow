@@ -21,7 +21,7 @@
 
 set -euo pipefail
 
-# Extract the bash command from the tool input.
+# Read the bash command from the tool input.
 # Claude Code passes the full hook context with tool params nested under tool_input.
 command=$(jq -r '.tool_input.command // .command // empty' 2>/dev/null || echo "")
 if [ -z "$command" ]; then
