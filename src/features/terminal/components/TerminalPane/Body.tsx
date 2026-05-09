@@ -21,8 +21,26 @@ import { type ITerminalService } from '../../services/terminalService'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
 import '@xterm/xterm/css/xterm.css'
 
-// P2 Fix: Global cache of terminal instances per sessionId
-// This allows terminals to persist when switching between sessions
+// Module-level cache of terminal instances per sessionId.
+//
+// HISTORICAL NOTE (corrected 2026-05-09): the original comment claimed
+// this cache "allows terminals to persist when switching between
+// sessions". That's not what makes tab switching work today —
+// `TerminalZone` always-renders inactive panes and hides them via
+// CSS `display: none` rather than unmount/remount, so Body never
+// unmounts on a tab switch and the cache hit/miss branch in the mount
+// effect is not the persistence mechanism. Body's stable mount is.
+//
+// What the cache actually serves:
+//   - the imperative `focusTerminal()` handle, which reads
+//     `terminalCache.get(sessionId)?.terminal.focus()` to focus xterm
+//     without reaching into Body's internals;
+//   - tests + the existing public `clearTerminalCache` /
+//     `disposeTerminalSession` API surface (preserved per the step-4
+//     migration spec — external imports would break otherwise).
+//
+// New internal code should NOT add to the cache for "tab persistence"
+// reasons; xterm lifetime is scoped to Body's mount.
 export const terminalCache = new Map<
   string,
   { terminal: Terminal; fitAddon: FitAddon }

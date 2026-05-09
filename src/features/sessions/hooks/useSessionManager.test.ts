@@ -965,6 +965,7 @@ describe('useSessionManager', () => {
     service.spawn = vi.fn().mockResolvedValue({
       sessionId: 'fresh-id',
       pid: 4242,
+      cwd: '/home/user/projects/foo',
     })
 
     const { result } = renderHook(() =>

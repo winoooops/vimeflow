@@ -918,7 +918,13 @@ export const useSessionManager = (
         // Finding 2: previously we killed the old id before spawn, so a
         // failed spawn left the React tab visible but the backend cache
         // gone — the tab silently disappeared on the next reload.
-        let result: { sessionId: string; pid: number; cwd?: string }
+        // Note: `cwd` is required (matches the IPC contract — Rust always
+        // returns a canonical absolute path from spawn, even on symlinked
+        // project directories). Tightening from `cwd?: string` keeps the
+        // type aligned with `createSession`'s spawn-result and lets the
+        // PTY register at the canonical path the agent detector observes
+        // (Cycle-5 F-c5-3 fix — symlinked cwd case).
+        let result: { sessionId: string; pid: number; cwd: string }
         try {
           // Round 8, Finding 3 (claude MEDIUM): restart preserves the
           // user's tab semantics, so re-enable the agent bridge for parity
@@ -980,16 +986,25 @@ export const useSessionManager = (
         // 3. Seed restoreData so TerminalPane mounts in 'attach' mode
         // instead of falling through to the legacy spawn path (which would
         // create a hidden duplicate PTY — the F3 / round-1 bug).
+        //
+        // Use `result.cwd` (canonical path from Rust) — NOT `cachedCwd`
+        // which is the OLD session's workingDirectory, possibly a
+        // symlink. The agent detector observes the canonical path
+        // returned from spawn, so registering at the symlink diverges
+        // from what the detector sees → silent missed agent-type
+        // detection after restart on monorepo-style symlinked project
+        // dirs. createSession uses result.cwd for the same reason
+        // (Cycle-5 F-c5-3 fix).
         restoreDataRef.current.set(result.sessionId, {
           sessionId: result.sessionId,
-          cwd: cachedCwd,
+          cwd: result.cwd,
           pid: result.pid,
           replayData: '',
           replayEndOffset: 0,
           bufferedEvents: [],
         })
         pendingPanesRef.current.add(result.sessionId)
-        registerPtySession(result.sessionId, result.sessionId, cachedCwd)
+        registerPtySession(result.sessionId, result.sessionId, result.cwd)
 
         // Round 9, Finding 3 (codex P2): read the LATEST active id post-await,
         // not the closure-captured `activeSessionId` from when restartSession
