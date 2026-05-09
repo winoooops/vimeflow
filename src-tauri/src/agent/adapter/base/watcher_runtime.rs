@@ -13,7 +13,9 @@ use std::time::Instant;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{Emitter, Manager};
 
-use super::diagnostics::{record_event_diag, short_sid, EventTiming, PathHistory, TxOutcome};
+#[cfg(debug_assertions)]
+use super::diagnostics::short_sid;
+use super::diagnostics::{record_event_diag, EventTiming, PathHistory, TxOutcome};
 use super::transcript_state::{TranscriptStartStatus, TranscriptState};
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::adapter::AgentAdapter;
@@ -168,8 +170,9 @@ fn maybe_start_transcript<R: tauri::Runtime>(
                 // diagnostics emitter format string) get the
                 // null-byte signal directly. Claude review on PR #153.
                 ValidateTranscriptError::InvalidPath(_) => TxOutcome::InvalidPath,
-                ValidateTranscriptError::NotAFile(_)
-                | ValidateTranscriptError::Other(_) => TxOutcome::NotFile,
+                ValidateTranscriptError::NotAFile(_) | ValidateTranscriptError::Other(_) => {
+                    TxOutcome::NotFile
+                }
             };
         }
     };

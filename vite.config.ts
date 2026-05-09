@@ -588,6 +588,9 @@ function readBody(
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Tauri serves embedded production assets from its app protocol, so emitted
+  // asset URLs must be relative instead of rooted at `/`.
+  base: './',
   plugins: [react(), gitApiPlugin(), fileApiPlugin()],
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),

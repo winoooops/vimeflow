@@ -19,6 +19,9 @@ use terminal::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    configure_linux_webkit_env();
+
     let builder = tauri::Builder::default()
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -148,4 +151,14 @@ pub fn run() {
             }
         }
     });
+}
+
+#[cfg(target_os = "linux")]
+fn configure_linux_webkit_env() {
+    // Mirrors the dev/e2e launch environment. WebKitGTK can render a blank
+    // white webview on some Linux GPU/Wayland stacks when the DMABUF renderer
+    // is enabled.
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
 }

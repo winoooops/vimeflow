@@ -137,6 +137,11 @@ pub async fn spawn_pty<R: tauri::Runtime>(
     // Build command — env from IPC is ignored for security (prevents injection)
     let mut cmd = CommandBuilder::new(&shell);
     cmd.cwd(&cwd);
+    // GUI launches (desktop/AppImage) often do not inherit a terminal-capable
+    // environment. xterm.js supports 256-color + truecolor, so advertise that
+    // contract to child TUIs without accepting arbitrary env from IPC.
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
 
     // Inject a `claude` wrapper function into the interactive shell.
     //
