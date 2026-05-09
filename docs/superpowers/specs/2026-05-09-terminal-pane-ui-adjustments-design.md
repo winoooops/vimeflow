@@ -13,7 +13,7 @@ related:
 Two small follow-up fixes to step 4 (handoff §4.6 TerminalPane chrome) after first-pass implementation:
 
 1. **Bug 1**: xterm.js's `.xterm-viewport` scrollbar renders with the browser default (light grey/white on dark background), creating a bright vertical strip on the right edge of the terminal pane.
-2. **Bug 2**: The session tab in `SessionTabs` is always yellow (shell glyph `$`) regardless of the live agent. Session creation hard-codes `agentType: 'generic'`. The current TerminalPane chrome overrides this for the active pane via an `activeAgentType` prop drilled from `WorkspaceView` (`agentStatus.agentType`) through `TerminalZone` and into `TerminalPane`'s `chromeSession`, but that override is local to the pane chrome — `SessionTabs` lives outside the pane and reads `session.agentType` directly, so the tab strip never sees the live detection.
+2. **Bug 2**: Originally reported as "tab is always yellow regardless of the live agent". Session creation hard-codes `agentType: 'generic'`. The codex-implemented step-4 baseline drilled `activeAgentType` through both `WorkspaceView → Tabs` AND `WorkspaceView → TerminalZone → TerminalPane` to override `Session.agentType` for the active pane / tab. With both overrides in place the tab DOES color correctly today (per Image 3), but two parallel sources of truth disagree at lifecycle edges (tab activation, EXIT_HOLD window, PTY exit). This bug consolidates the data flow into a single source — `Session.agentType`, written by the bridge effect in `WorkspaceView` — and removes both `activeAgentType` prop chains.
 3. **Bug 3**: The session tab visual is rough. Three concrete issues: (a) the active tab uses a `linear-gradient(accentDim → surface)` background that washes the whole tab in agent color — handoff §4.3 specifies plain `bg-surface` with only a 2 px accent stripe at the top. (b) The close `×` button is always visible on every tab, fighting the agent chip + status dot for attention on a 130–220 px-wide surface. (c) Title is at 11 px, below the 12.5 px handoff value.
 
 Both bugs are fixable in small, independent commits.
@@ -21,9 +21,10 @@ Both bugs are fixable in small, independent commits.
 ## Goals
 
 1. Style `.xterm-viewport` scrollbar to match the existing `thin-scrollbar` utility in `src/index.css` (`#333344` thumb, transparent track, 6 px wide).
-2. `Session.agentType` is updated by **two narrow signals only** — never by ambiguous "not yet checked" / "exit-hold-pending" states from `useAgentStatus`. Lifecycle:
+2. `Session.agentType` is updated by **two narrow runtime signals** — never by ambiguous "not yet checked" / "exit-hold-pending" states from `useAgentStatus`. Plus one initialization point on session creation/restart (Decision D11; not a "runtime signal" but a baseline that the runtime signals act on). Lifecycle:
+   - **Initialization**: new sessions are created with `agentType: 'generic'` (in `useSessionManager.sessionFromInfo` / `createSession`); `restartSession` re-seeds `'generic'` on the replaced session entry (Decision D11). This is the baseline; runtime signals overwrite it.
    - **Detected (write detected value)**: when `useAgentStatus` returns `isActive: true` with a non-null `agentType`, write that into `Session.agentType`. This is the only path that overwrites a previous value with new live detection.
-   - **Status transition to `completed` / `errored` (reset to `'generic'`)**: when **any** session's `status` flips to one of these, force its `agentType` back to `'generic'`. Without this, awaiting-restart chrome keeps the last agent's accent, AND inactive exited sessions retain their stale agent indefinitely. This is the **only** reset path.
+   - **Status transition to `completed` / `errored` (reset to `'generic'`)**: when **any** session's `status` flips to one of these, force its `agentType` back to `'generic'`. Without this, awaiting-restart chrome keeps the last agent's accent, AND inactive exited sessions retain their stale agent indefinitely. This is the **only** runtime reset path.
    - **Detector says inactive but PTY is still alive (no write — agent stays sticky)**: do nothing. The Rust detector returns `Option<(AgentType, u32)>` and yields `None` (`agentType: null`) when no agent process is found in the PTY's tree — including when the user typed `exit` in Claude Code and only the shell remains. The bridge's `if (!isActive || !agentType) return` guard means **once detected, `Session.agentType` sticks until the PTY exits** (status flips to `completed` / `errored`). This is a deliberate tradeoff:
      - Pro: avoids the cross-session-leak race + the EXIT_HOLD_MS flicker.
      - Con: a Claude tab whose user typed `exit` keeps reading "claude" until they restart or close the session. Acceptable for step-4 scope; if it bothers users in practice, step-9 polish can add an explicit "agent disappeared but PTY alive" reset path keyed off something less ambiguous (e.g., a transition counter or PID change).
@@ -171,8 +172,9 @@ const agentStatus = useAgentStatus(activeSessionId)
 //
 // Consumers downstream of Session.agentType: Tab strip, Header chip,
 // Footer prompt-marker (`>`) glyph, RestartAffordance — all via
-// agentForSession(session). AgentStatusPanel is NOT in this list; it
-// reads useAgentStatus directly.
+// agentForSession(session). AgentStatusPanel is intentionally NOT a
+// consumer — it reads useAgentStatus directly for model-id /
+// context-window / tool-call surfaces and is unaffected by this bridge.
 //
 // Reads agentStatus directly — no intermediate `activeAgentType` variable
 // (Decision D7's prop-chain removal also retires that derivation, leaving
@@ -246,7 +248,7 @@ This consolidation is part of the same commit as the bridge — without it, both
 
 ### Race window
 
-`useAgentStatus` polls `detect_agent_in_session` every **2000 ms** (`DETECTION_POLL_MS` in `useAgentStatus.ts`). For the first up-to-2-second window after a fresh spawn, `Session.agentType === 'generic'` and the tab renders yellow (`shell`). Once detection resolves, the setter flips `agentType` and the tab switches to lavender/mint with no further intervention. Better than an indefinite mis-color; if the 2 s flash is jarring in practice, step 9 polish can shorten the first poll cycle or trigger detection eagerly on the `spawn` resolve.
+`useAgentStatus` runs detection immediately on subscription attach (not only on the 2000 ms `DETECTION_POLL_MS` interval). The visible shell-yellow phase after a fresh spawn is therefore bounded by the detector's PID walk + IPC round-trip (~tens to hundreds of ms in practice), not a full 2 s. The 2 s ceiling applies only to retries after the initial detection. Acceptable either way; if the eager-detection path ever proves insufficient, step 9 polish can pre-warm detection at `spawn` resolve.
 
 ### Test approach
 
@@ -265,7 +267,7 @@ This consolidation is part of the same commit as the bridge — without it, both
 Three changes inside the existing `Tab` component:
 
 1. **Drop the gradient on active.** Replace `style={activeChromeStyle}` (which sets `background: linear-gradient(...)` and `borderColor: agent.accentSoft`) with a plain `bg-surface` + tonal-border class set when active. Only the 2 px top stripe carries agent color.
-2. **Hover-reveal close.** Wrap the tab in a `group` and switch the close button to `opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 data-[active=true]:opacity-100 transition-opacity`. Active tabs always show close; inactive only on hover/focus-within. Keyboard `Delete`/`Backspace` flow unchanged.
+2. **Hover-reveal close — applies to BOTH active and inactive tabs.** Wrap the tab in a `group` and switch the close button to `opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto transition-opacity`. The close button is `aria-hidden="true"` permanently — sighted users see it on hover or when the tab itself is keyboard-focused (group-focus-within); screen-reader / keyboard-only users close via `Delete` / `Backspace` on the focused tab.
 3. **Title 12.5 px.** Replace `text-[11px]` with `text-[12.5px]` on the title `<span>`. (Tailwind's `text-xs` is 12 px; we use the arbitrary value to hit handoff's exact spec.)
 
 ```tsx
@@ -302,36 +304,32 @@ Three changes inside the existing `Tab` component:
     tabIndex={-1}
     onClick={...}
     aria-label={`Close ${session.name}`}
-    aria-hidden={!isActive}  // hide from a11y tree when invisibly hover-only; mouse users still get it via the visible group-hover state
+    aria-hidden="true"  // permanent — visible affordance is mouse/focus only; SR users close via Delete/Backspace on the focused tab
     className="
       flex h-4 w-4 shrink-0 items-center justify-center rounded
       text-on-surface-variant/70 transition-opacity
       opacity-0 pointer-events-none
       group-hover:opacity-100 group-hover:pointer-events-auto
       group-focus-within:opacity-100 group-focus-within:pointer-events-auto
-      data-[active=true]:opacity-100 data-[active=true]:pointer-events-auto
       hover:bg-on-surface/[0.06] hover:text-on-surface
     "
-    data-active={isActive}
   >
     <span className="material-symbols-outlined text-[11px]">close</span>
   </button>
 </div>
 ```
 
-> Note: `data-active=...` on the close button mirrors the wrapper's attr so the `data-[active=true]:opacity-100` Tailwind selector resolves; alternative is to drop the attr and key the override off the parent via `[&[data-active=true]_button]:opacity-100`. The mirrored attr is simpler to read.
-
-> **A11y note**: when invisible, the close button has `pointer-events-none` (no mouse interaction) AND `aria-hidden="true"` (excluded from screen-reader tree). It's still in the DOM but inert. Keyboard users close via the existing `Delete`/`Backspace` shortcut on the focused tab, which doesn't depend on the button being focusable. Switching to conditional rendering (`{(isActive || isHovered) && <button>}`) was rejected because it requires JS hover state — `pointer-events-none + aria-hidden` is the CSS-driven equivalent.
+> **A11y note**: the close button is permanently `aria-hidden="true"` and has `pointer-events-none` by default. It's a decorative affordance for sighted users only — visible on hover or when the tab itself is keyboard-focused (group-focus-within). Screen-reader / keyboard-only users close via the `Delete` / `Backspace` shortcut on the focused tab, which doesn't depend on the button being focusable or visible. Conditional rendering (`{(isActive || isHovered) && <button>}`) was rejected because it requires JS hover state — `pointer-events-none + aria-hidden` is the CSS-driven equivalent.
 
 #### Tab.tsx tests
 
-| Test                                    | Assertion                                                                                                                                                                                                                                         |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active tab uses surface bg, no gradient | `getByTestId('session-tab')` for active has class `bg-surface` and no inline `style.background` containing `linear-gradient`.                                                                                                                     |
-| Inactive tab close button starts hidden | `screen.getByRole('button', { name: /close/i })` is in the document and the **button itself** carries class `opacity-0`. (Opacity is on the button, not its parent — assert with `toHaveClass('opacity-0')` against the button element directly.) |
-| Active tab close button is visible      | After rendering with `isActive`, the close button has `data-active="true"`, satisfying `data-[active=true]:opacity-100` (the button's own class set, not a parent's).                                                                             |
-| Hover on inactive tab reveals close     | jsdom doesn't drive `:hover` natively — verify the class string on the button contains `group-hover:opacity-100` and trust Tailwind. Visual verification covers the actual hover.                                                                 |
-| Title font size                         | Title span has class `text-[12.5px]`.                                                                                                                                                                                                             |
+| Test                                                     | Assertion                                                                                                                                                                                                                                           |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Active tab uses surface bg, no gradient                  | `getByTestId('session-tab')` for active has class `bg-surface` and no inline `style.background` containing `linear-gradient`.                                                                                                                       |
+| Close button hidden on **both** inactive AND active tabs | Query via `screen.getByLabelText(/Close /i)` — the button is `aria-hidden="true"` so role-based queries can't reach it even with `hidden: true`. Assert class string contains `opacity-0` and `pointer-events-none`. Same for both states.          |
+| Hover/focus reveal class strings                         | jsdom can't drive `:hover`. Verify the class string contains `group-hover:opacity-100`, `group-hover:pointer-events-auto`, `group-focus-within:opacity-100`, `group-focus-within:pointer-events-auto`. Visual verification covers the actual hover. |
+| Click handler still wired                                | Use `fireEvent.click` (NOT `userEvent.click`) on the close button — the latter respects `pointer-events: none` and won't dispatch. Keyboard close (`Delete`/`Backspace` on the focused tab) is unchanged.                                           |
+| Title font size                                          | Title span has class `text-[12.5px]`.                                                                                                                                                                                                               |
 
 ### Commit shape
 
