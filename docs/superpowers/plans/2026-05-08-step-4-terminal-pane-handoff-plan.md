@@ -2261,3 +2261,5 @@ Plan complete. Two execution options once `/lifeline:planner` finishes its codex
 2. **Inline execution** — execute tasks in this session with checkpoints. (Sub-skill: `superpowers:executing-plans`.)
 
 Either is fine; subagent-driven keeps each task scoped + reviewable.
+
+<!-- codex-reviewed: 2026-05-09T03:53:12Z -->
