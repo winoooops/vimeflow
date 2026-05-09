@@ -112,6 +112,40 @@ describe('StatusCard', () => {
     expect(screen.getByTestId('agent-status-card')).toBeInTheDocument()
   })
 
+  test('keeps card height and agent names stable across claude and codex', () => {
+    const { rerender } = render(
+      <StatusCard
+        {...defaultProps}
+        agentType="claude-code"
+        modelDisplayName="Opus 4.7 (1M context)"
+      />
+    )
+
+    expect(screen.getByTestId('agent-status-card')).toHaveClass('min-h-44')
+    expect(screen.getByText('Claude Code')).toHaveClass(
+      'shrink-0',
+      'whitespace-nowrap'
+    )
+
+    expect(
+      screen.getByText('Opus 4.7 (1M context)', { selector: 'span' })
+    ).toHaveClass('min-w-0', 'flex-1', 'truncate')
+
+    rerender(
+      <StatusCard
+        {...defaultProps}
+        agentType="codex"
+        modelDisplayName="gpt-5.4"
+      />
+    )
+
+    expect(screen.getByTestId('agent-status-card')).toHaveClass('min-h-44')
+    expect(screen.getByText('Codex')).toHaveClass(
+      'shrink-0',
+      'whitespace-nowrap'
+    )
+  })
+
   test('renders BudgetMetrics section', () => {
     render(
       <StatusCard

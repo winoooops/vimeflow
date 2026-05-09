@@ -39,23 +39,10 @@ export const SessionsView = ({
       sessions={sessions}
       activeSessionId={activeSessionId}
       onSessionClick={onSessionClick}
-      onNewInstance={onCreateSession}
+      onCreateSession={onCreateSession}
       onRemoveSession={onRemoveSession}
       onRenameSession={onRenameSession}
       onReorderSessions={onReorderSessions}
     />
-
-    <button
-      type="button"
-      onClick={onCreateSession}
-      className="m-3 flex shrink-0 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-primary to-secondary py-2.5 font-label text-sm font-bold text-on-primary shadow-lg shadow-primary/10 transition-all hover:shadow-xl hover:shadow-primary/20"
-      aria-label="New Instance"
-      data-testid="sessions-view-new-instance"
-    >
-      <span className="material-symbols-outlined text-lg" aria-hidden="true">
-        bolt
-      </span>
-      <span>New Instance</span>
-    </button>
   </div>
 )

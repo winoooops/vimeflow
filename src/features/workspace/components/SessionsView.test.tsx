@@ -24,12 +24,21 @@ describe('SessionsView', () => {
     expect(screen.getByTestId('session-list')).toBeInTheDocument()
   })
 
-  test('New Instance button fires onCreateSession on click', async () => {
+  test('new session button fires onCreateSession on click', async () => {
     const onCreateSession = vi.fn()
     const user = userEvent.setup()
 
     render(<SessionsView {...baseProps} onCreateSession={onCreateSession} />)
-    await user.click(screen.getByRole('button', { name: 'New Instance' }))
+
+    const newSessionButton = screen.getByRole('button', {
+      name: 'new session',
+    })
+    expect(newSessionButton).toHaveAttribute(
+      'data-testid',
+      'sessions-list-new-session'
+    )
+
+    await user.click(newSessionButton)
 
     expect(onCreateSession).toHaveBeenCalledTimes(1)
   })
