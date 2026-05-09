@@ -277,7 +277,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       newTerminal = new Terminal({
         cursorBlink: true,
         fontSize: 14,
-        fontFamily: '"JetBrains Mono", "Courier New", Courier, monospace',
+        fontFamily:
+          '"JetBrains Mono", "Pure Nerd Font", "Courier New", Courier, monospace',
         theme: toXtermTheme(catppuccinMocha),
         scrollback: 10000,
         allowProposedApi: true,

@@ -1,8 +1,49 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@700;800&family=JetBrains+Mono&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
-
 @import 'tailwindcss';
 @config '../tailwind.config.js';
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url('@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'Material Symbols Outlined Variable';
+  font-style: normal;
+  font-display: block;
+  font-weight: 100 700;
+  src: url('@fontsource-variable/material-symbols-outlined/files/material-symbols-outlined-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'Pure Nerd Font';
+  font-style: normal;
+  font-display: block;
+  font-weight: 400;
+  src: url('@azurity/pure-nerd-font/PureNerdFont.woff2') format('woff2');
+}
 
 @layer base {
   * {
@@ -14,6 +55,18 @@
   }
 
   .material-symbols-outlined {
+    font-family: 'Material Symbols Outlined Variable';
+    font-weight: normal;
+    font-style: normal;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-feature-settings: 'liga';
+    font-feature-settings: 'liga';
     font-variation-settings:
       'FILL' 0,
       'wght' 400,
