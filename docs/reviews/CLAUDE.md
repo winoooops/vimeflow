@@ -1,7 +1,7 @@
 # Review Knowledge Base
 
-Patterns learned from code reviews (local Codex and GitHub Codex). This is an
-optional reference — agents may consult relevant patterns before implementing
+Patterns learned from code reviews (local Codex, GitHub Claude, and GitHub
+Codex connector). This is an optional reference — agents may consult relevant patterns before implementing
 to avoid repeating past mistakes.
 
 **Timeline companion.** The repo-root `CHANGELOG.md` (and its zh-CN mirror
@@ -25,15 +25,15 @@ When appending findings to a pattern file, label the source so future readers ca
   disabled as of [#111](https://github.com/winoooops/vimeflow/issues/111)). Existing entries with
   this label remain as historical record; do **NOT** rewrite or relabel them.
 - `github-codex-connector` — the `chatgpt-codex-connector[bot]` GitHub App integration. Posts
-  inline review comments on PR diffs. New entries from `/harness-plugin:github-review` cycles use
+  inline review comments on PR diffs. New entries from `/lifeline:upsource-review` cycles use
   this label.
 - `github-claude` — the Claude Code Review GitHub Action (`.github/workflows/claude-review.yml`).
   Posts an aggregated `## Claude Code Review` issue comment per push.
 - `github-human` — a human reviewer (PR author, maintainer, contributor) commenting on a PR.
   Posted via `/issues/{pr}/comments` (top-level conversation) or `/pulls/{pr}/comments` (inline).
-  New entries from `/harness-plugin:github-review` Step 2D use this label.
-- `local-codex` — local `codex exec` runs (e.g. `npm run review` or post-fix verify in the
-  github-review skill).
+  New entries from `/lifeline:upsource-review` human-review processing use this label.
+- `local-codex` — local `codex exec` runs (e.g. `/lifeline:review` or post-fix verify in
+  `/lifeline:upsource-review`).
 
 | Pattern                                                              | Category       | Findings | Refs | Last Updated |
 | -------------------------------------------------------------------- | -------------- | -------- | ---- | ------------ |

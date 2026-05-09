@@ -24,7 +24,8 @@ test-results/
 # Superpowers plugin working directory
 .superpowers/
 
-# Harness review-loop artifacts
+# Lifeline and legacy harness review-loop artifacts
+.lifeline-upsource-review/
 .harness-github-review/
 
 # IDE
@@ -52,22 +53,17 @@ logs/
 # OS
 Thumbs.db
 
-# Python (for harness)
-harness/__pycache__/
-harness/*.pyc
-harness/.venv/
+# Python
 *.py[cod]
 __pycache__/
 
-# Harness runtime files (generated per iteration, not source)
+# Lifeline runtime files (generated per iteration, not source)
 app_spec.md
 feature_list.json
 .feature_list_stamp.json
 claude-progress.txt
-harness/prompts/app_spec.md
-harness/.env
 
-# Harness agent artifacts (session summaries, scratch files)
+# Lifeline agent artifacts (session summaries, scratch files)
 SESSION_*_SUMMARY.md
 NEXT_COMMIT.txt
 BUG_FIX_VERIFICATION.md
@@ -88,12 +84,10 @@ VISUAL_VERIFICATION.md
 # Verification screenshots (testing artifacts)
 feedback*.png
 feedbacak*.png
-harness/.venv/
 
-# Harness sandbox shadow stubs (0-byte read-only files mirroring $HOME paths
-# at the project root — created by claude-code's sandbox layer to deny
-# path-traversal writes to user home; were the root cause of a prettier
-# pre-commit failure that broke a harness run on 2026-05-05).
+# Lifeline sandbox shadow stubs (0-byte read-only files mirroring $HOME paths
+# at the project root, created by claude-code's sandbox layer to deny
+# path-traversal writes to user home).
 /.bash_profile
 /.bashrc
 /.gitconfig
@@ -109,7 +103,7 @@ harness/.venv/
 /.claude/agents
 /.claude/commands
 /.claude/scheduled_tasks.lock
-# Harness runtime config + scratch files.
+# Lifeline runtime config + scratch files.
 /.claude_settings_cli.json
 /handoff.md
 /dyn_trait_test

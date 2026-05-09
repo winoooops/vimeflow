@@ -74,9 +74,9 @@ Quick reference: no semicolons, single quotes, trailing commas (es5), arrow-func
 - `docs/design/git_diff/` — git diff viewer screen
 - `docs/design/command_palette/` — command palette overlay
 
-## Harness Integration
+## Lifeline Integration
 
-This file is read by Codex during both **local reviews** (Phase 2 inner loop via `codex exec review --base main`) and **cloud reviews** (GitHub Action on PRs). It provides the project context that informs review quality. See `harness/CLAUDE.md` for the full three-phase harness workflow.
+This file is read by Codex during Lifeline local reviews (`/lifeline:review`), Lifeline PR fix cycles (`/lifeline:upsource-review`), and GitHub PR reviews. It provides the project context that informs review quality. Lifeline is installed from <https://github.com/winoooops/lifeline>; this repository no longer vendors the old `harness/` scripts or `harness-plugin`.
 
 ## Review Profile
 

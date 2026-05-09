@@ -82,6 +82,12 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
 
 #### Changed
 
+- 采用专用的 Lifeline Claude Code 插件工作流来承载自主代理循环与 review
+  流程，并移除仓库内 harness、本地 `harness-plugin` marketplace 与旧 review
+  辅助脚本。根文档现在在 `README.md`、`README.zh-CN.md` 与 `CLAUDE.md`
+  保留项目本地 Lifeline 安装说明；不再在 `docs/` 下随仓库提供单独 Lifeline 文档。
+  ([#188](https://github.com/winoooops/vimeflow/pull/188), `68a5501`) —
+  patterns: [Documentation Accuracy](docs/reviews/patterns/documentation-accuracy.md)。
 - 重写 `/harness-plugin:github-review`，同时消费 `chatgpt-codex-connector`
   行内评审、Claude Code Review 聚合评论与人类评审者评论（第三类输入）。
   状态持久化改为 git commit-message trailers（不再使用 JSON 状态文件），
