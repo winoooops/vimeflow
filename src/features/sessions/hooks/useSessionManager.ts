@@ -365,12 +365,17 @@ export const useSessionManager = (
   // Lifecycle: subscribed for the entire useSessionManager lifetime so
   // sessions created via createSession (post-restore) also flip status on
   // exit. Idempotent — flipping an already-completed session to completed
-  // is a no-op. Unsubscribes on unmount via the returned cleanup.
+  // just refreshes its exit-relative timestamp. Unsubscribes on unmount via
+  // the returned cleanup.
   useEffect(() => {
     const unsubscribeExit = service.onExit((sessionId) => {
+      const exitedAt = new Date().toISOString()
+
       setSessions((prev) =>
         prev.map((s) =>
-          s.id === sessionId ? { ...s, status: 'completed' } : s
+          s.id === sessionId
+            ? { ...s, status: 'completed', lastActivityAt: exitedAt }
+            : s
         )
       )
     })

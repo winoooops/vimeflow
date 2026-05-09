@@ -1598,19 +1598,29 @@ describe('useSessionManager', () => {
     expect(exitCallback).not.toBeNull()
 
     // Simulate the PTY exiting (e.g. user typed `exit`). The orchestrator
-    // must flip status to 'completed' so TerminalZone's status-first mode
-    // resolution renders the awaiting-restart UX without a reload.
-    act(() => {
-      // exitCallback is captured above as non-null; cast for the closure.
-      ;(exitCallback as (sessionId: string, code: number | null) => void)(
-        'a',
-        0
-      )
-    })
+    // must flip status to 'completed' and stamp the exit time so
+    // TerminalZone's status-first mode resolution renders the
+    // awaiting-restart UX without a reload.
+    const exitedAt = new Date('2026-05-08T12:05:00Z')
+    try {
+      vi.useFakeTimers()
+      vi.setSystemTime(exitedAt)
 
-    await waitFor(() => {
+      act(() => {
+        // exitCallback is captured above as non-null; cast for the closure.
+        ;(exitCallback as (sessionId: string, code: number | null) => void)(
+          'a',
+          0
+        )
+      })
+
       expect(result.current.sessions[0].status).toBe('completed')
-    })
+      expect(result.current.sessions[0].lastActivityAt).toBe(
+        exitedAt.toISOString()
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   // Round 4, Finding 2 (codex P2) regression test.

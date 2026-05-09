@@ -38,12 +38,12 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                              | Category       | Findings | Refs | Last Updated |
 | -------------------------------------------------------------------- | -------------- | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security       | 21       | 3    | 2026-05-03   |
-| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns | 12       | 4    | 2026-05-09   |
+| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns | 13       | 4    | 2026-05-09   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns | 2        | 3    | 2026-04-14   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform | 4        | 3    | 2026-05-07   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality   | 5        | 0    | 2026-05-09   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality   | 2        | 0    | 2026-05-04   |
-| [Testing Gaps](patterns/testing-gaps.md)                             | testing        | 44       | 20   | 2026-05-08   |
+| [Testing Gaps](patterns/testing-gaps.md)                             | testing        | 45       | 20   | 2026-05-09   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal       | 3        | 1    | 2026-04-09   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality   | 53       | 18   | 2026-05-07   |
 | [Accessibility](patterns/accessibility.md)                           | a11y           | 22       | 6    | 2026-05-09   |

@@ -1,8 +1,9 @@
 import type { ReactElement } from 'react'
 import type { Agent } from '../../../../agents/registry'
-import { formatRelativeTime } from '../../../agent-status/utils/relativeTime'
 import { StatusDot } from '../../../sessions/components/StatusDot'
 import type { Session, SessionStatus } from '../../../sessions/types'
+import { HeaderActions } from './HeaderActions'
+import { HeaderMetadata } from './HeaderMetadata'
 
 export interface HeaderProps {
   agent: Agent
@@ -63,62 +64,21 @@ export const Header = ({
       <span className="min-w-0 truncate text-on-surface">{session.name}</span>
 
       {!isCollapsed && (
-        <>
-          {branch && (
-            <>
-              <span className="text-outline-variant/60">·</span>
-              <span className="min-w-0 truncate text-on-surface-muted">
-                {branch}
-              </span>
-            </>
-          )}
-          <span className="text-outline-variant/60">·</span>
-          <span className="text-success">+{added}</span>
-          <span className="text-error">−{removed}</span>
-          <span className="text-outline-variant/60">·</span>
-          <span className="whitespace-nowrap text-on-surface-muted">
-            {formatRelativeTime(session.lastActivityAt)}
-          </span>
-        </>
+        <HeaderMetadata
+          branch={branch}
+          added={added}
+          removed={removed}
+          session={session}
+        />
       )}
 
       <span className="flex-1" />
 
-      <button
-        type="button"
-        aria-label={isCollapsed ? 'expand status' : 'collapse status'}
-        onClick={(event) => {
-          event.stopPropagation()
-          onToggleCollapse()
-        }}
-        className="inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 bg-transparent text-on-surface-muted hover:bg-white/5"
-      >
-        <span
-          className="material-symbols-outlined text-[13px]"
-          aria-hidden="true"
-        >
-          {isCollapsed ? 'unfold_more' : 'unfold_less'}
-        </span>
-      </button>
-
-      {onClose && (
-        <button
-          type="button"
-          aria-label="close pane"
-          onClick={(event) => {
-            event.stopPropagation()
-            onClose()
-          }}
-          className="inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 bg-transparent text-on-surface-muted hover:bg-white/5"
-        >
-          <span
-            className="material-symbols-outlined text-[13px]"
-            aria-hidden="true"
-          >
-            close
-          </span>
-        </button>
-      )}
+      <HeaderActions
+        isCollapsed={isCollapsed}
+        onToggleCollapse={onToggleCollapse}
+        onClose={onClose}
+      />
     </div>
   )
 }
