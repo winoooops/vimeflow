@@ -669,7 +669,11 @@ describe('Body', () => {
 
       onResizeCallback({ cols: 1, rows: 24 })
 
-      // Neither fit() nor PTY resize should run at zero width
+      // PTY resize must NOT fire at zero width — that path forwards tiny
+      // dimensions to the PTY and re-wraps scrollback. fit() is no longer
+      // called inside onResize at all (PR #190 review: the cols/rows
+      // delivered by onResize are already the result of an upstream fit(),
+      // so re-fitting here is circular).
       expect(mockFitAddon.fit).not.toHaveBeenCalled()
       expect(mockUseTerminal.resize).not.toHaveBeenCalled()
 
@@ -681,8 +685,9 @@ describe('Body', () => {
 
       onResizeCallback({ cols: 80, rows: 24 })
 
-      // Both should fire now
-      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      // PTY resize fires; fit() does NOT (handler forwards xterm's
+      // already-fitted dimensions to the PTY without re-measuring).
+      expect(mockFitAddon.fit).not.toHaveBeenCalled()
       expect(mockUseTerminal.resize).toHaveBeenCalledTimes(1)
     })
 

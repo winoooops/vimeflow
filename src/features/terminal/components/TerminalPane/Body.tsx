@@ -312,15 +312,16 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     // This will be a no-op on first render but ensures PTY gets correct size on subsequent recreations
     resizeRef.current(newTerminal.cols, newTerminal.rows)
 
-    // Handle resize events - notify PTY of terminal size changes
+    // Handle resize events - notify PTY of terminal size changes.
+    // The cols/rows from xterm's onResize event are already correct because
+    // fitAddon.fit() (the trigger upstream) has already computed and applied
+    // them. Calling fit() again here would re-measure the container — pure
+    // overhead during rapid sidebar drag / window resize. Just forward to PTY.
     const resizeDisposable = newTerminal.onResize(({ cols, rows }) => {
       // Guard: don't forward resize when container is hidden (display:none).
       // Otherwise the PTY receives cols≈1 and re-wraps scrollback.
       const width = containerRef.current?.offsetWidth ?? 0
       if (width > 0) {
-        // Fit terminal to container
-        fitAddon.fit()
-
         // Notify PTY service of size change using ref (stable across renders)
         resizeRef.current(cols, rows)
       }

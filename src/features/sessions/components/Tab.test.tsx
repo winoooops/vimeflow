@@ -89,7 +89,7 @@ describe('Tab — ARIA', () => {
     // Inactive tabs hide the close from a11y (aria-hidden=true). Query
     // by aria-label directly since role + name cannot pierce nested
     // aria-hidden in testing-library's a11y resolver.
-    const close = screen.getByLabelText(/Close /i)
+    const close = screen.getByTestId('close-tab-button')
     expect(close).toHaveAttribute('tabindex', '-1')
   })
 })
@@ -140,7 +140,7 @@ describe('Tab — keyboard', () => {
     const onSelect = vi.fn()
     const onClose = vi.fn()
     renderTab({ onSelect, onClose })
-    const close = screen.getByLabelText(/Close /i)
+    const close = screen.getByTestId('close-tab-button')
     close.focus()
     await userEvent.keyboard('{Enter}')
     // The onClose IS called via the close button's own click (bubble),
@@ -174,7 +174,7 @@ describe('Tab — click', () => {
     // DOM click event directly — sufficient to assert the handler wires
     // correctly. The actual hover+click path is verified visually in
     // tauri:dev.
-    fireEvent.click(screen.getByLabelText(/Close X/i))
+    fireEvent.click(screen.getByTestId('close-tab-button'))
     expect(onClose).toHaveBeenCalledWith('X')
     expect(onSelect).not.toHaveBeenCalled()
   })
@@ -237,7 +237,7 @@ describe('Tab — visual', () => {
 
   test('close button starts hidden on inactive tabs (opacity-0 + pointer-events-none + aria-hidden)', () => {
     renderTab({ isActive: false })
-    const close = screen.getByLabelText(/Close /i)
+    const close = screen.getByTestId('close-tab-button')
     expect(close.className).toContain('opacity-0')
     expect(close.className).toContain('pointer-events-none')
     expect(close).toHaveAttribute('aria-hidden', 'true')
@@ -249,7 +249,7 @@ describe('Tab — visual', () => {
     // they navigate to the tab itself; screen-reader users use
     // Delete/Backspace on the focused tab.
     renderTab({ isActive: true })
-    const close = screen.getByLabelText(/Close /i)
+    const close = screen.getByTestId('close-tab-button')
     expect(close.className).toContain('opacity-0')
     expect(close.className).toContain('pointer-events-none')
     expect(close).toHaveAttribute('aria-hidden', 'true')
@@ -259,7 +259,7 @@ describe('Tab — visual', () => {
     // jsdom does not drive :hover natively; verify the Tailwind selectors
     // are wired so a tauri:dev visual check is the source of truth.
     renderTab({ isActive: false })
-    const close = screen.getByLabelText(/Close /i)
+    const close = screen.getByTestId('close-tab-button')
     expect(close.className).toContain('group-hover:opacity-100')
     expect(close.className).toContain('group-hover:pointer-events-auto')
     expect(close.className).toContain('group-focus-within:opacity-100')

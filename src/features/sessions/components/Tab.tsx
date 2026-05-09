@@ -130,12 +130,17 @@ export const Tab = ({
         // being focusable. group-focus-within reveals the button when
         // the tab itself receives keyboard focus, so sighted keyboard
         // users still see the close affordance during tab navigation.
+        // aria-hidden="true" removes this element from the a11y tree, so
+        // an aria-label here would be silently ignored. The button has no
+        // accessible name by design — keyboard users close via
+        // Delete/Backspace on the focused tab (see handleKeyDown above).
+        // data-testid is for vitest queries (no a11y semantics).
         aria-hidden="true"
+        data-testid="close-tab-button"
         onClick={(e) => {
           e.stopPropagation()
           onClose(session.id)
         }}
-        aria-label={`Close ${session.name}`}
         className="
           flex h-4 w-4 shrink-0 items-center justify-center rounded
           text-on-surface-variant/70 transition-opacity

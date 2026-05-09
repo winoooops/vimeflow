@@ -121,6 +121,17 @@ export const WorkspaceView = (): ReactElement => {
   // is ambiguous (tab just activated / EXIT_HOLD window / agent gone but
   // shell alive — detector returns None) so we leave Session.agentType
   // untouched. Once detected, it sticks until PTY exit.
+  //
+  // Status guard: skip the write when the active session has already
+  // exited (status completed/errored). useAgentStatus keeps isActive
+  // true for EXIT_HOLD_MS (5s) after the agent process disappears; if
+  // the PTY also exits during that window, the reset effect below sets
+  // agentType='generic' on the completed session — without this guard
+  // a re-render that re-fires the bridge would write the stale agent
+  // back, ping-ponging against the reset.
+  const activeSessionStatus = sessions.find(
+    (session) => session.id === activeSessionId
+  )?.status
   useEffect(() => {
     if (!activeSessionId) {
       return
@@ -131,9 +142,13 @@ export const WorkspaceView = (): ReactElement => {
     if (!agentStatus.isActive || !agentStatus.agentType) {
       return
     }
+    if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
+      return
+    }
     updateSessionAgentType(activeSessionId, agentStatus.agentType)
   }, [
     activeSessionId,
+    activeSessionStatus,
     agentStatus.isActive,
     agentStatus.agentType,
     agentStatus.sessionId,

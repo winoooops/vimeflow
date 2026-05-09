@@ -200,7 +200,7 @@ describe('Tabs', () => {
     const tabs = screen.getAllByRole('tab')
 
     // Close button is aria-hidden — query by label, not role.
-    const closeBtn = within(tabs[0]).getByLabelText(/^Close auth/)
+    const closeBtn = within(tabs[0]).getByTestId('close-tab-button')
     closeBtn.focus()
     await user.keyboard('{Enter}')
 
@@ -234,8 +234,8 @@ describe('Tabs', () => {
     // Close button has pointer-events-none by default (only interactive
     // on hover/focus-within). Use fireEvent to bypass jsdom's lack of
     // hover support; the actual hover+click path is verified visually.
-    const closeC = within(screen.getAllByRole('tab')[0]).getByLabelText(
-      /close first/i
+    const closeC = within(screen.getAllByRole('tab')[0]).getByTestId(
+      'close-tab-button'
     )
     fireEvent.click(closeC)
 
@@ -252,10 +252,9 @@ describe('Tabs', () => {
     )
   })
 
-  test('closing an inactive tab does NOT change selection', async () => {
+  test('closing an inactive tab does NOT change selection', () => {
     const onSelect = vi.fn()
     const onClose = vi.fn()
-    const user = userEvent.setup()
 
     const sessions = [
       buildSession({ id: 'a', name: 'auth' }),
@@ -263,13 +262,13 @@ describe('Tabs', () => {
     ]
     renderTabs(sessions, 'a', { onSelect, onClose })
 
-    // Inactive tabs hide the close button via aria-hidden; getByLabelText
-    // pierces that mask while role+name does not in testing-library's
-    // a11y resolver. The hover-reveal class is verified separately.
-    const closeB = within(screen.getAllByRole('tab')[1]).getByLabelText(
-      /close tests/i
+    // Inactive tabs hide the close button via aria-hidden + pointer-events-none
+    // — getByLabelText/getByRole can't reach it. data-testid sidesteps both.
+    // fireEvent bypasses pointer-events-none for the click-handler test.
+    const closeB = within(screen.getAllByRole('tab')[1]).getByTestId(
+      'close-tab-button'
     )
-    await user.click(closeB)
+    fireEvent.click(closeB)
 
     expect(onClose).toHaveBeenCalledWith('b')
     expect(onSelect).not.toHaveBeenCalled()

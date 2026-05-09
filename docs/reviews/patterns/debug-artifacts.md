@@ -52,3 +52,12 @@ statements must not ship to production. Gate debug visuals behind
 - **Finding:** `document.title` was set to debug data (`ctx:4 cost:0.25 model:Opus`) on every `agent-status` event callback. This overwrites the app window title with raw metrics and flickers with each statusline update — a visible regression for all users. Added during debugging to verify event delivery, but never removed.
 - **Fix:** Removed the `document.title = ...` line.
 - **Commit:** (pending — agent-status-sidebar PR)
+
+### 5. Yellow `bg-yellow-900` debug strip in TerminalZone gated only on `import.meta.env.DEV`
+
+- **Source:** github-claude | PR #190 round 1 | 2026-05-09
+- **Severity:** LOW
+- **File:** `src/features/workspace/components/TerminalZone.tsx`
+- **Finding:** A hard-coded yellow `DEBUG TerminalZone: N sessions | active=…` JSX block was rendered conditionally on `import.meta.env.DEV`. ESLint's `no-console` rule does not catch JSX nodes, so this slipped past lint. The strip occupies visible vertical space in dev mode (pushes xterm's viewport down), distracts every developer running `tauri:dev`, and is functionally redundant — the same data is observable via React DevTools or by inspecting `useSessionManager` state.
+- **Fix:** Removed the JSX block entirely. If session-count inspection is still useful during active development, use `console.debug('[TerminalZone]', ...)` behind the same `import.meta.env.DEV` guard — that way ESLint's `no-console` rule can catch strays in future and the rendered layout is unaffected. Code-review heuristic: dev-only debug rendering belongs in DevTools or `console.debug`, never in JSX shipped to the production bundle (even when gated on `DEV`) — the visual cost is paid daily by every developer; the diagnostic value is paid once.
+- **Commit:** _(see git log for the cycle-1 fix commit on PR #190)_
