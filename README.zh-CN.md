@@ -162,7 +162,7 @@ npm run type-check               # tsc -b
 /reload-plugins
 ```
 
-安装后，Lifeline 会缓存在 Claude Code 的插件缓存中，并跨会话保留。项目本地说明见 [`docs/lifeline/CLAUDE.md`](docs/lifeline/CLAUDE.md)。
+安装后，Lifeline 会缓存在 Claude Code 的插件缓存中，并跨会话保留。项目本地说明见 [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup)。
 
 > 由于[已知的 Claude Code 问题](https://github.com/anthropics/claude-code/issues/18949)，插件技能不会出现在 `/` 自动补全中。可选的自动补全变通方法见 [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup)。
 
@@ -212,7 +212,7 @@ rules/                      # 分层开发标准（通用 + TS + Rust）
 3. **专业代理审查工作** — 10 个 AI 代理分别负责规划、TDD、代码审查、安全和文档
 4. **规则管控一切** — 分层规则系统（通用层 + 语言特定层）确保一致性，无需人工逐次提交干预
 
-旧的仓库内 harness 已抽离到 Lifeline。Vimeflow 本地使用说明见 [`docs/lifeline/CLAUDE.md`](docs/lifeline/CLAUDE.md)，插件运行手册见 <https://github.com/winoooops/lifeline>。
+旧的仓库内 harness 已抽离到 Lifeline。Vimeflow 本地使用说明见 [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup)，插件运行手册见 <https://github.com/winoooops/lifeline>。
 
 ## 路线图
 

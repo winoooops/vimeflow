@@ -98,7 +98,6 @@ This file covers what you need to start working. For deeper topics, read the lin
 | AI agent specs (planner, tdd-guide, code-reviewer, etc.) | `agents/CLAUDE.md`                                                                                                                 |
 | Development standards (coding style, testing, security)  | `rules/CLAUDE.md`                                                                                                                  |
 | Autonomous development loop and Codex review workflows   | Lifeline plugin — see [Plugin Setup](#lifeline-plugin-setup)                                                                       |
-| Lifeline project usage notes                             | `docs/lifeline/CLAUDE.md`                                                                                                          |
 | Architecture specs, exploration notes                    | `docs/CLAUDE.md`                                                                                                                   |
 | Codex code review (project context for Codex)            | `AGENTS.md`                                                                                                                        |
 | Historical Codex review specs                            | `docs/superpowers/specs/2026-04-02-codex-code-review-design.md`, `docs/superpowers/specs/2026-04-03-codex-feedback-loop-design.md` |

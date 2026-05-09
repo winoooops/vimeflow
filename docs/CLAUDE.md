@@ -22,10 +22,6 @@ Review knowledge base — patterns learned from local Codex and GitHub Codex cod
 
 Technical decision records — what we chose, what we rejected, and why. Each record is a dated, self-contained file (e.g. `2026-04-22-tooltip-library.md`). Read one when a topic touches a previously-decided trade-off so we don't re-litigate it. See `decisions/CLAUDE.md` for the index and format.
 
-### `lifeline/`
-
-Bilingual (EN + zh-CN) project-local notes for the extracted Lifeline plugin. Lifeline now owns the autonomous development loop, local Codex review, PR opener, PR review-fix loop, and PR finisher. See `lifeline/CLAUDE.md` for the English version or `CLAUDE.zh-CN.md` for the Chinese mirror.
-
 ### `../CHANGELOG.md` and `../CHANGELOG.zh-CN.md` (at repo root)
 
 Linear timeline of notable changes, bilingual. Paired with `reviews/` —

@@ -189,7 +189,7 @@ The autonomous development workflow is provided by the extracted [Lifeline Claud
 /reload-plugins
 ```
 
-After installation, Lifeline is cached under Claude Code's plugin cache and persists across sessions. Project-local notes live in [`docs/lifeline/CLAUDE.md`](docs/lifeline/CLAUDE.md).
+After installation, Lifeline is cached under Claude Code's plugin cache and persists across sessions. Project-local usage notes live in [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup).
 
 > Plugin skills don't appear in `/` autocomplete due to a [known Claude Code bug](https://github.com/anthropics/claude-code/issues/18949). See [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup) for the optional autocomplete workaround.
 
@@ -239,7 +239,7 @@ Traditional projects have humans write code and AI assist. Vimeflow inverts this
 3. **Specialized agents review the work** — 10 AI agents handle planning, TDD, code review, security, and documentation
 4. **Rules govern everything** — a hierarchical rule system (common + language-specific) ensures consistency without human intervention per commit
 
-The old in-repo harness has been extracted into Lifeline. See [`docs/lifeline/CLAUDE.md`](docs/lifeline/CLAUDE.md) for Vimeflow-specific usage notes and <https://github.com/winoooops/lifeline> for the plugin runbook.
+The old in-repo harness has been extracted into Lifeline. See [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup) for Vimeflow-specific usage notes and <https://github.com/winoooops/lifeline> for the plugin runbook.
 
 ## Roadmap
 

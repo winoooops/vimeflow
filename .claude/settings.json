@@ -39,7 +39,7 @@
           },
           {
             "type": "command",
-            "command": "jq -r '.tool_input.skill // \"\"' | grep -qE '^lifeline:(planner|loop|review|request-pr|upsource-review|approve-pr)$' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Before running Lifeline workflows, consult docs/lifeline/CLAUDE.md for the project-local usage notes and https://github.com/winoooops/lifeline for the plugin runbook.\"}}' || true"
+            "command": "jq -r '.tool_input.skill // \"\"' | grep -qE '^lifeline:(planner|loop|review|request-pr|upsource-review|approve-pr)$' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Before running Lifeline workflows, consult CLAUDE.md and README.md for project-local usage notes, and https://github.com/winoooops/lifeline for the plugin runbook.\"}}' || true"
           }
         ]
       }
