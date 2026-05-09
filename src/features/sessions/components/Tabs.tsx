@@ -101,23 +101,25 @@ export const Tabs = ({
         // shortcut.
         className="flex items-end gap-0.5"
       >
-        {open.map((session, idx) => (
-          <Tab
-            key={session.id}
-            session={session}
-            isActive={session.id === activeSessionId}
-            isFocusEntryPoint={
-              session.id === activeSessionId || (!hasFocusMatch && idx === 0)
-            }
-            agent={agentForSession(session)}
-            onSelect={(id) => {
-              if (id !== activeSessionId) {
-                onSelect(id)
-              }
-            }}
-            onClose={handleClose}
-          />
-        ))}
+        {open.map((session, idx) => {
+          const isActive = session.id === activeSessionId
+
+          return (
+            <Tab
+              key={session.id}
+              session={session}
+              isActive={isActive}
+              isFocusEntryPoint={isActive || (!hasFocusMatch && idx === 0)}
+              agent={agentForSession(session)}
+              onSelect={(id) => {
+                if (id !== activeSessionId) {
+                  onSelect(id)
+                }
+              }}
+              onClose={handleClose}
+            />
+          )
+        })}
       </div>
       <button
         type="button"

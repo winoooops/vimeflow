@@ -1,8 +1,9 @@
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Tabs } from './Tabs'
 import type { Session } from '../types'
+import { AGENTS } from '../../../agents/registry'
 
 const buildSession = (overrides: Partial<Session> = {}): Session => ({
   id: 'sess-1',
@@ -113,6 +114,31 @@ describe('Tabs', () => {
     expect(tabs[1]).toHaveAttribute('tabindex', '-1')
   })
 
+  test('renders agent chrome from session.agentType (no override path)', () => {
+    // The bridge in WorkspaceView writes detection results into
+    // Session.agentType; Tabs reads agentForSession(session) directly,
+    // no activeAgentType prop override. Verifies the single-source
+    // contract — different sessions render different agent chips
+    // based on their own agentType, regardless of which is active.
+    const sessions = [
+      buildSession({ id: 'a', name: 'codex tab', agentType: 'codex' }),
+      buildSession({
+        id: 'b',
+        name: 'shell tab',
+        agentType: 'generic',
+      }),
+    ]
+    renderTabs(sessions, 'a')
+
+    const activeTab = screen.getByRole('tab', { name: 'codex tab' })
+    const inactiveTab = screen.getByRole('tab', { name: 'shell tab' })
+
+    expect(within(activeTab).getByText(AGENTS.codex.glyph)).toBeInTheDocument()
+    expect(
+      within(inactiveTab).getByText(AGENTS.shell.glyph)
+    ).toBeInTheDocument()
+  })
+
   test('null activeSessionId falls back to the first visible tab (roving entry)', () => {
     // Without the fallback, every tab gets tabIndex=-1 and keyboard
     // users skip the entire tablist. The strip must always have one
@@ -174,7 +200,7 @@ describe('Tabs', () => {
     const tabs = screen.getAllByRole('tab')
 
     const closeBtn = within(tabs[0]).getByRole('button', {
-      name: /^Close auth/,
+      name: 'Close auth',
     })
     closeBtn.focus()
     await user.keyboard('{Enter}')
@@ -191,14 +217,13 @@ describe('Tabs', () => {
     expect(screen.getByRole('tab', { name: 'tests' })).toHaveFocus()
   })
 
-  test('closing the active tab pre-selects the next VISIBLE tab', async () => {
+  test('closing the active tab pre-selects the next VISIBLE tab', () => {
     // Without pre-select, useSessionManager's fallback can land on a
     // hidden completed/errored session that sits between two open
     // ones in the underlying sessions array. Pre-select keeps the
     // selection on a tab the user can actually see.
     const onSelect = vi.fn()
     const onClose = vi.fn()
-    const user = userEvent.setup()
 
     const sessions = [
       buildSession({ id: 'C', status: 'running', name: 'first' }),
@@ -207,10 +232,13 @@ describe('Tabs', () => {
     ]
     renderTabs(sessions, 'C', { onSelect, onClose })
 
-    const closeC = within(screen.getAllByRole('tab')[0]).getByRole('button', {
-      name: /close first/i,
-    })
-    await user.click(closeC)
+    // Close button has pointer-events-none by default (only interactive
+    // on hover/focus-within). Use fireEvent to bypass jsdom's lack of
+    // hover support; the actual hover+click path is verified visually.
+    const closeC = within(screen.getAllByRole('tab')[0]).getByTestId(
+      'close-tab-button'
+    )
+    fireEvent.click(closeC)
 
     // Visible-order next tab is 'A' (B is filtered out of the strip).
     expect(onSelect).toHaveBeenCalledWith('A')
@@ -225,10 +253,9 @@ describe('Tabs', () => {
     )
   })
 
-  test('closing an inactive tab does NOT change selection', async () => {
+  test('closing an inactive tab does NOT change selection', () => {
     const onSelect = vi.fn()
     const onClose = vi.fn()
-    const user = userEvent.setup()
 
     const sessions = [
       buildSession({ id: 'a', name: 'auth' }),
@@ -236,10 +263,12 @@ describe('Tabs', () => {
     ]
     renderTabs(sessions, 'a', { onSelect, onClose })
 
+    // Inactive tabs visually hide the close button with pointer-events-none.
+    // fireEvent bypasses that CSS for the click-handler test.
     const closeB = within(screen.getAllByRole('tab')[1]).getByRole('button', {
-      name: /close tests/i,
+      name: 'Close tests',
     })
-    await user.click(closeB)
+    fireEvent.click(closeB)
 
     expect(onClose).toHaveBeenCalledWith('b')
     expect(onSelect).not.toHaveBeenCalled()

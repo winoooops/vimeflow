@@ -63,6 +63,7 @@ export const WorkspaceView = (): ReactElement => {
     renameSession,
     reorderSessions,
     updateSessionCwd,
+    updateSessionAgentType,
     restoreData,
     loading,
     notifyPaneReady,
@@ -108,6 +109,69 @@ export const WorkspaceView = (): ReactElement => {
   )
 
   const agentStatus = useAgentStatus(activeSessionId)
+
+  // Bridge: when the detector resolves a live agent for the active
+  // session, write it into Session.agentType. This is the single source
+  // of truth — chrome consumers (Tab strip, Header chip, Footer
+  // prompt-marker, RestartAffordance) all read agentForSession(session)
+  // and follow naturally. AgentStatusPanel is NOT in this set; it reads
+  // useAgentStatus directly.
+  //
+  // Only writes on isActive=true with non-null agentType. isActive=false
+  // is ambiguous (tab just activated / EXIT_HOLD window / agent gone but
+  // shell alive — detector returns None) so we leave Session.agentType
+  // untouched. Once detected, it sticks until PTY exit.
+  //
+  // Status guard: skip the write when the active session has already
+  // exited (status completed/errored). useAgentStatus keeps isActive
+  // true for EXIT_HOLD_MS (5s) after the agent process disappears; if
+  // the PTY also exits during that window, the reset effect below sets
+  // agentType='generic' on the completed session — without this guard
+  // a re-render that re-fires the bridge would write the stale agent
+  // back, ping-ponging against the reset.
+  const activeSessionStatus = sessions.find(
+    (session) => session.id === activeSessionId
+  )?.status
+  useEffect(() => {
+    if (!activeSessionId) {
+      return
+    }
+    if (agentStatus.sessionId !== activeSessionId) {
+      return
+    }
+    if (!agentStatus.isActive || !agentStatus.agentType) {
+      return
+    }
+    if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
+      return
+    }
+    updateSessionAgentType(activeSessionId, agentStatus.agentType)
+  }, [
+    activeSessionId,
+    activeSessionStatus,
+    agentStatus.isActive,
+    agentStatus.agentType,
+    agentStatus.sessionId,
+    updateSessionAgentType,
+  ])
+
+  // Reset on PTY exit: when ANY session's status flips to completed or
+  // errored, force its agentType back to 'generic'. Watches the whole
+  // sessions array so inactive exited sessions also get reset; without
+  // this they'd retain the last-detected agent until reactivation.
+  // updateSessionAgentType bails early when value is unchanged, so the
+  // effect is cheap even though it fires on every sessions array change.
+  useEffect(() => {
+    for (const session of sessions) {
+      if (session.status !== 'completed' && session.status !== 'errored') {
+        continue
+      }
+      if (session.agentType === 'generic') {
+        continue
+      }
+      updateSessionAgentType(session.id, 'generic')
+    }
+  }, [sessions, updateSessionAgentType])
 
   const {
     size: sidebarWidth,

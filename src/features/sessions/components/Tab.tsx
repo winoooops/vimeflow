@@ -75,13 +75,16 @@ export const Tab = ({
         }
       }}
       onKeyDown={handleKeyDown}
+      // `group` enables hover-reveal of the close button per handoff
+      // §4.3 — close × is invisible on inactive tabs, visible on hover
+      // or when the tab is active.
       className={`
-        relative flex h-[30px] min-w-[130px] max-w-[220px] cursor-pointer items-center gap-2
+        group relative flex h-[30px] min-w-[130px] max-w-[220px] cursor-pointer items-center gap-2
         rounded-t-lg border border-transparent pl-3 pr-2 outline-none transition-colors
         focus-visible:ring-2 focus-visible:ring-primary/50
         ${
           isActive
-            ? '-mb-px bg-surface border-outline-variant/30'
+            ? '-mb-px border-outline-variant/30 bg-surface'
             : 'hover:bg-on-surface/[0.025]'
         }
       `}
@@ -102,7 +105,7 @@ export const Tab = ({
       </span>
       <span
         className={`
-          min-w-0 flex-1 truncate font-mono text-[11px]
+          min-w-0 flex-1 truncate font-mono text-[12.5px]
           ${isActive ? 'font-medium text-on-surface' : 'text-on-surface-variant'}
         `}
       >
@@ -120,12 +123,24 @@ export const Tab = ({
         // WAI-ARIA tabs §3.27: tablist is one Tab stop; descendants
         // reached via shortcut. Always tabIndex=-1.
         tabIndex={-1}
+        // AT-visible (aria-label set). Visual hover-reveal via opacity
+        // classes is independent of AT visibility per WCAG 2.1.1.
+        // Keyboard close via Delete/Backspace on the focused tab remains
+        // the primary keyboard path.
+        aria-label={`Close ${session.name}`}
+        data-testid="close-tab-button"
         onClick={(e) => {
           e.stopPropagation()
           onClose(session.id)
         }}
-        aria-label={`Close ${session.name}`}
-        className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-on-surface-variant/70 transition-colors hover:bg-on-surface/[0.06] hover:text-on-surface"
+        className="
+          flex h-4 w-4 shrink-0 items-center justify-center rounded
+          text-on-surface-variant/70 transition-opacity
+          opacity-0 pointer-events-none
+          group-hover:opacity-100 group-hover:pointer-events-auto
+          group-focus-within:opacity-100 group-focus-within:pointer-events-auto
+          hover:bg-on-surface/[0.06] hover:text-on-surface
+        "
       >
         <span className="material-symbols-outlined text-[11px]">close</span>
       </button>

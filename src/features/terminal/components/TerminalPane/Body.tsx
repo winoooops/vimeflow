@@ -1,21 +1,46 @@
+/* eslint-disable react/require-default-props */
 import type { ReactElement } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 // WebGL addon disabled — causes blank terminal in Tauri's webview (WebView2/WebKit)
 // due to broken WebGL2 context. Canvas2D renderer works fine. See PR #33.
-import { catppuccinMocha, toXtermTheme } from '../theme/catppuccin-mocha'
+import { catppuccinMocha, toXtermTheme } from '../../theme/catppuccin-mocha'
 import {
   useTerminal,
   type RestoreData,
   type NotifyPaneReady,
-} from '../hooks/useTerminal'
-import { type ITerminalService } from '../services/terminalService'
-import { registerPtySession, unregisterPtySession } from '../ptySessionMap'
+} from '../../hooks/useTerminal'
+import { type ITerminalService } from '../../services/terminalService'
+import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
 import '@xterm/xterm/css/xterm.css'
 
-// P2 Fix: Global cache of terminal instances per sessionId
-// This allows terminals to persist when switching between sessions
+// Module-level cache of terminal instances per sessionId.
+//
+// HISTORICAL NOTE (corrected 2026-05-09): the original comment claimed
+// this cache "allows terminals to persist when switching between
+// sessions". That's not what makes tab switching work today —
+// `TerminalZone` always-renders inactive panes and hides them via
+// CSS `display: none` rather than unmount/remount, so Body never
+// unmounts on a tab switch and the cache hit/miss branch in the mount
+// effect is not the persistence mechanism. Body's stable mount is.
+//
+// What the cache actually serves:
+//   - the imperative `focusTerminal()` handle, which reads
+//     `terminalCache.get(sessionId)?.terminal.focus()` to focus xterm
+//     without reaching into Body's internals;
+//   - tests + the existing public `clearTerminalCache` /
+//     `disposeTerminalSession` API surface (preserved per the step-4
+//     migration spec — external imports would break otherwise).
+//
+// New internal code should NOT add to the cache for "tab persistence"
+// reasons; xterm lifetime is scoped to Body's mount.
 export const terminalCache = new Map<
   string,
   { terminal: Terminal; fitAddon: FitAddon }
@@ -41,19 +66,9 @@ export const disposeTerminalSession = (sessionId: string): void => {
   }
 }
 
-/**
- * Terminal pane lifecycle mode — explicit instead of inferred from
- * `restoredFrom`. Inference was the source of two Codex P1 bugs:
- *
- *   - Newly-created sessions (createSession spawned, then TerminalPane
- *     mounted with restoredFrom undefined) hit the spawn branch a second
- *     time and created hidden duplicate PTYs.
- *   - Cached Exited sessions (no restoredFrom) were resurrected as fresh
- *     PTYs on reload instead of waiting for the user to opt in to restart.
- */
-export type TerminalPaneMode = 'attach' | 'spawn' | 'awaiting-restart'
+export type BodyMode = 'attach' | 'spawn'
 
-export interface TerminalPaneProps {
+export interface BodyProps {
   /**
    * Terminal session identifier
    */
@@ -109,50 +124,45 @@ export interface TerminalPaneProps {
   onPaneReady?: NotifyPaneReady
 
   /**
-   * Explicit lifecycle mode — see {@link TerminalPaneMode}.
+   * Explicit lifecycle mode — see {@link BodyMode}.
    * @default 'spawn'
    */
-  mode?: TerminalPaneMode
+  mode?: BodyMode
 
   /**
-   * Called when the user clicks Restart in `awaiting-restart` mode. No-op
-   * if not provided.
+   * Called whenever the underlying PTY hook reports a status transition.
    */
-  onRestart?: (sessionId: string) => void
+  onPtyStatusChange?: (status: 'idle' | 'running' | 'exited' | 'error') => void
+
+  /**
+   * Called when xterm gains or loses focus.
+   */
+  onFocusChange?: (focused: boolean) => void
 }
 
-/**
- * TerminalPane component - renders an xterm.js terminal with PTY integration
- *
- * Features:
- * - Catppuccin Mocha theme
- * - Responsive sizing with fit addon
- * - Canvas2D renderer (WebGL disabled — broken in Tauri webview)
- * - PTY process spawning and lifecycle management
- * - Bidirectional data flow (xterm ↔ PTY)
- * - Automatic cleanup on unmount
- */
-export const TerminalPane = ({
-  sessionId,
-  cwd,
-  service,
-  shell = undefined,
-  env = undefined,
-  restoredFrom = undefined,
-  onCwdChange = undefined,
-  onPaneReady = undefined,
-  mode = 'spawn',
-  onRestart = undefined,
-}: TerminalPaneProps): ReactElement => {
+export interface BodyHandle {
+  focusTerminal: () => void
+}
+
+export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
+  {
+    sessionId,
+    cwd,
+    service,
+    shell = undefined,
+    env = undefined,
+    restoredFrom = undefined,
+    onCwdChange = undefined,
+    onPaneReady = undefined,
+    mode = 'spawn',
+    onPtyStatusChange = undefined,
+    onFocusChange = undefined,
+  },
+  ref
+): ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
   const [terminal, setTerminal] = useState<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
-
-  // awaiting-restart mode: render a Restart affordance and skip ALL PTY
-  // interaction (no spawn, no attach, no xterm). Per spec, exited sessions
-  // wait for explicit user action — auto-respawn would mask intentional
-  // exits and silently re-execute commands in stale cwds.
-  const isAwaitingRestart = mode === 'awaiting-restart'
 
   // Use terminal hook for PTY lifecycle management
   const {
@@ -160,8 +170,7 @@ export const TerminalPane = ({
     resize,
     status,
   } = useTerminal({
-    // Pass null terminal in awaiting-restart so useTerminal short-circuits.
-    terminal: isAwaitingRestart ? null : terminal,
+    terminal,
     service,
     cwd,
     shell,
@@ -198,6 +207,32 @@ export const TerminalPane = ({
     resizeRef.current = resize
   }, [resize])
 
+  const onPtyStatusChangeRef = useRef(onPtyStatusChange)
+  const onFocusChangeRef = useRef(onFocusChange)
+
+  useEffect(() => {
+    onPtyStatusChangeRef.current = onPtyStatusChange
+  }, [onPtyStatusChange])
+
+  useEffect(() => {
+    onFocusChangeRef.current = onFocusChange
+  }, [onFocusChange])
+
+  useEffect(() => {
+    onPtyStatusChangeRef.current?.(status)
+  }, [status])
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusTerminal: (): void => {
+        const cached = terminalCache.get(sessionId)
+        cached?.terminal.focus()
+      },
+    }),
+    [sessionId]
+  )
+
   // P2 Fix: Send resize when terminal is created AND when session becomes running
   // The initial resize effect runs immediately when terminal is created, but resize()
   // is a no-op until the session is actually spawned and status becomes 'running'.
@@ -210,10 +245,9 @@ export const TerminalPane = ({
 
   // P2 Fix: Terminal instance management with caching.
   // Terminals persist when switching sessions to avoid killing PTY processes.
-  // Skip xterm setup entirely in awaiting-restart mode — there's no PTY to
-  // attach to and we render a Restart button instead of a terminal.
   useEffect(() => {
-    if (!containerRef.current || isAwaitingRestart) {
+    const node = containerRef.current
+    if (!node) {
       return
     }
 
@@ -229,12 +263,12 @@ export const TerminalPane = ({
       fitAddonRef.current = fitAddon
 
       // Re-open terminal in the new container
-      newTerminal.open(containerRef.current)
+      newTerminal.open(node)
 
       // Re-fit to new container — guard against hidden (display:none) containers
       // where offsetWidth is 0. Fitting at zero width tells xterm cols≈1,
       // which causes the PTY to re-wrap scrollback into a narrow column.
-      const width = containerRef.current.offsetWidth
+      const width = node.offsetWidth
       if (width > 0) {
         fitAddon.fit()
       }
@@ -256,10 +290,10 @@ export const TerminalPane = ({
 
       // WebGL addon intentionally disabled — see comment at top of file.
       // Open terminal in container
-      newTerminal.open(containerRef.current)
+      newTerminal.open(node)
 
       // Fit terminal to container — guard against hidden (display:none) containers
-      const width = containerRef.current.offsetWidth
+      const width = node.offsetWidth
       if (width > 0) {
         fitAddon.fit()
       }
@@ -296,19 +330,31 @@ export const TerminalPane = ({
     // This will be a no-op on first render but ensures PTY gets correct size on subsequent recreations
     resizeRef.current(newTerminal.cols, newTerminal.rows)
 
-    // Handle resize events - notify PTY of terminal size changes
+    // Handle resize events - notify PTY of terminal size changes.
+    // The cols/rows from xterm's onResize event are already correct because
+    // fitAddon.fit() (the trigger upstream) has already computed and applied
+    // them. Calling fit() again here would re-measure the container — pure
+    // overhead during rapid sidebar drag / window resize. Just forward to PTY.
     const resizeDisposable = newTerminal.onResize(({ cols, rows }) => {
       // Guard: don't forward resize when container is hidden (display:none).
       // Otherwise the PTY receives cols≈1 and re-wraps scrollback.
       const width = containerRef.current?.offsetWidth ?? 0
       if (width > 0) {
-        // Fit terminal to container
-        fitAddon.fit()
-
         // Notify PTY service of size change using ref (stable across renders)
         resizeRef.current(cols, rows)
       }
     })
+
+    const handleFocusIn = (): void => {
+      onFocusChangeRef.current?.(true)
+    }
+
+    const handleFocusOut = (): void => {
+      onFocusChangeRef.current?.(false)
+    }
+
+    node.addEventListener('focusin', handleFocusIn)
+    node.addEventListener('focusout', handleFocusOut)
 
     // P2 Fix: Add ResizeObserver to detect container size changes
     // When the container resizes (e.g., window resize, panel collapse),
@@ -321,16 +367,18 @@ export const TerminalPane = ({
         fitAddon.fit()
       }
     })
-    resizeObserver.observe(containerRef.current)
+    resizeObserver.observe(node)
 
     // Store terminal in state to trigger useTerminal hook
     setTerminal(newTerminal)
 
     // Cleanup: disconnect observers and dispose terminal from cache
-    // When TerminalPane unmounts, the session is closed — free resources
+    // When Body unmounts, the session is closed — free resources
     return (): void => {
       resizeObserver.disconnect()
       resizeDisposable.dispose()
+      node.removeEventListener('focusin', handleFocusIn)
+      node.removeEventListener('focusout', handleFocusOut)
       const entry = terminalCache.get(sessionId)
       if (entry) {
         entry.terminal.dispose()
@@ -339,43 +387,19 @@ export const TerminalPane = ({
       setTerminal(null)
       fitAddonRef.current = null
     }
-  }, [sessionId, isAwaitingRestart])
-
-  // Awaiting-restart: render a Restart affordance instead of an xterm.
-  // Per the design spec ("no auto-respawn for Exited" IDEA), the user must
-  // explicitly opt in to restarting an Exited session.
-  if (isAwaitingRestart) {
-    return (
-      <div
-        data-testid="terminal-pane-wrapper"
-        data-session-id={sessionId}
-        data-mode="awaiting-restart"
-        className="relative flex h-full w-full flex-col items-center justify-center gap-3 overflow-hidden bg-surface text-on-surface/70"
-      >
-        <p className="font-mono text-sm">Session exited.</p>
-        <button
-          type="button"
-          aria-label={`Restart session ${sessionId}`}
-          onClick={() => onRestart?.(sessionId)}
-          className="rounded bg-surface-container px-3 py-1.5 font-label text-sm text-on-surface hover:bg-surface-container/80"
-        >
-          Restart
-        </button>
-      </div>
-    )
-  }
+  }, [sessionId])
 
   return (
     <div
-      data-testid="terminal-pane-wrapper"
-      className="relative w-full h-full overflow-hidden"
+      data-testid="terminal-pane-body-wrapper"
+      className="terminal-pane-body relative h-full w-full overflow-hidden"
     >
       <div
         ref={containerRef}
         data-testid="terminal-pane"
         data-session-id={sessionId}
-        className="w-full h-full"
+        className="h-full w-full"
       />
     </div>
   )
-}
+})

@@ -957,6 +957,39 @@ pub async fn get_git_diff(
     Ok(parsed)
 }
 
+/// Tauri command: Get the current branch for a git repository
+#[tauri::command]
+pub async fn git_branch(cwd: String) -> Result<String, String> {
+    let safe_cwd = validate_cwd(&cwd)?;
+
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(&safe_cwd)
+        .arg("symbolic-ref")
+        .arg("-q")
+        .arg("--short")
+        .arg("HEAD")
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let output = run_git_with_timeout(cmd).await?;
+
+    if output.status.success() {
+        let branch = String::from_utf8(output.stdout)
+            .map_err(|e| format!("git_branch utf8: {}", e))?
+            .trim()
+            .to_string();
+        return Ok(branch);
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.trim().is_empty() {
+        // Detached HEAD has no symbolic ref; the frontend treats empty as no branch.
+        return Ok(String::new());
+    }
+
+    Err(format!("git_branch: {stderr}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::test_helpers::{configure_test_git, home_tempdir};
@@ -1549,6 +1582,120 @@ copy to copy.txt
         let diff = result.unwrap();
         assert_eq!(diff.file_path, "foo.txt");
         assert_eq!(diff.hunks.len(), 0, "non-repo should return empty hunks");
+    }
+
+    #[tokio::test]
+    async fn test_git_branch_returns_default_branch_for_unborn_repo() {
+        use std::process::Command;
+
+        let tmp = home_tempdir();
+        let repo_path = tmp.path();
+        let init_out = Command::new("git")
+            .args(["init", "--initial-branch=main"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git init failed");
+        assert!(
+            init_out.status.success(),
+            "git init must succeed: {}",
+            String::from_utf8_lossy(&init_out.stderr)
+        );
+
+        let path = repo_path.to_string_lossy().to_string();
+        let branch = git_branch(path).await.expect("git_branch");
+
+        assert_eq!(branch, "main");
+    }
+
+    #[tokio::test]
+    async fn test_git_branch_returns_empty_for_detached_head() {
+        use std::process::Command;
+
+        let tmp = home_tempdir();
+        let repo_path = tmp.path();
+        let init_out = Command::new("git")
+            .args(["init", "--initial-branch=main"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git init failed");
+        assert!(
+            init_out.status.success(),
+            "git init must succeed: {}",
+            String::from_utf8_lossy(&init_out.stderr)
+        );
+
+        configure_test_git(repo_path);
+
+        let commit_out = Command::new("git")
+            .args(["commit", "--allow-empty", "-m", "init"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git commit failed");
+        assert!(
+            commit_out.status.success(),
+            "git commit must succeed: {}",
+            String::from_utf8_lossy(&commit_out.stderr)
+        );
+
+        let checkout_out = Command::new("git")
+            .args(["checkout", "--detach", "HEAD"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git checkout failed");
+        assert!(
+            checkout_out.status.success(),
+            "git checkout must succeed: {}",
+            String::from_utf8_lossy(&checkout_out.stderr)
+        );
+
+        let path = repo_path.to_string_lossy().to_string();
+        let branch = git_branch(path).await.expect("git_branch");
+
+        assert_eq!(branch, "");
+    }
+
+    #[tokio::test]
+    async fn test_git_branch_returns_error_for_non_repo_cwd() {
+        let tmp = home_tempdir();
+        let path = tmp.path().to_string_lossy().to_string();
+
+        let result = git_branch(path).await;
+
+        assert!(result.is_err(), "expected error, got {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_git_branch_returns_error_for_non_detached_git_failure() {
+        use std::fs;
+        use std::process::Command;
+
+        let tmp = home_tempdir();
+        let repo_path = tmp.path();
+        let init_out = Command::new("git")
+            .args(["init", "--initial-branch=main"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git init failed");
+        assert!(
+            init_out.status.success(),
+            "git init must succeed: {}",
+            String::from_utf8_lossy(&init_out.stderr)
+        );
+
+        fs::write(repo_path.join(".git").join("config"), "[core\n")
+            .expect("failed to corrupt git config");
+
+        let path = repo_path.to_string_lossy().to_string();
+        let result = git_branch(path).await;
+
+        assert!(result.is_err(), "expected error, got {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_git_branch_rejects_out_of_scope_cwd() {
+        let result = git_branch("/etc".to_string()).await;
+
+        assert!(result.is_err(), "expected error, got {:?}", result);
     }
 
     #[tokio::test]

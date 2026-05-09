@@ -17,6 +17,24 @@ const waitForCount = async (
   )
 }
 
+const clickLatestSessionTabCloseButton = async (): Promise<void> => {
+  const ok = await browser.execute(() => {
+    const tabs = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid="session-tab"]')
+    )
+    const latestTab = tabs[tabs.length - 1]
+    const closeButton = latestTab?.querySelector<HTMLButtonElement>(
+      '[data-testid="close-tab-button"]'
+    )
+    if (!closeButton) return false
+
+    closeButton.click()
+
+    return true
+  })
+  if (!ok) throw new Error('could not locate close button for the spawned tab')
+}
+
 describe('Terminal session lifecycle', () => {
   it('increments and decrements active PTY count on new/close tab', async () => {
     await (
@@ -33,23 +51,10 @@ describe('Terminal session lifecycle', () => {
     await clickBySelector('button[aria-label="New session"]')
     await waitForCount(2, 'new tab did not register a second PTY session')
 
-    // Close the *second* session by its frontend name. useSessionManager
-    // auto-names sequential sessions; we target the one whose close button
-    // isn't the first (originalaria-label aria-label="Close sess-...").
-    const secondCloseLabel = await browser.execute(() => {
-      const closeBtns = Array.from(
-        document.querySelectorAll<HTMLButtonElement>(
-          'button[aria-label^="Close "]'
-        )
-      )
-      // Return aria-label of the last close button (most recently spawned).
-      return closeBtns[closeBtns.length - 1]?.getAttribute('aria-label') ?? null
-    })
-
-    if (!secondCloseLabel) {
-      throw new Error('could not locate close button for the spawned tab')
-    }
-    await clickBySelector(`button[aria-label="${secondCloseLabel}"]`)
+    // Close the most recently spawned session by finding the close control
+    // inside the latest tab. The close button is intentionally hidden from
+    // the a11y tree and exposed to tests via data-testid.
+    await clickLatestSessionTabCloseButton()
 
     await waitForCount(1, 'closing the spawned tab did not decrement count')
   })

@@ -965,6 +965,7 @@ describe('useSessionManager', () => {
     service.spawn = vi.fn().mockResolvedValue({
       sessionId: 'fresh-id',
       pid: 4242,
+      cwd: '/home/user/projects/foo',
     })
 
     const { result } = renderHook(() =>
@@ -1598,19 +1599,29 @@ describe('useSessionManager', () => {
     expect(exitCallback).not.toBeNull()
 
     // Simulate the PTY exiting (e.g. user typed `exit`). The orchestrator
-    // must flip status to 'completed' so TerminalZone's status-first mode
-    // resolution renders the awaiting-restart UX without a reload.
-    act(() => {
-      // exitCallback is captured above as non-null; cast for the closure.
-      ;(exitCallback as (sessionId: string, code: number | null) => void)(
-        'a',
-        0
-      )
-    })
+    // must flip status to 'completed' and stamp the exit time so
+    // TerminalZone's status-first mode resolution renders the
+    // awaiting-restart UX without a reload.
+    const exitedAt = new Date('2026-05-08T12:05:00Z')
+    try {
+      vi.useFakeTimers()
+      vi.setSystemTime(exitedAt)
 
-    await waitFor(() => {
+      act(() => {
+        // exitCallback is captured above as non-null; cast for the closure.
+        ;(exitCallback as (sessionId: string, code: number | null) => void)(
+          'a',
+          0
+        )
+      })
+
       expect(result.current.sessions[0].status).toBe('completed')
-    })
+      expect(result.current.sessions[0].lastActivityAt).toBe(
+        exitedAt.toISOString()
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   // Round 4, Finding 2 (codex P2) regression test.
@@ -1856,6 +1867,142 @@ describe('useSessionManager', () => {
     await waitFor(() =>
       expect(service.updateSessionCwd).toHaveBeenCalledWith('s1', '/home/user')
     )
+  })
+
+  test('updateSessionAgentType persists detected agent identity in local session state', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.updateSessionAgentType('s1', 'codex'))
+
+    expect(result.current.sessions[0].agentType).toBe('codex')
+  })
+
+  test('updateSessionAgentType returns prev reference for unknown id (no re-render)', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const before = result.current.sessions
+    act(() => result.current.updateSessionAgentType('does-not-exist', 'codex'))
+
+    expect(result.current.sessions).toBe(before)
+  })
+
+  test('updateSessionAgentType returns prev reference when value unchanged', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.updateSessionAgentType('s1', 'codex'))
+    const after1 = result.current.sessions
+    act(() => result.current.updateSessionAgentType('s1', 'codex'))
+
+    expect(result.current.sessions).toBe(after1)
+  })
+
+  test('restartSession seeds agentType to generic on the new session entry', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 's2',
+      pid: 2,
+      cwd: '/tmp',
+    })
+    service.kill = vi.fn().mockResolvedValue(undefined)
+    service.reorderSessions = vi.fn().mockResolvedValue(undefined)
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Stamp a non-generic agentType so the reset is observable.
+    act(() => result.current.updateSessionAgentType('s1', 'claude-code'))
+    expect(result.current.sessions[0].agentType).toBe('claude-code')
+
+    await act(async () => {
+      result.current.restartSession('s1')
+      // wait for the spawn-first sequence to complete + flushSync apply
+      await vi.waitFor(
+        () => {
+          expect(result.current.sessions[0].id).toBe('s2')
+        },
+        { timeout: 1000 }
+      )
+    })
+
+    expect(result.current.sessions[0].agentType).toBe('generic')
   })
 
   // F2 regression: events fired AFTER listSessions resolves but BEFORE the

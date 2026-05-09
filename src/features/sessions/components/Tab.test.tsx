@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Tab } from './Tab'
 import type { Session } from '../types'
@@ -86,8 +86,9 @@ describe('Tab — ARIA', () => {
 
   test('close button is always tabIndex=-1', () => {
     renderTab()
-    const close = screen.getByRole('button', { name: /Close /i })
+    const close = screen.getByRole('button', { name: 'Close a' })
     expect(close).toHaveAttribute('tabindex', '-1')
+    expect(close).toHaveAttribute('aria-label', 'Close a')
   })
 })
 
@@ -137,7 +138,7 @@ describe('Tab — keyboard', () => {
     const onSelect = vi.fn()
     const onClose = vi.fn()
     renderTab({ onSelect, onClose })
-    const close = screen.getByRole('button', { name: /Close /i })
+    const close = screen.getByTestId('close-tab-button')
     close.focus()
     await userEvent.keyboard('{Enter}')
     // The onClose IS called via the close button's own click (bubble),
@@ -161,11 +162,17 @@ describe('Tab — click', () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 
-  test('close button calls onClose with stopPropagation (does not also fire onSelect)', async () => {
+  test('close button calls onClose with stopPropagation (does not also fire onSelect)', () => {
     const onSelect = vi.fn()
     const onClose = vi.fn()
     renderTab({ session: session('X'), onSelect, onClose })
-    await userEvent.click(screen.getByRole('button', { name: /Close /i }))
+    // The close button has pointer-events-none by default (it's only
+    // interactive on hover/focus-within). userEvent.click respects
+    // pointer-events; fireEvent.click bypasses it and dispatches the
+    // DOM click event directly — sufficient to assert the handler wires
+    // correctly. The actual hover+click path is verified visually in
+    // tauri:dev.
+    fireEvent.click(screen.getByTestId('close-tab-button'))
     expect(onClose).toHaveBeenCalledWith('X')
     expect(onSelect).not.toHaveBeenCalled()
   })
@@ -175,6 +182,16 @@ describe('Tab — visual', () => {
   test('renders agent glyph from the registry', () => {
     renderTab({ agent: AGENTS.claude })
     expect(screen.getByText(AGENTS.claude.glyph)).toBeInTheDocument()
+  })
+
+  test('active tab uses bg-surface (no agent-color gradient — handoff §4.3)', () => {
+    renderTab({ isActive: true, agent: AGENTS.codex })
+    const tab = screen.getByRole('tab')
+    // The active state uses plain `bg-surface` — agent identity comes
+    // through via the chip + the 2px top stripe, NOT a gradient bg
+    // washing the whole tab in agent color.
+    expect(tab.className).toContain('bg-surface')
+    expect(tab.style.background).toBe('')
   })
 
   test('active accent stripe rendered iff isActive', () => {
@@ -214,5 +231,42 @@ describe('Tab — visual', () => {
     )
 
     expect(screen.queryByLabelText(/^Status/)).not.toBeInTheDocument()
+  })
+
+  test('close button starts visually hidden on inactive tabs but keeps its accessible name', () => {
+    renderTab({ isActive: false })
+    const close = screen.getByTestId('close-tab-button')
+    expect(close.className).toContain('opacity-0')
+    expect(close.className).toContain('pointer-events-none')
+    expect(close.getAttribute('aria-label')).toMatch(/Close /i)
+  })
+
+  test('close button starts hidden on active tabs too (revealed only on hover/focus)', () => {
+    // Active tabs no longer always show the close button. Mouse users
+    // see it on hover; keyboard users see it on group-focus-within when
+    // they navigate to the tab itself; screen-reader users use
+    // Delete/Backspace on the focused tab.
+    renderTab({ isActive: true })
+    const close = screen.getByTestId('close-tab-button')
+    expect(close.className).toContain('opacity-0')
+    expect(close.className).toContain('pointer-events-none')
+    expect(close.getAttribute('aria-label')).toMatch(/Close /i)
+  })
+
+  test('hover + focus-within reveal class strings on close button (visual verification covers the actual hover)', () => {
+    // jsdom does not drive :hover natively; verify the Tailwind selectors
+    // are wired so a tauri:dev visual check is the source of truth.
+    renderTab({ isActive: false })
+    const close = screen.getByTestId('close-tab-button')
+    expect(close.className).toContain('group-hover:opacity-100')
+    expect(close.className).toContain('group-hover:pointer-events-auto')
+    expect(close.className).toContain('group-focus-within:opacity-100')
+    expect(close.className).toContain('group-focus-within:pointer-events-auto')
+  })
+
+  test('title is rendered at 12.5px per handoff §4.3', () => {
+    renderTab({ session: session('hello') })
+    const title = screen.getByText('hello')
+    expect(title.className).toContain('text-[12.5px]')
   })
 })

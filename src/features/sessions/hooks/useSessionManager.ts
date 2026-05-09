@@ -37,7 +37,7 @@ function sessionFromInfo(info: SessionInfo, index: number): Session {
     name: tabName(info.cwd, index),
     status: info.status.kind === 'Alive' ? 'running' : 'completed',
     workingDirectory: info.cwd,
-    agentType: 'claude-code',
+    agentType: 'generic',
     createdAt: new Date().toISOString(),
     lastActivityAt: new Date().toISOString(),
     activity: { ...emptyActivity },
@@ -94,6 +94,7 @@ export interface SessionManager {
   renameSession: (id: string, name: string) => void
   reorderSessions: (reordered: Session[]) => void
   updateSessionCwd: (id: string, cwd: string) => void
+  updateSessionAgentType: (id: string, agentType: Session['agentType']) => void
   /** restoreData per session id, populated during mount-time restore */
   restoreData: Map<string, RestoreData>
   /** True until the initial restore IPC + drain completes */
@@ -364,12 +365,17 @@ export const useSessionManager = (
   // Lifecycle: subscribed for the entire useSessionManager lifetime so
   // sessions created via createSession (post-restore) also flip status on
   // exit. Idempotent — flipping an already-completed session to completed
-  // is a no-op. Unsubscribes on unmount via the returned cleanup.
+  // just refreshes its exit-relative timestamp. Unsubscribes on unmount via
+  // the returned cleanup.
   useEffect(() => {
     const unsubscribeExit = service.onExit((sessionId) => {
+      const exitedAt = new Date().toISOString()
+
       setSessions((prev) =>
         prev.map((s) =>
-          s.id === sessionId ? { ...s, status: 'completed' } : s
+          s.id === sessionId
+            ? { ...s, status: 'completed', lastActivityAt: exitedAt }
+            : s
         )
       )
     })
@@ -642,7 +648,7 @@ export const useSessionManager = (
               name: `session ${prev.length + 1}`,
               status: 'running',
               workingDirectory: result.cwd,
-              agentType: 'claude-code',
+              agentType: 'generic',
               createdAt: now,
               lastActivityAt: now,
               activity: { ...emptyActivity },
@@ -912,7 +918,13 @@ export const useSessionManager = (
         // Finding 2: previously we killed the old id before spawn, so a
         // failed spawn left the React tab visible but the backend cache
         // gone — the tab silently disappeared on the next reload.
-        let result: { sessionId: string; pid: number; cwd?: string }
+        // Note: `cwd` is required (matches the IPC contract — Rust always
+        // returns a canonical absolute path from spawn, even on symlinked
+        // project directories). Tightening from `cwd?: string` keeps the
+        // type aligned with `createSession`'s spawn-result and lets the
+        // PTY register at the canonical path the agent detector observes
+        // (Cycle-5 F-c5-3 fix — symlinked cwd case).
+        let result: { sessionId: string; pid: number; cwd: string }
         try {
           // Round 8, Finding 3 (claude MEDIUM): restart preserves the
           // user's tab semantics, so re-enable the agent bridge for parity
@@ -974,16 +986,25 @@ export const useSessionManager = (
         // 3. Seed restoreData so TerminalPane mounts in 'attach' mode
         // instead of falling through to the legacy spawn path (which would
         // create a hidden duplicate PTY — the F3 / round-1 bug).
+        //
+        // Use `result.cwd` (canonical path from Rust) — NOT `cachedCwd`
+        // which is the OLD session's workingDirectory, possibly a
+        // symlink. The agent detector observes the canonical path
+        // returned from spawn, so registering at the symlink diverges
+        // from what the detector sees → silent missed agent-type
+        // detection after restart on monorepo-style symlinked project
+        // dirs. createSession uses result.cwd for the same reason
+        // (Cycle-5 F-c5-3 fix).
         restoreDataRef.current.set(result.sessionId, {
           sessionId: result.sessionId,
-          cwd: cachedCwd,
+          cwd: result.cwd,
           pid: result.pid,
           replayData: '',
           replayEndOffset: 0,
           bufferedEvents: [],
         })
         pendingPanesRef.current.add(result.sessionId)
-        registerPtySession(result.sessionId, result.sessionId, cachedCwd)
+        registerPtySession(result.sessionId, result.sessionId, result.cwd)
 
         // Round 9, Finding 3 (codex P2): read the LATEST active id post-await,
         // not the closure-captured `activeSessionId` from when restartSession
@@ -1058,6 +1079,15 @@ export const useSessionManager = (
               status: 'running',
               // workingDirectory unchanged — restart preserves cwd by spec
               lastActivityAt: new Date().toISOString(),
+              // Reset agentType to 'generic' on restart so the new session
+              // starts from a known baseline. Without this, a stale agent
+              // from before the exit can leak into the new session: the
+              // detector returns None for shell-only PTYs, the bridge
+              // ignores isActive=false, and Session.agentType would stay
+              // whatever was last detected. Fresh-spawn parity: the new
+              // tab is yellow until detection picks up the actual agent
+              // (~tens to hundreds of ms after subscription attaches).
+              agentType: 'generic',
             }
 
             // Capture the post-restart order for outer-scope IPC fire.
@@ -1180,6 +1210,20 @@ export const useSessionManager = (
     [service]
   )
 
+  const updateSessionAgentType = useCallback(
+    (id: string, agentType: Session['agentType']): void => {
+      setSessions((prev) => {
+        const current = prev.find((s) => s.id === id)
+        if (!current || current.agentType === agentType) {
+          return prev
+        }
+
+        return prev.map((s) => (s.id === id ? { ...s, agentType } : s))
+      })
+    },
+    []
+  )
+
   return {
     sessions,
     activeSessionId,
@@ -1190,6 +1234,7 @@ export const useSessionManager = (
     renameSession,
     reorderSessions,
     updateSessionCwd,
+    updateSessionAgentType,
     // Round 12 F2: expose the ref-backed Map. Identity is stable across
     // renders; consumers that previously relied on Map identity changing
     // were reading stale state — every mutation in this hook is paired
