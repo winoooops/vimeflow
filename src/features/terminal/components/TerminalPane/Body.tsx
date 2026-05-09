@@ -373,13 +373,13 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   return (
     <div
       data-testid="terminal-pane-body-wrapper"
-      className="relative w-full h-full overflow-hidden"
+      className="terminal-pane-body relative h-full w-full overflow-hidden"
     >
       <div
         ref={containerRef}
         data-testid="terminal-pane"
         data-session-id={sessionId}
-        className="w-full h-full"
+        className="h-full w-full"
       />
     </div>
   )

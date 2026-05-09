@@ -177,6 +177,13 @@ describe('Tab — visual', () => {
     expect(screen.getByText(AGENTS.claude.glyph)).toBeInTheDocument()
   })
 
+  test('active tab border uses the agent accent', () => {
+    renderTab({ isActive: true, agent: AGENTS.codex })
+    expect(screen.getByRole('tab')).toHaveStyle({
+      borderColor: AGENTS.codex.accentSoft,
+    })
+  })
+
   test('active accent stripe rendered iff isActive', () => {
     const { container, rerender } = renderTab({
       isActive: true,

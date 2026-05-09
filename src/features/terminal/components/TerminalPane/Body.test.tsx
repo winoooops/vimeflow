@@ -139,6 +139,20 @@ describe('Body', () => {
     expect(container).toBeInTheDocument()
   })
 
+  test('scopes xterm scrollbar styling to the terminal pane body', () => {
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    expect(screen.getByTestId('terminal-pane-body-wrapper')).toHaveClass(
+      'terminal-pane-body'
+    )
+  })
+
   test('initializes xterm terminal on mount', async () => {
     render(
       <Body

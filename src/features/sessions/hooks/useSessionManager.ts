@@ -94,6 +94,7 @@ export interface SessionManager {
   renameSession: (id: string, name: string) => void
   reorderSessions: (reordered: Session[]) => void
   updateSessionCwd: (id: string, cwd: string) => void
+  updateSessionAgentType: (id: string, agentType: Session['agentType']) => void
   /** restoreData per session id, populated during mount-time restore */
   restoreData: Map<string, RestoreData>
   /** True until the initial restore IPC + drain completes */
@@ -1180,6 +1181,20 @@ export const useSessionManager = (
     [service]
   )
 
+  const updateSessionAgentType = useCallback(
+    (id: string, agentType: Session['agentType']): void => {
+      setSessions((prev) => {
+        const current = prev.find((s) => s.id === id)
+        if (!current || current.agentType === agentType) {
+          return prev
+        }
+
+        return prev.map((s) => (s.id === id ? { ...s, agentType } : s))
+      })
+    },
+    []
+  )
+
   return {
     sessions,
     activeSessionId,
@@ -1190,6 +1205,7 @@ export const useSessionManager = (
     renameSession,
     reorderSessions,
     updateSessionCwd,
+    updateSessionAgentType,
     // Round 12 F2: expose the ref-backed Map. Identity is stable across
     // renders; consumers that previously relied on Map identity changing
     // were reading stale state — every mutation in this hook is paired

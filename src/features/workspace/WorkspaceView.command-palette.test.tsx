@@ -1,10 +1,11 @@
-import { render, screen, waitFor, act } from '@testing-library/react'
+import { render, screen, waitFor, act, within } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { Session } from '../sessions/types'
+import { AGENTS } from '../../agents/registry'
 
 // Mock all WorkspaceView dependencies
 vi.mock('../sessions/hooks/useSessionManager')
@@ -97,6 +98,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       renameSession: vi.fn(),
       reorderSessions: vi.fn(),
       updateSessionCwd: vi.fn(),
+      updateSessionAgentType: vi.fn(),
       restoreData: new Map(),
       loading: false,
       notifyPaneReady: vi.fn(),
@@ -133,7 +135,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       modelId: null,
       modelDisplayName: null,
       version: null,
-      sessionId: null,
+      sessionId: 'session-1',
       agentSessionId: null,
       contextWindow: null,
       cost: null,
@@ -241,6 +243,69 @@ describe('WorkspaceView - Command Palette Integration', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
+  })
+
+  test('records detected agent type on the active session', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue({
+      isActive: true,
+      agentType: 'codex',
+      modelId: null,
+      modelDisplayName: null,
+      version: null,
+      sessionId: 'session-1',
+      agentSessionId: null,
+      contextWindow: null,
+      cost: null,
+      rateLimits: null,
+      numTurns: 0,
+      toolCalls: { total: 0, byType: {}, active: null },
+      recentToolCalls: [],
+      testRun: null,
+    })
+
+    render(<WorkspaceView />)
+
+    await waitFor(() =>
+      expect(mockSessionManager.updateSessionAgentType).toHaveBeenCalledWith(
+        'session-1',
+        'codex'
+      )
+    )
+  })
+
+  test('does not apply stale agent status from another session to the active shell tab', async () => {
+    mockSessions[1] = {
+      ...mockSessions[1],
+      agentType: 'generic',
+    }
+    mockSessionManager.activeSessionId = 'session-2'
+
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue({
+      isActive: true,
+      agentType: 'claude-code',
+      modelId: null,
+      modelDisplayName: null,
+      version: null,
+      sessionId: 'session-1',
+      agentSessionId: null,
+      contextWindow: null,
+      cost: null,
+      rateLimits: null,
+      numTurns: 0,
+      toolCalls: { total: 0, byType: {}, active: null },
+      recentToolCalls: [],
+      testRun: null,
+    })
+
+    render(<WorkspaceView />)
+
+    const activeTab = screen.getByRole('tab', { name: 'feature' })
+    expect(within(activeTab).getByText(AGENTS.shell.glyph)).toBeInTheDocument()
+    expect(mockSessionManager.updateSessionAgentType).not.toHaveBeenCalled()
   })
 
   test(':close command removes active session', async () => {

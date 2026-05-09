@@ -1,4 +1,8 @@
-import { type ReactElement, type KeyboardEvent } from 'react'
+import {
+  type ReactElement,
+  type KeyboardEvent,
+  type CSSProperties,
+} from 'react'
 import type { Session } from '../types'
 import type { Agent } from '../../../agents/registry'
 import { StatusDot } from './StatusDot'
@@ -54,6 +58,13 @@ export const Tab = ({
     }
   }
 
+  const activeChromeStyle: CSSProperties | undefined = isActive
+    ? {
+        background: `linear-gradient(180deg, ${agent.accentDim}, rgba(18, 18, 33, 0.96))`,
+        borderColor: agent.accentSoft,
+      }
+    : undefined
+
   return (
     <div
       id={`session-tab-${session.id}`}
@@ -69,6 +80,7 @@ export const Tab = ({
       data-testid="session-tab"
       data-session-id={session.id}
       data-active={isActive}
+      style={activeChromeStyle}
       onClick={() => {
         if (!isActive) {
           onSelect(session.id)

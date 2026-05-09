@@ -1858,6 +1858,34 @@ describe('useSessionManager', () => {
     )
   })
 
+  test('updateSessionAgentType persists detected agent identity in local session state', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.updateSessionAgentType('s1', 'codex'))
+
+    expect(result.current.sessions[0].agentType).toBe('codex')
+  })
+
   // F2 regression: events fired AFTER listSessions resolves but BEFORE the
   // pane attaches its live listener must still reach the pane via the
   // notifyPaneReady drain. Without this, the previous code stopped buffering

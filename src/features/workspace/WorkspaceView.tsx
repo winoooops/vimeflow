@@ -63,6 +63,7 @@ export const WorkspaceView = (): ReactElement => {
     renameSession,
     reorderSessions,
     updateSessionCwd,
+    updateSessionAgentType,
     restoreData,
     loading,
     notifyPaneReady,
@@ -108,6 +109,22 @@ export const WorkspaceView = (): ReactElement => {
   )
 
   const agentStatus = useAgentStatus(activeSessionId)
+
+  const agentStatusMatchesActiveSession =
+    activeSessionId !== null && agentStatus.sessionId === activeSessionId
+
+  const activeAgentType =
+    agentStatusMatchesActiveSession && agentStatus.isActive
+      ? agentStatus.agentType
+      : null
+
+  useEffect(() => {
+    if (!activeSessionId || !activeAgentType) {
+      return
+    }
+
+    updateSessionAgentType(activeSessionId, activeAgentType)
+  }, [activeAgentType, activeSessionId, updateSessionAgentType])
 
   const {
     size: sidebarWidth,
@@ -449,6 +466,7 @@ export const WorkspaceView = (): ReactElement => {
         <Tabs
           sessions={sessions}
           activeSessionId={activeSessionId}
+          activeAgentType={activeAgentType}
           onSelect={setActiveSessionId}
           onClose={removeSession}
           onNew={createSession}
@@ -457,7 +475,7 @@ export const WorkspaceView = (): ReactElement => {
         <TerminalZone
           sessions={sessions}
           activeSessionId={activeSessionId}
-          activeAgentType={agentStatus.agentType}
+          activeAgentType={activeAgentType}
           onSessionCwdChange={updateSessionCwd}
           restoreData={restoreData}
           loading={loading}
