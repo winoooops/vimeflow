@@ -123,11 +123,14 @@ export const Tab = ({
         // WAI-ARIA tabs §3.27: tablist is one Tab stop; descendants
         // reached via shortcut. Always tabIndex=-1.
         tabIndex={-1}
-        // When invisible, hide from a11y tree (screen reader users still
-        // close via Delete/Backspace on the focused tab). pointer-events
-        // disabled so an off-screen click can't dispatch close.
-        aria-hidden={!isActive}
-        data-active={isActive}
+        // Always hidden from the a11y tree — the button is decorative
+        // chrome that only appears on hover/focus-within. Keyboard users
+        // close the focused tab via Delete/Backspace (handled in
+        // handleKeyDown above), which doesn't depend on this button
+        // being focusable. group-focus-within reveals the button when
+        // the tab itself receives keyboard focus, so sighted keyboard
+        // users still see the close affordance during tab navigation.
+        aria-hidden="true"
         onClick={(e) => {
           e.stopPropagation()
           onClose(session.id)
@@ -139,7 +142,6 @@ export const Tab = ({
           opacity-0 pointer-events-none
           group-hover:opacity-100 group-hover:pointer-events-auto
           group-focus-within:opacity-100 group-focus-within:pointer-events-auto
-          data-[active=true]:opacity-100 data-[active=true]:pointer-events-auto
           hover:bg-on-surface/[0.06] hover:text-on-surface
         "
       >

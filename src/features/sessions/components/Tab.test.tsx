@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Tab } from './Tab'
 import type { Session } from '../types'
@@ -164,13 +164,17 @@ describe('Tab — click', () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 
-  test('close button calls onClose with stopPropagation (does not also fire onSelect)', async () => {
+  test('close button calls onClose with stopPropagation (does not also fire onSelect)', () => {
     const onSelect = vi.fn()
     const onClose = vi.fn()
-    // Active so the button is interactive (not aria-hidden) — the
-    // hover-reveal path on inactive tabs is verified separately.
-    renderTab({ session: session('X'), isActive: true, onSelect, onClose })
-    await userEvent.click(screen.getByRole('button', { name: /Close X/i }))
+    renderTab({ session: session('X'), onSelect, onClose })
+    // The close button has pointer-events-none by default (it's only
+    // interactive on hover/focus-within). userEvent.click respects
+    // pointer-events; fireEvent.click bypasses it and dispatches the
+    // DOM click event directly — sufficient to assert the handler wires
+    // correctly. The actual hover+click path is verified visually in
+    // tauri:dev.
+    fireEvent.click(screen.getByLabelText(/Close X/i))
     expect(onClose).toHaveBeenCalledWith('X')
     expect(onSelect).not.toHaveBeenCalled()
   })
@@ -231,32 +235,35 @@ describe('Tab — visual', () => {
     expect(screen.queryByLabelText(/^Status/)).not.toBeInTheDocument()
   })
 
-  test('inactive tab close button starts hidden (opacity-0 + pointer-events-none + aria-hidden)', () => {
+  test('close button starts hidden on inactive tabs (opacity-0 + pointer-events-none + aria-hidden)', () => {
     renderTab({ isActive: false })
     const close = screen.getByLabelText(/Close /i)
     expect(close.className).toContain('opacity-0')
     expect(close.className).toContain('pointer-events-none')
     expect(close).toHaveAttribute('aria-hidden', 'true')
-    expect(close).toHaveAttribute('data-active', 'false')
   })
 
-  test('active tab close button is visible (data-active=true drives reveal)', () => {
+  test('close button starts hidden on active tabs too (revealed only on hover/focus)', () => {
+    // Active tabs no longer always show the close button. Mouse users
+    // see it on hover; keyboard users see it on group-focus-within when
+    // they navigate to the tab itself; screen-reader users use
+    // Delete/Backspace on the focused tab.
     renderTab({ isActive: true })
-    const close = screen.getByRole('button', { name: /Close /i })
-    expect(close).toHaveAttribute('data-active', 'true')
-    // class string still carries opacity-0 base + the data-[active=true]
-    // override; we verify the override class is wired so Tailwind can apply it.
-    expect(close.className).toContain('data-[active=true]:opacity-100')
-    expect(close).toHaveAttribute('aria-hidden', 'false')
+    const close = screen.getByLabelText(/Close /i)
+    expect(close.className).toContain('opacity-0')
+    expect(close.className).toContain('pointer-events-none')
+    expect(close).toHaveAttribute('aria-hidden', 'true')
   })
 
-  test('hover-reveal class string on close button (visual verification covers the actual hover)', () => {
-    // jsdom does not drive :hover natively; verify the Tailwind selector
-    // is wired so a tauri:dev visual check is the source of truth.
+  test('hover + focus-within reveal class strings on close button (visual verification covers the actual hover)', () => {
+    // jsdom does not drive :hover natively; verify the Tailwind selectors
+    // are wired so a tauri:dev visual check is the source of truth.
     renderTab({ isActive: false })
     const close = screen.getByLabelText(/Close /i)
     expect(close.className).toContain('group-hover:opacity-100')
     expect(close.className).toContain('group-hover:pointer-events-auto')
+    expect(close.className).toContain('group-focus-within:opacity-100')
+    expect(close.className).toContain('group-focus-within:pointer-events-auto')
   })
 
   test('title is rendered at 12.5px per handoff §4.3', () => {

@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Tabs } from './Tabs'
 import type { Session } from '../types'
@@ -199,9 +199,8 @@ describe('Tabs', () => {
 
     const tabs = screen.getAllByRole('tab')
 
-    const closeBtn = within(tabs[0]).getByRole('button', {
-      name: /^Close auth/,
-    })
+    // Close button is aria-hidden — query by label, not role.
+    const closeBtn = within(tabs[0]).getByLabelText(/^Close auth/)
     closeBtn.focus()
     await user.keyboard('{Enter}')
 
@@ -217,14 +216,13 @@ describe('Tabs', () => {
     expect(screen.getByRole('tab', { name: 'tests' })).toHaveFocus()
   })
 
-  test('closing the active tab pre-selects the next VISIBLE tab', async () => {
+  test('closing the active tab pre-selects the next VISIBLE tab', () => {
     // Without pre-select, useSessionManager's fallback can land on a
     // hidden completed/errored session that sits between two open
     // ones in the underlying sessions array. Pre-select keeps the
     // selection on a tab the user can actually see.
     const onSelect = vi.fn()
     const onClose = vi.fn()
-    const user = userEvent.setup()
 
     const sessions = [
       buildSession({ id: 'C', status: 'running', name: 'first' }),
@@ -233,10 +231,13 @@ describe('Tabs', () => {
     ]
     renderTabs(sessions, 'C', { onSelect, onClose })
 
-    const closeC = within(screen.getAllByRole('tab')[0]).getByRole('button', {
-      name: /close first/i,
-    })
-    await user.click(closeC)
+    // Close button has pointer-events-none by default (only interactive
+    // on hover/focus-within). Use fireEvent to bypass jsdom's lack of
+    // hover support; the actual hover+click path is verified visually.
+    const closeC = within(screen.getAllByRole('tab')[0]).getByLabelText(
+      /close first/i
+    )
+    fireEvent.click(closeC)
 
     // Visible-order next tab is 'A' (B is filtered out of the strip).
     expect(onSelect).toHaveBeenCalledWith('A')
