@@ -24,8 +24,9 @@ test-results/
 # Superpowers plugin working directory
 .superpowers/
 
-# Lifeline review-loop artifacts
+# Lifeline and legacy harness review-loop artifacts
 .lifeline-upsource-review/
+.harness-github-review/
 
 # IDE
 .vscode/*
