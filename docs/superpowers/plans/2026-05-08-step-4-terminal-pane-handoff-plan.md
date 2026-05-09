@@ -80,47 +80,67 @@ Expected: `git_status` starts with `let safe_cwd = validate_cwd(&cwd)?;` and she
 
 Use the existing test patterns (search for `#[tokio::test]` blocks near the bottom of `git/mod.rs`).
 
+Two helpers are mandatory:
+
+- `home_tempdir()` from `super::test_helpers` — creates a tempdir inside `$HOME` so `validate_cwd`'s home-scope check passes. Plain `tempfile::tempdir()` lives in `/tmp` and is rejected.
+- `configure_test_git(path)` from `super::test_helpers` — sets `user.email` + `user.name` so `git commit` works on bare CI runners.
+
+The existing `git/mod.rs` uses `std::process::Command` (synchronous) — no `.await`. The new tests are `#[test]` not `#[tokio::test]` and call `pollster::block_on` to drive the `async fn git_branch`. (Grep `git/mod.rs` for `block_on` if `pollster` isn't already imported; the existing tests for `git_status` show the canonical pattern — use it verbatim.)
+
 ```rust
-#[tokio::test]
-async fn git_branch_returns_default_branch_for_unborn_repo() {
-    let tmp = tempfile::tempdir().expect("tempdir");
+#[test]
+fn git_branch_returns_default_branch_for_unborn_repo() {
+    use super::test_helpers::home_tempdir;
+    use std::process::Command;
+    let tmp = home_tempdir();
     let path = tmp.path().to_str().expect("path str").to_string();
     Command::new("git")
-        .arg("-C")
-        .arg(&path)
-        .arg("init")
-        .arg("--initial-branch=main")
+        .args(["-C", &path, "init", "--initial-branch=main"])
         .output()
-        .await
         .expect("git init");
 
-    let branch = git_branch(path).await.expect("git_branch");
+    let branch = pollster::block_on(git_branch(path)).expect("git_branch");
     assert_eq!(branch, "main");
 }
 
-#[tokio::test]
-async fn git_branch_returns_empty_for_detached_head() {
-    let tmp = tempfile::tempdir().expect("tempdir");
+#[test]
+fn git_branch_returns_empty_for_detached_head() {
+    use super::test_helpers::{configure_test_git, home_tempdir};
+    use std::process::Command;
+    let tmp = home_tempdir();
     let path = tmp.path().to_str().expect("path str").to_string();
-    // init + first commit + detach
-    for args in [
-        &["-C", &path, "init", "--initial-branch=main"][..],
-        &["-C", &path, "config", "user.email", "test@example.com"],
-        &["-C", &path, "config", "user.name", "test"],
-        &["-C", &path, "commit", "--allow-empty", "-m", "init"],
-        &["-C", &path, "checkout", "--detach", "HEAD"],
-    ] {
-        Command::new("git").args(*args).output().await.expect("git");
-    }
+    Command::new("git")
+        .args(["-C", &path, "init", "--initial-branch=main"])
+        .output()
+        .expect("git init");
+    configure_test_git(tmp.path());
+    Command::new("git")
+        .args(["-C", &path, "commit", "--allow-empty", "-m", "init"])
+        .output()
+        .expect("git commit");
+    Command::new("git")
+        .args(["-C", &path, "checkout", "--detach", "HEAD"])
+        .output()
+        .expect("git checkout --detach");
 
-    let branch = git_branch(path).await.expect("git_branch");
+    let branch = pollster::block_on(git_branch(path)).expect("git_branch");
     assert_eq!(branch, "");
 }
 
-#[tokio::test]
-async fn git_branch_rejects_invalid_cwd_via_validate_cwd() {
-    // validate_cwd rejects '.', '~', and out-of-scope paths.
-    let result = git_branch("../../../etc".to_string()).await;
+#[test]
+fn git_branch_returns_error_for_non_repo_cwd() {
+    use super::test_helpers::home_tempdir;
+    let tmp = home_tempdir();
+    let path = tmp.path().to_str().expect("path str").to_string();
+
+    let result = pollster::block_on(git_branch(path));
+    assert!(result.is_err(), "expected error, got {:?}", result);
+}
+
+#[test]
+fn git_branch_rejects_out_of_scope_cwd() {
+    // validate_cwd rejects paths outside $HOME.
+    let result = pollster::block_on(git_branch("/etc".to_string()));
     assert!(result.is_err(), "expected error, got {:?}", result);
 }
 ```
@@ -137,6 +157,8 @@ Expected: compile error `cannot find function git_branch`.
 
 Add near the end of the existing `pub async fn` block (after `get_git_diff`, before the watcher module if any):
 
+`Command` is `std::process::Command` (sync), so no `.await` on the call. Differentiate "not a repo" (return `Err`) from "detached HEAD" (return `Ok("")`) by inspecting stderr — `git symbolic-ref` reports `fatal: not a git repository` for non-repos and `fatal: ref HEAD is not a symbolic ref` for detached HEAD.
+
 ```rust
 #[tauri::command]
 pub async fn git_branch(cwd: String) -> Result<String, String> {
@@ -149,22 +171,25 @@ pub async fn git_branch(cwd: String) -> Result<String, String> {
         .arg("--short")
         .arg("HEAD")
         .output()
-        .await
         .map_err(|e| format!("git symbolic-ref failed: {e}"))?;
 
-    // Detached HEAD: symbolic-ref exits non-zero. Treat as "no branch" by
-    // returning the empty string; the hook maps empty to null and the
-    // Header omits the segment.
-    if !output.status.success() {
-        return Ok(String::new());
+    if output.status.success() {
+        let branch = String::from_utf8(output.stdout)
+            .map_err(|e| format!("git_branch utf8: {e}"))?
+            .trim()
+            .to_string();
+        return Ok(branch);
     }
 
-    let branch = String::from_utf8(output.stdout)
-        .map_err(|e| format!("git_branch utf8: {e}"))?
-        .trim()
-        .to_string();
+    // Differentiate non-repo (Err) from detached HEAD (Ok("")) via stderr.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("not a git repository") {
+        return Err("not a git repository".to_string());
+    }
 
-    Ok(branch)
+    // Detached HEAD or other "no symbolic ref" condition — Header treats
+    // empty as null and omits the branch segment.
+    Ok(String::new())
 }
 ```
 
@@ -174,7 +199,7 @@ pub async fn git_branch(cwd: String) -> Result<String, String> {
 cd src-tauri && cargo test --lib git::tests::git_branch -- --nocapture
 ```
 
-Expected: all 3 tests pass.
+Expected: all 4 tests pass (unborn repo, detached HEAD, non-repo error, out-of-scope error).
 
 - [ ] **Step 6: Commit**
 
@@ -223,13 +248,16 @@ grep -n "git_status," src-tauri/src/lib.rs
 
 Expected: 2 lines now read `git_status,\n        git_branch,` (or equivalent ordering).
 
-- [ ] **Step 4: Build to verify it compiles**
+- [ ] **Step 4: Build BOTH cfg arms to verify it compiles**
+
+The default `cargo build` only checks the production cfg arm. The `e2e-test` cfg arm has its own `generate_handler!` block, so a forgotten entry there only surfaces during the E2E build (which runs in CI). Verify both:
 
 ```bash
 cd src-tauri && cargo build
+cd src-tauri && cargo build --features e2e-test,tauri/custom-protocol
 ```
 
-Expected: clean build, no warnings about unused `git_branch`.
+(The second invocation matches `npm run test:e2e:build` from `package.json`.) Expected: both clean, no warnings about unused `git_branch`.
 
 - [ ] **Step 5: Commit**
 
@@ -463,28 +491,45 @@ wc -l /tmp/terminal-pane-snapshot.tsx
 
 Expected: ~382 lines.
 
-- [ ] **Step 3: Create `Body.tsx` by copying the current `TerminalPane.tsx` verbatim, then renaming the exported component**
+- [ ] **Step 3: Create `Body.tsx` by copying the current `TerminalPane.tsx`, then rewriting imports + renaming the exported component**
 
-Copy the entire contents to `src/features/terminal/components/TerminalPane/Body.tsx`, then rename:
+Copy the contents to `src/features/terminal/components/TerminalPane/Body.tsx`. Two non-trivial fixups are required because the file moved one directory deeper:
+
+**3a — Rewrite relative imports.** Every `../*` import in the original was relative to `src/features/terminal/components/`. From the new location `src/features/terminal/components/TerminalPane/`, each needs an extra `../`:
+
+| Original import in `TerminalPane.tsx`                       | Becomes in `TerminalPane/Body.tsx`      |
+| ----------------------------------------------------------- | --------------------------------------- |
+| `from '../theme/catppuccin-mocha'`                          | `from '../../theme/catppuccin-mocha'`   |
+| `from '../hooks/useTerminal'`                               | `from '../../hooks/useTerminal'`        |
+| `from '../services/terminalService'`                        | `from '../../services/terminalService'` |
+| `from '../ptySessionMap'`                                   | `from '../../ptySessionMap'`            |
+| Any other `../<file>` referring to a sibling of components/ | Add one more `../`                      |
+
+`@xterm/...` and other non-relative imports stay unchanged. Verify with:
+
+```bash
+grep -nE "^import .* from '\\.\\." src/features/terminal/components/TerminalPane/Body.tsx
+```
+
+Expected: every relative import begins with `'../../'` (or deeper).
+
+**3b — Rename the exports.**
 
 - The component name `TerminalPane` → `Body`
 - The exported props interface `TerminalPaneProps` → `BodyProps`
 - Keep all module-scope exports (`terminalCache`, `clearTerminalCache`, `disposeTerminalSession`, `TerminalPaneMode`)
-- Remove the `mode === 'awaiting-restart'` branch and the `onRestart` prop handling — both move to `index.tsx` in Phase 3. Body's narrower mode is `'attach' | 'spawn'`. (Defer this narrowing to Phase 3 if you want to keep Phase 2 strictly verbatim. Recommended: keep Phase 2 verbatim — preserve `TerminalPaneMode` import and the awaiting-restart fallback, do the narrowing in Phase 3 along with the chrome wiring.)
 
-For Phase 2 keep `Body` as a near-clone of the current `TerminalPane` so tests pass with minimal modification. Phase 3 narrows it.
+For Phase 2 keep the awaiting-restart fallback in Body so tests pass with minimal modification — Phase 3 (Task 3.7) narrows `BodyProps.mode` to `'attach' | 'spawn'` and the awaiting-restart fast-path moves up to `index.tsx`.
 
 ```ts
 // src/features/terminal/components/TerminalPane/Body.tsx
 //
-// (Verbatim copy of src/features/terminal/components/TerminalPane.tsx with
-// the component / interface renames below. xterm + PTY wiring unchanged.)
-
-// ... copy entire TerminalPane.tsx ...
-// then rename:
-//   export const TerminalPane = ...      →  export const Body = ...
-//   export interface TerminalPaneProps { →  export interface BodyProps {
-//   ...all internal references update accordingly.
+// Copy of src/features/terminal/components/TerminalPane.tsx with:
+//   1. Relative imports rewritten one level deeper (`../` → `../../`).
+//   2. `export const TerminalPane = ...` renamed to `export const Body = ...`.
+//   3. `export interface TerminalPaneProps {` renamed to `export interface BodyProps {`.
+//   4. Internal references `TerminalPane` → `Body`, `TerminalPaneProps` → `BodyProps`.
+// xterm + PTY wiring unchanged.
 ```
 
 - [ ] **Step 4: Create `index.tsx` as a thin pass-through re-export**
@@ -528,17 +573,21 @@ cp src/features/terminal/components/TerminalPane.test.tsx \
    src/features/terminal/components/TerminalPane/Body.test.tsx
 ```
 
-- [ ] **Step 2: Update imports inside `Body.test.tsx`**
+- [ ] **Step 2: Rewrite imports + renames inside `Body.test.tsx`**
 
-Each `import { TerminalPane, ... } from './TerminalPane'` becomes:
+Same dual fix as `Body.tsx` (Task 2.1 Step 3): rewrite relative imports one level deeper AND rename `TerminalPane` → `Body`. Common patterns:
 
-```ts
-import { Body, terminalCache, clearTerminalCache } from './Body'
-```
+| Original                                                       | Becomes                                        |
+| -------------------------------------------------------------- | ---------------------------------------------- |
+| `from './TerminalPane'`                                        | `from './Body'`                                |
+| `from '../services/terminalService'`                           | `from '../../services/terminalService'`        |
+| `from '../hooks/useTerminal'`                                  | `from '../../hooks/useTerminal'`               |
+| `from '../theme/...'`                                          | `from '../../theme/...'`                       |
+| `from '../ptySessionMap'`                                      | `from '../../ptySessionMap'`                   |
+| `import { TerminalPane, terminalCache } from './TerminalPane'` | `import { Body, terminalCache } from './Body'` |
+| `<TerminalPane ... />` (JSX)                                   | `<Body ... />`                                 |
 
-(or whichever exports the test uses — adjust to the new symbol names.)
-
-Component references inside the test (`<TerminalPane ... />`) become `<Body ... />`. Drop or update awaiting-restart cases that reference props no longer on `BodyProps` — but for Phase 2, leaving them in passes if you kept Body's type compatible with the original. Phase 3 splits the cases.
+For Phase 2, leave awaiting-restart cases in if Body still accepts that mode — they pass as-is. Phase 3 Task 3.11 splits them into `index.test.tsx` + `RestartAffordance.test.tsx`.
 
 - [ ] **Step 3: Run the moved tests**
 
@@ -590,10 +639,11 @@ Expected: clean.
 
 - [ ] **Step 5: Commit**
 
+The deletes from Step 1 are already staged (`git rm` updates the index). Just add the new directory and commit:
+
 ```bash
 git add src/features/terminal/components/TerminalPane/
-git rm src/features/terminal/components/TerminalPane.tsx \
-       src/features/terminal/components/TerminalPane.test.tsx
+git status --short    # confirm: D for old files, A for new TerminalPane/* files
 git commit -m "refactor(terminal): split TerminalPane.tsx into TerminalPane/ folder"
 ```
 
@@ -696,17 +746,35 @@ describe('aggregateLineDelta', () => {
 
   test('sums insertions + deletions across files', () => {
     const files: ChangedFile[] = [
-      { path: 'a.ts', status: 'modified', insertions: 10, deletions: 3 },
-      { path: 'b.ts', status: 'modified', insertions: 5, deletions: 1 },
-      { path: 'c.ts', status: 'new', insertions: 20, deletions: 0 },
+      {
+        path: 'a.ts',
+        status: 'modified',
+        insertions: 10,
+        deletions: 3,
+        staged: false,
+      },
+      {
+        path: 'b.ts',
+        status: 'modified',
+        insertions: 5,
+        deletions: 1,
+        staged: true,
+      },
+      {
+        path: 'c.ts',
+        status: 'untracked',
+        insertions: 20,
+        deletions: 0,
+        staged: false,
+      },
     ]
     expect(aggregateLineDelta(files)).toEqual({ added: 35, removed: 4 })
   })
 
   test('treats undefined insertions/deletions as 0', () => {
     const files: ChangedFile[] = [
-      { path: 'a.ts', status: 'modified' },
-      { path: 'b.ts', status: 'modified', insertions: 7 },
+      { path: 'a.ts', status: 'modified', staged: false },
+      { path: 'b.ts', status: 'modified', insertions: 7, staged: true },
     ]
     expect(aggregateLineDelta(files)).toEqual({ added: 7, removed: 0 })
   })
@@ -764,7 +832,7 @@ Expected: all 3 tests pass.
 ```ts
 // src/features/terminal/components/TerminalPane/useFocusedPane.test.ts
 import { renderHook, act } from '@testing-library/react'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { useRef } from 'react'
 import { useFocusedPane } from './useFocusedPane'
 
@@ -815,13 +883,46 @@ describe('useFocusedPane', () => {
   })
 
   test('mousedown inside container does not blur', () => {
-    const { result } = setup(true)
-    // Need to dispatch a mousedown whose target is inside the container.
-    // The setup helper attaches the ref to a node already in document.body.
-    // Re-grab it via the result render helper — left as exercise. For
-    // hook-only tests we trust the inverse case: outside blurs, no false
-    // positive on inside since we directly manipulate ref.current via
-    // dispatch on the node itself.
+    const containerNode = document.createElement('div')
+    Object.defineProperty(containerNode, 'offsetWidth', { value: 100 })
+    document.body.appendChild(containerNode)
+    const child = document.createElement('span')
+    containerNode.appendChild(child)
+
+    const { result } = renderHook(() => {
+      const ref = useRef<HTMLElement | null>(containerNode)
+      return useFocusedPane({ containerRef: ref, initial: true })
+    })
+    expect(result.current.isFocused).toBe(true)
+    act(() => {
+      child.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+    expect(result.current.isFocused).toBe(true)
+  })
+
+  test('offsetWidth === 0 short-circuits the outside-click handler', () => {
+    const hidden = document.createElement('div')
+    Object.defineProperty(hidden, 'offsetWidth', { value: 0 })
+    document.body.appendChild(hidden)
+
+    const { result } = renderHook(() => {
+      const ref = useRef<HTMLElement | null>(hidden)
+      return useFocusedPane({ containerRef: ref, initial: true })
+    })
+
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    act(() => {
+      outside.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+    expect(result.current.isFocused).toBe(true) // hidden pane: no blur
+  })
+
+  test('removes mousedown listener on unmount', () => {
+    const removeSpy = vi.spyOn(document, 'removeEventListener')
+    const { unmount } = setup()
+    unmount()
+    expect(removeSpy).toHaveBeenCalledWith('mousedown', expect.any(Function))
   })
 })
 ```
@@ -892,7 +993,7 @@ export const useFocusedPane = ({
 npx vitest run src/features/terminal/components/TerminalPane/useFocusedPane.test.ts
 ```
 
-Expected: 5 of 6 tests pass (the "mousedown inside" test is intentionally a placeholder body — keep it, mark explicit `expect(true).toBe(true)` or remove it; the design contract is verified by the outside-click case).
+Expected: all 8 tests pass (initial=false, initial=true, setFocused, onTerminalFocusChange, mousedown-outside-blurs, mousedown-inside-no-blur, offsetWidth-zero-short-circuit, listener-cleanup-on-unmount).
 
 ---
 
@@ -1436,32 +1537,94 @@ Confirm the existing `BodyProps` interface and component shape.
 
 - [ ] **Step 2: Add the new test cases**
 
-Append to `Body.test.tsx`:
+Append to `Body.test.tsx`. Mirror the existing render harness — same `MockTerminalService` instance, same `await waitFor` patterns the file already uses.
 
 ```tsx
-test('emits onPtyStatusChange when status transitions', async () => {
+import { createRef } from 'react'
+import { render, screen, waitFor } from '@testing-library/react'
+import { vi } from 'vitest'
+import { MockTerminalService } from '../../services/terminalService'
+import { Body, terminalCache, type BodyHandle } from './Body'
+
+// (Existing tests in this file already cover lifecycle / OSC 7 / resize.
+// These three add the new chrome-bridge contracts.)
+
+test('emits onPtyStatusChange when PTY transitions to running', async () => {
+  const service = new MockTerminalService()
   const onPtyStatusChange = vi.fn()
-  // Mount with mock service; trigger status change; assert callback fired.
-  // (Adapt to the mock-service helper used by the existing tests.)
-  // Specifics depend on how MockTerminalService is set up — typically
-  // calling service._emitStatus('running') will flow through useTerminal's
-  // internal status state.
+  render(
+    <Body
+      sessionId="s-status"
+      cwd="/tmp"
+      service={service}
+      mode="spawn"
+      onPtyStatusChange={onPtyStatusChange}
+    />
+  )
+
+  // MockTerminalService.spawn resolves after a 100ms setTimeout that
+  // emits the initial '$ ' prompt; useTerminal flips status to 'running'
+  // synchronously after the spawn promise resolves.
+  await waitFor(() => {
+    expect(onPtyStatusChange).toHaveBeenCalledWith('running')
+  })
 })
 
-test('useImperativeHandle exposes focusTerminal()', async () => {
-  const ref = React.createRef<{ focusTerminal: () => void }>()
-  // Mount Body with ref; cache an xterm; call ref.current.focusTerminal();
-  // assert terminalCache.get(sessionId).terminal.focus was called.
+test('useImperativeHandle exposes focusTerminal that focuses the cached xterm', async () => {
+  const service = new MockTerminalService()
+  const ref = createRef<BodyHandle>()
+  render(
+    <Body
+      ref={ref}
+      sessionId="s-focus"
+      cwd="/tmp"
+      service={service}
+      mode="spawn"
+    />
+  )
+
+  await waitFor(() => {
+    expect(terminalCache.has('s-focus')).toBe(true)
+  })
+  const cached = terminalCache.get('s-focus')!
+  const focusSpy = vi.spyOn(cached.terminal, 'focus')
+
+  ref.current?.focusTerminal()
+  expect(focusSpy).toHaveBeenCalledTimes(1)
 })
 
-test('emits onFocusChange when xterm gains/loses focus', () => {
+test('emits onFocusChange when xterm gains/loses focus', async () => {
+  const service = new MockTerminalService()
   const onFocusChange = vi.fn()
-  // Mount; dispatch xterm onFocus event; assert onFocusChange(true) fired.
-  // Then onBlur → onFocusChange(false).
+  render(
+    <Body
+      sessionId="s-fc"
+      cwd="/tmp"
+      service={service}
+      mode="spawn"
+      onFocusChange={onFocusChange}
+    />
+  )
+
+  await waitFor(() => expect(terminalCache.has('s-fc')).toBe(true))
+  const cached = terminalCache.get('s-fc')!
+
+  // xterm 6 exposes `onFocus` / `onBlur` event registrars. Body's setup
+  // effect attaches handlers to both; firing the registrar's underlying
+  // emitter is xterm-version specific. The pragmatic test path is to
+  // capture the registered handlers via spies on the registrars themselves.
+  // Adapt to whichever pattern the existing test file uses for xterm
+  // event verification (search for `.onFocus(` or `.onBlur(` in
+  // Body.test.tsx for the established convention).
+  //
+  // Minimum assertion: handlers are attached. Full assertion: invoking
+  // each handler flips onFocusChange.
+  expect(typeof cached.terminal.onFocus).toBe('function')
+  expect(typeof cached.terminal.onBlur).toBe('function')
 })
 ```
 
-(Adapt the test bodies to match the existing test harness's mock-service emission helpers. The tests above are scaffolds — the existing TerminalPane tests already mock xterm.js; reuse the same patterns.)
+(The third test acknowledges that fully exercising xterm focus events requires the project's existing xterm event-emit helper, which lives elsewhere in `Body.test.tsx`. If the existing test file doesn't have that helper, mark the third test `test.skip(...)` and lean on the manual verification gate in Task 3.12. Don't fake the assertion — a green test that proves nothing is worse than a skipped one.)
 
 - [ ] **Step 3: Run the new test cases — they should fail**
 
@@ -1888,7 +2051,15 @@ vi.mock('../../../diff/hooks/useGitBranch', () => ({
 }))
 vi.mock('../../../diff/hooks/useGitStatus', () => ({
   useGitStatus: () => ({
-    files: [{ path: 'a.ts', status: 'modified', insertions: 10, deletions: 3 }],
+    files: [
+      {
+        path: 'a.ts',
+        status: 'modified',
+        insertions: 10,
+        deletions: 3,
+        staged: false,
+      },
+    ],
     filesCwd: '/home/user/repo',
     loading: false,
     error: null,
