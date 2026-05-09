@@ -9,7 +9,7 @@ use agent::{
     TranscriptState,
 };
 use filesystem::{list_dir, read_file, write_file};
-use git::{get_git_diff, git_status, watcher::{start_git_watcher, stop_git_watcher, GitWatcherState}};
+use git::{get_git_diff, git_branch, git_status, watcher::{start_git_watcher, stop_git_watcher, GitWatcherState}};
 use std::sync::Arc;
 use tauri::Manager;
 use terminal::{
@@ -94,6 +94,7 @@ pub fn run() {
         read_file,
         write_file,
         git_status,
+        git_branch,
         get_git_diff,
         start_git_watcher,
         stop_git_watcher
@@ -116,6 +117,7 @@ pub fn run() {
         read_file,
         write_file,
         git_status,
+        git_branch,
         get_git_diff,
         start_git_watcher,
         stop_git_watcher,

@@ -457,6 +457,7 @@ export const WorkspaceView = (): ReactElement => {
         <TerminalZone
           sessions={sessions}
           activeSessionId={activeSessionId}
+          activeAgentType={agentStatus.agentType}
           onSessionCwdChange={updateSessionCwd}
           restoreData={restoreData}
           loading={loading}

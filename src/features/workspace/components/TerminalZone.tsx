@@ -15,6 +15,7 @@ import { isOpenSessionStatus } from '../../sessions/utils/pickNextVisibleSession
 export interface TerminalZoneProps {
   sessions: Session[]
   activeSessionId: string | null
+  activeAgentType?: Session['agentType'] | null
   onSessionCwdChange?: (sessionId: string, cwd: string) => void
   /** Restore data per session id, populated during mount-time restore */
   restoreData?: Map<string, RestoreData>
@@ -43,6 +44,7 @@ export interface TerminalZoneProps {
 export const TerminalZone = ({
   sessions,
   activeSessionId,
+  activeAgentType = undefined,
   onSessionCwdChange = undefined,
   restoreData = undefined,
   loading = false,
@@ -147,6 +149,9 @@ export const TerminalZone = ({
                 onCwdChange={(cwd) => onSessionCwdChange?.(session.id, cwd)}
                 onPaneReady={onPaneReady}
                 onRestart={onSessionRestart}
+                session={session}
+                isActive={isActive}
+                activeAgentType={isActive ? activeAgentType : null}
               />
             </div>
           )

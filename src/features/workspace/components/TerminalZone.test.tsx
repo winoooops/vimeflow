@@ -1,8 +1,10 @@
 import { describe, test, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement } from 'react'
 import { TerminalZone } from './TerminalZone'
 import { mockSessions } from '../data/mockSessions'
+import type { TerminalPaneProps } from '../../terminal/components/TerminalPane'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 
 // Round 4 Finding 1: TerminalZone now requires a `service` prop so it can
@@ -34,30 +36,42 @@ const mockService: ITerminalService = {
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../../terminal/components/TerminalPane', () => ({
-  TerminalPane: vi.fn(({ sessionId, cwd, restoredFrom, mode, onRestart }) => (
-    <div
-      data-testid="terminal-pane-mock"
-      data-session-id={sessionId}
-      data-cwd={cwd}
-      data-restored={restoredFrom ? 'true' : 'false'}
-      data-mode={mode}
-    >
-      Mocked TerminalPane
-      {/* Expose the onRestart wiring so tests can assert TerminalZone
+  TerminalPane: vi.fn(
+    ({
+      sessionId,
+      cwd,
+      restoredFrom,
+      mode,
+      onRestart,
+      session,
+      isActive,
+      activeAgentType,
+    }: TerminalPaneProps): ReactElement => (
+      <div
+        data-testid="terminal-pane-mock"
+        data-session-id={sessionId}
+        data-cwd={cwd}
+        data-restored={restoredFrom ? 'true' : 'false'}
+        data-mode={mode}
+        data-session-name={session.name}
+        data-is-active={isActive ? 'true' : 'false'}
+        data-active-agent-type={activeAgentType ?? ''}
+      >
+        Mocked TerminalPane
+        {/* Expose the onRestart wiring so tests can assert TerminalZone
           forwards onSessionRestart down to the pane. */}
-      {onRestart && (
-        <button
-          type="button"
-          data-testid={`mock-restart-${sessionId as string}`}
-          onClick={() =>
-            (onRestart as (id: string) => void)(sessionId as string)
-          }
-        >
-          mock-restart
-        </button>
-      )}
-    </div>
-  )),
+        {onRestart && (
+          <button
+            type="button"
+            data-testid={`mock-restart-${sessionId}`}
+            onClick={() => onRestart(sessionId)}
+          >
+            mock-restart
+          </button>
+        )}
+      </div>
+    )
+  ),
 }))
 
 describe('TerminalZone', () => {
@@ -151,6 +165,23 @@ describe('TerminalZone', () => {
       (pane) => pane.getAttribute('data-session-id') === 'sess-1'
     )
     expect(activeMockPane).toHaveAttribute('data-cwd', '~')
+  })
+
+  test('passes live agent type only to the active TerminalPane', () => {
+    render(<TerminalZone {...defaultProps} activeAgentType="codex" />)
+
+    const mockPanes = screen.getAllByTestId('terminal-pane-mock')
+
+    const activeMockPane = mockPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-1'
+    )
+
+    const inactiveMockPane = mockPanes.find(
+      (pane) => pane.getAttribute('data-session-id') === 'sess-2'
+    )
+
+    expect(activeMockPane).toHaveAttribute('data-active-agent-type', 'codex')
+    expect(inactiveMockPane).toHaveAttribute('data-active-agent-type', '')
   })
 
   test('does not render TerminalPane when no sessions exist', () => {

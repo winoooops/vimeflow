@@ -1,9 +1,15 @@
 /* eslint-disable testing-library/no-node-access */
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import { TerminalPane, clearTerminalCache } from './components/TerminalPane'
+import type { ReactElement } from 'react'
+import {
+  TerminalPane,
+  clearTerminalCache,
+  type TerminalPaneProps,
+} from './components/TerminalPane'
 import { MockTerminalService } from './services/terminalService'
 import type { ITerminalService } from './services/terminalService'
+import type { Session } from '../sessions/types'
 
 // Mock the terminal service module to use our controlled instance
 // Initialize here (before vi.mock) so it's available when modules are imported
@@ -19,6 +25,44 @@ vi.mock('./services/terminalService', async () => {
     createTerminalService: (): ITerminalService => mockServiceInstance,
   }
 })
+
+const createTestSession = (sessionId: string, cwd: string): Session => ({
+  id: sessionId,
+  projectId: 'terminal-integration',
+  name: sessionId,
+  status: 'running',
+  workingDirectory: cwd,
+  agentType: 'generic',
+  createdAt: '2026-05-08T00:00:00Z',
+  lastActivityAt: '2026-05-08T00:00:00Z',
+  activity: {
+    fileChanges: [],
+    toolCalls: [],
+    testResults: [],
+    contextWindow: { used: 0, total: 200000, percentage: 0, emoji: '😊' },
+    usage: {
+      sessionDuration: 0,
+      turnCount: 0,
+      messages: { sent: 0, limit: 200 },
+      tokens: { input: 0, output: 0, total: 0 },
+    },
+  },
+})
+
+type TestTerminalPaneProps = Omit<TerminalPaneProps, 'session' | 'isActive'> &
+  Partial<Pick<TerminalPaneProps, 'session' | 'isActive'>>
+
+const TestTerminalPane = ({
+  session,
+  isActive = true,
+  ...props
+}: TestTerminalPaneProps): ReactElement => (
+  <TerminalPane
+    {...props}
+    session={session ?? createTestSession(props.sessionId, props.cwd)}
+    isActive={isActive}
+  />
+)
 
 /**
  * Terminal Integration Tests
@@ -59,7 +103,7 @@ describe('Terminal Integration Tests', () => {
   describe('Spawn shell and interactive I/O', () => {
     test('spawns shell and wires PTY service for I/O', async (): Promise<void> => {
       render(
-        <TerminalPane
+        <TestTerminalPane
           sessionId="test-session-1"
           cwd="/home/user"
           service={mockServiceInstance}
@@ -86,7 +130,7 @@ describe('Terminal Integration Tests', () => {
 
     test('emits PTY data events to xterm output', async (): Promise<void> => {
       render(
-        <TerminalPane
+        <TestTerminalPane
           service={mockServiceInstance}
           sessionId="test-session-2"
           cwd="/home/user"
@@ -120,7 +164,7 @@ describe('Terminal Integration Tests', () => {
       const resizeSpy = vi.spyOn(mockServiceInstance, 'resize')
 
       const { container, unmount } = render(
-        <TerminalPane
+        <TestTerminalPane
           service={mockServiceInstance}
           sessionId="test-session-resize"
           cwd="/home/user"
@@ -181,7 +225,7 @@ describe('Terminal Integration Tests', () => {
   describe('Multiple terminal tabs', () => {
     test('can switch between multiple terminal sessions', async (): Promise<void> => {
       const { rerender, unmount } = render(
-        <TerminalPane
+        <TestTerminalPane
           service={mockServiceInstance}
           sessionId="session-1"
           cwd="/home/user"
@@ -206,7 +250,7 @@ describe('Terminal Integration Tests', () => {
 
       // Switch to second terminal session
       rerender(
-        <TerminalPane
+        <TestTerminalPane
           service={mockServiceInstance}
           sessionId="session-2"
           cwd="/home/user"
@@ -235,7 +279,7 @@ describe('Terminal Integration Tests', () => {
       const killSpy = vi.spyOn(mockServiceInstance, 'kill')
 
       const { unmount } = render(
-        <TerminalPane
+        <TestTerminalPane
           service={mockServiceInstance}
           sessionId="cleanup-test"
           cwd="/home/user"
@@ -266,7 +310,7 @@ describe('Terminal Integration Tests', () => {
       // Mount and unmount multiple times rapidly
       for (let i = 0; i < 5; i++) {
         const { unmount } = render(
-          <TerminalPane
+          <TestTerminalPane
             sessionId={`rapid-test-${i}`}
             cwd="/home/user"
             service={mockServiceInstance}
@@ -295,7 +339,7 @@ describe('Terminal Integration Tests', () => {
         )
 
       const { unmount } = render(
-        <TerminalPane
+        <TestTerminalPane
           service={mockServiceInstance}
           sessionId="spawn-error-test"
           cwd="/invalid"
@@ -347,7 +391,7 @@ describe('Terminal Integration Tests', () => {
 
     test('handles PTY exit event', async (): Promise<void> => {
       const { unmount } = render(
-        <TerminalPane
+        <TestTerminalPane
           service={mockServiceInstance}
           sessionId="exit-test"
           cwd="/home/user"
@@ -381,7 +425,7 @@ describe('Terminal Integration Tests', () => {
 
     test('handles PTY error event', async (): Promise<void> => {
       const { unmount } = render(
-        <TerminalPane
+        <TestTerminalPane
           service={mockServiceInstance}
           sessionId="error-test"
           cwd="/home/user"
