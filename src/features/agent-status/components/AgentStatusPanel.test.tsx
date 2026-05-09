@@ -251,6 +251,10 @@ describe('AgentStatusPanel', () => {
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     const scrollableDiv = container.querySelector('.overflow-y-auto')
     expect(scrollableDiv).toHaveClass('thin-scrollbar')
+    // `overflow-x-clip` keeps the scroller vertical-only — see
+    // List.tsx:session-scroll for the WebKitGTK phantom-gutter rationale.
+    expect(scrollableDiv).toHaveClass('overflow-x-clip')
+    expect(scrollableDiv).toHaveClass('min-h-0')
   })
 
   test('keeps ToolCallSummary consumer mounted alongside the ActivityFeed', () => {

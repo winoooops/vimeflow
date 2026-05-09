@@ -102,8 +102,16 @@
 }
 
 @utility thin-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #333344 transparent;
+  /* `scrollbar-width`/`scrollbar-color` (CSS standard) and
+     `::-webkit-scrollbar` (WebKit pseudo) both apply on WebKitGTK on
+     Linux — the renderer paints two synced vertical tracks. Gate the
+     standard properties to engines that lack the pseudo (Firefox,
+     detected via `-moz-appearance: none`) so WebKit only sees the
+     pseudo-element rules. */
+  @supports (-moz-appearance: none) {
+    scrollbar-width: thin;
+    scrollbar-color: #333344 transparent;
+  }
   &::-webkit-scrollbar {
     width: 6px;
     height: 6px;
