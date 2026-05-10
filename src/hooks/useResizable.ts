@@ -33,6 +33,8 @@ export interface UseResizableOptions {
   /**
    * Receives coalesced preview sizes without requiring a React state update.
    * Useful for hot splitter drags that can update a CSS variable directly.
+   * Only called in `commit-on-end` mode; `live` mode commits React state
+   * instead and intentionally ignores this callback.
    * Programmatic `adjustBy` calls intentionally skip this callback; callers
    * should mirror committed keyboard resize through their normal render path.
    */
@@ -230,12 +232,13 @@ export const useResizable = ({
 
   const adjustBy = useCallback(
     (delta: number): void => {
+      const baseSize =
+        pendingSize.current ??
+        (updateModeRef.current === 'commit-on-end'
+          ? previewSize.current
+          : sizeRef.current)
       cancelPendingSize()
 
-      const baseSize =
-        updateModeRef.current === 'commit-on-end'
-          ? previewSize.current
-          : sizeRef.current
       const nextSize = clampSize(baseSize + delta, min, max)
 
       commitSize(nextSize)

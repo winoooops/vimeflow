@@ -70,9 +70,7 @@ jobs:
 
       - name: Build Tauri application (Ubuntu)
         if: matrix.platform == 'ubuntu'
-        env:
-          NO_STRIP: '1'
-        run: npx tauri build --ci
+        run: npm run tauri:build -- --ci
 
       - name: Build Tauri application
         if: matrix.platform != 'ubuntu'
