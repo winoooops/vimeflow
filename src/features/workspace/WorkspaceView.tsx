@@ -217,9 +217,8 @@ export const WorkspaceView = (): ReactElement => {
   const setSidebarResizeHandle = useCallback(
     (element: HTMLDivElement | null): void => {
       sidebarResizeHandleRef.current = element
-      element?.setAttribute('aria-valuenow', String(sidebarWidth))
     },
-    [sidebarWidth]
+    []
   )
 
   useLayoutEffect(() => {
@@ -546,8 +545,8 @@ export const WorkspaceView = (): ReactElement => {
           aria-orientation="vertical"
           aria-valuemin={SIDEBAR_MIN}
           aria-valuemax={SIDEBAR_MAX}
-          // aria-valuenow is owned imperatively so drag previews can update
-          // the splitter value without per-frame React state commits.
+          // aria-valuenow is set by the layout effect and drag preview path
+          // so previews do not need per-frame React state commits.
           onMouseDown={handleMouseDown}
           className={`
             absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize
