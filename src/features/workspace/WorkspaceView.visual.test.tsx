@@ -100,7 +100,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       const workspace = screen.getByTestId('workspace-view')
 
       expect(workspace.style.gridTemplateColumns).toBe(
-        '48px var(--workspace-sidebar-width) 1fr auto'
+        '48px var(--workspace-sidebar-width, 272px) 1fr auto'
       )
 
       expect(

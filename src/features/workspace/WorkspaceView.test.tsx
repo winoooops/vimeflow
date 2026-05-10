@@ -153,7 +153,7 @@ describe('WorkspaceView', () => {
 
     expect(container).toHaveClass('grid')
     expect(container.style.gridTemplateColumns).toBe(
-      '48px var(--workspace-sidebar-width) 1fr auto'
+      '48px var(--workspace-sidebar-width, 272px) 1fr auto'
     )
 
     expect(container.style.getPropertyValue('--workspace-sidebar-width')).toBe(
@@ -442,7 +442,7 @@ describe('WorkspaceView', () => {
 
     expect(container.style.gridTemplateColumns).toContain('48px')
     expect(container.style.gridTemplateColumns).toContain(
-      'var(--workspace-sidebar-width)'
+      'var(--workspace-sidebar-width, 272px)'
     )
 
     expect(container.style.getPropertyValue('--workspace-sidebar-width')).toBe(

@@ -495,8 +495,9 @@ export const WorkspaceView = (): ReactElement => {
       className="grid h-screen grid-rows-1 overflow-hidden"
       style={
         {
-          '--workspace-sidebar-width': `${sidebarWidth}px`,
-          gridTemplateColumns: '48px var(--workspace-sidebar-width) 1fr auto',
+          // `--workspace-sidebar-width` is owned by previewSidebarWidth so
+          // React rerenders cannot overwrite an in-progress drag preview.
+          gridTemplateColumns: `48px var(--workspace-sidebar-width, ${SIDEBAR_DEFAULT}px) 1fr auto`,
         } as CSSProperties
       }
     >
