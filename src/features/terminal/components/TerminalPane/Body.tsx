@@ -301,7 +301,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
       if (
         !force &&
-        lastFitSize?.width === width &&
+        lastFitSize !== null &&
+        lastFitSize.width === width &&
         lastFitSize.height === height
       ) {
         return
