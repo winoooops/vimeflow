@@ -92,7 +92,10 @@ export const useResizable = ({
   const commitSize = useCallback(
     (nextSize: number): void => {
       sizeRef.current = nextSize
-      preview(nextSize)
+
+      if (updateModeRef.current === 'commit-on-end') {
+        preview(nextSize)
+      }
 
       setSize((currentSize) => {
         if (currentSize === nextSize) {
