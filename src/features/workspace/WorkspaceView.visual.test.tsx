@@ -122,7 +122,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       render(<WorkspaceView />)
       const workspace = screen.getByTestId('workspace-view')
 
-      expect(workspace.className).toContain('grid-rows-1')
+      expect(workspace).toHaveClass('grid-rows-1')
     })
   })
 
