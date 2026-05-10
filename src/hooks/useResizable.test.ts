@@ -251,6 +251,69 @@ describe('useResizable', () => {
     expect(onDragPreview).not.toHaveBeenCalled()
   })
 
+  test('commit-on-end keyboard resize during drag survives mouseup', () => {
+    const frameCallbacks: FrameRequestCallback[] = []
+    const onDragPreview = vi.fn()
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    try {
+      const { result } = renderHook(() =>
+        useResizable({
+          initial: 256,
+          min: 100,
+          max: 500,
+          updateMode: 'commit-on-end',
+          onDragPreview,
+        })
+      )
+
+      act(() => {
+        result.current.handleMouseDown({
+          preventDefault: () => undefined,
+          clientX: 200,
+          clientY: 0,
+        } as React.MouseEvent)
+      })
+
+      act(() => {
+        document.dispatchEvent(new MouseEvent('mousemove', { clientX: 320 }))
+      })
+
+      const callback = frameCallbacks[0]
+      if (!callback) {
+        throw new Error('Expected resize animation frame to be scheduled')
+      }
+
+      act(() => {
+        callback(16)
+      })
+
+      expect(onDragPreview).toHaveBeenCalledWith(376)
+
+      act(() => {
+        result.current.adjustBy(50)
+      })
+
+      expect(result.current.size).toBe(306)
+
+      act(() => {
+        document.dispatchEvent(new MouseEvent('mouseup'))
+      })
+
+      expect(result.current.size).toBe(306)
+      expect(onDragPreview).toHaveBeenCalledTimes(1)
+    } finally {
+      requestAnimationFrameSpy.mockRestore()
+    }
+  })
+
   test('mouseup flushes pending size before ending drag', () => {
     const requestAnimationFrameSpy = vi
       .spyOn(window, 'requestAnimationFrame')

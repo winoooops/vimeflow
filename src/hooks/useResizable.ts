@@ -221,7 +221,12 @@ export const useResizable = ({
   const adjustBy = useCallback(
     (delta: number): void => {
       cancelPendingSize()
-      commitSize(clampSize(sizeRef.current + delta, min, max))
+      const nextSize = clampSize(sizeRef.current + delta, min, max)
+      commitSize(nextSize)
+
+      if (updateModeRef.current === 'commit-on-end') {
+        previewSize.current = nextSize
+      }
     },
     [min, max, cancelPendingSize, commitSize]
   )
