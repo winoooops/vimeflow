@@ -1,4 +1,10 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+} from 'react'
 
 const clampSize = (value: number, min: number, max: number): number =>
   Math.round(Math.min(max, Math.max(min, value)))
@@ -67,16 +73,15 @@ export const useResizable = ({
   const pendingSize = useRef<number | null>(null)
   const animationFrameId = useRef<number | null>(null)
 
-  useEffect(() => {
-    sizeRef.current = size
+  useLayoutEffect(() => {
     previewSize.current = size
   }, [size])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     updateModeRef.current = updateMode
   }, [updateMode])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     onDragPreviewRef.current = onDragPreview
   }, [onDragPreview])
 
@@ -91,10 +96,13 @@ export const useResizable = ({
 
   const commitSize = useCallback(
     (nextSize: number, syncPreview = false): void => {
+      // RAF and keyboard paths read sizeRef before React effects run.
       sizeRef.current = nextSize
 
       if (syncPreview && updateModeRef.current === 'commit-on-end') {
         preview(nextSize)
+      } else if (updateModeRef.current !== 'commit-on-end') {
+        previewSize.current = nextSize
       }
 
       setSize((currentSize) => {

@@ -51,7 +51,8 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
 
 export const WorkspaceView = (): ReactElement => {
   const workspaceRef = useRef<HTMLDivElement>(null)
-  const sidebarResizeHandleRef = useRef<HTMLDivElement>(null)
+  const sidebarResizeHandleRef = useRef<HTMLDivElement | null>(null)
+  const sidebarResizeValueRef = useRef(SIDEBAR_DEFAULT)
 
   // Round 4, Finding 1 (codex P1): one terminal service per WorkspaceView
   // instance. Both `useSessionManager` and every `TerminalPane` (via
@@ -183,19 +184,26 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [sessions, updateSessionAgentType])
 
+  const setSidebarResizeHandle = useCallback(
+    (element: HTMLDivElement | null): void => {
+      sidebarResizeHandleRef.current = element
+      element?.setAttribute(
+        'aria-valuenow',
+        String(sidebarResizeValueRef.current)
+      )
+    },
+    []
+  )
+
   const previewSidebarWidth = useCallback((nextWidth: number): void => {
+    sidebarResizeValueRef.current = nextWidth
     workspaceRef.current?.style.setProperty(
       '--workspace-sidebar-width',
       `${nextWidth}px`
     )
-
     const resizeHandle = sidebarResizeHandleRef.current
-    if (!resizeHandle) {
-      if (import.meta.env.DEV) {
-        // eslint-disable-next-line no-console
-        console.error('Sidebar resize handle not mounted for aria-valuenow')
-      }
 
+    if (!resizeHandle) {
       return
     }
 
@@ -533,7 +541,7 @@ export const WorkspaceView = (): ReactElement => {
 
         {/* Resize handle */}
         <div
-          ref={sidebarResizeHandleRef}
+          ref={setSidebarResizeHandle}
           data-testid="sidebar-resize-handle"
           role="separator"
           aria-orientation="vertical"

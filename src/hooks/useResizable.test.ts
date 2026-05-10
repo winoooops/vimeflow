@@ -179,6 +179,62 @@ describe('useResizable', () => {
     }
   })
 
+  test('commit-on-end preview uses latest preview callback before frame flush', () => {
+    const frameCallbacks: FrameRequestCallback[] = []
+    const firstOnDragPreview = vi.fn()
+    const secondOnDragPreview = vi.fn()
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    try {
+      const { result, rerender } = renderHook(
+        ({ onDragPreview }) =>
+          useResizable({
+            initial: 256,
+            min: 100,
+            max: 500,
+            updateMode: 'commit-on-end',
+            onDragPreview,
+          }),
+        { initialProps: { onDragPreview: firstOnDragPreview } }
+      )
+
+      act(() => {
+        result.current.handleMouseDown({
+          preventDefault: () => undefined,
+          clientX: 200,
+          clientY: 0,
+        } as React.MouseEvent)
+      })
+
+      act(() => {
+        document.dispatchEvent(new MouseEvent('mousemove', { clientX: 320 }))
+      })
+
+      rerender({ onDragPreview: secondOnDragPreview })
+
+      const callback = frameCallbacks[0]
+      if (!callback) {
+        throw new Error('Expected resize animation frame to be scheduled')
+      }
+
+      act(() => {
+        callback(16)
+      })
+
+      expect(firstOnDragPreview).not.toHaveBeenCalled()
+      expect(secondOnDragPreview).toHaveBeenCalledWith(376)
+    } finally {
+      requestAnimationFrameSpy.mockRestore()
+    }
+  })
+
   test('live mode does not call onDragPreview alongside state updates', () => {
     const frameCallbacks: FrameRequestCallback[] = []
     const onDragPreview = vi.fn()
