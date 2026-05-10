@@ -57,6 +57,7 @@ export const WorkspaceView = (): ReactElement => {
   // Imperative resize previews keep this ref, the CSS variable, and
   // aria-valuenow in sync without per-frame React commits.
   const sidebarResizeValueRef = useRef(SIDEBAR_INITIAL)
+  const hasAppliedSidebarResizePreviewRef = useRef(false)
 
   // Round 4, Finding 1 (codex P1): one terminal service per WorkspaceView
   // instance. Both `useSessionManager` and every `TerminalPane` (via
@@ -200,6 +201,14 @@ export const WorkspaceView = (): ReactElement => {
   )
 
   const previewSidebarWidth = useCallback((nextWidth: number): void => {
+    if (
+      hasAppliedSidebarResizePreviewRef.current &&
+      sidebarResizeValueRef.current === nextWidth
+    ) {
+      return
+    }
+
+    hasAppliedSidebarResizePreviewRef.current = true
     sidebarResizeValueRef.current = nextWidth
     workspaceRef.current?.style.setProperty(
       '--workspace-sidebar-width',

@@ -507,6 +507,47 @@ describe('WorkspaceView', () => {
     }
   })
 
+  test('skips duplicate sidebar preview write after fast drag release', () => {
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    const setPropertySpy = vi.spyOn(
+      CSSStyleDeclaration.prototype,
+      'setProperty'
+    )
+
+    try {
+      render(<WorkspaceView />)
+
+      const handle = screen.getByTestId('sidebar-resize-handle')
+
+      fireEvent.mouseDown(handle, { clientX: 200 })
+      fireEvent.mouseMove(document, { clientX: 300 })
+      fireEvent.mouseUp(document)
+
+      const sidebarWidthWrites = setPropertySpy.mock.calls.filter(
+        ([propertyName]) => propertyName === '--workspace-sidebar-width'
+      )
+
+      expect(sidebarWidthWrites).toEqual([
+        ['--workspace-sidebar-width', '272px'],
+        ['--workspace-sidebar-width', '372px'],
+      ])
+      expect(frameCallbacks).toHaveLength(1)
+      expect(handle).toHaveAttribute('aria-valuenow', '372')
+    } finally {
+      requestAnimationFrameSpy.mockRestore()
+      setPropertySpy.mockRestore()
+    }
+  })
+
   test('mounts SessionTabs above terminal zone', () => {
     render(<WorkspaceView />)
 
