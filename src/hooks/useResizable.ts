@@ -214,7 +214,10 @@ export const useResizable = ({
         (updateModeRef.current === 'commit-on-end' ? previewSize.current : null)
       pendingSize.current = null
 
-      if (finalSize !== null) {
+      if (
+        finalSize !== null &&
+        (finalSize !== sizeRef.current || finalSize !== previewSize.current)
+      ) {
         commitSize(finalSize, updateModeRef.current === 'commit-on-end')
       }
 

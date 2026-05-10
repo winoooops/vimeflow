@@ -179,6 +179,67 @@ describe('useResizable', () => {
     }
   })
 
+  test('commit-on-end mouseup restores preview when final size returns to committed size', () => {
+    const frameCallbacks: FrameRequestCallback[] = []
+    const onDragPreview = vi.fn()
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    try {
+      const { result } = renderHook(() =>
+        useResizable({
+          initial: 256,
+          min: 100,
+          max: 500,
+          updateMode: 'commit-on-end',
+          onDragPreview,
+        })
+      )
+
+      act(() => {
+        result.current.handleMouseDown({
+          preventDefault: () => undefined,
+          clientX: 200,
+          clientY: 0,
+        } as React.MouseEvent)
+      })
+
+      act(() => {
+        document.dispatchEvent(new MouseEvent('mousemove', { clientX: 320 }))
+      })
+
+      const callback = frameCallbacks[0]
+      if (!callback) {
+        throw new Error('Expected resize animation frame to be scheduled')
+      }
+
+      act(() => {
+        callback(16)
+      })
+
+      expect(onDragPreview).toHaveBeenLastCalledWith(376)
+
+      act(() => {
+        document.dispatchEvent(new MouseEvent('mousemove', { clientX: 200 }))
+      })
+
+      act(() => {
+        document.dispatchEvent(new MouseEvent('mouseup'))
+      })
+
+      expect(result.current.size).toBe(256)
+      expect(onDragPreview).toHaveBeenLastCalledWith(256)
+    } finally {
+      requestAnimationFrameSpy.mockRestore()
+    }
+  })
+
   test('commit-on-end preview uses latest preview callback before frame flush', () => {
     const frameCallbacks: FrameRequestCallback[] = []
     const firstOnDragPreview = vi.fn()
