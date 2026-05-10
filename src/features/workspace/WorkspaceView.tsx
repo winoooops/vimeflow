@@ -1,5 +1,12 @@
 import type { CSSProperties, ReactElement } from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { IconRail } from './components/IconRail'
 import { Tabs } from '../sessions/components/Tabs'
 import { Sidebar } from '../../components/sidebar/Sidebar'
@@ -199,6 +206,10 @@ export const WorkspaceView = (): ReactElement => {
     updateMode: 'commit-on-end',
     onDragPreview: previewSidebarWidth,
   })
+
+  useLayoutEffect(() => {
+    previewSidebarWidth(sidebarWidth)
+  }, [previewSidebarWidth, sidebarWidth])
 
   const activeSession = activeSessionId
     ? sessions.find((s) => s.id === activeSessionId)
@@ -518,7 +529,6 @@ export const WorkspaceView = (): ReactElement => {
           data-testid="sidebar-resize-handle"
           role="separator"
           aria-orientation="vertical"
-          aria-valuenow={sidebarWidth}
           aria-valuemin={SIDEBAR_MIN}
           aria-valuemax={SIDEBAR_MAX}
           onMouseDown={handleMouseDown}

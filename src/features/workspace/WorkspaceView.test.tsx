@@ -464,7 +464,7 @@ describe('WorkspaceView', () => {
       })
 
     try {
-      render(<WorkspaceView />)
+      const { rerender } = render(<WorkspaceView />)
 
       const workspace = screen.getByTestId('workspace-view')
       const handle = screen.getByTestId('sidebar-resize-handle')
@@ -486,6 +486,13 @@ describe('WorkspaceView', () => {
       act(() => {
         callback(16)
       })
+
+      expect(
+        workspace.style.getPropertyValue('--workspace-sidebar-width')
+      ).toBe('372px')
+      expect(handle).toHaveAttribute('aria-valuenow', '372')
+
+      rerender(<WorkspaceView />)
 
       expect(
         workspace.style.getPropertyValue('--workspace-sidebar-width')
