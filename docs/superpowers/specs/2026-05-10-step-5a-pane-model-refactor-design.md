@@ -959,4 +959,4 @@ getByText > getByTestId`, 80% minimum coverage.
   - `src/features/terminal/components/TerminalPane/` (step-4 chrome, prop extension)
 - Roadmap entry: `docs/roadmap/progress.yaml` (`ui-handoff-migration`; new `ui-s5a` step)
 
-<!-- codex-reviewed: 2026-05-10T09:14:53Z -->
+<!-- codex-reviewed: 2026-05-10T09:26:03Z -->
