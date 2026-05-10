@@ -770,6 +770,78 @@ describe('Body', () => {
       }
     })
 
+    test('fits the new session instead of flushing the old session when drag ends during session switch', async () => {
+      const firstFitAddon = { fit: vi.fn() }
+      const secondFitAddon = { fit: vi.fn() }
+      const frameCallbacks: FrameRequestCallback[] = []
+
+      vi.mocked(FitAddon)
+        .mockImplementationOnce(() => firstFitAddon as never)
+        .mockImplementationOnce(() => secondFitAddon as never)
+
+      const offsetWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+        .mockReturnValue(840)
+
+      const offsetHeightSpy = vi
+        .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+        .mockReturnValue(600)
+
+      global.ResizeObserver = vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      }))
+
+      try {
+        const { rerender } = render(
+          <Body
+            sessionId="session-a"
+            cwd="/home/user"
+            service={defaultMockService}
+            deferFit
+          />
+        )
+
+        await waitFor(() => {
+          expect(FitAddon).toHaveBeenCalledTimes(1)
+        })
+
+        expect(firstFitAddon.fit).not.toHaveBeenCalled()
+
+        const requestAnimationFrameSpy = vi
+          .spyOn(window, 'requestAnimationFrame')
+          .mockImplementation((callback: FrameRequestCallback): number => {
+            frameCallbacks.push(callback)
+
+            return frameCallbacks.length
+          })
+
+        try {
+          rerender(
+            <Body
+              sessionId="session-b"
+              cwd="/home/user"
+              service={defaultMockService}
+            />
+          )
+
+          await waitFor(() => {
+            expect(FitAddon).toHaveBeenCalledTimes(2)
+          })
+
+          expect(requestAnimationFrameSpy).not.toHaveBeenCalled()
+          expect(firstFitAddon.fit).not.toHaveBeenCalled()
+          expect(secondFitAddon.fit).toHaveBeenCalledTimes(1)
+        } finally {
+          requestAnimationFrameSpy.mockRestore()
+        }
+      } finally {
+        offsetWidthSpy.mockRestore()
+        offsetHeightSpy.mockRestore()
+      }
+    })
+
     test('regression #81: ResizeObserver skips fit when container is hidden (width=0)', async () => {
       let resizeCallback: ResizeObserverCallback | undefined
       const mockObserve = vi.fn()

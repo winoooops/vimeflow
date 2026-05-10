@@ -175,6 +175,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const previousDeferFitRef = useRef(deferFit)
   const cancelScheduledFitRef = useRef<(() => void) | null>(null)
   const flushFitRef = useRef<(() => void) | null>(null)
+  const flushFitSessionIdRef = useRef<string | null>(null)
+  const pendingDeferredFitFlushRef = useRef(false)
 
   // Use terminal hook for PTY lifecycle management
   const {
@@ -242,11 +244,17 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     if (!wasDeferred && deferFit) {
       cancelScheduledFitRef.current?.()
     } else if (wasDeferred && !deferFit) {
-      flushFitRef.current?.()
+      const flushFit = flushFitRef.current
+
+      if (flushFit && flushFitSessionIdRef.current === sessionId) {
+        flushFit()
+      } else {
+        pendingDeferredFitFlushRef.current = true
+      }
     }
 
     previousDeferFitRef.current = deferFit
-  }, [deferFit])
+  }, [deferFit, sessionId])
 
   useImperativeHandle(
     ref,
@@ -291,12 +299,12 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       }
     }
 
-    const fitIfNeeded = (targetFitAddon: FitAddon, force = false): void => {
+    const fitIfNeeded = (targetFitAddon: FitAddon, force = false): boolean => {
       const width = node.offsetWidth
       const height = node.offsetHeight
 
       if (width <= 0) {
-        return
+        return false
       }
 
       if (
@@ -305,11 +313,13 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         lastFitSize.width === width &&
         lastFitSize.height === height
       ) {
-        return
+        return false
       }
 
       lastFitSize = { width, height }
       targetFitAddon.fit()
+
+      return true
     }
 
     const scheduleFit = (targetFitAddon: FitAddon): void => {
@@ -342,13 +352,15 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       })
     }
 
-    const fitInitialWhenReady = (targetFitAddon: FitAddon): void => {
+    const fitInitialWhenReady = (targetFitAddon: FitAddon): boolean => {
       if (deferFitRef.current) {
-        return
+        return false
       }
 
-      fitIfNeeded(targetFitAddon, true)
+      return fitIfNeeded(targetFitAddon, true)
     }
+
+    let didInitialFit = false
 
     if (cached) {
       // Reuse existing terminal from cache
@@ -362,7 +374,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       // Re-fit to new container — guard against hidden (display:none) containers
       // where offsetWidth is 0. Fitting at zero width tells xterm cols≈1,
       // which causes the PTY to re-wrap scrollback into a narrow column.
-      fitInitialWhenReady(fitAddon)
+      didInitialFit = fitInitialWhenReady(fitAddon)
     } else {
       // Create new terminal instance
       newTerminal = new Terminal({
@@ -385,7 +397,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       newTerminal.open(node)
 
       // Fit terminal to container — guard against hidden (display:none) containers
-      fitInitialWhenReady(fitAddon)
+      didInitialFit = fitInitialWhenReady(fitAddon)
 
       // Register OSC 7 handler for cwd tracking
       // Shells emit: \e]7;file://hostname/path\a on every cd
@@ -418,6 +430,15 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     cancelScheduledFitRef.current = cancelScheduledFit
     flushFitRef.current = (): void => {
       flushFit(fitAddon)
+    }
+    flushFitSessionIdRef.current = sessionId
+
+    if (pendingDeferredFitFlushRef.current && !deferFitRef.current) {
+      pendingDeferredFitFlushRef.current = false
+
+      if (!didInitialFit) {
+        flushFit(fitAddon)
+      }
     }
 
     // Send initial terminal size to PTY (avoids default 80×24 when terminal is actually larger)
@@ -480,8 +501,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     // When Body unmounts, the session is closed — free resources
     return (): void => {
       cancelScheduledFit()
-      cancelScheduledFitRef.current = null
-      flushFitRef.current = null
+      if (flushFitSessionIdRef.current === sessionId) {
+        cancelScheduledFitRef.current = null
+        flushFitRef.current = null
+        flushFitSessionIdRef.current = null
+      }
       resizeObserver.disconnect()
       resizeDisposable.dispose()
       node.removeEventListener('focusin', handleFocusIn)
