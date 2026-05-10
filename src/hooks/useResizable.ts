@@ -90,10 +90,10 @@ export const useResizable = ({
   }, [])
 
   const commitSize = useCallback(
-    (nextSize: number): void => {
+    (nextSize: number, syncPreview = false): void => {
       sizeRef.current = nextSize
 
-      if (updateModeRef.current === 'commit-on-end') {
+      if (syncPreview && updateModeRef.current === 'commit-on-end') {
         preview(nextSize)
       }
 
@@ -196,7 +196,7 @@ export const useResizable = ({
       pendingSize.current = null
 
       if (finalSize !== null) {
-        commitSize(finalSize)
+        commitSize(finalSize, true)
       }
 
       setIsDragging(false)

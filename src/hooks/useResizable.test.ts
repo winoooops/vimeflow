@@ -230,6 +230,27 @@ describe('useResizable', () => {
     }
   })
 
+  test('commit-on-end keyboard resize does not call onDragPreview', () => {
+    const onDragPreview = vi.fn()
+
+    const { result } = renderHook(() =>
+      useResizable({
+        initial: 256,
+        min: 100,
+        max: 500,
+        updateMode: 'commit-on-end',
+        onDragPreview,
+      })
+    )
+
+    act(() => {
+      result.current.adjustBy(50)
+    })
+
+    expect(result.current.size).toBe(306)
+    expect(onDragPreview).not.toHaveBeenCalled()
+  })
+
   test('mouseup flushes pending size before ending drag', () => {
     const requestAnimationFrameSpy = vi
       .spyOn(window, 'requestAnimationFrame')
