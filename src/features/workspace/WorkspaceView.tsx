@@ -192,7 +192,8 @@ export const WorkspaceView = (): ReactElement => {
     const resizeHandle = sidebarResizeHandleRef.current
     if (!resizeHandle) {
       if (import.meta.env.DEV) {
-        throw new Error('Sidebar resize handle not mounted for aria-valuenow')
+        // eslint-disable-next-line no-console
+        console.error('Sidebar resize handle not mounted for aria-valuenow')
       }
 
       return
