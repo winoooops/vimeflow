@@ -301,13 +301,13 @@ describe('useResizable', () => {
         result.current.adjustBy(50)
       })
 
-      expect(result.current.size).toBe(306)
+      expect(result.current.size).toBe(426)
 
       act(() => {
         document.dispatchEvent(new MouseEvent('mouseup'))
       })
 
-      expect(result.current.size).toBe(306)
+      expect(result.current.size).toBe(426)
       expect(onDragPreview).toHaveBeenCalledTimes(1)
     } finally {
       requestAnimationFrameSpy.mockRestore()
