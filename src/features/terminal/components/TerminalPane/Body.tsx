@@ -341,6 +341,14 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       })
     }
 
+    const fitInitialWhenReady = (targetFitAddon: FitAddon): void => {
+      if (deferFitRef.current) {
+        return
+      }
+
+      fitIfNeeded(targetFitAddon, true)
+    }
+
     if (cached) {
       // Reuse existing terminal from cache
       newTerminal = cached.terminal
@@ -353,7 +361,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       // Re-fit to new container — guard against hidden (display:none) containers
       // where offsetWidth is 0. Fitting at zero width tells xterm cols≈1,
       // which causes the PTY to re-wrap scrollback into a narrow column.
-      fitIfNeeded(fitAddon, true)
+      fitInitialWhenReady(fitAddon)
     } else {
       // Create new terminal instance
       newTerminal = new Terminal({
@@ -376,7 +384,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       newTerminal.open(node)
 
       // Fit terminal to container — guard against hidden (display:none) containers
-      fitIfNeeded(fitAddon, true)
+      fitInitialWhenReady(fitAddon)
 
       // Register OSC 7 handler for cwd tracking
       // Shells emit: \e]7;file://hostname/path\a on every cd

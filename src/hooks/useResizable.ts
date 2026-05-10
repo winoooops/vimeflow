@@ -72,8 +72,10 @@ export const useResizable = ({
   const previewSize = useRef(size)
   const updateModeRef = useRef(updateMode)
   const onDragPreviewRef = useRef(onDragPreview)
+  const isDraggingRef = useRef(false)
   const startPos = useRef(0)
   const startSize = useRef(0)
+  const currentPos = useRef(0)
   const pendingSize = useRef<number | null>(null)
   const animationFrameId = useRef<number | null>(null)
 
@@ -175,9 +177,12 @@ export const useResizable = ({
   const handleMouseDown = useCallback(
     (e: React.MouseEvent): void => {
       e.preventDefault()
-      startPos.current = direction === 'horizontal' ? e.clientX : e.clientY
+      const initialPos = direction === 'horizontal' ? e.clientX : e.clientY
+      startPos.current = initialPos
+      currentPos.current = initialPos
       startSize.current = sizeRef.current
       previewSize.current = sizeRef.current
+      isDraggingRef.current = true
       setIsDragging(true)
     },
     [direction]
@@ -189,8 +194,9 @@ export const useResizable = ({
     }
 
     const handleMouseMove = (e: MouseEvent): void => {
-      const currentPos = direction === 'horizontal' ? e.clientX : e.clientY
-      const rawDelta = currentPos - startPos.current
+      const nextCurrentPos = direction === 'horizontal' ? e.clientX : e.clientY
+      currentPos.current = nextCurrentPos
+      const rawDelta = nextCurrentPos - startPos.current
       const delta = invert ? -rawDelta : rawDelta
 
       scheduleSize(clampSize(startSize.current + delta, min, max))
@@ -211,6 +217,7 @@ export const useResizable = ({
         commitSize(finalSize, updateModeRef.current === 'commit-on-end')
       }
 
+      isDraggingRef.current = false
       setIsDragging(false)
     }
 
@@ -245,6 +252,11 @@ export const useResizable = ({
 
       if (updateModeRef.current === 'commit-on-end') {
         previewSize.current = nextSize
+      }
+
+      if (isDraggingRef.current) {
+        startPos.current = currentPos.current
+        startSize.current = nextSize
       }
     },
     [min, max, cancelPendingSize, commitSize]

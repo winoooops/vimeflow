@@ -54,6 +54,8 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
 export const WorkspaceView = (): ReactElement => {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const sidebarResizeHandleRef = useRef<HTMLDivElement | null>(null)
+  // Imperative resize previews keep this ref, the CSS variable, and
+  // aria-valuenow in sync without per-frame React commits.
   const sidebarResizeValueRef = useRef(SIDEBAR_INITIAL)
 
   // Round 4, Finding 1 (codex P1): one terminal service per WorkspaceView

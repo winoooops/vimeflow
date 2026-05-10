@@ -616,6 +616,14 @@ describe('Body', () => {
           return frameCallbacks.length
         })
 
+      const offsetWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+        .mockReturnValue(840)
+
+      const offsetHeightSpy = vi
+        .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+        .mockReturnValue(600)
+
       global.ResizeObserver = vi
         .fn()
         .mockImplementation((callback: ResizeObserverCallback) => {
@@ -643,6 +651,7 @@ describe('Body', () => {
           expect(mockObserve).toHaveBeenCalled()
         })
 
+        expect(mockFitAddon.fit).not.toHaveBeenCalled()
         mockFitAddon.fit.mockClear()
 
         const container = screen.getByTestId('terminal-pane')
@@ -681,6 +690,8 @@ describe('Body', () => {
         expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
       } finally {
         requestAnimationFrameSpy.mockRestore()
+        offsetWidthSpy.mockRestore()
+        offsetHeightSpy.mockRestore()
       }
     })
 
