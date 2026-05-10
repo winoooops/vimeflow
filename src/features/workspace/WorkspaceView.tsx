@@ -189,10 +189,16 @@ export const WorkspaceView = (): ReactElement => {
       `${nextWidth}px`
     )
 
-    sidebarResizeHandleRef.current?.setAttribute(
-      'aria-valuenow',
-      String(nextWidth)
-    )
+    const resizeHandle = sidebarResizeHandleRef.current
+    if (!resizeHandle) {
+      if (import.meta.env.DEV) {
+        throw new Error('Sidebar resize handle not mounted for aria-valuenow')
+      }
+
+      return
+    }
+
+    resizeHandle.setAttribute('aria-valuenow', String(nextWidth))
   }, [])
 
   const {
@@ -531,6 +537,8 @@ export const WorkspaceView = (): ReactElement => {
           aria-orientation="vertical"
           aria-valuemin={SIDEBAR_MIN}
           aria-valuemax={SIDEBAR_MAX}
+          // aria-valuenow is owned by previewSidebarWidth so unrelated
+          // React renders do not overwrite the frame-accurate drag preview.
           onMouseDown={handleMouseDown}
           className={`
             absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize
