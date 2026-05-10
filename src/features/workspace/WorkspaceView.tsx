@@ -26,7 +26,7 @@ import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
-import { useResizable } from '../../hooks/useResizable'
+import { clampSize, useResizable } from '../../hooks/useResizable'
 import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
@@ -44,9 +44,7 @@ const SIDEBAR_MIN = 240
 const SIDEBAR_MAX = 560
 const SIDEBAR_DEFAULT = 272
 
-const SIDEBAR_INITIAL = Math.round(
-  Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, SIDEBAR_DEFAULT))
-)
+const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
 
 const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'sessions', label: 'SESSIONS' },

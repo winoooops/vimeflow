@@ -6,7 +6,7 @@ import {
   useLayoutEffect,
 } from 'react'
 
-const clampSize = (value: number, min: number, max: number): number =>
+export const clampSize = (value: number, min: number, max: number): number =>
   Math.round(Math.min(max, Math.max(min, value)))
 
 export interface UseResizableOptions {
@@ -206,7 +206,7 @@ export const useResizable = ({
       pendingSize.current = null
 
       if (finalSize !== null) {
-        commitSize(finalSize, true)
+        commitSize(finalSize, updateModeRef.current === 'commit-on-end')
       }
 
       setIsDragging(false)
