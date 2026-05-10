@@ -684,6 +684,81 @@ describe('Body', () => {
       }
     })
 
+    test('skips flushed fit when layout drag restarts before frame runs', async () => {
+      const mockObserve = vi.fn()
+      const frameCallbacks: FrameRequestCallback[] = []
+
+      const requestAnimationFrameSpy = vi
+        .spyOn(window, 'requestAnimationFrame')
+        .mockImplementation((callback: FrameRequestCallback): number => {
+          frameCallbacks.push(callback)
+
+          return frameCallbacks.length
+        })
+
+      global.ResizeObserver = vi.fn().mockImplementation(() => ({
+        observe: mockObserve,
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      }))
+
+      try {
+        const { rerender } = render(
+          <Body
+            sessionId="test-session"
+            cwd="/home/user"
+            service={defaultMockService}
+            deferFit
+          />
+        )
+
+        await waitFor(() => {
+          expect(global.ResizeObserver).toHaveBeenCalled()
+          expect(mockObserve).toHaveBeenCalled()
+        })
+
+        const container = screen.getByTestId('terminal-pane')
+        Object.defineProperty(container, 'offsetWidth', {
+          value: 840,
+          configurable: true,
+        })
+
+        Object.defineProperty(container, 'offsetHeight', {
+          value: 600,
+          configurable: true,
+        })
+
+        mockFitAddon.fit.mockClear()
+
+        rerender(
+          <Body
+            sessionId="test-session"
+            cwd="/home/user"
+            service={defaultMockService}
+          />
+        )
+
+        expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+
+        rerender(
+          <Body
+            sessionId="test-session"
+            cwd="/home/user"
+            service={defaultMockService}
+            deferFit
+          />
+        )
+
+        act(() => {
+          frameCallbacks[0](16)
+        })
+
+        expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      } finally {
+        requestAnimationFrameSpy.mockRestore()
+      }
+    })
+
     test('regression #81: ResizeObserver skips fit when container is hidden (width=0)', async () => {
       let resizeCallback: ResizeObserverCallback | undefined
       const mockObserve = vi.fn()

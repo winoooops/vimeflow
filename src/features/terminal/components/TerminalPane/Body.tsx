@@ -322,6 +322,9 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
       fitFrameId = window.requestAnimationFrame(() => {
         fitFrameId = null
+        if (deferFitRef.current) {
+          return
+        }
         fitIfNeeded(targetFitAddon)
       })
     }
@@ -331,6 +334,9 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
       fitFrameId = window.requestAnimationFrame(() => {
         fitFrameId = null
+        if (deferFitRef.current) {
+          return
+        }
         fitIfNeeded(targetFitAddon)
       })
     }
