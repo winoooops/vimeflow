@@ -190,6 +190,18 @@ export interface Session {
   projectId: string
   name: string
 
+  /** Derived from `getActivePane(session).cwd` — kept on Session as a
+   *  materialized field so existing consumers (Tab, Sidebar, WorkspaceView)
+   *  continue to read `session.workingDirectory` unchanged. Updated by
+   *  `useSessionManager` whenever the active pane's cwd changes or the
+   *  active flag rotates between panes. */
+  workingDirectory: string
+
+  /** Derived from `getActivePane(session).agentType` — same materialization
+   *  pattern as `workingDirectory`. Consumers like `agentForSession()` and
+   *  the Tab agent chip read it unchanged. */
+  agentType: AgentType
+
   /** Aggregate status. Derived from `panes[]` per
    *  `src/features/sessions/utils/sessionStatus.ts`:
    *    if any pane is 'running' → 'running'
@@ -219,18 +231,18 @@ export interface Session {
 
 ### What moves, what stays
 
-| Field                                 | Before  | After                                                                                             |
-| ------------------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
-| `Session.workingDirectory`            | session | **REMOVED** — accessed via `getActivePane(session).cwd`                                           |
-| `Session.agentType`                   | session | **REMOVED** — `pane.agentType` per pane                                                           |
-| `Session.terminalPid?`                | session | **MOVES** — `Pane.pid?` (per-PTY)                                                                 |
-| `Session.currentAction?`              | session | **STAYS** on Session (aggregated across panes; 5a no behaviour change)                            |
-| `Session.status`                      | session | **DERIVED** from panes (formula above)                                                            |
-| `Session.id`                          | session | unchanged                                                                                         |
-| `Session.name`                        | session | unchanged                                                                                         |
-| `Session.{createdAt, lastActivityAt}` | session | unchanged (`lastActivityAt` aggregates panes' activity)                                           |
-| `Session.activity`                    | session | unchanged for now (5a does NOT split per-pane activity tracking — out of scope; 5b/6 may revisit) |
-| `RestoreData` map                     | manager | **MOVES** — `pane.restoreData?: RestoreData` (one-per-pane, naturally co-located)                 |
+| Field                                 | Before  | After                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Session.workingDirectory`            | session | **DERIVED, kept on Session** — materialized from `getActivePane(session).cwd`. Updated whenever `pane.cwd` or `active` flag changes. Existing consumers (Tab cards, Sidebar subtitles, `WorkspaceView.activeCwd`, FilesView, BottomDrawer git context, agent-status panel) read this field unchanged. |
+| `Session.agentType`                   | session | **DERIVED, kept on Session** — materialized from `getActivePane(session).agentType`. Existing consumers (Tab agent chip, Sidebar agent indicator, `agentForSession` resolver) read it unchanged.                                                                                                      |
+| `Session.terminalPid?`                | session | **MOVES** — `Pane.pid?` (per-PTY)                                                                                                                                                                                                                                                                     |
+| `Session.currentAction?`              | session | **STAYS** on Session (aggregated across panes; 5a no behaviour change)                                                                                                                                                                                                                                |
+| `Session.status`                      | session | **DERIVED** from panes (formula above)                                                                                                                                                                                                                                                                |
+| `Session.id`                          | session | unchanged                                                                                                                                                                                                                                                                                             |
+| `Session.name`                        | session | unchanged                                                                                                                                                                                                                                                                                             |
+| `Session.{createdAt, lastActivityAt}` | session | unchanged (`lastActivityAt` aggregates panes' activity)                                                                                                                                                                                                                                               |
+| `Session.activity`                    | session | unchanged for now (5a does NOT split per-pane activity tracking — out of scope; 5b/6 may revisit)                                                                                                                                                                                                     |
+| `RestoreData` map                     | manager | **MOVES** — `pane.restoreData?: RestoreData` (one-per-pane, naturally co-located)                                                                                                                                                                                                                     |
 
 > Note: `Session.activity` (`AgentActivity`) stays session-level for 5a.
 > Tool calls / file changes / test results are aggregated across all panes
@@ -362,7 +374,7 @@ in a manager-exposed map.
 | `src/features/terminal/components/TerminalPane/index.tsx`             | Accept `pane: Pane` prop. Internal references to `cwd`, `mode`-derivation, ID handles → pane-keyed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | +~30, -~15              |
 | `src/features/terminal/components/TerminalPane/Header.tsx`            | `useGitBranch(pane.cwd)`, `useGitStatus(pane.cwd)` (was `session.workingDirectory`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | +~5, -~5                |
 | `src/features/terminal/components/TerminalPane/Body.tsx`              | `useTerminal(pane.ptyId)` (was `session.id`); `terminalCache` keyed by `ptyId`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | +~10, -~10              |
-| `src/features/terminal/components/TerminalPane/RestartAffordance.tsx` | `onRestart(pane.ptyId)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | +~5, -~5                |
+| `src/features/terminal/components/TerminalPane/RestartAffordance.tsx` | `onRestart(session.id)` — bubbles up via `TerminalPaneProps.onRestart` to the manager's `restartSession(sessionId)`. The Rust-IPC `service.spawn`/`service.kill` calls happen INSIDE `restartSession` using the looked-up `pane.ptyId`.                                                                                                                                                                                                                                                                                                                                                     | +~5, -~5                |
 | `src/features/terminal/ptySessionMap.ts`                              | NO API change. Internal docs note the keys are PTY handles (semantic only).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | +~3, -~3                |
 | `src/bindings/*.ts` (ts-rs generated)                                 | NO CHANGE.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | 0                       |
 | `src-tauri/src/**`                                                    | NO CHANGE.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | 0                       |
@@ -379,11 +391,11 @@ well within the 200-400 typical / 800 max budget per
 
 Three distinct id systems coexist after 5a; clarity prevents bugs:
 
-| Namespace    | Where                   | Lifetime                       | Used for                                                                                                                                                                                                           |
-| ------------ | ----------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `session.id` | React workspace state   | Whole session lifetime         | Tab strip, sidebar, `activeSessionId`, `aria-labelledby`, session order persistence.                                                                                                                               |
-| `pane.id`    | `Session.panes[].id`    | Pane lifetime within a session | Layout slot mapping (`'p0'` → grid area), `active` flag tracking, `focusedPaneId` (5b).                                                                                                                            |
-| `pane.ptyId` | `Session.panes[].ptyId` | Pane PTY lifetime              | Rust IPC: `kill({sessionId: ptyId})`, `write_pty`, `resize_pty`, `terminalCache.get(ptyId)`, agent detection (`registerPtySession(ptyId, ptyId, cwd)`), all callbacks (`onPaneReady`, `onCwdChange`, `onRestart`). |
+| Namespace    | Where                   | Lifetime                       | Used for                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------ | ----------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session.id` | React workspace state   | Whole session lifetime         | Tab strip, sidebar, `activeSessionId`, `aria-labelledby`, session order persistence.                                                                                                                                                                                                                                                                                                                                                      |
+| `pane.id`    | `Session.panes[].id`    | Pane lifetime within a session | Layout slot mapping (`'p0'` → grid area), `active` flag tracking, `focusedPaneId` (5b).                                                                                                                                                                                                                                                                                                                                                   |
+| `pane.ptyId` | `Session.panes[].ptyId` | Pane PTY lifetime              | Rust-IPC layer ONLY: `kill({sessionId: ptyId})`, `write_pty`, `resize_pty`, `terminalCache.get(ptyId)`, agent detection (`registerPtySession(ptyId, ptyId, cwd)`), `service.onData((ptyId, …))`, `service.onExit((ptyId))`, `notifyPaneReady(ptyId, handler)`. **Not** used for chrome callbacks like `TerminalPane.onCwdChange(cwd)` or `TerminalPane.onRestart(sessionId)` — those carry React `Session.id` per Decision #11 layer-(b). |
 
 > `pane.ptyId` and `session.id` are **independent values** post-5a.
 > `session.id` is generated client-side by `useSessionManager` (UUID); a
@@ -451,14 +463,21 @@ Flow:
 1. Look up session in `sessionsRef.current`. If not found, log + bail.
 2. **Kill every pane's PTY**: `const results = await Promise.allSettled(
 session.panes.map(p => service.kill({ sessionId: p.ptyId })))`. Current
-   code's `kill` is idempotent in Rust (KillError::NotPresent collapses to Ok),
-   but real failures (cache mutation error, child.kill syscall failure) can
-   still reject. `allSettled` ensures: every pane is at least ATTEMPTED; React
-   bookkeeping (step 3) runs unconditionally so we don't leak per-pane state
-   even when some kills failed; rejected entries are logged via
-   `console.warn`. Sequence preserved: the React state drop in step 4 only
-   fires after every kill has settled — no React/Rust divergence where the
-   tab disappears but a PTY is still running.
+   code's `kill` is idempotent in Rust (`KillError::NotPresent` collapses to
+   Ok), but real failures (cache mutation error, child.kill syscall failure)
+   can still reject. **Bail when any kill rejects** — Rust preserves the
+   session entry on real `KillFailed`, so dropping it from React state would
+   recreate the "invisible live process" divergence the current code avoids.
+   Behaviour:
+   - All `results` fulfilled → proceed to step 3 (full cleanup).
+   - At least one rejection → `console.warn` every rejection, **abort React
+     state drop**, leave the session visible. The user can retry by clicking
+     X again. Per-pane bookkeeping for already-killed panes
+     (`buffer.dropAllForPty`, `unregisterPtySession`) is ALSO skipped on
+     abort — premature cleanup against still-tracked Rust state would leak
+     the next pty-data event for a now-dead pane.
+     This matches the current single-pane code's try/catch semantics extended
+     to N panes.
 3. Drop bookkeeping per pane: `for (p of session.panes) {
   buffer.dropAllForPty(p.ptyId);
   unregisterPtySession(p.ptyId);
@@ -810,17 +829,30 @@ pid: undefined }]`, `layout: 'single'`. No `buffer.registerPending`
    - Both cases produce a renderable Session; a session is never
      restored without a pane (≥1 invariant per Decision #3).
 4. **Resolve active session.** `list.activeSessionId: string | null`.
-   - **Non-null case**: find session whose `panes[0].ptyId ===
-list.activeSessionId`. If found, call `onActiveResolved(matched.id)`.
-     If NOT found (cache referenced a ptyId no longer present, e.g.
-     because it was killed in a graceful-exit cleanup race): fall through
-     to null case.
-   - **Null case (or no-match)**: if any session was restored, set
-     `activeSessionId = restoredSessions[0].id` (first in cached order).
-     If zero sessions were restored, `activeSessionId = null` (auto-create
-     fires per `useAutoCreateOnEmpty`'s policy).
-   - All paths use `setActiveSessionIdRaw` (no IPC) since Rust already
-     persists the cached active value or null.
+   The resolution preserves any optimistic active id set during the load
+   window (matches existing F1-round-2 alignment in `useSessionManager`).
+   The decision tree:
+   - **Optimistic active exists** (user called `createSession` during
+     loading=true and `setActiveSessionId` already wrote to React state):
+     **prefer it** — do NOT touch the active id. The optimistic session
+     is the user's most recent intent. Skip the resolution paths below.
+   - **Non-null cached + match**: find session whose `panes[0].ptyId ===
+list.activeSessionId`. If found, call
+     `setActiveSessionIdRaw(matched.id)` (no IPC — Rust already persists
+     this value).
+   - **Non-null cached + no match** (cache referenced a ptyId no longer
+     present, e.g. killed in a graceful-exit cleanup race): fall back to
+     `restoredSessions[0].id` if any restored, else `null`. Use
+     `setActiveSessionId` (the IPC path) NOT `setActiveSessionIdRaw` —
+     Rust's cached active value diverges from the chosen fallback, so
+     the IPC roundtrip is needed to write the corrected value to cache.
+     Without this, a subsequent reload would re-attempt the stale active
+     id again.
+   - **Null cached**: if any session restored, set fallback to
+     `restoredSessions[0].id` via `setActiveSessionId` (IPC path) so Rust
+     learns the chosen first session. If zero restored, leave
+     `activeSessionId = null` and let `useAutoCreateOnEmpty` fire per its
+     policy.
 5. **Merge with optimistic in-memory sessions** (race window): if user
    called `createSession` during the load window, a fresh PTY may
    already be in `sessions[]` AND in `list.sessions`. Merge rule:
@@ -926,3 +958,5 @@ getByText > getByTestId`, 80% minimum coverage.
   - `src/features/workspace/components/TerminalZone.tsx` (rendering iteration)
   - `src/features/terminal/components/TerminalPane/` (step-4 chrome, prop extension)
 - Roadmap entry: `docs/roadmap/progress.yaml` (`ui-handoff-migration`; new `ui-s5a` step)
+
+<!-- codex-reviewed: 2026-05-10T09:14:53Z -->
