@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import type { CSSProperties, ReactElement } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IconRail } from './components/IconRail'
 import { Tabs } from '../sessions/components/Tabs'
@@ -43,6 +43,8 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
 ]
 
 export const WorkspaceView = (): ReactElement => {
+  const workspaceRef = useRef<HTMLDivElement>(null)
+
   // Round 4, Finding 1 (codex P1): one terminal service per WorkspaceView
   // instance. Both `useSessionManager` and every `TerminalPane` (via
   // `TerminalZone`) MUST receive the same instance. Under Tauri the factory
@@ -173,6 +175,13 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [sessions, updateSessionAgentType])
 
+  const previewSidebarWidth = useCallback((nextWidth: number): void => {
+    workspaceRef.current?.style.setProperty(
+      '--workspace-sidebar-width',
+      `${nextWidth}px`
+    )
+  }, [])
+
   const {
     size: sidebarWidth,
     isDragging,
@@ -181,6 +190,8 @@ export const WorkspaceView = (): ReactElement => {
     initial: SIDEBAR_DEFAULT,
     min: SIDEBAR_MIN,
     max: SIDEBAR_MAX,
+    updateMode: 'commit-on-end',
+    onDragPreview: previewSidebarWidth,
   })
 
   const activeSession = activeSessionId
@@ -445,14 +456,18 @@ export const WorkspaceView = (): ReactElement => {
 
   return (
     <div
+      ref={workspaceRef}
       data-testid="workspace-view"
       // `grid-rows-1` pins the implicit row to `1fr`; without it
       // `grid-auto-rows: auto` lets the row grow to content size and
       // `h-full` stops propagating the 100vh constraint downward.
       className="grid h-screen grid-rows-1 overflow-hidden"
-      style={{
-        gridTemplateColumns: `48px ${sidebarWidth}px 1fr auto`,
-      }}
+      style={
+        {
+          '--workspace-sidebar-width': `${sidebarWidth}px`,
+          gridTemplateColumns: '48px var(--workspace-sidebar-width) 1fr auto',
+        } as CSSProperties
+      }
     >
       <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
 
@@ -524,6 +539,7 @@ export const WorkspaceView = (): ReactElement => {
         <TerminalZone
           sessions={sessions}
           activeSessionId={activeSessionId}
+          deferTerminalFit={isDragging}
           onSessionCwdChange={updateSessionCwd}
           restoreData={restoreData}
           loading={loading}

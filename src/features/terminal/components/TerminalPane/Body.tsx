@@ -4,6 +4,7 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react'
@@ -138,6 +139,12 @@ export interface BodyProps {
    * Called when xterm gains or loses focus.
    */
   onFocusChange?: (focused: boolean) => void
+
+  /**
+   * Defer expensive xterm fitting while surrounding layout is actively being
+   * dragged. The final size is fitted when this flips back to false.
+   */
+  deferFit?: boolean
 }
 
 export interface BodyHandle {
@@ -157,12 +164,17 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     mode = 'spawn',
     onPtyStatusChange = undefined,
     onFocusChange = undefined,
+    deferFit = false,
   },
   ref
 ): ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
   const [terminal, setTerminal] = useState<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const deferFitRef = useRef(deferFit)
+  const previousDeferFitRef = useRef(deferFit)
+  const cancelScheduledFitRef = useRef<(() => void) | null>(null)
+  const flushFitRef = useRef<(() => void) | null>(null)
 
   // Use terminal hook for PTY lifecycle management
   const {
@@ -222,6 +234,20 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     onPtyStatusChangeRef.current?.(status)
   }, [status])
 
+  useLayoutEffect(() => {
+    const wasDeferred = previousDeferFitRef.current
+
+    deferFitRef.current = deferFit
+
+    if (!wasDeferred && deferFit) {
+      cancelScheduledFitRef.current?.()
+    } else if (wasDeferred && !deferFit) {
+      flushFitRef.current?.()
+    }
+
+    previousDeferFitRef.current = deferFit
+  }, [deferFit])
+
   useImperativeHandle(
     ref,
     () => ({
@@ -255,6 +281,59 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     const cached = terminalCache.get(sessionId)
     let newTerminal: Terminal
     let fitAddon: FitAddon
+    let fitFrameId: number | null = null
+    let lastFitSize: { width: number; height: number } | null = null
+
+    const cancelScheduledFit = (): void => {
+      if (fitFrameId !== null) {
+        window.cancelAnimationFrame(fitFrameId)
+        fitFrameId = null
+      }
+    }
+
+    const fitIfNeeded = (targetFitAddon: FitAddon, force = false): void => {
+      const width = node.offsetWidth
+      const height = node.offsetHeight
+
+      if (width <= 0) {
+        return
+      }
+
+      if (
+        !force &&
+        lastFitSize?.width === width &&
+        lastFitSize.height === height
+      ) {
+        return
+      }
+
+      lastFitSize = { width, height }
+      targetFitAddon.fit()
+    }
+
+    const scheduleFit = (targetFitAddon: FitAddon): void => {
+      if (deferFitRef.current) {
+        return
+      }
+
+      if (fitFrameId !== null) {
+        return
+      }
+
+      fitFrameId = window.requestAnimationFrame(() => {
+        fitFrameId = null
+        fitIfNeeded(targetFitAddon)
+      })
+    }
+
+    const flushFit = (targetFitAddon: FitAddon): void => {
+      cancelScheduledFit()
+
+      fitFrameId = window.requestAnimationFrame(() => {
+        fitFrameId = null
+        fitIfNeeded(targetFitAddon)
+      })
+    }
 
     if (cached) {
       // Reuse existing terminal from cache
@@ -268,10 +347,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       // Re-fit to new container — guard against hidden (display:none) containers
       // where offsetWidth is 0. Fitting at zero width tells xterm cols≈1,
       // which causes the PTY to re-wrap scrollback into a narrow column.
-      const width = node.offsetWidth
-      if (width > 0) {
-        fitAddon.fit()
-      }
+      fitIfNeeded(fitAddon, true)
     } else {
       // Create new terminal instance
       newTerminal = new Terminal({
@@ -294,10 +370,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       newTerminal.open(node)
 
       // Fit terminal to container — guard against hidden (display:none) containers
-      const width = node.offsetWidth
-      if (width > 0) {
-        fitAddon.fit()
-      }
+      fitIfNeeded(fitAddon, true)
 
       // Register OSC 7 handler for cwd tracking
       // Shells emit: \e]7;file://hostname/path\a on every cd
@@ -327,6 +400,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       terminalCache.set(sessionId, { terminal: newTerminal, fitAddon })
     }
 
+    cancelScheduledFitRef.current = cancelScheduledFit
+    flushFitRef.current = (): void => {
+      flushFit(fitAddon)
+    }
+
     // Send initial terminal size to PTY (avoids default 80×24 when terminal is actually larger)
     // This will be a no-op on first render but ensures PTY gets correct size on subsequent recreations
     resizeRef.current(newTerminal.cols, newTerminal.rows)
@@ -336,14 +414,27 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     // fitAddon.fit() (the trigger upstream) has already computed and applied
     // them. Calling fit() again here would re-measure the container — pure
     // overhead during rapid sidebar drag / window resize. Just forward to PTY.
+    let lastForwardedResize: { cols: number; rows: number } | null = null
+
     const resizeDisposable = newTerminal.onResize(({ cols, rows }) => {
       // Guard: don't forward resize when container is hidden (display:none).
       // Otherwise the PTY receives cols≈1 and re-wraps scrollback.
       const width = containerRef.current?.offsetWidth ?? 0
-      if (width > 0) {
-        // Notify PTY service of size change using ref (stable across renders)
-        resizeRef.current(cols, rows)
+      if (width <= 0) {
+        return
       }
+
+      if (
+        lastForwardedResize?.cols === cols &&
+        lastForwardedResize.rows === rows
+      ) {
+        return
+      }
+
+      lastForwardedResize = { cols, rows }
+
+      // Notify PTY service of size change using ref (stable across renders)
+      resizeRef.current(cols, rows)
     })
 
     const handleFocusIn = (): void => {
@@ -363,10 +454,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     // Guard: skip fit when container is hidden (display:none → width=0)
     // to avoid PTY scrollback re-wrapping at a narrow column count.
     const resizeObserver = new ResizeObserver(() => {
-      const width = containerRef.current?.offsetWidth ?? 0
-      if (width > 0) {
-        fitAddon.fit()
-      }
+      scheduleFit(fitAddon)
     })
     resizeObserver.observe(node)
 
@@ -376,6 +464,9 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     // Cleanup: disconnect observers and dispose terminal from cache
     // When Body unmounts, the session is closed — free resources
     return (): void => {
+      cancelScheduledFit()
+      cancelScheduledFitRef.current = null
+      flushFitRef.current = null
       resizeObserver.disconnect()
       resizeDisposable.dispose()
       node.removeEventListener('focusin', handleFocusIn)

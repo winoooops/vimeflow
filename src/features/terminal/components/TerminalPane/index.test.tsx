@@ -8,15 +8,19 @@ import { TerminalPane } from './index'
 vi.mock('./Body', async () => {
   const React = await import('react')
 
-  const Body = React.forwardRef<{ focusTerminal: () => void }, unknown>(
-    function MockBody(_, ref): React.ReactElement {
-      React.useImperativeHandle(ref, () => ({
-        focusTerminal: vi.fn(),
-      }))
+  const Body = React.forwardRef<
+    { focusTerminal: () => void },
+    { deferFit: boolean }
+  >(function MockBody({ deferFit }, ref): React.ReactElement {
+    React.useImperativeHandle(ref, () => ({
+      focusTerminal: vi.fn(),
+    }))
 
-      return React.createElement('div', { 'data-testid': 'body-mock' })
-    }
-  )
+    return React.createElement('div', {
+      'data-testid': 'body-mock',
+      'data-defer-fit': deferFit ? 'true' : 'false',
+    })
+  })
 
   return {
     Body,
@@ -98,6 +102,15 @@ describe('TerminalPane index', () => {
     render(<TerminalPane {...baseProps} mode="attach" />)
 
     expect(screen.getByTestId('body-mock')).toBeInTheDocument()
+  })
+
+  test('forwards deferred fit state to Body', () => {
+    render(<TerminalPane {...baseProps} deferFit />)
+
+    expect(screen.getByTestId('body-mock')).toHaveAttribute(
+      'data-defer-fit',
+      'true'
+    )
   })
 
   test('renders RestartAffordance when mode is awaiting-restart', () => {

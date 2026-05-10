@@ -33,6 +33,11 @@ export interface TerminalZoneProps {
    */
   onSessionRestart?: (sessionId: string) => void
   /**
+   * Temporarily hold xterm fitting while surrounding workspace chrome is being
+   * dragged. The active terminal gets one final fit when the drag ends.
+   */
+  deferTerminalFit?: boolean
+  /**
    * Terminal service forwarded to every `TerminalPane`. MUST be the same
    * instance the parent passes to `useSessionManager` — see Round 4
    * Finding 1 in `useSessionManager.ts` for the rationale.
@@ -48,6 +53,7 @@ export const TerminalZone = ({
   loading = false,
   onPaneReady = undefined,
   onSessionRestart = undefined,
+  deferTerminalFit = false,
   service,
 }: TerminalZoneProps): ReactElement => (
   <div data-testid="terminal-zone" className="flex min-h-0 flex-1 flex-col">
@@ -141,6 +147,7 @@ export const TerminalZone = ({
                 onRestart={onSessionRestart}
                 session={session}
                 isActive={isActive}
+                deferFit={deferTerminalFit}
               />
             </div>
           )

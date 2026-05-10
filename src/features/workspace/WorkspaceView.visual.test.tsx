@@ -99,7 +99,13 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       render(<WorkspaceView />)
       const workspace = screen.getByTestId('workspace-view')
 
-      expect(workspace.style.gridTemplateColumns).toBe('48px 272px 1fr auto')
+      expect(workspace.style.gridTemplateColumns).toBe(
+        '48px var(--workspace-sidebar-width) 1fr auto'
+      )
+
+      expect(
+        workspace.style.getPropertyValue('--workspace-sidebar-width')
+      ).toBe('272px')
     })
 
     test('workspace uses full screen height', () => {

@@ -2,7 +2,7 @@
 /* eslint-disable vitest/expect-expect */
 import type { ReactElement } from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { act, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceView } from './WorkspaceView'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
@@ -152,7 +152,13 @@ describe('WorkspaceView', () => {
     const container = screen.getByTestId('workspace-view')
 
     expect(container).toHaveClass('grid')
-    expect(container.style.gridTemplateColumns).toBe('48px 272px 1fr auto')
+    expect(container.style.gridTemplateColumns).toBe(
+      '48px var(--workspace-sidebar-width) 1fr auto'
+    )
+
+    expect(container.style.getPropertyValue('--workspace-sidebar-width')).toBe(
+      '272px'
+    )
   })
 
   test('fills viewport height', () => {
@@ -435,9 +441,63 @@ describe('WorkspaceView', () => {
     const container = screen.getByTestId('workspace-view')
 
     expect(container.style.gridTemplateColumns).toContain('48px')
-    expect(container.style.gridTemplateColumns).toContain('272px')
+    expect(container.style.gridTemplateColumns).toContain(
+      'var(--workspace-sidebar-width)'
+    )
+
+    expect(container.style.getPropertyValue('--workspace-sidebar-width')).toBe(
+      '272px'
+    )
     expect(container.style.gridTemplateColumns).toContain('1fr')
     expect(container.style.gridTemplateColumns).toContain('auto')
+  })
+
+  test('previews sidebar drag width through CSS variable before committing React state', () => {
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    try {
+      render(<WorkspaceView />)
+
+      const workspace = screen.getByTestId('workspace-view')
+      const handle = screen.getByTestId('sidebar-resize-handle')
+
+      fireEvent.mouseDown(handle, { clientX: 200 })
+
+      fireEvent.mouseMove(document, { clientX: 300 })
+
+      expect(
+        workspace.style.getPropertyValue('--workspace-sidebar-width')
+      ).toBe('272px')
+      expect(handle).toHaveAttribute('aria-valuenow', '272')
+
+      const callback = frameCallbacks[0]
+      if (!callback) {
+        throw new Error('Expected sidebar resize animation frame')
+      }
+
+      act(() => {
+        callback(16)
+      })
+
+      expect(
+        workspace.style.getPropertyValue('--workspace-sidebar-width')
+      ).toBe('372px')
+      expect(handle).toHaveAttribute('aria-valuenow', '272')
+
+      fireEvent.mouseUp(document)
+
+      expect(handle).toHaveAttribute('aria-valuenow', '372')
+    } finally {
+      requestAnimationFrameSpy.mockRestore()
+    }
   })
 
   test('mounts SessionTabs above terminal zone', () => {
