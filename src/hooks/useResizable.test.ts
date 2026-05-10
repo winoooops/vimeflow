@@ -235,6 +235,72 @@ describe('useResizable', () => {
     }
   })
 
+  test('new drag cancels pending preview from previous drag', () => {
+    const frameCallbacks: FrameRequestCallback[] = []
+    const onDragPreview = vi.fn()
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, 'cancelAnimationFrame')
+      .mockImplementation(() => undefined)
+
+    try {
+      const { result } = renderHook(() =>
+        useResizable({
+          initial: 256,
+          min: 100,
+          max: 500,
+          updateMode: 'commit-on-end',
+          onDragPreview,
+        })
+      )
+
+      act(() => {
+        result.current.handleMouseDown({
+          preventDefault: () => undefined,
+          clientX: 200,
+          clientY: 0,
+        } as React.MouseEvent)
+      })
+
+      act(() => {
+        document.dispatchEvent(new MouseEvent('mousemove', { clientX: 320 }))
+      })
+
+      const staleCallback = frameCallbacks[0]
+      if (!staleCallback) {
+        throw new Error('Expected resize animation frame to be scheduled')
+      }
+
+      act(() => {
+        result.current.handleMouseDown({
+          preventDefault: () => undefined,
+          clientX: 400,
+          clientY: 0,
+        } as React.MouseEvent)
+      })
+
+      expect(cancelAnimationFrameSpy).toHaveBeenCalledWith(1)
+
+      act(() => {
+        staleCallback(16)
+      })
+
+      expect(onDragPreview).not.toHaveBeenCalled()
+      expect(result.current.size).toBe(256)
+    } finally {
+      requestAnimationFrameSpy.mockRestore()
+      cancelAnimationFrameSpy.mockRestore()
+    }
+  })
+
   test('live mode does not call onDragPreview alongside state updates', () => {
     const frameCallbacks: FrameRequestCallback[] = []
     const onDragPreview = vi.fn()

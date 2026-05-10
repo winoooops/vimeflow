@@ -177,6 +177,7 @@ export const useResizable = ({
   const handleMouseDown = useCallback(
     (e: React.MouseEvent): void => {
       e.preventDefault()
+      cancelPendingSize()
       const initialPos = direction === 'horizontal' ? e.clientX : e.clientY
       startPos.current = initialPos
       currentPos.current = initialPos
@@ -185,7 +186,7 @@ export const useResizable = ({
       isDraggingRef.current = true
       setIsDragging(true)
     },
-    [direction]
+    [cancelPendingSize, direction]
   )
 
   useEffect(() => {
