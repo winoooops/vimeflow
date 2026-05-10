@@ -12,6 +12,38 @@
 
 ---
 
+## Codex-applied plan corrections (2026-05-10)
+
+The plan-complete codex review surfaced 8 contract / ordering issues. Fixes are applied
+inline at the affected tasks; this index is the audit trail:
+
+1. **Task 8 — `Session.id` for restored sessions stays = ptyId** by design (backward
+   compat with cached `active_session_id`). Fresh UUIDs are introduced in **Task 14**'s
+   `createSession` ONLY. Restore never mutates ids.
+2. **Task 8 — production constructors update atomically with the type change.** Steps
+   `8.4` and `8.5` (added) update `createSession`, `restartSession`, and the `onPtyExit`
+   handler in the SAME commit as the Session shape change so the build stays green.
+   Behavior is preserved (no API renames yet — those are still Task 14).
+3. **Task 11 — controller exposes `activeSessionIdRef`** in its return interface so
+   Task 14's mutations can read the latest active id without reaching into manager
+   internals. Step 3's `ActiveSessionController` interface updated.
+4. **Task 12 — `notifyPaneReady` cleanup keeps the removed-pane guard.** The release
+   callback consults a `isStillTracked(ptyId)` predicate before re-arming pending
+   state, mirroring the existing `removeSession` race fix in current code.
+5. **Task 13 — restore callbacks use refs, not closure values.** `useSessionRestore`'s
+   wiring in the manager passes a callback that reads `active.activeSessionIdRef.current`
+   inside the body, NOT the destructured `active.activeSessionId` (which captures stale
+   `null`).
+6. **Tasks 15 ↔ 16 swapped:** Task 16 (TerminalPane accepts `pane` prop) now precedes
+   Task 15 (TerminalZone passes `pane`). Renumbered as **Task 15: TerminalPane**,
+   **Task 16: TerminalZone** below.
+7. **Task 14 placeholder tests filled in** with executable assertion bodies instead of
+   `// ...` stubs.
+8. **Verification commands use `set -o pipefail`** (or drop the `| tail` filter) so
+   failing exit codes propagate. Updated in Task 0 + Task 20.
+
+---
+
 ## Working Directory
 
 **All work happens on branch `docs/step-5a-pane-model-spec`** (already created off main, contains the spec). After Task 0 confirms the baseline, all subsequent commits land on this branch.
@@ -55,10 +87,15 @@ Expected: branch `docs/step-5a-pane-model-spec`. Working tree may have uncommitt
 - [ ] **Step 2: Record baseline test count**
 
 ```bash
-npm run test 2>&1 | tail -3
+set -o pipefail; npm run test 2>&1 | tail -3
 ```
 
 Record the `Tests` line (e.g. `Tests  1234 passed (1234)`). Each subsequent task's "verify tests pass" step must show ≥ this number.
+
+> `set -o pipefail` is **required** so the pipeline's exit code reflects the
+> upstream `npm run test` command. Without it, `tail` always exits 0 and a
+> failing test run looks successful at the gate. Apply this pattern to every
+> piped verification command in this plan.
 
 - [ ] **Step 3: Record baseline lint + type-check**
 
@@ -1055,7 +1092,125 @@ npm run test 2>&1 | tail -3
 
 Expected: every test passes (count ≥ baseline from Task 0).
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 9: Update production constructors so the build stays green**
+
+Per **Codex correction #2** at the top of this plan: changing `Session` shape
+breaks `createSession` and `restartSession` immediately because they
+literally construct Session objects without `panes`/`layout`. Update them
+NOW (in this commit) — but PRESERVE existing behavior. NEW behaviors (fresh
+UUIDs, kill-failure bailout, method renames) still wait until Task 14.
+
+In `src/features/sessions/hooks/useSessionManager.ts`:
+
+**`createSession`** — replace the inner `setSessions((prev) => { const newSession = {...} })`
+literal with a panes-shaped one. Critical: keep `id: result.sessionId` (NOT a
+fresh UUID — Task 14 introduces that). Keep all existing IPC + reorder logic
+unchanged.
+
+```ts
+const newSession: Session = {
+  id: result.sessionId, // unchanged behavior; Task 14 swaps to UUID
+  projectId: 'proj-1',
+  name: `session ${prev.length + 1}`,
+  status: 'running',
+  workingDirectory: result.cwd,
+  agentType: 'generic',
+  layout: 'single',
+  panes: [
+    {
+      id: 'p0',
+      ptyId: result.sessionId,
+      cwd: result.cwd,
+      agentType: 'generic',
+      status: 'running',
+      active: true,
+      pid: result.pid,
+      restoreData: {
+        sessionId: result.sessionId,
+        cwd: result.cwd,
+        pid: result.pid,
+        replayData: '',
+        replayEndOffset: 0,
+        bufferedEvents: [],
+      },
+    },
+  ],
+  createdAt: now,
+  lastActivityAt: now,
+  activity: { ...emptyActivity },
+}
+```
+
+**`restartSession`** — find the `setSessions` updater that replaces the
+restarted session entry. Update the literal to also rotate `panes[0].ptyId`
+
+- reset `panes[0].agentType` + populate `panes[0].restoreData`:
+
+```ts
+next[idx] = {
+  ...prev[idx],
+  id: result.sessionId, // existing behavior preserved
+  status: 'running',
+  workingDirectory: result.cwd, // (was unchanged; cwd stays the active pane's cwd)
+  agentType: 'generic',
+  lastActivityAt: new Date().toISOString(),
+  panes: [
+    {
+      ...prev[idx].panes[0],
+      ptyId: result.sessionId,
+      cwd: result.cwd,
+      status: 'running',
+      agentType: 'generic',
+      pid: result.pid,
+      restoreData: {
+        sessionId: result.sessionId,
+        cwd: result.cwd,
+        pid: result.pid,
+        replayData: '',
+        replayEndOffset: 0,
+        bufferedEvents: [],
+      },
+    },
+  ],
+}
+```
+
+**`onExit` (the existing useEffect at lines ~370-386 OR Task 9's ref body if
+already extracted)** — flip both `Session.status` AND the active pane's
+status:
+
+```ts
+setSessions((prev) =>
+  prev.map((s) => {
+    if (s.panes[0]?.ptyId !== sessionId) return s
+    const newPane: Pane = {
+      ...s.panes[0],
+      status: 'completed',
+      agentType: 'generic',
+    }
+    return {
+      ...s,
+      status: 'completed',
+      agentType: 'generic',
+      panes: [newPane],
+      lastActivityAt: exitedAt,
+    }
+  })
+)
+```
+
+> Single-pane is still the only shape in 5a (Decision #8), so the `panes[0]`
+> shortcut is safe. Task 14 generalizes to `panes.findIndex` for multi-pane.
+
+- [ ] **Step 10: Run the full test suite**
+
+```bash
+set -o pipefail; npm run test 2>&1 | tail -3
+```
+
+Expected: all tests pass (count ≥ baseline from Task 0).
+
+- [ ] **Step 11: Commit**
 
 ```bash
 git add src/features/sessions/
@@ -1064,8 +1219,15 @@ git commit -m "feat(sessions): add Session.panes + layout, derive workingDirecto
 Session gains panes: Pane[] + layout: LayoutId. terminalPid? is removed
 (moves to Pane.pid?). workingDirectory and agentType stay as derived
 materialized fields (matched to active pane). sessionFromInfo extended
-to produce a single 'p0' pane per restored session. All Session-shaped
-test fixtures across the project updated to include the new fields.
+to produce a single 'p0' pane per restored session.
+
+Production constructors (createSession, restartSession, onExit handler)
+updated atomically: they now construct Session objects with panes[0]
+populated from the spawn result. Behavior preserved — Session.id still
+equals the spawn ptyId (Task 14 introduces the fresh-UUID rule).
+
+All Session-shaped test fixtures across the project updated to include
+the new fields.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -1591,8 +1753,15 @@ export interface ActiveSessionController {
   activeSessionId: string | null
   setActiveSessionId: (id: string) => void
   /** Restore-time write that bypasses the IPC roundtrip. Use when Rust
-   *  already persists the chosen value (cached active matched a session). */
-  setActiveSessionIdRaw: (id: string) => void
+   *  already persists the chosen value (cached active matched a session).
+   *  Accepts `null` for the last-tab-removed path. */
+  setActiveSessionIdRaw: (id: string | null) => void
+  /** Read-only ref tracking the latest committed `activeSessionId`. Manager
+   *  mutations (createSession / removeSession / restartSession) read this
+   *  AFTER awaits to get the freshest value (closure-captured `activeSessionId`
+   *  goes stale during in-flight IPC). Lifted onto the controller so manager
+   *  code doesn't reach into private internals. */
+  activeSessionIdRef: { readonly current: string | null }
 }
 
 export const useActiveSessionController = ({
@@ -1640,12 +1809,17 @@ export const useActiveSessionController = ({
     [service, sessionsRef]
   )
 
-  const setActiveSessionIdRaw = useCallback((id: string): void => {
+  const setActiveSessionIdRaw = useCallback((id: string | null): void => {
     activeRequestIdRef.current += 1 // supersede any in-flight pick
     setActiveSessionIdState(id)
   }, [])
 
-  return { activeSessionId, setActiveSessionId, setActiveSessionIdRaw }
+  return {
+    activeSessionId,
+    setActiveSessionId,
+    setActiveSessionIdRaw,
+    activeSessionIdRef, // exposed for manager mutations to read post-await
+  }
 }
 ```
 
@@ -1893,6 +2067,18 @@ export const usePtyBufferDrain = (
       }
 
       return (): void => {
+        // Removed-pane guard (round-8 F2 in current code): if dropAllForPty
+        // already ran (e.g. removeSession / restartSession), do NOT re-arm
+        // pending state. Without this, racing pty-data events would buffer
+        // forever under a removed ptyId, leaking memory across the lifetime
+        // of the hook.
+        const isStillTracked =
+          readyPanesRef.current.has(ptyId) ||
+          pendingPanesRef.current.has(ptyId) ||
+          bufferedRef.current.has(ptyId)
+        if (!isStillTracked) {
+          return // permanent teardown — nothing to re-arm
+        }
         readyPanesRef.current.delete(ptyId)
         pendingPanesRef.current.add(ptyId)
         if (!bufferedRef.current.has(ptyId)) {
@@ -2224,14 +2410,16 @@ const { loading } = useSessionRestore({
     })
   },
   onActiveResolved: (id) => {
-    // Optimistic preference: if active already set during load, keep it.
-    if (active.activeSessionId === null) {
+    // Optimistic preference: read FRESH active id via ref, not the closure-
+    // captured value (which was `null` at hook-create time and would falsely
+    // overwrite a user-created active session that landed during restore).
+    if (active.activeSessionIdRef.current === null) {
       active.setActiveSessionIdRaw(id)
     }
   },
   onActiveFallback: (id) => {
     // Rust didn't have this id (or had null). Fire IPC to sync cache.
-    if (active.activeSessionId === null) {
+    if (active.activeSessionIdRef.current === null) {
       active.setActiveSessionId(id)
     }
   },
@@ -2276,43 +2464,166 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 Add to `useSessionManager.test.ts`:
 
 ```ts
+// Test infrastructure used across the new tests:
+//
+// const buildService = (overrides = {}) => ({
+//   spawn: vi.fn().mockResolvedValue({ sessionId: 'pty-new', pid: 99, cwd: '/x' }),
+//   kill: vi.fn().mockResolvedValue(undefined),
+//   listSessions: vi.fn().mockResolvedValue({ sessions: [], activeSessionId: null }),
+//   reorderSessions: vi.fn().mockResolvedValue(undefined),
+//   setActiveSession: vi.fn().mockResolvedValue(undefined),
+//   updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+//   onData: vi.fn().mockResolvedValue(() => {}),
+//   onExit: vi.fn().mockReturnValue(() => {}),
+//   ...overrides,
+// } as unknown as ITerminalService)
+
 describe('createSession (pane-keyed)', () => {
   test('produces a 1-pane session with fresh UUID id (not the spawn ptyId)', async () => {
-    // ... mock service with spawn returning { sessionId: 'pty-new', pid: 1, cwd: '/x' }
-    // ... call createSession()
-    // ... assert sessions[0].id is a UUID (not 'pty-new')
-    // ... assert sessions[0].panes[0].ptyId === 'pty-new'
-    // ... assert sessions[0].panes[0].active === true
-    // ... assert sessions[0].layout === 'single'
+    const service = buildService({
+      spawn: vi
+        .fn()
+        .mockResolvedValue({ sessionId: 'pty-new', pid: 99, cwd: '/x' }),
+    })
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => {
+      result.current.createSession()
+      // Allow the spawn promise to resolve and flushSync to commit.
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const created = result.current.sessions[0]
+    expect(created.id).not.toBe('pty-new') // fresh UUID, not the ptyId
+    expect(created.id).toMatch(/^[0-9a-f-]{36}$/i) // UUID v4 shape
+    expect(created.panes).toHaveLength(1)
+    expect(created.panes[0].ptyId).toBe('pty-new')
+    expect(created.panes[0].id).toBe('p0')
+    expect(created.panes[0].active).toBe(true)
+    expect(created.layout).toBe('single')
+    // Materialized fields match the active pane.
+    expect(created.workingDirectory).toBe('/x')
+    expect(created.agentType).toBe('generic')
   })
 })
 
 describe('restartSession preserves Session.id', () => {
   test('only pane.ptyId rotates; session.id stays', async () => {
-    // ... start with 1 session whose panes[0].ptyId = 'pty-old'
-    // ... mock spawn to return ptyId 'pty-new', cwd same
-    // ... call restartSession(session.id)
-    // ... assert sessions[0].id is unchanged
-    // ... assert sessions[0].panes[0].ptyId === 'pty-new'
-    // ... assert sessions[0].panes[0].id === 'p0' (preserved layout slot)
+    // Seed a manager with one session whose panes[0].ptyId = 'pty-old' via
+    // the listSessions restore path, then spawn returns 'pty-new' on restart.
+    const service = buildService({
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          {
+            id: 'pty-old',
+            cwd: '/x',
+            status: {
+              kind: 'Alive',
+              pid: 1,
+              replay_data: '',
+              replay_end_offset: 0,
+            },
+          },
+        ],
+        activeSessionId: 'pty-old',
+      }),
+      spawn: vi
+        .fn()
+        .mockResolvedValue({ sessionId: 'pty-new', pid: 2, cwd: '/x' }),
+    })
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const sessionIdBefore = result.current.sessions[0].id
+
+    await act(async () => {
+      result.current.restartSession(sessionIdBefore)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const restarted = result.current.sessions[0]
+    expect(restarted.id).toBe(sessionIdBefore) // preserved
+    expect(restarted.panes[0].ptyId).toBe('pty-new') // rotated
+    expect(restarted.panes[0].id).toBe('p0') // layout slot preserved
+    expect(restarted.panes[0].status).toBe('running')
+    expect(restarted.panes[0].agentType).toBe('generic') // reset
   })
 })
 
 describe('removeSession bails on real kill failure', () => {
   test('rejected kill leaves session visible', async () => {
-    // ... mock service.kill to reject with new Error('KillFailed')
-    // ... call removeSession(session.id)
-    // ... assert sessions[].length unchanged (session still visible)
-    // ... assert console.warn called
+    const service = buildService({
+      kill: vi.fn().mockRejectedValue(new Error('KillFailed')),
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          {
+            id: 'pty-1',
+            cwd: '/x',
+            status: {
+              kind: 'Alive',
+              pid: 1,
+              replay_data: '',
+              replay_end_offset: 0,
+            },
+          },
+        ],
+        activeSessionId: 'pty-1',
+      }),
+    })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions).toHaveLength(1)
+    const sessionId = result.current.sessions[0].id
+
+    await act(async () => {
+      result.current.removeSession(sessionId)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions).toHaveLength(1) // still visible
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('removeSession: kill failed for a pane'),
+      expect.any(Error)
+    )
+    warnSpy.mockRestore()
   })
 })
 
 describe('updatePaneCwd (renamed from updateSessionCwd)', () => {
-  test('updates pane.cwd via paneId, mirrors to Rust via pane.ptyId', () => {
-    // ... call updatePaneCwd(sess.id, 'p0', '/new/cwd')
-    // ... assert sessions[0].panes[0].cwd === '/new/cwd'
-    // ... assert sessions[0].workingDirectory === '/new/cwd' (materialized)
-    // ... assert service.updateSessionCwd called with ('pty-1', '/new/cwd')
+  test('updates pane.cwd via paneId, mirrors to Rust via pane.ptyId', async () => {
+    const service = buildService({
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          {
+            id: 'pty-1',
+            cwd: '/old',
+            status: {
+              kind: 'Alive',
+              pid: 1,
+              replay_data: '',
+              replay_end_offset: 0,
+            },
+          },
+        ],
+        activeSessionId: 'pty-1',
+      }),
+    })
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const sessionId = result.current.sessions[0].id
+
+    act(() => {
+      result.current.updatePaneCwd(sessionId, 'p0', '/new/cwd')
+    })
+
+    const updated = result.current.sessions[0]
+    expect(updated.panes[0].cwd).toBe('/new/cwd')
+    expect(updated.workingDirectory).toBe('/new/cwd') // materialized
+    expect(service.updateSessionCwd).toHaveBeenCalledWith('pty-1', '/new/cwd')
   })
 })
 ```
@@ -2695,7 +3006,12 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ---
 
-## Task 15: Update `TerminalZone` to pass `pane` to `TerminalPane`
+## Task 16 (was 15): Update `TerminalZone` to pass `pane` to `TerminalPane`
+
+> **ORDER NOTE (Codex correction #6):** This task now follows Task 15
+> (TerminalPane index.tsx) below. The TerminalPane prop interface MUST
+> accept `pane` before TerminalZone passes it, otherwise the JSX boundary
+> fails type-check.
 
 **Files:**
 
@@ -2826,7 +3142,11 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ---
 
-## Task 16: Update `TerminalPane/index.tsx` to consume `pane` prop
+## Task 15 (was 16): Update `TerminalPane/index.tsx` to consume `pane` prop
+
+> **ORDER NOTE (Codex correction #6):** This task runs FIRST among the
+> TerminalPane / TerminalZone pair so the prop is available when Task 16
+> (TerminalZone) starts passing it.
 
 **Files:**
 
@@ -3107,15 +3427,17 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 - [ ] **Step 1: Full test suite**
 
 ```bash
-npm run test 2>&1 | tail -3
+set -o pipefail; npm run test 2>&1 | tail -3
 ```
 
-Expected: ≥ baseline test count from Task 0.
+Expected: ≥ baseline test count from Task 0. Failed exit code propagates
+through `tail` thanks to `pipefail` — without it, a failing test run
+silently appears successful.
 
 - [ ] **Step 2: Type check**
 
 ```bash
-npm run type-check 2>&1 | tail -3
+set -o pipefail; npm run type-check 2>&1 | tail -3
 ```
 
 Expected: 0 errors.
@@ -3123,7 +3445,7 @@ Expected: 0 errors.
 - [ ] **Step 3: Lint**
 
 ```bash
-npm run lint 2>&1 | tail -3
+set -o pipefail; npm run lint 2>&1 | tail -3
 ```
 
 Expected: 0 errors, 0 warnings (no `console.log`, `test()` not `it()`).
@@ -3131,7 +3453,7 @@ Expected: 0 errors, 0 warnings (no `console.log`, `test()` not `it()`).
 - [ ] **Step 4: Format check**
 
 ```bash
-npm run format:check 2>&1 | tail -3
+set -o pipefail; npm run format:check 2>&1 | tail -3
 ```
 
 Expected: clean. If not, run `npm run format` and amend the most recent commit.
