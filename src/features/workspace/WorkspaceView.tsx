@@ -44,6 +44,10 @@ const SIDEBAR_MIN = 240
 const SIDEBAR_MAX = 560
 const SIDEBAR_DEFAULT = 272
 
+const SIDEBAR_INITIAL = Math.round(
+  Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, SIDEBAR_DEFAULT))
+)
+
 const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'sessions', label: 'SESSIONS' },
   { id: 'files', label: 'FILES' },
@@ -52,7 +56,7 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
 export const WorkspaceView = (): ReactElement => {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const sidebarResizeHandleRef = useRef<HTMLDivElement | null>(null)
-  const sidebarResizeValueRef = useRef(SIDEBAR_DEFAULT)
+  const sidebarResizeValueRef = useRef(SIDEBAR_INITIAL)
 
   // Round 4, Finding 1 (codex P1): one terminal service per WorkspaceView
   // instance. Both `useSessionManager` and every `TerminalPane` (via

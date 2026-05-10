@@ -33,6 +33,8 @@ export interface UseResizableOptions {
   /**
    * Receives coalesced preview sizes without requiring a React state update.
    * Useful for hot splitter drags that can update a CSS variable directly.
+   * Programmatic `adjustBy` calls intentionally skip this callback; callers
+   * should mirror committed keyboard resize through their normal render path.
    */
   onDragPreview?: (size: number) => void
 }
