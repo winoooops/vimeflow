@@ -446,7 +446,10 @@ export const WorkspaceView = (): ReactElement => {
   return (
     <div
       data-testid="workspace-view"
-      className="grid h-screen overflow-hidden"
+      // `grid-rows-1` pins the implicit row to `1fr`; without it
+      // `grid-auto-rows: auto` lets the row grow to content size and
+      // `h-full` stops propagating the 100vh constraint downward.
+      className="grid h-screen grid-rows-1 overflow-hidden"
       style={{
         gridTemplateColumns: `48px ${sidebarWidth}px 1fr auto`,
       }}

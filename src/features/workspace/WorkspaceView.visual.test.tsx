@@ -115,6 +115,15 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
 
       expect(workspace.className).toContain('overflow-hidden')
     })
+
+    test('grid pins the implicit row to 1fr so 100vh propagates downward', () => {
+      // Without `grid-rows-1`, `grid-auto-rows: auto` lets the row grow
+      // to content size and the sidebar overflows 100vh.
+      render(<WorkspaceView />)
+      const workspace = screen.getByTestId('workspace-view')
+
+      expect(workspace).toHaveClass('grid-rows-1')
+    })
   })
 
   describe('Color Tokens: Catppuccin Mocha Palette', () => {
