@@ -3518,3 +3518,5 @@ If nothing to commit: skip.
 > Per the calling planner: control returns to `/lifeline:planner` for codex review of this plan before any implementation begins. Do NOT chain to executing-plans or subagent-driven-development from here.
 
 After codex review of this plan completes, the user will pick the execution mode (subagent-driven or inline) at that time.
+
+<!-- codex-reviewed: 2026-05-10T14:14:57Z -->
