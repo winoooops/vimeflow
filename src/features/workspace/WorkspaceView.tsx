@@ -44,6 +44,7 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
 
 export const WorkspaceView = (): ReactElement => {
   const workspaceRef = useRef<HTMLDivElement>(null)
+  const sidebarResizeHandleRef = useRef<HTMLDivElement>(null)
 
   // Round 4, Finding 1 (codex P1): one terminal service per WorkspaceView
   // instance. Both `useSessionManager` and every `TerminalPane` (via
@@ -179,6 +180,11 @@ export const WorkspaceView = (): ReactElement => {
     workspaceRef.current?.style.setProperty(
       '--workspace-sidebar-width',
       `${nextWidth}px`
+    )
+
+    sidebarResizeHandleRef.current?.setAttribute(
+      'aria-valuenow',
+      String(nextWidth)
     )
   }, [])
 
@@ -508,6 +514,7 @@ export const WorkspaceView = (): ReactElement => {
 
         {/* Resize handle */}
         <div
+          ref={sidebarResizeHandleRef}
           data-testid="sidebar-resize-handle"
           role="separator"
           aria-orientation="vertical"

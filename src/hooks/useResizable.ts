@@ -206,16 +206,7 @@ export const useResizable = ({
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [
-    isDragging,
-    min,
-    max,
-    direction,
-    invert,
-    commitSize,
-    flushPendingSize,
-    scheduleSize,
-  ])
+  }, [isDragging, min, max, direction, invert, commitSize, scheduleSize])
 
   useEffect(
     () => (): void => {

@@ -490,7 +490,7 @@ describe('WorkspaceView', () => {
       expect(
         workspace.style.getPropertyValue('--workspace-sidebar-width')
       ).toBe('372px')
-      expect(handle).toHaveAttribute('aria-valuenow', '272')
+      expect(handle).toHaveAttribute('aria-valuenow', '372')
 
       fireEvent.mouseUp(document)
 
