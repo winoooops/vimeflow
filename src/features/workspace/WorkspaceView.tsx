@@ -214,13 +214,6 @@ export const WorkspaceView = (): ReactElement => {
     onDragPreview: previewSidebarWidth,
   })
 
-  const setSidebarResizeHandle = useCallback(
-    (element: HTMLDivElement | null): void => {
-      sidebarResizeHandleRef.current = element
-    },
-    []
-  )
-
   useLayoutEffect(() => {
     previewSidebarWidth(sidebarWidth)
   }, [previewSidebarWidth, sidebarWidth])
@@ -540,7 +533,7 @@ export const WorkspaceView = (): ReactElement => {
 
         {/* Resize handle */}
         <div
-          ref={setSidebarResizeHandle}
+          ref={sidebarResizeHandleRef}
           data-testid="sidebar-resize-handle"
           role="separator"
           aria-orientation="vertical"
