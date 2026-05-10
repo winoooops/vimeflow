@@ -538,8 +538,10 @@ export const WorkspaceView = (): ReactElement => {
           aria-orientation="vertical"
           aria-valuemin={SIDEBAR_MIN}
           aria-valuemax={SIDEBAR_MAX}
-          // aria-valuenow is owned by previewSidebarWidth so unrelated
-          // React renders do not overwrite the frame-accurate drag preview.
+          aria-valuenow={sidebarWidth}
+          // aria-valuenow has a JSX fallback for a11y tooling; live drag
+          // preview remains owned by previewSidebarWidth while sidebarWidth
+          // is stable during commit-on-end drags.
           onMouseDown={handleMouseDown}
           className={`
             absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize
