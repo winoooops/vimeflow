@@ -56,7 +56,7 @@ export const WorkspaceView = (): ReactElement => {
   const sidebarResizeHandleRef = useRef<HTMLDivElement | null>(null)
   // Imperative resize previews keep this ref, the CSS variable, and
   // aria-valuenow in sync without per-frame React commits.
-  const sidebarResizeValueRef = useRef(SIDEBAR_INITIAL)
+  const sidebarResizeValueRef = useRef<number | null>(null)
 
   // Round 4, Finding 1 (codex P1): one terminal service per WorkspaceView
   // instance. Both `useSessionManager` and every `TerminalPane` (via
@@ -193,7 +193,7 @@ export const WorkspaceView = (): ReactElement => {
       sidebarResizeHandleRef.current = element
       element?.setAttribute(
         'aria-valuenow',
-        String(sidebarResizeValueRef.current)
+        String(sidebarResizeValueRef.current ?? SIDEBAR_INITIAL)
       )
     },
     []
@@ -206,11 +206,7 @@ export const WorkspaceView = (): ReactElement => {
     }
 
     const nextCssWidth = `${nextWidth}px`
-    if (
-      sidebarResizeValueRef.current === nextWidth &&
-      workspaceElement.style.getPropertyValue('--workspace-sidebar-width') ===
-        nextCssWidth
-    ) {
+    if (sidebarResizeValueRef.current === nextWidth) {
       return
     }
 
@@ -517,7 +513,7 @@ export const WorkspaceView = (): ReactElement => {
         {
           // `--workspace-sidebar-width` is owned by previewSidebarWidth so
           // React rerenders cannot overwrite an in-progress drag preview.
-          gridTemplateColumns: `48px var(--workspace-sidebar-width, ${SIDEBAR_DEFAULT}px) 1fr auto`,
+          gridTemplateColumns: `48px var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px) 1fr auto`,
         } as CSSProperties
       }
     >
