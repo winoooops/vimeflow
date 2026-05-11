@@ -1,6 +1,37 @@
 // Session domain types — owned by src/features/sessions/.
+// cspell:ignore vsplit hsplit
 
 export type SessionStatus = 'running' | 'paused' | 'completed' | 'errored'
+
+export type LayoutId = 'single' | 'vsplit' | 'hsplit' | 'threeRight' | 'quad'
+
+export interface Pane {
+  /** Session-scoped pane id, e.g. `'p0'`, `'p1'`. Stable across renders;
+   * used to address the pane within `Session.panes`. NOT a Rust handle. */
+  id: string
+
+  /** Rust PTY handle. Equals what the Rust IPC layer calls `sessionId` on
+   * the wire. Used for every PTY operation. */
+  ptyId: string
+
+  /** Per-pane working directory. */
+  cwd: string
+
+  /** Detected agent CLI for this pane. */
+  agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
+
+  /** Materialized pane status. */
+  status: SessionStatus
+
+  /** Restoration buffer for buffered-event drain. */
+  restoreData?: import('../hooks/useSessionManager').RestoreData
+
+  /** OS process id of the PTY. */
+  pid?: number
+
+  /** Exactly one pane per session has `active === true`. */
+  active: boolean
+}
 
 export interface Session {
   id: string

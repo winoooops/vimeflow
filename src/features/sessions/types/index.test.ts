@@ -1,5 +1,8 @@
 import { describe, test, expect } from 'vitest'
+// cspell:ignore vsplit hsplit
 import type {
+  LayoutId,
+  Pane,
   Session,
   SessionStatus,
   FileChange,
@@ -29,6 +32,42 @@ describe('Session Types', () => {
   })
 
   describe('Session', () => {
+    test('LayoutId enumerates the five canonical layouts', () => {
+      const ids: LayoutId[] = [
+        'single',
+        'vsplit',
+        'hsplit',
+        'threeRight',
+        'quad',
+      ]
+      expect(ids).toHaveLength(5)
+    })
+
+    test('Pane has the documented fields', () => {
+      const pane: Pane = {
+        id: 'p0',
+        ptyId: 'pty-abc-123',
+        cwd: '/home/will/repo',
+        agentType: 'claude-code',
+        status: 'running',
+        active: true,
+        pid: 12345,
+        restoreData: undefined,
+      }
+
+      expect(pane.id).toBe('p0')
+      expect(pane.active).toBe(true)
+    })
+
+    test('Session keeps workingDirectory and agentType (derived materialized fields)', () => {
+      const session: Pick<Session, 'workingDirectory' | 'agentType'> = {
+        workingDirectory: '/home/will/repo',
+        agentType: 'claude-code',
+      }
+
+      expect(session.workingDirectory).toBe('/home/will/repo')
+    })
+
     test('creates valid session object', () => {
       const session: Session = {
         id: 'sess-1',
