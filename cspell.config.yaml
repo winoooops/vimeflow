@@ -8,6 +8,10 @@ words:
   - notebookedit
   - multiedit
 
+  # Buffer-drain F6 fix: late-event tombstoning of removed pty ids
+  - tombstoned
+  - tombstoning
+
   # Anthropic id prefixes appearing in code and test fixtures
   - toolu
 

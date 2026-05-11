@@ -132,4 +132,30 @@ describe('useActiveSessionController', () => {
     expect(result.current.activeSessionId).toBe('sess-A')
     expect(setActive).not.toHaveBeenCalled()
   })
+
+  // F5 (claude MEDIUM) regression: setActiveSessionId must look up the
+  // session BEFORE mutating ref+state. Calling with a non-existent id
+  // must be a no-op (no ghost state, no IPC).
+  test('ignores missing session id without mutating active state or firing IPC', () => {
+    const setActive = vi.fn().mockResolvedValue(undefined)
+    const service = buildService(setActive)
+    const sessionsRef = { current: [session('sess-A', 'pty-A')] }
+
+    const { result } = renderHook(() =>
+      useActiveSessionController({ service, sessionsRef })
+    )
+
+    act(() => {
+      result.current.setActiveSessionIdRaw('sess-A')
+    })
+    setActive.mockClear()
+
+    act(() => {
+      result.current.setActiveSessionId('does-not-exist')
+    })
+
+    expect(result.current.activeSessionId).toBe('sess-A')
+    expect(result.current.activeSessionIdRef.current).toBe('sess-A')
+    expect(setActive).not.toHaveBeenCalled()
+  })
 })

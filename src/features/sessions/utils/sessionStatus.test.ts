@@ -39,4 +39,11 @@ describe('deriveSessionStatus', () => {
   test('single pane proxies its status', () => {
     expect(deriveSessionStatus([pane('running')])).toBe('running')
   })
+
+  test('empty panes -> errored (5a invariant violation surface)', () => {
+    // Sessions must carry >=1 pane per the model. An empty panes[] is a
+    // hard bug; surface it as 'errored' rather than vacuously 'completed'
+    // (Array.every of an empty array is true).
+    expect(deriveSessionStatus([])).toBe('errored')
+  })
 })

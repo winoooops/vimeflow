@@ -27,10 +27,23 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
   const bufferedRef = useRef(new Map<string, BufferedEvent[]>())
   const pendingPanesRef = useRef(new Set<string>())
   const readyPanesRef = useRef(new Set<string>())
+  // F6 (claude MEDIUM): tombstones for ptyIds whose session has been
+  // removed via dropAllForPty. PTY-exit / pty-data events can race the
+  // kill IPC and arrive AFTER cleanup; without tombstones they would
+  // re-populate bufferedRef, then the notifyPaneReady release would see
+  // `isStillTracked === true` and re-arm the dead pane, leaking
+  // bookkeeping forever. The tombstone set bounds itself by the number
+  // of sessions removed during the app lifetime (typically O(tens)).
+  // PTY ids are not reused — Rust generates fresh UUIDs per spawn — so
+  // permanent tombstoning is safe.
+  const tombstonedPanesRef = useRef(new Set<string>())
 
   const bufferEvent = useCallback<PtyBufferDrain['bufferEvent']>(
     (ptyId, data, offsetStart, byteLen) => {
-      if (readyPanesRef.current.has(ptyId)) {
+      if (
+        tombstonedPanesRef.current.has(ptyId) ||
+        readyPanesRef.current.has(ptyId)
+      ) {
         return
       }
 
@@ -46,6 +59,13 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
 
   const notifyPaneReady = useCallback<PtyBufferDrain['notifyPaneReady']>(
     (ptyId, handler) => {
+      // F6: dead pane already tombstoned — caller's xterm subscription is
+      // a no-op for this id, drain nothing, return a no-op release so
+      // the pane unmount cleanup doesn't re-arm pending state.
+      if (tombstonedPanesRef.current.has(ptyId)) {
+        return (): void => undefined
+      }
+
       readyPanesRef.current.add(ptyId)
       pendingPanesRef.current.delete(ptyId)
 
@@ -59,9 +79,10 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
 
       return (): void => {
         const isStillTracked =
-          readyPanesRef.current.has(ptyId) ||
-          pendingPanesRef.current.has(ptyId) ||
-          bufferedRef.current.has(ptyId)
+          !tombstonedPanesRef.current.has(ptyId) &&
+          (readyPanesRef.current.has(ptyId) ||
+            pendingPanesRef.current.has(ptyId) ||
+            bufferedRef.current.has(ptyId))
         if (!isStillTracked) {
           return
         }
@@ -78,6 +99,11 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
 
   const registerPending = useCallback<PtyBufferDrain['registerPending']>(
     (ptyId) => {
+      // F6: refuse to track a tombstoned id (e.g. a kill-then-respawn
+      // race where Rust DID reuse an id — guard for it anyway).
+      if (tombstonedPanesRef.current.has(ptyId)) {
+        return
+      }
       pendingPanesRef.current.add(ptyId)
     },
     []
@@ -89,6 +115,10 @@ export const usePtyBufferDrain = (): PtyBufferDrain => {
 
   const dropAllForPty = useCallback<PtyBufferDrain['dropAllForPty']>(
     (ptyId) => {
+      // F6: tombstone FIRST so any racing pty-data event arriving between
+      // here and Rust's actual kill is dropped on the floor instead of
+      // re-populating bufferedRef.
+      tombstonedPanesRef.current.add(ptyId)
       readyPanesRef.current.delete(ptyId)
       pendingPanesRef.current.delete(ptyId)
       bufferedRef.current.delete(ptyId)

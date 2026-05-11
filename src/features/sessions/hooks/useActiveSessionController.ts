@@ -34,15 +34,22 @@ export const useActiveSessionController = ({
 
   const setActiveSessionId = useCallback(
     (id: string): void => {
-      const myReq = ++activeRequestIdRef.current
-      const prev = activeSessionIdRef.current
-      activeSessionIdRef.current = id
-      setActiveSessionIdState(id)
-
+      // F5 (claude MEDIUM): look up the session BEFORE mutating ref+state.
+      // The previous order eagerly wrote the id even when sessionsRef
+      // contained no matching session, leaving React state + ref pointing
+      // to a ghost id with no IPC fired — WorkspaceView's `activeSession`
+      // would be undefined and the entire chrome (cwd, agent-status,
+      // file explorer) would silently zero out until the user clicked
+      // another tab.
       const session = sessionsRef.current.find((s) => s.id === id)
       if (!session) {
         return
       }
+
+      const myReq = ++activeRequestIdRef.current
+      const prev = activeSessionIdRef.current
+      activeSessionIdRef.current = id
+      setActiveSessionIdState(id)
 
       const ptyId = getActivePane(session).ptyId
 

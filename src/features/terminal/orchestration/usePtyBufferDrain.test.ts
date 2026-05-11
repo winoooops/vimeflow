@@ -66,4 +66,37 @@ describe('usePtyBufferDrain', () => {
 
     expect(result.current.getBufferedSnapshot('pty-1')).toEqual([])
   })
+
+  // F6 (claude MEDIUM) regression: a late pty-data event arriving AFTER
+  // dropAllForPty must not re-populate bufferedRef and must not let the
+  // pane-unmount cleanup re-arm pending state (the prior implementation
+  // leaked one entry per removed session).
+  test('tombstones a dropped ptyId so late events + cleanup do not re-arm', () => {
+    const { result } = renderHook(() => usePtyBufferDrain())
+    const handler = vi.fn()
+    const lateHandler = vi.fn()
+
+    result.current.registerPending('pty-1')
+    const release = result.current.notifyPaneReady('pty-1', handler)
+
+    // Session removed.
+    result.current.dropAllForPty('pty-1')
+
+    // Late pty-data event from Rust — must be dropped, not buffered.
+    result.current.bufferEvent('pty-1', 'late', 0, 4)
+    expect(result.current.getBufferedSnapshot('pty-1')).toEqual([])
+
+    // Pane unmount cleanup fires. Tombstone makes isStillTracked false,
+    // no re-arm — pendingPanesRef stays empty for the dead pty.
+    release()
+    expect(result.current.getBufferedSnapshot('pty-1')).toEqual([])
+
+    // A subsequent (incorrect) notifyPaneReady on the tombstoned id is
+    // a no-op: the handler is never invoked, and the returned release
+    // is a no-op too.
+    const release2 = result.current.notifyPaneReady('pty-1', lateHandler)
+    expect(lateHandler).not.toHaveBeenCalled()
+    release2()
+    expect(result.current.getBufferedSnapshot('pty-1')).toEqual([])
+  })
 })
