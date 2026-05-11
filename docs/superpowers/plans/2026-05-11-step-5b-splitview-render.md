@@ -1574,3 +1574,5 @@ git branch -D feat/step-5b-splitview-render
 ```
 
 No state is published until the PR is opened in Task 13 Step 4.
+
+<!-- codex-reviewed: 2026-05-11T17:06:34Z -->
