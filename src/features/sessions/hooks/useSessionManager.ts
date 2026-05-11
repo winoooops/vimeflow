@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import type { Session } from '../types'
-import type { SessionList, SessionInfo } from '../../../bindings'
+import type { SessionList } from '../../../bindings'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type {
   RestoreData,
@@ -13,23 +13,9 @@ import {
   unregisterPtySession,
 } from '../../terminal/ptySessionMap'
 import { emptyActivity } from '../constants'
-import { tabName } from '../utils/tabName'
+import { sessionFromInfo } from '../utils/sessionFromInfo'
 
 export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
-
-function sessionFromInfo(info: SessionInfo, index: number): Session {
-  return {
-    id: info.id,
-    projectId: 'proj-1',
-    name: tabName(info.cwd, index),
-    status: info.status.kind === 'Alive' ? 'running' : 'completed',
-    workingDirectory: info.cwd,
-    agentType: 'generic',
-    createdAt: new Date().toISOString(),
-    lastActivityAt: new Date().toISOString(),
-    activity: { ...emptyActivity },
-  }
-}
 
 export interface SessionManager {
   sessions: Session[]
