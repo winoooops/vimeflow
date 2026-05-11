@@ -668,7 +668,7 @@ describe('WorkspaceView', () => {
     expect(Array.from(stack?.children ?? [])).toEqual([alert, status])
   })
 
-  test('lifts useAgentStatus and forwards the latest activeSessionId', async () => {
+  test('lifts useAgentStatus and forwards the latest active pane ptyId', async () => {
     render(<WorkspaceView />)
 
     // Wait for session restore to settle (the listSessions mock resolves
@@ -681,7 +681,8 @@ describe('WorkspaceView', () => {
 
     // Latest call arg, not call count — activeSessionId flips from null
     // to the restored id during mount, and React may re-render multiple
-    // times. We assert the *value* of the most-recent call.
+    // times. Restored sessions keep ptyId === session id for compatibility,
+    // so this pins the active-pane handle that useAgentStatus now receives.
     expect(lastArg).toBe('sess-1')
   })
 

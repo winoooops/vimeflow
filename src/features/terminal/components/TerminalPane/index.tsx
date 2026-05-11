@@ -7,9 +7,9 @@ import {
 } from 'react'
 import { useGitBranch } from '../../../diff/hooks/useGitBranch'
 import { useGitStatus } from '../../../diff/hooks/useGitStatus'
-import type { Session, SessionStatus } from '../../../sessions/types'
+import type { Pane, Session, SessionStatus } from '../../../sessions/types'
 import { agentForSession } from '../../../sessions/utils/agentForSession'
-import type { NotifyPaneReady, RestoreData } from '../../hooks/useTerminal'
+import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
 import { aggregateLineDelta } from './aggregateLineDelta'
 import { Body, type BodyHandle } from './Body'
@@ -25,19 +25,15 @@ import { useFocusedPane } from './useFocusedPane'
 export type TerminalPaneMode = 'attach' | 'spawn' | 'awaiting-restart'
 
 export interface TerminalPaneProps {
-  sessionId: string
-  cwd: string
+  session: Session
+  pane: Pane
+  isActive: boolean
   service: ITerminalService
-  shell?: string
-  env?: Record<string, string>
-  restoredFrom?: RestoreData
-  onCwdChange?: (cwd: string) => void
   onPaneReady?: NotifyPaneReady
   mode?: TerminalPaneMode
-  onRestart?: (sessionId: string) => void
-  session: Session
-  isActive: boolean
   onClose?: (sessionId: string) => void
+  onCwdChange?: (cwd: string) => void
+  onRestart?: (sessionId: string) => void
 }
 
 export {
@@ -47,19 +43,15 @@ export {
 } from './Body'
 
 export const TerminalPane = ({
-  sessionId,
-  cwd,
+  session,
+  pane,
+  isActive,
   service,
-  shell = undefined,
-  env = undefined,
-  restoredFrom = undefined,
-  onCwdChange = undefined,
   onPaneReady = undefined,
   mode = 'spawn',
-  onRestart = undefined,
-  session,
-  isActive,
   onClose = undefined,
+  onCwdChange = undefined,
+  onRestart = undefined,
 }: TerminalPaneProps): ReactElement => {
   const agent = agentForSession(session)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -73,20 +65,20 @@ export const TerminalPane = ({
 
   const pipStatus: SessionStatus =
     mode === 'awaiting-restart'
-      ? session.status
+      ? pane.status
       : ptyStatusToSessionStatus(ptyStatus)
 
   const isPaused = pipStatus === 'paused'
 
-  const { branch } = useGitBranch(session.workingDirectory, {
+  const { branch } = useGitBranch(pane.cwd, {
     enabled: isActive,
   })
 
-  const { files, filesCwd } = useGitStatus(session.workingDirectory, {
+  const { files, filesCwd } = useGitStatus(pane.cwd, {
     enabled: isActive,
   })
 
-  const isFresh = filesCwd === session.workingDirectory
+  const isFresh = filesCwd === pane.cwd
 
   const { added, removed } = useMemo(
     () => (isFresh ? aggregateLineDelta(files) : { added: 0, removed: 0 }),
@@ -177,12 +169,10 @@ export const TerminalPane = ({
         <div className="relative min-h-0 flex-1">
           <Body
             ref={bodyRef}
-            sessionId={sessionId}
-            cwd={cwd}
+            sessionId={pane.ptyId}
+            cwd={pane.cwd}
             service={service}
-            shell={shell}
-            env={env}
-            restoredFrom={restoredFrom}
+            restoredFrom={pane.restoreData}
             onCwdChange={onCwdChange}
             onPaneReady={onPaneReady}
             mode={mode}

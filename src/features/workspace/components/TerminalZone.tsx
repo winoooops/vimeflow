@@ -6,18 +6,16 @@ import {
 } from '../../terminal/components/TerminalPane'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type {
-  RestoreData,
   PaneEventHandler,
   NotifyPaneReadyResult,
 } from '../../sessions/hooks/useSessionManager'
+import { getActivePane } from '../../sessions/utils/activeSessionPane'
 import { isOpenSessionStatus } from '../../sessions/utils/pickNextVisibleSessionId'
 
 export interface TerminalZoneProps {
   sessions: Session[]
   activeSessionId: string | null
-  onSessionCwdChange?: (sessionId: string, cwd: string) => void
-  /** Restore data per session id, populated during mount-time restore */
-  restoreData?: Map<string, RestoreData>
+  onSessionCwdChange?: (sessionId: string, paneId: string, cwd: string) => void
   /** True until the initial restore IPC + drain completes */
   loading?: boolean
   /**
@@ -44,7 +42,6 @@ export const TerminalZone = ({
   sessions,
   activeSessionId,
   onSessionCwdChange = undefined,
-  restoreData = undefined,
   loading = false,
   onPaneReady = undefined,
   onSessionRestart = undefined,
@@ -75,7 +72,7 @@ export const TerminalZone = ({
         // for newly-created sessions and resurrected dead ones on reload).
         sessions.map((session) => {
           const isActive = session.id === activeSessionId
-          const restore = restoreData?.get(session.id)
+          const activePane = getActivePane(session)
 
           // Rules (status-first, round 3 Finding 3 / codex P2):
           //  - Exited statuses (completed OR errored) →
@@ -92,14 +89,17 @@ export const TerminalZone = ({
           //    SessionTabs strip when active) so both must route here;
           //    skipping errored leaves a zombie attach or silent respawn
           //    on a dead PTY.
-          //  - Has restoreData → 'attach'. Covers Alive restored sessions
+          //  - Has pane.restoreData → 'attach'. Covers Alive restored sessions
           //    AND newly-created sessions (createSession seeds an empty
           //    restoreData slot so the pane attaches instead of spawning).
           //  - Otherwise → 'spawn' (legacy fallback).
           let mode: TerminalPaneMode = 'spawn'
-          if (session.status === 'completed' || session.status === 'errored') {
+          if (
+            activePane.status === 'completed' ||
+            activePane.status === 'errored'
+          ) {
             mode = 'awaiting-restart'
-          } else if (restore) {
+          } else if (activePane.restoreData) {
             mode = 'attach'
           }
 
@@ -126,20 +126,21 @@ export const TerminalZone = ({
               }
               data-testid="terminal-pane"
               data-session-id={session.id}
-              data-cwd={session.workingDirectory}
+              data-pane-id={activePane.id}
+              data-cwd={activePane.cwd}
               data-mode={mode}
               className={`absolute inset-0 ${isActive ? '' : 'hidden'}`}
             >
               <TerminalPane
-                sessionId={session.id}
-                cwd={session.workingDirectory}
+                session={session}
+                pane={activePane}
                 service={service}
-                restoredFrom={restore}
                 mode={mode}
-                onCwdChange={(cwd) => onSessionCwdChange?.(session.id, cwd)}
+                onCwdChange={(cwd) =>
+                  onSessionCwdChange?.(session.id, activePane.id, cwd)
+                }
                 onPaneReady={onPaneReady}
                 onRestart={onSessionRestart}
-                session={session}
                 isActive={isActive}
               />
             </div>

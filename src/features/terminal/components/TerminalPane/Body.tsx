@@ -70,7 +70,8 @@ export type BodyMode = 'attach' | 'spawn'
 
 export interface BodyProps {
   /**
-   * Terminal session identifier
+   * Rust PTY handle. This is the value Rust IPC calls `sessionId`; in the
+   * pane model it flows from `pane.ptyId` and keys xterm cache entries.
    */
   sessionId: string
 
