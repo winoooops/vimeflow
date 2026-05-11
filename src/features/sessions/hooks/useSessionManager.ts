@@ -15,6 +15,7 @@ import {
 import { emptyActivity } from '../constants'
 import { sessionFromInfo } from '../utils/sessionFromInfo'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
+import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 
 export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
 
@@ -707,32 +708,14 @@ export const useSessionManager = (
   // terminal on first paint. Treat that case the same as empty cache
   // and seed a fresh tab; the Exited tabs remain available for the user
   // to Restart in their original cwd if they want to.
-  const didInitialAutoCreateRef = useRef(false)
   const hasLiveSession = sessions.some((s) => s.status === 'running')
-  useEffect(() => {
-    if (!autoCreateOnEmpty || loading || didInitialAutoCreateRef.current) {
-      return
-    }
-    // Round 10 (codex P2): if a manual createSession is already in flight
-    // (e.g. user clicked `+` during the restore window), DEFER auto-create.
-    // Round 12 F1: `pendingSpawns` is now state (not a ref) so its decrement
-    // re-fires this effect even when `hasLiveSession` doesn't flip — i.e.
-    // when the manual spawn FAILED. The post-failure tick observes
-    // `pendingSpawns === 0 && !hasLiveSession` and reaches the auto-create
-    // path below, restoring the "always have a tab" invariant.
-    //
-    // Note: don't set `didInitialAutoCreateRef = true` in this early-return
-    // branch — we want a future re-fire (when the manual spawn resolves
-    // and changes pendingSpawns) to be able to auto-create if the manual
-    // attempt failed.
-    if (pendingSpawns > 0) {
-      return
-    }
-    didInitialAutoCreateRef.current = true
-    if (!hasLiveSession) {
-      createSession()
-    }
-  }, [autoCreateOnEmpty, loading, hasLiveSession, pendingSpawns, createSession])
+  useAutoCreateOnEmpty({
+    enabled: autoCreateOnEmpty,
+    loading,
+    hasLiveSession,
+    pendingSpawns,
+    createSession,
+  })
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(
