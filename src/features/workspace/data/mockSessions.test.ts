@@ -70,12 +70,12 @@ describe('mockSessions', () => {
     expect(sessions).toEqual([])
   })
 
-  test('running sessions have terminalPid', () => {
+  test('running sessions have pane pid', () => {
     mockSessions
       .filter((s) => s.status === 'running')
       .forEach((session) => {
-        expect(session.terminalPid).toBeDefined()
-        expect(session.terminalPid).toBeGreaterThan(0)
+        expect(session.panes[0].pid).toBeDefined()
+        expect(session.panes[0].pid).toBeGreaterThan(0)
       })
   })
 

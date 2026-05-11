@@ -38,9 +38,14 @@ export interface Session {
   projectId: string
   name: string // user-assigned or derived from prompt
   status: SessionStatus
+  /** Derived from `getActivePane(session).cwd`; retained for existing chrome. */
   workingDirectory: string
+  /** Derived from `getActivePane(session).agentType`; retained for existing chrome. */
   agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
-  terminalPid?: number
+  /** Per-session canvas layout. Default 'single' in step 5a. */
+  layout: LayoutId
+  /** At least one pane per session. Step 5a creates single-pane sessions. */
+  panes: Pane[]
   currentAction?: string // current action description (e.g., "Creating auth middleware...")
   createdAt: string
   lastActivityAt: string

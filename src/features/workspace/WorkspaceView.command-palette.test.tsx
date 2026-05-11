@@ -51,6 +51,17 @@ const createMockSession = (id: string, name: string): Session => ({
   status: 'running',
   workingDirectory: '/home/user',
   agentType: 'claude-code',
+  layout: 'single',
+  panes: [
+    {
+      id: 'p0',
+      ptyId: id,
+      cwd: '/home/user',
+      agentType: 'claude-code',
+      status: 'running',
+      active: true,
+    },
+  ],
   createdAt: '2024-01-01T00:00:00Z',
   lastActivityAt: '2024-01-01T00:00:00Z',
   activity: {

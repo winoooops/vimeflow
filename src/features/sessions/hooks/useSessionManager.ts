@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
-import type { Session } from '../types'
+import type { Pane, Session } from '../types'
 import type { SessionList } from '../../../bindings'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type {
@@ -315,11 +315,25 @@ export const useSessionManager = (
       const exitedAt = new Date().toISOString()
 
       setSessions((prev) =>
-        prev.map((s) =>
-          s.id === sessionId
-            ? { ...s, status: 'completed', lastActivityAt: exitedAt }
-            : s
-        )
+        prev.map((s) => {
+          if (s.panes[0]?.ptyId !== sessionId) {
+            return s
+          }
+
+          const newPane: Pane = {
+            ...s.panes[0],
+            status: 'completed',
+            agentType: 'generic',
+          }
+
+          return {
+            ...s,
+            status: 'completed',
+            agentType: 'generic',
+            panes: [newPane],
+            lastActivityAt: exitedAt,
+          }
+        })
       )
     })
 
@@ -592,6 +606,26 @@ export const useSessionManager = (
               status: 'running',
               workingDirectory: result.cwd,
               agentType: 'generic',
+              layout: 'single',
+              panes: [
+                {
+                  id: 'p0',
+                  ptyId: result.sessionId,
+                  cwd: result.cwd,
+                  agentType: 'generic',
+                  status: 'running',
+                  active: true,
+                  pid: result.pid,
+                  restoreData: {
+                    sessionId: result.sessionId,
+                    cwd: result.cwd,
+                    pid: result.pid,
+                    replayData: '',
+                    replayEndOffset: 0,
+                    bufferedEvents: [],
+                  },
+                },
+              ],
               createdAt: now,
               lastActivityAt: now,
               activity: { ...emptyActivity },
@@ -1020,7 +1054,7 @@ export const useSessionManager = (
               ...prev[idx],
               id: result.sessionId,
               status: 'running',
-              // workingDirectory unchanged — restart preserves cwd by spec
+              workingDirectory: result.cwd,
               lastActivityAt: new Date().toISOString(),
               // Reset agentType to 'generic' on restart so the new session
               // starts from a known baseline. Without this, a stale agent
@@ -1031,6 +1065,24 @@ export const useSessionManager = (
               // tab is yellow until detection picks up the actual agent
               // (~tens to hundreds of ms after subscription attaches).
               agentType: 'generic',
+              panes: [
+                {
+                  ...prev[idx].panes[0],
+                  ptyId: result.sessionId,
+                  cwd: result.cwd,
+                  status: 'running',
+                  agentType: 'generic',
+                  pid: result.pid,
+                  restoreData: {
+                    sessionId: result.sessionId,
+                    cwd: result.cwd,
+                    pid: result.pid,
+                    replayData: '',
+                    replayEndOffset: 0,
+                    bufferedEvents: [],
+                  },
+                },
+              ],
             }
 
             // Capture the post-restart order for outer-scope IPC fire.

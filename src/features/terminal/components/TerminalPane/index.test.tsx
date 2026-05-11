@@ -62,6 +62,17 @@ const session: Session = {
   status: 'running',
   workingDirectory: '/home/user/repo',
   agentType: 'claude-code',
+  layout: 'single',
+  panes: [
+    {
+      id: 'p0',
+      ptyId: 's1',
+      cwd: '/home/user/repo',
+      agentType: 'claude-code',
+      status: 'running',
+      active: true,
+    },
+  ],
   createdAt: '2026-05-08T10:00:00Z',
   lastActivityAt: '2026-05-08T11:55:00Z',
   activity: {

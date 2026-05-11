@@ -33,6 +33,17 @@ const createTestSession = (sessionId: string, cwd: string): Session => ({
   status: 'running',
   workingDirectory: cwd,
   agentType: 'generic',
+  layout: 'single',
+  panes: [
+    {
+      id: 'p0',
+      ptyId: sessionId,
+      cwd,
+      agentType: 'generic',
+      status: 'running',
+      active: true,
+    },
+  ],
   createdAt: '2026-05-08T00:00:00Z',
   lastActivityAt: '2026-05-08T00:00:00Z',
   activity: {

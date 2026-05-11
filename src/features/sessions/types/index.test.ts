@@ -76,6 +76,17 @@ describe('Session Types', () => {
         status: 'running',
         workingDirectory: '/home/user/my-project',
         agentType: 'claude-code',
+        layout: 'single',
+        panes: [
+          {
+            id: 'p0',
+            ptyId: 'sess-1',
+            cwd: '/home/user/my-project',
+            agentType: 'claude-code',
+            status: 'running',
+            active: true,
+          },
+        ],
         createdAt: '2026-04-07T00:00:00Z',
         lastActivityAt: '2026-04-07T00:01:00Z',
         activity: {
