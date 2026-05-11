@@ -11,6 +11,9 @@ words:
   # Buffer-drain F6 fix: late-event tombstoning of removed pty ids
   - tombstoned
   - tombstoning
+  # removeSession P1 race-fix vocabulary
+  - unkilled
+  - ptys
 
   # Anthropic id prefixes appearing in code and test fixtures
   - toolu

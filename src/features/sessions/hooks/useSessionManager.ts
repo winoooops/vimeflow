@@ -400,8 +400,14 @@ export const useSessionManager = (
           return
         }
 
+        // Snapshot the ptyIds at the time the kill IPC fires. Used both
+        // for the kill loop and the (separate) post-await diff against
+        // any new ptyIds the session has acquired during the await
+        // window (concurrent restartSession would rotate pane.ptyId).
+        const snapshotPtyIds = target.panes.map((pane) => pane.ptyId)
+
         const results = await Promise.allSettled(
-          target.panes.map((pane) => service.kill({ sessionId: pane.ptyId }))
+          snapshotPtyIds.map((ptyId) => service.kill({ sessionId: ptyId }))
         )
 
         const rejected = results.filter(
@@ -423,10 +429,52 @@ export const useSessionManager = (
           return
         }
 
-        for (const pane of target.panes) {
-          dropAllForPty(pane.ptyId)
-          restoreDataRef.current.delete(pane.ptyId)
-          unregisterPtySession(pane.ptyId)
+        // P1 (codex connector) race fix: re-read the session AFTER the
+        // kill await. A concurrent restartSession may have rotated some
+        // pane.ptyIds during the await window — the snapshot we just
+        // killed is stale. Any ptyId present in the current session but
+        // absent from the snapshot is an orphaned PTY we MUST kill too,
+        // otherwise removing the React session leaves a live PTY in
+        // Rust with no tab to control it.
+        const currentTarget = sessionsRef.current.find((s) => s.id === id)
+
+        const currentPtyIds = currentTarget
+          ? currentTarget.panes.map((pane) => pane.ptyId)
+          : []
+
+        const newPtyIds = currentPtyIds.filter(
+          (ptyId) => !snapshotPtyIds.includes(ptyId)
+        )
+        if (newPtyIds.length > 0) {
+          const orphanResults = await Promise.allSettled(
+            newPtyIds.map((ptyId) => service.kill({ sessionId: ptyId }))
+          )
+
+          const orphanRejected = orphanResults.filter(
+            (result) => result.status === 'rejected'
+          )
+          if (orphanRejected.length > 0) {
+            for (const result of orphanRejected) {
+              // eslint-disable-next-line no-console
+              console.warn(
+                'removeSession: kill of post-await orphan PTY failed',
+                result.reason
+              )
+            }
+
+            // Same bail policy as above — refuse to drop the React
+            // session if any PTY remains unkilled.
+            return
+          }
+        }
+
+        // Drop bookkeeping for ALL ptys we killed (snapshot + post-await
+        // orphans).
+        const allKilledPtyIds = [...snapshotPtyIds, ...newPtyIds]
+        for (const ptyId of allKilledPtyIds) {
+          dropAllForPty(ptyId)
+          restoreDataRef.current.delete(ptyId)
+          unregisterPtySession(ptyId)
         }
         restoreDataRef.current.delete(target.id)
 
