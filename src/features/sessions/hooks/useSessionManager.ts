@@ -3,12 +3,19 @@ import { flushSync } from 'react-dom'
 import type { Session } from '../types'
 import type { SessionList, SessionInfo } from '../../../bindings'
 import type { ITerminalService } from '../../terminal/services/terminalService'
+import type {
+  RestoreData,
+  PaneEventHandler,
+  NotifyPaneReadyResult,
+} from '../../terminal/types'
 import {
   registerPtySession,
   unregisterPtySession,
 } from '../../terminal/ptySessionMap'
 import { emptyActivity } from '../constants'
 import { tabName } from '../utils/tabName'
+
+export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
 
 function sessionFromInfo(info: SessionInfo, index: number): Session {
   return {
@@ -23,36 +30,6 @@ function sessionFromInfo(info: SessionInfo, index: number): Session {
     activity: { ...emptyActivity },
   }
 }
-
-export interface RestoreData {
-  sessionId: string
-  cwd: string
-  pid: number
-  replayData: string
-  replayEndOffset: number
-  bufferedEvents: { data: string; offsetStart: number; byteLen: number }[]
-}
-
-/**
- * Handler that receives a buffered PTY event during pane drain.
- * Same signature as the live `pty-data` callback, so callers can reuse
- * a single function (with cursor dedupe) for both buffered drain and
- * live events. `byteLen` is the producer's raw byte count for the chunk —
- * the cursor MUST advance by this value (not by `data.length`) to avoid
- * lossy-UTF-8 drift away from the producer's offset stream.
- */
-export type PaneEventHandler = (
-  data: string,
-  offsetStart: number,
-  byteLen: number
-) => void
-
-/**
- * Function returned by `notifyPaneReady` — call it on pane unmount or when
- * the subscription is no longer needed. Currently a no-op for the buffer
- * drain side, but reserved for future per-pane teardown.
- */
-export type NotifyPaneReadyResult = () => void
 
 export interface SessionManager {
   sessions: Session[]

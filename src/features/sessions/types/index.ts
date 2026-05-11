@@ -24,7 +24,7 @@ export interface Pane {
   status: SessionStatus
 
   /** Restoration buffer for buffered-event drain. */
-  restoreData?: import('../hooks/useSessionManager').RestoreData
+  restoreData?: import('../../terminal/types').RestoreData
 
   /** OS process id of the PTY. */
   pid?: number
