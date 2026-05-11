@@ -644,3 +644,5 @@ for 5b. The plan lists the sub-tasks in dependency order (layouts.ts
 → SplitView.tsx → agentForPane → TerminalPane retarget → TerminalZone
 delegation → tests → progress.yaml) and the TDD sequence (red → green
 → refactor) per file.
+
+<!-- codex-reviewed: 2026-05-11T15:02:08Z -->
