@@ -18,7 +18,10 @@ vi.mock('./Body', async () => {
         focusTerminal: vi.fn(),
       }))
 
-      return React.createElement('div', { 'data-testid': 'body-mock' })
+      return React.createElement('div', {
+        'data-testid': 'body-mock',
+        'data-defer-fit': props.deferFit ? 'true' : 'false',
+      })
     }
   )
 
@@ -116,6 +119,15 @@ describe('TerminalPane index', () => {
     render(<TerminalPane {...baseProps} mode="attach" />)
 
     expect(screen.getByTestId('body-mock')).toBeInTheDocument()
+  })
+
+  test('forwards deferred fit state to Body', () => {
+    render(<TerminalPane {...baseProps} deferFit />)
+
+    expect(screen.getByTestId('body-mock')).toHaveAttribute(
+      'data-defer-fit',
+      'true'
+    )
   })
 
   test('renders RestartAffordance when mode is awaiting-restart', () => {

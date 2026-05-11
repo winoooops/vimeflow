@@ -68,8 +68,13 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Build Tauri application (Ubuntu)
+        if: matrix.platform == 'ubuntu'
+        run: npm run tauri:build -- --ci
+
       - name: Build Tauri application
-        run: npx tauri build
+        if: matrix.platform != 'ubuntu'
+        run: npx tauri build --ci
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
