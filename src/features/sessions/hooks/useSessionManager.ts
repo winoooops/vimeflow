@@ -14,6 +14,7 @@ import {
 } from '../../terminal/ptySessionMap'
 import { emptyActivity } from '../constants'
 import { sessionFromInfo } from '../utils/sessionFromInfo'
+import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 
 export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
 
@@ -310,37 +311,37 @@ export const useSessionManager = (
   // exit. Idempotent — flipping an already-completed session to completed
   // just refreshes its exit-relative timestamp. Unsubscribes on unmount via
   // the returned cleanup.
-  useEffect(() => {
-    const unsubscribeExit = service.onExit((sessionId) => {
-      const exitedAt = new Date().toISOString()
+  const onPtyExitRef = useRef<(ptyId: string) => void>(() => undefined)
+  onPtyExitRef.current = (ptyId: string): void => {
+    const exitedAt = new Date().toISOString()
 
-      setSessions((prev) =>
-        prev.map((s) => {
-          if (s.panes[0]?.ptyId !== sessionId) {
-            return s
-          }
+    setSessions((prev) =>
+      prev.map((s) => {
+        if (s.panes[0]?.ptyId !== ptyId) {
+          return s
+        }
 
-          const newPane: Pane = {
-            ...s.panes[0],
-            status: 'completed',
-            agentType: 'generic',
-          }
+        const newPane: Pane = {
+          ...s.panes[0],
+          status: 'completed',
+          agentType: 'generic',
+        }
 
-          return {
-            ...s,
-            status: 'completed',
-            agentType: 'generic',
-            panes: [newPane],
-            lastActivityAt: exitedAt,
-          }
-        })
-      )
-    })
+        return {
+          ...s,
+          status: 'completed',
+          agentType: 'generic',
+          panes: [newPane],
+          lastActivityAt: exitedAt,
+        }
+      })
+    )
+  }
 
-    return (): void => {
-      unsubscribeExit()
-    }
-  }, [service])
+  usePtyExitListener({
+    service,
+    onExit: (ptyId) => onPtyExitRef.current(ptyId),
+  })
 
   // Drain buffer + remove from pending set when a pane subscribes.
   // Stable ref-only identity so passing this through props doesn't churn deps.
