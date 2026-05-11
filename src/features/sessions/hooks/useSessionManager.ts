@@ -8,15 +8,7 @@ import {
   unregisterPtySession,
 } from '../../terminal/ptySessionMap'
 import { emptyActivity } from '../constants'
-
-function tabName(cwd: string, index: number): string {
-  if (cwd === '~') {
-    return `session ${index + 1}`
-  }
-  const parts = cwd.split('/').filter(Boolean)
-
-  return parts[parts.length - 1] || `session ${index + 1}`
-}
+import { tabName } from '../utils/tabName'
 
 function sessionFromInfo(info: SessionInfo, index: number): Session {
   return {
