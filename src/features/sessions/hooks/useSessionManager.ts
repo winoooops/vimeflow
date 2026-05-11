@@ -1,7 +1,6 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import type { Pane, Session } from '../types'
-import type { SessionList } from '../../../bindings'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type {
   RestoreData,
@@ -14,10 +13,10 @@ import {
 } from '../../terminal/ptySessionMap'
 import { usePtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
 import { emptyActivity } from '../constants'
-import { sessionFromInfo } from '../utils/sessionFromInfo'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 import { useActiveSessionController } from './useActiveSessionController'
+import { useSessionRestore } from './useSessionRestore'
 
 export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
 
@@ -127,161 +126,48 @@ export const useSessionManager = (
   // explicit: restoreData is read by consumers (TerminalZone) but
   // changes are coordinated by the sessions array, never by Map identity.
   const restoreDataRef = useRef(new Map<string, RestoreData>())
-  const [loading, setLoading] = useState(true)
 
-  const {
-    bufferEvent,
-    notifyPaneReady,
-    registerPending,
-    getBufferedSnapshot,
-    dropAllForPty,
-  } = usePtyBufferDrain({ service })
-  const stopBufferingRef = useRef<(() => void) | null>(null)
+  const buffer = usePtyBufferDrain({ service })
+  const { notifyPaneReady, registerPending, dropAllForPty } = buffer
 
-  // Mount-time restore orchestration: listen first, then list_sessions,
-  // then KEEP buffering alive until every restored pane reports ready.
-  //
-  // Note: under React 18 StrictMode dev, this effect runs twice (mount →
-  // cleanup → mount). The previous `ranRestoreRef` short-circuit blocked
-  // the second invocation from completing, but the FIRST invocation's
-  // cancelled-abort path skipped `setLoading(false)` — so loading was
-  // stuck on "Restoring sessions..." forever in dev. Removed the guard;
-  // both invocations now run, and the second one reaches setLoading(false)
-  // normally. The first invocation's listener gets unsubscribed in its
-  // cancelled-abort branch (line below), so the second invocation's
-  // listener is the durable one.
-  useEffect(() => {
-    let cancelled = false
-
-    void (async (): Promise<void> => {
-      try {
-        // 1. Register global buffering listener and AWAIT its attachment
-        //    BEFORE calling list_sessions. The await is critical: TauriTerminalService.onData
-        //    only resolves after the underlying tauri.listen('pty-data', ...) is wired up.
-        //    Without awaiting, PTY events emitted during the listen()-attach window are
-        //    lost from both replay_data AND bufferedEvents (irrecoverable).
-        //
-        //    F1 (round 2): this listener now stays attached for the lifetime of
-        //    useSessionManager so sessions created AFTER restore (createSession)
-        //    also benefit from the buffer→drain protocol. usePtyBufferDrain
-        //    drops events for panes that have already attached their own
-        //    listener.
-        stopBufferingRef.current = await service.onData(
-          (sessionId, data, offsetStart, byteLen) => {
-            bufferEvent(sessionId, data, offsetStart, byteLen)
-          }
-        )
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (cancelled) {
-          stopBufferingRef.current()
-          stopBufferingRef.current = null
-
-          return
-        }
-
-        // 2. Snapshot sessions
-        const list: SessionList = await service.listSessions()
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (cancelled) {
-          return
-        }
-
-        // 3. For each Alive session, prepare restoreData and add to the
-        //    pending-pane set. The buffering listener stays attached until
-        //    every pane reports ready (see notifyPaneReady below) — without
-        //    this, events emitted between setSessions() (which only
-        //    *schedules* a render) and useTerminal's subscription land in
-        //    neither the buffer nor the live stream.
-        const newSessions: Session[] = list.sessions.map((info, idx) =>
-          sessionFromInfo(info, idx)
-        )
-        for (const info of list.sessions) {
-          if (info.status.kind === 'Alive') {
-            const status = info.status
-            restoreDataRef.current.set(info.id, {
-              sessionId: info.id,
-              cwd: info.cwd,
-              pid: status.pid,
-              replayData: status.replay_data,
-              replayEndOffset: Number(status.replay_end_offset),
-              // Snapshot of buffered events known at restore-time (pre-render).
-              // Additional events arriving before the pane subscribes are
-              // captured by the buffering listener and drained by notifyPaneReady.
-              bufferedEvents: getBufferedSnapshot(info.id),
-            })
-            registerPending(info.id)
-            // Repopulate ptySessionMap so agent detection works after reload
-            registerPtySession(info.id, info.id, info.cwd)
-          }
-        }
-
-        // F2 (round 2): MERGE the restore snapshot with any sessions the
-        // user added via createSession while loading was still true. The
-        // previous wholesale `setSessions(newSessions)` blew away those
-        // optimistically-created tabs — the live PTY/cache entry survived
-        // in Rust, but the frontend lost track of it until the next reload.
-        //
-        // Merge order: existing in-memory sessions (added during the load
-        // window) come FIRST so they appear at the start of the tab strip,
-        // matching the [newSession, ...prev] prepend convention used by
-        // createSession. Restored sessions follow in their cached order.
-        // This also matches the cache invariant — createSession persists
-        // the prepended order via reorderSessions, so the merged in-memory
-        // arrangement here matches what the next reload will see.
-        setSessions((prev) => {
-          const restoredIds = new Set(newSessions.map((s) => s.id))
-          const addedDuringLoad = prev.filter((s) => !restoredIds.has(s.id))
-
-          return [...addedDuringLoad, ...newSessions]
-        })
-
-        // Active id: prefer an in-memory session created during load (the
-        // user's most recent intent) over the cached active id. Falls back
-        // to the cached value when no in-flight tabs exist, preserving
-        // behavior for the common clean-startup path.
-        if (
-          activeSessionIdRef.current === null &&
-          list.activeSessionId !== null
-        ) {
-          setActiveSessionIdRaw(list.activeSessionId)
-        }
-
-        setLoading(false)
-        // F1 (round 2): no stop-buffering call here. The global listener
-        // stays attached for the hook's lifetime so any session created via
-        // createSession also benefits from buffer→drain. The listener tears
-        // down only on hook unmount (see effect cleanup below).
-      } catch (err) {
-        // Cache load error or IPC failure — start fresh, but PRESERVE any
-        // sessions the user added via createSession during the load window
-        // (F2 round-2 alignment). Their PTY/cache entry exists in Rust and
-        // wiping them out would orphan the live tab strip until reload.
-        // eslint-disable-next-line no-console
-        console.warn('listSessions failed; starting empty', err)
-        // Leave sessions / activeSessionId untouched — createSession may
-        // have already populated them. If nothing was created, they remain
-        // at their initial empty values.
-        setLoading(false)
-        // Round 13, Codex P2: do NOT tear down the global buffering
-        // listener here. createSession() still relies on it to buffer
-        // pty-data between spawn() and the pane's live subscription.
-        // The listener tears down on hook unmount (cleanup below).
-      }
-    })()
-
-    return (): void => {
-      cancelled = true
-      stopBufferingRef.current?.()
-      stopBufferingRef.current = null
-    }
-  }, [
-    activeSessionIdRef,
-    bufferEvent,
-    getBufferedSnapshot,
-    registerPending,
+  const { loading } = useSessionRestore({
     service,
-    setActiveSessionIdRaw,
-  ])
+    buffer,
+    onRestore: (restored): void => {
+      for (const session of restored) {
+        for (const pane of session.panes) {
+          if (pane.restoreData) {
+            restoreDataRef.current.set(pane.ptyId, pane.restoreData)
+          }
+        }
+      }
+
+      flushSync(() => {
+        setSessions((prev) => {
+          const inMemoryPtyIds = new Set(
+            prev.flatMap((session) => session.panes.map((pane) => pane.ptyId))
+          )
+
+          const restoredOnly = restored.filter(
+            (session) =>
+              !session.panes.some((pane) => inMemoryPtyIds.has(pane.ptyId))
+          )
+
+          return [...prev, ...restoredOnly]
+        })
+      })
+    },
+    onActiveResolved: (id): void => {
+      if (activeSessionIdRef.current === null) {
+        setActiveSessionIdRaw(id)
+      }
+    },
+    onActiveFallback: (id): void => {
+      if (activeSessionIdRef.current === null) {
+        setActiveSessionId(id)
+      }
+    },
+  })
 
   // Round 3 (codex P2 follow-up to Finding 3): mark sessions completed when
   // their PTY exits. The mode-precedence fix in TerminalZone (status-first)
