@@ -13,6 +13,8 @@ import {
 } from '../../terminal/ptySessionMap'
 import { usePtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
 import { emptyActivity } from '../constants'
+import { getActivePane } from '../utils/activeSessionPane'
+import { deriveSessionStatus } from '../utils/sessionStatus'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 import { useActiveSessionController } from './useActiveSessionController'
@@ -39,9 +41,17 @@ export interface SessionManager {
   restartSession: (id: string) => void
   renameSession: (id: string, name: string) => void
   reorderSessions: (reordered: Session[]) => void
+  updatePaneCwd: (sessionId: string, paneId: string, cwd: string) => void
+  updatePaneAgentType: (
+    sessionId: string,
+    paneId: string,
+    agentType: Session['agentType']
+  ) => void
+  /** Compatibility wrapper until workspace consumers migrate to pane ids. */
   updateSessionCwd: (id: string, cwd: string) => void
+  /** Compatibility wrapper until workspace consumers migrate to pane ids. */
   updateSessionAgentType: (id: string, agentType: Session['agentType']) => void
-  /** restoreData per session id, populated during mount-time restore */
+  /** restoreData per session id, populated during mount-time restore. */
   restoreData: Map<string, RestoreData>
   /** True until the initial restore IPC + drain completes */
   loading: boolean
@@ -187,21 +197,27 @@ export const useSessionManager = (
 
     setSessions((prev) =>
       prev.map((s) => {
-        if (s.panes[0]?.ptyId !== ptyId) {
+        const idx = s.panes.findIndex((p) => p.ptyId === ptyId)
+        if (idx === -1) {
           return s
         }
 
-        const newPane: Pane = {
-          ...s.panes[0],
-          status: 'completed',
-          agentType: 'generic',
-        }
+        const newPanes = s.panes.map((p, paneIdx) =>
+          paneIdx === idx
+            ? {
+                ...p,
+                status: 'completed' as const,
+                agentType: 'generic' as const,
+              }
+            : p
+        )
+        const activePane = newPanes.find((p) => p.active)
 
         return {
           ...s,
-          status: 'completed',
-          agentType: 'generic',
-          panes: [newPane],
+          status: deriveSessionStatus(newPanes),
+          agentType: activePane?.agentType ?? s.agentType,
+          panes: newPanes,
           lastActivityAt: exitedAt,
         }
       })
@@ -253,12 +269,6 @@ export const useSessionManager = (
     setPendingSpawns((c) => c + 1)
     void (async (): Promise<void> => {
       try {
-        // Round 8, Finding 3 (claude MEDIUM): explicitly opt in to the
-        // agent bridge. The workspace UI is the canonical entry point for
-        // user-driven tab creation, and the Claude Code transcript watcher
-        // (agent statusline) is the product. Other (test, ad-hoc) callers
-        // get the default `false` so they don't litter arbitrary cwds with
-        // `.vimeflow/sessions/<uuid>/` directories.
         const result = await service.spawn({
           cwd: '~',
           env: {},
@@ -266,65 +276,27 @@ export const useSessionManager = (
         })
 
         const now = new Date().toISOString()
+        const newSessionId = crypto.randomUUID()
 
-        // Populate restoreData with empty replay so TerminalPane attaches
-        // instead of spawning a duplicate PTY.
-        // Use the resolved absolute cwd from spawn (e.g. /home/will), not
-        // the literal '~' we passed in — many shells don't emit OSC 7 on
-        // first prompt, so without this, useGitStatus and the agent-status
-        // panel sit idle until the user manually `cd`s.
-        restoreDataRef.current.set(result.sessionId, {
+        const restoreData: RestoreData = {
           sessionId: result.sessionId,
           cwd: result.cwd,
           pid: result.pid,
           replayData: '',
           replayEndOffset: 0,
           bufferedEvents: [],
-        })
+        }
+
+        restoreDataRef.current.set(newSessionId, restoreData)
+        restoreDataRef.current.set(result.sessionId, restoreData)
         registerPending(result.sessionId)
 
-        // F3 (round 2) — derive the persisted order from the latest state,
-        // not the closure-captured `sessions`. With the previous code, two
-        // rapid createSession() calls before either spawn() resolved would
-        // both close over the original (empty) `sessions` array; the second
-        // closure's `[result.sessionId, ...sessions.map(...)]` therefore
-        // omitted the FIRST new tab, and reorderSessions persisted an order
-        // that didn't match the live tab strip. After reload the order was
-        // wrong (or `reorder_sessions` rejected the call as a non-permutation,
-        // depending on Rust-side validation).
-        //
-        // Round 9, Finding 6 (claude MEDIUM): React requires functional
-        // updaters to be PURE — no side effects. The previous code fired
-        // `service.setActiveSession` and `service.reorderSessions` from
-        // INSIDE the setSessions updater, which StrictMode invokes twice
-        // (and concurrent React features may re-invoke unpredictably).
-        // Each extra invocation re-fired both IPCs.
-        //
-        // The fix captures the derived value (`computedNewOrder`) inside
-        // the updater — the closure still sees the latest `prev` so the
-        // race-safety from F3-round-2 is preserved — and fires the IPCs
-        // in the OUTER scope after `setSessions` returns. The captured
-        // value is a plain string array that survives StrictMode double
-        // invoke (each invoke writes the same array; the last write wins).
-        // Use flushSync to make the setSessions updater run synchronously,
-        // so we can capture the derived `computedNewOrder` and fire IPCs
-        // in the OUTER scope after the updater returns. Without flushSync,
-        // React 18's automatic batching defers the updater to the next
-        // render — `computedNewOrder` would still be null when we read it.
-        //
-        // The `as string[] | null` widens TypeScript's narrowed `null`
-        // literal — TS doesn't follow the closure assignment inside the
-        // updater callback by default.
         let computedNewOrder = null as string[] | null
         flushSync(() => {
           setSessions((prev) => {
             const newSession: Session = {
-              id: result.sessionId,
+              id: newSessionId,
               projectId: 'proj-1',
-              // Use spawn's resolved absolute cwd, not '~'. useGitStatus,
-              // tab-name derivation, and the diff/agent panes all need an
-              // absolute path; relying on OSC 7 to backfill leaves them
-              // idle for shells that don't emit it on first prompt.
               name: `session ${prev.length + 1}`,
               status: 'running',
               workingDirectory: result.cwd,
@@ -339,14 +311,7 @@ export const useSessionManager = (
                   status: 'running',
                   active: true,
                   pid: result.pid,
-                  restoreData: {
-                    sessionId: result.sessionId,
-                    cwd: result.cwd,
-                    pid: result.pid,
-                    replayData: '',
-                    replayEndOffset: 0,
-                    bufferedEvents: [],
-                  },
+                  restoreData,
                 },
               ],
               createdAt: now,
@@ -355,42 +320,21 @@ export const useSessionManager = (
             }
 
             const next = [newSession, ...prev]
-            // Capture only — do NOT fire IPC inside the updater.
-            computedNewOrder = next.map((s) => s.id)
+            computedNewOrder = next.map((s) => getActivePane(s).ptyId)
 
             return next
           })
         })
 
-        // IPCs fire OUTSIDE the updater. Captured `computedNewOrder` is
-        // derived from the latest `prev` (race-safety from F3-round-2 is
-        // preserved). reorderSessions persists the prepend.
         if (computedNewOrder !== null) {
           // eslint-disable-next-line promise/prefer-await-to-then
           service.reorderSessions(computedNewOrder).catch((err) => {
             // eslint-disable-next-line no-console
-            console.warn(
-              'createSession: reorderSessions IPC failed (cache order will lag)',
-              err
-            )
+            console.warn('createSession: reorderSessions failed', err)
           })
         }
 
-        // Round 12, Finding 5 (codex P2): route the active-session write
-        // through `setActiveSessionId` (the canonical path) so it shares
-        // the round-9 F4 monotonic-request guard. The previous code did
-        // `setActiveSessionIdState(...) + service.setActiveSession(...).catch(...)`
-        // — which bypassed the guard entirely. If the user switched tabs
-        // while createSession's IPC was in flight, a late completion
-        // could persist a stale active id to the Rust cache. Using the
-        // canonical setter consolidates the request-token logic and
-        // makes the optimistic-update / rollback semantics consistent
-        // across all active-session writes.
-        setActiveSessionId(result.sessionId)
-        // Round 10 (claude LOW): use the resolved absolute cwd from spawn,
-        // not the literal '~'. Agent detection and useGitStatus read this
-        // map immediately on mount; '~' would leave both subsystems idle
-        // until the shell emits OSC 7 (most shells don't on first prompt).
+        setActiveSessionId(newSessionId)
         registerPtySession(result.sessionId, result.sessionId, result.cwd)
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -442,91 +386,64 @@ export const useSessionManager = (
   const removeSession = useCallback(
     (id: string): void => {
       void (async (): Promise<void> => {
-        try {
-          await service.kill({ sessionId: id })
-
-          // F1 (round 2) cleanup: drop the session from the buffering bookkeeping
-          // so the global listener doesn't accumulate per-session state for
-          // destroyed tabs.
-          dropAllForPty(id)
-          restoreDataRef.current.delete(id)
-          // Round 14, Claude MEDIUM: also drop the module-level ptySessionMap
-          // entry. Without this, getAllPtySessionIds() (used by the E2E bridge)
-          // returns dead ids after every removeSession, and per-spec session-
-          // count assertions break as the map accumulates across specs.
-          unregisterPtySession(id)
-
-          // F4 (round 2): when the user closes the ACTIVE tab and the hook
-          // promotes a neighbor, the cache must learn about it too. Rust
-          // clears active_session_id when the active tab is killed, while
-          // React state moves to the index-aligned neighbor (Math.min(
-          // removedIndex, next.length - 1)). Persisting the same choice keeps
-          // reload state aligned with where the UI moved.
-          //
-          // Derive the fallback inside the setSessions updater so the
-          // computation matches the React-state branch and races with
-          // concurrent createSession/removeSession calls are resolved
-          // against the latest state.
-          //
-          // Round 9, Finding 2 (codex P2): read the LATEST active id from
-          // `activeSessionIdRef.current`, not the closure-captured
-          // `activeSessionId`. The closure was bound when removeSession was
-          // called; if the user switched tabs during the in-flight
-          // `service.kill` await, the closure value is stale and "removing
-          // the active tab" branch would fire even though a different tab
-          // is now active — clobbering the newer selection.
-          //
-          // Round 10 (claude MEDIUM): hoist setActiveSessionIdState + IPC
-          // OUT of the setSessions updater. React requires updaters to be
-          // pure; createSession/restartSession adopted this pattern in
-          // round 9 F6 but removeSession was missed. flushSync forces the
-          // updater to run synchronously so the captured `computedFallback`
-          // and `shouldUpdateActive` are populated by the time the outer
-          // scope reads them.
-          const currentActiveId = activeSessionIdRef.current
-          // Widen via `as` so TS doesn't narrow to the literal types `null`
-          // and `false` — flushSync's callback-mutation of these locals
-          // isn't visible to control-flow analysis, so the outer `if`
-          // checks would be flagged as always-falsy without the widening.
-          // Same idiom used by createSession/restartSession in round 9.
-          let computedFallback = null as string | null
-          let shouldUpdateActive = false as boolean
-          flushSync(() => {
-            setSessions((prev) => {
-              const next = prev.filter((s) => s.id !== id)
-              if (currentActiveId === id) {
-                const removedIndex = prev.findIndex((s) => s.id === id)
-                shouldUpdateActive = true
-                // next.length is 0 when the LAST tab was just removed; that's
-                // the only case fallback is null. Rust's kill_pty already
-                // cleared cache.active_session_id for an active kill, so we
-                // don't fire a setActiveSession IPC for null.
-                computedFallback =
-                  next.length === 0
-                    ? null
-                    : next[Math.min(removedIndex, next.length - 1)].id
-              }
-
-              return next
-            })
-          })
-
-          if (shouldUpdateActive) {
-            if (computedFallback !== null) {
-              // Round 13, Codex P2: route through the guarded helper so a
-              // stale fallback IPC can't overwrite a newer user selection
-              // that fires while this kill is in flight.
-              setActiveSessionId(computedFallback)
-            } else {
-              // Last tab removed — Rust's kill_pty already cleared
-              // cache.active_session_id, no IPC needed. Use the raw setter
-              // so any in-flight tab-pick rollback is superseded.
-              setActiveSessionIdRaw(null)
-            }
-          }
-        } catch (err) {
+        const target = sessionsRef.current.find((s) => s.id === id)
+        if (!target) {
           // eslint-disable-next-line no-console
-          console.warn('kill failed', err)
+          console.warn(`removeSession: no session with id ${id}`)
+
+          return
+        }
+
+        const results = await Promise.allSettled(
+          target.panes.map((pane) => service.kill({ sessionId: pane.ptyId }))
+        )
+
+        const rejected = results.filter(
+          (result) => result.status === 'rejected'
+        )
+        if (rejected.length > 0) {
+          for (const result of rejected) {
+            // eslint-disable-next-line no-console
+            console.warn('removeSession: kill failed for a pane', result.reason)
+          }
+
+          return
+        }
+
+        for (const pane of target.panes) {
+          dropAllForPty(pane.ptyId)
+          restoreDataRef.current.delete(pane.ptyId)
+          unregisterPtySession(pane.ptyId)
+        }
+        restoreDataRef.current.delete(target.id)
+
+        const currentActiveId = activeSessionIdRef.current
+        let computedFallback = null as string | null
+        let shouldUpdateActive = false as boolean
+        flushSync(() => {
+          setSessions((prev) => {
+            const next = prev.filter((s) => s.id !== id)
+            if (currentActiveId === id) {
+              const removedIndex = prev.findIndex((s) => s.id === id)
+              shouldUpdateActive = true
+              computedFallback =
+                next.length === 0
+                  ? null
+                  : next[Math.min(removedIndex, next.length - 1)].id
+            }
+
+            return next
+          })
+        })
+
+        if (!shouldUpdateActive) {
+          return
+        }
+
+        if (computedFallback !== null) {
+          setActiveSessionId(computedFallback)
+        } else {
+          setActiveSessionIdRaw(null)
         }
       })()
     },
@@ -574,36 +491,21 @@ export const useSessionManager = (
   // assigns a fresh UUID. Callers (TerminalPane) re-render with the new
   // id and useTerminal mounts a fresh attach lifecycle.
   const restartSession = useCallback(
-    (id: string): void => {
+    (sessionId: string): void => {
       void (async (): Promise<void> => {
-        const oldSession = sessionsRef.current.find((s) => s.id === id)
+        const oldSession = sessionsRef.current.find((s) => s.id === sessionId)
         if (!oldSession) {
           // eslint-disable-next-line no-console
-          console.warn(`restartSession: no session with id ${id}`)
+          console.warn(`restartSession: no session with id ${sessionId}`)
 
           return
         }
 
-        const cachedCwd = oldSession.workingDirectory
+        const oldPane = getActivePane(oldSession)
+        const cachedCwd = oldPane.cwd
 
-        // 1. Spawn fresh PTY at the cached cwd FIRST. If this fails (cwd
-        // deleted, permission denied, session cap hit), we bail BEFORE
-        // touching any cache state for the old id — the old session
-        // stays intact, still restorable on a later attempt. Round 4
-        // Finding 2: previously we killed the old id before spawn, so a
-        // failed spawn left the React tab visible but the backend cache
-        // gone — the tab silently disappeared on the next reload.
-        // Note: `cwd` is required (matches the IPC contract — Rust always
-        // returns a canonical absolute path from spawn, even on symlinked
-        // project directories). Tightening from `cwd?: string` keeps the
-        // type aligned with `createSession`'s spawn-result and lets the
-        // PTY register at the canonical path the agent detector observes
-        // (Cycle-5 F-c5-3 fix — symlinked cwd case).
         let result: { sessionId: string; pid: number; cwd: string }
         try {
-          // Round 8, Finding 3 (claude MEDIUM): restart preserves the
-          // user's tab semantics, so re-enable the agent bridge for parity
-          // with createSession. See createSession for full rationale.
           result = await service.spawn({
             cwd: cachedCwd,
             env: {},
@@ -619,26 +521,12 @@ export const useSessionManager = (
           return
         }
 
-        // 2. Now that the new PTY exists, retire the old. kill_pty is
-        // idempotent in Rust for the "already gone" case (a typed
-        // KillError::NotPresent collapses to Ok), so this only rejects
-        // when the actual SIGKILL or cache mutation fails.
-        //
-        // Round 13, Codex P2: if kill rejects, Rust cache still holds
-        // BOTH ids in session_order. The later `reorderSessions(new_only)`
-        // call would fail the permutation check and the cache would
-        // diverge from the UI; on reload the old tab would resurrect.
-        // Abort the restart instead — kill the new orphan to undo the
-        // spawn, leave React state untouched (old id keeps its prior
-        // status). The user can click Restart again. No bookkeeping
-        // for `result.sessionId` has been seeded yet at this point
-        // (it happens below), so nothing to tear down besides the PTY.
         try {
-          await service.kill({ sessionId: id })
+          await service.kill({ sessionId: oldPane.ptyId })
         } catch (err) {
           // eslint-disable-next-line no-console
           console.warn(
-            'restartSession: kill of old id failed; aborting and killing new orphan',
+            'restartSession: kill of old ptyId failed; killing new orphan',
             err
           )
           // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
@@ -647,161 +535,71 @@ export const useSessionManager = (
           return
         }
 
-        dropAllForPty(id)
-        restoreDataRef.current.delete(id)
-        // Round 14, Claude MEDIUM: drop the retired id from the module-level
-        // ptySessionMap symmetrically with registerPtySession(result.sessionId)
-        // below. The new id replaces the old in the workspace, but without
-        // unregisterPtySession the old entry leaks forever and the E2E bridge
-        // sees dead ids.
-        unregisterPtySession(id)
+        dropAllForPty(oldPane.ptyId)
+        restoreDataRef.current.delete(oldPane.ptyId)
+        restoreDataRef.current.delete(oldSession.id)
+        unregisterPtySession(oldPane.ptyId)
 
-        // 3. Seed restoreData so TerminalPane mounts in 'attach' mode
-        // instead of falling through to the legacy spawn path (which would
-        // create a hidden duplicate PTY — the F3 / round-1 bug).
-        //
-        // Use `result.cwd` (canonical path from Rust) — NOT `cachedCwd`
-        // which is the OLD session's workingDirectory, possibly a
-        // symlink. The agent detector observes the canonical path
-        // returned from spawn, so registering at the symlink diverges
-        // from what the detector sees → silent missed agent-type
-        // detection after restart on monorepo-style symlinked project
-        // dirs. createSession uses result.cwd for the same reason
-        // (Cycle-5 F-c5-3 fix).
-        restoreDataRef.current.set(result.sessionId, {
+        const restoreData: RestoreData = {
           sessionId: result.sessionId,
           cwd: result.cwd,
           pid: result.pid,
           replayData: '',
           replayEndOffset: 0,
           bufferedEvents: [],
-        })
+        }
+
+        restoreDataRef.current.set(oldSession.id, restoreData)
+        restoreDataRef.current.set(result.sessionId, restoreData)
         registerPending(result.sessionId)
         registerPtySession(result.sessionId, result.sessionId, result.cwd)
 
-        // Round 9, Finding 3 (codex P2): read the LATEST active id post-await,
-        // not the closure-captured `activeSessionId` from when restartSession
-        // was first called. The user may have switched tabs during the spawn
-        // / kill roundtrip; promoting the restarted tab on top of the newer
-        // pick would clobber the user's selection. Capturing post-await
-        // ensures any tab switch that landed in the meantime wins.
-        const wasActive = activeSessionIdRef.current === id
-
-        // Verify the session still exists in React state (latest committed
-        // snapshot via sessionsRef) before deciding to promote the new id.
-        // sessionsRef is updated synchronously during render — it reflects
-        // the latest committed state at the time of this read, not a
-        // closure-captured value. If the session was removed during the
-        // spawn/kill roundtrip, the swap below will be a no-op and we
-        // MUST NOT setActiveSessionIdState to an id that won't appear in
-        // `sessions`.
-        const oldIdStillExists = sessionsRef.current.some((s) => s.id === id)
-
-        // 4. Replace the old session entry with new metadata. Inside the
-        // setSessions updater so it races correctly against any concurrent
-        // create/remove operations. Preserve the in-memory position by
-        // mapping over `prev` rather than filter+push.
-        //
-        // Round 3, Finding 2 (codex P1): the new tab order MUST be persisted
-        // via reorderSessions IPC. Without it, kill_pty in Rust REMOVES the
-        // old id from cache.session_order and spawn_pty APPENDS the
-        // replacement id at the end, so a restarted middle tab would render
-        // as `[A, fresh, C]` in the live UI but persist as
-        // `[A, C, fresh]` in cache.session_order. After a reload the
-        // restored order would diverge from the live UI.
-        //
-        // Round 9, Finding 6 (claude MEDIUM): React requires functional
-        // updaters to be PURE. The previous code fired
-        // `service.reorderSessions` and `service.kill` (orphan path) from
-        // INSIDE the updater — StrictMode invokes updaters twice, and
-        // concurrent React features may re-invoke unpredictably. Each
-        // extra invocation re-fired the IPCs.
-        //
-        // Fix: capture the derived values inside the updater (`computedNewOrder`
-        // for the persisted order, `orphanedSessionId` for the orphan-kill
-        // case), and fire the IPCs in the OUTER scope after `setSessions`
-        // returns. The captures still derive from the latest `prev`, so the
-        // race-safety pattern is preserved.
-        //
-        // `flushSync` forces the updater to run synchronously so the captures
-        // are populated before we read them; without it React 18's automatic
-        // batching defers the updater to the next render and the captures
-        // remain null when we check.
-        //
-        // The `as ... | null` widens TypeScript's narrowed `null` literal —
-        // TS doesn't follow the closure assignment inside the updater
-        // callback by default.
         let computedNewOrder = null as string[] | null
         let orphanedSessionId = null as string | null
         flushSync(() => {
           setSessions((prev) => {
-            const idx = prev.findIndex((s) => s.id === id)
+            const idx = prev.findIndex((s) => s.id === sessionId)
             if (idx === -1) {
-              // The session was removed between the spawn() and now. Mark
-              // the new PTY for orphan-kill in the outer scope; React state
-              // stays as-is.
               orphanedSessionId = result.sessionId
 
               return prev
             }
 
             const next = [...prev]
-            next[idx] = {
-              ...prev[idx],
-              id: result.sessionId,
+            const current = prev[idx]
+
+            const replacementPane: Pane = {
+              ...oldPane,
+              ptyId: result.sessionId,
+              cwd: result.cwd,
               status: 'running',
-              workingDirectory: result.cwd,
-              lastActivityAt: new Date().toISOString(),
-              // Reset agentType to 'generic' on restart so the new session
-              // starts from a known baseline. Without this, a stale agent
-              // from before the exit can leak into the new session: the
-              // detector returns None for shell-only PTYs, the bridge
-              // ignores isActive=false, and Session.agentType would stay
-              // whatever was last detected. Fresh-spawn parity: the new
-              // tab is yellow until detection picks up the actual agent
-              // (~tens to hundreds of ms after subscription attaches).
               agentType: 'generic',
-              panes: [
-                {
-                  ...prev[idx].panes[0],
-                  ptyId: result.sessionId,
-                  cwd: result.cwd,
-                  status: 'running',
-                  agentType: 'generic',
-                  pid: result.pid,
-                  restoreData: {
-                    sessionId: result.sessionId,
-                    cwd: result.cwd,
-                    pid: result.pid,
-                    replayData: '',
-                    replayEndOffset: 0,
-                    bufferedEvents: [],
-                  },
-                },
-              ],
+              pid: result.pid,
+              restoreData,
             }
 
-            // Capture the post-restart order for outer-scope IPC fire.
-            computedNewOrder = next.map((s) => s.id)
+            next[idx] = {
+              ...current,
+              status: 'running',
+              workingDirectory: result.cwd,
+              agentType: 'generic',
+              panes: current.panes.map((pane) =>
+                pane.id === oldPane.id ? replacementPane : pane
+              ),
+              lastActivityAt: new Date().toISOString(),
+            }
+
+            computedNewOrder = next.map((s) => getActivePane(s).ptyId)
 
             return next
           })
         })
 
-        // IPCs fire OUTSIDE the updater (Round 9 F6 — preserve updater
-        // purity for StrictMode + concurrent React). Captured values
-        // derived from latest `prev`, so race-safety preserved.
         if (orphanedSessionId !== null) {
           // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
           service.kill({ sessionId: orphanedSessionId }).catch((): void => {})
-          // Round 12, Finding 4 (codex P2): tear down the bookkeeping we
-          // seeded BEFORE the setSessions updater discovered the session
-          // had been removed. Without this, repeated restart-vs-close
-          // races leak per-session entries in restoreData / pendingPanes /
-          // readyPanes / bufferedRef / ptySessionMap. The orphan PTY
-          // itself is killed above; this just removes the dangling
-          // metadata so the next reload reconciles cleanly.
           restoreDataRef.current.delete(orphanedSessionId)
+          restoreDataRef.current.delete(oldSession.id)
           dropAllForPty(orphanedSessionId)
           unregisterPtySession(orphanedSessionId)
         }
@@ -809,26 +607,12 @@ export const useSessionManager = (
           // eslint-disable-next-line promise/prefer-await-to-then
           service.reorderSessions(computedNewOrder).catch((err) => {
             // eslint-disable-next-line no-console
-            console.warn(
-              'restartSession: reorderSessions IPC failed (cache order will lag)',
-              err
-            )
+            console.warn('restartSession: reorderSessions failed', err)
           })
         }
 
-        // 5. If the restarted tab was active AND the old id still exists in
-        // the latest committed state (so the swap above produced a NEW id
-        // that will be in `sessions`), the React-state id moved. Update
-        // active to the new id and tell Rust about it. Skipping the
-        // promotion when `oldIdStillExists` is false prevents setting an
-        // active id that won't appear in `sessions` — Rust would reject
-        // `setActiveSession` for an unknown id, and the stale selection
-        // would leak until the next user action.
-        if (wasActive && oldIdStillExists) {
-          // Round 13, Codex P2: route through the guarded helper so a
-          // stale active write from this restart cannot persist over a
-          // newer user tab-pick fired before this IPC settles.
-          setActiveSessionId(result.sessionId)
+        if (activeSessionIdRef.current === sessionId) {
+          setActiveSessionId(sessionId)
         }
       })()
     },
@@ -870,7 +654,7 @@ export const useSessionManager = (
   const reorderSessions = useCallback(
     (reordered: Session[]): void => {
       setSessions(reordered)
-      const ids = reordered.map((s) => s.id)
+      const ids = reordered.map((s) => getActivePane(s).ptyId)
       // eslint-disable-next-line promise/prefer-await-to-then
       service.reorderSessions(ids).catch((err) => {
         // eslint-disable-next-line no-console
@@ -889,34 +673,98 @@ export const useSessionManager = (
     [service]
   )
 
-  // Update session cwd — optimistic update + IPC
-  const updateSessionCwd = useCallback(
-    (id: string, cwd: string): void => {
+  const updatePaneCwd = useCallback(
+    (sessionId: string, paneId: string, cwd: string): void => {
       setSessions((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, workingDirectory: cwd } : s))
+        prev.map((session) => {
+          if (session.id !== sessionId) {
+            return session
+          }
+
+          const panes = session.panes.map((pane) =>
+            pane.id === paneId ? { ...pane, cwd } : pane
+          )
+          const activePane = panes.find((pane) => pane.active)
+
+          return {
+            ...session,
+            panes,
+            workingDirectory: activePane?.cwd ?? session.workingDirectory,
+          }
+        })
       )
 
+      const target = sessionsRef.current.find((s) => s.id === sessionId)
+      const targetPane = target?.panes.find((pane) => pane.id === paneId)
+      if (!targetPane) {
+        return
+      }
+
       // eslint-disable-next-line promise/prefer-await-to-then
-      service.updateSessionCwd(id, cwd).catch((err) => {
+      service.updateSessionCwd(targetPane.ptyId, cwd).catch((err) => {
         // eslint-disable-next-line no-console
-        console.warn('updateSessionCwd IPC failed', err)
+        console.warn('updatePaneCwd IPC failed', err)
       })
     },
     [service]
   )
 
-  const updateSessionAgentType = useCallback(
-    (id: string, agentType: Session['agentType']): void => {
+  const updatePaneAgentType = useCallback(
+    (
+      sessionId: string,
+      paneId: string,
+      agentType: Session['agentType']
+    ): void => {
       setSessions((prev) => {
-        const current = prev.find((s) => s.id === id)
-        if (!current || current.agentType === agentType) {
+        const target = prev.find((session) => session.id === sessionId)
+        const current = target?.panes.find((pane) => pane.id === paneId)
+        if (!target || !current || current.agentType === agentType) {
           return prev
         }
 
-        return prev.map((s) => (s.id === id ? { ...s, agentType } : s))
+        return prev.map((session) => {
+          if (session.id !== sessionId) {
+            return session
+          }
+
+          const panes = session.panes.map((pane) =>
+            pane.id === paneId ? { ...pane, agentType } : pane
+          )
+          const activePane = panes.find((pane) => pane.active)
+
+          return {
+            ...session,
+            panes,
+            agentType: activePane?.agentType ?? session.agentType,
+          }
+        })
       })
     },
     []
+  )
+
+  const updateSessionCwd = useCallback(
+    (id: string, cwd: string): void => {
+      const target = sessionsRef.current.find((s) => s.id === id)
+      if (!target) {
+        return
+      }
+
+      updatePaneCwd(id, getActivePane(target).id, cwd)
+    },
+    [updatePaneCwd]
+  )
+
+  const updateSessionAgentType = useCallback(
+    (id: string, agentType: Session['agentType']): void => {
+      const target = sessionsRef.current.find((s) => s.id === id)
+      if (!target) {
+        return
+      }
+
+      updatePaneAgentType(id, getActivePane(target).id, agentType)
+    },
+    [updatePaneAgentType]
   )
 
   return {
@@ -928,6 +776,8 @@ export const useSessionManager = (
     restartSession,
     renameSession,
     reorderSessions,
+    updatePaneCwd,
+    updatePaneAgentType,
     updateSessionCwd,
     updateSessionAgentType,
     // Round 12 F2: expose the ref-backed Map. Identity is stable across

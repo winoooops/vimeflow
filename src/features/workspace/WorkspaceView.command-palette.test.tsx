@@ -108,6 +108,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       restartSession: vi.fn(),
       renameSession: vi.fn(),
       reorderSessions: vi.fn(),
+      updatePaneCwd: vi.fn(),
+      updatePaneAgentType: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
       restoreData: new Map(),
