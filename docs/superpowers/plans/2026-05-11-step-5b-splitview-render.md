@@ -66,10 +66,11 @@ Expected: HEAD points at the spec's footer commit (`cdf0f93` or current main tip
 - [ ] **Step 3: Record baseline test count**
 
 ```bash
-npm run test -- --reporter=basic 2>&1 | tail -10
+set -o pipefail
+npm run test -- --reporter=basic 2>&1 | tail -20
 ```
 
-Expected: all tests pass. Write down the total test count — every task in this plan keeps it equal or higher (never lower).
+`pipefail` is required so a failing test run doesn't get swallowed by `tail`'s exit code. Expected: all tests pass; the command exits 0. Write down the total test count — every task in this plan keeps it equal or higher (never lower). If the baseline fails, stop here and unblock before continuing.
 
 - [ ] **Step 4: Sanity-check the spec is reachable**
 
@@ -92,6 +93,7 @@ Expected: `spec present`.
 
 ```typescript
 // src/features/terminal/components/SplitView/layouts.test.ts
+// cspell:ignore vsplit hsplit
 import { describe, test, expect } from 'vitest'
 import { LAYOUTS, type LayoutShape } from './layouts'
 import type { LayoutId } from '../../../sessions/types'
@@ -164,6 +166,7 @@ Expected: FAIL with module resolution error.
 
 ```typescript
 // src/features/terminal/components/SplitView/layouts.ts
+// cspell:ignore vsplit hsplit
 import type { LayoutId } from '../../../sessions/types'
 
 export interface LayoutShape {
@@ -263,14 +266,22 @@ git commit -m "feat(terminal): add LAYOUTS constants for SplitView"
 - Modify: `src/features/sessions/utils/agentForSession.ts`
 - Modify: `src/features/sessions/utils/agentForSession.test.ts`
 
-- [ ] **Step 1: Write the failing tests by extending the existing file**
+- [ ] **Step 1a: Merge `agentForPane` + `Pane` into the existing top imports of the test file**
 
-Append to `src/features/sessions/utils/agentForSession.test.ts` (after the existing `describe('agentForSession', …)` block):
+The file already imports `agentForSession` and `Session` at the top. Lint rules (`import/first`, `import/no-duplicates`) forbid re-importing from the same module further down the file. Edit the existing import block at the top of `src/features/sessions/utils/agentForSession.test.ts` so it reads:
 
 ```typescript
-import { agentForPane } from './agentForSession'
-import type { Pane } from '../types'
+import { describe, test, expect } from 'vitest'
+import { agentForSession, agentForPane } from './agentForSession'
+import { AGENTS } from '../../../agents/registry'
+import type { Pane, Session } from '../types'
+```
 
+- [ ] **Step 1b: Append the new `describe('agentForPane', …)` block (no new imports)**
+
+After the existing `describe('agentForSession', …)` block in `agentForSession.test.ts`, append:
+
+```typescript
 const basePane: Omit<Pane, 'agentType'> = {
   id: 'p0',
   ptyId: 'pty-0',
@@ -310,24 +321,19 @@ npx vitest run src/features/sessions/utils/agentForSession.test.ts
 
 Expected: FAIL with "agentForPane is not a function" (or named-export error during transform).
 
-- [ ] **Step 3: Add `agentForPane` to the existing file**
+- [ ] **Step 3a: Update the type import in `agentForSession.ts` to include `Pane`**
 
-Modify `src/features/sessions/utils/agentForSession.ts` — add at the bottom, AFTER the existing `agentForSession` export:
+The file already imports `Session`. Edit the existing import statement so it reads:
 
 ```typescript
-import { AGENTS, type Agent, type AgentId } from '../../../agents/registry'
 import type { Pane, Session } from '../types'
+```
 
-const AGENT_BY_SESSION_TYPE: Record<Session['agentType'], AgentId> = {
-  'claude-code': 'claude',
-  codex: 'codex',
-  aider: 'shell',
-  generic: 'shell',
-}
+(Do NOT re-import `AGENTS`/`Agent`/`AgentId` — the existing top imports cover them. `import/no-duplicates` will fire if you do.)
 
-export const agentForSession = (session: Session): Agent =>
-  AGENTS[AGENT_BY_SESSION_TYPE[session.agentType]]
+- [ ] **Step 3b: Add the new export at the END of `agentForSession.ts`** (after the existing `agentForSession` export — keep imports at the top):
 
+```typescript
 // New: per-pane agent resolver. Reuses the existing translation map because
 // Pane.agentType and Session.agentType share the same string union.
 export const agentForPane = (pane: Pane): Agent =>
@@ -362,16 +368,13 @@ git commit -m "feat(sessions): add agentForPane helper"
 
 - [ ] **Step 1: Write the failing test for the single-layout case**
 
-```typescript
+```tsx
 // src/features/terminal/components/SplitView/SplitView.test.tsx
+// cspell:ignore vsplit hsplit
 import { describe, test, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { SplitView } from './SplitView'
-import type {
-  LayoutId,
-  Pane,
-  Session,
-} from '../../../sessions/types'
+import type { LayoutId, Pane, Session } from '../../../sessions/types'
 import type { ITerminalService } from '../../services/terminalService'
 
 const makeSession = (
@@ -481,6 +484,7 @@ export { LAYOUTS, type LayoutShape } from './layouts'
 
 ```tsx
 // src/features/terminal/components/SplitView/SplitView.tsx
+// cspell:ignore vsplit hsplit
 import type { ReactElement } from 'react'
 import type { Pane, Session } from '../../../sessions/types'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
@@ -510,9 +514,9 @@ export const SplitView = ({
   session,
   service,
   isActive,
-  onSessionCwdChange,
-  onPaneReady,
-  onSessionRestart,
+  onSessionCwdChange = undefined,
+  onPaneReady = undefined,
+  onSessionRestart = undefined,
   deferTerminalFit = false,
 }: SplitViewProps): ReactElement => {
   const layout = LAYOUTS[session.layout]
@@ -804,7 +808,10 @@ describe('SplitView — over-capacity invariant', () => {
     // Suppress the React error-boundary console noise so the failing-render
     // does not pollute test output. Vitest runs with import.meta.env.DEV=true,
     // so the throw path is reached.
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // `() => undefined` (not `() => {}`) sidesteps `no-empty-function`.
+    const consoleSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined)
 
     expect(() =>
       render(
@@ -1046,10 +1053,11 @@ git commit -m "refactor(terminal): TerminalPane focus ring follows pane.active"
 **Files:**
 
 - Modify: `src/features/terminal/components/TerminalPane/index.tsx`
+- Modify: `src/features/terminal/components/TerminalPane/index.test.tsx` (and any sibling test file whose fixture sets `session.agentType` without also setting `pane.agentType`)
 
-- [ ] **Step 1: Update the import and call site**
+- [ ] **Step 1: Update the import and call site in `index.tsx`**
 
-Modify `src/features/terminal/components/TerminalPane/index.tsx`. Replace the line:
+Replace:
 
 ```tsx
 import { agentForSession } from '../../../sessions/utils/agentForSession'
@@ -1073,15 +1081,27 @@ with:
 const agent = agentForPane(pane)
 ```
 
-- [ ] **Step 2: Run the TerminalPane suite — should pass (single-pane sessions have `session.agentType === pane.agentType` because pane is the active one, so the materialized values match)**
+- [ ] **Step 2: Audit `TerminalPane/index.test.tsx` for fixtures that diverge `session.agentType` from `pane.agentType`**
+
+`agentForSession(session)` and `agentForPane(pane)` are no longer equivalent when a fixture sets only one. Search the test file:
+
+```bash
+grep -n "agentType:" src/features/terminal/components/TerminalPane/index.test.tsx
+```
+
+For every fixture that previously set ONLY `session.agentType`, update the matching `pane` entry (or `panes[0]`) so its `agentType` is identical. If a fixture overrides `agentType` via the `baseSession` spread, also override `baseProps.pane.agentType` (or rebuild `baseProps.pane` to match).
+
+Apply the same audit to `Header.test.tsx`, `Footer.test.tsx`, and `Body.test.tsx` — any of those that import a session fixture from `index.test.tsx` inherits the same constraint.
+
+- [ ] **Step 3: Run the TerminalPane suite — should pass after fixture audit**
 
 ```bash
 npx vitest run src/features/terminal/components/TerminalPane/
 ```
 
-Expected: PASS. If any test seeded `pane.agentType` differently from `session.agentType` for a single-pane session, the test needs to be updated to set both.
+Expected: PASS. If a test still fails, the fixture mismatch is the most likely culprit — fix the fixture, not the assertion.
 
-- [ ] **Step 3: Run full type-check**
+- [ ] **Step 4: Run full type-check**
 
 ```bash
 npm run type-check
@@ -1089,10 +1109,15 @@ npm run type-check
 
 Expected: clean.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/features/terminal/components/TerminalPane/index.tsx
+git add src/features/terminal/components/TerminalPane/index.tsx \
+        src/features/terminal/components/TerminalPane/index.test.tsx \
+        src/features/terminal/components/TerminalPane/Header.test.tsx \
+        src/features/terminal/components/TerminalPane/Footer.test.tsx \
+        src/features/terminal/components/TerminalPane/Body.test.tsx
+# (Add only the files that the audit actually modified.)
 git commit -m "refactor(terminal): TerminalPane reads agent from pane (agentForPane)"
 ```
 
@@ -1301,6 +1326,92 @@ expect(screen.getAllByTestId('terminal-pane')[0]).toHaveAttribute(
 ```
 
 Walk through every `terminal-pane` assertion in the file (~10-15 spots) and split them into "session-level" assertions (on the `terminal-pane` outer wrapper) vs "pane-level" assertions (on `split-view-slot`).
+
+- [ ] **Step 2b: Add a multi-pane (vsplit) delegation test**
+
+Per spec §1 / §3 testing — TerminalZone must be proven to delegate multi-pane sessions through SplitView. Add this test to `TerminalZone.test.tsx`:
+
+```tsx
+test('vsplit session renders both panes via SplitView', () => {
+  const session: Session = {
+    // …reuse the standard test fixture shape from elsewhere in this file…
+    id: 'sess-vsplit',
+    projectId: 'proj-1',
+    name: 'multi-pane',
+    status: 'running',
+    workingDirectory: '/tmp/a',
+    agentType: 'generic',
+    layout: 'vsplit',
+    panes: [
+      {
+        id: 'p0',
+        ptyId: 'pty-a',
+        cwd: '/tmp/a',
+        agentType: 'generic',
+        status: 'running',
+        active: true,
+        pid: 1001,
+        restoreData: {
+          sessionId: 'pty-a',
+          cwd: '/tmp/a',
+          pid: 1001,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [],
+        },
+      },
+      {
+        id: 'p1',
+        ptyId: 'pty-b',
+        cwd: '/tmp/b',
+        agentType: 'generic',
+        status: 'running',
+        active: false,
+        pid: 1002,
+        restoreData: {
+          sessionId: 'pty-b',
+          cwd: '/tmp/b',
+          pid: 1002,
+          replayData: '',
+          replayEndOffset: 0,
+          bufferedEvents: [],
+        },
+      },
+    ],
+    createdAt: '2026-05-11T00:00:00Z',
+    lastActivityAt: '2026-05-11T00:00:00Z',
+    activity: {
+      fileChanges: [],
+      toolCalls: [],
+      testResults: [],
+      contextWindow: { used: 0, total: 200_000, percentage: 0, emoji: '😊' },
+      usage: {
+        sessionDuration: 0,
+        turnCount: 0,
+        messages: { sent: 0, limit: 200 },
+        tokens: { input: 0, output: 0, total: 0 },
+      },
+    },
+  }
+
+  render(
+    <TerminalZone
+      sessions={[session]}
+      activeSessionId="sess-vsplit"
+      service={mockService}
+    />
+  )
+
+  const slots = screen.getAllByTestId('split-view-slot')
+  expect(slots).toHaveLength(2)
+  expect(slots[0]).toHaveAttribute('data-pane-id', 'p0')
+  expect(slots[0]).toHaveAttribute('data-pty-id', 'pty-a')
+  expect(slots[1]).toHaveAttribute('data-pane-id', 'p1')
+  expect(slots[1]).toHaveAttribute('data-pty-id', 'pty-b')
+})
+```
+
+Reuse the existing `mockService` declared at the top of the test file (or import the same shape used by SplitView.test.tsx — if neither exists yet, copy the helper from Task 3 Step 1).
 
 - [ ] **Step 3: Run the TerminalZone test suite**
 
