@@ -9,7 +9,7 @@ import type {
   PaneEventHandler,
   NotifyPaneReadyResult,
 } from '../../sessions/hooks/useSessionManager'
-import { getActivePane } from '../../sessions/utils/activeSessionPane'
+import { findActivePane } from '../../sessions/utils/activeSessionPane'
 import { isOpenSessionStatus } from '../../sessions/utils/pickNextVisibleSessionId'
 
 export interface TerminalZoneProps {
@@ -78,7 +78,14 @@ export const TerminalZone = ({
         // for newly-created sessions and resurrected dead ones on reload).
         sessions.map((session) => {
           const isActive = session.id === activeSessionId
-          const activePane = getActivePane(session)
+          // Non-throwing variant: transient invariant violations (e.g. zero
+          // active panes mid-state-update during 5b multi-pane edits) must
+          // not crash the render tree. The session row is skipped until the
+          // invariant is restored by the next mutation tick.
+          const activePane = findActivePane(session)
+          if (!activePane) {
+            return null
+          }
 
           // Rules (status-first, round 3 Finding 3 / codex P2):
           //  - Exited statuses (completed OR errored) →

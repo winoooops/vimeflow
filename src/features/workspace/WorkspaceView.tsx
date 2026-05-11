@@ -34,7 +34,7 @@ import { createTerminalService } from '../terminal/services/terminalService'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
-import { getActivePane } from '../sessions/utils/activeSessionPane'
+import { findActivePane } from '../sessions/utils/activeSessionPane'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -126,7 +126,9 @@ export const WorkspaceView = (): ReactElement => {
   const activeSession = activeSessionId
     ? sessions.find((s) => s.id === activeSessionId)
     : undefined
-  const activePane = activeSession ? getActivePane(activeSession) : undefined
+  // Non-throwing variant: render-path callers cannot crash on transient
+  // invariant violations. Mutation guards still use `getActivePane`.
+  const activePane = activeSession ? findActivePane(activeSession) : undefined
   const activePaneId = activePane?.id
   const activePanePtyId = activePane?.ptyId
 
@@ -191,8 +193,11 @@ export const WorkspaceView = (): ReactElement => {
       if (session.status !== 'completed' && session.status !== 'errored') {
         continue
       }
-      const pane = getActivePane(session)
-      if (pane.agentType === 'generic') {
+      // Effect-path: skip silently on transient invariant violations
+      // rather than crashing React's reconciliation. Mutation guards still
+      // catch real bugs via `getActivePane`.
+      const pane = findActivePane(session)
+      if (!pane || pane.agentType === 'generic') {
         continue
       }
       updatePaneAgentType(session.id, pane.id, 'generic')

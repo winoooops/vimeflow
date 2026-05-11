@@ -1,11 +1,5 @@
 import { useCallback, useRef } from 'react'
-import type { ITerminalService } from '../services/terminalService'
 import type { NotifyPaneReadyResult, PaneEventHandler } from '../types'
-
-export interface UsePtyBufferDrainOptions {
-  /** Reserved for future lifecycle cleanup hooks. */
-  service: ITerminalService
-}
 
 interface BufferedEvent {
   data: string
@@ -29,10 +23,7 @@ export interface PtyBufferDrain {
   dropAllForPty: (ptyId: string) => void
 }
 
-export const usePtyBufferDrain = (
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _options: UsePtyBufferDrainOptions
-): PtyBufferDrain => {
+export const usePtyBufferDrain = (): PtyBufferDrain => {
   const bufferedRef = useRef(new Map<string, BufferedEvent[]>())
   const pendingPanesRef = useRef(new Set<string>())
   const readyPanesRef = useRef(new Set<string>())

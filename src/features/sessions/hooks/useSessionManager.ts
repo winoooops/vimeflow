@@ -137,7 +137,7 @@ export const useSessionManager = (
   // changes are coordinated by the sessions array, never by Map identity.
   const restoreDataRef = useRef(new Map<string, RestoreData>())
 
-  const buffer = usePtyBufferDrain({ service })
+  const buffer = usePtyBufferDrain()
   const { notifyPaneReady, registerPending, dropAllForPty } = buffer
 
   const { loading } = useSessionRestore({
@@ -287,8 +287,14 @@ export const useSessionManager = (
           bufferedEvents: [],
         }
 
+        // F4 (codex MEDIUM follow-up): the public `restoreData` Map is now
+        // a zombie — `pane.restoreData` is the live source. We keep only
+        // the React-Session.id key; the previous ptyId-keyed entry was
+        // never consumed after `usePtyBufferDrain.notifyPaneReady` started
+        // using `isStillTracked` instead of `restoreDataRef.has()`. Full
+        // removal of the Map deferred to a follow-up so existing tests
+        // keep their public-API contract.
         restoreDataRef.current.set(newSessionId, restoreData)
-        restoreDataRef.current.set(result.sessionId, restoreData)
         registerPending(result.sessionId)
 
         let computedNewOrder = null as string[] | null
@@ -407,6 +413,13 @@ export const useSessionManager = (
             console.warn('removeSession: kill failed for a pane', result.reason)
           }
 
+          // F2 (codex MEDIUM follow-up — step 5b): this all-or-nothing bail
+          // is intentional for 5a, where each session owns exactly one pane.
+          // When 5b sessions can retain surviving panes after one PTY-kill
+          // fails, this should clean up the fulfilled kills (remove dead
+          // panes from React state + drop their bookkeeping) before
+          // returning, so the user sees the survivors and can retry the
+          // failed kill on its own pane.
           return
         }
 
@@ -549,8 +562,10 @@ export const useSessionManager = (
           bufferedEvents: [],
         }
 
+        // F4 (codex MEDIUM follow-up): single React-Session.id key only.
+        // restartSession preserves session.id; the ptyId-keyed entry was
+        // unused by drain logic (see comment in createSession).
         restoreDataRef.current.set(oldSession.id, restoreData)
-        restoreDataRef.current.set(result.sessionId, restoreData)
         registerPending(result.sessionId)
         registerPtySession(result.sessionId, result.sessionId, result.cwd)
 

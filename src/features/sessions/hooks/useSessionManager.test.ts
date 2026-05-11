@@ -591,7 +591,14 @@ describe('useSessionManager', () => {
       '/home/user/projects/foo'
     )
 
-    const restored = result.current.restoreData.get('new-id')
+    // Post-5a-F4: restoreData is keyed by React Session.id (UUID), not by
+    // the ptyId returned from spawn. The live source is pane.restoreData
+    // on the created session — assert against it directly so the test is
+    // robust to the public Map removal scheduled in the F4 follow-up.
+    const created = result.current.sessions[0]
+    expect(created.panes[0].restoreData?.cwd).toBe('/home/user/projects/foo')
+    // Map-shape assertion for the duration of the public restoreData API:
+    const restored = result.current.restoreData.get(created.id)
     expect(restored).toBeDefined()
     expect(restored!.cwd).toBe('/home/user/projects/foo')
   })

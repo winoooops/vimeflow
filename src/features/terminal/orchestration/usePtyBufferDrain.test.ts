@@ -4,9 +4,7 @@ import { usePtyBufferDrain } from './usePtyBufferDrain'
 
 describe('usePtyBufferDrain', () => {
   test('bufferEvent collects events for pending sessions', () => {
-    const { result } = renderHook(() =>
-      usePtyBufferDrain({ service: {} as never })
-    )
+    const { result } = renderHook(() => usePtyBufferDrain())
 
     result.current.registerPending('pty-1')
     result.current.bufferEvent('pty-1', 'hello', 0, 5)
@@ -19,9 +17,7 @@ describe('usePtyBufferDrain', () => {
   })
 
   test('bufferEvent drops events for ready sessions', () => {
-    const { result } = renderHook(() =>
-      usePtyBufferDrain({ service: {} as never })
-    )
+    const { result } = renderHook(() => usePtyBufferDrain())
     const handler = vi.fn()
 
     result.current.registerPending('pty-1')
@@ -32,9 +28,7 @@ describe('usePtyBufferDrain', () => {
   })
 
   test('notifyPaneReady drains buffered events to handler', () => {
-    const { result } = renderHook(() =>
-      usePtyBufferDrain({ service: {} as never })
-    )
+    const { result } = renderHook(() => usePtyBufferDrain())
     const handler = vi.fn()
 
     result.current.registerPending('pty-1')
@@ -49,9 +43,7 @@ describe('usePtyBufferDrain', () => {
   })
 
   test('notifyPaneReady cleanup re-arms pending state on remount', () => {
-    const { result } = renderHook(() =>
-      usePtyBufferDrain({ service: {} as never })
-    )
+    const { result } = renderHook(() => usePtyBufferDrain())
     const handler = vi.fn()
 
     result.current.registerPending('pty-1')
@@ -66,9 +58,7 @@ describe('usePtyBufferDrain', () => {
   })
 
   test('dropAllForPty clears bookkeeping for one pty', () => {
-    const { result } = renderHook(() =>
-      usePtyBufferDrain({ service: {} as never })
-    )
+    const { result } = renderHook(() => usePtyBufferDrain())
 
     result.current.registerPending('pty-1')
     result.current.bufferEvent('pty-1', 'leak', 0, 4)
