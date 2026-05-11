@@ -529,7 +529,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       <div
         ref={containerRef}
         data-testid="terminal-pane"
-        data-session-id={sessionId}
+        data-pty-id={sessionId}
         className="h-full w-full"
       />
     </div>

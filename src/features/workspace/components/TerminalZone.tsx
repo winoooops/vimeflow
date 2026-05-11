@@ -133,6 +133,7 @@ export const TerminalZone = ({
               data-testid="terminal-pane"
               data-session-id={session.id}
               data-pane-id={activePane.id}
+              data-pty-id={activePane.ptyId}
               data-cwd={activePane.cwd}
               data-mode={mode}
               className={`absolute inset-0 ${isActive ? '' : 'hidden'}`}

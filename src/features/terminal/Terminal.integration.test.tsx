@@ -260,8 +260,12 @@ describe('Terminal Integration Tests', () => {
 
       // Wait for first terminal
       await screen.findByTestId('terminal-pane')
+      // Body's inner container exposes the PTY handle via data-pty-id post-5a
+      // (was data-session-id; renamed to avoid colliding with TerminalZone's
+      // data-session-id={session.id} now that React Session.id is independent
+      // from the Rust PTY handle).
       expect(screen.getByTestId('terminal-pane')).toHaveAttribute(
-        'data-session-id',
+        'data-pty-id',
         'session-1'
       )
 
@@ -286,7 +290,7 @@ describe('Terminal Integration Tests', () => {
       // Wait for second terminal to be ready
       await waitFor(() => {
         expect(screen.getByTestId('terminal-pane')).toHaveAttribute(
-          'data-session-id',
+          'data-pty-id',
           'session-2'
         )
       })
