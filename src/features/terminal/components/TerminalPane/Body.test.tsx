@@ -294,7 +294,13 @@ describe('Body', () => {
     )
 
     const container = screen.getByTestId('terminal-pane')
-    expect(container).toHaveAttribute('data-session-id', sessionId)
+    // Body exposes the PTY handle as data-pty-id (NOT data-session-id) to
+    // avoid colliding with TerminalZone's data-session-id={session.id} —
+    // post-5a, Session.id and pane.ptyId are independent values and putting
+    // them under the same attribute name made the E2E multi-tab test see
+    // duplicate sessions in the DOM (cycle 5a CI regression fix).
+    expect(container).toHaveAttribute('data-pty-id', sessionId)
+    expect(container).not.toHaveAttribute('data-session-id')
   })
 
   test('uses full width and height', () => {

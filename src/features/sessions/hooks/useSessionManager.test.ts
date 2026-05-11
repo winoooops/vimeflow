@@ -376,7 +376,7 @@ describe('useSessionManager', () => {
     // Auto-create fires once after loading transitions to false.
     await waitFor(() => expect(service.spawn).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(result.current.sessions).toHaveLength(1))
-    expect(result.current.sessions[0].id).toBe('auto-id')
+    expect(result.current.sessions[0].panes[0].ptyId).toBe('auto-id')
   })
 
   test('round 7: auto-create is skipped when listSessions returns sessions', async () => {
@@ -449,7 +449,7 @@ describe('useSessionManager', () => {
 
     // Final state: original Exited tabs preserved + the freshly spawned tab.
     await waitFor(() => expect(result.current.sessions).toHaveLength(3))
-    expect(result.current.sessions[0].id).toBe('fresh-1')
+    expect(result.current.sessions[0].panes[0].ptyId).toBe('fresh-1')
     expect(result.current.sessions[0].status).toBe('running')
     // Exited tabs remain so the user can Restart them.
     expect(
@@ -499,7 +499,7 @@ describe('useSessionManager', () => {
 
     await waitFor(() => expect(service.spawn).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(result.current.sessions).toHaveLength(1))
-    expect(result.current.sessions[0].id).toBe('auto-recovery')
+    expect(result.current.sessions[0].panes[0].ptyId).toBe('auto-recovery')
   })
 
   test('createSession spawns PTY and appends to sessions', async () => {
@@ -520,8 +520,11 @@ describe('useSessionManager', () => {
 
     await waitFor(() => expect(service.spawn).toHaveBeenCalled())
     await waitFor(() => expect(result.current.sessions).toHaveLength(1))
-    expect(result.current.sessions[0].id).toBe('new-id')
-    expect(result.current.activeSessionId).toBe('new-id')
+    const created = result.current.sessions[0]
+
+    expect(created.id).not.toBe('new-id')
+    expect(created.panes[0].ptyId).toBe('new-id')
+    expect(result.current.activeSessionId).toBe(created.id)
 
     // Round 8, Finding 3 (claude MEDIUM): the workspace UI is the canonical
     // entry point for user-driven tab creation, and the agent bridge IS the
@@ -536,7 +539,7 @@ describe('useSessionManager', () => {
     // populated). Without this, TerminalZone's mode-decision routes the
     // pane to legacy 'spawn' mode and useTerminal calls service.spawn() a
     // SECOND time — hidden duplicate PTY.
-    const restored = result.current.restoreData.get('new-id')
+    const restored = result.current.restoreData.get(created.id)
     expect(restored).toBeDefined()
     expect(restored!.pid).toBe(999)
     expect(restored!.replayData).toBe('')
@@ -588,7 +591,14 @@ describe('useSessionManager', () => {
       '/home/user/projects/foo'
     )
 
-    const restored = result.current.restoreData.get('new-id')
+    // Post-5a-F4: restoreData is keyed by React Session.id (UUID), not by
+    // the ptyId returned from spawn. The live source is pane.restoreData
+    // on the created session — assert against it directly so the test is
+    // robust to the public Map removal scheduled in the F4 follow-up.
+    const created = result.current.sessions[0]
+    expect(created.panes[0].restoreData?.cwd).toBe('/home/user/projects/foo')
+    // Map-shape assertion for the duration of the public restoreData API:
+    const restored = result.current.restoreData.get(created.id)
     expect(restored).toBeDefined()
     expect(restored!.cwd).toBe('/home/user/projects/foo')
   })
@@ -639,7 +649,12 @@ describe('useSessionManager', () => {
     // Active id flips to the new tab, both in React state and in the cache IPC.
     // Wrap in waitFor — the active id updates AFTER spawn resolves and React
     // flushes the setSessions/setActiveSessionIdState batch.
-    await waitFor(() => expect(result.current.activeSessionId).toBe('new-tab'))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('new-tab')
+    )
+    const createdSessionId = result.current.sessions[0].id
+
+    expect(result.current.activeSessionId).toBe(createdSessionId)
     await waitFor(() =>
       expect(service.setActiveSession).toHaveBeenCalledWith('new-tab')
     )
@@ -1011,11 +1026,12 @@ describe('useSessionManager', () => {
 
     expect(spawnCallOrder).toBeLessThan(killCallOrder)
 
-    // 3. React state replaces the old session — id flips to fresh-id, status
-    //    flips to 'running'. The previous 'exited-id' must NOT linger.
+    // 3. React state preserves the session id while the active pane rotates
+    //    to fresh-id and status flips to 'running'.
     await waitFor(() => {
       expect(result.current.sessions).toHaveLength(1)
-      expect(result.current.sessions[0].id).toBe('fresh-id')
+      expect(result.current.sessions[0].id).toBe('exited-id')
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('fresh-id')
       expect(result.current.sessions[0].status).toBe('running')
     })
 
@@ -1026,14 +1042,14 @@ describe('useSessionManager', () => {
     // 4. restoreData has a fresh entry under the NEW id with the new pid so
     //    TerminalPane attaches via the spawn-attached lifecycle (no duplicate
     //    PTY — same trick as createSession's F3 fix).
-    const restored = result.current.restoreData.get('fresh-id')
+    const restored = result.current.restoreData.get('exited-id')
     expect(restored).toBeDefined()
     expect(restored!.pid).toBe(4242)
     expect(restored!.cwd).toBe('/home/user/projects/foo')
 
-    // 5. Active id was 'exited-id'; it must move to 'fresh-id' AND echo to
-    //    Rust so reload sees the same selection.
-    expect(result.current.activeSessionId).toBe('fresh-id')
+    // 5. Active id remains the React session id and the IPC echoes the
+    //    rotated pane pty id so reload sees the same selection.
+    expect(result.current.activeSessionId).toBe('exited-id')
     await waitFor(() =>
       expect(service.setActiveSession).toHaveBeenCalledWith('fresh-id')
     )
@@ -1110,7 +1126,9 @@ describe('useSessionManager', () => {
     // Wait for the swap to commit.
     await waitFor(() =>
       expect(
-        result.current.sessions.find((s) => s.id === 'fresh')
+        result.current.sessions.find((s) =>
+          s.panes.some((pane) => pane.ptyId === 'fresh')
+        )
       ).toBeDefined()
     )
 
@@ -1179,19 +1197,33 @@ describe('useSessionManager', () => {
     act(() => result.current.createSession())
     await waitFor(() =>
       expect(
-        result.current.sessions.find((s) => s.id === 'created')
+        result.current.sessions.find((s) =>
+          s.panes.some((pane) => pane.ptyId === 'created')
+        )
       ).toBeDefined()
     )
-    expect(result.current.activeSessionId).toBe('created')
+
+    const createdSessionId = result.current.sessions.find((s) =>
+      s.panes.some((pane) => pane.ptyId === 'created')
+    )!.id
+
+    expect(result.current.activeSessionId).toBe(createdSessionId)
 
     // Step 2: another createSession — fires setActiveSession #2.
     act(() => result.current.createSession())
     await waitFor(() =>
       expect(
-        result.current.sessions.find((s) => s.id === 'second')
+        result.current.sessions.find((s) =>
+          s.panes.some((pane) => pane.ptyId === 'second')
+        )
       ).toBeDefined()
     )
-    expect(result.current.activeSessionId).toBe('second')
+
+    const secondSessionId = result.current.sessions.find((s) =>
+      s.panes.some((pane) => pane.ptyId === 'second')
+    )!.id
+
+    expect(result.current.activeSessionId).toBe(secondSessionId)
 
     // Step 3: createSession #1's IPC now FAILS (e.g. transient backend
     // error). Without the request-token guard, this would revert active
@@ -1204,7 +1236,9 @@ describe('useSessionManager', () => {
 
     // Critical: active stays on 'second'. With the bug, the rollback
     // would have reverted to null and clobbered the user's selection.
-    await waitFor(() => expect(result.current.activeSessionId).toBe('second'))
+    await waitFor(() =>
+      expect(result.current.activeSessionId).toBe(secondSessionId)
+    )
 
     // Resolve #2 so test cleanup is clean.
     act(() => resolveCreateActive?.())
@@ -1434,9 +1468,11 @@ describe('useSessionManager', () => {
 
     act(() => result.current.restartSession('old-id'))
 
-    // Wait until the React swap has landed: the new id replaces the old.
+    // Wait until the React swap has landed: Session.id stays stable while
+    // pane.ptyId rotates.
     await waitFor(() => {
-      expect(result.current.sessions.map((s) => s.id)).toEqual(['new-id'])
+      expect(result.current.sessions.map((s) => s.id)).toEqual(['old-id'])
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('new-id')
     })
 
     const ids = getAllPtySessionIds()
@@ -1541,14 +1577,11 @@ describe('useSessionManager', () => {
 
     act(() => result.current.restartSession('b'))
 
-    // React state replaces 'b' in place — the order is preserved.
+    // React state preserves Session.id while rotating b's pane ptyId in place.
     await waitFor(() =>
-      expect(result.current.sessions.map((s) => s.id)).toEqual([
-        'a',
-        'fresh',
-        'c',
-      ])
+      expect(result.current.sessions.map((s) => s.id)).toEqual(['a', 'b', 'c'])
     )
+    expect(result.current.sessions[1].panes[0].ptyId).toBe('fresh')
 
     // Rust cache must learn the in-memory order [a, fresh, c] — otherwise
     // kill+spawn would leave session_order at [a, c, fresh] and a reload
@@ -1996,7 +2029,7 @@ describe('useSessionManager', () => {
       // wait for the spawn-first sequence to complete + flushSync apply
       await vi.waitFor(
         () => {
-          expect(result.current.sessions[0].id).toBe('s2')
+          expect(result.current.sessions[0].panes[0].ptyId).toBe('s2')
         },
         { timeout: 1000 }
       )
@@ -2360,8 +2393,8 @@ describe('useSessionManager', () => {
     act(() => result.current.createSession())
     await waitFor(() => expect(service.spawn).toHaveBeenCalled())
     await waitFor(() => expect(result.current.sessions).toHaveLength(1))
-    expect(result.current.sessions[0].id).toBe('in-flight-tab')
-    expect(result.current.activeSessionId).toBe('in-flight-tab')
+    expect(result.current.sessions[0].panes[0].ptyId).toBe('in-flight-tab')
+    expect(result.current.activeSessionId).toBe(result.current.sessions[0].id)
 
     // Now the restore IPC resolves with a snapshot taken BEFORE the new tab
     // was added to the cache (it only contains a previously-existing tab).
@@ -2386,12 +2419,12 @@ describe('useSessionManager', () => {
     // BOTH sessions must be present after restore resolves — the in-flight
     // tab must NOT be wiped out by the snapshot. Order: in-flight first
     // (matches the createSession prepend convention), then restored tabs.
-    const ids = result.current.sessions.map((s) => s.id)
-    expect(ids).toEqual(['in-flight-tab', 'cached-tab'])
+    const ptyIds = result.current.sessions.map((s) => s.panes[0].ptyId)
+    expect(ptyIds).toEqual(['in-flight-tab', 'cached-tab'])
 
     // Active id stays on the user's most recent intent (the in-flight tab),
     // not the cached id. createSession's optimistic active update wins.
-    expect(result.current.activeSessionId).toBe('in-flight-tab')
+    expect(result.current.activeSessionId).toBe(result.current.sessions[0].id)
   })
 
   // Round 4, Finding 1 (codex P1) regression test.
@@ -2676,5 +2709,147 @@ describe('useSessionManager', () => {
       ;(cleanup as () => void)()
     })
     expect(result.current.restoreData.has('s1')).toBe(false)
+  })
+
+  test('pane-keyed createSession produces fresh React id and pane ptyId', async () => {
+    const service = createMockService()
+    service.spawn = vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'pty-new', pid: 99, cwd: '/x' })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.createSession())
+
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    const created = result.current.sessions[0]
+
+    expect(created.id).not.toBe('pty-new')
+    expect(created.id).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(created.panes).toHaveLength(1)
+    expect(created.panes[0].ptyId).toBe('pty-new')
+    expect(created.panes[0].id).toBe('p0')
+    expect(created.panes[0].active).toBe(true)
+    expect(created.layout).toBe('single')
+    expect(created.workingDirectory).toBe('/x')
+    expect(created.agentType).toBe('generic')
+  })
+
+  test('pane-keyed restartSession preserves Session.id and rotates pane ptyId', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-old',
+      sessions: [
+        {
+          id: 'pty-old',
+          cwd: '/x',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'pty-new', pid: 2, cwd: '/x' })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const sessionIdBefore = result.current.sessions[0].id
+
+    act(() => result.current.restartSession(sessionIdBefore))
+
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-new')
+    )
+    const restarted = result.current.sessions[0]
+
+    expect(restarted.id).toBe(sessionIdBefore)
+    expect(restarted.panes[0].id).toBe('p0')
+    expect(restarted.panes[0].status).toBe('running')
+    expect(restarted.panes[0].agentType).toBe('generic')
+  })
+
+  test('pane-keyed removeSession leaves session visible when pane kill fails', async () => {
+    const service = createMockService()
+    service.kill = vi.fn().mockRejectedValue(new Error('KillFailed'))
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/x',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const warnSpy = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined)
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const sessionId = result.current.sessions[0].id
+
+    act(() => result.current.removeSession(sessionId))
+
+    await waitFor(() => expect(service.kill).toHaveBeenCalled())
+    expect(result.current.sessions).toHaveLength(1)
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('removeSession: kill failed for a pane'),
+      expect.any(Error)
+    )
+    warnSpy.mockRestore()
+  })
+
+  test('updatePaneCwd updates pane cwd and mirrors to Rust via pane ptyId', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/old',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const sessionId = result.current.sessions[0].id
+
+    act(() => {
+      result.current.updatePaneCwd(sessionId, 'p0', '/new/cwd')
+    })
+
+    const updated = result.current.sessions[0]
+    expect(updated.panes[0].cwd).toBe('/new/cwd')
+    expect(updated.workingDirectory).toBe('/new/cwd')
+    expect(service.updateSessionCwd).toHaveBeenCalledWith('pty-1', '/new/cwd')
   })
 })

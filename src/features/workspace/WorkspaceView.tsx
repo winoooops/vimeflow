@@ -34,6 +34,7 @@ import { createTerminalService } from '../terminal/services/terminalService'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
+import { findActivePane } from '../sessions/utils/activeSessionPane'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -77,9 +78,8 @@ export const WorkspaceView = (): ReactElement => {
     restartSession,
     renameSession,
     reorderSessions,
-    updateSessionCwd,
-    updateSessionAgentType,
-    restoreData,
+    updatePaneCwd,
+    updatePaneAgentType,
     loading,
     notifyPaneReady,
   } = useSessionManager(terminalService)
@@ -123,7 +123,16 @@ export const WorkspaceView = (): ReactElement => {
     ]
   )
 
-  const agentStatus = useAgentStatus(activeSessionId)
+  const activeSession = activeSessionId
+    ? sessions.find((s) => s.id === activeSessionId)
+    : undefined
+  // Non-throwing variant: render-path callers cannot crash on transient
+  // invariant violations. Mutation guards still use `getActivePane`.
+  const activePane = activeSession ? findActivePane(activeSession) : undefined
+  const activePaneId = activePane?.id
+  const activePanePtyId = activePane?.ptyId
+
+  const agentStatus = useAgentStatus(activePanePtyId ?? null)
 
   // Bridge: when the detector resolves a live agent for the active
   // session, write it into Session.agentType. This is the single source
@@ -144,14 +153,15 @@ export const WorkspaceView = (): ReactElement => {
   // agentType='generic' on the completed session — without this guard
   // a re-render that re-fires the bridge would write the stale agent
   // back, ping-ponging against the reset.
-  const activeSessionStatus = sessions.find(
-    (session) => session.id === activeSessionId
-  )?.status
+  const activeSessionStatus = activeSession?.status
   useEffect(() => {
     if (!activeSessionId) {
       return
     }
-    if (agentStatus.sessionId !== activeSessionId) {
+    if (!activePaneId || !activePanePtyId) {
+      return
+    }
+    if (agentStatus.sessionId !== activePanePtyId) {
       return
     }
     if (!agentStatus.isActive || !agentStatus.agentType) {
@@ -160,33 +170,39 @@ export const WorkspaceView = (): ReactElement => {
     if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
       return
     }
-    updateSessionAgentType(activeSessionId, agentStatus.agentType)
+    updatePaneAgentType(activeSessionId, activePaneId, agentStatus.agentType)
   }, [
     activeSessionId,
+    activePaneId,
+    activePanePtyId,
     activeSessionStatus,
     agentStatus.isActive,
     agentStatus.agentType,
     agentStatus.sessionId,
-    updateSessionAgentType,
+    updatePaneAgentType,
   ])
 
   // Reset on PTY exit: when ANY session's status flips to completed or
   // errored, force its agentType back to 'generic'. Watches the whole
   // sessions array so inactive exited sessions also get reset; without
   // this they'd retain the last-detected agent until reactivation.
-  // updateSessionAgentType bails early when value is unchanged, so the
+  // updatePaneAgentType bails early when value is unchanged, so the
   // effect is cheap even though it fires on every sessions array change.
   useEffect(() => {
     for (const session of sessions) {
       if (session.status !== 'completed' && session.status !== 'errored') {
         continue
       }
-      if (session.agentType === 'generic') {
+      // Effect-path: skip silently on transient invariant violations
+      // rather than crashing React's reconciliation. Mutation guards still
+      // catch real bugs via `getActivePane`.
+      const pane = findActivePane(session)
+      if (!pane || pane.agentType === 'generic') {
         continue
       }
-      updateSessionAgentType(session.id, 'generic')
+      updatePaneAgentType(session.id, pane.id, 'generic')
     }
-  }, [sessions, updateSessionAgentType])
+  }, [sessions, updatePaneAgentType])
 
   const setSidebarResizeHandle = useCallback(
     (element: HTMLDivElement | null): void => {
@@ -241,16 +257,13 @@ export const WorkspaceView = (): ReactElement => {
     previewSidebarWidth(sidebarWidth)
   }, [previewSidebarWidth, sidebarWidth])
 
-  const activeSession = activeSessionId
-    ? sessions.find((s) => s.id === activeSessionId)
-    : undefined
-  const activeCwd = activeSession?.workingDirectory ?? '.'
+  const activeCwd = activePane?.cwd ?? '.'
   // Distinct fallback for the FILES-tab file explorer: when no session
   // is active, browse from `~` (home) rather than `.` (process cwd).
   // `activeCwd` defaults to `.` because git/diff/agent-status all need a
   // valid working directory in the running process; the file explorer
   // is a navigation surface where `~` is the more useful starting point.
-  const fileExplorerCwd = activeSession?.workingDirectory ?? '~'
+  const fileExplorerCwd = activePane?.cwd ?? '~'
 
   // File selection state.
   //
@@ -589,9 +602,8 @@ export const WorkspaceView = (): ReactElement => {
         <TerminalZone
           sessions={sessions}
           activeSessionId={activeSessionId}
+          onSessionCwdChange={updatePaneCwd}
           deferTerminalFit={isDragging}
-          onSessionCwdChange={updateSessionCwd}
-          restoreData={restoreData}
           loading={loading}
           onPaneReady={notifyPaneReady}
           onSessionRestart={restartSession}

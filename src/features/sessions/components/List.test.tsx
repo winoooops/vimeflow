@@ -13,7 +13,18 @@ const mockSessions: Session[] = [
     status: 'running',
     workingDirectory: '/home/user/projects/Vimeflow',
     agentType: 'claude-code',
-    terminalPid: 12345,
+    layout: 'single',
+    panes: [
+      {
+        id: 'p0',
+        ptyId: 'sess-1',
+        cwd: '/home/user/projects/Vimeflow',
+        agentType: 'claude-code',
+        status: 'running',
+        active: true,
+        pid: 12345,
+      },
+    ],
     createdAt: '2026-04-07T03:45:00Z',
     lastActivityAt: '2026-04-06T17:47:34Z',
     activity: {
@@ -41,7 +52,18 @@ const mockSessions: Session[] = [
     status: 'paused',
     workingDirectory: '/home/user/projects/Vimeflow',
     agentType: 'claude-code',
-    terminalPid: 12346,
+    layout: 'single',
+    panes: [
+      {
+        id: 'p0',
+        ptyId: 'sess-2',
+        cwd: '/home/user/projects/Vimeflow',
+        agentType: 'claude-code',
+        status: 'paused',
+        active: true,
+        pid: 12346,
+      },
+    ],
     createdAt: '2026-04-07T03:30:00Z',
     lastActivityAt: '2026-04-06T18:02:15Z',
     activity: {
@@ -64,6 +86,17 @@ const mockSessions: Session[] = [
     status: 'completed',
     workingDirectory: '/home/user/projects/Vimeflow',
     agentType: 'claude-code',
+    layout: 'single',
+    panes: [
+      {
+        id: 'p0',
+        ptyId: 'sess-3',
+        cwd: '/home/user/projects/Vimeflow',
+        agentType: 'claude-code',
+        status: 'completed',
+        active: true,
+      },
+    ],
     createdAt: '2026-04-07T02:00:00Z',
     lastActivityAt: '2026-04-06T12:45:00Z',
     activity: {

@@ -12,6 +12,17 @@ const buildSession = (id: string, status: SessionStatus): Session => ({
   status,
   workingDirectory: '~',
   agentType: 'claude-code',
+  layout: 'single',
+  panes: [
+    {
+      id: 'p0',
+      ptyId: id,
+      cwd: '~',
+      agentType: 'claude-code',
+      status,
+      active: true,
+    },
+  ],
   createdAt: '2026-05-06T00:00:00Z',
   lastActivityAt: '2026-05-06T00:00:00Z',
   activity: {

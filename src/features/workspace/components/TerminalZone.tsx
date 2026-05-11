@@ -6,18 +6,16 @@ import {
 } from '../../terminal/components/TerminalPane'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type {
-  RestoreData,
   PaneEventHandler,
   NotifyPaneReadyResult,
 } from '../../sessions/hooks/useSessionManager'
+import { findActivePane } from '../../sessions/utils/activeSessionPane'
 import { isOpenSessionStatus } from '../../sessions/utils/pickNextVisibleSessionId'
 
 export interface TerminalZoneProps {
   sessions: Session[]
   activeSessionId: string | null
-  onSessionCwdChange?: (sessionId: string, cwd: string) => void
-  /** Restore data per session id, populated during mount-time restore */
-  restoreData?: Map<string, RestoreData>
+  onSessionCwdChange?: (sessionId: string, paneId: string, cwd: string) => void
   /** True until the initial restore IPC + drain completes */
   loading?: boolean
   /**
@@ -25,7 +23,7 @@ export interface TerminalZoneProps {
    * attached. Forwarded from `useSessionManager.notifyPaneReady`.
    */
   onPaneReady?: (
-    sessionId: string,
+    ptyId: string,
     handler: PaneEventHandler
   ) => NotifyPaneReadyResult
   /**
@@ -49,7 +47,6 @@ export const TerminalZone = ({
   sessions,
   activeSessionId,
   onSessionCwdChange = undefined,
-  restoreData = undefined,
   loading = false,
   onPaneReady = undefined,
   onSessionRestart = undefined,
@@ -81,7 +78,14 @@ export const TerminalZone = ({
         // for newly-created sessions and resurrected dead ones on reload).
         sessions.map((session) => {
           const isActive = session.id === activeSessionId
-          const restore = restoreData?.get(session.id)
+          // Non-throwing variant: transient invariant violations (e.g. zero
+          // active panes mid-state-update during 5b multi-pane edits) must
+          // not crash the render tree. The session row is skipped until the
+          // invariant is restored by the next mutation tick.
+          const activePane = findActivePane(session)
+          if (!activePane) {
+            return null
+          }
 
           // Rules (status-first, round 3 Finding 3 / codex P2):
           //  - Exited statuses (completed OR errored) →
@@ -98,14 +102,17 @@ export const TerminalZone = ({
           //    SessionTabs strip when active) so both must route here;
           //    skipping errored leaves a zombie attach or silent respawn
           //    on a dead PTY.
-          //  - Has restoreData → 'attach'. Covers Alive restored sessions
+          //  - Has pane.restoreData → 'attach'. Covers Alive restored sessions
           //    AND newly-created sessions (createSession seeds an empty
           //    restoreData slot so the pane attaches instead of spawning).
           //  - Otherwise → 'spawn' (legacy fallback).
           let mode: TerminalPaneMode = 'spawn'
-          if (session.status === 'completed' || session.status === 'errored') {
+          if (
+            activePane.status === 'completed' ||
+            activePane.status === 'errored'
+          ) {
             mode = 'awaiting-restart'
-          } else if (restore) {
+          } else if (activePane.restoreData) {
             mode = 'attach'
           }
 
@@ -132,20 +139,32 @@ export const TerminalZone = ({
               }
               data-testid="terminal-pane"
               data-session-id={session.id}
-              data-cwd={session.workingDirectory}
+              data-pane-id={activePane.id}
+              data-pty-id={activePane.ptyId}
+              data-cwd={activePane.cwd}
               data-mode={mode}
               className={`absolute inset-0 ${isActive ? '' : 'hidden'}`}
             >
+              {/* F16 (codex connector P1): key the inner TerminalPane by
+                  pane.ptyId so a restartSession (which preserves Session.id
+                  but rotates pane.ptyId) forces a clean unmount/remount of
+                  the xterm + useTerminal subtree. Without this, the
+                  mount-initialized refs inside useTerminal stay bound to
+                  the dead pre-restart PTY and the user-visible pane
+                  appears detached after restart. The outer wrapper div
+                  keyed by session.id (above) is unchanged, so sidebar /
+                  tab-strip / ARIA associations don't churn. */}
               <TerminalPane
-                sessionId={session.id}
-                cwd={session.workingDirectory}
+                key={activePane.ptyId}
+                session={session}
+                pane={activePane}
                 service={service}
-                restoredFrom={restore}
                 mode={mode}
-                onCwdChange={(cwd) => onSessionCwdChange?.(session.id, cwd)}
+                onCwdChange={(cwd) =>
+                  onSessionCwdChange?.(session.id, activePane.id, cwd)
+                }
                 onPaneReady={onPaneReady}
                 onRestart={onSessionRestart}
-                session={session}
                 isActive={isActive}
                 deferFit={deferTerminalFit}
               />

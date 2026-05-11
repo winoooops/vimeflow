@@ -1,26 +1,29 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { UseGitBranchReturn } from '../../../diff/hooks/useGitBranch'
 import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
 import type { Session } from '../../../sessions/types'
+import type { BodyHandle, BodyProps } from './Body'
 import { TerminalPane } from './index'
+
+const bodyPropsSpy = vi.hoisted(() => vi.fn())
 
 vi.mock('./Body', async () => {
   const React = await import('react')
 
-  const Body = React.forwardRef<
-    { focusTerminal: () => void },
-    { deferFit: boolean }
-  >(function MockBody({ deferFit }, ref): React.ReactElement {
-    React.useImperativeHandle(ref, () => ({
-      focusTerminal: vi.fn(),
-    }))
+  const Body = React.forwardRef<BodyHandle, BodyProps>(
+    function MockBody(props, ref): React.ReactElement {
+      bodyPropsSpy(props)
+      React.useImperativeHandle(ref, () => ({
+        focusTerminal: vi.fn(),
+      }))
 
-    return React.createElement('div', {
-      'data-testid': 'body-mock',
-      'data-defer-fit': deferFit ? 'true' : 'false',
-    })
-  })
+      return React.createElement('div', {
+        'data-testid': 'body-mock',
+        'data-defer-fit': props.deferFit ? 'true' : 'false',
+      })
+    }
+  )
 
   return {
     Body,
@@ -66,6 +69,17 @@ const session: Session = {
   status: 'running',
   workingDirectory: '/home/user/repo',
   agentType: 'claude-code',
+  layout: 'single',
+  panes: [
+    {
+      id: 'p0',
+      ptyId: 'pty-s1',
+      cwd: '/home/user/repo',
+      agentType: 'claude-code',
+      status: 'running',
+      active: true,
+    },
+  ],
   createdAt: '2026-05-08T10:00:00Z',
   lastActivityAt: '2026-05-08T11:55:00Z',
   activity: {
@@ -83,14 +97,17 @@ const session: Session = {
 }
 
 const baseProps = {
-  sessionId: 's1',
-  cwd: '/home/user/repo',
   service: {} as never,
   session,
+  pane: session.panes[0],
   isActive: true,
 }
 
 describe('TerminalPane index', () => {
+  beforeEach(() => {
+    bodyPropsSpy.mockClear()
+  })
+
   test('renders Body when mode is spawn', () => {
     render(<TerminalPane {...baseProps} mode="spawn" />)
 
@@ -114,11 +131,18 @@ describe('TerminalPane index', () => {
   })
 
   test('renders RestartAffordance when mode is awaiting-restart', () => {
+    const completedSession: Session = {
+      ...session,
+      status: 'completed',
+      panes: [{ ...session.panes[0], status: 'completed' }],
+    }
+
     render(
       <TerminalPane
         {...baseProps}
         mode="awaiting-restart"
-        session={{ ...session, status: 'completed' }}
+        session={completedSession}
+        pane={completedSession.panes[0]}
       />
     )
 
@@ -166,6 +190,14 @@ describe('TerminalPane index', () => {
     expect(screen.getByText('−3')).toBeInTheDocument()
   })
 
+  test('forwards pane.ptyId to Body as sessionId', () => {
+    render(<TerminalPane {...baseProps} />)
+
+    expect(bodyPropsSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'pty-s1' })
+    )
+  })
+
   test('clicking the container flips focused state', () => {
     render(<TerminalPane {...baseProps} />)
 
@@ -186,11 +218,18 @@ describe('TerminalPane index', () => {
   })
 
   test('Footer placeholder uses awaiting-restart override', () => {
+    const completedSession: Session = {
+      ...session,
+      status: 'completed',
+      panes: [{ ...session.panes[0], status: 'completed' }],
+    }
+
     render(
       <TerminalPane
         {...baseProps}
         mode="awaiting-restart"
-        session={{ ...session, status: 'completed' }}
+        session={completedSession}
+        pane={completedSession.panes[0]}
       />
     )
 

@@ -51,6 +51,17 @@ const createMockSession = (id: string, name: string): Session => ({
   status: 'running',
   workingDirectory: '/home/user',
   agentType: 'claude-code',
+  layout: 'single',
+  panes: [
+    {
+      id: 'p0',
+      ptyId: `pty-${id}`,
+      cwd: '/home/user',
+      agentType: 'claude-code',
+      status: 'running',
+      active: true,
+    },
+  ],
   createdAt: '2024-01-01T00:00:00Z',
   lastActivityAt: '2024-01-01T00:00:00Z',
   activity: {
@@ -97,6 +108,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       restartSession: vi.fn(),
       renameSession: vi.fn(),
       reorderSessions: vi.fn(),
+      updatePaneCwd: vi.fn(),
+      updatePaneAgentType: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
       restoreData: new Map(),
@@ -135,7 +148,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       modelId: null,
       modelDisplayName: null,
       version: null,
-      sessionId: 'session-1',
+      sessionId: 'pty-session-1',
       agentSessionId: null,
       contextWindow: null,
       cost: null,
@@ -254,7 +267,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       modelId: null,
       modelDisplayName: null,
       version: null,
-      sessionId: 'session-1',
+      sessionId: 'pty-session-1',
       agentSessionId: null,
       contextWindow: null,
       cost: null,
@@ -268,8 +281,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
     render(<WorkspaceView />)
 
     await waitFor(() =>
-      expect(mockSessionManager.updateSessionAgentType).toHaveBeenCalledWith(
+      expect(mockSessionManager.updatePaneAgentType).toHaveBeenCalledWith(
         'session-1',
+        'p0',
         'codex'
       )
     )
@@ -290,7 +304,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       modelId: null,
       modelDisplayName: null,
       version: null,
-      sessionId: 'session-1',
+      sessionId: 'pty-session-1',
       agentSessionId: null,
       contextWindow: null,
       cost: null,
@@ -305,7 +319,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     const activeTab = screen.getByRole('tab', { name: 'feature' })
     expect(within(activeTab).getByText(AGENTS.shell.glyph)).toBeInTheDocument()
-    expect(mockSessionManager.updateSessionAgentType).not.toHaveBeenCalled()
+    expect(mockSessionManager.updatePaneAgentType).not.toHaveBeenCalled()
   })
 
   test(':close command removes active session', async () => {

@@ -1,15 +1,51 @@
 // Session domain types — owned by src/features/sessions/.
+// cspell:ignore vsplit hsplit
 
 export type SessionStatus = 'running' | 'paused' | 'completed' | 'errored'
+
+export type LayoutId = 'single' | 'vsplit' | 'hsplit' | 'threeRight' | 'quad'
+
+export interface Pane {
+  /** Session-scoped pane id, e.g. `'p0'`, `'p1'`. Stable across renders;
+   * used to address the pane within `Session.panes`. NOT a Rust handle. */
+  id: string
+
+  /** Rust PTY handle. Equals what the Rust IPC layer calls `sessionId` on
+   * the wire. Used for every PTY operation. */
+  ptyId: string
+
+  /** Per-pane working directory. */
+  cwd: string
+
+  /** Detected agent CLI for this pane. */
+  agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
+
+  /** Materialized pane status. */
+  status: SessionStatus
+
+  /** Restoration buffer for buffered-event drain. */
+  restoreData?: import('../../terminal/types').RestoreData
+
+  /** OS process id of the PTY. */
+  pid?: number
+
+  /** Exactly one pane per session has `active === true`. */
+  active: boolean
+}
 
 export interface Session {
   id: string
   projectId: string
   name: string // user-assigned or derived from prompt
   status: SessionStatus
+  /** Derived from `getActivePane(session).cwd`; retained for existing chrome. */
   workingDirectory: string
+  /** Derived from `getActivePane(session).agentType`; retained for existing chrome. */
   agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
-  terminalPid?: number
+  /** Per-session canvas layout. Default 'single' in step 5a. */
+  layout: LayoutId
+  /** At least one pane per session. Step 5a creates single-pane sessions. */
+  panes: Pane[]
   currentAction?: string // current action description (e.g., "Creating auth middleware...")
   createdAt: string
   lastActivityAt: string

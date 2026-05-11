@@ -33,10 +33,23 @@ const readVisibleTerminalBuffer = (): string => {
   return pane ? readPaneBuffer(pane) : ''
 }
 
-const readTerminalBufferForSession = (sessionId: string): string => {
-  const pane = document.querySelector<HTMLElement>(
-    `[data-testid="terminal-pane"][data-session-id="${CSS.escape(sessionId)}"]`
-  )
+// Callers may pass either a React `Session.id` (the workspace UUID) or a
+// `pane.ptyId` (the Rust PTY handle). Post-5a these are distinct values
+// living on different attributes — `data-session-id` on TerminalZone's
+// wrapper, `data-pty-id` on both the wrapper and Body's inner xterm
+// container. Try session-id first (most callers operate at the
+// workspace level), then fall back to pty-id so legacy / Rust-side
+// callers keep working.
+const readTerminalBufferForSession = (id: string): string => {
+  const escaped = CSS.escape(id)
+
+  const pane =
+    document.querySelector<HTMLElement>(
+      `[data-testid="terminal-pane"][data-session-id="${escaped}"]`
+    ) ??
+    document.querySelector<HTMLElement>(
+      `[data-testid="terminal-pane"][data-pty-id="${escaped}"]`
+    )
 
   return pane ? readPaneBuffer(pane) : ''
 }

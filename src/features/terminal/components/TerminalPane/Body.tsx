@@ -71,7 +71,8 @@ export type BodyMode = 'attach' | 'spawn'
 
 export interface BodyProps {
   /**
-   * Terminal session identifier
+   * Rust PTY handle. This is the value Rust IPC calls `sessionId`; in the
+   * pane model it flows from `pane.ptyId` and keys xterm cache entries.
    */
   sessionId: string
 
@@ -528,7 +529,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       <div
         ref={containerRef}
         data-testid="terminal-pane"
-        data-session-id={sessionId}
+        data-pty-id={sessionId}
         className="h-full w-full"
       />
     </div>

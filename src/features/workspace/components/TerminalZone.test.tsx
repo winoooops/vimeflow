@@ -38,10 +38,9 @@ const mockService: ITerminalService = {
 vi.mock('../../terminal/components/TerminalPane', () => ({
   TerminalPane: vi.fn(
     ({
-      sessionId,
-      cwd,
-      restoredFrom,
+      pane,
       mode,
+      onCwdChange,
       deferFit,
       onRestart,
       session,
@@ -49,9 +48,11 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
     }: TerminalPaneProps): ReactElement => (
       <div
         data-testid="terminal-pane-mock"
-        data-session-id={sessionId}
-        data-cwd={cwd}
-        data-restored={restoredFrom ? 'true' : 'false'}
+        data-session-id={session.id}
+        data-pane-id={pane.id}
+        data-pty-id={pane.ptyId}
+        data-cwd={pane.cwd}
+        data-restored={pane.restoreData ? 'true' : 'false'}
         data-mode={mode}
         data-defer-fit={deferFit ? 'true' : 'false'}
         data-session-name={session.name}
@@ -64,10 +65,19 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
         {onRestart && (
           <button
             type="button"
-            data-testid={`mock-restart-${sessionId}`}
-            onClick={() => onRestart(sessionId)}
+            data-testid={`mock-restart-${session.id}`}
+            onClick={() => onRestart(session.id)}
           >
             mock-restart
+          </button>
+        )}
+        {onCwdChange && (
+          <button
+            type="button"
+            data-testid={`mock-cwd-${session.id}`}
+            onClick={() => onCwdChange('/changed')}
+          >
+            mock-cwd
           </button>
         )}
       </div>
@@ -166,6 +176,31 @@ describe('TerminalZone', () => {
       (pane) => pane.getAttribute('data-session-id') === 'sess-1'
     )
     expect(activeMockPane).toHaveAttribute('data-cwd', '~')
+  })
+
+  test('passes the active pane to each TerminalPane', () => {
+    render(<TerminalZone {...defaultProps} />)
+
+    const terminalPanes = screen.getAllByTestId('terminal-pane')
+    const mockPanes = screen.getAllByTestId('terminal-pane-mock')
+
+    expect(terminalPanes[0]).toHaveAttribute('data-pane-id', 'p0')
+    expect(terminalPanes[0]).toHaveAttribute('data-cwd', '~')
+    expect(mockPanes[0]).toHaveAttribute('data-pane-id', 'p0')
+    expect(mockPanes[0]).toHaveAttribute('data-pty-id', 'sess-1')
+  })
+
+  test('forwards cwd changes with session id and pane id', async () => {
+    const user = userEvent.setup()
+    const onSessionCwdChange = vi.fn()
+
+    render(
+      <TerminalZone {...defaultProps} onSessionCwdChange={onSessionCwdChange} />
+    )
+
+    await user.click(screen.getByTestId('mock-cwd-sess-1'))
+
+    expect(onSessionCwdChange).toHaveBeenCalledWith('sess-1', 'p0', '/changed')
   })
 
   test('forwards deferred terminal fit state to TerminalPane', () => {
@@ -305,22 +340,29 @@ describe('TerminalZone', () => {
     expect(screen.queryByTestId('terminal-pane-mock')).not.toBeInTheDocument()
   })
 
-  test('passes restoreData to TerminalPane for each session', () => {
-    const restoreData = new Map([
-      [
-        'sess-1',
-        {
-          sessionId: 'sess-1',
-          cwd: '/tmp',
-          pid: 123,
-          replayData: 'AAA',
-          replayEndOffset: 3,
-          bufferedEvents: [],
-        },
-      ],
-    ])
+  test('passes pane.restoreData to TerminalPane for each session', () => {
+    const sessions = defaultProps.sessions.map((session) =>
+      session.id === 'sess-1'
+        ? {
+            ...session,
+            panes: [
+              {
+                ...session.panes[0],
+                restoreData: {
+                  sessionId: 'sess-1',
+                  cwd: '/tmp',
+                  pid: 123,
+                  replayData: 'AAA',
+                  replayEndOffset: 3,
+                  bufferedEvents: [],
+                },
+              },
+            ],
+          }
+        : session
+    )
 
-    render(<TerminalZone {...defaultProps} restoreData={restoreData} />)
+    render(<TerminalZone {...defaultProps} sessions={sessions} />)
 
     const mockPanes = screen.getAllByTestId('terminal-pane-mock')
 
@@ -353,30 +395,45 @@ describe('TerminalZone', () => {
   test('F3 regression: Exited session renders in awaiting-restart mode', () => {
     const aliveAndExited = [
       // Use the mockSessions shape from the test file but override status
-      { ...mockSessions[0], id: 'alive', status: 'running' as const },
-      { ...mockSessions[0], id: 'exited', status: 'completed' as const },
+      {
+        ...mockSessions[0],
+        id: 'alive',
+        status: 'running' as const,
+        panes: [
+          {
+            ...mockSessions[0].panes[0],
+            ptyId: 'alive',
+            status: 'running' as const,
+            restoreData: {
+              sessionId: 'alive',
+              cwd: '/tmp',
+              pid: 1,
+              replayData: '',
+              replayEndOffset: 0,
+              bufferedEvents: [],
+            },
+          },
+        ],
+      },
+      {
+        ...mockSessions[0],
+        id: 'exited',
+        status: 'completed' as const,
+        panes: [
+          {
+            ...mockSessions[0].panes[0],
+            ptyId: 'exited',
+            status: 'completed' as const,
+          },
+        ],
+      },
     ]
-
-    const restoreData = new Map([
-      [
-        'alive',
-        {
-          sessionId: 'alive',
-          cwd: '/tmp',
-          pid: 1,
-          replayData: '',
-          replayEndOffset: 0,
-          bufferedEvents: [],
-        },
-      ],
-    ])
 
     render(
       <TerminalZone
         {...defaultProps}
         sessions={aliveAndExited}
         activeSessionId="alive"
-        restoreData={restoreData}
       />
     )
 
@@ -412,29 +469,29 @@ describe('TerminalZone', () => {
         ...mockSessions[0],
         id: 'just-exited',
         status: 'completed' as const,
+        panes: [
+          {
+            ...mockSessions[0].panes[0],
+            ptyId: 'just-exited',
+            status: 'completed' as const,
+            restoreData: {
+              sessionId: 'just-exited',
+              cwd: '/tmp',
+              pid: 1,
+              replayData: '',
+              replayEndOffset: 0,
+              bufferedEvents: [],
+            },
+          },
+        ],
       },
     ]
-
-    const restoreData = new Map([
-      [
-        'just-exited',
-        {
-          sessionId: 'just-exited',
-          cwd: '/tmp',
-          pid: 1,
-          replayData: '',
-          replayEndOffset: 0,
-          bufferedEvents: [],
-        },
-      ],
-    ])
 
     render(
       <TerminalZone
         {...defaultProps}
         sessions={exitedAfterMount}
         activeSessionId="just-exited"
-        restoreData={restoreData}
       />
     )
 
@@ -463,32 +520,24 @@ describe('TerminalZone', () => {
   })
 
   test('F3: alive session with restoreData renders in attach mode (no spawn)', () => {
-    const restoreData = new Map([
-      [
-        'sess-1',
+    const sessions = defaultProps.sessions.map((session, index) => ({
+      ...session,
+      panes: [
         {
-          sessionId: 'sess-1',
-          cwd: '/tmp',
-          pid: 1,
-          replayData: '',
-          replayEndOffset: 0,
-          bufferedEvents: [],
+          ...session.panes[0],
+          restoreData: {
+            sessionId: session.id,
+            cwd: '/tmp',
+            pid: index + 1,
+            replayData: '',
+            replayEndOffset: 0,
+            bufferedEvents: [],
+          },
         },
       ],
-      [
-        'sess-2',
-        {
-          sessionId: 'sess-2',
-          cwd: '/tmp',
-          pid: 2,
-          replayData: '',
-          replayEndOffset: 0,
-          bufferedEvents: [],
-        },
-      ],
-    ])
+    }))
 
-    render(<TerminalZone {...defaultProps} restoreData={restoreData} />)
+    render(<TerminalZone {...defaultProps} sessions={sessions} />)
 
     const mockPanes = screen.getAllByTestId('terminal-pane-mock')
 

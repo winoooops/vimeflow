@@ -178,3 +178,24 @@ export interface TerminalTheme {
   /** ANSI bright white */
   brightWhite: string
 }
+
+/** Restoration data per PTY, populated at mount-time restore and on
+ * createSession. Consumed by `<TerminalPane>` Body when it mounts. */
+export interface RestoreData {
+  sessionId: string
+  cwd: string
+  pid: number
+  replayData: string
+  replayEndOffset: number
+  bufferedEvents: { data: string; offsetStart: number; byteLen: number }[]
+}
+
+/** Handler that receives a buffered PTY event during pane drain. */
+export type PaneEventHandler = (
+  data: string,
+  offsetStart: number,
+  byteLen: number
+) => void
+
+/** Cleanup callback returned by `notifyPaneReady` — call on pane unmount. */
+export type NotifyPaneReadyResult = () => void

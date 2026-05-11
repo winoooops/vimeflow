@@ -33,6 +33,17 @@ const createTestSession = (sessionId: string, cwd: string): Session => ({
   status: 'running',
   workingDirectory: cwd,
   agentType: 'generic',
+  layout: 'single',
+  panes: [
+    {
+      id: 'p0',
+      ptyId: sessionId,
+      cwd,
+      agentType: 'generic',
+      status: 'running',
+      active: true,
+    },
+  ],
   createdAt: '2026-05-08T00:00:00Z',
   lastActivityAt: '2026-05-08T00:00:00Z',
   activity: {
@@ -49,20 +60,35 @@ const createTestSession = (sessionId: string, cwd: string): Session => ({
   },
 })
 
-type TestTerminalPaneProps = Omit<TerminalPaneProps, 'session' | 'isActive'> &
-  Partial<Pick<TerminalPaneProps, 'session' | 'isActive'>>
+interface TestTerminalPaneProps {
+  sessionId: string
+  cwd: string
+  service: ITerminalService
+  mode?: TerminalPaneProps['mode']
+  session?: Session
+  isActive?: boolean
+}
 
 const TestTerminalPane = ({
-  session,
+  sessionId,
+  cwd,
+  session = undefined,
   isActive = true,
-  ...props
-}: TestTerminalPaneProps): ReactElement => (
-  <TerminalPane
-    {...props}
-    session={session ?? createTestSession(props.sessionId, props.cwd)}
-    isActive={isActive}
-  />
-)
+  service,
+  mode = undefined,
+}: TestTerminalPaneProps): ReactElement => {
+  const resolvedSession = session ?? createTestSession(sessionId, cwd)
+
+  return (
+    <TerminalPane
+      session={resolvedSession}
+      pane={resolvedSession.panes[0]}
+      isActive={isActive}
+      service={service}
+      mode={mode}
+    />
+  )
+}
 
 /**
  * Terminal Integration Tests
@@ -234,8 +260,12 @@ describe('Terminal Integration Tests', () => {
 
       // Wait for first terminal
       await screen.findByTestId('terminal-pane')
+      // Body's inner container exposes the PTY handle via data-pty-id post-5a
+      // (was data-session-id; renamed to avoid colliding with TerminalZone's
+      // data-session-id={session.id} now that React Session.id is independent
+      // from the Rust PTY handle).
       expect(screen.getByTestId('terminal-pane')).toHaveAttribute(
-        'data-session-id',
+        'data-pty-id',
         'session-1'
       )
 
@@ -260,7 +290,7 @@ describe('Terminal Integration Tests', () => {
       // Wait for second terminal to be ready
       await waitFor(() => {
         expect(screen.getByTestId('terminal-pane')).toHaveAttribute(
-          'data-session-id',
+          'data-pty-id',
           'session-2'
         )
       })
