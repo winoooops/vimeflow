@@ -1,25 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
-import type { Session, AgentActivity } from '../types'
+import type { Session } from '../types'
 import type { SessionList, SessionInfo } from '../../../bindings'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import {
   registerPtySession,
   unregisterPtySession,
 } from '../../terminal/ptySessionMap'
-
-const emptyActivity: AgentActivity = {
-  fileChanges: [],
-  toolCalls: [],
-  testResults: [],
-  contextWindow: { used: 0, total: 200000, percentage: 0, emoji: '😊' },
-  usage: {
-    sessionDuration: 0,
-    turnCount: 0,
-    messages: { sent: 0, limit: 200 },
-    tokens: { input: 0, output: 0, total: 0 },
-  },
-}
+import { emptyActivity } from '../constants'
 
 function tabName(cwd: string, index: number): string {
   if (cwd === '~') {
