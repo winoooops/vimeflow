@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
-import { getActivePane } from '../utils/activeSessionPane'
+import { findActivePane } from '../utils/activeSessionPane'
 
 export interface UseActiveSessionControllerOptions {
   service: ITerminalService
@@ -35,23 +35,26 @@ export const useActiveSessionController = ({
   const setActiveSessionId = useCallback(
     (id: string): void => {
       // F5 (claude MEDIUM): look up the session BEFORE mutating ref+state.
-      // The previous order eagerly wrote the id even when sessionsRef
-      // contained no matching session, leaving React state + ref pointing
-      // to a ghost id with no IPC fired — WorkspaceView's `activeSession`
-      // would be undefined and the entire chrome (cwd, agent-status,
-      // file explorer) would silently zero out until the user clicked
-      // another tab.
+      // F11 (claude MEDIUM): use the non-throwing `findActivePane` and
+      // resolve the ptyId BEFORE the mutations. The previous code called
+      // `getActivePane(session).ptyId` AFTER the ref+state writes — if
+      // 5b's multi-pane edits transiently produced a no-active-pane state,
+      // the throw would leave React pointing at the new id while Rust's
+      // active stayed on the old one (no IPC fired, no rollback reached).
       const session = sessionsRef.current.find((s) => s.id === id)
       if (!session) {
         return
       }
+      const pane = findActivePane(session)
+      if (!pane) {
+        return
+      }
+      const ptyId = pane.ptyId
 
       const myReq = ++activeRequestIdRef.current
       const prev = activeSessionIdRef.current
       activeSessionIdRef.current = id
       setActiveSessionIdState(id)
-
-      const ptyId = getActivePane(session).ptyId
 
       // eslint-disable-next-line promise/prefer-await-to-then
       service.setActiveSession(ptyId).catch((err) => {

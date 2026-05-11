@@ -75,4 +75,49 @@ describe('useAutoCreateOnEmpty', () => {
     )
     expect(createSession).not.toHaveBeenCalled()
   })
+
+  // F10 (claude MEDIUM) regression: a failed initial auto-create spawn
+  // must not permanently disable retry. The guard latches only on
+  // observed hasLiveSession === true, not on attempt count.
+  test('retries on initial spawn failure; latches on first observed live session', () => {
+    const createSession = vi.fn()
+
+    const { rerender } = renderHook(
+      ({ pending, hasLive }) =>
+        useAutoCreateOnEmpty({
+          enabled: true,
+          loading: false,
+          hasLiveSession: hasLive,
+          pendingSpawns: pending,
+          createSession,
+        }),
+      { initialProps: { pending: 0, hasLive: false } }
+    )
+
+    // Initial: no live session, no spawn in flight → fire.
+    expect(createSession).toHaveBeenCalledTimes(1)
+
+    // Spawn in flight.
+    rerender({ pending: 1, hasLive: false })
+    expect(createSession).toHaveBeenCalledTimes(1)
+
+    // Spawn FAILED — pendingSpawns drops to 0, hasLive still false.
+    // Per F10: must retry.
+    rerender({ pending: 0, hasLive: false })
+    expect(createSession).toHaveBeenCalledTimes(2)
+
+    // Spawn in flight again.
+    rerender({ pending: 1, hasLive: false })
+    expect(createSession).toHaveBeenCalledTimes(2)
+
+    // Spawn succeeds — hasLive flips true. Ref latches.
+    rerender({ pending: 0, hasLive: true })
+    expect(createSession).toHaveBeenCalledTimes(2)
+
+    // User later closes all tabs — hasLive returns to false. MUST NOT
+    // auto-create again (ref is latched). The user's tab-close is
+    // intentional, not a state to recover from.
+    rerender({ pending: 0, hasLive: false })
+    expect(createSession).toHaveBeenCalledTimes(2)
+  })
 })

@@ -29,7 +29,7 @@ export interface RestoreData {
  * orchestrator can fire buffered events through the same cursor-dedupe path.
  */
 export type NotifyPaneReady = (
-  sessionId: string,
+  ptyId: string,
   handler: (data: string, offsetStart: number, byteLen: number) => void
 ) => () => void
 

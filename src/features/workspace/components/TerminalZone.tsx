@@ -23,7 +23,7 @@ export interface TerminalZoneProps {
    * attached. Forwarded from `useSessionManager.notifyPaneReady`.
    */
   onPaneReady?: (
-    sessionId: string,
+    ptyId: string,
     handler: PaneEventHandler
   ) => NotifyPaneReadyResult
   /**

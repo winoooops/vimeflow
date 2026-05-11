@@ -73,7 +73,7 @@ export interface SessionManager {
    * subscription and the drain).
    */
   notifyPaneReady: (
-    sessionId: string,
+    ptyId: string,
     handler: PaneEventHandler
   ) => NotifyPaneReadyResult
 }
