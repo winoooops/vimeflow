@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -532,6 +532,316 @@ describe('Body', () => {
       })
     })
 
+    test('coalesces repeated ResizeObserver notifications into one fit per frame', async () => {
+      let resizeCallback: ResizeObserverCallback | undefined
+      const mockObserve = vi.fn()
+      const frameCallbacks: FrameRequestCallback[] = []
+
+      const requestAnimationFrameSpy = vi
+        .spyOn(window, 'requestAnimationFrame')
+        .mockImplementation((callback: FrameRequestCallback): number => {
+          frameCallbacks.push(callback)
+
+          return frameCallbacks.length
+        })
+
+      global.ResizeObserver = vi
+        .fn()
+        .mockImplementation((callback: ResizeObserverCallback) => {
+          resizeCallback = callback
+
+          return {
+            observe: mockObserve,
+            unobserve: vi.fn(),
+            disconnect: vi.fn(),
+          }
+        })
+
+      try {
+        render(
+          <Body
+            sessionId="test-session"
+            cwd="/home/user"
+            service={defaultMockService}
+          />
+        )
+
+        await waitFor(() => {
+          expect(global.ResizeObserver).toHaveBeenCalled()
+          expect(mockObserve).toHaveBeenCalled()
+        })
+
+        mockFitAddon.fit.mockClear()
+
+        const container = screen.getByTestId('terminal-pane')
+        Object.defineProperty(container, 'offsetWidth', {
+          value: 820,
+          configurable: true,
+        })
+
+        Object.defineProperty(container, 'offsetHeight', {
+          value: 600,
+          configurable: true,
+        })
+
+        act(() => {
+          resizeCallback?.([], {} as ResizeObserver)
+          resizeCallback?.([], {} as ResizeObserver)
+          resizeCallback?.([], {} as ResizeObserver)
+        })
+
+        expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+        expect(mockFitAddon.fit).not.toHaveBeenCalled()
+
+        act(() => {
+          frameCallbacks[0](16)
+        })
+
+        expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      } finally {
+        requestAnimationFrameSpy.mockRestore()
+      }
+    })
+
+    test('defers ResizeObserver fit while layout drag is active', async () => {
+      let resizeCallback: ResizeObserverCallback | undefined
+      const mockObserve = vi.fn()
+      const frameCallbacks: FrameRequestCallback[] = []
+
+      const requestAnimationFrameSpy = vi
+        .spyOn(window, 'requestAnimationFrame')
+        .mockImplementation((callback: FrameRequestCallback): number => {
+          frameCallbacks.push(callback)
+
+          return frameCallbacks.length
+        })
+
+      const offsetWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+        .mockReturnValue(840)
+
+      const offsetHeightSpy = vi
+        .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+        .mockReturnValue(600)
+
+      global.ResizeObserver = vi
+        .fn()
+        .mockImplementation((callback: ResizeObserverCallback) => {
+          resizeCallback = callback
+
+          return {
+            observe: mockObserve,
+            unobserve: vi.fn(),
+            disconnect: vi.fn(),
+          }
+        })
+
+      try {
+        const { rerender } = render(
+          <Body
+            sessionId="test-session"
+            cwd="/home/user"
+            service={defaultMockService}
+            deferFit
+          />
+        )
+
+        await waitFor(() => {
+          expect(global.ResizeObserver).toHaveBeenCalled()
+          expect(mockObserve).toHaveBeenCalled()
+        })
+
+        expect(mockFitAddon.fit).not.toHaveBeenCalled()
+        mockFitAddon.fit.mockClear()
+
+        const container = screen.getByTestId('terminal-pane')
+        Object.defineProperty(container, 'offsetWidth', {
+          value: 840,
+          configurable: true,
+        })
+
+        Object.defineProperty(container, 'offsetHeight', {
+          value: 600,
+          configurable: true,
+        })
+
+        act(() => {
+          resizeCallback?.([], {} as ResizeObserver)
+          resizeCallback?.([], {} as ResizeObserver)
+        })
+
+        expect(requestAnimationFrameSpy).not.toHaveBeenCalled()
+        expect(mockFitAddon.fit).not.toHaveBeenCalled()
+
+        rerender(
+          <Body
+            sessionId="test-session"
+            cwd="/home/user"
+            service={defaultMockService}
+          />
+        )
+
+        expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+
+        act(() => {
+          frameCallbacks[0](16)
+        })
+
+        expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      } finally {
+        requestAnimationFrameSpy.mockRestore()
+        offsetWidthSpy.mockRestore()
+        offsetHeightSpy.mockRestore()
+      }
+    })
+
+    test('skips flushed fit when layout drag restarts before frame runs', async () => {
+      const mockObserve = vi.fn()
+      const frameCallbacks: FrameRequestCallback[] = []
+
+      const requestAnimationFrameSpy = vi
+        .spyOn(window, 'requestAnimationFrame')
+        .mockImplementation((callback: FrameRequestCallback): number => {
+          frameCallbacks.push(callback)
+
+          return frameCallbacks.length
+        })
+
+      global.ResizeObserver = vi.fn().mockImplementation(() => ({
+        observe: mockObserve,
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      }))
+
+      try {
+        const { rerender } = render(
+          <Body
+            sessionId="test-session"
+            cwd="/home/user"
+            service={defaultMockService}
+            deferFit
+          />
+        )
+
+        await waitFor(() => {
+          expect(global.ResizeObserver).toHaveBeenCalled()
+          expect(mockObserve).toHaveBeenCalled()
+        })
+
+        const container = screen.getByTestId('terminal-pane')
+        Object.defineProperty(container, 'offsetWidth', {
+          value: 840,
+          configurable: true,
+        })
+
+        Object.defineProperty(container, 'offsetHeight', {
+          value: 600,
+          configurable: true,
+        })
+
+        mockFitAddon.fit.mockClear()
+
+        rerender(
+          <Body
+            sessionId="test-session"
+            cwd="/home/user"
+            service={defaultMockService}
+          />
+        )
+
+        expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+
+        rerender(
+          <Body
+            sessionId="test-session"
+            cwd="/home/user"
+            service={defaultMockService}
+            deferFit
+          />
+        )
+
+        act(() => {
+          frameCallbacks[0](16)
+        })
+
+        expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      } finally {
+        requestAnimationFrameSpy.mockRestore()
+      }
+    })
+
+    test('fits the new session instead of flushing the old session when drag ends during session switch', async () => {
+      const firstFitAddon = { fit: vi.fn() }
+      const secondFitAddon = { fit: vi.fn() }
+      const frameCallbacks: FrameRequestCallback[] = []
+
+      vi.mocked(FitAddon)
+        .mockImplementationOnce(() => firstFitAddon as never)
+        .mockImplementationOnce(() => secondFitAddon as never)
+
+      const offsetWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+        .mockReturnValue(840)
+
+      const offsetHeightSpy = vi
+        .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+        .mockReturnValue(600)
+
+      global.ResizeObserver = vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      }))
+
+      try {
+        const { rerender } = render(
+          <Body
+            sessionId="session-a"
+            cwd="/home/user"
+            service={defaultMockService}
+            deferFit
+          />
+        )
+
+        await waitFor(() => {
+          expect(FitAddon).toHaveBeenCalledTimes(1)
+        })
+
+        expect(firstFitAddon.fit).not.toHaveBeenCalled()
+
+        const requestAnimationFrameSpy = vi
+          .spyOn(window, 'requestAnimationFrame')
+          .mockImplementation((callback: FrameRequestCallback): number => {
+            frameCallbacks.push(callback)
+
+            return frameCallbacks.length
+          })
+
+        try {
+          rerender(
+            <Body
+              sessionId="session-b"
+              cwd="/home/user"
+              service={defaultMockService}
+            />
+          )
+
+          await waitFor(() => {
+            expect(FitAddon).toHaveBeenCalledTimes(2)
+          })
+
+          expect(requestAnimationFrameSpy).not.toHaveBeenCalled()
+          expect(firstFitAddon.fit).not.toHaveBeenCalled()
+          expect(secondFitAddon.fit).toHaveBeenCalledTimes(1)
+        } finally {
+          requestAnimationFrameSpy.mockRestore()
+        }
+      } finally {
+        offsetWidthSpy.mockRestore()
+        offsetHeightSpy.mockRestore()
+      }
+    })
+
     test('regression #81: ResizeObserver skips fit when container is hidden (width=0)', async () => {
       let resizeCallback: ResizeObserverCallback | undefined
       const mockObserve = vi.fn()
@@ -591,7 +901,9 @@ describe('Body', () => {
       }
 
       // fitAddon SHOULD fire now that the container has real dimensions
-      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      await waitFor(() => {
+        expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      })
     })
 
     test('regression #81: cached terminal reuse skips fit in zero-width container', async () => {
@@ -689,6 +1001,41 @@ describe('Body', () => {
       // already-fitted dimensions to the PTY without re-measuring).
       expect(mockFitAddon.fit).not.toHaveBeenCalled()
       expect(mockUseTerminal.resize).toHaveBeenCalledTimes(1)
+    })
+
+    test('does not forward duplicate xterm resize dimensions to PTY', async () => {
+      render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      await waitFor(() => {
+        expect(mockTerminal.onResize).toHaveBeenCalled()
+      })
+
+      vi.mocked(mockUseTerminal.resize).mockClear()
+
+      const container = screen.getByTestId('terminal-pane')
+      Object.defineProperty(container, 'offsetWidth', {
+        value: 800,
+        configurable: true,
+      })
+
+      const onResizeCallback = mockTerminal.onResize.mock
+        .calls[0][0] as (size: { cols: number; rows: number }) => void
+
+      act(() => {
+        onResizeCallback({ cols: 80, rows: 24 })
+        onResizeCallback({ cols: 80, rows: 24 })
+        onResizeCallback({ cols: 81, rows: 24 })
+      })
+
+      expect(mockUseTerminal.resize).toHaveBeenCalledTimes(2)
+      expect(mockUseTerminal.resize).toHaveBeenNthCalledWith(1, 80, 24)
+      expect(mockUseTerminal.resize).toHaveBeenNthCalledWith(2, 81, 24)
     })
 
     test('P2: disposes old session terminal when switching to different sessionId', async () => {

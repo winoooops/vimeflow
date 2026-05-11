@@ -31,14 +31,28 @@ describe('File explorer → editor flow', () => {
     const explorer = await $('[data-testid="file-explorer"]')
     await explorer.waitForDisplayed({ timeout: 15_000 })
 
+    const refreshButton = await $('[aria-label="Refresh file tree"]')
+    await refreshButton.waitForDisplayed({ timeout: 15_000 })
+    await refreshButton.click()
+
     await browser.waitUntil(
       async () => {
-        const count = await browser.execute(
-          () => document.querySelectorAll('[role="treeitem"]').length
-        )
-        return count > 0
+        return browser.execute((name: string) => {
+          const items = Array.from(
+            document.querySelectorAll<HTMLElement>('[role="treeitem"]')
+          )
+
+          return items.some(
+            (el) =>
+              !el.hasAttribute('aria-expanded') &&
+              (el.textContent ?? '').includes(name)
+          )
+        }, FIXTURE_NAME)
       },
-      { timeout: 15_000, timeoutMsg: 'file tree never populated' }
+      {
+        timeout: 15_000,
+        timeoutMsg: `fixture ${FIXTURE_NAME} never appeared in the refreshed file tree`,
+      }
     )
 
     // Click our fixture file specifically. Falls back to an error if the

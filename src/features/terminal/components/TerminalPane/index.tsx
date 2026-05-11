@@ -38,6 +38,7 @@ export interface TerminalPaneProps {
   session: Session
   isActive: boolean
   onClose?: (sessionId: string) => void
+  deferFit?: boolean
 }
 
 export {
@@ -60,6 +61,7 @@ export const TerminalPane = ({
   session,
   isActive,
   onClose = undefined,
+  deferFit = false,
 }: TerminalPaneProps): ReactElement => {
   const agent = agentForSession(session)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -188,6 +190,7 @@ export const TerminalPane = ({
             mode={mode}
             onPtyStatusChange={setPtyStatus}
             onFocusChange={onTerminalFocusChange}
+            deferFit={deferFit}
           />
         </div>
       )}

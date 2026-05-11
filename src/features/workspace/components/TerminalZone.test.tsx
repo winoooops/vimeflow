@@ -42,6 +42,7 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
       cwd,
       restoredFrom,
       mode,
+      deferFit,
       onRestart,
       session,
       isActive,
@@ -52,6 +53,7 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
         data-cwd={cwd}
         data-restored={restoredFrom ? 'true' : 'false'}
         data-mode={mode}
+        data-defer-fit={deferFit ? 'true' : 'false'}
         data-session-name={session.name}
         data-is-active={isActive ? 'true' : 'false'}
         data-session-agent-type={session.agentType}
@@ -164,6 +166,16 @@ describe('TerminalZone', () => {
       (pane) => pane.getAttribute('data-session-id') === 'sess-1'
     )
     expect(activeMockPane).toHaveAttribute('data-cwd', '~')
+  })
+
+  test('forwards deferred terminal fit state to TerminalPane', () => {
+    render(<TerminalZone {...defaultProps} deferTerminalFit />)
+
+    const mockPanes = screen.getAllByTestId('terminal-pane-mock')
+
+    mockPanes.forEach((pane) => {
+      expect(pane).toHaveAttribute('data-defer-fit', 'true')
+    })
   })
 
   test('passes session.agentType through to each TerminalPane', () => {

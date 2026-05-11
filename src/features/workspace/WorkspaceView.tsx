@@ -1,5 +1,12 @@
-import type { ReactElement } from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { IconRail } from './components/IconRail'
 import { Tabs } from '../sessions/components/Tabs'
 import { Sidebar } from '../../components/sidebar/Sidebar'
@@ -19,7 +26,7 @@ import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
-import { useResizable } from '../../hooks/useResizable'
+import { clampSize, useResizable } from '../../hooks/useResizable'
 import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
@@ -37,12 +44,20 @@ const SIDEBAR_MIN = 240
 const SIDEBAR_MAX = 560
 const SIDEBAR_DEFAULT = 272
 
+const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
+
 const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'sessions', label: 'SESSIONS' },
   { id: 'files', label: 'FILES' },
 ]
 
 export const WorkspaceView = (): ReactElement => {
+  const workspaceRef = useRef<HTMLDivElement>(null)
+  const sidebarResizeHandleRef = useRef<HTMLDivElement | null>(null)
+  // Imperative resize previews keep this ref, the CSS variable, and
+  // aria-valuenow in sync without per-frame React commits.
+  const sidebarResizeValueRef = useRef<number | null>(null)
+
   // Round 4, Finding 1 (codex P1): one terminal service per WorkspaceView
   // instance. Both `useSessionManager` and every `TerminalPane` (via
   // `TerminalZone`) MUST receive the same instance. Under Tauri the factory
@@ -173,6 +188,43 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [sessions, updateSessionAgentType])
 
+  const setSidebarResizeHandle = useCallback(
+    (element: HTMLDivElement | null): void => {
+      sidebarResizeHandleRef.current = element
+      element?.setAttribute(
+        'aria-valuenow',
+        String(sidebarResizeValueRef.current ?? SIDEBAR_INITIAL)
+      )
+    },
+    []
+  )
+
+  const previewSidebarWidth = useCallback((nextWidth: number): void => {
+    const workspaceElement = workspaceRef.current
+    if (!workspaceElement) {
+      return
+    }
+
+    const nextCssWidth = `${nextWidth}px`
+    if (sidebarResizeValueRef.current === nextWidth) {
+      return
+    }
+
+    workspaceElement.style.setProperty(
+      '--workspace-sidebar-width',
+      nextCssWidth
+    )
+    sidebarResizeValueRef.current = nextWidth
+
+    const resizeHandle = sidebarResizeHandleRef.current
+
+    if (!resizeHandle) {
+      return
+    }
+
+    resizeHandle.setAttribute('aria-valuenow', String(nextWidth))
+  }, [])
+
   const {
     size: sidebarWidth,
     isDragging,
@@ -181,7 +233,13 @@ export const WorkspaceView = (): ReactElement => {
     initial: SIDEBAR_DEFAULT,
     min: SIDEBAR_MIN,
     max: SIDEBAR_MAX,
+    updateMode: 'commit-on-end',
+    onDragPreview: previewSidebarWidth,
   })
+
+  useLayoutEffect(() => {
+    previewSidebarWidth(sidebarWidth)
+  }, [previewSidebarWidth, sidebarWidth])
 
   const activeSession = activeSessionId
     ? sessions.find((s) => s.id === activeSessionId)
@@ -445,14 +503,19 @@ export const WorkspaceView = (): ReactElement => {
 
   return (
     <div
+      ref={workspaceRef}
       data-testid="workspace-view"
       // `grid-rows-1` pins the implicit row to `1fr`; without it
       // `grid-auto-rows: auto` lets the row grow to content size and
       // `h-full` stops propagating the 100vh constraint downward.
       className="grid h-screen grid-rows-1 overflow-hidden"
-      style={{
-        gridTemplateColumns: `48px ${sidebarWidth}px 1fr auto`,
-      }}
+      style={
+        {
+          // `--workspace-sidebar-width` is owned by previewSidebarWidth so
+          // React rerenders cannot overwrite an in-progress drag preview.
+          gridTemplateColumns: `48px var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px) 1fr auto`,
+        } as CSSProperties
+      }
     >
       <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
 
@@ -493,12 +556,14 @@ export const WorkspaceView = (): ReactElement => {
 
         {/* Resize handle */}
         <div
+          ref={setSidebarResizeHandle}
           data-testid="sidebar-resize-handle"
           role="separator"
           aria-orientation="vertical"
-          aria-valuenow={sidebarWidth}
           aria-valuemin={SIDEBAR_MIN}
           aria-valuemax={SIDEBAR_MAX}
+          // aria-valuenow is set by the layout effect and drag preview path
+          // so previews do not need per-frame React state commits.
           onMouseDown={handleMouseDown}
           className={`
             absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize
@@ -524,6 +589,7 @@ export const WorkspaceView = (): ReactElement => {
         <TerminalZone
           sessions={sessions}
           activeSessionId={activeSessionId}
+          deferTerminalFit={isDragging}
           onSessionCwdChange={updateSessionCwd}
           restoreData={restoreData}
           loading={loading}
