@@ -1,0 +1,115 @@
+import { useCallback, useRef } from 'react'
+import type { ITerminalService } from '../services/terminalService'
+import type { NotifyPaneReadyResult, PaneEventHandler } from '../types'
+
+export interface UsePtyBufferDrainOptions {
+  /** Reserved for future lifecycle cleanup hooks. */
+  service: ITerminalService
+}
+
+interface BufferedEvent {
+  data: string
+  offsetStart: number
+  byteLen: number
+}
+
+export interface PtyBufferDrain {
+  bufferEvent: (
+    ptyId: string,
+    data: string,
+    offsetStart: number,
+    byteLen: number
+  ) => void
+  notifyPaneReady: (
+    ptyId: string,
+    handler: PaneEventHandler
+  ) => NotifyPaneReadyResult
+  registerPending: (ptyId: string) => void
+  getBufferedSnapshot: (ptyId: string) => BufferedEvent[]
+  dropAllForPty: (ptyId: string) => void
+}
+
+export const usePtyBufferDrain = (
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _options: UsePtyBufferDrainOptions
+): PtyBufferDrain => {
+  const bufferedRef = useRef(new Map<string, BufferedEvent[]>())
+  const pendingPanesRef = useRef(new Set<string>())
+  const readyPanesRef = useRef(new Set<string>())
+
+  const bufferEvent = useCallback<PtyBufferDrain['bufferEvent']>(
+    (ptyId, data, offsetStart, byteLen) => {
+      if (readyPanesRef.current.has(ptyId)) {
+        return
+      }
+
+      let queue = bufferedRef.current.get(ptyId)
+      if (!queue) {
+        queue = []
+        bufferedRef.current.set(ptyId, queue)
+      }
+      queue.push({ data, offsetStart, byteLen })
+    },
+    []
+  )
+
+  const notifyPaneReady = useCallback<PtyBufferDrain['notifyPaneReady']>(
+    (ptyId, handler) => {
+      readyPanesRef.current.add(ptyId)
+      pendingPanesRef.current.delete(ptyId)
+
+      const events = bufferedRef.current.get(ptyId)
+      if (events && events.length > 0) {
+        for (const event of events) {
+          handler(event.data, event.offsetStart, event.byteLen)
+        }
+        bufferedRef.current.delete(ptyId)
+      }
+
+      return (): void => {
+        const isStillTracked =
+          readyPanesRef.current.has(ptyId) ||
+          pendingPanesRef.current.has(ptyId) ||
+          bufferedRef.current.has(ptyId)
+        if (!isStillTracked) {
+          return
+        }
+
+        readyPanesRef.current.delete(ptyId)
+        pendingPanesRef.current.add(ptyId)
+        if (!bufferedRef.current.has(ptyId)) {
+          bufferedRef.current.set(ptyId, [])
+        }
+      }
+    },
+    []
+  )
+
+  const registerPending = useCallback<PtyBufferDrain['registerPending']>(
+    (ptyId) => {
+      pendingPanesRef.current.add(ptyId)
+    },
+    []
+  )
+
+  const getBufferedSnapshot = useCallback<
+    PtyBufferDrain['getBufferedSnapshot']
+  >((ptyId) => [...(bufferedRef.current.get(ptyId) ?? [])], [])
+
+  const dropAllForPty = useCallback<PtyBufferDrain['dropAllForPty']>(
+    (ptyId) => {
+      readyPanesRef.current.delete(ptyId)
+      pendingPanesRef.current.delete(ptyId)
+      bufferedRef.current.delete(ptyId)
+    },
+    []
+  )
+
+  return {
+    bufferEvent,
+    notifyPaneReady,
+    registerPending,
+    getBufferedSnapshot,
+    dropAllForPty,
+  }
+}

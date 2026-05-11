@@ -12,6 +12,7 @@ import {
   registerPtySession,
   unregisterPtySession,
 } from '../../terminal/ptySessionMap'
+import { usePtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
 import { emptyActivity } from '../constants'
 import { sessionFromInfo } from '../utils/sessionFromInfo'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
@@ -128,35 +129,14 @@ export const useSessionManager = (
   const restoreDataRef = useRef(new Map<string, RestoreData>())
   const [loading, setLoading] = useState(true)
 
-  // Refs that bridge the mount-time restore effect (which builds the buffer
-  // and the buffering listener) and the notifyPaneReady callback (which
-  // panes invoke from their useTerminal effect, possibly several React
-  // ticks later). Held outside the effect's closure so notifyPaneReady can
-  // see them across renders.
-  //
-  // F1 (round 2): the buffering listener lives for the ENTIRE lifetime of
-  // useSessionManager — no longer torn down once restored panes report ready.
-  // Without that, sessions created via createSession after restore had no
-  // safety net for the pty-data window between spawn() and useTerminal
-  // subscribing — events were silently lost on every fresh tab. Per-session
-  // gating now decides whether to buffer:
-  //
-  //   - sessionId in pendingPanesRef → buffer (pane hasn't attached yet)
-  //   - sessionId in readyPanesRef   → drop (per-pane listener handles it)
-  //   - neither (unknown session)    → buffer optimistically; the pane will
-  //                                    drain on notifyPaneReady. Covers the
-  //                                    race where pty-data for a new session
-  //                                    arrives before createSession adds it
-  //                                    to pendingPanesRef.
-  const bufferedRef = useRef<
-    Map<string, { data: string; offsetStart: number; byteLen: number }[]>
-  >(new Map())
+  const {
+    bufferEvent,
+    notifyPaneReady,
+    registerPending,
+    getBufferedSnapshot,
+    dropAllForPty,
+  } = usePtyBufferDrain({ service })
   const stopBufferingRef = useRef<(() => void) | null>(null)
-  const pendingPanesRef = useRef<Set<string>>(new Set())
-  // Sessions whose panes have already attached their per-pane live listener.
-  // Events for these sessions are dropped by the global buffering callback
-  // — the per-pane onData subscription delivers them directly to xterm.
-  const readyPanesRef = useRef<Set<string>>(new Set())
 
   // Mount-time restore orchestration: listen first, then list_sessions,
   // then KEEP buffering alive until every restored pane reports ready.
@@ -183,25 +163,12 @@ export const useSessionManager = (
         //
         //    F1 (round 2): this listener now stays attached for the lifetime of
         //    useSessionManager so sessions created AFTER restore (createSession)
-        //    also benefit from the buffer→drain protocol. Per-session gating
-        //    inside the callback (see readyPanesRef) ensures we don't double-
-        //    deliver to panes that have already attached their own listener.
+        //    also benefit from the buffer→drain protocol. usePtyBufferDrain
+        //    drops events for panes that have already attached their own
+        //    listener.
         stopBufferingRef.current = await service.onData(
           (sessionId, data, offsetStart, byteLen) => {
-            // Drop events for sessions whose pane has already attached its
-            // own per-pane onData subscription — that subscription writes
-            // directly to xterm. Buffering would risk re-delivery and
-            // unbounded memory growth.
-            if (readyPanesRef.current.has(sessionId)) {
-              return
-            }
-
-            let q = bufferedRef.current.get(sessionId)
-            if (!q) {
-              q = []
-              bufferedRef.current.set(sessionId, q)
-            }
-            q.push({ data, offsetStart, byteLen })
+            bufferEvent(sessionId, data, offsetStart, byteLen)
           }
         )
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -240,9 +207,9 @@ export const useSessionManager = (
               // Snapshot of buffered events known at restore-time (pre-render).
               // Additional events arriving before the pane subscribes are
               // captured by the buffering listener and drained by notifyPaneReady.
-              bufferedEvents: [...(bufferedRef.current.get(info.id) ?? [])],
+              bufferedEvents: getBufferedSnapshot(info.id),
             })
-            pendingPanesRef.current.add(info.id)
+            registerPending(info.id)
             // Repopulate ptySessionMap so agent detection works after reload
             registerPtySession(info.id, info.id, info.cwd)
           }
@@ -307,7 +274,14 @@ export const useSessionManager = (
       stopBufferingRef.current?.()
       stopBufferingRef.current = null
     }
-  }, [activeSessionIdRef, service, setActiveSessionIdRaw])
+  }, [
+    activeSessionIdRef,
+    bufferEvent,
+    getBufferedSnapshot,
+    registerPending,
+    service,
+    setActiveSessionIdRaw,
+  ])
 
   // Round 3 (codex P2 follow-up to Finding 3): mark sessions completed when
   // their PTY exits. The mode-precedence fix in TerminalZone (status-first)
@@ -353,97 +327,17 @@ export const useSessionManager = (
     onExit: (ptyId) => onPtyExitRef.current(ptyId),
   })
 
-  // Drain buffer + remove from pending set when a pane subscribes.
-  // Stable ref-only identity so passing this through props doesn't churn deps.
-  //
-  // F1 (round 2): the global buffering listener now lives for the hook's
-  // lifetime, so this function no longer tears it down. Instead, marking
-  // a session as `ready` flips the buffer callback's per-session gate so
-  // future events are dropped (the per-pane onData subscription handles them).
-  const notifyPaneReady = useCallback(
-    (sessionId: string, handler: PaneEventHandler): NotifyPaneReadyResult => {
-      // Mark the pane ready FIRST so any pty-data event that lands while
-      // we're draining lands directly via the per-pane listener (which is
-      // already attached by the time notifyPaneReady fires) and bypasses
-      // the buffer. Without flipping the gate before the drain, an event
-      // arriving mid-loop would be appended to bufferedRef AFTER we already
-      // copied it locally — leaking memory across the lifetime of the hook.
-      readyPanesRef.current.add(sessionId)
-      pendingPanesRef.current.delete(sessionId)
-
-      // Drain any events the buffering listener captured for this session
-      // before the pane attached its live listener. The handler is the same
-      // function the pane uses for live events (with cursor dedupe), so any
-      // event that also arrived live between subscribe and this drain gets
-      // filtered by the cursor — no duplicates.
-      const events = bufferedRef.current.get(sessionId)
-      if (events && events.length > 0) {
-        for (const e of events) {
-          handler(e.data, e.offsetStart, e.byteLen)
-        }
-        bufferedRef.current.delete(sessionId)
-      }
-
-      // Round 7, Finding 2 (claude MEDIUM): the cleanup callback returned
-      // by notifyPaneReady fires when the pane unmounts (StrictMode dev
-      // double-mount, error-boundary reset, route change, …). Previously
-      // this was a no-op, so:
-      //
-      //   1. pane unmounts → cleanup (no-op) — sessionId stays in
-      //      readyPanesRef
-      //   2. pty-data events for sessionId arrive → global listener sees
-      //      readyPanesRef.has(sessionId) and DROPS them (the `return`
-      //      branch in the buffering callback)
-      //   3. pane remounts → calls notifyPaneReady → tries to drain
-      //      bufferedRef → events from step 2 are NOT in the buffer
-      //      because step 2 dropped them. Silent output loss.
-      //
-      // Re-arm the per-session state on cleanup: remove from ready, add
-      // back to pending, ensure an empty buffer exists. The next
-      // pty-data event lands in the buffer, the next notifyPaneReady
-      // call drains it cleanly.
-      //
-      // Round 8, Finding 2 (claude MEDIUM): only re-arm when the session is
-      // still alive in the manager's view. `removeSession` synchronously
-      // deletes `sessionId` from `pendingPanesRef`, `readyPanesRef`,
-      // `bufferedRef`, AND `restoreData` BEFORE setSessions() schedules the
-      // re-render that unmounts the pane. By the time this cleanup runs the
-      // Map no longer contains the entry — treating that as a teardown signal
-      // means we DON'T re-add the session to pending/buffer state. Without
-      // this guard, any pty-data event racing the async kill_pty would land
-      // in the per-session buffer with no consumer, accumulating per removed
-      // session for the lifetime of the hook.
-      //
-      // The remount path (StrictMode, error-boundary reset, route change)
-      // continues to work because those code paths leave restoreData intact —
-      // only an explicit removeSession deletes it.
-      return (): void => {
-        if (!restoreDataRef.current.has(sessionId)) {
-          // removeSession already cleared this session — treat unmount as
-          // permanent teardown and skip the re-arm.
-          return
-        }
-        readyPanesRef.current.delete(sessionId)
-        pendingPanesRef.current.add(sessionId)
-        if (!bufferedRef.current.has(sessionId)) {
-          bufferedRef.current.set(sessionId, [])
-        }
-      }
-    },
-    []
-  )
-
   // Create session — spawn + prepend, then mark the pane as 'attach'.
   //
   // The PTY is created up-front in this hook (so we get the canonical id and
   // pid for state). We then populate restoreData with empty replay/buffered
-  // slots and add the new session to pendingPanesRef so TerminalPane renders
-  // in 'attach' mode. Without this the pane would mount with no restoredFrom
-  // and TerminalZone's mode-decision rules would route it to the legacy
-  // 'spawn' fallback — which calls service.spawn() a SECOND time and
-  // creates a hidden duplicate PTY (Codex P1 finding).
+  // slots and register the new pty as pending so TerminalPane renders in
+  // 'attach' mode. Without this the pane would mount with no restoredFrom and
+  // TerminalZone's mode-decision rules would route it to the legacy 'spawn'
+  // fallback — which calls service.spawn() a SECOND time and creates a hidden
+  // duplicate PTY (Codex P1 finding).
   //
-  // pendingPanesRef inclusion: pty-data events emitted between
+  // Pending-buffer inclusion: pty-data events emitted between
   // service.spawn() resolving and useTerminal subscribing land in the
   // orchestrator's permanent buffering listener (kept alive for the hook's
   // lifetime by F1-round-2) and get drained when the new pane reports ready.
@@ -501,7 +395,7 @@ export const useSessionManager = (
           replayEndOffset: 0,
           bufferedEvents: [],
         })
-        pendingPanesRef.current.add(result.sessionId)
+        registerPending(result.sessionId)
 
         // F3 (round 2) — derive the persisted order from the latest state,
         // not the closure-captured `sessions`. With the previous code, two
@@ -619,7 +513,7 @@ export const useSessionManager = (
         setPendingSpawns((c) => c - 1)
       }
     })()
-  }, [service, setActiveSessionId])
+  }, [registerPending, service, setActiveSessionId])
 
   // Auto-create one default tab on clean launch.
   //
@@ -668,9 +562,7 @@ export const useSessionManager = (
           // F1 (round 2) cleanup: drop the session from the buffering bookkeeping
           // so the global listener doesn't accumulate per-session state for
           // destroyed tabs.
-          readyPanesRef.current.delete(id)
-          pendingPanesRef.current.delete(id)
-          bufferedRef.current.delete(id)
+          dropAllForPty(id)
           restoreDataRef.current.delete(id)
           // Round 14, Claude MEDIUM: also drop the module-level ptySessionMap
           // entry. Without this, getAllPtySessionIds() (used by the E2E bridge)
@@ -752,7 +644,13 @@ export const useSessionManager = (
         }
       })()
     },
-    [activeSessionIdRef, service, setActiveSessionId, setActiveSessionIdRaw]
+    [
+      activeSessionIdRef,
+      dropAllForPty,
+      service,
+      setActiveSessionId,
+      setActiveSessionIdRaw,
+    ]
   )
 
   // F5 (round 2): restart an Exited session in the same cwd.
@@ -863,9 +761,7 @@ export const useSessionManager = (
           return
         }
 
-        readyPanesRef.current.delete(id)
-        pendingPanesRef.current.delete(id)
-        bufferedRef.current.delete(id)
+        dropAllForPty(id)
         restoreDataRef.current.delete(id)
         // Round 14, Claude MEDIUM: drop the retired id from the module-level
         // ptySessionMap symmetrically with registerPtySession(result.sessionId)
@@ -894,7 +790,7 @@ export const useSessionManager = (
           replayEndOffset: 0,
           bufferedEvents: [],
         })
-        pendingPanesRef.current.add(result.sessionId)
+        registerPending(result.sessionId)
         registerPtySession(result.sessionId, result.sessionId, result.cwd)
 
         // Round 9, Finding 3 (codex P2): read the LATEST active id post-await,
@@ -1020,9 +916,7 @@ export const useSessionManager = (
           // itself is killed above; this just removes the dangling
           // metadata so the next reload reconciles cleanly.
           restoreDataRef.current.delete(orphanedSessionId)
-          pendingPanesRef.current.delete(orphanedSessionId)
-          readyPanesRef.current.delete(orphanedSessionId)
-          bufferedRef.current.delete(orphanedSessionId)
+          dropAllForPty(orphanedSessionId)
           unregisterPtySession(orphanedSessionId)
         }
         if (computedNewOrder !== null) {
@@ -1052,7 +946,13 @@ export const useSessionManager = (
         }
       })()
     },
-    [activeSessionIdRef, service, setActiveSessionId]
+    [
+      activeSessionIdRef,
+      dropAllForPty,
+      registerPending,
+      service,
+      setActiveSessionId,
+    ]
   )
 
   // Rename session — in-memory only (no IPC)
