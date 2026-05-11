@@ -13,7 +13,7 @@ import {
 } from '../../terminal/ptySessionMap'
 import { usePtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
 import { emptyActivity } from '../constants'
-import { getActivePane } from '../utils/activeSessionPane'
+import { findActivePane, getActivePane } from '../utils/activeSessionPane'
 import { deriveSessionStatus } from '../utils/sessionStatus'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
@@ -326,11 +326,27 @@ export const useSessionManager = (
             }
 
             const next = [newSession, ...prev]
-            computedNewOrder = next.map((s) => getActivePane(s).ptyId)
+            // F13 (claude MEDIUM): do NOT call the throwing getActivePane
+            // inside the setSessions updater — a transient invariant
+            // violation (5b multi-pane edits) would abort the React state
+            // commit and orphan the freshly-spawned Rust PTY. Compute the
+            // reorder payload AFTER flushSync returns using findActivePane.
 
             return next
           })
         })
+
+        // F13: derive the reorder payload OUTSIDE the updater using the
+        // non-throwing findActivePane. sessionsRef.current was updated by
+        // the flushSync above. If any session lacks an active pane (5b
+        // bug), skip the IPC — React state stays, Rust order will catch
+        // up on the next reorder.
+        const orderIds = sessionsRef.current
+          .map((s) => findActivePane(s)?.ptyId)
+          .filter((ptyId): ptyId is string => ptyId !== undefined)
+        if (orderIds.length === sessionsRef.current.length) {
+          computedNewOrder = orderIds
+        }
 
         if (computedNewOrder !== null) {
           // eslint-disable-next-line promise/prefer-await-to-then
@@ -652,11 +668,22 @@ export const useSessionManager = (
               lastActivityAt: new Date().toISOString(),
             }
 
-            computedNewOrder = next.map((s) => getActivePane(s).ptyId)
+            // F13: defer the throw-prone getActivePane(s).ptyId map to
+            // OUTSIDE the updater (see createSession for the rationale).
 
             return next
           })
         })
+
+        // F13: compute ids OUTSIDE the updater with findActivePane. If any
+        // session lacks an active pane (5b transient state), skip the IPC
+        // — Rust order will catch up on the next successful reorder.
+        const orderIdsAfter = sessionsRef.current
+          .map((s) => findActivePane(s)?.ptyId)
+          .filter((ptyId): ptyId is string => ptyId !== undefined)
+        if (orderIdsAfter.length === sessionsRef.current.length) {
+          computedNewOrder = orderIdsAfter
+        }
 
         if (orphanedSessionId !== null) {
           // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
@@ -716,8 +743,26 @@ export const useSessionManager = (
   // (no clobbering of unrelated concurrent state).
   const reorderSessions = useCallback(
     (reordered: Session[]): void => {
+      // F14 (claude MEDIUM): compute the Rust IPC payload BEFORE
+      // committing React state. Previously: setSessions fired, then
+      // getActivePane(s).ptyId mapped — a throw would leave React
+      // showing the new order while Rust kept the old, diverging
+      // permanently until the next reload. Now: derive ids first via
+      // findActivePane (non-throwing); if any session is missing an
+      // active pane (5b transient state), bail BEFORE setSessions so
+      // React and Rust stay aligned.
+      const ids = reordered
+        .map((s) => findActivePane(s)?.ptyId)
+        .filter((ptyId): ptyId is string => ptyId !== undefined)
+      if (ids.length !== reordered.length) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          'reorderSessions: skipping — at least one session has no active pane'
+        )
+
+        return
+      }
       setSessions(reordered)
-      const ids = reordered.map((s) => getActivePane(s).ptyId)
       // eslint-disable-next-line promise/prefer-await-to-then
       service.reorderSessions(ids).catch((err) => {
         // eslint-disable-next-line no-console

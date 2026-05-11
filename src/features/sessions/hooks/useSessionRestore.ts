@@ -109,6 +109,13 @@ export const useSessionRestore = ({
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn('listSessions failed; starting empty', err)
+        // F15 (claude LOW): intentionally do NOT call stopBuffering() here.
+        // The pty-data buffering listener stays alive for the lifetime of
+        // useSessionManager so createSession (post-restore) still benefits
+        // from the buffer→drain protocol when spawn outpaces the pane's
+        // useTerminal subscription. Tearing it down on restore failure
+        // would silently lose early pty-data on every fresh tab. Cleanup
+        // happens via the effect's return path on unmount (see below).
         setLoading(false)
       }
     })()

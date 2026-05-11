@@ -145,7 +145,17 @@ export const TerminalZone = ({
               data-mode={mode}
               className={`absolute inset-0 ${isActive ? '' : 'hidden'}`}
             >
+              {/* F16 (codex connector P1): key the inner TerminalPane by
+                  pane.ptyId so a restartSession (which preserves Session.id
+                  but rotates pane.ptyId) forces a clean unmount/remount of
+                  the xterm + useTerminal subtree. Without this, the
+                  mount-initialized refs inside useTerminal stay bound to
+                  the dead pre-restart PTY and the user-visible pane
+                  appears detached after restart. The outer wrapper div
+                  keyed by session.id (above) is unchanged, so sidebar /
+                  tab-strip / ARIA associations don't churn. */}
               <TerminalPane
+                key={activePane.ptyId}
                 session={session}
                 pane={activePane}
                 service={service}
