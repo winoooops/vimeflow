@@ -16,6 +16,7 @@ import { emptyActivity } from '../constants'
 import { sessionFromInfo } from '../utils/sessionFromInfo'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
+import { useActiveSessionController } from './useActiveSessionController'
 
 export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
 
@@ -107,10 +108,15 @@ export const useSessionManager = (
   const { autoCreateOnEmpty = true } = options
 
   const [sessions, setSessions] = useState<Session[]>([])
+  const sessionsRef = useRef(sessions)
+  sessionsRef.current = sessions
 
-  const [activeSessionId, setActiveSessionIdState] = useState<string | null>(
-    null
-  )
+  const {
+    activeSessionId,
+    setActiveSessionId,
+    setActiveSessionIdRaw,
+    activeSessionIdRef,
+  } = useActiveSessionController({ service, sessionsRef })
   // Round 12, Finding 2 (claude MEDIUM): restoreData is a mutable
   // side-channel, NOT React state. The previous `useState(new Map())`
   // was misleading — Map mutations via .set/.delete don't notify React,
@@ -266,9 +272,12 @@ export const useSessionManager = (
         // user's most recent intent) over the cached active id. Falls back
         // to the cached value when no in-flight tabs exist, preserving
         // behavior for the common clean-startup path.
-        setActiveSessionIdState(
-          (prevActive) => prevActive ?? list.activeSessionId
-        )
+        if (
+          activeSessionIdRef.current === null &&
+          list.activeSessionId !== null
+        ) {
+          setActiveSessionIdRaw(list.activeSessionId)
+        }
 
         setLoading(false)
         // F1 (round 2): no stop-buffering call here. The global listener
@@ -298,7 +307,7 @@ export const useSessionManager = (
       stopBufferingRef.current?.()
       stopBufferingRef.current = null
     }
-  }, [service])
+  }, [activeSessionIdRef, service, setActiveSessionIdRaw])
 
   // Round 3 (codex P2 follow-up to Finding 3): mark sessions completed when
   // their PTY exits. The mode-precedence fix in TerminalZone (status-first)
@@ -422,74 +431,6 @@ export const useSessionManager = (
       }
     },
     []
-  )
-
-  // Mirror the latest active session id into a ref so async callbacks can
-  // read the freshest value AFTER an await rather than the stale closure
-  // capture from the call site.
-  //
-  // Round 9, Findings 2 + 3 (codex P2): `removeSession` and `restartSession`
-  // both branch on `activeSessionId === id` BEFORE an `await service.kill(...)`
-  // / `await service.spawn(...)`. If the user switches tabs while the IPC is
-  // in flight, the closure-captured id no longer reflects the user's choice;
-  // promoting (or rotating away from) the stale id then clobbers the newer
-  // selection. Reading `activeSessionIdRef.current` post-await uses the latest
-  // committed selection — including any tab switch that landed during the
-  // roundtrip.
-  const activeSessionIdRef = useRef(activeSessionId)
-  useEffect(() => {
-    activeSessionIdRef.current = activeSessionId
-  }, [activeSessionId])
-
-  // Round 9, Finding 4 (codex P2): out-of-order setActiveSession IPC failures
-  // can revert the active id to a stale value. Tag every call with a
-  // monotonically increasing request id and only honor the rollback when
-  // our request is still the latest. If a NEWER request has been issued in
-  // the meantime, the newer request now "owns" the active selection;
-  // reverting to the value WE captured at our call site would clobber the
-  // user's latest pick.
-  //
-  // Concrete scenario the previous code mis-handled:
-  //   1. Active = 'a'
-  //   2. User clicks 'b' → req=1 fires, optimistic active = 'b'
-  //   3. User clicks 'c' before req=1 settles → req=2 fires,
-  //      optimistic active = 'c'
-  //   4. req=1 rejects (e.g. transient cache write failure or 'b' was
-  //      killed) → revert to 'a'   ❌ clobbers user's 'c' pick
-  //   5. req=2 resolves successfully → cache active = 'c', UI active = 'a'
-  //
-  // After the fix, step 4 sees `myReq=1 !== activeRequestIdRef.current=2`
-  // and skips the rollback. `c` stays the user's selection.
-  const activeRequestIdRef = useRef(0)
-
-  // Active session — optimistic update + IPC
-  const setActiveSessionId = useCallback(
-    (id: string): void => {
-      const myReq = ++activeRequestIdRef.current
-      // Capture the value BEFORE we change it so a rollback restores
-      // exactly what was on screen, not a stale activeSessionId from a
-      // previous render cycle.
-      const prev = activeSessionIdRef.current
-      setActiveSessionIdState(id)
-      // eslint-disable-next-line promise/prefer-await-to-then
-      service.setActiveSession(id).catch((err) => {
-        if (myReq === activeRequestIdRef.current) {
-          // We're still the latest — safe to revert.
-          // eslint-disable-next-line no-console
-          console.warn('setActiveSession IPC failed; reverting', err)
-          setActiveSessionIdState(prev)
-        } else {
-          // A newer request superseded us; let it own the active id. Reverting
-          // here would clobber the user's actual newest selection.
-          // eslint-disable-next-line no-console
-          console.warn(
-            'setActiveSession IPC failed but newer request superseded; not reverting',
-            err
-          )
-        }
-      })
-    },
-    [service]
   )
 
   // Create session — spawn + prepend, then mark the pane as 'attach'.
@@ -800,12 +741,9 @@ export const useSessionManager = (
               setActiveSessionId(computedFallback)
             } else {
               // Last tab removed — Rust's kill_pty already cleared
-              // cache.active_session_id, no IPC needed. Round 14, Codex P2:
-              // bump activeRequestIdRef to supersede any in-flight tab-pick
-              // request whose .catch rollback would otherwise restore the
-              // just-deleted prev id (UI ↔ sessions divergence).
-              activeRequestIdRef.current += 1
-              setActiveSessionIdState(null)
+              // cache.active_session_id, no IPC needed. Use the raw setter
+              // so any in-flight tab-pick rollback is superseded.
+              setActiveSessionIdRaw(null)
             }
           }
         } catch (err) {
@@ -814,16 +752,8 @@ export const useSessionManager = (
         }
       })()
     },
-    [service, setActiveSessionId]
+    [activeSessionIdRef, service, setActiveSessionId, setActiveSessionIdRaw]
   )
-
-  // Use a ref to read the latest sessions inside the async closure without
-  // making the callback's identity depend on `sessions` (which would churn
-  // every render that tabs change). The `prev` snapshot from setSessions
-  // wouldn't help here because the restart ID needs to be looked up before
-  // the setState updater runs.
-  const sessionsRef = useRef(sessions)
-  sessionsRef.current = sessions
 
   // F5 (round 2): restart an Exited session in the same cwd.
   //
@@ -1122,7 +1052,7 @@ export const useSessionManager = (
         }
       })()
     },
-    [service, setActiveSessionId]
+    [activeSessionIdRef, service, setActiveSessionId]
   )
 
   // Rename session — in-memory only (no IPC)
