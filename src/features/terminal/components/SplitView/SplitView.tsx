@@ -28,6 +28,25 @@ const paneMode = (pane: Pane): TerminalPaneMode => {
   return 'spawn'
 }
 
+/** Pick the panes that should be rendered for `layout.capacity` slots.
+ *  Normally the prefix slice; if the active pane is beyond the slice
+ *  (only reachable in production when `panes.length > capacity` — the
+ *  DEV throw in `SplitView` catches the same case for fixtures/tests),
+ *  the active pane replaces the last visible slot so focus/agent/cwd
+ *  signals stay reachable from the UI. Exported for unit testing. */
+export const selectVisiblePanes = (
+  panes: readonly Pane[],
+  capacity: number
+): Pane[] => {
+  const sliced = panes.slice(0, capacity)
+  const activeIdx = panes.findIndex((p) => p.active)
+  if (activeIdx >= capacity) {
+    return [...sliced.slice(0, capacity - 1), panes[activeIdx]]
+  }
+
+  return sliced
+}
+
 export const SplitView = ({
   session,
   service,
@@ -47,7 +66,7 @@ export const SplitView = ({
     )
   }
 
-  const visiblePanes = session.panes.slice(0, layout.capacity)
+  const visiblePanes = selectVisiblePanes(session.panes, layout.capacity)
 
   const gridTemplateAreas = layout.areas
     .map((row) => `"${row.join(' ')}"`)

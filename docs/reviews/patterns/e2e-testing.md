@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-04-19
-ref_count: 1
+last_updated: 2026-05-12
+ref_count: 2
 ---
 
 # E2E Testing (WDIO + tauri-driver + WebKitGTK)
@@ -131,3 +131,12 @@ completely different root causes. The generic fast-failure modes:
 - PR: [#70](https://github.com/winoooops/vimeflow/pull/70)
 - WSL2-specific WebKitGTK issue: [#65](https://github.com/winoooops/vimeflow/issues/65)
 - Agent detector scope issue: [#71](https://github.com/winoooops/vimeflow/issues/71)
+
+### 10. E2E bridge buffer-read returns first xterm in DOM, not the active pane, once a single wrapper hosts N xterms
+
+- **Source:** github-codex-connector | PR #199 cycle 2 | 2026-05-12
+- **Severity:** P2 / MEDIUM
+- **File:** `src/lib/e2e-bridge.ts`
+- **Finding:** `readPaneBuffer(pane)` resolved `pane.querySelector('.xterm-rows')` to the FIRST xterm-rows descendant inside the session-level `data-testid="terminal-pane"` wrapper. Pre-5b each wrapper contained exactly one xterm (the session's single TerminalPane), so first-match was correct by construction. Post-5b the wrapper contains a SplitView with N inner TerminalPanes, each carrying its own xterm. `getTerminalBufferForSession(sessionId)` therefore returned whichever pane's xterm was first in DOM — not necessarily the active/target pane. Once multi-pane sessions exist in production (5c+), E2E specs reading buffer-by-session-id would get incorrect text and assertions would silently regress. Class of bug: refactors that change "1 wrapper : 1 inner widget" to "1 wrapper : N inner widgets" need a sweep of every DOM query that assumed singularity.
+- **Fix:** `readPaneBuffer` first looks for the inner TerminalPane wrapper with `data-focused="true"` (the active pane's marker, set by `TerminalPane/index.tsx` when `pane.active === true`), then scopes the `.xterm-rows` lookup to that wrapper. Falls back to the previous `pane.querySelector('.xterm-rows')` when no focused inner wrapper exists — preserves behavior for single-pane sessions (whose only pane has `data-focused="true"`) and the defensive case where no pane is active (write-site bug). Existing E2E specs and the `findActivePane`/`getVisibleSessionId` paths are unaffected because they operate at the session-wrapper level. Code-review heuristic: when a UI refactor changes the DOM cardinality under a stable test-anchor selector (testid / data-attr), grep the E2E bridge layer for every `.querySelector(...)` call that drops into the anchor — any first-match descendant query needs a disambiguation pass.
+- **Commit:** _(see git log for the cycle-2 fix commit on PR #199)_

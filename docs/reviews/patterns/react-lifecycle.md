@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-05-12
-ref_count: 4
+ref_count: 5
 ---
 
 # React Lifecycle
@@ -168,3 +168,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** After 5b retargeted the visual focus marker from `useFocusedPane().isFocused` to `pane.active`, `TerminalPane` kept calling `useFocusedPane({ containerRef })` to retain `onTerminalFocusChange` for `Body`'s `onFocusChange` prop. The hook's state (`isFocused`) became dead — but its `useEffect` still attached a global `document.addEventListener('mousedown', ...)` listener per mount. xterm focus events set state to `true` via `onTerminalFocusChange`; the next out-of-pane click triggered `setIsFocused(false)` → a real `useState` transition → a React re-render scheduled per pane. In multi-pane SplitView (vsplit/hsplit/threeRight/quad) N panes attached N listeners and produced N spurious re-renders per global click. Class of bug: refactor that retains a hook call solely for a non-state side effect — the hook's lifecycle (state, effects, listeners) keeps running wastefully.
 - **Fix:** Removed the `useFocusedPane` call entirely. `Body.onFocusChange` is optional and tracks xterm focus internally for cursor rendering, so dropping the outbound notification preserves xterm-focus behavior while eliminating the global listener. Deleted `useFocusedPane.ts` + `useFocusedPane.test.ts` (no remaining consumers in the codebase) and the now-orphaned `containerRef` declaration + wrapper-div `ref={containerRef}` binding. Code-review heuristic: when a refactor leaves a hook call whose return-value is only partially consumed, audit what the hook's lifecycle is still doing — state updates and effect attachments may have no visible consumer but still cost re-renders.
 - **Commit:** _(see git log for the cycle-1 fix commit on PR #199)_
+
+### 18. Prefix-slice clamp drops the active pane in production when DEV invariant relaxes
+
+- **Source:** github-codex-connector | PR #199 cycle 2 | 2026-05-12
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** SplitView clamped via `session.panes.slice(0, layout.capacity)` and protected the invariant with `if (import.meta.env.DEV && panes.length > capacity) throw`. The DEV throw catches the case in fixtures + dev builds, but in production builds the silent prefix slice can drop the active pane whenever pane order and active index diverge (post-shrink, restored inconsistent state, etc.). Result: rendered grid shows an inactive pane while the real active PTY is hidden; `useAgentStatus(activePane?.ptyId)` and per-pane `useGitBranch`/`useGitStatus` follow the hidden active pane, so the visible-but-inactive pane and the agent-status panel point at different PTYs — a state where the user cannot reach the pane that's actually receiving terminal input. Class of bug: DEV-only invariant assertions paired with naive production fallbacks leave a silent failure mode in the actual ship target.
+- **Fix:** Extracted `selectVisiblePanes(panes, capacity)` as an exported pure helper inside `SplitView.tsx`. When the active pane's index in `panes` is `>= capacity`, the helper replaces the LAST visible slot with the active pane so focus/agent/cwd signals stay reachable. Otherwise returns the prefix slice unchanged. SplitView calls `selectVisiblePanes` in place of inline `.slice(...)`. DEV throw retained for early-warning during fixtures. Added 5 unit tests on the pure helper covering in-bounds slice, active-already-inside, last-slot replacement, exact-capacity-index, and the defensive no-active-pane fallback. Code-review heuristic: when a render-path has a DEV-only assertion, audit the production fallback for the same invariant — a release build with the assertion silenced should still produce a usable UI, not a different-than-intended one.
+- **Commit:** _(see git log for the cycle-2 fix commit on PR #199)_

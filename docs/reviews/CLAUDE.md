@@ -38,7 +38,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                              | Category       | Findings | Refs | Last Updated |
 | -------------------------------------------------------------------- | -------------- | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security       | 21       | 3    | 2026-05-03   |
-| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns | 17       | 4    | 2026-05-12   |
+| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns | 18       | 5    | 2026-05-12   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns | 2        | 3    | 2026-04-14   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform | 4        | 3    | 2026-05-07   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality   | 5        | 0    | 2026-05-09   |
@@ -60,6 +60,6 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Error Surfacing](patterns/error-surfacing.md)                       | error-handling | 25       | 5    | 2026-05-09   |
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files          | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                         | review-process | 5        | 0    | 2026-04-12   |
-| [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing    | 9        | 1    | 2026-04-19   |
+| [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing    | 10       | 2    | 2026-05-12   |
 | [Module Boundaries](patterns/module-boundaries.md)                   | code-quality   | 3        | 1    | 2026-05-07   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality   | 7        | 2    | 2026-05-02   |
