@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { UseGitBranchReturn } from '../../../diff/hooks/useGitBranch'
 import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
@@ -150,20 +150,18 @@ describe('TerminalPane index', () => {
     expect(screen.getByText('Session exited.')).toBeInTheDocument()
   })
 
-  test('Header shows agent chip resolved from session.agentType', () => {
+  test('Header shows agent chip resolved from pane.agentType', () => {
     render(<TerminalPane {...baseProps} />)
 
     expect(screen.getByText('CLAUDE')).toBeInTheDocument()
   })
 
-  test('chrome reflects session.agentType directly (no override prop)', () => {
-    // The activeAgentType prop chain was retired; chrome reads
-    // agentForSession(session) so detection writes flow through
-    // Session.agentType (single source of truth).
+  test('chrome reflects pane.agentType directly (no override prop)', () => {
     render(
       <TerminalPane
         {...baseProps}
-        session={{ ...session, agentType: 'codex' }}
+        session={{ ...session, agentType: 'generic' }}
+        pane={{ ...baseProps.pane, agentType: 'codex', active: false }}
       />
     )
 
@@ -176,6 +174,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         {...baseProps}
         session={{ ...session, agentType: 'generic' }}
+        pane={{ ...baseProps.pane, agentType: 'generic', active: false }}
       />
     )
 
@@ -198,13 +197,28 @@ describe('TerminalPane index', () => {
     )
   })
 
-  test('clicking the container flips focused state', () => {
-    render(<TerminalPane {...baseProps} />)
+  test('data-focused mirrors pane.active=true', () => {
+    render(
+      <TerminalPane {...baseProps} pane={{ ...baseProps.pane, active: true }} />
+    )
 
-    const wrapper = screen.getByTestId('terminal-pane-wrapper')
-    fireEvent.click(wrapper)
+    expect(screen.getByTestId('terminal-pane-wrapper')).toHaveAttribute(
+      'data-focused',
+      'true'
+    )
+  })
 
-    expect(wrapper).toHaveAttribute('data-focused', 'true')
+  test('data-focused absent when pane.active=false', () => {
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+      />
+    )
+
+    expect(screen.getByTestId('terminal-pane-wrapper')).not.toHaveAttribute(
+      'data-focused'
+    )
   })
 
   test('renders focus ring overlay above scrollable terminal body', () => {
@@ -236,5 +250,28 @@ describe('TerminalPane index', () => {
     expect(
       screen.getByText(/session ended — restart to resume claude/i)
     ).toBeInTheDocument()
+  })
+
+  test('inactive pane renders dimmed', () => {
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+      />
+    )
+
+    expect(screen.getByTestId('terminal-pane-wrapper')).toHaveStyle({
+      opacity: '0.78',
+    })
+  })
+
+  test('active pane renders at full opacity', () => {
+    render(
+      <TerminalPane {...baseProps} pane={{ ...baseProps.pane, active: true }} />
+    )
+
+    expect(screen.getByTestId('terminal-pane-wrapper')).toHaveStyle({
+      opacity: '1',
+    })
   })
 })

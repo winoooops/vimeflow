@@ -1,16 +1,12 @@
 import type { ReactElement } from 'react'
 import type { Session } from '../../sessions/types'
-import {
-  TerminalPane,
-  type TerminalPaneMode,
-} from '../../terminal/components/TerminalPane'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type {
   PaneEventHandler,
   NotifyPaneReadyResult,
 } from '../../sessions/hooks/useSessionManager'
-import { findActivePane } from '../../sessions/utils/activeSessionPane'
 import { isOpenSessionStatus } from '../../sessions/utils/pickNextVisibleSessionId'
+import { SplitView } from '../../terminal/components/SplitView'
 
 export interface TerminalZoneProps {
   sessions: Session[]
@@ -72,49 +68,8 @@ export const TerminalZone = ({
         </div>
       ) : (
         // Render all sessions but hide inactive ones to keep PTY sessions alive.
-        // Decide explicit mode for this pane. Pinning the lifecycle here
-        // avoids the previous bug (TerminalPane inferred from
-        // restoredFrom===undefined, which spawned a hidden duplicate PTY
-        // for newly-created sessions and resurrected dead ones on reload).
         sessions.map((session) => {
           const isActive = session.id === activeSessionId
-          // Non-throwing variant: transient invariant violations (e.g. zero
-          // active panes mid-state-update during 5b multi-pane edits) must
-          // not crash the render tree. The session row is skipped until the
-          // invariant is restored by the next mutation tick.
-          const activePane = findActivePane(session)
-          if (!activePane) {
-            return null
-          }
-
-          // Rules (status-first, round 3 Finding 3 / codex P2):
-          //  - Exited statuses (completed OR errored) →
-          //    'awaiting-restart'. Render a Restart button; do NOT
-          //    auto-spawn. Status check wins over restoreData because
-          //    round-2 F1 made restoreData get seeded for every session
-          //    (so per-session buffering works for newly-created tabs
-          //    too) and nothing clears it when the PTY later exits. With
-          //    restoreData-first precedence, a shell that terminates
-          //    after mount stayed in 'attach' mode forever — the new
-          //    Restart UX was unreachable until a full reload.
-          //    Errored peers completed in the SessionStatus union (both
-          //    are visible in the Sidebar Recent group + retained in the
-          //    SessionTabs strip when active) so both must route here;
-          //    skipping errored leaves a zombie attach or silent respawn
-          //    on a dead PTY.
-          //  - Has pane.restoreData → 'attach'. Covers Alive restored sessions
-          //    AND newly-created sessions (createSession seeds an empty
-          //    restoreData slot so the pane attaches instead of spawning).
-          //  - Otherwise → 'spawn' (legacy fallback).
-          let mode: TerminalPaneMode = 'spawn'
-          if (
-            activePane.status === 'completed' ||
-            activePane.status === 'errored'
-          ) {
-            mode = 'awaiting-restart'
-          } else if (activePane.restoreData) {
-            mode = 'attach'
-          }
 
           // SessionTabs.open keeps a tab for running/paused sessions OR
           // the active session — completed/errored non-active sessions
@@ -139,34 +94,16 @@ export const TerminalZone = ({
               }
               data-testid="terminal-pane"
               data-session-id={session.id}
-              data-pane-id={activePane.id}
-              data-pty-id={activePane.ptyId}
-              data-cwd={activePane.cwd}
-              data-mode={mode}
               className={`absolute inset-0 ${isActive ? '' : 'hidden'}`}
             >
-              {/* F16 (codex connector P1): key the inner TerminalPane by
-                  pane.ptyId so a restartSession (which preserves Session.id
-                  but rotates pane.ptyId) forces a clean unmount/remount of
-                  the xterm + useTerminal subtree. Without this, the
-                  mount-initialized refs inside useTerminal stay bound to
-                  the dead pre-restart PTY and the user-visible pane
-                  appears detached after restart. The outer wrapper div
-                  keyed by session.id (above) is unchanged, so sidebar /
-                  tab-strip / ARIA associations don't churn. */}
-              <TerminalPane
-                key={activePane.ptyId}
+              <SplitView
                 session={session}
-                pane={activePane}
                 service={service}
-                mode={mode}
-                onCwdChange={(cwd) =>
-                  onSessionCwdChange?.(session.id, activePane.id, cwd)
-                }
-                onPaneReady={onPaneReady}
-                onRestart={onSessionRestart}
                 isActive={isActive}
-                deferFit={deferTerminalFit}
+                onSessionCwdChange={onSessionCwdChange}
+                onPaneReady={onPaneReady}
+                onSessionRestart={onSessionRestart}
+                deferTerminalFit={deferTerminalFit}
               />
             </div>
           )

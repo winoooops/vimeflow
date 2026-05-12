@@ -8,7 +8,7 @@ import {
 import { useGitBranch } from '../../../diff/hooks/useGitBranch'
 import { useGitStatus } from '../../../diff/hooks/useGitStatus'
 import type { Pane, Session, SessionStatus } from '../../../sessions/types'
-import { agentForSession } from '../../../sessions/utils/agentForSession'
+import { agentForPane } from '../../../sessions/utils/agentForSession'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
 import { aggregateLineDelta } from './aggregateLineDelta'
@@ -55,15 +55,14 @@ export const TerminalPane = ({
   onRestart = undefined,
   deferFit = false,
 }: TerminalPaneProps): ReactElement => {
-  const agent = agentForSession(session)
+  const agent = agentForPane(pane)
   const containerRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<BodyHandle>(null)
   const [ptyStatus, setPtyStatus] = useState<PtyStatus>('idle')
   const [isCollapsed, setIsCollapsed] = useState(false)
 
-  const { isFocused, setFocused, onTerminalFocusChange } = useFocusedPane({
-    containerRef,
-  })
+  const { onTerminalFocusChange } = useFocusedPane({ containerRef })
+  const isFocused = pane.active
 
   const pipStatus: SessionStatus =
     mode === 'awaiting-restart'
@@ -89,8 +88,7 @@ export const TerminalPane = ({
 
   const handleContainerClick = useCallback((): void => {
     bodyRef.current?.focusTerminal()
-    setFocused(true)
-  }, [setFocused])
+  }, [])
 
   const handleToggleCollapse = useCallback((): void => {
     setIsCollapsed((collapsed) => !collapsed)
@@ -144,6 +142,7 @@ export const TerminalPane = ({
         background: '#121221',
         borderRadius: 10,
         transition: 'box-shadow 220ms ease, opacity 220ms ease',
+        opacity: isFocused ? 1 : 0.78,
       }}
       className="relative flex h-full w-full flex-col overflow-hidden"
     >

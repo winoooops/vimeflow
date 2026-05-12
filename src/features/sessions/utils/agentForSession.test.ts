@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest'
-import { agentForSession } from './agentForSession'
+import { agentForSession, agentForPane } from './agentForSession'
 import { AGENTS } from '../../../agents/registry'
-import type { Session } from '../types'
+import type { Pane, Session } from '../types'
 
 const baseSession: Omit<Session, 'agentType'> = {
   id: 's1',
@@ -57,6 +57,36 @@ describe('agentForSession', () => {
 
   test('generic falls back to AGENTS.shell', () => {
     expect(agentForSession({ ...baseSession, agentType: 'generic' })).toBe(
+      AGENTS.shell
+    )
+  })
+})
+
+const basePane: Omit<Pane, 'agentType'> = {
+  id: 'p0',
+  ptyId: 'pty-0',
+  cwd: '~',
+  status: 'running',
+  active: true,
+}
+
+describe('agentForPane', () => {
+  test('claude-code maps to AGENTS.claude', () => {
+    expect(agentForPane({ ...basePane, agentType: 'claude-code' })).toBe(
+      AGENTS.claude
+    )
+  })
+
+  test('codex maps to AGENTS.codex', () => {
+    expect(agentForPane({ ...basePane, agentType: 'codex' })).toBe(AGENTS.codex)
+  })
+
+  test('aider falls back to AGENTS.shell', () => {
+    expect(agentForPane({ ...basePane, agentType: 'aider' })).toBe(AGENTS.shell)
+  })
+
+  test('generic falls back to AGENTS.shell', () => {
+    expect(agentForPane({ ...basePane, agentType: 'generic' })).toBe(
       AGENTS.shell
     )
   })
