@@ -103,7 +103,17 @@ export const SplitView = ({
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.96 }}
                 transition={{ type: 'spring', stiffness: 360, damping: 34 }}
-                onClick={() => onSetActivePane?.(session.id, pane.id)}
+                // Skip the dispatch when this slot's pane is already
+                // active. applyActivePane returns the same reference
+                // on no-op, but expressing the guard at the call site
+                // keeps the semantic clean: every click that survives
+                // this handler is a real focus change. Mirrors the
+                // already-active escape-hatch in usePaneShortcuts.
+                onClick={
+                  pane.active
+                    ? undefined
+                    : (): void => onSetActivePane?.(session.id, pane.id)
+                }
                 data-testid="split-view-slot"
                 data-pane-id={pane.id}
                 data-pty-id={pane.ptyId}

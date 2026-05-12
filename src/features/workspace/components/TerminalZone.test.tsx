@@ -696,7 +696,12 @@ describe('TerminalZone', () => {
     expect(setSessionLayout).toHaveBeenCalledWith('s1', 'vsplit')
   })
 
-  test('passes split slot clicks to setSessionActivePane', async () => {
+  test('clicking the already-active split slot does NOT fire setSessionActivePane', async () => {
+    // The slot wrapper's onClick is gated by `!pane.active` so the
+    // handler only fires on a real focus change. applyActivePane's
+    // idempotency was the safety net; expressing the guard at the
+    // call site keeps the wiring honest. Inactive-pane click is
+    // covered by the 2-pane fixture test below.
     const user = userEvent.setup()
     const setSessionActivePane = vi.fn()
 
@@ -711,7 +716,7 @@ describe('TerminalZone', () => {
 
     await user.click(screen.getByTestId('split-view-slot'))
 
-    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
+    expect(setSessionActivePane).not.toHaveBeenCalled()
   })
 
   test('clicking an inactive split slot forwards the inactive paneId', async () => {
