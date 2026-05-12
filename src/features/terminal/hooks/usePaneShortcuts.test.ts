@@ -77,7 +77,7 @@ describe('usePaneShortcuts', () => {
       })
     )
 
-    const event = fire('\\', { metaKey: true })
+    const event = fire('\\', { ctrlKey: true })
 
     expect(setSessionLayout).toHaveBeenCalledOnce()
     expect(setSessionLayout).toHaveBeenCalledWith('s1', 'vsplit')
@@ -117,7 +117,7 @@ describe('usePaneShortcuts', () => {
       })
     )
 
-    const event = fire('2', { metaKey: true })
+    const event = fire('2', { ctrlKey: true })
 
     expect(setSessionActivePane).not.toHaveBeenCalled()
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()
@@ -196,7 +196,7 @@ describe('usePaneShortcuts', () => {
       })
     )
 
-    fire('\\', { metaKey: true })
+    fire('\\', { ctrlKey: true })
 
     expect(setSessionLayout).not.toHaveBeenCalled()
   })
@@ -214,7 +214,7 @@ describe('usePaneShortcuts', () => {
     )
 
     unmount()
-    fire('\\', { metaKey: true })
+    fire('\\', { ctrlKey: true })
 
     expect(setSessionLayout).not.toHaveBeenCalled()
   })
@@ -230,7 +230,7 @@ describe('usePaneShortcuts', () => {
       })
     )
 
-    fire('2', { metaKey: true })
+    fire('2', { ctrlKey: true })
 
     expect(setSessionActivePane).toHaveBeenCalledOnce()
     expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
@@ -254,9 +254,59 @@ describe('usePaneShortcuts', () => {
       })
     )
 
-    const event = fire('1', { metaKey: true })
+    const event = fire('1', { ctrlKey: true })
 
     expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
+  test('Mac (preferModifier=meta): Cmd+\\ fires; Ctrl+\\ flows through', () => {
+    // Codex P2 (cycle 10): match exactly the modifier the toolbar
+    // advertises. On macOS the hint shows ⌘, so Ctrl+\ must NOT
+    // claim the slot — otherwise terminal apps that rely on Ctrl-
+    // shortcuts (vim, readline) silently lose them.
+    const setSessionLayout = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'single', ['p0'])],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout,
+        preferModifier: 'meta',
+      })
+    )
+
+    // Cmd+\ fires (Mac-displayed modifier matches)
+    const cmdEvent = fire('\\', { metaKey: true })
+    expect(setSessionLayout).toHaveBeenCalledOnce()
+    expect(setSessionLayout).toHaveBeenCalledWith('s1', 'vsplit')
+    expect(cmdEvent.preventDefaultSpy).toHaveBeenCalled()
+
+    setSessionLayout.mockClear()
+
+    // Ctrl+\ flows through (NOT the displayed modifier on Mac)
+    const ctrlEvent = fire('\\', { ctrlKey: true })
+    expect(setSessionLayout).not.toHaveBeenCalled()
+    expect(ctrlEvent.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
+  test('Linux default (preferModifier=ctrl): Cmd+\\ flows through', () => {
+    // Symmetric to the Mac test. On Linux/Windows the hint shows
+    // Ctrl, so Cmd+\ does NOT claim the slot.
+    const setSessionLayout = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'single', ['p0'])],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout,
+        // preferModifier defaults to 'ctrl'
+      })
+    )
+
+    const event = fire('\\', { metaKey: true })
+
+    expect(setSessionLayout).not.toHaveBeenCalled()
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 
@@ -282,7 +332,7 @@ describe('usePaneShortcuts', () => {
       })
     )
 
-    const event = fire('\\', { metaKey: true })
+    const event = fire('\\', { ctrlKey: true })
 
     expect(setSessionLayout).not.toHaveBeenCalled()
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()

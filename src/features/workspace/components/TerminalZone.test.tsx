@@ -714,6 +714,45 @@ describe('TerminalZone', () => {
     expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
   })
 
+  test('clicking an inactive split slot forwards the inactive paneId', async () => {
+    // The single-pane fixture above exercises the dispatch but lands
+    // on the already-active path, where `applyActivePane` returns the
+    // same reference. This test covers the real UX scenario: a
+    // two-pane session, click the second (inactive) slot, assert the
+    // INACTIVE pane id flows through to setSessionActivePane.
+    const user = userEvent.setup()
+    const setSessionActivePane = vi.fn()
+    const baseSession = makeToolbarSession('s1', 'vsplit')
+
+    const twoPaneSession: Session = {
+      ...baseSession,
+      panes: [
+        { ...baseSession.panes[0], id: 'p0', active: true },
+        {
+          ...baseSession.panes[0],
+          id: 'p1',
+          ptyId: 'pty-s1-p1',
+          active: false,
+        },
+      ],
+    }
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[twoPaneSession]}
+        activeSessionId="s1"
+        setSessionActivePane={setSessionActivePane}
+      />
+    )
+
+    const slots = screen.getAllByTestId('split-view-slot')
+    expect(slots).toHaveLength(2)
+    await user.click(slots[1])
+
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+  })
+
   // Capture jsdom's default navigator.platform once and restore it
   // around every test that overrides it. Without this, the
   // Object.defineProperty stub leaks into any subsequent test that

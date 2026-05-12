@@ -31,7 +31,10 @@ import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
 import { createTerminalService } from '../terminal/services/terminalService'
-import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
+import {
+  usePaneShortcuts,
+  type PaneShortcutModifier,
+} from '../terminal/hooks/usePaneShortcuts'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
@@ -87,11 +90,31 @@ export const WorkspaceView = (): ReactElement => {
     notifyPaneReady,
   } = useSessionManager(terminalService)
 
+  // Detect which modifier the toolbar advertises on this platform so
+  // the keyboard shortcut reserves EXACTLY that combo (and no other).
+  // macOS shows ⌘ → reserve meta; everything else shows Ctrl →
+  // reserve ctrl. Computed once per mount (navigator values are stable
+  // for the session) and forwarded to the hook so the visible modifier
+  // and the intercepted modifier stay in lockstep.
+  const preferModifier = useMemo<PaneShortcutModifier>(() => {
+    if (typeof navigator === 'undefined') {
+      return 'ctrl'
+    }
+
+    const uad = (
+      navigator as Navigator & { userAgentData?: { platform?: string } }
+    ).userAgentData
+    const detected = (uad?.platform ?? navigator.platform).toLowerCase()
+
+    return detected.startsWith('mac') ? 'meta' : 'ctrl'
+  }, [])
+
   usePaneShortcuts({
     sessions,
     activeSessionId,
     setSessionActivePane,
     setSessionLayout,
+    preferModifier,
   })
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()

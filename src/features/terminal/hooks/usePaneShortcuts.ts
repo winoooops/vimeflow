@@ -18,11 +18,23 @@ const LAYOUT_CYCLE: readonly LayoutId[] = Object.values(LAYOUTS).map(
   (layout) => layout.id
 )
 
+/** Which modifier the toolbar hint advertises — and therefore the only
+ *  one we intercept on this platform. Restricting to a single modifier
+ *  per platform prevents a hidden shortcut steal: on macOS, the
+ *  toolbar says "⌘+1-4 focus" but accepting `ctrlKey` would also
+ *  swallow `Ctrl+1` (which terminal apps like vim / readline use).
+ *  WorkspaceView derives this once from navigator + passes the same
+ *  value to TerminalZone (for display) and this hook (for behavior). */
+export type PaneShortcutModifier = 'meta' | 'ctrl'
+
 export interface UsePaneShortcutsOptions {
   sessions: Session[]
   activeSessionId: string | null
   setSessionActivePane: (sessionId: string, paneId: string) => void
   setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
+  /** Defaults to `'ctrl'` — the safer behavior for non-Mac shells
+   *  where the toolbar already shows `Ctrl`. */
+  preferModifier?: PaneShortcutModifier
 }
 
 export const usePaneShortcuts = ({
@@ -30,15 +42,25 @@ export const usePaneShortcuts = ({
   activeSessionId,
   setSessionActivePane,
   setSessionLayout,
+  preferModifier = 'ctrl',
 }: UsePaneShortcutsOptions): void => {
   const sessionsRef = useRef(sessions)
   const activeSessionIdRef = useRef(activeSessionId)
+  const preferModifierRef = useRef(preferModifier)
   sessionsRef.current = sessions
   activeSessionIdRef.current = activeSessionId
+  preferModifierRef.current = preferModifier
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (!(event.metaKey || event.ctrlKey)) {
+      // Match exactly the modifier the toolbar advertises. On macOS
+      // (preferModifier='meta'), Ctrl+1 flows through to xterm so
+      // terminal apps keep their Ctrl-shortcuts. Same logic mirrored
+      // on Linux/Windows for Cmd combos. (Codex P2 cycle 10.)
+      const mod = preferModifierRef.current
+      const expected = mod === 'meta' ? event.metaKey : event.ctrlKey
+      const forbidden = mod === 'meta' ? event.ctrlKey : event.metaKey
+      if (!expected || forbidden) {
         return
       }
       // We deliberately do NOT reject altKey / shiftKey. Non-US
