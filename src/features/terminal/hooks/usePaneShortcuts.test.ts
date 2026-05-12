@@ -101,7 +101,7 @@ describe('usePaneShortcuts', () => {
     expect(setSessionLayout).toHaveBeenCalledWith('s1', 'single')
   })
 
-  test('Cmd+2 with only one pane is a no-op AND lets the event propagate', () => {
+  test('Ctrl+2 with only one pane is a no-op AND lets the event propagate', () => {
     // Out-of-range pane index: we deliberately do NOT preventDefault so
     // that terminal apps (vim buffers, tmux windows) can claim Cmd+N
     // when there's no pane to focus. The toolbar advertises "⌘+1-4
@@ -219,7 +219,7 @@ describe('usePaneShortcuts', () => {
     expect(setSessionLayout).not.toHaveBeenCalled()
   })
 
-  test('Cmd+2 with active p0 and two panes focuses p1', () => {
+  test('Ctrl+2 with active p0 and two panes focuses p1', () => {
     const setSessionActivePane = vi.fn()
     renderHook(() =>
       usePaneShortcuts({
@@ -236,7 +236,7 @@ describe('usePaneShortcuts', () => {
     expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
   })
 
-  test('Cmd+1 with already-active p0 lets the event propagate (no preventDefault)', () => {
+  test('Ctrl+1 with already-active p0 lets the event propagate (no preventDefault)', () => {
     // The shortcut's job is to MOVE focus. When the target is already
     // active (the common single-pane case where Cmd+1 always targets
     // pane 0), intercepting would permanently swallow Ctrl+1 from
@@ -310,7 +310,7 @@ describe('usePaneShortcuts', () => {
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 
-  test('Cmd+\\ with an unknown persisted layout is a no-op (no silent reset)', () => {
+  test('Ctrl+\\ with an unknown persisted layout is a no-op (no silent reset)', () => {
     // Persisted sessions can carry a layout id that no longer exists
     // in LAYOUTS (e.g., the id was renamed between app versions). The
     // hook treats indexOf === -1 as a no-op so the user's stale layout
