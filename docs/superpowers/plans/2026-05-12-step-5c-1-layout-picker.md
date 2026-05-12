@@ -6,7 +6,7 @@
 
 **Architecture:** Two new manager mutations (`setSessionLayout`, `setSessionActivePane`) on `useSessionManager` drive the focus + layout state. A new `LayoutSwitcher` component + `usePaneShortcuts` hook surface them in the UI. SplitView wraps its grid in `<LayoutGroup id={session.id}>` + `<motion.div layout>` (grid container) + `<motion.div layout layoutId={pane.id}>` (per slot) + `<AnimatePresence initial={false}>` so layout changes animate smoothly. TerminalPane gains a rising-edge effect that calls `bodyRef.current?.focusTerminal()` whenever `pane.active` flips `false → true`, coupling visual ring and keyboard cursor in one user action.
 
-**Tech Stack:** TypeScript, React 19, Tailwind CSS, Vitest + @testing-library/react, framer-motion v12.38, xterm.js, clsx.
+**Tech Stack:** TypeScript, React 19, Tailwind CSS, Vitest + @testing-library/react, framer-motion v12.38, xterm.js. **No new dependencies** — `clsx` is NOT in the repo; conditional classes use template-literal interpolation throughout.
 
 **Spec:** `docs/superpowers/specs/2026-05-12-step-5c-1-layout-picker-design.md`
 
@@ -227,7 +227,8 @@ describe('LayoutSwitcher', () => {
     const onPick = vi.fn()
     render(<LayoutSwitcher activeLayoutId="single" onPick={onPick} />)
     await user.click(screen.getByTitle('Quad'))
-    expect(onPick).toHaveBeenCalledExactlyOnceWith('quad')
+    expect(onPick).toHaveBeenCalledOnce()
+    expect(onPick).toHaveBeenCalledWith('quad')
   })
 
   test('exposes role="toolbar" with an aria-label', () => {
@@ -246,8 +247,10 @@ Expected: FAIL with "Cannot find module './LayoutSwitcher'".
 
 ```tsx
 // src/features/terminal/components/LayoutSwitcher/LayoutSwitcher.tsx
+// NOTE: vimeflow does NOT depend on `clsx` (confirmed: not in
+// package.json, not in node_modules). Use template-literal class
+// merging instead — keeps 5c-1 dependency-free.
 import type { ReactElement } from 'react'
-import { clsx } from 'clsx'
 import type { LayoutId } from '../../../sessions/types'
 import { LAYOUTS } from '../SplitView'
 import { LayoutGlyph } from './LayoutGlyph'
@@ -256,6 +259,10 @@ export interface LayoutSwitcherProps {
   activeLayoutId: LayoutId
   onPick: (next: LayoutId) => void
 }
+
+const BASE_BTN = 'inline-flex h-5 w-6 items-center justify-center rounded'
+const ACTIVE_BTN = 'bg-primary/15 text-primary ring-1 ring-primary/45'
+const INACTIVE_BTN = 'text-on-surface-muted hover:text-on-surface'
 
 export const LayoutSwitcher = ({
   activeLayoutId,
@@ -276,12 +283,7 @@ export const LayoutSwitcher = ({
           title={L.name}
           data-active={isActive ? 'true' : undefined}
           onClick={() => onPick(L.id)}
-          className={clsx(
-            'inline-flex h-5 w-6 items-center justify-center rounded',
-            isActive
-              ? 'bg-primary/15 text-primary ring-1 ring-primary/45'
-              : 'text-on-surface-muted hover:text-on-surface'
-          )}
+          className={`${BASE_BTN} ${isActive ? ACTIVE_BTN : INACTIVE_BTN}`}
         >
           <LayoutGlyph layoutId={L.id} />
         </button>
@@ -435,167 +437,215 @@ git commit -m "feat(sessions): add setSessionLayout manager mutation (5c-1 task 
 
 ---
 
-## Task 4: `setSessionActivePane` manager mutation
+## Task 4: `setSessionActivePane` — pure helper + manager mutation
+
+**Why a pure helper:** `useSessionManager` exposes no test seam for seeding a multi-pane Session (the `addPane` lifecycle ships in 5c-2). To make the flip + materialized-field re-derivation testable with multi-pane fixtures TODAY, we factor the mutation logic into a pure helper `applyActivePane(sessions, sessionId, paneId): Session[]` that the manager calls inside its `setSessions` updater. The helper takes plain `Session[]` fixtures so multi-pane assertions don't need a manager seam.
 
 **Files:**
 
-- Modify: `src/features/sessions/hooks/useSessionManager.ts`
-- Test: `src/features/sessions/hooks/useSessionManager.test.ts`
+- Modify: `src/features/sessions/utils/activeSessionPane.ts` — add `applyActivePane`
+- Modify: `src/features/sessions/utils/activeSessionPane.test.ts` — multi-pane tests
+- Modify: `src/features/sessions/hooks/useSessionManager.ts` — `setSessionActivePane` wraps `applyActivePane`
+- Modify: `src/features/sessions/hooks/useSessionManager.test.ts` — integration coverage of the no-op paths only
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing helper tests**
 
-Append to `useSessionManager.test.ts`:
+Append to `src/features/sessions/utils/activeSessionPane.test.ts`:
 
-```tsx
-describe('setSessionActivePane', () => {
-  // 5c-1 production: panes.length === 1 always. These tests pre-seed a
-  // two-pane fixture by direct setState (bypassing addPane, which is 5c-2).
-  // Pattern: cast the manager + use the test-only seam exposed by the
-  // existing fixture helper (or call setSessions via the hook's exposed
-  // ref — see existing setSessionStatus tests for the convention).
-  test('flips active flag and re-derives materialized fields', async () => {
-    const service = buildMockService()
-    const { result } = renderHook(() => useSessionManager(service))
-    act(() => result.current.createSession())
-    await waitForSeed(result)
-    const sessionId = result.current.sessions[0].id
-    // Force-seed a second pane via the existing test util (post-5a's
-    // `__seedMultiPane` helper or whatever the test file already uses for
-    // multi-pane fixtures in SplitView.test).
-    seedSecondPane(result, sessionId, {
-      id: 'p1',
-      ptyId: 'pty-2',
-      cwd: '/tmp/p1-cwd',
-      agentType: 'codex',
-      status: 'running',
-      active: false,
-    })
+```ts
+import { describe, expect, test, vi } from 'vitest'
+import { applyActivePane } from './activeSessionPane'
+import { emptyActivity } from '../constants'
+import type { Pane, Session } from '../types'
 
-    act(() => result.current.setSessionActivePane(sessionId, 'p1'))
+const makePane = (id: string, overrides: Partial<Pane> = {}): Pane => ({
+  id,
+  ptyId: `pty-${id}`,
+  cwd: `/tmp/${id}`,
+  agentType: 'generic',
+  status: 'running',
+  active: false,
+  ...overrides,
+})
 
-    const updated = result.current.sessions[0]
-    const activeCount = updated.panes.filter((p) => p.active).length
-    expect(activeCount).toBe(1)
+const makeSession = (
+  id: string,
+  panes: Pane[],
+  layout: Session['layout'] = 'vsplit'
+): Session => ({
+  id,
+  projectId: 'proj-1',
+  name: id,
+  status: 'running',
+  workingDirectory: panes.find((p) => p.active)?.cwd ?? panes[0].cwd,
+  agentType: panes.find((p) => p.active)?.agentType ?? panes[0].agentType,
+  layout,
+  panes,
+  createdAt: '2026-05-12T00:00:00Z',
+  lastActivityAt: '2026-05-12T00:00:00Z',
+  activity: { ...emptyActivity },
+})
+
+describe('applyActivePane', () => {
+  test('flips active flag and re-derives workingDirectory + agentType', () => {
+    const sessions: Session[] = [
+      makeSession('s1', [
+        makePane('p0', {
+          active: true,
+          cwd: '/tmp/p0',
+          agentType: 'claude-code',
+        }),
+        makePane('p1', { active: false, cwd: '/tmp/p1', agentType: 'codex' }),
+      ]),
+    ]
+    const next = applyActivePane(sessions, 's1', 'p1')
+    const updated = next[0]
+    expect(updated.panes.filter((p) => p.active)).toHaveLength(1)
     expect(updated.panes.find((p) => p.id === 'p1')?.active).toBe(true)
-    expect(updated.workingDirectory).toBe('/tmp/p1-cwd')
+    expect(updated.panes.find((p) => p.id === 'p0')?.active).toBe(false)
+    expect(updated.workingDirectory).toBe('/tmp/p1')
     expect(updated.agentType).toBe('codex')
   })
 
-  test('returns same sessions reference when target is already active', async () => {
-    const service = buildMockService()
-    const { result } = renderHook(() => useSessionManager(service))
-    act(() => result.current.createSession())
-    await waitForSeed(result)
-    const sessionId = result.current.sessions[0].id
-    const before = result.current.sessions
-    act(() => result.current.setSessionActivePane(sessionId, 'p0'))
-    expect(result.current.sessions).toBe(before)
+  test('returns the same array reference when target is already active', () => {
+    const sessions: Session[] = [
+      makeSession('s1', [makePane('p0', { active: true })]),
+    ]
+    const next = applyActivePane(sessions, 's1', 'p0')
+    expect(next).toBe(sessions)
   })
 
-  test('warns and no-ops when sessionId is missing', async () => {
+  test('warns and returns same reference when sessionId is missing', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const service = buildMockService()
-    const { result } = renderHook(() => useSessionManager(service))
-    const before = result.current.sessions
-    act(() => result.current.setSessionActivePane('no-such-id', 'p0'))
-    expect(result.current.sessions).toBe(before)
+    const sessions: Session[] = [
+      makeSession('s1', [makePane('p0', { active: true })]),
+    ]
+    const next = applyActivePane(sessions, 'nope', 'p0')
+    expect(next).toBe(sessions)
+    expect(warn).toHaveBeenCalledWith('applyActivePane: no session nope')
+    warn.mockRestore()
+  })
+
+  test('warns and returns same reference when paneId is missing', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const sessions: Session[] = [
+      makeSession('s1', [makePane('p0', { active: true })]),
+    ]
+    const next = applyActivePane(sessions, 's1', 'p-fake')
+    expect(next).toBe(sessions)
     expect(warn).toHaveBeenCalledWith(
-      'setSessionActivePane: no session no-such-id'
+      'applyActivePane: no pane p-fake in session s1'
     )
     warn.mockRestore()
   })
 
-  test('warns and no-ops when paneId is missing within the session', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const service = buildMockService()
-    const { result } = renderHook(() => useSessionManager(service))
-    act(() => result.current.createSession())
-    await waitForSeed(result)
-    const sessionId = result.current.sessions[0].id
-    const before = result.current.sessions
-    act(() => result.current.setSessionActivePane(sessionId, 'p-fake'))
-    expect(result.current.sessions).toBe(before)
-    expect(warn).toHaveBeenCalledWith(
-      `setSessionActivePane: no pane p-fake in session ${sessionId}`
-    )
-    warn.mockRestore()
+  test('preserves identity of unaffected sessions', () => {
+    const sessions: Session[] = [
+      makeSession('s1', [
+        makePane('p0', { active: true }),
+        makePane('p1', { active: false }),
+      ]),
+      makeSession('s2', [makePane('p0', { active: true })]),
+    ]
+    const next = applyActivePane(sessions, 's1', 'p1')
+    expect(next[1]).toBe(sessions[1]) // s2 unchanged → same reference
+    expect(next[0]).not.toBe(sessions[0]) // s1 mutated → new reference
   })
 })
 ```
 
-If `seedSecondPane` doesn't exist, add it inline at the top of the test file:
+- [ ] **Step 2: Run helper test to verify it fails**
+
+Run: `npx vitest run src/features/sessions/utils/activeSessionPane.test.ts -t "applyActivePane"`
+Expected: FAIL — `applyActivePane` not exported.
+
+- [ ] **Step 3: Write the helper**
+
+Append to `src/features/sessions/utils/activeSessionPane.ts`:
 
 ```ts
-const seedSecondPane = (
-  result: { current: SessionManager },
+/** Pure helper that flips `pane.active` to true for the named pane in the
+ *  named session, sets every other pane in that session to active=false,
+ *  and re-materializes `Session.workingDirectory` + `Session.agentType`
+ *  from the new active pane (5a Decision #9 contract).
+ *
+ *  Returns the SAME `sessions` reference on no-op branches (missing
+ *  sessionId, missing paneId, already-active target). On the mutating
+ *  branch, only the affected session gets a new reference; siblings
+ *  preserve identity so React's `setSessions((prev) => helper(prev, …))`
+ *  call doesn't trigger spurious re-renders on unrelated panels.
+ */
+export const applyActivePane = (
+  sessions: Session[],
   sessionId: string,
-  pane: Pane
-): void => {
-  // useSessionManager exports no setter for direct pane manipulation;
-  // act through the existing __testInjectPanes hook the way other
-  // 5b tests seed multi-pane fixtures, or use the pattern from
-  // SplitView.test.tsx which constructs `Session` objects directly
-  // and renders against a mock manager.
-  // Concrete: see SplitView.test.tsx's `makeSession(layout, paneCount)`
-  // and follow the existing convention.
+  paneId: string
+): Session[] => {
+  const idx = sessions.findIndex((s) => s.id === sessionId)
+  if (idx === -1) {
+    // eslint-disable-next-line no-console
+    console.warn(`applyActivePane: no session ${sessionId}`)
+    return sessions
+  }
+  const session = sessions[idx]
+  const target = session.panes.find((p) => p.id === paneId)
+  if (!target) {
+    // eslint-disable-next-line no-console
+    console.warn(`applyActivePane: no pane ${paneId} in session ${sessionId}`)
+    return sessions
+  }
+  if (target.active) return sessions
+
+  const newPanes = session.panes.map((p) => ({
+    ...p,
+    active: p.id === paneId,
+  }))
+  const newSession: Session = {
+    ...session,
+    panes: newPanes,
+    workingDirectory: target.cwd,
+    agentType: target.agentType,
+  }
+  return [...sessions.slice(0, idx), newSession, ...sessions.slice(idx + 1)]
 }
 ```
 
-(If you find that 5b's tests construct sessions directly via fixtures bypassing the manager, follow that same convention here — this is the documented practice from the 5b spec Decision #8.)
+- [ ] **Step 4: Run helper test to verify it passes**
 
-- [ ] **Step 2: Run test to verify it fails**
+Run: `npx vitest run src/features/sessions/utils/activeSessionPane.test.ts -t "applyActivePane"`
+Expected: 5 tests PASS.
 
-Run: `npx vitest run src/features/sessions/hooks/useSessionManager.test.ts -t setSessionActivePane`
-Expected: FAIL — `setSessionActivePane` is undefined.
+- [ ] **Step 5: Add manager mutation that wraps the helper**
 
-- [ ] **Step 3: Write the implementation**
+In `src/features/sessions/hooks/useSessionManager.ts`:
 
-Add to `SessionManager` interface:
+1. Import the helper:
+
+```ts
+import {
+  applyActivePane,
+  findActivePane,
+  getActivePane,
+} from '../utils/activeSessionPane'
+```
+
+2. Extend `SessionManager` interface:
 
 ```ts
   setSessionActivePane: (sessionId: string, paneId: string) => void
 ```
 
-Add to the hook body (after `setSessionLayout`):
+3. Inside the hook body (after `setSessionLayout`):
 
 ```ts
 const setSessionActivePane = useCallback(
   (sessionId: string, paneId: string): void => {
-    setSessions((prev) => {
-      const idx = prev.findIndex((s) => s.id === sessionId)
-      if (idx === -1) {
-        // eslint-disable-next-line no-console
-        console.warn(`setSessionActivePane: no session ${sessionId}`)
-        return prev
-      }
-      const session = prev[idx]
-      const target = session.panes.find((p) => p.id === paneId)
-      if (!target) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          `setSessionActivePane: no pane ${paneId} in session ${sessionId}`
-        )
-        return prev
-      }
-      if (target.active) return prev
-      const newPanes = session.panes.map((p) => ({
-        ...p,
-        active: p.id === paneId,
-      }))
-      const newSession: Session = {
-        ...session,
-        panes: newPanes,
-        workingDirectory: target.cwd,
-        agentType: target.agentType,
-      }
-      return [...prev.slice(0, idx), newSession, ...prev.slice(idx + 1)]
-    })
+    setSessions((prev) => applyActivePane(prev, sessionId, paneId))
   },
   []
 )
 ```
 
-Expose in the returned object:
+4. Expose in the returned object:
 
 ```ts
 return {
@@ -606,16 +656,56 @@ return {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 6: Write integration tests for the manager wrapper (no-op paths only)**
 
-Run: `npx vitest run src/features/sessions/hooks/useSessionManager.test.ts -t setSessionActivePane`
-Expected: 4 tests PASS.
+Append to `useSessionManager.test.ts`:
 
-- [ ] **Step 5: Commit**
+```tsx
+describe('setSessionActivePane (manager integration)', () => {
+  // Multi-pane fixtures are tested in activeSessionPane.test.ts.
+  // Manager-level tests only verify the wrapper plumbing: missing-id
+  // is a no-op, already-active is a no-op, single-pane stays stable.
+
+  test('returns same sessions reference when target pane is already active', async () => {
+    const service = buildMockService()
+    const { result } = renderHook(() => useSessionManager(service))
+    act(() => result.current.createSession())
+    await waitForSeed(result)
+    const sessionId = result.current.sessions[0].id
+    const before = result.current.sessions
+    act(() => result.current.setSessionActivePane(sessionId, 'p0'))
+    expect(result.current.sessions).toBe(before)
+  })
+
+  test('warns when sessionId is missing', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const service = buildMockService()
+    const { result } = renderHook(() => useSessionManager(service))
+    act(() => result.current.setSessionActivePane('no-such-session', 'p0'))
+    expect(warn).toHaveBeenCalledWith(
+      'applyActivePane: no session no-such-session'
+    )
+    warn.mockRestore()
+  })
+})
+```
+
+(`buildMockService` / `waitForSeed` are the existing helpers used by the existing `createSession` tests in `useSessionManager.test.ts`. If the file's top-level imports / helpers don't include them, copy the pattern from one of the existing tests in the same file — they're defined inline at the top, post-5a.)
+
+- [ ] **Step 7: Run manager integration tests to verify they pass**
+
+Run: `npx vitest run src/features/sessions/hooks/useSessionManager.test.ts -t "setSessionActivePane (manager integration)"`
+Expected: 2 tests PASS.
+
+- [ ] **Step 8: Commit (helper + manager wrapper together)**
 
 ```bash
-git add src/features/sessions/hooks/useSessionManager.ts src/features/sessions/hooks/useSessionManager.test.ts
-git commit -m "feat(sessions): add setSessionActivePane mutation (5c-1 task 4)"
+git add \
+  src/features/sessions/utils/activeSessionPane.ts \
+  src/features/sessions/utils/activeSessionPane.test.ts \
+  src/features/sessions/hooks/useSessionManager.ts \
+  src/features/sessions/hooks/useSessionManager.test.ts
+git commit -m "feat(sessions): applyActivePane helper + setSessionActivePane mutation (5c-1 task 4)"
 ```
 
 ---
@@ -634,6 +724,7 @@ git commit -m "feat(sessions): add setSessionActivePane mutation (5c-1 task 4)"
 import { renderHook } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import { usePaneShortcuts } from './usePaneShortcuts'
+import { emptyActivity } from '../../sessions/constants'
 import type { LayoutId, Session } from '../../sessions/types'
 
 const makeSession = (
@@ -659,11 +750,11 @@ const makeSession = (
   })),
   createdAt: '2026-05-12T00:00:00Z',
   lastActivityAt: '2026-05-12T00:00:00Z',
-  activity: {
-    toolCalls: [],
-    filesChanged: [],
-    testRuns: [],
-  },
+  // Re-uses the canonical `emptyActivity` constant exported from
+  // `src/features/sessions/constants.ts` — the AgentActivity shape
+  // (fileChanges / toolCalls / testResults / contextWindow / usage)
+  // is the source of truth and must NOT be inlined incorrectly here.
+  activity: { ...emptyActivity },
 })
 
 const fire = (
@@ -695,7 +786,8 @@ describe('usePaneShortcuts', () => {
       })
     )
     const event = fire('\\', { metaKey: true })
-    expect(setSessionLayout).toHaveBeenCalledExactlyOnceWith('s1', 'vsplit')
+    expect(setSessionLayout).toHaveBeenCalledOnce()
+    expect(setSessionLayout).toHaveBeenCalledWith('s1', 'vsplit')
     expect(
       (event as KeyboardEvent & { __pd: ReturnType<typeof vi.spyOn> }).__pd
     ).toHaveBeenCalled()
@@ -713,7 +805,8 @@ describe('usePaneShortcuts', () => {
       })
     )
     fire('\\', { ctrlKey: true })
-    expect(setSessionLayout).toHaveBeenCalledExactlyOnceWith('s1', 'single')
+    expect(setSessionLayout).toHaveBeenCalledOnce()
+    expect(setSessionLayout).toHaveBeenCalledWith('s1', 'single')
   })
 
   test('Cmd+2 with only one pane is a no-op BUT preventDefault still fires', () => {
@@ -812,7 +905,8 @@ describe('usePaneShortcuts', () => {
       })
     )
     fire('2', { metaKey: true })
-    expect(setSessionActivePane).toHaveBeenCalledExactlyOnceWith('s1', 'p1')
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
   })
 
   test('Cmd+1 with already-active p0 is a no-op BUT preventDefault still fires', () => {
@@ -955,7 +1049,8 @@ describe('SplitView — click-to-focus (5c-1)', () => {
     )
     const slotP1 = screen.getAllByTestId('split-view-slot')[1]
     await user.click(slotP1)
-    expect(onSetActivePane).toHaveBeenCalledExactlyOnceWith(session.id, 'p1')
+    expect(onSetActivePane).toHaveBeenCalledOnce()
+    expect(onSetActivePane).toHaveBeenCalledWith(session.id, 'p1')
   })
 
   test('omitting onSetActivePane → click is a no-op (no error)', async () => {
@@ -1217,7 +1312,7 @@ git commit -m "feat(terminal): rising-edge focus effect on pane.active (5c-1 tas
 
 ---
 
-## Task 8: `TerminalZone` toolbar
+## Task 8: `TerminalZone` toolbar + `WorkspaceView` plumbing
 
 **Files:**
 
@@ -1286,7 +1381,8 @@ describe('TerminalZone — layout toolbar (5c-1)', () => {
       />
     )
     await user.click(screen.getByTitle('Vertical split'))
-    expect(setSessionLayout).toHaveBeenCalledExactlyOnceWith('s1', 'vsplit')
+    expect(setSessionLayout).toHaveBeenCalledOnce()
+    expect(setSessionLayout).toHaveBeenCalledWith('s1', 'vsplit')
   })
 
   test('toolbar shows ⌘ on Mac', () => {
@@ -1477,25 +1573,10 @@ Expected: existing tests PASS + 6 new toolbar tests PASS.
 
 - [ ] **Step 5: Commit**
 
-```bash
-git add src/features/workspace/components/TerminalZone.tsx src/features/workspace/components/TerminalZone.test.tsx
-git commit -m "feat(workspace): mount LayoutSwitcher toolbar in TerminalZone (5c-1 task 8)"
-```
-
----
-
-## Task 9: `WorkspaceView` plumbing
-
-**Files:**
-
-- Modify: `src/features/workspace/WorkspaceView.tsx`
-- Test: `src/features/workspace/WorkspaceView.test.tsx`
-
-- [ ] **Step 1: Write the failing tests (additions)**
+- [ ] **Step 6: Write WorkspaceView plumbing test (additions)**
 
 ```tsx
-// Additions to WorkspaceView.test.tsx
-
+// Additions to src/features/workspace/WorkspaceView.test.tsx
 import * as PaneShortcuts from '../terminal/hooks/usePaneShortcuts'
 
 describe('WorkspaceView — usePaneShortcuts wiring (5c-1)', () => {
@@ -1512,22 +1593,22 @@ describe('WorkspaceView — usePaneShortcuts wiring (5c-1)', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 7: Run WorkspaceView wiring test to verify it fails**
 
 Run: `npx vitest run src/features/workspace/WorkspaceView.test.tsx -t "usePaneShortcuts wiring"`
 Expected: FAIL — `usePaneShortcuts` is never called.
 
-- [ ] **Step 3: Write the implementation**
+- [ ] **Step 8: Wire WorkspaceView in the SAME commit as the TerminalZone toolbar**
 
-Update `src/features/workspace/WorkspaceView.tsx`:
+Combining Tasks 8 + 9 into one commit avoids a transient state where `TerminalZone`'s required `setSessionActivePane` / `setSessionLayout` props are unwired in `WorkspaceView` — the codex plan-complete pass flagged that intermediate as failing `tsc`. Update `src/features/workspace/WorkspaceView.tsx`:
 
-1. Add the import (alongside other terminal-feature imports):
+1. Add the import:
 
 ```ts
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
 ```
 
-2. Destructure the two new mutations from `useSessionManager`'s return (find the existing `const { sessions, activeSessionId, ... } = useSessionManager(...)` line and extend):
+2. Destructure the two new mutations from the manager:
 
 ```ts
 const {
@@ -1539,7 +1620,7 @@ const {
 } = useSessionManager(service)
 ```
 
-3. Mount the keyboard hook (alongside any other workspace-level effects; the `useCommandPalette` call is a good neighbour):
+3. Mount the keyboard hook (alongside `useCommandPalette`):
 
 ```ts
 usePaneShortcuts({
@@ -1550,7 +1631,7 @@ usePaneShortcuts({
 })
 ```
 
-4. Pass both mutations to `TerminalZone` in the JSX:
+4. Pass both mutations to `TerminalZone`:
 
 ```tsx
 <TerminalZone
@@ -1563,21 +1644,25 @@ usePaneShortcuts({
 />
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 9: Run all tests in the touched scope**
 
-Run: `npx vitest run src/features/workspace/WorkspaceView.test.tsx`
-Expected: existing tests PASS + new wiring test PASS.
+Run: `npx vitest run src/features/workspace/`
+Expected: existing tests PASS + new toolbar tests + WorkspaceView wiring test all PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 10: Commit toolbar + plumbing together**
 
 ```bash
-git add src/features/workspace/WorkspaceView.tsx src/features/workspace/WorkspaceView.test.tsx
-git commit -m "feat(workspace): wire usePaneShortcuts + layout mutations (5c-1 task 9)"
+git add \
+  src/features/workspace/components/TerminalZone.tsx \
+  src/features/workspace/components/TerminalZone.test.tsx \
+  src/features/workspace/WorkspaceView.tsx \
+  src/features/workspace/WorkspaceView.test.tsx
+git commit -m "feat(workspace): LayoutSwitcher toolbar + usePaneShortcuts wiring (5c-1 task 8)"
 ```
 
 ---
 
-## Task 10: `progress.yaml` split
+## Task 9: `progress.yaml` split
 
 **Files:**
 
@@ -1631,12 +1716,12 @@ Expected: no output, no error.
 
 ```bash
 git add docs/roadmap/progress.yaml
-git commit -m "chore(roadmap): split ui-s5c into ui-s5c-1 + ui-s5c-2 (5c-1 task 10)"
+git commit -m "chore(roadmap): split ui-s5c into ui-s5c-1 + ui-s5c-2 (5c-1 task 9)"
 ```
 
 ---
 
-## Task 11: Manual smoke test in `tauri:dev`
+## Task 10: Manual smoke test in `tauri:dev`
 
 **Goal:** Verify motion doesn't regress xterm rendering and the LayoutSwitcher + shortcuts work end-to-end before opening the PR.
 
@@ -1672,7 +1757,7 @@ If smoke test revealed nothing, this step is a no-op. Otherwise commit the fixes
 
 ---
 
-## Task 12: Open the pull request
+## Task 11: Open the pull request
 
 - [ ] **Step 1: Push the branch**
 
@@ -1724,7 +1809,7 @@ Once the PR merges, update `progress.yaml` in a follow-up commit:
 
 - [x] §0 Goals 1-6 each map to a task above (LayoutSwitcher → tasks 1-2; usePaneShortcuts → task 5; click-to-focus → task 6; manager mutations → tasks 3-4; toolbar placement → task 8; motion → tasks 6 + 7).
 - [x] §0 Non-goals are respected (no addPane/removePane, no placeholders, no X-close, no auto-shrink, no auto-grow, no Rust IPC changes).
-- [x] All 11 Decisions land somewhere in the plan (Decision #1 split is implicit; #2 passive layout in task 8; #3 LAYOUT_CYCLE in task 5; #4 modifier guard in task 5; #5/#6 manager mutations in tasks 3-4; #7 toolbar placement in task 8; #8 WorkspaceView mount in task 9; #9 motion + layoutId in task 6; #10 Rust contract not touched — respected by task content; #11 rising-edge effect in task 7).
+- [x] All 11 Decisions land somewhere in the plan (Decision #1 split is implicit; #2 passive layout in task 8; #3 LAYOUT_CYCLE in task 5; #4 modifier guard in task 5; #5/#6 manager mutations in tasks 3-4; #7 toolbar placement in task 8; #8 WorkspaceView mount also in task 8 — combined commit with TerminalZone toolbar so the required props are introduced and wired in one atomic change; #9 motion + layoutId in task 6; #10 Rust contract not touched — respected by task content; #11 rising-edge effect in task 7).
 - [x] No placeholders or "TBD" in code blocks.
 - [x] All file paths absolute from repo root.
 - [x] Type names consistent across tasks (`LayoutId`, `Pane`, `Session`, `SessionManager`, `LayoutShape` — single source of truth).
