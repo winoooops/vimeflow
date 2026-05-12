@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { TerminalZone } from './TerminalZone'
 import { mockSessions } from '../data/mockSessions'
-import type { Session } from '../../sessions/types'
+import type { LayoutId, Session } from '../../sessions/types'
 import type { TerminalPaneProps } from '../../terminal/components/TerminalPane'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 
@@ -92,6 +92,8 @@ describe('TerminalZone', () => {
     sessions: mockSessions.slice(0, 2), // First two sessions
     activeSessionId: 'sess-1',
     service: mockService,
+    setSessionActivePane: vi.fn(),
+    setSessionLayout: vi.fn(),
   }
 
   test('renders terminal content area with TerminalPane', () => {
@@ -402,6 +404,8 @@ describe('TerminalZone', () => {
         sessions={[session]}
         activeSessionId="sess-vsplit"
         service={mockService}
+        setSessionActivePane={vi.fn()}
+        setSessionLayout={vi.fn()}
       />
     )
 
@@ -619,5 +623,128 @@ describe('TerminalZone', () => {
     mockPanes.forEach((pane) => {
       expect(pane).toHaveAttribute('data-mode', 'attach')
     })
+  })
+
+  const makeToolbarSession = (
+    id: string,
+    layout: LayoutId = 'single'
+  ): Session => ({
+    ...mockSessions[0],
+    id,
+    name: id,
+    layout,
+    panes: [
+      {
+        ...mockSessions[0].panes[0],
+        id: 'p0',
+        ptyId: `pty-${id}`,
+        active: true,
+      },
+    ],
+  })
+
+  test('mounts layout toolbar when sessions exist and not loading', () => {
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[makeToolbarSession('s1', 'vsplit')]}
+        activeSessionId="s1"
+      />
+    )
+
+    expect(screen.getByTestId('layout-toolbar')).toBeInTheDocument()
+    expect(screen.getByTestId('layout-switcher')).toBeInTheDocument()
+  })
+
+  test('hides layout toolbar when loading=true', () => {
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[]}
+        activeSessionId={null}
+        loading
+      />
+    )
+
+    expect(screen.queryByTestId('layout-toolbar')).not.toBeInTheDocument()
+  })
+
+  test('hides layout toolbar when sessions is empty', () => {
+    render(
+      <TerminalZone {...defaultProps} sessions={[]} activeSessionId={null} />
+    )
+
+    expect(screen.queryByTestId('layout-toolbar')).not.toBeInTheDocument()
+  })
+
+  test('clicking a layout button calls setSessionLayout with active session id', async () => {
+    const user = userEvent.setup()
+    const setSessionLayout = vi.fn()
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[makeToolbarSession('s1')]}
+        activeSessionId="s1"
+        setSessionLayout={setSessionLayout}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Vertical split' }))
+
+    expect(setSessionLayout).toHaveBeenCalledOnce()
+    expect(setSessionLayout).toHaveBeenCalledWith('s1', 'vsplit')
+  })
+
+  test('passes split slot clicks to setSessionActivePane', async () => {
+    const user = userEvent.setup()
+    const setSessionActivePane = vi.fn()
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[makeToolbarSession('s1')]}
+        activeSessionId="s1"
+        setSessionActivePane={setSessionActivePane}
+      />
+    )
+
+    await user.click(screen.getByTestId('split-view-slot'))
+
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
+  })
+
+  test('toolbar shows Cmd glyph on Mac', () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[makeToolbarSession('s1')]}
+        activeSessionId="s1"
+      />
+    )
+
+    expect(screen.getByTestId('layout-toolbar')).toHaveTextContent('⌘')
+  })
+
+  test('toolbar shows Ctrl by default', () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Linux x86_64',
+      configurable: true,
+    })
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[makeToolbarSession('s1')]}
+        activeSessionId="s1"
+      />
+    )
+
+    expect(screen.getByTestId('layout-toolbar')).toHaveTextContent('Ctrl')
   })
 })

@@ -2852,4 +2852,135 @@ describe('useSessionManager', () => {
     expect(updated.workingDirectory).toBe('/new/cwd')
     expect(service.updateSessionCwd).toHaveBeenCalledWith('pty-1', '/new/cwd')
   })
+
+  describe('setSessionLayout', () => {
+    test('updates session.layout when target session exists and layout differs', async () => {
+      const service = createMockService()
+      service.listSessions = vi.fn().mockResolvedValue({
+        activeSessionId: 'pty-1',
+        sessions: [
+          {
+            id: 'pty-1',
+            cwd: '/tmp',
+            status: {
+              kind: 'Alive',
+              pid: 1,
+              replay_data: '',
+              replay_end_offset: BigInt(0),
+            },
+          },
+        ],
+      })
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      const sessionId = result.current.sessions[0].id
+
+      act(() => result.current.setSessionLayout(sessionId, 'vsplit'))
+
+      expect(result.current.sessions[0].layout).toBe('vsplit')
+      expect(result.current.sessions[0].panes).toHaveLength(1)
+    })
+
+    test('returns same sessions array reference when layout is unchanged', async () => {
+      const service = createMockService()
+      service.listSessions = vi.fn().mockResolvedValue({
+        activeSessionId: 'pty-1',
+        sessions: [
+          {
+            id: 'pty-1',
+            cwd: '/tmp',
+            status: {
+              kind: 'Alive',
+              pid: 1,
+              replay_data: '',
+              replay_end_offset: BigInt(0),
+            },
+          },
+        ],
+      })
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      const sessionId = result.current.sessions[0].id
+      const before = result.current.sessions
+
+      act(() => result.current.setSessionLayout(sessionId, before[0].layout))
+
+      expect(result.current.sessions).toBe(before)
+    })
+
+    test('warns and no-ops when sessionId is missing', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      const service = createMockService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const before = result.current.sessions
+
+      act(() => result.current.setSessionLayout('does-not-exist', 'vsplit'))
+
+      expect(result.current.sessions).toBe(before)
+      expect(warn).toHaveBeenCalledWith(
+        'setSessionLayout: no session does-not-exist'
+      )
+      warn.mockRestore()
+    })
+  })
+
+  describe('setSessionActivePane (manager integration)', () => {
+    test('returns same sessions reference when target pane is already active', async () => {
+      const service = createMockService()
+      service.listSessions = vi.fn().mockResolvedValue({
+        activeSessionId: 'pty-1',
+        sessions: [
+          {
+            id: 'pty-1',
+            cwd: '/tmp',
+            status: {
+              kind: 'Alive',
+              pid: 1,
+              replay_data: '',
+              replay_end_offset: BigInt(0),
+            },
+          },
+        ],
+      })
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      const sessionId = result.current.sessions[0].id
+      const before = result.current.sessions
+
+      act(() => result.current.setSessionActivePane(sessionId, 'p0'))
+
+      expect(result.current.sessions).toBe(before)
+    })
+
+    test('warns when sessionId is missing', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      const service = createMockService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      act(() => result.current.setSessionActivePane('no-such-session', 'p0'))
+
+      expect(warn).toHaveBeenCalledWith(
+        'applyActivePane: no session no-such-session'
+      )
+      warn.mockRestore()
+    })
+  })
 })

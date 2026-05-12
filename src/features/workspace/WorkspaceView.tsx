@@ -31,6 +31,7 @@ import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
 import { createTerminalService } from '../terminal/services/terminalService'
+import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
@@ -80,9 +81,18 @@ export const WorkspaceView = (): ReactElement => {
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
+    setSessionActivePane,
+    setSessionLayout,
     loading,
     notifyPaneReady,
   } = useSessionManager(terminalService)
+
+  usePaneShortcuts({
+    sessions,
+    activeSessionId,
+    setSessionActivePane,
+    setSessionLayout,
+  })
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
@@ -608,6 +618,8 @@ export const WorkspaceView = (): ReactElement => {
           onPaneReady={notifyPaneReady}
           onSessionRestart={restartSession}
           service={terminalService}
+          setSessionActivePane={setSessionActivePane}
+          setSessionLayout={setSessionLayout}
         />
 
         {/* Bottom Drawer - Editor + Diff Viewer */}

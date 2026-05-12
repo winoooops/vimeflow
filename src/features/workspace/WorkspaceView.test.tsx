@@ -8,6 +8,7 @@ import { WorkspaceView } from './WorkspaceView'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import type { AgentStatus } from '../agent-status/types'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
+import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../terminal/components/TerminalPane', () => ({
@@ -42,6 +43,10 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
 // existing tests behave as if no file is open.
 vi.mock('../editor/hooks/useEditorBuffer', () => ({
   useEditorBuffer: vi.fn(),
+}))
+
+vi.mock('../terminal/hooks/usePaneShortcuts', () => ({
+  usePaneShortcuts: vi.fn(),
 }))
 
 // Capture AgentStatusPanel's props (specifically `onOpenFile`) so the
@@ -120,6 +125,7 @@ describe('WorkspaceView', () => {
     capturedAgentStatusPanelProps.onOpenFile = undefined
     capturedAgentStatusPanelProps.onOpenDiff = undefined
     capturedAgentStatusPanelProps.agentStatus = undefined
+    vi.mocked(usePaneShortcuts).mockClear()
 
     // Default: clean buffer with no file open. Mirrors the real hook's
     // initial state so existing tests don't see a dirty buffer or get
@@ -144,6 +150,16 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument() // BottomDrawer
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
+  })
+
+  test('wires usePaneShortcuts to session-manager handlers', () => {
+    render(<WorkspaceView />)
+
+    expect(usePaneShortcuts).toHaveBeenCalled()
+    const args = vi.mocked(usePaneShortcuts).mock.calls[0][0]
+    expect(Array.isArray(args.sessions)).toBe(true)
+    expect(typeof args.setSessionActivePane).toBe('function')
+    expect(typeof args.setSessionLayout).toBe('function')
   })
 
   test('applies correct grid layout with 4 columns (dynamic sidebar width)', () => {

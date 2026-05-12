@@ -842,6 +842,13 @@ phases:
     blocked_by: []
     specs:
       - docs/superpowers/specs/2026-05-05-ui-handoff-migration-design.md
+    notes: >-
+      UI handoff migration is the active visual track. Steps 1-3 landed
+      in #171, #173, #174. Step 4 (single TerminalPane) shipped in #190.
+      Step 5 was sliced for PR scope: 5a (data model — #198), 5b (CSS
+      Grid SplitView — #199), 5c-1 (passive layout picker + focus controls
+      + motion — this PR), 5c-2 (pane lifecycle mutations — pending),
+      5d (auto-grow — pending).
     steps:
       - id: ui-s1
         name: 'Tokens + agents registry'
@@ -872,9 +879,14 @@ phases:
         name: 'SplitView render (CSS Grid mapping session.panes → 5 layouts)'
         status: pending
         notes: 'Pure render refactor — no LayoutSwitcher / shortcuts / spawn / close. Spec: docs/superpowers/specs/2026-05-11-step-5b-splitview-render-design.md.'
-      - id: ui-s5c
-        name: 'LayoutSwitcher + ⌘1-4 / ⌘\ + click-to-focus + placeholder spawn + X-close + auto-shrink'
+      - id: ui-s5c-1
+        name: 'Layout picker + focus controls (passive, animated)'
+        status: in_progress
+        notes: 'LayoutSwitcher passive UI + click-to-focus + ⌘1-4 / ⌘\ cycle + Framer Motion shared-layout animations. Spec: docs/superpowers/specs/2026-05-12-step-5c-1-layout-picker-design.md.'
+      - id: ui-s5c-2
+        name: 'addPane / removePane / placeholder spawn / X-close / auto-shrink'
         status: pending
+        notes: 'Pane lifecycle mutations + "+ click to add pane" placeholder in empty slots + X-close on per-pane chrome + auto-shrink layout on close. Follows ui-s5c-1.'
       - id: ui-s5d
         name: 'Auto-grow on layout pick (parallel PTY fan-out)'
         status: pending

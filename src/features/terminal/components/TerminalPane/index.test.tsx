@@ -7,6 +7,7 @@ import type { BodyHandle, BodyProps } from './Body'
 import { TerminalPane } from './index'
 
 const bodyPropsSpy = vi.hoisted(() => vi.fn())
+const focusTerminalSpy = vi.hoisted(() => vi.fn())
 
 vi.mock('./Body', async () => {
   const React = await import('react')
@@ -15,7 +16,7 @@ vi.mock('./Body', async () => {
     function MockBody(props, ref): React.ReactElement {
       bodyPropsSpy(props)
       React.useImperativeHandle(ref, () => ({
-        focusTerminal: vi.fn(),
+        focusTerminal: focusTerminalSpy,
       }))
 
       return React.createElement('div', {
@@ -106,6 +107,7 @@ const baseProps = {
 describe('TerminalPane index', () => {
   beforeEach(() => {
     bodyPropsSpy.mockClear()
+    focusTerminalSpy.mockClear()
   })
 
   test('renders Body when mode is spawn', () => {
@@ -273,5 +275,74 @@ describe('TerminalPane index', () => {
     expect(screen.getByTestId('terminal-pane-wrapper')).toHaveStyle({
       opacity: '1',
     })
+  })
+
+  test('does not focus on initial mount with pane.active=true', () => {
+    render(
+      <TerminalPane {...baseProps} pane={{ ...baseProps.pane, active: true }} />
+    )
+
+    expect(focusTerminalSpy).not.toHaveBeenCalled()
+  })
+
+  test('focuses when pane.active flips false to true', () => {
+    const { rerender } = render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+      />
+    )
+    expect(focusTerminalSpy).not.toHaveBeenCalled()
+
+    rerender(
+      <TerminalPane {...baseProps} pane={{ ...baseProps.pane, active: true }} />
+    )
+
+    expect(focusTerminalSpy).toHaveBeenCalledOnce()
+  })
+
+  test('does not re-focus when pane.active stays true across renders', () => {
+    const { rerender } = render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+      />
+    )
+
+    rerender(
+      <TerminalPane {...baseProps} pane={{ ...baseProps.pane, active: true }} />
+    )
+
+    rerender(
+      <TerminalPane {...baseProps} pane={{ ...baseProps.pane, active: true }} />
+    )
+
+    expect(focusTerminalSpy).toHaveBeenCalledOnce()
+  })
+
+  test('focuses on second rising edge after going false again', () => {
+    const { rerender } = render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+      />
+    )
+
+    rerender(
+      <TerminalPane {...baseProps} pane={{ ...baseProps.pane, active: true }} />
+    )
+
+    rerender(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+      />
+    )
+
+    rerender(
+      <TerminalPane {...baseProps} pane={{ ...baseProps.pane, active: true }} />
+    )
+
+    expect(focusTerminalSpy).toHaveBeenCalledTimes(2)
   })
 })

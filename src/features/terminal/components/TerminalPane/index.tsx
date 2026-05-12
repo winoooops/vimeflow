@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -56,10 +57,18 @@ export const TerminalPane = ({
 }: TerminalPaneProps): ReactElement => {
   const agent = agentForPane(pane)
   const bodyRef = useRef<BodyHandle>(null)
+  const wasActiveRef = useRef(pane.active)
   const [ptyStatus, setPtyStatus] = useState<PtyStatus>('idle')
   const [isCollapsed, setIsCollapsed] = useState(false)
 
   const isFocused = pane.active
+
+  useEffect(() => {
+    if (pane.active && !wasActiveRef.current) {
+      bodyRef.current?.focusTerminal()
+    }
+    wasActiveRef.current = pane.active
+  }, [pane.active])
 
   const pipStatus: SessionStatus =
     mode === 'awaiting-restart'
@@ -84,17 +93,9 @@ export const TerminalPane = ({
   )
 
   const handleContainerClick = useCallback((): void => {
-    // TODO(#202): dispatch `setActivePane(pane.id)` here so the focus ring
-    // moves to the clicked pane. Deferred to 5c — click-to-focus is the
-    // same work-class as the deferred LayoutSwitcher / spawn-close
-    // mutations (spec Non-goal #4).
-    //
-    // Until 5c lands the mutation, gate `focusTerminal()` on `pane.active`
-    // so clicking an inactive pane is INERT rather than routing keystrokes
-    // to an xterm whose visual focus ring still points at the
-    // previously-active pane. Single-pane production has `pane.active`
-    // always true, so the guard is a no-op there. Multi-pane test
-    // fixtures get safe "no action" instead of stale-focus typing.
+    // SplitView owns click-to-focus state changes. If this pane is inactive,
+    // the slot click flips pane.active first; the rising-edge effect above
+    // moves DOM focus into xterm after React commits the active state.
     if (!pane.active) {
       return
     }
@@ -145,12 +146,7 @@ export const TerminalPane = ({
       }
     : {
         boxShadow: 'none',
-        // `not-allowed` reflects the actual current behavior: clicking an
-        // inactive pane is INERT (see `handleContainerClick`'s `pane.active`
-        // guard) because the `setActivePane` dispatch is deferred to 5c.
-        // `pointer` would signal an affordance that doesn't exist yet —
-        // switch back to `pointer` once 5c wires the mutation (TODO #202).
-        cursor: 'not-allowed' as const,
+        cursor: 'pointer' as const,
       }
 
   const focusRingStyle = {

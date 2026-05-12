@@ -35,3 +35,54 @@ export const getActivePane = (session: Session): Pane => {
 
   return actives[0]
 }
+
+/** Flip the active pane inside one session and re-derive materialized
+ * session fields from the new active pane.
+ *
+ * No-op branches return the same sessions array reference so callers can use
+ * this directly in a React state updater without rerendering unchanged state.
+ */
+export const applyActivePane = (
+  sessions: Session[],
+  sessionId: string,
+  paneId: string
+): Session[] => {
+  const sessionIndex = sessions.findIndex((session) => session.id === sessionId)
+  if (sessionIndex === -1) {
+    // eslint-disable-next-line no-console
+    console.warn(`applyActivePane: no session ${sessionId}`)
+
+    return sessions
+  }
+
+  const session = sessions[sessionIndex]
+  const target = session.panes.find((pane) => pane.id === paneId)
+  if (!target) {
+    // eslint-disable-next-line no-console
+    console.warn(`applyActivePane: no pane ${paneId} in session ${sessionId}`)
+
+    return sessions
+  }
+
+  if (target.active) {
+    return sessions
+  }
+
+  const panes = session.panes.map((pane) => ({
+    ...pane,
+    active: pane.id === paneId,
+  }))
+
+  const updatedSession: Session = {
+    ...session,
+    panes,
+    workingDirectory: target.cwd,
+    agentType: target.agentType,
+  }
+
+  return [
+    ...sessions.slice(0, sessionIndex),
+    updatedSession,
+    ...sessions.slice(sessionIndex + 1),
+  ]
+}

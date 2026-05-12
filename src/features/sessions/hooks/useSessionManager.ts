@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import { flushSync } from 'react-dom'
-import type { Pane, Session } from '../types'
+import type { LayoutId, Pane, Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type {
   RestoreData,
@@ -13,7 +13,11 @@ import {
 } from '../../terminal/ptySessionMap'
 import { usePtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
 import { emptyActivity } from '../constants'
-import { findActivePane, getActivePane } from '../utils/activeSessionPane'
+import {
+  applyActivePane,
+  findActivePane,
+  getActivePane,
+} from '../utils/activeSessionPane'
 import { deriveSessionStatus } from '../utils/sessionStatus'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
@@ -28,6 +32,8 @@ export interface SessionManager {
   setActiveSessionId: (id: string) => void
   createSession: () => void
   removeSession: (id: string) => void
+  setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
+  setSessionActivePane: (sessionId: string, paneId: string) => void
   /**
    * Restart an Exited session in the same cwd. Idempotent on the kill side:
    * any remaining cache entry for `id` is killed (no-op if already gone),
@@ -533,6 +539,41 @@ export const useSessionManager = (
     ]
   )
 
+  const setSessionLayout = useCallback(
+    (sessionId: string, layoutId: LayoutId): void => {
+      setSessions((prev) => {
+        const sessionIndex = prev.findIndex(
+          (session) => session.id === sessionId
+        )
+        if (sessionIndex === -1) {
+          // eslint-disable-next-line no-console
+          console.warn(`setSessionLayout: no session ${sessionId}`)
+
+          return prev
+        }
+
+        const session = prev[sessionIndex]
+        if (session.layout === layoutId) {
+          return prev
+        }
+
+        return [
+          ...prev.slice(0, sessionIndex),
+          { ...session, layout: layoutId },
+          ...prev.slice(sessionIndex + 1),
+        ]
+      })
+    },
+    []
+  )
+
+  const setSessionActivePane = useCallback(
+    (sessionId: string, paneId: string): void => {
+      setSessions((prev) => applyActivePane(prev, sessionId, paneId))
+    },
+    []
+  )
+
   // F5 (round 2): restart an Exited session in the same cwd.
   //
   // Round 4, Finding 2 (codex P2): SPAWN-THEN-KILL ordering. The previous
@@ -881,6 +922,8 @@ export const useSessionManager = (
     setActiveSessionId,
     createSession,
     removeSession,
+    setSessionLayout,
+    setSessionActivePane,
     restartSession,
     renameSession,
     reorderSessions,

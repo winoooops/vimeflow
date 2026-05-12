@@ -16,6 +16,7 @@ vi.mock('../diff/hooks/useGitStatus')
 vi.mock('../editor/hooks/useEditorBuffer')
 vi.mock('../files/services/fileSystemService')
 vi.mock('../terminal/services/terminalService')
+vi.mock('../terminal/hooks/usePaneShortcuts')
 
 // Mock child components to keep test focused on integration
 vi.mock('./components/IconRail', () => ({
@@ -105,6 +106,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       setActiveSessionId: vi.fn(),
       createSession: vi.fn(),
       removeSession: vi.fn(),
+      setSessionLayout: vi.fn(),
+      setSessionActivePane: vi.fn(),
       restartSession: vi.fn(),
       renameSession: vi.fn(),
       reorderSessions: vi.fn(),

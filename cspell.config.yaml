@@ -67,6 +67,8 @@ words:
   - proj # project
   - terminalPid # terminal process ID
   - cwds # current working directories (plural of cwd)
+  - vsplit
+  - hsplit
 
   # Syntax Highlighting
   - shiki
