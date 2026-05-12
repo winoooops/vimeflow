@@ -74,7 +74,6 @@ export const SplitView = ({
   const gridTemplateAreas = layout.areas
     .map((row) => `"${row.join(' ')}"`)
     .join(' ')
-  const initialAnimation = false
 
   return (
     <LayoutGroup id={session.id}>
@@ -90,7 +89,8 @@ export const SplitView = ({
           gridTemplateAreas,
         }}
       >
-        <AnimatePresence initial={initialAnimation}>
+        {/* eslint-disable-next-line react/jsx-boolean-value -- framer-motion: `initial={false}` skips the entry animation for children already mounted. Omitting `initial` reverts to the default (animate on mount) — semantically distinct. */}
+        <AnimatePresence initial={false}>
           {visiblePanes.map((pane, i) => {
             const mode = paneMode(pane)
 

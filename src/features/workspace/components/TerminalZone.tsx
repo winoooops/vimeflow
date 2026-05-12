@@ -61,10 +61,34 @@ export const TerminalZone = ({
   const showToolbar =
     !loading && sessions.length > 0 && activeSession !== undefined
 
-  const modKey =
-    typeof navigator !== 'undefined' && navigator.platform.startsWith('Mac')
-      ? '⌘'
-      : 'Ctrl'
+  // `navigator.platform` is deprecated per MDN; prefer
+  // `navigator.userAgentData.platform` (Chromium-only) and fall through
+  // to the legacy field on WebKit / older browsers where `userAgentData`
+  // is undefined. The chained form keeps the check valid in Tauri's
+  // WebKit webview today AND in any future Chromium-based shell. The
+  // legacy `navigator.platform` fallback is intentional — it's the only
+  // programmatic platform signal on WebKit and the runtime value is
+  // stable on every target Vimeflow ships against. TypeScript flags it
+  // as deprecated (TS 6385) at the read site, but `tsc -b` does not
+  // promote that to an error so the chained read compiles cleanly.
+  const modKey = ((): string => {
+    if (typeof navigator === 'undefined') {
+      return 'Ctrl'
+    }
+
+    const uad = (
+      navigator as Navigator & { userAgentData?: { platform?: string } }
+    ).userAgentData
+    // Chromium's userAgentData.platform reports macOS as `"macOS"` (lower-
+    // case "m"), while the legacy `navigator.platform` reports it as
+    // `"MacIntel"` / `"MacPPC"`. Normalize to lowercase before the prefix
+    // check so both shells produce the ⌘ glyph on macOS — the original
+    // case-sensitive `.startsWith('Mac')` regressed Chromium users to
+    // Ctrl (caught in codex verify cycle 1).
+    const detected = (uad?.platform ?? navigator.platform).toLowerCase()
+
+    return detected.startsWith('mac') ? '⌘' : 'Ctrl'
+  })()
 
   return (
     <div data-testid="terminal-zone" className="flex min-h-0 flex-1 flex-col">

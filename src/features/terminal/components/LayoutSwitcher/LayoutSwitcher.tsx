@@ -32,6 +32,7 @@ export const LayoutSwitcher = ({
           type="button"
           title={layout.name}
           aria-label={layout.name}
+          aria-pressed={isActive}
           data-active={isActive ? 'true' : undefined}
           onClick={() => onPick(layout.id)}
           className={`${BASE_BUTTON} ${
