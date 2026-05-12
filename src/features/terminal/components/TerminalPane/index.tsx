@@ -97,6 +97,11 @@ export const TerminalPane = ({
 
   const handleRestart = useCallback(
     (restartSessionId: string): void => {
+      // TODO(#202): for multi-pane sessions, this needs to thread `pane.id`
+      // through so `useSessionManager.restartSession` targets the clicked
+      // pane instead of `getActivePane(session)`. Deferred to 5c (production
+      // multi-pane). Bug only fires when a non-active pane is in completed/
+      // errored state — unreachable in 5b's single-pane production.
       onRestart?.(restartSessionId)
     },
     [onRestart]
