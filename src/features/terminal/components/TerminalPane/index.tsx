@@ -84,6 +84,13 @@ export const TerminalPane = ({
   )
 
   const handleContainerClick = useCallback((): void => {
+    // TODO(#202): dispatch `setActivePane(pane.id)` here so the focus ring
+    // moves to the clicked pane. Deferred to 5c — click-to-focus is the
+    // same work-class as the deferred LayoutSwitcher / spawn-close
+    // mutations (spec Non-goal #4). Reachable only in multi-pane test
+    // fixtures; 5b's single-pane production has nothing to switch focus
+    // to. `focusTerminal()` is kept so xterm receives keystrokes either
+    // way.
     bodyRef.current?.focusTerminal()
   }, [])
 

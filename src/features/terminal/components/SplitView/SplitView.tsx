@@ -98,6 +98,15 @@ export const SplitView = ({
             className="relative min-h-0 min-w-0"
             style={{ gridArea: `p${i}` }}
           >
+            {/* F16 (codex connector P1, carried over from pre-5b TerminalZone):
+                keying TerminalPane by `pane.ptyId` (NOT `pane.id`) forces a
+                clean useTerminal subtree unmount + remount whenever a
+                restartSession rotates the pane's PTY handle. Without the
+                key swap, the stale useTerminal ref stays bound to the
+                dead pre-restart PTY and typing into the pane goes
+                nowhere until reload. The outer slot wrapper above keys
+                by `pane.id` so layout slot identity is preserved across
+                restarts. */}
             <TerminalPane
               key={pane.ptyId}
               session={session}
