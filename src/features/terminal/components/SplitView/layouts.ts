@@ -14,6 +14,18 @@ export interface LayoutShape {
   readonly areas: readonly (readonly string[])[]
 }
 
+/**
+ * The insertion order of this record is the **canonical cycle order**
+ * for `Ctrl/Cmd+\` in `usePaneShortcuts`: `single → vsplit → hsplit →
+ * threeRight → quad → (back to single)`. The shortcut derives its
+ * cycle via `Object.values(LAYOUTS).map(l => l.id)` — `Object.values`
+ * preserves insertion order for string keys.
+ *
+ * Adding a new layout? Append it at the end unless you specifically
+ * want it to appear at a particular slot in the keyboard cycle.
+ * Inserting between existing entries silently changes the cycle for
+ * every user without a type error, lint warning, or failing test.
+ */
 export const LAYOUTS: Record<LayoutId, LayoutShape> = {
   single: {
     id: 'single',

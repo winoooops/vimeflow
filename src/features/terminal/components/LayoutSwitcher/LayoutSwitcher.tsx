@@ -36,16 +36,16 @@ export const LayoutSwitcher = ({
           type="button"
           title={layout.name}
           aria-label={layout.name}
+          // `aria-pressed="true"` on the active button is the
+          // canonical toggle-button signal — AT (VoiceOver, NVDA)
+          // announce it as "pressed", which is the correct state for
+          // a layout that's already selected. Adding `aria-disabled`
+          // alongside (cycle 10 tried this) creates a contradiction:
+          // ATs read "pressed AND dimmed" which implies the control
+          // is broken, not "the selected layout". The onClick gate
+          // below already disables Space/Enter on the active button,
+          // so the ARIA state is faithful and complete.
           aria-pressed={isActive}
-          // `aria-disabled` pairs with `aria-pressed` so screen readers
-          // can distinguish a clickable toggle from one that's already
-          // in its terminal state. Without it, Space/Enter on the
-          // active button is silently a no-op — the AT user gets no
-          // signal that the layout is "the currently selected one"
-          // and not "broken". The underlying onClick is also gated to
-          // undefined, so keyboard activation is consistent with the
-          // ARIA-advertised state.
-          aria-disabled={isActive}
           data-active={isActive ? 'true' : undefined}
           // Skip the callback when the button represents the already-
           // active layout. setSessionLayout has its own same-layout
