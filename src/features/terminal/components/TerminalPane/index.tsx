@@ -20,7 +20,6 @@ import {
   type PtyStatus,
 } from './ptyStatusToSessionStatus'
 import { RestartAffordance } from './RestartAffordance'
-import { useFocusedPane } from './useFocusedPane'
 
 export type TerminalPaneMode = 'attach' | 'spawn' | 'awaiting-restart'
 
@@ -56,12 +55,10 @@ export const TerminalPane = ({
   deferFit = false,
 }: TerminalPaneProps): ReactElement => {
   const agent = agentForPane(pane)
-  const containerRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<BodyHandle>(null)
   const [ptyStatus, setPtyStatus] = useState<PtyStatus>('idle')
   const [isCollapsed, setIsCollapsed] = useState(false)
 
-  const { onTerminalFocusChange } = useFocusedPane({ containerRef })
   const isFocused = pane.active
 
   const pipStatus: SessionStatus =
@@ -131,7 +128,6 @@ export const TerminalPane = ({
 
   return (
     <div
-      ref={containerRef}
       data-testid="terminal-pane-wrapper"
       data-session-id={session.id}
       data-mode={mode}
@@ -178,7 +174,6 @@ export const TerminalPane = ({
             onPaneReady={onPaneReady}
             mode={mode}
             onPtyStatusChange={setPtyStatus}
-            onFocusChange={onTerminalFocusChange}
             deferFit={deferFit}
           />
         </div>

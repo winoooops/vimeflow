@@ -1,6 +1,6 @@
 // cspell:ignore vsplit
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { TerminalZone } from './TerminalZone'
@@ -163,13 +163,14 @@ describe('TerminalZone', () => {
   test('passes active session working directory to TerminalPane', () => {
     render(<TerminalZone {...defaultProps} />)
 
-    const slots = screen.getAllByTestId('split-view-slot')
+    // Scope by stable session-level selector; ptyId-on-slot would only
+    // match here by mock-data coincidence (sess-1 === ptyId).
+    const session1Wrapper = screen
+      .getAllByTestId('terminal-pane')
+      .find((wrapper) => wrapper.getAttribute('data-session-id') === 'sess-1')
+    expect(session1Wrapper).toBeDefined()
 
-    // Find the active session's pane slot
-    const activeSlot = slots.find(
-      (slot) => slot.getAttribute('data-pty-id') === 'sess-1'
-    )
-
+    const activeSlot = within(session1Wrapper!).getByTestId('split-view-slot')
     expect(activeSlot).toHaveAttribute('data-cwd', '~')
 
     // Mocked component should also receive it
@@ -289,10 +290,10 @@ describe('TerminalZone', () => {
     )
     expect(updatedSession2Pane).toHaveAttribute('data-session-id', 'sess-2')
 
-    const updatedSlots = screen.getAllByTestId('split-view-slot')
-
-    const updatedSession2Slot = updatedSlots.find(
-      (slot) => slot.getAttribute('data-pty-id') === 'sess-2'
+    // Scope by data-session-id for the same reason as L168 — ptyId-on-slot
+    // lookup would be a mock-data coincidence.
+    const updatedSession2Slot = within(updatedSession2Pane!).getByTestId(
+      'split-view-slot'
     )
     expect(updatedSession2Slot).toHaveAttribute('data-cwd', '~')
   })

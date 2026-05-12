@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-09
+last_updated: 2026-05-12
 ref_count: 21
 ---
 
@@ -462,3 +462,12 @@ filesystem scope restrictions).
 - **Finding:** Round-1 fix removed `aria-label` from the Tab close button (it was being silently ignored on `aria-hidden="true"` per the a11y review). The session-lifecycle E2E spec was still querying `button[aria-label^="Close "]` to find the close control on the most-recently-spawned tab. Browser query returned null → spec threw "could not locate close button for the spawned tab" → CI failed. Class of bug: a11y refactors that remove now-misleading attributes silently break E2E specs that used those attributes as selectors. Vitest unit tests caught the equivalent breakage (they used `getByLabelText` and were updated to `getByTestId`); E2E tests use raw DOM queries and don't share that toolchain, so the same pattern needs a separate sweep.
 - **Fix:** Switched the E2E spec to query by `[data-testid="session-tab"]` (locate the latest tab) then within it query `[data-testid="close-tab-button"]`. The new helper `clickLatestSessionTabCloseButton()` encapsulates the two-step traversal and replaces the old aria-label round-trip. Code-review heuristic: when removing a11y attributes that were repurposed as test selectors, grep all tests (vitest + E2E + manual fixtures) for that attribute string before merging — spec-only repositories may not share the unit-test toolchain that catches the breakage during local runs.
 - **Commit:** _(see git log for the cycle-2 fix commit on PR #190)_
+
+### 46. Test selector mapped to wrong DOM scope via mock-data coincidence
+
+- **Source:** github-claude | PR #199 cycle 1 | 2026-05-12
+- **Severity:** LOW
+- **File:** `src/features/workspace/components/TerminalZone.test.tsx`
+- **Finding:** Post-5b refactor moved `data-pane-id`/`data-pty-id`/`data-cwd`/`data-mode` from the outer `terminal-pane` session wrapper to inner `split-view-slot` per-pane wrappers. The mechanical port kept the same lookup pattern but on the new element: `slots.find(slot => slot.getAttribute('data-pty-id') === 'sess-1')`. The lookup happened to work because `mockSessions` sets `pane.ptyId === session.id` by convention — but `data-pty-id` carries pane-scoped state, not session-scoped state. If the mock was updated to realistic ptyIds (e.g., the Rust-generated UUID handles in production), `find(...)` returns `undefined` and the next `expect(undefined).toHaveAttribute(...)` throws a misleading error that doesn't point at the broken selector. Same fragility at two sites. Class of bug: refactors that move data attributes between DOM levels need a re-audit of every test selector that reads those attributes — porting the lookup mechanically preserves the false positive while losing the semantic anchor.
+- **Fix:** Scoped slot lookup via `within(sessionWrapper).getByTestId('split-view-slot')` after finding the session-level wrapper by the stable `data-session-id` attribute. Imported `within` from `@testing-library/react`. Decouples the assertion from the mock-data coincidence — works regardless of whether `pane.ptyId === session.id`. Applied to both sites (L168 and L286). Code-review heuristic: when a test selector uses `.find(el => el.getAttribute('X') === Y)` against a list of similarly-typed elements, ask whether `X` is the right attribute or whether scoping by a parent semantic landmark would be more robust.
+- **Commit:** _(see git log for the cycle-1 fix commit on PR #199)_
