@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactElement } from 'react'
+import { useCallback, type ReactElement } from 'react'
 import type { LayoutId, Session } from '../../sessions/types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type {
@@ -40,6 +40,15 @@ export interface TerminalZoneProps {
   service: ITerminalService
   setSessionActivePane: (sessionId: string, paneId: string) => void
   setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
+  /**
+   * Modifier glyph for the toolbar hint ('⌘' on macOS, 'Ctrl' on other
+   * platforms). Sourced from `WorkspaceView` so the visible label and
+   * `usePaneShortcuts.preferModifier` (which gates which modifier the
+   * hook intercepts) share a single platform-detection site and can
+   * never drift. Defaults to `'Ctrl'` for tests / sandboxed renders
+   * that don't pass it explicitly.
+   */
+  modKey?: '⌘' | 'Ctrl'
 }
 
 export const TerminalZone = ({
@@ -53,6 +62,7 @@ export const TerminalZone = ({
   service,
   setSessionActivePane,
   setSessionLayout,
+  modKey = 'Ctrl',
 }: TerminalZoneProps): ReactElement => {
   const activeSession = sessions.find(
     (session) => session.id === activeSessionId
@@ -60,44 +70,6 @@ export const TerminalZone = ({
 
   const showToolbar =
     !loading && sessions.length > 0 && activeSession !== undefined
-
-  // `navigator.platform` is deprecated per MDN; prefer
-  // `navigator.userAgentData.platform` (Chromium-only) and fall through
-  // to the legacy field on WebKit / older browsers where `userAgentData`
-  // is undefined. The chained form keeps the check valid in Tauri's
-  // WebKit webview today AND in any future Chromium-based shell. The
-  // legacy `navigator.platform` fallback is intentional — it's the only
-  // programmatic platform signal on WebKit and the runtime value is
-  // stable on every target Vimeflow ships against. TypeScript flags it
-  // as deprecated (TS 6385) at the read site, but `tsc -b` does not
-  // promote that to an error so the chained read compiles cleanly.
-  // The platform check reads the (stable for a given browser session)
-  // navigator value once and memoizes — TerminalZone re-renders on
-  // every session activity tick, and re-running the DOM access every
-  // time is wasted work even if it's cheap. `useMemo` with no deps
-  // runs once per mount, mirrors the existing once-per-render IIFE
-  // semantics, and remains compatible with the per-test
-  // `Object.defineProperty(navigator, 'platform', …)` mock pattern —
-  // the mock is set before each render, and useMemo's callback runs
-  // on first render after the mock takes effect.
-  const modKey = useMemo<string>(() => {
-    if (typeof navigator === 'undefined') {
-      return 'Ctrl'
-    }
-
-    const uad = (
-      navigator as Navigator & { userAgentData?: { platform?: string } }
-    ).userAgentData
-    // Chromium's userAgentData.platform reports macOS as `"macOS"` (lower-
-    // case "m"), while the legacy `navigator.platform` reports it as
-    // `"MacIntel"` / `"MacPPC"`. Normalize to lowercase before the prefix
-    // check so both shells produce the ⌘ glyph on macOS — the original
-    // case-sensitive `.startsWith('Mac')` regressed Chromium users to
-    // Ctrl (caught in codex verify cycle 1).
-    const detected = (uad?.platform ?? navigator.platform).toLowerCase()
-
-    return detected.startsWith('mac') ? '⌘' : 'Ctrl'
-  }, [])
 
   // Memoised onPick so a future `React.memo(LayoutSwitcher)` would
   // see a stable reference until the active session id changes.

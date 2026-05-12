@@ -643,6 +643,7 @@ export const WorkspaceView = (): ReactElement => {
           service={terminalService}
           setSessionActivePane={setSessionActivePane}
           setSessionLayout={setSessionLayout}
+          modKey={preferModifier === 'meta' ? '⌘' : 'Ctrl'}
         />
 
         {/* Bottom Drawer - Editor + Diff Viewer */}
