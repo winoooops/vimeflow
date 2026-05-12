@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { useCallback, useMemo, type ReactElement } from 'react'
 import type { LayoutId, Session } from '../../sessions/types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type {
@@ -71,7 +71,16 @@ export const TerminalZone = ({
   // stable on every target Vimeflow ships against. TypeScript flags it
   // as deprecated (TS 6385) at the read site, but `tsc -b` does not
   // promote that to an error so the chained read compiles cleanly.
-  const modKey = ((): string => {
+  // The platform check reads the (stable for a given browser session)
+  // navigator value once and memoizes — TerminalZone re-renders on
+  // every session activity tick, and re-running the DOM access every
+  // time is wasted work even if it's cheap. `useMemo` with no deps
+  // runs once per mount, mirrors the existing once-per-render IIFE
+  // semantics, and remains compatible with the per-test
+  // `Object.defineProperty(navigator, 'platform', …)` mock pattern —
+  // the mock is set before each render, and useMemo's callback runs
+  // on first render after the mock takes effect.
+  const modKey = useMemo<string>(() => {
     if (typeof navigator === 'undefined') {
       return 'Ctrl'
     }
@@ -88,7 +97,24 @@ export const TerminalZone = ({
     const detected = (uad?.platform ?? navigator.platform).toLowerCase()
 
     return detected.startsWith('mac') ? '⌘' : 'Ctrl'
-  })()
+  }, [])
+
+  // Memoised onPick so a future `React.memo(LayoutSwitcher)` would
+  // see a stable reference until the active session id changes.
+  // `setSessionLayout` is itself a stable `useCallback([])` exposed
+  // from `useSessionManager`, so the dep list collapses to the
+  // active session id.
+  const activeSessionId_ = activeSession?.id
+
+  const onPickLayout = useCallback(
+    (layoutId: LayoutId): void => {
+      if (activeSessionId_ === undefined) {
+        return
+      }
+      setSessionLayout(activeSessionId_, layoutId)
+    },
+    [activeSessionId_, setSessionLayout]
+  )
 
   return (
     <div data-testid="terminal-zone" className="flex min-h-0 flex-1 flex-col">
@@ -99,7 +125,7 @@ export const TerminalZone = ({
         >
           <LayoutSwitcher
             activeLayoutId={activeSession.layout}
-            onPick={(layoutId) => setSessionLayout(activeSession.id, layoutId)}
+            onPick={onPickLayout}
           />
           <span className="ml-auto hidden items-center gap-1 font-mono text-xs text-on-surface-muted sm:inline-flex">
             <kbd className="rounded bg-on-surface/10 px-1">{modKey}</kbd>
