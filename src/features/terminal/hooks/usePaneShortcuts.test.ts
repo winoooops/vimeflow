@@ -127,12 +127,14 @@ describe('usePaneShortcuts', () => {
     // Codex P2 (cycle 3): non-US layouts deliver Backslash as
     // Ctrl+AltGr+key (browsers usually surface AltGr as altKey). We
     // can't reject alt/shift without breaking those users — so Ctrl+
-    // Alt+1 also fires our shortcut. Trade-off accepted at the
-    // production code site.
+    // Alt+1 also fires our shortcut when there's a focus change to
+    // perform. Fixture has p1 active so Cmd+1 targets the INACTIVE
+    // p0 — the cycle-6 already-active escape-hatch (let key
+    // propagate when no focus change) doesn't apply here.
     const setSessionActivePane = vi.fn()
     renderHook(() =>
       usePaneShortcuts({
-        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'], 1)],
         activeSessionId: 's1',
         setSessionActivePane,
         setSessionLayout: vi.fn(),
@@ -141,7 +143,8 @@ describe('usePaneShortcuts', () => {
 
     const event = fire('1', { ctrlKey: true, altKey: true })
 
-    expect(setSessionActivePane).not.toHaveBeenCalled() // p0 already active
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
     expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
@@ -233,7 +236,14 @@ describe('usePaneShortcuts', () => {
     expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
   })
 
-  test('Cmd+1 with already-active p0 is a no-op but still prevents default', () => {
+  test('Cmd+1 with already-active p0 lets the event propagate (no preventDefault)', () => {
+    // The shortcut's job is to MOVE focus. When the target is already
+    // active (the common single-pane case where Cmd+1 always targets
+    // pane 0), intercepting would permanently swallow Ctrl+1 from
+    // every terminal app the user runs inside the pane — REPLs, vim,
+    // etc. Ownership of the keystroke belongs to the terminal app
+    // when no focus change would occur. Codex / Claude reached the
+    // same conclusion in round 6 of /lifeline:upsource-review.
     const setSessionActivePane = vi.fn()
     renderHook(() =>
       usePaneShortcuts({
@@ -247,6 +257,6 @@ describe('usePaneShortcuts', () => {
     const event = fire('1', { metaKey: true })
 
     expect(setSessionActivePane).not.toHaveBeenCalled()
-    expect(event.preventDefaultSpy).toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 })

@@ -75,13 +75,22 @@ export const usePaneShortcuts = ({
           return
         }
 
+        const target = activeSession.panes[paneIndex]
+        // Already-active: let the key propagate. The default single-
+        // pane session is `panes.length === 1`, so Ctrl/Cmd+1
+        // permanently maps to `panes[0]` which is always active. If
+        // we intercepted here, terminal apps (REPLs, vim) running
+        // inside the pane would NEVER see Ctrl+1 — a silent feature
+        // loss for the very common case of "one pane open". The
+        // shortcut's job is to MOVE focus; when focus is already on
+        // the target, ownership of the keystroke is the user's.
+        if (target.active) {
+          return
+        }
+
         event.preventDefault()
         event.stopPropagation()
-        const target = activeSession.panes[paneIndex]
-
-        if (!target.active) {
-          setSessionActivePane(activeSession.id, target.id)
-        }
+        setSessionActivePane(activeSession.id, target.id)
 
         return
       }
