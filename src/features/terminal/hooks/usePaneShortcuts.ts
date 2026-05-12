@@ -99,9 +99,19 @@ export const usePaneShortcuts = ({
       }
 
       if (event.code === 'Backslash') {
+        const currentIndex = LAYOUT_CYCLE.indexOf(activeSession.layout)
+        // Persisted sessions can carry a layout id that no longer
+        // exists in the current LAYOUTS record (e.g., a layout was
+        // renamed between app versions). `indexOf` returns -1 then,
+        // and a naive `(currentIndex + 1) % length` would wrap to 0
+        // and silently reset to 'single'. Treat the unknown layout
+        // as a no-op so the user keeps their existing state and can
+        // recover via the LayoutSwitcher buttons.
+        if (currentIndex === -1) {
+          return
+        }
         event.preventDefault()
         event.stopPropagation()
-        const currentIndex = LAYOUT_CYCLE.indexOf(activeSession.layout)
         const nextIndex = (currentIndex + 1) % LAYOUT_CYCLE.length
         setSessionLayout(activeSession.id, LAYOUT_CYCLE[nextIndex])
       }

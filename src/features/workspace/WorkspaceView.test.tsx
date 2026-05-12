@@ -158,6 +158,14 @@ describe('WorkspaceView', () => {
     expect(usePaneShortcuts).toHaveBeenCalled()
     const args = vi.mocked(usePaneShortcuts).mock.calls[0][0]
     expect(Array.isArray(args.sessions)).toBe(true)
+    // `activeSessionId` is `string | null`. The hook bails out on null,
+    // so an accidental hardcode or omitted prop would silently disable
+    // every shortcut. Asserting the property is reachable (not
+    // undefined) keeps the wiring honest.
+    expect(args).toHaveProperty('activeSessionId')
+    expect(
+      args.activeSessionId === null || typeof args.activeSessionId === 'string'
+    ).toBe(true)
     expect(typeof args.setSessionActivePane).toBe('function')
     expect(typeof args.setSessionLayout).toBe('function')
   })

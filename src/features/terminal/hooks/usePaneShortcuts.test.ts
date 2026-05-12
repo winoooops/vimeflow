@@ -259,4 +259,32 @@ describe('usePaneShortcuts', () => {
     expect(setSessionActivePane).not.toHaveBeenCalled()
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
+
+  test('Cmd+\\ with an unknown persisted layout is a no-op (no silent reset)', () => {
+    // Persisted sessions can carry a layout id that no longer exists
+    // in LAYOUTS (e.g., the id was renamed between app versions). The
+    // hook treats indexOf === -1 as a no-op so the user's stale layout
+    // stays put and they can recover via the LayoutSwitcher buttons —
+    // a naive `(currentIndex + 1) % length` cycle would silently
+    // wrap to LAYOUT_CYCLE[0] (= 'single') instead.
+    const setSessionLayout = vi.fn()
+
+    const sessionWithBadLayout = {
+      ...makeSession('s1', 'single', ['p0']),
+      layout: 'invalid-old-layout' as LayoutId,
+    }
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [sessionWithBadLayout],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout,
+      })
+    )
+
+    const event = fire('\\', { metaKey: true })
+
+    expect(setSessionLayout).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
 })
