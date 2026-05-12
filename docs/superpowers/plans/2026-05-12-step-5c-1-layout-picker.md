@@ -1820,3 +1820,5 @@ Once the PR merges, update `progress.yaml` in a follow-up commit:
 ## Stop Marker
 
 Plan complete. Per /lifeline:planner's contract, this plan is NOT to be auto-executed — codex must review it first via the `plan-complete` hook. Control returns to /lifeline:planner.
+
+<!-- codex-reviewed: 2026-05-12T14:34:18Z -->
