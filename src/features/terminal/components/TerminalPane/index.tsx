@@ -87,12 +87,19 @@ export const TerminalPane = ({
     // TODO(#202): dispatch `setActivePane(pane.id)` here so the focus ring
     // moves to the clicked pane. Deferred to 5c — click-to-focus is the
     // same work-class as the deferred LayoutSwitcher / spawn-close
-    // mutations (spec Non-goal #4). Reachable only in multi-pane test
-    // fixtures; 5b's single-pane production has nothing to switch focus
-    // to. `focusTerminal()` is kept so xterm receives keystrokes either
-    // way.
+    // mutations (spec Non-goal #4).
+    //
+    // Until 5c lands the mutation, gate `focusTerminal()` on `pane.active`
+    // so clicking an inactive pane is INERT rather than routing keystrokes
+    // to an xterm whose visual focus ring still points at the
+    // previously-active pane. Single-pane production has `pane.active`
+    // always true, so the guard is a no-op there. Multi-pane test
+    // fixtures get safe "no action" instead of stale-focus typing.
+    if (!pane.active) {
+      return
+    }
     bodyRef.current?.focusTerminal()
-  }, [])
+  }, [pane.active])
 
   const handleToggleCollapse = useCallback((): void => {
     setIsCollapsed((collapsed) => !collapsed)
@@ -107,11 +114,22 @@ export const TerminalPane = ({
       // TODO(#202): for multi-pane sessions, this needs to thread `pane.id`
       // through so `useSessionManager.restartSession` targets the clicked
       // pane instead of `getActivePane(session)`. Deferred to 5c (production
-      // multi-pane). Bug only fires when a non-active pane is in completed/
-      // errored state — unreachable in 5b's single-pane production.
+      // multi-pane).
+      //
+      // Until 5c lands the paneId-aware restart, gate the callback on
+      // `pane.active`. Without the guard, clicking Restart on a non-active
+      // exited pane silently restarts the active PTY (because
+      // `useSessionManager.restartSession` resolves via `getActivePane`).
+      // The guard makes non-active restarts INERT — a visible "click has
+      // no effect" is strictly safer than a wrong-pane restart with no
+      // recovery path until reload. Single-pane production has
+      // `pane.active` always true, so the guard is a no-op there.
+      if (!pane.active) {
+        return
+      }
       onRestart?.(restartSessionId)
     },
-    [onRestart]
+    [onRestart, pane.active]
   )
 
   const isAwaitingRestart = mode === 'awaiting-restart'
