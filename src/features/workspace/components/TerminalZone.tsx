@@ -73,15 +73,18 @@ export const TerminalZone = ({
 
   // Memoised onPick so a future `React.memo(LayoutSwitcher)` would
   // see a stable reference until the active session id changes.
-  // `setSessionLayout` is itself a stable `useCallback([])` exposed
-  // from `useSessionManager`, so the dep list collapses to the
-  // active session id. The local name `pickSessionId` shadows
-  // neither prop nor a TS-unused convention (`_name`).
+  // `setSessionLayout` is itself a stable `useCallback([])`, so the
+  // dep list collapses to `pickSessionId`. The callback is only
+  // mounted via `showToolbar === true`, which itself requires
+  // `activeSession !== undefined`, so the undefined branch is
+  // unreachable from the LayoutSwitcher mount site. The optional
+  // chain stays in for the TS-level narrowing; the `if (!pickSessionId)`
+  // bail satisfies the compiler without adding a non-null assertion.
   const pickSessionId = activeSession?.id
 
   const onPickLayout = useCallback(
     (layoutId: LayoutId): void => {
-      if (pickSessionId === undefined) {
+      if (!pickSessionId) {
         return
       }
       setSessionLayout(pickSessionId, layoutId)

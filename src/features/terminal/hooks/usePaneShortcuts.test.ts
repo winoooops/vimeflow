@@ -66,7 +66,7 @@ const fire = (
 }
 
 describe('usePaneShortcuts', () => {
-  test('Cmd+\\ from single cycles to vsplit and prevents default', () => {
+  test('Ctrl+\\ from single cycles to vsplit and prevents default (default modifier)', () => {
     const setSessionLayout = vi.fn()
     renderHook(() =>
       usePaneShortcuts({
@@ -84,7 +84,7 @@ describe('usePaneShortcuts', () => {
     expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
-  test('Cmd+\\ from quad wraps to single', () => {
+  test('Ctrl+\\ from quad wraps to single (default modifier)', () => {
     const setSessionLayout = vi.fn()
     renderHook(() =>
       usePaneShortcuts({

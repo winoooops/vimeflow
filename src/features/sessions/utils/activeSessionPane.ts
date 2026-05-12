@@ -67,10 +67,15 @@ export const applyActivePane = (
     return sessions
   }
 
-  const panes = session.panes.map((pane) => ({
-    ...pane,
-    active: pane.id === paneId,
-  }))
+  // Preserve object identity for panes whose `active` flag does not
+  // change so a future `React.memo(TerminalPane)` (or any prop-
+  // equality optimization) doesn't see false-positive churn from
+  // the bulk active-flag reset across all panes in the session.
+  const panes = session.panes.map((pane) => {
+    const next = pane.id === paneId
+
+    return pane.active === next ? pane : { ...pane, active: next }
+  })
 
   const updatedSession: Session = {
     ...session,
