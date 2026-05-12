@@ -1,5 +1,5 @@
 // cspell:ignore vsplit
-import { describe, test, expect, vi } from 'vitest'
+import { afterEach, describe, test, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
@@ -714,37 +714,52 @@ describe('TerminalZone', () => {
     expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
   })
 
-  test('toolbar shows Cmd glyph on Mac', () => {
-    Object.defineProperty(navigator, 'platform', {
-      value: 'MacIntel',
-      configurable: true,
+  // Capture jsdom's default navigator.platform once and restore it
+  // around every test that overrides it. Without this, the
+  // Object.defineProperty stub leaks into any subsequent test that
+  // renders TerminalZone with a toolbar — JSDOM's `navigator` is
+  // shared state per worker.
+  describe('toolbar platform glyph', () => {
+    const originalPlatform = navigator.platform
+    afterEach(() => {
+      Object.defineProperty(navigator, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+      })
     })
 
-    render(
-      <TerminalZone
-        {...defaultProps}
-        sessions={[makeToolbarSession('s1')]}
-        activeSessionId="s1"
-      />
-    )
+    test('toolbar shows Cmd glyph on Mac', () => {
+      Object.defineProperty(navigator, 'platform', {
+        value: 'MacIntel',
+        configurable: true,
+      })
 
-    expect(screen.getByTestId('layout-toolbar')).toHaveTextContent('⌘')
-  })
+      render(
+        <TerminalZone
+          {...defaultProps}
+          sessions={[makeToolbarSession('s1')]}
+          activeSessionId="s1"
+        />
+      )
 
-  test('toolbar shows Ctrl by default', () => {
-    Object.defineProperty(navigator, 'platform', {
-      value: 'Linux x86_64',
-      configurable: true,
+      expect(screen.getByTestId('layout-toolbar')).toHaveTextContent('⌘')
     })
 
-    render(
-      <TerminalZone
-        {...defaultProps}
-        sessions={[makeToolbarSession('s1')]}
-        activeSessionId="s1"
-      />
-    )
+    test('toolbar shows Ctrl by default', () => {
+      Object.defineProperty(navigator, 'platform', {
+        value: 'Linux x86_64',
+        configurable: true,
+      })
 
-    expect(screen.getByTestId('layout-toolbar')).toHaveTextContent('Ctrl')
+      render(
+        <TerminalZone
+          {...defaultProps}
+          sessions={[makeToolbarSession('s1')]}
+          activeSessionId="s1"
+        />
+      )
+
+      expect(screen.getByTestId('layout-toolbar')).toHaveTextContent('Ctrl')
+    })
   })
 })

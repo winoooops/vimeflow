@@ -103,17 +103,18 @@ export const TerminalZone = ({
   // see a stable reference until the active session id changes.
   // `setSessionLayout` is itself a stable `useCallback([])` exposed
   // from `useSessionManager`, so the dep list collapses to the
-  // active session id.
-  const activeSessionId_ = activeSession?.id
+  // active session id. The local name `pickSessionId` shadows
+  // neither prop nor a TS-unused convention (`_name`).
+  const pickSessionId = activeSession?.id
 
   const onPickLayout = useCallback(
     (layoutId: LayoutId): void => {
-      if (activeSessionId_ === undefined) {
+      if (pickSessionId === undefined) {
         return
       }
-      setSessionLayout(activeSessionId_, layoutId)
+      setSessionLayout(pickSessionId, layoutId)
     },
-    [activeSessionId_, setSessionLayout]
+    [pickSessionId, setSessionLayout]
   )
 
   return (
