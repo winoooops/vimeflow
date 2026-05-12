@@ -459,3 +459,37 @@ describe('selectVisiblePanes', () => {
   // `1 | 2 | 3 | 4` — so no test for it. The helper's behavior in that
   // degenerate case isn't load-bearing.
 })
+
+describe('SplitView - over-capacity production render', () => {
+  test('rescued active pane lands in the last grid slot (gridArea: p${capacity-1})', () => {
+    // `vi.stubEnv('DEV', false)` swaps `import.meta.env.DEV` at runtime so
+    // the DEV throw path is disabled and the production fallback
+    // (selectVisiblePanes) is exercised end-to-end through the render
+    // chain. This verifies the rescued active pane is mapped to
+    // `gridArea: 'p${capacity-1}'` — a chain that selectVisiblePanes'
+    // pure unit tests do not exercise.
+    vi.stubEnv('DEV', false)
+
+    try {
+      const session = makeSession('vsplit', 3, 2)
+      // 3 panes, vsplit capacity = 2, active at index 2 → must land at p1.
+
+      render(
+        <SplitView session={session} service={makeMockService()} isActive />
+      )
+
+      const slots = screen.getAllByTestId('split-view-slot')
+
+      expect(slots).toHaveLength(2)
+      // Slot 0 keeps the first pane in original order.
+      expect(slots[0]).toHaveAttribute('data-pane-id', 'p0')
+      expect(slots[0]).toHaveStyle({ gridArea: 'p0' })
+      // Slot 1 (the LAST visible slot) gets the rescued active pane,
+      // not panes[1] (which would be the naive prefix slice).
+      expect(slots[1]).toHaveAttribute('data-pane-id', 'p2')
+      expect(slots[1]).toHaveStyle({ gridArea: 'p1' })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+})

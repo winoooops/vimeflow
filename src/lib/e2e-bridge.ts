@@ -26,7 +26,10 @@ const findActivePane = (): HTMLElement | null => {
 // active pane's buffer instead of whichever pane happens to be first in
 // DOM. Falls back to the first `.xterm-rows` for single-pane sessions
 // and for the defensive case where no inner wrapper has `data-focused`.
-const readPaneBuffer = (pane: HTMLElement): string => {
+//
+// Exported for unit testing — production callers go through
+// `readVisibleTerminalBuffer` / `readTerminalBufferForSession`.
+export const readPaneBuffer = (pane: HTMLElement): string => {
   const focusedWrapper = pane.querySelector<HTMLElement>(
     '[data-testid="terminal-pane-wrapper"][data-focused="true"]'
   )

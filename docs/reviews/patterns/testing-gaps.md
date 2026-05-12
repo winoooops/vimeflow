@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-05-12
-ref_count: 21
+ref_count: 22
 ---
 
 # Testing Gaps
@@ -471,3 +471,21 @@ filesystem scope restrictions).
 - **Finding:** Post-5b refactor moved `data-pane-id`/`data-pty-id`/`data-cwd`/`data-mode` from the outer `terminal-pane` session wrapper to inner `split-view-slot` per-pane wrappers. The mechanical port kept the same lookup pattern but on the new element: `slots.find(slot => slot.getAttribute('data-pty-id') === 'sess-1')`. The lookup happened to work because `mockSessions` sets `pane.ptyId === session.id` by convention — but `data-pty-id` carries pane-scoped state, not session-scoped state. If the mock was updated to realistic ptyIds (e.g., the Rust-generated UUID handles in production), `find(...)` returns `undefined` and the next `expect(undefined).toHaveAttribute(...)` throws a misleading error that doesn't point at the broken selector. Same fragility at two sites. Class of bug: refactors that move data attributes between DOM levels need a re-audit of every test selector that reads those attributes — porting the lookup mechanically preserves the false positive while losing the semantic anchor.
 - **Fix:** Scoped slot lookup via `within(sessionWrapper).getByTestId('split-view-slot')` after finding the session-level wrapper by the stable `data-session-id` attribute. Imported `within` from `@testing-library/react`. Decouples the assertion from the mock-data coincidence — works regardless of whether `pane.ptyId === session.id`. Applied to both sites (L168 and L286). Code-review heuristic: when a test selector uses `.find(el => el.getAttribute('X') === Y)` against a list of similarly-typed elements, ask whether `X` is the right attribute or whether scoping by a parent semantic landmark would be more robust.
 - **Commit:** _(see git log for the cycle-1 fix commit on PR #199)_
+
+### 47. Production-only fallback gated by `import.meta.env.DEV` throw blocks render-level coverage
+
+- **Source:** github-claude | PR #199 cycle 5 | 2026-05-12
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/SplitView/SplitView.test.tsx`
+- **Finding:** `SplitView.tsx` has a DEV-only `throw` for `panes.length > capacity` invariant violations and a production `selectVisiblePanes()` fallback that rescues the active pane into the last visible slot. `selectVisiblePanes` was exhaustively unit-tested for selection logic, but the full render chain (rescued pane → `gridArea: 'p${i}'` mapping → last CSS grid slot) was never exercised end-to-end — Vitest runs in DEV mode, so the throw fires first and the production path is unreachable through `render(<SplitView>)`. A future refactor changing the slot-index-to-gridArea mapping for the rescued pane would pass all existing tests while silently breaking production.
+- **Fix:** Added a `describe('SplitView - over-capacity production render', ...)` test that wraps `vi.stubEnv('DEV', false)` in a `try/finally` (cleanup via `vi.unstubAllEnvs()`). Renders `vsplit` with 3 panes and active at index 2; asserts `slots[0]` has `data-pane-id='p0'` + `gridArea='p0'` and `slots[1]` (the LAST visible slot) has `data-pane-id='p2'` + `gridArea='p1'` — proving the rescued active pane goes to slot p${capacity-1} as designed. Code-review heuristic: when a function has a `if (import.meta.env.DEV) throw` clause paired with a production-only fallback, add at least one test that stubs `DEV` to `false` so the fallback path is reachable through the public render chain.
+- **Commit:** _(see git log for the cycle-5 fix commit on PR #199)_
+
+### 48. `src/lib/e2e-bridge.ts` was the last untested module in `src/lib/`
+
+- **Source:** github-claude | PR #199 cycle 5 | 2026-05-12
+- **Severity:** LOW
+- **File:** `src/lib/e2e-bridge.test.ts` (new)
+- **Finding:** `readPaneBuffer` in `src/lib/e2e-bridge.ts` gained a new focused-wrapper-first lookup path in PR #199 cycle 2 (for multi-pane disambiguation), but the module had no co-located test file. Component-level tests verified that `data-focused="true"` is correctly set on the active pane's wrapper, but nothing tested that `readPaneBuffer` itself scopes its `.xterm-rows` query to the focused wrapper. If `data-focused` is transiently absent (between a `pane.active` flip and the next React commit), the fallback queries the whole subtree and returns the first `.xterm-rows` — potentially the wrong pane's buffer — and any E2E spec asserting agent output could pass on stale data. The module had been an exception to the project's co-located-test rule because it's gated by `if (import.meta.env.VITE_E2E)` at the bottom, but the read functions themselves are pure DOM helpers and trivially testable in jsdom.
+- **Fix:** Exported `readPaneBuffer` (small comment notes it's for unit-testing — production goes through `readVisibleTerminalBuffer` / `readTerminalBufferForSession`). Created `src/lib/e2e-bridge.test.ts` with a `buildSessionWrapper(paneTexts, activeIndex)` helper that builds the post-5b DOM shape via `document.createElement`, then 5 tests covering: multi-pane focused-buffer selection, single-pane fallback, defensive no-`data-focused` fallback to first-in-DOM, empty-string when no `.xterm-rows`, and the pty-id-lookup path (called with a `split-view-slot` directly). Code-review heuristic: VITE_E2E-gated entry-point doesn't excuse the unit-testable PURE-FUNCTION helpers below it — extract and test them.
+- **Commit:** _(see git log for the cycle-5 fix commit on PR #199)_
