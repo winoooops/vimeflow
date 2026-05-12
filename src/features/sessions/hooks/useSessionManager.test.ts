@@ -2978,7 +2978,7 @@ describe('useSessionManager', () => {
       act(() => result.current.setSessionActivePane('no-such-session', 'p0'))
 
       expect(warn).toHaveBeenCalledWith(
-        'applyActivePane: no session no-such-session'
+        'setSessionActivePane: no session no-such-session'
       )
       warn.mockRestore()
     })

@@ -541,25 +541,29 @@ export const useSessionManager = (
 
   const setSessionLayout = useCallback(
     (sessionId: string, layoutId: LayoutId): void => {
+      // Warn outside `setSessions` so StrictMode's double-invocation
+      // of the state updater doesn't fire the log twice. The lookup
+      // reads `sessionsRef.current` for the check; the actual mutation
+      // (when present) still uses the updater's `prev` for correctness.
+      const session = sessionsRef.current.find((s) => s.id === sessionId)
+      if (!session) {
+        // eslint-disable-next-line no-console
+        console.warn(`setSessionLayout: no session ${sessionId}`)
+
+        return
+      }
+      if (session.layout === layoutId) {
+        return
+      }
       setSessions((prev) => {
-        const sessionIndex = prev.findIndex(
-          (session) => session.id === sessionId
-        )
-        if (sessionIndex === -1) {
-          // eslint-disable-next-line no-console
-          console.warn(`setSessionLayout: no session ${sessionId}`)
-
-          return prev
-        }
-
-        const session = prev[sessionIndex]
-        if (session.layout === layoutId) {
+        const sessionIndex = prev.findIndex((s) => s.id === sessionId)
+        if (sessionIndex === -1 || prev[sessionIndex].layout === layoutId) {
           return prev
         }
 
         return [
           ...prev.slice(0, sessionIndex),
-          { ...session, layout: layoutId },
+          { ...prev[sessionIndex], layout: layoutId },
           ...prev.slice(sessionIndex + 1),
         ]
       })
@@ -569,6 +573,25 @@ export const useSessionManager = (
 
   const setSessionActivePane = useCallback(
     (sessionId: string, paneId: string): void => {
+      // Warn outside `setSessions` for StrictMode parity (same reason
+      // as setSessionLayout). `applyActivePane` is a pure helper —
+      // it no-ops on missing ids (returns the same reference); the warns live here
+      // so they fire exactly once per operator action.
+      const session = sessionsRef.current.find((s) => s.id === sessionId)
+      if (!session) {
+        // eslint-disable-next-line no-console
+        console.warn(`setSessionActivePane: no session ${sessionId}`)
+
+        return
+      }
+      if (!session.panes.some((p) => p.id === paneId)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `setSessionActivePane: no pane ${paneId} in session ${sessionId}`
+        )
+
+        return
+      }
       setSessions((prev) => applyActivePane(prev, sessionId, paneId))
     },
     []

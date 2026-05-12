@@ -39,8 +39,13 @@ export const getActivePane = (session: Session): Pane => {
 /** Flip the active pane inside one session and re-derive materialized
  * session fields from the new active pane.
  *
- * No-op branches return the same sessions array reference so callers can use
- * this directly in a React state updater without rerendering unchanged state.
+ * Pure helper — no side effects. No-op branches (missing session,
+ * missing pane, already-active target) return the same `sessions`
+ * array reference so callers can drop this directly into a React
+ * state updater without forcing a re-render. The manager surfaces
+ * any operator-visible warnings BEFORE invoking this function so
+ * `setSessions(prev => applyActivePane(prev, …))` stays pure under
+ * StrictMode's double-invocation contract.
  */
 export const applyActivePane = (
   sessions: Session[],
@@ -49,18 +54,12 @@ export const applyActivePane = (
 ): Session[] => {
   const sessionIndex = sessions.findIndex((session) => session.id === sessionId)
   if (sessionIndex === -1) {
-    // eslint-disable-next-line no-console
-    console.warn(`applyActivePane: no session ${sessionId}`)
-
     return sessions
   }
 
   const session = sessions[sessionIndex]
   const target = session.panes.find((pane) => pane.id === paneId)
   if (!target) {
-    // eslint-disable-next-line no-console
-    console.warn(`applyActivePane: no pane ${paneId} in session ${sessionId}`)
-
     return sessions
   }
 

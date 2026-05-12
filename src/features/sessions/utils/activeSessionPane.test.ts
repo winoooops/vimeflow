@@ -134,7 +134,11 @@ describe('applyActivePane', () => {
     expect(applyActivePane(sessions, 's1', 'p0')).toBe(sessions)
   })
 
-  test('warns and returns the same reference when sessionId is missing', () => {
+  test('returns the same reference when sessionId is missing (silent — manager logs)', () => {
+    // applyActivePane is now a pure helper (cycle 14). It no longer
+    // logs on its own; the manager surfaces operator-visible warns
+    // BEFORE invoking this function so the message fires exactly once
+    // even under React StrictMode's double-invoked state updaters.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
     const sessions: Session[] = [
@@ -144,11 +148,11 @@ describe('applyActivePane', () => {
     const next = applyActivePane(sessions, 'nope', 'p0')
 
     expect(next).toBe(sessions)
-    expect(warn).toHaveBeenCalledWith('applyActivePane: no session nope')
+    expect(warn).not.toHaveBeenCalled()
     warn.mockRestore()
   })
 
-  test('warns and returns the same reference when paneId is missing', () => {
+  test('returns the same reference when paneId is missing (silent — manager logs)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
     const sessions: Session[] = [
@@ -158,9 +162,7 @@ describe('applyActivePane', () => {
     const next = applyActivePane(sessions, 's1', 'p-fake')
 
     expect(next).toBe(sessions)
-    expect(warn).toHaveBeenCalledWith(
-      'applyActivePane: no pane p-fake in session s1'
-    )
+    expect(warn).not.toHaveBeenCalled()
     warn.mockRestore()
   })
 
