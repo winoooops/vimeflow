@@ -1,6 +1,10 @@
 import type { ReactElement } from 'react'
 import type { LayoutId } from '../../../sessions/types'
-import { LAYOUTS } from '../SplitView'
+// Source the data constant directly from its module rather than the
+// `SplitView` component barrel — otherwise LayoutSwitcher silently
+// breaks if `SplitView/index.ts` ever narrows its re-exports. The
+// `layouts.ts` module is the canonical home for `LAYOUTS`.
+import { LAYOUTS } from '../SplitView/layouts'
 import { LayoutGlyph } from './LayoutGlyph'
 
 export interface LayoutSwitcherProps {

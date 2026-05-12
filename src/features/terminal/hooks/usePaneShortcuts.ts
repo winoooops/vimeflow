@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react'
 import type { LayoutId, Session } from '../../sessions/types'
-import { LAYOUTS } from '../components/SplitView'
+// Source the data constant directly from its module rather than the
+// SplitView barrel — keeps usePaneShortcuts decoupled from a
+// sibling component's re-export surface.
+import { LAYOUTS } from '../components/SplitView/layouts'
 
 // Derive the cycle order from the canonical LAYOUTS record so a future
 // LayoutId added in `layouts.ts` automatically participates in ⌘\
