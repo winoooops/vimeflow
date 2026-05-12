@@ -34,7 +34,14 @@ export const LayoutSwitcher = ({
           aria-label={layout.name}
           aria-pressed={isActive}
           data-active={isActive ? 'true' : undefined}
-          onClick={() => onPick(layout.id)}
+          // Skip the callback when the button represents the already-
+          // active layout. setSessionLayout has its own same-layout
+          // no-op guard, but expressing that here keeps the contract
+          // honest: onPick is called only when the active layout
+          // actually changes. Callers wiring different mutations
+          // downstream (e.g. analytics events) won't see spurious
+          // ticks for re-clicks of the active button.
+          onClick={isActive ? undefined : (): void => onPick(layout.id)}
           className={`${BASE_BUTTON} ${
             isActive ? ACTIVE_BUTTON : INACTIVE_BUTTON
           }`}

@@ -30,6 +30,21 @@ describe('LayoutSwitcher', () => {
     expect(onPick).toHaveBeenCalledWith('quad')
   })
 
+  test('clicking the already-active button does NOT fire onPick', async () => {
+    // The component's contract is that onPick fires only when the
+    // active layout actually changes. setSessionLayout already no-ops
+    // on same-layout picks, but expressing the guard here keeps the
+    // callback honest for any future caller that wires a different
+    // mutation (e.g. analytics, telemetry) downstream of onPick.
+    const user = userEvent.setup()
+    const onPick = vi.fn()
+    render(<LayoutSwitcher activeLayoutId="vsplit" onPick={onPick} />)
+
+    await user.click(screen.getByRole('button', { name: 'Vertical split' }))
+
+    expect(onPick).not.toHaveBeenCalled()
+  })
+
   test('exposes role="toolbar" with an aria-label', () => {
     render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
 
