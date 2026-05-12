@@ -3,7 +3,7 @@ id: scope-boundary
 category: review-process
 created: 2026-04-12
 last_updated: 2026-05-12
-ref_count: 1
+ref_count: 2
 ---
 
 # Scope Boundary
@@ -67,3 +67,12 @@ separate follow-up section, not as findings with severity.
 - **Finding:** "Pass pane identity when wiring per-pane restart action" — clicking Restart on an inactive exited pane in a multi-pane session restarts whichever pane is `pane.active`, not the one clicked, because `useSessionManager.restartSession(sessionId)` resolves the target via `getActivePane(oldSession)`. The visible symptom is a real correctness gap. BUT the fix shape (thread `paneId` through six call-sites; manager API gains an optional `paneId`) overlaps directly with 5b's explicit Non-goal #4 ("`addPane`/`removePane` manager mutations — 5c") and three of the touched files are outside 5b's spec-listed modified-files. 5b's production stays single-pane (`createSession` always emits `panes=[1]`), so `getActivePane(session)` returns the only pane and the bug never fires in shipped behavior. The bug only fires via test fixtures hand-building multi-pane sessions and none of 5b's tests simulate the Restart-on-inactive-pane click.
 - **Fix:** SKIP — file follow-up issue (#202) for the per-pane restart-targeting refactor (parallel to 5c's manager-API expansion), and land a `TODO(#202)` comment inside `TerminalPane/index.tsx`'s `handleRestart` so future readers (and the eventual 5c author) see the inline deferral without spelunking through the issue tracker. The TODO is the only code change in this cycle. Code-review heuristic: when a review surfaces a real bug whose fix shape spans the SAME work-class as an explicitly-deferred Non-goal in the current spec, the appropriate disposition is "skip with inline TODO + follow-up issue + same-cycle pattern-KB entry", not in-PR resolution. The reviewer should accept this disposition once the rationale (Non-goal alignment + production-reach analysis + follow-up tracking) is on-thread. PR-scope discipline is the constraint that rules here, not "the bug is real, ergo fix it".
 - **Commit:** _(see git log for the cycle-4 fix commit on PR #199)_
+
+### 7. Connector re-flags previously-skipped finding on the next review cycle (same code state, new thread)
+
+- **Source:** github-codex-connector | PR #199 cycle 7 | 2026-05-12
+- **Severity:** P2 / MEDIUM (duplicate of cycle 4's skip)
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** Cycle 4's SKIP for "Pass pane identity when wiring per-pane restart action" (issue #202) closed thread `PRRT_kwDOR06LW86BSzCk` via the rationale-in-thread + TODO-in-code disposition. The underlying code state did not change in cycle 5 (test additions only) or cycle 6 (doc comments only). On cycle 7's review of commit `6f08a03`, the connector posted essentially the same finding again — different inline comment id (`3223788780`) and new thread (`PRRT_kwDOR06LW86BS6GW`), retitled "Pass pane identity when forwarding restart callbacks", same root cause. The connector's heuristic re-flags any code state matching its lint on every push; it has no memory of prior threads. Class of lesson: previously-skipped findings that depend on code state will recur until either the code changes or the reviewer is told (via a `wontfix`-style label or repo-side configuration) to suppress them.
+- **Fix:** Replied on the new thread with the cross-cycle link: "Same finding as the cycle-4 disposition — SKIPPED + tracked in #202; see thread `PRRT_kwDOR06LW86BSzCk` and the TODO in `TerminalPane/index.tsx handleRestart`." Resolved the new thread (`PRRT_kwDOR06LW86BS6GW`). Recorded processed-inline id 3223788780 + processed-review id 4269233620 in the cycle 7 commit's watermark trailers so Step 1 of any future cycle doesn't re-poll this finding. Code-review heuristic: when a reviewer re-flags a previously-skipped finding on the next review cycle, reply with the cross-cycle pointer (resolved thread id + tracking issue) and resolve; do not re-fix. The discipline is to make the SKIP audit trail navigable from any single thread.
+- **Commit:** _(see git log for the cycle-7 fix commit on PR #199)_
