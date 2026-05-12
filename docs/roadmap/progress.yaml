@@ -862,8 +862,21 @@ phases:
         name: 'Single TerminalPane (handoff §4.6)'
         status: pending
         notes: 'Next active handoff step after #174.'
-      - id: ui-s5
-        name: 'SplitView grid (5 layouts) + LayoutSwitcher + ⌘1-4 / ⌘\ shortcuts'
+      - id: ui-s5a
+        name: 'Per-session pane model refactor'
+        status: done
+        commit: a76d962
+        pr: 198
+        notes: 'Data model — Session.layout + Session.panes[], per-pane PTY ownership, exactly-one-active invariant.'
+      - id: ui-s5b
+        name: 'SplitView render (CSS Grid mapping session.panes → 5 layouts)'
+        status: pending
+        notes: 'Pure render refactor — no LayoutSwitcher / shortcuts / spawn / close. Spec: docs/superpowers/specs/2026-05-11-step-5b-splitview-render-design.md.'
+      - id: ui-s5c
+        name: 'LayoutSwitcher + ⌘1-4 / ⌘\ + click-to-focus + placeholder spawn + X-close + auto-shrink'
+        status: pending
+      - id: ui-s5d
+        name: 'Auto-grow on layout pick (parallel PTY fan-out)'
         status: pending
       - id: ui-s6
         name: 'Activity panel (handoff §4.7)'

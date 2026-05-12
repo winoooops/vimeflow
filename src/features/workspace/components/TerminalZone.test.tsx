@@ -1,9 +1,11 @@
+// cspell:ignore vsplit
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { TerminalZone } from './TerminalZone'
 import { mockSessions } from '../data/mockSessions'
+import type { Session } from '../../sessions/types'
 import type { TerminalPaneProps } from '../../terminal/components/TerminalPane'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 
@@ -100,6 +102,7 @@ describe('TerminalZone', () => {
     expect(terminalContent).toBeInTheDocument()
     // Dark background matching design spec (#121221)
     expect(terminalContent).toHaveClass('bg-surface')
+    expect(screen.getAllByTestId('split-view')).toHaveLength(2)
     // Should have TerminalPanes (mocked) - one for each session
     expect(screen.getAllByTestId('terminal-pane-mock')).toHaveLength(2)
   })
@@ -160,14 +163,15 @@ describe('TerminalZone', () => {
   test('passes active session working directory to TerminalPane', () => {
     render(<TerminalZone {...defaultProps} />)
 
-    const terminalPanes = screen.getAllByTestId('terminal-pane')
+    // Scope by stable session-level selector; ptyId-on-slot would only
+    // match here by mock-data coincidence (sess-1 === ptyId).
+    const session1Wrapper = screen
+      .getAllByTestId('terminal-pane')
+      .find((wrapper) => wrapper.getAttribute('data-session-id') === 'sess-1')
+    expect(session1Wrapper).toBeDefined()
 
-    // Find the active session's pane
-    const activePane = terminalPanes.find(
-      (pane) => pane.getAttribute('data-session-id') === 'sess-1'
-    )
-
-    expect(activePane).toHaveAttribute('data-cwd', '~')
+    const activeSlot = within(session1Wrapper!).getByTestId('split-view-slot')
+    expect(activeSlot).toHaveAttribute('data-cwd', '~')
 
     // Mocked component should also receive it
     const mockPanes = screen.getAllByTestId('terminal-pane-mock')
@@ -181,11 +185,11 @@ describe('TerminalZone', () => {
   test('passes the active pane to each TerminalPane', () => {
     render(<TerminalZone {...defaultProps} />)
 
-    const terminalPanes = screen.getAllByTestId('terminal-pane')
+    const slots = screen.getAllByTestId('split-view-slot')
     const mockPanes = screen.getAllByTestId('terminal-pane-mock')
 
-    expect(terminalPanes[0]).toHaveAttribute('data-pane-id', 'p0')
-    expect(terminalPanes[0]).toHaveAttribute('data-cwd', '~')
+    expect(slots[0]).toHaveAttribute('data-pane-id', 'p0')
+    expect(slots[0]).toHaveAttribute('data-cwd', '~')
     expect(mockPanes[0]).toHaveAttribute('data-pane-id', 'p0')
     expect(mockPanes[0]).toHaveAttribute('data-pty-id', 'sess-1')
   })
@@ -285,7 +289,13 @@ describe('TerminalZone', () => {
       (pane) => pane.getAttribute('data-session-id') === 'sess-2'
     )
     expect(updatedSession2Pane).toHaveAttribute('data-session-id', 'sess-2')
-    expect(updatedSession2Pane).toHaveAttribute('data-cwd', '~')
+
+    // Scope by data-session-id for the same reason as L168 — ptyId-on-slot
+    // lookup would be a mock-data coincidence.
+    const updatedSession2Slot = within(updatedSession2Pane!).getByTestId(
+      'split-view-slot'
+    )
+    expect(updatedSession2Slot).toHaveAttribute('data-cwd', '~')
   })
 
   // P2 Codex Finding: Keep terminal sessions alive when switching tabs
@@ -337,7 +347,71 @@ describe('TerminalZone', () => {
     render(<TerminalZone {...defaultProps} loading />)
 
     expect(screen.getByText(/restoring sessions/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('split-view')).not.toBeInTheDocument()
     expect(screen.queryByTestId('terminal-pane-mock')).not.toBeInTheDocument()
+  })
+
+  test('vsplit session renders both panes via SplitView', () => {
+    const session: Session = {
+      ...mockSessions[0],
+      id: 'sess-vsplit',
+      name: 'multi-pane',
+      workingDirectory: '/tmp/a',
+      agentType: 'generic',
+      layout: 'vsplit',
+      panes: [
+        {
+          id: 'p0',
+          ptyId: 'pty-a',
+          cwd: '/tmp/a',
+          agentType: 'generic',
+          status: 'running',
+          active: true,
+          pid: 1001,
+          restoreData: {
+            sessionId: 'pty-a',
+            cwd: '/tmp/a',
+            pid: 1001,
+            replayData: '',
+            replayEndOffset: 0,
+            bufferedEvents: [],
+          },
+        },
+        {
+          id: 'p1',
+          ptyId: 'pty-b',
+          cwd: '/tmp/b',
+          agentType: 'generic',
+          status: 'running',
+          active: false,
+          pid: 1002,
+          restoreData: {
+            sessionId: 'pty-b',
+            cwd: '/tmp/b',
+            pid: 1002,
+            replayData: '',
+            replayEndOffset: 0,
+            bufferedEvents: [],
+          },
+        },
+      ],
+    }
+
+    render(
+      <TerminalZone
+        sessions={[session]}
+        activeSessionId="sess-vsplit"
+        service={mockService}
+      />
+    )
+
+    const slots = screen.getAllByTestId('split-view-slot')
+
+    expect(slots).toHaveLength(2)
+    expect(slots[0]).toHaveAttribute('data-pane-id', 'p0')
+    expect(slots[0]).toHaveAttribute('data-pty-id', 'pty-a')
+    expect(slots[1]).toHaveAttribute('data-pane-id', 'p1')
+    expect(slots[1]).toHaveAttribute('data-pty-id', 'pty-b')
   })
 
   test('passes pane.restoreData to TerminalPane for each session', () => {

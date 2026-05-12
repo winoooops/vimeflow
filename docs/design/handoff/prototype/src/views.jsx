@@ -1052,19 +1052,49 @@ function FilesView({ tree }) {
   )
 }
 
-// ---------- Bottom panel — Editor / Diff / Files (below terminal) ----------
-function BottomPanel({ tab, onTab, onClose, file, hunk, diffFiles, tree }) {
+// ---------- Dock panel — Editor / Diff / Files. Positionable: bottom | left | right | top ----------
+function DockPanel({
+  position = 'bottom',
+  flex,
+  tab,
+  onTab,
+  onClose,
+  onMovePosition,
+  file,
+  hunk,
+  diffFiles,
+  tree,
+}) {
   const tabs = [
     { id: 'editor', icon: 'code', label: 'Editor' },
     { id: 'diff', icon: 'difference', label: 'Diff Viewer' },
     { id: 'files', icon: 'folder_open', label: 'Files' },
   ]
+  // Border faces the terminal area.
+  const borderSide =
+    position === 'bottom'
+      ? 'borderTop'
+      : position === 'top'
+        ? 'borderBottom'
+        : position === 'left'
+          ? 'borderRight'
+          : 'borderLeft'
+  const collapseIcon =
+    position === 'bottom'
+      ? 'expand_more'
+      : position === 'top'
+        ? 'expand_less'
+        : position === 'left'
+          ? 'chevron_left'
+          : 'chevron_right'
+
   return (
     <div
       style={{
-        flex: '1 1 40%',
+        flex: flex || '1 1 40%',
         minHeight: 0,
-        borderTop: '1px solid rgba(74,68,79,0.3)',
+        minWidth: 0,
+        [borderSide]: '1px solid rgba(74,68,79,0.3)',
         background: '#121221',
         display: 'flex',
         flexDirection: 'column',
@@ -1115,17 +1145,14 @@ function BottomPanel({ tab, onTab, onClose, file, hunk, diffFiles, tree }) {
           )
         })}
         <span style={{ flex: 1 }} />
-        {tab === 'editor' && (
-          <span
-            style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 10,
-              color: '#8a8299',
-              paddingRight: 8,
-            }}
-          >
-            {file.path}
-          </span>
+        {onMovePosition && window.DockSwitcher && (
+          <div style={{ marginRight: 4 }}>
+            <window.DockSwitcher
+              position={position}
+              onPick={onMovePosition}
+              compact
+            />
+          </div>
         )}
         <button
           onClick={onClose}
@@ -1150,7 +1177,7 @@ function BottomPanel({ tab, onTab, onClose, file, hunk, diffFiles, tree }) {
             e.currentTarget.style.color = '#8a8299'
           }}
         >
-          <Icon name="expand_more" size={14} />
+          <Icon name={collapseIcon} size={14} />
         </button>
       </div>
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
@@ -1162,6 +1189,60 @@ function BottomPanel({ tab, onTab, onClose, file, hunk, diffFiles, tree }) {
   )
 }
 
+// Inline mini-menu for moving the dock around.
+function DockPositionMenu({ position, onPick }) {
+  const opts = [
+    { id: 'bottom', icon: 'vertical_align_bottom', label: 'Dock bottom' },
+    { id: 'left', icon: 'align_horizontal_left', label: 'Dock left' },
+    { id: 'right', icon: 'align_horizontal_right', label: 'Dock right' },
+  ]
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 1,
+        padding: 2,
+        marginRight: 4,
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(74,68,79,0.25)',
+        borderRadius: 6,
+      }}
+    >
+      {opts.map((o) => (
+        <button
+          key={o.id}
+          onClick={() => onPick(o.id)}
+          title={o.label}
+          style={{
+            width: 22,
+            height: 20,
+            borderRadius: 4,
+            background:
+              position === o.id ? 'rgba(203,166,247,0.15)' : 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            color: position === o.id ? '#cba6f7' : '#6c7086',
+            display: 'grid',
+            placeItems: 'center',
+          }}
+          onMouseEnter={(e) => {
+            if (position !== o.id) e.currentTarget.style.color = '#e2c7ff'
+          }}
+          onMouseLeave={(e) => {
+            if (position !== o.id) e.currentTarget.style.color = '#6c7086'
+          }}
+        >
+          <Icon name={o.icon} size={12} />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// Backward-compat alias used elsewhere.
+const BottomPanel = DockPanel
+
 Object.assign(window, {
   SessionTabs,
   ViewTabs,
@@ -1169,5 +1250,7 @@ Object.assign(window, {
   EditorView,
   DiffView,
   FilesView,
+  DockPanel,
+  DockPositionMenu,
   BottomPanel,
 })

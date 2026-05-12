@@ -753,10 +753,158 @@ function SplitView({
   )
 }
 
+// Dock-position switcher (small inline control matching LayoutSwitcher's look).
+function DockSwitcher({ position, onPick, compact }) {
+  const allOpts = [
+    { id: 'hidden', label: 'Hidden' },
+    { id: 'bottom', label: 'Bottom' },
+    { id: 'left', label: 'Left' },
+    { id: 'right', label: 'Right' },
+  ]
+  const opts = compact ? allOpts.filter((o) => o.id !== 'hidden') : allOpts
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 2,
+        padding: 3,
+        background: 'rgba(13,13,28,0.6)',
+        border: '1px solid rgba(74,68,79,0.3)',
+        borderRadius: 8,
+      }}
+    >
+      {opts.map((o) => (
+        <button
+          key={o.id}
+          title={`Dock: ${o.label}`}
+          onClick={() => onPick(o.id)}
+          style={{
+            width: 26,
+            height: 22,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background:
+              position === o.id ? 'rgba(203,166,247,0.15)' : 'transparent',
+            border:
+              position === o.id
+                ? '1px solid rgba(203,166,247,0.45)'
+                : '1px solid transparent',
+            borderRadius: 5,
+            cursor: 'pointer',
+            color: position === o.id ? '#cba6f7' : '#8a8299',
+          }}
+        >
+          <DockGlyph position={o.id} />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function DockGlyph({ position }) {
+  const stroke = 'currentColor'
+  const sw = 1.4
+  const r = 1.4
+  // Outer rect 12x9 at (1,1). The shaded sub-rect represents the dock.
+  const fill = 'currentColor'
+  if (position === 'hidden')
+    return (
+      <svg width="14" height="11" viewBox="0 0 14 11">
+        <rect
+          x="1"
+          y="1"
+          width="12"
+          height="9"
+          rx={r}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={sw}
+        />
+      </svg>
+    )
+  if (position === 'bottom')
+    return (
+      <svg width="14" height="11" viewBox="0 0 14 11">
+        <rect
+          x="1"
+          y="1"
+          width="12"
+          height="9"
+          rx={r}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={sw}
+        />
+        <rect
+          x="2"
+          y="6.5"
+          width="10"
+          height="3"
+          rx={0.6}
+          fill={fill}
+          opacity="0.55"
+        />
+      </svg>
+    )
+  if (position === 'left')
+    return (
+      <svg width="14" height="11" viewBox="0 0 14 11">
+        <rect
+          x="1"
+          y="1"
+          width="12"
+          height="9"
+          rx={r}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={sw}
+        />
+        <rect
+          x="2"
+          y="2"
+          width="4"
+          height="7"
+          rx={0.6}
+          fill={fill}
+          opacity="0.55"
+        />
+      </svg>
+    )
+  if (position === 'right')
+    return (
+      <svg width="14" height="11" viewBox="0 0 14 11">
+        <rect
+          x="1"
+          y="1"
+          width="12"
+          height="9"
+          rx={r}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={sw}
+        />
+        <rect
+          x="8"
+          y="2"
+          width="4"
+          height="7"
+          rx={0.6}
+          fill={fill}
+          opacity="0.55"
+        />
+      </svg>
+    )
+  return null
+}
+
 Object.assign(window, {
   SplitView,
   TerminalPane,
   LayoutSwitcher,
   LayoutGlyph,
   AgentPicker,
+  DockSwitcher,
+  DockGlyph,
 })

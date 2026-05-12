@@ -16,6 +16,8 @@ function App() {
     activityCollapsed: false,
     bottomPanelOpen: true,
     bottomPanelTab: 'diff',
+    dockPosition: 'bottom',
+    dockSize: 40,
     openSessionIds: ['sess_auth', 'sess_tests'],
     panes: [
       {
@@ -340,100 +342,130 @@ function App() {
           />
 
           <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-            <div
-              style={{
-                flex: 1,
-                minWidth: 0,
-                display: 'flex',
-                flexDirection: 'column',
-              }}
-            >
-              {/* Terminal area (top) */}
-              <div
-                style={{
-                  flex: tweaks.bottomPanelOpen ? '1 1 60%' : '1 1 100%',
-                  minHeight: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                }}
-              >
-                {tweaks.splitMode ? (
-                  <>
-                    <div
-                      style={{
-                        flexShrink: 0,
-                        padding: '8px 14px',
-                        background: '#121221',
-                        borderBottom: '1px solid rgba(74,68,79,0.18)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: "'JetBrains Mono', monospace",
-                          fontSize: 10,
-                          color: '#8a8299',
-                          letterSpacing: '0.08em',
-                          textTransform: 'uppercase',
-                        }}
-                      >
-                        Layout
-                      </span>
-                      <LayoutSwitcher layoutId={layoutId} onPick={setLayout} />
-                      <span style={{ flex: 1 }} />
-                      <span
-                        style={{
-                          fontFamily: "'JetBrains Mono', monospace",
-                          fontSize: 10,
-                          color: '#6c7086',
-                        }}
-                      >
-                        <Kbd>⌘</Kbd>+<Kbd>1-4</Kbd> focus pane · <Kbd>⌘</Kbd>+
-                        <Kbd>\</Kbd> toggle split
-                      </span>
-                    </div>
-                    <SplitView
-                      panes={panes}
-                      layoutId={layoutId}
-                      focusedPaneId={focusedPaneId}
-                      onFocus={focusPane}
-                      onClosePane={closePane}
-                      agentsBySession={sessionsById}
-                      paused={activeSession.state !== 'running'}
-                    />
-                  </>
-                ) : (
-                  <TerminalView
-                    session={activeSession}
-                    paused={activeSession.state !== 'running'}
-                    script={script}
-                  />
-                )}
-              </div>
+            {(() => {
+              const pos = tweaks.dockPosition || 'bottom'
+              const open = tweaks.bottomPanelOpen && pos !== 'hidden'
+              const dockPct = Math.max(20, Math.min(70, tweaks.dockSize || 40))
+              // Flex direction + order maps the dock around the terminal area.
+              const isVertical = pos === 'bottom' || pos === 'top'
+              const flexDir = isVertical ? 'column' : 'row'
+              const dockBefore = pos === 'top' || pos === 'left'
+              const terminalFlex = open ? `1 1 ${100 - dockPct}%` : '1 1 100%'
+              const dockFlex = `1 1 ${dockPct}%`
 
-              {/* Bottom panel — Editor / Diff / Files tabs */}
-              {tweaks.bottomPanelOpen && (
-                <BottomPanel
+              const TerminalArea = (
+                <div
+                  style={{
+                    flex: terminalFlex,
+                    minHeight: 0,
+                    minWidth: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                >
+                  {tweaks.splitMode ? (
+                    <>
+                      <div
+                        style={{
+                          flexShrink: 0,
+                          padding: '8px 14px',
+                          background: '#121221',
+                          borderBottom: '1px solid rgba(74,68,79,0.18)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontFamily: "'JetBrains Mono', monospace",
+                            fontSize: 10,
+                            color: '#8a8299',
+                            letterSpacing: '0.08em',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          Layout
+                        </span>
+                        <LayoutSwitcher
+                          layoutId={layoutId}
+                          onPick={setLayout}
+                        />
+                        <span style={{ flex: 1 }} />
+                        <span
+                          style={{
+                            fontFamily: "'JetBrains Mono', monospace",
+                            fontSize: 10,
+                            color: '#6c7086',
+                          }}
+                        >
+                          <Kbd>⌘</Kbd>+<Kbd>1-4</Kbd> focus pane · <Kbd>⌘</Kbd>+
+                          <Kbd>\</Kbd> toggle split
+                        </span>
+                      </div>
+                      <SplitView
+                        panes={panes}
+                        layoutId={layoutId}
+                        focusedPaneId={focusedPaneId}
+                        onFocus={focusPane}
+                        onClosePane={closePane}
+                        agentsBySession={sessionsById}
+                        paused={activeSession.state !== 'running'}
+                      />
+                    </>
+                  ) : (
+                    <TerminalView
+                      session={activeSession}
+                      paused={activeSession.state !== 'running'}
+                      script={script}
+                    />
+                  )}
+                </div>
+              )
+
+              const DockArea = open ? (
+                <DockPanel
+                  position={pos}
+                  flex={dockFlex}
                   tab={tweaks.bottomPanelTab || 'diff'}
                   onTab={(t) => updateTweaks({ bottomPanelTab: t })}
                   onClose={() => updateTweaks({ bottomPanelOpen: false })}
+                  onMovePosition={(p) =>
+                    updateTweaks({
+                      dockPosition: p,
+                      bottomPanelOpen: p !== 'hidden',
+                    })
+                  }
                   file={window.VIMEFLOW_EDITOR_FILE}
                   hunk={window.VIMEFLOW_DIFF_HUNK}
                   diffFiles={window.VIMEFLOW_DIFF_FILES}
                   tree={window.VIMEFLOW_TREE}
                 />
-              )}
-              {!tweaks.bottomPanelOpen && (
+              ) : (
                 <button
-                  onClick={() => updateTweaks({ bottomPanelOpen: true })}
+                  onClick={() =>
+                    updateTweaks({
+                      bottomPanelOpen: true,
+                      dockPosition: pos === 'hidden' ? 'bottom' : pos,
+                    })
+                  }
                   style={{
                     flexShrink: 0,
-                    height: 26,
+                    ...(isVertical
+                      ? {
+                          height: 26,
+                          width: '100%',
+                          borderTop: '1px solid rgba(74,68,79,0.25)',
+                        }
+                      : {
+                          width: 26,
+                          height: '100%',
+                          borderLeft: '1px solid rgba(74,68,79,0.25)',
+                          flexDirection: 'column',
+                        }),
                     background: '#0d0d1c',
                     border: 'none',
-                    borderTop: '1px solid rgba(74,68,79,0.25)',
                     color: '#8a8299',
                     cursor: 'pointer',
                     fontFamily: "'JetBrains Mono', monospace",
@@ -444,6 +476,7 @@ function App() {
                     gap: 6,
                     letterSpacing: '0.06em',
                     textTransform: 'uppercase',
+                    writingMode: isVertical ? 'horizontal-tb' : 'vertical-rl',
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.color = '#e2c7ff'
@@ -452,10 +485,38 @@ function App() {
                     e.currentTarget.style.color = '#8a8299'
                   }}
                 >
-                  <Icon name="expand_less" size={14} /> show editor & diff
+                  <Icon
+                    name={isVertical ? 'expand_less' : 'chevron_left'}
+                    size={14}
+                  />{' '}
+                  show editor & diff
                 </button>
-              )}
-            </div>
+              )
+
+              return (
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    minHeight: 0,
+                    display: 'flex',
+                    flexDirection: flexDir,
+                  }}
+                >
+                  {dockBefore ? (
+                    <>
+                      {DockArea}
+                      {TerminalArea}
+                    </>
+                  ) : (
+                    <>
+                      {TerminalArea}
+                      {DockArea}
+                    </>
+                  )}
+                </div>
+              )
+            })()}
 
             <ActivityPanel
               session={focusedSession || activeSession}

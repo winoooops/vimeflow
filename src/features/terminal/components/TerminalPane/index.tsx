@@ -8,7 +8,7 @@ import {
 import { useGitBranch } from '../../../diff/hooks/useGitBranch'
 import { useGitStatus } from '../../../diff/hooks/useGitStatus'
 import type { Pane, Session, SessionStatus } from '../../../sessions/types'
-import { agentForSession } from '../../../sessions/utils/agentForSession'
+import { agentForPane } from '../../../sessions/utils/agentForSession'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
 import { aggregateLineDelta } from './aggregateLineDelta'
@@ -20,7 +20,6 @@ import {
   type PtyStatus,
 } from './ptyStatusToSessionStatus'
 import { RestartAffordance } from './RestartAffordance'
-import { useFocusedPane } from './useFocusedPane'
 
 export type TerminalPaneMode = 'attach' | 'spawn' | 'awaiting-restart'
 
@@ -55,15 +54,12 @@ export const TerminalPane = ({
   onRestart = undefined,
   deferFit = false,
 }: TerminalPaneProps): ReactElement => {
-  const agent = agentForSession(session)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const agent = agentForPane(pane)
   const bodyRef = useRef<BodyHandle>(null)
   const [ptyStatus, setPtyStatus] = useState<PtyStatus>('idle')
   const [isCollapsed, setIsCollapsed] = useState(false)
 
-  const { isFocused, setFocused, onTerminalFocusChange } = useFocusedPane({
-    containerRef,
-  })
+  const isFocused = pane.active
 
   const pipStatus: SessionStatus =
     mode === 'awaiting-restart'
@@ -88,9 +84,22 @@ export const TerminalPane = ({
   )
 
   const handleContainerClick = useCallback((): void => {
+    // TODO(#202): dispatch `setActivePane(pane.id)` here so the focus ring
+    // moves to the clicked pane. Deferred to 5c — click-to-focus is the
+    // same work-class as the deferred LayoutSwitcher / spawn-close
+    // mutations (spec Non-goal #4).
+    //
+    // Until 5c lands the mutation, gate `focusTerminal()` on `pane.active`
+    // so clicking an inactive pane is INERT rather than routing keystrokes
+    // to an xterm whose visual focus ring still points at the
+    // previously-active pane. Single-pane production has `pane.active`
+    // always true, so the guard is a no-op there. Multi-pane test
+    // fixtures get safe "no action" instead of stale-focus typing.
+    if (!pane.active) {
+      return
+    }
     bodyRef.current?.focusTerminal()
-    setFocused(true)
-  }, [setFocused])
+  }, [pane.active])
 
   const handleToggleCollapse = useCallback((): void => {
     setIsCollapsed((collapsed) => !collapsed)
@@ -102,9 +111,25 @@ export const TerminalPane = ({
 
   const handleRestart = useCallback(
     (restartSessionId: string): void => {
+      // TODO(#202): for multi-pane sessions, this needs to thread `pane.id`
+      // through so `useSessionManager.restartSession` targets the clicked
+      // pane instead of `getActivePane(session)`. Deferred to 5c (production
+      // multi-pane).
+      //
+      // Until 5c lands the paneId-aware restart, gate the callback on
+      // `pane.active`. Without the guard, clicking Restart on a non-active
+      // exited pane silently restarts the active PTY (because
+      // `useSessionManager.restartSession` resolves via `getActivePane`).
+      // The guard makes non-active restarts INERT — a visible "click has
+      // no effect" is strictly safer than a wrong-pane restart with no
+      // recovery path until reload. Single-pane production has
+      // `pane.active` always true, so the guard is a no-op there.
+      if (!pane.active) {
+        return
+      }
       onRestart?.(restartSessionId)
     },
-    [onRestart]
+    [onRestart, pane.active]
   )
 
   const isAwaitingRestart = mode === 'awaiting-restart'
@@ -120,7 +145,12 @@ export const TerminalPane = ({
       }
     : {
         boxShadow: 'none',
-        cursor: 'pointer' as const,
+        // `not-allowed` reflects the actual current behavior: clicking an
+        // inactive pane is INERT (see `handleContainerClick`'s `pane.active`
+        // guard) because the `setActivePane` dispatch is deferred to 5c.
+        // `pointer` would signal an affordance that doesn't exist yet —
+        // switch back to `pointer` once 5c wires the mutation (TODO #202).
+        cursor: 'not-allowed' as const,
       }
 
   const focusRingStyle = {
@@ -133,7 +163,6 @@ export const TerminalPane = ({
 
   return (
     <div
-      ref={containerRef}
       data-testid="terminal-pane-wrapper"
       data-session-id={session.id}
       data-mode={mode}
@@ -144,6 +173,7 @@ export const TerminalPane = ({
         background: '#121221',
         borderRadius: 10,
         transition: 'box-shadow 220ms ease, opacity 220ms ease',
+        opacity: isFocused ? 1 : 0.78,
       }}
       className="relative flex h-full w-full flex-col overflow-hidden"
     >
@@ -179,7 +209,6 @@ export const TerminalPane = ({
             onPaneReady={onPaneReady}
             mode={mode}
             onPtyStatusChange={setPtyStatus}
-            onFocusChange={onTerminalFocusChange}
             deferFit={deferFit}
           />
         </div>
