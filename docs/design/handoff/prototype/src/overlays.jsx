@@ -310,6 +310,15 @@ function TweaksPanel({ open, onClose, tweaks, onChange }) {
           </TweakBlock>
         )}
 
+        <TweakBlock label="Editor / Diff dock">
+          <DockSwitcher
+            position={tweaks.dockPosition || 'bottom'}
+            onPick={(v) =>
+              onChange({ dockPosition: v, bottomPanelOpen: v !== 'hidden' })
+            }
+          />
+        </TweakBlock>
+
         <TweakBlock label="Aesthetic">
           <Segmented
             items={aesthetics}
