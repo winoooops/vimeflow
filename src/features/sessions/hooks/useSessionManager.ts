@@ -584,12 +584,23 @@ export const useSessionManager = (
 
         return
       }
-      if (!session.panes.some((p) => p.id === paneId)) {
+      const target = session.panes.find((p) => p.id === paneId)
+      if (!target) {
         // eslint-disable-next-line no-console
         console.warn(
           `setSessionActivePane: no pane ${paneId} in session ${sessionId}`
         )
 
+        return
+      }
+      // Already-active short-circuit (mirrors setSessionLayout's same-
+      // layout guard). applyActivePane returns the same reference in
+      // this case and React bails on the re-render, so the visible
+      // outcome is unchanged — but we avoid enqueuing a state update
+      // that the reducer would just no-op. Same defensive shape on
+      // both mutations keeps future callers from accidentally
+      // diverging.
+      if (target.active) {
         return
       }
       setSessions((prev) => applyActivePane(prev, sessionId, paneId))
