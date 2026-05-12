@@ -38,9 +38,17 @@ export const usePaneShortcuts = ({
       if (!(event.metaKey || event.ctrlKey)) {
         return
       }
-      if (event.altKey || event.shiftKey) {
-        return
-      }
+      // We deliberately do NOT reject altKey / shiftKey. Non-US
+      // keyboard layouts (AZERTY, QWERTZ, …) require Shift to access
+      // the digit row and AltGr (delivered as altKey on most browsers)
+      // to access backslash. Matching by `event.code` (physical key
+      // position) below keeps the shortcut layout-independent. Gating
+      // on alt/shift being absent would silently disable the feature
+      // on those layouts. Trade-off: Ctrl+Alt+1 / Ctrl+Shift+1 also
+      // claim the slot, so terminal apps in those modifier combos
+      // lose them. Codex P2 review (cycle 3) prefers this trade-off
+      // over having the shortcut silently fail to fire on non-US
+      // keyboards.
 
       const activeId = activeSessionIdRef.current
       if (activeId === null) {
@@ -54,8 +62,9 @@ export const usePaneShortcuts = ({
         return
       }
 
-      if (event.key >= '1' && event.key <= '4') {
-        const paneIndex = Number.parseInt(event.key, 10) - 1
+      const digitMatch = /^Digit([1-4])$/.exec(event.code)
+      if (digitMatch) {
+        const paneIndex = Number.parseInt(digitMatch[1], 10) - 1
         // Out-of-range: let the key propagate so terminal apps (vim,
         // tmux, etc.) can use ⌘N for their own purposes. The toolbar
         // advertises "⌘+1-4 focus pane" — reserving the slot when
@@ -77,7 +86,7 @@ export const usePaneShortcuts = ({
         return
       }
 
-      if (event.key === '\\') {
+      if (event.code === 'Backslash') {
         event.preventDefault()
         event.stopPropagation()
         const currentIndex = LAYOUT_CYCLE.indexOf(activeSession.layout)

@@ -31,6 +31,21 @@ const makeSession = (
   activity: { ...emptyActivity },
 })
 
+// Derive `event.code` (physical key position) from the printable `key`.
+// Production code matches by `event.code` so non-US layouts (AZERTY,
+// QWERTZ) work too; tests synthesize both fields the way a real
+// keypress would.
+const codeFor = (key: string): string | undefined => {
+  if (key >= '1' && key <= '4') {
+    return `Digit${key}`
+  }
+  if (key === '\\') {
+    return 'Backslash'
+  }
+
+  return undefined
+}
+
 const fire = (
   key: string,
   modifiers: Partial<KeyboardEventInit> = {}
@@ -40,6 +55,9 @@ const fire = (
     bubbles: true,
     cancelable: true,
     ...modifiers,
+    // Spread `modifiers` first so a test can override `code` explicitly
+    // (e.g. simulating a layout where the key/code pairing differs).
+    code: modifiers.code ?? codeFor(key) ?? '',
   })
   const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
   document.dispatchEvent(event)
@@ -105,7 +123,12 @@ describe('usePaneShortcuts', () => {
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 
-  test('Ctrl+Alt+1 is rejected and does not prevent default', () => {
+  test('Ctrl+Alt+1 still claims the slot — Alt is not rejected (non-US-layout accommodation)', () => {
+    // Codex P2 (cycle 3): non-US layouts deliver Backslash as
+    // Ctrl+AltGr+key (browsers usually surface AltGr as altKey). We
+    // can't reject alt/shift without breaking those users — so Ctrl+
+    // Alt+1 also fires our shortcut. Trade-off accepted at the
+    // production code site.
     const setSessionActivePane = vi.fn()
     renderHook(() =>
       usePaneShortcuts({
@@ -118,8 +141,28 @@ describe('usePaneShortcuts', () => {
 
     const event = fire('1', { ctrlKey: true, altKey: true })
 
-    expect(setSessionActivePane).not.toHaveBeenCalled()
-    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+    expect(setSessionActivePane).not.toHaveBeenCalled() // p0 already active
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
+  })
+
+  test('Ctrl+Shift+\\ on a US layout cycles layout (non-US layouts depend on this)', () => {
+    // QWERTZ users press Shift to access `\`; we must accept the
+    // shift modifier or the shortcut is unreachable for them.
+    const setSessionLayout = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'single', ['p0'])],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout,
+      })
+    )
+
+    const event = fire('\\', { ctrlKey: true, shiftKey: true })
+
+    expect(setSessionLayout).toHaveBeenCalledOnce()
+    expect(setSessionLayout).toHaveBeenCalledWith('s1', 'vsplit')
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
   test('no modifier is a no-op and does not prevent default', () => {
