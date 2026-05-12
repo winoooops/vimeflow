@@ -145,7 +145,12 @@ export const TerminalPane = ({
       }
     : {
         boxShadow: 'none',
-        cursor: 'pointer' as const,
+        // `not-allowed` reflects the actual current behavior: clicking an
+        // inactive pane is INERT (see `handleContainerClick`'s `pane.active`
+        // guard) because the `setActivePane` dispatch is deferred to 5c.
+        // `pointer` would signal an affordance that doesn't exist yet —
+        // switch back to `pointer` once 5c wires the mutation (TODO #202).
+        cursor: 'not-allowed' as const,
       }
 
   const focusRingStyle = {
