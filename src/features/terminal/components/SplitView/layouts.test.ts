@@ -40,11 +40,24 @@ describe('LAYOUTS', () => {
     }
   )
 
+  // Count top-level whitespace-separated tracks in a `grid-template-*` value.
+  // Collapse parenthesised expressions (e.g. `minmax(0, 1fr)`) to a single
+  // placeholder first so interior whitespace inside `minmax(...)` /
+  // `repeat(...)` doesn't double-count. Keeps the cross-field invariant
+  // (cols/rows string ↔ areas matrix) robust against idiomatic CSS
+  // formatting that future layouts might use.
+  const countTracks = (template: string): number =>
+    template
+      .replace(/\([^)]*\)/g, 'X')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean).length
+
   test.each<LayoutId>(layoutIds)(
     '%s: cols track-count matches areas[0].length',
     (id) => {
       const layout = LAYOUTS[id]
-      const colTracks = layout.cols.split(/\s+/).filter(Boolean).length
+      const colTracks = countTracks(layout.cols)
 
       expect(colTracks).toBe(layout.areas[0].length)
     }
@@ -54,11 +67,21 @@ describe('LAYOUTS', () => {
     '%s: rows track-count matches areas.length',
     (id) => {
       const layout = LAYOUTS[id]
-      const rowTracks = layout.rows.split(/\s+/).filter(Boolean).length
+      const rowTracks = countTracks(layout.rows)
 
       expect(rowTracks).toBe(layout.areas.length)
     }
   )
+
+  // Sanity-check the tokenizer handles the future case Claude flagged in
+  // PR #199 review — interior whitespace inside `minmax(0, 1fr)` /
+  // `repeat(2, minmax(...))` would have doubled the naive `\s+` split.
+  test('countTracks tolerates interior whitespace in parenthesised expressions', () => {
+    expect(countTracks('minmax(0, 1fr) minmax(0, 1fr)')).toBe(2)
+    expect(countTracks('minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)')).toBe(3)
+    expect(countTracks('repeat(2, minmax(0, 1fr))')).toBe(1)
+    expect(countTracks('  1fr   2fr  ')).toBe(2)
+  })
 
   test('LayoutShape uses readonly area arrays', () => {
     const mutate = (layout: LayoutShape): void => {
