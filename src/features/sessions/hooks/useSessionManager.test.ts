@@ -2982,5 +2982,32 @@ describe('useSessionManager', () => {
       )
       warn.mockRestore()
     })
+
+    test('warns when paneId is missing within the session', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      const service = createMockService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      // createSession spawns a single-pane session via the mock. Calling
+      // setSessionActivePane against a pane id that doesn't exist on
+      // it exercises the second guard branch the manager added in cycle 14.
+      act(() => result.current.createSession())
+      await waitFor(() => expect(result.current.sessions.length).toBe(1))
+      const sessionId = result.current.sessions[0].id
+      const before = result.current.sessions
+      warn.mockClear() // drop the createSession-side reorder warn noise
+
+      act(() => result.current.setSessionActivePane(sessionId, 'ghost-pane'))
+
+      expect(result.current.sessions).toBe(before)
+      expect(warn).toHaveBeenCalledWith(
+        `setSessionActivePane: no pane ghost-pane in session ${sessionId}`
+      )
+      warn.mockRestore()
+    })
   })
 })
