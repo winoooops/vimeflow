@@ -45,9 +45,13 @@ describe('LayoutSwitcher', () => {
     expect(onPick).not.toHaveBeenCalled()
   })
 
-  test('exposes role="toolbar" with an aria-label', () => {
+  test('exposes role="group" with an aria-label', () => {
+    // `role="group"` was chosen (over "toolbar") because the picker
+    // doesn't implement roving-tabindex / arrow-key navigation. The
+    // group + aria-label combination names the region for screen
+    // readers without advertising an unimplemented keyboard pattern.
     render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
 
-    expect(screen.getByRole('toolbar')).toHaveAccessibleName('Pane layout')
+    expect(screen.getByRole('group')).toHaveAccessibleName('Pane layout')
   })
 })

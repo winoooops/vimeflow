@@ -72,9 +72,11 @@ export const applyActivePane = (
   // equality optimization) doesn't see false-positive churn from
   // the bulk active-flag reset across all panes in the session.
   const panes = session.panes.map((pane) => {
-    const next = pane.id === paneId
+    const shouldBeActive = pane.id === paneId
 
-    return pane.active === next ? pane : { ...pane, active: next }
+    return pane.active === shouldBeActive
+      ? pane
+      : { ...pane, active: shouldBeActive }
   })
 
   const updatedSession: Session = {
