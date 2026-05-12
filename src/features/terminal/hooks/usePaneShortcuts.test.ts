@@ -83,7 +83,12 @@ describe('usePaneShortcuts', () => {
     expect(setSessionLayout).toHaveBeenCalledWith('s1', 'single')
   })
 
-  test('Cmd+2 with only one pane is a no-op but still prevents default', () => {
+  test('Cmd+2 with only one pane is a no-op AND lets the event propagate', () => {
+    // Out-of-range pane index: we deliberately do NOT preventDefault so
+    // that terminal apps (vim buffers, tmux windows) can claim Cmd+N
+    // when there's no pane to focus. The toolbar advertises "⌘+1-4
+    // focus pane" — claiming a slot we can't fill would silently
+    // swallow user input with no visible action.
     const setSessionActivePane = vi.fn()
     renderHook(() =>
       usePaneShortcuts({
@@ -97,7 +102,7 @@ describe('usePaneShortcuts', () => {
     const event = fire('2', { metaKey: true })
 
     expect(setSessionActivePane).not.toHaveBeenCalled()
-    expect(event.preventDefaultSpy).toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 
   test('Ctrl+Alt+1 is rejected and does not prevent default', () => {
