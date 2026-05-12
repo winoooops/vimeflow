@@ -29,12 +29,19 @@ const findActivePane = (): HTMLElement | null => {
 //
 // Exported for unit testing — production callers go through
 // `readVisibleTerminalBuffer` / `readTerminalBufferForSession`.
-export const readPaneBuffer = (pane: HTMLElement): string => {
-  const focusedWrapper = pane.querySelector<HTMLElement>(
+//
+// `container` is any xterm ancestor element: the session-level
+// `terminal-pane` wrapper (preferred for multi-pane sessions —
+// triggers the `data-focused` first-pass), a single `split-view-slot`
+// (the pty-id lookup path), or any `terminal-pane-wrapper` directly.
+// Renamed from `pane` to remove the pre-5b "single-pane element"
+// connotation — post-5b the function handles all three DOM shapes.
+export const readPaneBuffer = (container: HTMLElement): string => {
+  const focusedWrapper = container.querySelector<HTMLElement>(
     '[data-testid="terminal-pane-wrapper"][data-focused="true"]'
   )
 
-  const rows = (focusedWrapper ?? pane).querySelector<HTMLElement>(
+  const rows = (focusedWrapper ?? container).querySelector<HTMLElement>(
     '.xterm-rows'
   )
   if (!rows) {
