@@ -104,6 +104,16 @@ export const WorkspaceView = (): ReactElement => {
     const uad = (
       navigator as Navigator & { userAgentData?: { platform?: string } }
     ).userAgentData
+    // `navigator.platform` is deprecated per MDN (TS 6385 warning at
+    // the read site) but still populated on every shipping target
+    // Vimeflow runs on: Tauri's WebKitGTK on Linux, the Tauri WebKit
+    // bundle on macOS, and the Chromium-based shells where
+    // `userAgentData.platform` exists. `tsc -b` does NOT promote 6385
+    // to an error, so the chained read compiles cleanly. If a future
+    // Chromium release drops `navigator.platform` entirely, this
+    // computation throws — defer the future-proofing until that's a
+    // real signal, not a hypothetical (round-20 review chose this
+    // trade-off over an eslint-suppression dance).
     const detected = (uad?.platform ?? navigator.platform).toLowerCase()
 
     return detected.startsWith('mac') ? 'meta' : 'ctrl'
