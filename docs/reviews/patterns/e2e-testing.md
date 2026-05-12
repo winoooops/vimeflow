@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-05-12
-ref_count: 2
+ref_count: 3
 ---
 
 # E2E Testing (WDIO + tauri-driver + WebKitGTK)
@@ -140,3 +140,12 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** `readPaneBuffer(pane)` resolved `pane.querySelector('.xterm-rows')` to the FIRST xterm-rows descendant inside the session-level `data-testid="terminal-pane"` wrapper. Pre-5b each wrapper contained exactly one xterm (the session's single TerminalPane), so first-match was correct by construction. Post-5b the wrapper contains a SplitView with N inner TerminalPanes, each carrying its own xterm. `getTerminalBufferForSession(sessionId)` therefore returned whichever pane's xterm was first in DOM — not necessarily the active/target pane. Once multi-pane sessions exist in production (5c+), E2E specs reading buffer-by-session-id would get incorrect text and assertions would silently regress. Class of bug: refactors that change "1 wrapper : 1 inner widget" to "1 wrapper : N inner widgets" need a sweep of every DOM query that assumed singularity.
 - **Fix:** `readPaneBuffer` first looks for the inner TerminalPane wrapper with `data-focused="true"` (the active pane's marker, set by `TerminalPane/index.tsx` when `pane.active === true`), then scopes the `.xterm-rows` lookup to that wrapper. Falls back to the previous `pane.querySelector('.xterm-rows')` when no focused inner wrapper exists — preserves behavior for single-pane sessions (whose only pane has `data-focused="true"`) and the defensive case where no pane is active (write-site bug). Existing E2E specs and the `findActivePane`/`getVisibleSessionId` paths are unaffected because they operate at the session-wrapper level. Code-review heuristic: when a UI refactor changes the DOM cardinality under a stable test-anchor selector (testid / data-attr), grep the E2E bridge layer for every `.querySelector(...)` call that drops into the anchor — any first-match descendant query needs a disambiguation pass.
 - **Commit:** _(see git log for the cycle-2 fix commit on PR #199)_
+
+### 11. e2e-bridge PTY-id fallback selector orphaned by the same attr-migration that fixed F10
+
+- **Source:** github-codex-connector | PR #199 cycle 3 | 2026-05-12
+- **Severity:** P2 / MEDIUM
+- **File:** `src/lib/e2e-bridge.ts`
+- **Finding:** Cycle 1's TerminalZone refactor migrated `data-pane-id`/`data-pty-id`/`data-cwd`/`data-mode` from the session-level `terminal-pane` wrapper to the per-pane `split-view-slot`. `readTerminalBufferForSession` already had a session-id query path (unchanged: targets the session wrapper), but its pty-id fallback still read `[data-testid="terminal-pane"][data-pty-id="..."]` — a selector that NO element matches after the attr migration. Result: every caller passing a PTY id (and the bridge explicitly supports it via `getActiveSessionIds()`-then-feed-back-in pattern) silently received an empty buffer. Class of bug: when a refactor moves an attribute between DOM levels, every selector that READ the attribute at the old level needs a paired update. The first-cycle fix (data-attr migration) and the next-cycle find (pty-id selector orphaned) were two halves of the same change — should have been caught together via grep on the attribute name.
+- **Fix:** Updated the pty-id fallback selector to `[data-testid="split-view-slot"][data-pty-id="..."]` — the new home of the pane-level pty-id. `readPaneBuffer(slot)` works on a split-view-slot the same way it works on the session wrapper: the slot contains exactly one inner TerminalPane wrapper that carries `data-focused="true"` iff `pane.active`, so the focused-first lookup returns the slot's xterm-rows. Comment block updated to reflect the post-5b DOM cardinality. Code-review heuristic: when migrating DOM attributes between levels (session-wrapper → per-pane-slot in this case), `grep -rn "data-<attr>" src/` BEFORE committing the migration — every read site needs a paired update or it silently breaks.
+- **Commit:** _(see git log for the cycle-3 fix commit on PR #199)_

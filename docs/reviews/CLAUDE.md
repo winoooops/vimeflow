@@ -60,6 +60,6 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Error Surfacing](patterns/error-surfacing.md)                       | error-handling | 25       | 5    | 2026-05-09   |
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files          | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                         | review-process | 5        | 0    | 2026-04-12   |
-| [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing    | 10       | 2    | 2026-05-12   |
+| [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing    | 11       | 3    | 2026-05-12   |
 | [Module Boundaries](patterns/module-boundaries.md)                   | code-quality   | 3        | 1    | 2026-05-07   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality   | 7        | 2    | 2026-05-02   |

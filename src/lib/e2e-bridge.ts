@@ -48,12 +48,13 @@ const readVisibleTerminalBuffer = (): string => {
 }
 
 // Callers may pass either a React `Session.id` (the workspace UUID) or a
-// `pane.ptyId` (the Rust PTY handle). Post-5a these are distinct values
-// living on different attributes — `data-session-id` on TerminalZone's
-// wrapper, `data-pty-id` on both the wrapper and Body's inner xterm
-// container. Try session-id first (most callers operate at the
-// workspace level), then fall back to pty-id so legacy / Rust-side
-// callers keep working.
+// `pane.ptyId` (the Rust PTY handle). Post-5a these are distinct values;
+// post-5b SplitView refactor (PR #199) the pane-level data-attrs moved
+// off `terminal-pane` (session wrapper) and onto `split-view-slot` (one
+// per pane). Try session-id first against the session wrapper, then fall
+// back to pty-id against the per-pane slot so legacy / Rust-side callers
+// passing a PTY handle keep working — `getActiveSessionIds()` exposes
+// PTY ids and existing automation may pass them straight back here.
 const readTerminalBufferForSession = (id: string): string => {
   const escaped = CSS.escape(id)
 
@@ -62,7 +63,7 @@ const readTerminalBufferForSession = (id: string): string => {
       `[data-testid="terminal-pane"][data-session-id="${escaped}"]`
     ) ??
     document.querySelector<HTMLElement>(
-      `[data-testid="terminal-pane"][data-pty-id="${escaped}"]`
+      `[data-testid="split-view-slot"][data-pty-id="${escaped}"]`
     )
 
   return pane ? readPaneBuffer(pane) : ''
