@@ -31,10 +31,13 @@ export const ActivityFeed = ({ events }: ActivityFeedProps): ReactElement => {
   // session's 10+ events would surface `Show less` on first render.
   const hasRunning = events.some((e) => e.status === 'running')
   useEffect(() => {
-    setNow(new Date())
     if (events.length === 0) {
       setShowAll(false)
+
+      return
     }
+
+    setNow(new Date())
   }, [events])
 
   // Effect 2: own the 1s tick's lifecycle — start it only while a

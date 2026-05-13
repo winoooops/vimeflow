@@ -57,7 +57,7 @@ export const SidebarStatusHeader = ({
   return (
     <div
       data-testid="sidebar-status-header-idle"
-      className="flex flex-col gap-3 rounded-xl bg-surface-container-high p-3"
+      className="flex min-h-44 flex-col gap-3 rounded-xl bg-surface-container-high p-3"
     >
       <div className="flex items-center gap-2.5">
         <div className="h-8 w-8 shrink-0 rounded-lg bg-gradient-to-br from-primary-container to-secondary" />
