@@ -90,12 +90,12 @@ const defaultProps = {
 }
 
 describe('AgentStatusPanel', () => {
-  test('renders at 0px width when agent is not active', () => {
+  test('renders at 280px width when agent is not active', () => {
     render(
       <AgentStatusPanel {...defaultProps} agentStatus={inactiveAgentStatus} />
     )
     const panel = screen.getByTestId('agent-status-panel')
-    expect(panel.style.width).toBe('0px')
+    expect(panel.style.width).toBe('280px')
   })
 
   test('renders at 280px width when agent is active', () => {
@@ -106,23 +106,18 @@ describe('AgentStatusPanel', () => {
     expect(panel.style.width).toBe('280px')
   })
 
-  test('applies ease-out transition when collapsing', () => {
+  test('keeps inactive context and cache placeholders mounted', () => {
     render(
       <AgentStatusPanel {...defaultProps} agentStatus={inactiveAgentStatus} />
     )
-    const panel = screen.getByTestId('agent-status-panel')
-    expect(panel.style.transition).toBe('width 200ms ease-out')
+
+    expect(screen.getByText(/CURRENT CONTEXT/)).toBeInTheDocument()
+    expect(screen.getByTestId('context-percentage')).toHaveTextContent('\u2014')
+    expect(screen.getByText(/no data yet/i)).toBeInTheDocument()
+    expect(screen.getByText(/No activity yet/i)).toBeInTheDocument()
   })
 
-  test('applies ease-in transition when expanding', () => {
-    render(
-      <AgentStatusPanel {...defaultProps} agentStatus={activeAgentStatus} />
-    )
-    const panel = screen.getByTestId('agent-status-panel')
-    expect(panel.style.transition).toBe('width 200ms ease-in')
-  })
-
-  test('has overflow-hidden to clip content during collapse', () => {
+  test('has overflow-hidden to clip content inside the fixed panel', () => {
     render(
       <AgentStatusPanel {...defaultProps} agentStatus={inactiveAgentStatus} />
     )
