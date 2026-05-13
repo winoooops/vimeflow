@@ -2,19 +2,25 @@ pub mod agent;
 mod debug;
 mod filesystem;
 mod git;
+pub mod runtime;
 mod terminal;
 
-use agent::{
-    detect_agent_in_session, start_agent_watcher, stop_agent_watcher, AgentWatcherState,
-    TranscriptState,
-};
+#[cfg(not(test))]
+use agent::{detect_agent_in_session, start_agent_watcher, stop_agent_watcher};
+#[cfg(not(test))]
 use filesystem::{list_dir, read_file, write_file};
-use git::{get_git_diff, git_branch, git_status, watcher::{start_git_watcher, stop_git_watcher, GitWatcherState}};
+#[cfg(not(test))]
+use git::{
+    get_git_diff, git_branch, git_status,
+    watcher::{start_git_watcher, stop_git_watcher},
+};
+use runtime::{BackendState, EventSink, TauriEventSink};
 use std::sync::Arc;
 use tauri::Manager;
+#[cfg(not(test))]
 use terminal::{
-    cache::SessionCache, kill_pty, list_sessions, reorder_sessions, resize_pty,
-    set_active_session, spawn_pty, update_session_cwd, write_pty, PtyState,
+    kill_pty, list_sessions, reorder_sessions, resize_pty, set_active_session, spawn_pty,
+    update_session_cwd, write_pty,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,65 +28,63 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     configure_linux_webkit_env();
 
-    let builder = tauri::Builder::default()
-        .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+    let builder = tauri::Builder::default().setup(|app| {
+        if cfg!(debug_assertions) {
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Info)
+                    .build(),
+            )?;
+        }
 
-            // Initialize session cache in app_data_dir
-            let app_data_dir = app.path().app_data_dir().expect("failed to get app_data_dir");
+        // Initialize session cache in app_data_dir
+        let app_data_dir = app
+            .path()
+            .app_data_dir()
+            .expect("failed to get app_data_dir");
+        // E2E test mode: wipe the cache on every launch.
+        //
+        // Production cache persistence is one of the round-7 features —
+        // if the app dies non-gracefully (SIGKILL, OOM, panic, host
+        // shutdown) the cache still has the session list and lazy
+        // reconciliation in `list_sessions` flips them all to Exited
+        // so the user lands on a workspace of "Restart" tabs.
+        //
+        // wdio's `deleteSession()` teardown looks like a non-graceful
+        // crash to the runtime — `RunEvent::ExitRequested` never fires,
+        // so `cache.clear_all()` below never runs. Each spec inherits
+        // the previous spec's session list as Exited stragglers, the
+        // round-7 auto-create skips because `sessions.length > 0`, and
+        // the test sees a full tab strip with zero live PTY → "PTY
+        // never produced a prompt" / "default session never became
+        // active" / "closing the spawned tab did not decrement count".
+        //
+        // The fix: under the `e2e-test` Cargo feature (only enabled by
+        // `npm run test:e2e:build` and the CI E2E job), pre-emptively
+        // delete the cache file before `SessionCache::load_or_recover`
+        // reads it. Production builds are unaffected.
+        #[cfg(feature = "e2e-test")]
+        {
             let cache_path = app_data_dir.join("sessions.json");
-
-            // E2E test mode: wipe the cache on every launch.
-            //
-            // Production cache persistence is one of the round-7 features —
-            // if the app dies non-gracefully (SIGKILL, OOM, panic, host
-            // shutdown) the cache still has the session list and lazy
-            // reconciliation in `list_sessions` flips them all to Exited
-            // so the user lands on a workspace of "Restart" tabs.
-            //
-            // wdio's `deleteSession()` teardown looks like a non-graceful
-            // crash to the runtime — `RunEvent::ExitRequested` never fires,
-            // so `cache.clear_all()` below never runs. Each spec inherits
-            // the previous spec's session list as Exited stragglers, the
-            // round-7 auto-create skips because `sessions.length > 0`, and
-            // the test sees a full tab strip with zero live PTY → "PTY
-            // never produced a prompt" / "default session never became
-            // active" / "closing the spawned tab did not decrement count".
-            //
-            // The fix: under the `e2e-test` Cargo feature (only enabled by
-            // `npm run test:e2e:build` and the CI E2E job), pre-emptively
-            // delete the cache file before `SessionCache::load_or_recover`
-            // reads it. Production builds are unaffected.
-            #[cfg(feature = "e2e-test")]
-            {
-                if let Err(e) = std::fs::remove_file(&cache_path) {
-                    if e.kind() != std::io::ErrorKind::NotFound {
-                        log::warn!(
-                            "e2e-test: failed to remove cache file {}: {}",
-                            cache_path.display(),
-                            e
-                        );
-                    }
+            if let Err(e) = std::fs::remove_file(&cache_path) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    log::warn!(
+                        "e2e-test: failed to remove cache file {}: {}",
+                        cache_path.display(),
+                        e
+                    );
                 }
             }
+        }
 
-            let cache = Arc::new(SessionCache::load_or_recover(cache_path));
-            app.manage(cache);
+        let events: Arc<dyn EventSink> = Arc::new(TauriEventSink::new(app.handle().clone()));
+        let state = Arc::new(BackendState::new(app_data_dir, events));
+        app.manage(state);
 
-            Ok(())
-        })
-        .manage(PtyState::new())
-        .manage(AgentWatcherState::new())
-        .manage(TranscriptState::new())
-        .manage(GitWatcherState::new());
+        Ok(())
+    });
 
-    #[cfg(not(feature = "e2e-test"))]
+    #[cfg(all(not(feature = "e2e-test"), not(test)))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         spawn_pty,
         write_pty,
@@ -103,7 +107,7 @@ pub fn run() {
         stop_git_watcher
     ]);
 
-    #[cfg(feature = "e2e-test")]
+    #[cfg(all(feature = "e2e-test", not(test)))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         spawn_pty,
         write_pty,
@@ -127,6 +131,9 @@ pub fn run() {
         terminal::test_commands::list_active_pty_sessions
     ]);
 
+    #[cfg(test)]
+    let builder = builder;
+
     // Build the App so we can intercept the exit event. Equivalent to
     // builder.run(generate_context!()) plus an event handler — needed so we
     // can wipe the SessionCache on graceful exit (Cmd+Q, window-close)
@@ -142,12 +149,8 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if let tauri::RunEvent::ExitRequested { .. } = event {
-            if let Some(cache) =
-                app_handle.try_state::<std::sync::Arc<terminal::cache::SessionCache>>()
-            {
-                if let Err(e) = cache.clear_all() {
-                    log::warn!("failed to clear session cache on exit: {e}");
-                }
+            if let Some(state) = app_handle.try_state::<Arc<BackendState>>() {
+                state.shutdown();
             }
         }
     });

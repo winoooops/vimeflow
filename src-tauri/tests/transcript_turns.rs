@@ -1,34 +1,15 @@
-use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use tauri::test::MockRuntime;
-use vimeflow_lib::agent::adapter::AgentAdapter;
+mod support;
+
+use support::RecordingEventSink;
 use vimeflow_lib::agent::adapter::base::TranscriptState;
 use vimeflow_lib::agent::adapter::claude_code::ClaudeCodeAdapter;
+use vimeflow_lib::agent::adapter::AgentAdapter;
 
 #[test]
 fn transcript_emits_turn_events_for_real_user_prompts_only() {
-    use tauri::Listener;
-    use tauri::test::mock_builder;
-
-    let app = mock_builder().build(tauri::generate_context!()).unwrap();
-    let app_handle = app.handle().clone();
-
-    // Channel signals when the expected event count (3) lands so the test
-    // doesn't rely on a fixed sleep — flaky on loaded CI runners where the
-    // watcher thread can miss a millisecond budget.
-    let (tx, rx) = mpsc::channel::<()>();
-    let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let recv_clone = received.clone();
-    let tx_clone = tx.clone();
-    app_handle.listen("agent-turn", move |event| {
-        let mut events = recv_clone.lock().unwrap();
-        events.push(event.payload().to_string());
-        if events.len() >= 3 {
-            let _ = tx_clone.send(());
-        }
-    });
-    drop(tx);
+    let sink = RecordingEventSink::new();
 
     let tmp = tempfile::tempdir().expect("temp transcript dir");
     let transcript_path = tmp.path().join("turns.jsonl");
@@ -59,26 +40,29 @@ fn transcript_emits_turn_events_for_real_user_prompts_only() {
     .expect("write transcript fixture");
 
     let state = TranscriptState::new();
-    let adapter: Arc<dyn AgentAdapter<MockRuntime>> = Arc::new(ClaudeCodeAdapter);
+    let adapter: Arc<dyn AgentAdapter> = Arc::new(ClaudeCodeAdapter);
     state
         .start_or_replace(
             adapter,
-            app_handle,
+            sink.clone(),
             "session-turns".to_string(),
             transcript_path,
             None,
         )
         .expect("start watcher");
 
-    rx.recv_timeout(std::time::Duration::from_secs(5))
-        .expect("timed out waiting for turn events");
+    std::thread::sleep(std::time::Duration::from_millis(1500));
     state.stop("session-turns").ok();
 
-    let events = received.lock().unwrap();
+    let events: Vec<_> = sink
+        .recorded()
+        .into_iter()
+        .filter(|(event, _)| event == "agent-turn")
+        .collect();
     assert_eq!(events.len(), 3, "expected one event per real user prompt");
-    assert!(events[0].contains(r#""numTurns":1"#));
-    assert!(events[1].contains(r#""numTurns":2"#));
+    assert_eq!(events[0].1["numTurns"], 1);
+    assert_eq!(events[1].1["numTurns"], 2);
     // Mixed-content block (tool_result + text) is still a real prompt — the
     // text portion has non-whitespace content so it should emit a turn.
-    assert!(events[2].contains(r#""numTurns":3"#));
+    assert_eq!(events[2].1["numTurns"], 3);
 }

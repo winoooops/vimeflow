@@ -1,26 +1,18 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use tauri::test::MockRuntime;
-use vimeflow_lib::agent::adapter::AgentAdapter;
+mod support;
+
+use support::RecordingEventSink;
 use vimeflow_lib::agent::adapter::base::TranscriptState;
 use vimeflow_lib::agent::adapter::claude_code::ClaudeCodeAdapter;
+use vimeflow_lib::agent::adapter::AgentAdapter;
 
 #[test]
 fn cargo_mixed_fixture_emits_test_run_with_groups() {
-    use tauri::Listener;
-    use tauri::test::mock_builder;
-
-    let app = mock_builder().build(tauri::generate_context!()).unwrap();
-    let app_handle = app.handle().clone();
-
-    let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let recv_clone = received.clone();
-    app_handle.listen("test-run", move |event| {
-        recv_clone.lock().unwrap().push(event.payload().to_string());
-    });
+    let sink = RecordingEventSink::new();
 
     let state = TranscriptState::new();
-    let adapter: Arc<dyn AgentAdapter<MockRuntime>> = Arc::new(ClaudeCodeAdapter);
+    let adapter: Arc<dyn AgentAdapter> = Arc::new(ClaudeCodeAdapter);
     let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/transcript_cargo_mixed.jsonl");
 
@@ -33,7 +25,7 @@ fn cargo_mixed_fixture_emits_test_run_with_groups() {
     state
         .start_or_replace(
             adapter,
-            app_handle,
+            sink.clone(),
             "session-cargo".to_string(),
             fixture_path,
             Some(cwd.path().to_path_buf()),
@@ -43,14 +35,22 @@ fn cargo_mixed_fixture_emits_test_run_with_groups() {
     std::thread::sleep(std::time::Duration::from_millis(2000));
     state.stop("session-cargo").ok();
 
-    let events = received.lock().unwrap();
+    let events: Vec<_> = sink
+        .recorded()
+        .into_iter()
+        .filter(|(event, _)| event == "test-run")
+        .collect();
     assert_eq!(events.len(), 1);
-    let payload = &events[0];
-    assert!(payload.contains(r#""runner":"cargo""#));
-    assert!(payload.contains(r#""passed":1"#));
-    assert!(payload.contains(r#""failed":1"#));
-    assert!(payload.contains(r#""skipped":1"#));
-    assert!(payload.contains(r#""status":"fail""#));
-    assert!(payload.contains(r#""kind":"module""#));
-    assert!(payload.contains(r#""path":null"#));
+    let payload = &events[0].1;
+    assert_eq!(payload["runner"], "cargo");
+    assert_eq!(payload["summary"]["passed"], 1);
+    assert_eq!(payload["summary"]["failed"], 1);
+    assert_eq!(payload["summary"]["skipped"], 1);
+    assert_eq!(payload["status"], "fail");
+    assert!(payload["summary"]["groups"]
+        .to_string()
+        .contains(r#""kind":"module""#));
+    assert!(payload["summary"]["groups"]
+        .to_string()
+        .contains(r#""path":null"#));
 }

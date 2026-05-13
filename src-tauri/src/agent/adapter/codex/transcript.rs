@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use tauri::Emitter;
 
 use crate::agent::adapter::base::TranscriptHandle;
 use crate::agent::adapter::claude_code::test_runners::build::{maybe_build_snapshot, BuildArgs};
@@ -20,6 +19,7 @@ use crate::agent::adapter::claude_code::test_runners::timestamps::compute_durati
 use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::types::{AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
+use crate::runtime::EventSink;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_ARGS_LEN: usize = 100;
@@ -102,8 +102,8 @@ fn validate_transcript_path_under_root(
     Ok(canonical)
 }
 
-pub(super) fn start_tailing<R: tauri::Runtime>(
-    app_handle: tauri::AppHandle<R>,
+pub(super) fn start_tailing(
+    events: Arc<dyn EventSink>,
     session_id: String,
     transcript_path: PathBuf,
     cwd: Option<PathBuf>,
@@ -120,14 +120,14 @@ pub(super) fn start_tailing<R: tauri::Runtime>(
     let stop_clone = stop_flag.clone();
 
     let join_handle = std::thread::spawn(move || {
-        tail_loop(app_handle, session_id, cwd, file, stop_clone);
+        tail_loop(events, session_id, cwd, file, stop_clone);
     });
 
     Ok(TranscriptHandle::new(stop_flag, join_handle))
 }
 
-fn tail_loop<R: tauri::Runtime>(
-    app_handle: tauri::AppHandle<R>,
+fn tail_loop(
+    events: Arc<dyn EventSink>,
     session_id: String,
     cwd: Option<PathBuf>,
     file: File,
@@ -138,7 +138,7 @@ fn tail_loop<R: tauri::Runtime>(
     let mut partial_line = String::new();
     let mut in_flight: InFlightToolCalls = HashMap::new();
     let mut num_turns = 0_u32;
-    let mut emitter = TestRunEmitter::new(app_handle.clone());
+    let mut emitter = TestRunEmitter::new(events.clone());
 
     while !stop_flag.load(Ordering::Acquire) {
         line_buf.clear();
@@ -159,7 +159,7 @@ fn tail_loop<R: tauri::Runtime>(
                         partial_line.trim_end_matches('\n'),
                         &session_id,
                         cwd.as_deref(),
-                        &app_handle,
+                        &events,
                         &mut emitter,
                         &mut in_flight,
                         &mut num_turns,
@@ -177,7 +177,7 @@ fn tail_loop<R: tauri::Runtime>(
                     line,
                     &session_id,
                     cwd.as_deref(),
-                    &app_handle,
+                    &events,
                     &mut emitter,
                     &mut in_flight,
                     &mut num_turns,
@@ -191,12 +191,12 @@ fn tail_loop<R: tauri::Runtime>(
     }
 }
 
-fn process_line<R: tauri::Runtime>(
+fn process_line(
     line: &str,
     session_id: &str,
     cwd: Option<&Path>,
-    app_handle: &tauri::AppHandle<R>,
-    emitter: &mut TestRunEmitter<R>,
+    events: &Arc<dyn EventSink>,
+    emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
 ) {
@@ -207,22 +207,22 @@ fn process_line<R: tauri::Runtime>(
 
     match value.get("type").and_then(Value::as_str) {
         Some("response_item") => {
-            process_response_item(&value, session_id, cwd, app_handle, in_flight);
+            process_response_item(&value, session_id, cwd, events, in_flight);
         }
         Some("event_msg") => {
             process_event_msg(
-                &value, session_id, cwd, app_handle, emitter, in_flight, num_turns,
+                &value, session_id, cwd, events, emitter, in_flight, num_turns,
             );
         }
         _ => {}
     }
 }
 
-fn process_response_item<R: tauri::Runtime>(
+fn process_response_item(
     value: &Value,
     session_id: &str,
     cwd: Option<&Path>,
-    app_handle: &tauri::AppHandle<R>,
+    events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
 ) {
     let payload = value.get("payload").unwrap_or(&Value::Null);
@@ -230,48 +230,27 @@ fn process_response_item<R: tauri::Runtime>(
 
     match payload.get("type").and_then(Value::as_str) {
         Some("function_call") => {
-            start_function_call(
-                payload,
-                session_id,
-                cwd,
-                app_handle,
-                in_flight,
-                &timestamp,
-            );
+            start_function_call(payload, session_id, cwd, events, in_flight, &timestamp);
         }
         Some("custom_tool_call") => {
-            start_custom_tool_call(payload, session_id, app_handle, in_flight, &timestamp);
+            start_custom_tool_call(payload, session_id, events, in_flight, &timestamp);
         }
         Some("function_call_output") => {
-            process_output_completion(
-                payload,
-                session_id,
-                app_handle,
-                in_flight,
-                &timestamp,
-                false,
-            );
+            process_output_completion(payload, session_id, events, in_flight, &timestamp, false);
         }
         Some("custom_tool_call_output") => {
-            process_output_completion(
-                payload,
-                session_id,
-                app_handle,
-                in_flight,
-                &timestamp,
-                true,
-            );
+            process_output_completion(payload, session_id, events, in_flight, &timestamp, true);
         }
         _ => {}
     }
 }
 
-fn process_event_msg<R: tauri::Runtime>(
+fn process_event_msg(
     value: &Value,
     session_id: &str,
     cwd: Option<&Path>,
-    app_handle: &tauri::AppHandle<R>,
-    emitter: &mut TestRunEmitter<R>,
+    events: &Arc<dyn EventSink>,
+    emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
 ) {
@@ -280,30 +259,24 @@ fn process_event_msg<R: tauri::Runtime>(
 
     match payload.get("type").and_then(Value::as_str) {
         Some("user_message") => {
-            process_user_message(payload, session_id, app_handle, num_turns);
+            process_user_message(payload, session_id, events, num_turns);
         }
         Some("exec_command_end") => {
             process_exec_command_end(
-                payload,
-                session_id,
-                cwd,
-                app_handle,
-                emitter,
-                in_flight,
-                &timestamp,
+                payload, session_id, cwd, events, emitter, in_flight, &timestamp,
             );
         }
         Some("patch_apply_end") => {
-            process_patch_apply_end(payload, session_id, app_handle, in_flight, &timestamp);
+            process_patch_apply_end(payload, session_id, events, in_flight, &timestamp);
         }
         _ => {}
     }
 }
 
-fn process_user_message<R: tauri::Runtime>(
+fn process_user_message(
     payload: &Value,
     session_id: &str,
-    app_handle: &tauri::AppHandle<R>,
+    events: &Arc<dyn EventSink>,
     num_turns: &mut u32,
 ) {
     let Some(message) = payload.get("message").and_then(Value::as_str) else {
@@ -319,16 +292,16 @@ fn process_user_message<R: tauri::Runtime>(
         num_turns: *num_turns,
     };
 
-    if let Err(e) = app_handle.emit("agent-turn", &event) {
+    if let Err(e) = events.emit_agent_turn(&event) {
         log::warn!("Failed to emit agent-turn event: {}", e);
     }
 }
 
-fn start_function_call<R: tauri::Runtime>(
+fn start_function_call(
     payload: &Value,
     session_id: &str,
     cwd: Option<&Path>,
-    app_handle: &tauri::AppHandle<R>,
+    events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
@@ -365,7 +338,7 @@ fn start_function_call<R: tauri::Runtime>(
     );
 
     emit_tool_call(
-        app_handle,
+        events,
         AgentToolCallEvent {
             session_id: session_id.to_string(),
             tool_use_id: call_id.to_string(),
@@ -379,10 +352,10 @@ fn start_function_call<R: tauri::Runtime>(
     );
 }
 
-fn start_custom_tool_call<R: tauri::Runtime>(
+fn start_custom_tool_call(
     payload: &Value,
     session_id: &str,
-    app_handle: &tauri::AppHandle<R>,
+    events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
@@ -415,7 +388,7 @@ fn start_custom_tool_call<R: tauri::Runtime>(
     );
 
     emit_tool_call(
-        app_handle,
+        events,
         AgentToolCallEvent {
             session_id: session_id.to_string(),
             tool_use_id: call_id.to_string(),
@@ -429,10 +402,10 @@ fn start_custom_tool_call<R: tauri::Runtime>(
     );
 }
 
-fn process_output_completion<R: tauri::Runtime>(
+fn process_output_completion(
     payload: &Value,
     session_id: &str,
-    app_handle: &tauri::AppHandle<R>,
+    events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
     is_custom_tool_output: bool,
@@ -463,7 +436,7 @@ fn process_output_completion<R: tauri::Runtime>(
     };
 
     emit_tool_call(
-        app_handle,
+        events,
         AgentToolCallEvent {
             session_id: session_id.to_string(),
             tool_use_id: call_id.to_string(),
@@ -481,12 +454,12 @@ fn process_output_completion<R: tauri::Runtime>(
     );
 }
 
-fn process_exec_command_end<R: tauri::Runtime>(
+fn process_exec_command_end(
     payload: &Value,
     session_id: &str,
     cwd: Option<&Path>,
-    app_handle: &tauri::AppHandle<R>,
-    emitter: &mut TestRunEmitter<R>,
+    events: &Arc<dyn EventSink>,
+    emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
@@ -541,7 +514,7 @@ fn process_exec_command_end<R: tauri::Runtime>(
     };
 
     emit_tool_call(
-        app_handle,
+        events,
         AgentToolCallEvent {
             session_id: session_id.to_string(),
             tool_use_id: call_id.to_string(),
@@ -557,10 +530,10 @@ fn process_exec_command_end<R: tauri::Runtime>(
     );
 }
 
-fn process_patch_apply_end<R: tauri::Runtime>(
+fn process_patch_apply_end(
     payload: &Value,
     session_id: &str,
-    app_handle: &tauri::AppHandle<R>,
+    events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
@@ -583,7 +556,7 @@ fn process_patch_apply_end<R: tauri::Runtime>(
     };
 
     emit_tool_call(
-        app_handle,
+        events,
         AgentToolCallEvent {
             session_id: session_id.to_string(),
             tool_use_id: call_id.to_string(),
@@ -601,8 +574,8 @@ fn process_patch_apply_end<R: tauri::Runtime>(
     );
 }
 
-fn emit_tool_call<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>, event: AgentToolCallEvent) {
-    if let Err(e) = app_handle.emit("agent-tool-call", &event) {
+fn emit_tool_call(events: &Arc<dyn EventSink>, event: AgentToolCallEvent) {
+    if let Err(e) = events.emit_agent_tool_call(&event) {
         log::warn!("Failed to emit agent-tool-call event: {}", e);
     }
 }
@@ -686,7 +659,10 @@ fn extract_patch_paths(input: &str) -> Vec<String> {
 }
 
 fn custom_tool_output_failed(payload: &Value) -> bool {
-    let raw = payload.get("output").and_then(Value::as_str).unwrap_or_default();
+    let raw = payload
+        .get("output")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     let parsed: Value = match serde_json::from_str(raw) {
         Ok(parsed) => parsed,
         Err(_) => return false,
@@ -759,22 +735,8 @@ fn days_to_date(days_since_epoch: u64) -> (u64, u64, u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::FakeEventSink;
     use serde_json::json;
-    use std::sync::{Arc, Mutex};
-    use tauri::Listener;
-    use tauri::test::{mock_builder, MockRuntime};
-
-    fn collect_emits(app: &tauri::App<MockRuntime>, event_name: &'static str) -> Arc<Mutex<Vec<String>>> {
-        let received = Arc::new(Mutex::new(Vec::new()));
-        let clone = received.clone();
-        app.handle().listen(event_name, move |event| {
-            clone
-                .lock()
-                .expect("event collector lock")
-                .push(event.payload().to_string());
-        });
-        received
-    }
 
     fn write_rollout(path: &Path, lines: &[Value]) {
         let body = lines
@@ -790,12 +752,8 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let codex_root = tmp.path().join(".codex");
         let transcript_path = codex_root.join("sessions").join("rollout.jsonl");
-        std::fs::create_dir_all(
-            transcript_path
-                .parent()
-                .expect("rollout parent directory"),
-        )
-        .expect("mkdir codex root");
+        std::fs::create_dir_all(transcript_path.parent().expect("rollout parent directory"))
+            .expect("mkdir codex root");
         std::fs::write(&transcript_path, "").expect("write transcript");
 
         let canonical = validate_transcript_path_under_root(
@@ -831,10 +789,7 @@ mod tests {
 
     #[test]
     fn start_tailing_replays_tool_calls_turns_and_test_runs() {
-        let app = mock_builder().build(tauri::generate_context!()).unwrap();
-        let tool_calls = collect_emits(&app, "agent-tool-call");
-        let turns = collect_emits(&app, "agent-turn");
-        let test_runs = collect_emits(&app, "test-run");
+        let sink = FakeEventSink::new();
 
         let tmp = tempfile::tempdir().expect("tempdir");
         let workspace = tmp.path().join("workspace");
@@ -925,7 +880,7 @@ mod tests {
         );
 
         let handle = start_tailing(
-            app.handle().clone(),
+            sink.clone(),
             "sid-1".to_string(),
             transcript_path,
             Some(workspace.clone()),
@@ -936,11 +891,11 @@ mod tests {
         handle.stop();
         std::thread::sleep(Duration::from_millis(100));
 
-        let tool_call_payloads: Vec<Value> = tool_calls
-            .lock()
-            .expect("tool calls lock")
+        let recorded = sink.recorded();
+        let tool_call_payloads: Vec<Value> = recorded
             .iter()
-            .map(|payload| serde_json::from_str(payload).expect("tool call payload json"))
+            .filter(|(event, _)| event == "agent-tool-call")
+            .map(|(_, payload)| payload.clone())
             .collect();
         assert_eq!(tool_call_payloads.len(), 4);
         assert_eq!(tool_call_payloads[0]["toolUseId"], "call_exec");
@@ -954,21 +909,19 @@ mod tests {
         assert_eq!(tool_call_payloads[3]["status"], "done");
         assert_eq!(tool_call_payloads[3]["isTestFile"], true);
 
-        let turn_payloads: Vec<Value> = turns
-            .lock()
-            .expect("turns lock")
+        let turn_payloads: Vec<Value> = recorded
             .iter()
-            .map(|payload| serde_json::from_str(payload).expect("turn payload json"))
+            .filter(|(event, _)| event == "agent-turn")
+            .map(|(_, payload)| payload.clone())
             .collect();
         assert_eq!(turn_payloads.len(), 1);
         assert_eq!(turn_payloads[0]["sessionId"], "sid-1");
         assert_eq!(turn_payloads[0]["numTurns"], 1);
 
-        let test_run_payloads: Vec<Value> = test_runs
-            .lock()
-            .expect("test runs lock")
+        let test_run_payloads: Vec<Value> = recorded
             .iter()
-            .map(|payload| serde_json::from_str(payload).expect("test-run payload json"))
+            .filter(|(event, _)| event == "test-run")
+            .map(|(_, payload)| payload.clone())
             .collect();
         assert_eq!(test_run_payloads.len(), 1);
         assert_eq!(test_run_payloads[0]["runner"], "cargo");

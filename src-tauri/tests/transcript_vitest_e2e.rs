@@ -2,29 +2,21 @@
 //! and assert exactly one test-run event is emitted with the expected
 //! summary counts.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use tauri::test::MockRuntime;
-use vimeflow_lib::agent::adapter::AgentAdapter;
+mod support;
+
+use support::RecordingEventSink;
 use vimeflow_lib::agent::adapter::base::TranscriptState;
 use vimeflow_lib::agent::adapter::claude_code::ClaudeCodeAdapter;
+use vimeflow_lib::agent::adapter::AgentAdapter;
 
 #[test]
 fn vitest_pass_fixture_emits_one_test_run() {
-    use tauri::Listener;
-    use tauri::test::mock_builder;
-
-    let app = mock_builder().build(tauri::generate_context!()).unwrap();
-    let app_handle = app.handle().clone();
-
-    let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let recv_clone = received.clone();
-    app_handle.listen("test-run", move |event| {
-        recv_clone.lock().unwrap().push(event.payload().to_string());
-    });
+    let sink = RecordingEventSink::new();
 
     let state = TranscriptState::new();
-    let adapter: Arc<dyn AgentAdapter<MockRuntime>> = Arc::new(ClaudeCodeAdapter);
+    let adapter: Arc<dyn AgentAdapter> = Arc::new(ClaudeCodeAdapter);
     let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/transcript_vitest_pass.jsonl");
 
@@ -36,7 +28,7 @@ fn vitest_pass_fixture_emits_one_test_run() {
     state
         .start_or_replace(
             adapter,
-            app_handle,
+            sink.clone(),
             "session-fixture".to_string(),
             fixture_path,
             Some(cwd.path().to_path_buf()),
@@ -47,11 +39,15 @@ fn vitest_pass_fixture_emits_one_test_run() {
     std::thread::sleep(std::time::Duration::from_millis(1500));
     state.stop("session-fixture").ok();
 
-    let events = received.lock().unwrap();
+    let events: Vec<_> = sink
+        .recorded()
+        .into_iter()
+        .filter(|(event, _)| event == "test-run")
+        .collect();
     assert_eq!(events.len(), 1, "expected exactly one test-run event");
-    let payload = &events[0];
-    assert!(payload.contains(r#""runner":"vitest""#));
-    assert!(payload.contains(r#""passed":3"#));
-    assert!(payload.contains(r#""total":3"#));
-    assert!(payload.contains(r#""status":"pass""#));
+    let payload = &events[0].1;
+    assert_eq!(payload["runner"], "vitest");
+    assert_eq!(payload["summary"]["passed"], 3);
+    assert_eq!(payload["summary"]["total"], 3);
+    assert_eq!(payload["status"], "pass");
 }

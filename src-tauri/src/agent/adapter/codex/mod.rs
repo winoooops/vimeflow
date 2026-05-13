@@ -9,12 +9,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 
-use tauri::AppHandle;
-
 use crate::agent::adapter::base::TranscriptHandle;
 use crate::agent::adapter::types::{ParsedStatus, StatusSource, ValidateTranscriptError};
 use crate::agent::adapter::AgentAdapter;
 use crate::agent::types::AgentType;
+use crate::runtime::EventSink;
 
 use self::locator::{CodexSessionLocator, CompositeLocator, LocatorError, RolloutLocation};
 use self::types::BindContext;
@@ -69,7 +68,7 @@ fn default_codex_home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".codex"))
 }
 
-impl<R: tauri::Runtime> AgentAdapter<R> for CodexAdapter {
+impl AgentAdapter for CodexAdapter {
     fn agent_type(&self) -> AgentType {
         AgentType::Codex
     }
@@ -109,12 +108,12 @@ impl<R: tauri::Runtime> AgentAdapter<R> for CodexAdapter {
 
     fn tail_transcript(
         &self,
-        app: AppHandle<R>,
+        events: std::sync::Arc<dyn EventSink>,
         session_id: String,
         cwd: Option<PathBuf>,
         transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String> {
-        transcript::start_tailing(app, session_id, transcript_path, cwd)
+        transcript::start_tailing(events, session_id, transcript_path, cwd)
     }
 }
 
@@ -155,16 +154,14 @@ where
 mod adapter_tests {
     use super::*;
     use std::time::SystemTime;
-    use tauri::test::MockRuntime;
 
     #[test]
     fn parse_status_delegates_to_parser_with_transcript_path_none() {
         let adapter = CodexAdapter::new(12345, SystemTime::UNIX_EPOCH);
         let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
 "#;
-        let parsed =
-            <CodexAdapter as AgentAdapter<MockRuntime>>::parse_status(&adapter, "pty-1", raw)
-                .expect("minimal codex status parses");
+        let parsed = <CodexAdapter as AgentAdapter>::parse_status(&adapter, "pty-1", raw)
+            .expect("minimal codex status parses");
 
         assert_eq!(parsed.event.agent_session_id, "sess");
         assert!(parsed.transcript_path.is_none());
@@ -183,9 +180,8 @@ mod adapter_tests {
         let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
 "#;
 
-        let parsed =
-            <CodexAdapter as AgentAdapter<MockRuntime>>::parse_status(&adapter, "pty-1", raw)
-                .expect("minimal codex status parses");
+        let parsed = <CodexAdapter as AgentAdapter>::parse_status(&adapter, "pty-1", raw)
+            .expect("minimal codex status parses");
 
         assert_eq!(
             parsed.transcript_path.as_deref(),
@@ -197,8 +193,7 @@ mod adapter_tests {
     fn validate_transcript_rejects_outside_codex_root() {
         let adapter = CodexAdapter::new(12345, SystemTime::UNIX_EPOCH);
         assert!(
-            <CodexAdapter as AgentAdapter<MockRuntime>>::validate_transcript(&adapter, "/tmp/t")
-                .is_err(),
+            <CodexAdapter as AgentAdapter>::validate_transcript(&adapter, "/tmp/t").is_err(),
             "path outside ~/.codex should be rejected"
         );
     }
@@ -291,7 +286,6 @@ mod status_source_tests {
     use super::*;
     use rusqlite::{params, Connection};
     use std::time::{Duration, SystemTime};
-    use tauri::test::MockRuntime;
 
     fn seed_codex_home_with_thread(codex_home: &Path, pid: u32, pty_start: SystemTime) -> PathBuf {
         let rollout_path = codex_home
@@ -366,7 +360,7 @@ mod status_source_tests {
         let adapter = CodexAdapter::with_home(999, pty_start, codex_home.path().to_path_buf());
         let cwd = codex_home.path().to_path_buf();
 
-        let src = <CodexAdapter as AgentAdapter<MockRuntime>>::status_source(&adapter, &cwd, "sid")
+        let src = <CodexAdapter as AgentAdapter>::status_source(&adapter, &cwd, "sid")
             .expect("status_source should resolve");
 
         assert_eq!(src.path, rollout_path);
@@ -380,7 +374,7 @@ mod status_source_tests {
             CodexAdapter::with_home(999, SystemTime::now(), codex_home.path().to_path_buf());
         let cwd = codex_home.path().to_path_buf();
 
-        let err = <CodexAdapter as AgentAdapter<MockRuntime>>::status_source(&adapter, &cwd, "sid")
+        let err = <CodexAdapter as AgentAdapter>::status_source(&adapter, &cwd, "sid")
             .expect_err("empty codex_home should exhaust retry");
         assert!(err.contains("retry exhausted"), "got: {}", err);
     }

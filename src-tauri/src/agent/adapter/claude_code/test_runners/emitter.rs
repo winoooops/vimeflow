@@ -4,20 +4,21 @@
 //! snapshot (if any) is emitted exactly once. After replay, every submit
 //! emits immediately.
 
-use tauri::{AppHandle, Emitter, Runtime};
+use std::sync::Arc;
 
 use super::types::TestRunSnapshot;
+use crate::runtime::EventSink;
 
-pub struct TestRunEmitter<R: Runtime> {
-    app_handle: AppHandle<R>,
+pub struct TestRunEmitter {
+    events: Arc<dyn EventSink>,
     replay_done: bool,
     pending: Option<TestRunSnapshot>,
 }
 
-impl<R: Runtime> TestRunEmitter<R> {
-    pub fn new(app_handle: AppHandle<R>) -> Self {
+impl TestRunEmitter {
+    pub fn new(events: Arc<dyn EventSink>) -> Self {
         Self {
-            app_handle,
+            events,
             replay_done: false,
             pending: None,
         }
@@ -25,7 +26,7 @@ impl<R: Runtime> TestRunEmitter<R> {
 
     pub fn submit(&mut self, snapshot: TestRunSnapshot) {
         if self.replay_done {
-            if let Err(e) = self.app_handle.emit("test-run", &snapshot) {
+            if let Err(e) = self.events.emit_test_run(&snapshot) {
                 log::warn!("Failed to emit test-run event: {}", e);
             }
         } else {
@@ -39,7 +40,7 @@ impl<R: Runtime> TestRunEmitter<R> {
         }
         self.replay_done = true;
         if let Some(s) = self.pending.take() {
-            if let Err(e) = self.app_handle.emit("test-run", &s) {
+            if let Err(e) = self.events.emit_test_run(&s) {
                 log::warn!("Failed to emit test-run event: {}", e);
             }
         }
@@ -50,9 +51,7 @@ impl<R: Runtime> TestRunEmitter<R> {
 mod tests {
     use super::*;
     use crate::agent::adapter::claude_code::test_runners::types::{TestRunStatus, TestRunSummary};
-    use std::sync::{Arc, Mutex};
-    use tauri::Listener;
-    use tauri::test::{MockRuntime, mock_builder};
+    use crate::runtime::FakeEventSink;
 
     fn snap(passed: u32) -> TestRunSnapshot {
         TestRunSnapshot {
@@ -74,52 +73,36 @@ mod tests {
         }
     }
 
-    fn collect_emits(app: &tauri::App<MockRuntime>) -> Arc<Mutex<Vec<String>>> {
-        let received = Arc::new(Mutex::new(Vec::new()));
-        let clone = received.clone();
-        app.handle().listen("test-run", move |event| {
-            clone.lock().unwrap().push(event.payload().to_string());
-        });
-        received
-    }
-
     #[test]
     fn submit_during_replay_buffers_latest() {
-        let app = mock_builder().build(tauri::generate_context!()).unwrap();
-        let emits = collect_emits(&app);
-        let mut e = TestRunEmitter::new(app.handle().clone());
+        let sink = FakeEventSink::new();
+        let mut e = TestRunEmitter::new(sink.clone());
         e.submit(snap(1));
         e.submit(snap(2));
         e.submit(snap(3));
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        assert!(emits.lock().unwrap().is_empty());
+        assert_eq!(sink.count("test-run"), 0);
         e.finish_replay();
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        let v = emits.lock().unwrap();
+        let v = sink.recorded();
         assert_eq!(v.len(), 1);
-        assert!(v[0].contains(r#""passed":3"#));
+        assert_eq!(v[0].1["summary"]["passed"], 3);
     }
 
     #[test]
     fn submit_after_replay_emits_immediately() {
-        let app = mock_builder().build(tauri::generate_context!()).unwrap();
-        let emits = collect_emits(&app);
-        let mut e = TestRunEmitter::new(app.handle().clone());
+        let sink = FakeEventSink::new();
+        let mut e = TestRunEmitter::new(sink.clone());
         e.finish_replay();
         e.submit(snap(7));
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        assert_eq!(emits.lock().unwrap().len(), 1);
+        assert_eq!(sink.count("test-run"), 1);
     }
 
     #[test]
     fn finish_replay_is_idempotent() {
-        let app = mock_builder().build(tauri::generate_context!()).unwrap();
-        let emits = collect_emits(&app);
-        let mut e = TestRunEmitter::new(app.handle().clone());
+        let sink = FakeEventSink::new();
+        let mut e = TestRunEmitter::new(sink.clone());
         e.submit(snap(1));
         e.finish_replay();
         e.finish_replay(); // second call must not re-emit
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        assert_eq!(emits.lock().unwrap().len(), 1);
+        assert_eq!(sink.count("test-run"), 1);
     }
 }

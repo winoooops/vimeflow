@@ -3,29 +3,21 @@
 //! collapses them to exactly ONE emit (the latest, with passed=3) at
 //! first EOF. Locks the load-bearing invariant for session-restore UX.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use tauri::test::MockRuntime;
-use vimeflow_lib::agent::adapter::AgentAdapter;
+mod support;
+
+use support::RecordingEventSink;
 use vimeflow_lib::agent::adapter::base::TranscriptState;
 use vimeflow_lib::agent::adapter::claude_code::ClaudeCodeAdapter;
+use vimeflow_lib::agent::adapter::AgentAdapter;
 
 #[test]
 fn replay_emits_only_latest_snapshot() {
-    use tauri::Listener;
-    use tauri::test::mock_builder;
-
-    let app = mock_builder().build(tauri::generate_context!()).unwrap();
-    let app_handle = app.handle().clone();
-
-    let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let recv_clone = received.clone();
-    app_handle.listen("test-run", move |event| {
-        recv_clone.lock().unwrap().push(event.payload().to_string());
-    });
+    let sink = RecordingEventSink::new();
 
     let state = TranscriptState::new();
-    let adapter: Arc<dyn AgentAdapter<MockRuntime>> = Arc::new(ClaudeCodeAdapter);
+    let adapter: Arc<dyn AgentAdapter> = Arc::new(ClaudeCodeAdapter);
     let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/transcript_vitest_replay.jsonl");
 
@@ -37,7 +29,7 @@ fn replay_emits_only_latest_snapshot() {
     state
         .start_or_replace(
             adapter,
-            app_handle,
+            sink.clone(),
             "session-replay".to_string(),
             fixture_path,
             Some(cwd.path().to_path_buf()),
@@ -47,9 +39,13 @@ fn replay_emits_only_latest_snapshot() {
     std::thread::sleep(std::time::Duration::from_millis(2000));
     state.stop("session-replay").ok();
 
-    let events = received.lock().unwrap();
+    let events: Vec<_> = sink
+        .recorded()
+        .into_iter()
+        .filter(|(event, _)| event == "test-run")
+        .collect();
     // 3 historical runs in the fixture, but replay batching collapses to 1 emit
     // containing the LATEST run (passed=3).
     assert_eq!(events.len(), 1, "expected exactly one emit after replay");
-    assert!(events[0].contains(r#""passed":3"#));
+    assert_eq!(events[0].1["summary"]["passed"], 3);
 }
