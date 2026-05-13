@@ -1092,3 +1092,5 @@ TDD per task: red test → green implementation → refactor → commit
 behind the watermark trailers `/lifeline:upsource-review` consumes.
 
 PR-B's spec is the next planner run.
+
+<!-- codex-reviewed: 2026-05-13T08:31:34Z -->
