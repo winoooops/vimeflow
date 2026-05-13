@@ -770,7 +770,13 @@ const addPane = useCallback(
           restoreData,
         }
 
-        restoreDataRef.current.set(fresh.id, restoreData)
+        // NOTE: don't touch `restoreDataRef.current` here. The public
+        // map is a zombie (see F4 in `useSessionManager.ts`) — the
+        // live restoreData source is `pane.restoreData`, which
+        // `newPane` already carries. Skipping the set means we don't
+        // need a matching delete on the rollback path (and we don't
+        // accidentally clobber the existing session's entry by
+        // overwriting `fresh.id`).
         registerPending(result.sessionId)
 
         let appended = false
@@ -795,10 +801,10 @@ const addPane = useCallback(
           // Reducer no-op'd — capacity full at commit (lost a race
           // against another addPane, or a layout shrunk under us)
           // or pane id collision. Kill the freshly-spawned PTY and
-          // drop bookkeeping so it doesn't orphan in Rust.
+          // drop the orphan's pty-data buffer so it doesn't leak.
           // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
           service.kill({ sessionId: result.sessionId }).catch(() => {})
-          restoreDataRef.current.delete(result.sessionId)
+          dropAllForPty(result.sessionId)
           // eslint-disable-next-line no-console
           console.warn(
             `addPane: reducer rejected commit for ${sessionId}; orphan killed`
