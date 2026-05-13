@@ -2038,3 +2038,5 @@ After merge, follow up with:
 - `progress.yaml` ui-s5c-2 status → `done` with commit + PR id.
 - Smoke-test the framer-motion exit animation overlap (Risk in §4 of the spec). If perceptibly bad, tighten `exit.transition.duration` to ~150ms.
 - Watch for the LAYOUT_CYCLE capacity-filter follow-up (5c-1 risk carry-over, now more impactful with multi-pane).
+
+<!-- codex-reviewed: 2026-05-13T03:43:19Z -->
