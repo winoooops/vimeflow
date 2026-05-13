@@ -1912,3 +1912,5 @@ After PR-A merges to `dev`:
 - [ ] `tauri::AppHandle` references are limited to `runtime/tauri_bridge.rs` + `#[tauri::command]` wrapper functions.
 
 PR-B's planner run is next.
+
+<!-- codex-reviewed: 2026-05-13T08:57:16Z -->
