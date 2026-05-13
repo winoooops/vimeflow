@@ -885,8 +885,8 @@ phases:
         notes: 'LayoutSwitcher passive UI + click-to-focus + ⌘1-4 / ⌘\ cycle + Framer Motion shared-layout animations. Spec: docs/superpowers/specs/2026-05-12-step-5c-1-layout-picker-design.md.'
       - id: ui-s5c-2
         name: 'addPane / removePane / placeholder spawn / X-close / auto-shrink'
-        status: pending
-        notes: 'Pane lifecycle mutations + "+ click to add pane" placeholder in empty slots + X-close on per-pane chrome + auto-shrink layout on close. Follows ui-s5c-1.'
+        status: in_progress
+        notes: 'Pane lifecycle mutations + "+ click to add pane" placeholder in empty slots + X-close on per-pane chrome + auto-shrink layout on close. Spec: docs/superpowers/specs/2026-05-12-step-5c-2-pane-lifecycle-design.md. Plan: docs/superpowers/plans/2026-05-12-step-5c-2-pane-lifecycle.md. Next: ui-s5d auto-grow on layout pick.'
       - id: ui-s5d
         name: 'Auto-grow on layout pick (parallel PTY fan-out)'
         status: pending

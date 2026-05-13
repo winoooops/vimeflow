@@ -6,6 +6,9 @@ import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { Session } from '../sessions/types'
 import { AGENTS } from '../../agents/registry'
+import type { TerminalZoneProps } from './components/TerminalZone'
+
+const terminalZonePropsSpy = vi.hoisted(() => vi.fn())
 
 // Mock all WorkspaceView dependencies
 vi.mock('../sessions/hooks/useSessionManager')
@@ -28,7 +31,11 @@ vi.mock('../../components/sidebar/Sidebar', () => ({
 }))
 
 vi.mock('./components/TerminalZone', () => ({
-  TerminalZone: (): ReactElement => <div data-testid="terminal-zone" />,
+  TerminalZone: (props: TerminalZoneProps): ReactElement => {
+    terminalZonePropsSpy(props)
+
+    return <div data-testid="terminal-zone" />
+  },
 }))
 
 vi.mock('./components/BottomDrawer', () => ({
@@ -91,6 +98,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
   beforeEach(async () => {
     // Reset all mocks
     vi.clearAllMocks()
+    terminalZonePropsSpy.mockClear()
 
     // Create mock sessions
     mockSessions = [
@@ -108,6 +116,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       removeSession: vi.fn(),
       setSessionLayout: vi.fn(),
       setSessionActivePane: vi.fn(),
+      addPane: vi.fn(),
+      removePane: vi.fn(),
       restartSession: vi.fn(),
       renameSession: vi.fn(),
       reorderSessions: vi.fn(),
@@ -259,6 +269,17 @@ describe('WorkspaceView - Command Palette Integration', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
+  })
+
+  test('forwards pane lifecycle handlers to TerminalZone', () => {
+    render(<WorkspaceView />)
+
+    expect(terminalZonePropsSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addPane: mockSessionManager.addPane,
+        removePane: mockSessionManager.removePane,
+      })
+    )
   })
 
   test('records detected agent type on the active session', async () => {

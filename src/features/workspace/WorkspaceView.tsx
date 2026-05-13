@@ -86,6 +86,8 @@ export const WorkspaceView = (): ReactElement => {
     updatePaneAgentType,
     setSessionActivePane,
     setSessionLayout,
+    addPane,
+    removePane,
     loading,
     notifyPaneReady,
   } = useSessionManager(terminalService)
@@ -653,6 +655,8 @@ export const WorkspaceView = (): ReactElement => {
           service={terminalService}
           setSessionActivePane={setSessionActivePane}
           setSessionLayout={setSessionLayout}
+          addPane={addPane}
+          removePane={removePane}
           modKey={preferModifier === 'meta' ? '⌘' : 'Ctrl'}
         />
 

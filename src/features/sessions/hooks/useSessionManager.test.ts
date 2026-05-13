@@ -3010,4 +3010,204 @@ describe('useSessionManager', () => {
       warn.mockRestore()
     })
   })
+
+  describe('pane lifecycle mutations', () => {
+    const createSequentialSpawnService = (
+      resolvedCwds: readonly string[] = ['/workspace', '/workspace', '/other']
+    ): ITerminalService => {
+      const service = createMockService()
+      let spawnIndex = 0
+
+      service.spawn = vi.fn(
+        (params: Parameters<ITerminalService['spawn']>[0]) => {
+          void params
+
+          const index = spawnIndex
+          spawnIndex += 1
+
+          return Promise.resolve({
+            sessionId: `pty-${index}`,
+            pid: 100 + index,
+            cwd: resolvedCwds[index] ?? `/workspace-${index}`,
+          })
+        }
+      )
+
+      return service
+    }
+
+    const createInitialSession = async (result: {
+      current: ReturnType<typeof useSessionManager>
+    }): Promise<string> => {
+      act(() => result.current.createSession())
+
+      await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+      return result.current.sessions[0].id
+    }
+
+    const addSecondPane = async (
+      result: { current: ReturnType<typeof useSessionManager> },
+      sessionId: string
+    ): Promise<void> => {
+      act(() => result.current.setSessionLayout(sessionId, 'vsplit'))
+      act(() => result.current.addPane(sessionId))
+
+      await waitFor(() => {
+        const session = result.current.sessions.find((s) => s.id === sessionId)
+        expect(session?.panes).toHaveLength(2)
+      })
+    }
+
+    test('addPane spawns in the active pane cwd and appends an active pane', async () => {
+      const service = createSequentialSpawnService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
+
+      await addSecondPane(result, sessionId)
+
+      const session = result.current.sessions[0]
+      expect(service.spawn).toHaveBeenNthCalledWith(2, {
+        cwd: '/workspace',
+        env: {},
+        enableAgentBridge: true,
+      })
+      expect(session.panes).toHaveLength(2)
+      expect(session.panes[0]).toMatchObject({ id: 'p0', active: false })
+      expect(session.panes[1]).toMatchObject({
+        id: 'p1',
+        ptyId: 'pty-1',
+        cwd: '/workspace',
+        active: true,
+      })
+      expect(session.workingDirectory).toBe('/workspace')
+      expect(service.setActiveSession).toHaveBeenCalledWith('pty-1')
+      expect(getAllPtySessionIds()).toContain('pty-1')
+    })
+
+    test('addPane refuses to spawn when the current layout is at capacity', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      const service = createSequentialSpawnService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+      ;(service.spawn as ReturnType<typeof vi.fn>).mockClear()
+
+      act(() => result.current.addPane(sessionId))
+
+      expect(service.spawn).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledWith(
+        `addPane: session ${sessionId} is at capacity for layout single`
+      )
+      warn.mockRestore()
+    })
+
+    test('removePane kills the pane, shrinks layout, and rotates Rust active PTY', async () => {
+      const service = createSequentialSpawnService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      await addSecondPane(result, sessionId)
+
+      // Reset spies so the spawn-time activations don't bleed into the
+      // close-side assertions below.
+      ;(service.kill as ReturnType<typeof vi.fn>).mockClear()
+      ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
+
+      act(() => result.current.removePane(sessionId, 'p1'))
+
+      await waitFor(() =>
+        expect(result.current.sessions[0].panes).toHaveLength(1)
+      )
+
+      const session = result.current.sessions[0]
+      expect(service.kill).toHaveBeenCalledWith({ sessionId: 'pty-1' })
+      expect(session.layout).toBe('single')
+      expect(session.panes[0]).toMatchObject({ id: 'p0', active: true })
+      expect(service.setActiveSession).toHaveBeenCalledWith('pty-0')
+      expect(getAllPtySessionIds()).not.toContain('pty-1')
+    })
+
+    test('removePane refuses to remove the last pane', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      const service = createSequentialSpawnService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+      ;(service.kill as ReturnType<typeof vi.fn>).mockClear()
+
+      act(() => result.current.removePane(sessionId, 'p0'))
+
+      expect(service.kill).not.toHaveBeenCalled()
+      expect(result.current.sessions[0].panes).toHaveLength(1)
+      expect(warn).toHaveBeenCalledWith(
+        `removePane: refusing to remove the last pane in ${sessionId}; use removeSession instead`
+      )
+      warn.mockRestore()
+    })
+
+    test('setSessionActivePane syncs Rust when rotating panes in the active session', async () => {
+      const service = createSequentialSpawnService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      const sessionId = await createInitialSession(result)
+      await addSecondPane(result, sessionId)
+      ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
+
+      act(() => result.current.setSessionActivePane(sessionId, 'p0'))
+
+      expect(result.current.sessions[0].panes[0].active).toBe(true)
+      expect(service.setActiveSession).toHaveBeenCalledWith('pty-0')
+    })
+
+    test('setSessionActivePane does not sync Rust for inactive sessions', async () => {
+      const service = createSequentialSpawnService([
+        '/workspace-a',
+        '/workspace-a',
+        '/workspace-b',
+      ])
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      const firstSessionId = await createInitialSession(result)
+      await addSecondPane(result, firstSessionId)
+
+      act(() => result.current.createSession())
+      await waitFor(() => expect(result.current.sessions).toHaveLength(2))
+      ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
+
+      act(() => result.current.setSessionActivePane(firstSessionId, 'p0'))
+
+      const firstSession = result.current.sessions.find(
+        (session) => session.id === firstSessionId
+      )
+      expect(firstSession?.panes[0].active).toBe(true)
+      expect(service.setActiveSession).not.toHaveBeenCalled()
+    })
+  })
 })
