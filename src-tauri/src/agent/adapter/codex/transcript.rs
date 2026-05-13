@@ -789,7 +789,7 @@ mod tests {
 
     #[test]
     fn start_tailing_replays_tool_calls_turns_and_test_runs() {
-        let sink = FakeEventSink::new();
+        let sink = Arc::new(FakeEventSink::new());
 
         let tmp = tempfile::tempdir().expect("tempdir");
         let workspace = tmp.path().join("workspace");

@@ -1,4 +1,4 @@
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -11,11 +11,11 @@ pub struct RecordingEventSink {
 }
 
 impl RecordingEventSink {
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self {
+    pub fn new() -> Self {
+        Self {
             recorded: Mutex::new(Vec::new()),
             changed: Condvar::new(),
-        })
+        }
     }
 
     pub fn recorded(&self) -> Vec<(String, Value)> {

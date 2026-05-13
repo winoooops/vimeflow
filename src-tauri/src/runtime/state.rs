@@ -16,6 +16,8 @@ pub struct BackendState {
     transcripts: TranscriptState,
     git: GitWatcherState,
     events: Arc<dyn EventSink>,
+    #[cfg(any(test, feature = "e2e-test"))]
+    _test_cache_dir: Option<tempfile::TempDir>,
 }
 
 impl BackendState {
@@ -28,25 +30,21 @@ impl BackendState {
             transcripts: TranscriptState::new(),
             git: GitWatcherState::new(),
             events,
+            #[cfg(any(test, feature = "e2e-test"))]
+            _test_cache_dir: None,
         }
     }
 
-    /// Returns test backend state, its event sink, and the temp cache owner.
-    ///
-    /// Keep the returned `TempDir` bound to a named variable for the whole
-    /// test. A bare `_` pattern drops it immediately and removes the cache
-    /// directory before `SessionCache` can flush changes.
+    /// Returns test backend state and its event sink.
     #[cfg(any(test, feature = "e2e-test"))]
-    pub fn with_fake_sink() -> (
-        Arc<Self>,
-        Arc<super::event_sink::FakeEventSink>,
-        tempfile::TempDir,
-    ) {
+    pub fn with_fake_sink() -> (Arc<Self>, Arc<super::event_sink::FakeEventSink>) {
         let temp_dir = tempfile::tempdir().expect("temp dir for test BackendState");
-        let sink = super::event_sink::FakeEventSink::new();
+        let app_data_dir = temp_dir.path().to_path_buf();
+        let sink = Arc::new(super::event_sink::FakeEventSink::new());
         let events: Arc<dyn EventSink> = sink.clone();
-        let state = Arc::new(Self::new(temp_dir.path().to_path_buf(), events));
-        (state, sink, temp_dir)
+        let mut state = Self::new(app_data_dir, events);
+        state._test_cache_dir = Some(temp_dir);
+        (Arc::new(state), sink)
     }
 
     pub fn shutdown(&self) {
@@ -192,15 +190,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn with_fake_sink_returns_arc_state_and_fake_and_temp_dir() {
-        let (state, sink, _temp) = BackendState::with_fake_sink();
+    fn with_fake_sink_returns_arc_state_and_fake_sink() {
+        let (state, sink) = BackendState::with_fake_sink();
         assert!(Arc::strong_count(&state) >= 1);
         assert_eq!(sink.recorded().len(), 0);
     }
 
     #[test]
     fn shutdown_clears_session_cache_and_is_idempotent() {
-        let (state, _sink, _temp) = BackendState::with_fake_sink();
+        let (state, _sink) = BackendState::with_fake_sink();
         state.shutdown();
         state.shutdown();
     }

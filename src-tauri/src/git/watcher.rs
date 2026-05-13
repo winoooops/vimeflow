@@ -1362,7 +1362,7 @@ mod tests {
 
     #[test]
     fn upgrade_to_repo_watcher_emits_once_for_duplicate_original_cwd() {
-        let sink = FakeEventSink::new();
+        let sink = Arc::new(FakeEventSink::new());
 
         let temp = create_temp_repo();
         let cwd = temp.path().to_string_lossy().to_string();
@@ -1412,7 +1412,7 @@ mod tests {
 
     #[test]
     fn upgrade_to_repo_watcher_restores_failed_subscribers_for_retry() {
-        let sink = FakeEventSink::new();
+        let sink = Arc::new(FakeEventSink::new());
 
         let temp = create_temp_repo();
         let cwd = temp.path().to_string_lossy().to_string();

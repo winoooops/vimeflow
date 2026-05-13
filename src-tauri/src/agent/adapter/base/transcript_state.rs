@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn transcript_state_replaces_changed_path() {
-        let sink = FakeEventSink::new();
+        let sink = Arc::new(FakeEventSink::new());
         let tmp = tempfile::tempdir().expect("failed to create temp dir");
         let first_path = tmp.path().join("first.jsonl");
         let second_path = tmp.path().join("second.jsonl");
@@ -312,7 +312,7 @@ mod tests {
 
     #[test]
     fn transcript_state_threads_cwd_through() {
-        let sink = FakeEventSink::new();
+        let sink = Arc::new(FakeEventSink::new());
         let tmp = tempfile::tempdir().expect("failed to create temp dir");
         let transcript_path = tmp.path().join("t.jsonl");
         std::fs::write(&transcript_path, "").expect("failed to write transcript");
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn transcript_state_replaces_when_only_cwd_changes() {
-        let sink = FakeEventSink::new();
+        let sink = Arc::new(FakeEventSink::new());
         let tmp = tempfile::tempdir().expect("failed to create temp dir");
         let transcript_path = tmp.path().join("t.jsonl");
         std::fs::write(&transcript_path, "").expect("failed to write transcript");
@@ -505,7 +505,7 @@ mod tests {
             }
         }
 
-        let sink = FakeEventSink::new();
+        let sink = Arc::new(FakeEventSink::new());
         let tmp = tempfile::tempdir().expect("failed to create temp dir");
         let transcript_path = tmp.path().join("t.jsonl");
         std::fs::write(&transcript_path, "").expect("failed to write transcript");

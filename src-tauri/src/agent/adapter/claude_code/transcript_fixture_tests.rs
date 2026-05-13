@@ -8,7 +8,7 @@ use crate::runtime::FakeEventSink;
 
 #[test]
 fn transcript_emits_turn_events_for_real_user_prompts_only() {
-    let sink = FakeEventSink::new();
+    let sink = Arc::new(FakeEventSink::new());
 
     let tmp = tempfile::tempdir().expect("temp transcript dir");
     let transcript_path = tmp.path().join("turns.jsonl");
@@ -71,7 +71,7 @@ fn transcript_emits_turn_events_for_real_user_prompts_only() {
 
 #[test]
 fn vitest_pass_fixture_emits_one_test_run() {
-    let sink = FakeEventSink::new();
+    let sink = Arc::new(FakeEventSink::new());
 
     let state = TranscriptState::new();
     let adapter: Arc<dyn AgentAdapter> = Arc::new(ClaudeCodeAdapter);
@@ -114,7 +114,7 @@ fn vitest_pass_fixture_emits_one_test_run() {
 
 #[test]
 fn cargo_mixed_fixture_emits_test_run_with_groups() {
-    let sink = FakeEventSink::new();
+    let sink = Arc::new(FakeEventSink::new());
 
     let state = TranscriptState::new();
     let adapter: Arc<dyn AgentAdapter> = Arc::new(ClaudeCodeAdapter);
@@ -164,7 +164,7 @@ fn cargo_mixed_fixture_emits_test_run_with_groups() {
 
 #[test]
 fn replay_emits_only_latest_snapshot() {
-    let sink = FakeEventSink::new();
+    let sink = Arc::new(FakeEventSink::new());
 
     let state = TranscriptState::new();
     let adapter: Arc<dyn AgentAdapter> = Arc::new(ClaudeCodeAdapter);

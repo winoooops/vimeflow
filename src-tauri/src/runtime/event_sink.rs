@@ -66,7 +66,7 @@ mod tests {
 
     #[test]
     fn fake_event_sink_records_emit_json() {
-        let sink = FakeEventSink::new();
+        let sink = std::sync::Arc::new(FakeEventSink::new());
         sink.emit_json("pty-data", json!({"session_id": "s1", "data": "hello"}))
             .expect("emit");
 
@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn fake_event_sink_count_filters_by_name() {
-        let sink = FakeEventSink::new();
+        let sink = std::sync::Arc::new(FakeEventSink::new());
         sink.emit_json("pty-data", json!({})).expect("emit");
         sink.emit_json("pty-exit", json!({})).expect("emit");
         sink.emit_json("pty-data", json!({})).expect("emit");
@@ -92,7 +92,7 @@ mod tests {
     fn fake_event_sink_concurrent_emits_record_all_events() {
         use std::thread;
 
-        let sink = FakeEventSink::new();
+        let sink = std::sync::Arc::new(FakeEventSink::new());
         let handles: Vec<_> = (0..10)
             .map(|i| {
                 let sink = sink.clone();

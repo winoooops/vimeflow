@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn submit_during_replay_buffers_latest() {
-        let sink = FakeEventSink::new();
+        let sink = Arc::new(FakeEventSink::new());
         let mut e = TestRunEmitter::new(sink.clone());
         e.submit(snap(1));
         e.submit(snap(2));
@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn submit_after_replay_emits_immediately() {
-        let sink = FakeEventSink::new();
+        let sink = Arc::new(FakeEventSink::new());
         let mut e = TestRunEmitter::new(sink.clone());
         e.finish_replay();
         e.submit(snap(7));
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn finish_replay_is_idempotent() {
-        let sink = FakeEventSink::new();
+        let sink = Arc::new(FakeEventSink::new());
         let mut e = TestRunEmitter::new(sink.clone());
         e.submit(snap(1));
         e.finish_replay();

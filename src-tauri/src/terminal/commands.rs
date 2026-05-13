@@ -939,7 +939,7 @@ mod tests {
         let cache_path = temp_dir.path().join("sessions.json");
         let cache = SessionCache::load(cache_path).expect("failed to load cache");
         let cache = Arc::new(cache);
-        let events = crate::runtime::FakeEventSink::new();
+        let events = Arc::new(crate::runtime::FakeEventSink::new());
 
         (PtyState::new(), cache, events, temp_dir)
     }
