@@ -691,47 +691,56 @@ describe('addPane', () => {
     warn.mockRestore()
   })
 
-  test('kills orphan PTY when reducer rejects at commit (lost race)', async () => {
+  test('kills orphan PTY when reducer rejects at commit (layout shrunk during spawn)', async () => {
+    // Deterministic capacity race: a separate `setSessionLayout`
+    // shrinks the session from `vsplit` (capacity 2) to `single`
+    // (capacity 1) while `addPane`'s spawn is in flight.
+    // `setSessionLayout` is not gated by `pendingPaneOps`, so it
+    // commits immediately. When the spawn resolves and
+    // `applyAddPane` runs against the latest committed state,
+    // `panes.length (1) >= capacity (1)` and the reducer returns
+    // `{ appended: false }`. The wrapper's recovery branch kills
+    // the orphan PTY and drops bookkeeping.
     const { service, spawn, kill } = createMockTerminalServiceForPane()
-    spawn.mockResolvedValueOnce({
-      sessionId: 'pty-orphan',
-      pid: 1234,
-      cwd: '/home/test',
-    })
-    // Inject a state mutation between spawn() resolution and the
-    // reducer commit: bump panes to capacity via a separate call.
+    let resolveSpawn: (v: {
+      sessionId: string
+      pid: number
+      cwd: string
+    }) => void = () => undefined
+    spawn.mockImplementationOnce(
+      () =>
+        new Promise((res) => {
+          resolveSpawn = res
+        })
+    )
+    kill.mockResolvedValue(undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const { result } = renderManagerWithSession(service, {
       layout: 'vsplit',
       panes: [makePane({ id: 'p0', active: true })],
     })
 
-    // Stub applyAddPane via a real-race simulation: pre-fill the
-    // session to capacity AFTER addPane reads pre-flight but BEFORE
-    // flushSync commits. Easiest: directly set sessions via a test-
-    // only hook into setSessionLayout / setSessionActivePane pattern.
-    // The deterministic path: call addPane twice synchronously; second
-    // pre-flight already sees capacity full, but if we re-order: first
-    // addPane awaits spawn, second tries pre-flight WITH capacity
-    // recheck inside the reducer.
+    // Pre-flight passes: 1 pane, vsplit capacity 2.
+    act(() => {
+      result.current.addPane(result.current.sessions[0].id)
+    })
+    // Shrink layout while spawn is pending.
+    act(() => {
+      result.current.setSessionLayout(result.current.sessions[0].id, 'single')
+    })
+
+    // Resolve the spawn — reducer commit sees capacity = 1.
     await act(async () => {
-      // Start addPane; pre-flight passes (1 pane).
-      const p1 = (async () => {
-        result.current.addPane(result.current.sessions[0].id)
-      })()
-      // Before spawn resolves, force the session to capacity via
-      // setSessions through the public API. The cleanest way: spy
-      // applyAddPane to return appended:false; OR set up the fixture
-      // so the second addPane in the queue sees full state.
-      await p1
+      resolveSpawn({ sessionId: 'pty-orphan', pid: 1234, cwd: '/home/test' })
       await flushPromises()
     })
 
-    // Assertion: if the reducer rejects, kill is called with pty-orphan.
-    // (Implementation detail: depending on the simulated race, the
-    // exact assertion may be that kill was called when appended=false.)
-    // Adjust this test to use a vi.mock of applyAddPane returning
-    // { sessions: prev, appended: false } once.
     expect(kill).toHaveBeenCalledWith({ sessionId: 'pty-orphan' })
+    expect(result.current.sessions[0].panes).toHaveLength(1)
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('reducer rejected commit')
+    )
+    warn.mockRestore()
   })
 
   test('serialization: second addPane while first in-flight is rejected', async () => {
@@ -888,7 +897,11 @@ const addPane = useCallback(
           restoreData,
         }
 
-        restoreDataRef.current.set(fresh.id, restoreData)
+        // NOTE: don't touch `restoreDataRef.current` here. The public
+        // map is a zombie (F4 in useSessionManager.ts) — the live
+        // restoreData source is `pane.restoreData`, which `newPane`
+        // already carries. Skipping the set means we don't need a
+        // matching delete on the rollback path.
         registerPending(result.sessionId)
 
         let appended = false
@@ -907,7 +920,11 @@ const addPane = useCallback(
         if (!appended) {
           // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
           service.kill({ sessionId: result.sessionId }).catch(() => {})
-          restoreDataRef.current.delete(result.sessionId)
+          // Drop pty-data buffer entries the orchestrator queued for
+          // the orphan during the spawn window — registerPending
+          // started buffering; without dropAllForPty those events
+          // leak until the next session commit.
+          dropAllForPty(result.sessionId)
           // eslint-disable-next-line no-console
           console.warn(
             `addPane: reducer rejected commit for ${sessionId}; orphan killed`
@@ -932,7 +949,7 @@ const addPane = useCallback(
       }
     })()
   },
-  [activeSessionIdRef, registerPending, service]
+  [activeSessionIdRef, dropAllForPty, registerPending, service]
 )
 
 // Add `addPane` to the returned manager object:
@@ -1702,25 +1719,25 @@ git commit -m "feat(terminal): SplitView — EmptySlot mounting + onClose pass-t
 - Modify: `src/features/workspace/components/TerminalZone.tsx`
 - Modify: `src/features/workspace/components/TerminalZone.test.tsx`
 
-- [ ] **Step 1: Add failing test for prop threading**
+- [ ] **Step 1: Add failing tests for prop threading (behavior-driven, no SplitView mock)**
 
-Append to `src/features/workspace/components/TerminalZone.test.tsx`:
+Append to `src/features/workspace/components/TerminalZone.test.tsx`. **Do NOT introduce a `vi.mock('../../terminal/components/SplitView')` at file scope** — the existing tests rely on the real SplitView render (asserting `split-view`, `split-view-slot`, etc.). The new tests assert prop threading indirectly via observable behavior: SplitView renders `EmptySlot` (with `aria-label="add pane"`) when `onAddPane` is passed, and `TerminalPane` renders the X-close button (with `aria-label="close pane"`) when `onClosePane` is passed for a multi-pane session.
 
 ```tsx
-// At the top, ensure SplitView is mocked so we can assert prop calls.
-vi.mock('../../terminal/components/SplitView', () => ({
-  SplitView: vi.fn(() => null),
-}))
+import { userEvent } from '@testing-library/user-event'
 
-import { SplitView } from '../../terminal/components/SplitView'
-
-test('threads onAddPane and onClosePane to SplitView', () => {
+test('threads addPane: clicking the EmptySlot fires the manager mutation', async () => {
   const addPane = vi.fn()
   const removePane = vi.fn()
-
   render(
     <TerminalZone
-      sessions={[makeSession({ id: 's0' })]}
+      sessions={[
+        makeSession({
+          id: 's0',
+          layout: 'vsplit',
+          panes: [makePane({ id: 'p0', active: true })],
+        }),
+      ]}
       activeSessionId="s0"
       service={createMockTerminalService()}
       loading={false}
@@ -1732,17 +1749,48 @@ test('threads onAddPane and onClosePane to SplitView', () => {
       removePane={removePane}
     />
   )
+  await userEvent.click(screen.getByRole('button', { name: /add pane/i }))
+  expect(addPane).toHaveBeenCalledWith('s0')
+  expect(removePane).not.toHaveBeenCalled()
+})
 
-  const splitViewProps = vi.mocked(SplitView).mock.calls[0]?.[0]
-  expect(splitViewProps?.onAddPane).toBe(addPane)
-  expect(splitViewProps?.onClosePane).toBe(removePane)
+test('threads removePane: clicking a pane X fires the manager mutation', async () => {
+  const addPane = vi.fn()
+  const removePane = vi.fn()
+  render(
+    <TerminalZone
+      sessions={[
+        makeSession({
+          id: 's0',
+          layout: 'vsplit',
+          panes: [
+            makePane({ id: 'p0', active: true }),
+            makePane({ id: 'p1', active: false }),
+          ],
+        }),
+      ]}
+      activeSessionId="s0"
+      service={createMockTerminalService()}
+      loading={false}
+      setActiveSessionId={vi.fn()}
+      setSessionLayout={vi.fn()}
+      setSessionActivePane={vi.fn()}
+      restartSession={vi.fn()}
+      addPane={addPane}
+      removePane={removePane}
+    />
+  )
+  const closeButtons = screen.getAllByRole('button', { name: /close pane/i })
+  expect(closeButtons.length).toBeGreaterThanOrEqual(1)
+  await userEvent.click(closeButtons[0])
+  expect(removePane).toHaveBeenCalledWith('s0', 'p0')
 })
 ```
 
-- [ ] **Step 2: Run test, expect fail**
+- [ ] **Step 2: Run tests, expect fail**
 
-Run: `npx vitest run src/features/workspace/components/TerminalZone.test.tsx -t "threads onAddPane"`
-Expected: FAIL — `TerminalZone` doesn't accept `addPane` / `removePane` props yet.
+Run: `npx vitest run src/features/workspace/components/TerminalZone.test.tsx -t "threads"`
+Expected: FAIL — `TerminalZone` doesn't accept `addPane` / `removePane` props yet (TypeScript error).
 
 - [ ] **Step 3: Update `TerminalZone.tsx`**
 
@@ -1763,10 +1811,17 @@ export interface TerminalZoneProps {
 />
 ```
 
-- [ ] **Step 4: Run test, expect pass**
+- [ ] **Step 3.5: Sweep existing `<TerminalZone />` renders in the test file**
+
+`addPane` and `removePane` are now REQUIRED in `TerminalZoneProps`. Find every other `<TerminalZone ... />` render in `TerminalZone.test.tsx` and add `addPane={vi.fn()} removePane={vi.fn()}` to each, otherwise the existing tests will fail TypeScript.
+
+Run: `npm run type-check`
+Expected: No errors. Address each "missing property 'addPane'/'removePane'" complaint by adding the stub props.
+
+- [ ] **Step 4: Run tests, expect pass**
 
 Run: `npx vitest run src/features/workspace/components/TerminalZone.test.tsx`
-Expected: PASS.
+Expected: PASS (existing + 2 new).
 
 - [ ] **Step 5: Commit**
 
@@ -1846,6 +1901,26 @@ const {
 />
 ```
 
+- [ ] **Step 3.5: Sweep other SessionManager-typed mocks**
+
+Other test files type a `SessionManager` fixture and will fail TypeScript when `addPane` / `removePane` become required fields on the manager interface. Sweep these files and add `addPane: vi.fn(), removePane: vi.fn()` (or destructure-spread an existing helper that does) to each `SessionManager` mock:
+
+- `src/features/workspace/WorkspaceView.command-palette.test.tsx`
+- `src/features/workspace/WorkspaceView.integration.test.tsx`
+
+Confirm there are no more by running:
+
+```bash
+grep -rln "SessionManager\|useSessionManager" src --include='*.test.tsx' --include='*.test.ts'
+```
+
+For each result, open the file and search for object literals typed as `SessionManager` (or returned from `vi.mocked(useSessionManager).mockReturnValue(...)`). Add the two stubs.
+
+Then run type-check across the whole repo:
+
+Run: `npm run type-check`
+Expected: No errors.
+
 - [ ] **Step 4: Run test, expect pass**
 
 Run: `npx vitest run src/features/workspace/WorkspaceView.test.tsx`
@@ -1859,7 +1934,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/features/workspace/WorkspaceView.tsx src/features/workspace/WorkspaceView.test.tsx
+git add src/features/workspace/WorkspaceView.tsx src/features/workspace/WorkspaceView.test.tsx src/features/workspace/WorkspaceView.command-palette.test.tsx src/features/workspace/WorkspaceView.integration.test.tsx
 git commit -m "feat(workspace): WorkspaceView wires addPane / removePane to TerminalZone"
 ```
 
