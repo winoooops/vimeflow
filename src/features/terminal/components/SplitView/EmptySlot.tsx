@@ -1,4 +1,4 @@
-import { useCallback, type MouseEvent, type ReactElement } from 'react'
+import { useCallback, type ReactElement } from 'react'
 
 export interface EmptySlotProps {
   sessionId: string
@@ -9,13 +9,15 @@ export const EmptySlot = ({
   sessionId,
   onAddPane,
 }: EmptySlotProps): ReactElement => {
-  const handleClick = useCallback(
-    (event: MouseEvent<HTMLButtonElement>): void => {
-      event.stopPropagation()
-      onAddPane(sessionId)
-    },
-    [onAddPane, sessionId]
-  )
+  // Round 13, Claude LOW: dropped the previous `event.stopPropagation()`.
+  // SplitView's empty-slot `motion.div` wrapper carries no `onClick`, and
+  // the outer grid container doesn't either — the call was inert. If a
+  // future ancestor adds a container-level click handler, that's the
+  // place to gate it; the empty slot's button shouldn't silently
+  // suppress unknown future handlers.
+  const handleClick = useCallback((): void => {
+    onAddPane(sessionId)
+  }, [onAddPane, sessionId])
 
   return (
     <div className="flex h-full w-full items-center justify-center rounded-lg border border-dashed border-outline-variant/35 bg-surface-container/35">

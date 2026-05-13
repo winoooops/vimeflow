@@ -586,6 +586,20 @@ export const useSessionManager = (
       // as setSessionLayout). `applyActivePane` is a pure helper —
       // it no-ops on missing ids (returns the same reference); the warns live here
       // so they fire exactly once per operator action.
+      //
+      // Round 13, Claude MEDIUM: serialize against in-flight addPane /
+      // removePane on the same session. Without this guard, a focus
+      // rotation can fire `service.setActiveSession(target.ptyId)` while
+      // a concurrent removePane has `service.kill(target.ptyId)` in
+      // flight — Rust may briefly set the active session to a PTY that
+      // is being killed, dropping any keystroke delivered during the
+      // ~10–50ms window. removePane's own setActiveSession(newActive)
+      // self-corrects the state, but the dropped input is unrecoverable.
+      // Treat focus rotation as a no-op while a lifecycle op is pending
+      // (the target pane may evaporate anyway when the remove commits).
+      if (pendingPaneOps.current.has(sessionId)) {
+        return
+      }
       const session = sessionsRef.current.find((s) => s.id === sessionId)
       if (!session) {
         // eslint-disable-next-line no-console

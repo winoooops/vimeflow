@@ -3209,5 +3209,59 @@ describe('useSessionManager', () => {
       expect(firstSession?.panes[0].active).toBe(true)
       expect(service.setActiveSession).not.toHaveBeenCalled()
     })
+
+    // Round 13, Claude MEDIUM: setSessionActivePane must serialize with
+    // in-flight addPane / removePane on the same session. A pending kill
+    // for the target pane can race the setActiveSession IPC and leave
+    // Rust briefly pointing at a dying PTY; the cleanest fix is to make
+    // focus rotation a no-op while a lifecycle op holds pendingPaneOps.
+    test('setSessionActivePane is a no-op while removePane is in flight', async () => {
+      const service = createSequentialSpawnService()
+      let resolveKill: () => void = () => undefined
+      ;(service.kill as ReturnType<typeof vi.fn>).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveKill = resolve
+          })
+      )
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      await addSecondPane(result, sessionId)
+
+      // Reset the spy so we only observe setActiveSession calls that
+      // happen during the racing window we're exercising below.
+      ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
+
+      // Start a removePane that will block until we resolve the kill.
+      act(() => result.current.removePane(sessionId, 'p0'))
+
+      // While the kill is in flight, an attempt to focus-rotate must
+      // do nothing — no state mutation, no Rust IPC. The active pane
+      // stays where it was when removePane fired.
+      const activeBefore = result.current.sessions[0].panes.find(
+        (pane) => pane.active
+      )?.id
+
+      act(() => result.current.setSessionActivePane(sessionId, 'p0'))
+
+      const activeAfter = result.current.sessions[0].panes.find(
+        (pane) => pane.active
+      )?.id
+
+      expect(activeAfter).toBe(activeBefore)
+      expect(service.setActiveSession).not.toHaveBeenCalled()
+
+      // Let removePane finish so the hook unwinds cleanly.
+      await act(async () => {
+        resolveKill()
+        await Promise.resolve()
+      })
+    })
   })
 })

@@ -21,19 +21,4 @@ describe('EmptySlot', () => {
     expect(onAddPane).toHaveBeenCalledOnce()
     expect(onAddPane).toHaveBeenCalledWith('s1')
   })
-
-  test('add pane click does not bubble to parent slots', async () => {
-    const user = userEvent.setup()
-    const onParentClick = vi.fn()
-
-    render(
-      <div onClick={onParentClick}>
-        <EmptySlot sessionId="s1" onAddPane={vi.fn()} />
-      </div>
-    )
-
-    await user.click(screen.getByRole('button', { name: 'add pane' }))
-
-    expect(onParentClick).not.toHaveBeenCalled()
-  })
 })
