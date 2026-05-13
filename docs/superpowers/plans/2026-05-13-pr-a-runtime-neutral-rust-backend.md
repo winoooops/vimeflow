@@ -90,14 +90,16 @@ Expected: all green.
 
 ```bash
 cd /home/will/projects/vimeflow
-rg -nE "tauri::AppHandle|tauri::State|tauri::Runtime|app\.emit|app_handle\.emit|handle\.emit" src-tauri/src \
+rg -nE "tauri::AppHandle|tauri::State|tauri::Runtime|tauri::Manager|tauri::Emitter|[a-zA-Z_]+\.emit\(" src-tauri/src \
   --glob '!src-tauri/target/**' \
   --glob '!src-tauri/gen/**' \
   --glob '!src-tauri/bindings/**' > /tmp/pr-a-baseline.txt
 wc -l /tmp/pr-a-baseline.txt
 ```
 
-Expected: many hits — these are the call sites Task 6-13 collapses into the `BackendState` / `EventSink` shape. Save for diff comparison at Task 15.
+The widened `[a-zA-Z_]+\.emit(` pattern catches `app.emit`, `app_handle.emit`, `handle.emit`, AND the locally-renamed `initial_app.emit` / `poll_app.emit` clones inside the agent watcher runtime. The narrow grep used in earlier drafts of this plan missed those — Task 11 must drain them all.
+
+Expected: many hits — these are the call sites Task 5-13 collapses into the `BackendState` / `EventSink` shape. Save for diff comparison at Task 15.
 
 ---
 
@@ -774,6 +776,8 @@ This task is structured as 8 sub-tasks (one per command). Each sub-task = 5 step
 
 - [ ] **Step 1: Write parity test for the new method**
 
+The real `SpawnPtyRequest` has fields `session_id: SessionId`, `cwd: String`, `shell: Option<String>`, `env: Option<HashMap<String, String>>`, `enable_agent_bridge: bool`. Verify by reading `src-tauri/src/terminal/types.rs:28-43` before writing the test.
+
 Add to `src-tauri/src/runtime/state.rs` inside the existing `mod tests`:
 
 ```rust
@@ -781,21 +785,24 @@ Add to `src-tauri/src/runtime/state.rs` inside the existing `mod tests`:
 async fn spawn_pty_emits_pty_data_via_event_sink() {
     let (state, sink, _temp) = BackendState::with_fake_sink();
     let request = crate::terminal::types::SpawnPtyRequest {
-        cwd: "~".into(),
-        env: Default::default(),
+        session_id: "test-session-1".into(),
+        cwd: std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()),
+        shell: None,
+        env: None,
         enable_agent_bridge: false,
     };
     let session = state.spawn_pty(request).await.expect("spawn");
     // Wait briefly for the PTY read-loop to produce the prompt.
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     assert!(sink.count("pty-data") >= 1);
-    // Cleanup so the test doesn't leak the child process.
-    state.kill_pty(crate::terminal::types::KillPtyRequest {
-        session_id: session.id.clone(),
-    })
-    .expect("kill");
+    // Cleanup so the test doesn't leak the child process. Read the
+    // real kill_pty signature before drafting — likely takes a bare
+    // `session_id: SessionId` rather than a wrapping struct.
+    state.kill_pty(session.id.clone()).await.expect("kill");
 }
 ```
+
+If `kill_pty` does take a `KillPtyRequest` struct, adjust the call site to construct it; otherwise pass the bare `SessionId`. Verify by `grep -nA 5 "pub async fn kill_pty" src-tauri/src/terminal/commands.rs`.
 
 - [ ] **Step 2: Run, expect compile failure (no `BackendState::spawn_pty` yet)**
 
@@ -828,23 +835,51 @@ pub async fn spawn_pty(
 ) -> Result<crate::terminal::types::PtySession, String> {
     // <PASTE the body from terminal/commands.rs::spawn_pty here>
     //
-    // Apply these three textual substitutions on the pasted body:
+    // Apply these textual substitutions on the pasted body:
     //   1. Where the original used `pty_state: tauri::State<'_, PtyState>`,
-    //      use `&self.pty` (or `self.pty.<method>(...)`).
+    //      use `&self.pty`.
     //   2. Where the original used `cache_state: tauri::State<'_, Arc<SessionCache>>`,
     //      use `self.sessions.clone()` or `&self.sessions`.
-    //   3. Where the original used `app.emit("pty-data", payload)`,
-    //      use `self.events.emit_pty_data(&payload)`. Same for
-    //      `pty-exit` → `self.events.emit_pty_exit(&payload)`,
-    //      `pty-error` → `self.events.emit_pty_error(&payload)`.
+    //   3. Where the original used `app.emit("pty-data", payload)` (and
+    //      `pty-exit` / `pty-error`), use the matching typed helper:
+    //      `self.events.emit_pty_data(&payload)`,
+    //      `self.events.emit_pty_exit(&payload)`,
+    //      `self.events.emit_pty_error(&payload)`.
     //
-    // Every other line — cache mutations, lock order, bridge wiring,
-    // tombstone-first cleanup — is byte-identical to today.
+    // Three carry-along complications that the migration MUST preserve:
+    //   (a) The body uses `tauri::async_runtime::handle()` to spawn the
+    //       read-loop task on Tauri's runtime. Replace with
+    //       `tokio::runtime::Handle::current()` — equivalent in this
+    //       context because `#[tauri::command] async fn` already runs
+    //       on a Tokio runtime, and PR-B's sidecar binary will also
+    //       run under Tokio. (`tauri::async_runtime` is a thin re-
+    //       export of Tokio.)
+    //   (b) The body calls several private helpers in
+    //       `terminal::pty::*` (or wherever the PTY plumbing lives;
+    //       grep for callees). Those helpers may take an `AppHandle`
+    //       or `tauri::State` themselves — verify with
+    //       `grep -nE "fn [a-z_]+.*AppHandle|fn [a-z_]+.*State<" src-tauri/src/terminal/`.
+    //       If a helper takes an `AppHandle`, that's a follow-on
+    //       migration in the same task: hoist the helper's signature
+    //       to take `&Arc<dyn EventSink>` instead, and migrate every
+    //       caller. The helpers MOVE WITH the body — they don't stay
+    //       in `terminal/commands.rs` alongside the now-empty
+    //       wrapper; co-locate them under `terminal::pty::*` or
+    //       `runtime::state` as appropriate.
+    //   (c) The body registers the new PTY in `pty_state.sessions`
+    //       under a Mutex lock. Preserve the lock-acquisition order
+    //       exactly — the 5a/5b/5c-1/5c-2 work depends on
+    //       acquire-pty-then-cache, never the reverse.
+    //
+    // Reference the pre-Task-5.1 git blob:
+    //   git show HEAD~:src-tauri/src/terminal/commands.rs | sed -n '22,100p'
+    // and use that as the source-of-truth for the migration. Adjust
+    // the line range by grep'ing for the `spawn_pty` opening brace.
     todo!("paste body from terminal/commands.rs::spawn_pty (pre-Task 5.1 commit)")
 }
 ```
 
-Replace the `todo!()` with the actual migrated body. Reference the pre-Task-5.1 git blob: `git show HEAD:src-tauri/src/terminal/commands.rs | sed -n '22,90p'` (adjust line range to match the current `spawn_pty` extent).
+Replace the `todo!()` with the actual migrated body. The "byte-identical except substitutions" framing is a useful target but **not a literal contract** — the three complications above force minor structural changes. The parity test in Step 1 catches behavior regressions even when the body shifts slightly.
 
 - [ ] **Step 4: Run the parity test, expect pass**
 
@@ -916,48 +951,52 @@ Three small commands: `list_dir`, `read_file`, `write_file`. None emit events; t
 
 - [ ] **Step 1: Write parity tests for the 3 new methods**
 
+The filesystem commands enforce `ensure_within_home` (see `src-tauri/src/filesystem/scope.rs`) — paths under `/tmp` are REJECTED with a scope-violation error. Use a `tempdir_in($HOME)` fixture so the test paths are home-scoped. Real signatures (verify with `grep -nA 6 "#\[tauri::command\]" src-tauri/src/filesystem/{list,read,write}.rs`): the commands take bare `path: String` (no request structs).
+
 Add to `runtime/state.rs` tests:
 
 ```rust
-#[test]
-fn list_dir_returns_expected_entries() {
-    let (state, _sink, temp) = BackendState::with_fake_sink();
-    // Create a couple of files in the temp dir.
+#[tokio::test]
+async fn list_dir_returns_expected_entries() {
+    let home = std::env::var("HOME").expect("HOME env var");
+    let temp = tempfile::tempdir_in(&home).expect("home-scoped tempdir");
+    let (state, _sink, _bg_temp) = BackendState::with_fake_sink();
     std::fs::write(temp.path().join("a.txt"), b"a").unwrap();
     std::fs::write(temp.path().join("b.txt"), b"b").unwrap();
     let entries = state
-        .list_dir(crate::filesystem::list::ListDirRequest {
-            path: temp.path().to_string_lossy().into_owned(),
-        })
+        .list_dir(temp.path().to_string_lossy().into_owned())
+        .await
         .expect("list");
     let names: Vec<_> = entries.iter().map(|e| e.name.clone()).collect();
     assert!(names.contains(&"a.txt".to_string()));
     assert!(names.contains(&"b.txt".to_string()));
 }
 
-#[test]
-fn read_write_file_roundtrip() {
-    let (state, _sink, temp) = BackendState::with_fake_sink();
-    let path = temp.path().join("greeting.txt").to_string_lossy().into_owned();
+#[tokio::test]
+async fn read_write_file_roundtrip() {
+    let home = std::env::var("HOME").expect("HOME env var");
+    let temp = tempfile::tempdir_in(&home).expect("home-scoped tempdir");
+    let (state, _sink, _bg_temp) = BackendState::with_fake_sink();
+    let path = temp
+        .path()
+        .join("greeting.txt")
+        .to_string_lossy()
+        .into_owned();
     state
-        .write_file(crate::filesystem::write::WriteFileRequest {
-            path: path.clone(),
-            content: "hello".into(),
-        })
+        .write_file(path.clone(), "hello".into())
+        .await
         .expect("write");
-    let content = state
-        .read_file(crate::filesystem::read::ReadFileRequest { path: path.clone() })
-        .expect("read");
+    let content = state.read_file(path).await.expect("read");
     assert_eq!(content, "hello");
 }
 ```
 
-(Adjust `ListDirRequest` / `ReadFileRequest` / `WriteFileRequest` field names + types to match the actual structs in those modules — use `grep -n "pub struct" src-tauri/src/filesystem/*.rs` if uncertain.)
+Adjust positional args + return types to match the real `list_dir(path: String) -> Result<Vec<DirEntry>, String>`, `read_file(path: String) -> Result<String, String>`, `write_file(path: String, content: String) -> Result<(), String>` signatures. The wrapper-test path is fine to construct under a home-scoped temp dir; CI runs under `/home/runner/...` and the dev box's `$HOME` is writable.
 
 - [ ] **Step 2: Run tests, expect failure**
 
 ```bash
-cd src-tauri && cargo test --lib runtime::state::tests::list_dir_returns_expected_entries runtime::state::tests::read_write_file_roundtrip
+cd src-tauri && cargo test --lib runtime::state::tests -- list_dir_returns_expected_entries read_write_file_roundtrip
 ```
 
 Expected: FAIL — methods don't exist.
@@ -985,7 +1024,7 @@ pub async fn list_dir(
 - [ ] **Step 4: Run tests, expect pass**
 
 ```bash
-cd src-tauri && cargo test --lib runtime::state::tests::list_dir_returns_expected_entries runtime::state::tests::read_write_file_roundtrip filesystem
+cd src-tauri && cargo test --lib filesystem
 ```
 
 Expected: all green.
@@ -1011,49 +1050,45 @@ Three commands: `git_status`, `git_branch`, `get_git_diff`. Pure-data; no events
 
 - [ ] **Step 1: Write parity tests**
 
+The real git commands take **bare `cwd: String` arguments** — there are no `GitStatusRequest` / `GitBranchRequest` structs today. Signatures:
+
+- `pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String>`
+- `pub async fn git_branch(cwd: String) -> Result<String, String>`
+- `pub async fn get_git_diff(cwd: String, file: String, staged: bool, untracked: Option<bool>) -> Result<FileDiff, String>`
+
+Plus: `git_status` and friends use `validate_cwd(&cwd)` which enforces that `cwd` is under the user's home directory. **Tests using `tempfile::tempdir()` (which gives `/tmp/...`) will fail `validate_cwd`.** Two options:
+
+- (a) Use a `tempfile::tempdir_in(home_dir)` to put the test repo under `$HOME`. Clean but pollutes the user's home.
+- (b) Use a stable sub-directory of `$HOME` (e.g. `$HOME/.cache/vimeflow-test-${PID}`) that gets `tempdir`-cleaned.
+- (c) For the parity test, exercise `BackendState::git_status` AGAINST the project's own repo (cwd = `env!("CARGO_MANIFEST_DIR")`) which IS under home in dev/CI.
+
+The recipe below uses option (c) — uses the project repo itself as the fixture. The `BackendState` method bodies are byte-identical to the existing commands, so the test only proves the migration didn't lose behavior; it does NOT need to exercise novel git scenarios.
+
 Add to `runtime/state.rs` tests:
 
 ```rust
-#[test]
-fn git_branch_returns_repo_branch() {
-    let (state, _sink, temp) = BackendState::with_fake_sink();
-    // Initialize a tiny git repo in temp.
-    std::process::Command::new("git")
-        .args(&["init", "-q", "-b", "main"])
-        .current_dir(temp.path())
-        .status()
-        .unwrap();
-    let branch = state
-        .git_branch(crate::git::types::GitBranchRequest {
-            cwd: temp.path().to_string_lossy().into_owned(),
-        })
-        .expect("branch");
-    assert_eq!(branch, "main");
+#[tokio::test]
+async fn git_branch_returns_a_non_empty_string_for_project_repo() {
+    let (state, _sink, _temp) = BackendState::with_fake_sink();
+    let cwd = env!("CARGO_MANIFEST_DIR").to_string();
+    let branch = state.git_branch(cwd).await.expect("branch");
+    assert!(!branch.is_empty(), "git_branch should return a branch name for the project repo");
 }
 
-#[test]
-fn git_status_returns_empty_for_fresh_repo() {
-    let (state, _sink, temp) = BackendState::with_fake_sink();
-    std::process::Command::new("git")
-        .args(&["init", "-q", "-b", "main"])
-        .current_dir(temp.path())
-        .status()
-        .unwrap();
-    let status = state
-        .git_status(crate::git::types::GitStatusRequest {
-            cwd: temp.path().to_string_lossy().into_owned(),
-        })
-        .expect("status");
-    assert!(status.files.is_empty());
+#[tokio::test]
+async fn git_status_returns_ok_for_project_repo() {
+    let (state, _sink, _temp) = BackendState::with_fake_sink();
+    let cwd = env!("CARGO_MANIFEST_DIR").to_string();
+    let _files = state.git_status(cwd).await.expect("status");
+    // The Vec may be empty (clean) or non-empty (dev-environment edits);
+    // either is fine — the parity contract is "doesn't error out".
 }
 ```
-
-(Adjust request struct names + return types to match the current `git/types.rs` definitions.)
 
 - [ ] **Step 2: Run tests, expect failure**
 
 ```bash
-cd src-tauri && cargo test --lib runtime::state::tests::git_branch_returns_repo_branch runtime::state::tests::git_status_returns_empty_for_fresh_repo
+cd src-tauri && cargo test --lib runtime::state::tests -- git_branch_returns_a_non_empty_string_for_project_repo git_status_returns_ok_for_project_repo
 ```
 
 Expected: FAIL — methods don't exist.
@@ -1065,7 +1100,7 @@ Migrate from `src-tauri/src/git/mod.rs` to `BackendState` methods. Same one-line
 - [ ] **Step 4: Run tests, expect pass**
 
 ```bash
-cd src-tauri && cargo test --lib runtime::state::tests::git_branch_returns_repo_branch runtime::state::tests::git_status_returns_empty_for_fresh_repo git
+cd src-tauri && cargo test --lib git
 ```
 
 Expected: green.
@@ -1131,63 +1166,81 @@ git commit -m "refactor(terminal): migrate list_active_pty_sessions (e2e-only) t
 
 ---
 
-## Task 9: Migrate `agent/commands.rs` to `BackendState`
+## Task 9: Migrate `detect_agent_in_session` from `agent/commands.rs`
 
-Three commands: `detect_agent_in_session`, `start_agent_watcher`, `stop_agent_watcher`. These DO emit events (`agent-status`, `agent-tool-call`, etc.) through the agent adapter — but the wire-up to `state.events` lives in Tasks 10-11 (the adapter migration). For Task 9, just migrate the command bodies and pass through to whatever the adapters expose today; Tasks 10-11 swap the inner emission path.
+Important: `detect_agent_in_session` is the ONLY agent command in `agent/commands.rs`. The other two — `start_agent_watcher` and `stop_agent_watcher` — are `#[tauri::command]` functions in `agent/adapter/mod.rs` (around lines 133 and 190). Tasks 10 + 11 migrate those alongside the adapter trait refactor because they currently take `AppHandle<R>` and need the EventSink-bound adapter to exist first.
 
 **Files:**
 
 - Modify: `src-tauri/src/agent/commands.rs`
 - Modify: `src-tauri/src/runtime/state.rs`
 
-- [ ] **Step 1: Write parity tests**
+- [ ] **Step 1: Read the real signature**
 
-Add to `runtime/state.rs` tests:
+```bash
+grep -nA 10 "#\[tauri::command\]" src-tauri/src/agent/commands.rs | head -20
+```
+
+The current signature is `pub async fn detect_agent_in_session(session_id: String, state: ...) -> Result<Option<AgentType>, String>` (or similar — read the file to confirm the exact return type before drafting the test).
+
+- [ ] **Step 2: Write parity test using the REAL request shape**
+
+Add to `runtime/state.rs` tests (use whatever request shape the current command takes — likely a bare `session_id: String` rather than a wrapping struct):
 
 ```rust
-#[test]
-fn detect_agent_in_session_returns_none_for_blank_state() {
+#[tokio::test]
+async fn detect_agent_in_session_returns_ok_for_unknown_session() {
     let (state, _sink, _temp) = BackendState::with_fake_sink();
-    let result = state.detect_agent_in_session(
-        crate::agent::types::DetectAgentRequest {
-            session_id: "nonexistent".into(),
-        },
-    );
-    // Detection without an active session is expected to be None or
-    // an explicit "no agent" variant; assert whatever the current
-    // command returns today by mirroring the existing detect-only
-    // test in agent/commands.rs.
+    let result = state.detect_agent_in_session("nonexistent".into()).await;
+    // Mirror today's behavior — currently returns Ok(None) or
+    // similar for an unknown session_id. Adapt to the actual return
+    // type the command produces today.
     assert!(result.is_ok());
 }
 ```
 
-- [ ] **Step 2: Run, expect failure (method missing)**
+- [ ] **Step 3: Run, expect failure (method missing)**
 
 ```bash
-cd src-tauri && cargo test --lib runtime::state::tests::detect_agent_in_session_returns_none_for_blank_state
+cd src-tauri && cargo test --lib runtime::state::tests::detect_agent_in_session_returns_ok_for_unknown_session
 ```
 
 Expected: FAIL.
 
-- [ ] **Step 3: Migrate the three command bodies**
+- [ ] **Step 4: Migrate the body**
 
-Cut bodies from `agent/commands.rs`, paste into `BackendState` methods, collapse to forwarders. Today's adapters still emit through `AppHandle<R>` — that's fine for this task; Tasks 10-11 swap.
+In `agent/commands.rs`:
 
-- [ ] **Step 4: Run tests, expect pass**
+```rust
+#[tauri::command]
+pub async fn detect_agent_in_session(
+    state: tauri::State<'_, std::sync::Arc<crate::runtime::BackendState>>,
+    session_id: String,
+) -> Result<Option<AgentType>, String> {
+    state.detect_agent_in_session(session_id).await
+}
+```
+
+In `runtime/state.rs`, add the migrated body as `BackendState::detect_agent_in_session`.
+
+- [ ] **Step 5: Run tests, expect pass**
 
 ```bash
+cd src-tauri && cargo test --lib runtime::state::tests::detect_agent_in_session_returns_ok_for_unknown_session
 cd src-tauri && cargo test --lib agent
 ```
 
 Expected: green.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 cd /home/will/projects/vimeflow
 git add src-tauri/src/agent/commands.rs src-tauri/src/runtime/state.rs
-git commit -m "refactor(agent): migrate detect / start_watcher / stop_watcher commands to BackendState"
+git commit -m "refactor(agent): migrate detect_agent_in_session to BackendState"
 ```
+
+(Note: `start_agent_watcher` / `stop_agent_watcher` migration happens in Task 10 alongside the adapter trait refactor — those commands today live in `agent/adapter/mod.rs`, depend on `AppHandle<R>` for the watcher start, and need the EventSink-bound adapter to exist before they can collapse to thin wrappers.)
 
 ---
 
@@ -1201,50 +1254,117 @@ This is the deepest refactor. The trait + every concrete adapter + every test ca
 - Modify: `src-tauri/src/agent/adapter/claude_code/mod.rs`
 - Modify: `src-tauri/src/agent/adapter/codex/mod.rs`
 
-- [ ] **Step 1: Drop the generic from the trait**
+- [ ] **Step 1: Drop the generic from the trait — preserve every existing method**
+
+The real `AgentAdapter` trait (read `src-tauri/src/agent/adapter/mod.rs:30-46`) has FIVE methods: `agent_type`, `status_source`, `parse_status`, `validate_transcript`, `tail_transcript`. The migration drops the `<R>` generic and the `AppHandle<R>` param from `tail_transcript` (replacing with an `Arc<dyn EventSink>`); every other method stays byte-identical.
 
 Edit `src-tauri/src/agent/adapter/mod.rs`:
 
 ```rust
 // Before:
 // pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
-//     fn detect(&self, app: &AppHandle<R>, info: &SessionInfo) -> Result<...>;
-//     ...
+//     fn agent_type(&self) -> AgentType;
+//     fn status_source(&self, cwd: &Path, session_id: &str) -> Result<StatusSource, String>;
+//     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String>;
+//     fn validate_transcript(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError>;
+//     fn tail_transcript(
+//         &self,
+//         app: AppHandle<R>,
+//         session_id: String,
+//         cwd: Option<PathBuf>,
+//         transcript_path: PathBuf,
+//     ) -> Result<TranscriptHandle, String>;
 // }
 //
-// After:
+// After: drop the <R> generic; tail_transcript takes Arc<dyn EventSink>
+// in place of AppHandle<R>. Concrete adapters already capture that
+// Arc at construction time (Task 10 Step 2/3), so trait methods don't
+// need to receive it as a parameter — but tail_transcript today
+// spawns a watcher task that has to outlive the call, so we DO pass
+// the events Arc through the trait method (the concrete impl clones
+// from `self.events` and forwards). Choose ONE consistent style; the
+// recipe below threads events through the call rather than relying on
+// self capture inside the spawned task.
 
 pub trait AgentAdapter: Send + Sync + 'static {
     fn agent_type(&self) -> AgentType;
-    fn detect(&self, info: &SessionInfo) -> Result<DetectionResult, String>;
-    fn start_watcher(&self, info: &SessionInfo) -> Result<(), String>;
-    fn stop_watcher(&self, session_id: &str) -> Result<bool, String>;
-    fn status_source(&self, cwd: &Path, session_id: &str) -> Result<StatusSource, String>;
-    fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String>;
+
+    fn status_source(
+        &self,
+        cwd: &Path,
+        session_id: &str,
+    ) -> Result<StatusSource, String>;
+
+    fn parse_status(
+        &self,
+        session_id: &str,
+        raw: &str,
+    ) -> Result<ParsedStatus, String>;
+
+    fn validate_transcript(
+        &self,
+        raw: &str,
+    ) -> Result<PathBuf, ValidateTranscriptError>;
+
+    fn tail_transcript(
+        &self,
+        events: std::sync::Arc<dyn crate::runtime::EventSink>,
+        session_id: String,
+        cwd: Option<PathBuf>,
+        transcript_path: PathBuf,
+    ) -> Result<TranscriptHandle, String>;
 }
 
 impl dyn AgentAdapter {
     pub fn for_attach(
-        events: std::sync::Arc<dyn crate::runtime::EventSink>,
         agent_type: AgentType,
         pid: u32,
-        pty_start: PtyStartId,
-    ) -> Result<std::sync::Arc<dyn AgentAdapter>, String> {
+        pty_start: std::time::SystemTime,
+    ) -> Result<std::sync::Arc<Self>, String> {
         match agent_type {
-            AgentType::ClaudeCode => Ok(std::sync::Arc::new(ClaudeCodeAdapter::new(events))),
-            AgentType::Codex => Ok(std::sync::Arc::new(CodexAdapter::new(events, pid, pty_start))),
-            // ... preserve every existing match arm; just adapt the constructor calls.
+            AgentType::ClaudeCode => Ok(std::sync::Arc::new(ClaudeCodeAdapter)),
+            AgentType::Codex => {
+                Ok(std::sync::Arc::new(CodexAdapter::new(pid, pty_start)))
+            }
+            other => Ok(std::sync::Arc::new(NoOpAdapter::new(other))),
         }
     }
 
-    pub fn stop(state: &Arc<BackendState>, session_id: &str) -> bool {
-        // ... migrate today's body that uses AppHandle<R>; substitute
-        // state.events for the AppHandle.
+    /// `start` previously took `AppHandle<R>`; now takes the events
+    /// sink. The body migrates from today's `start_for(adapter, app,
+    /// session_id, cwd, state)` to `start_for(adapter, events,
+    /// session_id, cwd, state)`. AgentWatcherState is unchanged.
+    pub fn start(
+        self: std::sync::Arc<Self>,
+        events: std::sync::Arc<dyn crate::runtime::EventSink>,
+        session_id: String,
+        cwd: std::path::PathBuf,
+        state: AgentWatcherState,
+    ) -> Result<(), String> {
+        base::start_for(self, events, session_id, cwd, state)
+    }
+
+    pub fn stop(state: &AgentWatcherState, session_id: &str) -> bool {
+        state.remove(session_id)
     }
 }
 ```
 
-(Use `grep -n "AgentAdapter<" src-tauri/src/agent/adapter/mod.rs` to find every reference and update.)
+Note: `ClaudeCodeAdapter` today is a unit struct (no fields). Two options for storing the events sink: (a) leave it a unit struct and thread `events` through every trait method — simpler diff, less idiomatic; (b) add a `pub struct ClaudeCodeAdapter { events: Arc<dyn EventSink> }` field — fits the spec's "constructor-store" decision but requires updating every `Arc::new(ClaudeCodeAdapter)` call site. The trait sketch above takes option (a). For PR-A, prefer (a) — less invasive and matches today's unit-struct shape. The constructor-store pattern from the spec applies to `CodexAdapter` (which already has fields), where adding `events` is natural.
+
+- [ ] **Step 1.5: Find every `AgentAdapter<R>` / `AgentAdapter<MockRuntime>` / `AgentAdapter<tauri::Wry>` reference**
+
+```bash
+grep -rn "AgentAdapter<" src-tauri/src/ src-tauri/tests/ 2>/dev/null
+```
+
+Every hit must be updated:
+
+- `pub trait AgentAdapter<R: tauri::Runtime>` → `pub trait AgentAdapter`
+- `impl<R: tauri::Runtime> dyn AgentAdapter<R>` → `impl dyn AgentAdapter`
+- `impl<R: tauri::Runtime> AgentAdapter<R> for ClaudeCodeAdapter` → `impl AgentAdapter for ClaudeCodeAdapter`
+- `<dyn AgentAdapter<tauri::Wry>>::for_attach(...)` → `<dyn AgentAdapter>::for_attach(...)` — and the call site adds the `events` arg to `start(...)` later in the same orchestrator code path
+- `<NoOpAdapter as AgentAdapter<MockRuntime>>::method(...)` (in tests) → `<NoOpAdapter as AgentAdapter>::method(...)`
 
 - [ ] **Step 2: Update `ClaudeCodeAdapter`**
 
@@ -1379,18 +1499,18 @@ Replace `AppHandle<R>` field with `Arc<dyn EventSink>`. Drop the `R: Runtime` ge
 - [ ] **Step 7: Verify the parity test passes + full agent suite stays green**
 
 ```bash
-cd src-tauri && cargo test --lib runtime::state::tests::start_agent_watcher_emits_tool_call_after_transcript_line agent
+cd src-tauri && cargo test --lib agent
 ```
 
 Expected: every test green.
 
-- [ ] **Step 8: Verify no more `app_handle.emit` / `app.emit` calls in `agent/adapter/`**
+- [ ] **Step 8: Verify no more event-emit-via-AppHandle calls in `agent/adapter/`**
 
 ```bash
-grep -rnE "app_handle\.emit|app\.emit" src-tauri/src/agent/adapter/
+grep -rnE "[a-zA-Z_]+\.emit\(" src-tauri/src/agent/adapter/
 ```
 
-Expected: zero hits.
+Expected: zero hits (the pattern catches `app.emit`, `app_handle.emit`, AND the locally-renamed `initial_app.emit` / `poll_app.emit` clones in `watcher_runtime.rs`).
 
 - [ ] **Step 9: Commit**
 
@@ -1411,33 +1531,37 @@ git commit -m "refactor(agent): route adapter event emission through Arc<dyn Eve
 
 - [ ] **Step 1: Write parity test**
 
+Real signatures: `start_git_watcher(cwd: String, app_handle, state)` and `stop_git_watcher(cwd: String, state)`. NO request structs. The watcher also enforces `validate_cwd` (must be under home). Use a `tempfile::tempdir_in(home)` fixture so the test path is home-scoped:
+
 Add to `runtime/state.rs` tests:
 
 ```rust
 #[tokio::test]
 async fn start_git_watcher_emits_git_status_changed_on_file_touch() {
-    let (state, sink, temp) = BackendState::with_fake_sink();
+    let home = std::env::var("HOME").expect("HOME env var");
+    let temp = tempfile::tempdir_in(&home).expect("home-scoped tempdir");
+    let (state, sink, _bg_temp) = BackendState::with_fake_sink();
     std::process::Command::new("git")
         .args(&["init", "-q", "-b", "main"])
         .current_dir(temp.path())
         .status()
         .unwrap();
+    let cwd = temp.path().to_string_lossy().into_owned();
     state
-        .start_git_watcher(crate::git::types::StartGitWatcherRequest {
-            cwd: temp.path().to_string_lossy().into_owned(),
-        })
+        .start_git_watcher(cwd.clone())
+        .await
         .expect("start watcher");
-    // Touch a file and wait for the notify callback.
     std::fs::write(temp.path().join("a.txt"), b"hello").unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     assert!(sink.count("git-status-changed") >= 1);
     state
-        .stop_git_watcher(crate::git::types::StopGitWatcherRequest {
-            cwd: temp.path().to_string_lossy().into_owned(),
-        })
+        .stop_git_watcher(cwd)
+        .await
         .expect("stop watcher");
 }
 ```
+
+(If the test runs in CI where `$HOME` may not be writable or may differ from the validate-cwd allowed set, fall back to `env!("CARGO_MANIFEST_DIR")` and pick a sub-directory like `target/test-git-watcher-${pid}` that gets created + cleaned up by the test.)
 
 - [ ] **Step 2: Run, expect failure**
 
@@ -1476,7 +1600,7 @@ pub async fn stop_git_watcher(
 - [ ] **Step 5: Run tests, expect pass**
 
 ```bash
-cd src-tauri && cargo test --lib runtime::state::tests::start_git_watcher_emits_git_status_changed_on_file_touch git
+cd src-tauri && cargo test --lib git
 ```
 
 Expected: green.
@@ -1706,10 +1830,10 @@ cd /home/will/projects/vimeflow && npm run test
 
 Expected: green and identical count to Task 0.
 
-- [ ] **Step 7: Diff inventory**
+- [ ] **Step 7: Diff inventory (widened pattern matches Task 0)**
 
 ```bash
-rg -nE "tauri::AppHandle|tauri::State|tauri::Runtime|app\.emit|app_handle\.emit|handle\.emit" \
+rg -nE "tauri::AppHandle|tauri::State|tauri::Runtime|tauri::Manager|tauri::Emitter|[a-zA-Z_]+\.emit\(" \
    src-tauri/src \
    --glob '!src-tauri/target/**' \
    --glob '!src-tauri/gen/**' \
@@ -1717,7 +1841,12 @@ rg -nE "tauri::AppHandle|tauri::State|tauri::Runtime|app\.emit|app_handle\.emit|
 diff /tmp/pr-a-baseline.txt /tmp/pr-a-post.txt | head -60
 ```
 
-Expected: every removed hit is a Tauri reference that moved to `runtime/tauri_bridge.rs`, a `#[tauri::command]` one-liner forwarder, or got dropped (e.g. `AppHandle<R>` field on an adapter). No NEW `app.emit` hits outside `tauri_bridge.rs`.
+Expected: every removed hit is a Tauri reference that moved to `runtime/tauri_bridge.rs`, a `#[tauri::command]` one-liner forwarder, or got dropped (e.g. `AppHandle<R>` field on an adapter). The ONLY remaining `*.emit(` calls should be:
+
+- inside `runtime/tauri_bridge.rs` (the adapter routes `emit_json` to `handle.emit`)
+- inside the typed-helper default impls in `runtime/event_sink.rs` that forward via `emit_json`
+
+No `*.emit(` calls outside `runtime/` after PR-A — Task 11 / 12 / 13 are responsible for moving every emission site. Likewise no `tauri::AppHandle` / `tauri::State` references outside `runtime/tauri_bridge.rs`, `#[tauri::command]` wrappers, and `lib.rs` setup.
 
 - [ ] **Step 8: Manual smoke — second pass**
 
