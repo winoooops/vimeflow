@@ -35,3 +35,60 @@ export const getActivePane = (session: Session): Pane => {
 
   return actives[0]
 }
+
+/** Flip the active pane inside one session and re-derive materialized
+ * session fields from the new active pane.
+ *
+ * Pure helper — no side effects. No-op branches (missing session,
+ * missing pane, already-active target) return the same `sessions`
+ * array reference so callers can drop this directly into a React
+ * state updater without forcing a re-render. The manager surfaces
+ * any operator-visible warnings BEFORE invoking this function so
+ * `setSessions(prev => applyActivePane(prev, …))` stays pure under
+ * StrictMode's double-invocation contract.
+ */
+export const applyActivePane = (
+  sessions: Session[],
+  sessionId: string,
+  paneId: string
+): Session[] => {
+  const sessionIndex = sessions.findIndex((session) => session.id === sessionId)
+  if (sessionIndex === -1) {
+    return sessions
+  }
+
+  const session = sessions[sessionIndex]
+  const target = session.panes.find((pane) => pane.id === paneId)
+  if (!target) {
+    return sessions
+  }
+
+  if (target.active) {
+    return sessions
+  }
+
+  // Preserve object identity for panes whose `active` flag does not
+  // change so a future `React.memo(TerminalPane)` (or any prop-
+  // equality optimization) doesn't see false-positive churn from
+  // the bulk active-flag reset across all panes in the session.
+  const panes = session.panes.map((pane) => {
+    const shouldBeActive = pane.id === paneId
+
+    return pane.active === shouldBeActive
+      ? pane
+      : { ...pane, active: shouldBeActive }
+  })
+
+  const updatedSession: Session = {
+    ...session,
+    panes,
+    workingDirectory: target.cwd,
+    agentType: target.agentType,
+  }
+
+  return [
+    ...sessions.slice(0, sessionIndex),
+    updatedSession,
+    ...sessions.slice(sessionIndex + 1),
+  ]
+}

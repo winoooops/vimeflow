@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import { flushSync } from 'react-dom'
-import type { Pane, Session } from '../types'
+import type { LayoutId, Pane, Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type {
   RestoreData,
@@ -13,7 +13,11 @@ import {
 } from '../../terminal/ptySessionMap'
 import { usePtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
 import { emptyActivity } from '../constants'
-import { findActivePane, getActivePane } from '../utils/activeSessionPane'
+import {
+  applyActivePane,
+  findActivePane,
+  getActivePane,
+} from '../utils/activeSessionPane'
 import { deriveSessionStatus } from '../utils/sessionStatus'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
@@ -28,6 +32,8 @@ export interface SessionManager {
   setActiveSessionId: (id: string) => void
   createSession: () => void
   removeSession: (id: string) => void
+  setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
+  setSessionActivePane: (sessionId: string, paneId: string) => void
   /**
    * Restart an Exited session in the same cwd. Idempotent on the kill side:
    * any remaining cache entry for `id` is killed (no-op if already gone),
@@ -533,6 +539,75 @@ export const useSessionManager = (
     ]
   )
 
+  const setSessionLayout = useCallback(
+    (sessionId: string, layoutId: LayoutId): void => {
+      // Warn outside `setSessions` so StrictMode's double-invocation
+      // of the state updater doesn't fire the log twice. The lookup
+      // reads `sessionsRef.current` for the check; the actual mutation
+      // (when present) still uses the updater's `prev` for correctness.
+      const session = sessionsRef.current.find((s) => s.id === sessionId)
+      if (!session) {
+        // eslint-disable-next-line no-console
+        console.warn(`setSessionLayout: no session ${sessionId}`)
+
+        return
+      }
+      if (session.layout === layoutId) {
+        return
+      }
+      setSessions((prev) => {
+        const sessionIndex = prev.findIndex((s) => s.id === sessionId)
+        if (sessionIndex === -1 || prev[sessionIndex].layout === layoutId) {
+          return prev
+        }
+
+        return [
+          ...prev.slice(0, sessionIndex),
+          { ...prev[sessionIndex], layout: layoutId },
+          ...prev.slice(sessionIndex + 1),
+        ]
+      })
+    },
+    []
+  )
+
+  const setSessionActivePane = useCallback(
+    (sessionId: string, paneId: string): void => {
+      // Warn outside `setSessions` for StrictMode parity (same reason
+      // as setSessionLayout). `applyActivePane` is a pure helper —
+      // it no-ops on missing ids (returns the same reference); the warns live here
+      // so they fire exactly once per operator action.
+      const session = sessionsRef.current.find((s) => s.id === sessionId)
+      if (!session) {
+        // eslint-disable-next-line no-console
+        console.warn(`setSessionActivePane: no session ${sessionId}`)
+
+        return
+      }
+      const target = session.panes.find((p) => p.id === paneId)
+      if (!target) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `setSessionActivePane: no pane ${paneId} in session ${sessionId}`
+        )
+
+        return
+      }
+      // Already-active short-circuit (mirrors setSessionLayout's same-
+      // layout guard). applyActivePane returns the same reference in
+      // this case and React bails on the re-render, so the visible
+      // outcome is unchanged — but we avoid enqueuing a state update
+      // that the reducer would just no-op. Same defensive shape on
+      // both mutations keeps future callers from accidentally
+      // diverging.
+      if (target.active) {
+        return
+      }
+      setSessions((prev) => applyActivePane(prev, sessionId, paneId))
+    },
+    []
+  )
+
   // F5 (round 2): restart an Exited session in the same cwd.
   //
   // Round 4, Finding 2 (codex P2): SPAWN-THEN-KILL ordering. The previous
@@ -881,6 +956,8 @@ export const useSessionManager = (
     setActiveSessionId,
     createSession,
     removeSession,
+    setSessionLayout,
+    setSessionActivePane,
     restartSession,
     renameSession,
     reorderSessions,

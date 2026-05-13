@@ -31,6 +31,10 @@ import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
 import { createTerminalService } from '../terminal/services/terminalService'
+import {
+  usePaneShortcuts,
+  type PaneShortcutModifier,
+} from '../terminal/hooks/usePaneShortcuts'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
@@ -80,9 +84,48 @@ export const WorkspaceView = (): ReactElement => {
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
+    setSessionActivePane,
+    setSessionLayout,
     loading,
     notifyPaneReady,
   } = useSessionManager(terminalService)
+
+  // Detect which modifier the toolbar advertises on this platform so
+  // the keyboard shortcut reserves EXACTLY that combo (and no other).
+  // macOS shows ⌘ → reserve meta; everything else shows Ctrl →
+  // reserve ctrl. Computed once per mount (navigator values are stable
+  // for the session) and forwarded to the hook so the visible modifier
+  // and the intercepted modifier stay in lockstep.
+  const preferModifier = useMemo<PaneShortcutModifier>(() => {
+    if (typeof navigator === 'undefined') {
+      return 'ctrl'
+    }
+
+    const uad = (
+      navigator as Navigator & { userAgentData?: { platform?: string } }
+    ).userAgentData
+    // `navigator.platform` is deprecated per MDN (TS 6385 warning at
+    // the read site) but still populated on every shipping target
+    // Vimeflow runs on: Tauri's WebKitGTK on Linux, the Tauri WebKit
+    // bundle on macOS, and the Chromium-based shells where
+    // `userAgentData.platform` exists. `tsc -b` does NOT promote 6385
+    // to an error, so the chained read compiles cleanly. If a future
+    // Chromium release drops `navigator.platform` entirely, this
+    // computation throws — defer the future-proofing until that's a
+    // real signal, not a hypothetical (round-20 review chose this
+    // trade-off over an eslint-suppression dance).
+    const detected = (uad?.platform ?? navigator.platform).toLowerCase()
+
+    return detected.startsWith('mac') ? 'meta' : 'ctrl'
+  }, [])
+
+  usePaneShortcuts({
+    sessions,
+    activeSessionId,
+    setSessionActivePane,
+    setSessionLayout,
+    preferModifier,
+  })
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
@@ -608,6 +651,9 @@ export const WorkspaceView = (): ReactElement => {
           onPaneReady={notifyPaneReady}
           onSessionRestart={restartSession}
           service={terminalService}
+          setSessionActivePane={setSessionActivePane}
+          setSessionLayout={setSessionLayout}
+          modKey={preferModifier === 'meta' ? '⌘' : 'Ctrl'}
         />
 
         {/* Bottom Drawer - Editor + Diff Viewer */}

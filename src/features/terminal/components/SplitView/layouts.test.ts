@@ -16,6 +16,23 @@ describe('LAYOUTS', () => {
     expect(Object.keys(LAYOUTS).sort()).toEqual([...layoutIds].sort())
   })
 
+  test('insertion order is the canonical ⌘\\ cycle (regression guard)', () => {
+    // usePaneShortcuts derives the keyboard cycle via
+    // `Object.values(LAYOUTS).map(l => l.id)` — the result inherits
+    // this record's insertion order. Inserting a new entry between
+    // existing ones (rather than appending) would silently change
+    // the cycle for every user with no failing test or type error.
+    // This snapshot pins the cycle order at the canonical layout
+    // sequence; any change here is intentional and visible in CI.
+    expect(Object.values(LAYOUTS).map((layout) => layout.id)).toEqual([
+      'single',
+      'vsplit',
+      'hsplit',
+      'threeRight',
+      'quad',
+    ])
+  })
+
   test.each<LayoutId>(layoutIds)(
     '%s: capacity matches unique slot count in areas',
     (id) => {

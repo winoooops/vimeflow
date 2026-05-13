@@ -67,6 +67,10 @@ words:
   - proj # project
   - terminalPid # terminal process ID
   - cwds # current working directories (plural of cwd)
+  - vsplit
+  - hsplit
+  - AZERTY # French/Belgian keyboard layout
+  - QWERTZ # German/Swiss keyboard layout
 
   # Syntax Highlighting
   - shiki

@@ -1,5 +1,6 @@
 // cspell:ignore vsplit hsplit
 import type { ReactElement } from 'react'
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion'
 import type { Pane, Session } from '../../../sessions/types'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
@@ -13,6 +14,7 @@ export interface SplitViewProps {
   onSessionCwdChange?: (sessionId: string, paneId: string, cwd: string) => void
   onPaneReady?: NotifyPaneReady
   onSessionRestart?: (sessionId: string) => void
+  onSetActivePane?: (sessionId: string, paneId: string) => void
   deferTerminalFit?: boolean
 }
 
@@ -54,6 +56,7 @@ export const SplitView = ({
   onSessionCwdChange = undefined,
   onPaneReady = undefined,
   onSessionRestart = undefined,
+  onSetActivePane = undefined,
   deferTerminalFit = false,
 }: SplitViewProps): ReactElement => {
   const layout = LAYOUTS[session.layout]
@@ -73,57 +76,80 @@ export const SplitView = ({
     .join(' ')
 
   return (
-    <div
-      data-testid="split-view"
-      data-session-id={session.id}
-      data-layout={session.layout}
-      className="grid h-full w-full gap-2 bg-surface p-2.5"
-      style={{
-        gridTemplateColumns: layout.cols,
-        gridTemplateRows: layout.rows,
-        gridTemplateAreas,
-      }}
-    >
-      {visiblePanes.map((pane, i) => {
-        const mode = paneMode(pane)
+    <LayoutGroup id={session.id}>
+      <motion.div
+        layout
+        data-testid="split-view"
+        data-session-id={session.id}
+        data-layout={session.layout}
+        className="grid h-full w-full gap-2 bg-surface p-2.5"
+        style={{
+          gridTemplateColumns: layout.cols,
+          gridTemplateRows: layout.rows,
+          gridTemplateAreas,
+        }}
+      >
+        {/* eslint-disable-next-line react/jsx-boolean-value -- framer-motion: `initial={false}` skips the entry animation for children already mounted. Omitting `initial` reverts to the default (animate on mount) — semantically distinct. */}
+        <AnimatePresence initial={false}>
+          {visiblePanes.map((pane, i) => {
+            const mode = paneMode(pane)
 
-        return (
-          <div
-            key={pane.id}
-            data-testid="split-view-slot"
-            data-pane-id={pane.id}
-            data-pty-id={pane.ptyId}
-            data-mode={mode}
-            data-cwd={pane.cwd}
-            className="relative min-h-0 min-w-0"
-            style={{ gridArea: `p${i}` }}
-          >
-            {/* F16 (codex connector P1, carried over from pre-5b TerminalZone):
-                keying TerminalPane by `pane.ptyId` (NOT `pane.id`) forces a
-                clean useTerminal subtree unmount + remount whenever a
-                restartSession rotates the pane's PTY handle. Without the
-                key swap, the stale useTerminal ref stays bound to the
-                dead pre-restart PTY and typing into the pane goes
-                nowhere until reload. The outer slot wrapper above keys
-                by `pane.id` so layout slot identity is preserved across
-                restarts. */}
-            <TerminalPane
-              key={pane.ptyId}
-              session={session}
-              pane={pane}
-              service={service}
-              mode={mode}
-              onCwdChange={(cwd) =>
-                onSessionCwdChange?.(session.id, pane.id, cwd)
-              }
-              onPaneReady={onPaneReady}
-              onRestart={onSessionRestart}
-              isActive={isActive}
-              deferFit={deferTerminalFit}
-            />
-          </div>
-        )
-      })}
-    </div>
+            return (
+              <motion.div
+                key={pane.id}
+                layout
+                layoutId={pane.id}
+                initial={{ opacity: 0, scale: 0.96 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.96 }}
+                transition={{ type: 'spring', stiffness: 360, damping: 34 }}
+                // Skip the dispatch when this slot's pane is already
+                // active. applyActivePane returns the same reference
+                // on no-op, but expressing the guard at the call site
+                // keeps the semantic clean: every click that survives
+                // this handler is a real focus change. Mirrors the
+                // already-active escape-hatch in usePaneShortcuts.
+                onClick={
+                  pane.active
+                    ? undefined
+                    : (): void => onSetActivePane?.(session.id, pane.id)
+                }
+                data-testid="split-view-slot"
+                data-pane-id={pane.id}
+                data-pty-id={pane.ptyId}
+                data-mode={mode}
+                data-cwd={pane.cwd}
+                className="relative min-h-0 min-w-0"
+                style={{ gridArea: `p${i}` }}
+              >
+                {/* F16 (codex connector P1, carried over from pre-5b TerminalZone):
+                    keying TerminalPane by `pane.ptyId` (NOT `pane.id`) forces a
+                    clean useTerminal subtree unmount + remount whenever a
+                    restartSession rotates the pane's PTY handle. Without the
+                    key swap, the stale useTerminal ref stays bound to the
+                    dead pre-restart PTY and typing into the pane goes
+                    nowhere until reload. The outer slot wrapper above keys
+                    by `pane.id` so layout slot identity is preserved across
+                    restarts. */}
+                <TerminalPane
+                  key={pane.ptyId}
+                  session={session}
+                  pane={pane}
+                  service={service}
+                  mode={mode}
+                  onCwdChange={(cwd) =>
+                    onSessionCwdChange?.(session.id, pane.id, cwd)
+                  }
+                  onPaneReady={onPaneReady}
+                  onRestart={onSessionRestart}
+                  isActive={isActive}
+                  deferFit={deferTerminalFit}
+                />
+              </motion.div>
+            )
+          })}
+        </AnimatePresence>
+      </motion.div>
+    </LayoutGroup>
   )
 }

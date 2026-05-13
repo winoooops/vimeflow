@@ -1,5 +1,6 @@
 // cspell:ignore vsplit hsplit
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, test, expect, vi } from 'vitest'
 import type { UseGitBranchReturn } from '../../../diff/hooks/useGitBranch'
 import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
@@ -377,6 +378,44 @@ describe('SplitView - no PTY lifecycle IPC', () => {
     )
 
     expect(service.spawn).not.toHaveBeenCalled()
+  })
+})
+
+describe('SplitView - click-to-focus', () => {
+  test('clicking a slot calls onSetActivePane with session id and pane id', async () => {
+    const user = userEvent.setup()
+    const onSetActivePane = vi.fn()
+    const session = makeSession('vsplit', 2)
+
+    render(
+      <SplitView
+        session={session}
+        service={makeMockService()}
+        isActive
+        onSetActivePane={onSetActivePane}
+      />
+    )
+
+    await user.click(screen.getAllByTestId('split-view-slot')[1])
+
+    expect(onSetActivePane).toHaveBeenCalledOnce()
+    expect(onSetActivePane).toHaveBeenCalledWith(session.id, 'p1')
+  })
+
+  test('omitting onSetActivePane makes slot clicks a no-op', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+
+    await user.click(screen.getAllByTestId('split-view-slot')[1])
+
+    expect(screen.getAllByTestId('split-view-slot')).toHaveLength(2)
   })
 })
 

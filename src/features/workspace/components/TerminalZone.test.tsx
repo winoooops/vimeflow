@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { TerminalZone } from './TerminalZone'
 import { mockSessions } from '../data/mockSessions'
-import type { Session } from '../../sessions/types'
+import type { LayoutId, Session } from '../../sessions/types'
 import type { TerminalPaneProps } from '../../terminal/components/TerminalPane'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 
@@ -92,6 +92,8 @@ describe('TerminalZone', () => {
     sessions: mockSessions.slice(0, 2), // First two sessions
     activeSessionId: 'sess-1',
     service: mockService,
+    setSessionActivePane: vi.fn(),
+    setSessionLayout: vi.fn(),
   }
 
   test('renders terminal content area with TerminalPane', () => {
@@ -402,6 +404,8 @@ describe('TerminalZone', () => {
         sessions={[session]}
         activeSessionId="sess-vsplit"
         service={mockService}
+        setSessionActivePane={vi.fn()}
+        setSessionLayout={vi.fn()}
       />
     )
 
@@ -618,6 +622,187 @@ describe('TerminalZone', () => {
     expect(mockPanes).toHaveLength(2)
     mockPanes.forEach((pane) => {
       expect(pane).toHaveAttribute('data-mode', 'attach')
+    })
+  })
+
+  const makeToolbarSession = (
+    id: string,
+    layout: LayoutId = 'single'
+  ): Session => ({
+    ...mockSessions[0],
+    id,
+    name: id,
+    layout,
+    panes: [
+      {
+        ...mockSessions[0].panes[0],
+        id: 'p0',
+        ptyId: `pty-${id}`,
+        active: true,
+      },
+    ],
+  })
+
+  test('mounts layout toolbar when sessions exist and not loading', () => {
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[makeToolbarSession('s1', 'vsplit')]}
+        activeSessionId="s1"
+      />
+    )
+
+    expect(screen.getByTestId('layout-toolbar')).toBeInTheDocument()
+    expect(screen.getByTestId('layout-switcher')).toBeInTheDocument()
+  })
+
+  test('hides layout toolbar when loading=true', () => {
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[]}
+        activeSessionId={null}
+        loading
+      />
+    )
+
+    expect(screen.queryByTestId('layout-toolbar')).not.toBeInTheDocument()
+  })
+
+  test('hides layout toolbar when sessions is empty', () => {
+    render(
+      <TerminalZone {...defaultProps} sessions={[]} activeSessionId={null} />
+    )
+
+    expect(screen.queryByTestId('layout-toolbar')).not.toBeInTheDocument()
+  })
+
+  test('clicking a layout button calls setSessionLayout with active session id', async () => {
+    const user = userEvent.setup()
+    const setSessionLayout = vi.fn()
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[makeToolbarSession('s1')]}
+        activeSessionId="s1"
+        setSessionLayout={setSessionLayout}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Vertical split' }))
+
+    expect(setSessionLayout).toHaveBeenCalledOnce()
+    expect(setSessionLayout).toHaveBeenCalledWith('s1', 'vsplit')
+  })
+
+  test('clicking the already-active split slot does NOT fire setSessionActivePane', async () => {
+    // The slot wrapper's onClick is gated by `!pane.active` so the
+    // handler only fires on a real focus change. applyActivePane's
+    // idempotency was the safety net; expressing the guard at the
+    // call site keeps the wiring honest. Inactive-pane click is
+    // covered by the 2-pane fixture test below.
+    const user = userEvent.setup()
+    const setSessionActivePane = vi.fn()
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[makeToolbarSession('s1')]}
+        activeSessionId="s1"
+        setSessionActivePane={setSessionActivePane}
+      />
+    )
+
+    await user.click(screen.getByTestId('split-view-slot'))
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+  })
+
+  test('clicking an inactive split slot forwards the inactive paneId', async () => {
+    // The single-pane fixture above exercises the dispatch but lands
+    // on the already-active path, where `applyActivePane` returns the
+    // same reference. This test covers the real UX scenario: a
+    // two-pane session, click the second (inactive) slot, assert the
+    // INACTIVE pane id flows through to setSessionActivePane.
+    const user = userEvent.setup()
+    const setSessionActivePane = vi.fn()
+    const baseSession = makeToolbarSession('s1', 'vsplit')
+
+    const twoPaneSession: Session = {
+      ...baseSession,
+      panes: [
+        { ...baseSession.panes[0], id: 'p0', active: true },
+        {
+          ...baseSession.panes[0],
+          id: 'p1',
+          ptyId: 'pty-s1-p1',
+          active: false,
+        },
+      ],
+    }
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[twoPaneSession]}
+        activeSessionId="s1"
+        setSessionActivePane={setSessionActivePane}
+      />
+    )
+
+    const slots = screen.getAllByTestId('split-view-slot')
+    expect(slots).toHaveLength(2)
+    await user.click(slots[1])
+
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+  })
+
+  // modKey is now a prop driven from WorkspaceView's single platform-
+  // detection site — TerminalZone itself doesn't read navigator. The
+  // platform-mock pattern is no longer needed; tests just pass the
+  // expected modKey directly. Cycle 12 collapsed two detection sites
+  // into one to prevent display/behavior drift (Claude #4433704763).
+  describe('toolbar platform glyph', () => {
+    test("toolbar shows the parent's modKey prop (Mac → ⌘)", () => {
+      render(
+        <TerminalZone
+          {...defaultProps}
+          sessions={[makeToolbarSession('s1')]}
+          activeSessionId="s1"
+          modKey="⌘"
+        />
+      )
+
+      expect(screen.getByTestId('layout-toolbar')).toHaveTextContent('⌘')
+    })
+
+    test("toolbar shows the parent's modKey prop (other → Ctrl)", () => {
+      render(
+        <TerminalZone
+          {...defaultProps}
+          sessions={[makeToolbarSession('s1')]}
+          activeSessionId="s1"
+          modKey="Ctrl"
+        />
+      )
+
+      expect(screen.getByTestId('layout-toolbar')).toHaveTextContent('Ctrl')
+    })
+
+    test('toolbar defaults to Ctrl when modKey is omitted', () => {
+      // The default keeps the toolbar functional in sandboxed renders
+      // (tests / Storybook) that don't pass the prop. Real production
+      // mounts always pass it from WorkspaceView.
+      render(
+        <TerminalZone
+          {...defaultProps}
+          sessions={[makeToolbarSession('s1')]}
+          activeSessionId="s1"
+        />
+      )
+
+      expect(screen.getByTestId('layout-toolbar')).toHaveTextContent('Ctrl')
     })
   })
 })
