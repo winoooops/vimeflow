@@ -2,6 +2,7 @@
 
 use super::detector::detect_agent;
 use super::types::AgentDetectedEvent;
+#[cfg(not(test))]
 use crate::runtime::BackendState;
 use crate::terminal::PtyState;
 
@@ -14,6 +15,7 @@ fn agent_detection_disabled() -> bool {
 }
 
 /// Detect which agent is running in a PTY session
+#[cfg(not(test))]
 #[tauri::command]
 pub async fn detect_agent_in_session(
     state: tauri::State<'_, std::sync::Arc<BackendState>>,

@@ -19,4 +19,5 @@ pub use adapter::base::TranscriptState;
 pub use adapter::AgentWatcherState;
 #[cfg(not(test))]
 pub use adapter::{start_agent_watcher, stop_agent_watcher};
+#[cfg(not(test))]
 pub use commands::detect_agent_in_session;

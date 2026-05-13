@@ -57,10 +57,8 @@ impl RecordingEventSink {
                 .expect("RecordingEventSink poisoned");
             recorded = next;
 
-            if wait_result.timed_out()
-                && recorded.iter().filter(|(name, _)| name == event).count() < count
-            {
-                return false;
+            if wait_result.timed_out() {
+                return recorded.iter().filter(|(name, _)| name == event).count() >= count;
             }
         }
     }
