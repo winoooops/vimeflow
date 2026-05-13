@@ -1018,3 +1018,5 @@ Invoke `superpowers:writing-plans` to produce the implementation plan for 5c-2. 
 8. `docs/roadmap/progress.yaml` — flip `ui-s5c-2` `in_progress` → `done` on merge
 
 TDD per task: red test → green implementation → refactor.
+
+<!-- codex-reviewed: 2026-05-13T03:26:12Z -->
