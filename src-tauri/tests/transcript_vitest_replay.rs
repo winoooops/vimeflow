@@ -4,6 +4,7 @@
 //! first EOF. Locks the load-bearing invariant for session-restore UX.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 mod support;
 
@@ -36,7 +37,10 @@ fn replay_emits_only_latest_snapshot() {
         )
         .expect("start watcher");
 
-    std::thread::sleep(std::time::Duration::from_millis(2000));
+    assert!(
+        sink.wait_for_count("test-run", 1, Duration::from_secs(5)),
+        "expected exactly one test-run event",
+    );
     state.stop("session-replay").ok();
 
     let events: Vec<_> = sink

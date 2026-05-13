@@ -3,6 +3,7 @@
 //! summary counts.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 mod support;
 
@@ -35,8 +36,10 @@ fn vitest_pass_fixture_emits_one_test_run() {
         )
         .expect("start watcher");
 
-    // Wait briefly for the tail loop to process the file.
-    std::thread::sleep(std::time::Duration::from_millis(1500));
+    assert!(
+        sink.wait_for_count("test-run", 1, Duration::from_secs(5)),
+        "expected exactly one test-run event",
+    );
     state.stop("session-fixture").ok();
 
     let events: Vec<_> = sink

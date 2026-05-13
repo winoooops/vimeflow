@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 mod support;
 
@@ -32,7 +33,10 @@ fn cargo_mixed_fixture_emits_test_run_with_groups() {
         )
         .expect("start watcher");
 
-    std::thread::sleep(std::time::Duration::from_millis(2000));
+    assert!(
+        sink.wait_for_count("test-run", 1, Duration::from_secs(5)),
+        "expected exactly one test-run event",
+    );
     state.stop("session-cargo").ok();
 
     let events: Vec<_> = sink

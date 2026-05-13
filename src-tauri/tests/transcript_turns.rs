@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 mod support;
 
@@ -51,7 +52,10 @@ fn transcript_emits_turn_events_for_real_user_prompts_only() {
         )
         .expect("start watcher");
 
-    std::thread::sleep(std::time::Duration::from_millis(1500));
+    assert!(
+        sink.wait_for_count("agent-turn", 3, Duration::from_secs(5)),
+        "expected one event per real user prompt",
+    );
     state.stop("session-turns").ok();
 
     let events: Vec<_> = sink

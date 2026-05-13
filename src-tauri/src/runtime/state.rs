@@ -38,17 +38,9 @@ impl BackendState {
         tempfile::TempDir,
     ) {
         let temp_dir = tempfile::tempdir().expect("temp dir for test BackendState");
-        let cache_path = temp_dir.path().join("sessions.json");
         let sink = super::event_sink::FakeEventSink::new();
         let events: Arc<dyn EventSink> = sink.clone();
-        let state = Arc::new(Self {
-            pty: PtyState::new(),
-            sessions: Arc::new(SessionCache::load_or_recover(cache_path)),
-            agents: AgentWatcherState::new(),
-            transcripts: TranscriptState::new(),
-            git: GitWatcherState::new(),
-            events,
-        });
+        let state = Arc::new(Self::new(temp_dir.path().to_path_buf(), events));
         (state, sink, temp_dir)
     }
 

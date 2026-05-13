@@ -6,9 +6,6 @@ use crate::agent::types::{AgentStatusEvent, AgentToolCallEvent, AgentTurnEvent};
 use crate::git::watcher::GitStatusChangedPayload;
 use crate::terminal::types::{PtyDataEvent, PtyErrorEvent, PtyExitEvent};
 
-#[cfg(any(test, feature = "e2e-test"))]
-use std::sync::{Arc, Mutex};
-
 /// Runtime-neutral event emission.
 ///
 /// Only `emit_json` is required; typed helpers preserve the current event
@@ -55,45 +52,11 @@ fn serialize<T: Serialize>(value: &T) -> Result<Value, String> {
 }
 
 #[cfg(any(test, feature = "e2e-test"))]
-pub struct FakeEventSink {
-    recorded: Mutex<Vec<(String, Value)>>,
-}
+#[path = "test_event_sink.rs"]
+mod test_event_sink;
 
 #[cfg(any(test, feature = "e2e-test"))]
-impl FakeEventSink {
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self {
-            recorded: Mutex::new(Vec::new()),
-        })
-    }
-
-    pub fn recorded(&self) -> Vec<(String, Value)> {
-        self.recorded
-            .lock()
-            .expect("FakeEventSink poisoned")
-            .clone()
-    }
-
-    pub fn count(&self, event: &str) -> usize {
-        self.recorded
-            .lock()
-            .expect("FakeEventSink poisoned")
-            .iter()
-            .filter(|(name, _)| name == event)
-            .count()
-    }
-}
-
-#[cfg(any(test, feature = "e2e-test"))]
-impl EventSink for FakeEventSink {
-    fn emit_json(&self, event: &str, payload: Value) -> Result<(), String> {
-        self.recorded
-            .lock()
-            .map_err(|err| format!("FakeEventSink poisoned: {err}"))?
-            .push((event.to_string(), payload));
-        Ok(())
-    }
-}
+pub type FakeEventSink = test_event_sink::RecordingEventSink;
 
 #[cfg(test)]
 mod tests {
@@ -125,7 +88,7 @@ mod tests {
     }
 
     #[test]
-    fn fake_event_sink_concurrent_emits_record_in_order() {
+    fn fake_event_sink_concurrent_emits_record_all_events() {
         use std::thread;
 
         let sink = FakeEventSink::new();
