@@ -79,10 +79,14 @@ session cache semantics on graceful exit.
    external callers see business methods (`state.spawn_pty(req)`,
    `state.list_sessions()`), not raw `Arc<Mutex<...>>`.
 2. **`EventSink` trait** at `src-tauri/src/runtime/event_sink.rs`.
-   Generic `emit_json(event, payload)` + typed convenience helpers
-   (`emit_pty_data`, `emit_pty_exit`, `emit_agent_status`,
-   `emit_agent_tool_call`, `emit_test_run`, `emit_git_status_changed`).
-   `FakeEventSink` test fixture in the same file behind `#[cfg(test)]`.
+   Generic `emit_json(event, payload)` + one typed convenience helper
+   per event the Rust backend actually emits today (`emit_pty_data`,
+   `emit_pty_exit`, `emit_pty_error`, `emit_agent_status`,
+   `emit_agent_tool_call`, `emit_agent_turn`, `emit_test_run`,
+   `emit_git_status_changed`). No helpers for events the Rust side
+   doesn't emit (`agent-detected` / `agent-disconnected` are
+   frontend-poll-only today). `FakeEventSink` test fixture in the
+   same file behind `#[cfg(any(test, feature = "e2e-test"))]`.
 3. **`TauriEventSink` adapter** at
    `src-tauri/src/runtime/tauri_bridge.rs` — the single file where
    `tauri::AppHandle` appears in the runtime layer. Implements
@@ -115,8 +119,10 @@ session cache semantics on graceful exit.
 6. **Agent adapter trait loses its `<R: tauri::Runtime>` generic.**
    `AgentAdapter<R>` becomes `AgentAdapter` (non-generic); concrete
    adapters (`ClaudeCodeAdapter`, `CodexAdapter`) take
-   `Arc<BackendState>` in their constructor and emit through
-   `state.events` instead of `AppHandle<R>`.
+   `Arc<dyn EventSink>` in their constructor (narrower than
+   `Arc<BackendState>` so the strong-Arc cycle through
+   `agents → WatcherHandle → adapter` is broken) and emit via
+   `self.events.emit_*(...)` instead of `AppHandle<R>::emit`.
 7. **Parity tests with `FakeEventSink`.** Every Rust unit test that
    today either skips because of Tauri runtime requirements or uses
    awkward `mock_app()` plumbing gets ported to construct
@@ -235,8 +241,8 @@ src-tauri/src/
 | `src-tauri/src/lib.rs`                                            | Replace the five `.manage(...)` calls with a single `app.manage(Arc::new(BackendState::new(app_data_dir, Arc::new(TauriEventSink::new(app.handle().clone())))))`. The `#[tauri::command]` functions registered in `invoke_handler!` come from `terminal/commands.rs` etc. and now extract `tauri::State<'_, Arc<BackendState>>` and forward to `state.spawn_pty(...)`. The graceful-exit `RunEvent::ExitRequested` handler invokes `state.shutdown()` instead of the inline cache-wipe code. | +~25, -~30   |
 | `src-tauri/src/terminal/commands.rs`                              | Replace 19 multi-statement command bodies with 19 one-liners (`state.spawn_pty(req).await`, etc.). Move the original bodies into `BackendState::spawn_pty` etc. in `runtime/state.rs`. PTY event emitter calls (`app.emit("pty-data", ...)`) become `state.events.emit_pty_data(...)`.                                                                                                                                                                                                       | +~30, -~250  |
 | `src-tauri/src/agent/adapter/mod.rs`                              | Drop `<R: tauri::Runtime>` from the `AgentAdapter` trait. Methods that took `&AppHandle<R>` now take `&Arc<BackendState>`. Concrete adapters update their impls.                                                                                                                                                                                                                                                                                                                             | +~10, -~30   |
-| `src-tauri/src/agent/adapter/claude_code/mod.rs`                  | Drop runtime generic. `pub struct ClaudeCodeAdapter` (was `<R>`). Constructor takes `Arc<BackendState>` (stored for later event emission) instead of `AppHandle<R>`.                                                                                                                                                                                                                                                                                                                         | +~15, -~25   |
-| `src-tauri/src/agent/adapter/codex/mod.rs`                        | Same shape as claude_code.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | +~15, -~25   |
+| `src-tauri/src/agent/adapter/claude_code/mod.rs`                  | Drop runtime generic. `pub struct ClaudeCodeAdapter` (was `<R>`). Constructor takes `Arc<dyn EventSink>` (stored for later event emission) instead of `AppHandle<R>`. Narrower than `Arc<BackendState>`: prevents the strong-Arc cycle through `agents → WatcherHandle → adapter` that would keep `BackendState` alive past graceful shutdown.                                                                                                                                               | +~15, -~25   |
+| `src-tauri/src/agent/adapter/codex/mod.rs`                        | Same shape as claude_code (drops `<R>` generic; constructor takes `Arc<dyn EventSink>`).                                                                                                                                                                                                                                                                                                                                                                                                     | +~15, -~25   |
 | `src-tauri/src/agent/adapter/base/watcher_runtime.rs`             | `start_agent_watcher`'s notify-spawned callback emits via `state.events.emit_agent_status(...)` instead of `handle.emit("agent-status", ...)`. The `start_agent_watcher` Tauri command body becomes a one-liner forwarding to `BackendState::start_agent_watcher`.                                                                                                                                                                                                                           | +~20, -~40   |
 | `src-tauri/src/agent/adapter/base/transcript_state.rs`            | Transcript tailer holds `Arc<BackendState>` (was `AppHandle<R>`). `emit_agent_tool_call` / `emit_agent_turn` calls go through `state.events`.                                                                                                                                                                                                                                                                                                                                                | +~15, -~30   |
 | `src-tauri/src/agent/adapter/claude_code/transcript.rs`           | Replace `AppHandle<R>` field with `Arc<BackendState>`. Emit routes change.                                                                                                                                                                                                                                                                                                                                                                                                                   | +~10, -~20   |
@@ -249,22 +255,22 @@ src-tauri/src/
 | `src-tauri/src/git/mod.rs`                                        | `git_status`, `git_branch`, `get_git_diff` become thin wrappers. Bodies move to `BackendState::git_status` etc. No data-layer changes (status.rs, diff.rs untouched — those are pure functions BackendState calls into).                                                                                                                                                                                                                                                                     | +~15, -~80   |
 | `src-tauri/src/git/watcher.rs`                                    | `start_git_watcher` notify-watcher emits via `state.events.emit_git_status_changed(...)`. Tauri wrapper functions for `start_git_watcher` / `stop_git_watcher` become one-liners. **`GitStatusChangedPayload` is promoted from module-private `struct` to `pub struct`** so `runtime/event_sink.rs` can import it (the type itself is unchanged).                                                                                                                                            | +~15, -~50   |
 | `src-tauri/Cargo.toml`                                            | Add `serde_json` if not already a direct dep (it's likely transitive today via Tauri). No Tauri changes — `tauri` stays. No new `[[bin]]` target (Decision #8).                                                                                                                                                                                                                                                                                                                              | +~2, -~0     |
+| `src-tauri/src/terminal/test_commands.rs`                         | Behind `#[cfg(feature = "e2e-test")]`. The `list_active_pty_sessions` `#[tauri::command]` collapses to a thin wrapper around a new `BackendState::list_active_pty_sessions()` method (added under the same cfg in `runtime/state.rs`). Required because PR-A removes the `.manage(PtyState::new())` call from `lib.rs` — without an updated wrapper, the existing `tauri::State<'_, PtyState>` arg extraction would fail at runtime.                                                         | +~10, -~15   |
 | Various `*.test` Rust unit tests                                  | Tests that today either `#[cfg(target_os = "...")]`-gate or skip because of `mock_app()` complexity are rewritten to construct `BackendState::with_fake_sink(...)` and assert recorded events. New tests for the parity contract (see §3).                                                                                                                                                                                                                                                   | +~400, -~100 |
 
 ### Files NOT touched
 
-| File / module                                                           | Why                                                                                                                                                                |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src-tauri/src/main.rs`                                                 | Still just `vimeflow_lib::run()`. PR-D rewrites it to `vimeflow_lib::run_tauri()` (transitional) and PR-D's final state deletes the file entirely.                 |
-| `src-tauri/src/agent/jsonl.rs`                                          | Pure parsing module. No Tauri references today; no changes needed.                                                                                                 |
-| `src-tauri/src/agent/types.rs`                                          | ts-rs `#[derive(TS)]` types. Serde shapes don't change; bindings stay stable.                                                                                      |
-| `src-tauri/src/git/status.rs`, `diff.rs`                                | Pure data-layer functions. `BackendState` methods call them; the functions themselves don't know about Tauri or EventSink.                                         |
-| `src-tauri/src/terminal/state.rs`, `cache.rs`, `bridge.rs`, `events.rs` | Per-domain state implementations. `BackendState::pty` holds the existing `PtyState`; the internals are untouched.                                                  |
-| `src-tauri/src/terminal/test_commands.rs`                               | The `list_active_pty_sessions` E2E command stays behind `#[cfg(feature = "e2e-test")]` and becomes a thin wrapper around `BackendState::list_active_pty_sessions`. |
-| `src/bindings/*.ts`                                                     | Generated by `ts-rs` from `#[derive(TS)]` types. PR-A doesn't change any of those types; regenerate is a no-op. The `verify:bindings` CI check stays green.        |
-| `src/**` (the entire frontend)                                          | PR-C territory.                                                                                                                                                    |
-| `.github/workflows/*`                                                   | PR-D territory.                                                                                                                                                    |
-| `tests/e2e/**`                                                          | PR-D territory.                                                                                                                                                    |
+| File / module                                                           | Why                                                                                                                                                         |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src-tauri/src/main.rs`                                                 | Still just `vimeflow_lib::run()`. PR-D rewrites it to `vimeflow_lib::run_tauri()` (transitional) and PR-D's final state deletes the file entirely.          |
+| `src-tauri/src/agent/jsonl.rs`                                          | Pure parsing module. No Tauri references today; no changes needed.                                                                                          |
+| `src-tauri/src/agent/types.rs`                                          | ts-rs `#[derive(TS)]` types. Serde shapes don't change; bindings stay stable.                                                                               |
+| `src-tauri/src/git/status.rs`, `diff.rs`                                | Pure data-layer functions. `BackendState` methods call them; the functions themselves don't know about Tauri or EventSink.                                  |
+| `src-tauri/src/terminal/state.rs`, `cache.rs`, `bridge.rs`, `events.rs` | Per-domain state implementations. `BackendState::pty` holds the existing `PtyState`; the internals are untouched.                                           |
+| `src/bindings/*.ts`                                                     | Generated by `ts-rs` from `#[derive(TS)]` types. PR-A doesn't change any of those types; regenerate is a no-op. The `verify:bindings` CI check stays green. |
+| `src/**` (the entire frontend)                                          | PR-C territory.                                                                                                                                             |
+| `.github/workflows/*`                                                   | PR-D territory.                                                                                                                                             |
+| `tests/e2e/**`                                                          | PR-D territory.                                                                                                                                             |
 
 ### `BackendState` skeleton (full body in §2)
 
@@ -298,11 +304,14 @@ pub trait EventSink: Send + Sync + 'static {
     // Typed convenience helpers — default impls forward through emit_json.
     fn emit_pty_data(&self, payload: &PtyDataEvent) -> Result<(), String> { ... }
     fn emit_pty_exit(&self, payload: &PtyExitEvent) -> Result<(), String> { ... }
-    fn emit_agent_status(&self, payload: &Value) -> Result<(), String> { ... }
+    fn emit_pty_error(&self, payload: &PtyErrorEvent) -> Result<(), String> { ... }
+    fn emit_agent_status(&self, payload: &AgentStatusEvent) -> Result<(), String> { ... }
     fn emit_agent_tool_call(&self, payload: &AgentToolCallEvent) -> Result<(), String> { ... }
+    fn emit_agent_turn(&self, payload: &AgentTurnEvent) -> Result<(), String> { ... }
     fn emit_test_run(&self, payload: &TestRunSnapshot) -> Result<(), String> { ... }
     fn emit_git_status_changed(&self, payload: &GitStatusChangedPayload) -> Result<(), String> { ... }
-    // ... one per existing event in src/bindings/event-names
+    // One helper per event the Rust backend emits today. agent-detected /
+    // agent-disconnected are frontend-poll-only, not Rust events — no helpers.
 }
 ```
 
@@ -328,8 +337,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::agent::adapter::claude_code::test_runners::types::TestRunSnapshot;
 use crate::agent::types::{
-    AgentDetectedEvent, AgentDisconnectedEvent, AgentToolCallEvent,
-    AgentTurnEvent,
+    AgentStatusEvent, AgentToolCallEvent, AgentTurnEvent,
 };
 use crate::git::watcher::GitStatusChangedPayload;
 use crate::terminal::types::{PtyDataEvent, PtyErrorEvent, PtyExitEvent};
@@ -361,18 +369,8 @@ pub trait EventSink: Send + Sync + 'static {
         self.emit_json("pty-error", serialize(payload)?)
     }
 
-    fn emit_agent_detected(&self, payload: &AgentDetectedEvent) -> Result<(), String> {
-        self.emit_json("agent-detected", serialize(payload)?)
-    }
-
-    fn emit_agent_disconnected(&self, payload: &AgentDisconnectedEvent) -> Result<(), String> {
-        self.emit_json("agent-disconnected", serialize(payload)?)
-    }
-
-    fn emit_agent_status(&self, payload: &Value) -> Result<(), String> {
-        // Status payloads come from external statusline-bridge JSON and
-        // are not strongly typed at the Rust layer. Stays Value-typed.
-        self.emit_json("agent-status", payload.clone())
+    fn emit_agent_status(&self, payload: &AgentStatusEvent) -> Result<(), String> {
+        self.emit_json("agent-status", serialize(payload)?)
     }
 
     fn emit_agent_tool_call(&self, payload: &AgentToolCallEvent) -> Result<(), String> {
@@ -478,8 +476,8 @@ impl EventSink for TauriEventSink {
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::agent::watcher::AgentWatcherState;
-use crate::agent::transcript_state::TranscriptState;
+use crate::agent::adapter::base::transcript_state::TranscriptState;
+use crate::agent::adapter::base::watcher_runtime::AgentWatcherState;
 use crate::git::watcher::GitWatcherState;
 use crate::terminal::cache::SessionCache;
 use crate::terminal::state::PtyState;
@@ -581,23 +579,28 @@ impl BackendState {
         request: SpawnPtyRequest,
     ) -> Result<PtySession, String> {
         // Body migrated verbatim from terminal/commands.rs::spawn_pty.
-        // The only changes are:
-        //  1. Drop the `state: tauri::State<'_, PtyState>` and
-        //     `app: AppHandle` arguments — read from `self.pty` and
-        //     `self.events` instead.
-        //  2. Replace `app.emit("pty-data", ...)` calls with
-        //     `self.events.emit_pty_data(...)`.
-        //  3. Replace `app.state::<Arc<SessionCache>>().inner()` with
-        //     `self.sessions.clone()`.
-        // Everything else (cache mutation order, lock acquisition,
-        // bridge wiring, tombstone-first cleanup) is byte-identical.
-        crate::terminal::pty::spawn_pty_inner(
-            &self.pty,
-            self.sessions.clone(),
-            self.events.clone(),
-            request,
-        )
-        .await
+        // The migration is a literal cut-and-paste of the existing
+        // function body (currently ~70 lines) into this method, with
+        // exactly three textual changes:
+        //   1. Drop the `state: tauri::State<'_, PtyState>` and
+        //      `app: AppHandle` arguments — read from `&self.pty` and
+        //      `&self.events` instead.
+        //   2. Replace `app.emit("pty-data", payload)` calls with
+        //      `self.events.emit_pty_data(&payload)` (and analogues
+        //      for `pty-exit`, `pty-error`).
+        //   3. Replace `app.state::<Arc<SessionCache>>().inner()` with
+        //      `self.sessions.clone()`.
+        // No new helper module (`terminal::pty::*`) is introduced —
+        // the body lives directly on `BackendState::spawn_pty`. Every
+        // other line — cache mutation order, lock acquisition,
+        // tombstone-first cleanup (per pty-session-management pattern
+        // #7) — is byte-identical to today.
+        //
+        // The implementation plan lists the source line range of the
+        // migrated body. Reviewers diff old-fn vs new-method using
+        // `git diff --no-index` after the move; the per-line diff
+        // should be exactly the three textual changes above.
+        todo!("body migrates from terminal/commands.rs::spawn_pty")
     }
 
     pub fn list_sessions(&self) -> Vec<SessionInfo> {
@@ -672,13 +675,18 @@ let _ = events.emit_pty_data(&PtyDataEvent {
 
 ### Refactor pattern: agent adapter de-generic (constructor-store ownership)
 
-**Ownership decision.** Concrete adapters hold `Arc<BackendState>` as a
-field (set at construction time via `for_attach(...)`); trait method
-signatures DON'T take state as a parameter. This matches today's
-lifetime — `for_attach` already returns a fresh `Arc<dyn AgentAdapter>`
-per session attach, so handing it the `Arc<BackendState>` once at
-construction is the natural fit. No cycle: `BackendState` does not hold
-adapters back; the orchestrator owns the `Arc<dyn AgentAdapter>`.
+**Ownership decision.** Concrete adapters hold `Arc<dyn EventSink>` as
+a field (set at construction time via `for_attach(...)`) — NOT
+`Arc<BackendState>`. Adapters only need the event-emission surface,
+so handing them the narrow `EventSink` trait object is sufficient AND
+breaks a strong-Arc cycle that would otherwise form via
+`BackendState → agents (AgentWatcherState) → WatcherHandle → adapter →
+BackendState` and keep `BackendState` alive past its intended drop.
+
+Trait method signatures DON'T take state as a parameter — adapters
+emit via `self.events.emit_*(...)` directly. The orchestrator in
+`agent/commands.rs` already passes per-attach data (`SessionInfo`,
+`AgentType`, etc.) through trait methods; that pattern is unchanged.
 
 **Before (`agent/adapter/mod.rs`):**
 
@@ -715,36 +723,41 @@ pub trait AgentAdapter: Send + Sync + 'static {
 
 impl dyn AgentAdapter {
     pub fn for_attach(
-        state: Arc<BackendState>,
+        events: Arc<dyn EventSink>,
         agent_type: AgentType,
         pid: u32,
         pty_start: PtyStartId,
     ) -> Result<Arc<dyn AgentAdapter>, String> {
         match agent_type {
-            AgentType::ClaudeCode => Ok(Arc::new(ClaudeCodeAdapter::new(state))),
-            AgentType::Codex => Ok(Arc::new(CodexAdapter::new(state, pid, pty_start))),
+            AgentType::ClaudeCode => Ok(Arc::new(ClaudeCodeAdapter::new(events))),
+            AgentType::Codex => Ok(Arc::new(CodexAdapter::new(events, pid, pty_start))),
             // ...
         }
     }
 }
 
-pub struct ClaudeCodeAdapter { state: Arc<BackendState> }
+pub struct ClaudeCodeAdapter { events: Arc<dyn EventSink> }
 impl ClaudeCodeAdapter {
-    pub fn new(state: Arc<BackendState>) -> Self { Self { state } }
+    pub fn new(events: Arc<dyn EventSink>) -> Self { Self { events } }
 }
 impl AgentAdapter for ClaudeCodeAdapter {
     fn detect(&self, info: &SessionInfo) -> Result<...> {
-        // Use self.state.events.emit_agent_detected(...) etc.
+        // Use self.events.emit_agent_tool_call(...) etc. to surface events.
     }
     // ...
 }
 ```
 
-Every `<R>` reference in the entire `agent/adapter/` subtree disappears in
-one go. Concrete adapters (`ClaudeCodeAdapter`, `CodexAdapter`) become
-non-generic structs that hold `Arc<BackendState>` as their event-emission
-handle. Trait method signatures lose the state parameter — the
-orchestrator in `agent/commands.rs` just calls `adapter.detect(info)` etc.
+Every `<R>` reference in the entire `agent/adapter/` subtree disappears
+in one go. Concrete adapters (`ClaudeCodeAdapter`, `CodexAdapter`)
+become non-generic structs that hold `Arc<dyn EventSink>` as their
+event-emission handle — narrower than `Arc<BackendState>` and crucially
+NOT cycle-forming. Trait method signatures lose the state parameter;
+the orchestrator in `agent/commands.rs` calls `adapter.detect(info)`
+directly. Other backend state the orchestrator needs to coordinate the
+attach (e.g., transcript path, pid metadata) is read from
+`BackendState` at the call site and passed in via the `SessionInfo` arg
+or stored on the adapter at construction.
 
 ### Refactor pattern: `lib.rs` setup hook
 
@@ -768,6 +781,27 @@ orchestrator in `agent/commands.rs` just calls `adapter.detect(info)` etc.
 ```rust
 .setup(|app| {
     let app_data_dir = app.path().app_data_dir().map_err(|e| ...)?;
+    let cache_path = app_data_dir.join("sessions.json");
+
+    // E2E parity: the existing cache pre-wipe must run BEFORE
+    // BackendState::new loads the cache. The block is the same as
+    // today (lib.rs:60-71); moving it inside BackendState would
+    // entangle the runtime layer with a test-only concern, so the
+    // wipe stays in the Tauri setup hook (and PR-D copies it into
+    // Electron's main process when the host moves).
+    #[cfg(feature = "e2e-test")]
+    {
+        if let Err(e) = std::fs::remove_file(&cache_path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                log::warn!(
+                    "e2e-test: failed to remove cache file {}: {}",
+                    cache_path.display(),
+                    e
+                );
+            }
+        }
+    }
+
     let sink: Arc<dyn EventSink> = Arc::new(TauriEventSink::new(app.handle().clone()));
     let state = Arc::new(BackendState::new(app_data_dir, sink));
     app.manage(state);
@@ -775,6 +809,11 @@ orchestrator in `agent/commands.rs` just calls `adapter.detect(info)` etc.
 })
 // no more individual .manage() calls — BackendState carries all five domains.
 ```
+
+`BackendState::new` recomputes `app_data_dir.join("sessions.json")`
+internally for `SessionCache::load_or_recover`. The pre-wipe block
+deletes the same path before construction, matching today's
+`#[cfg(feature = "e2e-test")]` ordering byte-for-byte.
 
 The graceful-exit `RunEvent::ExitRequested` handler changes from inline cache-wipe code to:
 
@@ -815,12 +854,16 @@ the order in `recorded()`:
    work). PR-A's `spawn_pty` body keeps that protocol byte-identical —
    the test asserts no `pty-data` event lands before the consumer
    side's `register_pending(ptyId)` completes.
-2. **`test-run` listener registration BEFORE `start_agent_watcher`.**
-   `agent_status` event today carries `test-run` updates piggy-backed
-   on transcript watcher attachment. PR-A's `start_agent_watcher` body
-   on `BackendState` keeps the same attachment ordering — the test
-   asserts the first `test-run` event in `recorded()` arrives after
-   the matching `agent-detected` event.
+2. **`test-run` is emitted only after the transcript tailer has been
+   subscribed.** Agent detection is frontend-poll-only (no
+   `agent-detected` event on the Rust side); the relevant Rust-side
+   ordering is "test-run emission happens AFTER the watcher's
+   transcript-tailer setup completes". The Rust test drives
+   `start_agent_watcher`, then writes a synthetic transcript line,
+   then asserts the first event in `recorded()` is the matching
+   `agent-tool-call` (or `test-run` for a tool-call that exercises
+   the test-runner emitter). Frontend listener-before-invoke ordering
+   stays in the existing TypeScript tests where it already lives.
 3. **`git-status-changed` listener registration BEFORE
    `start_git_watcher`.** Same shape as #2. New test for the parity
    contract.
@@ -846,10 +889,12 @@ the order in `recorded()`:
 ### Coverage gate
 
 Today's gate per `rules/typescript/testing/CLAUDE.md` is ≥80% statements
-on the TS side. The Rust side currently runs `cargo test` without an
-explicit coverage threshold; PR-A keeps that — coverage on the new
-files (`runtime/{state,event_sink,tauri_bridge}.rs`) is tracked via
-`cargo test`'s default counters and reviewed during the PR.
+on the TS side. The Rust side runs `cargo test` without an explicit
+coverage threshold and `cargo test` does NOT report coverage counters
+by default — PR-A keeps that status quo. Coverage on the new files
+(`runtime/{state,event_sink,tauri_bridge}.rs`) is reviewed during PR
+by reading the diff for test density; a follow-up PR may introduce
+`cargo-tarpaulin` or `cargo-llvm-cov` if we want a hard Rust gate.
 
 ### Pre-push gate
 
