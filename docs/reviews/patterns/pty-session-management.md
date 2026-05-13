@@ -2,7 +2,7 @@
 id: pty-session-management
 category: backend
 created: 2026-04-09
-last_updated: 2026-05-02
+last_updated: 2026-05-13
 ref_count: 2
 ---
 
@@ -69,3 +69,12 @@ never log terminal input (may contain secrets).
 - **Finding:** PR #123's perf optimization decoupled `read_pty_output` from the global `sessions` map (`Arc<Mutex<RingBuffer>>` cloned out, no per-chunk lock). The implicit "break on `sessions.get(session_id) == None`" guard that came along for free with the old per-chunk lock was eliminated without a replacement. After `kill_pty` removes a session, the read thread keeps reading and emitting `pty-data` until eventual EOF — fine for SIGTERM-honoring children, but a process that ignores SIGTERM keeps the read thread, the ring `Arc`, and the event flow alive indefinitely. The frontend buffers unknown-session `pty-data` optimistically, so the post-removal flow becomes unbounded memory growth on the JS side too.
 - **Fix:** Added `cancelled: Arc<AtomicBool>` to `ManagedSession` plus a `PtyState::set_cancelled(session_id)` method. `kill_pty` flips the flag AFTER the successful-kill / already-gone branches (NOT on the `KillError::KillFailed` path — flipping there would let a later read trip `remove_if_generation` and orphan a still-alive child from app state, breaking the retry contract). The read loop checks the flag at the TOP of the `Ok(n)` branch, BEFORE appending to the ring or emitting `pty-data` — checking after would leak one chunk per kill_pty. Codex verify caught both ordering bugs across two retry cycles before the third pass landed clean.
 - **Commit:** _(see git log for the round-1 fix commit; v1→v2→v3 codex-verify retries documented in `.harness-github-review/cycle-1-verify-result-v{1,2,3}.json`)_
+
+### 7. `addPane` orphan cleanup called `service.kill` BEFORE `dropAllForPty`, violating F6 tombstone-first invariant
+
+- **Source:** github-claude | PR #204 round 2 | 2026-05-13
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** Step 5c-2's `addPane` has two orphan-cleanup branches: (a) `!fresh` (session vanished during spawn), (b) `!appended` (reducer rejected at commit). Branch (b) correctly tombstones first (`dropAllForPty(result.sessionId)` then `await service.kill(...)`); branch (a) used the inverse order (kill then drop), so during the kill IPC round-trip any `pty-data` event the orphan emitted would be accepted into `usePtyBufferDrain`'s `bufferedRef` / `pendingPanesRef` and only discarded once `dropAllForPty` ran. The F6 invariant in `usePtyBufferDrain.ts` is explicit: "tombstone FIRST so any racing pty-data event arriving between here and Rust's actual kill is dropped on the floor instead of re-populating bufferedRef." Copy-paste drift between the two branches.
+- **Fix:** Swap the order in branch (a) so `dropAllForPty(result.sessionId)` runs BEFORE the `await service.kill(...)`. One-line move. Identical shape to branch (b); both branches now match the F6 contract. Code-review heuristic: any two cleanup branches in the same function that handle the same resource MUST share the same tombstone+kill ordering — any divergence is a copy-paste bug, not a deliberate design choice.
+- **Commit:** _(see git log for the cycle-2 fix commit on PR #204)_

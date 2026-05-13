@@ -3215,6 +3215,10 @@ describe('useSessionManager', () => {
     // for the target pane can race the setActiveSession IPC and leave
     // Rust briefly pointing at a dying PTY; the cleanest fix is to make
     // focus rotation a no-op while a lifecycle op holds pendingPaneOps.
+    // Round 14, Claude LOW: the guarded early-return must also warn so
+    // a developer chasing a "⌘1-4 stopped working briefly" report sees
+    // the suppression in devtools (parity with every other guard in the
+    // file).
     test('setSessionActivePane is a no-op while removePane is in flight', async () => {
       const service = createSequentialSpawnService()
       let resolveKill: () => void = () => undefined
@@ -3238,6 +3242,8 @@ describe('useSessionManager', () => {
       // happen during the racing window we're exercising below.
       ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
 
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
       // Start a removePane that will block until we resolve the kill.
       act(() => result.current.removePane(sessionId, 'p0'))
 
@@ -3256,6 +3262,11 @@ describe('useSessionManager', () => {
 
       expect(activeAfter).toBe(activeBefore)
       expect(service.setActiveSession).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('pane op in flight')
+      )
+
+      warn.mockRestore()
 
       // Let removePane finish so the hook unwinds cleanly.
       await act(async () => {

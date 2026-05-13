@@ -597,7 +597,17 @@ export const useSessionManager = (
       // self-corrects the state, but the dropped input is unrecoverable.
       // Treat focus rotation as a no-op while a lifecycle op is pending
       // (the target pane may evaporate anyway when the remove commits).
+      // Warn for parity with every other guarded early-return in this
+      // function (and in addPane / removePane): otherwise a developer
+      // chasing a "⌘1-4 stopped working for 50–300ms" report sees
+      // nothing in devtools and can't distinguish the transient
+      // suppression from a real bug.
       if (pendingPaneOps.current.has(sessionId)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `setSessionActivePane: pane op in flight for ${sessionId}; ignoring`
+        )
+
         return
       }
       const session = sessionsRef.current.find((s) => s.id === sessionId)
@@ -688,13 +698,19 @@ export const useSessionManager = (
 
           const fresh = sessionsRef.current.find((s) => s.id === sessionId)
           if (!fresh) {
+            // F6 tombstone-first (mirrors the `!appended` path and the
+            // invariant in usePtyBufferDrain.ts): drop the orphan's
+            // pty-data buffer BEFORE awaiting kill, so any pty-data
+            // event arriving during the kill round-trip is rejected
+            // by the tombstone instead of being buffered for a
+            // consumer that will never mount.
+            dropAllForPty(result.sessionId)
             try {
               await service.kill({ sessionId: result.sessionId })
             } catch (err) {
               // eslint-disable-next-line no-console
               console.warn('addPane: failed to kill orphan PTY', err)
             }
-            dropAllForPty(result.sessionId)
 
             return
           }
