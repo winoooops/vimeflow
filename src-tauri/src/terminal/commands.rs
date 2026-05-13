@@ -10,6 +10,7 @@ use crate::debug::debug_log;
 use crate::runtime::BackendState;
 use crate::runtime::EventSink;
 
+use super::events::{emit_pty_data, emit_pty_error, emit_pty_exit};
 use super::state::{ManagedSession, PtyState, RingBuffer};
 use super::types::*;
 
@@ -792,12 +793,14 @@ async fn read_pty_output(
                     }
                     Ok(())
                 });
-                events
-                    .emit_pty_exit(&PtyExitEvent {
+                emit_pty_exit(
+                    events.as_ref(),
+                    &PtyExitEvent {
                         session_id: session_id.clone(),
                         code: None,
-                    })
-                    .ok();
+                    },
+                )
+                .ok();
                 break;
             }
             Ok(n) => {
@@ -822,8 +825,9 @@ async fn read_pty_output(
                     ring.append(&buf[..n])
                 };
                 let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                events
-                    .emit_pty_data(&PtyDataEvent {
+                emit_pty_data(
+                    events.as_ref(),
+                    &PtyDataEvent {
                         session_id: session_id.clone(),
                         data,
                         offset_start: chunk_start,
@@ -833,8 +837,9 @@ async fn read_pty_output(
                         // length of `data` (lossy UTF-8 inflates invalid
                         // bytes to U+FFFD, which is 3 bytes when re-encoded).
                         byte_len: n as u64,
-                    })
-                    .ok();
+                    },
+                )
+                .ok();
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
                 // Interrupted - retry
@@ -843,12 +848,14 @@ async fn read_pty_output(
             Err(e) => {
                 // Error - emit error event and exit
                 log::error!("PTY read error for session {}: {}", session_id, e);
-                events
-                    .emit_pty_error(&PtyErrorEvent {
+                emit_pty_error(
+                    events.as_ref(),
+                    &PtyErrorEvent {
                         session_id: session_id.clone(),
                         message: e.to_string(),
-                    })
-                    .ok();
+                    },
+                )
+                .ok();
                 break;
             }
         }

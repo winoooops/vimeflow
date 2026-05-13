@@ -6,6 +6,7 @@ pub mod event_sink;
 pub mod state;
 pub mod tauri_bridge;
 
+pub(crate) use event_sink::serialize_event;
 pub use event_sink::EventSink;
 pub use state::BackendState;
 pub use tauri_bridge::TauriEventSink;

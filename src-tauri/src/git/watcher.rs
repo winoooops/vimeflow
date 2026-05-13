@@ -26,7 +26,7 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use super::validate_cwd;
 #[cfg(not(test))]
 use crate::runtime::BackendState;
-use crate::runtime::EventSink;
+use crate::runtime::{serialize_event, EventSink};
 
 /// Debounce interval — emit after filesystem events have been quiet for 300ms.
 const DEBOUNCE_MS: u64 = 300;
@@ -351,9 +351,9 @@ impl GitWatcherState {
 /// Payload emitted when git status changes
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct GitStatusChangedPayload {
+struct GitStatusChangedPayload {
     /// List of input cwds that should refresh
-    pub(crate) cwds: Vec<String>,
+    cwds: Vec<String>,
 }
 
 /// Resolve the git toplevel for a given cwd. Uses `run_sync_with_timeout`
@@ -1302,7 +1302,11 @@ fn emit_for_all_subscribers(
 
 /// Emit a git-status-changed event
 fn emit_git_status_changed(events: &Arc<dyn EventSink>, cwds: Vec<String>) {
-    if let Err(e) = events.emit_git_status_changed(cwds) {
+    let payload = GitStatusChangedPayload { cwds };
+    let result = serialize_event(&payload)
+        .and_then(|payload| events.emit_json("git-status-changed", payload));
+
+    if let Err(e) = result {
         log::error!("Failed to emit git-status-changed: {}", e);
     }
 }

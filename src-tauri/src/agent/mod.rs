@@ -7,6 +7,7 @@
 pub mod adapter;
 pub mod commands;
 pub mod detector;
+pub(crate) mod events;
 pub mod types;
 
 // Re-export commonly used types for external modules and frontend

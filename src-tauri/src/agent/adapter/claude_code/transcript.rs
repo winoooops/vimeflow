@@ -18,6 +18,7 @@ use super::test_runners::emitter::TestRunEmitter;
 use super::test_runners::matcher::{match_command, MatchedCommand};
 use crate::agent::adapter::base::TranscriptHandle;
 use crate::agent::adapter::types::ValidateTranscriptError;
+use crate::agent::events::{emit_agent_tool_call, emit_agent_turn};
 use crate::agent::types::{AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
 use crate::runtime::EventSink;
 
@@ -390,7 +391,7 @@ fn process_assistant_message(
             is_test_file,
         };
 
-        if let Err(e) = events.emit_agent_tool_call(&event) {
+        if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
             log::warn!("Failed to emit agent-tool-call event: {}", e);
         }
     }
@@ -430,7 +431,7 @@ fn process_user_message(
             num_turns: *num_turns,
         };
 
-        if let Err(e) = events.emit_agent_turn(&event) {
+        if let Err(e) = emit_agent_turn(events.as_ref(), &event) {
             log::warn!("Failed to emit agent-turn event: {}", e);
         }
     }
@@ -523,7 +524,7 @@ fn process_tool_result(
         is_test_file,
     };
 
-    if let Err(e) = events.emit_agent_tool_call(&event) {
+    if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
         log::warn!("Failed to emit agent-tool-call event: {}", e);
     }
 }

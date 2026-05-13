@@ -66,6 +66,12 @@ impl RecordingEventSink {
     }
 }
 
+impl Default for RecordingEventSink {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventSink for RecordingEventSink {
     fn emit_json(&self, event: &str, payload: Value) -> Result<(), String> {
         self.recorded

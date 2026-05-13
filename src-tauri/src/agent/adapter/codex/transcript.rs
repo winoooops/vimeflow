@@ -18,6 +18,7 @@ use crate::agent::adapter::claude_code::test_runners::test_file_patterns::is_tes
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
 use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::adapter::types::ValidateTranscriptError;
+use crate::agent::events::{emit_agent_tool_call, emit_agent_turn};
 use crate::agent::types::{AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
 use crate::runtime::EventSink;
 
@@ -292,7 +293,7 @@ fn process_user_message(
         num_turns: *num_turns,
     };
 
-    if let Err(e) = events.emit_agent_turn(&event) {
+    if let Err(e) = emit_agent_turn(events.as_ref(), &event) {
         log::warn!("Failed to emit agent-turn event: {}", e);
     }
 }
@@ -575,7 +576,7 @@ fn process_patch_apply_end(
 }
 
 fn emit_tool_call(events: &Arc<dyn EventSink>, event: AgentToolCallEvent) {
-    if let Err(e) = events.emit_agent_tool_call(&event) {
+    if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
         log::warn!("Failed to emit agent-tool-call event: {}", e);
     }
 }

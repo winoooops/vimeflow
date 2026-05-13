@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use super::types::TestRunSnapshot;
-use crate::runtime::EventSink;
+use crate::runtime::{serialize_event, EventSink};
 
 pub struct TestRunEmitter {
     events: Arc<dyn EventSink>,
@@ -26,7 +26,7 @@ impl TestRunEmitter {
 
     pub fn submit(&mut self, snapshot: TestRunSnapshot) {
         if self.replay_done {
-            if let Err(e) = self.events.emit_test_run(&snapshot) {
+            if let Err(e) = emit_test_run(self.events.as_ref(), &snapshot) {
                 log::warn!("Failed to emit test-run event: {}", e);
             }
         } else {
@@ -40,11 +40,15 @@ impl TestRunEmitter {
         }
         self.replay_done = true;
         if let Some(s) = self.pending.take() {
-            if let Err(e) = self.events.emit_test_run(&s) {
+            if let Err(e) = emit_test_run(self.events.as_ref(), &s) {
                 log::warn!("Failed to emit test-run event: {}", e);
             }
         }
     }
+}
+
+fn emit_test_run(events: &dyn EventSink, payload: &TestRunSnapshot) -> Result<(), String> {
+    events.emit_json("test-run", serialize_event(payload)?)
 }
 
 #[cfg(test)]

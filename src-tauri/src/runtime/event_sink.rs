@@ -1,54 +1,13 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::agent::adapter::claude_code::test_runners::types::TestRunSnapshot;
-use crate::agent::types::{AgentStatusEvent, AgentToolCallEvent, AgentTurnEvent};
-use crate::git::watcher::GitStatusChangedPayload;
-use crate::terminal::types::{PtyDataEvent, PtyErrorEvent, PtyExitEvent};
-
 /// Runtime-neutral event emission.
-///
-/// Only `emit_json` is required; typed helpers preserve the current event
-/// names and serde payload shapes at call sites.
 pub trait EventSink: Send + Sync + 'static {
     fn emit_json(&self, event: &str, payload: Value) -> Result<(), String>;
-
-    fn emit_pty_data(&self, payload: &PtyDataEvent) -> Result<(), String> {
-        self.emit_json("pty-data", serialize(payload)?)
-    }
-
-    fn emit_pty_exit(&self, payload: &PtyExitEvent) -> Result<(), String> {
-        self.emit_json("pty-exit", serialize(payload)?)
-    }
-
-    fn emit_pty_error(&self, payload: &PtyErrorEvent) -> Result<(), String> {
-        self.emit_json("pty-error", serialize(payload)?)
-    }
-
-    fn emit_agent_status(&self, payload: &AgentStatusEvent) -> Result<(), String> {
-        self.emit_json("agent-status", serialize(payload)?)
-    }
-
-    fn emit_agent_tool_call(&self, payload: &AgentToolCallEvent) -> Result<(), String> {
-        self.emit_json("agent-tool-call", serialize(payload)?)
-    }
-
-    fn emit_agent_turn(&self, payload: &AgentTurnEvent) -> Result<(), String> {
-        self.emit_json("agent-turn", serialize(payload)?)
-    }
-
-    fn emit_test_run(&self, payload: &TestRunSnapshot) -> Result<(), String> {
-        self.emit_json("test-run", serialize(payload)?)
-    }
-
-    fn emit_git_status_changed(&self, cwds: Vec<String>) -> Result<(), String> {
-        let payload = GitStatusChangedPayload { cwds };
-        self.emit_json("git-status-changed", serialize(&payload)?)
-    }
 }
 
 #[inline]
-fn serialize<T: Serialize>(value: &T) -> Result<Value, String> {
+pub(crate) fn serialize_event<T: Serialize>(value: &T) -> Result<Value, String> {
     serde_json::to_value(value).map_err(|err| format!("event serialize: {err}"))
 }
 

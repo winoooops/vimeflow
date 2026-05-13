@@ -18,6 +18,7 @@ use super::diagnostics::{record_event_diag, EventTiming, PathHistory, TxOutcome}
 use super::transcript_state::{TranscriptStartStatus, TranscriptState};
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::adapter::AgentAdapter;
+use crate::agent::events::emit_agent_status;
 use crate::runtime::EventSink;
 use crate::terminal::PtyState;
 
@@ -318,7 +319,7 @@ pub(super) fn start_watching(
 
         let (outcome, tx_path) = match adapter_for_cb.parse_status(&sid, &contents) {
             Ok(parsed) => {
-                if let Err(e) = events_for_cb.emit_agent_status(&parsed.event) {
+                if let Err(e) = emit_agent_status(events_for_cb.as_ref(), &parsed.event) {
                     log::error!("Failed to emit agent-status event: {}", e);
                 }
 
@@ -391,7 +392,7 @@ pub(super) fn start_watching(
                 *last_processed.lock().expect("failed to lock debounce") = Instant::now();
                 match initial_adapter.parse_status(&initial_sid, &contents) {
                     Ok(parsed) => {
-                        let _ = initial_events.emit_agent_status(&parsed.event);
+                        let _ = emit_agent_status(initial_events.as_ref(), &parsed.event);
                         if let Some(ref path) = parsed.transcript_path {
                             outcome = maybe_start_transcript(
                                 &initial_adapter,
@@ -483,7 +484,7 @@ pub(super) fn start_watching(
 
                 let (outcome, tx_path) = match adapter_for_poll.parse_status(&poll_sid, &contents) {
                     Ok(parsed) => {
-                        let _ = poll_events.emit_agent_status(&parsed.event);
+                        let _ = emit_agent_status(poll_events.as_ref(), &parsed.event);
                         if let Some(ref path) = parsed.transcript_path {
                             let outcome = maybe_start_transcript(
                                 &adapter_for_poll,

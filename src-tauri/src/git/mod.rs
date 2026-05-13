@@ -556,6 +556,7 @@ pub async fn git_status(
     state.git_status(cwd).await
 }
 
+// Git unit tests call the command name directly while bypassing tauri::State.
 #[cfg(test)]
 pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
     git_status_inner(cwd).await
@@ -892,6 +893,7 @@ pub async fn get_git_diff(
     state.get_git_diff(cwd, file, staged, untracked).await
 }
 
+// Git unit tests call the command name directly while bypassing tauri::State.
 #[cfg(test)]
 pub async fn get_git_diff(
     cwd: String,
@@ -1003,6 +1005,7 @@ pub async fn git_branch(
     state.git_branch(cwd).await
 }
 
+// Git unit tests call the command name directly while bypassing tauri::State.
 #[cfg(test)]
 pub async fn git_branch(cwd: String) -> Result<String, String> {
     git_branch_inner(cwd).await
