@@ -3,6 +3,7 @@ dist
 coverage
 src-tauri/target
 playwright-report
+.lifeline-planner
 *.min.js
 *.d.ts
 docs/design/*/code.html
