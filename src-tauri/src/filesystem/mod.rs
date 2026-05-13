@@ -18,14 +18,17 @@
 //!
 //! See `SECURITY.md` for the full model.
 
-mod list;
-mod read;
+pub(crate) mod list;
+pub(crate) mod read;
 pub(crate) mod scope;
-mod types;
-mod write;
+pub(crate) mod types;
+pub(crate) mod write;
 
+#[cfg(not(test))]
 pub use list::list_dir;
+#[cfg(not(test))]
 pub use read::read_file;
+#[cfg(not(test))]
 pub use write::write_file;
 
 #[cfg(test)]

@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::agent::adapter::AgentAdapter;
+use crate::runtime::EventSink;
 
 /// Internal lifecycle type — created by adapter `tail_transcript`
 /// implementations (e.g., `claude_code::transcript::start_tailing` via
@@ -67,17 +68,12 @@ struct TranscriptWatcher {
     handle: TranscriptHandle,
 }
 
-/// Tauri-managed registry of in-flight transcript tailers, one per
-/// session. Constructed once at app startup in `lib.rs` via
-/// `.manage(TranscriptState::new())` and accessed via
-/// `app_handle.state::<TranscriptState>()` from `WatcherHandle::Drop`,
-/// `AgentAdapter::start`, and adapter `tail_transcript` impls. `pub` is
-/// for Tauri's managed-state machinery (it requires `'static` types
-/// reachable from outside the defining module) and for direct
-/// instantiation in `#[cfg(test)]` integration tests under
+/// Runtime-managed registry of in-flight transcript tailers, one per
+/// session. Constructed once as part of `BackendState` and passed to the
+/// watcher runtime and adapter `tail_transcript` impls. `pub` supports
+/// direct instantiation in `#[cfg(test)]` integration tests under
 /// `src-tauri/tests/transcript_*.rs`; do not construct ad hoc instances
-/// in production code paths — there must be exactly one registered with
-/// the app.
+/// in production code paths.
 #[doc(hidden)]
 #[derive(Default, Clone)]
 pub struct TranscriptState {
@@ -102,10 +98,10 @@ impl TranscriptState {
 
     /// Start tailing when none is active, or switch to a newer transcript
     /// path or workspace cwd.
-    pub fn start_or_replace<R: tauri::Runtime>(
+    pub fn start_or_replace(
         &self,
-        adapter: Arc<dyn AgentAdapter<R>>,
-        app_handle: tauri::AppHandle<R>,
+        adapter: Arc<dyn AgentAdapter>,
+        events: Arc<dyn EventSink>,
         session_id: String,
         transcript_path: PathBuf,
         cwd: Option<PathBuf>,
@@ -170,7 +166,7 @@ impl TranscriptState {
         }
 
         let new_handle = adapter.tail_transcript(
-            app_handle,
+            events,
             session_id.clone(),
             cwd.clone(),
             transcript_path.clone(),
@@ -262,6 +258,7 @@ impl TranscriptState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::FakeEventSink;
 
     #[test]
     fn transcript_state_contains_empty() {
@@ -271,9 +268,7 @@ mod tests {
 
     #[test]
     fn transcript_state_replaces_changed_path() {
-        let app = tauri::test::mock_builder()
-            .build(tauri::generate_context!())
-            .expect("failed to build test app");
+        let sink = Arc::new(FakeEventSink::new());
         let tmp = tempfile::tempdir().expect("failed to create temp dir");
         let first_path = tmp.path().join("first.jsonl");
         let second_path = tmp.path().join("second.jsonl");
@@ -282,13 +277,13 @@ mod tests {
 
         let state = TranscriptState::new();
         let session_id = "session-1".to_string();
-        let adapter: Arc<dyn AgentAdapter<tauri::test::MockRuntime>> =
+        let adapter: Arc<dyn AgentAdapter> =
             Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
 
         let first_status = state
             .start_or_replace(
                 adapter.clone(),
-                app.handle().clone(),
+                sink.clone(),
                 session_id.clone(),
                 first_path.clone(),
                 None,
@@ -299,7 +294,7 @@ mod tests {
         let duplicate_status = state
             .start_or_replace(
                 adapter.clone(),
-                app.handle().clone(),
+                sink.clone(),
                 session_id.clone(),
                 first_path,
                 None,
@@ -308,13 +303,7 @@ mod tests {
         assert_eq!(duplicate_status, TranscriptStartStatus::AlreadyRunning);
 
         let replaced_status = state
-            .start_or_replace(
-                adapter,
-                app.handle().clone(),
-                session_id.clone(),
-                second_path,
-                None,
-            )
+            .start_or_replace(adapter, sink.clone(), session_id.clone(), second_path, None)
             .expect("failed to replace transcript watcher");
         assert_eq!(replaced_status, TranscriptStartStatus::Replaced);
 
@@ -323,22 +312,20 @@ mod tests {
 
     #[test]
     fn transcript_state_threads_cwd_through() {
-        let app = tauri::test::mock_builder()
-            .build(tauri::generate_context!())
-            .expect("failed to build test app");
+        let sink = Arc::new(FakeEventSink::new());
         let tmp = tempfile::tempdir().expect("failed to create temp dir");
         let transcript_path = tmp.path().join("t.jsonl");
         std::fs::write(&transcript_path, "").expect("failed to write transcript");
         let cwd = tmp.path().to_path_buf();
 
         let state = TranscriptState::new();
-        let adapter: Arc<dyn AgentAdapter<tauri::test::MockRuntime>> =
+        let adapter: Arc<dyn AgentAdapter> =
             Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
 
         let status = state
             .start_or_replace(
                 adapter,
-                app.handle().clone(),
+                sink.clone(),
                 "session-cwd".to_string(),
                 transcript_path,
                 Some(cwd),
@@ -351,9 +338,7 @@ mod tests {
 
     #[test]
     fn transcript_state_replaces_when_only_cwd_changes() {
-        let app = tauri::test::mock_builder()
-            .build(tauri::generate_context!())
-            .expect("failed to build test app");
+        let sink = Arc::new(FakeEventSink::new());
         let tmp = tempfile::tempdir().expect("failed to create temp dir");
         let transcript_path = tmp.path().join("t.jsonl");
         std::fs::write(&transcript_path, "").expect("failed to write transcript");
@@ -362,13 +347,13 @@ mod tests {
 
         let state = TranscriptState::new();
         let session_id = "session-cwd-change".to_string();
-        let adapter: Arc<dyn AgentAdapter<tauri::test::MockRuntime>> =
+        let adapter: Arc<dyn AgentAdapter> =
             Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
 
         let first = state
             .start_or_replace(
                 adapter.clone(),
-                app.handle().clone(),
+                sink.clone(),
                 session_id.clone(),
                 transcript_path.clone(),
                 Some(cwd_a.path().to_path_buf()),
@@ -379,7 +364,7 @@ mod tests {
         let same = state
             .start_or_replace(
                 adapter.clone(),
-                app.handle().clone(),
+                sink.clone(),
                 session_id.clone(),
                 transcript_path.clone(),
                 Some(cwd_a.path().to_path_buf()),
@@ -390,7 +375,7 @@ mod tests {
         let replaced = state
             .start_or_replace(
                 adapter.clone(),
-                app.handle().clone(),
+                sink.clone(),
                 session_id.clone(),
                 transcript_path.clone(),
                 Some(cwd_b.path().to_path_buf()),
@@ -401,7 +386,7 @@ mod tests {
         let replaced_to_none = state
             .start_or_replace(
                 adapter,
-                app.handle().clone(),
+                sink.clone(),
                 session_id.clone(),
                 transcript_path,
                 None,
@@ -448,7 +433,7 @@ mod tests {
             stop_flags: Arc<Mutex<Vec<Arc<AtomicBool>>>>,
         }
 
-        impl<R: tauri::Runtime> AgentAdapter<R> for OrderingAdapter {
+        impl AgentAdapter for OrderingAdapter {
             fn agent_type(&self) -> crate::agent::types::AgentType {
                 crate::agent::types::AgentType::ClaudeCode
             }
@@ -479,7 +464,7 @@ mod tests {
 
             fn tail_transcript(
                 &self,
-                _app: tauri::AppHandle<R>,
+                _events: Arc<dyn crate::runtime::EventSink>,
                 _session_id: String,
                 cwd: Option<PathBuf>,
                 _transcript_path: PathBuf,
@@ -520,9 +505,7 @@ mod tests {
             }
         }
 
-        let app = tauri::test::mock_builder()
-            .build(tauri::generate_context!())
-            .expect("failed to build test app");
+        let sink = Arc::new(FakeEventSink::new());
         let tmp = tempfile::tempdir().expect("failed to create temp dir");
         let transcript_path = tmp.path().join("t.jsonl");
         std::fs::write(&transcript_path, "").expect("failed to write transcript");
@@ -531,7 +514,7 @@ mod tests {
 
         let events = Arc::new(Mutex::new(Vec::<String>::new()));
         let stop_flags = Arc::new(Mutex::new(Vec::<Arc<AtomicBool>>::new()));
-        let adapter: Arc<dyn AgentAdapter<tauri::test::MockRuntime>> = Arc::new(OrderingAdapter {
+        let adapter: Arc<dyn AgentAdapter> = Arc::new(OrderingAdapter {
             events: Arc::clone(&events),
             stop_flags: Arc::clone(&stop_flags),
         });
@@ -542,7 +525,7 @@ mod tests {
         state
             .start_or_replace(
                 adapter.clone(),
-                app.handle().clone(),
+                sink.clone(),
                 session_id.clone(),
                 transcript_path.clone(),
                 Some(cwd_a.path().to_path_buf()),
@@ -552,7 +535,7 @@ mod tests {
         state
             .start_or_replace(
                 adapter,
-                app.handle().clone(),
+                sink.clone(),
                 session_id.clone(),
                 transcript_path,
                 Some(cwd_b.path().to_path_buf()),

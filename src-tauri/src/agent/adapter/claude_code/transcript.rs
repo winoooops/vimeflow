@@ -1,7 +1,7 @@
 //! Transcript JSONL parser for Claude Code tool call tracking
 //!
 //! Tails a Claude Code transcript JSONL file and extracts activity events.
-//! Emits `agent-tool-call` Tauri events for each tool call start/completion
+//! Emits `agent-tool-call` backend events for each tool call start/completion
 //! and `agent-turn` events as real user prompts are observed.
 
 use std::collections::HashMap;
@@ -13,13 +13,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use tauri::Emitter;
 
 use super::test_runners::emitter::TestRunEmitter;
 use super::test_runners::matcher::{match_command, MatchedCommand};
 use crate::agent::adapter::base::TranscriptHandle;
 use crate::agent::adapter::types::ValidateTranscriptError;
+use crate::agent::events::{emit_agent_tool_call, emit_agent_turn};
 use crate::agent::types::{AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
+use crate::runtime::EventSink;
 
 /// Poll interval for checking new transcript lines
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -181,9 +182,9 @@ fn input_pattern(input: &Value) -> Option<&str> {
 
 /// Start tailing a transcript JSONL file.
 /// Reads from the beginning to catch up on missed tool calls.
-/// Emits `agent-tool-call` Tauri events for each tool call detected.
-pub fn start_tailing<R: tauri::Runtime>(
-    app_handle: tauri::AppHandle<R>,
+/// Emits `agent-tool-call` backend events for each tool call detected.
+pub fn start_tailing(
+    events: Arc<dyn EventSink>,
     session_id: String,
     transcript_path: PathBuf,
     cwd: Option<PathBuf>,
@@ -200,15 +201,15 @@ pub fn start_tailing<R: tauri::Runtime>(
     let stop_clone = stop_flag.clone();
 
     let join_handle = std::thread::spawn(move || {
-        tail_loop(app_handle, session_id, cwd, file, stop_clone);
+        tail_loop(events, session_id, cwd, file, stop_clone);
     });
 
     Ok(TranscriptHandle::new(stop_flag, join_handle))
 }
 
 /// Background loop that tails the transcript file
-fn tail_loop<R: tauri::Runtime>(
-    app_handle: tauri::AppHandle<R>,
+fn tail_loop(
+    events: Arc<dyn EventSink>,
     session_id: String,
     cwd: Option<PathBuf>,
     file: File,
@@ -228,7 +229,7 @@ fn tail_loop<R: tauri::Runtime>(
     // Replay-aware emitter — buffers test-run snapshots during the initial
     // catch-up read and emits the latest one (only) on the first EOF. Once
     // we're tailing live, every snapshot emits immediately.
-    let mut emitter = TestRunEmitter::new(app_handle.clone());
+    let mut emitter = TestRunEmitter::new(events.clone());
 
     // Buffer for partial lines
     let mut line_buf = String::new();
@@ -255,7 +256,7 @@ fn tail_loop<R: tauri::Runtime>(
                     line,
                     &session_id,
                     cwd.as_deref(),
-                    &app_handle,
+                    &events,
                     &mut emitter,
                     &mut in_flight,
                     &mut num_turns,
@@ -270,12 +271,12 @@ fn tail_loop<R: tauri::Runtime>(
 }
 
 /// Process a single JSONL line and emit events if it's a tool call
-fn process_line<R: tauri::Runtime>(
+fn process_line(
     line: &str,
     session_id: &str,
     cwd: Option<&Path>,
-    app_handle: &tauri::AppHandle<R>,
-    emitter: &mut TestRunEmitter<R>,
+    events: &Arc<dyn EventSink>,
+    emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
 ) {
@@ -289,17 +290,17 @@ fn process_line<R: tauri::Runtime>(
 
     match line_type(&value) {
         "assistant" => {
-            process_assistant_message(&value, session_id, cwd, app_handle, in_flight);
+            process_assistant_message(&value, session_id, cwd, events, in_flight);
         }
         "user" => {
             process_user_message(
-                &value, session_id, cwd, app_handle, emitter, in_flight, num_turns,
+                &value, session_id, cwd, events, emitter, in_flight, num_turns,
             );
         }
         "tool_result" => {
             let timestamp = extract_timestamp(&value);
             process_tool_result(
-                &value, session_id, cwd, app_handle, emitter, in_flight, &timestamp,
+                &value, session_id, cwd, events, emitter, in_flight, &timestamp,
             );
         }
         _ => {
@@ -322,11 +323,11 @@ fn extract_timestamp(value: &Value) -> String {
         .unwrap_or_else(now_iso8601)
 }
 
-fn process_assistant_message<R: tauri::Runtime>(
+fn process_assistant_message(
     value: &Value,
     session_id: &str,
     cwd: Option<&Path>,
-    app_handle: &tauri::AppHandle<R>,
+    events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
 ) {
     let content = match message_content_items(value) {
@@ -390,19 +391,19 @@ fn process_assistant_message<R: tauri::Runtime>(
             is_test_file,
         };
 
-        if let Err(e) = app_handle.emit("agent-tool-call", &event) {
+        if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
             log::warn!("Failed to emit agent-tool-call event: {}", e);
         }
     }
 }
 
 /// Extract tool_result entries from a user message.
-fn process_user_message<R: tauri::Runtime>(
+fn process_user_message(
     value: &Value,
     session_id: &str,
     cwd: Option<&Path>,
-    app_handle: &tauri::AppHandle<R>,
-    emitter: &mut TestRunEmitter<R>,
+    events: &Arc<dyn EventSink>,
+    emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
 ) {
@@ -417,7 +418,7 @@ fn process_user_message<R: tauri::Runtime>(
         for item in items {
             if is_tool_result_block(item) {
                 process_tool_result(
-                    item, session_id, cwd, app_handle, emitter, in_flight, &timestamp,
+                    item, session_id, cwd, events, emitter, in_flight, &timestamp,
                 );
             }
         }
@@ -430,19 +431,19 @@ fn process_user_message<R: tauri::Runtime>(
             num_turns: *num_turns,
         };
 
-        if let Err(e) = app_handle.emit("agent-turn", &event) {
+        if let Err(e) = emit_agent_turn(events.as_ref(), &event) {
             log::warn!("Failed to emit agent-turn event: {}", e);
         }
     }
 }
 
 /// Process a tool_result line and emit Done/Failed event
-fn process_tool_result<R: tauri::Runtime>(
+fn process_tool_result(
     value: &Value,
     session_id: &str,
     cwd: Option<&Path>,
-    app_handle: &tauri::AppHandle<R>,
-    emitter: &mut TestRunEmitter<R>,
+    events: &Arc<dyn EventSink>,
+    emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
@@ -474,7 +475,7 @@ fn process_tool_result<R: tauri::Runtime>(
         let content = extract_tool_result_content(value);
         let captured = super::test_runners::types::CapturedOutput { content, is_error };
         // Build the snapshot only when we have a workspace cwd. Falling
-        // back to `Path::new(".")` would canonicalise to the Tauri app
+        // back to `Path::new(".")` would canonicalise to the backend
         // process's cwd — NOT the user's workspace — so test-file groups
         // would resolve against the wrong directory (silently producing
         // non-clickable or misleadingly-scoped rows). When cwd is absent
@@ -523,7 +524,7 @@ fn process_tool_result<R: tauri::Runtime>(
         is_test_file,
     };
 
-    if let Err(e) = app_handle.emit("agent-tool-call", &event) {
+    if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
         log::warn!("Failed to emit agent-tool-call event: {}", e);
     }
 }
@@ -1196,10 +1197,8 @@ mod tests {
         // this signal: in_flight.remove(id) returns None when the parent
         // tool_use was never recorded (typically because Claude Code
         // transcript compaction trimmed it). The test asserts the
-        // prerequisite, not the full emit-side path — a Tauri AppHandle
-        // cannot be cheaply constructed in unit tests, so we can't
-        // directly observe "no event was emitted" without refactoring
-        // process_tool_result to accept an injected channel.
+        // prerequisite, not the full emit-side path; those assertions live
+        // in EventSink-backed integration coverage.
         //
         // If the orphan-drop signal ever changes (e.g. we switch to a
         // different data structure), update this test and the `let Some
@@ -1265,10 +1264,9 @@ mod tests {
     }
 
     // is_user_prompt / is_non_empty_user_block — direct in-module coverage.
-    // The integration test at tests/transcript_turns.rs exercises these end
-    // to end through the watcher; these unit tests pin the predicate
-    // contract so a refactor can't silently regress the edge cases without
-    // standing up the Tauri mock harness.
+    // transcript_fixture_tests exercises these end to end through the watcher;
+    // these unit tests pin the predicate contract so a refactor can't silently
+    // regress the edge cases.
 
     #[test]
     fn is_user_prompt_string_path_rejects_whitespace_only() {
