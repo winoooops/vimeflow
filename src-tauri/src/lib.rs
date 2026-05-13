@@ -131,6 +131,8 @@ pub fn run() {
         terminal::test_commands::list_active_pty_sessions
     ]);
 
+    // Test builds exercise command bodies directly via BackendState/*_inner helpers,
+    // so no invoke_handler is registered in this cfg branch.
     #[cfg(test)]
     let builder = builder;
 

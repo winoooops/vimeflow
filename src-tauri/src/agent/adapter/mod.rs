@@ -17,7 +17,9 @@ pub use base::AgentWatcherState;
 
 use crate::agent::detector::detect_agent;
 use crate::agent::types::AgentType;
-use crate::runtime::{BackendState, EventSink};
+#[cfg(not(test))]
+use crate::runtime::BackendState;
+use crate::runtime::EventSink;
 use crate::terminal::types::SessionId;
 use crate::terminal::PtyState;
 use base::{TranscriptHandle, TranscriptState};
@@ -138,6 +140,7 @@ impl AgentAdapter for NoOpAdapter {
 }
 
 /// Start watching an agent status source for a PTY session.
+#[cfg(not(test))]
 #[tauri::command]
 pub async fn start_agent_watcher(
     state: tauri::State<'_, Arc<BackendState>>,
@@ -209,6 +212,7 @@ where
 }
 
 /// Stop watching an agent status source.
+#[cfg(not(test))]
 #[tauri::command]
 pub async fn stop_agent_watcher(
     state: tauri::State<'_, Arc<BackendState>>,

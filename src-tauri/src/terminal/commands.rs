@@ -29,16 +29,6 @@ pub async fn spawn_pty(
     state.spawn_pty(request).await
 }
 
-#[cfg(test)]
-pub async fn spawn_pty(
-    state: PtyState,
-    cache: Arc<super::cache::SessionCache>,
-    events: Arc<dyn EventSink>,
-    request: SpawnPtyRequest,
-) -> Result<PtySession, String> {
-    spawn_pty_inner(state, cache, events, request).await
-}
-
 pub(crate) async fn spawn_pty_inner(
     state: PtyState,
     cache: Arc<super::cache::SessionCache>,
@@ -383,11 +373,6 @@ pub fn write_pty(
     state.write_pty(request)
 }
 
-#[cfg(test)]
-pub fn write_pty(state: PtyState, request: WritePtyRequest) -> Result<(), String> {
-    write_pty_inner(&state, request)
-}
-
 pub(crate) fn write_pty_inner(state: &PtyState, request: WritePtyRequest) -> Result<(), String> {
     log::debug!(
         "Writing to PTY {}: {} bytes",
@@ -408,11 +393,6 @@ pub fn resize_pty(
     request: ResizePtyRequest,
 ) -> Result<(), String> {
     state.resize_pty(request)
-}
-
-#[cfg(test)]
-pub fn resize_pty(state: PtyState, request: ResizePtyRequest) -> Result<(), String> {
-    resize_pty_inner(&state, request)
 }
 
 pub(crate) fn resize_pty_inner(state: &PtyState, request: ResizePtyRequest) -> Result<(), String> {
@@ -450,15 +430,6 @@ pub fn kill_pty(
     request: KillPtyRequest,
 ) -> Result<(), String> {
     state.kill_pty(request)
-}
-
-#[cfg(test)]
-pub fn kill_pty(
-    state: PtyState,
-    cache: Arc<super::cache::SessionCache>,
-    request: KillPtyRequest,
-) -> Result<(), String> {
-    kill_pty_inner(&state, &cache, request)
 }
 
 pub(crate) fn kill_pty_inner(
@@ -524,14 +495,6 @@ pub(crate) fn kill_pty_inner(
 #[tauri::command]
 pub fn list_sessions(state: tauri::State<'_, Arc<BackendState>>) -> Result<SessionList, String> {
     state.list_sessions()
-}
-
-#[cfg(test)]
-pub fn list_sessions(
-    state: PtyState,
-    cache: Arc<super::cache::SessionCache>,
-) -> Result<SessionList, String> {
-    list_sessions_inner(&state, &cache)
 }
 
 pub(crate) fn list_sessions_inner(
@@ -684,14 +647,6 @@ pub fn set_active_session(
     state.set_active_session(request)
 }
 
-#[cfg(test)]
-pub fn set_active_session(
-    cache: Arc<crate::terminal::cache::SessionCache>,
-    request: SetActiveSessionRequest,
-) -> Result<(), String> {
-    set_active_session_inner(&cache, request)
-}
-
 pub(crate) fn set_active_session_inner(
     cache: &Arc<crate::terminal::cache::SessionCache>,
     request: SetActiveSessionRequest,
@@ -734,14 +689,6 @@ pub fn reorder_sessions(
     state.reorder_sessions(request)
 }
 
-#[cfg(test)]
-pub fn reorder_sessions(
-    cache: Arc<crate::terminal::cache::SessionCache>,
-    request: ReorderSessionsRequest,
-) -> Result<(), String> {
-    reorder_sessions_inner(&cache, request)
-}
-
 pub(crate) fn reorder_sessions_inner(
     cache: &Arc<crate::terminal::cache::SessionCache>,
     request: ReorderSessionsRequest,
@@ -779,14 +726,6 @@ pub fn update_session_cwd(
     request: UpdateSessionCwdRequest,
 ) -> Result<(), String> {
     state.update_session_cwd(request)
-}
-
-#[cfg(test)]
-pub fn update_session_cwd(
-    cache: Arc<crate::terminal::cache::SessionCache>,
-    request: UpdateSessionCwdRequest,
-) -> Result<(), String> {
-    update_session_cwd_inner(&cache, request)
 }
 
 pub(crate) fn update_session_cwd_inner(
@@ -959,7 +898,7 @@ mod tests {
             enable_agent_bridge: false,
         };
 
-        let result = spawn_pty(state.clone(), cache.clone(), events.clone(), request).await;
+        let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
 
         assert!(result.is_ok(), "spawn_pty should succeed");
         let session = result.unwrap();
@@ -979,7 +918,7 @@ mod tests {
             data: "test\n".to_string(),
         };
 
-        let result = write_pty(state.clone(), request);
+        let result = write_pty_inner(&state, request);
 
         assert!(
             result.is_err(),
@@ -997,7 +936,7 @@ mod tests {
             cols: 80,
         };
 
-        let result = resize_pty(state.clone(), request);
+        let result = resize_pty_inner(&state, request);
 
         assert!(
             result.is_err(),
@@ -1021,7 +960,7 @@ mod tests {
             enable_agent_bridge: false,
         };
 
-        spawn_pty(state.clone(), cache.clone(), events.clone(), spawn_request)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), spawn_request)
             .await
             .expect("spawn should succeed");
 
@@ -1056,7 +995,7 @@ mod tests {
             enable_agent_bridge: false,
         };
 
-        spawn_pty(state.clone(), cache.clone(), events.clone(), spawn_request)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), spawn_request)
             .await
             .expect("spawn should succeed");
 
@@ -1066,7 +1005,7 @@ mod tests {
             data: "echo hello\n".to_string(),
         };
 
-        let result1 = write_pty(state.clone(), write1);
+        let result1 = write_pty_inner(&state, write1);
         assert!(result1.is_ok(), "first write should succeed");
 
         // Write second command - this exposes the bug
@@ -1075,7 +1014,7 @@ mod tests {
             data: "echo world\n".to_string(),
         };
 
-        let result2 = write_pty(state.clone(), write2);
+        let result2 = write_pty_inner(&state, write2);
         assert!(
             result2.is_ok(),
             "second write should succeed (bug: take_writer consumes writer)"
@@ -1087,7 +1026,7 @@ mod tests {
             data: "exit\n".to_string(),
         };
 
-        let result3 = write_pty(state.clone(), write3);
+        let result3 = write_pty_inner(&state, write3);
         assert!(result3.is_ok(), "third write should succeed");
 
         // Cleanup
@@ -1113,7 +1052,7 @@ mod tests {
             enable_agent_bridge: false,
         };
 
-        spawn_pty(state.clone(), cache.clone(), events.clone(), spawn_request)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), spawn_request)
             .await
             .expect("spawn should succeed");
 
@@ -1124,7 +1063,7 @@ mod tests {
             data: "echo test\n".to_string(),
         };
 
-        let write_result = write_pty(state.clone(), write_request);
+        let write_result = write_pty_inner(&state, write_request);
         assert!(
             write_result.is_ok(),
             "write should succeed immediately after spawn (session must remain in state)"
@@ -1137,7 +1076,7 @@ mod tests {
             cols: 120,
         };
 
-        let resize_result = resize_pty(state.clone(), resize_request);
+        let resize_result = resize_pty_inner(&state, resize_request);
         assert!(
             resize_result.is_ok(),
             "resize should succeed immediately after spawn (session must remain in state)"
@@ -1163,7 +1102,7 @@ mod tests {
         };
 
         // First spawn should succeed
-        let result1 = spawn_pty(
+        let result1 = spawn_pty_inner(
             state.clone(),
             cache.clone(),
             events.clone(),
@@ -1173,7 +1112,7 @@ mod tests {
         assert!(result1.is_ok(), "first spawn should succeed");
 
         // Second spawn with same ID should fail
-        let result2 = spawn_pty(state.clone(), cache.clone(), events.clone(), request).await;
+        let result2 = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
         assert!(result2.is_err(), "second spawn with same ID should fail");
         assert!(
             result2.unwrap_err().contains("already exists"),
@@ -1202,7 +1141,7 @@ mod tests {
             enable_agent_bridge: false,
         };
 
-        spawn_pty(state.clone(), cache.clone(), events.clone(), request1)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request1)
             .await
             .expect("first spawn should succeed");
 
@@ -1221,7 +1160,7 @@ mod tests {
             enable_agent_bridge: false,
         };
 
-        spawn_pty(state.clone(), cache.clone(), events.clone(), request2)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request2)
             .await
             .expect("second spawn should succeed");
 
@@ -1253,7 +1192,7 @@ mod tests {
                 enable_agent_bridge: false,
             };
 
-            spawn_pty(state.clone(), cache.clone(), events.clone(), request)
+            spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request)
                 .await
                 .expect(&format!("spawn {} should succeed", i));
         }
@@ -1272,7 +1211,8 @@ mod tests {
             .join("sessions")
             .join("session-65");
 
-        let result = spawn_pty(state.clone(), cache.clone(), events.clone(), request_65).await;
+        let result =
+            spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request_65).await;
         assert!(result.is_err(), "65th spawn should fail due to cap");
         let err = result.unwrap_err();
         assert!(
@@ -1298,7 +1238,7 @@ mod tests {
             session_id: "nonexistent".to_string(),
         };
 
-        let result = kill_pty(state.clone(), cache.clone(), request);
+        let result = kill_pty_inner(&state, &cache, request);
         assert!(
             result.is_ok(),
             "kill_pty should be idempotent for missing session"
@@ -1411,7 +1351,7 @@ mod tests {
         let request = KillPtyRequest {
             session_id: id.clone(),
         };
-        let result = kill_pty(state.clone(), cache.clone(), request);
+        let result = kill_pty_inner(&state, &cache, request);
 
         // The OS-level kill syscall failed; kill_pty must surface that.
         let err = match result {
@@ -1468,7 +1408,7 @@ mod tests {
             env: None,
             enable_agent_bridge: false,
         };
-        spawn_pty(state.clone(), cache.clone(), events.clone(), request1)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request1)
             .await
             .expect("first spawn should succeed");
 
@@ -1479,7 +1419,7 @@ mod tests {
             env: None,
             enable_agent_bridge: false,
         };
-        spawn_pty(state.clone(), cache.clone(), events.clone(), request2)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request2)
             .await
             .expect("second spawn should succeed");
 
@@ -1493,7 +1433,7 @@ mod tests {
         let kill_request = KillPtyRequest {
             session_id: "session-1".to_string(),
         };
-        kill_pty(state.clone(), cache.clone(), kill_request).expect("kill_pty should succeed");
+        kill_pty_inner(&state, &cache, kill_request).expect("kill_pty should succeed");
 
         // Verify session-1 is removed from session_order and sessions map
         let snap_after = cache.snapshot();
@@ -1522,7 +1462,7 @@ mod tests {
             env: None,
             enable_agent_bridge: false,
         };
-        spawn_pty(state.clone(), cache.clone(), events.clone(), request1)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request1)
             .await
             .expect("first spawn should succeed");
 
@@ -1533,7 +1473,7 @@ mod tests {
             env: None,
             enable_agent_bridge: false,
         };
-        spawn_pty(state.clone(), cache.clone(), events.clone(), request2)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request2)
             .await
             .expect("second spawn should succeed");
 
@@ -1544,7 +1484,7 @@ mod tests {
             env: None,
             enable_agent_bridge: false,
         };
-        spawn_pty(state.clone(), cache.clone(), events.clone(), request3)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request3)
             .await
             .expect("third spawn should succeed");
 
@@ -1560,7 +1500,7 @@ mod tests {
         let kill_request = KillPtyRequest {
             session_id: "session-1".to_string(),
         };
-        kill_pty(state.clone(), cache.clone(), kill_request).expect("kill_pty should succeed");
+        kill_pty_inner(&state, &cache, kill_request).expect("kill_pty should succeed");
 
         // Verify active_session_id is unresolved until the frontend persists
         // its selected same-position neighbor via set_active_session.
@@ -1582,7 +1522,7 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
-        spawn_pty(
+        spawn_pty_inner(
             state.clone(),
             cache.clone(),
             events.clone(),
@@ -1598,8 +1538,8 @@ mod tests {
         .unwrap();
 
         // Force EOF by sending exit
-        write_pty(
-            state.clone(),
+        write_pty_inner(
+            &state,
             WritePtyRequest {
                 session_id: "eof-test".into(),
                 data: "exit\n".into(),
@@ -1625,7 +1565,7 @@ mod tests {
     async fn list_sessions_returns_alive_for_running_pty() {
         let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
-        spawn_pty(
+        spawn_pty_inner(
             state.clone(),
             cache.clone(),
             events.clone(),
@@ -1643,7 +1583,7 @@ mod tests {
         .await
         .unwrap();
 
-        let result = list_sessions(state.clone(), cache.clone()).unwrap();
+        let result = list_sessions_inner(&state, &cache).unwrap();
         assert_eq!(result.sessions.len(), 1);
         assert_eq!(result.sessions[0].id, "alive-1");
         assert!(matches!(
@@ -1651,9 +1591,9 @@ mod tests {
             SessionStatus::Alive { .. }
         ));
 
-        let _ = kill_pty(
-            state.clone(),
-            cache.clone(),
+        let _ = kill_pty_inner(
+            &state,
+            &cache,
             KillPtyRequest {
                 session_id: "alive-1".into(),
             },
@@ -1683,7 +1623,7 @@ mod tests {
             })
             .unwrap();
 
-        let result = list_sessions(state.clone(), cache_state.clone()).unwrap();
+        let result = list_sessions_inner(&state, &cache_state).unwrap();
         assert_eq!(result.sessions.len(), 1);
         match &result.sessions[0].status {
             SessionStatus::Exited { last_exit_code } => assert_eq!(*last_exit_code, None),
@@ -1706,7 +1646,7 @@ mod tests {
         let (state, cache_state, events, _temp_dir) = create_test_state_with_cache();
 
         // Spawn a real Alive session first so there's a rotation target.
-        spawn_pty(
+        spawn_pty_inner(
             state.clone(),
             cache_state.clone(),
             events.clone(),
@@ -1744,7 +1684,7 @@ mod tests {
             })
             .unwrap();
 
-        let result = list_sessions(state.clone(), cache_state.clone()).unwrap();
+        let result = list_sessions_inner(&state, &cache_state).unwrap();
 
         // Response active_session_id rotated away from phantom to alive-real.
         assert_eq!(result.active_session_id, Some("alive-real".into()));
@@ -1755,9 +1695,9 @@ mod tests {
         assert!(snap.sessions["phantom"].exited);
 
         // Cleanup: kill the live session so the test doesn't leak a process.
-        let _ = kill_pty(
-            state.clone(),
-            cache_state.clone(),
+        let _ = kill_pty_inner(
+            &state,
+            &cache_state,
             KillPtyRequest {
                 session_id: "alive-real".into(),
             },
@@ -1773,7 +1713,7 @@ mod tests {
             .to_string_lossy()
             .to_string();
         for id in &["zebra", "alpha", "mike"] {
-            spawn_pty(
+            spawn_pty_inner(
                 state.clone(),
                 cache.clone(),
                 events.clone(),
@@ -1789,14 +1729,14 @@ mod tests {
             .unwrap();
         }
 
-        let result = list_sessions(state.clone(), cache.clone()).unwrap();
+        let result = list_sessions_inner(&state, &cache).unwrap();
         let ids: Vec<_> = result.sessions.iter().map(|s| s.id.clone()).collect();
         assert_eq!(ids, vec!["zebra", "alpha", "mike"]);
 
         for id in &["zebra", "alpha", "mike"] {
-            let _ = kill_pty(
-                state.clone(),
-                cache.clone(),
+            let _ = kill_pty_inner(
+                &state,
+                &cache,
                 KillPtyRequest {
                     session_id: id.to_string(),
                 },
@@ -1808,7 +1748,7 @@ mod tests {
     async fn list_sessions_replay_end_offset_matches_buffer_contents() {
         let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
-        spawn_pty(
+        spawn_pty_inner(
             state.clone(),
             cache.clone(),
             events.clone(),
@@ -1827,8 +1767,8 @@ mod tests {
         .unwrap();
 
         // Write some output and let the read loop process
-        write_pty(
-            state.clone(),
+        write_pty_inner(
+            &state,
             WritePtyRequest {
                 session_id: "off-test".into(),
                 data: "echo hello\n".into(),
@@ -1837,7 +1777,7 @@ mod tests {
         .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(300));
 
-        let result = list_sessions(state.clone(), cache.clone()).unwrap();
+        let result = list_sessions_inner(&state, &cache).unwrap();
         match &result.sessions[0].status {
             SessionStatus::Alive {
                 replay_data,
@@ -1858,9 +1798,9 @@ mod tests {
             other => panic!("expected Alive, got {:?}", other),
         }
 
-        let _ = kill_pty(
-            state.clone(),
-            cache.clone(),
+        let _ = kill_pty_inner(
+            &state,
+            &cache,
             KillPtyRequest {
                 session_id: "off-test".into(),
             },
@@ -1876,7 +1816,7 @@ mod tests {
             .to_string_lossy()
             .to_string();
         for id in &["a", "b"] {
-            spawn_pty(
+            spawn_pty_inner(
                 state.clone(),
                 cache.clone(),
                 events.clone(),
@@ -1892,14 +1832,14 @@ mod tests {
             .unwrap();
         }
 
-        set_active_session(cache.clone(), SetActiveSessionRequest { id: "b".into() }).unwrap();
+        set_active_session_inner(&cache, SetActiveSessionRequest { id: "b".into() }).unwrap();
 
         assert_eq!(cache.snapshot().active_session_id.as_deref(), Some("b"));
 
         for id in &["a", "b"] {
-            let _ = kill_pty(
-                state.clone(),
-                cache.clone(),
+            let _ = kill_pty_inner(
+                &state,
+                &cache,
                 KillPtyRequest {
                     session_id: id.to_string(),
                 },
@@ -1912,7 +1852,7 @@ mod tests {
         let (_state, cache, _events, _temp_dir) = create_test_state_with_cache();
 
         let result =
-            set_active_session(cache.clone(), SetActiveSessionRequest { id: "nope".into() });
+            set_active_session_inner(&cache, SetActiveSessionRequest { id: "nope".into() });
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown session"));
     }
@@ -1926,7 +1866,7 @@ mod tests {
             .to_string_lossy()
             .to_string();
         for id in &["a", "b", "c"] {
-            spawn_pty(
+            spawn_pty_inner(
                 state.clone(),
                 cache.clone(),
                 events.clone(),
@@ -1942,8 +1882,8 @@ mod tests {
             .unwrap();
         }
 
-        reorder_sessions(
-            cache.clone(),
+        reorder_sessions_inner(
+            &cache,
             ReorderSessionsRequest {
                 ids: vec!["c".into(), "a".into(), "b".into()],
             },
@@ -1953,9 +1893,9 @@ mod tests {
         assert_eq!(cache.snapshot().session_order, vec!["c", "a", "b"]);
 
         for id in &["a", "b", "c"] {
-            let _ = kill_pty(
-                state.clone(),
-                cache.clone(),
+            let _ = kill_pty_inner(
+                &state,
+                &cache,
                 KillPtyRequest {
                     session_id: id.to_string(),
                 },
@@ -1967,7 +1907,7 @@ mod tests {
     async fn reorder_sessions_rejects_non_permutation() {
         let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
-        spawn_pty(
+        spawn_pty_inner(
             state.clone(),
             cache.clone(),
             events.clone(),
@@ -1982,8 +1922,8 @@ mod tests {
         .await
         .unwrap();
 
-        let result = reorder_sessions(
-            cache.clone(),
+        let result = reorder_sessions_inner(
+            &cache,
             ReorderSessionsRequest {
                 ids: vec!["only".into(), "extra".into()],
             },
@@ -1991,9 +1931,9 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not a permutation"));
 
-        let _ = kill_pty(
-            state.clone(),
-            cache.clone(),
+        let _ = kill_pty_inner(
+            &state,
+            &cache,
             KillPtyRequest {
                 session_id: "only".into(),
             },
@@ -2016,7 +1956,7 @@ mod tests {
             .to_string_lossy()
             .to_string();
         for id in &["a", "b", "c"] {
-            spawn_pty(
+            spawn_pty_inner(
                 state.clone(),
                 cache.clone(),
                 events.clone(),
@@ -2035,8 +1975,8 @@ mod tests {
         // Proposed order has the SAME unique ids as current ([a, b, c])
         // but adds a duplicate of `c`. HashSet equality would pass; the
         // multiset (sort+compare) catches the duplicate.
-        let result = reorder_sessions(
-            cache.clone(),
+        let result = reorder_sessions_inner(
+            &cache,
             ReorderSessionsRequest {
                 ids: vec!["a".into(), "b".into(), "c".into(), "c".into()],
             },
@@ -2052,9 +1992,9 @@ mod tests {
         assert!(snapshot.session_order.contains(&"c".to_string()));
 
         for id in &["a", "b", "c"] {
-            let _ = kill_pty(
-                state.clone(),
-                cache.clone(),
+            let _ = kill_pty_inner(
+                &state,
+                &cache,
                 KillPtyRequest {
                     session_id: id.to_string(),
                 },
@@ -2070,7 +2010,7 @@ mod tests {
             .unwrap()
             .to_string_lossy()
             .to_string();
-        spawn_pty(
+        spawn_pty_inner(
             state.clone(),
             cache.clone(),
             events.clone(),
@@ -2090,8 +2030,8 @@ mod tests {
         // the stored value is the canonical `/tmp` (or `/private/tmp` on
         // macOS). Mirrors `spawn_pty`'s canonicalize step so reload sees the
         // same path the OS reports for the cwd.
-        update_session_cwd(
-            cache.clone(),
+        update_session_cwd_inner(
+            &cache,
             UpdateSessionCwdRequest {
                 id: "cwd-test".into(),
                 cwd: "/tmp/./".into(),
@@ -2106,9 +2046,9 @@ mod tests {
             .to_string();
         assert_eq!(stored, &expected_canonical);
 
-        let _ = kill_pty(
-            state.clone(),
-            cache.clone(),
+        let _ = kill_pty_inner(
+            &state,
+            &cache,
             KillPtyRequest {
                 session_id: "cwd-test".into(),
             },
@@ -2119,8 +2059,8 @@ mod tests {
     fn update_session_cwd_rejects_invalid_path() {
         let (_state, cache, _events, _temp_dir) = create_test_state_with_cache();
 
-        let result = update_session_cwd(
-            cache.clone(),
+        let result = update_session_cwd_inner(
+            &cache,
             UpdateSessionCwdRequest {
                 id: "any".into(),
                 cwd: "/nonexistent/totally/fake/path".into(),
@@ -2301,10 +2241,8 @@ mod tests {
     fn set_active_session_rejects_unknown_id_under_lock() {
         let (_state, cache, _events, _temp_dir) = create_test_state_with_cache();
 
-        let result = set_active_session(
-            cache.clone(),
-            SetActiveSessionRequest { id: "ghost".into() },
-        );
+        let result =
+            set_active_session_inner(&cache, SetActiveSessionRequest { id: "ghost".into() });
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown session"));
         // Mirror unchanged — no half-written active id.
@@ -2318,8 +2256,8 @@ mod tests {
     fn update_session_cwd_rejects_unknown_id_under_lock() {
         let (_state, cache, _events, _temp_dir) = create_test_state_with_cache();
 
-        let result = update_session_cwd(
-            cache.clone(),
+        let result = update_session_cwd_inner(
+            &cache,
             UpdateSessionCwdRequest {
                 id: "ghost".into(),
                 cwd: "/tmp".into(),
@@ -2378,7 +2316,7 @@ mod tests {
         // future closure that bails on validation under the lock.
         test_force_mutate_err::arm("simulated cache write failure");
 
-        let result = spawn_pty(
+        let result = spawn_pty_inner(
             state.clone(),
             cache.clone(),
             events.clone(),
