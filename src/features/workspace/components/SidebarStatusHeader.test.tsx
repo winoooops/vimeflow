@@ -63,6 +63,19 @@ describe('SidebarStatusHeader', () => {
     expect(screen.getByText('Idle')).toBeInTheDocument()
   })
 
+  test('keeps the idle placeholder at the live card height', () => {
+    render(
+      <SidebarStatusHeader
+        status={inactiveStatus}
+        activeSessionName="my session"
+      />
+    )
+
+    expect(screen.getByTestId('sidebar-status-header-idle')).toHaveClass(
+      'min-h-44'
+    )
+  })
+
   test('falls back to "No session" when there is no active session', () => {
     render(
       <SidebarStatusHeader status={inactiveStatus} activeSessionName={null} />

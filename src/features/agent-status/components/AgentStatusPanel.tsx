@@ -23,6 +23,9 @@ interface AgentStatusPanelProps {
   gitStatus?: UseGitStatusReturn
 }
 
+const PANEL_WIDTH_PX = 280
+const DEFAULT_CONTEXT_WINDOW_SIZE = 200_000
+
 export const AgentStatusPanel = ({
   agentStatus,
   cwd,
@@ -60,52 +63,46 @@ export const AgentStatusPanel = ({
   return (
     <div
       data-testid="agent-status-panel"
-      className="flex h-full flex-col overflow-hidden bg-surface-container"
+      className="flex h-full shrink-0 flex-col overflow-hidden bg-surface-container"
       style={{
-        width: status.isActive ? '280px' : '0px',
-        transition: status.isActive
-          ? 'width 200ms ease-in'
-          : 'width 200ms ease-out',
+        width: `${PANEL_WIDTH_PX}px`,
       }}
     >
-      {status.isActive && status.agentType ? (
-        <>
-          <div className="flex flex-col gap-2 p-2">
-            <ContextBucket
-              usedPercentage={status.contextWindow?.usedPercentage ?? null}
-              contextWindowSize={
-                status.contextWindow?.contextWindowSize ?? 200_000
-              }
-              totalInputTokens={status.contextWindow?.totalInputTokens ?? 0}
-              totalOutputTokens={status.contextWindow?.totalOutputTokens ?? 0}
-            />
-            <TokenCache usage={status.contextWindow?.currentUsage ?? null} />
-          </div>
+      <div className="flex flex-col gap-2 p-2">
+        <ContextBucket
+          usedPercentage={status.contextWindow?.usedPercentage ?? null}
+          contextWindowSize={
+            status.contextWindow?.contextWindowSize ??
+            DEFAULT_CONTEXT_WINDOW_SIZE
+          }
+          totalInputTokens={status.contextWindow?.totalInputTokens ?? 0}
+          totalOutputTokens={status.contextWindow?.totalOutputTokens ?? 0}
+        />
+        <TokenCache usage={status.contextWindow?.currentUsage ?? null} />
+      </div>
 
-          <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-clip">
-            <ToolCallSummary
-              total={status.toolCalls.total}
-              byType={status.toolCalls.byType}
-              active={status.toolCalls.active}
-            />
-            <ActivityFeed events={events} />
-            <FilesChanged
-              files={effectiveFiles}
-              loading={effectiveLoading}
-              error={error}
-              onRetry={refresh}
-              onSelect={onOpenDiff}
-            />
-            <TestResults snapshot={status.testRun} onOpenFile={onOpenFile} />
-          </div>
-          <ActivityFooter
-            totalDurationMs={status.cost?.totalDurationMs ?? 0}
-            numTurns={status.numTurns}
-            linesAdded={lineTotals.added}
-            linesRemoved={lineTotals.removed}
-          />
-        </>
-      ) : null}
+      <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-clip">
+        <ToolCallSummary
+          total={status.toolCalls.total}
+          byType={status.toolCalls.byType}
+          active={status.toolCalls.active}
+        />
+        <ActivityFeed events={events} />
+        <FilesChanged
+          files={effectiveFiles}
+          loading={effectiveLoading}
+          error={error}
+          onRetry={refresh}
+          onSelect={onOpenDiff}
+        />
+        <TestResults snapshot={status.testRun} onOpenFile={onOpenFile} />
+      </div>
+      <ActivityFooter
+        totalDurationMs={status.cost?.totalDurationMs ?? 0}
+        numTurns={status.numTurns}
+        linesAdded={lineTotals.added}
+        linesRemoved={lineTotals.removed}
+      />
     </div>
   )
 }
