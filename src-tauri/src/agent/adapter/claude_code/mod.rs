@@ -12,6 +12,9 @@ pub mod statusline;
 pub mod test_runners;
 pub mod transcript;
 
+#[cfg(test)]
+mod transcript_fixture_tests;
+
 pub struct ClaudeCodeAdapter;
 
 impl AgentAdapter for ClaudeCodeAdapter {

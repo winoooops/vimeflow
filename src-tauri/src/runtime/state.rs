@@ -31,6 +31,11 @@ impl BackendState {
         }
     }
 
+    /// Returns test backend state, its event sink, and the temp cache owner.
+    ///
+    /// Keep the returned `TempDir` bound to a named variable for the whole
+    /// test. A bare `_` pattern drops it immediately and removes the cache
+    /// directory before `SessionCache` can flush changes.
     #[cfg(any(test, feature = "e2e-test"))]
     pub fn with_fake_sink() -> (
         Arc<Self>,

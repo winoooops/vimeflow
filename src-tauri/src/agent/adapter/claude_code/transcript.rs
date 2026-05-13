@@ -1263,9 +1263,9 @@ mod tests {
     }
 
     // is_user_prompt / is_non_empty_user_block — direct in-module coverage.
-    // The integration test at tests/transcript_turns.rs exercises these end
-    // to end through the watcher; these unit tests pin the predicate
-    // contract so a refactor can't silently regress the edge cases.
+    // transcript_fixture_tests exercises these end to end through the watcher;
+    // these unit tests pin the predicate contract so a refactor can't silently
+    // regress the edge cases.
 
     #[test]
     fn is_user_prompt_string_path_rejects_whitespace_only() {
