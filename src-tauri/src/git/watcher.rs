@@ -351,9 +351,9 @@ impl GitWatcherState {
 /// Payload emitted when git status changes
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GitStatusChangedPayload {
+pub(crate) struct GitStatusChangedPayload {
     /// List of input cwds that should refresh
-    pub cwds: Vec<String>,
+    pub(crate) cwds: Vec<String>,
 }
 
 /// Resolve the git toplevel for a given cwd. Uses `run_sync_with_timeout`
@@ -1302,9 +1302,7 @@ fn emit_for_all_subscribers(
 
 /// Emit a git-status-changed event
 fn emit_git_status_changed(events: &Arc<dyn EventSink>, cwds: Vec<String>) {
-    let payload = GitStatusChangedPayload { cwds };
-
-    if let Err(e) = events.emit_git_status_changed(&payload) {
+    if let Err(e) = events.emit_git_status_changed(cwds) {
         log::error!("Failed to emit git-status-changed: {}", e);
     }
 }

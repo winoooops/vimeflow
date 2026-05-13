@@ -41,8 +41,9 @@ pub trait EventSink: Send + Sync + 'static {
         self.emit_json("test-run", serialize(payload)?)
     }
 
-    fn emit_git_status_changed(&self, payload: &GitStatusChangedPayload) -> Result<(), String> {
-        self.emit_json("git-status-changed", serialize(payload)?)
+    fn emit_git_status_changed(&self, cwds: Vec<String>) -> Result<(), String> {
+        let payload = GitStatusChangedPayload { cwds };
+        self.emit_json("git-status-changed", serialize(&payload)?)
     }
 }
 

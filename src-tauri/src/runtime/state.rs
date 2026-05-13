@@ -10,12 +10,12 @@ use super::event_sink::EventSink;
 
 /// Consolidated runtime-neutral backend state.
 pub struct BackendState {
-    pub(crate) pty: PtyState,
-    pub(crate) sessions: Arc<SessionCache>,
-    pub(crate) agents: AgentWatcherState,
-    pub(crate) transcripts: TranscriptState,
-    pub(crate) git: GitWatcherState,
-    pub(crate) events: Arc<dyn EventSink>,
+    pty: PtyState,
+    sessions: Arc<SessionCache>,
+    agents: AgentWatcherState,
+    transcripts: TranscriptState,
+    git: GitWatcherState,
+    events: Arc<dyn EventSink>,
 }
 
 impl BackendState {
