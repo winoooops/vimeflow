@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { UseGitBranchReturn } from '../../../diff/hooks/useGitBranch'
 import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
@@ -197,6 +198,18 @@ describe('TerminalPane index', () => {
     expect(bodyPropsSpy).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 'pty-s1' })
     )
+  })
+
+  test('clicking close calls onClose with session id and pane id', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+
+    render(<TerminalPane {...baseProps} onClose={onClose} />)
+
+    await user.click(screen.getByRole('button', { name: 'close pane' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalledWith('s1', 'p0')
   })
 
   test('data-focused mirrors pane.active=true', () => {

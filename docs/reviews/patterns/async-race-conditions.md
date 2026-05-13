@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-07
+last_updated: 2026-05-13
 ref_count: 9
 ---
 
@@ -358,3 +358,12 @@ prevent showing previous data.
 - **Finding:** `SessionTab` dispatched `onSelect(session.id)` on EVERY pointer click and Enter/Space keypress, regardless of whether the tab was already the active tab. `WorkspaceView` bridges `onSelect` to `setActiveSessionId`, which always issues `service.setActiveSession(...)` — so each idle click on the active tab became a redundant Tauri IPC round-trip. Worse: `useSessionManager` uses the request-supersession pattern (a later request supersedes an earlier in-flight one for transient-failure rollback). A no-op same-id "switch" would supersede a real prior switch attempt, and if the real one transiently failed, the rollback machinery would skip it — leaving the displayed selection out of sync with the backend. Hard to repro without simulated transient IPC failure, but the fix is one guard.
 - **Fix:** Added `if (!isActive)` guard before `onSelect(session.id)` in BOTH activation paths (`onClick` and `handleKeyDown` for Enter/Space). Inactive-tab activation still dispatches normally; close-fallback selection from `SessionTabs.handleClose` is unaffected because it calls the parent `onSelect(nextId)` directly, bypassing the per-tab activation handlers. Comments at both call sites cite the IPC bridge AND the request-supersession rationale so future maintainers don't strip the guard for "clarity". Added regression test asserting click + Enter + Space on the already-active tab all leave `onSelect` un-called. Code-review heuristic: any UI activation gesture that dispatches an IPC must check whether the gesture changes state — the cost of "always dispatch and let downstream debounce" is invisible in steady-state but compounds with retry/supersession patterns under failure.
 - **Commit:** _(see git log for the cycle-19 fix commit on PR #174)_
+
+### 36. `setSessionActivePane` fired Rust `setActiveSession` while a concurrent `removePane` for the same pane had `kill` in flight
+
+- **Source:** github-claude | PR #204 round 1 | 2026-05-13
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** Step 5c-2 added `service.setActiveSession(target.ptyId)` to `setSessionActivePane` to close 5c-1 Decision #10. The new `pendingPaneOps` ref already serialises `addPane` / `removePane` against each other, but `setSessionActivePane` predates the serialisation system and was never wired into the same guard. A user clicking an inactive pane while a concurrent `removePane` is in flight (kill IPC pending) hits a race window where `service.setActiveSession(target.ptyId)` can arrive at Rust either before or after the `kill` — when it arrives after, Rust briefly sets the active session to a PTY that's being killed. Any keyboard input delivered during the ~10–50 ms IPC round-trip is routed to the dying PTY and silently dropped. `removePane`'s own `setActiveSession(newActivePtyId)` self-corrects the state, but the dropped input is unrecoverable.
+- **Fix:** Added `if (pendingPaneOps.current.has(sessionId)) return` at the TOP of `setSessionActivePane`'s body — the whole mutation (React state + IPC) is a no-op while a lifecycle op is pending. Skipping the React state mutation too (not just the IPC, as Claude originally suggested) closes a second sub-case: the targeted pane may evaporate when the remove commits, so flipping its `active=true` is futile. Test: synthesised the race by leaving `service.kill` pending via `mockImplementationOnce(new Promise)`, called `setSessionActivePane` during the window, asserted active flag + Rust IPC stay unchanged. Code-review heuristic: any newly-added IPC inside a mutation that ALREADY participates in a serialisation system must extend the gate, not bypass it.
+- **Commit:** _(see git log for the cycle-1 fix commit on PR #204)_

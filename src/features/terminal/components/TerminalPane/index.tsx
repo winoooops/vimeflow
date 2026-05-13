@@ -31,7 +31,7 @@ export interface TerminalPaneProps {
   service: ITerminalService
   onPaneReady?: NotifyPaneReady
   mode?: TerminalPaneMode
-  onClose?: (sessionId: string) => void
+  onClose?: (sessionId: string, paneId: string) => void
   onCwdChange?: (cwd: string) => void
   onRestart?: (sessionId: string) => void
   deferFit?: boolean
@@ -107,8 +107,8 @@ export const TerminalPane = ({
   }, [])
 
   const handleClose = useCallback((): void => {
-    onClose?.(session.id)
-  }, [onClose, session.id])
+    onClose?.(session.id, pane.id)
+  }, [onClose, pane.id, session.id])
 
   const handleRestart = useCallback(
     (restartSessionId: string): void => {

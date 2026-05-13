@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import type { LayoutId, Pane, Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
+import { LAYOUTS } from '../../terminal/components/SplitView/layouts'
 import type {
   RestoreData,
   PaneEventHandler,
@@ -18,6 +19,11 @@ import {
   findActivePane,
   getActivePane,
 } from '../utils/activeSessionPane'
+import {
+  applyAddPane,
+  applyRemovePane,
+  nextFreePaneId,
+} from '../utils/paneLifecycle'
 import { deriveSessionStatus } from '../utils/sessionStatus'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
@@ -34,6 +40,8 @@ export interface SessionManager {
   removeSession: (id: string) => void
   setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
   setSessionActivePane: (sessionId: string, paneId: string) => void
+  addPane: (sessionId: string) => void
+  removePane: (sessionId: string, paneId: string) => void
   /**
    * Restart an Exited session in the same cwd. Idempotent on the kill side:
    * any remaining cache entry for `id` is killed (no-op if already gone),
@@ -270,6 +278,7 @@ export const useSessionManager = (
   // post-failure tick observes `pendingSpawns === 0 && !hasLiveSession`
   // and fires the auto-create that the round-10 comment promised.
   const [pendingSpawns, setPendingSpawns] = useState(0)
+  const pendingPaneOps = useRef<Set<string>>(new Set())
 
   const createSession = useCallback((): void => {
     setPendingSpawns((c) => c + 1)
@@ -577,6 +586,30 @@ export const useSessionManager = (
       // as setSessionLayout). `applyActivePane` is a pure helper —
       // it no-ops on missing ids (returns the same reference); the warns live here
       // so they fire exactly once per operator action.
+      //
+      // Round 13, Claude MEDIUM: serialize against in-flight addPane /
+      // removePane on the same session. Without this guard, a focus
+      // rotation can fire `service.setActiveSession(target.ptyId)` while
+      // a concurrent removePane has `service.kill(target.ptyId)` in
+      // flight — Rust may briefly set the active session to a PTY that
+      // is being killed, dropping any keystroke delivered during the
+      // ~10–50ms window. removePane's own setActiveSession(newActive)
+      // self-corrects the state, but the dropped input is unrecoverable.
+      // Treat focus rotation as a no-op while a lifecycle op is pending
+      // (the target pane may evaporate anyway when the remove commits).
+      // Warn for parity with every other guarded early-return in this
+      // function (and in addPane / removePane): otherwise a developer
+      // chasing a "⌘1-4 stopped working for 50–300ms" report sees
+      // nothing in devtools and can't distinguish the transient
+      // suppression from a real bug.
+      if (pendingPaneOps.current.has(sessionId)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `setSessionActivePane: pane op in flight for ${sessionId}; ignoring`
+        )
+
+        return
+      }
       const session = sessionsRef.current.find((s) => s.id === sessionId)
       if (!session) {
         // eslint-disable-next-line no-console
@@ -604,8 +637,241 @@ export const useSessionManager = (
         return
       }
       setSessions((prev) => applyActivePane(prev, sessionId, paneId))
+
+      if (sessionId === activeSessionIdRef.current) {
+        // eslint-disable-next-line promise/prefer-await-to-then
+        service.setActiveSession(target.ptyId).catch((err) => {
+          // eslint-disable-next-line no-console
+          console.warn('setSessionActivePane: setActiveSession failed', err)
+        })
+      }
     },
-    []
+    [activeSessionIdRef, service]
+  )
+
+  const addPane = useCallback(
+    (sessionId: string): void => {
+      if (pendingPaneOps.current.has(sessionId)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `addPane: another pane op in flight for ${sessionId}; ignoring`
+        )
+
+        return
+      }
+
+      const session = sessionsRef.current.find((s) => s.id === sessionId)
+      if (!session) {
+        // eslint-disable-next-line no-console
+        console.warn(`addPane: no session ${sessionId}`)
+
+        return
+      }
+
+      const activePane = findActivePane(session)
+      if (!activePane) {
+        // eslint-disable-next-line no-console
+        console.warn(`addPane: session ${sessionId} has no active pane`)
+
+        return
+      }
+
+      if (session.panes.length >= LAYOUTS[session.layout].capacity) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `addPane: session ${sessionId} is at capacity for layout ${session.layout}`
+        )
+
+        return
+      }
+
+      pendingPaneOps.current.add(sessionId)
+      setPendingSpawns((count) => count + 1)
+
+      void (async (): Promise<void> => {
+        try {
+          const result = await service.spawn({
+            cwd: activePane.cwd,
+            env: {},
+            enableAgentBridge: true,
+          })
+
+          const fresh = sessionsRef.current.find((s) => s.id === sessionId)
+          if (!fresh) {
+            // F6 tombstone-first (mirrors the `!appended` path and the
+            // invariant in usePtyBufferDrain.ts): drop the orphan's
+            // pty-data buffer BEFORE awaiting kill, so any pty-data
+            // event arriving during the kill round-trip is rejected
+            // by the tombstone instead of being buffered for a
+            // consumer that will never mount.
+            dropAllForPty(result.sessionId)
+            try {
+              await service.kill({ sessionId: result.sessionId })
+            } catch (err) {
+              // eslint-disable-next-line no-console
+              console.warn('addPane: failed to kill orphan PTY', err)
+            }
+
+            return
+          }
+
+          const restoreData: RestoreData = {
+            sessionId: result.sessionId,
+            cwd: result.cwd,
+            pid: result.pid,
+            replayData: '',
+            replayEndOffset: 0,
+            bufferedEvents: [],
+          }
+
+          const newPane: Pane = {
+            id: nextFreePaneId(fresh.panes),
+            ptyId: result.sessionId,
+            cwd: result.cwd,
+            agentType: 'generic',
+            status: 'running',
+            active: true,
+            pid: result.pid,
+            restoreData,
+          }
+
+          registerPending(result.sessionId)
+
+          let appended = false as boolean
+          flushSync(() => {
+            setSessions((prev) => {
+              const target = prev.find((s) => s.id === sessionId)
+              const capacity = target ? LAYOUTS[target.layout].capacity : 0
+              const update = applyAddPane(prev, sessionId, newPane, capacity)
+              appended = update.appended
+
+              return update.sessions
+            })
+          })
+
+          if (!appended) {
+            dropAllForPty(result.sessionId)
+            try {
+              await service.kill({ sessionId: result.sessionId })
+            } catch (err) {
+              // eslint-disable-next-line no-console
+              console.warn('addPane: failed to kill reducer-rejected PTY', err)
+            }
+            // eslint-disable-next-line no-console
+            console.warn(
+              `addPane: reducer rejected commit for ${sessionId}; orphan killed`
+            )
+
+            return
+          }
+
+          if (sessionId === activeSessionIdRef.current) {
+            // eslint-disable-next-line promise/prefer-await-to-then
+            service.setActiveSession(result.sessionId).catch((err) => {
+              // eslint-disable-next-line no-console
+              console.warn('addPane: setActiveSession failed', err)
+            })
+          }
+
+          registerPtySession(result.sessionId, result.sessionId, result.cwd)
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('addPane: spawn failed', err)
+        } finally {
+          setPendingSpawns((count) => count - 1)
+          pendingPaneOps.current.delete(sessionId)
+        }
+      })()
+    },
+    [activeSessionIdRef, dropAllForPty, registerPending, service]
+  )
+
+  const removePane = useCallback(
+    (sessionId: string, paneId: string): void => {
+      if (pendingPaneOps.current.has(sessionId)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `removePane: another pane op in flight for ${sessionId}; ignoring`
+        )
+
+        return
+      }
+
+      const session = sessionsRef.current.find((s) => s.id === sessionId)
+      if (!session) {
+        // eslint-disable-next-line no-console
+        console.warn(`removePane: no session ${sessionId}`)
+
+        return
+      }
+
+      const target = session.panes.find((pane) => pane.id === paneId)
+      if (!target) {
+        // eslint-disable-next-line no-console
+        console.warn(`removePane: no pane ${paneId} in session ${sessionId}`)
+
+        return
+      }
+
+      if (session.panes.length === 1) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `removePane: refusing to remove the last pane in ${sessionId}; use removeSession instead`
+        )
+
+        return
+      }
+
+      pendingPaneOps.current.add(sessionId)
+
+      void (async (): Promise<void> => {
+        try {
+          try {
+            await service.kill({ sessionId: target.ptyId })
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn('removePane: kill failed; pane preserved', err)
+
+            return
+          }
+
+          dropAllForPty(target.ptyId)
+          restoreDataRef.current.delete(target.ptyId)
+          unregisterPtySession(target.ptyId)
+
+          let newActivePtyId: string | undefined
+          flushSync(() => {
+            setSessions((prev) => {
+              const fresh = prev.find((s) => s.id === sessionId)
+
+              const update = applyRemovePane(
+                prev,
+                sessionId,
+                paneId,
+                fresh?.layout ?? session.layout
+              )
+              newActivePtyId = update.newActivePtyId
+
+              return update.sessions
+            })
+          })
+
+          if (
+            newActivePtyId !== undefined &&
+            sessionId === activeSessionIdRef.current
+          ) {
+            // eslint-disable-next-line promise/prefer-await-to-then
+            service.setActiveSession(newActivePtyId).catch((err) => {
+              // eslint-disable-next-line no-console
+              console.warn('removePane: setActiveSession failed', err)
+            })
+          }
+        } finally {
+          pendingPaneOps.current.delete(sessionId)
+        }
+      })()
+    },
+    [activeSessionIdRef, dropAllForPty, service]
   )
 
   // F5 (round 2): restart an Exited session in the same cwd.
@@ -958,6 +1224,8 @@ export const useSessionManager = (
     removeSession,
     setSessionLayout,
     setSessionActivePane,
+    addPane,
+    removePane,
     restartSession,
     renameSession,
     reorderSessions,

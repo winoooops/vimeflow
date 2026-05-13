@@ -332,25 +332,91 @@ describe('SplitView - under-capacity', () => {
 
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(1)
   })
+
+  test('vsplit with 1 pane renders one empty slot when add handler exists', () => {
+    render(
+      <SplitView
+        session={makeSession('vsplit', 1)}
+        service={makeMockService()}
+        isActive
+        onAddPane={vi.fn()}
+      />
+    )
+
+    expect(screen.getAllByTestId('split-view-slot')).toHaveLength(1)
+    expect(screen.getAllByTestId('split-view-empty-slot')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'add pane' })).toBeInTheDocument()
+  })
+
+  test('quad with 2 panes renders two empty slots when add handler exists', () => {
+    render(
+      <SplitView
+        session={makeSession('quad', 2)}
+        service={makeMockService()}
+        isActive
+        onAddPane={vi.fn()}
+      />
+    )
+
+    const emptySlots = screen.getAllByTestId('split-view-empty-slot')
+
+    expect(emptySlots).toHaveLength(2)
+    expect(emptySlots[0]).toHaveAttribute('data-slot-index', '2')
+    expect(emptySlots[1]).toHaveAttribute('data-slot-index', '3')
+  })
+
+  test('omitting onAddPane leaves empty tracks inert', () => {
+    render(
+      <SplitView
+        session={makeSession('quad', 2)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+
+    expect(
+      screen.queryByTestId('split-view-empty-slot')
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: 'add pane' })
+    ).not.toBeInTheDocument()
+  })
+
+  test('clicking empty slot add button calls onAddPane with session id', async () => {
+    const user = userEvent.setup()
+    const onAddPane = vi.fn()
+
+    render(
+      <SplitView
+        session={makeSession('vsplit', 1)}
+        service={makeMockService()}
+        isActive
+        onAddPane={onAddPane}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'add pane' }))
+
+    expect(onAddPane).toHaveBeenCalledOnce()
+    expect(onAddPane).toHaveBeenCalledWith('sess-fix')
+  })
 })
 
-describe('SplitView - over-capacity invariant', () => {
-  test('throws in DEV when panes.length exceeds layout capacity', () => {
-    const session = makeSession('single', 2)
+describe('SplitView - over-capacity layout render', () => {
+  test('single layout keeps an active second pane visible without throwing', () => {
+    const session = makeSession('single', 2, 1)
 
-    const consoleSpy = vi
-      .spyOn(console, 'error')
-      .mockImplementation(() => undefined)
+    render(<SplitView session={session} service={makeMockService()} isActive />)
 
-    try {
-      expect(() =>
-        render(
-          <SplitView session={session} service={makeMockService()} isActive />
-        )
-      ).toThrow(/SplitView invariant violation/)
-    } finally {
-      consoleSpy.mockRestore()
-    }
+    const slots = screen.getAllByTestId('split-view-slot')
+
+    expect(slots).toHaveLength(1)
+    expect(slots[0]).toHaveAttribute('data-pane-id', 'p1')
+    expect(slots[0]).toHaveStyle({ gridArea: 'p0' })
+    expect(
+      screen.queryByTestId('split-view-empty-slot')
+    ).not.toBeInTheDocument()
   })
 })
 
@@ -416,6 +482,42 @@ describe('SplitView - click-to-focus', () => {
     await user.click(screen.getAllByTestId('split-view-slot')[1])
 
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(2)
+  })
+})
+
+describe('SplitView - close pane', () => {
+  test('multi-pane sessions pass close through with session id and pane id', async () => {
+    const user = userEvent.setup()
+    const onClosePane = vi.fn()
+
+    render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+        onClosePane={onClosePane}
+      />
+    )
+
+    await user.click(screen.getAllByRole('button', { name: 'close pane' })[1])
+
+    expect(onClosePane).toHaveBeenCalledOnce()
+    expect(onClosePane).toHaveBeenCalledWith('sess-fix', 'p1')
+  })
+
+  test('single-pane sessions do not render pane close controls', () => {
+    render(
+      <SplitView
+        session={makeSession('single', 1)}
+        service={makeMockService()}
+        isActive
+        onClosePane={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.queryByRole('button', { name: 'close pane' })
+    ).not.toBeInTheDocument()
   })
 })
 
@@ -499,36 +601,22 @@ describe('selectVisiblePanes', () => {
   // degenerate case isn't load-bearing.
 })
 
-describe('SplitView - over-capacity production render', () => {
+describe('SplitView - over-capacity rescued active render', () => {
   test('rescued active pane lands in the last grid slot (gridArea: p${capacity-1})', () => {
-    // `vi.stubEnv('DEV', false)` swaps `import.meta.env.DEV` at runtime so
-    // the DEV throw path is disabled and the production fallback
-    // (selectVisiblePanes) is exercised end-to-end through the render
-    // chain. This verifies the rescued active pane is mapped to
-    // `gridArea: 'p${capacity-1}'` — a chain that selectVisiblePanes'
-    // pure unit tests do not exercise.
-    vi.stubEnv('DEV', false)
+    const session = makeSession('vsplit', 3, 2)
+    // 3 panes, vsplit capacity = 2, active at index 2 → must land at p1.
 
-    try {
-      const session = makeSession('vsplit', 3, 2)
-      // 3 panes, vsplit capacity = 2, active at index 2 → must land at p1.
+    render(<SplitView session={session} service={makeMockService()} isActive />)
 
-      render(
-        <SplitView session={session} service={makeMockService()} isActive />
-      )
+    const slots = screen.getAllByTestId('split-view-slot')
 
-      const slots = screen.getAllByTestId('split-view-slot')
-
-      expect(slots).toHaveLength(2)
-      // Slot 0 keeps the first pane in original order.
-      expect(slots[0]).toHaveAttribute('data-pane-id', 'p0')
-      expect(slots[0]).toHaveStyle({ gridArea: 'p0' })
-      // Slot 1 (the LAST visible slot) gets the rescued active pane,
-      // not panes[1] (which would be the naive prefix slice).
-      expect(slots[1]).toHaveAttribute('data-pane-id', 'p2')
-      expect(slots[1]).toHaveStyle({ gridArea: 'p1' })
-    } finally {
-      vi.unstubAllEnvs()
-    }
+    expect(slots).toHaveLength(2)
+    // Slot 0 keeps the first pane in original order.
+    expect(slots[0]).toHaveAttribute('data-pane-id', 'p0')
+    expect(slots[0]).toHaveStyle({ gridArea: 'p0' })
+    // Slot 1 (the LAST visible slot) gets the rescued active pane,
+    // not panes[1] (which would be the naive prefix slice).
+    expect(slots[1]).toHaveAttribute('data-pane-id', 'p2')
+    expect(slots[1]).toHaveStyle({ gridArea: 'p1' })
   })
 })

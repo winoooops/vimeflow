@@ -45,6 +45,7 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
       onCwdChange,
       deferFit,
       onRestart,
+      onClose,
       session,
       isActive,
     }: TerminalPaneProps): ReactElement => (
@@ -73,6 +74,15 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
             mock-restart
           </button>
         )}
+        {onClose && (
+          <button
+            type="button"
+            data-testid={`mock-close-${session.id}-${pane.id}`}
+            onClick={() => onClose(session.id, pane.id)}
+          >
+            mock-close
+          </button>
+        )}
         {onCwdChange && (
           <button
             type="button"
@@ -94,6 +104,8 @@ describe('TerminalZone', () => {
     service: mockService,
     setSessionActivePane: vi.fn(),
     setSessionLayout: vi.fn(),
+    addPane: vi.fn(),
+    removePane: vi.fn(),
   }
 
   test('renders terminal content area with TerminalPane', () => {
@@ -406,6 +418,8 @@ describe('TerminalZone', () => {
         service={mockService}
         setSessionActivePane={vi.fn()}
         setSessionLayout={vi.fn()}
+        addPane={vi.fn()}
+        removePane={vi.fn()}
       />
     )
 
@@ -756,6 +770,58 @@ describe('TerminalZone', () => {
     await user.click(slots[1])
 
     expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+  })
+
+  test('clicking an empty split slot forwards addPane with active session id', async () => {
+    const user = userEvent.setup()
+    const addPane = vi.fn()
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[makeToolbarSession('s1', 'vsplit')]}
+        activeSessionId="s1"
+        addPane={addPane}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'add pane' }))
+
+    expect(addPane).toHaveBeenCalledOnce()
+    expect(addPane).toHaveBeenCalledWith('s1')
+  })
+
+  test('clicking a pane close control forwards removePane with both ids', async () => {
+    const user = userEvent.setup()
+    const removePane = vi.fn()
+    const baseSession = makeToolbarSession('s1', 'vsplit')
+
+    const twoPaneSession: Session = {
+      ...baseSession,
+      panes: [
+        { ...baseSession.panes[0], id: 'p0', active: true },
+        {
+          ...baseSession.panes[0],
+          id: 'p1',
+          ptyId: 'pty-s1-p1',
+          active: false,
+        },
+      ],
+    }
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={[twoPaneSession]}
+        activeSessionId="s1"
+        removePane={removePane}
+      />
+    )
+
+    await user.click(screen.getByTestId('mock-close-s1-p1'))
+
+    expect(removePane).toHaveBeenCalledOnce()
+    expect(removePane).toHaveBeenCalledWith('s1', 'p1')
   })
 
   // modKey is now a prop driven from WorkspaceView's single platform-

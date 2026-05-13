@@ -40,6 +40,8 @@ export interface TerminalZoneProps {
   service: ITerminalService
   setSessionActivePane: (sessionId: string, paneId: string) => void
   setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
+  addPane: (sessionId: string) => void
+  removePane: (sessionId: string, paneId: string) => void
   /**
    * Modifier glyph for the toolbar hint ('⌘' on macOS, 'Ctrl' on other
    * platforms). Sourced from `WorkspaceView` so the visible label and
@@ -62,6 +64,8 @@ export const TerminalZone = ({
   service,
   setSessionActivePane,
   setSessionLayout,
+  addPane,
+  removePane,
   modKey = 'Ctrl',
 }: TerminalZoneProps): ReactElement => {
   const activeSession = sessions.find(
@@ -168,6 +172,8 @@ export const TerminalZone = ({
                   onPaneReady={onPaneReady}
                   onSessionRestart={onSessionRestart}
                   onSetActivePane={setSessionActivePane}
+                  onAddPane={addPane}
+                  onClosePane={removePane}
                   deferTerminalFit={deferTerminalFit}
                 />
               </div>
