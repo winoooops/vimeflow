@@ -304,7 +304,6 @@ mod frame {
                                     "non-numeric content-length: {err}"
                                 )));
                             }
-                            content_length = None;
                             continue;
                         }
                     }
@@ -1071,6 +1070,19 @@ mod tests {
         input.extend_from_slice(format!("Content-Length: {}\r\n", body.len()).as_bytes());
         input.extend_from_slice(b"X-Trace: 42\r\n\r\n");
         input.extend_from_slice(body);
+        let mut reader = make_reader(&input);
+        let got = frame::read_frame(&mut reader).await.expect("ok");
+        assert_eq!(got.as_deref(), Some(body.as_slice()));
+    }
+
+    #[tokio::test]
+    async fn read_frame_preserves_valid_content_length_after_malformed_duplicate() {
+        let body = b"hello";
+        let mut input = Vec::new();
+        input.extend_from_slice(format!("Content-Length: {}\r\n", body.len()).as_bytes());
+        input.extend_from_slice(b"Content-Length: abc\r\n\r\n");
+        input.extend_from_slice(body);
+
         let mut reader = make_reader(&input);
         let got = frame::read_frame(&mut reader).await.expect("ok");
         assert_eq!(got.as_deref(), Some(body.as_slice()));
