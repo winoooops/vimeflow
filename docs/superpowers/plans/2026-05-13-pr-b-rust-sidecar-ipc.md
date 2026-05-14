@@ -804,17 +804,30 @@ impl EventSink for StdoutEventSink {
             "payload": payload,
         }))
         .map_err(|err| format!("event encode {event}: {err}"))?;
-        self.tx
-            .try_send(frame::format_frame(&body))
-            .map_err(|err| match err {
-                tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                    format!("stdout writer backlog full; dropped {event}")
-                }
-                tokio::sync::mpsc::error::TrySendError::Closed(_) => {
-                    format!("stdout writer closed; cannot emit {event}")
-                }
-            })?;
-        Ok(())
+        send_event_frame(&self.tx, frame::format_frame(&body), event)
+    }
+}
+
+fn send_event_frame(tx: &Sender<Vec<u8>>, framed: Vec<u8>, event: &str) -> Result<(), String> {
+    // try_send is the fast path. If the bounded queue is full, block this
+    // producer until capacity is available so event frames are not dropped.
+    match tx.try_send(framed) {
+        Ok(()) => Ok(()),
+        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+            Err(format!("stdout writer closed; cannot emit {event}"))
+        }
+        Err(tokio::sync::mpsc::error::TrySendError::Full(framed)) => {
+            let tx = tx.clone();
+            let handle = std::thread::Builder::new()
+                .name("ipc-stdout-backpressure".into())
+                .spawn(move || tx.blocking_send(framed))
+                .map_err(|err| format!("stdout writer send worker spawn failed: {err}"))?;
+
+            handle
+                .join()
+                .map_err(|_| "stdout writer send worker panicked".to_string())?
+                .map_err(|_| format!("stdout writer closed; cannot emit {event}"))
+        }
     }
 }
 ```
@@ -866,7 +879,7 @@ Expected: both tests pass. Run the whole module suite to confirm no regression:
 cargo test --lib runtime::ipc::tests::
 ```
 
-Expected: 17 total tests pass.
+Expected: the full IPC module test suite passes.
 
 - [ ] **Step 4: Commit**
 

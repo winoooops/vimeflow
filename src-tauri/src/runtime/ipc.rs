@@ -63,7 +63,7 @@ impl<'a> ResponseFrame<'a> {
     }
 }
 
-/// Event sink that formats LSP frames synchronously and pushes them onto an
+/// Event sink that formats LSP frames synchronously and pushes them onto a
 /// bounded channel. A single writer task owns stdout and drains the channel.
 pub struct StdoutEventSink {
     tx: Sender<Vec<u8>>,
@@ -84,18 +84,29 @@ impl EventSink for StdoutEventSink {
         }))
         .map_err(|err| format!("event encode {event}: {err}"))?;
 
-        self.tx
-            .try_send(frame::format_frame(&body))
-            .map_err(|err| match err {
-                tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                    format!("stdout writer backlog full; dropped {event}")
-                }
-                tokio::sync::mpsc::error::TrySendError::Closed(_) => {
-                    format!("stdout writer closed; cannot emit {event}")
-                }
-            })?;
+        send_event_frame(&self.tx, frame::format_frame(&body), event)
+    }
+}
 
-        Ok(())
+fn send_event_frame(tx: &Sender<Vec<u8>>, framed: Vec<u8>, event: &str) -> Result<(), String> {
+    match tx.try_send(framed) {
+        Ok(()) => Ok(()),
+        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+            Err(format!("stdout writer closed; cannot emit {event}"))
+        }
+        Err(tokio::sync::mpsc::error::TrySendError::Full(framed)) => {
+            log::warn!("stdout writer backlog full; backpressuring event producer for {event}");
+            let tx = tx.clone();
+            let handle = std::thread::Builder::new()
+                .name("ipc-stdout-backpressure".into())
+                .spawn(move || tx.blocking_send(framed))
+                .map_err(|err| format!("stdout writer send worker spawn failed: {err}"))?;
+
+            handle
+                .join()
+                .map_err(|_| "stdout writer send worker panicked".to_string())?
+                .map_err(|_| format!("stdout writer closed; cannot emit {event}"))
+        }
     }
 }
 
@@ -1051,16 +1062,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stdout_event_sink_errors_when_channel_full() {
+    async fn stdout_event_sink_backpressures_when_channel_full() {
         use crate::runtime::EventSink;
 
-        let (tx, _rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1);
         tx.try_send(Vec::new()).expect("fill channel");
         let sink = super::StdoutEventSink::new(tx);
-        let err = sink
-            .emit_json("pty-data", serde_json::json!({}))
-            .expect_err("expected err");
-        assert!(err.contains("backlog full"), "got {err}");
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            let result = sink.emit_json("pty-data", serde_json::json!({"data": "hi"}));
+            done_tx.send(result).expect("send result");
+        });
+
+        assert!(
+            matches!(
+                done_rx.recv_timeout(std::time::Duration::from_millis(50)),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ),
+            "event producer should block while the queue is full"
+        );
+
+        let first = rx.recv().await.expect("first queued frame");
+        assert!(first.is_empty(), "expected the queue filler frame");
+
+        let result = done_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("emit should complete after capacity is available");
+        assert!(result.is_ok(), "emit failed: {result:?}");
+
+        let framed = rx.recv().await.expect("backpressured event frame");
+        let s = std::str::from_utf8(&framed).expect("utf8");
+        let body_start = s.find("\r\n\r\n").expect("delimiter") + 4;
+        let body: serde_json::Value = serde_json::from_str(&s[body_start..]).expect("parse");
+        assert_eq!(body["kind"], "event");
+        assert_eq!(body["event"], "pty-data");
+        assert_eq!(body["payload"]["data"], "hi");
     }
 
     #[tokio::test]
