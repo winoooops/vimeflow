@@ -72,7 +72,17 @@ Contract details:
 
 - `invoke<T>(method, args?)` returns `Promise<T>`. The `T` parameter is
   the deserialized `result` field of the response frame (PR-B §5.1.2).
-  Errors reject the promise with **the underlying transport's reject
+  The `args` parameter is optional at the renderer-facing surface
+  (`args?: Record<string, unknown>`) because many command call sites
+  pass no payload (`invoke('list_sessions')`). The bridge MUST pass
+  `args` through to the underlying transport unchanged — Tauri's
+  `tauriInvoke(method, undefined)` already handles undefined; PR-D's
+  `window.vimeflow.invoke` producer (Electron preload) MUST normalize
+  to `params: args ?? {}` when serializing the request frame, because
+  PR-B §5.1.1 requires the `params` field to be an object (the sidecar
+  router decodes empty objects per-method, but rejects missing keys).
+  This normalization lives in the preload, not the bridge.
+- Errors reject the promise with **the underlying transport's reject
   value, passed through unchanged**. The bridge MUST NOT wrap, transform,
   or normalize the rejection shape. Today that means Tauri's invoke
   rejects with a string (Rust's `Result<T, String>` Err arm reaches JS
@@ -323,8 +333,9 @@ import { listen as tauriListen } from '@tauri-apps/api/event'
 /**
  * Detach a previously-registered listener. Idempotent — a second call is
  * a no-op. PR-D removes the `@tauri-apps/event` import and the
- * `tauriUnlisten` branch below; the bridge then returns the
- * `window.vimeflow.listen` unsubscribe function directly.
+ * `tauriUnlisten` branch below; the bridge's `called` guard wrapper
+ * (in `listen()` below) stays so StrictMode double-cleanup remains
+ * safe regardless of which transport produced `rawUnlisten`.
  */
 export type UnlistenFn = () => void
 
