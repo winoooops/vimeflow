@@ -1,12 +1,11 @@
 import { afterEach, describe, test, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { invoke, listen } from '../../../lib/backend'
 import { getPtySessionId } from '../../terminal/ptySessionMap'
 import type { TestRunSnapshot } from '../types'
 import { useAgentStatus } from './useAgentStatus'
 
-type EventCallback<T = unknown> = (event: { payload: T }) => void
+type EventCallback<T = unknown> = (payload: T) => void
 
 const eventListeners = new Map<string, EventCallback[]>()
 
@@ -34,8 +33,9 @@ const defaultInvokeImpl = (): Promise<null> => Promise.resolve(null)
 
 const defaultGetPtySessionIdImpl = (id: string): string => `pty-${id}`
 
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock('../../../lib/backend', () => ({
   invoke: vi.fn(),
+  listen: vi.fn(),
 }))
 
 vi.mock('../../terminal/ptySessionMap', () => ({
@@ -45,14 +45,10 @@ vi.mock('../../terminal/ptySessionMap', () => ({
   ),
 }))
 
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(),
-}))
-
 const emit = <T>(eventName: string, payload: T): void => {
   const listeners = eventListeners.get(eventName) ?? []
   for (const cb of listeners) {
-    cb({ payload })
+    cb(payload)
   }
 }
 
@@ -1136,11 +1132,11 @@ describe('useAgentStatus', () => {
     const PTY_ID = 'pty-tr'
     vi.mocked(getPtySessionId).mockReturnValue(PTY_ID)
 
-    let testRunHandler: ((e: { payload: TestRunSnapshot }) => void) | undefined
+    let testRunHandler: ((payload: TestRunSnapshot) => void) | undefined
 
     vi.mocked(listen).mockImplementation(((
       event: string,
-      handler: (e: { payload: TestRunSnapshot }) => void
+      handler: (payload: TestRunSnapshot) => void
     ) => {
       if (event === 'test-run') {
         testRunHandler = handler
@@ -1168,7 +1164,7 @@ describe('useAgentStatus', () => {
     }
 
     act(() => {
-      testRunHandler?.({ payload: snap })
+      testRunHandler?.(snap)
     })
 
     expect(result.current.testRun).toEqual(snap)
@@ -1178,11 +1174,11 @@ describe('useAgentStatus', () => {
     const PTY_ID = 'pty-real'
     vi.mocked(getPtySessionId).mockReturnValue(PTY_ID)
 
-    let testRunHandler: ((e: { payload: TestRunSnapshot }) => void) | undefined
+    let testRunHandler: ((payload: TestRunSnapshot) => void) | undefined
 
     vi.mocked(listen).mockImplementation(((
       event: string,
-      handler: (e: { payload: TestRunSnapshot }) => void
+      handler: (payload: TestRunSnapshot) => void
     ) => {
       if (event === 'test-run') {
         testRunHandler = handler
@@ -1199,17 +1195,15 @@ describe('useAgentStatus', () => {
 
     act(() => {
       testRunHandler?.({
-        payload: {
-          sessionId: 'wrong-pty-id',
-          runner: 'vitest',
-          commandPreview: 'vitest',
-          startedAt: '',
-          finishedAt: '',
-          durationMs: 0,
-          status: 'pass',
-          summary: { passed: 1, failed: 0, skipped: 0, total: 1, groups: [] },
-          outputExcerpt: null,
-        },
+        sessionId: 'wrong-pty-id',
+        runner: 'vitest',
+        commandPreview: 'vitest',
+        startedAt: '',
+        finishedAt: '',
+        durationMs: 0,
+        status: 'pass',
+        summary: { passed: 1, failed: 0, skipped: 0, total: 1, groups: [] },
+        outputExcerpt: null,
       })
     })
 
