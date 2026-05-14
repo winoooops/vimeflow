@@ -2,8 +2,10 @@
 //! IPC wire shape over real stdio.
 
 use std::io::{BufRead, BufReader, Read, Write};
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use tempfile::TempDir;
@@ -32,7 +34,9 @@ impl IpcClient {
             .spawn()
             .expect("spawn bin");
         let stdin = Some(child.stdin.take().expect("stdin"));
-        let stdout = BufReader::new(child.stdout.take().expect("stdout"));
+        let stdout = child.stdout.take().expect("stdout");
+        set_nonblocking_stdout(&stdout);
+        let stdout = BufReader::new(stdout);
 
         Self {
             child,
@@ -78,39 +82,22 @@ impl IpcClient {
 
     fn read_one_frame_body(&mut self) -> Vec<u8> {
         let mut stdout = self.stdout.take().expect("stdout already taken");
-        let (tx, rx) = std::sync::mpsc::channel();
+        let result = Self::read_one_frame_body_from(&mut stdout, Duration::from_secs(2));
+        self.stdout = Some(stdout);
 
-        std::thread::spawn(move || {
-            let result = Self::read_one_frame_body_from(&mut stdout);
-            let _ = tx.send((result, stdout));
-        });
-
-        match rx.recv_timeout(Duration::from_secs(2)) {
-            Ok((Ok(body), stdout)) => {
-                self.stdout = Some(stdout);
-                body
-            }
-            Ok((Err(err), stdout)) => {
-                self.stdout = Some(stdout);
-                panic!("{err}");
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                panic!("timed out reading frame from sidecar stdout");
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                panic!("stdout read thread disconnected");
-            }
-        }
+        result.unwrap_or_else(|err| panic!("{err}"))
     }
 
-    fn read_one_frame_body_from(stdout: &mut BufReader<ChildStdout>) -> Result<Vec<u8>, String> {
+    fn read_one_frame_body_from(
+        stdout: &mut BufReader<ChildStdout>,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, String> {
+        let deadline = Instant::now() + timeout;
         let mut content_length: Option<usize> = None;
 
         loop {
             let mut line = String::new();
-            let n = stdout
-                .read_line(&mut line)
-                .map_err(|err| format!("read header line: {err}"))?;
+            let n = read_line_with_deadline(stdout, &mut line, deadline)?;
             if n == 0 {
                 return Err("unexpected EOF reading frame headers".into());
             }
@@ -120,9 +107,7 @@ impl IpcClient {
                 let len =
                     content_length.ok_or("Content-Length must precede blank line".to_string())?;
                 let mut body = vec![0u8; len];
-                stdout
-                    .read_exact(&mut body)
-                    .map_err(|err| format!("read body: {err}"))?;
+                read_exact_with_deadline(stdout, &mut body, deadline)?;
                 return Ok(body);
             }
 
@@ -179,6 +164,74 @@ impl Drop for IpcClient {
             }
         }
     }
+}
+
+#[cfg(unix)]
+fn set_nonblocking_stdout(stdout: &ChildStdout) {
+    let fd = stdout.as_raw_fd();
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags == -1 {
+        panic!("fcntl F_GETFL failed: {}", std::io::Error::last_os_error());
+    }
+
+    let result = unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) };
+    if result == -1 {
+        panic!("fcntl F_SETFL failed: {}", std::io::Error::last_os_error());
+    }
+}
+
+#[cfg(not(unix))]
+fn set_nonblocking_stdout(_stdout: &ChildStdout) {}
+
+fn read_line_with_deadline(
+    stdout: &mut BufReader<ChildStdout>,
+    line: &mut String,
+    deadline: Instant,
+) -> Result<usize, String> {
+    loop {
+        match stdout.read_line(line) {
+            Ok(n) => return Ok(n),
+            Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                wait_for_read(deadline, "frame header")?;
+            }
+            Err(err) => return Err(format!("read header line: {err}")),
+        }
+    }
+}
+
+fn read_exact_with_deadline(
+    stdout: &mut BufReader<ChildStdout>,
+    body: &mut [u8],
+    deadline: Instant,
+) -> Result<(), String> {
+    let mut read = 0;
+    while read < body.len() {
+        match stdout.read(&mut body[read..]) {
+            Ok(0) => return Err("unexpected EOF reading frame body".into()),
+            Ok(n) => read += n,
+            Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                wait_for_read(deadline, "frame body")?;
+            }
+            Err(err) => return Err(format!("read body: {err}")),
+        }
+    }
+
+    Ok(())
+}
+
+fn wait_for_read(deadline: Instant, context: &str) -> Result<(), String> {
+    let now = Instant::now();
+    if now >= deadline {
+        return Err(format!("timed out reading {context} from sidecar stdout"));
+    }
+
+    std::thread::sleep(std::cmp::min(
+        Duration::from_millis(1),
+        deadline.duration_since(now),
+    ));
+    Ok(())
 }
 
 #[test]
