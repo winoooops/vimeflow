@@ -840,3 +840,5 @@ in `src/lib/`. After PR-D, the e2e-bridge will be the only file in
 `tests/e2e/shared/` or `src/test/` so renderer-runtime code and
 test-instrumentation code live in different directories. Defer to a
 follow-up PR; not blocking PR-C or PR-D.
+
+<!-- codex-reviewed: 2026-05-14T09:17:09Z -->
