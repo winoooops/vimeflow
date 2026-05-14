@@ -143,10 +143,12 @@ The trailing `export {}` makes the file a module so `import type` is legal.
 - [ ] **Step 2: Verify `tsconfig.json` includes `src/types/**`\*\*
 
 ```bash
-grep -nE '"include"|"src/types"' tsconfig.json tsconfig.app.json 2>/dev/null
+grep -nE '"include"' tsconfig.json
 ```
 
-Expected: `src` is included by `tsconfig.app.json` (or whichever app-level config Vite uses), which covers `src/types/**` transitively. If not, the new ambient declaration won't load — add `"src/types/**/*.d.ts"` to the `"include"` array of the app-level tsconfig.
+Expected: a line like `"include": ["src"]`. This repo uses a single top-level `tsconfig.json` (no `tsconfig.app.json` split), and the `["src"]` include transitively covers `src/types/**`. The new ambient declaration loads automatically; no tsconfig edit is needed.
+
+If the `include` line is missing or doesn't contain `"src"`, investigate before continuing — the rest of the bridge won't be type-checked.
 
 - [ ] **Step 3: Write the failing tests in `src/lib/backend.test.ts`**
 
@@ -1469,6 +1471,18 @@ const mockedInvoke = vi.mocked(invoke)
 const mockedIsDesktop = vi.mocked(isDesktop)
 ```
 
+Critical: add a `beforeEach` that resets `mockedIsDesktop` to a safe default at the top of the test suite, so the per-test `mockReturnValue(true)` calls in Step 3 don't leak across the factory's three-way branch tests:
+
+```ts
+beforeEach(() => {
+  // Default: behave as non-desktop. Individual tests override.
+  mockedIsDesktop.mockReturnValue(false)
+  mockedInvoke.mockReset()
+})
+```
+
+Without this reset, a test setting `mockedIsDesktop.mockReturnValue(true)` would leak into the existing "returns HttpGitService when MODE=development and no desktop signal" test (or equivalent), which would then route to `TauriGitService` and fail in a confusing way. Vitest doesn't auto-reset `vi.mocked()` spies between tests unless `clearMocks: true` is set globally; this `beforeEach` makes the reset explicit.
+
 - [ ] **Step 3: Rewrite the factory test at `gitService.test.ts:401-416`**
 
 Today's test (paraphrased):
@@ -1635,56 +1649,109 @@ rg -n "event\.payload" src/features/terminal/services/tauriTerminalService.ts
 
 Expected: zero hits.
 
-- [ ] **Step 4: Edit `tauriTerminalService.test.ts` mock + fixtures**
+- [ ] **Step 4: Edit `tauriTerminalService.test.ts` — migrate the stateful mock**
 
-Replace the top-level mocks:
+The existing test file does NOT use a simple `vi.fn()` for `listen` —
+it uses a stateful mock impl that records callbacks in an
+`eventListeners` Map so `emitTauriEvent` can later fire them. Preserve
+that pattern; only the imported module changes (and the
+`Event<T>.payload` unwrap).
+
+Replace the top-level mock block + dynamic-invoke import:
 
 ```ts
-// Before:
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+// Before (top of file, lines ~1-40):
+import { describe, test, expect, beforeEach, vi, type Mock } from 'vitest'
+import { TauriTerminalService } from './tauriTerminalService'
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn() }))
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+}))
+
+type EventCallback = (event: { payload: unknown }) => void
+const eventListeners = new Map<string, EventCallback[]>()
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(
+    (eventName: string, callback: EventCallback): Promise<() => void> => {
+      const existing = eventListeners.get(eventName) ?? []
+      existing.push(callback)
+      eventListeners.set(eventName, existing)
+
+      return Promise.resolve(() => {
+        const cbs = eventListeners.get(eventName) ?? []
+        const index = cbs.indexOf(callback)
+        if (index > -1) {
+          cbs.splice(index, 1)
+        }
+      })
+    }
+  ),
+}))
+
+const emitTauriEvent = (eventName: string, payload: unknown): void => {
+  const callbacks = eventListeners.get(eventName) ?? []
+  callbacks.forEach((cb) => cb({ payload }))
+}
+
+const { invoke } = await import('@tauri-apps/api/core')
 
 // After:
-import { invoke, listen } from '../../../lib/backend'
+import { describe, test, expect, beforeEach, vi, type Mock } from 'vitest'
+import { TauriTerminalService } from './tauriTerminalService'
+import { invoke } from '../../../lib/backend'
+
+type EventCallback = (payload: unknown) => void
+const eventListeners = new Map<string, EventCallback[]>()
 
 vi.mock('../../../lib/backend', () => ({
   invoke: vi.fn(),
-  listen: vi.fn(),
+  listen: vi.fn(
+    (eventName: string, callback: EventCallback): Promise<() => void> => {
+      const existing = eventListeners.get(eventName) ?? []
+      existing.push(callback)
+      eventListeners.set(eventName, existing)
+
+      return Promise.resolve(() => {
+        const cbs = eventListeners.get(eventName) ?? []
+        const index = cbs.indexOf(callback)
+        if (index > -1) {
+          cbs.splice(index, 1)
+        }
+      })
+    }
+  ),
 }))
-```
 
-Update the `EventCallback` type alias:
-
-```ts
-// Before:
-type EventCallback = (event: { payload: unknown }) => void
-
-// After:
-type EventCallback = (payload: unknown) => void
-```
-
-Update the `emitTauriEvent` helper (around line 34):
-
-```ts
-// Before:
 const emitTauriEvent = (eventName: string, payload: unknown): void => {
-  const call = mockedListen.mock.calls.find((c) => c[0] === eventName)
-  const cb = call?.[1] as EventCallback
-  cb({ payload })
-}
-
-// After:
-const emitTauriEvent = (eventName: string, payload: unknown): void => {
-  const call = mockedListen.mock.calls.find((c) => c[0] === eventName)
-  const cb = call?.[1] as EventCallback
-  cb(payload)
+  const callbacks = eventListeners.get(eventName) ?? []
+  callbacks.forEach((cb) => cb(payload))
 }
 ```
 
-(The helper name `emitTauriEvent` is now slightly stale — the emission isn't Tauri-specific anymore — but renaming it is a drive-by; leave it.)
+Key changes:
+
+- `vi.mock('@tauri-apps/api/core', ...)` + `vi.mock('@tauri-apps/api/event', ...)` collapse into a single `vi.mock('../../../lib/backend', ...)` factory exposing both `invoke` and `listen`.
+- `EventCallback` type changes from `(event: { payload: unknown }) => void` to `(payload: unknown) => void` (bridge surface).
+- `emitTauriEvent` fires with bare `payload`, not `{ payload }`.
+- The top-level `const { invoke } = await import('@tauri-apps/api/core')` (line 40) becomes a regular top-level `import { invoke } from '../../../lib/backend'` — the bridge mock factory exposes the spy directly, so no dynamic-import workaround is needed.
+- The helper name `emitTauriEvent` stays (drive-by rename out of scope).
+
+- [ ] **Step 4b: Migrate the F1 regression test's dynamic import (line ~428)**
+
+The existing F1 regression test (`F1 regression: onData await blocks until underlying listen attaches`) does a dynamic `await import('@tauri-apps/api/event')` to retrieve the listen mock and stall it. After migration, it imports from the bridge module instead:
+
+```ts
+// Before (around line 428):
+const eventModule = await import('@tauri-apps/api/event')
+const listenMock = vi.mocked(eventModule.listen)
+
+// After:
+const backendModule = await import('../../../lib/backend')
+const listenMock = vi.mocked(backendModule.listen)
+```
+
+The rest of the test body — the `listenGate`, `stalledImpl`, callback recording into `eventListeners`, `releaseListen()` — works unchanged. Critical: the `stalledImpl` callback still records into `eventListeners` and `emitTauriEvent` reads from the same map, so the stall-then-release flow stays intact.
 
 - [ ] **Step 5: Sanity grep**
 
@@ -1780,8 +1847,10 @@ Expected: byte-identical test count to the post-PR-B baseline. A diff here means
 
 ```bash
 rg -nE "@tauri-apps/api|__TAURI_INTERNALS__" src tests > /tmp/pr-c-final.txt
-diff /tmp/pr-c-baseline.txt /tmp/pr-c-final.txt
+diff /tmp/pr-c-baseline.txt /tmp/pr-c-final.txt || true
 ```
+
+`diff` exits non-zero whenever the files differ — and after a successful migration they SHOULD differ (entries for `useGitBranch.ts`, `useGitStatus.ts`, etc. drop out of the final list). The `|| true` swallows that expected non-zero, so a shell with `set -e` doesn't abort. Read the actual diff output to confirm what changed.
 
 Expected: production hits remain in exactly these files (no others):
 
@@ -1819,19 +1888,23 @@ npm run test:e2e
 
 Expected: all green. The `e2e-bridge.ts` migration is a one-line import swap; the runtime path through `tauri-driver` + Wry is unchanged. If a spec fails, it's a real regression — do not paper it over by adjusting the spec.
 
-- [ ] **Step 8: Frontend-only Tauri references — should be zero outside the bridge**
+- [ ] **Step 8: Frontend-only Tauri references — should be confined to the bridge module**
+
+Production code (excluding tests):
 
 ```bash
-rg -n "from '@tauri-apps/api" src
+rg -n "from '@tauri-apps/api" src --glob '!*.test.ts' --glob '!*.test.tsx'
 ```
 
-Expected: 2 hits, both in `src/lib/backend.ts` (the fallback's runtime imports). Anything else means a renderer file still imports `@tauri-apps/api` directly — fix before opening the PR.
+Expected: exactly 2 hits, both in `src/lib/backend.ts` (the fallback's runtime imports for `core` + `event`). Anything else means a renderer file still imports `@tauri-apps/api` directly — fix before opening the PR.
+
+Test code (separate check):
 
 ```bash
-rg -n "from '@tauri-apps/api" src/lib/backend.test.ts
+rg -n "from '@tauri-apps/api" src tests
 ```
 
-Expected: 2 hits (the test mocks the same two modules the bridge consumes). These ARE expected — the test exercises the fallback path explicitly.
+Expected: 4 hits total. 2 in `src/lib/backend.ts` (the production fallback imports above) PLUS 2 in `src/lib/backend.test.ts` (the test imports the same two mocked modules so the spies are typed). Both pairs are intentional — the bridge module owns the only `@tauri-apps/api` surface area in PR-C, and its test exercises the fallback against the real module identifiers.
 
 - [ ] **Step 9: No drive-by formatting in feature commits**
 
@@ -1863,9 +1936,27 @@ rg -n "TauriXxx|DesktopXxx" src 2>&1 | head -5
 
 (Sanity check that we did NOT rename the class identifiers — those wait for PR-D.) Expected: `TauriTerminalService`, `TauriGitService`, `TauriFileSystemService` all still exist; `DesktopXxx` symbols do NOT yet exist.
 
-- [ ] **Step 11: Update `CHANGELOG.md` + `CHANGELOG.zh-CN.md`**
+- [ ] **Step 11: Update `CHANGELOG.md` + `CHANGELOG.zh-CN.md` (separate commit)**
 
 Add a top-of-file entry (or extend the active section if one is in flight) describing PR-C's renderer-side IPC seam. Mirror the entry in `CHANGELOG.zh-CN.md`. Cross-link the entry to the relevant `docs/reviews/` patterns if any reviews surface during the PR (defer if none yet).
+
+This step happens AFTER Steps 1-10 of the verification gate have all passed. It introduces file changes, so it MUST be its own commit (not bundled with feature work) and the formatting gate must re-run:
+
+```bash
+git add CHANGELOG.md CHANGELOG.zh-CN.md
+npm run format:check
+git commit -m "docs(changelog): pr-c frontend backend bridge entry"
+```
+
+If `format:check` fails (likely on the bilingual markdown line wrapping), run `npm run format` first, re-add, then commit. The other gate commands (`npm run lint`, `type-check`, `test`, `cargo test`, `test:e2e`) only check source code paths the CHANGELOG does not touch, so re-running them is optional. The `tauri:dev` manual smoke is similarly unaffected.
+
+- [ ] **Step 12: Final coupling re-check after CHANGELOG commit**
+
+```bash
+rg -nE "@tauri-apps/api|__TAURI_INTERNALS__" src tests
+```
+
+Same expected residual hits as Step 5. The CHANGELOG commit shouldn't touch any of these paths; this re-check confirms nothing accidentally leaked in via a paired CHANGELOG-flavored "I'm already here" edit (see `rules/common/pr-scope.md`).
 
 ---
 
