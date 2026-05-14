@@ -26,7 +26,8 @@ tauri-plugin-log = "2"
 portable-pty = "0.8"
 anyhow = "1.0"
 thiserror = "2.0"
-tokio = { version = "1", features = ["sync", "io-util", "time", "rt", "macros"] }
+tokio = { version = "1", features = ["sync", "io-util", "io-std", "time", "rt", "rt-multi-thread", "macros"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 notify = "6"
 dirs = "6"
 ignore = "0.4"
@@ -36,6 +37,7 @@ shell-words = "1.1"
 regex = "1.10"
 rusqlite = { version = "0.32", features = ["bundled"] }
 once_cell = "1.19"
+env_logger = "0.11"
 
 [features]
 e2e-test = []
@@ -48,3 +50,7 @@ tauri = { version = "2", features = ["test"] }
 tokio = { version = "1", features = ["macros", "rt"] }
 ts-rs = "10"
 tempfile = "3"
+
+[[bin]]
+name = "vimeflow-backend"
+path = "src/bin/vimeflow-backend.rs"
