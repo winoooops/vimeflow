@@ -2024,3 +2024,5 @@ After PR-C merges to `dev`:
 - The PR-D planner session can start. PR-D consumes §2.1, §2.4, and §2.5 of this PR's spec.
 - Local dev continues against Tauri (`npm run tauri:dev`) — PR-C didn't change the desktop shell.
 - `npm run test` test count climbed by ~16; `cargo test` count unchanged.
+
+<!-- codex-reviewed: 2026-05-14T10:03:01Z -->
