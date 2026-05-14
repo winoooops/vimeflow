@@ -14,7 +14,9 @@ use crate::runtime::event_sink::EventSink;
 
 const HANDLER_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const WRITER_DRAIN_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
-const EVENT_SEND_BACKPRESSURE_TIMEOUT: Duration = Duration::from_secs(5);
+// `block_in_place` cannot be interrupted by JoinSet::abort_all(), so keep this
+// below the handler drain timeout to bound clean-EOF shutdown latency.
+const EVENT_SEND_BACKPRESSURE_TIMEOUT: Duration = Duration::from_secs(1);
 const EVENT_SEND_BACKPRESSURE_POLL: Duration = Duration::from_millis(10);
 const MAX_CONCURRENT_HANDLERS: usize = 64;
 
@@ -1336,6 +1338,11 @@ mod tests {
 
         assert!(err.contains("backlog full"), "got {err}");
         assert!(err.contains("pty-data"), "got {err}");
+    }
+
+    #[test]
+    fn stdout_event_backpressure_timeout_stays_below_handler_drain_timeout() {
+        assert!(super::EVENT_SEND_BACKPRESSURE_TIMEOUT < super::HANDLER_DRAIN_TIMEOUT);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
