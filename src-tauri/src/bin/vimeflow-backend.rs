@@ -25,24 +25,41 @@ async fn main() {
     };
 
     let (tx, rx) = mpsc::channel::<Vec<u8>>(ipc::STDOUT_QUEUE_CAPACITY);
-    let writer_handle = tokio::spawn(ipc::writer_task(rx, tokio::io::stdout()));
+    let writer_shutdown = CancellationToken::new();
+    let writer_handle = tokio::spawn(ipc::writer_task_with_shutdown(
+        rx,
+        tokio::io::stdout(),
+        writer_shutdown.clone(),
+    ));
 
     let sink: Arc<dyn EventSink> = Arc::new(ipc::StdoutEventSink::new(tx.clone()));
     let state = Arc::new(BackendState::new(app_data_dir, sink));
     let cancel = CancellationToken::new();
 
-    let run_result = ipc::run(state.clone(), tokio::io::stdin(), tx, cancel.clone()).await;
+    let run_result = ipc::run(state.clone(), tokio::io::stdin(), tx, cancel).await;
 
     if run_result.is_ok() {
         state.shutdown();
     }
     drop(state);
 
-    let _ = tokio::time::timeout(std::time::Duration::from_millis(200), writer_handle).await;
+    writer_shutdown.cancel();
+    let writer_result = match writer_handle.await {
+        Ok(result) => result,
+        Err(err) => Err(std::io::Error::other(format!(
+            "writer task join failed: {err}"
+        ))),
+    };
 
     if let Err(err) = run_result {
         write_stderr_line(&format!(
             "vimeflow-backend: run loop exited with error: {err}"
+        ));
+        std::process::exit(1);
+    }
+    if let Err(err) = writer_result {
+        write_stderr_line(&format!(
+            "vimeflow-backend: writer exited with error: {err}"
         ));
         std::process::exit(1);
     }

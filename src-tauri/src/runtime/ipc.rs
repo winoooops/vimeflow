@@ -4,12 +4,15 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, BufReader};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
 
 use crate::runtime::event_sink::EventSink;
+
+const HANDLER_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub const STDOUT_QUEUE_CAPACITY: usize = 1024;
 
@@ -113,11 +116,6 @@ mod frame {
 
     #[derive(Debug)]
     pub enum FrameError {
-        /// Header line malformed but the codec advanced past it without
-        /// exceeding RESYNC_BUDGET_BYTES. Kept as part of the run-loop contract;
-        /// the current codec resyncs internally so this variant is not emitted.
-        #[allow(dead_code)]
-        ResyncableBadHeader(String),
         /// Header parsing exhausted RESYNC_BUDGET_BYTES or hit a hard limit.
         FatalBadHeader(String),
         /// Body length exceeds MAX_FRAME_BYTES.
@@ -496,21 +494,56 @@ mod router {
 
 /// Drain the writer channel into `writer` until all senders drop.
 pub async fn writer_task<W: AsyncWrite + Unpin + Send + 'static>(
+    rx: Receiver<Vec<u8>>,
+    writer: W,
+) -> std::io::Result<()> {
+    writer_task_with_shutdown(rx, writer, CancellationToken::new()).await
+}
+
+/// Drain the writer channel until all senders drop, or until `shutdown` asks
+/// the receiver to close. Shutdown drains already-queued frames before exit.
+pub async fn writer_task_with_shutdown<W: AsyncWrite + Unpin + Send + 'static>(
     mut rx: Receiver<Vec<u8>>,
     mut writer: W,
-) {
-    use tokio::io::AsyncWriteExt;
+    shutdown: CancellationToken,
+) -> std::io::Result<()> {
+    loop {
+        let framed = tokio::select! {
+            biased;
+            _ = shutdown.cancelled() => {
+                rx.close();
+                break;
+            }
+            framed = rx.recv() => framed,
+        };
+
+        let Some(framed) = framed else {
+            return Ok(());
+        };
+
+        write_framed(&mut writer, &framed).await?;
+    }
 
     while let Some(framed) = rx.recv().await {
-        if let Err(err) = writer.write_all(&framed).await {
-            log::warn!("ipc writer_task: write failed: {err}");
-            break;
-        }
-        if let Err(err) = writer.flush().await {
-            log::warn!("ipc writer_task: flush failed: {err}");
-            break;
-        }
+        write_framed(&mut writer, &framed).await?;
     }
+
+    Ok(())
+}
+
+async fn write_framed<W: AsyncWrite + Unpin>(writer: &mut W, framed: &[u8]) -> std::io::Result<()> {
+    use tokio::io::AsyncWriteExt;
+
+    if let Err(err) = writer.write_all(framed).await {
+        log::warn!("ipc writer_task: write failed: {err}");
+        return Err(err);
+    }
+    if let Err(err) = writer.flush().await {
+        log::warn!("ipc writer_task: flush failed: {err}");
+        return Err(err);
+    }
+
+    Ok(())
 }
 
 /// Read frames from `reader`, dispatch each as a Tokio task, and send responses
@@ -520,6 +553,16 @@ pub async fn run<R: AsyncRead + Unpin + Send>(
     reader: R,
     tx: Sender<Vec<u8>>,
     cancel: CancellationToken,
+) -> Result<(), std::io::Error> {
+    run_with_handler_drain_timeout(state, reader, tx, cancel, HANDLER_DRAIN_TIMEOUT).await
+}
+
+async fn run_with_handler_drain_timeout<R: AsyncRead + Unpin + Send>(
+    state: std::sync::Arc<crate::runtime::BackendState>,
+    reader: R,
+    tx: Sender<Vec<u8>>,
+    cancel: CancellationToken,
+    handler_drain_timeout: Duration,
 ) -> Result<(), std::io::Error> {
     let mut buf_reader = BufReader::new(reader);
     let mut handlers = JoinSet::new();
@@ -537,12 +580,8 @@ pub async fn run<R: AsyncRead + Unpin + Send>(
                 drain_finished_handlers(&mut handlers);
             }
             Ok(None) => {
-                wait_for_handlers(&mut handlers).await;
+                wait_for_handlers(&mut handlers, handler_drain_timeout, &cancel).await;
                 return Ok(());
-            }
-            Err(frame::FrameError::ResyncableBadHeader(msg)) => {
-                log::warn!("ipc bad frame header (resyncable): {msg}");
-                continue;
             }
             Err(frame::FrameError::FatalBadHeader(msg)) => {
                 log::error!("ipc fatal frame error: {msg}; exiting");
@@ -624,7 +663,26 @@ fn drain_finished_handlers(handlers: &mut JoinSet<()>) {
     }
 }
 
-async fn wait_for_handlers(handlers: &mut JoinSet<()>) {
+async fn wait_for_handlers(
+    handlers: &mut JoinSet<()>,
+    drain_timeout: Duration,
+    cancel: &CancellationToken,
+) {
+    let result = tokio::time::timeout(drain_timeout, drain_handlers(handlers)).await;
+    if result.is_ok() {
+        return;
+    }
+
+    let remaining = handlers.len();
+    log::warn!(
+        "ipc clean EOF: timed out waiting for {remaining} request handlers; aborting remaining handlers"
+    );
+    cancel.cancel();
+    handlers.abort_all();
+    drain_handlers(handlers).await;
+}
+
+async fn drain_handlers(handlers: &mut JoinSet<()>) {
     while let Some(result) = handlers.join_next().await {
         log_handler_result(result);
     }
@@ -642,7 +700,7 @@ fn log_handler_result(result: Result<(), JoinError>) {
 
 #[cfg(test)]
 mod tests {
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::frame;
 
@@ -912,6 +970,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn writer_task_shutdown_drains_queued_frames_with_live_sender() {
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let (mut read_end, write_end) = tokio::io::duplex(8192);
+
+        tx.try_send(super::frame::format_frame(br#"{"one":1}"#))
+            .expect("first send");
+        tx.try_send(super::frame::format_frame(br#"{"two":2}"#))
+            .expect("second send");
+
+        let writer_handle = tokio::spawn(super::writer_task_with_shutdown(
+            rx,
+            write_end,
+            shutdown.clone(),
+        ));
+        shutdown.cancel();
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), writer_handle)
+            .await
+            .expect("writer timeout")
+            .expect("writer task")
+            .expect("writer ok");
+
+        let mut output = Vec::new();
+        read_end
+            .read_to_end(&mut output)
+            .await
+            .expect("read output");
+        let output = std::str::from_utf8(&output).expect("utf8");
+        assert!(output.contains(r#"{"one":1}"#), "got {output}");
+        assert!(output.contains(r#"{"two":2}"#), "got {output}");
+
+        drop(tx);
+    }
+
+    #[tokio::test]
     async fn dispatch_unknown_method_errors() {
         let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
         let err = super::router::dispatch(state, "no_such_method", serde_json::json!({}))
@@ -1045,6 +1139,43 @@ mod tests {
         assert_eq!(resp["ok"], true);
 
         run_handle.await.expect("run task").expect("run ok");
+    }
+
+    #[tokio::test]
+    async fn run_times_out_in_flight_handlers_on_clean_eof() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
+        let cancel = tokio_util::sync::CancellationToken::new();
+
+        let (read_end, mut write_end) = tokio::io::duplex(8192);
+        let mut run_handle = tokio::spawn(super::run_with_handler_drain_timeout(
+            state,
+            read_end,
+            tx,
+            cancel.clone(),
+            std::time::Duration::from_millis(30),
+        ));
+
+        let frame = make_request_frame(
+            "too-slow",
+            "__test_sleep_then_null",
+            serde_json::json!({"delayMs": 250}),
+        );
+        write_end.write_all(&frame).await.expect("write");
+        drop(write_end);
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), &mut run_handle)
+            .await
+            .expect("run timeout")
+            .expect("run task")
+            .expect("run ok");
+
+        assert!(cancel.is_cancelled(), "clean EOF timeout should cancel");
+        let response = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
+        assert!(
+            !matches!(response, Ok(Some(_))),
+            "timed-out handler should not send a response: {response:?}"
+        );
     }
 
     #[tokio::test]

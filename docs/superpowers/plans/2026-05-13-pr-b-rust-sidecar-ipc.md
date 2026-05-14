@@ -284,9 +284,6 @@ mod frame {
 
     #[derive(Debug)]
     pub enum FrameError {
-        /// Header line malformed but the codec advanced past it without
-        /// exceeding RESYNC_BUDGET_BYTES. The caller `continue`s the read loop.
-        ResyncableBadHeader(String),
         /// Header parsing exhausted RESYNC_BUDGET_BYTES or hit a hard limit
         /// like MAX_HEADER_LINE_BYTES. Fatal — caller exits.
         FatalBadHeader(String),
@@ -602,7 +599,7 @@ feat(backend/ipc): add frame codec (read_frame / write_frame / format_frame)
 LSP-style Content-Length framing per spec §2.1. Header-line cap
 (MAX_HEADER_LINE_BYTES = 8 KiB) via fill_buf/consume to bound
 allocation; resync budget (RESYNC_BUDGET_BYTES = 64 KiB) for
-ResyncableBadHeader → continue, exhaustion → FatalBadHeader.
+skipping malformed header noise until exhaustion → FatalBadHeader.
 
 11 codec tests: format roundtrip, well-formed frame, clean EOF,
 mid-body EOF, oversize body, extra-header ignore, unknown-header
@@ -1362,9 +1359,9 @@ pub async fn writer_task<W: AsyncWrite + Unpin + Send + 'static>(
 /// Read frames from `reader`, dispatch each as a Tokio task, send responses
 /// through `tx`. Returns Ok(()) on clean EOF, Err on fatal codec error.
 ///
-/// On clean EOF we do NOT cancel in-flight handlers — they are tracked and
-/// awaited so already-accepted requests get a response. The bin's main bounds
-/// the writer drain after the handlers finish.
+/// On clean EOF we give in-flight handlers a bounded drain window so
+/// already-accepted requests can queue responses. Handlers still running after
+/// the timeout are cancelled and aborted so EOF cannot hang process exit.
 ///
 /// On fatal error we DO cancel: the process is about to exit non-zero, no
 /// supervisor is listening for the responses anyway, and we want the spawned
@@ -1390,12 +1387,8 @@ pub async fn run<R: AsyncRead + Unpin + Send>(
                 );
             }
             Ok(None) => {
-                while handlers.join_next().await.is_some() {}
+                wait_for_handlers(&mut handlers, std::time::Duration::from_secs(5), &cancel).await;
                 return Ok(());
-            }
-            Err(frame::FrameError::ResyncableBadHeader(msg)) => {
-                log::warn!("ipc bad frame header (resyncable): {msg}");
-                continue;
             }
             Err(frame::FrameError::FatalBadHeader(msg)) => {
                 log::error!("ipc fatal frame error: {msg}; exiting");
@@ -1687,7 +1680,12 @@ async fn main() {
     };
 
     let (tx, rx) = mpsc::channel::<Vec<u8>>(ipc::STDOUT_QUEUE_CAPACITY);
-    let writer_handle = tokio::spawn(ipc::writer_task(rx, tokio::io::stdout()));
+    let writer_shutdown = CancellationToken::new();
+    let writer_handle = tokio::spawn(ipc::writer_task_with_shutdown(
+        rx,
+        tokio::io::stdout(),
+        writer_shutdown.clone(),
+    ));
 
     let sink: Arc<dyn EventSink> = Arc::new(ipc::StdoutEventSink::new(tx.clone()));
     let state = Arc::new(BackendState::new(app_data_dir, sink));
@@ -1702,17 +1700,17 @@ async fn main() {
     }
     drop(state);
 
-    // Bounded writer drain — PTY threads holding tx clones can outlive
-    // BackendState. 200 ms is generous for the in-flight responses; longer
-    // would risk hanging on a stuck PTY thread. Process exit reaps the rest.
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_millis(200),
-        writer_handle,
-    )
-    .await;
+    // Close the writer receiver so long-lived event sender clones cannot keep
+    // the sidecar open, then await the writer so already-queued frames flush.
+    writer_shutdown.cancel();
+    let writer_result = writer_handle.await.expect("writer task join");
 
     if let Err(err) = run_result {
         eprintln!("vimeflow-backend: run loop exited with error: {err}");
+        std::process::exit(1);
+    }
+    if let Err(err) = writer_result {
+        eprintln!("vimeflow-backend: writer exited with error: {err}");
         std::process::exit(1);
     }
 }
@@ -1779,7 +1777,7 @@ echo "stderr (first 5 lines):"; head -5 /tmp/err.log
 rm -rf "$TMP" /tmp/out.bin /tmp/err.log
 ```
 
-Expected: stdout is 0 bytes (no log lines leaked); stderr has at least one `ipc bad frame header (resyncable)` warning; exit code `1`. The codec resyncs past the garbage line but then hits EOF mid-resync (resync_consumed != 0 → `FrameError::Io(UnexpectedEof)`), which the run loop maps to a fatal Err and main exits 1. This is the correct contract — a peer that closes the pipe mid-noise looks like a protocol error, not a clean shutdown. The stdout-clean assertion is the load-bearing check; the exit code differentiates "garbage input + crash" from "garbage input + clean recovery".
+Expected: stdout is 0 bytes (no log lines leaked); stderr contains the run-loop protocol error; exit code `1`. The codec resyncs past the garbage line but then hits EOF mid-resync (resync_consumed != 0 → `FrameError::Io(UnexpectedEof)`), which the run loop maps to a fatal Err and main exits 1. This is the correct contract — a peer that closes the pipe mid-noise looks like a protocol error, not a clean shutdown. The stdout-clean assertion is the load-bearing check; the exit code differentiates "garbage input + crash" from "garbage input + clean recovery".
 
 - [ ] **Step 7: Commit**
 
@@ -1790,10 +1788,11 @@ git commit -m "$(cat <<'EOF'
 feat(backend/ipc): add vimeflow-backend bin entry
 
 #[tokio::main(flavor = "multi_thread")] entry that parses --app-data-dir,
-spawns ipc::writer_task, builds Arc<BackendState> with StdoutEventSink,
-runs ipc::run. Shutdown ONLY on Ok(()); error paths leave the cache
-intact (spec §2.6). 200 ms bounded writer drain so PTY threads holding
-tx clones can't hang exit indefinitely.
+spawns ipc::writer_task_with_shutdown, builds Arc<BackendState> with
+StdoutEventSink, runs ipc::run. Shutdown ONLY on Ok(()); error paths
+leave the cache intact (spec §2.6). Writer shutdown closes the receiver,
+drains queued frames, and does not wait for long-lived PTY sender clones
+to drop.
 
 Manual smokes (see plan Task 8 Steps 4-6): bad argv → exit 2; valid
 list_sessions request → framed response on stdout, exit 0; garbage
