@@ -39,9 +39,7 @@ async fn main() {
 
     let run_result = ipc::run(state.clone(), tokio::io::stdin(), tx, cancel.clone()).await;
 
-    if run_result.is_ok() {
-        state.shutdown();
-    }
+    state.shutdown();
     drop(state);
 
     writer_shutdown.cancel();

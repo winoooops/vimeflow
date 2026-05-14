@@ -292,6 +292,63 @@ fn garbage_input_does_not_corrupt_stdout() {
 }
 
 #[test]
+fn error_exit_clears_session_cache() {
+    let app_data_dir = tempfile::tempdir().expect("tempdir");
+    let cache_path = app_data_dir.path().join("sessions.json");
+    let seeded_cache = json!({
+        "version": 1,
+        "active_session_id": "ghost",
+        "session_order": ["ghost"],
+        "sessions": {
+            "ghost": {
+                "cwd": "/tmp",
+                "created_at": "2026-05-14T00:00:00Z",
+                "exited": false,
+                "last_exit_code": null
+            }
+        }
+    });
+    std::fs::write(
+        &cache_path,
+        serde_json::to_vec(&seeded_cache).expect("encode cache"),
+    )
+    .expect("seed cache");
+
+    let mut child = Command::new(BIN)
+        .args([
+            "--app-data-dir",
+            app_data_dir.path().to_str().expect("path"),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn bin");
+
+    {
+        let mut stdin = child.stdin.take().expect("stdin");
+        stdin
+            .write_all(b"garbage garbage garbage\n")
+            .expect("write");
+    }
+
+    let output = child.wait_with_output().expect("wait");
+    assert!(!output.status.success(), "expected protocol error exit");
+
+    let cache: Value = serde_json::from_slice(&std::fs::read(cache_path).expect("read cache"))
+        .expect("parse cache");
+    assert_eq!(cache["sessions"].as_object().expect("sessions").len(), 0);
+    assert_eq!(
+        cache["session_order"]
+            .as_array()
+            .expect("session_order")
+            .len(),
+        0
+    );
+    assert!(cache["active_session_id"].is_null());
+}
+
+#[test]
 fn every_production_method_returns_well_formed_response_frame() {
     let cases: &[(&str, Value)] = &[
         ("list_sessions", json!({})),

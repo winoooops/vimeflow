@@ -96,18 +96,46 @@ fn send_event_frame(tx: &Sender<Vec<u8>>, framed: Vec<u8>, event: &str) -> Resul
         }
         Err(tokio::sync::mpsc::error::TrySendError::Full(framed)) => {
             log::warn!("stdout writer backlog full; backpressuring event producer for {event}");
-            let tx = tx.clone();
-            let handle = std::thread::Builder::new()
-                .name("ipc-stdout-backpressure".into())
-                .spawn(move || tx.blocking_send(framed))
-                .map_err(|err| format!("stdout writer send worker spawn failed: {err}"))?;
-
-            handle
-                .join()
-                .map_err(|_| "stdout writer send worker panicked".to_string())?
-                .map_err(|_| format!("stdout writer closed; cannot emit {event}"))
+            blocking_send_event_frame(tx.clone(), framed, event)
         }
     }
+}
+
+fn blocking_send_event_frame(
+    tx: Sender<Vec<u8>>,
+    framed: Vec<u8>,
+    event: &str,
+) -> Result<(), String> {
+    let send_result = match tokio::runtime::Handle::try_current() {
+        Ok(handle)
+            if matches!(
+                handle.runtime_flavor(),
+                tokio::runtime::RuntimeFlavor::MultiThread
+            ) =>
+        {
+            // Synchronous emitters can run inside async tasks. Hand the blocking
+            // wait back to Tokio so a saturated stdout queue does not pin a worker.
+            tokio::task::block_in_place(|| tx.blocking_send(framed))
+        }
+        Ok(_) => send_event_frame_on_worker_thread(tx, framed)?,
+        Err(_) => tx.blocking_send(framed),
+    };
+
+    send_result.map_err(|_| format!("stdout writer closed; cannot emit {event}"))
+}
+
+fn send_event_frame_on_worker_thread(
+    tx: Sender<Vec<u8>>,
+    framed: Vec<u8>,
+) -> Result<Result<(), tokio::sync::mpsc::error::SendError<Vec<u8>>>, String> {
+    let handle = std::thread::Builder::new()
+        .name("ipc-stdout-backpressure".into())
+        .spawn(move || tx.blocking_send(framed))
+        .map_err(|err| format!("stdout writer send worker spawn failed: {err}"))?;
+
+    handle
+        .join()
+        .map_err(|_| "stdout writer send worker panicked".to_string())
 }
 
 mod frame {
@@ -1120,6 +1148,43 @@ mod tests {
         let result = done_rx
             .recv_timeout(std::time::Duration::from_secs(1))
             .expect("emit should complete after capacity is available");
+        assert!(result.is_ok(), "emit failed: {result:?}");
+
+        let framed = rx.recv().await.expect("backpressured event frame");
+        let s = std::str::from_utf8(&framed).expect("utf8");
+        let body_start = s.find("\r\n\r\n").expect("delimiter") + 4;
+        let body: serde_json::Value = serde_json::from_str(&s[body_start..]).expect("parse");
+        assert_eq!(body["kind"], "event");
+        assert_eq!(body["event"], "pty-data");
+        assert_eq!(body["payload"]["data"], "hi");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn stdout_event_sink_backpressures_inside_tokio_task_without_panicking() {
+        use crate::runtime::EventSink;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1);
+        tx.try_send(Vec::new()).expect("fill channel");
+        let sink = super::StdoutEventSink::new(tx);
+
+        let handle = tokio::spawn(async move {
+            let payload = serde_json::json!({"data": "hi"});
+            sink.emit_json("pty-data", payload)
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            !handle.is_finished(),
+            "event producer should backpressure while the queue is full"
+        );
+
+        let first = rx.recv().await.expect("first queued frame");
+        assert!(first.is_empty(), "expected the queue filler frame");
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), handle)
+            .await
+            .expect("emit should complete after capacity is available")
+            .expect("emit task should not panic");
         assert!(result.is_ok(), "emit failed: {result:?}");
 
         let framed = rx.recv().await.expect("backpressured event frame");
