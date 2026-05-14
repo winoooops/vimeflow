@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../../../lib/backend'
 
 export interface UseGitBranchOptions {
   /** When false, returns empty state and skips IPC. */
