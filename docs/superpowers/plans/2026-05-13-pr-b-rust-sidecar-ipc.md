@@ -2308,3 +2308,5 @@ After PR-B merges to `dev`:
 - The PR-C planner session can start. PR-C consumes §5.1 of this spec.
 - Local dev continues against Tauri (`npm run tauri:dev`) — PR-B didn't change the desktop shell.
 - `cargo test` count climbed by ~33; `cargo test --features e2e-test` count climbed by the same.
+
+<!-- codex-reviewed: 2026-05-14T02:45:50Z -->
