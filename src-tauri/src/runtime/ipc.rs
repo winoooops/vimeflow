@@ -802,14 +802,7 @@ fn spawn_handler(
             Err(err) => {
                 log::warn!("ipc bad envelope: {err}");
                 if let Some(id) = recoverable_request_id {
-                    let body = match serde_json::to_vec(&ResponseFrame::err(&id, "bad envelope")) {
-                        Ok(body) => body,
-                        Err(err) => {
-                            log::error!("ipc bad-envelope response encode failed (id={id}): {err}");
-                            return;
-                        }
-                    };
-
+                    let body = encode_error_response_body(&id, "bad envelope", "bad-envelope");
                     send_response_frame(&tx, &id, body, &cancel).await;
                 }
                 return;
@@ -832,16 +825,10 @@ fn spawn_handler(
                 Ok(body) => body,
                 Err(err) => {
                     log::error!("ipc response encode failed (id={}): {err}", req.id);
-                    return;
+                    encode_internal_error_response_body(&req.id)
                 }
             },
-            Err(msg) => match serde_json::to_vec(&ResponseFrame::err(&req.id, msg.as_str())) {
-                Ok(body) => body,
-                Err(err) => {
-                    log::error!("ipc error-response encode failed (id={}): {err}", req.id);
-                    return;
-                }
-            },
+            Err(msg) => encode_error_response_body(&req.id, msg.as_str(), "error-response"),
         };
 
         send_response_frame(&tx, &req.id, body, &cancel).await;
@@ -854,15 +841,54 @@ async fn send_overload_response(tx: &Sender<Vec<u8>>, cancel: &CancellationToken
         return;
     };
 
-    let response = match serde_json::to_vec(&ResponseFrame::err(&id, "server overloaded")) {
-        Ok(response) => response,
-        Err(err) => {
-            log::error!("ipc overload response encode failed (id={id}): {err}");
-            return;
-        }
-    };
-
+    let response = encode_error_response_body(&id, "server overloaded", "overload");
     send_response_frame(tx, &id, response, cancel).await;
+}
+
+fn encode_error_response_body(id: &str, message: &str, context: &str) -> Vec<u8> {
+    match serde_json::to_vec(&ResponseFrame::err(id, message)) {
+        Ok(body) => body,
+        Err(err) => {
+            log::error!("ipc {context} response encode failed (id={id}): {err}");
+            encode_internal_error_response_body(id)
+        }
+    }
+}
+
+fn encode_internal_error_response_body(id: &str) -> Vec<u8> {
+    let mut body = Vec::with_capacity(id.len() + 64);
+    body.extend_from_slice(br#"{"kind":"response","id":"#);
+    append_json_string(&mut body, id);
+    body.extend_from_slice(br#","ok":false,"error":"internal error"}"#);
+    body
+}
+
+fn append_json_string(body: &mut Vec<u8>, value: &str) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+
+    body.push(b'"');
+    for ch in value.chars() {
+        match ch {
+            '"' => body.extend_from_slice(br#"\""#),
+            '\\' => body.extend_from_slice(br#"\\"#),
+            '\u{08}' => body.extend_from_slice(br#"\b"#),
+            '\u{0c}' => body.extend_from_slice(br#"\f"#),
+            '\n' => body.extend_from_slice(br#"\n"#),
+            '\r' => body.extend_from_slice(br#"\r"#),
+            '\t' => body.extend_from_slice(br#"\t"#),
+            '\u{00}'..='\u{1f}' => {
+                let code = ch as usize;
+                body.extend_from_slice(br#"\u00"#);
+                body.push(HEX[(code >> 4) & 0x0f]);
+                body.push(HEX[code & 0x0f]);
+            }
+            _ => {
+                let mut buf = [0; 4];
+                body.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+            }
+        }
+    }
+    body.push(b'"');
 }
 
 fn recover_bad_request_id_from_body(body: &[u8]) -> Option<String> {
@@ -1302,6 +1328,18 @@ mod tests {
         assert_eq!(val["kind"], "response");
         assert_eq!(val["ok"], false);
         assert_eq!(val["error"], "boom");
+        assert!(val.get("result").is_none());
+    }
+
+    #[test]
+    fn internal_error_response_body_preserves_escaped_request_id() {
+        let id = "quote\"slash\\newline\ncontrol\u{001f}accent\u{00e9}";
+        let bytes = super::encode_internal_error_response_body(id);
+        let val: serde_json::Value = serde_json::from_slice(&bytes).expect("parse");
+        assert_eq!(val["kind"], "response");
+        assert_eq!(val["id"], id);
+        assert_eq!(val["ok"], false);
+        assert_eq!(val["error"], "internal error");
         assert!(val.get("result").is_none());
     }
 

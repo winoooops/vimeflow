@@ -169,11 +169,15 @@ impl Drop for IpcClient {
 #[cfg(unix)]
 fn set_nonblocking_stdout(stdout: &ChildStdout) {
     let fd = stdout.as_raw_fd();
+    // SAFETY: `fd` is owned by `stdout`, which is live for this call, and
+    // F_GETFL only reads descriptor flags.
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if flags == -1 {
         panic!("fcntl F_GETFL failed: {}", std::io::Error::last_os_error());
     }
 
+    // SAFETY: `fd` is owned by `stdout`, which is live for this call, and
+    // F_SETFL with the existing flags plus O_NONBLOCK updates descriptor mode.
     let result = unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) };
     if result == -1 {
         panic!("fcntl F_SETFL failed: {}", std::io::Error::last_os_error());
