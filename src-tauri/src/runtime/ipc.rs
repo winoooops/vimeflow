@@ -14,6 +14,8 @@ use crate::runtime::event_sink::EventSink;
 
 const HANDLER_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const WRITER_DRAIN_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+const EVENT_SEND_BACKPRESSURE_TIMEOUT: Duration = Duration::from_secs(5);
+const EVENT_SEND_BACKPRESSURE_POLL: Duration = Duration::from_millis(10);
 const MAX_CONCURRENT_HANDLERS: usize = 64;
 
 pub const STDOUT_QUEUE_CAPACITY: usize = 1024;
@@ -108,7 +110,7 @@ fn blocking_send_event_frame(
     framed: Vec<u8>,
     event: &str,
 ) -> Result<(), String> {
-    let send_result = match tokio::runtime::Handle::try_current() {
+    match tokio::runtime::Handle::try_current() {
         Ok(handle)
             if matches!(
                 handle.runtime_flavor(),
@@ -117,17 +119,58 @@ fn blocking_send_event_frame(
         {
             // Synchronous emitters can run inside async tasks. Hand the blocking
             // wait back to Tokio so a saturated stdout queue does not pin a worker.
-            tokio::task::block_in_place(|| tx.blocking_send(framed))
+            tokio::task::block_in_place(|| {
+                send_event_frame_with_backpressure_timeout(
+                    &tx,
+                    framed,
+                    event,
+                    EVENT_SEND_BACKPRESSURE_TIMEOUT,
+                    EVENT_SEND_BACKPRESSURE_POLL,
+                )
+            })
         }
-        Ok(_) => {
+        Ok(_) => Err(format!(
+            "stdout writer backlog full in current-thread runtime; cannot emit {event}"
+        )),
+        Err(_) => send_event_frame_with_backpressure_timeout(
+            &tx,
+            framed,
+            event,
+            EVENT_SEND_BACKPRESSURE_TIMEOUT,
+            EVENT_SEND_BACKPRESSURE_POLL,
+        ),
+    }
+}
+
+fn send_event_frame_with_backpressure_timeout(
+    tx: &Sender<Vec<u8>>,
+    mut framed: Vec<u8>,
+    event: &str,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + timeout;
+
+    loop {
+        match tx.try_send(framed) {
+            Ok(()) => return Ok(()),
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                return Err(format!("stdout writer closed; cannot emit {event}"));
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Full(returned)) => {
+                framed = returned;
+            }
+        }
+
+        let now = std::time::Instant::now();
+        if now >= deadline {
             return Err(format!(
-                "stdout writer backlog full in current-thread runtime; cannot emit {event}"
+                "stdout writer backlog full for {timeout:?}; cannot emit {event}"
             ));
         }
-        Err(_) => tx.blocking_send(framed),
-    };
 
-    send_result.map_err(|_| format!("stdout writer closed; cannot emit {event}"))
+        std::thread::sleep(std::cmp::min(poll_interval, deadline.duration_since(now)));
+    }
 }
 
 mod frame {
@@ -577,40 +620,62 @@ async fn writer_task_with_shutdown_timeout<W: AsyncWrite + Unpin + Send + 'stati
             return Ok(());
         };
 
-        if let Err(err) = write_framed(&mut writer, &framed).await {
-            cancel.cancel();
-            return Err(err);
-        }
+        write_framed_with_timeout(
+            &mut writer,
+            &framed,
+            &cancel,
+            drain_write_timeout,
+            "steady-state write",
+        )
+        .await?;
     }
 
     while let Some(framed) = rx.recv().await {
-        let write_result = tokio::select! {
-            biased;
-            _ = cancel.cancelled() => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "ipc writer cancelled during shutdown drain",
-                ));
-            }
-            result = tokio::time::timeout(drain_write_timeout, write_framed(&mut writer, &framed)) => match result {
-                Ok(write_result) => write_result,
-                Err(_) => {
-                    cancel.cancel();
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        "ipc writer shutdown drain timed out",
-                    ));
-                }
-            },
-        };
-
-        if let Err(err) = write_result {
-            cancel.cancel();
-            return Err(err);
-        }
+        write_framed_with_timeout(
+            &mut writer,
+            &framed,
+            &cancel,
+            drain_write_timeout,
+            "shutdown drain",
+        )
+        .await?;
     }
 
     Ok(())
+}
+
+async fn write_framed_with_timeout<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    framed: &[u8],
+    cancel: &CancellationToken,
+    timeout: Duration,
+    phase: &str,
+) -> std::io::Result<()> {
+    let write_result = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                format!("ipc writer cancelled during {phase}"),
+            ));
+        }
+        result = tokio::time::timeout(timeout, write_framed(writer, framed)) => result,
+    };
+
+    match write_result {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(err)) => {
+            cancel.cancel();
+            Err(err)
+        }
+        Err(_) => {
+            cancel.cancel();
+            Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("ipc writer {phase} timed out"),
+            ))
+        }
+    }
 }
 
 async fn write_framed<W: AsyncWrite + Unpin>(writer: &mut W, framed: &[u8]) -> std::io::Result<()> {
@@ -678,7 +743,7 @@ async fn run_with_handler_drain_timeout<R: AsyncRead + Unpin + Send>(
                 );
             }
             Ok(None) => {
-                wait_for_handlers(&mut handlers, handler_drain_timeout, &cancel).await;
+                wait_for_handlers(&mut handlers, handler_drain_timeout).await;
                 return Ok(());
             }
             Err(frame::FrameError::FatalBadHeader(msg)) => {
@@ -833,11 +898,7 @@ fn drain_finished_handlers(handlers: &mut JoinSet<()>) {
     }
 }
 
-async fn wait_for_handlers(
-    handlers: &mut JoinSet<()>,
-    drain_timeout: Duration,
-    cancel: &CancellationToken,
-) {
+async fn wait_for_handlers(handlers: &mut JoinSet<()>, drain_timeout: Duration) {
     let result = tokio::time::timeout(drain_timeout, drain_handlers(handlers)).await;
     if result.is_ok() {
         return;
@@ -847,7 +908,6 @@ async fn wait_for_handlers(
     log::warn!(
         "ipc clean EOF: timed out waiting for {remaining} request handlers; aborting remaining handlers"
     );
-    cancel.cancel();
     handlers.abort_all();
     drain_handlers(handlers).await;
 }
@@ -1248,6 +1308,24 @@ mod tests {
         assert_eq!(body["payload"]["data"], "hi");
     }
 
+    #[test]
+    fn stdout_event_backpressure_timeout_bounds_non_tokio_callers() {
+        let (tx, _rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1);
+        tx.try_send(Vec::new()).expect("fill channel");
+
+        let err = super::send_event_frame_with_backpressure_timeout(
+            &tx,
+            Vec::new(),
+            "pty-data",
+            std::time::Duration::from_millis(30),
+            std::time::Duration::from_millis(1),
+        )
+        .expect_err("saturated queue should time out");
+
+        assert!(err.contains("backlog full"), "got {err}");
+        assert!(err.contains("pty-data"), "got {err}");
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn stdout_event_sink_backpressures_inside_tokio_task_without_panicking() {
         use crate::runtime::EventSink;
@@ -1365,6 +1443,32 @@ mod tests {
         let err = writer_result.expect_err("writer drain should time out");
         assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
         assert!(cancel.is_cancelled(), "drain timeout should cancel IPC");
+    }
+
+    #[tokio::test]
+    async fn writer_task_steady_state_write_times_out_when_writer_backpressures() {
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let cancel = tokio_util::sync::CancellationToken::new();
+
+        tx.try_send(super::frame::format_frame(br#"{"one":1}"#))
+            .expect("queue frame");
+
+        let writer_handle = tokio::spawn(super::writer_task_with_shutdown_timeout(
+            rx,
+            PendingWriter,
+            shutdown,
+            cancel.clone(),
+            std::time::Duration::from_millis(30),
+        ));
+
+        let writer_result = tokio::time::timeout(std::time::Duration::from_secs(1), writer_handle)
+            .await
+            .expect("writer timeout")
+            .expect("writer task");
+        let err = writer_result.expect_err("steady write should time out");
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(cancel.is_cancelled(), "steady timeout should cancel IPC");
     }
 
     #[tokio::test]
@@ -1571,7 +1675,57 @@ mod tests {
             .expect("run task")
             .expect("run ok");
 
-        assert!(cancel.is_cancelled(), "clean EOF timeout should cancel");
+        assert!(
+            !cancel.is_cancelled(),
+            "clean EOF handler timeout should not cancel writer drain"
+        );
+        let response = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
+        assert!(
+            !matches!(response, Ok(Some(_))),
+            "timed-out handler should not send a response: {response:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_preserves_queued_responses_when_handler_drain_times_out() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
+        let cancel = tokio_util::sync::CancellationToken::new();
+
+        let (read_end, mut write_end) = tokio::io::duplex(8192);
+        let run_handle = tokio::spawn(super::run_with_handler_drain_timeout(
+            state,
+            read_end,
+            tx,
+            cancel.clone(),
+            std::time::Duration::from_millis(30),
+        ));
+
+        let fast = make_request_frame("fast", "list_sessions", serde_json::json!({}));
+        write_end.write_all(&fast).await.expect("write fast");
+        let slow = make_request_frame(
+            "too-slow",
+            "__test_sleep_then_null",
+            serde_json::json!({"delayMs": 250}),
+        );
+        write_end.write_all(&slow).await.expect("write slow");
+        drop(write_end);
+
+        let resp = recv_response(&mut rx).await;
+        assert_eq!(resp["kind"], "response");
+        assert_eq!(resp["id"], "fast");
+        assert_eq!(resp["ok"], true);
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), run_handle)
+            .await
+            .expect("run timeout")
+            .expect("run task")
+            .expect("run ok");
+        assert!(
+            !cancel.is_cancelled(),
+            "queued response drain should survive handler timeout"
+        );
+
         let response = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
         assert!(
             !matches!(response, Ok(Some(_))),
@@ -1626,8 +1780,8 @@ mod tests {
             .expect("run task")
             .expect("run ok");
         assert!(
-            cancel.is_cancelled(),
-            "drain timeout should cancel slow handlers"
+            !cancel.is_cancelled(),
+            "handler overload cleanup should not cancel writer drain"
         );
     }
 
