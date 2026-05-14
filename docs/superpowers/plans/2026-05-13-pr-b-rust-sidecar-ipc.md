@@ -277,6 +277,11 @@ mod frame {
     /// the resync-byte budget triggers.
     pub const MAX_HEADER_LINE_BYTES: u64 = 8 * 1024;
 
+    /// Hard cap on the complete header section, including extension headers
+    /// after Content-Length. The resync budget below is narrower: it only
+    /// limits malformed or pre-Content-Length bytes.
+    pub const MAX_HEADER_SECTION_BYTES: u64 = 1024 * 1024;
+
     /// Soft cap on bytes consumed while resyncing past malformed header noise.
     /// Hitting this is non-recoverable corruption — the run loop returns Err
     /// (FatalBadHeader) and the bin exits 1.
@@ -309,17 +314,8 @@ mod frame {
         out
     }
 
-    /// Async write of one full frame: header + body + flush. Called by the
-    /// single writer task; serialization is the channel's job, not the lock.
-    pub async fn write_frame<W: AsyncWriteExt + Unpin>(
-        writer: &mut W,
-        body: &[u8],
-    ) -> io::Result<()> {
-        let header = format!("Content-Length: {}\r\n\r\n", body.len());
-        writer.write_all(header.as_bytes()).await?;
-        writer.write_all(body).await?;
-        writer.flush().await
-    }
+    // Writer code uses format_frame() as the canonical framing helper, then
+    // writes the already-framed Vec<u8> through the single stdout task.
 
     /// Read one full frame from `reader`. Returns Ok(Some(body)) on a valid
     /// frame, Ok(None) on clean inter-frame EOF, Err otherwise.
@@ -331,6 +327,7 @@ mod frame {
     pub async fn read_frame<R: AsyncBufRead + Unpin>(
         reader: &mut R,
     ) -> Result<Option<Vec<u8>>, FrameError> {
+        let mut header_consumed: u64 = 0;
         let mut resync_consumed: u64 = 0;
         let mut content_length: Option<usize> = None;
 
@@ -358,12 +355,19 @@ mod frame {
 
             // EOF detection.
             if n == 0 {
-                if resync_consumed == 0 && content_length.is_none() {
+                if header_consumed == 0 && content_length.is_none() {
                     return Ok(None); // Clean inter-frame EOF.
                 }
                 return Err(FrameError::Io(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
                     "eof mid-header",
+                )));
+            }
+
+            header_consumed = header_consumed.saturating_add(n as u64);
+            if header_consumed > MAX_HEADER_SECTION_BYTES {
+                return Err(FrameError::FatalBadHeader(format!(
+                    "header section exceeded {MAX_HEADER_SECTION_BYTES} bytes"
                 )));
             }
 
@@ -413,14 +417,16 @@ mod frame {
                         }
                     }
                 }
-                // Unknown header — LSP allows it, but count it against the
-                // resync budget so an infinite stream of non-Content-Length
-                // headers cannot spin forever.
-                resync_consumed = resync_consumed.saturating_add(n as u64);
-                if resync_consumed > RESYNC_BUDGET_BYTES {
-                    return Err(FrameError::FatalBadHeader(format!(
-                        "no Content-Length within {RESYNC_BUDGET_BYTES} bytes of headers"
-                    )));
+                // Unknown header — LSP allows it. Only pre-Content-Length
+                // unknown headers count against the resync budget; all headers
+                // remain bounded by MAX_HEADER_SECTION_BYTES.
+                if content_length.is_none() {
+                    resync_consumed = resync_consumed.saturating_add(n as u64);
+                    if resync_consumed > RESYNC_BUDGET_BYTES {
+                        return Err(FrameError::FatalBadHeader(format!(
+                            "no Content-Length within {RESYNC_BUDGET_BYTES} bytes of headers"
+                        )));
+                    }
                 }
                 continue;
             }
@@ -568,11 +574,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn write_frame_round_trips_through_read_frame() {
+    async fn format_frame_round_trips_through_read_frame() {
         let body = br#"{"a":1,"b":"two"}"#;
-        let mut buf: Vec<u8> = Vec::new();
-        frame::write_frame(&mut buf, body).await.expect("write");
-        let mut reader = make_reader(&buf);
+        let framed = frame::format_frame(body);
+        let mut reader = make_reader(&framed);
         let got = frame::read_frame(&mut reader).await.expect("ok");
         assert_eq!(got.as_deref(), Some(body.as_slice()));
     }
@@ -594,7 +599,7 @@ Expected: all 10 frame tests pass. If any fail, fix the implementation in Step 1
 cd /home/will/projects/vimeflow
 git add src-tauri/src/runtime/ipc.rs
 git commit -m "$(cat <<'EOF'
-feat(backend/ipc): add frame codec (read_frame / write_frame / format_frame)
+feat(backend/ipc): add frame codec (read_frame / format_frame)
 
 LSP-style Content-Length framing per spec §2.1. Header-line cap
 (MAX_HEADER_LINE_BYTES = 8 KiB) via fill_buf/consume to bound
@@ -1681,15 +1686,16 @@ async fn main() {
 
     let (tx, rx) = mpsc::channel::<Vec<u8>>(ipc::STDOUT_QUEUE_CAPACITY);
     let writer_shutdown = CancellationToken::new();
+    let cancel = CancellationToken::new();
     let writer_handle = tokio::spawn(ipc::writer_task_with_shutdown(
         rx,
         tokio::io::stdout(),
         writer_shutdown.clone(),
+        cancel.clone(),
     ));
 
     let sink: Arc<dyn EventSink> = Arc::new(ipc::StdoutEventSink::new(tx.clone()));
     let state = Arc::new(BackendState::new(app_data_dir, sink));
-    let cancel = CancellationToken::new();
 
     let run_result = ipc::run(state.clone(), tokio::io::stdin(), tx, cancel.clone()).await;
 

@@ -102,7 +102,7 @@ impl EventSink for StdoutEventSink {
 mod frame {
     use std::io;
 
-    use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+    use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt};
 
     /// Maximum body bytes per frame. Protects against a malicious or buggy peer
     /// triggering unbounded allocation.
@@ -110,6 +110,11 @@ mod frame {
 
     /// Hard cap on a single header line.
     pub const MAX_HEADER_LINE_BYTES: u64 = 8 * 1024;
+
+    /// Hard cap on the complete header section, including extension headers
+    /// after Content-Length. The resync budget below is narrower: it only
+    /// limits malformed or pre-Content-Length bytes.
+    pub const MAX_HEADER_SECTION_BYTES: u64 = 1024 * 1024;
 
     /// Soft cap on bytes consumed while resyncing past malformed header noise.
     pub const RESYNC_BUDGET_BYTES: u64 = 64 * 1024;
@@ -138,17 +143,10 @@ mod frame {
         out
     }
 
-    #[allow(dead_code)]
-    pub async fn write_frame<W: AsyncWrite + Unpin>(writer: &mut W, body: &[u8]) -> io::Result<()> {
-        let header = format!("Content-Length: {}\r\n\r\n", body.len());
-        writer.write_all(header.as_bytes()).await?;
-        writer.write_all(body).await?;
-        writer.flush().await
-    }
-
     pub async fn read_frame<R: AsyncBufRead + Unpin>(
         reader: &mut R,
     ) -> Result<Option<Vec<u8>>, FrameError> {
+        let mut header_consumed: u64 = 0;
         let mut resync_consumed: u64 = 0;
         let mut content_length: Option<usize> = None;
 
@@ -177,13 +175,20 @@ mod frame {
             };
 
             if n == 0 {
-                if resync_consumed == 0 && content_length.is_none() {
+                if header_consumed == 0 && content_length.is_none() {
                     return Ok(None);
                 }
 
                 return Err(FrameError::Io(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
                     "eof mid-header",
+                )));
+            }
+
+            header_consumed = header_consumed.saturating_add(n as u64);
+            if header_consumed > MAX_HEADER_SECTION_BYTES {
+                return Err(FrameError::FatalBadHeader(format!(
+                    "header section exceeded {MAX_HEADER_SECTION_BYTES} bytes"
                 )));
             }
 
@@ -231,11 +236,13 @@ mod frame {
                     }
                 }
 
-                resync_consumed = resync_consumed.saturating_add(n as u64);
-                if resync_consumed > RESYNC_BUDGET_BYTES {
-                    return Err(FrameError::FatalBadHeader(format!(
-                        "no Content-Length within {RESYNC_BUDGET_BYTES} bytes of headers"
-                    )));
+                if content_length.is_none() {
+                    resync_consumed = resync_consumed.saturating_add(n as u64);
+                    if resync_consumed > RESYNC_BUDGET_BYTES {
+                        return Err(FrameError::FatalBadHeader(format!(
+                            "no Content-Length within {RESYNC_BUDGET_BYTES} bytes of headers"
+                        )));
+                    }
                 }
                 continue;
             }
@@ -497,7 +504,13 @@ pub async fn writer_task<W: AsyncWrite + Unpin + Send + 'static>(
     rx: Receiver<Vec<u8>>,
     writer: W,
 ) -> std::io::Result<()> {
-    writer_task_with_shutdown(rx, writer, CancellationToken::new()).await
+    writer_task_with_shutdown(
+        rx,
+        writer,
+        CancellationToken::new(),
+        CancellationToken::new(),
+    )
+    .await
 }
 
 /// Drain the writer channel until all senders drop, or until `shutdown` asks
@@ -506,6 +519,7 @@ pub async fn writer_task_with_shutdown<W: AsyncWrite + Unpin + Send + 'static>(
     mut rx: Receiver<Vec<u8>>,
     mut writer: W,
     shutdown: CancellationToken,
+    cancel: CancellationToken,
 ) -> std::io::Result<()> {
     loop {
         let framed = tokio::select! {
@@ -521,11 +535,17 @@ pub async fn writer_task_with_shutdown<W: AsyncWrite + Unpin + Send + 'static>(
             return Ok(());
         };
 
-        write_framed(&mut writer, &framed).await?;
+        if let Err(err) = write_framed(&mut writer, &framed).await {
+            cancel.cancel();
+            return Err(err);
+        }
     }
 
     while let Some(framed) = rx.recv().await {
-        write_framed(&mut writer, &framed).await?;
+        if let Err(err) = write_framed(&mut writer, &framed).await {
+            cancel.cancel();
+            return Err(err);
+        }
     }
 
     Ok(())
@@ -568,7 +588,18 @@ async fn run_with_handler_drain_timeout<R: AsyncRead + Unpin + Send>(
     let mut handlers = JoinSet::new();
 
     loop {
-        match frame::read_frame(&mut buf_reader).await {
+        let frame = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "ipc cancelled",
+                ));
+            }
+            frame = frame::read_frame(&mut buf_reader) => frame,
+        };
+
+        match frame {
             Ok(Some(body)) => {
                 spawn_handler(
                     &mut handlers,
@@ -700,9 +731,35 @@ fn log_handler_result(result: Result<(), JoinError>) {
 
 #[cfg(test)]
 mod tests {
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::frame;
+
+    struct FailingWriter;
+
+    impl tokio::io::AsyncWrite for FailingWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "test writer failed",
+            )))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
 
     fn make_reader(bytes: &[u8]) -> tokio::io::BufReader<&[u8]> {
         tokio::io::BufReader::new(bytes)
@@ -817,6 +874,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn read_frame_does_not_count_extension_headers_after_content_length_against_resync_budget(
+    ) {
+        let body = b"{}";
+        let mut input = Vec::new();
+        input.extend_from_slice(format!("Content-Length: {}\r\n", body.len()).as_bytes());
+        for _ in 0..5000 {
+            input.extend_from_slice(b"X-Noise: value\r\n");
+        }
+        input.extend_from_slice(b"\r\n");
+        input.extend_from_slice(body);
+
+        let mut reader = make_reader(&input);
+        let got = frame::read_frame(&mut reader).await.expect("ok");
+        assert_eq!(got.as_deref(), Some(body.as_slice()));
+    }
+
+    #[tokio::test]
+    async fn read_frame_rejects_unbounded_extension_headers_after_content_length() {
+        let mut input = Vec::new();
+        input.extend_from_slice(b"Content-Length: 2\r\n");
+        for _ in 0..(frame::MAX_HEADER_SECTION_BYTES / 16 + 1) {
+            input.extend_from_slice(b"X-Noise: value\r\n");
+        }
+        input.extend_from_slice(b"\r\n{}");
+
+        let mut reader = make_reader(&input);
+        match frame::read_frame(&mut reader).await {
+            Err(frame::FrameError::FatalBadHeader(msg)) => {
+                assert!(
+                    msg.contains("header section exceeded"),
+                    "unexpected error: {msg}"
+                );
+            }
+            other => panic!("expected fatal header error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn read_frame_resyncs_past_garbage_lines_within_budget() {
         let body = b"{}";
         let mut input = Vec::new();
@@ -858,11 +953,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn write_frame_round_trips_through_read_frame() {
+    async fn format_frame_round_trips_through_read_frame() {
         let body = br#"{"a":1,"b":"two"}"#;
-        let mut buf: Vec<u8> = Vec::new();
-        frame::write_frame(&mut buf, body).await.expect("write");
-        let mut reader = make_reader(&buf);
+        let framed = frame::format_frame(body);
+        let mut reader = make_reader(&framed);
         let got = frame::read_frame(&mut reader).await.expect("ok");
         assert_eq!(got.as_deref(), Some(body.as_slice()));
     }
@@ -984,6 +1078,7 @@ mod tests {
             rx,
             write_end,
             shutdown.clone(),
+            tokio_util::sync::CancellationToken::new(),
         ));
         shutdown.cancel();
 
@@ -1003,6 +1098,45 @@ mod tests {
         assert!(output.contains(r#"{"two":2}"#), "got {output}");
 
         drop(tx);
+    }
+
+    #[tokio::test]
+    async fn writer_failure_cancels_run_loop() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
+        let writer_shutdown = tokio_util::sync::CancellationToken::new();
+        let cancel = tokio_util::sync::CancellationToken::new();
+
+        let writer_handle = tokio::spawn(super::writer_task_with_shutdown(
+            rx,
+            FailingWriter,
+            writer_shutdown,
+            cancel.clone(),
+        ));
+
+        let (read_end, write_end) = tokio::io::duplex(8192);
+        let run_handle = tokio::spawn(super::run(state, read_end, tx.clone(), cancel.clone()));
+
+        tx.send(super::frame::format_frame(
+            br#"{"kind":"event","event":"boom","payload":{}}"#,
+        ))
+        .await
+        .expect("queue frame");
+
+        let writer_result = tokio::time::timeout(std::time::Duration::from_secs(1), writer_handle)
+            .await
+            .expect("writer timeout")
+            .expect("writer task");
+        assert!(writer_result.is_err(), "expected writer failure");
+
+        let run_result = tokio::time::timeout(std::time::Duration::from_secs(1), run_handle)
+            .await
+            .expect("run timeout")
+            .expect("run task");
+        assert!(run_result.is_err(), "expected run cancellation");
+        assert!(cancel.is_cancelled(), "writer failure should cancel run");
+
+        drop(write_end);
     }
 
     #[tokio::test]

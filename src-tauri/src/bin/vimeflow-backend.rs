@@ -26,17 +26,18 @@ async fn main() {
 
     let (tx, rx) = mpsc::channel::<Vec<u8>>(ipc::STDOUT_QUEUE_CAPACITY);
     let writer_shutdown = CancellationToken::new();
+    let cancel = CancellationToken::new();
     let writer_handle = tokio::spawn(ipc::writer_task_with_shutdown(
         rx,
         tokio::io::stdout(),
         writer_shutdown.clone(),
+        cancel.clone(),
     ));
 
     let sink: Arc<dyn EventSink> = Arc::new(ipc::StdoutEventSink::new(tx.clone()));
     let state = Arc::new(BackendState::new(app_data_dir, sink));
-    let cancel = CancellationToken::new();
 
-    let run_result = ipc::run(state.clone(), tokio::io::stdin(), tx, cancel).await;
+    let run_result = ipc::run(state.clone(), tokio::io::stdin(), tx, cancel.clone()).await;
 
     if run_result.is_ok() {
         state.shutdown();

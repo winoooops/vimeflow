@@ -13,7 +13,7 @@ const BIN: &str = env!("CARGO_BIN_EXE_vimeflow-backend");
 struct IpcClient {
     child: Child,
     stdin: Option<ChildStdin>,
-    stdout: BufReader<ChildStdout>,
+    stdout: Option<BufReader<ChildStdout>>,
     next_id: u64,
     _app_data_dir: TempDir,
 }
@@ -37,7 +37,7 @@ impl IpcClient {
         Self {
             child,
             stdin,
-            stdout,
+            stdout: Some(stdout),
             next_id: 0,
             _app_data_dir: app_data_dir,
         }
@@ -77,24 +77,63 @@ impl IpcClient {
     }
 
     fn read_one_frame_body(&mut self) -> Vec<u8> {
+        let mut stdout = self.stdout.take().expect("stdout already taken");
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            let result = Self::read_one_frame_body_from(&mut stdout);
+            let _ = tx.send((result, stdout));
+        });
+
+        match rx.recv_timeout(Duration::from_secs(2)) {
+            Ok((Ok(body), stdout)) => {
+                self.stdout = Some(stdout);
+                body
+            }
+            Ok((Err(err), stdout)) => {
+                self.stdout = Some(stdout);
+                panic!("{err}");
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                panic!("timed out reading frame from sidecar stdout");
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("stdout read thread disconnected");
+            }
+        }
+    }
+
+    fn read_one_frame_body_from(stdout: &mut BufReader<ChildStdout>) -> Result<Vec<u8>, String> {
         let mut content_length: Option<usize> = None;
 
         loop {
             let mut line = String::new();
-            let n = self.stdout.read_line(&mut line).expect("read header line");
-            assert!(n > 0, "unexpected EOF reading frame headers");
+            let n = stdout
+                .read_line(&mut line)
+                .map_err(|err| format!("read header line: {err}"))?;
+            if n == 0 {
+                return Err("unexpected EOF reading frame headers".into());
+            }
             let trimmed = line.trim_end_matches(['\r', '\n']);
 
             if trimmed.is_empty() {
-                let len = content_length.expect("Content-Length must precede blank line");
+                let len =
+                    content_length.ok_or("Content-Length must precede blank line".to_string())?;
                 let mut body = vec![0u8; len];
-                self.stdout.read_exact(&mut body).expect("read body");
-                return body;
+                stdout
+                    .read_exact(&mut body)
+                    .map_err(|err| format!("read body: {err}"))?;
+                return Ok(body);
             }
 
             if let Some((name, value)) = trimmed.split_once(':') {
                 if name.trim().eq_ignore_ascii_case("Content-Length") {
-                    content_length = Some(value.trim().parse().expect("parse content-length"));
+                    content_length = Some(
+                        value
+                            .trim()
+                            .parse()
+                            .map_err(|err| format!("parse content-length: {err}"))?,
+                    );
                 }
             }
         }

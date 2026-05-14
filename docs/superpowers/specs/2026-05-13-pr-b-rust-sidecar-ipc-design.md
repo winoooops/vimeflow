@@ -126,7 +126,7 @@ Renderer / test driver
 | File                                    | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Approx LOC |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
 | `src-tauri/src/bin/vimeflow-backend.rs` | `fn main()` shim. Parses `--app-data-dir <path>` via a hand-rolled argv loop (no `clap` dep). Initializes `env_logger` (stderr only). Builds the writer-channel: `let (tx, rx) = mpsc::channel(ipc::STDOUT_QUEUE_CAPACITY);`. Spawns the writer task with a shutdown token. Builds `BackendState::new(app_data_dir, Arc::new(StdoutEventSink::new(tx.clone())))`. Builds the `CancellationToken`. Calls `runtime::ipc::run(state, tokio::io::stdin(), tx, cancel).await`. When `run` returns, drops `BackendState`, signals writer shutdown, waits for queued frames to drain, and exits 0 only if both the run loop and writer succeeded. | ~70        |
-| `src-tauri/src/runtime/ipc.rs`          | The whole IPC layer. Internal layout: `mod frame { read_frame, write_frame, FrameError }`, `mod router { dispatch, per-method-decoder-structs }`, `pub struct StdoutEventSink { tx: tokio::sync::mpsc::Sender<Vec<u8>> }`, `pub async fn run<R: AsyncRead>(state: Arc<BackendState>, reader: R, tx: Sender<Vec<u8>>, cancel: CancellationToken)` (the writer task is separate; see bin shim row). Internal tests via `#[cfg(test)] mod tests` exercise the codec and dispatch against `BackendState::with_fake_sink()`.                                                                                                                    | ~400       |
+| `src-tauri/src/runtime/ipc.rs`          | The whole IPC layer. Internal layout: `mod frame { read_frame, format_frame, FrameError }`, `mod router { dispatch, per-method-decoder-structs }`, `pub struct StdoutEventSink { tx: tokio::sync::mpsc::Sender<Vec<u8>> }`, `pub async fn run<R: AsyncRead>(state: Arc<BackendState>, reader: R, tx: Sender<Vec<u8>>, cancel: CancellationToken)` (the writer task is separate; see bin shim row). Internal tests via `#[cfg(test)] mod tests` exercise the codec and dispatch against `BackendState::with_fake_sink()`.                                                                                                                   | ~400       |
 | `src-tauri/tests/ipc_subprocess.rs`     | Cargo **integration test** (`tests/` is the canonical location for tests that spawn the cargo-built bin via `env!("CARGO_BIN_EXE_vimeflow-backend")`). Pipes request frames in via stdin, asserts response frames out via stdout. One test fixture per §5.1 method. Cargo builds the bin before running the integration test — no separate build step needed.                                                                                                                                                                                                                                                                              | ~250       |
 
 ### Modified files
@@ -154,18 +154,13 @@ Renderer / test driver
 ```rust
 mod frame {
     use std::io;
-    use tokio::io::{AsyncBufRead, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+    use tokio::io::{AsyncBufRead, AsyncRead, AsyncReadExt, BufReader};
 
     pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024; // 16 MiB hard cap; per-frame DoS guard.
 
     pub async fn read_frame<R: AsyncBufRead + Unpin>(
         reader: &mut R,
     ) -> Result<Option<Vec<u8>>, FrameError> { /* parse Content-Length: N\r\n\r\n then read N bytes */ }
-
-    pub async fn write_frame<W: AsyncWrite + Unpin>(
-        writer: &mut W,
-        body: &[u8],
-    ) -> io::Result<()> { /* write Content-Length: N\r\n\r\n + body, flush */ }
 
     #[derive(Debug)]
     pub enum FrameError {
@@ -290,9 +285,11 @@ pub async fn writer_task_with_shutdown<W: AsyncWrite + Unpin + Send + 'static>(
     mut rx: Receiver<Vec<u8>>,
     mut writer: W,
     shutdown: CancellationToken,
+    cancel: CancellationToken,
 ) -> io::Result<()> {
     // Selects on shutdown.cancelled(); closes rx, drains already-queued frames,
-    // and returns an error if stdout cannot be flushed.
+    // cancels the run loop on stdout write failure, and returns an error if
+    // stdout cannot be flushed.
     Ok(())
 }
 ```
@@ -334,6 +331,12 @@ mod frame {
     /// MAX_HEADER_LINE_BYTES; the resync budget is measured in line counts.
     pub const MAX_HEADER_LINE_BYTES: u64 = 8 * 1024;
 
+    /// Hard cap on the complete header section, including extension headers
+    /// after Content-Length. This keeps LSP-compatible extension headers from
+    /// consuming the malformed-header resync budget while still bounding total
+    /// header work.
+    pub const MAX_HEADER_SECTION_BYTES: u64 = 1024 * 1024;
+
     /// Returns Ok(Some(body)) on success, Ok(None) on clean EOF, Err otherwise.
     /// Internal resync is best-effort: when a header line is malformed, the
     /// reader consumes bytes until either (a) it finds another `Content-Length:`
@@ -342,6 +345,7 @@ mod frame {
     pub async fn read_frame<R: AsyncBufReadExt + Unpin>(
         reader: &mut R,
     ) -> Result<Option<Vec<u8>>, FrameError> {
+        let mut header_consumed: u64 = 0;
         let mut resync_consumed: u64 = 0;
 
         // Phase 1 — accumulate headers until a blank line terminates the block.
@@ -381,12 +385,18 @@ mod frame {
                 .map_err(|err| FrameError::FatalBadHeader(format!("header utf8: {err}")))?;
             if n == 0 {
                 // EOF.
-                if resync_consumed == 0 && content_length.is_none() {
+                if header_consumed == 0 && content_length.is_none() {
                     return Ok(None); // Clean inter-frame EOF.
                 }
                 return Err(FrameError::Io(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
                     "eof mid-header",
+                )));
+            }
+            header_consumed = header_consumed.saturating_add(n as u64);
+            if header_consumed > MAX_HEADER_SECTION_BYTES {
+                return Err(FrameError::FatalBadHeader(format!(
+                    "header section exceeded {MAX_HEADER_SECTION_BYTES} bytes"
                 )));
             }
             let trimmed = line.trim_end_matches(['\r', '\n']);
@@ -431,14 +441,16 @@ mod frame {
                     }
                     continue;
                 }
-                // Unknown header — LSP allows it, but count it against the
-                // resync budget so an infinite stream of non-Content-Length
-                // headers cannot spin forever.
-                resync_consumed = resync_consumed.saturating_add(n as u64);
-                if resync_consumed > RESYNC_BUDGET_BYTES {
-                    return Err(FrameError::FatalBadHeader(format!(
-                        "no Content-Length within {RESYNC_BUDGET_BYTES} bytes of headers"
-                    )));
+                // Unknown header — LSP allows it. Only pre-Content-Length
+                // unknown headers count against the resync budget; all headers
+                // remain bounded by MAX_HEADER_SECTION_BYTES.
+                if content_length.is_none() {
+                    resync_consumed = resync_consumed.saturating_add(n as u64);
+                    if resync_consumed > RESYNC_BUDGET_BYTES {
+                        return Err(FrameError::FatalBadHeader(format!(
+                            "no Content-Length within {RESYNC_BUDGET_BYTES} bytes of headers"
+                        )));
+                    }
                 }
                 continue;
             }
@@ -452,20 +464,7 @@ mod frame {
         }
     }
 
-    /// Atomically writes one frame: header + body + flush. Does NOT lock — the
-    /// caller (writer_task) is the sole writer; serialization is the channel's job.
-    pub async fn write_frame<W: AsyncWriteExt + Unpin>(
-        writer: &mut W,
-        body: &[u8],
-    ) -> io::Result<()> {
-        let header = format!("Content-Length: {}\r\n\r\n", body.len());
-        writer.write_all(header.as_bytes()).await?;
-        writer.write_all(body).await?;
-        writer.flush().await
-    }
-
-    /// Synchronous variant of `write_frame` used by `format_frame` upstream of
-    /// the channel — produces the framed bytes without doing IO.
+    /// Produces framed bytes upstream of the writer channel without doing IO.
     pub fn format_frame(body: &[u8]) -> Vec<u8> {
         let header = format!("Content-Length: {}\r\n\r\n", body.len());
         let mut out = Vec::with_capacity(header.len() + body.len());
@@ -802,15 +801,16 @@ async fn main() {
 
     let (tx, rx) = mpsc::channel::<Vec<u8>>(ipc::STDOUT_QUEUE_CAPACITY);
     let writer_shutdown = CancellationToken::new();
+    let cancel = CancellationToken::new();
     let writer_handle = tokio::spawn(ipc::writer_task_with_shutdown(
         rx,
         tokio::io::stdout(),
         writer_shutdown.clone(),
+        cancel.clone(),
     ));
 
     let sink: Arc<dyn EventSink> = Arc::new(ipc::StdoutEventSink::new(tx.clone()));
     let state = Arc::new(BackendState::new(app_data_dir, sink));
-    let cancel = CancellationToken::new();
 
     let run_result = ipc::run(state.clone(), tokio::io::stdin(), tx, cancel.clone()).await;
 
@@ -997,7 +997,7 @@ After this spec is codex-reviewed (Step 8) and approved, invoke `superpowers:wri
 1. Baseline verification — `cargo test` + `cargo test --features e2e-test` both green.
 2. Cargo.toml — extend tokio features, add tokio-util/env_logger, add `[[bin]]` block (no behavior change yet).
 3. `runtime/ipc.rs` skeleton — empty module + `pub mod ipc;` in `runtime/mod.rs` (compiles, does nothing).
-4. `mod frame` — `read_frame` + `write_frame` + `format_frame` + tests (TDD: write codec tests first).
+4. `mod frame` — `read_frame` + `format_frame` + tests (TDD: write codec tests first).
 5. Envelope types — `InboundFrame` + `RequestFrame` + `ResponseFrame` + tests (TDD: round-trip via serde_json).
 6. `StdoutEventSink` + tests (TDD: send into a (tx, rx) pair, assert recv).
 7. `mod router` — one match arm at a time (TDD: each arm gets one happy-path + one error-path test against `BackendState::with_fake_sink`).
