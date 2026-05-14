@@ -7,11 +7,27 @@ import {
   type GitService,
 } from './gitService'
 import { mockChangedFiles, mockFileDiffs } from '../data/mockDiff'
+import { invoke } from '../../../lib/backend'
+import { isDesktop } from '../../../lib/environment'
 
-// Mock @tauri-apps/api/core
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock('../../../lib/backend', () => ({
   invoke: vi.fn(),
 }))
+
+vi.mock('../../../lib/environment', () => ({
+  isDesktop: vi.fn(),
+  isBrowser: vi.fn(),
+  getEnvironment: vi.fn(),
+  isTest: vi.fn(),
+}))
+
+const mockedInvoke = vi.mocked(invoke)
+const mockedIsDesktop = vi.mocked(isDesktop)
+
+beforeEach(() => {
+  mockedInvoke.mockReset()
+  mockedIsDesktop.mockReturnValue(false)
+})
 
 describe('MockGitService', () => {
   let service: GitService
@@ -282,10 +298,8 @@ describe('TauriGitService', () => {
   let service: GitService
   let invokeMock: ReturnType<typeof vi.fn>
 
-  beforeEach(async () => {
-    const { invoke } = await import('@tauri-apps/api/core')
-    invokeMock = vi.mocked(invoke)
-    invokeMock.mockClear()
+  beforeEach(() => {
+    invokeMock = mockedInvoke
     service = new TauriGitService('/home/user/project')
   })
 
@@ -398,33 +412,39 @@ describe('createGitService', () => {
     expect(service).toBeInstanceOf(MockGitService)
   })
 
-  test('returns TauriGitService when __TAURI_INTERNALS__ exists', () => {
-    const originalMode = import.meta.env.MODE
-
-    const tauriWindow = window as typeof window & {
-      __TAURI_INTERNALS__?: unknown
-    }
-
+  test('returns TauriGitService when isDesktop() is true', () => {
+    vi.stubEnv('MODE', 'development')
+    mockedIsDesktop.mockReturnValue(true)
     try {
-      import.meta.env.MODE = 'development'
-      tauriWindow.__TAURI_INTERNALS__ = {}
-
       const service = createGitService('/test/path')
 
       expect(service).toBeInstanceOf(TauriGitService)
     } finally {
-      delete tauriWindow.__TAURI_INTERNALS__
-      import.meta.env.MODE = originalMode
+      vi.unstubAllEnvs()
     }
   })
 
-  test('returns HttpGitService in development mode without Tauri', () => {
-    const originalMode = import.meta.env.MODE
-    import.meta.env.MODE = 'development'
+  test('returns TauriGitService when isDesktop() is true (via vimeflow)', () => {
+    vi.stubEnv('MODE', 'development')
+    mockedIsDesktop.mockReturnValue(true)
+    try {
+      const service = createGitService('/test/path')
 
-    const service = createGitService()
-    expect(service).toBeInstanceOf(HttpGitService)
+      expect(service).toBeInstanceOf(TauriGitService)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
 
-    import.meta.env.MODE = originalMode
+  test('returns HttpGitService in development mode without desktop host', () => {
+    vi.stubEnv('MODE', 'development')
+    mockedIsDesktop.mockReturnValue(false)
+    try {
+      const service = createGitService()
+
+      expect(service).toBeInstanceOf(HttpGitService)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })
