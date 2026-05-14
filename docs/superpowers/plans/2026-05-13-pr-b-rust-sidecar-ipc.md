@@ -1345,6 +1345,14 @@ pub async fn writer_task<W: AsyncWrite + Unpin + Send + 'static>(
 
 /// Read frames from `reader`, dispatch each as a Tokio task, send responses
 /// through `tx`. Returns Ok(()) on clean EOF, Err on fatal codec error.
+///
+/// On clean EOF we do NOT cancel in-flight handlers — they finish naturally
+/// so already-accepted requests get a response. The bin's main bounds the
+/// total shutdown time via the writer_handle.await timeout.
+///
+/// On fatal error we DO cancel: the process is about to exit non-zero, no
+/// supervisor is listening for the responses anyway, and we want the spawned
+/// handlers' tx clones to drop so the writer task can exit too.
 pub async fn run<R: AsyncRead + Unpin + Send>(
     state: std::sync::Arc<crate::runtime::BackendState>,
     reader: R,
@@ -1358,27 +1366,27 @@ pub async fn run<R: AsyncRead + Unpin + Send>(
             Ok(Some(body)) => {
                 spawn_handler(state.clone(), tx.clone(), cancel.clone(), body);
             }
-            Ok(None) => break, // Clean stdin EOF.
+            Ok(None) => return Ok(()), // Clean stdin EOF — let in-flight finish.
             Err(frame::FrameError::ResyncableBadHeader(msg)) => {
                 log::warn!("ipc bad frame header (resyncable): {msg}");
                 continue;
             }
             Err(frame::FrameError::FatalBadHeader(msg)) => {
                 log::error!("ipc fatal frame error: {msg}; exiting");
+                cancel.cancel();
                 return Err(std::io::Error::other(format!("fatal header: {msg}")));
             }
             Err(frame::FrameError::BodyTooLarge { len }) => {
                 log::error!("ipc body too large: {len} bytes; exiting");
+                cancel.cancel();
                 return Err(std::io::Error::other("body too large"));
             }
-            Err(frame::FrameError::Io(err)) => return Err(err),
+            Err(frame::FrameError::Io(err)) => {
+                cancel.cancel();
+                return Err(err);
+            }
         }
     }
-
-    // EOF reached on stdin. Cancel in-flight handlers; they observe
-    // `cancel.cancelled()` at their next await point and short-circuit.
-    cancel.cancel();
-    Ok(())
 }
 
 fn spawn_handler(
@@ -1431,11 +1439,9 @@ fn spawn_handler(
 
 - [ ] **Step 2: Add tests for the run loop**
 
-Inside `mod tests`, append:
+Inside `mod tests`, append (note: `use tokio::io::AsyncWriteExt;` is already imported at the top of `mod tests` from Task 3 — do NOT re-import; `E0252` if you do):
 
 ```rust
-    use tokio::io::AsyncWriteExt;
-
     /// Helper: build a request frame body, prepend Content-Length, return bytes.
     fn make_request_frame(id: &str, method: &str, params: serde_json::Value) -> Vec<u8> {
         let body = serde_json::to_vec(&serde_json::json!({
@@ -1734,7 +1740,7 @@ rm -rf "$TMP"
 
 Expected: stdout shows `Content-Length: <N>\r\n\r\n{"kind":"response","id":"1","ok":true,"result":{...}}`. Exit code `0` (the heredoc closes stdin → EOF → clean shutdown).
 
-- [ ] **Step 6: Manual smoke — bin tolerates garbage stdin without corrupting stdout**
+- [ ] **Step 6: Manual smoke — bin doesn't corrupt stdout on garbage input**
 
 ```bash
 cd /home/will/projects/vimeflow
@@ -1746,7 +1752,7 @@ echo "stderr (first 5 lines):"; head -5 /tmp/err.log
 rm -rf "$TMP" /tmp/out.bin /tmp/err.log
 ```
 
-Expected: stdout is 0 bytes (no log lines leaked); stderr has at least one `ipc bad frame header (resyncable)` warning; exit code `0` (the single garbage line is under the 64 KiB resync budget, so the codec recovers and then sees stdin EOF cleanly).
+Expected: stdout is 0 bytes (no log lines leaked); stderr has at least one `ipc bad frame header (resyncable)` warning; exit code `1`. The codec resyncs past the garbage line but then hits EOF mid-resync (resync_consumed != 0 → `FrameError::Io(UnexpectedEof)`), which the run loop maps to a fatal Err and main exits 1. This is the correct contract — a peer that closes the pipe mid-noise looks like a protocol error, not a clean shutdown. The stdout-clean assertion is the load-bearing check; the exit code differentiates "garbage input + crash" from "garbage input + clean recovery".
 
 - [ ] **Step 7: Commit**
 
@@ -1802,7 +1808,7 @@ const BIN: &str = env!("CARGO_BIN_EXE_vimeflow-backend");
 
 struct IpcClient {
     child: Child,
-    stdin: ChildStdin,
+    stdin: Option<ChildStdin>,
     stdout: BufReader<ChildStdout>,
     next_id: u64,
     _app_data_dir: TempDir,
@@ -1818,7 +1824,7 @@ impl IpcClient {
             .stderr(Stdio::piped())
             .spawn()
             .expect("spawn bin");
-        let stdin = child.stdin.take().expect("stdin");
+        let stdin = Some(child.stdin.take().expect("stdin"));
         let stdout = BufReader::new(child.stdout.take().expect("stdout"));
         Self {
             child,
@@ -1827,6 +1833,10 @@ impl IpcClient {
             next_id: 0,
             _app_data_dir: app_data_dir,
         }
+    }
+
+    fn stdin_mut(&mut self) -> &mut ChildStdin {
+        self.stdin.as_mut().expect("stdin already closed")
     }
 
     fn send_request(&mut self, method: &str, params: Value) -> Value {
@@ -1840,9 +1850,10 @@ impl IpcClient {
         }))
         .expect("encode");
         let header = format!("Content-Length: {}\r\n\r\n", body.len());
-        self.stdin.write_all(header.as_bytes()).expect("write header");
-        self.stdin.write_all(&body).expect("write body");
-        self.stdin.flush().expect("flush");
+        let stdin = self.stdin_mut();
+        stdin.write_all(header.as_bytes()).expect("write header");
+        stdin.write_all(&body).expect("write body");
+        stdin.flush().expect("flush");
         self.read_response_for(&id)
     }
 
@@ -1880,18 +1891,10 @@ impl IpcClient {
     }
 
     fn close_stdin(&mut self) {
-        // Replace stdin with a closed handle. We can't take ownership in
-        // a `&mut self` method without unsafe, so we close the OS handle by
-        // shutting down writes — easiest is to drop a replacement.
-        let dummy = Command::new("true").stdin(Stdio::null()).spawn().unwrap();
-        let placeholder = dummy.stdin;
-        drop(placeholder);
-        // Actually close ours:
-        let _ = self.stdin.flush();
-        // The simplest portable close: replace with a dummy via std::mem::replace
-        // on a piped Stdio is non-trivial; use ProcessExtensions in tests by
-        // letting Drop close stdin when IpcClient drops.
-        let _ = self.stdin.write_all(b""); // no-op but keeps API simple
+        // Take the stdin handle and drop it → OS pipe write-end closes →
+        // sidecar sees EOF. Subsequent `stdin_mut()` calls panic; tests must
+        // not write after this call.
+        drop(self.stdin.take());
     }
 
     fn wait_exit(&mut self, timeout: Duration) -> std::io::Result<Option<std::process::ExitStatus>> {
@@ -1906,22 +1909,28 @@ impl IpcClient {
             std::thread::sleep(Duration::from_millis(20));
         }
     }
-
-    fn drain_stderr_string(&mut self) -> String {
-        let mut buf = String::new();
-        if let Some(mut s) = self.child.stderr.take() {
-            let _ = s.read_to_string(&mut buf);
-        }
-        buf
-    }
 }
 
 impl Drop for IpcClient {
     fn drop(&mut self) {
-        // Close stdin so the bin sees EOF and exits cleanly.
-        // Dropping the child handle alone would only kill it; we want graceful.
-        // Stdin is owned by self and will close when the struct drops.
-        let _ = self.child.wait();
+        // CRITICAL: close stdin BEFORE waiting, or the bin never sees EOF and
+        // this drop deadlocks the test. After close_stdin, wait up to 2s for
+        // a graceful exit; SIGKILL if it overshoots.
+        self.close_stdin();
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            match self.child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                _ => {
+                    let _ = self.child.kill();
+                    let _ = self.child.wait();
+                    return;
+                }
+            }
+        }
     }
 }
 
@@ -1953,9 +1962,12 @@ fn bad_kind_envelope_drops_no_response() {
     let mut client = IpcClient::spawn();
     let body = br#"{"kind":"response","id":"x","ok":true}"#;
     let header = format!("Content-Length: {}\r\n\r\n", body.len());
-    client.stdin.write_all(header.as_bytes()).expect("write");
-    client.stdin.write_all(body).expect("write");
-    client.stdin.flush().expect("flush");
+    {
+        let stdin = client.stdin_mut();
+        stdin.write_all(header.as_bytes()).expect("write");
+        stdin.write_all(body).expect("write");
+        stdin.flush().expect("flush");
+    }
 
     // Then send a real request — its response must arrive (the bad envelope
     // must NOT have desynced the protocol).
@@ -1967,8 +1979,14 @@ fn bad_kind_envelope_drops_no_response() {
 #[test]
 fn eof_triggers_clean_exit_zero() {
     let mut client = IpcClient::spawn();
-    let _ = client.send_request("list_sessions", json!({}));
-    drop(client.stdin); // Force EOF; replacement isn't supported by stdlib stdin.
+    // Send AND fully read the response before closing stdin. If we close
+    // stdin before reading, the EOF can race the spawned handler's tx.send
+    // back to stdout — though run() now does NOT cancel on EOF, the writer
+    // task still needs the handler's tx clone to actually push the frame
+    // before we drop the receiver via the BufReader.
+    let resp = client.send_request("list_sessions", json!({}));
+    assert_eq!(resp["ok"], true);
+    client.close_stdin();
     let status = client
         .wait_exit(Duration::from_secs(2))
         .expect("wait")
@@ -1988,6 +2006,77 @@ fn missing_app_data_dir_arg_exits_two() {
         .expect("wait");
     assert_eq!(status.code(), Some(2), "expected exit 2, got {status:?}");
 }
+
+/// One wire-shape check per method (spec §3 "End-to-end per method"). We
+/// pick params that exercise the decoder without depending on real PTY /
+/// real git state: BackendState may return an Err (e.g. `git_status` on a
+/// nonexistent cwd), but we only assert the wire SHAPE — `kind`/`id`/`ok`
+/// presence, error key when ok=false. The byte-level "ok response equals
+/// in-process return" parity lives in `runtime::ipc::tests::dispatch_*`.
+#[test]
+fn every_production_method_returns_well_formed_response_frame() {
+    // The decoder shapes for the four pty-request methods need ts-rs-shaped
+    // payloads; the public types are crate-private to vimeflow_lib so we
+    // pass minimal valid JSON. BackendState may surface a logical Err
+    // (e.g. "PTY session not found"), which is still a wire-shape PASS.
+    let dummy_pty_request = json!({"sessionId": "no-such-session"});
+    let cases: &[(&str, Value)] = &[
+        ("list_sessions", json!({})),
+        ("write_pty", json!({"request": {"sessionId": "no-such-session", "data": ""}})),
+        ("resize_pty", json!({"request": {"sessionId": "no-such-session", "cols": 80, "rows": 24}})),
+        ("kill_pty", json!({"request": {"sessionId": "no-such-session"}})),
+        ("set_active_session", json!({"request": dummy_pty_request.clone()})),
+        ("reorder_sessions", json!({"request": {"sessionIds": []}})),
+        ("update_session_cwd", json!({"request": {"sessionId": "no-such-session", "cwd": "/tmp"}})),
+        ("detect_agent_in_session", json!({"sessionId": "no-such-session"})),
+        ("start_agent_watcher", json!({"sessionId": "no-such-session"})),
+        ("stop_agent_watcher", json!({"sessionId": "no-such-session"})),
+        ("list_dir", json!({"request": {"path": "/tmp"}})),
+        ("read_file", json!({"request": {"path": "/tmp/no-such-file-vimeflow-test"}})),
+        ("write_file", json!({"request": {"path": "/dev/null/no", "contents": ""}})),
+        ("git_status", json!({"cwd": "/tmp/no-such-dir"})),
+        ("git_branch", json!({"cwd": "/tmp/no-such-dir"})),
+        ("get_git_diff", json!({"cwd": "/tmp/no-such-dir", "file": "x", "staged": false})),
+        ("start_git_watcher", json!({"cwd": "/tmp/no-such-dir"})),
+        ("stop_git_watcher", json!({"cwd": "/tmp/no-such-dir"})),
+        // spawn_pty is intentionally LAST because if it succeeds it forks a
+        // real PTY; we use a clearly-invalid command so it errors fast.
+        ("spawn_pty", json!({"request": {"command": "/nonexistent/no/such/command", "cwd": "/tmp"}})),
+    ];
+
+    let mut client = IpcClient::spawn();
+    for (method, params) in cases {
+        let resp = client.send_request(method, params.clone());
+        assert_eq!(resp["kind"], "response", "method={method} resp={resp}");
+        assert!(
+            resp["id"].is_string(),
+            "method={method} id missing: {resp}"
+        );
+        assert!(
+            resp["ok"].is_boolean(),
+            "method={method} ok missing: {resp}"
+        );
+        if resp["ok"] == false {
+            assert!(
+                resp["error"].is_string(),
+                "method={method} ok=false but no error string: {resp}"
+            );
+        }
+    }
+}
+
+/// The cfg-gated 20th method is only reachable with the e2e-test feature.
+/// Gate the test the same way so default `cargo test --test ipc_subprocess`
+/// doesn't try to call an unknown method.
+#[cfg(feature = "e2e-test")]
+#[test]
+fn list_active_pty_sessions_responds_under_e2e_feature() {
+    let mut client = IpcClient::spawn();
+    let resp = client.send_request("list_active_pty_sessions", json!({}));
+    assert_eq!(resp["kind"], "response");
+    assert_eq!(resp["ok"], true, "expected ok, got {resp}");
+    assert!(resp["result"].is_array(), "expected array, got {}", resp["result"]);
+}
 ```
 
 (The `close_stdin` and `wait_exit` helpers are sufficient for these tests. The `eof_triggers_clean_exit_zero` test uses `drop(client.stdin)` directly because the `ChildStdin` is owned by the struct — dropping it closes the OS handle.)
@@ -1999,55 +2088,7 @@ cd /home/will/projects/vimeflow/src-tauri
 cargo test --test ipc_subprocess
 ```
 
-Expected: 5 tests pass. Cargo automatically rebuilds the bin if needed; the first run may take ~30s, subsequent runs are <5s.
-
-If `eof_triggers_clean_exit_zero` fails because Rust's `std::process::ChildStdin` is owned by the struct, refactor that test to use `client.child.stdin.take()` directly:
-
-```rust
-#[test]
-fn eof_triggers_clean_exit_zero() {
-    let mut client = IpcClient::spawn();
-    let _ = client.send_request("list_sessions", json!({}));
-    // Drop our owned stdin to close the pipe.
-    {
-        let _stdin = std::mem::replace(&mut client.stdin, {
-            // Need a dummy ChildStdin; instead, take it off the inner Child if present.
-            // Simplest: just drop the struct entirely below.
-            unreachable!("don't construct");
-        });
-    }
-    // ...
-}
-```
-
-If that gets awkward, change the test to spawn its own `Child` (without the IpcClient wrapper), write one frame, drop stdin, await exit:
-
-```rust
-#[test]
-fn eof_triggers_clean_exit_zero() {
-    let app_data_dir = tempfile::tempdir().expect("tempdir");
-    let mut child = Command::new(BIN)
-        .args(["--app-data-dir", app_data_dir.path().to_str().unwrap()])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn");
-    {
-        let mut stdin = child.stdin.take().expect("stdin");
-        let body = b"{\"kind\":\"request\",\"id\":\"1\",\"method\":\"list_sessions\",\"params\":{}}";
-        stdin
-            .write_all(format!("Content-Length: {}\r\n\r\n", body.len()).as_bytes())
-            .unwrap();
-        stdin.write_all(body).unwrap();
-    } // stdin dropped → EOF.
-
-    let status = child.wait().expect("wait");
-    assert!(status.success(), "expected exit 0, got {status:?}");
-}
-```
-
-Pick whichever version compiles cleanly; both prove the same shutdown contract.
+Expected: all tests pass. Cargo automatically rebuilds the bin if needed; the first run may take ~30s, subsequent runs are <5s.
 
 - [ ] **Step 3: Run again under the e2e-test feature**
 
