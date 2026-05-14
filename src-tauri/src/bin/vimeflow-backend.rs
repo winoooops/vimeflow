@@ -73,12 +73,23 @@ fn write_stderr_line(message: &str) {
 }
 
 fn parse_app_data_dir() -> Result<std::path::PathBuf, String> {
-    let mut args = std::env::args().skip(1);
+    parse_app_data_dir_from(std::env::args().skip(1))
+}
+
+fn parse_app_data_dir_from<I, S>(args: I) -> Result<std::path::PathBuf, String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let mut args = args.into_iter().map(Into::into);
     let mut app_data_dir: Option<std::path::PathBuf> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--app-data-dir" => {
+                if app_data_dir.is_some() {
+                    return Err("--app-data-dir specified more than once".into());
+                }
                 let value = args
                     .next()
                     .ok_or_else(|| "--app-data-dir requires a path".to_string())?;
@@ -89,4 +100,20 @@ fn parse_app_data_dir() -> Result<std::path::PathBuf, String> {
     }
 
     app_data_dir.ok_or_else(|| "--app-data-dir <path> is required".into())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parse_app_data_dir_rejects_duplicate_flag() {
+        let err = super::parse_app_data_dir_from([
+            "--app-data-dir",
+            "/tmp/vimeflow-one",
+            "--app-data-dir",
+            "/tmp/vimeflow-two",
+        ])
+        .expect_err("duplicate flag should fail");
+
+        assert!(err.contains("specified more than once"), "got {err}");
+    }
 }

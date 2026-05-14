@@ -13,12 +13,14 @@ use tokio_util::sync::CancellationToken;
 use crate::runtime::event_sink::EventSink;
 
 const HANDLER_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+const POST_ABORT_HANDLER_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 const WRITER_DRAIN_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 // `block_in_place` cannot be interrupted by JoinSet::abort_all(), so keep this
 // below the handler drain timeout to bound clean-EOF shutdown latency.
 const EVENT_SEND_BACKPRESSURE_TIMEOUT: Duration = Duration::from_secs(1);
 const EVENT_SEND_BACKPRESSURE_POLL: Duration = Duration::from_millis(10);
 const MAX_CONCURRENT_HANDLERS: usize = 64;
+const OVERLOAD_ID_RECOVERY_MAX_BYTES: usize = 4 * 1024;
 
 pub const STDOUT_QUEUE_CAPACITY: usize = 1024;
 
@@ -864,6 +866,14 @@ async fn send_overload_response(tx: &Sender<Vec<u8>>, cancel: &CancellationToken
 }
 
 fn recover_bad_request_id_from_body(body: &[u8]) -> Option<String> {
+    if body.len() > OVERLOAD_ID_RECOVERY_MAX_BYTES {
+        log::warn!(
+            "ipc overloaded; request body too large for id recovery: {} bytes",
+            body.len()
+        );
+        return None;
+    }
+
     let value = match serde_json::from_slice(body) {
         Ok(value) => value,
         Err(err) => {
@@ -908,6 +918,19 @@ fn drain_finished_handlers(handlers: &mut JoinSet<()>) {
 }
 
 async fn wait_for_handlers(handlers: &mut JoinSet<()>, drain_timeout: Duration) {
+    wait_for_handlers_with_post_abort_timeout(
+        handlers,
+        drain_timeout,
+        POST_ABORT_HANDLER_DRAIN_TIMEOUT,
+    )
+    .await;
+}
+
+async fn wait_for_handlers_with_post_abort_timeout(
+    handlers: &mut JoinSet<()>,
+    drain_timeout: Duration,
+    post_abort_timeout: Duration,
+) {
     let result = tokio::time::timeout(drain_timeout, drain_handlers(handlers)).await;
     if result.is_ok() {
         return;
@@ -918,7 +941,15 @@ async fn wait_for_handlers(handlers: &mut JoinSet<()>, drain_timeout: Duration) 
         "ipc clean EOF: timed out waiting for {remaining} request handlers; aborting remaining handlers"
     );
     handlers.abort_all();
-    drain_handlers(handlers).await;
+    if tokio::time::timeout(post_abort_timeout, drain_handlers(handlers))
+        .await
+        .is_err()
+    {
+        log::warn!(
+            "ipc clean EOF: timed out draining {} handlers after abort",
+            handlers.len()
+        );
+    }
 }
 
 async fn drain_handlers(handlers: &mut JoinSet<()>) {
@@ -1274,6 +1305,25 @@ mod tests {
         assert!(val.get("result").is_none());
     }
 
+    #[test]
+    fn recover_bad_request_id_from_body_recovers_small_request_id() {
+        let body = br#"{"kind":"request","id":"overloaded","method":"list_sessions"}"#;
+        let id = super::recover_bad_request_id_from_body(body).expect("id");
+        assert_eq!(id, "overloaded");
+    }
+
+    #[test]
+    fn recover_bad_request_id_from_body_skips_large_payloads() {
+        let body = format!(
+            r#"{{"kind":"request","id":"overloaded","method":"x","params":"{}"}}"#,
+            "x".repeat(super::OVERLOAD_ID_RECOVERY_MAX_BYTES)
+        );
+        assert!(body.len() > super::OVERLOAD_ID_RECOVERY_MAX_BYTES);
+
+        let id = super::recover_bad_request_id_from_body(body.as_bytes());
+        assert_eq!(id, None);
+    }
+
     #[tokio::test]
     async fn stdout_event_sink_pushes_framed_event_to_channel() {
         use crate::runtime::EventSink;
@@ -1370,6 +1420,39 @@ mod tests {
     #[test]
     fn stdout_event_backpressure_timeout_stays_below_handler_drain_timeout() {
         assert!(super::EVENT_SEND_BACKPRESSURE_TIMEOUT < super::HANDLER_DRAIN_TIMEOUT);
+        assert!(super::EVENT_SEND_BACKPRESSURE_TIMEOUT < super::POST_ABORT_HANDLER_DRAIN_TIMEOUT);
+        assert!(super::POST_ABORT_HANDLER_DRAIN_TIMEOUT < super::HANDLER_DRAIN_TIMEOUT);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn wait_for_handlers_bounds_post_abort_drain() {
+        let mut handlers = tokio::task::JoinSet::new();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+
+        handlers.spawn(async move {
+            tokio::task::block_in_place(|| {
+                started_tx.send(()).expect("send started");
+                std::thread::sleep(std::time::Duration::from_millis(300));
+            });
+        });
+
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("handler entered block_in_place");
+
+        let started_at = std::time::Instant::now();
+        super::wait_for_handlers_with_post_abort_timeout(
+            &mut handlers,
+            std::time::Duration::from_millis(10),
+            std::time::Duration::from_millis(20),
+        )
+        .await;
+
+        assert!(
+            started_at.elapsed() < std::time::Duration::from_millis(150),
+            "post-abort drain should be bounded; elapsed {:?}",
+            started_at.elapsed()
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
