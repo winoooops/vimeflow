@@ -657,10 +657,29 @@ fn spawn_handler(
     body: Vec<u8>,
 ) {
     handlers.spawn(async move {
-        let mut req: RequestFrame = match serde_json::from_slice::<InboundFrame>(&body) {
+        let envelope: Value = match serde_json::from_slice(&body) {
+            Ok(value) => value,
+            Err(err) => {
+                log::warn!("ipc bad envelope: {err}");
+                return;
+            }
+        };
+        let recoverable_request_id = recover_bad_request_id(&envelope);
+        let mut req: RequestFrame = match serde_json::from_value::<InboundFrame>(envelope) {
             Ok(InboundFrame::Request(req)) => req,
             Err(err) => {
                 log::warn!("ipc bad envelope: {err}");
+                if let Some(id) = recoverable_request_id {
+                    let body = match serde_json::to_vec(&ResponseFrame::err(&id, "bad envelope")) {
+                        Ok(body) => body,
+                        Err(err) => {
+                            log::error!("ipc bad-envelope response encode failed (id={id}): {err}");
+                            return;
+                        }
+                    };
+
+                    send_response_frame(&tx, &id, body).await;
+                }
                 return;
             }
         };
@@ -693,10 +712,22 @@ fn spawn_handler(
             },
         };
 
-        if let Err(err) = tx.send(frame::format_frame(&body)).await {
-            log::warn!("ipc response send failed (id={}): {err}", req.id);
-        }
+        send_response_frame(&tx, &req.id, body).await;
     });
+}
+
+fn recover_bad_request_id(value: &Value) -> Option<String> {
+    if value.get("kind").and_then(Value::as_str) != Some("request") {
+        return None;
+    }
+
+    value.get("id").and_then(Value::as_str).map(str::to_owned)
+}
+
+async fn send_response_frame(tx: &Sender<Vec<u8>>, id: &str, body: Vec<u8>) {
+    if let Err(err) = tx.send(frame::format_frame(&body)).await {
+        log::warn!("ipc response send failed (id={id}): {err}");
+    }
 }
 
 fn drain_finished_handlers(handlers: &mut JoinSet<()>) {
@@ -1394,6 +1425,28 @@ mod tests {
             !matches!(res, Ok(Some(_))),
             "expected no response frame, got {res:?}"
         );
+
+        run_handle.await.expect("run task").expect("run ok");
+    }
+
+    #[tokio::test]
+    async fn run_bad_request_envelope_returns_id_bearing_error_response() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let (read_end, mut write_end) = tokio::io::duplex(8192);
+        let run_handle = tokio::spawn(super::run(state, read_end, tx, cancel));
+
+        let body = br#"{"kind":"request","id":"bad","params":{}}"#;
+        let frame = super::frame::format_frame(body);
+        write_end.write_all(&frame).await.expect("write");
+        drop(write_end);
+
+        let resp = recv_response(&mut rx).await;
+        assert_eq!(resp["kind"], "response");
+        assert_eq!(resp["id"], "bad");
+        assert_eq!(resp["ok"], false);
+        assert_eq!(resp["error"], "bad envelope");
 
         run_handle.await.expect("run task").expect("run ok");
     }
