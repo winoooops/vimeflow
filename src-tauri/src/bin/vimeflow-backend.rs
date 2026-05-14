@@ -24,7 +24,7 @@ async fn main() {
         }
     };
 
-    let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (tx, rx) = mpsc::channel::<Vec<u8>>(ipc::STDOUT_QUEUE_CAPACITY);
     let writer_handle = tokio::spawn(ipc::writer_task(rx, tokio::io::stdout()));
 
     let sink: Arc<dyn EventSink> = Arc::new(ipc::StdoutEventSink::new(tx.clone()));

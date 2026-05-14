@@ -4,7 +4,7 @@
 
 **Goal:** Add the `vimeflow-backend` sidecar bin + an LSP-style JSON-RPC IPC layer over stdio (`src-tauri/src/runtime/ipc.rs`) that dispatches to the `BackendState` API PR-A locked in §5.1, while the Tauri host stays as the production runtime through end of PR-B.
 
-**Architecture:** New file `src-tauri/src/runtime/ipc.rs` holds the whole IPC layer: a `mod frame` codec (LSP `Content-Length: N\r\n\r\n<body>`), tagged envelope types (`InboundFrame::Request` / `ResponseFrame` / event-frame inline), a `mod router` match-arm dispatch over the 19 + 1 production methods with per-arm `#[serde(rename_all = "camelCase")]` decoder structs, a `StdoutEventSink` (impls `EventSink`) that formats frames and pushes them onto a `tokio::sync::mpsc::UnboundedSender<Vec<u8>>`, and a single writer task draining the channel to `tokio::io::stdout()`. The bin shim parses `--app-data-dir`, builds `Arc<BackendState>` with the channel-backed sink, runs `runtime::ipc::run(...)`, and exits 0 only after writer drain — calling `state.shutdown()` only on clean stdin-EOF (never on errors, so protocol corruption doesn't wipe the session cache).
+**Architecture:** New file `src-tauri/src/runtime/ipc.rs` holds the whole IPC layer: a `mod frame` codec (LSP `Content-Length: N\r\n\r\n<body>`), tagged envelope types (`InboundFrame::Request` / `ResponseFrame` / event-frame inline), a `mod router` match-arm dispatch over the 19 + 1 production methods with per-arm `#[serde(rename_all = "camelCase")]` decoder structs, a `StdoutEventSink` (impls `EventSink`) that formats frames and pushes them onto a bounded `tokio::sync::mpsc::Sender<Vec<u8>>`, and a single writer task draining the channel to `tokio::io::stdout()`. The bin shim parses `--app-data-dir`, builds `Arc<BackendState>` with the channel-backed sink, runs `runtime::ipc::run(...)`, and exits 0 only after writer drain — calling `state.shutdown()` only on clean stdin-EOF (never on errors, so protocol corruption doesn't wipe the session cache).
 
 **Tech Stack:** Rust 2021, Tokio (multi-thread runtime), tokio-util `CancellationToken`, serde / serde_json, env_logger, tempfile (dev), portable-pty (transitive via PR-A).
 
@@ -416,8 +416,15 @@ mod frame {
                         }
                     }
                 }
-                // Unknown header — ignore. Well-formed `Name: Value` does
-                // NOT count against the resync budget.
+                // Unknown header — LSP allows it, but count it against the
+                // resync budget so an infinite stream of non-Content-Length
+                // headers cannot spin forever.
+                resync_consumed = resync_consumed.saturating_add(n as u64);
+                if resync_consumed > RESYNC_BUDGET_BYTES {
+                    return Err(FrameError::FatalBadHeader(format!(
+                        "no Content-Length within {RESYNC_BUDGET_BYTES} bytes of headers"
+                    )));
+                }
                 continue;
             }
 
@@ -597,9 +604,10 @@ LSP-style Content-Length framing per spec §2.1. Header-line cap
 allocation; resync budget (RESYNC_BUDGET_BYTES = 64 KiB) for
 ResyncableBadHeader → continue, exhaustion → FatalBadHeader.
 
-10 codec tests: format roundtrip, well-formed frame, clean EOF,
-mid-body EOF, oversize body, extra-header ignore, resync within
-budget, fatal resync, fatal long line, write+read roundtrip.
+11 codec tests: format roundtrip, well-formed frame, clean EOF,
+mid-body EOF, oversize body, extra-header ignore, unknown-header
+budget, resync within budget, fatal resync, fatal long line,
+write+read roundtrip.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -768,20 +776,20 @@ EOF
 Insert after the envelope types from Task 4, before `mod frame`:
 
 ```rust
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 
 use crate::runtime::event_sink::EventSink;
 
-/// Event sink that formats LSP frames synchronously and pushes them onto an
-/// unbounded mpsc channel. The single writer task drains the channel into
+/// Event sink that formats LSP frames synchronously and pushes them onto a
+/// bounded mpsc channel. The single writer task drains the channel into
 /// `tokio::io::stdout()`. No Mutex on the writer path — channel arrival order
 /// IS the serialization.
 pub struct StdoutEventSink {
-    tx: UnboundedSender<Vec<u8>>,
+    tx: Sender<Vec<u8>>,
 }
 
 impl StdoutEventSink {
-    pub fn new(tx: UnboundedSender<Vec<u8>>) -> Self {
+    pub fn new(tx: Sender<Vec<u8>>) -> Self {
         Self { tx }
     }
 }
@@ -795,8 +803,15 @@ impl EventSink for StdoutEventSink {
         }))
         .map_err(|err| format!("event encode {event}: {err}"))?;
         self.tx
-            .send(frame::format_frame(&body))
-            .map_err(|_| format!("stdout writer closed; cannot emit {event}"))?;
+            .try_send(frame::format_frame(&body))
+            .map_err(|err| match err {
+                tokio::sync::mpsc::error::TrySendError::Full(_) => {
+                    format!("stdout writer backlog full; dropped {event}")
+                }
+                tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+                    format!("stdout writer closed; cannot emit {event}")
+                }
+            })?;
         Ok(())
     }
 }
@@ -808,7 +823,7 @@ impl EventSink for StdoutEventSink {
     #[tokio::test]
     async fn stdout_event_sink_pushes_framed_event_to_channel() {
         use crate::runtime::EventSink;
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
         let sink = super::StdoutEventSink::new(tx);
         sink.emit_json("pty-data", serde_json::json!({"sessionId": "s1", "data": "hi"}))
             .expect("emit");
@@ -826,7 +841,7 @@ impl EventSink for StdoutEventSink {
     #[tokio::test]
     async fn stdout_event_sink_errors_when_channel_closed() {
         use crate::runtime::EventSink;
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
         drop(rx);
         let sink = super::StdoutEventSink::new(tx);
         let err = sink
@@ -860,8 +875,8 @@ git commit -m "$(cat <<'EOF'
 feat(backend/ipc): add channel-based StdoutEventSink
 
 Implements EventSink (sync trait, fits PR-A §5.2 lock) by formatting
-the LSP frame upfront and pushing the byte-vec onto an unbounded
-mpsc channel. No Mutex on the writer path — Decision #5. Closed
+the LSP frame upfront and pushing the byte-vec onto a bounded
+mpsc channel. No Mutex on the writer path — Decision #5. Full/closed
 channel surfaces as an emit error string the caller can log.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
@@ -1321,14 +1336,14 @@ Append to `src-tauri/src/runtime/ipc.rs` (after `mod router`):
 
 ```rust
 use tokio::io::{AsyncRead, AsyncWrite, BufReader};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 /// Drain the writer channel into `writer` until all senders drop. Logs and
 /// breaks on write failure. The bin's main spawns this once.
 pub async fn writer_task<W: AsyncWrite + Unpin + Send + 'static>(
-    mut rx: UnboundedReceiver<Vec<u8>>,
+    mut rx: Receiver<Vec<u8>>,
     mut writer: W,
 ) {
     use tokio::io::AsyncWriteExt;
@@ -1357,7 +1372,7 @@ pub async fn writer_task<W: AsyncWrite + Unpin + Send + 'static>(
 pub async fn run<R: AsyncRead + Unpin + Send>(
     state: std::sync::Arc<crate::runtime::BackendState>,
     reader: R,
-    tx: UnboundedSender<Vec<u8>>,
+    tx: Sender<Vec<u8>>,
     cancel: CancellationToken,
 ) -> Result<(), std::io::Error> {
     let mut buf_reader = BufReader::new(reader);
@@ -1403,7 +1418,7 @@ pub async fn run<R: AsyncRead + Unpin + Send>(
 fn spawn_handler(
     handlers: &mut JoinSet<()>,
     state: std::sync::Arc<crate::runtime::BackendState>,
-    tx: UnboundedSender<Vec<u8>>,
+    tx: Sender<Vec<u8>>,
     cancel: CancellationToken,
     body: Vec<u8>,
 ) {
@@ -1444,7 +1459,7 @@ fn spawn_handler(
                 }
             },
         };
-        let _ = tx.send(frame::format_frame(&body));
+        let _ = tx.send(frame::format_frame(&body)).await;
     });
 }
 ```
@@ -1467,7 +1482,7 @@ Inside `mod tests`, append (note: `use tokio::io::AsyncWriteExt;` is already imp
     }
 
     /// Helper: read one response frame from the rx channel, decode the body.
-    async fn recv_response(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>) -> serde_json::Value {
+    async fn recv_response(rx: &mut tokio::sync::mpsc::Receiver<Vec<u8>>) -> serde_json::Value {
         let framed = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
             .await
             .expect("recv timeout")
@@ -1480,7 +1495,7 @@ Inside `mod tests`, append (note: `use tokio::io::AsyncWriteExt;` is already imp
     #[tokio::test]
     async fn run_dispatches_one_request_and_writes_response() {
         let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
         let cancel = tokio_util::sync::CancellationToken::new();
 
         let (read_end, mut write_end) = tokio::io::duplex(8192);
@@ -1501,7 +1516,7 @@ Inside `mod tests`, append (note: `use tokio::io::AsyncWriteExt;` is already imp
     #[tokio::test]
     async fn run_unknown_method_returns_id_bearing_error_response() {
         let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
         let cancel = tokio_util::sync::CancellationToken::new();
         let (read_end, mut write_end) = tokio::io::duplex(8192);
         let run_handle = tokio::spawn(super::run(state, read_end, tx, cancel));
@@ -1525,7 +1540,7 @@ Inside `mod tests`, append (note: `use tokio::io::AsyncWriteExt;` is already imp
     #[tokio::test]
     async fn run_wrong_kind_envelope_logs_and_drops_no_response() {
         let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
         let cancel = tokio_util::sync::CancellationToken::new();
         let (read_end, mut write_end) = tokio::io::duplex(8192);
         let run_handle = tokio::spawn(super::run(state, read_end, tx, cancel));
@@ -1548,7 +1563,7 @@ Inside `mod tests`, append (note: `use tokio::io::AsyncWriteExt;` is already imp
         // list_sessions takes no params; absent → Value::Null → must be normalized to {} so its
         // (implicit empty-object) decoding succeeds. We send "params": null explicitly.
         let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
         let cancel = tokio_util::sync::CancellationToken::new();
         let (read_end, mut write_end) = tokio::io::duplex(8192);
         let run_handle = tokio::spawn(super::run(state, read_end, tx, cancel));
@@ -1568,7 +1583,7 @@ Inside `mod tests`, append (note: `use tokio::io::AsyncWriteExt;` is already imp
     #[tokio::test]
     async fn run_fatal_bad_header_returns_err() {
         let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx, _rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
         let cancel = tokio_util::sync::CancellationToken::new();
         let (read_end, mut write_end) = tokio::io::duplex(super::frame::RESYNC_BUDGET_BYTES as usize * 2);
         let run_handle = tokio::spawn(super::run(state, read_end, tx, cancel));
@@ -1671,7 +1686,7 @@ async fn main() {
         }
     };
 
-    let (tx, rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (tx, rx) = mpsc::channel::<Vec<u8>>(ipc::STDOUT_QUEUE_CAPACITY);
     let writer_handle = tokio::spawn(ipc::writer_task(rx, tokio::io::stdout()));
 
     let sink: Arc<dyn EventSink> = Arc::new(ipc::StdoutEventSink::new(tx.clone()));
