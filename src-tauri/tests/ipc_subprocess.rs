@@ -292,7 +292,7 @@ fn garbage_input_does_not_corrupt_stdout() {
 }
 
 #[test]
-fn error_exit_clears_session_cache() {
+fn error_exit_preserves_session_cache_for_reconciliation() {
     let app_data_dir = tempfile::tempdir().expect("tempdir");
     let cache_path = app_data_dir.path().join("sessions.json");
     let seeded_cache = json!({
@@ -337,15 +337,15 @@ fn error_exit_clears_session_cache() {
 
     let cache: Value = serde_json::from_slice(&std::fs::read(cache_path).expect("read cache"))
         .expect("parse cache");
-    assert_eq!(cache["sessions"].as_object().expect("sessions").len(), 0);
-    assert_eq!(
-        cache["session_order"]
-            .as_array()
-            .expect("session_order")
-            .len(),
-        0
+    assert!(
+        cache["sessions"]
+            .as_object()
+            .expect("sessions")
+            .contains_key("ghost"),
+        "error exits preserve cache for next-launch reconciliation: {cache}"
     );
-    assert!(cache["active_session_id"].is_null());
+    assert_eq!(cache["session_order"], json!(["ghost"]));
+    assert_eq!(cache["active_session_id"], "ghost");
 }
 
 #[test]

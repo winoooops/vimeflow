@@ -39,7 +39,11 @@ async fn main() {
 
     let run_result = ipc::run(state.clone(), tokio::io::stdin(), tx, cancel.clone()).await;
 
-    state.shutdown();
+    // Only clean EOF is graceful. Protocol/runtime failures preserve the cache
+    // so the next launch can lazy-reconcile old sessions as restartable entries.
+    if run_result.is_ok() {
+        state.shutdown();
+    }
     drop(state);
 
     writer_shutdown.cancel();
