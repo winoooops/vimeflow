@@ -1321,7 +1321,8 @@ Append to `src-tauri/src/runtime/ipc.rs` (after `mod router`):
 
 ```rust
 use tokio::io::{AsyncRead, AsyncWrite, BufReader};
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 /// Drain the writer channel into `writer` until all senders drop. Logs and
@@ -1346,9 +1347,9 @@ pub async fn writer_task<W: AsyncWrite + Unpin + Send + 'static>(
 /// Read frames from `reader`, dispatch each as a Tokio task, send responses
 /// through `tx`. Returns Ok(()) on clean EOF, Err on fatal codec error.
 ///
-/// On clean EOF we do NOT cancel in-flight handlers — they finish naturally
-/// so already-accepted requests get a response. The bin's main bounds the
-/// total shutdown time via the writer_handle.await timeout.
+/// On clean EOF we do NOT cancel in-flight handlers — they are tracked and
+/// awaited so already-accepted requests get a response. The bin's main bounds
+/// the writer drain after the handlers finish.
 ///
 /// On fatal error we DO cancel: the process is about to exit non-zero, no
 /// supervisor is listening for the responses anyway, and we want the spawned
@@ -1360,13 +1361,23 @@ pub async fn run<R: AsyncRead + Unpin + Send>(
     cancel: CancellationToken,
 ) -> Result<(), std::io::Error> {
     let mut buf_reader = BufReader::new(reader);
+    let mut handlers = JoinSet::new();
 
     loop {
         match frame::read_frame(&mut buf_reader).await {
             Ok(Some(body)) => {
-                spawn_handler(state.clone(), tx.clone(), cancel.clone(), body);
+                spawn_handler(
+                    &mut handlers,
+                    state.clone(),
+                    tx.clone(),
+                    cancel.clone(),
+                    body,
+                );
             }
-            Ok(None) => return Ok(()), // Clean stdin EOF — let in-flight finish.
+            Ok(None) => {
+                while handlers.join_next().await.is_some() {}
+                return Ok(());
+            }
             Err(frame::FrameError::ResyncableBadHeader(msg)) => {
                 log::warn!("ipc bad frame header (resyncable): {msg}");
                 continue;
@@ -1390,12 +1401,13 @@ pub async fn run<R: AsyncRead + Unpin + Send>(
 }
 
 fn spawn_handler(
+    handlers: &mut JoinSet<()>,
     state: std::sync::Arc<crate::runtime::BackendState>,
     tx: UnboundedSender<Vec<u8>>,
     cancel: CancellationToken,
     body: Vec<u8>,
 ) {
-    tokio::spawn(async move {
+    handlers.spawn(async move {
         let mut req: RequestFrame = match serde_json::from_slice::<InboundFrame>(&body) {
             Ok(InboundFrame::Request(req)) => req,
             Err(err) => {
@@ -1596,7 +1608,7 @@ feat(backend/ipc): add run / spawn_handler / writer_task
 
 run reads frames from stdin via a BufReader, spawns one Tokio task per
 parsed request, and threads outbound bytes through the tx channel.
-EOF is the sole shutdown signal — on Ok(None) we cancel.cancel() in-flight
+EOF is the sole shutdown signal — on Ok(None) we wait for in-flight
 handlers and return. FatalBadHeader / BodyTooLarge / IO errors bubble up
 so the bin's main exits 1 (no shutdown(), no cache wipe — §2.6).
 

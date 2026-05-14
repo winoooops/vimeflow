@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite, BufReader};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
 
 use crate::runtime::event_sink::EventSink;
@@ -461,6 +462,18 @@ mod router {
             #[cfg(feature = "e2e-test")]
             "list_active_pty_sessions" => serde_json::to_value(state.list_active_pty_sessions())
                 .map_err(|e| format!("result encode: {e}")),
+            #[cfg(test)]
+            "__test_sleep_then_null" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    delay_ms: u64,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                tokio::time::sleep(std::time::Duration::from_millis(p.delay_ms)).await;
+                Ok(Value::Null)
+            }
             _ => Err(format!("unknown method: {method}")),
         }
     }
@@ -494,13 +507,24 @@ pub async fn run<R: AsyncRead + Unpin + Send>(
     cancel: CancellationToken,
 ) -> Result<(), std::io::Error> {
     let mut buf_reader = BufReader::new(reader);
+    let mut handlers = JoinSet::new();
 
     loop {
         match frame::read_frame(&mut buf_reader).await {
             Ok(Some(body)) => {
-                spawn_handler(state.clone(), tx.clone(), cancel.clone(), body);
+                spawn_handler(
+                    &mut handlers,
+                    state.clone(),
+                    tx.clone(),
+                    cancel.clone(),
+                    body,
+                );
+                drain_finished_handlers(&mut handlers);
             }
-            Ok(None) => return Ok(()),
+            Ok(None) => {
+                wait_for_handlers(&mut handlers).await;
+                return Ok(());
+            }
             Err(frame::FrameError::ResyncableBadHeader(msg)) => {
                 log::warn!("ipc bad frame header (resyncable): {msg}");
                 continue;
@@ -530,12 +554,13 @@ pub async fn run<R: AsyncRead + Unpin + Send>(
 }
 
 fn spawn_handler(
+    handlers: &mut JoinSet<()>,
     state: std::sync::Arc<crate::runtime::BackendState>,
     tx: UnboundedSender<Vec<u8>>,
     cancel: CancellationToken,
     body: Vec<u8>,
 ) {
-    tokio::spawn(async move {
+    handlers.spawn(async move {
         let mut req: RequestFrame = match serde_json::from_slice::<InboundFrame>(&body) {
             Ok(InboundFrame::Request(req)) => req,
             Err(err) => {
@@ -574,6 +599,28 @@ fn spawn_handler(
 
         let _ = tx.send(frame::format_frame(&body));
     });
+}
+
+fn drain_finished_handlers(handlers: &mut JoinSet<()>) {
+    while let Some(result) = handlers.try_join_next() {
+        log_handler_result(result);
+    }
+}
+
+async fn wait_for_handlers(handlers: &mut JoinSet<()>) {
+    while let Some(result) = handlers.join_next().await {
+        log_handler_result(result);
+    }
+}
+
+fn log_handler_result(result: Result<(), JoinError>) {
+    if let Err(err) = result {
+        if err.is_cancelled() {
+            log::debug!("ipc request handler cancelled");
+        } else {
+            log::warn!("ipc request handler failed: {err}");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -919,6 +966,38 @@ mod tests {
         let resp = recv_response(&mut rx).await;
         assert_eq!(resp["kind"], "response");
         assert_eq!(resp["id"], "1");
+        assert_eq!(resp["ok"], true);
+
+        run_handle.await.expect("run task").expect("run ok");
+    }
+
+    #[tokio::test]
+    async fn run_waits_for_in_flight_handlers_before_clean_eof() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let cancel = tokio_util::sync::CancellationToken::new();
+
+        let (read_end, mut write_end) = tokio::io::duplex(8192);
+        let mut run_handle = tokio::spawn(super::run(state, read_end, tx, cancel));
+
+        let frame = make_request_frame(
+            "slow",
+            "__test_sleep_then_null",
+            serde_json::json!({"delayMs": 100}),
+        );
+        write_end.write_all(&frame).await.expect("write");
+        drop(write_end);
+
+        let early =
+            tokio::time::timeout(std::time::Duration::from_millis(20), &mut run_handle).await;
+        assert!(
+            early.is_err(),
+            "run returned before the in-flight handler drained"
+        );
+
+        let resp = recv_response(&mut rx).await;
+        assert_eq!(resp["kind"], "response");
+        assert_eq!(resp["id"], "slow");
         assert_eq!(resp["ok"], true);
 
         run_handle.await.expect("run task").expect("run ok");

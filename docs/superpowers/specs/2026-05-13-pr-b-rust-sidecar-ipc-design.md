@@ -35,7 +35,7 @@ The migration roadmap (`docs/superpowers/plans/2026-05-13-electron-rust-backend-
    - Bad-frame contract (Decision #13): any frame whose body fails to deserialize as `InboundFrame::Request` (missing `kind`, wrong `kind`, missing `id`/`method`, malformed JSON) is logged to stderr and dropped — even if a partial parse could extract an id, we don't try. Frames that DO deserialize as a request but then fail at `params` decoding OR hit an unknown method get an id-bearing error response.
 4. **Preserve §5.1 wire shape with camelCase params.** Method name == `BackendState` method name. `params` is a JSON object using **camelCase** keys to match the existing renderer call sites (e.g. `useAgentStatus.ts` calls `invoke('stop_agent_watcher', { sessionId: ptyId })`; `gitService.ts` calls with `{ cwd, file, staged, untracked }`). Tauri's invoke auto-converts camelCase → snake_case at the host boundary; PR-B's router does the same by giving each match arm a private decoder struct with `#[serde(rename_all = "camelCase")]`. For methods with a struct arg like `spawn_pty(request: SpawnPtyRequest)`, the wire is `{"request": {...}}` and the inner struct keeps its existing ts-rs serde renames untouched. §2 tabulates every method's exact decoder struct; PR-C MUST NOT alter these.
 5. **Preserve §5.2 event shape verbatim.** Event names byte-identical to `app.emit("...")` literals. Payload shapes byte-identical to current ts-rs derivations.
-6. **Stdin EOF = graceful shutdown.** When the parent closes its pipe, the sidecar (1) stops accepting new requests, (2) cancels in-flight request tasks via a `CancellationToken` (no draining — Electron has stopped listening, so unfinished responses go nowhere), (3) calls `state.shutdown()` ONLY on clean EOF (which `clear_all()`s the session cache; errors leave it intact for next-launch reconciliation), (4) drops `BackendState`, (5) waits up to 200 ms for the writer task to drain, and (6) exits 0. **PTY children are NOT explicitly killed** by PR-B — `portable_pty::Child::Drop` does not kill the child, so any active PTY processes are reparented to PID 1 on bin exit and become orphans. PR-D's Electron supervisor closes the PTY parent-side and uses `process.kill(-pid, 'SIGTERM')` (negative-pid → process group) to terminate the PTY tree. PR-B's integration test exit-cleanup assertion only verifies that the bin process itself exits 0; orphan-PTY cleanup is PR-D's territory. Matches the [[feedback_lazy_reconciliation_over_shutdown_hooks]] memory — SIGKILL/OOM/panic skip this path; `list_sessions` reconciles the cache on next launch.
+6. **Stdin EOF = graceful shutdown.** When the parent closes its pipe, the sidecar (1) stops accepting new requests, (2) awaits already-accepted request handlers so their response frames can be queued before shutdown, (3) calls `state.shutdown()` ONLY on clean EOF (which `clear_all()`s the session cache; errors leave it intact for next-launch reconciliation), (4) drops `BackendState`, (5) waits up to 200 ms for the writer task to drain, and (6) exits 0. Fatal protocol/runtime errors still cancel in-flight handlers via `CancellationToken` before the process exits non-zero. **PTY children are NOT explicitly killed** by PR-B — `portable_pty::Child::Drop` does not kill the child, so any active PTY processes are reparented to PID 1 on bin exit and become orphans. PR-D's Electron supervisor closes the PTY parent-side and uses `process.kill(-pid, 'SIGTERM')` (negative-pid → process group) to terminate the PTY tree. PR-B's integration test exit-cleanup assertion only verifies that the bin process itself exits 0; orphan-PTY cleanup is PR-D's territory. Matches the [[feedback_lazy_reconciliation_over_shutdown_hooks]] memory — SIGKILL/OOM/panic skip this path; `list_sessions` reconciles the cache on next launch.
 7. **Stderr for logs, stdout protocol-owned.** Logger initialized in the bin to stderr only; no `println!` anywhere in `src-tauri/src/`. Smoke test (from repo root): `(cd src-tauri && cargo build --bin vimeflow-backend) && echo '<bad input>' | src-tauri/target/debug/vimeflow-backend --app-data-dir /tmp/vimeflow-smoke` must produce zero corruption on the stdout stream — any log line that reaches stdout is a bug.
 8. **Tauri host still works.** `npm run tauri:dev` opens the existing app and exercises every flow exactly as it does today. PR-B doesn't touch `src/`, doesn't touch `package.json`, and the only edit to `src-tauri/src/lib.rs` is non-mandatory — the new module is registered in `src-tauri/src/runtime/mod.rs` via `pub mod ipc;` (which `lib.rs` already re-exports via `pub mod runtime;`).
 9. **Test semantic parity.** For each `#[tauri::command]` wrapper today, PR-B adds one integration-style test that drives the bin via stdio and asserts the response payload matches what `BackendState::<method>()` returns in-process — _semantically_, not byte-for-byte. Nondeterministic fields like `pid` from `spawn_pty` are asserted by type/shape; deterministic fields (paths, names, error messages) are asserted by value. Event-sequence parity: a recorded `StdoutEventSink` trace from the IPC test must match the `FakeEventSink::recorded()` order from the in-process test. The Tauri-bound parity tests from PR-A stay green; PR-B adds a parallel set covering the IPC path.
@@ -74,7 +74,7 @@ The migration roadmap (`docs/superpowers/plans/2026-05-13-electron-rust-backend-
 | 11  | No protocol version handshake in v1                                                                                     | YAGNI — there is no v2 to negotiate against yet. The natural place for `?protocol=v2` negotiation is the binary-PTY hot path (PR-A Decision #4's v2). Adding a handshake now would lock a shape we don't yet know we want. Rejected: a `hello` exchange on connect.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | 12  | No `agent-detected` / `agent-disconnected` events on the wire                                                           | PR-A §5 confirmed those remain frontend-poll-only. PR-B emits the eight events PR-A already wires: `pty-data`, `pty-exit`, `pty-error`, `agent-status`, `agent-tool-call`, `agent-turn`, `test-run`, `git-status-changed`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 13  | Bad-frame behavior — error response only when the body deserializes as `InboundFrame::Request`                          | Four cases. (a) Bytes don't form a valid `Content-Length: N\r\n\r\n` header: codec resyncs up to RESYNC_BUDGET_BYTES (64 KiB); on exhaustion, returns `FatalBadHeader` and `run` exits 1. Resyncable-noise lines are logged + skipped. (b) Header OK but body fails `serde_json::from_slice::<InboundFrame>` (malformed JSON, wrong `kind`, missing `id` or `method`): log to stderr, skip — we don't extract an id from a non-parseable envelope. (c) Body deserializes as `InboundFrame::Request` (so `id` and `method` are both valid), but `params` decoding fails: return `{"kind":"response","id":"<id>","ok":false,"error":"params: <reason>"}`. (d) Same as (c) but `method` is unknown: same error shape, error message `"unknown method: <name>"`. Smoke test (Goal 7) hits case (a) — expects stderr lines + non-zero exit, never corrupted stdout. |
-| 14  | Each request is `tokio::spawn`'d; `CancellationToken` aborts them all on EOF                                            | The IO reader task spawns one Tokio task per parsed request frame; the spawned task owns its `Arc<BackendState>` clone and the writer-Mutex Arc. EOF on stdin triggers `cancel_token.cancel()`; spawned tasks check the token between awaits where cancellation makes sense (most just complete quickly anyway). No drain timeout in v1 — Electron has stopped listening, so unfinished responses go to a dropped writer; the writes log a warning and return. PR-D's Electron-main supervisor is the right place for a drain-timeout policy if it ever becomes needed.                                                                                                                                                                                                                                                                                        |
+| 14  | Each request handler is tracked and drained on clean EOF                                                                | The IO reader task inserts one Tokio task per parsed request frame into a `JoinSet`; the spawned task owns its `Arc<BackendState>` clone and stdout sender clone. EOF on stdin stops accepting new requests, then awaits the `JoinSet` so already-accepted requests can queue responses before the writer drains. Fatal protocol/runtime errors still trigger `cancel_token.cancel()` so spawned tasks short-circuit at await points while the process exits non-zero. PR-D's Electron-main supervisor owns the outer shutdown timeout if a backend method runs long.                                                                                                                                                                                                                                                                                          |
 
 ---
 
@@ -271,10 +271,10 @@ pub async fn run<R: AsyncRead + Unpin + Send>(
     cancel: CancellationToken,
 ) -> Result<(), io::Error> {
     // 1. Loop: read_frame from reader; on Eof → break; on BadHeader → log + continue.
-    // 2. Per frame: serde_json::from_slice into RequestFrame; spawn task to dispatch+respond.
+    // 2. Per frame: serde_json::from_slice into RequestFrame; track a task to dispatch+respond.
     //    The spawned task captures tx.clone(), state.clone(), cancel.clone().
-    // 3. On EOF: cancel.cancel() so spawned tasks abort their awaits cleanly.
-    // 4. drop the final `tx` clone (held by `run`) — writer task exits when all clones drop.
+    // 3. On EOF: await tracked handlers so accepted requests can queue responses.
+    // 4. Drop the final `tx` clone (held by `run`) — writer task exits when all clones drop.
     Ok(())
 }
 
@@ -663,6 +663,7 @@ use std::sync::Arc;
 use std::io;
 use tokio::io::{AsyncRead, BufReader};
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::runtime::BackendState;
@@ -674,11 +675,12 @@ pub async fn run<R: AsyncRead + Unpin + Send>(
     cancel: CancellationToken,
 ) -> Result<(), io::Error> {
     let mut buf_reader = BufReader::new(reader);
+    let mut handlers = JoinSet::new();
 
     loop {
         match frame::read_frame(&mut buf_reader).await {
             Ok(Some(body)) => {
-                spawn_handler(state.clone(), tx.clone(), cancel.clone(), body);
+                spawn_handler(&mut handlers, state.clone(), tx.clone(), cancel.clone(), body);
             }
             Ok(None) => break, // Clean stdin EOF.
             Err(frame::FrameError::ResyncableBadHeader(msg)) => {
@@ -697,9 +699,9 @@ pub async fn run<R: AsyncRead + Unpin + Send>(
         }
     }
 
-    // EOF reached on stdin. Cancel in-flight handlers; they observe `cancel.cancelled()`
-    // at their next await point and short-circuit without sending a response.
-    cancel.cancel();
+    // EOF reached on stdin. Already-accepted handlers finish naturally so their
+    // response frames can be sent before the clean shutdown path drops tx.
+    while handlers.join_next().await.is_some() {}
 
     // Drop the final tx clone held by `run`. The writer task's recv() returns None
     // when all senders drop; it then exits. main()'s join handle on writer_task
@@ -708,12 +710,13 @@ pub async fn run<R: AsyncRead + Unpin + Send>(
 }
 
 fn spawn_handler(
+    handlers: &mut JoinSet<()>,
     state: Arc<BackendState>,
     tx: UnboundedSender<Vec<u8>>,
     cancel: CancellationToken,
     body: Vec<u8>,
 ) {
-    tokio::spawn(async move {
+    handlers.spawn(async move {
         // Parse the tagged envelope. Invalid JSON or wrong `kind` → log + return
         // (no id to respond to). InboundFrame enforces `kind == "request"`.
         let mut req: RequestFrame = match serde_json::from_slice::<InboundFrame>(&body) {
@@ -920,7 +923,7 @@ PR-D's `electron/main.ts` spawns the bin. PR-B guarantees:
 - **CLI:** `vimeflow-backend --app-data-dir <path>`. The path argument is required; passing other flags produces a stderr message and exit code 2.
 - **Stdio:** stdin = request frames, stdout = response + event frames, stderr = `env_logger` output (level configurable via the `RUST_LOG` env var, default `warn`).
 - **Exit codes:** `0` clean (stdin EOF); `1` runtime error (`FatalBadHeader`, `BodyTooLarge`, IO failure); `2` invalid argv. PR-D's supervisor MAY use these to differentiate respawn-worthy crashes (1) from configuration bugs (2).
-- **Shutdown:** Electron main closes stdin → bin sees EOF → bin runs the `state.shutdown()` path (clean EOF only) → bin exits 0 within `~250ms` IF no long-running BackendState method is in flight. The CancellationToken aborts at await points, but methods that use `tokio::task::spawn_blocking` (some git operations, filesystem walks) cannot be aborted mid-blocking-call — they run to their natural completion before the bin exits. For an idle bin, expect <250ms; for a bin mid-`get_git_diff` on a large repo, expect up to the natural method duration (typically <1s; large repos can be longer). PR-D's supervisor SHOULD give the bin a generous shutdown window (e.g. 5s) before sending SIGTERM, and only escalate to SIGKILL on supervisor timeout.
+- **Shutdown:** Electron main closes stdin → bin sees EOF → bin awaits already-accepted request handlers → bin runs the `state.shutdown()` path (clean EOF only) → bin exits 0 within `~250ms` IF no long-running BackendState method is in flight. Clean EOF does not cancel handlers because queued responses are still part of the accepted-request contract. Fatal protocol/runtime errors do cancel through `CancellationToken`; methods that use `tokio::task::spawn_blocking` (some git operations, filesystem walks) still run to their natural completion if already inside the blocking section. For an idle bin, expect <250ms; for a bin mid-`get_git_diff` on a large repo, expect up to the natural method duration (typically <1s; large repos can be longer). PR-D's supervisor SHOULD give the bin a generous shutdown window (e.g. 5s) before sending SIGTERM, and only escalate to SIGKILL on supervisor timeout.
 
 ### 5.3 — Integration-test helper API (consumed by PR-D, optional)
 
