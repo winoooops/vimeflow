@@ -3,6 +3,7 @@
 //! `FakeEventSink`.
 
 pub mod event_sink;
+pub mod ipc;
 pub mod state;
 pub mod tauri_bridge;
 
