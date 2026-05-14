@@ -14,6 +14,7 @@ use crate::runtime::event_sink::EventSink;
 
 const HANDLER_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const WRITER_DRAIN_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_CONCURRENT_HANDLERS: usize = 64;
 
 pub const STDOUT_QUEUE_CAPACITY: usize = 1024;
 
@@ -662,6 +663,12 @@ async fn run_with_handler_drain_timeout<R: AsyncRead + Unpin + Send>(
 
         match frame {
             Ok(Some(body)) => {
+                drain_finished_handlers(&mut handlers);
+                if handlers.len() >= MAX_CONCURRENT_HANDLERS {
+                    send_overload_response(&tx, &cancel, &body).await;
+                    continue;
+                }
+
                 spawn_handler(
                     &mut handlers,
                     state.clone(),
@@ -669,7 +676,6 @@ async fn run_with_handler_drain_timeout<R: AsyncRead + Unpin + Send>(
                     cancel.clone(),
                     body,
                 );
-                drain_finished_handlers(&mut handlers);
             }
             Ok(None) => {
                 wait_for_handlers(&mut handlers, handler_drain_timeout, &cancel).await;
@@ -728,7 +734,7 @@ fn spawn_handler(
                         }
                     };
 
-                    send_response_frame(&tx, &id, body).await;
+                    send_response_frame(&tx, &id, body, &cancel).await;
                 }
                 return;
             }
@@ -762,8 +768,37 @@ fn spawn_handler(
             },
         };
 
-        send_response_frame(&tx, &req.id, body).await;
+        send_response_frame(&tx, &req.id, body, &cancel).await;
     });
+}
+
+async fn send_overload_response(tx: &Sender<Vec<u8>>, cancel: &CancellationToken, body: &[u8]) {
+    let Some(id) = recover_bad_request_id_from_body(body) else {
+        log::warn!("ipc overloaded; dropping request without recoverable id");
+        return;
+    };
+
+    let response = match serde_json::to_vec(&ResponseFrame::err(&id, "server overloaded")) {
+        Ok(response) => response,
+        Err(err) => {
+            log::error!("ipc overload response encode failed (id={id}): {err}");
+            return;
+        }
+    };
+
+    send_response_frame(tx, &id, response, cancel).await;
+}
+
+fn recover_bad_request_id_from_body(body: &[u8]) -> Option<String> {
+    let value = match serde_json::from_slice(body) {
+        Ok(value) => value,
+        Err(err) => {
+            log::warn!("ipc overloaded; bad envelope: {err}");
+            return None;
+        }
+    };
+
+    recover_bad_request_id(&value)
 }
 
 fn recover_bad_request_id(value: &Value) -> Option<String> {
@@ -774,8 +809,20 @@ fn recover_bad_request_id(value: &Value) -> Option<String> {
     value.get("id").and_then(Value::as_str).map(str::to_owned)
 }
 
-async fn send_response_frame(tx: &Sender<Vec<u8>>, id: &str, body: Vec<u8>) {
-    if let Err(err) = tx.send(frame::format_frame(&body)).await {
+async fn send_response_frame(
+    tx: &Sender<Vec<u8>>,
+    id: &str,
+    body: Vec<u8>,
+    cancel: &CancellationToken,
+) {
+    let framed = frame::format_frame(&body);
+    let result = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return,
+        result = tx.send(framed) => result,
+    };
+
+    if let Err(err) = result {
         log::warn!("ipc response send failed (id={id}): {err}");
     }
 }
@@ -1529,6 +1576,58 @@ mod tests {
         assert!(
             !matches!(response, Ok(Some(_))),
             "timed-out handler should not send a response: {response:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_rejects_requests_above_concurrent_handler_cap() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(128);
+        let cancel = tokio_util::sync::CancellationToken::new();
+
+        let (read_end, mut write_end) = tokio::io::duplex(64 * 1024);
+        let run_handle = tokio::spawn(super::run_with_handler_drain_timeout(
+            state,
+            read_end,
+            tx,
+            cancel.clone(),
+            std::time::Duration::from_millis(30),
+        ));
+
+        for i in 0..super::MAX_CONCURRENT_HANDLERS {
+            let frame = make_request_frame(
+                &format!("slow-{i}"),
+                "__test_sleep_then_null",
+                serde_json::json!({"delayMs": 500}),
+            );
+            write_end.write_all(&frame).await.expect("write slow frame");
+        }
+
+        let overflow = make_request_frame(
+            "overflow",
+            "__test_sleep_then_null",
+            serde_json::json!({"delayMs": 1}),
+        );
+        write_end
+            .write_all(&overflow)
+            .await
+            .expect("write overflow");
+        drop(write_end);
+
+        let resp = recv_response(&mut rx).await;
+        assert_eq!(resp["kind"], "response");
+        assert_eq!(resp["id"], "overflow");
+        assert_eq!(resp["ok"], false);
+        assert_eq!(resp["error"], "server overloaded");
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), run_handle)
+            .await
+            .expect("run timeout")
+            .expect("run task")
+            .expect("run ok");
+        assert!(
+            cancel.is_cancelled(),
+            "drain timeout should cancel slow handlers"
         );
     }
 
