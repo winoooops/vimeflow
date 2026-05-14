@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { invoke, listen } from '../../../lib/backend'
 import { getPtySessionId } from '../../terminal/ptySessionMap'
 import type {
   AgentDetectedEvent,
@@ -354,12 +353,12 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
 
       const unlistenStatus = await listen<AgentStatusEvent>(
         'agent-status',
-        (event) => {
-          if (event.payload.sessionId !== resolvePtyId()) {
+        (payload) => {
+          if (payload.sessionId !== resolvePtyId()) {
             return
           }
 
-          const p = event.payload
+          const p = payload
 
           setStatus((prev) => ({
             ...prev,
@@ -428,13 +427,13 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
 
       const unlistenToolCall = await listen<AgentToolCallEvent>(
         'agent-tool-call',
-        (event) => {
+        (payload) => {
           const ptyId = getPtySessionId(sessionId)
-          if (event.payload.sessionId !== ptyId) {
+          if (payload.sessionId !== ptyId) {
             return
           }
 
-          const p = event.payload
+          const p = payload
 
           if (p.status === 'running') {
             setStatus((prev) => ({
@@ -493,15 +492,15 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
 
       const unlistenTurn = await listen<AgentTurnEvent>(
         'agent-turn',
-        (event) => {
-          if (event.payload.sessionId !== resolvePtyId()) {
+        (payload) => {
+          if (payload.sessionId !== resolvePtyId()) {
             return
           }
 
           // numTurns is u32 in the Rust binding — fits safely in JS number,
           // no Number() coercion needed (those are reserved for u64/i64
           // fields where serde-json may emit values past Number.MAX_SAFE_INTEGER).
-          const nextTurns = event.payload.numTurns
+          const nextTurns = payload.numTurns
 
           setStatus((prev) => ({
             ...prev,
@@ -524,14 +523,14 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       // batch from session start would lose the snapshot entirely.
       const unlistenTestRun = await listen<TestRunSnapshot>(
         'test-run',
-        (event) => {
-          if (event.payload.sessionId !== resolvePtyId()) {
+        (payload) => {
+          if (payload.sessionId !== resolvePtyId()) {
             return
           }
 
           setStatus((prev) => ({
             ...prev,
-            testRun: event.payload,
+            testRun: payload,
           }))
         }
       )

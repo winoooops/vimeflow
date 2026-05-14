@@ -1,16 +1,13 @@
 import { describe, test, expect, beforeEach, vi, type Mock } from 'vitest'
 import { TauriTerminalService } from './tauriTerminalService'
+import { invoke } from '../../../lib/backend'
 
-// Mock @tauri-apps/api/core
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-}))
-
-// Mock @tauri-apps/api/event — capture listener callbacks for testing
-type EventCallback = (event: { payload: unknown }) => void
+// Mock backend bridge — capture listener callbacks for testing.
+type EventCallback = (payload: unknown) => void
 const eventListeners = new Map<string, EventCallback[]>()
 
-vi.mock('@tauri-apps/api/event', () => ({
+vi.mock('../../../lib/backend', () => ({
+  invoke: vi.fn(),
   listen: vi.fn(
     (eventName: string, callback: EventCallback): Promise<() => void> => {
       const existing = eventListeners.get(eventName) ?? []
@@ -33,11 +30,8 @@ vi.mock('@tauri-apps/api/event', () => ({
  */
 const emitTauriEvent = (eventName: string, payload: unknown): void => {
   const callbacks = eventListeners.get(eventName) ?? []
-  callbacks.forEach((cb) => cb({ payload }))
+  callbacks.forEach((cb) => cb(payload))
 }
-
-// Import after mocks are set up
-const { invoke } = await import('@tauri-apps/api/core')
 
 /** Mock invoke to return a spawn response, then spawn a session */
 const mockSpawnAndInit = async (
@@ -425,8 +419,8 @@ describe('TauriTerminalService', () => {
     // step lets PTY events fire into the void during the listen() roundtrip.
     test('F1 regression: onData await blocks until underlying listen attaches', async () => {
       // Re-import the listen mock so we can stall it
-      const eventModule = await import('@tauri-apps/api/event')
-      const listenMock = vi.mocked(eventModule.listen)
+      const backendModule = await import('../../../lib/backend')
+      const listenMock = vi.mocked(backendModule.listen)
 
       // Stall the first three listen() calls (one per event: pty-data, pty-exit, pty-error)
       // by deferring their resolution until we explicitly release them.
@@ -461,7 +455,7 @@ describe('TauriTerminalService', () => {
         }
       }
       listenMock.mockImplementation(
-        stalledImpl as unknown as typeof eventModule.listen
+        stalledImpl as unknown as typeof backendModule.listen
       )
 
       try {

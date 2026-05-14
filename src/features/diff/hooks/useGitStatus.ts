@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke, listen, type UnlistenFn } from '../../../lib/backend'
 import { createGitService } from '../services/gitService'
 import type { ChangedFile } from '../types'
 
@@ -133,10 +132,10 @@ export const useGitStatus = (
         // Step 1: Attach event listener BEFORE starting watcher (race-free)
         const unlisten = await listen<GitStatusChangedPayload>(
           'git-status-changed',
-          (event) => {
+          (payload) => {
             // Only refresh if this cwd is in the fan-out list
             // cspell:disable-next-line
-            if (event.payload.cwds.includes(cwd)) {
+            if (payload.cwds.includes(cwd)) {
               refresh()
             }
           }

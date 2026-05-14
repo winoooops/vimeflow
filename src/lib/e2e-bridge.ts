@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './backend'
 import { getAllPtySessionIds } from '../features/terminal/ptySessionMap'
 
 const isVisible = (el: HTMLElement): boolean => {

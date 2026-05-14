@@ -1,5 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { invoke, listen, type UnlistenFn } from '../../../lib/backend'
 import type {
   PTYSpawnParams,
   PTYSpawnResult,
@@ -56,8 +55,8 @@ export class TauriTerminalService implements ITerminalService {
     }
 
     this.initPromise = (async (): Promise<void> => {
-      const unlistenData = await listen<PtyDataEvent>('pty-data', (event) => {
-        const { sessionId, data, offsetStart, byteLen } = event.payload
+      const unlistenData = await listen<PtyDataEvent>('pty-data', (payload) => {
+        const { sessionId, data, offsetStart, byteLen } = payload
 
         // PtyDataEvent.offset_start and .byte_len are u64 — bindings may emit
         // as bigint or number. Coerce to number; safe up to 2^53 = ~9 PB per
@@ -68,15 +67,15 @@ export class TauriTerminalService implements ITerminalService {
         this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset, len))
       })
 
-      const unlistenExit = await listen<PtyExitEvent>('pty-exit', (event) => {
-        const { sessionId, code } = event.payload
+      const unlistenExit = await listen<PtyExitEvent>('pty-exit', (payload) => {
+        const { sessionId, code } = payload
         this.exitCallbacks.forEach((cb) => cb(sessionId, code))
       })
 
       const unlistenError = await listen<PtyErrorEvent>(
         'pty-error',
-        (event) => {
-          const { sessionId, message } = event.payload
+        (payload) => {
+          const { sessionId, message } = payload
           this.errorCallbacks.forEach((cb) => cb(sessionId, message))
         }
       )

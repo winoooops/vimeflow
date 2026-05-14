@@ -3,17 +3,14 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { useGitStatus } from './useGitStatus'
 import { mockChangedFiles } from '../data/mockDiff'
 
-// Mock Tauri APIs
+// Mock backend bridge
 const mockInvoke = vi.fn()
 const mockListen = vi.fn()
 const mockUnlisten = vi.fn()
 
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock('../../../lib/backend', () => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   invoke: (...args: unknown[]): any => mockInvoke(...args),
-}))
-
-vi.mock('@tauri-apps/api/event', () => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   listen: (...args: unknown[]): any => mockListen(...args),
 }))
@@ -212,16 +209,12 @@ describe('useGitStatus', () => {
     // cspell:disable-next-line
     test('refreshes when event cwds includes current cwd', async (): Promise<void> => {
       // cspell:disable-next-line
-      let eventHandler:
-        | ((event: { payload: { cwds: string[] } }) => void)
-        | null = null
+      let eventHandler: ((payload: { cwds: string[] }) => void) | null = null
 
       mockListen.mockImplementation(
         (_event: string, handler: unknown): Promise<typeof mockUnlisten> => {
           // cspell:disable-next-line
-          eventHandler = handler as (event: {
-            payload: { cwds: string[] }
-          }) => void
+          eventHandler = handler as (payload: { cwds: string[] }) => void
 
           return Promise.resolve(mockUnlisten)
         }
@@ -240,7 +233,7 @@ describe('useGitStatus', () => {
 
       // Fire event with matching cwd
       // cspell:disable-next-line
-      eventHandler!({ payload: { cwds: ['/home/test/project'] } })
+      eventHandler!({ cwds: ['/home/test/project'] })
 
       await waitFor(() => {
         // refresh() was called, files re-fetched
@@ -251,16 +244,12 @@ describe('useGitStatus', () => {
     // cspell:disable-next-line
     test('does not refresh when event cwds does not include current cwd', async (): Promise<void> => {
       // cspell:disable-next-line
-      let eventHandler:
-        | ((event: { payload: { cwds: string[] } }) => void)
-        | null = null
+      let eventHandler: ((payload: { cwds: string[] }) => void) | null = null
 
       mockListen.mockImplementation(
         (_event: string, handler: unknown): Promise<typeof mockUnlisten> => {
           // cspell:disable-next-line
-          eventHandler = handler as (event: {
-            payload: { cwds: string[] }
-          }) => void
+          eventHandler = handler as (payload: { cwds: string[] }) => void
 
           return Promise.resolve(mockUnlisten)
         }
@@ -279,7 +268,7 @@ describe('useGitStatus', () => {
 
       // Fire event with different cwd
       // cspell:disable-next-line
-      eventHandler!({ payload: { cwds: ['/other/project'] } })
+      eventHandler!({ cwds: ['/other/project'] })
 
       // Should not trigger refresh (loading stays false)
       expect(result.current.loading).toBe(initialLoading)
@@ -288,16 +277,12 @@ describe('useGitStatus', () => {
     // cspell:disable-next-line
     test('shared-watcher fan-out (multiple cwds in one event)', async (): Promise<void> => {
       // cspell:disable-next-line
-      let eventHandler:
-        | ((event: { payload: { cwds: string[] } }) => void)
-        | null = null
+      let eventHandler: ((payload: { cwds: string[] }) => void) | null = null
 
       mockListen.mockImplementation(
         (_event: string, handler: unknown): Promise<typeof mockUnlisten> => {
           // cspell:disable-next-line
-          eventHandler = handler as (event: {
-            payload: { cwds: string[] }
-          }) => void
+          eventHandler = handler as (payload: { cwds: string[] }) => void
 
           return Promise.resolve(mockUnlisten)
         }
@@ -316,7 +301,7 @@ describe('useGitStatus', () => {
       // cspell:disable-next-line
       eventHandler!({
         // cspell:disable-next-line
-        payload: { cwds: ['/home/test/repo/src/a', '/home/test/repo/src/b'] },
+        cwds: ['/home/test/repo/src/a', '/home/test/repo/src/b'],
       })
 
       await waitFor(() => {

@@ -1,9 +1,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../../../lib/backend'
 import { useGitBranch } from './useGitBranch'
 
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock('../../../lib/backend', () => ({
   invoke: vi.fn(),
 }))
 

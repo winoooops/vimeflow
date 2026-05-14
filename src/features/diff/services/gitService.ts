@@ -1,6 +1,7 @@
-import { invoke } from '@tauri-apps/api/core'
 import type { ChangedFile, FileDiff } from '../types'
 import { mockChangedFiles, mockFileDiffs } from '../data/mockDiff'
+import { invoke } from '../../../lib/backend'
+import { isDesktop } from '../../../lib/environment'
 
 /** Git service interface for diff operations */
 export interface GitService {
@@ -176,8 +177,8 @@ export const createGitService = (cwd = '.'): GitService => {
     return new MockGitService()
   }
 
-  // Check if running under Tauri
-  if ('__TAURI_INTERNALS__' in window) {
+  // Check if running on the desktop host (Tauri today, Electron in PR-D)
+  if (isDesktop()) {
     return new TauriGitService(cwd)
   }
 
