@@ -296,7 +296,15 @@ mod frame {
                 if name.trim().eq_ignore_ascii_case("Content-Length") {
                     match value.trim().parse::<usize>() {
                         Ok(len) => {
-                            content_length = Some(len);
+                            match content_length {
+                                Some(existing) if existing != len => {
+                                    return Err(FrameError::FatalBadHeader(format!(
+                                        "conflicting content-length headers: {existing} and {len}"
+                                    )));
+                                }
+                                Some(_) => {}
+                                None => content_length = Some(len),
+                            }
                             continue;
                         }
                         Err(err) => {
@@ -1088,6 +1096,25 @@ mod tests {
         let mut reader = make_reader(&input);
         let got = frame::read_frame(&mut reader).await.expect("ok");
         assert_eq!(got.as_deref(), Some(body.as_slice()));
+    }
+
+    #[tokio::test]
+    async fn read_frame_rejects_conflicting_duplicate_content_length() {
+        for (first_len, second_len) in [(5, 3), (3, 5)] {
+            let mut input = Vec::new();
+            input.extend_from_slice(format!("Content-Length: {first_len}\r\n").as_bytes());
+            input.extend_from_slice(format!("Content-Length: {second_len}\r\n\r\n").as_bytes());
+            input.extend_from_slice(b"hello");
+
+            let mut reader = make_reader(&input);
+            let err = frame::read_frame(&mut reader).await.expect_err("err");
+            match err {
+                frame::FrameError::FatalBadHeader(msg) => {
+                    assert!(msg.contains("conflicting content-length"), "got {msg}");
+                }
+                other => panic!("expected FatalBadHeader, got {other:?}"),
+            }
+        }
     }
 
     #[tokio::test]
