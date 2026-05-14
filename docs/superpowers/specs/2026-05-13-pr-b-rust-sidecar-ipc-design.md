@@ -983,3 +983,5 @@ After this spec is codex-reviewed (Step 8) and approved, invoke `superpowers:wri
 TDD per task: red test → green implementation → refactor → commit behind the watermark trailers `/lifeline:upsource-review` consumes (`Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`).
 
 PR-C's planner run is next (the renderer side). PR-D's planner run is after PR-C merges.
+
+<!-- codex-reviewed: 2026-05-14T02:23:41Z -->
