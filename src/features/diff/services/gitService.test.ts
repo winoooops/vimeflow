@@ -424,18 +424,6 @@ describe('createGitService', () => {
     }
   })
 
-  test('returns TauriGitService when isDesktop() is true (via vimeflow)', () => {
-    vi.stubEnv('MODE', 'development')
-    mockedIsDesktop.mockReturnValue(true)
-    try {
-      const service = createGitService('/test/path')
-
-      expect(service).toBeInstanceOf(TauriGitService)
-    } finally {
-      vi.unstubAllEnvs()
-    }
-  })
-
   test('returns HttpGitService in development mode without desktop host', () => {
     vi.stubEnv('MODE', 'development')
     mockedIsDesktop.mockReturnValue(false)

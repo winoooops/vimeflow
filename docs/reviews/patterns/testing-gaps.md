@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-12
-ref_count: 22
+last_updated: 2026-05-14
+ref_count: 23
 ---
 
 # Testing Gaps
@@ -489,3 +489,12 @@ filesystem scope restrictions).
 - **Finding:** `readPaneBuffer` in `src/lib/e2e-bridge.ts` gained a new focused-wrapper-first lookup path in PR #199 cycle 2 (for multi-pane disambiguation), but the module had no co-located test file. Component-level tests verified that `data-focused="true"` is correctly set on the active pane's wrapper, but nothing tested that `readPaneBuffer` itself scopes its `.xterm-rows` query to the focused wrapper. If `data-focused` is transiently absent (between a `pane.active` flip and the next React commit), the fallback queries the whole subtree and returns the first `.xterm-rows` — potentially the wrong pane's buffer — and any E2E spec asserting agent output could pass on stale data. The module had been an exception to the project's co-located-test rule because it's gated by `if (import.meta.env.VITE_E2E)` at the bottom, but the read functions themselves are pure DOM helpers and trivially testable in jsdom.
 - **Fix:** Exported `readPaneBuffer` (small comment notes it's for unit-testing — production goes through `readVisibleTerminalBuffer` / `readTerminalBufferForSession`). Created `src/lib/e2e-bridge.test.ts` with a `buildSessionWrapper(paneTexts, activeIndex)` helper that builds the post-5b DOM shape via `document.createElement`, then 5 tests covering: multi-pane focused-buffer selection, single-pane fallback, defensive no-`data-focused` fallback to first-in-DOM, empty-string when no `.xterm-rows`, and the pty-id-lookup path (called with a `split-view-slot` directly). Code-review heuristic: VITE_E2E-gated entry-point doesn't excuse the unit-testable PURE-FUNCTION helpers below it — extract and test them.
 - **Commit:** _(see git log for the cycle-5 fix commit on PR #199)_
+
+### 49. Duplicate test name claimed runtime-signal coverage while the mock bypassed it
+
+- **Source:** github-claude | PR #208 round 1 | 2026-05-14
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/services/gitService.test.ts`
+- **Finding:** The factory test named `returns TauriGitService when isDesktop() is true (via vimeflow)` was byte-for-byte identical to the preceding `isDesktop() is true` test. Because the suite mocked `isDesktop`, the test never set `window.vimeflow` and never exercised the real OR-detection branch it claimed to cover.
+- **Fix:** Removed the duplicate factory test and kept the actual `window.vimeflow` signal coverage in `src/lib/environment.test.ts`. Code-review heuristic: when a test name includes a specific runtime signal ("via vimeflow", "via Tauri", "via env"), the body must manipulate that signal or call the real helper that observes it; otherwise the test is only duplicate branch coverage with a misleading title.
+- **Commit:** _(see git log for the PR #208 round-1 fix commit)_
