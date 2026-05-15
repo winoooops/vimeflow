@@ -21,7 +21,7 @@
 - `electron/main.ts` — Electron entry. App lifecycle, `BrowserWindow`, sidecar orchestration, `ipcMain.handle('backend:invoke')` with envelope, event fan-out to `webContents.send('backend:event')`.
 - `electron/preload.ts` — Sole `contextBridge.exposeInMainWorld('vimeflow', { invoke, listen })` call. Unwraps the `{ ok, result, error }` envelope and throws bare `error` strings.
 - `electron/sidecar.ts` — Deep module. Owns child process, frame codec (LSP `Content-Length` with PR-B parity), pending-request map, listener registry, exit/spawn-error/stderr handling, `shutdown()`.
-- `electron/sidecar.test.ts` — Vitest unit suite. 12 tests covering codec, invoke/response, exit/disabled, events, fatal limits, spawn error, shutdown.
+- `electron/sidecar.test.ts` — Vitest unit suite. 16 tests covering codec, invoke/response, exit/disabled, events, fatal limits, spawn error, stderr drain, shutdown.
 - `electron/ipc-channels.ts` — Two channel-name constants (`BACKEND_INVOKE`, `BACKEND_EVENT`).
 - `electron/tsconfig.json` — Stand-alone CommonJS `noEmit` config (IDE + `tsc -p electron/tsconfig.json` for type-check).
 
