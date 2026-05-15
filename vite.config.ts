@@ -1,6 +1,7 @@
 import path from 'path'
 import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import electron from 'vite-plugin-electron/simple'
 import simpleGit from 'simple-git'
 import { parse as parseDiffText } from 'diff2html'
 import { fileApiPlugin } from './vite-plugin-files'
@@ -587,22 +588,66 @@ function readBody(
 }
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   // Tauri serves embedded production assets from its app protocol, so emitted
   // asset URLs must be relative instead of rooted at `/`.
   base: './',
-  plugins: [react(), gitApiPlugin(), fileApiPlugin()],
+  plugins: [
+    react(),
+    gitApiPlugin(),
+    fileApiPlugin(),
+    ...(mode === 'electron'
+      ? [
+          electron({
+            main: {
+              entry: 'electron/main.ts',
+              onstart: ({ startup }) => {
+                void startup(['.'])
+              },
+              vite: {
+                build: {
+                  outDir: 'dist-electron',
+                  rollupOptions: {
+                    output: {
+                      format: 'cjs',
+                      entryFileNames: '[name].cjs',
+                    },
+                  },
+                },
+              },
+            },
+            preload: {
+              input: 'electron/preload.ts',
+              vite: {
+                build: {
+                  outDir: 'dist-electron',
+                  rollupOptions: {
+                    output: {
+                      format: 'cjs',
+                      entryFileNames: '[name].cjs',
+                    },
+                  },
+                },
+              },
+            },
+          }),
+        ]
+      : []),
+  ],
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },
   server: {
+    port: 5173,
+    strictPort: true,
     watch: {
       ignored: [
         '**/.vimeflow/**',
         '**/target/**',
         '**/.codex*/**',
         '**/.git/**',
+        '**/dist-electron/**',
       ],
     },
   },
-})
+}))
