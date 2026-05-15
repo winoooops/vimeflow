@@ -39,11 +39,9 @@ async fn main() {
 
     let run_result = ipc::run(state.clone(), tokio::io::stdin(), tx, cancel.clone()).await;
 
-    // Only clean EOF is graceful. Protocol/runtime failures preserve the cache
-    // so the next launch can lazy-reconcile old sessions as restartable entries.
-    if run_result.is_ok() {
-        state.shutdown();
-    }
+    // The IPC run loop clears cache only after an explicit host shutdown frame.
+    // Plain EOF can also mean the Electron parent crashed or was force-killed,
+    // so EOF must preserve sessions for next-launch reconciliation.
     drop(state);
 
     writer_shutdown.cancel();

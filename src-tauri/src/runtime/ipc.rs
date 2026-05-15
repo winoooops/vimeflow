@@ -740,6 +740,12 @@ async fn run_with_handler_drain_timeout<R: AsyncRead + Unpin + Send>(
         match frame {
             Ok(Some(body)) => {
                 drain_finished_handlers(&mut handlers);
+                if is_shutdown_frame(&body) {
+                    wait_for_handlers(&mut handlers, handler_drain_timeout).await;
+                    state.shutdown();
+                    return Ok(());
+                }
+
                 if handlers.len() >= MAX_CONCURRENT_HANDLERS {
                     send_overload_response(&tx, &cancel, &body).await;
                     continue;
@@ -833,6 +839,14 @@ fn spawn_handler(
 
         send_response_frame(&tx, &req.id, body, &cancel).await;
     });
+}
+
+fn is_shutdown_frame(body: &[u8]) -> bool {
+    let Ok(value) = serde_json::from_slice::<Value>(body) else {
+        return false;
+    };
+
+    value.get("kind").and_then(Value::as_str) == Some("shutdown")
 }
 
 async fn send_overload_response(tx: &Sender<Vec<u8>>, cancel: &CancellationToken, body: &[u8]) {

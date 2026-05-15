@@ -12,14 +12,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const BINARY_NAME =
   process.platform === 'win32' ? 'vimeflow-backend.exe' : 'vimeflow-backend'
 
-const SIDECAR_BIN = path.resolve(
-  __dirname,
-  '..',
-  'src-tauri',
-  'target',
-  'debug',
-  BINARY_NAME
-)
+const resolveSidecarBin = (): string => {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'bin', BINARY_NAME)
+  }
+
+  return path.resolve(
+    __dirname,
+    '..',
+    'src-tauri',
+    'target',
+    'debug',
+    BINARY_NAME
+  )
+}
 
 interface BackendInvokePayload {
   method: string
@@ -81,7 +87,7 @@ const setupApp = async (): Promise<void> => {
   await app.whenReady()
 
   const spawnedSidecar = spawnSidecar({
-    binary: SIDECAR_BIN,
+    binary: resolveSidecarBin(),
     appDataDir: app.getPath('userData'),
   })
 

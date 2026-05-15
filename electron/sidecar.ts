@@ -253,6 +253,11 @@ export const createSidecar = (
     disable(`sidecar spawn failed: ${err.message}`)
   })
 
+  child.stdin.on('error', (err: Error) => {
+    errStream.write(`[sidecar stdin error] ${err.message}\n`)
+    disable(`sidecar stdin failed: ${err.message}`)
+  })
+
   child.on('exit', (code, signal) => {
     exited = true
 
@@ -330,6 +335,7 @@ export const createSidecar = (
         }
 
         child.on('exit', finalize)
+        child.stdin.write(encode({ kind: 'shutdown' }))
         child.stdin.end()
 
         sigterm = setTimeout(() => {

@@ -167,6 +167,16 @@ describe('Sidecar exit handling', () => {
     expect(stdinSpy).not.toHaveBeenCalled()
     await expect(sidecar.shutdown()).resolves.toBeUndefined()
   })
+
+  test('stdin error drains pending invokes without an unhandled stream error', async () => {
+    const { mock, sidecar } = makeSidecar()
+    const promise = sidecar.invoke('m')
+
+    mock.stdin.emit('error', new Error('EPIPE'))
+
+    await expect(promise).rejects.toBe('sidecar stdin failed: EPIPE')
+    await expect(sidecar.invoke('again')).rejects.toBe('backend unavailable')
+  })
 })
 
 describe('Sidecar onEvent', () => {
@@ -294,15 +304,24 @@ describe('Sidecar shutdown', () => {
     await expect(promise).rejects.toBe('app quitting')
   })
 
-  test('shutdown closes stdin and resolves on cooperative exit', async () => {
+  test('shutdown sends explicit frame, closes stdin, and resolves on cooperative exit', async () => {
     vi.useFakeTimers()
 
     try {
       const { mock, sidecar } = makeSidecar()
+      const chunks: Buffer[] = []
       const endSpy = vi.spyOn(mock.stdin, 'end')
+
+      mock.stdin.on('data', (chunk: Buffer) => {
+        chunks.push(Buffer.from(chunk))
+      })
+
       const shutdownPromise = sidecar.shutdown()
 
       expect(endSpy).toHaveBeenCalled()
+      expect(Buffer.concat(chunks).toString('utf8')).toContain(
+        '"kind":"shutdown"'
+      )
 
       mock.emit('exit', 0, null)
 

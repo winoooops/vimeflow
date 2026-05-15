@@ -4,6 +4,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
+use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -22,7 +23,10 @@ struct IpcClient {
 
 impl IpcClient {
     fn spawn() -> Self {
-        let app_data_dir = tempfile::tempdir().expect("tempdir");
+        Self::spawn_in(tempfile::tempdir().expect("tempdir"))
+    }
+
+    fn spawn_in(app_data_dir: TempDir) -> Self {
         let mut child = Command::new(BIN)
             .args([
                 "--app-data-dir",
@@ -126,6 +130,15 @@ impl IpcClient {
 
     fn close_stdin(&mut self) {
         drop(self.stdin.take());
+    }
+
+    fn send_shutdown(&mut self) {
+        let body = serde_json::to_vec(&json!({"kind": "shutdown"})).expect("encode");
+        let header = format!("Content-Length: {}\r\n\r\n", body.len());
+        let stdin = self.stdin_mut();
+        stdin.write_all(header.as_bytes()).expect("write header");
+        stdin.write_all(&body).expect("write body");
+        stdin.flush().expect("flush");
     }
 
     fn wait_exit(
@@ -238,6 +251,31 @@ fn wait_for_read(deadline: Instant, context: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn seed_live_session_cache(cache_path: &Path) {
+    let seeded_cache = json!({
+        "version": 1,
+        "active_session_id": "ghost",
+        "session_order": ["ghost"],
+        "sessions": {
+            "ghost": {
+                "cwd": "/tmp",
+                "created_at": "2026-05-14T00:00:00Z",
+                "exited": false,
+                "last_exit_code": null
+            }
+        }
+    });
+    std::fs::write(
+        cache_path,
+        serde_json::to_vec(&seeded_cache).expect("encode cache"),
+    )
+    .expect("seed cache");
+}
+
+fn read_cache(cache_path: &Path) -> Value {
+    serde_json::from_slice(&std::fs::read(cache_path).expect("read cache")).expect("parse cache")
+}
+
 #[test]
 fn list_sessions_returns_response_with_id_round_trip() {
     let mut client = IpcClient::spawn();
@@ -287,10 +325,12 @@ fn bad_kind_envelope_drops_no_response_without_desyncing() {
 }
 
 #[test]
-fn eof_triggers_clean_exit_zero() {
-    let mut client = IpcClient::spawn();
-    let resp = client.send_request("list_sessions", json!({}));
-    assert_eq!(resp["ok"], true);
+fn eof_exits_zero_and_preserves_session_cache_for_reconciliation() {
+    let app_data_dir = tempfile::tempdir().expect("tempdir");
+    let cache_path = app_data_dir.path().join("sessions.json");
+    seed_live_session_cache(&cache_path);
+    let mut client = IpcClient::spawn_in(app_data_dir);
+
     client.close_stdin();
 
     let status = client
@@ -298,6 +338,41 @@ fn eof_triggers_clean_exit_zero() {
         .expect("wait")
         .expect("exited");
     assert!(status.success(), "expected exit 0, got {status:?}");
+
+    let cache = read_cache(&cache_path);
+    assert!(
+        cache["sessions"]
+            .as_object()
+            .expect("sessions")
+            .contains_key("ghost"),
+        "EOF should preserve cache for next-launch reconciliation: {cache}"
+    );
+    assert_eq!(cache["session_order"], json!(["ghost"]));
+    assert_eq!(cache["active_session_id"], "ghost");
+}
+
+#[test]
+fn explicit_shutdown_frame_clears_session_cache() {
+    let app_data_dir = tempfile::tempdir().expect("tempdir");
+    let cache_path = app_data_dir.path().join("sessions.json");
+    seed_live_session_cache(&cache_path);
+    let mut client = IpcClient::spawn_in(app_data_dir);
+
+    client.send_shutdown();
+
+    let status = client
+        .wait_exit(Duration::from_secs(2))
+        .expect("wait")
+        .expect("exited");
+    assert!(status.success(), "expected exit 0, got {status:?}");
+
+    let cache = read_cache(&cache_path);
+    assert!(
+        cache["sessions"].as_object().expect("sessions").is_empty(),
+        "explicit shutdown should clear sessions: {cache}"
+    );
+    assert_eq!(cache["session_order"], json!([]));
+    assert_eq!(cache["active_session_id"], Value::Null);
 }
 
 #[test]
@@ -352,24 +427,7 @@ fn garbage_input_does_not_corrupt_stdout() {
 fn error_exit_preserves_session_cache_for_reconciliation() {
     let app_data_dir = tempfile::tempdir().expect("tempdir");
     let cache_path = app_data_dir.path().join("sessions.json");
-    let seeded_cache = json!({
-        "version": 1,
-        "active_session_id": "ghost",
-        "session_order": ["ghost"],
-        "sessions": {
-            "ghost": {
-                "cwd": "/tmp",
-                "created_at": "2026-05-14T00:00:00Z",
-                "exited": false,
-                "last_exit_code": null
-            }
-        }
-    });
-    std::fs::write(
-        &cache_path,
-        serde_json::to_vec(&seeded_cache).expect("encode cache"),
-    )
-    .expect("seed cache");
+    seed_live_session_cache(&cache_path);
 
     let mut child = Command::new(BIN)
         .args([
@@ -392,8 +450,7 @@ fn error_exit_preserves_session_cache_for_reconciliation() {
     let output = child.wait_with_output().expect("wait");
     assert!(!output.status.success(), "expected protocol error exit");
 
-    let cache: Value = serde_json::from_slice(&std::fs::read(cache_path).expect("read cache"))
-        .expect("parse cache");
+    let cache = read_cache(&cache_path);
     assert!(
         cache["sessions"]
             .as_object()
