@@ -124,7 +124,17 @@ src-tauri/target/debug/vimeflow-backend  (binary unchanged from PR-B)
 
 - `electron/main.ts` — Electron entry.
   - App lifecycle:
-    - `app.whenReady` — spawn sidecar + create window concurrently.
+    - `app.whenReady` — three-step ordered sequence to avoid the
+      early-invoke race:
+      1. `const sidecar = spawnSidecar({ binary: SIDECAR_BIN, appDataDir: app.getPath('userData') })`.
+      2. **Register `ipcMain.handle(BACKEND_INVOKE, ...)` and
+         `sidecar.onEvent(...)` BEFORE step 3.** This guarantees that
+         a renderer firing `window.vimeflow.invoke` immediately on
+         page load has a handler ready on the main side; the sidecar
+         child has already started reading stdin so the request frame
+         is buffered cleanly.
+      3. `createWindow()` → `BrowserWindow` instance →
+         `browserWindow.loadURL(devURL)`.
     - `before-quit` — gate the quit on the async shutdown using
       `event.preventDefault()` + a `quitting` flag. The full pattern
       is required because Electron does NOT await async listeners
@@ -305,7 +315,7 @@ src-tauri/target/debug/vimeflow-backend  (binary unchanged from PR-B)
   `"type-check": "tsc -b && tsc -p electron/tsconfig.json"`. This
   way every `.ts` file in the repo is type-checked exactly once.
 
-### Modified (4 files)
+### Modified (5 files)
 
 - `package.json`:
   - Add `devDependencies`: `electron`, `vite-plugin-electron` (the
@@ -438,6 +448,10 @@ src-tauri/target/debug/vimeflow-backend  (binary unchanged from PR-B)
   drop because `electron/main.ts` and `electron/preload.ts` are not
   unit-tested. Note: this repo uses a separate `vitest.config.ts` (not
   `vite.config.ts`'s `test` block) — edits MUST go in that file.
+- `package-lock.json` — Auto-updated by `npm install` when adding the
+  new `electron` and `vite-plugin-electron` devDependencies. Must be
+  committed alongside the `package.json` edit so CI's `npm ci` stays
+  in sync. No hand edits — let `npm install` regenerate.
 
 ### Files NOT touched
 
@@ -490,14 +504,23 @@ needed:
       `vimeflow-backend` with `--app-data-dir` → opens BrowserWindow
       at `http://localhost:5173`.
 
-**Shutdown:** the cleanest stop is Ctrl+C in the terminal running
-`vite --mode electron` — vite-plugin-electron's cleanup hook then
-SIGTERMs the child Electron process, which fires `before-quit` and
-runs the sidecar shutdown path. On Linux and Windows, closing the
-BrowserWindow alone also takes the whole tree down (the
-`window-all-closed` handler calls `app.quit()`). On macOS, per
-platform UX, closing the window leaves Electron running — Cmd+Q (or
-Ctrl+C in the dev terminal) is required to fully exit.
+**Shutdown:** the cleanest stop fires `before-quit` so the sidecar
+runs `state.shutdown()` and wipes the session cache:
+
+- **Linux / Windows**: close the BrowserWindow — `window-all-closed`
+  calls `app.quit()` → `before-quit` → 5500 ms drain → exit.
+- **macOS**: press Cmd+Q (closing the window alone leaves Electron
+  running per platform UX) — also fires `before-quit`.
+
+Ctrl+C in the dev terminal is the **emergency stop**, not the clean
+path: `vite-plugin-electron`'s cleanup hook tree-kills the Electron
+process tree (it does not send a request to quit), so `before-quit`
+NEVER fires and the sidecar receives SIGHUP/SIGTERM mid-flight
+without going through `state.shutdown()`. The session cache file is
+preserved on disk (un-modified), and PR-A's lazy-reconciliation in
+`list_sessions` flips its entries to Exited on the next launch —
+recoverable but not clean. Prefer the window-close / Cmd+Q paths
+above when shutting down between iterations.
 
 ### 3.2 — vite-plugin-electron output behavior
 
@@ -778,16 +801,22 @@ Two layers of malformedness must be distinguished:
 
 1. **Frame-codec-level malformed** (§4.3): the byte stream itself
    violates the `Content-Length` framing — missing header, non-numeric
-   length, oversize frame, header section overflow. These are
-   **fatal**: drain pending, mark `disabled`, log to stderr. The
-   dispatcher never sees these — they trip in the decoder first.
+   length, oversize frame, header section overflow, JSON parse failure
+   on the body. These are **fatal**: drain pending, mark `disabled`,
+   log to stderr. The dispatcher never sees these — they trip in the
+   decoder first.
 
 2. **Frame-body-level malformed** (this section): the bytes framed
-   cleanly and JSON-parsed, but the body shape doesn't match a known
-   variant. These are **non-fatal warnings** — log + skip the frame.
-   The router has already validated structure on the sidecar side,
-   so the only way to reach this branch is a protocol-version skew
-   or a bug we want to be tolerant of rather than crash for.
+   cleanly AND the body JSON-parsed, but the parsed object shape
+   doesn't match a known variant. The default for this layer is
+   **non-fatal** (log + skip the frame) — the router has already
+   validated structure on the sidecar side, so the only way to reach
+   this branch is a protocol-version skew or a bug we want to be
+   tolerant of rather than crash for. **Exception:** missing
+   top-level `id` or `ok` on a `kind: 'response'` frame IS fatal
+   (drain + disable), because we cannot settle the corresponding
+   pending invoke without `id` — leaving it pending would hang the
+   caller forever. The table below makes this exhaustive.
 
 For each parsed frame:
 
@@ -825,7 +854,22 @@ For UNKNOWN frame kinds (`kind` neither `'response'` nor `'event'`):
   additions" path. Router-validated shapes on the sidecar side mean
   this branch should never fire in practice.
 
-### 4.6 — Exit and spawn-error handling
+### 4.6 — Stderr drainage and exit/spawn-error handling
+
+**Stderr drainage (required, not optional):** the constructor MUST
+attach a `data` listener to `child.stderr` and forward each chunk to
+the configured `stderr` stream (or `process.stderr` by default):
+
+```ts
+child.stderr?.on('data', (chunk: Buffer) =>
+  (options.stderr ?? process.stderr).write(chunk)
+)
+```
+
+Without this, the sidecar's stderr pipe buffer (~64 KB on Linux)
+will fill once `env_logger` produces enough output, and the sidecar
+blocks on its next `stderr.write` — silently bricking the backend
+with no visible error. The pipe MUST be drained continuously.
 
 Three paths feed the disable/drain machinery:
 
