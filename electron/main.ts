@@ -54,6 +54,19 @@ const packagedContentSecurityPolicy = [
 
 const devContentSecurityPolicy = [
   "default-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+  "script-src 'self' 'unsafe-eval' http://localhost:* http://127.0.0.1:*",
+  "style-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
+  "img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*",
+  "font-src 'self' data: http://localhost:* http://127.0.0.1:*",
+  "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+].join('; ')
+
+// E2E adds 'unsafe-inline' to script-src so @wdio/electron-service /
+// chromedriver can inject its inline bootstrap script into the renderer.
+// Scoped to isE2eRuntime() (env or --vimeflow-e2e CLI arg) so regular
+// `npm run electron:dev` keeps the stricter dev CSP.
+const devE2eContentSecurityPolicy = [
+  "default-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
   "script-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
   "style-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
   "img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*",
@@ -66,6 +79,10 @@ const installContentSecurityPolicy = (): void => {
     return
   }
 
+  const csp = isE2eRuntime()
+    ? devE2eContentSecurityPolicy
+    : devContentSecurityPolicy
+
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const responseHeaders = Object.fromEntries(
       Object.entries(details.responseHeaders ?? {}).filter(
@@ -76,7 +93,7 @@ const installContentSecurityPolicy = (): void => {
     callback({
       responseHeaders: {
         ...responseHeaders,
-        'Content-Security-Policy': [devContentSecurityPolicy],
+        'Content-Security-Policy': [csp],
       },
     })
   })

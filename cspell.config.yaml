@@ -92,6 +92,8 @@ words:
   - WDIO
   - WebdriverIO
   - webdriver
+  - chromedriver
+  - mkdtemp
 
   # Terminal / PTY
   - tput
