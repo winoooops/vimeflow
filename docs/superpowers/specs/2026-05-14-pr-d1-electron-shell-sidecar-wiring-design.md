@@ -196,11 +196,28 @@ src-tauri/target/debug/vimeflow-backend  (binary unchanged from PR-B)
     elsewhere. `__dirname` is `dist-electron/`, so the resolved path
     points at the cargo dev-target. Production (`process.resourcesPath`)
     resolution is deferred to PR-D3 (packaging).
+  - **ESM `__dirname` derivation:** the bundled main is ESM
+    (`dist-electron/main.js`), so the CommonJS global `__dirname` is
+    not defined. `main.ts` must derive it explicitly near the top
+    of the file:
+
+    ```ts
+    import path from 'node:path'
+    import { fileURLToPath } from 'node:url'
+    const __dirname = path.dirname(fileURLToPath(import.meta.url))
+    ```
+
+    Without this, every `path.join(__dirname, …)` call throws
+    `ReferenceError: __dirname is not defined in ES module scope`
+    and Electron crashes during `app.whenReady`.
+
   - `BrowserWindow` config: 1400×900, min 800×600, title "Vimeflow",
     resizable (matches `src-tauri/tauri.conf.json`).
     `webPreferences`: `contextIsolation: true`, `nodeIntegration: false`,
-    `sandbox: true`, `preload: path.join(__dirname, 'preload.cjs')`
-    (relative to `dist-electron/main.cjs` after bundling). Dev:
+    `sandbox: true`, `preload: path.join(__dirname, 'preload.mjs')`
+    (relative to `dist-electron/main.js` after bundling — and
+    `__dirname` is derived from `import.meta.url` because the
+    bundled main is ESM; see §4 implementation note). Dev:
     `loadURL('http://localhost:5173')`; production-equivalent
     `loadFile(path.join(__dirname, '..', 'dist', 'index.html'))` is
     wired up but exercised by PR-D3's packaging smoke — Tauri remains
@@ -289,25 +306,35 @@ src-tauri/target/debug/vimeflow-backend  (binary unchanged from PR-B)
   `BACKEND_EVENT = 'backend:event'`.
 - `electron/tsconfig.json` — IDE / language-server + type-check
   config (`noEmit: true`). Stand-alone (does NOT extend
-  `../tsconfig.json` — the root uses
-  `moduleResolution: "bundler" + module: "ESNext"`, which is
-  incompatible with the CommonJS module mode required for the
-  Electron main/preload outputs). Explicit options:
-  `target: "es2022"`, `module: "commonjs"`,
-  `moduleResolution: "node"` (the only resolution compatible with
-  `commonjs`), `strict: true`, `noEmit: true`, `esModuleInterop: true`,
-  `skipLibCheck: true`, `types: ["node"]`,
+  `../tsconfig.json` — the root has `noEmit` interaction quirks with
+  project references; a flat config keeps the Electron build path
+  independent). Explicit options:
+  `target: "es2022"`, `module: "esnext"`,
+  `moduleResolution: "bundler"` (Vite-aligned; allows
+  `import.meta.url` and pass-through `.ts` extensions without
+  requiring `.js` suffixes on relative imports), `strict: true`,
+  `noEmit: true`, `esModuleInterop: true`, `skipLibCheck: true`,
+  `isolatedModules: true`, `types: ["node"]`,
   `include: ["./**/*.ts"]` (test files included — they need
   type-checking even though `vite-plugin-electron`'s bundler ignores
-  them). The
-  actual JavaScript output is produced by `vite-plugin-electron`
-  (Rollup), which is configured to emit CommonJS via
-  `vite: { build: { rollupOptions: { output: { format: 'cjs', entryFileNames: '[name].cjs' } } } }`
-  for both `main.ts` and `preload.ts` entries. The `.cjs` extension
-  is load-bearing under the root `"type": "module"` package: it
-  lets Electron load the bundled main/preload as CommonJS without
-  needing Electron 30+ ESM main-process support, and without
-  polluting the renderer's ESM resolution.
+  them). The actual JavaScript output is produced by
+  `vite-plugin-electron`, whose defaults under root
+  `package.json:type=module` emit:
+  - **`dist-electron/main.js`** as ESM (Electron 28+ supports an ESM
+    main process when `type=module`; the bundled module uses
+    top-level `import` and is loaded directly by Electron).
+  - **`dist-electron/preload.mjs`** with CJS-style content
+    (`require('electron')`) — the plugin's deliberate convention for
+    preload scripts under sandbox + contextIsolation, and Electron's
+    preload loader handles this special case.
+
+  Custom `build.lib` / `rollupOptions.output` configs to force CJS
+  are NOT used: `vite.mergeConfig` concatenates `lib.formats` arrays
+  rather than replacing them, so a `formats: ['cjs']` override is
+  merged into `['es', 'cjs']`, producing dual builds that overwrite
+  each other into a hybrid output (top-level `import` + `__commonJS`
+  wrapper + `export default` tail) which parses as neither ESM nor
+  CJS. Accepting the plugin defaults is the supported path.
 
   Because root `tsconfig.json:include = ["src"]` deliberately
   excludes `electron/**` (the renderer build path must not see Node
@@ -327,8 +354,10 @@ src-tauri/target/debug/vimeflow-backend  (binary unchanged from PR-B)
     process compiles `main.ts`, starts the renderer dev server, then
     spawns Electron pointed at the dev URL once the renderer is
     ready).
-  - Add `"main": "dist-electron/main.cjs"` (top-level field — Electron
-    reads this when launched as `electron .`).
+  - Add `"main": "dist-electron/main.js"` (top-level field — Electron
+    reads this when launched as `electron .`). The `.js` extension
+    pairs with root `package.json:type=module` and Electron loads
+    the file as ESM.
   - Add scripts:
     - `"electron:dev": "npm run backend:build && vite --mode electron"`
     - `"backend:build": "cd src-tauri && cargo build --bin vimeflow-backend"`
@@ -367,6 +396,15 @@ src-tauri/target/debug/vimeflow-backend  (binary unchanged from PR-B)
          ...(mode === 'electron'
            ? [
                electron({
+                 // Use vite-plugin-electron/simple defaults. With root
+                 // package.json:type=module, the plugin emits
+                 // dist-electron/main.js (ESM) and
+                 // dist-electron/preload.mjs (CJS-content). Custom
+                 // build.lib / rollupOptions.output configs to force CJS
+                 // fight the plugin defaults because mergeConfig
+                 // concatenates `lib.formats` arrays, producing dual
+                 // overwriting builds. Accept the defaults; the only
+                 // override needed is the `onstart` sandbox patch.
                  main: {
                    entry: 'electron/main.ts',
                    // Drop --no-sandbox from the plugin's default
@@ -376,31 +414,11 @@ src-tauri/target/debug/vimeflow-backend  (binary unchanged from PR-B)
                    onstart: ({ startup }) => {
                      void startup(['.'])
                    },
-                   vite: {
-                     build: {
-                       outDir: 'dist-electron',
-                       rollupOptions: {
-                         output: {
-                           format: 'cjs',
-                           entryFileNames: '[name].cjs',
-                         },
-                       },
-                     },
-                   },
+                   vite: { build: { outDir: 'dist-electron' } },
                  },
                  preload: {
                    input: 'electron/preload.ts',
-                   vite: {
-                     build: {
-                       outDir: 'dist-electron',
-                       rollupOptions: {
-                         output: {
-                           format: 'cjs',
-                           entryFileNames: '[name].cjs',
-                         },
-                       },
-                     },
-                   },
+                   vite: { build: { outDir: 'dist-electron' } },
                  },
                }),
              ]
@@ -432,8 +450,8 @@ src-tauri/target/debug/vimeflow-backend  (binary unchanged from PR-B)
 
   3. The plugin's dev-mode auto-launch handles the run-Electron step,
      replacing the `concurrently` + `wait-on` + `electron .` chain.
-     Build-output paths and `package.json:main` (`dist-electron/main.cjs`)
-     stay aligned via the rollup output config above.
+     Build-output paths and `package.json:main` (`dist-electron/main.js`)
+     stay aligned with the plugin's ESM defaults.
 
   Keep `base: './'` (already set). No alias / build-target changes to
   the renderer half.
@@ -494,13 +512,18 @@ needed:
 3. **Vite step** — `vite --mode electron` reads `vite.config.ts`,
    sees `mode === 'electron'`, loads the `vite-plugin-electron/simple`
    plugin. The plugin:
-   1. Bundles `electron/main.ts` → `dist-electron/main.cjs`.
-   2. Bundles `electron/preload.ts` → `dist-electron/preload.cjs`.
+   1. Bundles `electron/main.ts` → `dist-electron/main.js` (ESM —
+      see §3.2 / §2 `electron/tsconfig.json` for why we accept the
+      plugin's ESM default rather than forcing CJS).
+   2. Bundles `electron/preload.ts` → `dist-electron/preload.mjs`
+      (CJS-content under an `.mjs` extension — the plugin's
+      deliberate convention for preload scripts; Electron's preload
+      loader handles this special case).
    3. Starts the renderer dev server on `http://localhost:5173`
       (Vite's standard pipeline, `strictPort: true`).
    4. Once both bundled outputs are written AND the dev server is
       listening, the plugin spawns `electron .`. Electron reads
-      `package.json:main` → `dist-electron/main.cjs` → spawns
+      `package.json:main` → `dist-electron/main.js` → spawns
       `vimeflow-backend` with `--app-data-dir` → opens BrowserWindow
       at `http://localhost:5173`.
 
@@ -524,20 +547,43 @@ above when shutting down between iterations.
 
 ### 3.2 — vite-plugin-electron output behavior
 
-`vite-plugin-electron` runs Vite/Rollup once for each entry to produce
-`dist-electron/main.cjs` and `dist-electron/preload.cjs`. In dev mode
-(`vite` + `electron:dev`), the plugin watches `electron/**/*.ts` and
-rebuilds on change. By default, when `main.ts` changes the plugin
-restarts the Electron process; when `preload.ts` changes the plugin
-reloads the affected renderer windows. Both are appropriate for our
-case — we do not need to override the plugin's restart/reload behavior
-in PR-D1.
+`vite-plugin-electron` runs Vite/Rollup once for each entry. With root
+`package.json:type=module`, its defaults produce:
 
-The plugin output is CommonJS (`format: 'cjs'`, `entryFileNames:
-'[name].cjs'`) so Electron can load `main.cjs` directly. The `.cjs`
-extension overrides the parent `package.json:type = "module"` on a
-per-file basis, so we do NOT need a `dist-electron/package.json`
-override.
+- **`dist-electron/main.js`** — ESM module loaded directly by
+  Electron 28+ (which honors `package.json:type=module` for the main
+  process). The bundled file uses top-level `import` for `electron`
+  and `node:*` externals. `__dirname` is not defined in ESM scope,
+  so `electron/main.ts` derives it via
+  `path.dirname(fileURLToPath(import.meta.url))` (see §4 main.ts
+  contract).
+- **`dist-electron/preload.mjs`** — CJS-content
+  (`"use strict"; const electron = require("electron")…`) but with
+  `.mjs` extension. The plugin emits this combination on purpose
+  for preload under sandbox + contextIsolation: Electron's preload
+  loader handles `.mjs`-with-`require` specially. Do not try to
+  rename the extension to `.cjs` — the plugin's preload pipeline
+  rewrites it back.
+
+In dev mode (`vite` + `electron:dev`), the plugin watches
+`electron/**/*.ts` and rebuilds on change. By default, when
+`main.ts` changes the plugin restarts the Electron process; when
+`preload.ts` changes the plugin reloads the affected renderer
+windows. Both are appropriate for our case — we do not need to
+override the plugin's restart/reload behavior in PR-D1.
+
+**Why not force CJS via `build.lib.formats: ['cjs']` or
+`rollupOptions.output.format: 'cjs'`?** Vite's `mergeConfig` deep-merges
+arrays by concatenation, not replacement. The plugin's internal default
+sets `lib.formats: ['es']` (under `type=module`) and our `['cjs']` is
+appended to `['es', 'cjs']`, producing two builds for the same entry
+that race to write the same path. The result is a hybrid file (top-level
+`import` for externals, `__commonJS` factory wrapper for user code, and
+`export default require_main();` tail) that parses as neither ESM nor
+CJS — observed in PR-D1 implementation: `SyntaxError: Cannot use import
+statement outside a module` followed (after a `.cjs`→`.mjs` rename
+attempt) by `SyntaxError: Unexpected token '}'` on the trailing
+`export default`. Accepting the plugin's defaults is the supported path.
 
 ### 3.3 — Vitest discovery for `electron/sidecar.test.ts`
 
@@ -1184,8 +1230,8 @@ Expected timeline:
    warm).
 2. Vite dev server starts on `http://localhost:5173`.
 3. Vite-plugin-electron bundles `electron/main.ts` and
-   `electron/preload.ts` → `dist-electron/main.cjs`,
-   `dist-electron/preload.cjs`.
+   `electron/preload.ts` → `dist-electron/main.js`,
+   `dist-electron/preload.mjs`.
 4. Electron BrowserWindow opens at 1400×900 with title "Vimeflow".
 
 Within the window, exercise the renderer's full feature surface and

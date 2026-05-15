@@ -4,7 +4,7 @@
 
 **Goal:** Add Electron as a parallel desktop runtime to Tauri. Spawn the existing `vimeflow-backend` sidecar from `electron/main.ts`, expose `window.vimeflow.invoke` / `.listen` via `electron/preload.ts`'s `contextBridge`, and let PR-C's renderer bridge auto-route through the sidecar IPC path. Tauri stays alive — `npm run tauri:dev` and the new `npm run electron:dev` both work side-by-side.
 
-**Architecture:** Three new files under `electron/`: a `Sidecar` deep module (`sidecar.ts`) owning the child process, LSP-framed stdout reader, pending-request map, and listener registry; a preload script (`preload.ts`) exposing a 2-method `contextBridge` allowlist; a main process (`main.ts`) wiring `ipcMain.handle` to `sidecar.invoke` (envelope-wrapped, never rethrows) and `sidecar.onEvent` to `webContents.send`. Build path: `vite-plugin-electron/simple` gated by `mode === 'electron'` produces `dist-electron/main.cjs` + `dist-electron/preload.cjs` (CommonJS so Electron loads them under the root `"type": "module"` package).
+**Architecture:** Three new files under `electron/`: a `Sidecar` deep module (`sidecar.ts`) owning the child process, LSP-framed stdout reader, pending-request map, and listener registry; a preload script (`preload.ts`) exposing a 2-method `contextBridge` allowlist; a main process (`main.ts`) wiring `ipcMain.handle` to `sidecar.invoke` (envelope-wrapped, never rethrows) and `sidecar.onEvent` to `webContents.send`. Build path: `vite-plugin-electron/simple` gated by `mode === 'electron'` produces `dist-electron/main.js` (ESM under root `package.json:type=module`) and `dist-electron/preload.mjs` (CJS-content with .mjs extension — the plugin's deliberate preload convention; Electron's preload loader handles this special case). `main.ts` derives `__dirname` from `import.meta.url` because the bundled main is ESM.
 
 **Tech Stack:** Electron (latest stable major), `vite-plugin-electron` (the `/simple` API), TypeScript 5, Vitest. No new renderer-side dependencies. The sidecar binary `vimeflow-backend` lands unchanged from PR-B.
 
@@ -23,11 +23,11 @@
 - `electron/sidecar.ts` — Deep module. Owns child process, frame codec (LSP `Content-Length` with PR-B parity), pending-request map, listener registry, exit/spawn-error/stderr handling, `shutdown()`.
 - `electron/sidecar.test.ts` — Vitest unit suite. 16 tests covering codec, invoke/response, exit/disabled, events, fatal limits, spawn error, stderr drain, shutdown.
 - `electron/ipc-channels.ts` — Two channel-name constants (`BACKEND_INVOKE`, `BACKEND_EVENT`).
-- `electron/tsconfig.json` — Stand-alone CommonJS `noEmit` config (IDE + `tsc -p electron/tsconfig.json` for type-check).
+- `electron/tsconfig.json` — Stand-alone ESM-aligned `noEmit` config (`module: esnext`, `moduleResolution: bundler` — allows `import.meta.url` for ESM `__dirname` derivation in `main.ts`). IDE + `tsc -p electron/tsconfig.json` for type-check.
 
 ### Modified (5 files)
 
-- `package.json` — Add devDeps (`electron`, `vite-plugin-electron`), `main: "dist-electron/main.cjs"`, scripts (`electron:dev`, `backend:build`), modify `type-check` to chain electron tsconfig.
+- `package.json` — Add devDeps (`electron`, `vite-plugin-electron`), `main: "dist-electron/main.js"`, scripts (`electron:dev`, `backend:build`), modify `type-check` to chain electron tsconfig.
 - `vite.config.ts` — Additive: import + conditionally append `vite-plugin-electron/simple` plugin under `mode === 'electron'`; add `server.strictPort` and `server.watch.ignored` entry for `dist-electron`. ALL existing plugins/keys preserved verbatim.
 - `.gitignore` — Add `dist-electron/`.
 - `vitest.config.ts` — Add `electron/main.ts` and `electron/preload.ts` to `coverage.exclude`.
@@ -114,7 +114,7 @@ This adds two entries under `devDependencies` and regenerates `package-lock.json
 
 - [ ] **Step 2: Add the top-level `"main"` field**
 
-Edit `package.json`. Add `"main": "dist-electron/main.cjs"` next to the existing `"type": "module"` entry:
+Edit `package.json`. Add `"main": "dist-electron/main.js"` next to the existing `"type": "module"` entry. The `.js` extension under `type: "module"` makes Electron load main as ESM (supported in Electron 28+):
 
 ```jsonc
 {
@@ -122,7 +122,7 @@ Edit `package.json`. Add `"main": "dist-electron/main.cjs"` next to the existing
   "version": "0.1.0",
   // …
   "type": "module",
-  "main": "dist-electron/main.cjs", // ADDED
+  "main": "dist-electron/main.js", // ADDED
   "engines": { "node": ">=22" },
   // …
 }
@@ -163,7 +163,7 @@ chore(deps): add electron + vite-plugin-electron devDeps for PR-D1
 
 Adds the desktop runtime and bundler dependencies that PR-D1's
 electron/ files will consume. Also adds the `main` field pointing at
-the (not-yet-built) dist-electron/main.cjs and two new scripts:
+the (not-yet-built) dist-electron/main.js and two new scripts:
 - electron:dev: build sidecar binary, then run vite --mode electron
 - backend:build: cargo build --bin vimeflow-backend
 
@@ -194,14 +194,14 @@ modification + verification together.
 mkdir -p electron
 ```
 
-- [ ] **Step 2: Create `electron/tsconfig.json` (stand-alone, CommonJS)**
+- [ ] **Step 2: Create `electron/tsconfig.json` (stand-alone, ESM)**
 
 ```jsonc
 {
   "compilerOptions": {
     "target": "es2022",
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "lib": ["es2022"],
     "strict": true,
     "noEmit": true,
@@ -214,18 +214,20 @@ mkdir -p electron
 }
 ```
 
-This does NOT extend `../tsconfig.json` — the root uses `moduleResolution: "bundler"` which is incompatible with `commonjs`. The `noEmit` keeps tsc check-only; actual bundling is done by `vite-plugin-electron` (Task 13).
+Stand-alone (does NOT extend `../tsconfig.json`). `module: "esnext"` + `moduleResolution: "bundler"` are Vite-aligned and allow `import.meta.url` (needed for the ESM `__dirname` derivation in `electron/main.ts` because the bundled main is ESM). `noEmit: true` keeps `tsc` check-only; actual bundling is done by `vite-plugin-electron` (Task 13).
 
 - [ ] **Step 3: Commit (config only — script change comes in Task 3)**
 
 ```bash
 git add electron/tsconfig.json
 git commit -m "$(cat <<'EOF'
-chore(electron): add stand-alone CommonJS tsconfig for electron/
+chore(electron): add stand-alone tsconfig for electron/
 
-Stand-alone CommonJS noEmit config (the root tsconfig's
-moduleResolution: 'bundler' is incompatible with module: 'commonjs'
-that Electron main/preload need).
+Stand-alone ESM-aligned noEmit config (module: esnext,
+moduleResolution: bundler) so import.meta.url is allowed.
+`electron/main.ts` needs it to derive __dirname in ESM scope,
+because vite-plugin-electron bundles main as ESM (main.js) under
+root package.json:type=module.
 
 The `npm run type-check` script is NOT modified in this commit —
 running `tsc -p electron/tsconfig.json` against an empty directory
@@ -1336,8 +1338,13 @@ EOF
 
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
+
+// __dirname is not defined in ESM. vite-plugin-electron bundles main.ts
+// as ESM (main.js) under root package.json:type=module, so derive it.
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const BINARY_NAME =
   process.platform === 'win32' ? 'vimeflow-backend.exe' : 'vimeflow-backend'
@@ -1365,7 +1372,7 @@ const createWindow = (): void => {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(__dirname, 'preload.mjs'),
     },
   })
   const devURL = process.env.VITE_DEV_SERVER_URL
@@ -1513,6 +1520,18 @@ Inside the `plugins: [ ... ]` array, after all existing entries, add:
 ...(mode === 'electron'
   ? [
       electron({
+        // Use vite-plugin-electron/simple defaults. With root
+        // package.json:type=module, the plugin emits
+        // dist-electron/main.js (ESM) and dist-electron/preload.mjs
+        // (CJS-content under .mjs — the plugin's intentional preload
+        // convention; Electron's preload loader handles it).
+        // Custom build.lib / rollupOptions.output configs to force
+        // CJS are NOT used: Vite's mergeConfig concatenates
+        // `lib.formats` arrays, so a `['cjs']` override gets merged
+        // into `['es', 'cjs']`, producing dual builds that overwrite
+        // each other into a hybrid output. Accept the plugin's
+        // defaults; the only override needed is the onstart sandbox
+        // patch on main.
         main: {
           entry: 'electron/main.ts',
           // Drop --no-sandbox from the plugin's default startup so
@@ -1521,31 +1540,11 @@ Inside the `plugins: [ ... ]` array, after all existing entries, add:
           onstart: ({ startup }) => {
             void startup(['.'])
           },
-          vite: {
-            build: {
-              outDir: 'dist-electron',
-              rollupOptions: {
-                output: {
-                  format: 'cjs',
-                  entryFileNames: '[name].cjs',
-                },
-              },
-            },
-          },
+          vite: { build: { outDir: 'dist-electron' } },
         },
         preload: {
           input: 'electron/preload.ts',
-          vite: {
-            build: {
-              outDir: 'dist-electron',
-              rollupOptions: {
-                output: {
-                  format: 'cjs',
-                  entryFileNames: '[name].cjs',
-                },
-              },
-            },
-          },
+          vite: { build: { outDir: 'dist-electron' } },
         },
       }),
     ]
@@ -1582,11 +1581,14 @@ feat(vite): add vite-plugin-electron under --mode electron
 Conditionally appends vite-plugin-electron/simple when mode is
 'electron'. Renderer-only path (npm run dev) stays unaffected.
 
-Plugin output: dist-electron/main.cjs + dist-electron/preload.cjs
-via rollupOptions.output.format = 'cjs'. The CommonJS .cjs
-extension overrides the root package's "type": "module" on a
-per-file basis so Electron can load main/preload without needing
-ESM main-process support.
+Plugin output (vite-plugin-electron/simple defaults under root
+package.json:type=module): dist-electron/main.js (ESM, loaded by
+Electron 28+'s ESM main-process support) and
+dist-electron/preload.mjs (CJS-content with .mjs extension — the
+plugin's deliberate preload convention; Electron's preload loader
+handles it). Custom build.lib / rollupOptions.output configs are
+NOT used (mergeConfig concatenates lib.formats arrays and produces
+hybrid output).
 
 onstart override removes --no-sandbox from the plugin's default
 startup args so production sandbox parity is preserved in dev.
@@ -1694,7 +1696,7 @@ Then:
 npm run electron:dev
 ```
 
-Wait for: cargo build (~30-60s cold), Vite dev server on 5173, vite-plugin-electron bundles `dist-electron/main.cjs` + `dist-electron/preload.cjs`, Electron BrowserWindow opens at 1400×900 with title "Vimeflow".
+Wait for: cargo build (~30-60s cold), Vite dev server on 5173, vite-plugin-electron bundles `dist-electron/main.js` + `dist-electron/preload.mjs`, Electron BrowserWindow opens at 1400×900 with title "Vimeflow".
 
 Within the Electron window, walk through:
 
