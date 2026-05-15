@@ -100,3 +100,40 @@ describe('Sidecar frame codec', () => {
     await expect(p2).resolves.toBe(2)
   })
 })
+
+describe('Sidecar invoke result and error handling', () => {
+  test('multiple resolutions clean up pending entries between calls', async () => {
+    const { mock, sidecar } = makeSidecar()
+    const p1 = sidecar.invoke<number>('m')
+
+    mock.stdout.write(
+      encodeFrame({ kind: 'response', id: '1', ok: true, result: 1 })
+    )
+
+    await expect(p1).resolves.toBe(1)
+
+    const p2 = sidecar.invoke<number>('m')
+
+    mock.stdout.write(
+      encodeFrame({ kind: 'response', id: '2', ok: true, result: 2 })
+    )
+
+    await expect(p2).resolves.toBe(2)
+  })
+
+  test('ok false response rejects with bare error string', async () => {
+    const { mock, sidecar } = makeSidecar()
+    const promise = sidecar.invoke('write_pty', { id: 'missing' })
+
+    mock.stdout.write(
+      encodeFrame({
+        kind: 'response',
+        id: '1',
+        ok: false,
+        error: 'PTY session not found',
+      })
+    )
+
+    await expect(promise).rejects.toBe('PTY session not found')
+  })
+})
