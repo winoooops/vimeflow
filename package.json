@@ -20,7 +20,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "type-check": "tsc -b",
+    "type-check": "tsc -b && tsc -p electron/tsconfig.json",
     "test": "vitest --passWithNoTests",
     "test:coverage": "vitest run --coverage",
     "generate:bindings": "cd src-tauri && cargo test export_bindings && cd .. && prettier --write src/bindings/",
