@@ -38,6 +38,18 @@ const focusActiveTerminalTextarea = async (): Promise<void> => {
       throw new Error(
         'focusActiveTerminalTextarea: textarea.focus() did not stick (focus stolen or blocked)'
       )
+    default: {
+      // TypeScript exhaustiveness check + runtime guard: browser.execute's
+      // return type is `any` at runtime, so a future ChromeDriver version
+      // or transport change could yield something outside FocusFailure.
+      // Without this default, the unexpected value would slip past the
+      // switch and silently leave focus unestablished, causing
+      // browser.keys() to type into the wrong element.
+      const _exhaustive: never = status
+      throw new Error(
+        `focusActiveTerminalTextarea: unexpected status: ${String(_exhaustive)}`
+      )
+    }
   }
 }
 

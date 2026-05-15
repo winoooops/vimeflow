@@ -1,6 +1,11 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { appArgs, appEntryPoint } from '../shared/electron-app.js'
+import {
+  appArgs,
+  appEntryPoint,
+  cleanupUserDataDirs,
+  injectFreshUserDataDir,
+} from '../shared/electron-app.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -23,6 +28,14 @@ export const config: WebdriverIO.Config = {
     // spec itself has a skip-guard for pre-existing host claude
     // processes (see agent-detect-fake.spec.ts and #71).
     delete process.env.VIMEFLOW_DISABLE_AGENT_DETECTION
+  },
+
+  // Per-spec app-data isolation — see core/wdio.conf.ts beforeSession.
+  beforeSession: (_config, capabilities) => {
+    injectFreshUserDataDir(capabilities as WebdriverIO.Capabilities)
+  },
+  afterSession: () => {
+    cleanupUserDataDirs()
   },
 
   capabilities: [

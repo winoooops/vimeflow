@@ -1,6 +1,11 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { appArgs, appEntryPoint } from '../shared/electron-app.js'
+import {
+  appArgs,
+  appEntryPoint,
+  cleanupUserDataDirs,
+  injectFreshUserDataDir,
+} from '../shared/electron-app.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -22,6 +27,14 @@ export const config: WebdriverIO.Config = {
     // skip agent detection in this suite so real claude processes on
     // the dev host don't destabilise unrelated terminal specs. See #71.
     process.env.VIMEFLOW_DISABLE_AGENT_DETECTION = '1'
+  },
+
+  // Per-spec app-data isolation — see core/wdio.conf.ts beforeSession.
+  beforeSession: (_config, capabilities) => {
+    injectFreshUserDataDir(capabilities as WebdriverIO.Capabilities)
+  },
+  afterSession: () => {
+    cleanupUserDataDirs()
   },
 
   capabilities: [
