@@ -74,7 +74,7 @@ const createWindow = (): void => {
 
   const devUrl = process.env.VITE_DEV_SERVER_URL
 
-  if (devUrl !== undefined && devUrl.length > 0) {
+  if (!app.isPackaged && devUrl !== undefined && devUrl.length > 0) {
     void win.loadURL(devUrl)
 
     return

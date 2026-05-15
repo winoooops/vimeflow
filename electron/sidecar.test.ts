@@ -220,6 +220,27 @@ describe('Sidecar onEvent', () => {
 
     expect(callback).not.toHaveBeenCalled()
   })
+
+  test('event dispatch snapshots listeners during synchronous teardown', () => {
+    const { mock, sidecar } = makeSidecar()
+    const calls: string[] = []
+    let unlistenSecond: (() => void) | null = null
+
+    sidecar.onEvent(() => {
+      calls.push('first')
+      unlistenSecond?.()
+    })
+
+    unlistenSecond = sidecar.onEvent(() => {
+      calls.push('second')
+    })
+
+    mock.stdout.write(
+      encodeFrame({ kind: 'event', event: 'pty-data', payload: {} })
+    )
+
+    expect(calls).toEqual(['first', 'second'])
+  })
 })
 
 describe('Sidecar fatal limits, spawn errors, and stderr', () => {
@@ -347,6 +368,33 @@ describe('Sidecar shutdown', () => {
       expect(mock.kill).toHaveBeenCalledWith('SIGKILL')
 
       mock.emit('exit', null, 'SIGKILL')
+
+      await expect(shutdownPromise).resolves.toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('shutdown skips cooperative stdin write after stdin error', async () => {
+    vi.useFakeTimers()
+
+    try {
+      const { mock, sidecar } = makeSidecar()
+
+      mock.stdin.emit('error', new Error('EPIPE'))
+
+      const writeSpy = vi.spyOn(mock.stdin, 'write')
+      const endSpy = vi.spyOn(mock.stdin, 'end')
+      const shutdownPromise = sidecar.shutdown()
+
+      expect(writeSpy).not.toHaveBeenCalled()
+      expect(endSpy).not.toHaveBeenCalled()
+
+      vi.advanceTimersByTime(5500)
+
+      expect(mock.kill).toHaveBeenCalledWith('SIGTERM')
+
+      mock.emit('exit', null, 'SIGTERM')
 
       await expect(shutdownPromise).resolves.toBeUndefined()
     } finally {

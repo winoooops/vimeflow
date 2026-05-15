@@ -71,6 +71,7 @@ export const createSidecar = (
   let disabled = false
   let cooperativeShutdown = false
   let exited = false
+  let stdinUsable = true
 
   child.stderr?.on('data', (chunk: Buffer) => {
     errStream.write(chunk)
@@ -162,7 +163,7 @@ export const createSidecar = (
         return
       }
 
-      for (const listener of listeners) {
+      for (const listener of [...listeners]) {
         listener(eventName, parsed.payload)
       }
 
@@ -254,6 +255,7 @@ export const createSidecar = (
   })
 
   child.stdin.on('error', (err: Error) => {
+    stdinUsable = false
     errStream.write(`[sidecar stdin error] ${err.message}\n`)
     disable(`sidecar stdin failed: ${err.message}`)
   })
@@ -335,8 +337,11 @@ export const createSidecar = (
         }
 
         child.on('exit', finalize)
-        child.stdin.write(encode({ kind: 'shutdown' }))
-        child.stdin.end()
+        if (stdinUsable) {
+          stdinUsable = false
+          child.stdin.write(encode({ kind: 'shutdown' }))
+          child.stdin.end()
+        }
 
         sigterm = setTimeout(() => {
           child.kill('SIGTERM')
