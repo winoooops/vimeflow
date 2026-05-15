@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, session } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
@@ -25,6 +25,45 @@ const resolveSidecarBin = (): string => {
     'debug',
     BINARY_NAME
   )
+}
+
+const packagedContentSecurityPolicy = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+].join('; ')
+
+const devContentSecurityPolicy = [
+  "default-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+  "script-src 'self' 'unsafe-eval' http://localhost:* http://127.0.0.1:*",
+  "style-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
+  "img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*",
+  "font-src 'self' data: http://localhost:* http://127.0.0.1:*",
+  "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+].join('; ')
+
+const installContentSecurityPolicy = (): void => {
+  const policy = app.isPackaged
+    ? packagedContentSecurityPolicy
+    : devContentSecurityPolicy
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const responseHeaders = Object.fromEntries(
+      Object.entries(details.responseHeaders ?? {}).filter(
+        ([key]) => key.toLowerCase() !== 'content-security-policy'
+      )
+    )
+
+    callback({
+      responseHeaders: {
+        ...responseHeaders,
+        'Content-Security-Policy': [policy],
+      },
+    })
+  })
 }
 
 interface BackendInvokePayload {
@@ -85,6 +124,7 @@ const createWindow = (): void => {
 
 const setupApp = async (): Promise<void> => {
   await app.whenReady()
+  installContentSecurityPolicy()
 
   const spawnedSidecar = spawnSidecar({
     binary: resolveSidecarBin(),

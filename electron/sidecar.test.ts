@@ -105,6 +105,25 @@ describe('Sidecar frame codec', () => {
     await expect(p1).resolves.toBe(1)
     await expect(p2).resolves.toBe(2)
   })
+
+  test('large response split across many stdout chunks resolves once complete', async () => {
+    const { mock, sidecar } = makeSidecar()
+    const payload = 'x'.repeat(64 * 1024)
+    const promise = sidecar.invoke<{ payload: string }>('read_file')
+
+    const frame = encodeFrame({
+      kind: 'response',
+      id: '1',
+      ok: true,
+      result: { payload },
+    })
+
+    for (let i = 0; i < frame.length; i += 17) {
+      mock.stdout.write(frame.subarray(i, i + 17))
+    }
+
+    await expect(promise).resolves.toEqual({ payload })
+  })
 })
 
 describe('Sidecar invoke result and error handling', () => {

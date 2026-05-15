@@ -34,6 +34,7 @@ export interface SidecarDeps {
 const MAX_FRAME_BYTES = 16 * 1024 * 1024
 const MAX_HEADER_SECTION_BYTES = 1024 * 1024
 const MAX_HEADER_LINE_BYTES = 8 * 1024
+const HEADER_END = Buffer.from('\r\n\r\n', 'ascii')
 
 interface Pending {
   resolve: (value: unknown) => void
@@ -66,7 +67,11 @@ export const createSidecar = (
 
   const pending = new Map<string, Pending>()
   const listeners = new Set<(event: string, payload: unknown) => void>()
-  let buffer = Buffer.alloc(0)
+  let stdoutChunks: Buffer[] = []
+  let stdoutChunkIndex = 0
+  let stdoutChunkOffset = 0
+  let bufferedBytes = 0
+  let pendingBodyBytes: number | null = null
   let nextId = 1
   let disabled = false
   let cooperativeShutdown = false
@@ -175,56 +180,148 @@ export const createSidecar = (
     )
   }
 
-  const processBuffer = (): void => {
-    while (!disabled) {
-      const headerEnd = buffer.indexOf('\r\n\r\n')
+  const compactConsumedStdoutChunks = (): void => {
+    if (stdoutChunkIndex === 0) {
+      return
+    }
 
-      if (headerEnd === -1) {
-        if (buffer.length > MAX_HEADER_SECTION_BYTES) {
-          disable('header section exceeded MAX_HEADER_SECTION_BYTES')
+    if (stdoutChunkIndex === stdoutChunks.length) {
+      stdoutChunks = []
+      stdoutChunkIndex = 0
+      stdoutChunkOffset = 0
+
+      return
+    }
+
+    if (stdoutChunkIndex > 64) {
+      stdoutChunks = stdoutChunks.slice(stdoutChunkIndex)
+      stdoutChunkIndex = 0
+    }
+  }
+
+  const takeBufferedBytes = (length: number): Buffer | null => {
+    if (bufferedBytes < length) {
+      return null
+    }
+
+    const out = Buffer.allocUnsafe(length)
+    let copied = 0
+
+    while (copied < length) {
+      const chunk = stdoutChunks[stdoutChunkIndex]
+      const available = chunk.length - stdoutChunkOffset
+      const toCopy = Math.min(length - copied, available)
+
+      chunk.copy(out, copied, stdoutChunkOffset, stdoutChunkOffset + toCopy)
+      copied += toCopy
+      stdoutChunkOffset += toCopy
+
+      if (stdoutChunkOffset === chunk.length) {
+        stdoutChunkIndex += 1
+        stdoutChunkOffset = 0
+      }
+    }
+
+    bufferedBytes -= length
+    compactConsumedStdoutChunks()
+
+    return out
+  }
+
+  const findHeaderEnd = (): number => {
+    let matched = 0
+    let offset = 0
+
+    for (let i = stdoutChunkIndex; i < stdoutChunks.length; i += 1) {
+      const chunk = stdoutChunks[i]
+      const start = i === stdoutChunkIndex ? stdoutChunkOffset : 0
+
+      for (let j = start; j < chunk.length; j += 1) {
+        const byte = chunk[j]
+
+        if (byte === HEADER_END[matched]) {
+          matched += 1
+        } else {
+          matched = byte === HEADER_END[0] ? 1 : 0
         }
 
+        if (matched === HEADER_END.length) {
+          return offset - HEADER_END.length + 1
+        }
+
+        offset += 1
+      }
+    }
+
+    return -1
+  }
+
+  const parseNextHeader = (): number | null => {
+    const headerEnd = findHeaderEnd()
+
+    if (headerEnd === -1) {
+      if (bufferedBytes > MAX_HEADER_SECTION_BYTES) {
+        disable('header section exceeded MAX_HEADER_SECTION_BYTES')
+      }
+
+      return null
+    }
+
+    const headerBuffer = takeBufferedBytes(headerEnd + HEADER_END.length)
+
+    if (headerBuffer === null) {
+      return null
+    }
+
+    const headerText = headerBuffer.subarray(0, headerEnd).toString('ascii')
+    const headerLines = headerText.split('\r\n')
+
+    if (
+      headerLines.some(
+        (line) => Buffer.byteLength(line, 'ascii') > MAX_HEADER_LINE_BYTES
+      )
+    ) {
+      disable('header line exceeds MAX_HEADER_LINE_BYTES')
+
+      return null
+    }
+
+    const match = /Content-Length:\s*(\d+)/i.exec(headerText)
+
+    if (!match) {
+      disable('missing or malformed Content-Length header')
+
+      return null
+    }
+
+    const length = Number(match[1])
+
+    if (!Number.isFinite(length) || length > MAX_FRAME_BYTES) {
+      disable(`frame too large or invalid: ${match[1]}`)
+
+      return null
+    }
+
+    return length
+  }
+
+  const processBuffer = (): void => {
+    while (!disabled) {
+      if (pendingBodyBytes === null) {
+        pendingBodyBytes = parseNextHeader()
+
+        if (pendingBodyBytes === null) {
+          return
+        }
+      }
+
+      const bodyBuffer = takeBufferedBytes(pendingBodyBytes)
+
+      if (bodyBuffer === null) {
         return
       }
 
-      const headerText = buffer.subarray(0, headerEnd).toString('ascii')
-      const headerLines = headerText.split('\r\n')
-
-      if (
-        headerLines.some(
-          (line) => Buffer.byteLength(line, 'ascii') > MAX_HEADER_LINE_BYTES
-        )
-      ) {
-        disable('header line exceeds MAX_HEADER_LINE_BYTES')
-
-        return
-      }
-
-      const match = /Content-Length:\s*(\d+)/i.exec(headerText)
-
-      if (!match) {
-        disable('missing or malformed Content-Length header')
-
-        return
-      }
-
-      const length = Number(match[1])
-
-      if (!Number.isFinite(length) || length > MAX_FRAME_BYTES) {
-        disable(`frame too large or invalid: ${match[1]}`)
-
-        return
-      }
-
-      const bodyStart = headerEnd + 4
-      const bodyEnd = bodyStart + length
-
-      if (buffer.length < bodyEnd) {
-        return
-      }
-
-      const bodyBuffer = buffer.subarray(bodyStart, bodyEnd)
-      buffer = buffer.subarray(bodyEnd)
+      pendingBodyBytes = null
 
       let frame: unknown
 
@@ -245,7 +342,8 @@ export const createSidecar = (
       return
     }
 
-    buffer = Buffer.concat([buffer, chunk])
+    stdoutChunks.push(chunk)
+    bufferedBytes += chunk.length
     processBuffer()
   })
 
