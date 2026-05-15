@@ -69,6 +69,7 @@ export const createSidecar = (
   let buffer = Buffer.alloc(0)
   let nextId = 1
   let disabled = false
+  let cooperativeShutdown = false
 
   const disable = (reason: string): void => {
     if (disabled) {
@@ -238,6 +239,14 @@ export const createSidecar = (
     processBuffer()
   })
 
+  child.on('exit', () => {
+    if (cooperativeShutdown) {
+      return
+    }
+
+    disable('sidecar exited unexpectedly')
+  })
+
   return {
     invoke: <T>(method: string, args?: Record<string, unknown>): Promise<T> =>
       new Promise<T>((resolve, reject) => {
@@ -272,7 +281,11 @@ export const createSidecar = (
       }
     },
 
-    shutdown: (): Promise<void> => Promise.resolve(),
+    shutdown: (): Promise<void> => {
+      cooperativeShutdown = true
+
+      return Promise.resolve()
+    },
   }
 }
 

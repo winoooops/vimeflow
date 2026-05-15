@@ -137,3 +137,27 @@ describe('Sidecar invoke result and error handling', () => {
     await expect(promise).rejects.toBe('PTY session not found')
   })
 })
+
+describe('Sidecar exit handling', () => {
+  test('unexpected exit drains pending invokes', async () => {
+    const { mock, sidecar } = makeSidecar()
+    const p1 = sidecar.invoke('a')
+    const p2 = sidecar.invoke('b')
+
+    mock.emit('exit', 1, null)
+
+    await expect(p1).rejects.toBe('sidecar exited unexpectedly')
+    await expect(p2).rejects.toBe('sidecar exited unexpectedly')
+  })
+
+  test('invoke after exit rejects and does not write', async () => {
+    const { mock, sidecar } = makeSidecar()
+
+    mock.emit('exit', 1, null)
+
+    const stdinSpy = vi.spyOn(mock.stdin, 'write')
+
+    await expect(sidecar.invoke('m')).rejects.toBe('backend unavailable')
+    expect(stdinSpy).not.toHaveBeenCalled()
+  })
+})
