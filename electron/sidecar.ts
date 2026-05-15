@@ -89,6 +89,10 @@ export const createSidecar = (
     pending.clear()
   }
 
+  const unrefTimer = (timer: NodeJS.Timeout): void => {
+    timer.unref()
+  }
+
   const dispatch = (frame: unknown): void => {
     if (typeof frame !== 'object' || frame === null) {
       return
@@ -290,11 +294,41 @@ export const createSidecar = (
       }
     },
 
-    shutdown: (): Promise<void> => {
-      cooperativeShutdown = true
+    shutdown: (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        cooperativeShutdown = true
+        disable('app quitting')
 
-      return Promise.resolve()
-    },
+        let resolved = false
+        let sigkill: NodeJS.Timeout | null = null
+
+        const finalize = (): void => {
+          if (resolved) {
+            return
+          }
+
+          resolved = true
+
+          if (sigkill) {
+            clearTimeout(sigkill)
+          }
+
+          resolve()
+        }
+
+        child.on('exit', finalize)
+        child.stdin.end()
+
+        const sigterm = setTimeout(() => {
+          child.kill('SIGTERM')
+          sigkill = setTimeout(() => {
+            child.kill('SIGKILL')
+          }, 2000)
+          unrefTimer(sigkill)
+        }, 5500)
+
+        unrefTimer(sigterm)
+      }),
   }
 }
 

@@ -281,3 +281,55 @@ describe('Sidecar fatal limits, spawn errors, and stderr', () => {
     expect(Buffer.concat(stderrChunks).toString('utf8')).toBe('rust log line\n')
   })
 })
+
+describe('Sidecar shutdown', () => {
+  test('shutdown drains pending invokes with app quitting', async () => {
+    const { sidecar } = makeSidecar()
+    const promise = sidecar.invoke('m')
+
+    void sidecar.shutdown()
+
+    await expect(promise).rejects.toBe('app quitting')
+  })
+
+  test('shutdown closes stdin and resolves on cooperative exit', async () => {
+    vi.useFakeTimers()
+
+    try {
+      const { mock, sidecar } = makeSidecar()
+      const endSpy = vi.spyOn(mock.stdin, 'end')
+      const shutdownPromise = sidecar.shutdown()
+
+      expect(endSpy).toHaveBeenCalled()
+
+      mock.emit('exit', 0, null)
+
+      await expect(shutdownPromise).resolves.toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('shutdown escalates to SIGTERM then SIGKILL after timeout', async () => {
+    vi.useFakeTimers()
+
+    try {
+      const { mock, sidecar } = makeSidecar()
+      const shutdownPromise = sidecar.shutdown()
+
+      vi.advanceTimersByTime(5500)
+
+      expect(mock.kill).toHaveBeenCalledWith('SIGTERM')
+
+      vi.advanceTimersByTime(2000)
+
+      expect(mock.kill).toHaveBeenCalledWith('SIGKILL')
+
+      mock.emit('exit', null, 'SIGKILL')
+
+      await expect(shutdownPromise).resolves.toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
