@@ -70,6 +70,7 @@ export const createSidecar = (
   let nextId = 1
   let disabled = false
   let cooperativeShutdown = false
+  let exited = false
 
   child.stderr?.on('data', (chunk: Buffer) => {
     errStream.write(chunk)
@@ -252,11 +253,14 @@ export const createSidecar = (
     disable(`sidecar spawn failed: ${err.message}`)
   })
 
-  child.on('exit', () => {
+  child.on('exit', (code, signal) => {
+    exited = true
+
     if (cooperativeShutdown) {
       return
     }
 
+    errStream.write(`[sidecar exit] code=${code} signal=${signal}\n`)
     disable('sidecar exited unexpectedly')
   })
 
@@ -294,12 +298,17 @@ export const createSidecar = (
       }
     },
 
-    shutdown: (): Promise<void> =>
-      new Promise<void>((resolve) => {
-        cooperativeShutdown = true
-        disable('app quitting')
+    shutdown: (): Promise<void> => {
+      cooperativeShutdown = true
+      disable('app quitting')
 
+      if (exited) {
+        return Promise.resolve()
+      }
+
+      return new Promise<void>((resolve) => {
         let resolved = false
+        let sigterm: NodeJS.Timeout | null = null
         let sigkill: NodeJS.Timeout | null = null
 
         const finalize = (): void => {
@@ -308,6 +317,10 @@ export const createSidecar = (
           }
 
           resolved = true
+
+          if (sigterm) {
+            clearTimeout(sigterm)
+          }
 
           if (sigkill) {
             clearTimeout(sigkill)
@@ -319,7 +332,7 @@ export const createSidecar = (
         child.on('exit', finalize)
         child.stdin.end()
 
-        const sigterm = setTimeout(() => {
+        sigterm = setTimeout(() => {
           child.kill('SIGTERM')
           sigkill = setTimeout(() => {
             child.kill('SIGKILL')
@@ -328,7 +341,8 @@ export const createSidecar = (
         }, 5500)
 
         unrefTimer(sigterm)
-      }),
+      })
+    },
   }
 }
 

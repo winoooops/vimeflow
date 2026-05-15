@@ -26,6 +26,7 @@ const makeSidecar = (): {
   const sidecar = createSidecar({
     binary: '/fake/vimeflow-backend',
     appDataDir: '/fake/data',
+    stderr: new PassThrough(),
     spawnFn: (): MockChildProcess => mock,
   })
 
@@ -164,6 +165,7 @@ describe('Sidecar exit handling', () => {
 
     await expect(sidecar.invoke('m')).rejects.toBe('backend unavailable')
     expect(stdinSpy).not.toHaveBeenCalled()
+    await expect(sidecar.shutdown()).resolves.toBeUndefined()
   })
 })
 
