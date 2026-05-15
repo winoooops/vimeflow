@@ -6,12 +6,13 @@ import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 
 // __dirname is not defined in ESM modules. Derive it from import.meta.url.
-// vite-plugin-electron bundles main.ts as ESM (main.mjs) under
+// vite-plugin-electron bundles main.ts as ESM (main.js) under
 // package.json:type=module, so we need the ESM-compatible idiom.
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const APP_PROTOCOL = 'vimeflow'
 const APP_HOST = 'app'
 const APP_ORIGIN = `${APP_PROTOCOL}://${APP_HOST}`
+const E2E_RUNTIME_ARG = '--vimeflow-e2e'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -53,7 +54,7 @@ const packagedContentSecurityPolicy = [
 
 const devContentSecurityPolicy = [
   "default-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-  "script-src 'self' 'unsafe-eval' http://localhost:* http://127.0.0.1:*",
+  "script-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
   "style-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
   "img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*",
   "font-src 'self' data: http://localhost:* http://127.0.0.1:*",
@@ -162,6 +163,9 @@ const isBackendInvokePayload = (
   return payload.args === undefined || isRecord(payload.args)
 }
 
+const isE2eRuntime = (): boolean =>
+  process.env.VITE_E2E === '1' || process.argv.includes(E2E_RUNTIME_ARG)
+
 const createWindow = (): void => {
   const win = new BrowserWindow({
     width: 1400,
@@ -209,7 +213,7 @@ const setupApp = async (): Promise<void> => {
   })
 
   sidecar = spawnedSidecar
-  const allowE2eBackendMethods = !app.isPackaged && process.env.VITE_E2E === '1'
+  const allowE2eBackendMethods = !app.isPackaged && isE2eRuntime()
 
   ipcMain.handle(
     BACKEND_INVOKE,

@@ -599,12 +599,15 @@ export default defineConfig(({ mode }) => ({
     ...(mode === 'electron'
       ? [
           electron({
-            // Use vite-plugin-electron/simple's defaults. With root
-            // package.json:type=module, the plugin emits:
-            //   - main as ESM at dist-electron/main.mjs
+            // Use vite-plugin-electron/simple's defaults. The plugin emits:
+            //   - main as ESM at dist-electron/main.js (the plugin's `lib`
+            //     config in node_modules/vite-plugin-electron/dist/index.mjs:17
+            //     hard-codes `fileName: () => '[name].js'`, so this stays .js
+            //     regardless of root package.json:type=module)
             //   - preload as CJS-content with .mjs extension at
-            //     dist-electron/preload.mjs (Electron's preload loader
-            //     handles this special case)
+            //     dist-electron/preload.mjs (the plugin's separate preload
+            //     config overrides entryFileNames with the .mjs suffix to
+            //     trigger Electron's preload-loader special case)
             // Custom build/lib/rollupOptions configs fight the
             // plugin's defaults because mergeConfig concatenates arrays
             // like `lib.formats`, producing dual ESM+CJS builds that
