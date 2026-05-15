@@ -5,7 +5,7 @@ import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 
 // __dirname is not defined in ESM modules. Derive it from import.meta.url.
-// vite-plugin-electron bundles main.ts as ESM (main.js) under
+// vite-plugin-electron bundles main.ts as ESM (main.mjs) under
 // package.json:type=module, so we need the ESM-compatible idiom.
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
