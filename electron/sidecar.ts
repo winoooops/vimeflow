@@ -35,6 +35,8 @@ const MAX_FRAME_BYTES = 16 * 1024 * 1024
 const MAX_HEADER_SECTION_BYTES = 1024 * 1024
 const MAX_HEADER_LINE_BYTES = 8 * 1024
 const HEADER_END = Buffer.from('\r\n\r\n', 'ascii')
+// Batch chunk-array compaction so slicing stays amortized without retaining too many consumed buffers.
+const COMPACT_CHUNK_THRESHOLD = 64
 
 interface Pending {
   resolve: (value: unknown) => void
@@ -193,7 +195,7 @@ export const createSidecar = (
       return
     }
 
-    if (stdoutChunkIndex > 64) {
+    if (stdoutChunkIndex > COMPACT_CHUNK_THRESHOLD) {
       stdoutChunks = stdoutChunks.slice(stdoutChunkIndex)
       stdoutChunkIndex = 0
     }
@@ -263,6 +265,12 @@ export const createSidecar = (
       if (bufferedBytes > MAX_HEADER_SECTION_BYTES) {
         disable('header section exceeded MAX_HEADER_SECTION_BYTES')
       }
+
+      return null
+    }
+
+    if (headerEnd > MAX_HEADER_SECTION_BYTES) {
+      disable('header section exceeded MAX_HEADER_SECTION_BYTES')
 
       return null
     }
@@ -404,6 +412,10 @@ export const createSidecar = (
     },
 
     shutdown: (): Promise<void> => {
+      if (cooperativeShutdown) {
+        return Promise.resolve()
+      }
+
       cooperativeShutdown = true
       disable('app quitting')
 

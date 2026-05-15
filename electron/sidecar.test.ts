@@ -311,6 +311,16 @@ describe('Sidecar fatal limits, spawn errors, and stderr', () => {
     )
   })
 
+  test('single-chunk oversized header section disables sidecar', async () => {
+    const { mock, sidecar } = makeSidecar()
+    const headerLine = `X-Long-But-Allowed: ${'a'.repeat(1024)}\r\n`
+    const repeats = Math.ceil((1024 * 1024 + 1) / headerLine.length)
+
+    mock.stdout.write(Buffer.from(`${headerLine.repeat(repeats)}\r\n`, 'ascii'))
+
+    await expect(sidecar.invoke('m')).rejects.toBe('backend unavailable')
+  })
+
   test('child stderr is drained to the configured stream', async () => {
     const mock = new MockChildProcess()
     const stderrSink = new PassThrough()
@@ -342,6 +352,33 @@ describe('Sidecar shutdown', () => {
     void sidecar.shutdown()
 
     await expect(promise).rejects.toBe('app quitting')
+  })
+
+  test('shutdown is idempotent while exit is pending', async () => {
+    vi.useFakeTimers()
+
+    try {
+      const { mock, sidecar } = makeSidecar()
+      const writeSpy = vi.spyOn(mock.stdin, 'write')
+      const endSpy = vi.spyOn(mock.stdin, 'end')
+      const firstShutdown = sidecar.shutdown()
+      const secondShutdown = sidecar.shutdown()
+
+      await expect(secondShutdown).resolves.toBeUndefined()
+      expect(writeSpy).toHaveBeenCalledTimes(1)
+      expect(endSpy).toHaveBeenCalledTimes(1)
+
+      vi.advanceTimersByTime(5500)
+
+      expect(mock.kill).toHaveBeenCalledTimes(1)
+      expect(mock.kill).toHaveBeenCalledWith('SIGTERM')
+
+      mock.emit('exit', null, 'SIGTERM')
+
+      await expect(firstShutdown).resolves.toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('shutdown sends explicit frame, closes stdin, and resolves on cooperative exit', async () => {
