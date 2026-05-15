@@ -1767,3 +1767,5 @@ See spec §7 for the full risk breakdown. The plan-time TL;DR:
 - **Dev-mode sandbox.** Task 13's `onstart` override is the load-bearing line — if it breaks across a `vite-plugin-electron` upgrade, dev mode silently loses sandbox.
 - **macOS quit UX.** Task 12's `before-quit`/`activate` handlers and Task 15's smoke step cover the platform divergence.
 - **PTY orphans.** Pre-existing limitation; PR-D1 preserves Tauri parity. Out of scope.
+
+<!-- codex-reviewed: 2026-05-15T02:30:18Z -->
