@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, session } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isAllowedBackendMethod } from './backend-methods'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 
@@ -138,6 +139,10 @@ const setupApp = async (): Promise<void> => {
     async (_ipcEvent, payload: unknown): Promise<InvokeEnvelope> => {
       if (!isBackendInvokePayload(payload)) {
         return { ok: false, error: 'invalid backend invoke payload' }
+      }
+
+      if (!isAllowedBackendMethod(payload.method)) {
+        return { ok: false, error: 'unknown backend method' }
       }
 
       try {
