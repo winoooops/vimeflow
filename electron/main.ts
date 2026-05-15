@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, session } from 'electron'
+import { app, BrowserWindow, ipcMain, net, protocol, session } from 'electron'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isAllowedBackendMethod } from './backend-methods'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
@@ -9,6 +9,20 @@ import { spawnSidecar, type Sidecar } from './sidecar'
 // vite-plugin-electron bundles main.ts as ESM (main.mjs) under
 // package.json:type=module, so we need the ESM-compatible idiom.
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const APP_PROTOCOL = 'vimeflow'
+const APP_HOST = 'app'
+const APP_ORIGIN = `${APP_PROTOCOL}://${APP_HOST}`
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: APP_PROTOCOL,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+    },
+  },
+])
 
 const BINARY_NAME =
   process.platform === 'win32' ? 'vimeflow-backend.exe' : 'vimeflow-backend'
@@ -47,9 +61,9 @@ const devContentSecurityPolicy = [
 ].join('; ')
 
 const installContentSecurityPolicy = (): void => {
-  const policy = app.isPackaged
-    ? packagedContentSecurityPolicy
-    : devContentSecurityPolicy
+  if (app.isPackaged) {
+    return
+  }
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const responseHeaders = Object.fromEntries(
@@ -61,8 +75,60 @@ const installContentSecurityPolicy = (): void => {
     callback({
       responseHeaders: {
         ...responseHeaders,
-        'Content-Security-Policy': [policy],
+        'Content-Security-Policy': [devContentSecurityPolicy],
       },
+    })
+  })
+}
+
+const resolveAppProtocolFile = (requestUrl: string): string | null => {
+  const url = new URL(requestUrl)
+
+  if (url.protocol !== `${APP_PROTOCOL}:` || url.host !== APP_HOST) {
+    return null
+  }
+
+  const pathname = url.pathname === '/' ? '/index.html' : url.pathname
+  let decodedPathname: string
+
+  try {
+    decodedPathname = decodeURIComponent(pathname)
+  } catch {
+    return null
+  }
+
+  const rendererDistDir = path.resolve(__dirname, '..', 'dist')
+
+  const resolvedPath = path.resolve(
+    rendererDistDir,
+    decodedPathname.replace(/^\/+/, '')
+  )
+  const relativePath = path.relative(rendererDistDir, resolvedPath)
+
+  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    return null
+  }
+
+  return resolvedPath
+}
+
+const registerAppProtocol = (): void => {
+  protocol.handle(APP_PROTOCOL, async (request): Promise<Response> => {
+    const filePath = resolveAppProtocolFile(request.url)
+
+    if (filePath === null) {
+      return new Response('Forbidden', { status: 403 })
+    }
+
+    const response = await net.fetch(pathToFileURL(filePath).toString())
+    const headers = new Headers(response.headers)
+
+    headers.set('Content-Security-Policy', packagedContentSecurityPolicy)
+
+    return new Response(response.body, {
+      headers,
+      status: response.status,
+      statusText: response.statusText,
     })
   })
 }
@@ -114,7 +180,13 @@ const createWindow = (): void => {
 
   const devUrl = process.env.VITE_DEV_SERVER_URL
 
-  if (!app.isPackaged && devUrl !== undefined && devUrl.length > 0) {
+  if (app.isPackaged) {
+    void win.loadURL(`${APP_ORIGIN}/index.html`)
+
+    return
+  }
+
+  if (devUrl !== undefined && devUrl.length > 0) {
     void win.loadURL(devUrl)
 
     return
@@ -126,6 +198,10 @@ const createWindow = (): void => {
 const setupApp = async (): Promise<void> => {
   await app.whenReady()
   installContentSecurityPolicy()
+
+  if (app.isPackaged) {
+    registerAppProtocol()
+  }
 
   const spawnedSidecar = spawnSidecar({
     binary: resolveSidecarBin(),

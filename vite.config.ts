@@ -623,6 +623,8 @@ export default defineConfig(({ mode }) => ({
                   process.stderr.write(
                     `[electron] startup failed: ${message}\n`
                   )
+
+                  throw error
                 }
               },
               vite: {
