@@ -599,35 +599,29 @@ export default defineConfig(({ mode }) => ({
     ...(mode === 'electron'
       ? [
           electron({
+            // Use vite-plugin-electron/simple's defaults. With root
+            // package.json:type=module, the plugin emits:
+            //   - main as ESM at dist-electron/main.mjs
+            //   - preload as CJS-content with .mjs extension at
+            //     dist-electron/preload.mjs (Electron's preload loader
+            //     handles this special case)
+            // Custom build/lib/rollupOptions configs fight the
+            // plugin's defaults because mergeConfig concatenates arrays
+            // like `lib.formats`, producing dual ESM+CJS builds that
+            // overwrite each other.
             main: {
               entry: 'electron/main.ts',
               onstart: ({ startup }) => {
                 void startup(['.'])
               },
               vite: {
-                build: {
-                  outDir: 'dist-electron',
-                  rollupOptions: {
-                    output: {
-                      format: 'cjs',
-                      entryFileNames: '[name].cjs',
-                    },
-                  },
-                },
+                build: { outDir: 'dist-electron' },
               },
             },
             preload: {
               input: 'electron/preload.ts',
               vite: {
-                build: {
-                  outDir: 'dist-electron',
-                  rollupOptions: {
-                    output: {
-                      format: 'cjs',
-                      entryFileNames: '[name].cjs',
-                    },
-                  },
-                },
+                build: { outDir: 'dist-electron' },
               },
             },
           }),

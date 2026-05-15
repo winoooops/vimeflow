@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "VIBM - Coding agent conversation manager",
   "type": "module",
-  "main": "dist-electron/main.cjs",
+  "main": "dist-electron/main.js",
   "engines": {
     "node": ">=22"
   },

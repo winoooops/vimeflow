@@ -1,7 +1,13 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
+
+// __dirname is not defined in ESM modules. Derive it from import.meta.url.
+// vite-plugin-electron bundles main.ts as ESM (main.js) under
+// package.json:type=module, so we need the ESM-compatible idiom.
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const BINARY_NAME =
   process.platform === 'win32' ? 'vimeflow-backend.exe' : 'vimeflow-backend'
@@ -56,7 +62,7 @@ const createWindow = (): void => {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(__dirname, 'preload.mjs'),
     },
   })
 
