@@ -1347,3 +1347,5 @@ Run-through against the spec's §1.1 In-Scope list:
 | Fix vite.config.ts comment                    | Task 3                                       |
 
 Run-through against the spec's §3 file structure: every file in New (1) / Modified (8) / Deleted (1) maps to a task. The `tests/e2e/tsconfig.json:include` extension for `e2e.d.ts` is captured in Task 5.
+
+<!-- codex-reviewed: 2026-05-15T15:46:38Z -->
