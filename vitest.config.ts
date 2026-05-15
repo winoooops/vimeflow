@@ -32,6 +32,8 @@ export default defineConfig({
         '**/types/**',
         'src/main.tsx',
         'dist/**',
+        'electron/main.ts',
+        'electron/preload.ts',
         '.claude/**',
         'scripts/**',
       ],

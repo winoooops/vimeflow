@@ -1,7 +1,7 @@
 //! Agent adapter abstraction.
 //!
 //! The trait carries provider hooks only. User-facing lifecycle methods live
-//! on `dyn AgentAdapter<R>`, and the watcher orchestration body lives in
+//! on `dyn AgentAdapter`, and the watcher orchestration body lives in
 //! `base::start_for`.
 
 pub mod base;
@@ -13,21 +13,22 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use tauri::AppHandle;
-
 pub use base::AgentWatcherState;
 
 use crate::agent::detector::detect_agent;
 use crate::agent::types::AgentType;
+#[cfg(not(test))]
+use crate::runtime::BackendState;
+use crate::runtime::EventSink;
 use crate::terminal::types::SessionId;
 use crate::terminal::PtyState;
-use base::TranscriptHandle;
+use base::{TranscriptHandle, TranscriptState};
 use claude_code::ClaudeCodeAdapter;
 use codex::CodexAdapter;
 use types::{ParsedStatus, StatusSource, ValidateTranscriptError};
 
 /// Provider hooks for one CLI coding agent.
-pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
+pub trait AgentAdapter: Send + Sync + 'static {
     fn agent_type(&self) -> AgentType;
 
     fn status_source(&self, cwd: &Path, session_id: &str) -> Result<StatusSource, String>;
@@ -38,14 +39,14 @@ pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
 
     fn tail_transcript(
         &self,
-        app: AppHandle<R>,
+        events: Arc<dyn EventSink>,
         session_id: String,
         cwd: Option<PathBuf>,
         transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String>;
 }
 
-impl<R: tauri::Runtime> dyn AgentAdapter<R> {
+impl dyn AgentAdapter {
     pub fn for_attach(
         agent_type: AgentType,
         pid: u32,
@@ -60,12 +61,22 @@ impl<R: tauri::Runtime> dyn AgentAdapter<R> {
 
     pub fn start(
         self: Arc<Self>,
-        app: AppHandle<R>,
+        events: Arc<dyn EventSink>,
+        pty_state: PtyState,
+        transcript_state: TranscriptState,
         session_id: String,
         cwd: PathBuf,
         state: AgentWatcherState,
     ) -> Result<(), String> {
-        base::start_for(self, app, session_id, cwd, state)
+        base::start_for(
+            self,
+            events,
+            pty_state,
+            transcript_state,
+            session_id,
+            cwd,
+            state,
+        )
     }
 
     pub fn stop(state: &AgentWatcherState, session_id: &str) -> bool {
@@ -84,7 +95,7 @@ impl NoOpAdapter {
     }
 }
 
-impl<R: tauri::Runtime> AgentAdapter<R> for NoOpAdapter {
+impl AgentAdapter for NoOpAdapter {
     fn agent_type(&self) -> AgentType {
         self.agent_type.clone()
     }
@@ -116,7 +127,7 @@ impl<R: tauri::Runtime> AgentAdapter<R> for NoOpAdapter {
 
     fn tail_transcript(
         &self,
-        _: AppHandle<R>,
+        _: Arc<dyn EventSink>,
         _: String,
         _: Option<PathBuf>,
         _: PathBuf,
@@ -129,18 +140,26 @@ impl<R: tauri::Runtime> AgentAdapter<R> for NoOpAdapter {
 }
 
 /// Start watching an agent status source for a PTY session.
+#[cfg(not(test))]
 #[tauri::command]
 pub async fn start_agent_watcher(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, AgentWatcherState>,
-    pty_state: tauri::State<'_, PtyState>,
+    state: tauri::State<'_, Arc<BackendState>>,
+    session_id: String,
+) -> Result<(), String> {
+    state.start_agent_watcher(session_id).await
+}
+
+pub(crate) async fn start_agent_watcher_inner(
+    pty_state: PtyState,
+    watcher_state: AgentWatcherState,
+    transcript_state: TranscriptState,
+    events: Arc<dyn EventSink>,
     session_id: String,
 ) -> Result<(), String> {
     let (cwd, _shell_pid, pty_start, agent_type, agent_pid) =
         resolve_bind_inputs(&pty_state, &session_id, detect_agent)?;
 
-    let adapter = <dyn AgentAdapter<tauri::Wry>>::for_attach(agent_type, agent_pid, pty_start)?;
-    let owned_state = (*state).clone();
+    let adapter = <dyn AgentAdapter>::for_attach(agent_type, agent_pid, pty_start)?;
     let cwd_path = PathBuf::from(cwd);
     // `adapter.start(...)` walks into `base::start_for`, which calls
     // `adapter.status_source(...)`. For codex sessions, that call runs a
@@ -153,7 +172,14 @@ pub async fn start_agent_watcher(
     // worker; mirror the pattern at `src/git/watcher.rs:399` and hop
     // onto the blocking pool so the async thread returns immediately.
     tokio::task::spawn_blocking(move || {
-        adapter.start(app_handle, session_id, cwd_path, owned_state)
+        adapter.start(
+            events,
+            pty_state,
+            transcript_state,
+            session_id,
+            cwd_path,
+            watcher_state,
+        )
     })
     .await
     .map_err(|e| format!("start_agent_watcher task panicked: {}", e))?
@@ -186,12 +212,20 @@ where
 }
 
 /// Stop watching an agent status source.
+#[cfg(not(test))]
 #[tauri::command]
 pub async fn stop_agent_watcher(
-    state: tauri::State<'_, AgentWatcherState>,
+    state: tauri::State<'_, Arc<BackendState>>,
     session_id: String,
 ) -> Result<(), String> {
-    if <dyn AgentAdapter<tauri::Wry>>::stop(&state, &session_id) {
+    state.stop_agent_watcher(session_id).await
+}
+
+pub(crate) async fn stop_agent_watcher_inner(
+    state: &AgentWatcherState,
+    session_id: String,
+) -> Result<(), String> {
+    if <dyn AgentAdapter>::stop(state, &session_id) {
         log::info!("Stopped watching statusline for session {}", session_id);
         Ok(())
     } else {
@@ -205,13 +239,12 @@ mod noop_tests {
     use portable_pty::{native_pty_system, CommandBuilder, PtySize};
     use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
-    use tauri::test::MockRuntime;
 
     #[test]
     fn agent_type_round_trips() {
         let adapter = NoOpAdapter::new(AgentType::Codex);
         assert!(matches!(
-            <NoOpAdapter as AgentAdapter<MockRuntime>>::agent_type(&adapter),
+            <NoOpAdapter as AgentAdapter>::agent_type(&adapter),
             AgentType::Codex
         ));
     }
@@ -220,7 +253,7 @@ mod noop_tests {
     fn status_source_uses_claude_shaped_path() {
         let adapter = NoOpAdapter::new(AgentType::Aider);
         let cwd = PathBuf::from("/tmp/ws");
-        let src = <NoOpAdapter as AgentAdapter<MockRuntime>>::status_source(&adapter, &cwd, "sid")
+        let src = <NoOpAdapter as AgentAdapter>::status_source(&adapter, &cwd, "sid")
             .expect("noop adapter always resolves a status source");
         assert_eq!(
             src.path,
@@ -235,20 +268,14 @@ mod noop_tests {
     #[test]
     fn parse_status_returns_err() {
         let adapter = NoOpAdapter::new(AgentType::Generic);
-        assert!(
-            <NoOpAdapter as AgentAdapter<MockRuntime>>::parse_status(&adapter, "sid", "{}")
-                .is_err()
-        );
+        assert!(<NoOpAdapter as AgentAdapter>::parse_status(&adapter, "sid", "{}").is_err());
     }
 
     #[test]
     fn for_attach_returns_real_codex_adapter() {
-        let adapter = <dyn AgentAdapter<MockRuntime>>::for_attach(
-            AgentType::Codex,
-            12345,
-            SystemTime::UNIX_EPOCH,
-        )
-        .expect("codex adapter should construct");
+        let adapter =
+            <dyn AgentAdapter>::for_attach(AgentType::Codex, 12345, SystemTime::UNIX_EPOCH)
+                .expect("codex adapter should construct");
         let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
 "#;
 

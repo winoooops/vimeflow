@@ -1,6 +1,7 @@
 import type { FileNode } from '../types'
 import type { FileEntry } from '../../../bindings'
-import { isTauri } from '../../../lib/environment'
+import { isDesktop } from '../../../lib/environment'
+import { invoke } from '../../../lib/backend'
 import { mockFileTree } from '../data/mockFileTree'
 
 export interface IFileSystemService {
@@ -41,8 +42,6 @@ const toFileNode = (entry: FileEntry, parentPath: string): FileNode => {
 
 class TauriFileSystemService implements IFileSystemService {
   async listDir(path: string): Promise<FileNode[]> {
-    const { invoke } = await import('@tauri-apps/api/core')
-
     const entries = await invoke<FileEntry[]>('list_dir', {
       request: { path },
     })
@@ -51,16 +50,12 @@ class TauriFileSystemService implements IFileSystemService {
   }
 
   async readFile(path: string): Promise<string> {
-    const { invoke } = await import('@tauri-apps/api/core')
-
-    return await invoke<string>('read_file', {
+    return invoke<string>('read_file', {
       request: { path },
     })
   }
 
   async writeFile(path: string, content: string): Promise<void> {
-    const { invoke } = await import('@tauri-apps/api/core')
-
     await invoke<void>('write_file', {
       request: { path, content },
     })
@@ -107,7 +102,7 @@ class MockFileSystemService implements IFileSystemService {
 }
 
 export const createFileSystemService = (): IFileSystemService => {
-  if (isTauri()) {
+  if (isDesktop()) {
     return new TauriFileSystemService()
   }
 

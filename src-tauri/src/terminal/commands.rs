@@ -4,10 +4,13 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, State};
 
 use crate::debug::debug_log;
+#[cfg(not(test))]
+use crate::runtime::BackendState;
+use crate::runtime::EventSink;
 
+use super::events::{emit_pty_data, emit_pty_error, emit_pty_exit};
 use super::state::{ManagedSession, PtyState, RingBuffer};
 use super::types::*;
 
@@ -18,11 +21,19 @@ fn cleanup_generated_bridge_dir(dir: Option<&std::path::Path>) {
 }
 
 /// Spawn a new PTY session with a shell
+#[cfg(not(test))]
 #[tauri::command]
-pub async fn spawn_pty<R: tauri::Runtime>(
-    app: AppHandle<R>,
-    state: State<'_, PtyState>,
-    cache: State<'_, std::sync::Arc<super::cache::SessionCache>>,
+pub async fn spawn_pty(
+    state: tauri::State<'_, Arc<BackendState>>,
+    request: SpawnPtyRequest,
+) -> Result<PtySession, String> {
+    state.spawn_pty(request).await
+}
+
+pub(crate) async fn spawn_pty_inner(
+    state: PtyState,
+    cache: Arc<super::cache::SessionCache>,
+    events: Arc<dyn EventSink>,
     request: SpawnPtyRequest,
 ) -> Result<PtySession, String> {
     debug_log(
@@ -264,9 +275,7 @@ pub async fn spawn_pty<R: tauri::Runtime>(
         cancelled,
         started_at: std::time::SystemTime::now(),
     };
-    if let Err((reason, mut rejected)) =
-        state.try_insert(request.session_id.clone(), session, 64)
-    {
+    if let Err((reason, mut rejected)) = state.try_insert(request.session_id.clone(), session, 64) {
         // Reap the child whose session we couldn't insert. portable_pty's
         // Child::Drop does not kill the process by default — we must call
         // kill explicitly so spawn_pty's failure path doesn't leak the
@@ -330,12 +339,13 @@ pub async fn spawn_pty<R: tauri::Runtime>(
 
     // Spawn blocking thread for PTY read loop (avoids starving async runtime)
     let session_id = request.session_id.clone();
-    let state_clone = state.inner().clone();
-    let cache_clone = cache.inner().clone();
+    let state_clone = state.clone();
+    let cache_clone = cache.clone();
+    let events_clone = events.clone();
+    let runtime = tokio::runtime::Handle::current();
     std::thread::spawn(move || {
-        let rt = tauri::async_runtime::handle();
-        if let Err(e) = rt.block_on(read_pty_output(
-            app,
+        if let Err(e) = runtime.block_on(read_pty_output(
+            events_clone,
             state_clone,
             cache_clone,
             session_id,
@@ -355,8 +365,16 @@ pub async fn spawn_pty<R: tauri::Runtime>(
 }
 
 /// Write data to a PTY session
+#[cfg(not(test))]
 #[tauri::command]
-pub fn write_pty(state: State<'_, PtyState>, request: WritePtyRequest) -> Result<(), String> {
+pub fn write_pty(
+    state: tauri::State<'_, Arc<BackendState>>,
+    request: WritePtyRequest,
+) -> Result<(), String> {
+    state.write_pty(request)
+}
+
+pub(crate) fn write_pty_inner(state: &PtyState, request: WritePtyRequest) -> Result<(), String> {
     log::debug!(
         "Writing to PTY {}: {} bytes",
         request.session_id,
@@ -369,8 +387,16 @@ pub fn write_pty(state: State<'_, PtyState>, request: WritePtyRequest) -> Result
 }
 
 /// Resize a PTY session
+#[cfg(not(test))]
 #[tauri::command]
-pub fn resize_pty(state: State<'_, PtyState>, request: ResizePtyRequest) -> Result<(), String> {
+pub fn resize_pty(
+    state: tauri::State<'_, Arc<BackendState>>,
+    request: ResizePtyRequest,
+) -> Result<(), String> {
+    state.resize_pty(request)
+}
+
+pub(crate) fn resize_pty_inner(state: &PtyState, request: ResizePtyRequest) -> Result<(), String> {
     log::debug!(
         "Resizing PTY {} to {}x{}",
         request.session_id,
@@ -398,10 +424,18 @@ pub fn resize_pty(state: State<'_, PtyState>, request: ResizePtyRequest) -> Resu
 /// processes the user could not see or close. By preserving state on
 /// `KillFailed` the user can retry, and the cache stays consistent with
 /// the actual process tree.
+#[cfg(not(test))]
 #[tauri::command]
 pub fn kill_pty(
-    state: State<'_, PtyState>,
-    cache: State<'_, std::sync::Arc<super::cache::SessionCache>>,
+    state: tauri::State<'_, Arc<BackendState>>,
+    request: KillPtyRequest,
+) -> Result<(), String> {
+    state.kill_pty(request)
+}
+
+pub(crate) fn kill_pty_inner(
+    state: &PtyState,
+    cache: &Arc<super::cache::SessionCache>,
     request: KillPtyRequest,
 ) -> Result<(), String> {
     log::info!("Killing PTY session: {}", request.session_id);
@@ -458,10 +492,15 @@ pub fn kill_pty(
 }
 
 /// List all sessions with their current status and replay data
+#[cfg(not(test))]
 #[tauri::command]
-pub fn list_sessions(
-    state: State<'_, PtyState>,
-    cache: State<'_, std::sync::Arc<super::cache::SessionCache>>,
+pub fn list_sessions(state: tauri::State<'_, Arc<BackendState>>) -> Result<SessionList, String> {
+    state.list_sessions()
+}
+
+pub(crate) fn list_sessions_inner(
+    state: &PtyState,
+    cache: &Arc<super::cache::SessionCache>,
 ) -> Result<SessionList, String> {
     let snapshot = cache.snapshot();
     let mut needs_flush = false;
@@ -546,10 +585,7 @@ pub fn list_sessions(
         .filter(|info| {
             // Only the freshly reconciled ones; sessions already exited in
             // the cache snapshot don't change anything.
-            snapshot
-                .sessions
-                .get(&info.id)
-                .is_some_and(|c| !c.exited)
+            snapshot.sessions.get(&info.id).is_some_and(|c| !c.exited)
         })
         .map(|info| info.id.clone())
         .collect();
@@ -603,9 +639,17 @@ pub fn list_sessions(
 /// Without this, a concurrent `kill_pty` could remove the id between the
 /// snapshot-based check and the write — the check passed against the old
 /// state and we'd then write a now-stale `active_session_id`.
+#[cfg(not(test))]
 #[tauri::command]
 pub fn set_active_session(
-    cache: State<'_, std::sync::Arc<crate::terminal::cache::SessionCache>>,
+    state: tauri::State<'_, Arc<BackendState>>,
+    request: SetActiveSessionRequest,
+) -> Result<(), String> {
+    state.set_active_session(request)
+}
+
+pub(crate) fn set_active_session_inner(
+    cache: &Arc<crate::terminal::cache::SessionCache>,
     request: SetActiveSessionRequest,
 ) -> Result<(), String> {
     cache.mutate(|d| {
@@ -637,9 +681,17 @@ pub fn set_active_session(
 /// On the next reload, `list_sessions` returns a duplicate session entry,
 /// React tab keys collide, and active-tab selection becomes unstable.
 /// Comparing sorted vectors enforces equal length AND equal multiset.
+#[cfg(not(test))]
 #[tauri::command]
 pub fn reorder_sessions(
-    cache: State<'_, std::sync::Arc<crate::terminal::cache::SessionCache>>,
+    state: tauri::State<'_, Arc<BackendState>>,
+    request: ReorderSessionsRequest,
+) -> Result<(), String> {
+    state.reorder_sessions(request)
+}
+
+pub(crate) fn reorder_sessions_inner(
+    cache: &Arc<crate::terminal::cache::SessionCache>,
     request: ReorderSessionsRequest,
 ) -> Result<(), String> {
     cache.mutate(|d| {
@@ -668,9 +720,17 @@ pub fn reorder_sessions(
 /// inequality checks and confusing output in tests / debug logs. Canonical
 /// paths also serve as a safety net against directory-traversal-style cwds
 /// that pass the absolute + is_dir checks but mask the actual location.
+#[cfg(not(test))]
 #[tauri::command]
 pub fn update_session_cwd(
-    cache: State<'_, std::sync::Arc<crate::terminal::cache::SessionCache>>,
+    state: tauri::State<'_, Arc<BackendState>>,
+    request: UpdateSessionCwdRequest,
+) -> Result<(), String> {
+    state.update_session_cwd(request)
+}
+
+pub(crate) fn update_session_cwd_inner(
+    cache: &Arc<crate::terminal::cache::SessionCache>,
     request: UpdateSessionCwdRequest,
 ) -> Result<(), String> {
     // UUID-shape allow-list (same as spawn_pty)
@@ -687,10 +747,7 @@ pub fn update_session_cwd(
     let path = std::fs::canonicalize(std::path::PathBuf::from(&request.cwd))
         .map_err(|e| format!("invalid cwd: {e}"))?;
     if !path.is_dir() {
-        return Err(format!(
-            "invalid cwd: not a directory: {}",
-            path.display()
-        ));
+        return Err(format!("invalid cwd: not a directory: {}", path.display()));
     }
     let canonical_cwd = path.to_string_lossy().to_string();
 
@@ -704,8 +761,8 @@ pub fn update_session_cwd(
 }
 
 /// Background task to read PTY output and emit events
-async fn read_pty_output<R: tauri::Runtime>(
-    app: AppHandle<R>,
+async fn read_pty_output(
+    events: Arc<dyn EventSink>,
     state: PtyState,
     cache: std::sync::Arc<crate::terminal::cache::SessionCache>,
     session_id: SessionId,
@@ -736,9 +793,9 @@ async fn read_pty_output<R: tauri::Runtime>(
                     }
                     Ok(())
                 });
-                app.emit(
-                    "pty-exit",
-                    PtyExitEvent {
+                emit_pty_exit(
+                    events.as_ref(),
+                    &PtyExitEvent {
                         session_id: session_id.clone(),
                         code: None,
                     },
@@ -768,9 +825,9 @@ async fn read_pty_output<R: tauri::Runtime>(
                     ring.append(&buf[..n])
                 };
                 let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                app.emit(
-                    "pty-data",
-                    PtyDataEvent {
+                emit_pty_data(
+                    events.as_ref(),
+                    &PtyDataEvent {
                         session_id: session_id.clone(),
                         data,
                         offset_start: chunk_start,
@@ -791,9 +848,9 @@ async fn read_pty_output<R: tauri::Runtime>(
             Err(e) => {
                 // Error - emit error event and exit
                 log::error!("PTY read error for session {}: {}", session_id, e);
-                app.emit(
-                    "pty-error",
-                    PtyErrorEvent {
+                emit_pty_error(
+                    events.as_ref(),
+                    &PtyErrorEvent {
                         session_id: session_id.clone(),
                         message: e.to_string(),
                     },
@@ -816,42 +873,26 @@ mod tests {
     use super::*;
     use crate::terminal::cache::SessionCache;
     use std::sync::{Arc, Mutex};
-    use tauri::test::{mock_builder, MockRuntime};
-    use tauri::Manager;
     use tempfile::TempDir;
 
-    // Helper to create a test app handle
-    fn create_test_app() -> tauri::App<MockRuntime> {
-        let state = PtyState::new();
-        mock_builder()
-            .manage(state)
-            .build(tauri::generate_context!())
-            .expect("failed to build test app")
-    }
-
-    // Helper to create a test app with SessionCache
-    fn create_test_app_with_cache() -> (tauri::App<MockRuntime>, TempDir) {
+    fn create_test_state_with_cache() -> (
+        PtyState,
+        Arc<SessionCache>,
+        Arc<dyn crate::runtime::EventSink>,
+        TempDir,
+    ) {
         let temp_dir = TempDir::new().expect("failed to create temp dir");
         let cache_path = temp_dir.path().join("sessions.json");
         let cache = SessionCache::load(cache_path).expect("failed to load cache");
         let cache = Arc::new(cache);
+        let events = Arc::new(crate::runtime::FakeEventSink::new());
 
-        let state = PtyState::new();
-        let app = mock_builder()
-            .manage(state)
-            .manage(cache)
-            .build(tauri::generate_context!())
-            .expect("failed to build test app");
-
-        (app, temp_dir)
+        (PtyState::new(), cache, events, temp_dir)
     }
 
     #[tokio::test]
     async fn spawn_pty_creates_session() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         let request = SpawnPtyRequest {
             session_id: "test-session".to_string(),
@@ -864,7 +905,7 @@ mod tests {
             enable_agent_bridge: false,
         };
 
-        let result = spawn_pty(handle.clone(), state.clone(), cache.clone(), request).await;
+        let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
 
         assert!(result.is_ok(), "spawn_pty should succeed");
         let session = result.unwrap();
@@ -877,15 +918,14 @@ mod tests {
 
     #[tokio::test]
     async fn write_pty_fails_for_nonexistent_session() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let state = app.handle().state::<PtyState>();
+        let (state, _cache, _events, _temp_dir) = create_test_state_with_cache();
 
         let request = WritePtyRequest {
             session_id: "nonexistent".to_string(),
             data: "test\n".to_string(),
         };
 
-        let result = write_pty(state.clone(), request);
+        let result = write_pty_inner(&state, request);
 
         assert!(
             result.is_err(),
@@ -895,8 +935,7 @@ mod tests {
 
     #[tokio::test]
     async fn resize_pty_fails_for_nonexistent_session() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let state = app.handle().state::<PtyState>();
+        let (state, _cache, _events, _temp_dir) = create_test_state_with_cache();
 
         let request = ResizePtyRequest {
             session_id: "nonexistent".to_string(),
@@ -904,7 +943,7 @@ mod tests {
             cols: 80,
         };
 
-        let result = resize_pty(state.clone(), request);
+        let result = resize_pty_inner(&state, request);
 
         assert!(
             result.is_err(),
@@ -914,10 +953,7 @@ mod tests {
 
     #[tokio::test]
     async fn kill_pty_removes_session() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         // First spawn a session
         let spawn_request = SpawnPtyRequest {
@@ -931,7 +967,7 @@ mod tests {
             enable_agent_bridge: false,
         };
 
-        spawn_pty(handle.clone(), state.clone(), cache.clone(), spawn_request)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), spawn_request)
             .await
             .expect("spawn should succeed");
 
@@ -952,10 +988,7 @@ mod tests {
 
     #[tokio::test]
     async fn write_pty_succeeds_multiple_times() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         // Spawn a session
         let spawn_request = SpawnPtyRequest {
@@ -969,7 +1002,7 @@ mod tests {
             enable_agent_bridge: false,
         };
 
-        spawn_pty(handle.clone(), state.clone(), cache.clone(), spawn_request)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), spawn_request)
             .await
             .expect("spawn should succeed");
 
@@ -979,7 +1012,7 @@ mod tests {
             data: "echo hello\n".to_string(),
         };
 
-        let result1 = write_pty(state.clone(), write1);
+        let result1 = write_pty_inner(&state, write1);
         assert!(result1.is_ok(), "first write should succeed");
 
         // Write second command - this exposes the bug
@@ -988,7 +1021,7 @@ mod tests {
             data: "echo world\n".to_string(),
         };
 
-        let result2 = write_pty(state.clone(), write2);
+        let result2 = write_pty_inner(&state, write2);
         assert!(
             result2.is_ok(),
             "second write should succeed (bug: take_writer consumes writer)"
@@ -1000,7 +1033,7 @@ mod tests {
             data: "exit\n".to_string(),
         };
 
-        let result3 = write_pty(state.clone(), write3);
+        let result3 = write_pty_inner(&state, write3);
         assert!(result3.is_ok(), "third write should succeed");
 
         // Cleanup
@@ -1012,10 +1045,7 @@ mod tests {
         // This test verifies the fix for the race condition where session was
         // temporarily removed from state during reader cloning, causing concurrent
         // writes/resizes to fail with "session not found"
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         // Spawn a session (this starts the background reader task)
         let spawn_request = SpawnPtyRequest {
@@ -1029,7 +1059,7 @@ mod tests {
             enable_agent_bridge: false,
         };
 
-        spawn_pty(handle.clone(), state.clone(), cache.clone(), spawn_request)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), spawn_request)
             .await
             .expect("spawn should succeed");
 
@@ -1040,7 +1070,7 @@ mod tests {
             data: "echo test\n".to_string(),
         };
 
-        let write_result = write_pty(state.clone(), write_request);
+        let write_result = write_pty_inner(&state, write_request);
         assert!(
             write_result.is_ok(),
             "write should succeed immediately after spawn (session must remain in state)"
@@ -1053,7 +1083,7 @@ mod tests {
             cols: 120,
         };
 
-        let resize_result = resize_pty(state.clone(), resize_request);
+        let resize_result = resize_pty_inner(&state, resize_request);
         assert!(
             resize_result.is_ok(),
             "resize should succeed immediately after spawn (session must remain in state)"
@@ -1065,10 +1095,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_pty_returns_error_on_existing_session_id() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         let request = SpawnPtyRequest {
             session_id: "duplicate-id".to_string(),
@@ -1082,11 +1109,17 @@ mod tests {
         };
 
         // First spawn should succeed
-        let result1 = spawn_pty(handle.clone(), state.clone(), cache.clone(), request.clone()).await;
+        let result1 = spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request.clone(),
+        )
+        .await;
         assert!(result1.is_ok(), "first spawn should succeed");
 
         // Second spawn with same ID should fail
-        let result2 = spawn_pty(handle.clone(), state.clone(), cache.clone(), request).await;
+        let result2 = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
         assert!(result2.is_err(), "second spawn with same ID should fail");
         assert!(
             result2.unwrap_err().contains("already exists"),
@@ -1099,10 +1132,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_pty_appends_to_session_order_and_promotes_active() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         let cwd = std::env::current_dir()
             .unwrap()
@@ -1118,7 +1148,7 @@ mod tests {
             enable_agent_bridge: false,
         };
 
-        spawn_pty(handle.clone(), state.clone(), cache.clone(), request1)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request1)
             .await
             .expect("first spawn should succeed");
 
@@ -1137,7 +1167,7 @@ mod tests {
             enable_agent_bridge: false,
         };
 
-        spawn_pty(handle.clone(), state.clone(), cache.clone(), request2)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request2)
             .await
             .expect("second spawn should succeed");
 
@@ -1154,10 +1184,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_pty_caps_at_64_active_sessions() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         let cwd_temp_dir = TempDir::new().expect("failed to create cwd temp dir");
         let cwd = cwd_temp_dir.path().to_string_lossy().to_string();
@@ -1172,7 +1199,7 @@ mod tests {
                 enable_agent_bridge: false,
             };
 
-            spawn_pty(handle.clone(), state.clone(), cache.clone(), request)
+            spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request)
                 .await
                 .expect(&format!("spawn {} should succeed", i));
         }
@@ -1191,7 +1218,8 @@ mod tests {
             .join("sessions")
             .join("session-65");
 
-        let result = spawn_pty(handle.clone(), state.clone(), cache.clone(), request_65).await;
+        let result =
+            spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request_65).await;
         assert!(result.is_err(), "65th spawn should fail due to cap");
         let err = result.unwrap_err();
         assert!(
@@ -1211,16 +1239,17 @@ mod tests {
 
     #[tokio::test]
     async fn kill_pty_is_idempotent_for_missing_session() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let state = app.handle().state::<PtyState>();
-        let cache = app.handle().state::<Arc<SessionCache>>();
+        let (state, cache, _events, _temp_dir) = create_test_state_with_cache();
 
         let request = KillPtyRequest {
             session_id: "nonexistent".to_string(),
         };
 
-        let result = kill_pty(state.clone(), cache.clone(), request);
-        assert!(result.is_ok(), "kill_pty should be idempotent for missing session");
+        let result = kill_pty_inner(&state, &cache, request);
+        assert!(
+            result.is_ok(),
+            "kill_pty should be idempotent for missing session"
+        );
     }
 
     /// Fake `Child` whose `kill()` returns an `io::Error` — exercises the
@@ -1300,10 +1329,7 @@ mod tests {
     async fn kill_pty_preserves_state_and_cache_when_child_kill_fails() {
         use crate::terminal::cache::CachedSession;
 
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, _events, _temp_dir) = create_test_state_with_cache();
 
         let id = "stuck-session".to_string();
 
@@ -1332,7 +1358,7 @@ mod tests {
         let request = KillPtyRequest {
             session_id: id.clone(),
         };
-        let result = kill_pty(state.clone(), cache.clone(), request);
+        let result = kill_pty_inner(&state, &cache, request);
 
         // The OS-level kill syscall failed; kill_pty must surface that.
         let err = match result {
@@ -1374,10 +1400,7 @@ mod tests {
 
     #[tokio::test]
     async fn kill_pty_removes_from_session_order_and_cache() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         let cwd = std::env::current_dir()
             .unwrap()
@@ -1392,7 +1415,7 @@ mod tests {
             env: None,
             enable_agent_bridge: false,
         };
-        spawn_pty(handle.clone(), state.clone(), cache.clone(), request1)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request1)
             .await
             .expect("first spawn should succeed");
 
@@ -1403,7 +1426,7 @@ mod tests {
             env: None,
             enable_agent_bridge: false,
         };
-        spawn_pty(handle.clone(), state.clone(), cache.clone(), request2)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request2)
             .await
             .expect("second spawn should succeed");
 
@@ -1417,8 +1440,7 @@ mod tests {
         let kill_request = KillPtyRequest {
             session_id: "session-1".to_string(),
         };
-        kill_pty(state.clone(), cache.clone(), kill_request)
-            .expect("kill_pty should succeed");
+        kill_pty_inner(&state, &cache, kill_request).expect("kill_pty should succeed");
 
         // Verify session-1 is removed from session_order and sessions map
         let snap_after = cache.snapshot();
@@ -1432,10 +1454,7 @@ mod tests {
 
     #[tokio::test]
     async fn kill_pty_clears_active_when_active_killed() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         let cwd = std::env::current_dir()
             .unwrap()
@@ -1450,7 +1469,7 @@ mod tests {
             env: None,
             enable_agent_bridge: false,
         };
-        spawn_pty(handle.clone(), state.clone(), cache.clone(), request1)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request1)
             .await
             .expect("first spawn should succeed");
 
@@ -1461,7 +1480,7 @@ mod tests {
             env: None,
             enable_agent_bridge: false,
         };
-        spawn_pty(handle.clone(), state.clone(), cache.clone(), request2)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request2)
             .await
             .expect("second spawn should succeed");
 
@@ -1472,21 +1491,23 @@ mod tests {
             env: None,
             enable_agent_bridge: false,
         };
-        spawn_pty(handle.clone(), state.clone(), cache.clone(), request3)
+        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request3)
             .await
             .expect("third spawn should succeed");
 
         // Verify session-1 is active
         let snap_before = cache.snapshot();
         assert_eq!(snap_before.active_session_id.as_deref(), Some("session-1"));
-        assert_eq!(snap_before.session_order, vec!["session-1", "session-2", "session-3"]);
+        assert_eq!(
+            snap_before.session_order,
+            vec!["session-1", "session-2", "session-3"]
+        );
 
         // Kill session-1 (the active session)
         let kill_request = KillPtyRequest {
             session_id: "session-1".to_string(),
         };
-        kill_pty(state.clone(), cache.clone(), kill_request)
-            .expect("kill_pty should succeed");
+        kill_pty_inner(&state, &cache, kill_request).expect("kill_pty should succeed");
 
         // Verify active_session_id is unresolved until the frontend persists
         // its selected same-position neighbor via set_active_session.
@@ -1501,20 +1522,17 @@ mod tests {
 
     #[tokio::test]
     async fn read_loop_eof_marks_cache_exited() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         let cwd = std::env::current_dir()
             .unwrap()
             .to_string_lossy()
             .to_string();
 
-        spawn_pty(
-            handle.clone(),
+        spawn_pty_inner(
             state.clone(),
             cache.clone(),
+            events.clone(),
             SpawnPtyRequest {
                 session_id: "eof-test".into(),
                 cwd,
@@ -1527,8 +1545,8 @@ mod tests {
         .unwrap();
 
         // Force EOF by sending exit
-        write_pty(
-            state.clone(),
+        write_pty_inner(
+            &state,
             WritePtyRequest {
                 session_id: "eof-test".into(),
                 data: "exit\n".into(),
@@ -1544,20 +1562,20 @@ mod tests {
             .sessions
             .get("eof-test")
             .expect("session should still be in cache after exit");
-        assert!(entry.exited, "cache entry should be marked exited after EOF");
+        assert!(
+            entry.exited,
+            "cache entry should be marked exited after EOF"
+        );
     }
 
     #[tokio::test]
     async fn list_sessions_returns_alive_for_running_pty() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
-        spawn_pty(
-            handle.clone(),
+        spawn_pty_inner(
             state.clone(),
             cache.clone(),
+            events.clone(),
             SpawnPtyRequest {
                 session_id: "alive-1".into(),
                 cwd: std::env::current_dir()
@@ -1572,7 +1590,7 @@ mod tests {
         .await
         .unwrap();
 
-        let result = list_sessions(state.clone(), cache.clone()).unwrap();
+        let result = list_sessions_inner(&state, &cache).unwrap();
         assert_eq!(result.sessions.len(), 1);
         assert_eq!(result.sessions[0].id, "alive-1");
         assert!(matches!(
@@ -1580,9 +1598,9 @@ mod tests {
             SessionStatus::Alive { .. }
         ));
 
-        let _ = kill_pty(
-            state.clone(),
-            cache.clone(),
+        let _ = kill_pty_inner(
+            &state,
+            &cache,
             KillPtyRequest {
                 session_id: "alive-1".into(),
             },
@@ -1593,9 +1611,7 @@ mod tests {
     async fn list_sessions_reconciles_alive_cache_with_empty_pty_state() {
         use crate::terminal::cache;
 
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let cache_state = app.handle().state::<Arc<SessionCache>>();
-        let state = app.handle().state::<PtyState>();
+        let (state, cache_state, _events, _temp_dir) = create_test_state_with_cache();
 
         // Manually plant an "alive but missing" entry in the cache
         cache_state
@@ -1614,7 +1630,7 @@ mod tests {
             })
             .unwrap();
 
-        let result = list_sessions(state.clone(), cache_state.clone()).unwrap();
+        let result = list_sessions_inner(&state, &cache_state).unwrap();
         assert_eq!(result.sessions.len(), 1);
         match &result.sessions[0].status {
             SessionStatus::Exited { last_exit_code } => assert_eq!(*last_exit_code, None),
@@ -1634,16 +1650,13 @@ mod tests {
     async fn list_sessions_rotates_active_id_when_reconciled_to_exited() {
         use crate::terminal::cache;
 
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let cache_state = handle.state::<Arc<SessionCache>>();
-        let state = handle.state::<PtyState>();
+        let (state, cache_state, events, _temp_dir) = create_test_state_with_cache();
 
         // Spawn a real Alive session first so there's a rotation target.
-        spawn_pty(
-            handle.clone(),
+        spawn_pty_inner(
             state.clone(),
             cache_state.clone(),
+            events.clone(),
             SpawnPtyRequest {
                 session_id: "alive-real".into(),
                 cwd: std::env::current_dir()
@@ -1678,7 +1691,7 @@ mod tests {
             })
             .unwrap();
 
-        let result = list_sessions(state.clone(), cache_state.clone()).unwrap();
+        let result = list_sessions_inner(&state, &cache_state).unwrap();
 
         // Response active_session_id rotated away from phantom to alive-real.
         assert_eq!(result.active_session_id, Some("alive-real".into()));
@@ -1689,9 +1702,9 @@ mod tests {
         assert!(snap.sessions["phantom"].exited);
 
         // Cleanup: kill the live session so the test doesn't leak a process.
-        let _ = kill_pty(
-            state.clone(),
-            cache_state.clone(),
+        let _ = kill_pty_inner(
+            &state,
+            &cache_state,
             KillPtyRequest {
                 session_id: "alive-real".into(),
             },
@@ -1700,20 +1713,17 @@ mod tests {
 
     #[tokio::test]
     async fn list_sessions_returns_in_session_order() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         let cwd = std::env::current_dir()
             .unwrap()
             .to_string_lossy()
             .to_string();
         for id in &["zebra", "alpha", "mike"] {
-            spawn_pty(
-                handle.clone(),
+            spawn_pty_inner(
                 state.clone(),
                 cache.clone(),
+                events.clone(),
                 SpawnPtyRequest {
                     session_id: id.to_string(),
                     cwd: cwd.clone(),
@@ -1726,14 +1736,14 @@ mod tests {
             .unwrap();
         }
 
-        let result = list_sessions(state.clone(), cache.clone()).unwrap();
+        let result = list_sessions_inner(&state, &cache).unwrap();
         let ids: Vec<_> = result.sessions.iter().map(|s| s.id.clone()).collect();
         assert_eq!(ids, vec!["zebra", "alpha", "mike"]);
 
         for id in &["zebra", "alpha", "mike"] {
-            let _ = kill_pty(
-                state.clone(),
-                cache.clone(),
+            let _ = kill_pty_inner(
+                &state,
+                &cache,
                 KillPtyRequest {
                     session_id: id.to_string(),
                 },
@@ -1743,15 +1753,12 @@ mod tests {
 
     #[tokio::test]
     async fn list_sessions_replay_end_offset_matches_buffer_contents() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
-        spawn_pty(
-            handle.clone(),
+        spawn_pty_inner(
             state.clone(),
             cache.clone(),
+            events.clone(),
             SpawnPtyRequest {
                 session_id: "off-test".into(),
                 cwd: std::env::current_dir()
@@ -1767,8 +1774,8 @@ mod tests {
         .unwrap();
 
         // Write some output and let the read loop process
-        write_pty(
-            state.clone(),
+        write_pty_inner(
+            &state,
             WritePtyRequest {
                 session_id: "off-test".into(),
                 data: "echo hello\n".into(),
@@ -1777,7 +1784,7 @@ mod tests {
         .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(300));
 
-        let result = list_sessions(state.clone(), cache.clone()).unwrap();
+        let result = list_sessions_inner(&state, &cache).unwrap();
         match &result.sessions[0].status {
             SessionStatus::Alive {
                 replay_data,
@@ -1798,9 +1805,9 @@ mod tests {
             other => panic!("expected Alive, got {:?}", other),
         }
 
-        let _ = kill_pty(
-            state.clone(),
-            cache.clone(),
+        let _ = kill_pty_inner(
+            &state,
+            &cache,
             KillPtyRequest {
                 session_id: "off-test".into(),
             },
@@ -1809,20 +1816,17 @@ mod tests {
 
     #[tokio::test]
     async fn set_active_session_persists_to_cache() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         let cwd = std::env::current_dir()
             .unwrap()
             .to_string_lossy()
             .to_string();
         for id in &["a", "b"] {
-            spawn_pty(
-                handle.clone(),
+            spawn_pty_inner(
                 state.clone(),
                 cache.clone(),
+                events.clone(),
                 SpawnPtyRequest {
                     session_id: id.to_string(),
                     cwd: cwd.clone(),
@@ -1835,18 +1839,14 @@ mod tests {
             .unwrap();
         }
 
-        set_active_session(
-            cache.clone(),
-            SetActiveSessionRequest { id: "b".into() },
-        )
-        .unwrap();
+        set_active_session_inner(&cache, SetActiveSessionRequest { id: "b".into() }).unwrap();
 
         assert_eq!(cache.snapshot().active_session_id.as_deref(), Some("b"));
 
         for id in &["a", "b"] {
-            let _ = kill_pty(
-                state.clone(),
-                cache.clone(),
+            let _ = kill_pty_inner(
+                &state,
+                &cache,
                 KillPtyRequest {
                     session_id: id.to_string(),
                 },
@@ -1856,33 +1856,27 @@ mod tests {
 
     #[test]
     fn set_active_session_rejects_unknown_id() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let cache = app.handle().state::<Arc<SessionCache>>();
+        let (_state, cache, _events, _temp_dir) = create_test_state_with_cache();
 
-        let result = set_active_session(
-            cache.clone(),
-            SetActiveSessionRequest { id: "nope".into() },
-        );
+        let result =
+            set_active_session_inner(&cache, SetActiveSessionRequest { id: "nope".into() });
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown session"));
     }
 
     #[tokio::test]
     async fn reorder_sessions_persists_to_cache() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         let cwd = std::env::current_dir()
             .unwrap()
             .to_string_lossy()
             .to_string();
         for id in &["a", "b", "c"] {
-            spawn_pty(
-                handle.clone(),
+            spawn_pty_inner(
                 state.clone(),
                 cache.clone(),
+                events.clone(),
                 SpawnPtyRequest {
                     session_id: id.to_string(),
                     cwd: cwd.clone(),
@@ -1895,8 +1889,8 @@ mod tests {
             .unwrap();
         }
 
-        reorder_sessions(
-            cache.clone(),
+        reorder_sessions_inner(
+            &cache,
             ReorderSessionsRequest {
                 ids: vec!["c".into(), "a".into(), "b".into()],
             },
@@ -1906,9 +1900,9 @@ mod tests {
         assert_eq!(cache.snapshot().session_order, vec!["c", "a", "b"]);
 
         for id in &["a", "b", "c"] {
-            let _ = kill_pty(
-                state.clone(),
-                cache.clone(),
+            let _ = kill_pty_inner(
+                &state,
+                &cache,
                 KillPtyRequest {
                     session_id: id.to_string(),
                 },
@@ -1918,21 +1912,15 @@ mod tests {
 
     #[tokio::test]
     async fn reorder_sessions_rejects_non_permutation() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
-        spawn_pty(
-            handle.clone(),
+        spawn_pty_inner(
             state.clone(),
             cache.clone(),
+            events.clone(),
             SpawnPtyRequest {
                 session_id: "only".into(),
-                cwd: std::env::current_dir()
-                    .unwrap()
-                    .to_string_lossy()
-                    .into(),
+                cwd: std::env::current_dir().unwrap().to_string_lossy().into(),
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
@@ -1941,8 +1929,8 @@ mod tests {
         .await
         .unwrap();
 
-        let result = reorder_sessions(
-            cache.clone(),
+        let result = reorder_sessions_inner(
+            &cache,
             ReorderSessionsRequest {
                 ids: vec!["only".into(), "extra".into()],
             },
@@ -1950,9 +1938,9 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not a permutation"));
 
-        let _ = kill_pty(
-            state.clone(),
-            cache.clone(),
+        let _ = kill_pty_inner(
+            &state,
+            &cache,
             KillPtyRequest {
                 session_id: "only".into(),
             },
@@ -1968,20 +1956,17 @@ mod tests {
     /// unstable active-tab selection).
     #[tokio::test]
     async fn reorder_sessions_rejects_duplicate_id() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         let cwd = std::env::current_dir()
             .unwrap()
             .to_string_lossy()
             .to_string();
         for id in &["a", "b", "c"] {
-            spawn_pty(
-                handle.clone(),
+            spawn_pty_inner(
                 state.clone(),
                 cache.clone(),
+                events.clone(),
                 SpawnPtyRequest {
                     session_id: id.to_string(),
                     cwd: cwd.clone(),
@@ -1997,8 +1982,8 @@ mod tests {
         // Proposed order has the SAME unique ids as current ([a, b, c])
         // but adds a duplicate of `c`. HashSet equality would pass; the
         // multiset (sort+compare) catches the duplicate.
-        let result = reorder_sessions(
-            cache.clone(),
+        let result = reorder_sessions_inner(
+            &cache,
             ReorderSessionsRequest {
                 ids: vec!["a".into(), "b".into(), "c".into(), "c".into()],
             },
@@ -2014,9 +1999,9 @@ mod tests {
         assert!(snapshot.session_order.contains(&"c".to_string()));
 
         for id in &["a", "b", "c"] {
-            let _ = kill_pty(
-                state.clone(),
-                cache.clone(),
+            let _ = kill_pty_inner(
+                &state,
+                &cache,
                 KillPtyRequest {
                     session_id: id.to_string(),
                 },
@@ -2026,19 +2011,16 @@ mod tests {
 
     #[tokio::test]
     async fn update_session_cwd_persists_to_cache() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         let cwd = std::env::current_dir()
             .unwrap()
             .to_string_lossy()
             .to_string();
-        spawn_pty(
-            handle.clone(),
+        spawn_pty_inner(
             state.clone(),
             cache.clone(),
+            events.clone(),
             SpawnPtyRequest {
                 session_id: "cwd-test".into(),
                 cwd: cwd.clone(),
@@ -2055,8 +2037,8 @@ mod tests {
         // the stored value is the canonical `/tmp` (or `/private/tmp` on
         // macOS). Mirrors `spawn_pty`'s canonicalize step so reload sees the
         // same path the OS reports for the cwd.
-        update_session_cwd(
-            cache.clone(),
+        update_session_cwd_inner(
+            &cache,
             UpdateSessionCwdRequest {
                 id: "cwd-test".into(),
                 cwd: "/tmp/./".into(),
@@ -2071,9 +2053,9 @@ mod tests {
             .to_string();
         assert_eq!(stored, &expected_canonical);
 
-        let _ = kill_pty(
-            state.clone(),
-            cache.clone(),
+        let _ = kill_pty_inner(
+            &state,
+            &cache,
             KillPtyRequest {
                 session_id: "cwd-test".into(),
             },
@@ -2082,11 +2064,10 @@ mod tests {
 
     #[test]
     fn update_session_cwd_rejects_invalid_path() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let cache = app.handle().state::<Arc<SessionCache>>();
+        let (_state, cache, _events, _temp_dir) = create_test_state_with_cache();
 
-        let result = update_session_cwd(
-            cache.clone(),
+        let result = update_session_cwd_inner(
+            &cache,
             UpdateSessionCwdRequest {
                 id: "any".into(),
                 cwd: "/nonexistent/totally/fake/path".into(),
@@ -2132,9 +2113,8 @@ mod tests {
         use std::thread;
 
         let temp_dir = TempDir::new().expect("temp");
-        let cache = StdArc::new(
-            SessionCache::load(temp_dir.path().join("sessions.json")).expect("load"),
-        );
+        let cache =
+            StdArc::new(SessionCache::load(temp_dir.path().join("sessions.json")).expect("load"));
 
         // Seed two sessions, "a" and "b", in a known order.
         let cache_seed = StdArc::clone(&cache);
@@ -2240,8 +2220,7 @@ mod tests {
     #[test]
     fn mutate_rolls_back_on_err() {
         let temp_dir = TempDir::new().expect("temp");
-        let cache =
-            SessionCache::load(temp_dir.path().join("sessions.json")).expect("load");
+        let cache = SessionCache::load(temp_dir.path().join("sessions.json")).expect("load");
 
         cache
             .mutate(|d| {
@@ -2267,13 +2246,10 @@ mod tests {
     /// the mutate closure.
     #[test]
     fn set_active_session_rejects_unknown_id_under_lock() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let cache = app.handle().state::<Arc<SessionCache>>();
+        let (_state, cache, _events, _temp_dir) = create_test_state_with_cache();
 
-        let result = set_active_session(
-            cache.clone(),
-            SetActiveSessionRequest { id: "ghost".into() },
-        );
+        let result =
+            set_active_session_inner(&cache, SetActiveSessionRequest { id: "ghost".into() });
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown session"));
         // Mirror unchanged — no half-written active id.
@@ -2285,11 +2261,10 @@ mod tests {
     /// leave a half-modified cwd if an entry exists but for a different id.
     #[test]
     fn update_session_cwd_rejects_unknown_id_under_lock() {
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let cache = app.handle().state::<Arc<SessionCache>>();
+        let (_state, cache, _events, _temp_dir) = create_test_state_with_cache();
 
-        let result = update_session_cwd(
-            cache.clone(),
+        let result = update_session_cwd_inner(
+            &cache,
             UpdateSessionCwdRequest {
                 id: "ghost".into(),
                 cwd: "/tmp".into(),
@@ -2335,10 +2310,7 @@ mod tests {
     async fn spawn_pty_does_not_orphan_state_when_cache_mutate_fails() {
         use crate::terminal::cache::test_force_mutate_err;
 
-        let (app, _temp_dir) = create_test_app_with_cache();
-        let handle = app.handle();
-        let state = handle.state::<PtyState>();
-        let cache = handle.state::<Arc<SessionCache>>();
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         // Snapshot pre-state so we can verify the cache stayed unchanged.
         let pre_snapshot = cache.snapshot();
@@ -2351,10 +2323,10 @@ mod tests {
         // future closure that bails on validation under the lock.
         test_force_mutate_err::arm("simulated cache write failure");
 
-        let result = spawn_pty(
-            handle.clone(),
+        let result = spawn_pty_inner(
             state.clone(),
             cache.clone(),
+            events.clone(),
             SpawnPtyRequest {
                 session_id: "orphan-test".to_string(),
                 cwd: std::env::current_dir()
@@ -2369,7 +2341,10 @@ mod tests {
         .await;
 
         // 1. spawn_pty must surface the cache failure to the caller.
-        assert!(result.is_err(), "spawn_pty should fail when cache.mutate fails");
+        assert!(
+            result.is_err(),
+            "spawn_pty should fail when cache.mutate fails"
+        );
         let err = result.unwrap_err();
         assert!(
             err.contains("failed to write cache"),

@@ -1,80 +1,115 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
-import { isTauri, isBrowser, getEnvironment, isTest } from './environment'
+import { isDesktop, isBrowser, getEnvironment, isTest } from './environment'
+import type { BackendApi } from './backend'
 
-describe('environment detection', () => {
+const noop = (): void => undefined
+
+describe('environment', () => {
   let originalTauriInternals: typeof window.__TAURI_INTERNALS__
+  let originalVimeflow: typeof window.vimeflow
 
   beforeEach(() => {
-    // Save the original value
-    originalTauriInternals = (window as Window).__TAURI_INTERNALS__
+    originalTauriInternals = window.__TAURI_INTERNALS__
+    originalVimeflow = window.vimeflow
   })
 
   afterEach(() => {
-    // Restore the original value
     if (originalTauriInternals === undefined) {
-      delete (window as Window).__TAURI_INTERNALS__
+      delete window.__TAURI_INTERNALS__
     } else {
-      ;(window as Window).__TAURI_INTERNALS__ = originalTauriInternals
+      window.__TAURI_INTERNALS__ = originalTauriInternals
+    }
+
+    if (originalVimeflow === undefined) {
+      delete window.vimeflow
+    } else {
+      window.vimeflow = originalVimeflow
     }
   })
 
-  describe('isTauri', () => {
-    test('returns true when __TAURI_INTERNALS__ is defined', () => {
-      ;(window as Window).__TAURI_INTERNALS__ = {}
+  describe('isDesktop', () => {
+    test('returns true when __TAURI_INTERNALS__ is set (Tauri host)', () => {
+      window.__TAURI_INTERNALS__ = {}
+      delete window.vimeflow
 
-      expect(isTauri()).toBe(true)
+      expect(isDesktop()).toBe(true)
     })
 
-    test('returns false when __TAURI_INTERNALS__ is not defined', () => {
-      delete (window as Window).__TAURI_INTERNALS__
+    test('returns true when window.vimeflow is set (Electron host)', () => {
+      delete window.__TAURI_INTERNALS__
+      window.vimeflow = {
+        invoke: () => Promise.resolve(),
+        listen: () => Promise.resolve(noop),
+      } as unknown as BackendApi
 
-      expect(isTauri()).toBe(false)
+      expect(isDesktop()).toBe(true)
+    })
+
+    test('returns false when window.vimeflow is explicitly undefined', () => {
+      delete window.__TAURI_INTERNALS__
+      window.vimeflow = undefined
+
+      expect(isDesktop()).toBe(false)
+    })
+
+    test('returns false when neither signal is present (browser)', () => {
+      delete window.__TAURI_INTERNALS__
+      delete window.vimeflow
+
+      expect(isDesktop()).toBe(false)
     })
 
     test('returns true when __TAURI_INTERNALS__ has metadata', () => {
-      ;(window as Window).__TAURI_INTERNALS__ = {
-        metadata: {
-          currentWindow: {
-            label: 'main',
-          },
-        },
+      window.__TAURI_INTERNALS__ = {
+        metadata: { currentWindow: { label: 'main' } },
       }
 
-      expect(isTauri()).toBe(true)
+      expect(isDesktop()).toBe(true)
     })
   })
 
   describe('isBrowser', () => {
-    test('returns false when __TAURI_INTERNALS__ is defined', () => {
-      ;(window as Window).__TAURI_INTERNALS__ = {}
+    test('returns false when desktop signal is set', () => {
+      window.__TAURI_INTERNALS__ = {}
 
       expect(isBrowser()).toBe(false)
     })
 
-    test('returns true when __TAURI_INTERNALS__ is not defined', () => {
-      delete (window as Window).__TAURI_INTERNALS__
+    test('returns true when no desktop signal is set', () => {
+      delete window.__TAURI_INTERNALS__
+      delete window.vimeflow
 
       expect(isBrowser()).toBe(true)
     })
   })
 
   describe('getEnvironment', () => {
-    test('returns "tauri" when running in Tauri', () => {
-      ;(window as Window).__TAURI_INTERNALS__ = {}
+    test('returns desktop when Tauri signal is present', () => {
+      window.__TAURI_INTERNALS__ = {}
 
-      expect(getEnvironment()).toBe('tauri')
+      expect(getEnvironment()).toBe('desktop')
     })
 
-    test('returns "browser" when running in browser', () => {
-      delete (window as Window).__TAURI_INTERNALS__
+    test('returns desktop when vimeflow signal is present', () => {
+      delete window.__TAURI_INTERNALS__
+      window.vimeflow = {
+        invoke: () => Promise.resolve(),
+        listen: () => Promise.resolve(noop),
+      } as unknown as BackendApi
+
+      expect(getEnvironment()).toBe('desktop')
+    })
+
+    test('returns browser when no signal is present', () => {
+      delete window.__TAURI_INTERNALS__
+      delete window.vimeflow
 
       expect(getEnvironment()).toBe('browser')
     })
   })
 
   describe('isTest', () => {
-    test('returns true when running in test mode', () => {
-      // In vitest, import.meta.env.MODE is 'test' by default
+    test('returns true when MODE is test', () => {
       expect(isTest()).toBe(true)
     })
   })

@@ -7,6 +7,7 @@
 pub mod adapter;
 pub mod commands;
 pub mod detector;
+pub(crate) mod events;
 pub mod types;
 
 // Re-export commonly used types for external modules and frontend
@@ -15,5 +16,8 @@ pub use types::{AgentDetectedEvent, AgentDisconnectedEvent, AgentType};
 
 // Re-export Tauri commands
 pub use adapter::base::TranscriptState;
-pub use adapter::{AgentWatcherState, start_agent_watcher, stop_agent_watcher};
+pub use adapter::AgentWatcherState;
+#[cfg(not(test))]
+pub use adapter::{start_agent_watcher, stop_agent_watcher};
+#[cfg(not(test))]
 pub use commands::detect_agent_in_session;

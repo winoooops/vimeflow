@@ -22,9 +22,11 @@ use std::time::{Duration, Instant};
 
 use ignore::WalkBuilder;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::Emitter;
 
 use super::validate_cwd;
+#[cfg(not(test))]
+use crate::runtime::BackendState;
+use crate::runtime::{serialize_event, EventSink};
 
 /// Debounce interval — emit after filesystem events have been quiet for 300ms.
 const DEBOUNCE_MS: u64 = 300;
@@ -451,11 +453,19 @@ fn enumerate_dirs(toplevel: &std::path::Path) -> Vec<PathBuf> {
 /// If `cwd` is a subdirectory of a repo, resolves to the toplevel and adds
 /// the input cwd as a subscriber. Multiple calls with different subdirs of
 /// the same repo increment the refcount.
+#[cfg(not(test))]
 #[tauri::command]
 pub async fn start_git_watcher(
     cwd: String,
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, GitWatcherState>,
+    state: tauri::State<'_, std::sync::Arc<BackendState>>,
+) -> Result<(), String> {
+    state.start_git_watcher(cwd).await
+}
+
+pub(crate) async fn start_git_watcher_backend(
+    cwd: String,
+    events: Arc<dyn EventSink>,
+    state: GitWatcherState,
 ) -> Result<(), String> {
     // The inner helper runs blocking `std::process::Command` calls
     // (rev-parse, git status) and constructs `notify` watchers that do
@@ -464,8 +474,7 @@ pub async fn start_git_watcher(
     // of the setup — harmful on the bounded Tauri IPC pool. Hop onto the
     // blocking pool via `spawn_blocking` so the async thread returns
     // immediately and the sync inner can take as long as it needs.
-    let owned_state = state.inner().clone();
-    tokio::task::spawn_blocking(move || start_git_watcher_inner(&cwd, app_handle, &owned_state))
+    tokio::task::spawn_blocking(move || start_git_watcher_inner(&cwd, events, &state))
         .await
         .map_err(|e| format!("start_git_watcher task panicked: {}", e))?
 }
@@ -473,9 +482,9 @@ pub async fn start_git_watcher(
 /// Synchronous core of `start_git_watcher`. Called by both the Tauri command and
 /// the pre-repo upgrade path — works against a cloneable `&GitWatcherState` so it
 /// doesn't require a `tauri::State` handle.
-fn start_git_watcher_inner<R: tauri::Runtime>(
+fn start_git_watcher_inner(
     cwd: &str,
-    app_handle: tauri::AppHandle<R>,
+    events: Arc<dyn EventSink>,
     state: &GitWatcherState,
 ) -> Result<(), String> {
     let safe_cwd = validate_cwd(cwd)?;
@@ -518,7 +527,7 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
             // filter), the PathBuf is the map key (so two calls for
             // the same dir via different spellings share one poll
             // thread).
-            return start_pre_repo_watcher_inner(cwd, safe_cwd, app_handle, state);
+            return start_pre_repo_watcher_inner(cwd, safe_cwd, events, state);
         }
     };
 
@@ -576,7 +585,7 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
                 .expect("failed to lock cwd_to_toplevel")
                 .insert(cwd.to_string(), toplevel.clone());
             drop(repo_watchers);
-            emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
+            emit_git_status_changed(&events, vec![cwd.to_string()]);
             return Ok(());
         }
     }
@@ -587,7 +596,7 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
     let stop_flag = Arc::new(AtomicBool::new(false));
     let poll_stop_signal = WatcherStopSignal::new();
     let debounce_tx = {
-        let app_handle = app_handle.clone();
+        let events = events.clone();
         let state = state_clone.clone();
         let toplevel = toplevel.clone();
         let stop_flag = stop_flag.clone();
@@ -599,7 +608,7 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
         let (tx, _completed) = spawn_trailing_debounce_thread(
             stop_flag,
             Duration::from_millis(DEBOUNCE_MS),
-            move || emit_for_all_subscribers(&app_handle, &state, &toplevel),
+            move || emit_for_all_subscribers(&events, &state, &toplevel),
         );
         tx
     };
@@ -687,7 +696,7 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
     //       registers any not yet watched. Compensates for non-recursive
     //       inotify's inability to extend into post-startup directories.
     let poll_toplevel = toplevel.clone();
-    let poll_app_handle = app_handle.clone();
+    let poll_events = events.clone();
     let poll_state = state_clone.clone();
     let poll_thread_stop_signal = poll_stop_signal.clone();
     let poll_last_status_hash = last_status_hash.clone();
@@ -713,7 +722,7 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
                     changed
                 };
                 if changed {
-                    emit_for_all_subscribers(&poll_app_handle, &poll_state, &poll_toplevel);
+                    emit_for_all_subscribers(&poll_events, &poll_state, &poll_toplevel);
                 }
             }
 
@@ -801,7 +810,7 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
                 .insert(cwd.to_string(), toplevel.clone());
             drop(repo_watchers);
             // `repo_watcher` (local) drops here.
-            emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
+            emit_git_status_changed(&events, vec![cwd.to_string()]);
             return Ok(());
         }
 
@@ -815,7 +824,7 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
     }
 
     // Emit initial event using the frontend's original cwd string.
-    emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
+    emit_git_status_changed(&events, vec![cwd.to_string()]);
 
     Ok(())
 }
@@ -826,10 +835,10 @@ fn start_git_watcher_inner<R: tauri::Runtime>(
 /// used in event payloads) and the canonicalized `safe_cwd` PathBuf (map
 /// key, used for dedup when multiple callers watch the same dir via
 /// different spellings).
-fn start_pre_repo_watcher_inner<R: tauri::Runtime>(
+fn start_pre_repo_watcher_inner(
     cwd: &str,
     safe_cwd: PathBuf,
-    app_handle: tauri::AppHandle<R>,
+    events: Arc<dyn EventSink>,
     state: &GitWatcherState,
 ) -> Result<(), String> {
     let mut pre_repo_watchers = state
@@ -854,7 +863,7 @@ fn start_pre_repo_watcher_inner<R: tauri::Runtime>(
             .expect("failed to lock cwd_to_safe_pre_repo")
             .insert(cwd.to_string(), safe_cwd.clone());
 
-        emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
+        emit_git_status_changed(&events, vec![cwd.to_string()]);
 
         return Ok(());
     }
@@ -863,7 +872,7 @@ fn start_pre_repo_watcher_inner<R: tauri::Runtime>(
     let stop_signal = WatcherStopSignal::new();
     spawn_pre_repo_poll_thread(
         safe_cwd.clone(),
-        app_handle.clone(),
+        events.clone(),
         state.clone(),
         stop_signal.clone(),
     );
@@ -887,14 +896,14 @@ fn start_pre_repo_watcher_inner<R: tauri::Runtime>(
         .insert(cwd.to_string(), safe_cwd);
 
     // Emit initial event with the frontend's original cwd string
-    emit_git_status_changed(&app_handle, vec![cwd.to_string()]);
+    emit_git_status_changed(&events, vec![cwd.to_string()]);
 
     Ok(())
 }
 
-fn spawn_pre_repo_poll_thread<R: tauri::Runtime>(
+fn spawn_pre_repo_poll_thread(
     safe_cwd: PathBuf,
-    app_handle: tauri::AppHandle<R>,
+    events: Arc<dyn EventSink>,
     state: GitWatcherState,
     stop_signal: Arc<WatcherStopSignal>,
 ) {
@@ -909,7 +918,7 @@ fn spawn_pre_repo_poll_thread<R: tauri::Runtime>(
                 // Upgrade to repo watcher — transfers the subscriber map
                 // (with original cwd strings intact) into repo_watchers.
                 if let Err(e) =
-                    upgrade_to_repo_watcher(safe_cwd.clone(), app_handle.clone(), state.clone())
+                    upgrade_to_repo_watcher(safe_cwd.clone(), events.clone(), state.clone())
                 {
                     log::error!("Failed to upgrade to repo watcher: {}", e);
                 }
@@ -928,10 +937,10 @@ fn spawn_pre_repo_poll_thread<R: tauri::Runtime>(
     });
 }
 
-fn restore_pre_repo_subscribers<R: tauri::Runtime>(
+fn restore_pre_repo_subscribers(
     safe_cwd: PathBuf,
     subscribers: HashMap<String, u32>,
-    app_handle: tauri::AppHandle<R>,
+    events: Arc<dyn EventSink>,
     state: &GitWatcherState,
 ) -> Result<(), String> {
     if subscribers.is_empty() {
@@ -999,11 +1008,11 @@ fn restore_pre_repo_subscribers<R: tauri::Runtime>(
                 safe_cwd,
             );
         } else {
-            spawn_pre_repo_poll_thread(safe_cwd, app_handle.clone(), state.clone(), stop_signal);
+            spawn_pre_repo_poll_thread(safe_cwd, events.clone(), state.clone(), stop_signal);
         }
     }
 
-    emit_git_status_changed(&app_handle, subscriber_cwds);
+    emit_git_status_changed(&events, subscriber_cwds);
 
     Ok(())
 }
@@ -1016,9 +1025,9 @@ fn restore_pre_repo_subscribers<R: tauri::Runtime>(
 /// the upgrade. Previously this used `cwd.to_string_lossy()` (the
 /// canonical form), stranding any frontend that had subscribed with a
 /// symlinked or non-canonical path.
-fn upgrade_to_repo_watcher<R: tauri::Runtime>(
+fn upgrade_to_repo_watcher(
     safe_cwd: PathBuf,
-    app_handle: tauri::AppHandle<R>,
+    events: Arc<dyn EventSink>,
     state: GitWatcherState,
 ) -> Result<(), String> {
     // Collect the subscribers (original-cwd → refcount) from the pre-repo
@@ -1069,7 +1078,7 @@ fn upgrade_to_repo_watcher<R: tauri::Runtime>(
             continue;
         }
 
-        if let Err(e) = start_git_watcher_inner(&original_cwd, app_handle.clone(), &state) {
+        if let Err(e) = start_git_watcher_inner(&original_cwd, events.clone(), &state) {
             errors.push(format!("{}: {}", original_cwd, e));
             failed_subscribers.insert(original_cwd, refcount);
             subscriber_failures += 1;
@@ -1115,7 +1124,7 @@ fn upgrade_to_repo_watcher<R: tauri::Runtime>(
     }
 
     if let Err(e) =
-        restore_pre_repo_subscribers(safe_cwd, failed_subscribers, app_handle.clone(), &state)
+        restore_pre_repo_subscribers(safe_cwd, failed_subscribers, events.clone(), &state)
     {
         errors.push(format!("failed to restore failed subscribers: {}", e));
     }
@@ -1139,16 +1148,23 @@ fn upgrade_to_repo_watcher<R: tauri::Runtime>(
 }
 
 /// Stop watching a git repository
+#[cfg(not(test))]
 #[tauri::command]
 pub async fn stop_git_watcher(
     cwd: String,
-    state: tauri::State<'_, GitWatcherState>,
+    state: tauri::State<'_, std::sync::Arc<BackendState>>,
+) -> Result<(), String> {
+    state.stop_git_watcher(cwd).await
+}
+
+pub(crate) async fn stop_git_watcher_backend(
+    cwd: String,
+    state: GitWatcherState,
 ) -> Result<(), String> {
     // Same rationale as `start_git_watcher`: `validate_cwd` and
     // `resolve_toplevel` both spawn sync subprocess calls; hop to the
     // blocking pool so the async runtime isn't pinned while they run.
-    let owned_state = state.inner().clone();
-    tokio::task::spawn_blocking(move || stop_git_watcher_inner(cwd, owned_state))
+    tokio::task::spawn_blocking(move || stop_git_watcher_inner(cwd, state))
         .await
         .map_err(|e| format!("stop_git_watcher task panicked: {}", e))?
 }
@@ -1259,8 +1275,8 @@ fn stop_git_watcher_inner(cwd: String, state: GitWatcherState) -> Result<(), Str
 }
 
 /// Emit git-status-changed event for all subscribers of a repo
-fn emit_for_all_subscribers<R: tauri::Runtime>(
-    app_handle: &tauri::AppHandle<R>,
+fn emit_for_all_subscribers(
+    events: &Arc<dyn EventSink>,
     state: &GitWatcherState,
     toplevel: &std::path::Path,
 ) {
@@ -1280,15 +1296,17 @@ fn emit_for_all_subscribers<R: tauri::Runtime>(
     };
 
     if !cwds.is_empty() {
-        emit_git_status_changed(app_handle, cwds);
+        emit_git_status_changed(events, cwds);
     }
 }
 
 /// Emit a git-status-changed event
-fn emit_git_status_changed<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>, cwds: Vec<String>) {
+fn emit_git_status_changed(events: &Arc<dyn EventSink>, cwds: Vec<String>) {
     let payload = GitStatusChangedPayload { cwds };
+    let result = serialize_event(&payload)
+        .and_then(|payload| events.emit_json("git-status-changed", payload));
 
-    if let Err(e) = app_handle.emit("git-status-changed", payload) {
+    if let Err(e) = result {
         log::error!("Failed to emit git-status-changed: {}", e);
     }
 }
@@ -1297,10 +1315,10 @@ fn emit_git_status_changed<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>, 
 mod tests {
     use super::super::test_helpers::{configure_test_git, home_tempdir};
     use super::*;
+    use crate::runtime::FakeEventSink;
     use std::fs;
     use std::process::Command;
-    use std::sync::{mpsc, Arc, Mutex};
-    use tauri::Listener;
+    use std::sync::{mpsc, Arc};
     use tempfile::TempDir;
 
     /// Create a temp git repo for testing
@@ -1348,18 +1366,7 @@ mod tests {
 
     #[test]
     fn upgrade_to_repo_watcher_emits_once_for_duplicate_original_cwd() {
-        let app = tauri::test::mock_builder()
-            .build(tauri::generate_context!())
-            .expect("failed to build test app");
-        let received = Arc::new(Mutex::new(Vec::new()));
-        let received_for_listener = received.clone();
-
-        app.handle().listen("git-status-changed", move |event| {
-            received_for_listener
-                .lock()
-                .expect("failed to lock received events")
-                .push(event.payload().to_string());
-        });
+        let sink = Arc::new(FakeEventSink::new());
 
         let temp = create_temp_repo();
         let cwd = temp.path().to_string_lossy().to_string();
@@ -1380,7 +1387,7 @@ mod tests {
                 },
             );
 
-        let result = upgrade_to_repo_watcher(safe_cwd, app.handle().clone(), state.clone());
+        let result = upgrade_to_repo_watcher(safe_cwd, sink.clone(), state.clone());
 
         assert!(result.is_ok(), "upgrade should succeed: {:?}", result.err());
 
@@ -1398,30 +1405,18 @@ mod tests {
         assert_eq!(watcher.subscribers.get(&cwd), Some(&3));
         drop(repo_watchers);
 
-        std::thread::sleep(Duration::from_millis(100));
-
-        let events = received.lock().expect("failed to lock received events");
-
+        let events = sink.recorded();
         assert_eq!(events.len(), 1);
-        assert!(events[0].contains(&cwd));
+        assert_eq!(events[0].0, "git-status-changed");
+        assert_eq!(
+            events[0].1["cwds"].as_array().expect("cwds array")[0].as_str(),
+            Some(cwd.as_str())
+        );
     }
 
     #[test]
     fn upgrade_to_repo_watcher_restores_failed_subscribers_for_retry() {
-        let app = tauri::test::mock_builder()
-            .build(tauri::generate_context!())
-            .expect("failed to build test app");
-
-        // Listen for git-status-changed and pipe payloads through an
-        // mpsc channel so the assertion below can deterministically wait
-        // for the restored-subscriber event with a generous timeout
-        // instead of guessing a fixed sleep window. A 100 ms sleep on
-        // a saturated CI host can expire before Tauri's listener
-        // dispatch thread is scheduled, producing flaky false negatives.
-        let (events_tx, events_rx) = mpsc::channel::<String>();
-        app.handle().listen("git-status-changed", move |event| {
-            let _ = events_tx.send(event.payload().to_string());
-        });
+        let sink = Arc::new(FakeEventSink::new());
 
         let temp = create_temp_repo();
         let cwd = temp.path().to_string_lossy().to_string();
@@ -1444,7 +1439,7 @@ mod tests {
                 },
             );
 
-        let result = upgrade_to_repo_watcher(safe_cwd.clone(), app.handle().clone(), state.clone());
+        let result = upgrade_to_repo_watcher(safe_cwd.clone(), sink.clone(), state.clone());
 
         assert!(result.is_err(), "missing subscriber should fail upgrade");
 
@@ -1482,34 +1477,12 @@ mod tests {
         assert_eq!(safe_pre_repo.get(&missing_cwd), Some(&safe_cwd));
         drop(safe_pre_repo);
 
-        // Drain events with a 1-second deadline, looking for the
-        // payload that mentions `missing_cwd`. The upgrade + restore
-        // phases may emit independently, so we tolerate intervening
-        // events; we only need to confirm one of them references the
-        // restored subscriber. Failing the assertion on
-        // `RecvTimeoutError::Timeout` produces a clear "emit never
-        // arrived" message rather than the ambiguous "vector didn't
-        // contain expected entry" of the prior sleep-then-assert form.
-        let deadline = std::time::Instant::now() + Duration::from_secs(1);
-        let mut found = false;
-        while std::time::Instant::now() < deadline {
-            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-            match events_rx.recv_timeout(remaining) {
-                Ok(payload) => {
-                    if payload.contains(&missing_cwd) {
-                        found = true;
-                        break;
-                    }
-                    // Not the one we're looking for — keep draining.
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => break,
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-        }
+        let found = sink.recorded().iter().any(|(event, payload)| {
+            event == "git-status-changed" && payload["cwds"].to_string().contains(&missing_cwd)
+        });
         assert!(
             found,
-            "expected git-status-changed emit for restored subscriber {:?} within 1s",
-            missing_cwd,
+            "expected git-status-changed emit for restored subscriber {missing_cwd:?}"
         );
     }
 

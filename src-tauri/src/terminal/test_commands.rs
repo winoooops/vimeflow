@@ -4,14 +4,15 @@
 //! read-only accessors into Rust backend state so WebdriverIO specs can
 //! assert on things the frontend bridge cannot see.
 
-use tauri::State;
+use std::sync::Arc;
 
-use super::state::PtyState;
+use crate::runtime::BackendState;
 
 /// Return the set of active PTY session IDs held in Rust state.
 ///
 /// Used by session-lifecycle specs to verify spawn/close accounting.
+#[cfg_attr(test, allow(dead_code))]
 #[tauri::command]
-pub fn list_active_pty_sessions(state: State<'_, PtyState>) -> Vec<String> {
-    state.active_ids()
+pub fn list_active_pty_sessions(state: tauri::State<'_, Arc<BackendState>>) -> Vec<String> {
+    state.list_active_pty_sessions()
 }

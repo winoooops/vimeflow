@@ -18,6 +18,7 @@ export default defineConfig([
   {
     ignores: [
       'dist',
+      'dist-electron',
       'node_modules',
       '*.min.js',
       'coverage',

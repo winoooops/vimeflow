@@ -1,6 +1,6 @@
 //! File watcher runtime for agent status sources.
 //!
-//! Watches adapter-provided status files for changes and emits Tauri events
+//! Watches adapter-provided status files for changes and emits backend events
 //! when they update. Uses the `notify` crate plus a polling fallback for
 //! environments where file-system notifications are unreliable.
 
@@ -11,7 +11,6 @@ use std::time::Duration;
 use std::time::Instant;
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::{Emitter, Manager};
 
 #[cfg(debug_assertions)]
 use super::diagnostics::short_sid;
@@ -19,6 +18,9 @@ use super::diagnostics::{record_event_diag, EventTiming, PathHistory, TxOutcome}
 use super::transcript_state::{TranscriptStartStatus, TranscriptState};
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::adapter::AgentAdapter;
+use crate::agent::events::emit_agent_status;
+use crate::runtime::EventSink;
+use crate::terminal::PtyState;
 
 /// Handle to a running watcher — dropping it stops the watcher and polling thread
 pub struct WatcherHandle {
@@ -28,7 +30,7 @@ pub struct WatcherHandle {
     /// Polling fallback thread. Stored so Drop can join after signalling
     /// stop, rather than leaving the thread briefly detached.
     join_handle: Option<std::thread::JoinHandle<()>>,
-    /// Cloned `Arc` to the Tauri-managed `TranscriptState` — `Drop`
+    /// Cloned handle to the runtime-managed `TranscriptState` — `Drop`
     /// calls `transcript_state.stop(&self.session_id)` to cascade
     /// transcript-tail teardown, replacing today's two-step
     /// frontend-driven stop courtesy.
@@ -140,9 +142,11 @@ impl AgentWatcherState {
 /// pick up the new workspace immediately. Combined with
 /// `TranscriptState::start_or_replace`'s (transcript_path, cwd) identity
 /// check, a cwd change triggers a Replace of the tail thread.
-fn maybe_start_transcript<R: tauri::Runtime>(
-    adapter: &Arc<dyn AgentAdapter<R>>,
-    app_handle: &tauri::AppHandle<R>,
+fn maybe_start_transcript(
+    adapter: &Arc<dyn AgentAdapter>,
+    events: Arc<dyn EventSink>,
+    pty_state: &PtyState,
+    transcript_state: &TranscriptState,
     session_id: &str,
     transcript_path: &str,
 ) -> TxOutcome {
@@ -177,15 +181,13 @@ fn maybe_start_transcript<R: tauri::Runtime>(
         }
     };
 
-    let cwd = app_handle
-        .state::<crate::terminal::PtyState>()
+    let cwd = pty_state
         .get_cwd(&session_id.to_string())
         .map(PathBuf::from);
 
-    let ts = app_handle.state::<TranscriptState>();
-    match ts.start_or_replace(
+    match transcript_state.start_or_replace(
         adapter.clone(),
-        app_handle.clone(),
+        events,
         session_id.to_string(),
         canonical.clone(),
         cwd,
@@ -226,18 +228,19 @@ fn maybe_start_transcript<R: tauri::Runtime>(
 /// CWD is intentionally NOT captured here. `maybe_start_transcript` queries
 /// PtyState fresh on every invocation so a `cd` mid-session updates the
 /// workspace seen by the test-runner parser.
-pub(super) fn start_watching<R: tauri::Runtime>(
-    adapter: Arc<dyn AgentAdapter<R>>,
-    app_handle: tauri::AppHandle<R>,
+pub(super) fn start_watching(
+    adapter: Arc<dyn AgentAdapter>,
+    events: Arc<dyn EventSink>,
+    pty_state: PtyState,
+    transcript_state: TranscriptState,
     session_id: String,
     status_file_path: PathBuf,
 ) -> Result<WatcherHandle, String> {
     let target_path = status_file_path.clone();
     let sid = session_id.clone();
     let last_processed = Arc::new(Mutex::new(Instant::now()));
-    let app_handle_for_poll = app_handle.clone();
     let poll_stop = Arc::new((Mutex::new(false), Condvar::new()));
-    let transcript_state_for_handle = app_handle.state::<TranscriptState>().inner().clone();
+    let transcript_state_for_handle = transcript_state.clone();
 
     // Diagnostic state — per-source timing for sources that fire
     // repeatedly (notify, poll), and a SHARED path history so the
@@ -255,6 +258,9 @@ pub(super) fn start_watching<R: tauri::Runtime>(
     let path_history_for_cb = path_history.clone();
     let adapter_for_cb = adapter.clone();
     let last_processed_for_cb = last_processed.clone();
+    let events_for_cb = events.clone();
+    let pty_state_for_cb = pty_state.clone();
+    let transcript_state_for_cb = transcript_state.clone();
 
     // Debounce interval — ignore events within 100ms of the last processed one
     let debounce_ms = 100;
@@ -313,12 +319,19 @@ pub(super) fn start_watching<R: tauri::Runtime>(
 
         let (outcome, tx_path) = match adapter_for_cb.parse_status(&sid, &contents) {
             Ok(parsed) => {
-                if let Err(e) = app_handle.emit("agent-status", &parsed.event) {
+                if let Err(e) = emit_agent_status(events_for_cb.as_ref(), &parsed.event) {
                     log::error!("Failed to emit agent-status event: {}", e);
                 }
 
                 if let Some(ref path) = parsed.transcript_path {
-                    let outcome = maybe_start_transcript(&adapter_for_cb, &app_handle, &sid, path);
+                    let outcome = maybe_start_transcript(
+                        &adapter_for_cb,
+                        events_for_cb.clone(),
+                        &pty_state_for_cb,
+                        &transcript_state_for_cb,
+                        &sid,
+                        path,
+                    );
                     (outcome, Some(path.clone()))
                 } else {
                     (TxOutcome::NoPath, None)
@@ -367,8 +380,10 @@ pub(super) fn start_watching<R: tauri::Runtime>(
     {
         let initial_sid = session_id.clone();
         let initial_path = status_file_path.clone();
-        let initial_app = app_handle_for_poll.clone();
         let initial_adapter = adapter.clone();
+        let initial_events = events.clone();
+        let initial_pty_state = pty_state.clone();
+        let initial_transcript_state = transcript_state.clone();
         let started = Instant::now();
         let mut outcome = TxOutcome::NoPath;
         let mut inline_tx_path: Option<String> = None;
@@ -377,11 +392,13 @@ pub(super) fn start_watching<R: tauri::Runtime>(
                 *last_processed.lock().expect("failed to lock debounce") = Instant::now();
                 match initial_adapter.parse_status(&initial_sid, &contents) {
                     Ok(parsed) => {
-                        let _ = initial_app.emit("agent-status", &parsed.event);
+                        let _ = emit_agent_status(initial_events.as_ref(), &parsed.event);
                         if let Some(ref path) = parsed.transcript_path {
                             outcome = maybe_start_transcript(
                                 &initial_adapter,
-                                &initial_app,
+                                initial_events.clone(),
+                                &initial_pty_state,
+                                &initial_transcript_state,
                                 &initial_sid,
                                 path,
                             );
@@ -417,7 +434,9 @@ pub(super) fn start_watching<R: tauri::Runtime>(
     let poll_join_handle = {
         let poll_sid = session_id.clone();
         let poll_path = status_file_path.clone();
-        let poll_app = app_handle_for_poll;
+        let poll_events = events.clone();
+        let poll_pty_state = pty_state.clone();
+        let poll_transcript_state = transcript_state.clone();
         let poll_stop = poll_stop.clone();
         let poll_timing_for_thread = poll_timing.clone();
         let path_history_for_poll = path_history.clone();
@@ -465,11 +484,13 @@ pub(super) fn start_watching<R: tauri::Runtime>(
 
                 let (outcome, tx_path) = match adapter_for_poll.parse_status(&poll_sid, &contents) {
                     Ok(parsed) => {
-                        let _ = poll_app.emit("agent-status", &parsed.event);
+                        let _ = emit_agent_status(poll_events.as_ref(), &parsed.event);
                         if let Some(ref path) = parsed.transcript_path {
                             let outcome = maybe_start_transcript(
                                 &adapter_for_poll,
-                                &poll_app,
+                                poll_events.clone(),
+                                &poll_pty_state,
+                                &poll_transcript_state,
                                 &poll_sid,
                                 path,
                             );

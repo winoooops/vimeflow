@@ -1,19 +1,17 @@
 /**
  * Environment detection utilities for VIBM
  *
- * Provides functions to detect the runtime environment (Tauri desktop app vs browser)
+ * Provides functions to detect the runtime environment (desktop app
+ * vs browser). "Desktop" covers both the current Tauri host AND the
+ * Electron host introduced in PR-D — see spec §2.4.
  */
 
-/**
- * Tauri internals interface for environment detection
- */
 interface TauriInternals {
   metadata?: {
     currentWindow?: {
       label?: string
     }
   }
-  // Add other properties as needed
 }
 
 declare global {
@@ -23,31 +21,23 @@ declare global {
 }
 
 /**
- * Check if the application is running in a Tauri desktop environment
- *
- * @returns true if running in Tauri, false if running in browser
+ * True when the renderer is running inside a desktop host (Tauri today,
+ * Electron in PR-D). Uses `!= null` (not `in`) so an explicit
+ * `window.vimeflow = undefined` does NOT trip the check.
  */
-export const isTauri = (): boolean =>
-  typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+export const isDesktop = (): boolean => {
+  if (typeof window === 'undefined') {
+    return false
+  }
 
-/**
- * Check if the application is running in a browser environment
- *
- * @returns true if running in browser, false if running in Tauri
- */
-export const isBrowser = (): boolean => !isTauri()
+  return window.__TAURI_INTERNALS__ != null || window.vimeflow != null
+}
 
-/**
- * Get the current environment name
- *
- * @returns 'tauri' if running in Tauri, 'browser' if running in browser
- */
-export const getEnvironment = (): 'tauri' | 'browser' =>
-  isTauri() ? 'tauri' : 'browser'
+/** True when the renderer is in a browser / Vitest context. */
+export const isBrowser = (): boolean => !isDesktop()
 
-/**
- * Check if the application is running in test mode
- *
- * @returns true if running in test mode, false otherwise
- */
+/** 'desktop' covers both Tauri and Electron; 'browser' is everything else. */
+export const getEnvironment = (): 'desktop' | 'browser' =>
+  isDesktop() ? 'desktop' : 'browser'
+
 export const isTest = (): boolean => import.meta.env.MODE === 'test'

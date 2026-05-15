@@ -6,7 +6,7 @@ import type {
   PTYKillParams,
 } from '../types'
 import type { SessionList } from '../../../bindings'
-import { isTauri } from '../../../lib/environment'
+import { isDesktop } from '../../../lib/environment'
 import { TauriTerminalService } from './tauriTerminalService'
 
 /**
@@ -385,7 +385,7 @@ let tauriServiceInstance: TauriTerminalService | null = null
  * so each test/pane gets isolated mock state.
  */
 export function createTerminalService(): ITerminalService {
-  if (isTauri()) {
+  if (isDesktop()) {
     tauriServiceInstance ??= new TauriTerminalService()
 
     return tauriServiceInstance

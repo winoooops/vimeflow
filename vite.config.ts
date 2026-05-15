@@ -1,6 +1,7 @@
 import path from 'path'
 import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import electron from 'vite-plugin-electron/simple'
 import simpleGit from 'simple-git'
 import { parse as parseDiffText } from 'diff2html'
 import { fileApiPlugin } from './vite-plugin-files'
@@ -587,22 +588,73 @@ function readBody(
 }
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   // Tauri serves embedded production assets from its app protocol, so emitted
   // asset URLs must be relative instead of rooted at `/`.
   base: './',
-  plugins: [react(), gitApiPlugin(), fileApiPlugin()],
+  plugins: [
+    react(),
+    gitApiPlugin(),
+    fileApiPlugin(),
+    ...(mode === 'electron'
+      ? [
+          electron({
+            // Use vite-plugin-electron/simple's defaults. With root
+            // package.json:type=module, the plugin emits:
+            //   - main as ESM at dist-electron/main.mjs
+            //   - preload as CJS-content with .mjs extension at
+            //     dist-electron/preload.mjs (Electron's preload loader
+            //     handles this special case)
+            // Custom build/lib/rollupOptions configs fight the
+            // plugin's defaults because mergeConfig concatenates arrays
+            // like `lib.formats`, producing dual ESM+CJS builds that
+            // overwrite each other.
+            main: {
+              entry: 'electron/main.ts',
+              onstart: async ({ startup }): Promise<void> => {
+                try {
+                  await startup(['.'])
+                } catch (error: unknown) {
+                  const message =
+                    error instanceof Error
+                      ? (error.stack ?? error.message)
+                      : String(error)
+
+                  process.stderr.write(
+                    `[electron] startup failed: ${message}\n`
+                  )
+
+                  throw error
+                }
+              },
+              vite: {
+                build: { outDir: 'dist-electron' },
+              },
+            },
+            preload: {
+              input: 'electron/preload.ts',
+              vite: {
+                build: { outDir: 'dist-electron' },
+              },
+            },
+          }),
+        ]
+      : []),
+  ],
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },
   server: {
+    port: 5173,
+    strictPort: true,
     watch: {
       ignored: [
         '**/.vimeflow/**',
         '**/target/**',
         '**/.codex*/**',
         '**/.git/**',
+        '**/dist-electron/**',
       ],
     },
   },
-})
+}))

@@ -14,13 +14,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::agent::adapter::AgentAdapter;
+use crate::runtime::EventSink;
+use crate::terminal::PtyState;
 
 pub use transcript_state::{TranscriptHandle, TranscriptStartStatus, TranscriptState};
 pub use watcher_runtime::{AgentWatcherState, WatcherHandle};
 
-pub(crate) fn start_for<R: tauri::Runtime>(
-    adapter: Arc<dyn AgentAdapter<R>>,
-    app_handle: tauri::AppHandle<R>,
+pub(crate) fn start_for(
+    adapter: Arc<dyn AgentAdapter>,
+    events: Arc<dyn EventSink>,
+    pty_state: PtyState,
+    transcript_state: TranscriptState,
     session_id: String,
     cwd: PathBuf,
     state: AgentWatcherState,
@@ -47,8 +51,14 @@ pub(crate) fn start_for<R: tauri::Runtime>(
         state.active_count(),
     );
 
-    let handle =
-        watcher_runtime::start_watching(adapter, app_handle, session_id.clone(), source.path)?;
+    let handle = watcher_runtime::start_watching(
+        adapter,
+        events,
+        pty_state,
+        transcript_state,
+        session_id.clone(),
+        source.path,
+    )?;
     state.insert(session_id, handle);
 
     Ok(())

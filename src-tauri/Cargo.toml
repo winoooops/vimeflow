@@ -7,6 +7,7 @@ license = "MIT"
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"
+default-run = "vimeflow"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -21,12 +22,13 @@ tauri-build = { version = "2", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2", features = [] }
+tauri = { version = "2.11", features = [] }
 tauri-plugin-log = "2"
 portable-pty = "0.8"
 anyhow = "1.0"
 thiserror = "2.0"
-tokio = { version = "1", features = ["sync", "io-util", "time", "rt", "macros"] }
+tokio = { version = "1", features = ["sync", "io-util", "io-std", "time", "rt", "rt-multi-thread", "macros"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 notify = "6"
 dirs = "6"
 ignore = "0.4"
@@ -36,6 +38,7 @@ shell-words = "1.1"
 regex = "1.10"
 rusqlite = { version = "0.32", features = ["bundled"] }
 once_cell = "1.19"
+env_logger = "0.11"
 
 [features]
 e2e-test = []
@@ -44,7 +47,11 @@ e2e-test = []
 libc = "0.2"
 
 [dev-dependencies]
-tauri = { version = "2", features = ["test"] }
+tauri = { version = "2.11", features = ["test"] }
 tokio = { version = "1", features = ["macros", "rt"] }
 ts-rs = "10"
 tempfile = "3"
+
+[[bin]]
+name = "vimeflow-backend"
+path = "src/bin/vimeflow-backend.rs"
