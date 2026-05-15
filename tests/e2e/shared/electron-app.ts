@@ -51,7 +51,15 @@ export const injectFreshUserDataDir = (
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vimeflow-e2e-'))
   activeUserDataDirs.add(dir)
   const electronOpts = capabilities['wdio:electronServiceOptions'] ?? {}
-  const baseArgs = electronOpts.appArgs ?? []
+  // Strip any --user-data-dir already injected by a prior beforeSession
+  // call in the same WDIO process. WDIO reuses the same capabilities
+  // object across sessions (it does not deep-clone), so without the
+  // filter `appArgs` would grow by one entry per spec; Chromium's
+  // last-arg-wins rule keeps the correct dir active but the arg list
+  // would accumulate paths that afterSession already removed.
+  const baseArgs = (electronOpts.appArgs ?? []).filter(
+    (a) => !a.startsWith('--user-data-dir=')
+  )
   capabilities['wdio:electronServiceOptions'] = {
     ...electronOpts,
     appArgs: [...baseArgs, `--user-data-dir=${dir}`],

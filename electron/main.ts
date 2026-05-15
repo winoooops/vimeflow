@@ -14,6 +14,14 @@ const APP_HOST = 'app'
 const APP_ORIGIN = `${APP_PROTOCOL}://${APP_HOST}`
 const E2E_RUNTIME_ARG = '--vimeflow-e2e'
 
+// E2E detection (env var OR CLI flag fallback). Hoisted above its first
+// caller (installContentSecurityPolicy at ~line 80) so the TDZ never
+// bites — even if a future refactor moves installContentSecurityPolicy
+// off the async `app.whenReady()` path. Closures over E2E_RUNTIME_ARG
+// declared just above.
+const isE2eRuntime = (): boolean =>
+  process.env.VITE_E2E === '1' || process.argv.includes(E2E_RUNTIME_ARG)
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: APP_PROTOCOL,
@@ -179,9 +187,6 @@ const isBackendInvokePayload = (
 
   return payload.args === undefined || isRecord(payload.args)
 }
-
-const isE2eRuntime = (): boolean =>
-  process.env.VITE_E2E === '1' || process.argv.includes(E2E_RUNTIME_ARG)
 
 const createWindow = (): void => {
   const win = new BrowserWindow({
