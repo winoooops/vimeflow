@@ -89,7 +89,7 @@ Expected: clean build, binary present. PR-D1 spawns this binary from Electron ma
 - [ ] **Step 5: Inventory existing Tauri coupling for diff comparison at Task 15**
 
 ```bash
-rg -nE "@tauri-apps/api|__TAURI_INTERNALS__" src tests > /tmp/pr-d1-baseline.txt
+rg -n "@tauri-apps/api|__TAURI_INTERNALS__" src tests > /tmp/pr-d1-baseline.txt
 wc -l /tmp/pr-d1-baseline.txt
 ```
 
@@ -176,12 +176,17 @@ EOF
 
 ---
 
-## Task 2: electron/tsconfig.json + type-check script update
+## Task 2: electron/tsconfig.json (config-only; no type-check change yet)
 
 **Files:**
 
 - Create: `electron/tsconfig.json`
-- Modify: `package.json`
+
+Note: the `npm run type-check` script is updated in Task 3, not
+here, because `tsc -p electron/tsconfig.json` errors with TS18003
+("No inputs were found") when the `electron/` directory has no `.ts`
+files. Task 3 creates `ipc-channels.ts` and ships the script
+modification + verification together.
 
 - [ ] **Step 1: Create the directory**
 
@@ -211,37 +216,22 @@ mkdir -p electron
 
 This does NOT extend `../tsconfig.json` — the root uses `moduleResolution: "bundler"` which is incompatible with `commonjs`. The `noEmit` keeps tsc check-only; actual bundling is done by `vite-plugin-electron` (Task 13).
 
-- [ ] **Step 3: Update the `type-check` script**
-
-Edit `package.json`. Change the existing `type-check` script from `"tsc -b"` to:
-
-```jsonc
-"type-check": "tsc -b && tsc -p electron/tsconfig.json"
-```
-
-This makes `npm run type-check` cover the renderer (root tsconfig project references) AND the electron files.
-
-- [ ] **Step 4: Verify type-check passes**
+- [ ] **Step 3: Commit (config only — script change comes in Task 3)**
 
 ```bash
-npm run type-check
-```
-
-Expected: clean. The electron/ directory has no `.ts` files yet, so `tsc -p electron/tsconfig.json` is a no-op.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add electron/tsconfig.json package.json
+git add electron/tsconfig.json
 git commit -m "$(cat <<'EOF'
-chore(electron): add tsconfig + extend type-check to cover electron/
+chore(electron): add stand-alone CommonJS tsconfig for electron/
 
 Stand-alone CommonJS noEmit config (the root tsconfig's
 moduleResolution: 'bundler' is incompatible with module: 'commonjs'
 that Electron main/preload need).
 
-Modifies `npm run type-check` to chain both projects so every .ts
-file in the repo is type-checked exactly once.
+The `npm run type-check` script is NOT modified in this commit —
+running `tsc -p electron/tsconfig.json` against an empty directory
+errors with TS18003. Task 3 adds the first .ts file
+(electron/ipc-channels.ts) and ships the type-check chain change
+together so verification succeeds atomically.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -250,11 +240,12 @@ EOF
 
 ---
 
-## Task 3: electron/ipc-channels.ts — shared channel constants
+## Task 3: electron/ipc-channels.ts + extend type-check script
 
 **Files:**
 
 - Create: `electron/ipc-channels.ts`
+- Modify: `package.json`
 
 - [ ] **Step 1: Create the file**
 
@@ -269,24 +260,43 @@ export const BACKEND_INVOKE = 'backend:invoke'
 export const BACKEND_EVENT = 'backend:event'
 ```
 
-- [ ] **Step 2: Verify type-check passes**
+- [ ] **Step 2: Update the `type-check` script**
+
+Edit `package.json`. Change the existing `type-check` script from
+`"tsc -b"` to:
+
+```jsonc
+"type-check": "tsc -b && tsc -p electron/tsconfig.json"
+```
+
+This makes `npm run type-check` cover the renderer (root tsconfig
+project references) AND the electron files. `ipc-channels.ts` is the
+one input needed to avoid TS18003.
+
+- [ ] **Step 3: Verify type-check passes**
 
 ```bash
 npm run type-check
 ```
 
-Expected: clean.
+Expected: clean. Both passes run; the electron pass finds
+`ipc-channels.ts` and succeeds.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add electron/ipc-channels.ts
+git add electron/ipc-channels.ts package.json
 git commit -m "$(cat <<'EOF'
-feat(electron): add ipc-channels.ts with two channel constants
+feat(electron): add ipc-channels + chain type-check to cover electron/
 
 BACKEND_INVOKE ('backend:invoke') and BACKEND_EVENT ('backend:event')
 are imported by both main.ts and preload.ts so the channel names
 have one source of truth.
+
+Modifies `npm run type-check` to chain
+`tsc -b && tsc -p electron/tsconfig.json` so every .ts file in the
+repo is type-checked exactly once. ipc-channels.ts is the one
+electron/ input that prevents TS18003 'No inputs were found'.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -454,16 +464,19 @@ describe('Sidecar — frame codec', () => {
       result: { x: 42 },
     })
     const mid = Math.floor(full.length / 2)
-    mock.stdout.write(full.subarray(0, mid))
-    // First write should NOT resolve the promise yet.
     let resolved = false
-    void promise.then(() => {
-      resolved = true
-    })
-    await Promise.resolve()
+    // eslint-disable-next-line promise/prefer-await-to-then
+    promise
+      .then(() => {
+        resolved = true
+      })
+      .catch(() => {})
+    mock.stdout.write(full.subarray(0, mid))
+    await new Promise((r) => setImmediate(r))
     expect(resolved).toBe(false)
     mock.stdout.write(full.subarray(mid))
     await expect(promise).resolves.toEqual({ x: 42 })
+    expect(resolved).toBe(true)
   })
 
   test('3. two frames concatenated in one stdout write dispatch in order', async () => {
@@ -526,6 +539,7 @@ export interface SidecarDeps {
 
 const MAX_FRAME_BYTES = 16 * 1024 * 1024
 const MAX_HEADER_SECTION_BYTES = 1024 * 1024
+const MAX_HEADER_LINE_BYTES = 8 * 1024
 
 interface Pending {
   resolve: (value: unknown) => void
@@ -574,13 +588,28 @@ export const createSidecar = (
         errStream.write(`[sidecar] dropping response for unknown id ${id}\n`)
         return
       }
-      if (f.ok === true) {
-        entry.resolve(f.result)
-      } else {
-        const err = typeof f.error === 'string' ? f.error : 'unknown error'
-        entry.reject(err)
-      }
       pending.delete(id)
+      if (f.ok === true) {
+        if (!('result' in f)) {
+          entry.reject('malformed response frame: missing result')
+          return
+        }
+        entry.resolve(f.result)
+        return
+      }
+      if (f.ok === false) {
+        if (!('error' in f)) {
+          entry.reject('malformed response frame: missing error')
+          return
+        }
+        if (typeof f.error !== 'string') {
+          entry.reject('malformed response frame: error not a string')
+          return
+        }
+        entry.reject(f.error)
+        return
+      }
+      entry.reject('malformed response frame: ambiguous ok flag')
       return
     }
     if (f.kind === 'event') {
@@ -602,6 +631,15 @@ export const createSidecar = (
         return
       }
       const headerText = buffer.subarray(0, headerEnd).toString('ascii')
+      const headerLines = headerText.split('\r\n')
+      if (
+        headerLines.some(
+          (line) => Buffer.byteLength(line, 'ascii') > MAX_HEADER_LINE_BYTES
+        )
+      ) {
+        disable('header line exceeds MAX_HEADER_LINE_BYTES (8 KiB)')
+        return
+      }
       const match = /Content-Length:\s*(\d+)/i.exec(headerText)
       if (!match) {
         disable('missing or malformed Content-Length header')
@@ -983,6 +1021,14 @@ describe('Sidecar — fatal limits + spawn errors + stderr', () => {
     await expect(sidecar.invoke('m')).rejects.toBe('backend unavailable')
   })
 
+  test('12b. oversize single header line disables sidecar', async () => {
+    const { mock, sidecar } = makeSidecar()
+    // A single header line of 9 KiB exceeds MAX_HEADER_LINE_BYTES (8 KiB)
+    const longLine = 'X-Long: ' + 'a'.repeat(9 * 1024)
+    mock.stdout.write(Buffer.from(longLine + '\r\n\r\n', 'ascii'))
+    await expect(sidecar.invoke('m')).rejects.toBe('backend unavailable')
+  })
+
   test('13. child stderr is drained continuously to the configured stream', async () => {
     const mock = new MockChildProcess()
     const stderrBuf: Buffer[] = []
@@ -1306,9 +1352,8 @@ const SIDECAR_BIN = path.resolve(
 )
 
 let sidecar: Sidecar | null = null
-let mainWindow: BrowserWindow | null = null
 
-const createWindow = (): BrowserWindow => {
+const createWindow = (): void => {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -1323,12 +1368,20 @@ const createWindow = (): BrowserWindow => {
       preload: path.join(__dirname, 'preload.cjs'),
     },
   })
-  const devURL = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173'
-  void win.loadURL(devURL)
-  return win
+  const devURL = process.env.VITE_DEV_SERVER_URL
+  if (devURL !== undefined && devURL.length > 0) {
+    void win.loadURL(devURL)
+  } else {
+    // Production-equivalent path. PR-D3 will exercise this through
+    // electron-builder packaging; PR-D1 wires it for completeness so
+    // packaged smoke testing doesn't hit a no-loader path.
+    void win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+  }
 }
 
-app.whenReady().then(() => {
+const setupApp = async (): Promise<void> => {
+  await app.whenReady()
+
   // Step 1: spawn sidecar.
   sidecar = spawnSidecar({
     binary: SIDECAR_BIN,
@@ -1356,16 +1409,22 @@ app.whenReady().then(() => {
   })
 
   // Step 3: open the window.
-  mainWindow = createWindow()
-})
+  createWindow()
+}
+
+void setupApp()
 
 // before-quit gates the actual exit on the async sidecar shutdown.
 let quitting = false
-app.on('before-quit', (event) => {
+app.on('before-quit', async (event) => {
   if (quitting || !sidecar) return // second-pass or no sidecar — let it quit
   event.preventDefault()
   quitting = true
-  void sidecar.shutdown().finally(() => app.exit(0))
+  try {
+    await sidecar.shutdown()
+  } finally {
+    app.exit(0)
+  }
 })
 
 app.on('window-all-closed', () => {
@@ -1379,7 +1438,7 @@ app.on('activate', () => {
   // windows were closed. Without this, the sidecar would keep
   // running with no visible UI.
   if (BrowserWindow.getAllWindows().length === 0) {
-    mainWindow = createWindow()
+    createWindow()
   }
 })
 ```
@@ -1670,13 +1729,13 @@ Confirm the Tauri host still launches and all feature surface still works (PR-C'
 - [ ] **Step 4: Coupling inventory (spec §6.4)**
 
 ```bash
-rg -nE "@tauri-apps/api|__TAURI_INTERNALS__" src tests --glob '!src/types/vimeflow.d.ts' | wc -l
+rg -n "@tauri-apps/api|__TAURI_INTERNALS__" src tests --glob '!src/types/vimeflow.d.ts' | wc -l
 ```
 
 Expected: matches the Task 0 baseline count byte-for-byte. PR-D1 does NOT change Tauri coupling — that's PR-D3.
 
 ```bash
-rg -nE "from 'electron'|require\\('electron'\\)" src tests --glob '!electron/**'
+rg -n "from 'electron'|require\\('electron'\\)" src tests --glob '!electron/**'
 ```
 
 Expected: zero hits. Renderer code must NOT import `electron` directly — all paths go through `window.vimeflow`.
