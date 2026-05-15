@@ -611,8 +611,19 @@ export default defineConfig(({ mode }) => ({
             // overwrite each other.
             main: {
               entry: 'electron/main.ts',
-              onstart: ({ startup }) => {
-                void startup(['.'])
+              onstart: async ({ startup }): Promise<void> => {
+                try {
+                  await startup(['.'])
+                } catch (error: unknown) {
+                  const message =
+                    error instanceof Error
+                      ? (error.stack ?? error.message)
+                      : String(error)
+
+                  process.stderr.write(
+                    `[electron] startup failed: ${message}\n`
+                  )
+                }
               },
               vite: {
                 build: { outDir: 'dist-electron' },
