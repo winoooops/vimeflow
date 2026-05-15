@@ -39,6 +39,11 @@ const encodeFrame = (body: object): Buffer => {
   return Buffer.concat([header, json])
 }
 
+const waitForImmediate = (): Promise<void> =>
+  new Promise((resolve) => {
+    setImmediate(resolve)
+  })
+
 describe('Sidecar frame codec', () => {
   test('response frame round trip resolves matching invoke', async () => {
     const { mock, sidecar } = makeSidecar()
@@ -202,5 +207,77 @@ describe('Sidecar onEvent', () => {
     )
 
     expect(callback).not.toHaveBeenCalled()
+  })
+})
+
+describe('Sidecar fatal limits, spawn errors, and stderr', () => {
+  test('oversize Content-Length disables sidecar', async () => {
+    const { mock, sidecar } = makeSidecar()
+
+    mock.stdout.write(Buffer.from('Content-Length: 17000000\r\n\r\n', 'ascii'))
+
+    await expect(sidecar.invoke('m')).rejects.toBe('backend unavailable')
+  })
+
+  test('spawn error rejects pending invoke with bare string', async () => {
+    const mock = new MockChildProcess()
+
+    const sidecar = createSidecar({
+      binary: '/missing/bin',
+      appDataDir: '/fake',
+      stderr: new PassThrough(),
+      spawnFn: (): MockChildProcess => mock,
+    })
+
+    const promise = sidecar.invoke('m')
+
+    queueMicrotask(() => {
+      mock.emit('error', new Error('ENOENT: vimeflow-backend'))
+    })
+
+    await expect(promise).rejects.toBe(
+      'sidecar spawn failed: ENOENT: vimeflow-backend'
+    )
+  })
+
+  test('header limit violations disable sidecar', async () => {
+    const sectionOverflow = makeSidecar()
+
+    sectionOverflow.mock.stdout.write(Buffer.alloc(2 * 1024 * 1024, 0x61))
+
+    await expect(sectionOverflow.sidecar.invoke('m')).rejects.toBe(
+      'backend unavailable'
+    )
+
+    const lineOverflow = makeSidecar()
+    const longLine = `X-Long: ${'a'.repeat(9 * 1024)}`
+
+    lineOverflow.mock.stdout.write(Buffer.from(`${longLine}\r\n\r\n`, 'ascii'))
+
+    await expect(lineOverflow.sidecar.invoke('m')).rejects.toBe(
+      'backend unavailable'
+    )
+  })
+
+  test('child stderr is drained to the configured stream', async () => {
+    const mock = new MockChildProcess()
+    const stderrSink = new PassThrough()
+    const stderrChunks: Buffer[] = []
+
+    stderrSink.on('data', (chunk: Buffer) => {
+      stderrChunks.push(Buffer.from(chunk))
+    })
+
+    createSidecar({
+      binary: '/fake',
+      appDataDir: '/fake',
+      stderr: stderrSink,
+      spawnFn: (): MockChildProcess => mock,
+    })
+
+    mock.stderr?.write('rust log line\n')
+    await waitForImmediate()
+
+    expect(Buffer.concat(stderrChunks).toString('utf8')).toBe('rust log line\n')
   })
 })

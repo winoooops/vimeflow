@@ -71,6 +71,10 @@ export const createSidecar = (
   let disabled = false
   let cooperativeShutdown = false
 
+  child.stderr?.on('data', (chunk: Buffer) => {
+    errStream.write(chunk)
+  })
+
   const disable = (reason: string): void => {
     if (disabled) {
       return
@@ -237,6 +241,11 @@ export const createSidecar = (
 
     buffer = Buffer.concat([buffer, chunk])
     processBuffer()
+  })
+
+  child.on('error', (err: Error) => {
+    errStream.write(`[sidecar spawn error] ${err.message}\n`)
+    disable(`sidecar spawn failed: ${err.message}`)
   })
 
   child.on('exit', () => {
