@@ -31,7 +31,7 @@ const resolveSidecarBin = (): string => {
 const packagedContentSecurityPolicy = [
   "default-src 'self'",
   "script-src 'self'",
-  "style-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   "connect-src 'self'",
@@ -133,6 +133,7 @@ const setupApp = async (): Promise<void> => {
   })
 
   sidecar = spawnedSidecar
+  const allowE2eBackendMethods = !app.isPackaged && process.env.VITE_E2E === '1'
 
   ipcMain.handle(
     BACKEND_INVOKE,
@@ -141,7 +142,11 @@ const setupApp = async (): Promise<void> => {
         return { ok: false, error: 'invalid backend invoke payload' }
       }
 
-      if (!isAllowedBackendMethod(payload.method)) {
+      if (
+        !isAllowedBackendMethod(payload.method, {
+          allowE2eMethods: allowE2eBackendMethods,
+        })
+      ) {
         return { ok: false, error: 'unknown backend method' }
       }
 

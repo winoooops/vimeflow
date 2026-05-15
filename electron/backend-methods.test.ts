@@ -1,17 +1,5 @@
-import { afterEach, describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import { isAllowedBackendMethod } from './backend-methods'
-
-const originalViteE2e = process.env.VITE_E2E
-
-afterEach(() => {
-  if (originalViteE2e === undefined) {
-    delete process.env.VITE_E2E
-
-    return
-  }
-
-  process.env.VITE_E2E = originalViteE2e
-})
 
 describe('isAllowedBackendMethod', () => {
   test.each([
@@ -43,14 +31,14 @@ describe('isAllowedBackendMethod', () => {
   })
 
   test('rejects e2e-only methods by default', () => {
-    delete process.env.VITE_E2E
-
     expect(isAllowedBackendMethod('list_active_pty_sessions')).toBe(false)
   })
 
-  test('allows e2e-only methods when e2e mode is enabled', () => {
-    process.env.VITE_E2E = '1'
-
-    expect(isAllowedBackendMethod('list_active_pty_sessions')).toBe(true)
+  test('allows e2e-only methods when explicitly enabled', () => {
+    expect(
+      isAllowedBackendMethod('list_active_pty_sessions', {
+        allowE2eMethods: true,
+      })
+    ).toBe(true)
   })
 })

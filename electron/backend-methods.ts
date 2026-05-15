@@ -22,10 +22,17 @@ const backendMethods = new Set([
 
 const e2eBackendMethods = new Set(['list_active_pty_sessions'])
 
-export const isAllowedBackendMethod = (method: string): boolean => {
+interface BackendMethodOptions {
+  allowE2eMethods?: boolean
+}
+
+export const isAllowedBackendMethod = (
+  method: string,
+  options: BackendMethodOptions = {}
+): boolean => {
   if (backendMethods.has(method)) {
     return true
   }
 
-  return process.env.VITE_E2E === '1' && e2eBackendMethods.has(method)
+  return options.allowE2eMethods === true && e2eBackendMethods.has(method)
 }
