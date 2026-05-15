@@ -16,12 +16,6 @@ export const repoRoot = path.resolve(__dirname, '../../..')
 // node_modules.
 export const appEntryPoint = path.resolve(repoRoot, 'dist-electron/main.js')
 
-// Safety net if `wdio` is invoked directly without `cross-env VITE_E2E=1`
-// (the normal `npm run test:e2e*` path). The Electron main process also
-// recognises the `--vimeflow-e2e` CLI arg in `appArgs` below, so two
-// independent fallbacks gate the E2E backend-method allowlist.
-process.env.VITE_E2E = '1'
-
 // Per-WDIO-session app-data dir. Electron's --user-data-dir CLI flag
 // reroutes app.getPath('userData'); the sidecar inherits the rerouted
 // path via spawnSidecar({ appDataDir: app.getPath('userData') }) in
