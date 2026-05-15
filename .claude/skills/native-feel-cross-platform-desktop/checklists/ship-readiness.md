@@ -102,11 +102,11 @@ Score: green ✓ if observably correct, red ✗ if not, gray ◯ if N/A.
 
 ## I. Cross-platform parity (5 items)
 
-71. ◯ Mac and Windows ship the same feature set (no "this feature only on Mac").
-72. ◯ Both shell binaries hit the same IPC schema version after an update.
-73. ◯ Extensions written by third parties work identically on both OSes.
+71. ◯ Mac, Windows, and Linux ship the same feature set (no "this feature only on Mac").
+72. ◯ Shell binaries hit the same IPC schema version after an update.
+73. ◯ Extensions written by third parties work identically on all target OSes.
 74. ◯ Visual differences between OSes match platform conventions, not arbitrary.
-75. ◯ Bug fixes propagate to both OSes from a single codebase change in most cases.
+75. ◯ Bug fixes propagate to all target OSes from a single codebase change in most cases.
 
 ---
 
@@ -122,4 +122,4 @@ For a regression audit after a refactor: walk the whole list. Refactors tend to 
 
 ## The single most diagnostic test
 
-Hand the app to a designer who uses native Mac/Windows apps daily but has never seen yours. Don't tell them anything. Watch for the first time they say "wait, this feels weird." That moment is one of the items above. Find it, fix it, ship.
+Hand the app to a designer who uses native Mac/Windows/Linux apps daily but has never seen yours. Don't tell them anything. Watch for the first time they say "wait, this feels weird." That moment is one of the items above. Find it, fix it, ship.

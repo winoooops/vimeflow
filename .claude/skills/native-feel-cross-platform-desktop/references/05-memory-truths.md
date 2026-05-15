@@ -8,12 +8,12 @@ T4 (_performance is a property of perception_) and T8 (_separate baseline from m
 
 For a native shell + system WebView + Node backend architecture:
 
-| Component                             | Minimum resident (warm) | Notes                                                                                              |
-| ------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------- |
-| Native shell (Swift/AppKit or C#/WPF) | ~30–40 MB               | Mostly shared frameworks.                                                                          |
-| WKWebView (one window, blank page)    | ~50 MB                  | This is _the WebKit content process plus GPU and networking helpers, attributed back to your app_. |
-| WebView2 (one window, blank page)     | ~80–120 MB              | Chromium baseline is heavier than WebKit.                                                          |
-| Node.js runtime (no app code)         | ~12 MB                  | Just `node` cold.                                                                                  |
+| Component                                      | Minimum resident (warm) | Notes                                                                                              |
+| ---------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------- |
+| Native shell (Swift/AppKit, C#/WPF, or GTK/Qt) | ~30–40 MB               | Mostly shared frameworks.                                                                          |
+| WKWebView (one window, blank page)             | ~50 MB                  | This is _the WebKit content process plus GPU and networking helpers, attributed back to your app_. |
+| WebView2 (one window, blank page)              | ~80–120 MB              | Chromium baseline is heavier than WebKit.                                                          |
+| Node.js runtime (no app code)                  | ~12 MB                  | Just `node` cold.                                                                                  |
 
 So your floor on macOS is ~90 MB, on Windows ~130 MB, _before_ you write a line of app code. **This is not negotiable.** This is the _baseline_ in T8's sense — rented from the platform, not yours to optimize. If you came here to make a 50 MB cross-platform desktop app, you are in the wrong architecture.
 

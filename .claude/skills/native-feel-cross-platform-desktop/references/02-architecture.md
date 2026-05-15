@@ -7,6 +7,7 @@ This is the structural recommendation. Every layer exists because removing it lo
 │  LAYER 1: NATIVE HOST SHELL                                         │
 │    macOS:    Swift + AppKit  (Xcode project)                        │
 │    Windows:  C#    + WPF / WinUI 3  (Visual Studio project)         │
+│    Linux:    GTK/libadwaita or Qt  (distro packaging project)       │
 │    Owns:     NSWindow / Win32 HWND, global hotkeys, menubar /       │
 │              system tray, Dock/Taskbar presence, file associations, │
 │              accessibility integration, materials (Liquid Glass /   │
@@ -50,7 +51,7 @@ This is the structural recommendation. Every layer exists because removing it lo
 
 **Why this can't move into the WebView:** Global hotkeys, system tray icons, menu bar extras, accessibility roles, transparency materials, drag-and-drop with file URLs, Dock click handlers, URL scheme registration, file type associations, multi-display awareness, native notifications — none of these are reachable from WebKit/WebView2 without a host process. The shell exists to do what the WebView _cannot_.
 
-**Why two implementations is correct:** macOS and Windows have fundamentally different window/material/tray models. Cross-platform abstractions over them (Electron, Tauri) leak in exactly the places you care about for native feel. Two ~10kLoC shells in their idiomatic languages will, on net, be smaller and clearer than one 30kLoC abstraction.
+**Why per-platform implementations are correct:** macOS, Windows, and Linux have fundamentally different window/material/tray models. Cross-platform abstractions over them (Electron, Tauri) leak in exactly the places you care about for native feel. Small shells in their idiomatic stacks will, on net, be smaller and clearer than one large abstraction.
 
 **What to actually write here:**
 
@@ -64,7 +65,7 @@ This is the structural recommendation. Every layer exists because removing it lo
 
 **Why a WebView and not native UI:** Two reasons.
 
-1. _Maintenance halving._ A single React/TS UI codebase running on both OSes versus two parallel UIs (AppKit + WPF/WinUI). Every feature ships twice if you go native.
+1. _Maintenance reduction._ A single React/TS UI codebase running on the target OSes versus parallel native UIs (AppKit + WPF/WinUI + GTK/Qt). Every feature ships once per native UI if you go fully native.
 2. _Iteration speed._ Hot module reload in 200 ms vs Xcode rebuild in 30 s. Compounded over a year of design iteration, this is the difference between shipping and not.
 
 **Why the _system_ WebView, not a bundled Chromium:** WebKit ships with macOS, WebView2 ships with Windows. You inherit their security updates without bundling a 200 MB browser. You pay the cost of two engines (KHTML-descended Safari/WebKit and Chromium-descended Edge/WebView2) instead of one — meaning CSS quirks must be tested on both. This is a real tax. Pay it; the alternative is bundling Chromium and inheriting Electron's footprint.

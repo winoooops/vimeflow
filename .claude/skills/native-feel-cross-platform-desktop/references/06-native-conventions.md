@@ -2,7 +2,7 @@
 
 T3 (_adopt the platform; don't compete with it_) and T4 (_performance is a property of perception_) converge here. This file is a list of behaviors that, when wrong, telegraph "web app." Each is independent. Each is cheap to fix once you know about it. None changes a benchmark; all change what the user feels.
 
-The goal: a skeptical user should examine the app for 30 seconds and conclude "this is a regular Mac/Windows app." Every item below is something that skeptic notices unconsciously.
+The goal: a skeptical user should examine the app for 30 seconds and conclude "this is a regular Mac/Windows/Linux app." Every item below is something that skeptic notices unconsciously.
 
 ---
 

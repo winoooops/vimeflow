@@ -6,8 +6,8 @@ Run the user's project through this tree _before_ recommending the four-layer ar
 
 ## Question 1: How many OS targets?
 
-- **Just one (macOS only, or Windows only):**
-  → **Don't use this architecture.** Build native (Swift/AppKit, or C#/WinUI/WPF). The cross-platform tax is not worth it. The whole point of this stack is to share a UI codebase across OSes; with one OS, you have nothing to share.
+- **Just one (macOS only, Windows only, or Linux only):**
+  → **Don't use this architecture.** Build native (Swift/AppKit, C#/WinUI/WPF, or GTK/Qt). The cross-platform tax is not worth it. The whole point of this stack is to share a UI codebase across OSes; with one OS, you have nothing to share.
 
 - **Two (macOS + Windows):**
   → Proceed.
@@ -29,7 +29,7 @@ Run the user's project through this tree _before_ recommending the four-layer ar
   → **Don't use this architecture.** Use Electron. The polish budget here is 5–10× higher than Electron, and you only earn that back if native-feel is a competitive differentiator. If "nice" is sufficient, the cheapest path is Electron + a good designer.
 
 - **No, it's an internal tool, no end-user polish needed:**
-  → **Don't use this architecture.** Web app in a browser tab. Or Electron. Or a Mac app for the one OS your team uses.
+  → **Don't use this architecture.** Web app in a browser tab. Or Electron. Or a native app for the one OS your team uses.
 
 ---
 

@@ -73,10 +73,10 @@ Agent  ❯ Quickest path is the 75-item native-feel audit
 
 ### Case 2 — Build a cross-platform native-feel app from scratch
 
-Greenfield project, must run on macOS + Windows, and the native feel is the _point_ — a launcher, a productivity tool, an AI workspace your users live in all day.
+Greenfield project, must run on macOS + Windows + Linux, and the native feel is the _point_ — a launcher, a productivity tool, an AI workspace your users live in all day.
 
 ```
-You    ❯ Starting a new desktop app — macOS + Windows, native feel
+You    ❯ Starting a new desktop app — macOS + Windows + Linux, native feel
          is the whole pitch. What architecture should I use?
 
 Agent  ❯ Before architecture, the decision tree
@@ -90,7 +90,7 @@ Agent  ❯ Before architecture, the decision tree
          If you pass, the four-layer architecture is:
 
            ┌──────────────────────────────────────────────────┐
-           │ Native shell      Swift/AppKit  +  C#/WPF        │
+           │ Native shell      Swift/AppKit + C#/WPF + GTK/Qt │
            │       ↕   one IPC schema, codegen for all sides  │
            │ System WebView    WKWebView    +  WebView2       │
            │   running React + TypeScript, shared 1:1         │
@@ -129,7 +129,7 @@ Agent  ❯ Before architecture, the decision tree
 
 A reference for architects, tech leads, and engineers who must build a desktop app that:
 
-- runs on **macOS + Windows** (optionally Linux) from a single UI codebase,
+- runs on **macOS + Windows + Linux** from a single UI codebase,
 - launches in under 500 ms and stays under 500 MB resident,
 - is **indistinguishable from a native app** to its users (no `cursor: pointer` tell-tales, no white-flash on launch, no WebKit context menu, no smooth-scroll JS),
 - supports a **plugin/extension ecosystem** in TypeScript,

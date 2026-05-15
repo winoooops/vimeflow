@@ -180,7 +180,7 @@ The transport may share a channel, but the schema doesn't. `RequestKind` and `Ev
 
 ## Versioning across runtimes
 
-You will ship a Mac app at version N while a user is still on version N-1 of the Windows app. The frontend bundle and the native shell update on different cadences (auto-update of the shell is slower than CDN updates of the JS).
+You will ship a Mac app at version N while a user is still on version N-1 of the Windows or Linux app. The frontend bundle and the native shell update on different cadences (auto-update of the shell is slower than CDN updates of the JS).
 
 **Rule:** the IPC schema is versioned, every message carries the version it was generated against, and the receiving side either:
 
