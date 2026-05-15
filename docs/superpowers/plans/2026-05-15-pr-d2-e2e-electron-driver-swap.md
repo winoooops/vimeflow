@@ -382,14 +382,13 @@ export const appArgs: string[] = [
 ]
 ```
 
-- [ ] **Step 2: Verify the file lints + formats clean.**
+- [ ] **Step 2: Verify the file formats clean.**
 
 ```bash
-npx eslint tests/e2e/shared/electron-app.ts
 npx prettier --check tests/e2e/shared/electron-app.ts
 ```
 
-Expected: both clean. If prettier fails, run `npx prettier --write tests/e2e/shared/electron-app.ts`.
+Expected: clean. If it fails, run `npx prettier --write tests/e2e/shared/electron-app.ts`. ESLint is not invoked because `eslint.config.js` line 40 ignores `tests/e2e/**` (the suite has its own tsconfig + WDIO globals); the type-check in Task 14 covers the parts ESLint would catch.
 
 - [ ] **Step 3: Smoke-test the module can import.**
 
@@ -560,22 +559,27 @@ export const config: WebdriverIO.Config = {
 }
 ```
 
-- [ ] **Step 2: Verify lint + format are clean.**
+- [ ] **Step 2: Verify the file formats clean.**
 
 ```bash
-npx eslint tests/e2e/core/wdio.conf.ts
 npx prettier --check tests/e2e/core/wdio.conf.ts
 ```
 
-Expected: clean. If prettier fails, run `npx prettier --write tests/e2e/core/wdio.conf.ts`.
+Expected: clean. If it fails, run `npx prettier --write tests/e2e/core/wdio.conf.ts`. ESLint not invoked (see Task 4 Step 2 for rationale).
 
-- [ ] **Step 3: Verify the tests/e2e tsconfig type-checks this file.**
+- [ ] **Step 3: Verify the tests/e2e tsconfig has no errors for this file.**
 
 ```bash
-npx tsc --noEmit -p tests/e2e/tsconfig.json 2>&1 | grep "core/wdio.conf"
+output=$(npx tsc --noEmit -p tests/e2e/tsconfig.json 2>&1)
+if echo "$output" | grep -q "core/wdio.conf"; then
+  echo "FAIL: type errors in core/wdio.conf.ts:"
+  echo "$output" | grep "core/wdio.conf"
+else
+  echo "PASS: core/wdio.conf.ts type-checks (errors in other suite configs may still exist until Tasks 7-8 land)"
+fi
 ```
 
-Expected: zero matches (clean). The other two wdio.conf.ts files (terminal, agent) will still flag `tauri:options` errors until Tasks 7-8 rewrite them; ignore those.
+Expected: `PASS: core/wdio.conf.ts type-checks ...` line. The standalone `tsc` exit code will likely be non-zero because the other two suite configs still reference `tauri:options`; the wrapping `if/else` isolates the per-file check.
 
 - [ ] **Step 4: Commit.**
 
@@ -656,22 +660,27 @@ export const config: WebdriverIO.Config = {
 
 The differences vs core: shorter onPrepare comment (cross-references core), `waitforTimeout: 20_000` (vs 10), `mochaOpts.timeout: 60_000` (vs 30). Match the pre-PR-D2 file's per-suite tuning.
 
-- [ ] **Step 2: Verify lint + format are clean.**
+- [ ] **Step 2: Verify the file formats clean.**
 
 ```bash
-npx eslint tests/e2e/terminal/wdio.conf.ts
 npx prettier --check tests/e2e/terminal/wdio.conf.ts
 ```
 
-Expected: clean.
+Expected: clean. If it fails, run `npx prettier --write tests/e2e/terminal/wdio.conf.ts`. ESLint not invoked (see Task 4 Step 2 for rationale).
 
-- [ ] **Step 3: Verify the tsconfig type-checks this file.**
+- [ ] **Step 3: Verify the tests/e2e tsconfig has no errors for this file.**
 
 ```bash
-npx tsc --noEmit -p tests/e2e/tsconfig.json 2>&1 | grep "terminal/wdio.conf"
+output=$(npx tsc --noEmit -p tests/e2e/tsconfig.json 2>&1)
+if echo "$output" | grep -q "terminal/wdio.conf"; then
+  echo "FAIL: type errors in terminal/wdio.conf.ts:"
+  echo "$output" | grep "terminal/wdio.conf"
+else
+  echo "PASS: terminal/wdio.conf.ts type-checks (errors in agent/wdio.conf.ts may still exist until Task 8 lands)"
+fi
 ```
 
-Expected: zero matches.
+Expected: `PASS: terminal/wdio.conf.ts type-checks ...` line.
 
 - [ ] **Step 4: Commit.**
 
@@ -747,22 +756,27 @@ export const config: WebdriverIO.Config = {
 
 Differences vs core: `delete process.env.VIMEFLOW_DISABLE_AGENT_DETECTION` instead of `= '1'`; `waitforTimeout: 30_000` and `mochaOpts.timeout: 90_000`.
 
-- [ ] **Step 2: Verify lint + format are clean.**
+- [ ] **Step 2: Verify the file formats clean.**
 
 ```bash
-npx eslint tests/e2e/agent/wdio.conf.ts
 npx prettier --check tests/e2e/agent/wdio.conf.ts
 ```
 
-Expected: clean.
+Expected: clean. If it fails, run `npx prettier --write tests/e2e/agent/wdio.conf.ts`. ESLint not invoked (see Task 4 Step 2 for rationale).
 
-- [ ] **Step 3: Verify the tsconfig type-checks this file.**
+- [ ] **Step 3: Verify the tests/e2e tsconfig has no errors for this file.**
 
 ```bash
-npx tsc --noEmit -p tests/e2e/tsconfig.json 2>&1 | grep "agent/wdio.conf"
+output=$(npx tsc --noEmit -p tests/e2e/tsconfig.json 2>&1)
+if echo "$output" | grep -q "agent/wdio.conf"; then
+  echo "FAIL: type errors in agent/wdio.conf.ts:"
+  echo "$output" | grep "agent/wdio.conf"
+else
+  echo "PASS: agent/wdio.conf.ts type-checks. After Tasks 6-8 all land, full `tsc -p tests/e2e/tsconfig.json` should be clean — Task 14 Step 1 verifies."
+fi
 ```
 
-Expected: zero matches.
+Expected: `PASS: agent/wdio.conf.ts type-checks ...` line.
 
 - [ ] **Step 4: Commit.**
 
@@ -1247,14 +1261,19 @@ Expected: 3 hits (one per `wdio.conf.ts`).
 
 - [ ] **Step 7: Confirm `npm run electron:dev` still launches (manual sanity).**
 
+Open a separate terminal in the project root and run:
+
 ```bash
-timeout 8 npm run electron:dev 2>&1 | head -30 || true
-pkill -f 'electron .' 2>/dev/null || true
+npm run electron:dev
 ```
 
-Expected: vite logs + electron window opens within ~5s. The `timeout 8` exits the dev server after 8s; that's fine for the smoke. The `pkill` cleans up any stuck electron process.
+Expected: Vite dev server logs appear, then an Electron window opens at 1400×900 with title "Vimeflow" within ~5s. The renderer + sidecar should both be functional (default terminal pane spawns; `pwd` echoes).
 
-(If running headless and no display, skip this step and note it.)
+Quit Electron via the OS's normal quit shortcut (Cmd/Ctrl+Q, or close the window on non-macOS). The Vite server should exit cleanly when the Electron process detaches; if it doesn't, Ctrl+C in the terminal stops it.
+
+If running headless / on a CI agent without a display, skip this step and explicitly note it in the PR description — the CI workflow change in Task 11 covers the headless smoke.
+
+This step is intentionally manual: a scripted smoke that does `timeout N npm run electron:dev | head` + a `pkill` cleanup would (1) swallow real launch failures via the pipe-to-head pattern, and (2) the `pkill` pattern can match unrelated Electron processes the operator is running on the same machine. Manual quit is safer.
 
 - [ ] **Step 8: Confirm `package.json:main` and the new test:e2e:build match the spec.**
 
