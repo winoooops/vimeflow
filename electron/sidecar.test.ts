@@ -161,3 +161,46 @@ describe('Sidecar exit handling', () => {
     expect(stdinSpy).not.toHaveBeenCalled()
   })
 })
+
+describe('Sidecar onEvent', () => {
+  test('event frame fans out to every registered listener in order', () => {
+    const { mock, sidecar } = makeSidecar()
+    const calls: [string, unknown][] = []
+
+    sidecar.onEvent((event, payload) => {
+      calls.push([event, payload])
+    })
+
+    sidecar.onEvent((event, payload) => {
+      calls.push([event, payload])
+    })
+
+    mock.stdout.write(
+      encodeFrame({
+        kind: 'event',
+        event: 'pty-data',
+        payload: { sessionId: 's1', data: 'hi' },
+      })
+    )
+
+    expect(calls).toEqual([
+      ['pty-data', { sessionId: 's1', data: 'hi' }],
+      ['pty-data', { sessionId: 's1', data: 'hi' }],
+    ])
+  })
+
+  test('listener teardown is idempotent and stops further deliveries', () => {
+    const { mock, sidecar } = makeSidecar()
+    const callback = vi.fn()
+    const unlisten = sidecar.onEvent(callback)
+
+    unlisten()
+    unlisten()
+
+    mock.stdout.write(
+      encodeFrame({ kind: 'event', event: 'pty-data', payload: {} })
+    )
+
+    expect(callback).not.toHaveBeenCalled()
+  })
+})
