@@ -1376,3 +1376,5 @@ PR. **Mitigation**: §6.2 covers the full feature surface end-to-end;
 PR-D2's E2E swap moves these paths under automated Electron-driven
 tests. Coverage thresholds are protected via the
 `vitest.config.ts:coverage.exclude` additions in §3.3.
+
+<!-- codex-reviewed: 2026-05-15T01:37:44Z -->
