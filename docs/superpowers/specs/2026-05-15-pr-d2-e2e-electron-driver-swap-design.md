@@ -679,3 +679,5 @@ Rollback is mechanical because PR-D2 doesn't touch any Rust source, any spec fil
 - macOS / Windows runners in the E2E matrix.
 - PR-D3: delete the entire `@tauri-apps/*` surface, Cargo Tauri dep, `tauri.conf.json`, `tauri:dev` / `tauri:build` scripts; add electron-builder packaging + signed binaries.
 - Remove the `dist-electron/` mention from the vite-plugin-electron-renderer skip-list once we confirm we never want to enable it.
+
+<!-- codex-reviewed: 2026-05-15T15:29:10Z -->
