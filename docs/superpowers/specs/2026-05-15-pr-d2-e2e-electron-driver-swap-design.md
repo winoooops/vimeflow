@@ -190,7 +190,27 @@ export const appEntryPoint = path.resolve(repoRoot, 'dist-electron/main.js')
 // ran without. NOT applied to `npm run electron:dev` (vite-plugin-electron's
 // startup(['.']) hook keeps the default sandboxed mode). Packaged production
 // builds (PR-D3) re-enable the sandbox.
-export const appArgs: string[] = ['--no-sandbox']
+//
+// --user-data-dir=<temp> forces Electron to use a fresh app-data dir for every
+// WDIO session. Without this, `app.getPath('userData')` resolves to the
+// Electron default (e.g. ~/.config/Vimeflow on Linux) which is shared across
+// runs. The sidecar's `e2e-test` Cargo feature only wipes sessions.json from
+// the Tauri lib.rs::run() setup path — the Electron sidecar entry
+// (src-tauri/src/bin/vimeflow-backend.rs) skips that block, so stale cache
+// would leak between specs and break the unchanged terminal specs that assume
+// a fresh default session. Each WDIO worker computes its own temp dir at
+// import time so the three suite invocations get distinct user-data dirs.
+import os from 'node:os'
+import fs from 'node:fs'
+
+const sessionUserDataDir = fs.mkdtempSync(
+  path.join(os.tmpdir(), 'vimeflow-e2e-')
+)
+
+export const appArgs: string[] = [
+  '--no-sandbox',
+  `--user-data-dir=${sessionUserDataDir}`,
+]
 ```
 
 **Properties:**
@@ -304,8 +324,11 @@ Single delta — add `"@wdio/electron-service"` to the `types` array:
 +      "@wdio/electron-service"
 +    ]
    },
-   "include": ["**/*.ts"]
+-  "include": ["**/*.ts"]
++  "include": ["**/*.ts", "../../src/types/e2e.d.ts"]
 ```
+
+The second `include` entry imports the `window.__VIMEFLOW_E2E__` global declaration so the spec files (and `e2e-bridge.ts` callers) type-check. Without this addition, `tsc --noEmit -p tests/e2e/tsconfig.json` reports `TS2339 Property '__VIMEFLOW_E2E__' does not exist on type 'Window & typeof globalThis'` for every spec that touches the bridge — even though the WDIO runtime resolver loads correctly via `tsx`. This change is required for the §7.1 type-check command to pass.
 
 ### 4.4 `vite.config.ts` (comment fix)
 
@@ -372,7 +395,7 @@ Rationale for each:
 | ---- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | 1    | `tsc -b`                                                                 | nothing emitted (root tsconfig is `noEmit`); validates `src/**` types                                                                                                                                 | exits non-zero with file:line errors; CI/dev fails fast                  |
 | 2    | `cross-env VITE_E2E=1 vite build --mode electron`                        | `dist/index.html` + `dist/assets/*` (renderer with `VITE_E2E=1` baked in via `import.meta.env`); `dist-electron/main.js` (Electron main, ESM, ~10 KB); `dist-electron/preload.mjs` (preload, ~0.4 KB) | vite build errors; missing entry; renderer too large warning (non-fatal) |
-| 3    | `cd src-tauri && cargo build --bin vimeflow-backend --features e2e-test` | `src-tauri/target/debug/vimeflow-backend` (Rust sidecar with the `e2e-test` feature enabled, which makes the cache wipe deterministic per `lib.rs:46-50`)                                             | cargo compile error; exits non-zero                                      |
+| 3    | `cd src-tauri && cargo build --bin vimeflow-backend --features e2e-test` | `src-tauri/target/debug/vimeflow-backend` (Rust sidecar built with the `e2e-test` Cargo feature; see §5.7 for what the feature gates and why it does NOT wipe the cache on this code path)            | cargo compile error; exits non-zero                                      |
 
 ### 5.3 What Changed vs the Tauri Version
 
@@ -416,17 +439,32 @@ npm run test:e2e:all           # all three
 - **Does not validate that `@wdio/electron-service` is installed.** If missing, WDIO fails at session start, not at build.
 - **Does not produce a packaged binary.** `electron-builder` is PR-D3 scope.
 
+### 5.7 The `e2e-test` Cargo feature does NOT wipe cache on the sidecar path
+
+A subtle holdover from the Tauri E2E setup: the existing `#[cfg(feature = "e2e-test")]` block in `src-tauri/src/lib.rs:66-78` deletes `sessions.json` from `app_data_dir` on every launch. That block runs ONLY inside Tauri's `setup()` closure. Electron launches `src-tauri/src/bin/vimeflow-backend.rs`, which calls `BackendState::new(app_data_dir, sink)` directly — it never enters Tauri's setup path. So with `--features e2e-test`, the sidecar still builds, but the cache-wipe behavior does not fire under Electron.
+
+Two alternatives were considered:
+
+1. **Move the cache wipe into `src/bin/vimeflow-backend.rs`** behind the same Cargo feature. Cleanest from an "the feature does what it claims" angle, but requires a Rust source change and is therefore out of PR-D2's "no Rust source changes" boundary (§3.4).
+2. **Isolate every WDIO session into its own app-data dir** via Electron's `--user-data-dir=<temp>` CLI flag. The flag overrides `app.getPath('userData')` (Electron checks `--user-data-dir` at startup and reroutes the path). The sidecar inherits the rerouted path via `appDataDir: app.getPath('userData')` in `electron/main.ts:208`, so the entire E2E surface — main, renderer, and sidecar — uses the isolated temp dir.
+
+PR-D2 takes option (2): `tests/e2e/shared/electron-app.ts` computes a fresh `mkdtempSync` path per WDIO worker import and appends it to `appArgs`. PR-D3 may move the cache-wipe into the sidecar entry as a follow-up cleanup once Tauri's `lib.rs` is deleted.
+
 ## 6. CI Workflow Update (`.github/workflows/e2e.yml`)
 
 ### 6.1 Steps Removed
 
-| Step                                                                                                                            | Reason                                                                                                                                                                                                                            |
-| ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Cache tauri-driver` (lines 59-64)                                                                                              | `tauri-driver` not used; `@wdio/electron-service` manages chromedriver and caches it under `~/.cache/wdio` (handled by the service, not us).                                                                                      |
-| `Install tauri-driver` (lines 66-68)                                                                                            | Same.                                                                                                                                                                                                                             |
-| `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libappindicator3-dev`, `librsvg2-dev`, `patchelf`, `webkit2gtk-driver` from `apt-get` | These are Tauri-build / wry dependencies. The sidecar build doesn't need GUI libs; Electron ships its own Chromium. The only Linux deps Electron+Chromedriver need on Ubuntu 24.04 are already in the GitHub runners' base image. |
-| `WEBKIT_DISABLE_DMABUF_RENDERER: '1'` env on each WDIO step                                                                     | wry-specific workaround; Electron's Chromium has its own renderer path.                                                                                                                                                           |
-| `Build Tauri debug binary with e2e-test feature` (lines 90-92)                                                                  | Tauri binary not used in PR-D2+. Replaced by Electron bundles + sidecar (in `test:e2e:build`).                                                                                                                                    |
+| Step                                                           | Reason                                                                                                                                       |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Cache tauri-driver` (lines 59-64)                             | `tauri-driver` not used; `@wdio/electron-service` manages chromedriver and caches it under `~/.cache/wdio` (handled by the service, not us). |
+| `Install tauri-driver` (lines 66-68)                           | Same.                                                                                                                                        |
+| `webkit2gtk-driver` from `apt-get install`                     | wry-specific WebDriver binary; not used by Electron's chromedriver.                                                                          |
+| `WEBKIT_DISABLE_DMABUF_RENDERER: '1'` env on each WDIO step    | wry-specific workaround; Electron's Chromium has its own renderer path.                                                                      |
+| `Build Tauri debug binary with e2e-test feature` (lines 90-92) | Tauri binary not used in PR-D2+. Replaced by Electron bundles + sidecar (in `test:e2e:build`).                                               |
+
+### 6.1.1 Steps Explicitly Preserved (counterintuitive)
+
+`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libappindicator3-dev`, `librsvg2-dev`, and `patchelf` STAY in the apt-get install list even though the WDIO/Electron pipeline doesn't need them at runtime. The sidecar binary (`cargo build --bin vimeflow-backend --features e2e-test`) compiles against the `vimeflow_lib` crate, whose `Cargo.toml` still declares `tauri = "2.11"` as a direct dependency. Building any binary in this crate transitively pulls in `tauri → tauri-runtime-wry → wry → webkit2gtk-rs`, which requires the GTK/webkit headers at link time. Removing these apt packages would surface as a link-time failure during the `cargo build --bin vimeflow-backend` step on a fresh CI runner. The cleanup is deferred to PR-D3 when the Tauri dependency itself is removed from `src-tauri/Cargo.toml`.
 
 ### 6.2 Steps Added / Changed
 
@@ -506,7 +544,20 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xvfb
+        # libwebkit2gtk / libgtk / libappindicator / librsvg / patchelf are
+        # still required at link time because the sidecar binary
+        # (cargo build --bin vimeflow-backend) compiles against the
+        # vimeflow_lib crate, which still pulls in the Tauri dependency
+        # graph (tauri → wry → webkit2gtk-rs). PR-D3 removes the Tauri
+        # dep itself, after which these system packages can be dropped
+        # too. xvfb is required by xvfb-run for headless Electron runs.
 
       - name: Install npm dependencies
         run: npm ci
