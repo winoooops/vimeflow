@@ -2293,3 +2293,5 @@ Run-through against the spec's §1.1 In-Scope list:
 | Acceptance grep zero-hits                      | Task 14 Step 5                      |
 
 Every spec §1.1 item maps to a task. The acceptance gate in spec §1.3 is satisfied by Task 14 Steps 1-7.
+
+<!-- codex-reviewed: 2026-05-16T04:45:23Z -->
