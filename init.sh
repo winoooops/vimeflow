@@ -63,10 +63,10 @@ echo "  - Review CLAUDE.md for project conventions"
 echo ""
 
 # Check if Tauri is initialized
-if [ -d "src-tauri" ]; then
-    echo "Tauri backend detected!"
-    echo "To start development server: cargo tauri dev"
+if [ -d "crates/backend" ]; then
+    echo "Rust backend crate detected!"
+    echo "To start development server: npm run electron:dev"
 else
-    echo "Tauri backend not yet initialized."
-    echo "To initialize: npm create tauri-app (or see feature_list.json #1)"
+    echo "Rust backend crate not yet initialized."
+    echo "Expected crate path: crates/backend"
 fi

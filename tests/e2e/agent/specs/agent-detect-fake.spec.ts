@@ -9,7 +9,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const FIXTURE_DIR = path.resolve(__dirname, '../../fixtures/agents')
 
-// Host has any claude processes? The current detector (src-tauri/src/agent/
+// Host has any claude processes? The current detector (crates/backend/src/agent/
 // detector.rs) scans /proc globally for argv[0]="claude" and attributes any
 // match to the fresh PTY. On a dev box running real Claude Code, the host
 // processes win the race and this spec sees non-deterministic failures

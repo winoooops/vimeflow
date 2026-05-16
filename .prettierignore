@@ -1,7 +1,7 @@
 node_modules
 dist
 coverage
-src-tauri/target
+target
 playwright-report
 .lifeline-planner
 *.min.js

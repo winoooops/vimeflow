@@ -121,8 +121,8 @@
     "category": "backend",
     "description": "Implement Rust PTY spawn command",
     "steps": [
-      "Add portable-pty dependency to src-tauri/Cargo.toml",
-      "Create src-tauri/src/terminal/mod.rs module",
+      "Add portable-pty dependency to crates/backend/Cargo.toml",
+      "Create crates/backend/src/terminal/mod.rs module",
       "Implement spawn_pty Tauri command (shell, cwd, env)",
       "Return PtySession struct (id, pid)",
       "Store active PTY sessions in Mutex<HashMap>",
