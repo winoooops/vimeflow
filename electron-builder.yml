@@ -14,7 +14,7 @@ files:
   - package.json
 
 extraResources:
-  - from: src-tauri/target/release/vimeflow-backend
+  - from: target/release/vimeflow-backend
     to: bin/vimeflow-backend
 
 asar: true

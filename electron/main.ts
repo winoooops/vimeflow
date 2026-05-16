@@ -41,14 +41,7 @@ const resolveSidecarBin = (): string => {
     return path.join(process.resourcesPath, 'bin', BINARY_NAME)
   }
 
-  return path.resolve(
-    __dirname,
-    '..',
-    'src-tauri',
-    'target',
-    'debug',
-    BINARY_NAME
-  )
+  return path.resolve(__dirname, '..', 'target', 'debug', BINARY_NAME)
 }
 
 const packagedContentSecurityPolicy = [
