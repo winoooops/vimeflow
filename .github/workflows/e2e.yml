@@ -5,7 +5,10 @@ on:
     branches:
       - main
     paths:
-      - 'src-tauri/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/**'
       - 'src/**'
       - 'electron/**'
       - 'tests/e2e/**'
@@ -17,7 +20,10 @@ on:
     branches:
       - main
     paths:
-      - 'src-tauri/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/**'
       - 'src/**'
       - 'electron/**'
       - 'tests/e2e/**'
@@ -54,7 +60,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: .
           # Key the cargo cache against the e2e-test feature so cache
           # entries from non-e2e CI jobs don't mask recompiles triggered
           # by this job.
@@ -75,13 +81,13 @@ jobs:
         run: npm run test:e2e:build
 
       - name: Run core E2E suite
-        run: xvfb-run --auto-servernum npm run test:e2e
+        run: xvfb-run --auto-servernum npm run test:e2e:core:run
 
       - name: Run terminal E2E suite
-        run: xvfb-run --auto-servernum npm run test:e2e:terminal
+        run: xvfb-run --auto-servernum npm run test:e2e:terminal:run
 
       - name: Run agent E2E suite
-        run: xvfb-run --auto-servernum npm run test:e2e:agent
+        run: xvfb-run --auto-servernum npm run test:e2e:agent:run
 
       - name: Upload E2E diagnostics on failure
         if: failure()
@@ -89,7 +95,7 @@ jobs:
         with:
           name: e2e-diagnostics-${{ github.run_id }}
           path: |
-            src-tauri/target/debug/vimeflow-backend
+            target/debug/vimeflow-backend
             dist/
             dist-electron/
           retention-days: 3

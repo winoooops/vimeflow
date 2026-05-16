@@ -67,7 +67,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: .
 
       - name: Install system dependencies
         run: |
@@ -80,7 +80,6 @@ jobs:
             patchelf
 
       - name: Run Rust tests
-        working-directory: src-tauri
         run: cargo test
 
   bindings-check:
@@ -103,7 +102,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: .
 
       - name: Install system dependencies
         run: |

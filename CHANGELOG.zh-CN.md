@@ -47,6 +47,8 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
   ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
 - CI：从 `.github/workflows/e2e.yml` 的 apt 安装步骤中移除 `libwebkit2gtk-4.1-dev`、`libgtk-3-dev`、`libappindicator3-dev`、`librsvg2-dev`、`patchelf`。在 Tauri Cargo 依赖被移除之后，旁路二进制不再链接 `webkit2gtk-rs`，这些系统依赖完全失去意义。保留 `xvfb`（无头 Electron 运行仍需）。
   ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+- 将 Rust crate 目录从 `src-tauri/` 重命名为 `crates/backend/`，并在仓库根目录引入 Cargo workspace manifest（`./Cargo.toml`）。`.cargo/config.toml` 现在位于仓库根目录，确保 `TS_RS_EXPORT_DIR` 稳定指向 `src/bindings/`；此前未跟踪的 crate 本地 lockfile 被仓库根目录跟踪的 `Cargo.lock` 取代。CI、npm 脚本、Electron 开发/打包路径、lint/spell 忽略规则，以及当前文档都已指向 workspace 布局。
+  （当前分支）
 
 #### Removed
 

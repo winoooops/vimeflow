@@ -41,14 +41,7 @@ const resolveSidecarBin = (): string => {
     return path.join(process.resourcesPath, 'bin', BINARY_NAME)
   }
 
-  return path.resolve(
-    __dirname,
-    '..',
-    'src-tauri',
-    'target',
-    'debug',
-    BINARY_NAME
-  )
+  return path.resolve(__dirname, '..', 'target', 'debug', BINARY_NAME)
 }
 
 const packagedContentSecurityPolicy = [
@@ -62,25 +55,16 @@ const packagedContentSecurityPolicy = [
 
 const devContentSecurityPolicy = [
   "default-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-  "script-src 'self' 'unsafe-eval' http://localhost:* http://127.0.0.1:*",
-  "style-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
-  "img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*",
-  "font-src 'self' data: http://localhost:* http://127.0.0.1:*",
-  "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-].join('; ')
-
-// E2E adds 'unsafe-inline' to script-src so @wdio/electron-service /
-// chromedriver can inject its inline bootstrap script into the renderer.
-// Scoped to isE2eRuntime() (env or --vimeflow-e2e CLI arg) so regular
-// `npm run electron:dev` keeps the stricter dev CSP.
-const devE2eContentSecurityPolicy = [
-  "default-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
   "script-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
   "style-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
   "img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*",
   "font-src 'self' data: http://localhost:* http://127.0.0.1:*",
   "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
 ].join('; ')
+
+// Vite React dev mode injects an inline preamble; WDIO also injects an
+// inline bootstrap in E2E. This stays limited to non-packaged builds.
+const devE2eContentSecurityPolicy = devContentSecurityPolicy
 
 const installContentSecurityPolicy = (): void => {
   if (app.isPackaged) {

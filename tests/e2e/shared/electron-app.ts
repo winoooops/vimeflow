@@ -22,10 +22,10 @@ export const appEntryPoint = path.resolve(repoRoot, 'dist-electron/main.js')
 //
 // --no-sandbox is required on most Linux dev hosts and CI runners that
 // don't ship a SUID chrome-sandbox; this matches what the Tauri/wry
-// path effectively ran without. NOT applied to `npm run electron:dev`
-// (vite-plugin-electron's startup(['.']) hook keeps the default
-// sandboxed mode). Packaged production builds (PR-D3) re-enable the
-// sandbox.
+// path effectively ran without. `npm run electron:dev` uses the same
+// flag so local development does not boot to a blank/crashed Chromium
+// window on hosts without a working sandbox. Packaged production builds
+// (PR-D3) re-enable the sandbox.
 //
 // --vimeflow-e2e is the Electron-side detection fallback for the
 // E2E-only backend-method allowlist (electron/main.ts:isE2eRuntime).

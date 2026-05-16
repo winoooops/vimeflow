@@ -18,7 +18,7 @@
 ## File System Access
 
 - Validate all file paths received via IPC are within the app's data directory
-- The sidecar receives its app-data directory via the `--app-data-dir <path>` CLI argument (passed by Electron's `app.getPath('userData')` in `electron/main.ts`); store the resolved `PathBuf` on `BackendState` and validate every IPC path is descended from it (see `src-tauri/src/filesystem/scope.rs` for the canonical check).
+- The sidecar receives its app-data directory via the `--app-data-dir <path>` CLI argument (passed by Electron's `app.getPath('userData')` in `electron/main.ts`); store the resolved `PathBuf` on `BackendState` and validate every IPC path is descended from it (see `crates/backend/src/filesystem/scope.rs` for the canonical check).
 - Never construct paths by concatenating user input — use `Path::join()` and `canonicalize()`
 - Prevent path traversal: reject paths containing `..` components from IPC inputs
 

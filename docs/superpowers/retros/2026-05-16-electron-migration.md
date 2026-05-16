@@ -62,19 +62,22 @@ On one mid-section review, codex returned the _exact same 4 findings_ from the p
 
 Codex's plan-complete review caught that `useSessionManager.test.ts`, `useTerminal.ts`, and `terminal/types/index.ts` had doc-comments referencing `tauriTerminalService` that would become stale after the rename. The original Task 3 (class rename) plan only listed the obvious file pair. Codex's broader sweep caught the leak. Lesson: when renaming a symbol that's referenced in non-source-of-truth comments, plan for a global text sweep on the symbol name — not just the source files.
 
-### The `src-tauri/` directory name remains misleading
+### The `src-tauri/` directory rename was the right follow-up to close quickly
 
-We deferred the `src-tauri/` → `backend/` rename because it touches every Cargo path, every CI workflow, and every test script. The interim state has a directory called `src-tauri/` that contains zero Tauri references. We added `src-tauri/README.md` as a defusing doc but it's a workaround. New contributors reading `src-tauri/` will reasonably assume Tauri is still in use; the rename should land in a follow-up PR before any new contributor onboards.
+PR-D3 intentionally deferred the `src-tauri/` → `crates/backend/` rename because it touched every Cargo path, CI workflow, and test script. The follow-up branch closed that gap by moving the crate under the root Cargo workspace, promoting `.cargo/config.toml` and `Cargo.lock` to the repo root, and updating scripts / CI / docs to use the workspace target directory.
+
+## Resolved deferrals
+
+- **`src-tauri/` → `crates/backend/` directory rename.** Closed by the 2026-05-16 follow-up branch. The Tauri-era directory name is gone; the crate now lives at `crates/backend/` with a Cargo workspace manifest at the repo root (`./Cargo.toml`).
 
 ## Deferrals tracked
 
-- **`src-tauri/` → `backend/` directory rename.** Touches every Cargo path / CI workflow / test script. Own atomic PR.
 - **macOS / Windows packaging.** `electron-builder.yml` is structured to accept them; needs a new CI matrix workflow + cross-build verification.
 - **Code signing + notarization.** Required for production end-user distribution on macOS / Windows; deferred until distribution is a real concern.
 - **Auto-update wiring.** `electron-builder` supports `publish: null` for now; auto-update integration is its own design problem (Squirrel for Windows, latest.yml for AppImage).
 - **End-user-safe sandboxed AppImage.** PR-D3's AppImage requires `--no-sandbox` on hosts without a SUID `chrome-sandbox`. Bundling chrome-sandbox or wrapping in flatpak / AppRun-with-sandbox-helper is a follow-up.
 - **Multi-platform CI matrix.** The deleted `.github/workflows/tauri-build.yml` did Ubuntu/macOS/Windows; a replacement `packaged-build.yml` is a follow-up.
-- **`src-tauri/src/agent/architecture.{puml,svg}` redraw.** The diagrams still show `AgentAdapter<R: tauri::Runtime>`; the post-D3 trait is non-generic.
+- **`crates/backend/src/agent/architecture.{puml,svg}` redraw.** The diagrams still show `AgentAdapter<R: tauri::Runtime>`; the post-D3 trait is non-generic.
 
 ## What we'd do differently
 
@@ -82,7 +85,7 @@ We deferred the `src-tauri/` → `backend/` rename because it touches every Carg
 2. **Verify codex review-file timestamps before reading.** A stale review file from a prior timed-out run can produce misleading "same findings as before" loops.
 3. **Plan for doc-comment sweep when renaming public symbols.** Add an explicit step like "`rg -i <old-symbol-name> src tests` and update every comment hit" rather than relying on codex review to catch them.
 4. **Bake dependency-ordering analysis into the spec, not just the plan.** PR-D3's "Tasks must execute in this order to keep compilation green" insight surfaced during plan-writing; it should have been in the spec's architecture section so it could be reviewed earlier.
-5. **Land the directory rename in the same migration window.** The deferred `src-tauri/` → `backend/` rename is going to confuse contributors. The "do it during the migration" cost was finite; the "do it later as a follow-up" cost is unbounded contributor-onboarding friction.
+5. **Land directory renames in the same migration window.** The deferred `src-tauri/` → `crates/backend/` rename was small enough to close quickly, but it still created stale contributor-facing context in the gap between PR-D3 and the follow-up. Future runtime migrations should include directory naming cleanup before declaring the migration done for onboarding purposes.
 
 ## Notes on the skill toolkit used for this migration
 

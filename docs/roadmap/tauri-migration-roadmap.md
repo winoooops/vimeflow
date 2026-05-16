@@ -24,19 +24,19 @@ Replaces the previous 6-phase chat-based roadmap. The core change: the primary w
 
 ## Current State
 
-| Component           | Status                                                                                                           |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Desktop runtime     | **Electron** — `electron/` shell + `vimeflow-backend` Rust sidecar (post-PR-D3, 2026-05-16)                      |
-| Rust backend crate  | **Done** — `src-tauri/` (directory rename to `backend/` is a deferred follow-up); runtime-neutral `BackendState` |
-| Chat view           | **Removed** — project pivoted to terminal-first agent workspace                                                  |
-| Terminal (xterm.js) | **Done** — sidecar PTY bridge, xterm.js, multi-tab sessions, resize/replay support                               |
-| Agent status panel  | **Done** — Claude Code and Codex adapters feed the shared frontend panel                                         |
-| Diff view           | Wired — Vite dev API fallback plus sidecar git/watch integration                                                 |
-| Editor view         | Wired — CodeMirror editor, vim mode, file buffers, sidecar/Vite file services                                    |
-| Command Palette     | Wired — fuzzy registry, Ctrl+: trigger, workspace tab actions                                                    |
-| Packaging           | **Linux AppImage** via electron-builder; macOS / Windows / signing / auto-update are deferred follow-ups         |
-| UI handoff          | **In progress** — steps 1-3 merged; step 4 Single TerminalPane shipped (#190); step 5 mid-flight                 |
-| State management    | Pending — session persistence/store remains on the future roadmap                                                |
+| Component           | Status                                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| Desktop runtime     | **Electron** — `electron/` shell + `vimeflow-backend` Rust sidecar (post-PR-D3, 2026-05-16)              |
+| Rust backend crate  | **Done** — `crates/backend/` (renamed from `src-tauri/` on 2026-05-16); runtime-neutral `BackendState`   |
+| Chat view           | **Removed** — project pivoted to terminal-first agent workspace                                          |
+| Terminal (xterm.js) | **Done** — sidecar PTY bridge, xterm.js, multi-tab sessions, resize/replay support                       |
+| Agent status panel  | **Done** — Claude Code and Codex adapters feed the shared frontend panel                                 |
+| Diff view           | Wired — Vite dev API fallback plus sidecar git/watch integration                                         |
+| Editor view         | Wired — CodeMirror editor, vim mode, file buffers, sidecar/Vite file services                            |
+| Command Palette     | Wired — fuzzy registry, Ctrl+: trigger, workspace tab actions                                            |
+| Packaging           | **Linux AppImage** via electron-builder; macOS / Windows / signing / auto-update are deferred follow-ups |
+| UI handoff          | **In progress** — steps 1-3 merged; step 4 Single TerminalPane shipped (#190); step 5 mid-flight         |
+| State management    | Pending — session persistence/store remains on the future roadmap                                        |
 
 ---
 

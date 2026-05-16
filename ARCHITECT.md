@@ -11,7 +11,7 @@
 
 Post-PR-D3 (2026-05-16), the desktop shell is Electron and the Rust backend runs as a long-lived `vimeflow-backend` sidecar process. The renderer talks to the sidecar through a single LSP-framed JSON IPC channel routed by Electron's main process.
 
-- **IPC contract**: define shared types in `src-tauri/src/runtime/` and re-export via `ts-rs` to `src/bindings/` before implementing either side. Validate on the sidecar side (renderer is untrusted by default).
+- **IPC contract**: define shared types in `crates/backend/src/runtime/` and re-export via `ts-rs` to `src/bindings/` before implementing either side. Validate on the sidecar side (renderer is untrusted by default).
 - **Renderer surface**: `window.vimeflow.{invoke,listen}` is the only allowed entry point; thin wrappers in `src/lib/backend.ts` provide the runtime-neutral seam. Feature code never imports `electron` directly.
 - **Method allowlist**: `electron/backend-methods.ts` enumerates the methods the preload + main process forward to the sidecar. E2E-only methods are double-gated (`VITE_E2E=1` renderer flag AND Cargo `e2e-test` feature).
 - **State management**: `BackendState` is the only shared-mutable container on the sidecar; wrap interior state in `Mutex<T>` / `RwLock<T>`. Production builds use `StdoutEventSink` for backend → renderer push; tests use `FakeEventSink`.

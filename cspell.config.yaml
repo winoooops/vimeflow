@@ -106,7 +106,7 @@ ignorePaths:
   - node_modules
   - dist
   - coverage
-  - src-tauri/target
+  - target
   - '**/*.min.js'
   - '**/*.d.ts'
   - playwright-report

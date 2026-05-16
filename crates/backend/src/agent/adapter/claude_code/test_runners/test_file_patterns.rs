@@ -95,10 +95,10 @@ mod tests {
         // Regression: non-RS files under tests/ (test ASSETS — fixtures,
         // JSON snapshots, JSONL transcripts) used to satisfy the broad
         // /tests/ heuristic. Now the rule restricts to .rs files. This
-        // PR's own fixtures live under src-tauri/tests/fixtures/*.jsonl
+        // PR's own fixtures live under crates/backend/tests/fixtures/*.jsonl
         // and would have been mislabelled as test creations.
         assert!(!is_test_file(
-            "src-tauri/tests/fixtures/transcript_vitest_pass.jsonl"
+            "crates/backend/tests/fixtures/transcript_vitest_pass.jsonl"
         ));
         assert!(!is_test_file("tests/fixtures/cases.json"));
         assert!(!is_test_file("crates/x/tests/snapshot.toml"));

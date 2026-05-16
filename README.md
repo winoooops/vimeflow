@@ -57,10 +57,10 @@ Current UI handoff progress is tracked in [`docs/roadmap/progress.yaml`](docs/ro
 
 Real-time agent observability panel that auto-detects running AI coding agents in terminal sessions. Supports **Claude Code** and **Codex** (since [#154](https://github.com/winoooops/vimeflow/pull/154)) with one shared frontend:
 
-- **`AgentAdapter` trait** — `src-tauri/src/agent/adapter/` defines a single trait (`status_source` / `parse_status` / `validate_transcript` / `tail_transcript`) that each agent's adapter implements; the watcher pipeline, frontend events, and panel UI are agent-agnostic
+- **`AgentAdapter` trait** — `crates/backend/src/agent/adapter/` defines a single trait (`status_source` / `parse_status` / `validate_transcript` / `tail_transcript`) that each agent's adapter implements; the watcher pipeline, frontend events, and panel UI are agent-agnostic
 - **Claude Code adapter** (`adapter/claude_code/`) — per-session shell script pipes Claude's statusline JSON to a watched file; the adapter parses it and emits sidecar events (`agent-detected`, `agent-status`, `agent-tool-call`, `agent-disconnected`)
 - **Codex adapter** (`adapter/codex/`) — schema-driven SQLite locator over `~/.codex/*.sqlite` (logs DB → thread_id, threads DB → rollout JSONL path) with `/proc`-driven Linux fast-paths and FS-scan fallback; fold `event_msg.token_count` into the same `AgentStatusEvent` shape Claude emits
-- **Rust backend orchestration** — `src-tauri/src/agent/` adds the agent detector (process tree polling), the `base::start_for` watcher driver (file-change notify + polling fallback), and per-adapter transcript JSONL tailers for tool-call / turn / test-run signals
+- **Rust backend orchestration** — `crates/backend/src/agent/` adds the agent detector (process tree polling), the `base::start_for` watcher driver (file-change notify + polling fallback), and per-adapter transcript JSONL tailers for tool-call / turn / test-run signals
 - **Frontend panel** — `src/features/agent-status/` with `useAgentStatus` hook subscribing to the sidecar event bus, plus components: StatusCard (identity + model badge), BudgetMetrics (adaptive ApiKey/Subscriber/Fallback layout — Codex sessions render Subscriber with rate-limit bars; Claude API-key sessions render the Cost cell), ContextBucket (fill gauge + progress bar driven by `last_token_usage` for Codex, `total_input_tokens` for Claude), ToolCallSummary (aggregated chips), RecentToolCalls, FilesChanged, TestResults, and ActivityFooter
 - **Auto-collapse** — panel is 0px when no agent detected, animates to 280px on detection, holds final state for 5s after disconnect
 - **ts-rs type codegen** — Rust types exported to `src/bindings/` for type-safe frontend consumption (`CostMetrics.totalCostUsd: number | null` distinguishes Codex's no-cost surface from Claude's reported cost)
@@ -105,7 +105,7 @@ See [`CHANGELOG.md`](./CHANGELOG.md) (English) or [`CHANGELOG.zh-CN.md`](./CHANG
 
 | Layer         | Technologies                                          |
 | ------------- | ----------------------------------------------------- |
-| **Desktop**   | Tauri 2, Rust, portable-pty, tokio                    |
+| **Desktop**   | Electron 42, Rust sidecar, portable-pty, tokio        |
 | **Frontend**  | React 19, TypeScript 5 (strict), Vite                 |
 | **Styling**   | Tailwind CSS v4, Catppuccin Mocha semantic tokens     |
 | **Terminal**  | xterm.js 6, WebGL addon, FitAddon                     |
@@ -207,13 +207,13 @@ After installation, Lifeline is cached under Claude Code's plugin cache and pers
 
 ```
 CLAUDE.md                   # AI navigation hub (agents start here)
-ARCHITECT.md                # Architecture decisions, Tauri IPC patterns
+ARCHITECT.md                # Architecture decisions, Electron sidecar IPC patterns
 docs/design/DESIGN.md       # UI design system (single source of truth)
 
 src/
 ├── features/
 │   ├── workspace/          # Workspace shell, session tabs/sidebar, bottom drawer
-│   ├── terminal/           # xterm.js + TauriTerminalService IPC bridge
+│   ├── terminal/           # xterm.js + DesktopTerminalService IPC bridge
 │   ├── editor/             # Tabbed code editor with CodeMirror 6 + vim mode
 │   ├── diff/               # Lazygit-style diff viewer
 │   ├── files/              # File explorer tree
@@ -225,18 +225,23 @@ src/
 ├── bindings/               # Generated Rust -> TypeScript types
 └── test/                   # Vitest setup
 
-src-tauri/                  # Rust sidecar crate (post-PR-D3; dir rename to backend/ is a deferred follow-up)
-├── src/
-│   ├── bin/
-│   │   └── vimeflow-backend.rs  # Sidecar binary entry — stdin/stdout LSP-framed JSON IPC
-│   ├── lib.rs              # Module declarations only (post-PR-D3 collapse)
-│   ├── runtime/            # BackendState, IPC router, EventSink trait
-│   ├── terminal/           # PTY commands (_inner helpers + BackendState methods)
-│   ├── filesystem/         # List/read/write commands with scope validation
-│   ├── git/                # Git status, diff, stage/unstage
-│   └── agent/              # Agent detector, statusline watcher, transcript parser
-├── Cargo.toml              # Rust dependencies (Tauri deps removed in PR-D3)
-└── README.md               # Crate-level orientation
+Cargo.toml                  # Workspace root manifest (members = ["crates/backend"])
+Cargo.lock                  # Workspace lockfile (tracked at repo root)
+target/                     # Cargo workspace build dir (gitignored)
+.cargo/config.toml          # Cargo env: TS_RS_EXPORT_DIR = src/bindings/
+crates/                     # Rust workspace members
+└── backend/                # Renamed from src-tauri/
+    ├── src/
+    │   ├── bin/
+    │   │   └── vimeflow-backend.rs  # Sidecar binary entry — stdin/stdout LSP-framed JSON IPC
+    │   ├── lib.rs                   # Module declarations only (post-PR-D3 collapse)
+    │   ├── runtime/                 # BackendState, IPC router, EventSink trait
+    │   ├── terminal/                # PTY commands (_inner helpers + BackendState methods)
+    │   ├── filesystem/              # List/read/write commands with scope validation
+    │   ├── git/                     # Git status, diff, stage/unstage
+    │   └── agent/                   # Agent detector, statusline watcher, transcript parser
+    ├── Cargo.toml                   # Crate manifest (Tauri deps removed in PR-D3)
+    └── README.md                    # Crate-level orientation
 
 electron/                   # Electron desktop shell (PR-D1+)
 ├── main.ts                 # App lifecycle + ipcMain + sidecar process orchestration
@@ -268,7 +273,7 @@ Lifeline is the dedicated workflow plugin for Vimeflow's AI-native development l
 | ---------- | ----------- | ---------------------------------------------------------------- |
 | Phase 1    | Done        | Tauri scaffold, Rust compilation, CI green                       |
 | Phase 2    | Done        | Workspace layout shell (4-zone grid, all components)             |
-| Phase 3    | Done        | Terminal core (xterm.js + Tauri PTY IPC)                         |
+| Phase 3    | Done        | Terminal core (xterm.js + sidecar PTY IPC)                       |
 | Phase 4    | Done        | Agent status sidebar (detection, statusline bridge, UI)          |
 | UI Handoff | In progress | Steps 1-3 done: tokens/registry, app shell, sidebar/session tabs |
 | Phase 5    | Planned     | Session management + persistence/state                           |

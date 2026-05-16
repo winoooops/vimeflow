@@ -26,7 +26,7 @@
 ## File Organization
 
 - One module per file; use `mod.rs` or named module files
-- Feature-based directory structure under `src-tauri/src/`
+- Feature-based directory structure under `crates/backend/src/`
 - Keep files under 400 lines; extract submodules when approaching the limit
 - Group `use` statements: std → external crates → internal modules, separated by blank lines
 

@@ -21,8 +21,8 @@ This README is the **interface map**. For _why_ the design is shaped the way it 
 Source lives in [`architecture.puml`](architecture.puml). To regenerate after editing:
 
 ```bash
-java -jar /path/to/plantuml.jar -tpng src-tauri/src/agent/architecture.puml
-java -jar /path/to/plantuml.jar -tsvg src-tauri/src/agent/architecture.puml
+java -jar /path/to/plantuml.jar -tpng crates/backend/src/agent/architecture.puml
+java -jar /path/to/plantuml.jar -tsvg crates/backend/src/agent/architecture.puml
 ```
 
 Legend:
@@ -45,7 +45,7 @@ Legend:
 ## Module tree
 
 ```
-src-tauri/src/agent/
+crates/backend/src/agent/
 ├── README.md                ← this file
 ├── architecture.puml        ← class-diagram source
 ├── architecture.png         ← rendered (committed; regenerated from .puml)

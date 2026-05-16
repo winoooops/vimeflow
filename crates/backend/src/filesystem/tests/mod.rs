@@ -8,7 +8,7 @@
 //! The 15 command-level tests in this tree plus the 3 scope unit tests
 //! are the regression safety net for the 14 security findings catalogued
 //! in `docs/reviews/patterns/filesystem-scope.md`. If you're renaming a
-//! test, update the map in `src-tauri/src/filesystem/SECURITY.md`
+//! test, update the map in `crates/backend/src/filesystem/SECURITY.md`
 //! (once added in Task 4).
 
 #![cfg(test)]

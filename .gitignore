@@ -39,10 +39,8 @@ test-results/
 *~
 .DS_Store
 
-# Tauri
-src-tauri/target/
-src-tauri/gen/
-src-tauri/Cargo.lock
+# Rust workspace
+/target/
 
 # TypeScript
 *.tsbuildinfo
