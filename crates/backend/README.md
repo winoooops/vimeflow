@@ -1,27 +1,17 @@
-# src-tauri/ - Electron sidecar backend
+# crates/backend - Electron sidecar (Rust)
 
-> Despite the directory name, this crate contains only the Electron sidecar
-> binary. The Tauri runtime was removed in PR-D3, the final PR of the 4-PR
-> Electron migration. Renaming `src-tauri/` to `backend/` is tracked as a
-> deferred follow-up.
+Long-lived sidecar process spawned by Electron over LSP-framed JSON stdio IPC.
+Hosts PTY (`portable-pty`), filesystem, git (status / diff / watch), and agent
+observability (Claude Code + Codex adapters).
 
-## What's here
-
-- `src/bin/vimeflow-backend.rs` - sidecar entry point. Reads and writes
-  LSP-framed JSON over stdio; spawned by `electron/main.ts`.
-- `src/runtime/` - runtime-neutral `BackendState`, IPC router, and event sink.
-- `src/{terminal,filesystem,git,agent}/` - feature modules for PTY, file ops,
-  git status/diff/watch, and agent detection. Each exposes `_inner` helper
-  functions consumed by `BackendState` methods.
-- `src/bindings/` - `ts-rs` generated TypeScript types. Regenerate via
+- `src/bin/vimeflow-backend.rs` - sidecar binary entry point.
+- `src/runtime/` - `BackendState`, IPC router, `EventSink` trait.
+- `src/{terminal,filesystem,git,agent}/` - feature modules.
+- `bindings/` - `ts-rs` generated TypeScript types; regenerate via
   `npm run generate:bindings`.
-- `tests/` - integration tests, fixtures, and transcript replay.
+- `tests/` - integration tests.
 
-## What's gone
-
-- `src/main.rs` - Tauri host binary entry.
-- `src/lib.rs` `run()` function - the Tauri builder and invoke handler.
-- `src/runtime/tauri_bridge.rs` - `TauriEventSink`.
-- All `#[tauri::command]` wrapper functions.
-- `build.rs`, `tauri.conf.json`, and `capabilities/`.
-- The `tauri`, `tauri-plugin-log`, and `tauri-build` Cargo dependencies.
+This crate is the sole member of the workspace at `./Cargo.toml` (repo root).
+The directory was renamed from `src-tauri/` after the May 2026 Electron
+migration; see
+[`docs/superpowers/retros/2026-05-16-electron-migration.md`](../../docs/superpowers/retros/2026-05-16-electron-migration.md).

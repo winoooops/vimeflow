@@ -8,9 +8,9 @@ This file is intentionally minimal — it is an **index, not a reference**. Each
 
 ## What This Project Is
 
-Vimeflow is a **CLI coding agent control plane** — a Tauri desktop application (Rust backend + React/TypeScript frontend) that unifies terminal sessions for AI coding agents, file explorer, code editor, git diff, command palette, and live agent observability in one window.
+Vimeflow is a **CLI coding agent control plane** — an Electron desktop application (Rust sidecar + React/TypeScript frontend) that unifies terminal sessions for AI coding agents, file explorer, code editor, git diff, command palette, and live agent observability in one window.
 
-**Current state** — the chat-first UI has been removed. The Tauri/Rust backend exists under `src-tauri/` with terminal PTY, filesystem, git, and Claude Code / Codex agent adapter modules. The frontend workspace shell is active, and the UI handoff migration has landed steps 1-3 (tokens/agent registry, shell layout, sidebar session rows, browser-style session tabs). Track live status in `docs/roadmap/progress.yaml`.
+**Current state** — the chat-first UI has been removed. The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with terminal PTY, filesystem, git, and Claude Code / Codex agent adapter modules. The frontend workspace shell is active, and the UI handoff migration has landed steps 1-3 (tokens/agent registry, shell layout, sidebar session rows, browser-style session tabs). Track live status in `docs/roadmap/progress.yaml`.
 
 ## Commands
 
@@ -44,7 +44,7 @@ src/
 ├── bindings/                   # Generated Rust -> TypeScript types
 ├── features/
 │   ├── workspace/              # Workspace assembly, shell components, session state
-│   ├── terminal/               # xterm.js + Tauri terminal service
+│   ├── terminal/               # xterm.js + DesktopTerminalService IPC bridge
 │   ├── agent-status/           # Live Claude Code / Codex observability panel
 │   ├── files/                  # File explorer data/services/components
 │   ├── editor/                 # CodeMirror editor, file buffers, vim mode
@@ -52,8 +52,10 @@ src/
 │   └── command-palette/        # Vim-style command palette
 └── test/setup.ts               # Vitest setup (jsdom, testing-library matchers)
 
-src-tauri/
+crates/backend/
 ├── src/
+│   ├── bin/vimeflow-backend.rs # Electron sidecar binary entry point
+│   ├── runtime/                # BackendState, IPC router, EventSink trait
 │   ├── terminal/               # PTY commands, cache, bridge, state
 │   ├── filesystem/             # List/read/write commands with scope validation
 │   ├── git/                    # Git status/diff/watch support

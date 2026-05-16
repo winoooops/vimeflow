@@ -48,6 +48,8 @@ The desktop shell migrated from Tauri 2 to Electron 42 over three merged PRs (wi
   ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
 - CI: dropped `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libappindicator3-dev`, `librsvg2-dev`, `patchelf` from `.github/workflows/e2e.yml`'s apt install step. After the Tauri Cargo dep was removed, the sidecar binary no longer link-pulls `webkit2gtk-rs`. Kept `xvfb` for headless Electron runs.
   ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+- Renamed the Rust crate directory `src-tauri/` to `crates/backend/` and introduced the root Cargo workspace manifest (`./Cargo.toml`). `.cargo/config.toml` now lives at repo root so `TS_RS_EXPORT_DIR` consistently targets `src/bindings/`; the previously untracked crate-local lockfile is replaced by a tracked root `Cargo.lock`. CI, npm scripts, Electron dev/packaging paths, lint/spell ignores, and current docs now point at the workspace layout.
+  (this branch)
 
 #### Removed
 

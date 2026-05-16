@@ -6,10 +6,10 @@
 
 ## BackendState + `_inner` helpers
 
-The runtime-neutral entry point for every IPC command is a method on `BackendState` (defined in `src-tauri/src/runtime/state.rs`). It delegates to a `pub(crate) fn xxx_inner(...)` helper that takes plain arguments (no runtime handle):
+The runtime-neutral entry point for every IPC command is a method on `BackendState` (defined in `crates/backend/src/runtime/state.rs`). It delegates to a `pub(crate) fn xxx_inner(...)` helper that takes plain arguments (no runtime handle):
 
 ```rust
-// src-tauri/src/runtime/state.rs — the IPC router calls these methods.
+// crates/backend/src/runtime/state.rs — the IPC router calls these methods.
 impl BackendState {
     pub async fn spawn_pty(
         &self,
@@ -25,7 +25,7 @@ impl BackendState {
     }
 }
 
-// src-tauri/src/terminal/commands.rs — the actual logic; runtime-neutral.
+// crates/backend/src/terminal/commands.rs — the actual logic; runtime-neutral.
 pub(crate) async fn spawn_pty_inner(
     pty: PtyState,
     sessions: Arc<SessionCache>,
@@ -38,14 +38,14 @@ pub(crate) async fn spawn_pty_inner(
 }
 ```
 
-- All `BackendState` method args and return types implement `serde::Serialize` / `serde::Deserialize` — the IPC router (`src-tauri/src/runtime/ipc.rs`) deserializes the request frame and re-serializes the response.
+- All `BackendState` method args and return types implement `serde::Serialize` / `serde::Deserialize` — the IPC router (`crates/backend/src/runtime/ipc.rs`) deserializes the request frame and re-serializes the response.
 - Return `Result<T, String>` so the bare-string rejection contract makes it all the way to the renderer (`src/lib/backend.ts`'s `invoke` rejects with the same string).
 - Validate all inputs in the `_inner` helper — frames coming off stdio are untrusted.
-- Co-locate a `#[cfg(test)] pub fn xxx(args)` alias next to each `_inner` helper so tests call the command name directly without setting up a `BackendState` (see `src-tauri/src/git/mod.rs:559`).
+- Co-locate a `#[cfg(test)] pub fn xxx(args)` alias next to each `_inner` helper so tests call the command name directly without setting up a `BackendState` (see `crates/backend/src/git/mod.rs:559`).
 
 ## State ownership
 
-`BackendState` is the only shared-mutable-state container the sidecar exposes. Build it once in `src-tauri/src/bin/vimeflow-backend.rs`, wrap in `Arc`, and pass into the IPC router:
+`BackendState` is the only shared-mutable-state container the sidecar exposes. Build it once in `crates/backend/src/bin/vimeflow-backend.rs`, wrap in `Arc`, and pass into the IPC router:
 
 ```rust
 let sink: Arc<dyn EventSink> = Arc::new(ipc::StdoutEventSink::new(tx.clone()));
@@ -58,7 +58,7 @@ ipc::run(state.clone(), tokio::io::stdin(), tx, cancel.clone()).await;
 
 ## Event System
 
-Push notifications from sidecar to renderer go through `EventSink` (defined in `src-tauri/src/runtime/event_sink.rs`):
+Push notifications from sidecar to renderer go through `EventSink` (defined in `crates/backend/src/runtime/event_sink.rs`):
 
 ```rust
 // Backend emits via the trait.

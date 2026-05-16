@@ -870,10 +870,11 @@ phases:
       exposed by the Electron preload script. `npm run electron:build`
       produces a Linux AppImage with the sidecar bundled as an
       extraResource. macOS/Windows packaging matrix, code signing,
-      auto-update wiring, and the `src-tauri/` → `backend/` directory
-      rename are deferred follow-ups (Phase 10 / future tracks). The
-      runtime cutover is complete; the phase remains in_progress until
-      the final main-branch E2E workflow DoD below is observed.
+      auto-update wiring are deferred follow-ups (Phase 10 / future
+      tracks). The `src-tauri/` → `crates/backend/` directory rename is
+      complete in this follow-up branch. The runtime cutover is
+      complete; the phase remains in_progress until the final main-branch
+      E2E workflow DoD below is observed.
       Retrospective: docs/superpowers/retros/2026-05-16-electron-migration.md.
     steps:
       - id: em-pra
@@ -883,7 +884,7 @@ phases:
       - id: em-prb
         name: 'PR-B — Rust sidecar IPC (LSP-framed JSON, stdout writer task, backpressure)'
         status: done
-        notes: 'Added src-tauri/src/bin/vimeflow-backend.rs + src-tauri/src/runtime/ipc.rs; the sidecar is what Electron spawns.'
+        notes: 'Added crates/backend/src/bin/vimeflow-backend.rs + crates/backend/src/runtime/ipc.rs; the sidecar is what Electron spawns.'
       - id: em-prc
         name: 'PR-C — Frontend backend bridge (src/lib/backend.ts)'
         status: done
@@ -905,7 +906,7 @@ phases:
         status: done
         commit: c5433da
         pr: 211
-        notes: '20 #[tauri::command] wrappers deleted; src-tauri/{main.rs, build.rs, tauri.conf.json, capabilities/, icons/} deleted; @tauri-apps/* + tauri Cargo deps removed; electron-builder.yml + build/icon.png + src-tauri/README.md added; npm run electron:build produces a Linux AppImage.'
+        notes: '20 #[tauri::command] wrappers deleted; src-tauri/{main.rs, build.rs, tauri.conf.json, capabilities/, icons/} deleted; @tauri-apps/* + tauri Cargo deps removed; electron-builder.yml + build/icon.png + crate README added (now crates/backend/README.md); npm run electron:build produces a Linux AppImage.'
     dod:
       - id: em-d1
         check: '`npm run electron:dev` opens Electron with a working PTY terminal'
@@ -921,7 +922,7 @@ phases:
         commit: c5433da
         pr: 211
       - id: em-d4
-        check: 'Zero runtime Tauri references in src/, src-tauri/, tests/, package.json, vite.config.ts (excluding docs/, target/, bindings/, *.md, *.puml, *.svg)'
+        check: 'Zero runtime Tauri references in src/, crates/backend/, tests/, package.json, vite.config.ts (excluding docs/, target/, bindings/, *.md, *.puml, *.svg)'
         status: done
         commit: c5433da
         pr: 211
