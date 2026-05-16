@@ -3,7 +3,7 @@ id: git-operations
 category: correctness
 created: 2026-04-09
 last_updated: 2026-05-16
-ref_count: 6
+ref_count: 7
 ---
 
 # Git Operations
@@ -158,3 +158,12 @@ between display and mutation operations.
 - **Finding:** `parse_git_status` treated all `R*`/`C*` porcelain entries as a single staged rename/copy, so `RM` and `CM` omitted the unstaged modification on the destination path.
 - **Fix:** Preserve the staged rename/copy entry and add a second unstaged modified entry when the porcelain worktree status is `M`, with regression tests for `RM` and `CM`.
 - **Commit:** _(see git log for the PR #214 review-fix commit)_
+
+### 17. Rename/copy status drops worktree-deleted/copied half
+
+- **Source:** github-claude | PR #214 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/git/mod.rs`
+- **Finding:** The first `RM`/`CM` fix only emitted a second entry when the porcelain worktree status was `M`. `RD` still showed only the staged rename and omitted the unstaged delete on the destination path; `RC` similarly lost the worktree copy half.
+- **Fix:** Dispatch rename/copy worktree status bytes into second unstaged entries for modified, deleted, added, renamed, and copied states. Added regression tests for `RD` and `RC`.
+- **Commit:** _(see git log for the PR #214 rename worktree-status review-fix commit)_

@@ -390,10 +390,16 @@ fn parse_git_status(output: &str) -> Vec<ChangedFile> {
                     insertions: None,
                     deletions: None,
                 });
-                if worktree_status == Some(b'M') {
+                if let Some(status) = match worktree_status {
+                    Some(b'M') => Some(ChangedFileStatus::Modified),
+                    Some(b'D') => Some(ChangedFileStatus::Deleted),
+                    Some(b'A') => Some(ChangedFileStatus::Added),
+                    Some(b'R') | Some(b'C') => Some(ChangedFileStatus::Renamed),
+                    _ => None,
+                } {
                     files.push(ChangedFile {
                         path,
-                        status: ChangedFileStatus::Modified,
+                        status,
                         staged: false,
                         insertions: None,
                         deletions: None,
@@ -1187,6 +1193,40 @@ mod tests {
         assert_eq!(files[1].path, "renamed.txt");
         assert!(matches!(files[1].status, ChangedFileStatus::Modified));
         assert!(!files[1].staged, "Second RM entry should be unstaged");
+    }
+
+    #[test]
+    fn test_parse_git_status_renamed_deleted_dual_entry() {
+        // RD = renamed in index, deleted from worktree after staging.
+        let output = "RD renamed.txt\0old.txt\0";
+        let files = parse_git_status(output);
+
+        assert_eq!(files.len(), 2, "RD should produce two entries");
+
+        assert_eq!(files[0].path, "renamed.txt");
+        assert!(matches!(files[0].status, ChangedFileStatus::Renamed));
+        assert!(files[0].staged, "First RD entry should be staged");
+
+        assert_eq!(files[1].path, "renamed.txt");
+        assert!(matches!(files[1].status, ChangedFileStatus::Deleted));
+        assert!(!files[1].staged, "Second RD entry should be unstaged");
+    }
+
+    #[test]
+    fn test_parse_git_status_renamed_copied_dual_entry() {
+        // RC = renamed in index, copied again in worktree.
+        let output = "RC renamed.txt\0old.txt\0";
+        let files = parse_git_status(output);
+
+        assert_eq!(files.len(), 2, "RC should produce two entries");
+
+        assert_eq!(files[0].path, "renamed.txt");
+        assert!(matches!(files[0].status, ChangedFileStatus::Renamed));
+        assert!(files[0].staged, "First RC entry should be staged");
+
+        assert_eq!(files[1].path, "renamed.txt");
+        assert!(matches!(files[1].status, ChangedFileStatus::Renamed));
+        assert!(!files[1].staged, "Second RC entry should be unstaged");
     }
 
     #[test]
