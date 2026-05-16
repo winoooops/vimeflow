@@ -10,7 +10,7 @@
 > the Electron migration's own roadmap lives at
 > `docs/superpowers/plans/2026-05-13-electron-rust-backend-migration.md`,
 > and `docs/roadmap/progress.yaml` has an `electron-migration` phase
-> entry summarizing the 6-PR sequence.
+> entry summarizing the three merged PRs / six design tracks.
 > Use `docs/roadmap/progress.yaml` for live status and
 > `docs/roadmap/ui-update-roadmap.md` for the active UI handoff track.
 > Design spec: docs/superpowers/specs/2026-04-06-cli-agent-workspace-design.md

@@ -883,7 +883,7 @@ phases:
       - id: em-prb
         name: 'PR-B — Rust sidecar IPC (LSP-framed JSON, stdout writer task, backpressure)'
         status: done
-        notes: 'Added src/bin/vimeflow-backend.rs + src/runtime/ipc.rs; the sidecar is what Electron spawns.'
+        notes: 'Added src-tauri/src/bin/vimeflow-backend.rs + src-tauri/src/runtime/ipc.rs; the sidecar is what Electron spawns.'
       - id: em-prc
         name: 'PR-C — Frontend backend bridge (src/lib/backend.ts)'
         status: done

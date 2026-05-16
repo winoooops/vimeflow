@@ -38,14 +38,14 @@ pub(crate) async fn spawn_pty_inner(
 }
 ```
 
-- All `BackendState` method args and return types implement `serde::Serialize` / `serde::Deserialize` — the IPC router (`src/runtime/ipc.rs`) deserializes the request frame and re-serializes the response.
+- All `BackendState` method args and return types implement `serde::Serialize` / `serde::Deserialize` — the IPC router (`src-tauri/src/runtime/ipc.rs`) deserializes the request frame and re-serializes the response.
 - Return `Result<T, String>` so the bare-string rejection contract makes it all the way to the renderer (`src/lib/backend.ts`'s `invoke` rejects with the same string).
 - Validate all inputs in the `_inner` helper — frames coming off stdio are untrusted.
-- Co-locate a `#[cfg(test)] pub fn xxx(args)` alias next to each `_inner` helper so tests call the command name directly without setting up a `BackendState` (see `src/git/mod.rs:559`).
+- Co-locate a `#[cfg(test)] pub fn xxx(args)` alias next to each `_inner` helper so tests call the command name directly without setting up a `BackendState` (see `src-tauri/src/git/mod.rs:559`).
 
 ## State ownership
 
-`BackendState` is the only shared-mutable-state container the sidecar exposes. Build it once in `src/bin/vimeflow-backend.rs`, wrap in `Arc`, and pass into the IPC router:
+`BackendState` is the only shared-mutable-state container the sidecar exposes. Build it once in `src-tauri/src/bin/vimeflow-backend.rs`, wrap in `Arc`, and pass into the IPC router:
 
 ```rust
 let sink: Arc<dyn EventSink> = Arc::new(ipc::StdoutEventSink::new(tx.clone()));

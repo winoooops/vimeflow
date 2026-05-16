@@ -576,3 +576,30 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** A TypeScript snippet labeled as the renderer bridge subscriber imported `listen` from `../../lib/backend` while its file comment named `src/lib/backend.ts`. Read literally, the snippet imported the bridge from itself via a path that exits the source root, conflicting with the path-alias form used in the TypeScript rules file.
 - **Fix:** Removed the misleading file-path comment and switched the import to `@/lib/backend`, matching the established path-alias convention and avoiding any implied self-import.
 - **Commit:** same commit as this entry
+
+### 61. Crate-relative Rust paths in repo-root docs fail lookup from agent context
+
+- **Source:** github-claude | PR #212 round 2 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `rules/rust/patterns.md`, `rules/rust/testing.md`
+- **Finding:** Rust rules prose cited files like `src/git/mod.rs` and `src/bin/vimeflow-backend.rs`, which are valid only from the `src-tauri/` crate directory. Agents read rules files from the repo root, so those paths failed lookup and made the concrete examples appear nonexistent.
+- **Fix:** Rewrote the rules references to repo-root paths (`src-tauri/src/git/mod.rs`, `src-tauri/src/runtime/ipc.rs`, `src-tauri/src/bin/vimeflow-backend.rs`) and swept the same crate-relative wording from PR #212's progress and changelog entries.
+- **Commit:** same commit as this entry
+
+### 62. Terminology fix applied to tracker and retro but missed historical roadmap breadcrumb
+
+- **Source:** github-claude | PR #212 round 2 | 2026-05-16
+- **Severity:** LOW
+- **File:** `docs/roadmap/tauri-migration-roadmap.md`
+- **Finding:** Round 1 standardized the Electron migration wording to "three merged PRs / six design tracks" in `progress.yaml` and the retrospective, but the historical Tauri roadmap still pointed readers to a `progress.yaml` entry "summarizing the 6-PR sequence." That preserved the exact ambiguity the previous finding was meant to remove.
+- **Fix:** Updated the breadcrumb to say `three merged PRs / six design tracks`, matching the live progress tracker and retrospective wording.
+- **Commit:** same commit as this entry
+
+### 63. English-term spacing survived after replacing the term with Chinese prose
+
+- **Source:** github-claude | PR #212 round 2 | 2026-05-16
+- **Severity:** LOW
+- **File:** `README.zh-CN.md`
+- **Finding:** A Chinese README bullet changed an English runtime term to `旁路` but kept the spacing pattern used around the old English word, producing `订阅 旁路事件总线`. Chinese continuous prose should not retain that inter-word space.
+- **Fix:** Removed the stray space so the phrase reads `订阅旁路事件总线`.
+- **Commit:** same commit as this entry

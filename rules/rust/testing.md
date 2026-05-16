@@ -12,7 +12,7 @@
 
 - Place in `src-tauri/tests/` as separate files (the directory keeps the `src-tauri` name post-PR-D3; rename to `backend/` is a deferred follow-up)
 - Each file is compiled as its own crate; use `use vimeflow_lib::...` to import from the library
-- Test command handlers by calling the `#[cfg(test)] pub fn xxx(...)` aliases co-located next to each `_inner` helper, or call `BackendState` methods directly with a `FakeEventSink`. Do NOT try to spin up a real runtime — the sidecar `main()` (in `src/bin/vimeflow-backend.rs`) is the only production entry point.
+- Test command handlers by calling the `#[cfg(test)] pub fn xxx(...)` aliases co-located next to each `_inner` helper, or call `BackendState` methods directly with a `FakeEventSink`. Do NOT try to spin up a real runtime — the sidecar `main()` (in `src-tauri/src/bin/vimeflow-backend.rs`) is the only production entry point.
 
 ## Coverage
 
