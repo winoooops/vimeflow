@@ -45,9 +45,9 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality   | 2        | 0    | 2026-05-04   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing        | 50       | 23   | 2026-05-14   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal       | 3        | 1    | 2026-04-09   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality   | 56       | 20   | 2026-05-16   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality   | 57       | 20   | 2026-05-16   |
 | [Accessibility](patterns/accessibility.md)                           | a11y           | 25       | 6    | 2026-05-09   |
-| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns | 37       | 10   | 2026-05-16   |
+| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns | 38       | 10   | 2026-05-16   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend        | 1        | 0    | 2026-05-04   |
 | [Command Injection](patterns/command-injection.md)                   | security       | 7        | 3    | 2026-05-02   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)             | security       | 15       | 2    | 2026-04-20   |

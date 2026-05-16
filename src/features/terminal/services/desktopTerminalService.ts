@@ -38,6 +38,7 @@ export class DesktopTerminalService implements ITerminalService {
 
   private unlistenFns: UnlistenFn[] = []
   private initPromise: Promise<void> | null = null
+  private listenerInitGeneration = 0
 
   private reportListenerInitFailure(error: unknown): void {
     // eslint-disable-next-line no-console
@@ -55,6 +56,16 @@ export class DesktopTerminalService implements ITerminalService {
     }
   }
 
+  private cleanupListeners(unlistenFns: UnlistenFn[]): void {
+    unlistenFns.forEach((fn) => {
+      try {
+        fn()
+      } catch (error) {
+        this.reportListenerInitFailure(error)
+      }
+    })
+  }
+
   /**
    * Lazily initialize backend event listeners on first use.
    * Listeners are shared across all sessions — callbacks filter by sessionId.
@@ -70,6 +81,7 @@ export class DesktopTerminalService implements ITerminalService {
       return this.initPromise
     }
 
+    const initGeneration = this.listenerInitGeneration
     this.initPromise = (async (): Promise<void> => {
       const pendingUnlistenFns: UnlistenFn[] = []
 
@@ -110,17 +122,18 @@ export class DesktopTerminalService implements ITerminalService {
         )
         pendingUnlistenFns.push(unlistenError)
 
+        if (initGeneration !== this.listenerInitGeneration) {
+          this.cleanupListeners(pendingUnlistenFns)
+
+          return
+        }
+
         this.unlistenFns.push(...pendingUnlistenFns)
       } catch (error) {
-        this.initPromise = null
-
-        pendingUnlistenFns.forEach((fn) => {
-          try {
-            fn()
-          } catch (cleanupError) {
-            this.reportListenerInitFailure(cleanupError)
-          }
-        })
+        if (initGeneration === this.listenerInitGeneration) {
+          this.initPromise = null
+        }
+        this.cleanupListeners(pendingUnlistenFns)
 
         throw error
       }
@@ -134,15 +147,7 @@ export class DesktopTerminalService implements ITerminalService {
 
     const sessionId = crypto.randomUUID()
 
-    // Round 8, Finding 3 (claude MEDIUM): forward the caller's intent
-    // instead of hardcoding `true`. Previously every spawn created a
-    // `.vimeflow/sessions/<uuid>/` tree in the cwd — including `/tmp`, the
-    // user's home, third-party project roots — which showed up in
-    // `git status` and was excluded from Vite's HMR watch list as a
-    // workaround. The agent statusline IS the product when the workspace
-    // UI explicitly spawns a tab (useSessionManager passes `true`); other
-    // callers default to `false` so ad-hoc spawns don't pollute arbitrary
-    // working directories.
+    // Default false keeps ad-hoc spawns from creating .vimeflow/sessions trees.
     const request: SpawnPtyRequest = {
       sessionId,
       cwd: params.cwd,
@@ -254,7 +259,8 @@ export class DesktopTerminalService implements ITerminalService {
    * Dispose all backend event listeners. Call when the service is no longer needed.
    */
   dispose(): void {
-    this.unlistenFns.forEach((fn) => fn())
+    this.listenerInitGeneration += 1
+    this.cleanupListeners(this.unlistenFns)
     this.unlistenFns = []
     this.dataCallbacks = []
     this.exitCallbacks = []

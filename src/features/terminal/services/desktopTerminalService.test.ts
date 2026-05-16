@@ -106,13 +106,7 @@ describe('DesktopTerminalService', () => {
       expect(eventListeners.has('pty-error')).toBe(true)
     })
 
-    // Round 8, Finding 3 (claude MEDIUM): the agent bridge creates a
-    // `.vimeflow/sessions/<uuid>/` tree in the spawn cwd. This was previously
-    // hardcoded `true`, which polluted ad-hoc spawns (tests, scripts, third-
-    // party project roots) with bookkeeping directories that surfaced in
-    // `git status`. The flag now defaults to `false` and only the workspace
-    // UI's `useSessionManager` opts in.
-    test('round 8 F3: spawn forwards enableAgentBridge=true when caller opts in', async () => {
+    test('spawn forwards enableAgentBridge=true when caller opts in', async () => {
       mockInvokeOnce({ id: 's1', pid: 1, cwd: '/home/user' })
       await service.spawn({ cwd: '/home/user', enableAgentBridge: true })
 
@@ -121,7 +115,7 @@ describe('DesktopTerminalService', () => {
       })
     })
 
-    test('round 8 F3: spawn defaults enableAgentBridge to false when caller omits it', async () => {
+    test('spawn defaults enableAgentBridge to false when caller omits it', async () => {
       mockInvokeOnce({ id: 's1', pid: 1, cwd: '/tmp' })
       await service.spawn({ cwd: '/tmp' })
 
@@ -130,7 +124,7 @@ describe('DesktopTerminalService', () => {
       })
     })
 
-    test('round 8 F3: spawn forwards enableAgentBridge=false when caller explicitly opts out', async () => {
+    test('spawn forwards enableAgentBridge=false when caller explicitly opts out', async () => {
       mockInvokeOnce({ id: 's1', pid: 1, cwd: '/tmp' })
       await service.spawn({ cwd: '/tmp', enableAgentBridge: false })
 
@@ -401,6 +395,65 @@ describe('DesktopTerminalService', () => {
       })
 
       expect(callback).not.toHaveBeenCalled()
+    })
+
+    test('cleans listener init that completes after dispose', async () => {
+      const listenMock = vi.mocked(listen)
+      const originalImpl = listenMock.getMockImplementation()
+      const unlistenCalls: string[] = []
+      let resolveDataListen: (() => void) | undefined
+
+      const registerListener = (
+        eventName: string,
+        callback: EventCallback
+      ): (() => void) => {
+        const existing = eventListeners.get(eventName) ?? []
+        existing.push(callback)
+        eventListeners.set(eventName, existing)
+
+        return () => {
+          unlistenCalls.push(eventName)
+          const cbs = eventListeners.get(eventName) ?? []
+          const index = cbs.indexOf(callback)
+          if (index > -1) {
+            cbs.splice(index, 1)
+          }
+        }
+      }
+
+      listenMock.mockImplementation(((
+        eventName: string,
+        callback: EventCallback
+      ): Promise<() => void> => {
+        const unlisten = registerListener(eventName, callback)
+
+        if (eventName === 'pty-data') {
+          return new Promise((resolve) => {
+            resolveDataListen = (): void => resolve(unlisten)
+          })
+        }
+
+        return Promise.resolve(unlisten)
+      }) as typeof listen)
+
+      try {
+        const unsubscribePromise = service.onData(vi.fn())
+
+        expect(listenMock).toHaveBeenCalledTimes(1)
+        service.dispose()
+        resolveDataListen?.()
+
+        await expect(unsubscribePromise).resolves.toEqual(expect.any(Function))
+
+        expect(unlistenCalls).toEqual(['pty-data', 'pty-exit', 'pty-error'])
+        expect(eventListeners.get('pty-data')).toEqual([])
+        expect(eventListeners.get('pty-exit')).toEqual([])
+        expect(eventListeners.get('pty-error')).toEqual([])
+      } finally {
+        if (originalImpl) {
+          listenMock.mockImplementation(originalImpl)
+        }
+      }
     })
   })
 

@@ -540,3 +540,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** `electron:build` still ran `cross-env vite build --mode electron` after the script stopped assigning any environment variables. With no `KEY=value` arguments, `cross-env` adds no behavior; it only makes the build script look as if an environment-normalization step is required. Because other scripts in the same file still legitimately use `cross-env VITE_E2E=1 ...`, the no-op wrapper was especially easy to mistake for intentional platform handling rather than leftover metadata.
 - **Fix:** Removed `cross-env` from `electron:build`, leaving `vite build --mode electron` directly. The dependency stays because the E2E scripts still use it with actual environment assignments. Code-review heuristic: when deleting or moving env vars in npm scripts, scan the remaining command for wrappers whose only purpose was those vars; a no-op wrapper is stale operational documentation.
 - **Commit:** _(see git log for the PR #211 round-1 fix commit)_
+
+### 57. Review round/finding labels leaked into permanent source comments and test names
+
+- **Source:** github-claude | PR #211 round 2 | 2026-05-16
+- **Severity:** LOW
+- **File:** `src/features/terminal/services/desktopTerminalService.ts`, `src/features/terminal/services/desktopTerminalService.test.ts`
+- **Finding:** The `enableAgentBridge` default comment started with `Round 8, Finding 3 (claude MEDIUM)`, and three tests used `round 8 F3:` prefixes. The factual reason for the default was useful, but the review-cycle label is process metadata that becomes meaningless outside the PR transcript and pollutes CI output when tests fail. Same recurrence as #47 / #50 / #51: review IDs, task steps, and migration-section labels belong in PR descriptions, commit messages, or the KB, not source.
+- **Fix:** Collapsed the source comment to the stable invariant: default false prevents ad-hoc spawns from creating `.vimeflow/sessions` trees. Renamed the three tests to describe only the behavior under test. Code-review heuristic: before committing review-loop fixes, grep changed source and tests for `round`, `finding`, `PR #`, `cycle`, and task-step tokens.
+- **Commit:** _(see git log for the PR #211 round-2 fix commit)_
