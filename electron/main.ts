@@ -2,6 +2,10 @@ import { app, BrowserWindow, ipcMain, net, protocol, session } from 'electron'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isAllowedBackendMethod } from './backend-methods'
+import {
+  developmentContentSecurityPolicy,
+  packagedContentSecurityPolicy,
+} from './csp'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 
@@ -44,36 +48,12 @@ const resolveSidecarBin = (): string => {
   return path.resolve(__dirname, '..', 'target', 'debug', BINARY_NAME)
 }
 
-const packagedContentSecurityPolicy = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "connect-src 'self'",
-].join('; ')
-
-const devContentSecurityPolicy = [
-  "default-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-  "script-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
-  "style-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
-  "img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*",
-  "font-src 'self' data: http://localhost:* http://127.0.0.1:*",
-  "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-].join('; ')
-
-// Vite React dev mode injects an inline preamble; WDIO also injects an
-// inline bootstrap in E2E. This stays limited to non-packaged builds.
-const devE2eContentSecurityPolicy = devContentSecurityPolicy
-
 const installContentSecurityPolicy = (): void => {
   if (app.isPackaged) {
     return
   }
 
-  const csp = isE2eRuntime()
-    ? devE2eContentSecurityPolicy
-    : devContentSecurityPolicy
+  const csp = developmentContentSecurityPolicy(isE2eRuntime())
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const responseHeaders = Object.fromEntries(

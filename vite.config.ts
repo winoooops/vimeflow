@@ -6,6 +6,7 @@ import simpleGit from 'simple-git'
 import { parse as parseDiffText } from 'diff2html'
 import { fileApiPlugin } from './vite-plugin-files'
 import packageJson from './package.json' with { type: 'json' }
+import { addDevReactRefreshNonce } from './electron/csp'
 import type {
   ChangedFile,
   FileDiff,
@@ -500,6 +501,17 @@ function gitApiPlugin(): Plugin {
   }
 }
 
+function reactRefreshNoncePlugin(): Plugin {
+  return {
+    name: 'vimeflow-react-refresh-nonce',
+    apply: 'serve',
+    enforce: 'post',
+    transformIndexHtml(html): string {
+      return addDevReactRefreshNonce(html)
+    },
+  }
+}
+
 /**
  * Parse unified diff output into FileDiff structure
  */
@@ -594,6 +606,7 @@ export default defineConfig(({ mode }) => ({
   base: './',
   plugins: [
     react(),
+    reactRefreshNoncePlugin(),
     gitApiPlugin(),
     fileApiPlugin(),
     ...(mode === 'electron'

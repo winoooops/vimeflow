@@ -2,18 +2,20 @@
 id: csp-configuration
 category: security
 created: 2026-04-09
-last_updated: 2026-04-09
-ref_count: 1
+last_updated: 2026-05-16
+ref_count: 2
 ---
 
 # CSP Configuration
 
 ## Summary
 
-Content Security Policy in Tauri apps must be strict — no `unsafe-inline` for
-styles or scripts. In Tauri v2, CSP config must be at the top level of
-`tauri.conf.json`, not nested under `app`. Always verify the policy is actually
-applied, not just declared.
+Content Security Policy in desktop app shells must be strict by default and
+must keep dev-only relaxations explicit. In Tauri v2, CSP config must be at the
+top level of `tauri.conf.json`, not nested under `app`. In Electron, dev and
+E2E policies should stay separate so test-only inline-script permissions do not
+silently leak into regular development sessions. Always verify the policy is
+actually applied, not just declared.
 
 ## Findings
 
@@ -34,3 +36,12 @@ applied, not just declared.
 - **Finding:** `security` nested under `app` which Tauri v2 doesn't read for CSP — policy likely not applied
 - **Fix:** Moved `security` to top level of `tauri.conf.json`
 - **Commit:** `9ce4d61 feat: Phase 1 - Tauri scaffold with v2 configuration (#27)`
+
+### 3. Electron dev and E2E CSP policies collapsed
+
+- **Source:** github-claude | PR #214 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `electron/main.ts`, `vite.config.ts`
+- **Finding:** Regular Electron dev and E2E both used a dev CSP with `script-src 'unsafe-inline'`, making the E2E runtime switch a no-op and allowing inline script execution in every `electron:dev` session.
+- **Fix:** Split CSP construction into a tested Electron module. Regular dev now allows Vite React Refresh through a nonce on the injected preamble, while E2E keeps the separate `unsafe-inline` policy needed for WDIO injection.
+- **Commit:** _(see git log for the PR #214 CSP review-fix commit)_
