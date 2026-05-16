@@ -630,3 +630,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** The Lifeline skills bootstrap snippets used `echo 'skills/' >> .git/info/exclude`, which appends duplicate `skills/` lines if the user runs the setup twice. The surrounding `ln -sfn` commands were already idempotent, so this one non-idempotent line made the snippet noisier than necessary.
 - **Fix:** Replaced both appends with `grep -qxF ... || echo ...`, preserving the local exclude behavior while making repeated runs no-op clean.
 - **Commit:** same commit as this entry
+
+### 67. English README event-bus wording survived a partial Tauri terminology sweep
+
+- **Source:** github-claude | PR #212 round 4 | 2026-05-16
+- **Severity:** LOW
+- **File:** `README.md`
+- **Finding:** The Agent Status Sidebar section updated adjacent bullets from Tauri terminology to sidecar terminology, and the Chinese README equivalent changed to `旁路事件总线`, but the English Frontend panel bullet still said `subscribing to the Tauri event bus`.
+- **Fix:** Changed the phrase to `subscribing to the sidecar event bus`, matching the surrounding Electron/sidecar terminology.
+- **Commit:** same commit as this entry
