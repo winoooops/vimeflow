@@ -1,12 +1,12 @@
 # Electron Migration Retrospective
 
 > **Date:** 2026-05-16
-> **Scope:** Tauri 2 → Electron 42 + Rust sidecar (vimeflow-backend), 4-PR sequence May 13-16, 2026
-> **Outcome:** ✓ Complete. Tauri runtime fully removed; AppImage packaging working; CI green.
+> **Scope:** Tauri 2 → Electron 42 + Rust sidecar (vimeflow-backend), 3 merged PRs / 6 design tracks May 13-16, 2026
+> **Outcome:** Runtime cutover complete. Tauri runtime fully removed; AppImage packaging working; PR-D3 CI checks green. The final main-branch E2E workflow signal remains tracked in `docs/roadmap/progress.yaml`.
 
 ## TL;DR
 
-We replaced the Tauri 2 desktop shell with Electron 42 over three merged PRs (#209, #210, #211), preserving the Rust backend's PTY / filesystem / git / agent surface unchanged. The Rust crate transitioned from "Tauri command handlers + invoke_handler! macro" to "runtime-neutral `BackendState` methods + LSP-framed JSON IPC over stdio." `npm run electron:build` now produces a Linux AppImage with the sidecar binary bundled as an `extraResource`. The PR-A / PR-B / PR-C design tracks (runtime-neutral backend / sidecar IPC / frontend bridge) were authored as separate specs + plans but landed bundled inside #209 to keep the cutover atomic.
+We replaced the Tauri 2 desktop shell with Electron 42 over three merged PRs (#209, #210, #211) and six design tracks (PR-A through PR-D3), preserving the Rust backend's PTY / filesystem / git / agent surface unchanged. The Rust crate transitioned from "Tauri command handlers + invoke_handler! macro" to "runtime-neutral `BackendState` methods + LSP-framed JSON IPC over stdio." `npm run electron:build` now produces a Linux AppImage with the sidecar binary bundled as an `extraResource`. The PR-A / PR-B / PR-C design tracks (runtime-neutral backend / sidecar IPC / frontend bridge) were authored as separate specs + plans but landed bundled inside #209 to keep the cutover atomic.
 
 ## What worked
 

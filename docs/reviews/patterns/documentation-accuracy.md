@@ -549,3 +549,30 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** The `enableAgentBridge` default comment started with `Round 8, Finding 3 (claude MEDIUM)`, and three tests used `round 8 F3:` prefixes. The factual reason for the default was useful, but the review-cycle label is process metadata that becomes meaningless outside the PR transcript and pollutes CI output when tests fail. Same recurrence as #47 / #50 / #51: review IDs, task steps, and migration-section labels belong in PR descriptions, commit messages, or the KB, not source.
 - **Fix:** Collapsed the source comment to the stable invariant: default false prevents ad-hoc spawns from creating `.vimeflow/sessions` trees. Renamed the three tests to describe only the behavior under test. Code-review heuristic: before committing review-loop fixes, grep changed source and tests for `round`, `finding`, `PR #`, `cycle`, and task-step tokens.
 - **Commit:** _(see git log for the PR #211 round-2 fix commit)_
+
+### 58. Roadmap phase marked done while a child DoD stayed pending
+
+- **Source:** github-claude | PR #212 round 1 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `docs/roadmap/progress.yaml`
+- **Finding:** The `electron-migration` phase was marked `status: done` while its `em-d5` DoD remained `status: pending`. The child note said the final E2E workflow signal still needed to land, so downstream agents reading the phase state could skip work that the same record still listed as incomplete.
+- **Fix:** Changed the phase back to `in_progress`, rewrote the phase note to distinguish completed runtime cutover from the pending main-branch E2E workflow signal, and removed the inaccurate claim that PR-D3 merge CI had already satisfied the E2E DoD.
+- **Commit:** same commit as this entry
+
+### 59. Migration sequence counts disagreed across tracker and retrospective docs
+
+- **Source:** github-claude | PR #212 round 1 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `docs/roadmap/progress.yaml`, `docs/superpowers/retros/2026-05-16-electron-migration.md`
+- **Finding:** The progress tracker described the Electron migration as a "6-PR sequence", the phase name said "4-PR sequence", and the retrospective simultaneously said "4-PR sequence" and "three merged PRs." All numbers pointed at real concepts, but none named the unit being counted, so first-time readers could not tell whether the authoritative count was PRs, tracks, or merged commits.
+- **Fix:** Standardized the wording to "three merged PRs / six design tracks" across the progress tracker and retrospective, with the TL;DR explicitly naming PR-A through PR-D3 as design tracks and #209 through #211 as the merged GitHub PRs.
+- **Commit:** same commit as this entry
+
+### 60. Bridge subscription snippet used a self-referential import path
+
+- **Source:** github-claude | PR #212 round 1 | 2026-05-16
+- **Severity:** LOW
+- **File:** `rules/rust/patterns.md`
+- **Finding:** A TypeScript snippet labeled as the renderer bridge subscriber imported `listen` from `../../lib/backend` while its file comment named `src/lib/backend.ts`. Read literally, the snippet imported the bridge from itself via a path that exits the source root, conflicting with the path-alias form used in the TypeScript rules file.
+- **Fix:** Removed the misleading file-path comment and switched the import to `@/lib/backend`, matching the established path-alias convention and avoiding any implied self-import.
+- **Commit:** same commit as this entry

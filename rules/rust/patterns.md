@@ -80,8 +80,7 @@ events.emit_json("pty-data", serde_json::json!({
 The renderer subscribes through the bridge:
 
 ```ts
-// src/lib/backend.ts
-import { listen, type UnlistenFn } from '../../lib/backend'
+import { listen, type UnlistenFn } from '@/lib/backend'
 
 const unlisten: UnlistenFn = await listen('pty-data', (payload) => {
   // payload is the bare value, NOT a Tauri Event<T> envelope
