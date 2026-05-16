@@ -167,3 +167,12 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** `vite-plugin-electron` defaults to launching Electron with `--no-sandbox`, but this project overrode startup with `startup(['.'])` to preserve sandbox parity in dev. On Linux dev hosts without a working Chromium SUID/user-namespace sandbox, that can surface as a blank/crashed dev window even though the production renderer and packaged custom-protocol path are healthy.
 - **Fix:** `electron:dev` now starts Electron with `startup(['.', '--no-sandbox'])`, matching the E2E launch path. Packaged production still keeps the sandbox unless the operator explicitly passes `--no-sandbox` for local AppImage smoke.
 - **Commit:** _(this migration wrap-up branch)_
+
+### 14. Electron dev CSP must allow Vite React's inline preamble
+
+- **Source:** local migration wrap-up | 2026-05-16
+- **Severity:** HIGH
+- **File:** `electron/main.ts`
+- **Finding:** The non-packaged dev CSP allowed `unsafe-eval` for Vite but not `unsafe-inline`. Vite React injects an inline refresh preamble into `index.html`; Chromium blocked it, then `@vitejs/plugin-react` threw `can't detect preamble`, leaving `#root` empty on the dark page. Production builds and packaged `vimeflow://app/index.html` still mounted, so the failure looked like a dev-only black window.
+- **Fix:** Added `'unsafe-inline'` to the non-packaged `script-src`. Packaged CSP remains strict; the relaxation is limited to dev/E2E where Vite React and WDIO need inline bootstrap code.
+- **Commit:** _(this migration wrap-up branch)_
