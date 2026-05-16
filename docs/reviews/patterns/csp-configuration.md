@@ -72,3 +72,12 @@ actually applied, not just declared.
 - **Finding:** The nonce transform matched only a named `injectIntoGlobalHook` import from `@react-refresh`. If Vite emitted the React Refresh preamble with a default runtime import, the inline preamble would stay nonce-less and regular dev would regress to a blocked blank renderer.
 - **Fix:** Match React Refresh preamble scripts by a leading module import whose source contains `@react-refresh`, covering both named and default runtime import shapes while leaving unrelated module scripts untouched.
 - **Commit:** _(see git log for the PR #214 React Refresh nonce-transform review-fix commit)_
+
+### 7. React Refresh nonce transform silently no-ops on future preamble drift
+
+- **Source:** github-claude | PR #214 | 2026-05-16
+- **Severity:** LOW
+- **File:** `electron/csp.ts`
+- **Finding:** `addDevReactRefreshNonce()` used `String.replace()` and returned the original HTML unchanged when the regex missed a future Vite React Refresh preamble shape. The dev CSP would then block the nonce-less inline preamble, leaving HMR broken with only a DevTools CSP violation as a clue.
+- **Fix:** After the transform, warn when the HTML still contains `@react-refresh` but no nonce was injected. This keeps the strict CSP behavior while making Vite preamble drift immediately visible during dev startup.
+- **Commit:** _(see git log for the PR #214 React Refresh mismatch-warning review-fix commit)_

@@ -25,16 +25,12 @@ const git = simpleGit()
 const repoRoot = process.cwd()
 const devReactRefreshNonce = ensureDevReactRefreshNonce()
 
-const isCiRuntime = (): boolean =>
-  process.env.CI !== undefined && process.env.CI !== 'false'
-
 const isLinuxHeadlessRuntime = (): boolean =>
   process.platform === 'linux' &&
   process.env.DISPLAY === undefined &&
   process.env.WAYLAND_DISPLAY === undefined
 
-const shouldDisableElectronSandbox = (): boolean =>
-  isCiRuntime() || isLinuxHeadlessRuntime()
+const shouldDisableElectronSandbox = (): boolean => isLinuxHeadlessRuntime()
 
 const electronStartupArgs = (): string[] => [
   '.',
@@ -653,10 +649,10 @@ export default defineConfig(({ mode }) => ({
               entry: 'electron/main.ts',
               onstart: async ({ startup }): Promise<void> => {
                 try {
-                  // DEV ONLY: Linux CI and headless/containerized hosts may not
-                  // provide Chromium's SUID sandbox. Only those runs get the
-                  // process-level flag that overrides BrowserWindow.sandbox:
-                  // true; ordinary local dev keeps the renderer sandbox.
+                  // DEV ONLY: Linux headless/containerized hosts may not provide
+                  // Chromium's SUID sandbox. Only those runs get the process-level
+                  // flag that overrides BrowserWindow.sandbox: true; ordinary
+                  // local dev and macOS/Windows CI keep the renderer sandbox.
                   await startup(electronStartupArgs())
                 } catch (error: unknown) {
                   const message =

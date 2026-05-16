@@ -194,3 +194,12 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** Adding a comment near `startup(['.', '--no-sandbox'])` documented the sandbox tradeoff but left the flag applied to every `electron:dev` launch. That made ordinary local dev sessions run without Chromium's renderer sandbox, even on hosts where the sandbox works.
 - **Fix:** Compute Electron startup args from runtime context. Only CI and Linux headless/container runs without `DISPLAY` or `WAYLAND_DISPLAY` receive `--no-sandbox`; normal local dev starts Electron without the process-level sandbox override.
 - **Commit:** _(see git log for the PR #214 scoped-sandbox review-fix commit)_
+
+### 17. Electron dev sandbox CI detection must not apply outside Linux headless hosts
+
+- **Source:** github-claude | PR #214 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `vite.config.ts`
+- **Finding:** The first scoped-sandbox fix OR'd `process.env.CI` with the Linux headless display check. That still passed `--no-sandbox` on macOS/Windows CI and on developer shells that export `CI=true`, even though the SUID sandbox workaround is Linux-specific.
+- **Fix:** Remove the broad CI predicate and rely on the Linux headless display check. Normal local dev, macOS CI, and Windows CI keep Electron's renderer sandbox; Linux hosts without `DISPLAY` or `WAYLAND_DISPLAY` still get the dev-only workaround.
+- **Commit:** _(see git log for the PR #214 Linux-headless sandbox review-fix commit)_

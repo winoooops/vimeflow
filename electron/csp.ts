@@ -119,8 +119,17 @@ export const addDevReactRefreshNonce = (
 ): string => {
   const safeNonce = validateDevReactRefreshNonce(nonce)
 
-  return html.replace(
+  const transformed = html.replace(
     reactRefreshPreamblePattern,
     `<script type="module" nonce="${safeNonce}">`
   )
+
+  if (transformed === html && html.includes('@react-refresh')) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      'Vite React Refresh preamble found, but dev CSP nonce was not injected'
+    )
+  }
+
+  return transformed
 }

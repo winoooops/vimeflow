@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import {
   DEV_REACT_REFRESH_NONCE_ENV,
   addDevReactRefreshNonce,
@@ -94,6 +94,27 @@ describe('Content Security Policy', () => {
     const html = '<script type="module">import "/src/main.tsx";</script>'
 
     expect(addDevReactRefreshNonce(html, nonce)).toBe(html)
+  })
+
+  test('warns when React Refresh HTML is present but no preamble was matched', () => {
+    const warnSpy = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined)
+
+    const html = [
+      '<script type="module" data-vite-dev-id="refresh">',
+      'import RefreshRuntime from "/@react-refresh";',
+      '</script>',
+    ].join('\n')
+
+    try {
+      expect(addDevReactRefreshNonce(html, nonce)).toBe(html)
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Vite React Refresh preamble found, but dev CSP nonce was not injected'
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
   })
 
   test('rejects unsafe nonce values before injecting them into HTML', () => {
