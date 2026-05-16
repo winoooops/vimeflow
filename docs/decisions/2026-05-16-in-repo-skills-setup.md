@@ -21,7 +21,7 @@ The result: out of the box, on a fresh checkout, `/lifeline:planner` fails with 
 mkdir -p skills
 ln -sfn ~/.claude/plugins/cache/lifeline/lifeline/<version>/skills/planner skills/planner
 ln -sfn ~/.claude/plugins/cache/lifeline/lifeline/<version>/skills/upsource-review skills/upsource-review
-echo "skills/" >> .git/info/exclude   # don't commit the symlinks
+grep -qxF "skills/" .git/info/exclude || echo "skills/" >> .git/info/exclude
 ```
 
 After this, every helper script resolves cleanly. Codex review output lands in `.lifeline-planner/{spec,section,plan}-{complete,partial}-review.md`; both the planner artifacts and the symlinks are gitignored.

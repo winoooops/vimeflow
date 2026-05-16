@@ -178,8 +178,8 @@ PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND;}"'printf "\e]7;file://%s%s\a"
 `npm run electron:build` produces `release/vimeflow-<version>-x64.AppImage`. On dev hosts without a SUID `chrome-sandbox`, launch with `--no-sandbox`:
 
 ```bash
-chmod +x release/vimeflow-0.1.0-x64.AppImage
-./release/vimeflow-0.1.0-x64.AppImage --no-sandbox &
+chmod +x release/vimeflow-*.AppImage
+./release/vimeflow-*.AppImage --no-sandbox &
 ```
 
 On hosts without `libfuse2`, fall back to `--appimage-extract-and-run --no-sandbox` (extracts to tmp and runs the unpacked tree). Post-PR-D3, the GTK/WebKitGTK renderer flags from the old Tauri setup (`WEBKIT_DISABLE_DMABUF_RENDERER=1`) are no longer needed — Electron ships its own Chromium.

@@ -603,3 +603,30 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** A Chinese README bullet changed an English runtime term to `旁路` but kept the spacing pattern used around the old English word, producing `订阅 旁路事件总线`. Chinese continuous prose should not retain that inter-word space.
 - **Fix:** Removed the stray space so the phrase reads `订阅旁路事件总线`.
 - **Commit:** same commit as this entry
+
+### 64. Path sweep fixed prose but missed code-block comments in the same rules file
+
+- **Source:** github-claude | PR #212 round 3 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `rules/rust/patterns.md`
+- **Finding:** Round 2 fixed crate-relative Rust paths in prose but missed two code-block comments and one EventSink prose reference in the same file: `src/runtime/state.rs`, `src/terminal/commands.rs`, and `src/runtime/event_sink.rs`. Agents reading from the repo root would still search the frontend `src/` tree and fail to locate the Rust files.
+- **Fix:** Prefixed all three remaining references with `src-tauri/`, including the illustrative code comments, so every file pointer in the rules file uses the same repo-root convention.
+- **Commit:** same commit as this entry
+
+### 65. AppImage smoke command hardcoded the current package version
+
+- **Source:** github-claude | PR #212 round 3 | 2026-05-16
+- **Severity:** LOW
+- **File:** `README.md`
+- **Finding:** The AppImage smoke section described the generic output path `release/vimeflow-<version>-x64.AppImage` but the copy-paste command below hardcoded `release/vimeflow-0.1.0-x64.AppImage`. After a version bump, the command would fail with a file-not-found error.
+- **Fix:** Changed the command to use `release/vimeflow-*.AppImage` for both `chmod` and launch, keeping it copy-pasteable across version bumps.
+- **Commit:** same commit as this entry
+
+### 66. Bootstrap snippet appends duplicate local-exclude entries on repeat runs
+
+- **Source:** github-claude | PR #212 round 3 | 2026-05-16
+- **Severity:** LOW
+- **File:** `CLAUDE.md`, `docs/decisions/2026-05-16-in-repo-skills-setup.md`
+- **Finding:** The Lifeline skills bootstrap snippets used `echo 'skills/' >> .git/info/exclude`, which appends duplicate `skills/` lines if the user runs the setup twice. The surrounding `ln -sfn` commands were already idempotent, so this one non-idempotent line made the snippet noisier than necessary.
+- **Fix:** Replaced both appends with `grep -qxF ... || echo ...`, preserving the local exclude behavior while making repeated runs no-op clean.
+- **Commit:** same commit as this entry

@@ -9,7 +9,7 @@
 The runtime-neutral entry point for every IPC command is a method on `BackendState` (defined in `src-tauri/src/runtime/state.rs`). It delegates to a `pub(crate) fn xxx_inner(...)` helper that takes plain arguments (no runtime handle):
 
 ```rust
-// src/runtime/state.rs — the IPC router calls these methods.
+// src-tauri/src/runtime/state.rs — the IPC router calls these methods.
 impl BackendState {
     pub async fn spawn_pty(
         &self,
@@ -25,7 +25,7 @@ impl BackendState {
     }
 }
 
-// src/terminal/commands.rs — the actual logic; runtime-neutral.
+// src-tauri/src/terminal/commands.rs — the actual logic; runtime-neutral.
 pub(crate) async fn spawn_pty_inner(
     pty: PtyState,
     sessions: Arc<SessionCache>,
@@ -58,7 +58,7 @@ ipc::run(state.clone(), tokio::io::stdin(), tx, cancel.clone()).await;
 
 ## Event System
 
-Push notifications from sidecar to renderer go through `EventSink` (defined in `src/runtime/event_sink.rs`):
+Push notifications from sidecar to renderer go through `EventSink` (defined in `src-tauri/src/runtime/event_sink.rs`):
 
 ```rust
 // Backend emits via the trait.

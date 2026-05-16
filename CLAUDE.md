@@ -143,7 +143,7 @@ ln -sfn ~/.claude/plugins/cache/lifeline/lifeline/<version>/skills/planner skill
 ln -sfn ~/.claude/plugins/cache/lifeline/lifeline/<version>/skills/upsource-review skills/upsource-review
 
 # Keep the symlinks out of git (per-machine; the plugin cache path is operator-local).
-echo 'skills/' >> .git/info/exclude
+grep -qxF 'skills/' .git/info/exclude || echo 'skills/' >> .git/info/exclude
 ```
 
 After the bootstrap, `/lifeline:planner` resolves cleanly and codex output lands in `.lifeline-planner/` (also gitignored). The full rationale, alternatives, and risk mitigations live in [`docs/decisions/2026-05-16-in-repo-skills-setup.md`](docs/decisions/2026-05-16-in-repo-skills-setup.md).
