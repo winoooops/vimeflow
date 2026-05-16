@@ -32,10 +32,11 @@ Final task count: 15 (Task 0 through Task 14).
 
 ## File Structure
 
-### New (3 files)
+### New (4 files)
 
 - `electron-builder.yml` — Linux AppImage packaging config. ~30 lines.
 - `build/icon.png` — 512×512 PNG sourced by copying `src-tauri/icons/icon.png`. Verified 512×512 8-bit RGBA, 49 KB.
+- `src-tauri/README.md` — defuses `src-tauri/` directory-name confusion. States the crate contains only the Electron sidecar binary post-PR-D3; the `src-tauri/` → `backend/` rename is a deferred follow-up. Spec §4.2 R6.
 - `docs/superpowers/plans/2026-05-15-pr-d3-tauri-removal.md` — this plan.
 
 ### Modified (≥15 files)
@@ -70,7 +71,7 @@ Final task count: 15 (Task 0 through Task 14).
 - `src-tauri/src/agent/adapter/mod.rs` — delete 2 `#[tauri::command]` wrappers (the `<R: tauri::Runtime>`-generic forms).
 - `.github/workflows/e2e.yml` — drop GTK/webkit2gtk apt deps; drop `shared-key: e2e-test` tauri-build comment.
 
-### Deleted (7 files/dirs)
+### Deleted (8 files/dirs)
 
 - `src-tauri/src/main.rs` — was `vimeflow_lib::run()` shim.
 - `src-tauri/src/runtime/tauri_bridge.rs` — `TauriEventSink` adapter (only sink consumer was `lib.rs::run()`).
@@ -78,6 +79,7 @@ Final task count: 15 (Task 0 through Task 14).
 - `src-tauri/tauri.conf.json` — Tauri app config.
 - `src-tauri/capabilities/default.json` — Tauri capability allowlist.
 - `src-tauri/capabilities/` — entire directory (only contained default.json).
+- `src-tauri/icons/` — entire directory (15 PNG files: `icon.png`, the size-named PNGs, and Windows Store icons). The single `icon.png` source is copied to `build/icon.png` in Task 10 before the directory is deleted in the same task.
 - `.github/workflows/tauri-build.yml` — `npx tauri build --ci` matrix workflow.
 
 ### Files NOT touched
@@ -89,7 +91,6 @@ Final task count: 15 (Task 0 through Task 14).
 - `electron/main.ts`, `electron/preload.ts`, `electron/sidecar.ts`, `electron/ipc-channels.ts`, `electron/backend-methods.ts`, `electron/sidecar.test.ts` — PR-D1 artifacts.
 - `electron/tsconfig.json` — unchanged.
 - `tests/e2e/**` — PR-D2 artifacts.
-- `src-tauri/icons/` — preserved as the source for `build/icon.png` (the file copy is one-way; src-tauri/icons/ remains in the repo for now — the directory rename is a deferred follow-up per the migration roadmap).
 - `src-tauri/bindings/`, `src/bindings/` — ts-rs generated; ts-rs dev-dep stays.
 
 ---
@@ -1109,7 +1110,7 @@ pub use adapter::AgentWatcherState;
 
 Expected: clean, or only `unused import` warnings. For each unused-import warning in a wrapper-formerly-housing file (e.g., `use std::sync::Arc;` at the top of a file that no longer uses `Arc`), use `Edit` to remove the import line. Re-run `cargo check --lib` until clean.
 
-- [ ] **Step 13: Verify the sidecar binary still builds.**
+- [ ] **Step 13: Verify the sidecar binary still builds (default features).**
 
 ```bash
 (cd src-tauri && cargo build --bin vimeflow-backend)
@@ -1117,7 +1118,16 @@ Expected: clean, or only `unused import` warnings. For each unused-import warnin
 
 Expected: clean build.
 
-- [ ] **Step 14: Run Rust tests to verify the cfg(test) aliases still work.**
+- [ ] **Step 14: Verify the e2e-test feature path also compiles.**
+
+```bash
+(cd src-tauri && cargo check --lib --features e2e-test)
+(cd src-tauri && cargo check --bin vimeflow-backend --features e2e-test)
+```
+
+Expected: clean. `terminal/test_commands.rs` lives behind `#[cfg(feature = "e2e-test")]` and its wrapper was deleted in Step 2; this check ensures the deletion didn't leave a dangling reference inside the e2e-test feature path. The default `cargo build --bin vimeflow-backend` does not exercise this code.
+
+- [ ] **Step 15: Run Rust tests to verify the cfg(test) aliases still work.**
 
 ```bash
 (cd src-tauri && cargo test --lib)
@@ -1125,7 +1135,7 @@ Expected: clean build.
 
 Expected: green. Test count matches the Task 0 baseline byte-for-byte (none of the deleted wrappers had unit tests; the cfg(test) aliases that tests call were preserved).
 
-- [ ] **Step 15: Commit.**
+- [ ] **Step 16: Commit.**
 
 ```bash
 git add src-tauri/src/terminal/ \
@@ -1306,10 +1316,44 @@ Expected: clean. The previous `build.rs` ran `tauri_build::build()` which emitte
 
 **However:** `Cargo.toml` still has `tauri-build` in `[build-dependencies]`. Cargo will still compile `tauri-build` even with no `build.rs` to consume it — wasted work but not a build failure. Task 8 removes the dep from Cargo.toml.
 
-- [ ] **Step 3: Commit.**
+- [ ] **Step 3: Add `src-tauri/README.md` to defuse the directory-name confusion.**
+
+The migration roadmap defers the `src-tauri/` → `backend/` directory rename to a follow-up PR (renaming touches every Cargo path, every CI workflow, every test script). Until then, `src-tauri/` houses only the Electron sidecar — the name is misleading. Per spec §4.2 R6, add a README pointing new contributors at the actual contents:
+
+Write `src-tauri/README.md`:
+
+```markdown
+# src-tauri/ — Electron sidecar backend
+
+> **Despite the directory name, this crate contains only the Electron sidecar binary.** The Tauri runtime was removed in PR-D3 (final PR of the 4-PR Electron migration). Renaming `src-tauri/` to `backend/` is tracked as a deferred follow-up.
+
+## What's here
+
+- `src/bin/vimeflow-backend.rs` — sidecar entry point. Reads/writes
+  LSP-framed JSON over stdio; spawned by `electron/main.ts`.
+- `src/runtime/` — runtime-neutral `BackendState`, IPC router, event sink.
+- `src/{terminal,filesystem,git,agent}/` — feature modules (PTY,
+  file ops, git status/diff/watch, agent detection). Each exposes
+  `_inner` helper functions consumed by `BackendState` methods.
+- `src/bindings/` — `ts-rs` generated TypeScript types. Regenerate
+  via `npm run generate:bindings`.
+- `tests/` — integration tests (fixtures, transcript replay).
+
+## What's gone (deleted in PR-D3)
+
+- `src/main.rs` (Tauri host binary entry)
+- `src/lib.rs` `run()` function (was the Tauri builder + invoke_handler)
+- `src/runtime/tauri_bridge.rs` (`TauriEventSink`)
+- All `#[tauri::command]` wrapper functions (20 total)
+- `build.rs`, `tauri.conf.json`, `capabilities/`
+- The `tauri`, `tauri-plugin-log`, `tauri-build` Cargo deps
+```
+
+- [ ] **Step 4: Commit.**
 
 ```bash
-git add src-tauri/build.rs src-tauri/tauri.conf.json src-tauri/capabilities/
+git add src-tauri/build.rs src-tauri/tauri.conf.json \
+  src-tauri/capabilities/ src-tauri/README.md
 git commit -m "$(cat <<'EOF'
 refactor(rust): delete build.rs, tauri.conf.json, capabilities/
 
@@ -1318,6 +1362,11 @@ Tauri macros (#[tauri::command], invoke_handler!, generate_context!,
 mobile_entry_point) are gone. tauri.conf.json (Tauri app config) and
 capabilities/default.json (Tauri capability allowlist) have no
 consumers either.
+
+Adds src-tauri/README.md to defuse the directory-name confusion
+until the deferred `src-tauri/` → `backend/` rename lands (spec §4.2
+R6). The README explicitly states that the crate contains only the
+Electron sidecar binary post-PR-D3.
 
 Cargo silently skips a missing build.rs. The tauri-build dep removal
 from Cargo.toml is Task 8 (single atomic Cargo.toml strip).
@@ -1721,21 +1770,27 @@ npx js-yaml electron-builder.yml > /dev/null && echo "YAML valid"
 
 Expected: `YAML valid`. If `js-yaml` isn't installed, use `python3 -c "import yaml; yaml.safe_load(open('electron-builder.yml'))" && echo YAML valid`.
 
-- [ ] **Step 8: Run electron-builder's dry-run check (does NOT produce an AppImage; verifies config syntax).**
+- [ ] **Step 8: Delete `src-tauri/icons/`.**
 
 ```bash
-npx electron-builder --linux AppImage --dir 2>&1 | tail -20
+git rm -r src-tauri/icons/
 ```
 
-Note: `--dir` produces an unpacked directory under `release/linux-unpacked/` without the AppImage step. Useful for testing the asar + extraResources layout without paying for AppImage compression.
+After Step 1 copied `icon.png` to `build/icon.png`, the entire `src-tauri/icons/` directory (15 PNG files: `icon.png`, `32x32.png`, `128x128.png`, `128x128@2x.png`, plus 11 Windows Store / macOS icon files) is dead. The directory deletion is the spec §2.3 row that lists `src-tauri/icons/*` under deleted paths.
 
-Expected: succeeds. The smoke run (Task 13) does the full AppImage build.
+Verify nothing else in the repo references the deleted icons:
+
+```bash
+rg -n "src-tauri/icons/" --glob '!docs/**' --glob '!**/*.md'
+```
+
+Expected: zero hits. (`docs/**` and markdown files may still mention the path in historical context — that's fine.)
 
 - [ ] **Step 9: Commit.**
 
 ```bash
 git add package.json package-lock.json electron-builder.yml \
-  build/icon.png .gitignore
+  build/icon.png .gitignore src-tauri/icons/
 git commit -m "$(cat <<'EOF'
 feat(packaging): add electron-builder.yml + Linux AppImage build
 
