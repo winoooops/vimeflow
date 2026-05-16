@@ -3,7 +3,7 @@ id: csp-configuration
 category: security
 created: 2026-04-09
 last_updated: 2026-05-16
-ref_count: 2
+ref_count: 3
 ---
 
 # CSP Configuration
@@ -43,5 +43,14 @@ actually applied, not just declared.
 - **Severity:** MEDIUM
 - **File:** `electron/main.ts`, `vite.config.ts`
 - **Finding:** Regular Electron dev and E2E both used a dev CSP with `script-src 'unsafe-inline'`, making the E2E runtime switch a no-op and allowing inline script execution in every `electron:dev` session.
-- **Fix:** Split CSP construction into a tested Electron module. Regular dev now allows Vite React Refresh through a nonce on the injected preamble, while E2E keeps the separate `unsafe-inline` policy needed for WDIO injection.
+- **Fix:** Split CSP construction into a tested Electron module. Regular dev now allows Vite React Refresh through a generated nonce on the injected preamble, while E2E keeps the separate `unsafe-inline` policy needed for WDIO injection.
 - **Commit:** _(see git log for the PR #214 CSP review-fix commit)_
+
+### 4. Dev CSP nonce committed as a source-known constant
+
+- **Source:** github-claude | PR #214 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `electron/csp.ts`, `vite.config.ts`
+- **Finding:** The first Electron dev CSP fix used a compile-time nonce string, so any injected script that copied the source-known value could pass `script-src` and bypass the intended regular-dev hardening.
+- **Fix:** Generate an opaque nonce per Vite dev-server process, store it in an environment variable inherited by Electron main, and use the same value for both the CSP header and the Vite React Refresh preamble transform.
+- **Commit:** _(see git log for the PR #214 static-nonce review-fix commit)_

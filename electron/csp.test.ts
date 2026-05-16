@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'vitest'
 import {
-  DEV_REACT_REFRESH_NONCE,
+  DEV_REACT_REFRESH_NONCE_ENV,
   addDevReactRefreshNonce,
+  createDevReactRefreshNonce,
   devContentSecurityPolicy,
   devE2eContentSecurityPolicy,
   developmentContentSecurityPolicy,
+  ensureDevReactRefreshNonce,
+  getDevReactRefreshNonce,
   packagedContentSecurityPolicy,
 } from './csp'
 
@@ -19,10 +22,12 @@ const directive = (policy: string, name: string): string => {
 }
 
 describe('Content Security Policy', () => {
-  test('regular dev uses a React Refresh nonce without allowing inline scripts', () => {
-    const scriptSrc = directive(devContentSecurityPolicy, 'script-src')
+  const nonce = 'test-dev-nonce'
 
-    expect(scriptSrc).toContain(`'nonce-${DEV_REACT_REFRESH_NONCE}'`)
+  test('regular dev uses a React Refresh nonce without allowing inline scripts', () => {
+    const scriptSrc = directive(devContentSecurityPolicy(nonce), 'script-src')
+
+    expect(scriptSrc).toContain(`'nonce-${nonce}'`)
     expect(scriptSrc).toContain("'unsafe-eval'")
     expect(scriptSrc).not.toContain("'unsafe-inline'")
   })
@@ -32,15 +37,15 @@ describe('Content Security Policy', () => {
 
     expect(scriptSrc).toContain("'unsafe-inline'")
     expect(scriptSrc).toContain("'unsafe-eval'")
-    expect(scriptSrc).not.toContain(`'nonce-${DEV_REACT_REFRESH_NONCE}'`)
+    expect(scriptSrc).not.toContain("'nonce-")
   })
 
   test('development selector preserves the dev and E2E split', () => {
-    expect(developmentContentSecurityPolicy(false)).toBe(
-      devContentSecurityPolicy
+    expect(developmentContentSecurityPolicy(false, nonce)).toBe(
+      devContentSecurityPolicy(nonce)
     )
 
-    expect(developmentContentSecurityPolicy(true)).toBe(
+    expect(developmentContentSecurityPolicy(true, nonce)).toBe(
       devE2eContentSecurityPolicy
     )
   })
@@ -52,6 +57,8 @@ describe('Content Security Policy', () => {
   })
 
   test('adds nonce to Vite React Refresh preamble script', () => {
+    const htmlNonce = 'html-nonce'
+
     const html = [
       '<html><head>',
       '<script type="module">',
@@ -61,14 +68,39 @@ describe('Content Security Policy', () => {
       '</head></html>',
     ].join('\n')
 
-    expect(addDevReactRefreshNonce(html)).toContain(
-      `<script type="module" nonce="${DEV_REACT_REFRESH_NONCE}">`
+    expect(addDevReactRefreshNonce(html, htmlNonce)).toContain(
+      `<script type="module" nonce="${htmlNonce}">`
     )
   })
 
   test('leaves unrelated module scripts unchanged', () => {
     const html = '<script type="module">import "/src/main.tsx";</script>'
 
-    expect(addDevReactRefreshNonce(html)).toBe(html)
+    expect(addDevReactRefreshNonce(html, nonce)).toBe(html)
+  })
+
+  test('generates opaque nonce values instead of using a source-known constant', () => {
+    const generated = createDevReactRefreshNonce()
+
+    expect(generated).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(generated.length).toBeGreaterThanOrEqual(22)
+    expect(generated).not.toBe('vimeflow-dev-react-refresh')
+  })
+
+  test('reuses the environment nonce when one is configured', () => {
+    const previous = process.env[DEV_REACT_REFRESH_NONCE_ENV]
+
+    process.env[DEV_REACT_REFRESH_NONCE_ENV] = 'from-env'
+
+    try {
+      expect(getDevReactRefreshNonce()).toBe('from-env')
+      expect(ensureDevReactRefreshNonce()).toBe('from-env')
+    } finally {
+      if (previous === undefined) {
+        delete process.env[DEV_REACT_REFRESH_NONCE_ENV]
+      } else {
+        process.env[DEV_REACT_REFRESH_NONCE_ENV] = previous
+      }
+    }
   })
 })

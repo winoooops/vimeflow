@@ -1,4 +1,6 @@
-export const DEV_REACT_REFRESH_NONCE = 'vimeflow-dev-react-refresh'
+import { randomBytes } from 'node:crypto'
+
+export const DEV_REACT_REFRESH_NONCE_ENV = 'VIMEFLOW_DEV_REACT_REFRESH_NONCE'
 
 const localhostHttpSources = ['http://localhost:*', 'http://127.0.0.1:*']
 const localhostWebSocketSources = ['ws://localhost:*', 'ws://127.0.0.1:*']
@@ -21,10 +23,35 @@ const devBaseSources = [
   ...localhostWebSocketSources,
 ]
 
-const devScriptSources = [
+export const createDevReactRefreshNonce = (): string =>
+  randomBytes(16).toString('base64url')
+
+let fallbackDevReactRefreshNonce: string | null = null
+
+export const getDevReactRefreshNonce = (): string => {
+  const nonce = process.env[DEV_REACT_REFRESH_NONCE_ENV]
+
+  if (nonce !== undefined && nonce.length > 0) {
+    return nonce
+  }
+
+  fallbackDevReactRefreshNonce ??= createDevReactRefreshNonce()
+
+  return fallbackDevReactRefreshNonce
+}
+
+export const ensureDevReactRefreshNonce = (): string => {
+  const nonce = getDevReactRefreshNonce()
+
+  process.env[DEV_REACT_REFRESH_NONCE_ENV] = nonce
+
+  return nonce
+}
+
+const devScriptSources = (nonce: string): string[] => [
   "'self'",
   "'unsafe-eval'",
-  `'nonce-${DEV_REACT_REFRESH_NONCE}'`,
+  `'nonce-${nonce}'`,
   ...localhostHttpSources,
 ]
 
@@ -58,21 +85,24 @@ const developmentPolicy = (scriptSources: string[]): string =>
     directive('connect-src', devConnectSources),
   ].join('; ')
 
-export const devContentSecurityPolicy = developmentPolicy(devScriptSources)
+export const devContentSecurityPolicy = (
+  nonce = getDevReactRefreshNonce()
+): string => developmentPolicy(devScriptSources(nonce))
 
-export const devE2eContentSecurityPolicy =
+export const devE2eContentSecurityPolicy: string =
   developmentPolicy(devE2eScriptSources)
 
 export const developmentContentSecurityPolicy = (
-  isE2eRuntime: boolean
+  isE2eRuntime: boolean,
+  nonce = getDevReactRefreshNonce()
 ): string =>
-  isE2eRuntime ? devE2eContentSecurityPolicy : devContentSecurityPolicy
+  isE2eRuntime ? devE2eContentSecurityPolicy : devContentSecurityPolicy(nonce)
 
 const reactRefreshPreamblePattern =
   /<script type="module">(\s*import\s+\{\s*injectIntoGlobalHook\s*\}\s+from\s+["'][^"']*@react-refresh["'];)/
 
-export const addDevReactRefreshNonce = (html: string): string =>
+export const addDevReactRefreshNonce = (html: string, nonce: string): string =>
   html.replace(
     reactRefreshPreamblePattern,
-    `<script type="module" nonce="${DEV_REACT_REFRESH_NONCE}">$1`
+    `<script type="module" nonce="${nonce}">$1`
   )

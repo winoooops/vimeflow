@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-05-12
-ref_count: 3
+last_updated: 2026-05-16
+ref_count: 4
 ---
 
 # E2E Testing (WDIO + tauri-driver + WebKitGTK)
@@ -176,3 +176,12 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** The non-packaged dev CSP allowed `unsafe-eval` for Vite but not `unsafe-inline`. Vite React injects an inline refresh preamble into `index.html`; Chromium blocked it, then `@vitejs/plugin-react` threw `can't detect preamble`, leaving `#root` empty on the dark page. Production builds and packaged `vimeflow://app/index.html` still mounted, so the failure looked like a dev-only black window.
 - **Fix:** Added `'unsafe-inline'` to the non-packaged `script-src`. Packaged CSP remains strict; the relaxation is limited to dev/E2E where Vite React and WDIO need inline bootstrap code.
 - **Commit:** _(this migration wrap-up branch)_
+
+### 15. Electron dev sandbox override needs visible documentation
+
+- **Source:** github-claude | PR #214 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `vite.config.ts`
+- **Finding:** `electron:dev` launches Electron with `--no-sandbox`, which overrides `BrowserWindow.webPreferences.sandbox: true`; without an adjacent comment, the window-level setting falsely suggests the dev renderer is OS-sandboxed.
+- **Fix:** Added a DEV ONLY comment at the `startup(['.', '--no-sandbox'])` call documenting the Linux CI/container SUID sandbox constraint and the deferred removal condition.
+- **Commit:** _(see git log for the PR #214 sandbox-comment review-fix commit)_

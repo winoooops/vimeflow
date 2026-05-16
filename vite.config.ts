@@ -6,7 +6,10 @@ import simpleGit from 'simple-git'
 import { parse as parseDiffText } from 'diff2html'
 import { fileApiPlugin } from './vite-plugin-files'
 import packageJson from './package.json' with { type: 'json' }
-import { addDevReactRefreshNonce } from './electron/csp'
+import {
+  addDevReactRefreshNonce,
+  ensureDevReactRefreshNonce,
+} from './electron/csp'
 import type {
   ChangedFile,
   FileDiff,
@@ -20,6 +23,7 @@ import {
 
 const git = simpleGit()
 const repoRoot = process.cwd()
+const devReactRefreshNonce = ensureDevReactRefreshNonce()
 
 /**
  * Validate that a file path is repo-relative and doesn't escape the repo.
@@ -507,7 +511,7 @@ function reactRefreshNoncePlugin(): Plugin {
     apply: 'serve',
     enforce: 'post',
     transformIndexHtml(html): string {
-      return addDevReactRefreshNonce(html)
+      return addDevReactRefreshNonce(html, devReactRefreshNonce)
     },
   }
 }
@@ -633,6 +637,11 @@ export default defineConfig(({ mode }) => ({
               entry: 'electron/main.ts',
               onstart: async ({ startup }): Promise<void> => {
                 try {
+                  // DEV ONLY: Linux CI and some containerized dev hosts do not
+                  // provide Chromium's SUID sandbox. This process-level flag
+                  // overrides BrowserWindow.sandbox: true; remove it once the
+                  // deferred AppImage sandbox follow-up ships a working
+                  // chrome-sandbox path for dev and CI.
                   await startup(['.', '--no-sandbox'])
                 } catch (error: unknown) {
                   const message =
