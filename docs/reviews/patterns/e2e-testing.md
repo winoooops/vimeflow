@@ -158,3 +158,12 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** `npm run electron:build` overwrites `dist/` with a production renderer that does not include `window.__VIMEFLOW_E2E__`. Running `npm run test:e2e:terminal` after that production build produced prompt-readiness failures and one explicit `window.__VIMEFLOW_E2E__ missing` error, even though the backend path migration was correct. The WDIO runtime env var only unlocks Electron main-process E2E behavior; the renderer bridge is compile-time gated by the Vite build.
 - **Fix:** Public E2E scripts now run `npm run test:e2e:build` before their suite. CI still builds once, then calls explicit `test:e2e:*:run` scripts so the job does not rebuild for every suite.
 - **Commit:** _(this migration wrap-up branch)_
+
+### 13. Electron dev launcher can boot blank when it drops `--no-sandbox`
+
+- **Source:** local migration wrap-up | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `vite.config.ts`, `tests/e2e/shared/electron-app.ts`
+- **Finding:** `vite-plugin-electron` defaults to launching Electron with `--no-sandbox`, but this project overrode startup with `startup(['.'])` to preserve sandbox parity in dev. On Linux dev hosts without a working Chromium SUID/user-namespace sandbox, that can surface as a blank/crashed dev window even though the production renderer and packaged custom-protocol path are healthy.
+- **Fix:** `electron:dev` now starts Electron with `startup(['.', '--no-sandbox'])`, matching the E2E launch path. Packaged production still keeps the sandbox unless the operator explicitly passes `--no-sandbox` for local AppImage smoke.
+- **Commit:** _(this migration wrap-up branch)_

@@ -620,7 +620,7 @@ export default defineConfig(({ mode }) => ({
               entry: 'electron/main.ts',
               onstart: async ({ startup }): Promise<void> => {
                 try {
-                  await startup(['.'])
+                  await startup(['.', '--no-sandbox'])
                 } catch (error: unknown) {
                   const message =
                     error instanceof Error
