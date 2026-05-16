@@ -3,7 +3,7 @@
 ' ─────────────────────────────────────────────────────────────────────
 ' Vimeflow agent module — Stage 1 architecture (Rust class diagram).
 ' Generated alongside README.md; rerender with:
-'   java -jar plantuml.jar src-tauri/src/agent/architecture.puml
+'   java -jar plantuml.jar crates/backend/src/agent/architecture.puml
 ' Spec: docs/superpowers/specs/2026-05-02-claude-adapter-refactor-design.md
 ' ─────────────────────────────────────────────────────────────────────
 

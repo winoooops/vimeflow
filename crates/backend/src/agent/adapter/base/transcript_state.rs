@@ -72,7 +72,7 @@ struct TranscriptWatcher {
 /// session. Constructed once as part of `BackendState` and passed to the
 /// watcher runtime and adapter `tail_transcript` impls. `pub` supports
 /// direct instantiation in `#[cfg(test)]` integration tests under
-/// `src-tauri/tests/transcript_*.rs`; do not construct ad hoc instances
+/// `crates/backend/tests/transcript_*.rs`; do not construct ad hoc instances
 /// in production code paths.
 #[doc(hidden)]
 #[derive(Default, Clone)]

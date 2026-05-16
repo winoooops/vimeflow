@@ -1,6 +1,6 @@
 # Vimeflow Filesystem Sandbox — Security Model
 
-> **Read this before modifying anything in `src-tauri/src/filesystem/`.**
+> **Read this before modifying anything in `crates/backend/src/filesystem/`.**
 > The code here is a security boundary, not ordinary glue code. This
 > document is the threat model, enforcement contract, and deferred-work
 > log for the entire module.
@@ -10,7 +10,7 @@
 This module is the Tauri IPC boundary for all filesystem access. Any
 code that reads or writes user files from the frontend webview MUST go
 through one of the three commands in this directory (`list_dir`,
-`read_file`, `write_file`). No other module in `src-tauri` should open
+`read_file`, `write_file`). No other module in `crates/backend` should open
 files on behalf of the webview.
 
 ## Threat Model
@@ -101,7 +101,7 @@ The module guarantees to callers:
 
 **Status:** Deferred.
 
-**Rationale:** Currently only `src-tauri` consumes this module.
+**Rationale:** Currently only `crates/backend` consumes this module.
 Workspace-crate ceremony (nested `Cargo.toml`, path deps,
 workspace-level lints, doubled CI steps) has no payoff with a single
 consumer. The ~500 LOC of production code does not warrant a separate
