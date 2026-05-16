@@ -1550,3 +1550,5 @@ Run-through against the spec's §1.1 In-Scope list:
 | E2E suites green (spec §1.3 requires it)                      | Task 8 step 10                 |
 
 Every spec §1.1 item maps to a task. The acceptance gate in spec §1.3 is satisfied by Task 8's 11 steps.
+
+<!-- codex-reviewed: 2026-05-16T11:55:52Z -->
