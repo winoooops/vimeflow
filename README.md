@@ -139,6 +139,9 @@ npm run dev                      # Vite dev server at localhost:5173
 # Full desktop app (requires Rust)
 npm run electron:dev             # Electron + Rust sidecar (vimeflow-backend)
 
+# Linux dev hosts without a working Chromium sandbox
+VIMEFLOW_NO_SANDBOX=1 npm run electron:dev
+
 # Packaged Linux AppImage
 npm run electron:build           # Produces release/vimeflow-<version>-x64.AppImage
 

@@ -3,7 +3,7 @@ id: csp-configuration
 category: security
 created: 2026-04-09
 last_updated: 2026-05-16
-ref_count: 4
+ref_count: 5
 ---
 
 # CSP Configuration
@@ -81,3 +81,12 @@ actually applied, not just declared.
 - **Finding:** `addDevReactRefreshNonce()` used `String.replace()` and returned the original HTML unchanged when the regex missed a future Vite React Refresh preamble shape. The dev CSP would then block the nonce-less inline preamble, leaving HMR broken with only a DevTools CSP violation as a clue.
 - **Fix:** After the transform, warn when the HTML still contains `@react-refresh` but no nonce was injected. This keeps the strict CSP behavior while making Vite preamble drift immediately visible during dev startup.
 - **Commit:** _(see git log for the PR #214 React Refresh mismatch-warning review-fix commit)_
+
+### 8. React Refresh nonce transform must tolerate script attribute drift
+
+- **Source:** github-claude | PR #214 | 2026-05-16
+- **Severity:** LOW
+- **File:** `electron/csp.ts`
+- **Finding:** The React Refresh nonce transform still required an exact `<script type="module">` opening tag. If Vite added an attribute such as `crossorigin` or emitted `type='module'`, the transform would warn but leave the preamble nonce-less, breaking regular dev HMR under the strict CSP.
+- **Fix:** Match module script opening tags independent of attribute order and quote style, preserve the existing attributes, and append the generated nonce only to the React Refresh preamble. Added regression coverage for an extra-attribute, single-quoted module script.
+- **Commit:** _(see git log for the PR #214 React Refresh attribute-drift review-fix commit)_

@@ -53,13 +53,13 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)             | security       | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                   | security       | 3        | 1    | 2026-04-20   |
 | [Preflight Checks](patterns/preflight-checks.md)                     | error-handling | 1        | 0    | 2026-04-20   |
-| [CSP Configuration](patterns/csp-configuration.md)                   | security       | 7        | 4    | 2026-05-16   |
+| [CSP Configuration](patterns/csp-configuration.md)                   | security       | 8        | 5    | 2026-05-16   |
 | [PTY Session Management](patterns/pty-session-management.md)         | backend        | 7        | 2    | 2026-05-13   |
 | [Git Operations](patterns/git-operations.md)                         | correctness    | 17       | 7    | 2026-05-16   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)         | editor         | 12       | 0    | 2026-04-11   |
 | [Error Surfacing](patterns/error-surfacing.md)                       | error-handling | 27       | 7    | 2026-05-16   |
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files          | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                         | review-process | 7        | 2    | 2026-05-12   |
-| [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing    | 17       | 5    | 2026-05-16   |
+| [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing    | 18       | 6    | 2026-05-16   |
 | [Module Boundaries](patterns/module-boundaries.md)                   | code-quality   | 3        | 1    | 2026-05-07   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality   | 7        | 2    | 2026-05-02   |

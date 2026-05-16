@@ -96,13 +96,27 @@ describe('Content Security Policy', () => {
     expect(addDevReactRefreshNonce(html, nonce)).toBe(html)
   })
 
+  test('adds nonce to Vite React Refresh preamble with extra script attrs', () => {
+    const htmlNonce = 'html-nonce'
+
+    const html = [
+      '<script crossorigin type=\'module\' data-vite-dev-id="refresh">',
+      'import RefreshRuntime from "/@react-refresh";',
+      '</script>',
+    ].join('\n')
+
+    expect(addDevReactRefreshNonce(html, htmlNonce)).toContain(
+      `<script crossorigin type='module' data-vite-dev-id="refresh" nonce="${htmlNonce}">`
+    )
+  })
+
   test('warns when React Refresh HTML is present but no preamble was matched', () => {
     const warnSpy = vi
       .spyOn(console, 'warn')
       .mockImplementation(() => undefined)
 
     const html = [
-      '<script type="module" data-vite-dev-id="refresh">',
+      '<script type="text/javascript">',
       'import RefreshRuntime from "/@react-refresh";',
       '</script>',
     ].join('\n')

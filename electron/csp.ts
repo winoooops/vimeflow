@@ -111,7 +111,7 @@ export const developmentContentSecurityPolicy = (
   isE2eRuntime ? devE2eContentSecurityPolicy : devContentSecurityPolicy(nonce)
 
 const reactRefreshPreamblePattern =
-  /<script type="module">(?=\s*import\s+(?:[\s\S]*?\s+from\s+)?["'][^"']*@react-refresh["'];)/
+  /<script\b((?=[^>]*\btype\s*=\s*["']module["'])(?![^>]*\bnonce\s*=)[^>]*)>(?=\s*import\s+(?:[\s\S]*?\s+from\s+)?["'][^"']*@react-refresh["'];)/
 
 export const addDevReactRefreshNonce = (
   html: string,
@@ -121,7 +121,7 @@ export const addDevReactRefreshNonce = (
 
   const transformed = html.replace(
     reactRefreshPreamblePattern,
-    `<script type="module" nonce="${safeNonce}">`
+    (_match, attributes: string) => `<script${attributes} nonce="${safeNonce}">`
   )
 
   if (transformed === html && html.includes('@react-refresh')) {

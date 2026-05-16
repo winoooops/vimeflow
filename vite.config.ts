@@ -10,6 +10,7 @@ import {
   addDevReactRefreshNonce,
   ensureDevReactRefreshNonce,
 } from './electron/csp'
+import { electronStartupArgs } from './electron/sandbox'
 import type {
   ChangedFile,
   FileDiff,
@@ -24,18 +25,6 @@ import {
 const git = simpleGit()
 const repoRoot = process.cwd()
 const devReactRefreshNonce = ensureDevReactRefreshNonce()
-
-const isLinuxHeadlessRuntime = (): boolean =>
-  process.platform === 'linux' &&
-  process.env.DISPLAY === undefined &&
-  process.env.WAYLAND_DISPLAY === undefined
-
-const shouldDisableElectronSandbox = (): boolean => isLinuxHeadlessRuntime()
-
-const electronStartupArgs = (): string[] => [
-  '.',
-  ...(shouldDisableElectronSandbox() ? ['--no-sandbox'] : []),
-]
 
 /**
  * Validate that a file path is repo-relative and doesn't escape the repo.
@@ -649,10 +638,11 @@ export default defineConfig(({ mode }) => ({
               entry: 'electron/main.ts',
               onstart: async ({ startup }): Promise<void> => {
                 try {
-                  // DEV ONLY: Linux headless/containerized hosts may not provide
-                  // Chromium's SUID sandbox. Only those runs get the process-level
-                  // flag that overrides BrowserWindow.sandbox: true; ordinary
-                  // local dev and macOS/Windows CI keep the renderer sandbox.
+                  // DEV ONLY: keep Electron's renderer sandbox enabled unless
+                  // a developer explicitly opts out for a Linux host that cannot
+                  // launch Chromium's sandbox. Use VIMEFLOW_NO_SANDBOX=1 rather
+                  // than inferring the weaker mode from CI or headless display
+                  // state.
                   await startup(electronStartupArgs())
                 } catch (error: unknown) {
                   const message =

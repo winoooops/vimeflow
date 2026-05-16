@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-05-16
-ref_count: 5
+ref_count: 6
 ---
 
 # E2E Testing (WDIO + tauri-driver + WebKitGTK)
@@ -203,3 +203,12 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** The first scoped-sandbox fix OR'd `process.env.CI` with the Linux headless display check. That still passed `--no-sandbox` on macOS/Windows CI and on developer shells that export `CI=true`, even though the SUID sandbox workaround is Linux-specific.
 - **Fix:** Remove the broad CI predicate and rely on the Linux headless display check. Normal local dev, macOS CI, and Windows CI keep Electron's renderer sandbox; Linux hosts without `DISPLAY` or `WAYLAND_DISPLAY` still get the dev-only workaround.
 - **Commit:** _(see git log for the PR #214 Linux-headless sandbox review-fix commit)_
+
+### 18. Electron dev sandbox override must be an explicit opt-in
+
+- **Source:** github-claude | PR #214 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `vite.config.ts`
+- **Finding:** Even after narrowing the detection to Linux hosts without display variables, `electron:dev` still inferred `--no-sandbox` automatically on headless Linux. That made every CI/container/dev-shell run in that state silently drop Chromium's renderer sandbox with no visible opt-in.
+- **Fix:** Removed runtime auto-detection from the Vite startup path. `electron:dev` now passes `--no-sandbox` only when `VIMEFLOW_NO_SANDBOX=1` is explicitly set, keeping normal dev and CI sandboxed by default while preserving a documented escape hatch for Linux hosts that cannot launch Chromium's sandbox.
+- **Commit:** _(see git log for the PR #214 explicit sandbox opt-in review-fix commit)_
