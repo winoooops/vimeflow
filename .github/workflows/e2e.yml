@@ -7,9 +7,11 @@ on:
     paths:
       - 'src-tauri/**'
       - 'src/**'
+      - 'electron/**'
       - 'tests/e2e/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'vite.config.ts'
       - '.github/workflows/e2e.yml'
   pull_request:
     branches:
@@ -17,9 +19,11 @@ on:
     paths:
       - 'src-tauri/**'
       - 'src/**'
+      - 'electron/**'
       - 'tests/e2e/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'vite.config.ts'
       - '.github/workflows/e2e.yml'
 
 # Cancel in-flight runs for the same ref — E2E is expensive enough that
@@ -56,18 +60,14 @@ jobs:
           # mask recompiles triggered by this job.
           shared-key: e2e-test
 
-      - name: Cache tauri-driver
-        id: tauri-driver-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/tauri-driver
-          key: tauri-driver-${{ runner.os }}-v1
-
-      - name: Install tauri-driver
-        if: steps.tauri-driver-cache.outputs.cache-hit != 'true'
-        run: cargo install tauri-driver
-
       - name: Install system dependencies
+        # libwebkit2gtk / libgtk / libappindicator / librsvg / patchelf are
+        # still required at link time because the sidecar binary
+        # (cargo build --bin vimeflow-backend) compiles against the
+        # vimeflow_lib crate, which still pulls in the Tauri dependency
+        # graph (tauri -> wry -> webkit2gtk-rs). PR-D3 removes the Tauri
+        # dep itself, after which these system packages can be dropped
+        # too. xvfb is required by xvfb-run for headless Electron runs.
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -76,35 +76,22 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
-            webkit2gtk-driver \
             xvfb
 
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build frontend (VITE_E2E=1)
-        run: npm run build
-        env:
-          VITE_E2E: '1'
-
-      - name: Build Tauri debug binary with e2e-test feature
-        working-directory: src-tauri
-        run: cargo build --features e2e-test,tauri/custom-protocol
+      - name: Build E2E artifacts (renderer + Electron bundles + sidecar)
+        run: npm run test:e2e:build
 
       - name: Run core E2E suite
-        run: xvfb-run --auto-servernum npx wdio tests/e2e/core/wdio.conf.ts
-        env:
-          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+        run: xvfb-run --auto-servernum npm run test:e2e
 
       - name: Run terminal E2E suite
-        run: xvfb-run --auto-servernum npx wdio tests/e2e/terminal/wdio.conf.ts
-        env:
-          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+        run: xvfb-run --auto-servernum npm run test:e2e:terminal
 
       - name: Run agent E2E suite
-        run: xvfb-run --auto-servernum npx wdio tests/e2e/agent/wdio.conf.ts
-        env:
-          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+        run: xvfb-run --auto-servernum npm run test:e2e:agent
 
       - name: Upload E2E diagnostics on failure
         if: failure()
@@ -112,7 +99,8 @@ jobs:
         with:
           name: e2e-diagnostics-${{ github.run_id }}
           path: |
-            src-tauri/target/debug/vimeflow
+            src-tauri/target/debug/vimeflow-backend
             dist/
+            dist-electron/
           retention-days: 3
           if-no-files-found: ignore

@@ -6,12 +6,21 @@ import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 
 // __dirname is not defined in ESM modules. Derive it from import.meta.url.
-// vite-plugin-electron bundles main.ts as ESM (main.mjs) under
+// vite-plugin-electron bundles main.ts as ESM (main.js) under
 // package.json:type=module, so we need the ESM-compatible idiom.
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const APP_PROTOCOL = 'vimeflow'
 const APP_HOST = 'app'
 const APP_ORIGIN = `${APP_PROTOCOL}://${APP_HOST}`
+const E2E_RUNTIME_ARG = '--vimeflow-e2e'
+
+// E2E detection (env var OR CLI flag fallback). Hoisted above its first
+// caller (installContentSecurityPolicy at ~line 80) so the TDZ never
+// bites — even if a future refactor moves installContentSecurityPolicy
+// off the async `app.whenReady()` path. Closures over E2E_RUNTIME_ARG
+// declared just above.
+const isE2eRuntime = (): boolean =>
+  process.env.VITE_E2E === '1' || process.argv.includes(E2E_RUNTIME_ARG)
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -60,10 +69,27 @@ const devContentSecurityPolicy = [
   "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
 ].join('; ')
 
+// E2E adds 'unsafe-inline' to script-src so @wdio/electron-service /
+// chromedriver can inject its inline bootstrap script into the renderer.
+// Scoped to isE2eRuntime() (env or --vimeflow-e2e CLI arg) so regular
+// `npm run electron:dev` keeps the stricter dev CSP.
+const devE2eContentSecurityPolicy = [
+  "default-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+  "script-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
+  "style-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
+  "img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*",
+  "font-src 'self' data: http://localhost:* http://127.0.0.1:*",
+  "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+].join('; ')
+
 const installContentSecurityPolicy = (): void => {
   if (app.isPackaged) {
     return
   }
+
+  const csp = isE2eRuntime()
+    ? devE2eContentSecurityPolicy
+    : devContentSecurityPolicy
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const responseHeaders = Object.fromEntries(
@@ -75,7 +101,7 @@ const installContentSecurityPolicy = (): void => {
     callback({
       responseHeaders: {
         ...responseHeaders,
-        'Content-Security-Policy': [devContentSecurityPolicy],
+        'Content-Security-Policy': [csp],
       },
     })
   })
@@ -209,7 +235,7 @@ const setupApp = async (): Promise<void> => {
   })
 
   sidecar = spawnedSidecar
-  const allowE2eBackendMethods = !app.isPackaged && process.env.VITE_E2E === '1'
+  const allowE2eBackendMethods = !app.isPackaged && isE2eRuntime()
 
   ipcMain.handle(
     BACKEND_INVOKE,
