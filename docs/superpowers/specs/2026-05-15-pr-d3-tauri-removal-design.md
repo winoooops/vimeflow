@@ -84,6 +84,19 @@ Result<T, String>` (or the `<R: tauri::Runtime>`-generic form in
   `pub use adapter::AgentWatcherState` / etc. re-exports that don't
   reference deleted symbols **stay**.
 - Delete `src-tauri/tauri.conf.json` and `src-tauri/capabilities/default.json`.
+- Update doc-comments adjacent to surviving code that reference the
+  deleted Tauri symbols. Specifically:
+  - `src-tauri/src/git/mod.rs:559`, `:896`, `:1008` — the `// Git unit
+tests call the command name directly while bypassing tauri::State.`
+    comments next to the `#[cfg(test)] pub fn` aliases. Rewrite to
+    `// Git unit tests call the command name directly with plain args.`
+    (the `tauri::State` they "bypass" no longer exists).
+  - `src-tauri/src/git/watcher.rs:484` — `/// doesn't require a
+\`tauri::State\` handle.` doc-comment. Rewrite to drop the
+    Tauri reference; mention only the plain-args contract.
+  - `src/features/sessions/components/Tab.test.tsx:174` and `:258` —
+    comments referencing `tauri:dev` as the visual-check workflow.
+    Update to `electron:dev`.
 
 **Packaging (electron-builder):**
 
@@ -288,18 +301,15 @@ After PR-D3 lands, these paths cease to exist:
 ### 2.5 What Gets Added
 
 - `electron-builder.yml` at repo root.
-- `build/icons/` populated with size-named PNGs that electron-builder's
-  Linux target reads natively: `32x32.png`, `128x128.png`,
-  `128x128@2x.png` (copied from the existing `src-tauri/icons/`). The
-  AppImage embeds the largest size; the smaller sizes are used by
-  desktop-environment menus / dock icons. **Note:** `.gitignore`
-  currently ignores `build/` (line 1 of `.gitignore`). PR-D3 adds
-  un-ignore rules `!build/`, `!build/icons/`, `!build/icons/*.png` so
-  the icon files are tracked. The `release/` electron-builder output
-  directory remains ignored (added in the same `.gitignore` edit).
-- `build/icons/icon.png` is NOT added separately — `electron-builder.yml`
-  points `linux.icon` at one of the size-named files (default behavior
-  picks the largest), so a top-level `icon.png` is unused.
+- `build/icon.png` — single 512×512 PNG sourced by copying
+  `src-tauri/icons/icon.png` (verified 512×512 8-bit RGBA, 49 KB). This
+  is the electron-builder Linux convention: a single source icon at
+  `build/icon.png` and the tool generates all the size variants the
+  AppImage / desktop environments need. **Note:** `.gitignore` currently
+  ignores `build/` (line 1 of `.gitignore`). PR-D3 adds un-ignore rules
+  `!build/` + `!build/icon.png` so the icon file is tracked. The
+  `release/` electron-builder output directory remains ignored (added
+  in the same `.gitignore` edit).
 - `npm run electron:build` and `npm run backend:build:release` scripts
   in `package.json`.
 - `release/` to the `.gitignore` set (electron-builder output dir).
@@ -391,11 +401,10 @@ linux:
   # Stable filename so the §1.1 smoke step's `release/vimeflow-*.AppImage`
   # glob has a deterministic match across builds.
   artifactName: vimeflow-${version}-${arch}.AppImage
-  # Point at the largest size-named PNG; electron-builder generates the
-  # other sizes from it. The file is checked in at `build/icons/256x256.png`
-  # (sourced by upscaling from `src-tauri/icons/128x128@2x.png` during
-  # PR-D3 implementation — see §2.5).
-  icon: build/icons/256x256.png
+  # electron-builder auto-discovers `build/icon.png` (512×512, sourced
+  # from `src-tauri/icons/icon.png` during PR-D3 — see §2.5) without an
+  # explicit `icon:` field. Declaring it here makes the contract loud.
+  icon: build/icon.png
 
 # No publish target — release/upload is deferred follow-up.
 publish: null
@@ -432,11 +441,11 @@ publish: null
   with no system deps.
 - `linux.category: Development`: AppStream category. Picked from
   `xdg-utils`'s registered list; doesn't affect runtime.
-- `linux.icon: build/icons/256x256.png`: explicit path to the largest
-  source PNG. electron-builder downscales from this for the smaller
-  sizes the desktop environment requests. Without this, electron-builder
-  falls back to its embedded default Electron icon (visible during
-  smoke).
+- `linux.icon: build/icon.png`: explicit path to the 512×512 source PNG.
+  electron-builder reads this and generates the size variants the
+  desktop environment needs (16×16, 24×24, 32×32, 48×48, 64×64, 96×96,
+  128×128, 256×256, 512×512). Without it, electron-builder falls back
+  to its embedded default Electron icon (visible during smoke).
 - `publish: null`: prevents electron-builder from attempting to upload
   the AppImage on a successful build. Release wiring is a deferred
   follow-up.
@@ -478,15 +487,34 @@ chmod +x release/vimeflow-0.1.0-x64.AppImage
 ./release/vimeflow-0.1.0-x64.AppImage --no-sandbox &
 ```
 
-`--no-sandbox` is required when running the produced AppImage on a host
-without a working SUID chrome-sandbox (most dev hosts and many end-user
-Linux systems). electron-builder wraps the binary in an `AppRun` shell
-script that handles library path setup but does **not** install or
-satisfy the chrome-sandbox dependency — that's a host-OS concern. PR-D3
-ships an AppImage that requires either `--no-sandbox` or a host with
-`unprivileged_userns_clone=1` kernel knob. End-user-safe sandboxed
-distribution (auto-installing chrome-sandbox helpers, wrapping in
-flatpak, etc.) is a deferred follow-up; see §4.1 R2.
+**Host prerequisites for the smoke launch:**
+
+1. **`libfuse2` / `fuse`** — AppImage uses FUSE to mount itself read-only
+   at runtime. Modern Linux distros (Fedora 38+, Ubuntu 22.04+) ship
+   `libfuse3` by default; AppImageKit (electron-builder's bundler) still
+   targets the older `libfuse2` API. On hosts without `libfuse2`,
+   `--appimage-extract-and-run` is the fallback (extracts the AppImage
+   to a tmpdir and runs the extracted entry — slower, ~3-5s extra
+   startup, but functionally equivalent):
+
+   ```bash
+   ./release/vimeflow-0.1.0-x64.AppImage --appimage-extract-and-run --no-sandbox &
+   ```
+
+   The smoke script should attempt the direct launch first; if it
+   fails with `dlopen(): error loading libfuse.so.2`, fall back to the
+   extract-and-run form.
+
+2. **`--no-sandbox`** — required when running the produced AppImage on
+   a host without a working SUID chrome-sandbox (most dev hosts and
+   many end-user Linux systems). electron-builder wraps the binary in
+   an `AppRun` shell script that handles library path setup but does
+   **not** install or satisfy the chrome-sandbox dependency — that's a
+   host-OS concern. PR-D3 ships an AppImage that requires either
+   `--no-sandbox` or a host with `unprivileged_userns_clone=1` kernel
+   knob. End-user-safe sandboxed distribution (auto-installing
+   chrome-sandbox helpers, wrapping in flatpak, etc.) is a deferred
+   follow-up; see §4.1 R2.
 
 The 7 baseline flows from §1.1 must all pass:
 
