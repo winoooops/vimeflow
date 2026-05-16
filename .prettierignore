@@ -2,6 +2,7 @@ node_modules
 dist
 coverage
 target
+crates/backend/bindings
 playwright-report
 .lifeline-planner
 *.min.js
