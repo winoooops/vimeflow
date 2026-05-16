@@ -16,9 +16,11 @@
 
 </div>
 
-> 一个 Tauri 桌面应用，将终端会话、文件浏览器、代码编辑器和 Git Diff 统一到一个工作空间 — 专为 Claude Code、Codex 等 AI 编码代理打造。
+> 一个 Electron 桌面应用，将终端会话、文件浏览器、代码编辑器和 Git Diff 统一到一个工作空间 — 专为 Claude Code、Codex 等 AI 编码代理打造。
 
-Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + React/TypeScript）构建。它在一个窗口内管理 AI 代理工作的终端会话、浏览文件、审查 Diff 和编辑代码 — 全部配备 Vim 风格快捷键和暗色氛围 UI。
+Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Electron 42（渲染进程：React + TypeScript）与长期驻留的 `vimeflow-backend` Rust 旁路（PTY、文件系统、Git、代理可观测性）通过 LSP 帧 JSON IPC 协作构建。它在一个窗口内管理 AI 代理工作的终端会话、浏览文件、审查 Diff 和编辑代码 — 全部配备 Vim 风格快捷键和暗色氛围 UI。
+
+> 历史说明：Vimeflow 起初是 Tauri 2 桌面应用。Electron 迁移（[复盘](docs/superpowers/retros/2026-05-16-electron-migration.md)，PR [#209](https://github.com/winoooops/vimeflow/pull/209) / [#210](https://github.com/winoooops/vimeflow/pull/210) / [#211](https://github.com/winoooops/vimeflow/pull/211)）于 2026 年 5 月用 Electron + 运行时中立的 Rust 旁路替换了 Tauri 外壳。
 
 但产品只是故事的一半。这个仓库也是**工程化 AI 原生开发**的试验场：自主代理循环从规格说明构建功能，由分层规则和专业代理管控。
 
@@ -28,10 +30,10 @@ Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + Re
 
 ### 终端核心（第 3 阶段）
 
-完整的 xterm.js 终端，集成 Tauri Rust PTY 后端：
+完整的 xterm.js 终端，通过 Electron IPC 集成 `vimeflow-backend` Rust 旁路：
 
-- **TauriTerminalService** — xterm.js 与 `portable-pty` 之间的单例 IPC 桥接
-- Rust PTY 命令：spawn、write、resize、kill — stdout 通过 Tauri 事件流式传输
+- **DesktopTerminalService** — 渲染进程侧 xterm.js 与 `portable-pty` 之间的单例桥接（PR-D3 重命名自 `TauriTerminalService`）
+- Rust PTY 命令：spawn、write、resize、kill — 通过 `BackendState` 方法分发；stdout 经 `StdoutEventSink` 事件流式传输
 - 按标签页缓存会话，支持多标签终端
 - ResizeObserver + FitAddon 实现响应式终端尺寸
 - WebGL 渲染器 + Catppuccin Mocha 主题
@@ -59,7 +61,7 @@ Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + Re
 - **Claude Code 适配器**（`adapter/claude_code/`）— 每会话 shell 脚本把 Claude 的 statusline JSON 写入被监听文件；适配器解析后通过 Tauri 事件发送（`agent-detected`、`agent-status`、`agent-tool-call`、`agent-disconnected`）
 - **Codex 适配器**（`adapter/codex/`）— 基于 schema 探测的 SQLite 定位器扫描 `~/.codex/*.sqlite`（logs DB → thread_id，threads DB → rollout JSONL 路径），辅以 Linux `/proc` 快速路径与 FS 扫描回退；将 `event_msg.token_count` 折叠为与 Claude 一致的 `AgentStatusEvent` 形状
 - **Rust 后端编排** — `src-tauri/src/agent/` 提供代理检测器（进程树轮询）、`base::start_for` 监听驱动（notify 文件变更 + 轮询回退），以及各适配器的 transcript JSONL tailer（用于工具调用 / 轮次 / 测试运行信号）
-- **前端面板** — `src/features/agent-status/` 包含订阅 Tauri 事件总线的 `useAgentStatus` hook，以及组件：StatusCard（身份 + 模型徽章）、BudgetMetrics（自适应 ApiKey / Subscriber / Fallback 布局 — Codex 会话渲染 Subscriber 显示速率限额条；Claude API-key 会话渲染 Cost 单元）、ContextBucket（填充仪表 + 进度条；Codex 由 `last_token_usage` 驱动，Claude 由 `total_input_tokens` 驱动）、ToolCallSummary（聚合芯片）、RecentToolCalls、FilesChanged、TestResults 和 ActivityFooter
+- **前端面板** — `src/features/agent-status/` 包含订阅 旁路事件总线的 `useAgentStatus` hook，以及组件：StatusCard（身份 + 模型徽章）、BudgetMetrics（自适应 ApiKey / Subscriber / Fallback 布局 — Codex 会话渲染 Subscriber 显示速率限额条；Claude API-key 会话渲染 Cost 单元）、ContextBucket（填充仪表 + 进度条；Codex 由 `last_token_usage` 驱动，Claude 由 `total_input_tokens` 驱动）、ToolCallSummary（聚合芯片）、RecentToolCalls、FilesChanged、TestResults 和 ActivityFooter
 - **自动折叠** — 未检测到代理时面板为 0px，检测到时动画展开到 280px，断开后保留最终状态 5 秒
 - **ts-rs 类型代码生成** — Rust 类型自动导出到 `src/bindings/`，前端可类型安全消费（`CostMetrics.totalCostUsd: number | null` 用以区分 Codex 不暴露 cost 的语义与 Claude 上报的实际花费）
 
@@ -75,7 +77,7 @@ Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Tauri 2（Rust + Re
 
 | 模块                | 描述                                                                                  |
 | ------------------- | ------------------------------------------------------------------------------------- |
-| **terminal**        | xterm.js + Tauri PTY IPC 桥接，会话管理                                               |
+| **terminal**        | xterm.js + 旁路 PTY IPC 桥接，会话管理                                                |
 | **editor**          | IDE 风格标签编辑器 — CodeMirror 6、Vim 模式、语言扩展、Vim 状态栏                     |
 | **diff**            | Lazygit 风格 Git Diff 查看器（并排 + 统一视图，hunk 导航，暂存/丢弃）                 |
 | **files**           | 文件浏览树，面包屑导航，Git 状态徽章（M/A/D/U），拖放支持                             |

@@ -23,6 +23,43 @@ pattern when one exists; bump its `ref_count` per `docs/reviews/CLAUDE.md`.
 
 ## [Unreleased]
 
+### Electron Migration (Tauri → Electron + Rust Sidecar)
+
+The desktop shell migrated from Tauri 2 to Electron 42 over three merged PRs (with parallel spec/plan tracks for PR-A/B/C bundled into #209). After the sequence, the only desktop runtime is Electron and the only shipping Rust binary is the `vimeflow-backend` sidecar that Electron spawns and talks to over LSP-framed JSON stdio. Architecture overview lives in `docs/superpowers/plans/2026-05-13-electron-rust-backend-migration.md`; the per-phase specs are dated `2026-05-13` through `2026-05-15`; the retrospective is `docs/superpowers/retros/2026-05-16-electron-migration.md`.
+
+#### Added
+
+- Electron shell + Rust sidecar wiring landed alongside the existing Tauri host so the two runtimes coexisted during the cutover. New files: `electron/main.ts` (BrowserWindow + `ipcMain.handle('backend:invoke')` + sidecar process orchestration), `electron/preload.ts` (`contextBridge.exposeInMainWorld('vimeflow', { invoke, listen })`), `electron/sidecar.ts` (LSP `Content-Length` framing + pending-request map + listener registry + clean-EOF → SIGTERM → SIGKILL shutdown escalation), `electron/ipc-channels.ts`, `electron/backend-methods.ts` (production method allowlist, with `e2e-test`-gated extras). Bundled the runtime-neutral Rust backend changes (`BackendState` + `_inner` helpers — the "PR-A" intent) and the sidecar IPC plumbing (`src/runtime/ipc.rs` + `src/bin/vimeflow-backend.rs` — the "PR-B" intent) plus the frontend bridge (`src/lib/backend.ts` — the "PR-C" intent) that made the Electron shell possible. Tauri stayed alive — `npm run tauri:dev` and `npm run electron:dev` both worked side-by-side until PR-D3.
+  ([#209](https://github.com/winoooops/vimeflow/pull/209), `105f0ec`)
+  - Specs: `docs/superpowers/specs/2026-05-13-pr-a-runtime-neutral-rust-backend-design.md`, `2026-05-13-pr-b-rust-sidecar-ipc-design.md`, `2026-05-14-pr-c-frontend-backend-bridge-design.md`, `2026-05-14-pr-d1-electron-shell-sidecar-wiring-design.md`.
+- AppImage packaging via `electron-builder` (Linux-only for now; macOS / Windows / signing / auto-update are deferred). New `electron-builder.yml` at repo root: Linux AppImage target, `directories.output: release`, `extraResources` places the sidecar at `<resources>/bin/vimeflow-backend` to match `electron/main.ts`'s `process.resourcesPath/bin/<BINARY>` resolution. New `build/icon.png` (512×512, sourced from the now-deleted `src-tauri/icons/icon.png`). New `electron:build` npm script chains type-check → `vite build --mode electron` → `cargo build --release --bin vimeflow-backend` → `electron-builder --linux AppImage`. The produced `release/vimeflow-<version>-x64.AppImage` (~146 MB) launches with `--no-sandbox` on dev hosts without a SUID `chrome-sandbox`; `--appimage-extract-and-run` is the fallback on hosts without `libfuse2`.
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`) —
+  spec: [`2026-05-15-pr-d3-tauri-removal-design.md`](docs/superpowers/specs/2026-05-15-pr-d3-tauri-removal-design.md);
+  plan: [`2026-05-15-pr-d3-tauri-removal.md`](docs/superpowers/plans/2026-05-15-pr-d3-tauri-removal.md).
+
+#### Changed
+
+- E2E pipeline swapped from `tauri-driver` + `browserName: 'wry'` to `@wdio/electron-service` + `browserName: 'electron'` across all three WDIO suites (`tests/e2e/{core,terminal,agent}/wdio.conf.ts`). New `tests/e2e/shared/electron-app.ts` exposes `appEntryPoint` (the bundled `dist-electron/main.js`) and `appArgs` (`--no-sandbox` + `--user-data-dir=<mkdtempSync>` for per-worker app-data isolation). `test:e2e:build` rewrites to build the renderer + Electron bundles + sidecar (`--features e2e-test`) instead of the Tauri app binary. CI's `e2e.yml` drops the `tauri-driver` install + `webkit2gtk-driver` apt dep + the `WEBKIT_DISABLE_DMABUF_RENDERER` env. All 11 existing E2E specs land unchanged.
+  ([#210](https://github.com/winoooops/vimeflow/pull/210), `96aed26`) —
+  spec: [`2026-05-15-pr-d2-e2e-electron-driver-swap-design.md`](docs/superpowers/specs/2026-05-15-pr-d2-e2e-electron-driver-swap-design.md).
+- TypeScript service classes renamed from `Tauri*Service` to `Desktop*Service` (PR-C had explicitly deferred this rename). `TauriTerminalService` → `DesktopTerminalService` (with file rename `tauriTerminalService.ts` → `desktopTerminalService.ts`); `TauriGitService` → `DesktopGitService`; `TauriFileSystemService` → `DesktopFileSystemService`. Factory call sites + sibling test files + stale doc-comments in `useSessionManager.test.ts`, `useTerminal.ts`, and `terminal/types/index.ts` all updated.
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+- `src/lib/backend.ts` collapsed to a thin `window.vimeflow.{invoke,listen}` delegate. The `@tauri-apps/api/core` + `/event` fallback branches were removed in the same line-count as PR-C's `§2.5` cross-PR contract had predicted. A new `requireBridge()` helper throws a descriptive Error when the preload didn't expose the bridge (mitigation for spec `§4.1 R3` — the bridge `!` non-null assertion racing a slow preload). The `called`-guard idempotency wrapper for `UnlistenFn` stays for React StrictMode safety.
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+- CI: dropped `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libappindicator3-dev`, `librsvg2-dev`, `patchelf` from `.github/workflows/e2e.yml`'s apt install step. After the Tauri Cargo dep was removed, the sidecar binary no longer link-pulls `webkit2gtk-rs`. Kept `xvfb` for headless Electron runs.
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+
+#### Removed
+
+- The entire Tauri runtime surface: `src-tauri/src/main.rs` (Tauri host entry), `src-tauri/src/lib.rs::run()` (collapsed from 170 lines to 6 lines of `pub mod` declarations), `src-tauri/src/runtime/tauri_bridge.rs` (`TauriEventSink` adapter), 20 `#[tauri::command]` wrapper functions across `terminal/`, `filesystem/`, `git/`, `agent/` (the IPC router calls `BackendState` methods directly; the wrappers were pure dead code post-PR-A/B), and the `mod.rs` re-exports of those names. The `pub(crate) fn xxx_inner` helpers and `#[cfg(test)] pub fn xxx` test aliases were all preserved (tests call the cfg(test) aliases directly without a `tauri::State`; `cargo test` count matches the PR-D2 baseline byte-for-byte).
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+- Tauri-only files: `src-tauri/{build.rs, tauri.conf.json, capabilities/, icons/}` (15 icon files; `icon.png` was copied to `build/icon.png` first). Cargo deps `tauri`, `tauri-plugin-log`, `tauri-build`, and the dev-dep `tauri = features = ["test"]`. The `[lib] crate-type` narrowed from `["staticlib", "cdylib", "rlib"]` to `["rlib"]` (the first two existed only for the Tauri mobile binding path). `default-run = "vimeflow"` → `default-run = "vimeflow-backend"`.
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+- `@tauri-apps/api` (production dep) and `@tauri-apps/cli` (dev dep) from `package.json`; `tauri:dev` and `tauri:build` npm scripts; the `"tauri"` keyword (replaced with `"electron"`). `package-lock.json` regenerated.
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+- `.github/workflows/tauri-build.yml` deleted. The cross-platform `npx tauri build --ci` matrix workflow broke the moment the `tauri:build` script and `@tauri-apps/cli` were removed; a replacement multi-platform `electron:build` matrix is a deferred follow-up.
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+
 ### UI Handoff Migration
 
 #### Added

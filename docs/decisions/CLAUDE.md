@@ -2,7 +2,7 @@
 
 Self-contained records of significant technical choices: what we chose, what we rejected, and why — preserved so future agents and contributors don't re-litigate settled trade-offs.
 
-These are **technical decisions** (library choices, scoped patterns, reversible bets). For higher-level architecture (Tauri IPC structure, repo layout), see `ARCHITECT.md`.
+These are **technical decisions** (library choices, scoped patterns, reversible bets). For higher-level architecture (Electron sidecar IPC structure, repo layout), see `ARCHITECT.md`.
 
 ## Structure: Index-Only by Design
 
@@ -12,6 +12,7 @@ This file is an index. Each linked record is self-contained. Read only what you 
 
 | Date       | Decision                                                                                       | Status   |
 | ---------- | ---------------------------------------------------------------------------------------------- | -------- |
+| 2026-05-16 | [In-repo skill symlinks for `/lifeline:*`](./2026-05-16-in-repo-skills-setup.md)               | Accepted |
 | 2026-05-05 | [Codex adapter trait simplification](./2026-05-05-codex-adapter-trait-simplification.md)       | Accepted |
 | 2026-05-04 | [Codex adapter Stage 2 scope expansion](./2026-05-04-codex-adapter-stage-2-scope-expansion.md) | Accepted |
 | 2026-05-03 | [Claude parser JSON boundary](./2026-05-03-claude-parser-json-boundary.md)                     | Accepted |

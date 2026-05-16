@@ -71,7 +71,7 @@ Add `server.watch.ignored` for `.vimeflow/`, `target/`, `.codex*/`, `.git/` so m
 - E — Explain: 5-line config change, zero runtime risk — a patch, not a fix.
 - A — Alternatives: weak as a standalone fix; pairs well with C as a noise-reducer.
 
-### Option B — Suppress Vite's full-reload fallback in `tauri:dev`
+### Option B — Suppress Vite's full-reload fallback in the dev server (then `tauri:dev`, now `electron:dev`)
 
 Keep incremental HMR; when HMR can't apply, log a warning instead of triggering full reload.
 

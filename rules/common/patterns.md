@@ -35,7 +35,7 @@ Use a consistent envelope for all API responses:
 
 ## IPC Command/Event Patterns
 
-For applications with a frontend-backend IPC boundary (e.g., Tauri, Electron):
+For applications with a frontend-backend IPC boundary (e.g., Electron renderer ↔ main / sidecar, Tauri):
 
 ### Commands (Request/Response)
 

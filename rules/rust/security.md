@@ -18,21 +18,21 @@
 ## File System Access
 
 - Validate all file paths received via IPC are within the app's data directory
-- Use Tauri's path resolver APIs (`app.path_resolver().app_data_dir()`) instead of hardcoded paths
-- Never construct paths by concatenating user input — use `Path::join()` and canonicalize
+- The sidecar receives its app-data directory via the `--app-data-dir <path>` CLI argument (passed by Electron's `app.getPath('userData')` in `electron/main.ts`); store the resolved `PathBuf` on `BackendState` and validate every IPC path is descended from it (see `src-tauri/src/filesystem/scope.rs` for the canonical check).
+- Never construct paths by concatenating user input — use `Path::join()` and `canonicalize()`
 - Prevent path traversal: reject paths containing `..` components from IPC inputs
 
-## Tauri Allowlist
+## IPC method allowlist
 
-- Principle of least privilege: only enable APIs the app actually uses in `tauri.conf.json`
-- Review the allowlist when adding new features; do not enable broad permissions preemptively
-- Document why each enabled API is needed
+- Principle of least privilege: only methods registered in `electron/backend-methods.ts` are forwarded to the sidecar. The allowlist is enforced in `electron/main.ts`'s `ipcMain.handle(BACKEND_INVOKE, ...)` before the request frame is sent.
+- E2E-only methods (e.g., `list_active_pty_sessions`) are gated by both the renderer `VITE_E2E=1` build flag AND the Cargo `e2e-test` feature; they MUST NOT be reachable from production builds.
+- Review the allowlist when adding new sidecar methods; do not enable broad surface preemptively. Document why each enabled method is needed.
 
 ## Process Execution
 
 - Never pass user-supplied IPC arguments directly to `std::process::Command`
 - If shell execution is required, use an explicit allowlist of permitted commands
-- Prefer Tauri plugins or Rust libraries over shelling out
+- Prefer Rust libraries over shelling out (`portable-pty` for PTY, `git2` / `simple-git` callers for git, `notify` for file watching)
 
 ## Logging
 
