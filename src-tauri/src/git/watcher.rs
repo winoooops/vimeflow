@@ -1,6 +1,6 @@
 //! Git repository watcher for file system changes
 //!
-//! Watches git repositories for file system changes and emits Tauri events
+//! Watches git repositories for file system changes and emits backend events
 //! when the working tree is modified. Uses the `notify` crate for cross-platform
 //! file system notifications and the `ignore` crate to respect `.gitignore` rules.
 //!
@@ -24,8 +24,6 @@ use ignore::WalkBuilder;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 use super::validate_cwd;
-#[cfg(not(test))]
-use crate::runtime::BackendState;
 use crate::runtime::{serialize_event, EventSink};
 
 /// Debounce interval — emit after filesystem events have been quiet for 300ms.
@@ -453,15 +451,6 @@ fn enumerate_dirs(toplevel: &std::path::Path) -> Vec<PathBuf> {
 /// If `cwd` is a subdirectory of a repo, resolves to the toplevel and adds
 /// the input cwd as a subscriber. Multiple calls with different subdirs of
 /// the same repo increment the refcount.
-#[cfg(not(test))]
-#[tauri::command]
-pub async fn start_git_watcher(
-    cwd: String,
-    state: tauri::State<'_, std::sync::Arc<BackendState>>,
-) -> Result<(), String> {
-    state.start_git_watcher(cwd).await
-}
-
 pub(crate) async fn start_git_watcher_backend(
     cwd: String,
     events: Arc<dyn EventSink>,
@@ -471,17 +460,17 @@ pub(crate) async fn start_git_watcher_backend(
     // (rev-parse, git status) and constructs `notify` watchers that do
     // their own filesystem I/O. Running that work directly on the async
     // runtime would tie up a Tokio worker thread for the full duration
-    // of the setup — harmful on the bounded Tauri IPC pool. Hop onto the
-    // blocking pool via `spawn_blocking` so the async thread returns
-    // immediately and the sync inner can take as long as it needs.
+    // of the setup. Hop onto the blocking pool via `spawn_blocking` so
+    // the async thread returns immediately and the sync inner can take
+    // as long as it needs.
     tokio::task::spawn_blocking(move || start_git_watcher_inner(&cwd, events, &state))
         .await
         .map_err(|e| format!("start_git_watcher task panicked: {}", e))?
 }
 
-/// Synchronous core of `start_git_watcher`. Called by both the Tauri command and
-/// the pre-repo upgrade path — works against a cloneable `&GitWatcherState` so it
-/// doesn't require a `tauri::State` handle.
+/// Synchronous core of `start_git_watcher`. Called by both the backend entry
+/// point and the pre-repo upgrade path. Works against a cloneable
+/// `&GitWatcherState` so it doesn't require an external state handle.
 fn start_git_watcher_inner(
     cwd: &str,
     events: Arc<dyn EventSink>,
@@ -1148,15 +1137,6 @@ fn upgrade_to_repo_watcher(
 }
 
 /// Stop watching a git repository
-#[cfg(not(test))]
-#[tauri::command]
-pub async fn stop_git_watcher(
-    cwd: String,
-    state: tauri::State<'_, std::sync::Arc<BackendState>>,
-) -> Result<(), String> {
-    state.stop_git_watcher(cwd).await
-}
-
 pub(crate) async fn stop_git_watcher_backend(
     cwd: String,
     state: GitWatcherState,

@@ -7,23 +7,18 @@ license = "MIT"
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"
-default-run = "vimeflow"
+default-run = "vimeflow-backend"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 name = "vimeflow_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
+crate-type = ["rlib"]
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11", features = [] }
-tauri-plugin-log = "2"
 portable-pty = "0.8"
 anyhow = "1.0"
 thiserror = "2.0"
@@ -47,7 +42,6 @@ e2e-test = []
 libc = "0.2"
 
 [dev-dependencies]
-tauri = { version = "2.11", features = ["test"] }
 tokio = { version = "1", features = ["macros", "rt"] }
 ts-rs = "10"
 tempfile = "3"

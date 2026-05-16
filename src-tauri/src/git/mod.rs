@@ -11,8 +11,6 @@ use std::time::Duration;
 use crate::filesystem::scope::{
     ensure_within_home, expand_home, home_canonical, reject_parent_refs,
 };
-#[cfg(not(test))]
-use crate::runtime::BackendState;
 
 /// Timeout for git subprocess calls. Prevents indefinite blocking on
 /// hung NFS mounts, slow hooks, or unresponsive credential helpers.
@@ -546,17 +544,8 @@ fn parse_hunk_range(range: &str) -> (u32, u32) {
     (start, lines)
 }
 
-/// Tauri command: Get all files with git changes
-#[cfg(not(test))]
-#[tauri::command]
-pub async fn git_status(
-    state: tauri::State<'_, std::sync::Arc<BackendState>>,
-    cwd: String,
-) -> Result<Vec<ChangedFile>, String> {
-    state.git_status(cwd).await
-}
-
-// Git unit tests call the command name directly while bypassing tauri::State.
+/// Get all files with git changes.
+// Git unit tests call the command name directly with plain args.
 #[cfg(test)]
 pub async fn git_status(cwd: String) -> Result<Vec<ChangedFile>, String> {
     git_status_inner(cwd).await
@@ -880,20 +869,8 @@ async fn get_untracked_numstat(toplevel: &Path, file: &str) -> Result<Option<(u3
     }
 }
 
-/// Tauri command: Get diff for a specific file
-#[cfg(not(test))]
-#[tauri::command]
-pub async fn get_git_diff(
-    state: tauri::State<'_, std::sync::Arc<BackendState>>,
-    cwd: String,
-    file: String,
-    staged: bool,
-    untracked: Option<bool>,
-) -> Result<FileDiff, String> {
-    state.get_git_diff(cwd, file, staged, untracked).await
-}
-
-// Git unit tests call the command name directly while bypassing tauri::State.
+/// Get diff for a specific file.
+// Git unit tests call the command name directly with plain args.
 #[cfg(test)]
 pub async fn get_git_diff(
     cwd: String,
@@ -995,17 +972,8 @@ pub(crate) async fn get_git_diff_inner(
     Ok(parsed)
 }
 
-/// Tauri command: Get the current branch for a git repository
-#[cfg(not(test))]
-#[tauri::command]
-pub async fn git_branch(
-    state: tauri::State<'_, std::sync::Arc<BackendState>>,
-    cwd: String,
-) -> Result<String, String> {
-    state.git_branch(cwd).await
-}
-
-// Git unit tests call the command name directly while bypassing tauri::State.
+/// Get the current branch for a git repository.
+// Git unit tests call the command name directly with plain args.
 #[cfg(test)]
 pub async fn git_branch(cwd: String) -> Result<String, String> {
     git_branch_inner(cwd).await

@@ -1,18 +1,6 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import { listen as tauriListen } from '@tauri-apps/api/event'
 import { invoke, listen, type BackendApi } from './backend'
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-}))
-
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(),
-}))
-
-const mockedTauriInvoke = vi.mocked(tauriInvoke)
-const mockedTauriListen = vi.mocked(tauriListen)
 const noop = (): void => undefined
 
 const observeResolution = async (
@@ -23,13 +11,11 @@ const observeResolution = async (
   onResolve()
 }
 
-describe('backend (window.vimeflow path)', () => {
+describe('backend (window.vimeflow bridge)', () => {
   let mockInvoke: ReturnType<typeof vi.fn>
   let mockListen: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    mockedTauriInvoke.mockReset()
-    mockedTauriListen.mockReset()
     mockInvoke = vi.fn()
     mockListen = vi.fn()
     window.vimeflow = {
@@ -52,7 +38,6 @@ describe('backend (window.vimeflow path)', () => {
     expect(mockInvoke).toHaveBeenCalledTimes(1)
     expect(mockInvoke).toHaveBeenCalledWith('spawn_pty', { sessionId: 's1' })
     expect(result).toEqual({ id: 'abc' })
-    expect(mockedTauriInvoke).not.toHaveBeenCalled()
   })
 
   test('invoke rejection passes through unchanged', async () => {
@@ -118,7 +103,7 @@ describe('backend (window.vimeflow path)', () => {
     expect(resolved).toBe(true)
   })
 
-  test('UnlistenFn from window.vimeflow path is idempotent', async () => {
+  test('UnlistenFn is idempotent', async () => {
     const rawUnlisten = vi.fn()
     mockListen.mockResolvedValueOnce(rawUnlisten)
 
@@ -130,90 +115,20 @@ describe('backend (window.vimeflow path)', () => {
   })
 })
 
-describe('backend (@tauri-apps fallback path)', () => {
+describe('backend (missing bridge)', () => {
   beforeEach(() => {
-    mockedTauriInvoke.mockReset()
-    mockedTauriListen.mockReset()
     delete window.vimeflow
   })
 
-  test('invoke delegates to tauriInvoke when window.vimeflow is unset', async () => {
-    mockedTauriInvoke.mockResolvedValueOnce({ ok: true })
-
-    const result = await invoke<{ ok: boolean }>('list_sessions')
-
-    expect(mockedTauriInvoke).toHaveBeenCalledTimes(1)
-    expect(mockedTauriInvoke).toHaveBeenCalledWith('list_sessions', undefined)
-    expect(result).toEqual({ ok: true })
-  })
-
-  test('invoke rejection passes through tauri string error unchanged', async () => {
-    mockedTauriInvoke.mockRejectedValueOnce('PTY session not found')
-
-    await expect(invoke('write_pty', { id: 'x' })).rejects.toBe(
-      'PTY session not found'
+  test('invoke throws a descriptive Error when window.vimeflow is unset', async () => {
+    await expect(invoke('list_sessions')).rejects.toThrow(
+      'window.vimeflow is not available'
     )
   })
 
-  test('listen unwraps Event<T>.payload on the Tauri callback', async () => {
-    mockedTauriListen.mockImplementationOnce((_name, cb) => {
-      cb({
-        event: 'pty-data',
-        id: 0,
-        payload: { sessionId: 's1', data: 'hi' },
-        windowLabel: '',
-      } as unknown as Parameters<typeof cb>[0])
-
-      return Promise.resolve(vi.fn())
-    })
-    const cb = vi.fn()
-
-    await listen<{ sessionId: string; data: string }>('pty-data', cb)
-
-    expect(cb).toHaveBeenCalledWith({ sessionId: 's1', data: 'hi' })
-  })
-
-  test('UnlistenFn calls through to tauriListen-resolved unlisten', async () => {
-    const rawUnlisten = vi.fn()
-    mockedTauriListen.mockResolvedValueOnce(rawUnlisten)
-
-    const unlisten = await listen('pty-exit', noop)
-    unlisten()
-
-    expect(rawUnlisten).toHaveBeenCalledTimes(1)
-  })
-
-  test('UnlistenFn from fallback path is idempotent', async () => {
-    const rawUnlisten = vi.fn()
-    mockedTauriListen.mockResolvedValueOnce(rawUnlisten)
-
-    const unlisten = await listen('x', noop)
-    unlisten()
-    unlisten()
-
-    expect(rawUnlisten).toHaveBeenCalledTimes(1)
-  })
-
-  test('listen resolves only after tauriListen resolves (attach-before-resolve)', async () => {
-    let resolveTransport!: (unlisten: () => void) => void
-    mockedTauriListen.mockReturnValueOnce(
-      new Promise<() => void>((resolve) => {
-        resolveTransport = resolve
-      })
+  test('listen throws a descriptive Error when window.vimeflow is unset', async () => {
+    await expect(listen('x', noop)).rejects.toThrow(
+      'window.vimeflow is not available'
     )
-
-    const bridgePromise = listen('x', noop)
-    let resolved = false
-
-    const resolutionPromise = observeResolution(bridgePromise, () => {
-      resolved = true
-    })
-
-    await Promise.resolve()
-    expect(resolved).toBe(false)
-    resolveTransport(vi.fn())
-    await bridgePromise
-    await resolutionPromise
-    expect(resolved).toBe(true)
   })
 })

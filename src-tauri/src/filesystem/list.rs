@@ -2,20 +2,9 @@ use std::fs;
 
 use super::scope::{ensure_within_home, expand_home, home_canonical};
 use super::types::{EntryType, FileEntry, ListDirRequest};
-#[cfg(not(test))]
-use crate::runtime::BackendState;
 
 /// List directory contents (single level, sorted: folders first then files).
 /// Restricted to the user's home directory to prevent arbitrary filesystem enumeration.
-#[cfg(not(test))]
-#[tauri::command]
-pub fn list_dir(
-    state: tauri::State<'_, std::sync::Arc<BackendState>>,
-    request: ListDirRequest,
-) -> Result<Vec<FileEntry>, String> {
-    state.list_dir(request)
-}
-
 #[cfg(test)]
 pub fn list_dir(request: ListDirRequest) -> Result<Vec<FileEntry>, String> {
     list_dir_inner(request)

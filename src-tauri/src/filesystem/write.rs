@@ -6,8 +6,6 @@ use super::scope::{
     reject_parent_refs,
 };
 use super::types::WriteFileRequest;
-#[cfg(not(test))]
-use crate::runtime::BackendState;
 
 /// Per-process monotonic counter for write_file temp-file names. Ensures
 /// concurrent saves to the same target don't collide on `create_new(true)`
@@ -23,15 +21,6 @@ static WRITE_FILE_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// outside of home even when the parent path doesn't exist yet. The final
 /// write uses an atomic temp-file + rename pattern so a mid-write failure
 /// cannot leave the target at zero length.
-#[cfg(not(test))]
-#[tauri::command]
-pub fn write_file(
-    state: tauri::State<'_, std::sync::Arc<BackendState>>,
-    request: WriteFileRequest,
-) -> Result<(), String> {
-    state.write_file(request)
-}
-
 #[cfg(test)]
 pub fn write_file(request: WriteFileRequest) -> Result<(), String> {
     write_file_inner(request)

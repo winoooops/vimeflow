@@ -17,8 +17,6 @@ pub use base::AgentWatcherState;
 
 use crate::agent::detector::detect_agent;
 use crate::agent::types::AgentType;
-#[cfg(not(test))]
-use crate::runtime::BackendState;
 use crate::runtime::EventSink;
 use crate::terminal::types::SessionId;
 use crate::terminal::PtyState;
@@ -140,15 +138,6 @@ impl AgentAdapter for NoOpAdapter {
 }
 
 /// Start watching an agent status source for a PTY session.
-#[cfg(not(test))]
-#[tauri::command]
-pub async fn start_agent_watcher(
-    state: tauri::State<'_, Arc<BackendState>>,
-    session_id: String,
-) -> Result<(), String> {
-    state.start_agent_watcher(session_id).await
-}
-
 pub(crate) async fn start_agent_watcher_inner(
     pty_state: PtyState,
     watcher_state: AgentWatcherState,
@@ -212,15 +201,6 @@ where
 }
 
 /// Stop watching an agent status source.
-#[cfg(not(test))]
-#[tauri::command]
-pub async fn stop_agent_watcher(
-    state: tauri::State<'_, Arc<BackendState>>,
-    session_id: String,
-) -> Result<(), String> {
-    state.stop_agent_watcher(session_id).await
-}
-
 pub(crate) async fn stop_agent_watcher_inner(
     state: &AgentWatcherState,
     session_id: String,

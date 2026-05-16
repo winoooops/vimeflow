@@ -20,12 +20,12 @@ import type {
 import type { ITerminalService } from './terminalService'
 
 /**
- * Tauri terminal service — bridges ITerminalService to Tauri IPC commands and events.
+ * Desktop terminal service — bridges ITerminalService to backend IPC commands and events.
  *
  * Commands (invoke): spawn_pty, write_pty, resize_pty, kill_pty
  * Events (listen): pty-data, pty-exit, pty-error
  */
-export class TauriTerminalService implements ITerminalService {
+export class DesktopTerminalService implements ITerminalService {
   private dataCallbacks: ((
     sessionId: string,
     data: string,
@@ -40,7 +40,7 @@ export class TauriTerminalService implements ITerminalService {
   private initPromise: Promise<void> | null = null
 
   /**
-   * Lazily initialize Tauri event listeners on first use.
+   * Lazily initialize backend event listeners on first use.
    * Listeners are shared across all sessions — callbacks filter by sessionId.
    *
    * Uses promise memoization: the first caller drives initialization; concurrent
@@ -200,7 +200,7 @@ export class TauriTerminalService implements ITerminalService {
   }
 
   /**
-   * Dispose all Tauri event listeners. Call when the service is no longer needed.
+   * Dispose all backend event listeners. Call when the service is no longer needed.
    */
   dispose(): void {
     this.unlistenFns.forEach((fn) => fn())

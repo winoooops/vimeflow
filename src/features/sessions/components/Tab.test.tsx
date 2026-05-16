@@ -171,7 +171,7 @@ describe('Tab — click', () => {
     // pointer-events; fireEvent.click bypasses it and dispatches the
     // DOM click event directly — sufficient to assert the handler wires
     // correctly. The actual hover+click path is verified visually in
-    // tauri:dev.
+    // electron:dev.
     fireEvent.click(screen.getByTestId('close-tab-button'))
     expect(onClose).toHaveBeenCalledWith('X')
     expect(onSelect).not.toHaveBeenCalled()
@@ -255,7 +255,7 @@ describe('Tab — visual', () => {
 
   test('hover + focus-within reveal class strings on close button (visual verification covers the actual hover)', () => {
     // jsdom does not drive :hover natively; verify the Tailwind selectors
-    // are wired so a tauri:dev visual check is the source of truth.
+    // are wired so a electron:dev visual check is the source of truth.
     renderTab({ isActive: false })
     const close = screen.getByTestId('close-tab-button')
     expect(close.className).toContain('group-hover:opacity-100')

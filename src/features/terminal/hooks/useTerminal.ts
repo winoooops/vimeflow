@@ -55,7 +55,7 @@ export interface UseTerminalOptions {
   terminal: Terminal | null
 
   /**
-   * Terminal service (MockTerminalService or TauriTerminalService)
+   * Terminal service (MockTerminalService or DesktopTerminalService)
    */
   service: ITerminalService
 
@@ -335,7 +335,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           return
         }
 
-        // Tauri invoke() throws strings, not Error objects
+        // Backend invoke() throws strings, not Error objects
         const errorMessage =
           err instanceof Error
             ? err.message

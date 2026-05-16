@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, vi, type Mock } from 'vitest'
-import { TauriTerminalService } from './tauriTerminalService'
+import { DesktopTerminalService } from './desktopTerminalService'
 import { invoke } from '../../../lib/backend'
 
 // Mock backend bridge — capture listener callbacks for testing.
@@ -26,16 +26,16 @@ vi.mock('../../../lib/backend', () => ({
 }))
 
 /**
- * Simulate a Tauri event emission for testing
+ * Simulate a backend event emission for testing
  */
-const emitTauriEvent = (eventName: string, payload: unknown): void => {
+const emitDesktopEvent = (eventName: string, payload: unknown): void => {
   const callbacks = eventListeners.get(eventName) ?? []
   callbacks.forEach((cb) => cb(payload))
 }
 
 /** Mock invoke to return a spawn response, then spawn a session */
 const mockSpawnAndInit = async (
-  service: TauriTerminalService
+  service: DesktopTerminalService
 ): Promise<void> => {
   const mockInvoke = invoke as Mock
   mockInvoke.mockResolvedValueOnce({ id: 's1', pid: 1, cwd: '/' })
@@ -48,13 +48,13 @@ const mockInvokeOnce = (value: unknown): void => {
   mockInvoke.mockResolvedValueOnce(value)
 }
 
-describe('TauriTerminalService', () => {
-  let service: TauriTerminalService
+describe('DesktopTerminalService', () => {
+  let service: DesktopTerminalService
 
   beforeEach(() => {
     vi.clearAllMocks()
     eventListeners.clear()
-    service = new TauriTerminalService()
+    service = new DesktopTerminalService()
   })
 
   describe('spawn', () => {
@@ -179,7 +179,7 @@ describe('TauriTerminalService', () => {
       await service.onData(callback)
       await mockSpawnAndInit(service)
 
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'hello world',
         offsetStart: 0,
@@ -194,7 +194,7 @@ describe('TauriTerminalService', () => {
       service.onExit(callback)
       await mockSpawnAndInit(service)
 
-      emitTauriEvent('pty-exit', { sessionId: 'sess-1', code: 0 })
+      emitDesktopEvent('pty-exit', { sessionId: 'sess-1', code: 0 })
 
       expect(callback).toHaveBeenCalledWith('sess-1', 0)
     })
@@ -204,7 +204,7 @@ describe('TauriTerminalService', () => {
       service.onExit(callback)
       await mockSpawnAndInit(service)
 
-      emitTauriEvent('pty-exit', { sessionId: 'sess-1', code: null })
+      emitDesktopEvent('pty-exit', { sessionId: 'sess-1', code: null })
 
       expect(callback).toHaveBeenCalledWith('sess-1', null)
     })
@@ -214,7 +214,7 @@ describe('TauriTerminalService', () => {
       service.onError(callback)
       await mockSpawnAndInit(service)
 
-      emitTauriEvent('pty-error', {
+      emitDesktopEvent('pty-error', {
         sessionId: 'sess-1',
         message: 'PTY read error',
       })
@@ -230,7 +230,7 @@ describe('TauriTerminalService', () => {
 
       unsubscribe()
 
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'should not arrive',
       })
@@ -245,7 +245,7 @@ describe('TauriTerminalService', () => {
       await service.onData(cb2)
       await mockSpawnAndInit(service)
 
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'broadcast',
         offsetStart: 100,
@@ -265,7 +265,7 @@ describe('TauriTerminalService', () => {
 
       service.dispose()
 
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'after dispose',
       })
@@ -282,7 +282,7 @@ describe('TauriTerminalService', () => {
       })
       vi.mocked(invoke).mockImplementation(mockInvoke)
 
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       const result = await testService.listSessions()
 
       expect(mockInvoke).toHaveBeenCalledWith('list_sessions')
@@ -293,7 +293,7 @@ describe('TauriTerminalService', () => {
       const mockInvoke = vi.fn().mockResolvedValue(undefined)
       vi.mocked(invoke).mockImplementation(mockInvoke)
 
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       await testService.setActiveSession('xyz')
 
       expect(mockInvoke).toHaveBeenCalledWith('set_active_session', {
@@ -305,7 +305,7 @@ describe('TauriTerminalService', () => {
       const mockInvoke = vi.fn().mockResolvedValue(undefined)
       vi.mocked(invoke).mockImplementation(mockInvoke)
 
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       await testService.reorderSessions(['a', 'b'])
 
       expect(mockInvoke).toHaveBeenCalledWith('reorder_sessions', {
@@ -317,7 +317,7 @@ describe('TauriTerminalService', () => {
       const mockInvoke = vi.fn().mockResolvedValue(undefined)
       vi.mocked(invoke).mockImplementation(mockInvoke)
 
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       await testService.updateSessionCwd('s1', '/tmp')
 
       expect(mockInvoke).toHaveBeenCalledWith('update_session_cwd', {
@@ -332,7 +332,7 @@ describe('TauriTerminalService', () => {
         offsetStart: number
         byteLen: number
       }[] = []
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       await testService.onData((sessionId, data, offsetStart, byteLen) => {
         captured.push({ sessionId, data, offsetStart, byteLen })
       })
@@ -340,7 +340,7 @@ describe('TauriTerminalService', () => {
       await mockSpawnAndInit(testService)
 
       // Emit pty-data event with offsetStart as bigint (common Rust u64 binding)
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'test',
         offsetStart: BigInt(42),
@@ -358,7 +358,7 @@ describe('TauriTerminalService', () => {
 
     test('onData coerces bigint offsetStart and byteLen to number', async () => {
       const captured: { offset: number; byteLen: number }[] = []
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       await testService.onData((_sessionId, _data, offsetStart, byteLen) => {
         captured.push({ offset: offsetStart, byteLen })
       })
@@ -366,7 +366,7 @@ describe('TauriTerminalService', () => {
       await mockSpawnAndInit(testService)
 
       // Emit with bigint
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'test',
         offsetStart: BigInt(1024),
@@ -388,7 +388,7 @@ describe('TauriTerminalService', () => {
     // byte_len verbatim and not derive it from `data`.
     test('onData passes byteLen through verbatim even when it differs from data length', async () => {
       const captured: { data: string; byteLen: number }[] = []
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       await testService.onData((_sessionId, data, _offsetStart, byteLen) => {
         captured.push({ data, byteLen })
       })
@@ -398,7 +398,7 @@ describe('TauriTerminalService', () => {
       // Lossy decode case: producer's raw bytes were 2 (e.g. partial UTF-8
       // codepoint), but `data` contains 2 U+FFFD which encodes back to 6
       // bytes. The subscriber must see byteLen=2 (producer truth), not 6.
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: '��',
         offsetStart: BigInt(0),
@@ -441,7 +441,7 @@ describe('TauriTerminalService', () => {
       ): Promise<() => void> => {
         await listenGate
         // After release, fall through to the standard test impl that records
-        // the callback in eventListeners so emitTauriEvent works.
+        // the callback in eventListeners so emitDesktopEvent works.
         const existing = eventListeners.get(eventName) ?? []
         existing.push(callback)
         eventListeners.set(eventName, existing)
@@ -459,7 +459,7 @@ describe('TauriTerminalService', () => {
       )
 
       try {
-        const testService = new TauriTerminalService()
+        const testService = new DesktopTerminalService()
         const captured: { data: string; offset: number; byteLen: number }[] = []
 
         const onDataPromise = testService.onData(
@@ -469,8 +469,8 @@ describe('TauriTerminalService', () => {
         )
 
         // Synchronously try to emit an event — there's no listener yet, so
-        // it must NOT be captured (this matches the real Tauri pre-attach window).
-        emitTauriEvent('pty-data', {
+        // it must NOT be captured (this matches the real backend pre-attach window).
+        emitDesktopEvent('pty-data', {
           sessionId: 'sess-1',
           data: 'pre-attach-event',
           offsetStart: 0,
@@ -497,7 +497,7 @@ describe('TauriTerminalService', () => {
         // After awaiting onData, the underlying listener IS attached and
         // subsequent events ARE captured.
         await onDataPromise
-        emitTauriEvent('pty-data', {
+        emitDesktopEvent('pty-data', {
           sessionId: 'sess-1',
           data: 'post-attach-event',
           offsetStart: 100,

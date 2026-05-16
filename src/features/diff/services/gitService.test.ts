@@ -2,7 +2,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   MockGitService,
   HttpGitService,
-  TauriGitService,
+  DesktopGitService,
   createGitService,
   type GitService,
 } from './gitService'
@@ -294,13 +294,13 @@ describe('HttpGitService', () => {
   })
 })
 
-describe('TauriGitService', () => {
+describe('DesktopGitService', () => {
   let service: GitService
   let invokeMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     invokeMock = mockedInvoke
-    service = new TauriGitService('/home/user/project')
+    service = new DesktopGitService('/home/user/project')
   })
 
   afterEach(() => {
@@ -412,13 +412,13 @@ describe('createGitService', () => {
     expect(service).toBeInstanceOf(MockGitService)
   })
 
-  test('returns TauriGitService when isDesktop() is true', () => {
+  test('returns DesktopGitService when isDesktop() is true', () => {
     vi.stubEnv('MODE', 'development')
     mockedIsDesktop.mockReturnValue(true)
     try {
       const service = createGitService('/test/path')
 
-      expect(service).toBeInstanceOf(TauriGitService)
+      expect(service).toBeInstanceOf(DesktopGitService)
     } finally {
       vi.unstubAllEnvs()
     }
