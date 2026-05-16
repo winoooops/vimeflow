@@ -108,3 +108,8 @@ feedbacak*.png
 /.claude_settings_cli.json
 /handoff.md
 /dyn_trait_test
+
+# Electron-builder packaging
+!build/
+!build/icon.png
+release/

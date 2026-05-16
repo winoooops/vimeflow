@@ -1,6 +1,6 @@
 //! # Filesystem sandbox
 //!
-//! This module is the Tauri IPC boundary for all filesystem access.
+//! This module is the backend boundary for all filesystem access.
 //! It enforces a `$HOME`-rooted sandbox against a compromised sibling
 //! process in the same user session.
 //!
@@ -23,13 +23,6 @@ pub(crate) mod read;
 pub(crate) mod scope;
 pub(crate) mod types;
 pub(crate) mod write;
-
-#[cfg(not(test))]
-pub use list::list_dir;
-#[cfg(not(test))]
-pub use read::read_file;
-#[cfg(not(test))]
-pub use write::write_file;
 
 #[cfg(test)]
 mod tests;

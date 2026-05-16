@@ -20,12 +20,12 @@ import type {
 import type { ITerminalService } from './terminalService'
 
 /**
- * Tauri terminal service — bridges ITerminalService to Tauri IPC commands and events.
+ * Desktop terminal service — bridges ITerminalService to backend IPC commands and events.
  *
  * Commands (invoke): spawn_pty, write_pty, resize_pty, kill_pty
  * Events (listen): pty-data, pty-exit, pty-error
  */
-export class TauriTerminalService implements ITerminalService {
+export class DesktopTerminalService implements ITerminalService {
   private dataCallbacks: ((
     sessionId: string,
     data: string,
@@ -38,9 +38,36 @@ export class TauriTerminalService implements ITerminalService {
 
   private unlistenFns: UnlistenFn[] = []
   private initPromise: Promise<void> | null = null
+  private listenerInitGeneration = 0
+
+  private reportListenerInitFailure(error: unknown): void {
+    // eslint-disable-next-line no-console
+    console.warn(
+      'DesktopTerminalService: failed to attach backend listeners',
+      error
+    )
+  }
+
+  private async ensureListenersAndReportFailure(): Promise<void> {
+    try {
+      await this.ensureListeners()
+    } catch (error) {
+      this.reportListenerInitFailure(error)
+    }
+  }
+
+  private cleanupListeners(unlistenFns: UnlistenFn[]): void {
+    unlistenFns.forEach((fn) => {
+      try {
+        fn()
+      } catch (error) {
+        this.reportListenerInitFailure(error)
+      }
+    })
+  }
 
   /**
-   * Lazily initialize Tauri event listeners on first use.
+   * Lazily initialize backend event listeners on first use.
    * Listeners are shared across all sessions — callbacks filter by sessionId.
    *
    * Uses promise memoization: the first caller drives initialization; concurrent
@@ -54,33 +81,62 @@ export class TauriTerminalService implements ITerminalService {
       return this.initPromise
     }
 
+    const initGeneration = this.listenerInitGeneration
     this.initPromise = (async (): Promise<void> => {
-      const unlistenData = await listen<PtyDataEvent>('pty-data', (payload) => {
-        const { sessionId, data, offsetStart, byteLen } = payload
+      const pendingUnlistenFns: UnlistenFn[] = []
 
-        // PtyDataEvent.offset_start and .byte_len are u64 — bindings may emit
-        // as bigint or number. Coerce to number; safe up to 2^53 = ~9 PB per
-        // session.
-        const offset =
-          typeof offsetStart === 'bigint' ? Number(offsetStart) : offsetStart
-        const len = typeof byteLen === 'bigint' ? Number(byteLen) : byteLen
-        this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset, len))
-      })
+      try {
+        const unlistenData = await listen<PtyDataEvent>(
+          'pty-data',
+          (payload) => {
+            const { sessionId, data, offsetStart, byteLen } = payload
 
-      const unlistenExit = await listen<PtyExitEvent>('pty-exit', (payload) => {
-        const { sessionId, code } = payload
-        this.exitCallbacks.forEach((cb) => cb(sessionId, code))
-      })
+            // PtyDataEvent.offset_start and .byte_len are u64 — bindings may emit
+            // as bigint or number. Coerce to number; safe up to 2^53 = ~9 PB per
+            // session.
+            const offset =
+              typeof offsetStart === 'bigint'
+                ? Number(offsetStart)
+                : offsetStart
+            const len = typeof byteLen === 'bigint' ? Number(byteLen) : byteLen
+            this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset, len))
+          }
+        )
+        pendingUnlistenFns.push(unlistenData)
 
-      const unlistenError = await listen<PtyErrorEvent>(
-        'pty-error',
-        (payload) => {
-          const { sessionId, message } = payload
-          this.errorCallbacks.forEach((cb) => cb(sessionId, message))
+        const unlistenExit = await listen<PtyExitEvent>(
+          'pty-exit',
+          (payload) => {
+            const { sessionId, code } = payload
+            this.exitCallbacks.forEach((cb) => cb(sessionId, code))
+          }
+        )
+        pendingUnlistenFns.push(unlistenExit)
+
+        const unlistenError = await listen<PtyErrorEvent>(
+          'pty-error',
+          (payload) => {
+            const { sessionId, message } = payload
+            this.errorCallbacks.forEach((cb) => cb(sessionId, message))
+          }
+        )
+        pendingUnlistenFns.push(unlistenError)
+
+        if (initGeneration !== this.listenerInitGeneration) {
+          this.cleanupListeners(pendingUnlistenFns)
+
+          return
         }
-      )
 
-      this.unlistenFns.push(unlistenData, unlistenExit, unlistenError)
+        this.unlistenFns.push(...pendingUnlistenFns)
+      } catch (error) {
+        if (initGeneration === this.listenerInitGeneration) {
+          this.initPromise = null
+        }
+        this.cleanupListeners(pendingUnlistenFns)
+
+        throw error
+      }
     })()
 
     return this.initPromise
@@ -91,15 +147,7 @@ export class TauriTerminalService implements ITerminalService {
 
     const sessionId = crypto.randomUUID()
 
-    // Round 8, Finding 3 (claude MEDIUM): forward the caller's intent
-    // instead of hardcoding `true`. Previously every spawn created a
-    // `.vimeflow/sessions/<uuid>/` tree in the cwd — including `/tmp`, the
-    // user's home, third-party project roots — which showed up in
-    // `git status` and was excluded from Vite's HMR watch list as a
-    // workaround. The agent statusline IS the product when the workspace
-    // UI explicitly spawns a tab (useSessionManager passes `true`); other
-    // callers default to `false` so ad-hoc spawns don't pollute arbitrary
-    // working directories.
+    // Default false keeps ad-hoc spawns from creating .vimeflow/sessions trees.
     const request: SpawnPtyRequest = {
       sessionId,
       cwd: params.cwd,
@@ -159,11 +207,19 @@ export class TauriTerminalService implements ITerminalService {
     // attachment — once the listener fires, it iterates this.dataCallbacks.
     this.dataCallbacks.push(callback)
 
-    // CRITICAL: await ensureListeners so the underlying tauri.listen('pty-data', ...)
+    // CRITICAL: await ensureListeners so the underlying listen('pty-data', ...)
     // is attached before the caller proceeds. The restore orchestrator depends on
     // being able to await this method — without it, PTY events emitted between this
     // call returning and listen() resolving go to nobody (irrecoverable lost bytes).
-    await this.ensureListeners()
+    try {
+      await this.ensureListeners()
+    } catch (error) {
+      const index = this.dataCallbacks.indexOf(callback)
+      if (index > -1) {
+        this.dataCallbacks.splice(index, 1)
+      }
+      throw error
+    }
 
     return () => {
       const index = this.dataCallbacks.indexOf(callback)
@@ -177,7 +233,7 @@ export class TauriTerminalService implements ITerminalService {
     callback: (sessionId: string, code: number | null) => void
   ): () => void {
     this.exitCallbacks.push(callback)
-    void this.ensureListeners()
+    void this.ensureListenersAndReportFailure()
 
     return () => {
       const index = this.exitCallbacks.indexOf(callback)
@@ -189,7 +245,7 @@ export class TauriTerminalService implements ITerminalService {
 
   onError(callback: (sessionId: string, message: string) => void): () => void {
     this.errorCallbacks.push(callback)
-    void this.ensureListeners()
+    void this.ensureListenersAndReportFailure()
 
     return () => {
       const index = this.errorCallbacks.indexOf(callback)
@@ -200,10 +256,11 @@ export class TauriTerminalService implements ITerminalService {
   }
 
   /**
-   * Dispose all Tauri event listeners. Call when the service is no longer needed.
+   * Dispose all backend event listeners. Call when the service is no longer needed.
    */
   dispose(): void {
-    this.unlistenFns.forEach((fn) => fn())
+    this.listenerInitGeneration += 1
+    this.cleanupListeners(this.unlistenFns)
     this.unlistenFns = []
     this.dataCallbacks = []
     this.exitCallbacks = []

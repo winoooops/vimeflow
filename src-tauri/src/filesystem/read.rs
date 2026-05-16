@@ -2,8 +2,6 @@ use std::fs;
 
 use super::scope::{ensure_within_home, expand_home, home_canonical, open_nofollow};
 use super::types::ReadFileRequest;
-#[cfg(not(test))]
-use crate::runtime::BackendState;
 
 /// Read file contents as UTF-8 string.
 /// Restricted to the user's home directory.
@@ -13,15 +11,6 @@ use crate::runtime::BackendState;
 /// concurrent unlink+symlink race could swap the validated file for a
 /// symlink pointing outside home, and `fs::read_to_string` would happily
 /// follow it and leak the contents back to the webview.
-#[cfg(not(test))]
-#[tauri::command]
-pub fn read_file(
-    state: tauri::State<'_, std::sync::Arc<BackendState>>,
-    request: ReadFileRequest,
-) -> Result<String, String> {
-    state.read_file(request)
-}
-
 #[cfg(test)]
 pub fn read_file(request: ReadFileRequest) -> Result<String, String> {
     read_file_inner(request)

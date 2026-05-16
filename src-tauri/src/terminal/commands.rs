@@ -1,4 +1,4 @@
-//! Tauri command implementations for PTY operations
+//! PTY operation helpers consumed by the runtime-neutral backend state.
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::Read;
@@ -6,8 +6,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::debug::debug_log;
-#[cfg(not(test))]
-use crate::runtime::BackendState;
 use crate::runtime::EventSink;
 
 use super::events::{emit_pty_data, emit_pty_error, emit_pty_exit};
@@ -21,15 +19,6 @@ fn cleanup_generated_bridge_dir(dir: Option<&std::path::Path>) {
 }
 
 /// Spawn a new PTY session with a shell
-#[cfg(not(test))]
-#[tauri::command]
-pub async fn spawn_pty(
-    state: tauri::State<'_, Arc<BackendState>>,
-    request: SpawnPtyRequest,
-) -> Result<PtySession, String> {
-    state.spawn_pty(request).await
-}
-
 pub(crate) async fn spawn_pty_inner(
     state: PtyState,
     cache: Arc<super::cache::SessionCache>,
@@ -365,15 +354,6 @@ pub(crate) async fn spawn_pty_inner(
 }
 
 /// Write data to a PTY session
-#[cfg(not(test))]
-#[tauri::command]
-pub fn write_pty(
-    state: tauri::State<'_, Arc<BackendState>>,
-    request: WritePtyRequest,
-) -> Result<(), String> {
-    state.write_pty(request)
-}
-
 pub(crate) fn write_pty_inner(state: &PtyState, request: WritePtyRequest) -> Result<(), String> {
     log::debug!(
         "Writing to PTY {}: {} bytes",
@@ -387,15 +367,6 @@ pub(crate) fn write_pty_inner(state: &PtyState, request: WritePtyRequest) -> Res
 }
 
 /// Resize a PTY session
-#[cfg(not(test))]
-#[tauri::command]
-pub fn resize_pty(
-    state: tauri::State<'_, Arc<BackendState>>,
-    request: ResizePtyRequest,
-) -> Result<(), String> {
-    state.resize_pty(request)
-}
-
 pub(crate) fn resize_pty_inner(state: &PtyState, request: ResizePtyRequest) -> Result<(), String> {
     log::debug!(
         "Resizing PTY {} to {}x{}",
@@ -424,15 +395,6 @@ pub(crate) fn resize_pty_inner(state: &PtyState, request: ResizePtyRequest) -> R
 /// processes the user could not see or close. By preserving state on
 /// `KillFailed` the user can retry, and the cache stays consistent with
 /// the actual process tree.
-#[cfg(not(test))]
-#[tauri::command]
-pub fn kill_pty(
-    state: tauri::State<'_, Arc<BackendState>>,
-    request: KillPtyRequest,
-) -> Result<(), String> {
-    state.kill_pty(request)
-}
-
 pub(crate) fn kill_pty_inner(
     state: &PtyState,
     cache: &Arc<super::cache::SessionCache>,
@@ -492,12 +454,6 @@ pub(crate) fn kill_pty_inner(
 }
 
 /// List all sessions with their current status and replay data
-#[cfg(not(test))]
-#[tauri::command]
-pub fn list_sessions(state: tauri::State<'_, Arc<BackendState>>) -> Result<SessionList, String> {
-    state.list_sessions()
-}
-
 pub(crate) fn list_sessions_inner(
     state: &PtyState,
     cache: &Arc<super::cache::SessionCache>,
@@ -639,15 +595,6 @@ pub(crate) fn list_sessions_inner(
 /// Without this, a concurrent `kill_pty` could remove the id between the
 /// snapshot-based check and the write — the check passed against the old
 /// state and we'd then write a now-stale `active_session_id`.
-#[cfg(not(test))]
-#[tauri::command]
-pub fn set_active_session(
-    state: tauri::State<'_, Arc<BackendState>>,
-    request: SetActiveSessionRequest,
-) -> Result<(), String> {
-    state.set_active_session(request)
-}
-
 pub(crate) fn set_active_session_inner(
     cache: &Arc<crate::terminal::cache::SessionCache>,
     request: SetActiveSessionRequest,
@@ -681,15 +628,6 @@ pub(crate) fn set_active_session_inner(
 /// On the next reload, `list_sessions` returns a duplicate session entry,
 /// React tab keys collide, and active-tab selection becomes unstable.
 /// Comparing sorted vectors enforces equal length AND equal multiset.
-#[cfg(not(test))]
-#[tauri::command]
-pub fn reorder_sessions(
-    state: tauri::State<'_, Arc<BackendState>>,
-    request: ReorderSessionsRequest,
-) -> Result<(), String> {
-    state.reorder_sessions(request)
-}
-
 pub(crate) fn reorder_sessions_inner(
     cache: &Arc<crate::terminal::cache::SessionCache>,
     request: ReorderSessionsRequest,
@@ -720,15 +658,6 @@ pub(crate) fn reorder_sessions_inner(
 /// inequality checks and confusing output in tests / debug logs. Canonical
 /// paths also serve as a safety net against directory-traversal-style cwds
 /// that pass the absolute + is_dir checks but mask the actual location.
-#[cfg(not(test))]
-#[tauri::command]
-pub fn update_session_cwd(
-    state: tauri::State<'_, Arc<BackendState>>,
-    request: UpdateSessionCwdRequest,
-) -> Result<(), String> {
-    state.update_session_cwd(request)
-}
-
 pub(crate) fn update_session_cwd_inner(
     cache: &Arc<crate::terminal::cache::SessionCache>,
     request: UpdateSessionCwdRequest,

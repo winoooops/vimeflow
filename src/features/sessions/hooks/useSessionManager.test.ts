@@ -999,7 +999,7 @@ describe('useSessionManager', () => {
     //    old session. Round 8, Finding 3 (claude MEDIUM): restart preserves
     //    the user's tab semantics, so it must opt in to the agent bridge for
     //    parity with createSession — `enableAgentBridge` now defaults to
-    //    `false` in tauriTerminalService, so callers must be explicit.
+    //    `false` in desktopTerminalService, so callers must be explicit.
     await waitFor(() =>
       expect(service.spawn).toHaveBeenCalledWith(
         expect.objectContaining({

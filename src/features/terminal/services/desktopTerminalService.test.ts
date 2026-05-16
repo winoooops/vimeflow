@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, vi, type Mock } from 'vitest'
-import { TauriTerminalService } from './tauriTerminalService'
-import { invoke } from '../../../lib/backend'
+import { DesktopTerminalService } from './desktopTerminalService'
+import { invoke, listen } from '../../../lib/backend'
 
 // Mock backend bridge — capture listener callbacks for testing.
 type EventCallback = (payload: unknown) => void
@@ -26,16 +26,16 @@ vi.mock('../../../lib/backend', () => ({
 }))
 
 /**
- * Simulate a Tauri event emission for testing
+ * Simulate a backend event emission for testing
  */
-const emitTauriEvent = (eventName: string, payload: unknown): void => {
+const emitDesktopEvent = (eventName: string, payload: unknown): void => {
   const callbacks = eventListeners.get(eventName) ?? []
   callbacks.forEach((cb) => cb(payload))
 }
 
 /** Mock invoke to return a spawn response, then spawn a session */
 const mockSpawnAndInit = async (
-  service: TauriTerminalService
+  service: DesktopTerminalService
 ): Promise<void> => {
   const mockInvoke = invoke as Mock
   mockInvoke.mockResolvedValueOnce({ id: 's1', pid: 1, cwd: '/' })
@@ -48,13 +48,13 @@ const mockInvokeOnce = (value: unknown): void => {
   mockInvoke.mockResolvedValueOnce(value)
 }
 
-describe('TauriTerminalService', () => {
-  let service: TauriTerminalService
+describe('DesktopTerminalService', () => {
+  let service: DesktopTerminalService
 
   beforeEach(() => {
     vi.clearAllMocks()
     eventListeners.clear()
-    service = new TauriTerminalService()
+    service = new DesktopTerminalService()
   })
 
   describe('spawn', () => {
@@ -106,13 +106,7 @@ describe('TauriTerminalService', () => {
       expect(eventListeners.has('pty-error')).toBe(true)
     })
 
-    // Round 8, Finding 3 (claude MEDIUM): the agent bridge creates a
-    // `.vimeflow/sessions/<uuid>/` tree in the spawn cwd. This was previously
-    // hardcoded `true`, which polluted ad-hoc spawns (tests, scripts, third-
-    // party project roots) with bookkeeping directories that surfaced in
-    // `git status`. The flag now defaults to `false` and only the workspace
-    // UI's `useSessionManager` opts in.
-    test('round 8 F3: spawn forwards enableAgentBridge=true when caller opts in', async () => {
+    test('spawn forwards enableAgentBridge=true when caller opts in', async () => {
       mockInvokeOnce({ id: 's1', pid: 1, cwd: '/home/user' })
       await service.spawn({ cwd: '/home/user', enableAgentBridge: true })
 
@@ -121,7 +115,7 @@ describe('TauriTerminalService', () => {
       })
     })
 
-    test('round 8 F3: spawn defaults enableAgentBridge to false when caller omits it', async () => {
+    test('spawn defaults enableAgentBridge to false when caller omits it', async () => {
       mockInvokeOnce({ id: 's1', pid: 1, cwd: '/tmp' })
       await service.spawn({ cwd: '/tmp' })
 
@@ -130,7 +124,7 @@ describe('TauriTerminalService', () => {
       })
     })
 
-    test('round 8 F3: spawn forwards enableAgentBridge=false when caller explicitly opts out', async () => {
+    test('spawn forwards enableAgentBridge=false when caller explicitly opts out', async () => {
       mockInvokeOnce({ id: 's1', pid: 1, cwd: '/tmp' })
       await service.spawn({ cwd: '/tmp', enableAgentBridge: false })
 
@@ -179,7 +173,7 @@ describe('TauriTerminalService', () => {
       await service.onData(callback)
       await mockSpawnAndInit(service)
 
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'hello world',
         offsetStart: 0,
@@ -194,7 +188,7 @@ describe('TauriTerminalService', () => {
       service.onExit(callback)
       await mockSpawnAndInit(service)
 
-      emitTauriEvent('pty-exit', { sessionId: 'sess-1', code: 0 })
+      emitDesktopEvent('pty-exit', { sessionId: 'sess-1', code: 0 })
 
       expect(callback).toHaveBeenCalledWith('sess-1', 0)
     })
@@ -204,7 +198,7 @@ describe('TauriTerminalService', () => {
       service.onExit(callback)
       await mockSpawnAndInit(service)
 
-      emitTauriEvent('pty-exit', { sessionId: 'sess-1', code: null })
+      emitDesktopEvent('pty-exit', { sessionId: 'sess-1', code: null })
 
       expect(callback).toHaveBeenCalledWith('sess-1', null)
     })
@@ -214,7 +208,7 @@ describe('TauriTerminalService', () => {
       service.onError(callback)
       await mockSpawnAndInit(service)
 
-      emitTauriEvent('pty-error', {
+      emitDesktopEvent('pty-error', {
         sessionId: 'sess-1',
         message: 'PTY read error',
       })
@@ -230,7 +224,7 @@ describe('TauriTerminalService', () => {
 
       unsubscribe()
 
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'should not arrive',
       })
@@ -245,7 +239,7 @@ describe('TauriTerminalService', () => {
       await service.onData(cb2)
       await mockSpawnAndInit(service)
 
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'broadcast',
         offsetStart: 100,
@@ -254,6 +248,136 @@ describe('TauriTerminalService', () => {
 
       expect(cb1).toHaveBeenCalledWith('sess-1', 'broadcast', 100, 9)
       expect(cb2).toHaveBeenCalledWith('sess-1', 'broadcast', 100, 9)
+    })
+
+    test('cleans partial listeners and allows retry after init failure', async () => {
+      const listenMock = vi.mocked(listen)
+      const originalImpl = listenMock.getMockImplementation()
+      let calls = 0
+
+      listenMock.mockImplementation(((
+        eventName: string,
+        callback: EventCallback
+      ): Promise<() => void> => {
+        calls += 1
+
+        if (calls === 2) {
+          return Promise.reject(new Error('exit listener failed'))
+        }
+
+        const existing = eventListeners.get(eventName) ?? []
+        existing.push(callback)
+        eventListeners.set(eventName, existing)
+
+        return Promise.resolve(() => {
+          const cbs = eventListeners.get(eventName) ?? []
+          const index = cbs.indexOf(callback)
+          if (index > -1) {
+            cbs.splice(index, 1)
+          }
+        })
+      }) as typeof listen)
+
+      const callback = vi.fn()
+      await expect(service.onData(callback)).rejects.toThrow(
+        'exit listener failed'
+      )
+
+      expect(eventListeners.get('pty-data')).toEqual([])
+
+      if (originalImpl) {
+        listenMock.mockImplementation(originalImpl)
+      }
+      mockInvokeOnce({ id: 's1', pid: 1, cwd: '/' })
+
+      await expect(service.spawn({ cwd: '/' })).resolves.toEqual({
+        sessionId: 's1',
+        pid: 1,
+        cwd: '/',
+      })
+
+      expect(eventListeners.get('pty-data')).toHaveLength(1)
+      expect(eventListeners.get('pty-exit')).toHaveLength(1)
+      expect(eventListeners.get('pty-error')).toHaveLength(1)
+    })
+
+    test('onData removes callback when listener initialization fails', async () => {
+      const listenMock = vi.mocked(listen)
+      const originalImpl = listenMock.getMockImplementation()
+
+      listenMock.mockRejectedValueOnce(new Error('listener unavailable'))
+
+      const callback = vi.fn()
+      await expect(service.onData(callback)).rejects.toThrow(
+        'listener unavailable'
+      )
+
+      if (originalImpl) {
+        listenMock.mockImplementation(originalImpl)
+      }
+      mockInvokeOnce({ id: 's1', pid: 1, cwd: '/' })
+      await service.spawn({ cwd: '/' })
+
+      emitDesktopEvent('pty-data', {
+        sessionId: 'sess-1',
+        data: 'after retry',
+        offsetStart: 0,
+        byteLen: 11,
+      })
+
+      expect(callback).not.toHaveBeenCalled()
+    })
+
+    test('onExit reports listener initialization failures', async () => {
+      const listenMock = vi.mocked(listen)
+      const originalImpl = listenMock.getMockImplementation()
+
+      const warnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined)
+
+      listenMock.mockRejectedValueOnce(new Error('listener unavailable'))
+
+      try {
+        service.onExit(vi.fn())
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        expect(warnSpy).toHaveBeenCalledWith(
+          'DesktopTerminalService: failed to attach backend listeners',
+          expect.any(Error)
+        )
+      } finally {
+        warnSpy.mockRestore()
+        if (originalImpl) {
+          listenMock.mockImplementation(originalImpl)
+        }
+      }
+    })
+
+    test('onError reports listener initialization failures', async () => {
+      const listenMock = vi.mocked(listen)
+      const originalImpl = listenMock.getMockImplementation()
+
+      const warnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined)
+
+      listenMock.mockRejectedValueOnce(new Error('listener unavailable'))
+
+      try {
+        service.onError(vi.fn())
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        expect(warnSpy).toHaveBeenCalledWith(
+          'DesktopTerminalService: failed to attach backend listeners',
+          expect.any(Error)
+        )
+      } finally {
+        warnSpy.mockRestore()
+        if (originalImpl) {
+          listenMock.mockImplementation(originalImpl)
+        }
+      }
     })
   })
 
@@ -265,12 +389,71 @@ describe('TauriTerminalService', () => {
 
       service.dispose()
 
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'after dispose',
       })
 
       expect(callback).not.toHaveBeenCalled()
+    })
+
+    test('cleans listener init that completes after dispose', async () => {
+      const listenMock = vi.mocked(listen)
+      const originalImpl = listenMock.getMockImplementation()
+      const unlistenCalls: string[] = []
+      let resolveDataListen: (() => void) | undefined
+
+      const registerListener = (
+        eventName: string,
+        callback: EventCallback
+      ): (() => void) => {
+        const existing = eventListeners.get(eventName) ?? []
+        existing.push(callback)
+        eventListeners.set(eventName, existing)
+
+        return () => {
+          unlistenCalls.push(eventName)
+          const cbs = eventListeners.get(eventName) ?? []
+          const index = cbs.indexOf(callback)
+          if (index > -1) {
+            cbs.splice(index, 1)
+          }
+        }
+      }
+
+      listenMock.mockImplementation(((
+        eventName: string,
+        callback: EventCallback
+      ): Promise<() => void> => {
+        const unlisten = registerListener(eventName, callback)
+
+        if (eventName === 'pty-data') {
+          return new Promise((resolve) => {
+            resolveDataListen = (): void => resolve(unlisten)
+          })
+        }
+
+        return Promise.resolve(unlisten)
+      }) as typeof listen)
+
+      try {
+        const unsubscribePromise = service.onData(vi.fn())
+
+        expect(listenMock).toHaveBeenCalledTimes(1)
+        service.dispose()
+        resolveDataListen?.()
+
+        await expect(unsubscribePromise).resolves.toEqual(expect.any(Function))
+
+        expect(unlistenCalls).toEqual(['pty-data', 'pty-exit', 'pty-error'])
+        expect(eventListeners.get('pty-data')).toEqual([])
+        expect(eventListeners.get('pty-exit')).toEqual([])
+        expect(eventListeners.get('pty-error')).toEqual([])
+      } finally {
+        if (originalImpl) {
+          listenMock.mockImplementation(originalImpl)
+        }
+      }
     })
   })
 
@@ -282,7 +465,7 @@ describe('TauriTerminalService', () => {
       })
       vi.mocked(invoke).mockImplementation(mockInvoke)
 
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       const result = await testService.listSessions()
 
       expect(mockInvoke).toHaveBeenCalledWith('list_sessions')
@@ -293,7 +476,7 @@ describe('TauriTerminalService', () => {
       const mockInvoke = vi.fn().mockResolvedValue(undefined)
       vi.mocked(invoke).mockImplementation(mockInvoke)
 
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       await testService.setActiveSession('xyz')
 
       expect(mockInvoke).toHaveBeenCalledWith('set_active_session', {
@@ -305,7 +488,7 @@ describe('TauriTerminalService', () => {
       const mockInvoke = vi.fn().mockResolvedValue(undefined)
       vi.mocked(invoke).mockImplementation(mockInvoke)
 
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       await testService.reorderSessions(['a', 'b'])
 
       expect(mockInvoke).toHaveBeenCalledWith('reorder_sessions', {
@@ -317,7 +500,7 @@ describe('TauriTerminalService', () => {
       const mockInvoke = vi.fn().mockResolvedValue(undefined)
       vi.mocked(invoke).mockImplementation(mockInvoke)
 
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       await testService.updateSessionCwd('s1', '/tmp')
 
       expect(mockInvoke).toHaveBeenCalledWith('update_session_cwd', {
@@ -332,7 +515,7 @@ describe('TauriTerminalService', () => {
         offsetStart: number
         byteLen: number
       }[] = []
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       await testService.onData((sessionId, data, offsetStart, byteLen) => {
         captured.push({ sessionId, data, offsetStart, byteLen })
       })
@@ -340,7 +523,7 @@ describe('TauriTerminalService', () => {
       await mockSpawnAndInit(testService)
 
       // Emit pty-data event with offsetStart as bigint (common Rust u64 binding)
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'test',
         offsetStart: BigInt(42),
@@ -358,7 +541,7 @@ describe('TauriTerminalService', () => {
 
     test('onData coerces bigint offsetStart and byteLen to number', async () => {
       const captured: { offset: number; byteLen: number }[] = []
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       await testService.onData((_sessionId, _data, offsetStart, byteLen) => {
         captured.push({ offset: offsetStart, byteLen })
       })
@@ -366,7 +549,7 @@ describe('TauriTerminalService', () => {
       await mockSpawnAndInit(testService)
 
       // Emit with bigint
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: 'test',
         offsetStart: BigInt(1024),
@@ -388,7 +571,7 @@ describe('TauriTerminalService', () => {
     // byte_len verbatim and not derive it from `data`.
     test('onData passes byteLen through verbatim even when it differs from data length', async () => {
       const captured: { data: string; byteLen: number }[] = []
-      const testService = new TauriTerminalService()
+      const testService = new DesktopTerminalService()
       await testService.onData((_sessionId, data, _offsetStart, byteLen) => {
         captured.push({ data, byteLen })
       })
@@ -398,7 +581,7 @@ describe('TauriTerminalService', () => {
       // Lossy decode case: producer's raw bytes were 2 (e.g. partial UTF-8
       // codepoint), but `data` contains 2 U+FFFD which encodes back to 6
       // bytes. The subscriber must see byteLen=2 (producer truth), not 6.
-      emitTauriEvent('pty-data', {
+      emitDesktopEvent('pty-data', {
         sessionId: 'sess-1',
         data: '��',
         offsetStart: BigInt(0),
@@ -441,7 +624,7 @@ describe('TauriTerminalService', () => {
       ): Promise<() => void> => {
         await listenGate
         // After release, fall through to the standard test impl that records
-        // the callback in eventListeners so emitTauriEvent works.
+        // the callback in eventListeners so emitDesktopEvent works.
         const existing = eventListeners.get(eventName) ?? []
         existing.push(callback)
         eventListeners.set(eventName, existing)
@@ -459,7 +642,7 @@ describe('TauriTerminalService', () => {
       )
 
       try {
-        const testService = new TauriTerminalService()
+        const testService = new DesktopTerminalService()
         const captured: { data: string; offset: number; byteLen: number }[] = []
 
         const onDataPromise = testService.onData(
@@ -469,8 +652,8 @@ describe('TauriTerminalService', () => {
         )
 
         // Synchronously try to emit an event — there's no listener yet, so
-        // it must NOT be captured (this matches the real Tauri pre-attach window).
-        emitTauriEvent('pty-data', {
+        // it must NOT be captured (this matches the real backend pre-attach window).
+        emitDesktopEvent('pty-data', {
           sessionId: 'sess-1',
           data: 'pre-attach-event',
           offsetStart: 0,
@@ -497,7 +680,7 @@ describe('TauriTerminalService', () => {
         // After awaiting onData, the underlying listener IS attached and
         // subsequent events ARE captured.
         await onDataPromise
-        emitTauriEvent('pty-data', {
+        emitDesktopEvent('pty-data', {
           sessionId: 'sess-1',
           data: 'post-attach-event',
           offsetStart: 100,
