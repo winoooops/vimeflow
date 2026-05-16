@@ -380,14 +380,25 @@ fn parse_git_status(output: &str) -> Vec<ChangedFile> {
                 });
             }
             s if s.starts_with('R') || s.starts_with('C') => {
-                // Renames and copies are index operations
+                // Renames and copies are index operations, but the destination
+                // path can still have unstaged worktree edits.
+                let worktree_status = xy.as_bytes().get(1).copied();
                 files.push(ChangedFile {
-                    path,
+                    path: path.clone(),
                     status: ChangedFileStatus::Renamed,
                     staged: true,
                     insertions: None,
                     deletions: None,
                 });
+                if worktree_status == Some(b'M') {
+                    files.push(ChangedFile {
+                        path,
+                        status: ChangedFileStatus::Modified,
+                        staged: false,
+                        insertions: None,
+                        deletions: None,
+                    });
+                }
             }
             "UU" | "AA" | "DD" | "AU" | "UA" | "DU" | "UD" => {
                 // Merge conflict codes — show as unstaged modified
@@ -1157,6 +1168,43 @@ mod tests {
         assert_eq!(files[0].path, "new.txt");
         assert!(matches!(files[0].status, ChangedFileStatus::Renamed));
         assert!(files[0].staged);
+    }
+
+    #[test]
+    fn test_parse_git_status_renamed_modified_dual_entry() {
+        // RM = renamed in index, modified again in worktree.
+        let output = "RM renamed.txt\0old.txt\0";
+        let files = parse_git_status(output);
+
+        assert_eq!(files.len(), 2, "RM should produce two entries");
+
+        // First entry: staged rename.
+        assert_eq!(files[0].path, "renamed.txt");
+        assert!(matches!(files[0].status, ChangedFileStatus::Renamed));
+        assert!(files[0].staged, "First RM entry should be staged");
+
+        // Second entry: unstaged modification on the renamed destination.
+        assert_eq!(files[1].path, "renamed.txt");
+        assert!(matches!(files[1].status, ChangedFileStatus::Modified));
+        assert!(!files[1].staged, "Second RM entry should be unstaged");
+    }
+
+    #[test]
+    fn test_parse_git_status_copied_modified_dual_entry() {
+        // CM = copied in index, modified again in worktree.
+        let output = "CM copied.txt\0source.txt\0";
+        let files = parse_git_status(output);
+
+        assert_eq!(files.len(), 2, "CM should produce two entries");
+
+        // Existing UI model represents copy entries with the rename status.
+        assert_eq!(files[0].path, "copied.txt");
+        assert!(matches!(files[0].status, ChangedFileStatus::Renamed));
+        assert!(files[0].staged, "First CM entry should be staged");
+
+        assert_eq!(files[1].path, "copied.txt");
+        assert!(matches!(files[1].status, ChangedFileStatus::Modified));
+        assert!(!files[1].staged, "Second CM entry should be unstaged");
     }
 
     #[test]
