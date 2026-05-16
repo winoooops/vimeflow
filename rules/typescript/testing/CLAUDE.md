@@ -70,7 +70,9 @@ For rules on what to test at each layer (primitive vs consumer, library boundari
 
 ## E2E Testing
 
-Use **Playwright** for E2E tests against the Tauri webview (via `tauri-driver` or remote debugging).
+Use **WebdriverIO** with `@wdio/electron-service` for E2E tests against the packaged Electron app. The three suites under `tests/e2e/{core,terminal,agent}/` run via `npm run test:e2e:all`; each `wdio.conf.ts` declares `browserName: 'electron'` + `wdio:electronServiceOptions: { appEntryPoint, appArgs }` from `tests/e2e/shared/electron-app.ts`. The `e2e-test` Cargo feature flag unlocks the `list_active_pty_sessions` sidecar method that the harness needs.
+
+Historical note: pre-PR-D2 (2026-05-15) this used `tauri-driver` + `browserName: 'wry'`. The driver swap landed in PR-D2 (#210).
 
 ## Test Commands
 
@@ -79,12 +81,17 @@ npx vitest                    # Run all tests (watch mode)
 npx vitest run                # Run all tests (CI mode)
 npx vitest run src/path       # Run tests in a directory
 npx vitest run --coverage     # Coverage report
+npm run test:e2e:build        # Build renderer + Electron bundles + sidecar (e2e-test feature)
+npm run test:e2e              # Run the core E2E suite (4 specs)
+npm run test:e2e:terminal     # Run the terminal E2E suite (6 specs)
+npm run test:e2e:agent        # Run the agent E2E suite (1 spec)
+npm run test:e2e:all          # Run all three E2E suites in series
 ```
 
 ## Agent Support
 
 - **tdd-guide** — Test-driven development enforcement
-- **e2e-runner** — Desktop E2E testing with tauri-driver/Playwright
+- **e2e-runner** — Desktop E2E testing with `@wdio/electron-service`
 
 ## QA
 

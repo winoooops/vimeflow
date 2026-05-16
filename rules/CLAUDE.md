@@ -13,7 +13,7 @@ rules/
 │   ├── hooks.md
 │   ├── patterns.md
 │   └── security.md
-└── rust/                  # Rust/Tauri overrides (5 files)
+└── rust/                  # Rust backend overrides (5 files) — Electron sidecar (`vimeflow-backend`)
 ```
 
 Language-specific rules reference their common counterpart via `../../common/` (directories) or `../common/` (files). **Do not flatten** — they share filenames intentionally.
@@ -28,7 +28,7 @@ Each directory contains files covering the same topics:
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `coding-style/`           | Formatting, immutability, naming, a11y component patterns                                                                                                             |
 | `testing/`                | Framework, coverage targets, TDD workflow, a11y query patterns                                                                                                        |
-| `patterns.md`             | Repository pattern, API format, IPC patterns (Tauri)                                                                                                                  |
+| `patterns.md`             | Repository pattern, API format, IPC patterns (Electron preload + Rust sidecar)                                                                                        |
 | `security.md`             | Secrets, input validation, scanning tools                                                                                                                             |
 | `hooks.md`                | PreToolUse/PostToolUse hooks for formatters and linters                                                                                                               |
 | `git-workflow.md`         | Commit format, PR process (common only)                                                                                                                               |

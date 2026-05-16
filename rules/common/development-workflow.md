@@ -19,11 +19,11 @@ The Feature Implementation Workflow describes the development pipeline: research
    - Generate planning docs before coding: PRD, architecture, system_design, tech_doc, task_list
    - Identify dependencies and risks
    - Break down into phases
-   - **Frontend-Backend Coordination** (for Tauri/IPC projects):
-     - Define the IPC contract (command name, argument types, return type) before implementing either side
-     - Implement and test the backend command handler independently first
-     - Then wire up the frontend invocation
-     - Use `cargo tauri dev` for integrated development with hot-reload on both sides
+   - **Frontend-Backend Coordination** (for Electron renderer + Rust sidecar / other IPC projects):
+     - Define the IPC contract (method name, argument types, return type) before implementing either side
+     - Implement and test the sidecar `_inner` helper independently first; expose it via a `BackendState` method
+     - Then wire up the renderer-side bridge call through `src/lib/backend.ts`'s `invoke` / `listen`
+     - Use `npm run electron:dev` for integrated development with Vite HMR on the renderer and a fresh sidecar build on each launch
 
 2. **TDD Approach**
    - Use **tdd-guide** agent

@@ -93,7 +93,7 @@ This file covers what you need to start working. For deeper topics, read the lin
 
 | Topic                                                    | Where                                                                                                                              |
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Architecture decisions, Tauri IPC patterns               | `ARCHITECT.md`                                                                                                                     |
+| Architecture decisions, Electron sidecar IPC patterns    | `ARCHITECT.md`                                                                                                                     |
 | UI design system, screens, components                    | `docs/design/UNIFIED.md` (authoritative) -> `docs/design/DESIGN.md` (foundation) -> `docs/design/tokens.css` / `tokens.ts`         |
 | AI agent specs (planner, tdd-guide, code-reviewer, etc.) | `agents/CLAUDE.md`                                                                                                                 |
 | Development standards (coding style, testing, security)  | `rules/CLAUDE.md`                                                                                                                  |
@@ -104,7 +104,6 @@ This file covers what you need to start working. For deeper topics, read the lin
 | Progress tracking (roadmap status)                       | `docs/roadmap/progress.yaml`                                                                                                       |
 | Linear change timeline (paired with reviews)             | `CHANGELOG.md` / `CHANGELOG.zh-CN.md`                                                                                              |
 | Shell OSC 7 setup (file explorer cwd sync)               | `README.md` → "Shell Setup (OSC 7)"                                                                                                |
-| Linux/Wayland WebKitGTK renderer flag (tauri:dev)        | `README.md` → "Linux / Wayland: WebKitGTK Renderer"                                                                                |
 | Review knowledge base (patterns from past reviews)       | `docs/reviews/CLAUDE.md`                                                                                                           |
 | Technical decision records (library choices, etc.)       | `docs/decisions/CLAUDE.md`                                                                                                         |
 
@@ -124,6 +123,36 @@ Install the dedicated Lifeline Claude Code plugin from <https://github.com/winoo
 ```
 
 Available skills: `/lifeline:planner`, `/lifeline:loop`, `/lifeline:review`, `/lifeline:request-pr`, `/lifeline:upsource-review`, and `/lifeline:approve-pr`. Lifeline is self-contained and installs its Python orchestrator into the Claude plugin cache; this repo keeps only project-local usage notes.
+
+### Project-Critical Skills (set up on first clone)
+
+Two skills are load-bearing for non-trivial development on this repo. New contributors should know about both and have them available before opening their first PR.
+
+#### 1. `/lifeline:planner` (in-repo, symlinked) — spec + plan authoring with codex review
+
+Carries every non-trivial spec from draft to codex-reviewed-and-committed. Per-section iteration (codex reviews each section as it's added) plus a final whole-spec pass; same for plans. Output: a committed spec + plan that codex has signed off on, ready for human or subagent execution. The Electron migration ([retrospective](docs/superpowers/retros/2026-05-16-electron-migration.md)) was the third project to use it end-to-end (after PR-D1 and PR-D2); it now anchors how design work happens in this repo.
+
+The skill ships helper bash scripts (`codex-review.sh`, `update-footer.sh`, `resolve-skill-dir.sh`) that resolve `SKILL_DIR` as `skills/<skill-name>` relative to the project root. The Claude plugin cache at `~/.claude/plugins/cache/lifeline/...` is _not_ in their lookup chain, so a fresh checkout fails the first `/lifeline:planner` invocation with `no prompt template for hook 'spec-complete'`. Fix once per clone:
+
+```bash
+mkdir -p skills
+
+# Replace <version> with the installed lifeline plugin version (e.g. 0.0.2).
+# Run `ls ~/.claude/plugins/cache/lifeline/lifeline/` to confirm.
+ln -sfn ~/.claude/plugins/cache/lifeline/lifeline/<version>/skills/planner skills/planner
+ln -sfn ~/.claude/plugins/cache/lifeline/lifeline/<version>/skills/upsource-review skills/upsource-review
+
+# Keep the symlinks out of git (per-machine; the plugin cache path is operator-local).
+grep -qxF 'skills/' .git/info/exclude || echo 'skills/' >> .git/info/exclude
+```
+
+After the bootstrap, `/lifeline:planner` resolves cleanly and codex output lands in `.lifeline-planner/` (also gitignored). The full rationale, alternatives, and risk mitigations live in [`docs/decisions/2026-05-16-in-repo-skills-setup.md`](docs/decisions/2026-05-16-in-repo-skills-setup.md).
+
+#### 2. `native-feel-cross-platform-desktop` (system-wide skill) — desktop architecture shape
+
+Globally available (loaded from `~/.claude/skills/` or equivalent). Trigger phrases: "Electron alternative", "Tauri vs native", "WebView wrapper", "near-native performance", "Raycast architecture", "WKWebView", "system tray app". Use it at the **shape** stage — before any spec is written — to answer "what's the right runtime + bundler + sidecar architecture for a native-feeling desktop app on macOS / Windows / Linux?" The Electron migration's design phase relied on it to short-circuit a multi-day "which bundler does Codex Desktop use, and why?" research detour into a single conversation.
+
+The two skills compose: `native-feel-cross-platform-desktop` answers "what should this look like?" once; `/lifeline:planner` answers "is this spec self-consistent and complete?" on every iteration. Future migrations / new desktop projects should pair them in that order — shape with the design skill first, then write specs with the planner.
 
 ### Autocomplete Workaround
 

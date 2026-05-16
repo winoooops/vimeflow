@@ -3,6 +3,14 @@
 > Created: 2026-04-06
 > Revised: 2026-04-07 — pivoted from chat manager to CLI agent workspace
 > Status note: 2026-05-07 — this file preserves the original migration plan.
+> Status note: 2026-05-16 — **the Tauri runtime is gone.** The Electron
+> migration (PR-A → PR-D3, May 13-16, 2026) replaced the Tauri 2 desktop
+> shell with an Electron + Rust-sidecar architecture. This roadmap is
+> retained as historical context for the original Tauri-targeting plan;
+> the Electron migration's own roadmap lives at
+> `docs/superpowers/plans/2026-05-13-electron-rust-backend-migration.md`,
+> and `docs/roadmap/progress.yaml` has an `electron-migration` phase
+> entry summarizing the three merged PRs / six design tracks.
 > Use `docs/roadmap/progress.yaml` for live status and
 > `docs/roadmap/ui-update-roadmap.md` for the active UI handoff track.
 > Design spec: docs/superpowers/specs/2026-04-06-cli-agent-workspace-design.md
@@ -10,23 +18,25 @@
 
 ## Overview
 
-This roadmap transforms Vimeflow into a **CLI coding agent control plane** — a Tauri 2 desktop app that unifies terminal sessions (AI coding agents like Claude Code), file explorer, code editor, and git diff into one window.
+This roadmap transformed Vimeflow into a **CLI coding agent control plane** — originally a Tauri 2 desktop app that unifies terminal sessions (AI coding agents like Claude Code), file explorer, code editor, and git diff into one window. Post-PR-D3 (2026-05-16) the desktop shell is **Electron** with a long-lived Rust sidecar (`vimeflow-backend`) handling PTY, filesystem, git, and agent observability over LSP-framed JSON IPC; the Tauri-2 invocation surface and the webkit2gtk-rs link-path are gone.
 
 Replaces the previous 6-phase chat-based roadmap. The core change: the primary workspace is now terminal panes running agent processes, not a chat message thread.
 
 ## Current State
 
-| Component           | Status                                                                           |
-| ------------------- | -------------------------------------------------------------------------------- |
-| Tauri scaffold      | **Done** — `src-tauri/` is the active Rust backend                               |
-| Chat view           | **Removed** — project pivoted to terminal-first agent workspace                  |
-| Terminal (xterm.js) | **Done** — Tauri PTY bridge, xterm.js, multi-tab sessions, resize/replay support |
-| Agent status panel  | **Done** — Claude Code and Codex adapters feed the shared frontend panel         |
-| Diff view           | Wired — Vite dev API fallback plus Tauri git/watch integration                   |
-| Editor view         | Wired — CodeMirror editor, vim mode, file buffers, Tauri/Vite file services      |
-| Command Palette     | Wired — fuzzy registry, Ctrl+: trigger, workspace tab actions                    |
-| UI handoff          | **In progress** — steps 1-3 merged; step 4 Single TerminalPane is next           |
-| State management    | Pending — session persistence/store remains on the future roadmap                |
+| Component           | Status                                                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Desktop runtime     | **Electron** — `electron/` shell + `vimeflow-backend` Rust sidecar (post-PR-D3, 2026-05-16)                      |
+| Rust backend crate  | **Done** — `src-tauri/` (directory rename to `backend/` is a deferred follow-up); runtime-neutral `BackendState` |
+| Chat view           | **Removed** — project pivoted to terminal-first agent workspace                                                  |
+| Terminal (xterm.js) | **Done** — sidecar PTY bridge, xterm.js, multi-tab sessions, resize/replay support                               |
+| Agent status panel  | **Done** — Claude Code and Codex adapters feed the shared frontend panel                                         |
+| Diff view           | Wired — Vite dev API fallback plus sidecar git/watch integration                                                 |
+| Editor view         | Wired — CodeMirror editor, vim mode, file buffers, sidecar/Vite file services                                    |
+| Command Palette     | Wired — fuzzy registry, Ctrl+: trigger, workspace tab actions                                                    |
+| Packaging           | **Linux AppImage** via electron-builder; macOS / Windows / signing / auto-update are deferred follow-ups         |
+| UI handoff          | **In progress** — steps 1-3 merged; step 4 Single TerminalPane shipped (#190); step 5 mid-flight                 |
+| State management    | Pending — session persistence/store remains on the future roadmap                                                |
 
 ---
 

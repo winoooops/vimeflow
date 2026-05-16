@@ -3,27 +3,38 @@
 # Source: docs/roadmap/tauri-migration-roadmap.md
 # Schema: phase → steps → dod (definition of done)
 # Status values: pending | in_progress | done | blocked
-# Revised: 2026-05-07 — UI handoff steps 1-3 landed; docs synchronized with current source tree and CI.
+# Revised: 2026-05-16 — Electron runtime cutover complete; final E2E CI DoD pending.
+#   Tauri runtime fully removed; vimeflow now ships as an Electron shell with
+#   a runtime-neutral Rust sidecar binary (vimeflow-backend).
 
-version: 8
-updated: '2026-05-07'
+version: 9
+updated: '2026-05-16'
 roadmap: docs/roadmap/tauri-migration-roadmap.md
 changelog:
   en: CHANGELOG.md
   zh-CN: CHANGELOG.zh-CN.md
 notes: >-
-  Phase 3 (Terminal Core) and Phase 4 (Agent Status Sidebar) are done.
-  Phase 4 D6 was manually verified via docs/media/hero-init.gif, recorded
-  against a real Claude Code session. Several later-roadmap capabilities
-  shipped out-of-order during Phase 4: Files Changed from live git state
-  (#86), typed Activity feed (#80), Claude Code test-run surfacing (#109),
-  PTY reattach with cursor replay (#107), Tooltip primitive (#83),
-  StatusCard in the sidebar header (#120), Token Cache block (#115), and
-  Codex adapter support (#154). UI handoff migration is now the active
-  visual track: steps 1-3 landed in #171, #173, and #174; step 4
-  (single TerminalPane) is next. Bilingual CHANGELOG.md /
-  CHANGELOG.zh-CN.md continues as the linear timeline paired with
-  docs/reviews/.
+  Phases 1-4 are done. The Electron migration (a separate track from
+  the original Tauri-targeting roadmap) shipped as three merged PRs
+  over six design tracks May 13-16, 2026: PR-A (runtime-neutral Rust
+  backend), PR-B (sidecar IPC), PR-C (frontend backend bridge), PR-D1
+  (Electron shell wiring), PR-D2 (E2E driver swap to
+  @wdio/electron-service), PR-D3 (final Tauri removal + electron-builder
+  Linux AppImage packaging) — see the electron-migration phase entry
+  below for details and the linear CHANGELOG for the bilingual
+  narrative. UI handoff migration is the
+  next active visual track: steps 1-3 landed in #171, #173, #174;
+  step 4 (single TerminalPane) shipped in #190; step 5 was sliced into
+  5a (#198), 5b (pending), 5c-1 + 5c-2 (in progress), 5d (pending).
+  Phase 4 D6 was manually verified via docs/media/hero-init.gif against
+  a real Claude Code session. Several later-roadmap capabilities
+  shipped out-of-order during Phase 4: Files Changed from live git
+  state (#86), typed Activity feed (#80), Claude Code test-run
+  surfacing (#109), PTY reattach with cursor replay (#107), Tooltip
+  primitive (#83), StatusCard in the sidebar header (#120), Token
+  Cache block (#115), Codex adapter support (#154). Bilingual
+  CHANGELOG.md / CHANGELOG.zh-CN.md continues as the linear timeline
+  paired with docs/reviews/.
 
 phases:
   - id: phase-1
@@ -836,6 +847,88 @@ phases:
         status: pending
         commit: null
         pr: null
+  - id: electron-migration
+    name: 'Electron Runtime Migration (Tauri → Electron, 3 merged PRs / 6 design tracks)'
+    status: in_progress
+    blocked_by: []
+    specs:
+      - docs/superpowers/plans/2026-05-13-electron-rust-backend-migration.md
+      - docs/superpowers/specs/2026-05-13-pr-a-runtime-neutral-rust-backend-design.md
+      - docs/superpowers/specs/2026-05-13-pr-b-rust-sidecar-ipc-design.md
+      - docs/superpowers/specs/2026-05-14-pr-c-frontend-backend-bridge-design.md
+      - docs/superpowers/specs/2026-05-14-pr-d1-electron-shell-sidecar-wiring-design.md
+      - docs/superpowers/specs/2026-05-15-pr-d2-e2e-electron-driver-swap-design.md
+      - docs/superpowers/specs/2026-05-15-pr-d3-tauri-removal-design.md
+    notes: >-
+      Sub-project track parallel to the main phase ladder. Goal: replace
+      the Tauri 2 desktop shell with Electron while preserving the Rust
+      backend (PTY sessions, filesystem, git status/diff/watch, agent
+      observability). The Rust crate now compiles without any `tauri::*`
+      dep — production state is an Electron shell that spawns
+      `vimeflow-backend` as a stdio sidecar with LSP-framed JSON IPC.
+      Frontend renderer talks through `window.vimeflow.{invoke,listen}`
+      exposed by the Electron preload script. `npm run electron:build`
+      produces a Linux AppImage with the sidecar bundled as an
+      extraResource. macOS/Windows packaging matrix, code signing,
+      auto-update wiring, and the `src-tauri/` → `backend/` directory
+      rename are deferred follow-ups (Phase 10 / future tracks). The
+      runtime cutover is complete; the phase remains in_progress until
+      the final main-branch E2E workflow DoD below is observed.
+      Retrospective: docs/superpowers/retros/2026-05-16-electron-migration.md.
+    steps:
+      - id: em-pra
+        name: 'PR-A — Runtime-neutral Rust backend (BackendState + EventSink trait)'
+        status: done
+        notes: 'Extracted *_inner helpers + BackendState methods so production wrappers and tests share runtime-neutral entry points.'
+      - id: em-prb
+        name: 'PR-B — Rust sidecar IPC (LSP-framed JSON, stdout writer task, backpressure)'
+        status: done
+        notes: 'Added src-tauri/src/bin/vimeflow-backend.rs + src-tauri/src/runtime/ipc.rs; the sidecar is what Electron spawns.'
+      - id: em-prc
+        name: 'PR-C — Frontend backend bridge (src/lib/backend.ts)'
+        status: done
+        notes: 'Renderer-side IPC seam. Falls back to @tauri-apps/api when window.vimeflow is unset; pinned PR-D3 to a 4-to-6-line bridge edit (PR-C spec §2.5).'
+      - id: em-prd1
+        name: 'PR-D1 — Electron shell + sidecar wiring (#209)'
+        status: done
+        commit: 105f0ec
+        pr: 209
+        notes: 'electron/main.ts + preload.ts + sidecar.ts. Tauri stays alive — npm run tauri:dev and npm run electron:dev work side-by-side.'
+      - id: em-prd2
+        name: 'PR-D2 — E2E driver swap to @wdio/electron-service (#210)'
+        status: done
+        commit: 96aed26
+        pr: 210
+        notes: 'Replaced tauri-driver with @wdio/electron-service; all 11 E2E specs land unchanged.'
+      - id: em-prd3
+        name: 'PR-D3 — Final Tauri runtime removal + electron-builder packaging (#211)'
+        status: done
+        commit: c5433da
+        pr: 211
+        notes: '20 #[tauri::command] wrappers deleted; src-tauri/{main.rs, build.rs, tauri.conf.json, capabilities/, icons/} deleted; @tauri-apps/* + tauri Cargo deps removed; electron-builder.yml + build/icon.png + src-tauri/README.md added; npm run electron:build produces a Linux AppImage.'
+    dod:
+      - id: em-d1
+        check: '`npm run electron:dev` opens Electron with a working PTY terminal'
+        status: done
+      - id: em-d2
+        check: '`npm run electron:build` produces a runnable AppImage at release/vimeflow-*.AppImage'
+        status: done
+        commit: c5433da
+        pr: 211
+      - id: em-d3
+        check: '`cargo test` count matches PR-D2 baseline (deleted Tauri wrappers had no tests; cfg(test) aliases preserved)'
+        status: done
+        commit: c5433da
+        pr: 211
+      - id: em-d4
+        check: 'Zero runtime Tauri references in src/, src-tauri/, tests/, package.json, vite.config.ts (excluding docs/, target/, bindings/, *.md, *.puml, *.svg)'
+        status: done
+        commit: c5433da
+        pr: 211
+      - id: em-d5
+        check: 'CI e2e.yml green on Electron (no GTK/webkit2gtk apt deps)'
+        status: pending
+        notes: 'PR-D3 removed GTK/webkit2gtk apt deps from e2e.yml; final status waits for the main-branch E2E Tests workflow because e2e.yml triggers on main, not dev.'
   - id: ui-handoff-migration
     name: 'UI Handoff Migration (handoff §9 + token cleanup)'
     status: in_progress

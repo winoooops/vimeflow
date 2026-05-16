@@ -16,9 +16,11 @@
 
 </div>
 
-> A Tauri desktop app that unifies terminal sessions, file explorer, code editor, and git diff into a single workspace — purpose-built for AI coding agents like Claude Code and Codex.
+> An Electron desktop app that unifies terminal sessions, file explorer, code editor, and git diff into a single workspace — purpose-built for AI coding agents like Claude Code and Codex.
 
-Vimeflow is a **CLI coding agent control plane** built with Tauri 2 (Rust + React/TypeScript). It gives you one window to manage terminal sessions where AI agents work, browse files, review diffs, and edit code — all with vim-style keybindings and a dark atmospheric UI.
+Vimeflow is a **CLI coding agent control plane** built with Electron 42 (renderer: React + TypeScript) on top of a long-lived `vimeflow-backend` Rust sidecar (PTY, filesystem, git, agent observability) over LSP-framed JSON IPC. It gives you one window to manage terminal sessions where AI agents work, browse files, review diffs, and edit code — all with vim-style keybindings and a dark atmospheric UI.
+
+> Historical note: Vimeflow was originally a Tauri 2 desktop app. The Electron migration ([retrospective](docs/superpowers/retros/2026-05-16-electron-migration.md), PRs [#209](https://github.com/winoooops/vimeflow/pull/209) / [#210](https://github.com/winoooops/vimeflow/pull/210) / [#211](https://github.com/winoooops/vimeflow/pull/211)) replaced the Tauri shell with Electron + a runtime-neutral Rust sidecar in May 2026.
 
 But the product is only half the story. This repository is also a testbed for **Lifeline-driven, AI-native development**: an autonomous agent loop builds features from specification, governed by layered rules and specialized agents.
 
@@ -28,10 +30,10 @@ But the product is only half the story. This repository is also a testbed for **
 
 ### Terminal Core (Phase 3)
 
-Full xterm.js terminal integrated with a Tauri Rust PTY backend:
+Full xterm.js terminal integrated with the `vimeflow-backend` Rust sidecar via Electron IPC:
 
-- **TauriTerminalService** — singleton IPC bridge between xterm.js and `portable-pty`
-- Rust PTY commands: spawn, write, resize, kill — with stdout streamed via Tauri events
+- **DesktopTerminalService** — singleton renderer-side bridge between xterm.js and `portable-pty` (renamed from `TauriTerminalService` in PR-D3)
+- Rust PTY commands: spawn, write, resize, kill — dispatched through `BackendState` methods; stdout streamed via `StdoutEventSink` events
 - Session caching per tab, multi-tab terminal support
 - ResizeObserver + FitAddon for responsive terminal sizing
 - WebGL renderer with Catppuccin Mocha theme
@@ -56,10 +58,10 @@ Current UI handoff progress is tracked in [`docs/roadmap/progress.yaml`](docs/ro
 Real-time agent observability panel that auto-detects running AI coding agents in terminal sessions. Supports **Claude Code** and **Codex** (since [#154](https://github.com/winoooops/vimeflow/pull/154)) with one shared frontend:
 
 - **`AgentAdapter` trait** — `src-tauri/src/agent/adapter/` defines a single trait (`status_source` / `parse_status` / `validate_transcript` / `tail_transcript`) that each agent's adapter implements; the watcher pipeline, frontend events, and panel UI are agent-agnostic
-- **Claude Code adapter** (`adapter/claude_code/`) — per-session shell script pipes Claude's statusline JSON to a watched file; the adapter parses it and emits Tauri events (`agent-detected`, `agent-status`, `agent-tool-call`, `agent-disconnected`)
+- **Claude Code adapter** (`adapter/claude_code/`) — per-session shell script pipes Claude's statusline JSON to a watched file; the adapter parses it and emits sidecar events (`agent-detected`, `agent-status`, `agent-tool-call`, `agent-disconnected`)
 - **Codex adapter** (`adapter/codex/`) — schema-driven SQLite locator over `~/.codex/*.sqlite` (logs DB → thread_id, threads DB → rollout JSONL path) with `/proc`-driven Linux fast-paths and FS-scan fallback; fold `event_msg.token_count` into the same `AgentStatusEvent` shape Claude emits
 - **Rust backend orchestration** — `src-tauri/src/agent/` adds the agent detector (process tree polling), the `base::start_for` watcher driver (file-change notify + polling fallback), and per-adapter transcript JSONL tailers for tool-call / turn / test-run signals
-- **Frontend panel** — `src/features/agent-status/` with `useAgentStatus` hook subscribing to the Tauri event bus, plus components: StatusCard (identity + model badge), BudgetMetrics (adaptive ApiKey/Subscriber/Fallback layout — Codex sessions render Subscriber with rate-limit bars; Claude API-key sessions render the Cost cell), ContextBucket (fill gauge + progress bar driven by `last_token_usage` for Codex, `total_input_tokens` for Claude), ToolCallSummary (aggregated chips), RecentToolCalls, FilesChanged, TestResults, and ActivityFooter
+- **Frontend panel** — `src/features/agent-status/` with `useAgentStatus` hook subscribing to the sidecar event bus, plus components: StatusCard (identity + model badge), BudgetMetrics (adaptive ApiKey/Subscriber/Fallback layout — Codex sessions render Subscriber with rate-limit bars; Claude API-key sessions render the Cost cell), ContextBucket (fill gauge + progress bar driven by `last_token_usage` for Codex, `total_input_tokens` for Claude), ToolCallSummary (aggregated chips), RecentToolCalls, FilesChanged, TestResults, and ActivityFooter
 - **Auto-collapse** — panel is 0px when no agent detected, animates to 280px on detection, holds final state for 5s after disconnect
 - **ts-rs type codegen** — Rust types exported to `src/bindings/` for type-safe frontend consumption (`CostMetrics.totalCostUsd: number | null` distinguishes Codex's no-cost surface from Claude's reported cost)
 
@@ -75,7 +77,7 @@ Design specs: [`2026-04-12-agent-status-sidebar/`](docs/superpowers/specs/2026-0
 
 | Module              | Description                                                                                                                 |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **terminal**        | xterm.js + Tauri PTY IPC bridge, session management                                                                         |
+| **terminal**        | xterm.js + sidecar PTY IPC bridge, session management                                                                       |
 | **editor**          | IDE-style tabbed editor — CodeMirror 6, vim mode (@replit/codemirror-vim), vim status bar                                   |
 | **diff**            | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard)                                      |
 | **files**           | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop                                             |
@@ -130,12 +132,15 @@ Full spec: [`docs/design/DESIGN.md`](docs/design/DESIGN.md)
 # Prerequisites: Node >= 22 (Node 24 via .nvmrc for CI parity), Rust toolchain
 nvm use                          # Uses .nvmrc
 
-# Frontend only (no Tauri backend)
+# Frontend only (no Rust backend; useful for renderer-only iteration)
 npm install
 npm run dev                      # Vite dev server at localhost:5173
 
 # Full desktop app (requires Rust)
-npm run tauri:dev                # Tauri + Rust backend
+npm run electron:dev             # Electron + Rust sidecar (vimeflow-backend)
+
+# Packaged Linux AppImage
+npm run electron:build           # Produces release/vimeflow-<version>-x64.AppImage
 
 # Tests
 npm test                         # Vitest suite
@@ -168,11 +173,16 @@ Or add manually to `~/.bashrc`:
 PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND;}"'printf "\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'
 ```
 
-### Linux / Wayland: WebKitGTK Renderer
+### Linux: AppImage smoke
 
-The `tauri:dev` script sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`. WebKitGTK's DMA-BUF renderer crashes on many Wayland compositor + driver combos with `Gdk-Message: Error 71 (Protocol error) dispatching to Wayland display`. Disabling DMA-BUF falls back to a renderer that works reliably across setups.
+`npm run electron:build` produces `release/vimeflow-<version>-x64.AppImage`. On dev hosts without a SUID `chrome-sandbox`, launch with `--no-sandbox`:
 
-The variable is harmless on macOS (no WebKitGTK) but the inline shell syntax does not work on Windows `cmd.exe`. If Windows support is needed, swap in [`cross-env`](https://www.npmjs.com/package/cross-env).
+```bash
+chmod +x release/vimeflow-*.AppImage
+./release/vimeflow-*.AppImage --no-sandbox &
+```
+
+On hosts without `libfuse2`, fall back to `--appimage-extract-and-run --no-sandbox` (extracts to tmp and runs the unpacked tree). Post-PR-D3, the GTK/WebKitGTK renderer flags from the old Tauri setup (`WEBKIT_DISABLE_DMABUF_RENDERER=1`) are no longer needed — Electron ships its own Chromium.
 
 ### Lifeline Plugin Setup
 
@@ -215,16 +225,27 @@ src/
 ├── bindings/               # Generated Rust -> TypeScript types
 └── test/                   # Vitest setup
 
-src-tauri/
+src-tauri/                  # Rust sidecar crate (post-PR-D3; dir rename to backend/ is a deferred follow-up)
 ├── src/
-│   ├── main.rs             # Tauri entry point
-│   ├── lib.rs              # Library setup
-│   ├── terminal/           # PTY commands, state, types
+│   ├── bin/
+│   │   └── vimeflow-backend.rs  # Sidecar binary entry — stdin/stdout LSP-framed JSON IPC
+│   ├── lib.rs              # Module declarations only (post-PR-D3 collapse)
+│   ├── runtime/            # BackendState, IPC router, EventSink trait
+│   ├── terminal/           # PTY commands (_inner helpers + BackendState methods)
 │   ├── filesystem/         # List/read/write commands with scope validation
 │   ├── git/                # Git status, diff, stage/unstage
 │   └── agent/              # Agent detector, statusline watcher, transcript parser
-├── Cargo.toml              # Rust dependencies
-└── tauri.conf.json         # Tauri configuration
+├── Cargo.toml              # Rust dependencies (Tauri deps removed in PR-D3)
+└── README.md               # Crate-level orientation
+
+electron/                   # Electron desktop shell (PR-D1+)
+├── main.ts                 # App lifecycle + ipcMain + sidecar process orchestration
+├── preload.ts              # contextBridge.exposeInMainWorld('vimeflow', { invoke, listen })
+├── sidecar.ts              # LSP frame codec + pending-request map + shutdown escalation
+├── ipc-channels.ts         # Channel-name constants
+└── backend-methods.ts      # Production method allowlist
+
+electron-builder.yml        # Linux AppImage packaging config
 
 agents/                     # 10 specialized AI agent definitions
 rules/                      # Hierarchical dev standards (common + TS + Rust)
