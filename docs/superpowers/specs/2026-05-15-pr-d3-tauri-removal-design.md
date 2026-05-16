@@ -675,3 +675,5 @@ be a new architectural decision rather than a revert.
   post-D3 non-generic `AgentAdapter` trait shape (the diagrams still
   show `AgentAdapter<R: tauri::Runtime>`). Excluded from the §1.3
   acceptance grep via `--glob '!**/*.puml' --glob '!**/*.svg'`.
+
+<!-- codex-reviewed: 2026-05-16T04:26:36Z -->
