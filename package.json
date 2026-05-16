@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "backend:build": "cd src-tauri && cargo build --bin vimeflow-backend",
     "backend:build:release": "cd src-tauri && cargo build --release --bin vimeflow-backend",
-    "electron:build": "npm run type-check && cross-env vite build --mode electron && npm run backend:build:release && electron-builder --linux AppImage",
+    "electron:build": "npm run type-check && vite build --mode electron && npm run backend:build:release && electron-builder --linux AppImage",
     "electron:dev": "npm run backend:build && vite --mode electron",
     "prepare": "husky",
     "lint": "eslint .",

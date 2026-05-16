@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-13
-ref_count: 9
+last_updated: 2026-05-16
+ref_count: 10
 ---
 
 # Async Race Conditions
@@ -367,3 +367,12 @@ prevent showing previous data.
 - **Finding:** Step 5c-2 added `service.setActiveSession(target.ptyId)` to `setSessionActivePane` to close 5c-1 Decision #10. The new `pendingPaneOps` ref already serialises `addPane` / `removePane` against each other, but `setSessionActivePane` predates the serialisation system and was never wired into the same guard. A user clicking an inactive pane while a concurrent `removePane` is in flight (kill IPC pending) hits a race window where `service.setActiveSession(target.ptyId)` can arrive at Rust either before or after the `kill` — when it arrives after, Rust briefly sets the active session to a PTY that's being killed. Any keyboard input delivered during the ~10–50 ms IPC round-trip is routed to the dying PTY and silently dropped. `removePane`'s own `setActiveSession(newActivePtyId)` self-corrects the state, but the dropped input is unrecoverable.
 - **Fix:** Added `if (pendingPaneOps.current.has(sessionId)) return` at the TOP of `setSessionActivePane`'s body — the whole mutation (React state + IPC) is a no-op while a lifecycle op is pending. Skipping the React state mutation too (not just the IPC, as Claude originally suggested) closes a second sub-case: the targeted pane may evaporate when the remove commits, so flipping its `active=true` is futile. Test: synthesised the race by leaving `service.kill` pending via `mockImplementationOnce(new Promise)`, called `setSessionActivePane` during the window, asserted active flag + Rust IPC stay unchanged. Code-review heuristic: any newly-added IPC inside a mutation that ALREADY participates in a serialisation system must extend the gate, not bypass it.
 - **Commit:** _(see git log for the cycle-1 fix commit on PR #204)_
+
+### 37. Memoized listener initialization kept a failed promise and leaked partially attached listeners
+
+- **Source:** github-claude | PR #211 round 1 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/services/desktopTerminalService.ts`
+- **Finding:** `DesktopTerminalService.ensureListeners()` memoized its initialization promise, but if `listen('pty-data')` succeeded and a later `listen()` call failed, the rejected promise stayed in `initPromise` forever while the already-attached listener was never cleaned up. Every future `spawn()` / `onData()` reused the rejected promise and the service could not recover without a page reload; the stray partial listener also continued to dispatch into the singleton's callback arrays. Same class as async singleton startup races: a failed initialization must not become the terminal cached state, and partially-created resources must not escape a failed transaction.
+- **Fix:** Stage `UnlistenFn`s in a local array until all backend listeners attach. On any failure, reset `initPromise` to `null`, call each staged unlisten in a guarded cleanup loop, and rethrow so awaited callers still see the failure. Only publish staged unlisteners to `this.unlistenFns` after the full listener set is attached. Added regression coverage for partial-listener cleanup and successful retry after failure.
+- **Commit:** _(see git log for the PR #211 round-1 fix commit)_

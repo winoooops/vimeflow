@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-09
-ref_count: 19
+last_updated: 2026-05-16
+ref_count: 20
 ---
 
 # Documentation Accuracy
@@ -531,3 +531,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** A test-side comment justifying the `overflow-x-clip` assertion read `// see List.tsx:session-scroll for the WebKitGTK phantom-gutter rationale`. The pointer was correct on the day it was written but encodes two future-rot risks: (a) `List.tsx` may rename / move / restructure, breaking the breadcrumb silently because no test references the file by symbol; (b) a reader looking at the test in isolation has no local explanation and may delete the assertion thinking it is redundant. Same finding-class as #50 / #51 (task-reference smells), generalized: any inline comment that points OUT of the current file at all — to a sibling file, an issue, a PR, a "see also" — is rot-prone. Self-contained or absent are the only safe options.
 - **Fix:** Dropped the comment entirely. The class assertions (`thin-scrollbar`, `overflow-x-clip`, `min-h-0`) are self-documenting — the production-side comment in `AgentStatusPanel.tsx` carries the WHY, and that comment is co-located with the code it explains. Code-review heuristic: when justifying a non-obvious assertion in a test, prefer a one-line inline reason that names the platform / spec-quirk directly (e.g. `// CSS spec coerces overflow-x:visible → auto when y is auto`); if the production file already carries that reason, the test does not need to repeat it OR point at it. The pointer form fails closed over time; inline-or-nothing fails open.
 - **Commit:** _(see git log for the cycle-1 fix commit on PR #195)_
+
+### 56. No-op build-script wrapper implied an environment contract that no longer existed
+
+- **Source:** github-claude | PR #211 round 1 | 2026-05-16
+- **Severity:** LOW
+- **File:** `package.json`
+- **Finding:** `electron:build` still ran `cross-env vite build --mode electron` after the script stopped assigning any environment variables. With no `KEY=value` arguments, `cross-env` adds no behavior; it only makes the build script look as if an environment-normalization step is required. Because other scripts in the same file still legitimately use `cross-env VITE_E2E=1 ...`, the no-op wrapper was especially easy to mistake for intentional platform handling rather than leftover metadata.
+- **Fix:** Removed `cross-env` from `electron:build`, leaving `vite build --mode electron` directly. The dependency stays because the E2E scripts still use it with actual environment assignments. Code-review heuristic: when deleting or moving env vars in npm scripts, scan the remaining command for wrappers whose only purpose was those vars; a no-op wrapper is stale operational documentation.
+- **Commit:** _(see git log for the PR #211 round-1 fix commit)_

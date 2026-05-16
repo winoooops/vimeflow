@@ -39,6 +39,22 @@ export class DesktopTerminalService implements ITerminalService {
   private unlistenFns: UnlistenFn[] = []
   private initPromise: Promise<void> | null = null
 
+  private reportListenerInitFailure(error: unknown): void {
+    // eslint-disable-next-line no-console
+    console.warn(
+      'DesktopTerminalService: failed to attach backend listeners',
+      error
+    )
+  }
+
+  private async ensureListenersAndReportFailure(): Promise<void> {
+    try {
+      await this.ensureListeners()
+    } catch (error) {
+      this.reportListenerInitFailure(error)
+    }
+  }
+
   /**
    * Lazily initialize backend event listeners on first use.
    * Listeners are shared across all sessions — callbacks filter by sessionId.
@@ -55,32 +71,59 @@ export class DesktopTerminalService implements ITerminalService {
     }
 
     this.initPromise = (async (): Promise<void> => {
-      const unlistenData = await listen<PtyDataEvent>('pty-data', (payload) => {
-        const { sessionId, data, offsetStart, byteLen } = payload
+      const pendingUnlistenFns: UnlistenFn[] = []
 
-        // PtyDataEvent.offset_start and .byte_len are u64 — bindings may emit
-        // as bigint or number. Coerce to number; safe up to 2^53 = ~9 PB per
-        // session.
-        const offset =
-          typeof offsetStart === 'bigint' ? Number(offsetStart) : offsetStart
-        const len = typeof byteLen === 'bigint' ? Number(byteLen) : byteLen
-        this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset, len))
-      })
+      try {
+        const unlistenData = await listen<PtyDataEvent>(
+          'pty-data',
+          (payload) => {
+            const { sessionId, data, offsetStart, byteLen } = payload
 
-      const unlistenExit = await listen<PtyExitEvent>('pty-exit', (payload) => {
-        const { sessionId, code } = payload
-        this.exitCallbacks.forEach((cb) => cb(sessionId, code))
-      })
+            // PtyDataEvent.offset_start and .byte_len are u64 — bindings may emit
+            // as bigint or number. Coerce to number; safe up to 2^53 = ~9 PB per
+            // session.
+            const offset =
+              typeof offsetStart === 'bigint'
+                ? Number(offsetStart)
+                : offsetStart
+            const len = typeof byteLen === 'bigint' ? Number(byteLen) : byteLen
+            this.dataCallbacks.forEach((cb) => cb(sessionId, data, offset, len))
+          }
+        )
+        pendingUnlistenFns.push(unlistenData)
 
-      const unlistenError = await listen<PtyErrorEvent>(
-        'pty-error',
-        (payload) => {
-          const { sessionId, message } = payload
-          this.errorCallbacks.forEach((cb) => cb(sessionId, message))
-        }
-      )
+        const unlistenExit = await listen<PtyExitEvent>(
+          'pty-exit',
+          (payload) => {
+            const { sessionId, code } = payload
+            this.exitCallbacks.forEach((cb) => cb(sessionId, code))
+          }
+        )
+        pendingUnlistenFns.push(unlistenExit)
 
-      this.unlistenFns.push(unlistenData, unlistenExit, unlistenError)
+        const unlistenError = await listen<PtyErrorEvent>(
+          'pty-error',
+          (payload) => {
+            const { sessionId, message } = payload
+            this.errorCallbacks.forEach((cb) => cb(sessionId, message))
+          }
+        )
+        pendingUnlistenFns.push(unlistenError)
+
+        this.unlistenFns.push(...pendingUnlistenFns)
+      } catch (error) {
+        this.initPromise = null
+
+        pendingUnlistenFns.forEach((fn) => {
+          try {
+            fn()
+          } catch (cleanupError) {
+            this.reportListenerInitFailure(cleanupError)
+          }
+        })
+
+        throw error
+      }
     })()
 
     return this.initPromise
@@ -159,11 +202,19 @@ export class DesktopTerminalService implements ITerminalService {
     // attachment — once the listener fires, it iterates this.dataCallbacks.
     this.dataCallbacks.push(callback)
 
-    // CRITICAL: await ensureListeners so the underlying tauri.listen('pty-data', ...)
+    // CRITICAL: await ensureListeners so the underlying listen('pty-data', ...)
     // is attached before the caller proceeds. The restore orchestrator depends on
     // being able to await this method — without it, PTY events emitted between this
     // call returning and listen() resolving go to nobody (irrecoverable lost bytes).
-    await this.ensureListeners()
+    try {
+      await this.ensureListeners()
+    } catch (error) {
+      const index = this.dataCallbacks.indexOf(callback)
+      if (index > -1) {
+        this.dataCallbacks.splice(index, 1)
+      }
+      throw error
+    }
 
     return () => {
       const index = this.dataCallbacks.indexOf(callback)
@@ -177,7 +228,7 @@ export class DesktopTerminalService implements ITerminalService {
     callback: (sessionId: string, code: number | null) => void
   ): () => void {
     this.exitCallbacks.push(callback)
-    void this.ensureListeners()
+    void this.ensureListenersAndReportFailure()
 
     return () => {
       const index = this.exitCallbacks.indexOf(callback)
@@ -189,7 +240,7 @@ export class DesktopTerminalService implements ITerminalService {
 
   onError(callback: (sessionId: string, message: string) => void): () => void {
     this.errorCallbacks.push(callback)
-    void this.ensureListeners()
+    void this.ensureListenersAndReportFailure()
 
     return () => {
       const index = this.errorCallbacks.indexOf(callback)
