@@ -23,6 +23,18 @@ const devBaseSources = [
   ...localhostWebSocketSources,
 ]
 
+const devReactRefreshNoncePattern = /^[A-Za-z0-9_-]+$/
+
+const validateDevReactRefreshNonce = (nonce: string): string => {
+  if (!devReactRefreshNoncePattern.test(nonce)) {
+    throw new Error(
+      `${DEV_REACT_REFRESH_NONCE_ENV} must be a non-empty base64url value`
+    )
+  }
+
+  return nonce
+}
+
 export const createDevReactRefreshNonce = (): string =>
   randomBytes(16).toString('base64url')
 
@@ -32,7 +44,7 @@ export const getDevReactRefreshNonce = (): string => {
   const nonce = process.env[DEV_REACT_REFRESH_NONCE_ENV]
 
   if (nonce !== undefined && nonce.length > 0) {
-    return nonce
+    return validateDevReactRefreshNonce(nonce)
   }
 
   fallbackDevReactRefreshNonce ??= createDevReactRefreshNonce()
@@ -51,7 +63,7 @@ export const ensureDevReactRefreshNonce = (): string => {
 const devScriptSources = (nonce: string): string[] => [
   "'self'",
   "'unsafe-eval'",
-  `'nonce-${nonce}'`,
+  `'nonce-${validateDevReactRefreshNonce(nonce)}'`,
   ...localhostHttpSources,
 ]
 
@@ -99,10 +111,16 @@ export const developmentContentSecurityPolicy = (
   isE2eRuntime ? devE2eContentSecurityPolicy : devContentSecurityPolicy(nonce)
 
 const reactRefreshPreamblePattern =
-  /<script type="module">(\s*import\s+\{\s*injectIntoGlobalHook\s*\}\s+from\s+["'][^"']*@react-refresh["'];)/
+  /<script type="module">(?=\s*import\s+(?:[\s\S]*?\s+from\s+)?["'][^"']*@react-refresh["'];)/
 
-export const addDevReactRefreshNonce = (html: string, nonce: string): string =>
-  html.replace(
+export const addDevReactRefreshNonce = (
+  html: string,
+  nonce: string
+): string => {
+  const safeNonce = validateDevReactRefreshNonce(nonce)
+
+  return html.replace(
     reactRefreshPreamblePattern,
-    `<script type="module" nonce="${nonce}">$1`
+    `<script type="module" nonce="${safeNonce}">`
   )
+}

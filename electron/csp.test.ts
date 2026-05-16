@@ -73,10 +73,39 @@ describe('Content Security Policy', () => {
     )
   })
 
+  test('adds nonce to Vite React Refresh preamble with default runtime import', () => {
+    const htmlNonce = 'html-nonce'
+
+    const html = [
+      '<html><head>',
+      '<script type="module">',
+      'import RefreshRuntime from "/@react-refresh";',
+      'RefreshRuntime.injectIntoGlobalHook(window);',
+      '</script>',
+      '</head></html>',
+    ].join('\n')
+
+    expect(addDevReactRefreshNonce(html, htmlNonce)).toContain(
+      `<script type="module" nonce="${htmlNonce}">`
+    )
+  })
+
   test('leaves unrelated module scripts unchanged', () => {
     const html = '<script type="module">import "/src/main.tsx";</script>'
 
     expect(addDevReactRefreshNonce(html, nonce)).toBe(html)
+  })
+
+  test('rejects unsafe nonce values before injecting them into HTML', () => {
+    const html = [
+      '<script type="module">',
+      'import { injectIntoGlobalHook } from "/@react-refresh";',
+      '</script>',
+    ].join('\n')
+
+    expect(() => addDevReactRefreshNonce(html, 'bad" nonce')).toThrow(
+      'non-empty base64url value'
+    )
   })
 
   test('generates opaque nonce values instead of using a source-known constant', () => {
@@ -95,6 +124,24 @@ describe('Content Security Policy', () => {
     try {
       expect(getDevReactRefreshNonce()).toBe('from-env')
       expect(ensureDevReactRefreshNonce()).toBe('from-env')
+    } finally {
+      if (previous === undefined) {
+        delete process.env[DEV_REACT_REFRESH_NONCE_ENV]
+      } else {
+        process.env[DEV_REACT_REFRESH_NONCE_ENV] = previous
+      }
+    }
+  })
+
+  test('rejects unsafe environment nonce values', () => {
+    const previous = process.env[DEV_REACT_REFRESH_NONCE_ENV]
+
+    process.env[DEV_REACT_REFRESH_NONCE_ENV] = 'bad" nonce'
+
+    try {
+      expect(() => getDevReactRefreshNonce()).toThrow(
+        'non-empty base64url value'
+      )
     } finally {
       if (previous === undefined) {
         delete process.env[DEV_REACT_REFRESH_NONCE_ENV]

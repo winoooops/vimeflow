@@ -25,6 +25,22 @@ const git = simpleGit()
 const repoRoot = process.cwd()
 const devReactRefreshNonce = ensureDevReactRefreshNonce()
 
+const isCiRuntime = (): boolean =>
+  process.env.CI !== undefined && process.env.CI !== 'false'
+
+const isLinuxHeadlessRuntime = (): boolean =>
+  process.platform === 'linux' &&
+  process.env.DISPLAY === undefined &&
+  process.env.WAYLAND_DISPLAY === undefined
+
+const shouldDisableElectronSandbox = (): boolean =>
+  isCiRuntime() || isLinuxHeadlessRuntime()
+
+const electronStartupArgs = (): string[] => [
+  '.',
+  ...(shouldDisableElectronSandbox() ? ['--no-sandbox'] : []),
+]
+
 /**
  * Validate that a file path is repo-relative and doesn't escape the repo.
  * Rejects absolute paths, path traversal, and symlinks outside the repo.
@@ -637,12 +653,11 @@ export default defineConfig(({ mode }) => ({
               entry: 'electron/main.ts',
               onstart: async ({ startup }): Promise<void> => {
                 try {
-                  // DEV ONLY: Linux CI and some containerized dev hosts do not
-                  // provide Chromium's SUID sandbox. This process-level flag
-                  // overrides BrowserWindow.sandbox: true; remove it once the
-                  // deferred AppImage sandbox follow-up ships a working
-                  // chrome-sandbox path for dev and CI.
-                  await startup(['.', '--no-sandbox'])
+                  // DEV ONLY: Linux CI and headless/containerized hosts may not
+                  // provide Chromium's SUID sandbox. Only those runs get the
+                  // process-level flag that overrides BrowserWindow.sandbox:
+                  // true; ordinary local dev keeps the renderer sandbox.
+                  await startup(electronStartupArgs())
                 } catch (error: unknown) {
                   const message =
                     error instanceof Error

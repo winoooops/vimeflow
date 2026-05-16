@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-05-16
-ref_count: 4
+ref_count: 5
 ---
 
 # E2E Testing (WDIO + tauri-driver + WebKitGTK)
@@ -185,3 +185,12 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** `electron:dev` launches Electron with `--no-sandbox`, which overrides `BrowserWindow.webPreferences.sandbox: true`; without an adjacent comment, the window-level setting falsely suggests the dev renderer is OS-sandboxed.
 - **Fix:** Added a DEV ONLY comment at the `startup(['.', '--no-sandbox'])` call documenting the Linux CI/container SUID sandbox constraint and the deferred removal condition.
 - **Commit:** _(see git log for the PR #214 sandbox-comment review-fix commit)_
+
+### 16. Electron dev sandbox override must be scoped to CI/headless runs
+
+- **Source:** github-claude | PR #214 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `vite.config.ts`
+- **Finding:** Adding a comment near `startup(['.', '--no-sandbox'])` documented the sandbox tradeoff but left the flag applied to every `electron:dev` launch. That made ordinary local dev sessions run without Chromium's renderer sandbox, even on hosts where the sandbox works.
+- **Fix:** Compute Electron startup args from runtime context. Only CI and Linux headless/container runs without `DISPLAY` or `WAYLAND_DISPLAY` receive `--no-sandbox`; normal local dev starts Electron without the process-level sandbox override.
+- **Commit:** _(see git log for the PR #214 scoped-sandbox review-fix commit)_

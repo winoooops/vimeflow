@@ -48,14 +48,6 @@ export class DesktopTerminalService implements ITerminalService {
     )
   }
 
-  private async ensureListenersAndReportFailure(): Promise<void> {
-    try {
-      await this.ensureListeners()
-    } catch (error) {
-      this.reportListenerInitFailure(error)
-    }
-  }
-
   private cleanupListeners(unlistenFns: UnlistenFn[]): void {
     unlistenFns.forEach((fn) => {
       try {
@@ -140,6 +132,24 @@ export class DesktopTerminalService implements ITerminalService {
     })()
 
     return this.initPromise
+  }
+
+  private removeExitCallback(
+    callback: (sessionId: string, code: number | null) => void
+  ): void {
+    const index = this.exitCallbacks.indexOf(callback)
+    if (index > -1) {
+      this.exitCallbacks.splice(index, 1)
+    }
+  }
+
+  private removeErrorCallback(
+    callback: (sessionId: string, message: string) => void
+  ): void {
+    const index = this.errorCallbacks.indexOf(callback)
+    if (index > -1) {
+      this.errorCallbacks.splice(index, 1)
+    }
   }
 
   async spawn(params: PTYSpawnParams): Promise<PTYSpawnResult> {
@@ -229,29 +239,37 @@ export class DesktopTerminalService implements ITerminalService {
     }
   }
 
-  onExit(
+  async onExit(
     callback: (sessionId: string, code: number | null) => void
-  ): () => void {
+  ): Promise<() => void> {
     this.exitCallbacks.push(callback)
-    void this.ensureListenersAndReportFailure()
+
+    try {
+      await this.ensureListeners()
+    } catch (error) {
+      this.removeExitCallback(callback)
+      throw error
+    }
 
     return () => {
-      const index = this.exitCallbacks.indexOf(callback)
-      if (index > -1) {
-        this.exitCallbacks.splice(index, 1)
-      }
+      this.removeExitCallback(callback)
     }
   }
 
-  onError(callback: (sessionId: string, message: string) => void): () => void {
+  async onError(
+    callback: (sessionId: string, message: string) => void
+  ): Promise<() => void> {
     this.errorCallbacks.push(callback)
-    void this.ensureListenersAndReportFailure()
+
+    try {
+      await this.ensureListeners()
+    } catch (error) {
+      this.removeErrorCallback(callback)
+      throw error
+    }
 
     return () => {
-      const index = this.errorCallbacks.indexOf(callback)
-      if (index > -1) {
-        this.errorCallbacks.splice(index, 1)
-      }
+      this.removeErrorCallback(callback)
     }
   }
 

@@ -60,14 +60,20 @@ export interface ITerminalService {
   ): Promise<() => void>
 
   /**
-   * Subscribe to PTY exit events
+   * Subscribe to PTY exit events. Resolves after the underlying transport
+   * listener is attached and rejects if listener setup fails.
    */
-  onExit(callback: (sessionId: string, code: number | null) => void): () => void
+  onExit(
+    callback: (sessionId: string, code: number | null) => void
+  ): Promise<() => void>
 
   /**
-   * Subscribe to PTY error events
+   * Subscribe to PTY error events. Resolves after the underlying transport
+   * listener is attached and rejects if listener setup fails.
    */
-  onError(callback: (sessionId: string, message: string) => void): () => void
+  onError(
+    callback: (sessionId: string, message: string) => void
+  ): Promise<() => void>
 
   /**
    * List all sessions with their status (Alive or Exited)
@@ -261,26 +267,28 @@ export class MockTerminalService implements ITerminalService {
 
   onExit(
     callback: (sessionId: string, code: number | null) => void
-  ): () => void {
+  ): Promise<() => void> {
     this.exitCallbacks.push(callback)
 
-    return () => {
+    return Promise.resolve(() => {
       const index = this.exitCallbacks.indexOf(callback)
       if (index > -1) {
         this.exitCallbacks.splice(index, 1)
       }
-    }
+    })
   }
 
-  onError(callback: (sessionId: string, message: string) => void): () => void {
+  onError(
+    callback: (sessionId: string, message: string) => void
+  ): Promise<() => void> {
     this.errorCallbacks.push(callback)
 
-    return () => {
+    return Promise.resolve(() => {
       const index = this.errorCallbacks.indexOf(callback)
       if (index > -1) {
         this.errorCallbacks.splice(index, 1)
       }
-    }
+    })
   }
 
   // Test helpers

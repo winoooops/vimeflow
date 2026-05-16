@@ -21,12 +21,27 @@ export const usePtyExitListener = ({
   onExitRef.current = onExit
 
   useEffect(() => {
-    const unsubscribe = service.onExit((sessionId) => {
-      onExitRef.current(sessionId)
-    })
+    let subscriptionCancelled = false
+    let unsubscribeExit: (() => void) | undefined
+
+    void (async (): Promise<void> => {
+      const unsubscribe = await service.onExit((sessionId) => {
+        onExitRef.current(sessionId)
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (subscriptionCancelled) {
+        unsubscribe()
+
+        return
+      }
+
+      unsubscribeExit = unsubscribe
+    })()
 
     return (): void => {
-      unsubscribe()
+      subscriptionCancelled = true
+      unsubscribeExit?.()
     }
   }, [service])
 }

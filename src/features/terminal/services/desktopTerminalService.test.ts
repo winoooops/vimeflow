@@ -185,7 +185,7 @@ describe('DesktopTerminalService', () => {
 
     test('onExit delivers pty-exit events to callback', async () => {
       const callback = vi.fn()
-      service.onExit(callback)
+      await service.onExit(callback)
       await mockSpawnAndInit(service)
 
       emitDesktopEvent('pty-exit', { sessionId: 'sess-1', code: 0 })
@@ -195,7 +195,7 @@ describe('DesktopTerminalService', () => {
 
     test('onExit handles null exit code (EOF)', async () => {
       const callback = vi.fn()
-      service.onExit(callback)
+      await service.onExit(callback)
       await mockSpawnAndInit(service)
 
       emitDesktopEvent('pty-exit', { sessionId: 'sess-1', code: null })
@@ -205,7 +205,7 @@ describe('DesktopTerminalService', () => {
 
     test('onError delivers pty-error events to callback', async () => {
       const callback = vi.fn()
-      service.onError(callback)
+      await service.onError(callback)
       await mockSpawnAndInit(service)
 
       emitDesktopEvent('pty-error', {
@@ -328,52 +328,59 @@ describe('DesktopTerminalService', () => {
       expect(callback).not.toHaveBeenCalled()
     })
 
-    test('onExit reports listener initialization failures', async () => {
+    test('onExit rejects and removes callback when listener initialization fails', async () => {
       const listenMock = vi.mocked(listen)
       const originalImpl = listenMock.getMockImplementation()
-
-      const warnSpy = vi
-        .spyOn(console, 'warn')
-        .mockImplementation(() => undefined)
 
       listenMock.mockRejectedValueOnce(new Error('listener unavailable'))
 
       try {
-        service.onExit(vi.fn())
-        await new Promise((resolve) => setTimeout(resolve, 0))
-
-        expect(warnSpy).toHaveBeenCalledWith(
-          'DesktopTerminalService: failed to attach backend listeners',
-          expect.any(Error)
+        const callback = vi.fn()
+        await expect(service.onExit(callback)).rejects.toThrow(
+          'listener unavailable'
         )
+
+        if (originalImpl) {
+          listenMock.mockImplementation(originalImpl)
+        }
+        mockInvokeOnce({ id: 's1', pid: 1, cwd: '/' })
+        await service.spawn({ cwd: '/' })
+
+        emitDesktopEvent('pty-exit', { sessionId: 'sess-1', code: 0 })
+
+        expect(callback).not.toHaveBeenCalled()
       } finally {
-        warnSpy.mockRestore()
         if (originalImpl) {
           listenMock.mockImplementation(originalImpl)
         }
       }
     })
 
-    test('onError reports listener initialization failures', async () => {
+    test('onError rejects and removes callback when listener initialization fails', async () => {
       const listenMock = vi.mocked(listen)
       const originalImpl = listenMock.getMockImplementation()
-
-      const warnSpy = vi
-        .spyOn(console, 'warn')
-        .mockImplementation(() => undefined)
 
       listenMock.mockRejectedValueOnce(new Error('listener unavailable'))
 
       try {
-        service.onError(vi.fn())
-        await new Promise((resolve) => setTimeout(resolve, 0))
-
-        expect(warnSpy).toHaveBeenCalledWith(
-          'DesktopTerminalService: failed to attach backend listeners',
-          expect.any(Error)
+        const callback = vi.fn()
+        await expect(service.onError(callback)).rejects.toThrow(
+          'listener unavailable'
         )
+
+        if (originalImpl) {
+          listenMock.mockImplementation(originalImpl)
+        }
+        mockInvokeOnce({ id: 's1', pid: 1, cwd: '/' })
+        await service.spawn({ cwd: '/' })
+
+        emitDesktopEvent('pty-error', {
+          sessionId: 'sess-1',
+          message: 'after retry',
+        })
+
+        expect(callback).not.toHaveBeenCalled()
       } finally {
-        warnSpy.mockRestore()
         if (originalImpl) {
           listenMock.mockImplementation(originalImpl)
         }

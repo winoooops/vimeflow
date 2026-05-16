@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react'
+import { renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { ITerminalService } from '../services/terminalService'
 import { usePtyExitListener } from './usePtyExitListener'
@@ -16,9 +16,9 @@ const buildMockService = (): {
       onExit: (callback: (sid: string) => void) => {
         cb = callback
 
-        return () => {
+        return Promise.resolve(() => {
           didUnsubscribe = true
-        }
+        })
       },
     } as unknown as ITerminalService,
     fireExit: (sid) => cb?.(sid),
@@ -36,7 +36,7 @@ describe('usePtyExitListener', () => {
     expect(onExit).toHaveBeenCalledWith('pty-1')
   })
 
-  test('unsubscribes on unmount', () => {
+  test('unsubscribes on unmount', async () => {
     const { service, unsubscribed } = buildMockService()
 
     const { unmount } = renderHook(() =>
@@ -45,6 +45,8 @@ describe('usePtyExitListener', () => {
     expect(unsubscribed()).toBe(false)
 
     unmount()
-    expect(unsubscribed()).toBe(true)
+    await waitFor(() => {
+      expect(unsubscribed()).toBe(true)
+    })
   })
 })
