@@ -894,3 +894,5 @@ This PR is a single atomic rename. Rollback options:
   research showed no single dominant convention; `crates/<name>/`
   with a root `Cargo.toml` is the user's pick from the survey of Zed
   - the Cargo workspace norm.
+
+<!-- codex-reviewed: 2026-05-16T11:31:08Z -->
