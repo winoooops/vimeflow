@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { WorkspaceView } from './WorkspaceView'
@@ -123,21 +123,22 @@ vi.mock('../diff/hooks/useGitStatus', () => ({
 
 const capturedPanelProps: { agentStatus?: AgentStatus; gitStatus?: unknown } =
   {}
-const capturedBottomDrawerProps: { gitStatus?: unknown } = {}
+const capturedDockPanelProps: { gitStatus?: unknown } = {}
 
 interface MockPanelProps {
   agentStatus?: AgentStatus
   gitStatus?: unknown
 }
 
-interface MockBottomDrawerProps {
+interface MockDockPanelProps {
   gitStatus?: unknown
-  activeTab?: 'editor' | 'diff'
+  tab?: 'editor' | 'diff'
   onTabChange?: (tab: 'editor' | 'diff') => void
+  onClose?: () => void
 }
 
 interface MockSidebarProps {
-  header?: React.ReactNode
+  header?: ReactNode
 }
 
 // Render the `header` slot through so a mocked SidebarStatusHeader can
@@ -179,24 +180,28 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
   },
 }))
 
-vi.mock('./components/BottomDrawer', () => ({
+vi.mock('./components/DockPanel', () => ({
   default: ({
     gitStatus = undefined,
     onTabChange,
-  }: MockBottomDrawerProps): ReactElement => {
-    capturedBottomDrawerProps.gitStatus = gitStatus
+    onClose,
+  }: MockDockPanelProps): ReactElement => {
+    capturedDockPanelProps.gitStatus = gitStatus
 
     return (
-      <div data-testid="bottom-drawer-mock">
-        {/* Test-only hook to flip the parent's bottomDrawerTab state.
+      <div data-testid="dock-panel-mock">
+        {/* Test-only hook to flip the parent's dockTab state.
             Exposed so the diff-tab branch of WorkspaceView's `enabled`
             OR-condition can be exercised without rendering the real
-            BottomDrawer's tab UI. */}
+            DockPanel's tab UI. */}
         <button
           data-testid="mock-switch-to-diff"
           onClick={() => onTabChange?.('diff')}
         >
           switch to diff
+        </button>
+        <button data-testid="mock-close-dock" onClick={onClose}>
+          close dock
         </button>
       </div>
     )
@@ -207,7 +212,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
   beforeEach(() => {
     capturedPanelProps.agentStatus = undefined
     capturedPanelProps.gitStatus = undefined
-    capturedBottomDrawerProps.gitStatus = undefined
+    capturedDockPanelProps.gitStatus = undefined
     capturedStatusHeaderProps.status = undefined
     // Clear the mock between tests so `toHaveBeenCalledWith` assertions
     // see only the calls from THIS test's render. Without this,
@@ -259,17 +264,15 @@ describe('WorkspaceView lifted-subscription contract', () => {
     )
   })
 
-  test('AgentStatusPanel and BottomDrawer receive one shared git status object', async () => {
+  test('AgentStatusPanel and DockPanel receive one shared git status object', async () => {
     render(<WorkspaceView />)
 
     await screen.findByTestId('agent-status-panel-mock')
-    await screen.findByTestId('bottom-drawer-mock')
+    await screen.findByTestId('dock-panel-mock')
 
     expect(capturedPanelProps.gitStatus).toBeDefined()
-    expect(capturedBottomDrawerProps.gitStatus).toBeDefined()
-    expect(capturedPanelProps.gitStatus).toBe(
-      capturedBottomDrawerProps.gitStatus
-    )
+    expect(capturedDockPanelProps.gitStatus).toBeDefined()
+    expect(capturedPanelProps.gitStatus).toBe(capturedDockPanelProps.gitStatus)
   })
 
   test('WorkspaceView calls useGitStatus with enabled: true when an agent is active', async () => {
@@ -293,7 +296,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
 
   test('WorkspaceView passes enabled: true when the diff tab is active even if the agent is idle', async () => {
     // Locks the diff-tab arm of the OR-condition. With
-    // `agentStatus.isActive = false` AND `bottomDrawerTab = 'diff'`,
+    // `agentStatus.isActive = false` AND `dockTab = 'diff'`,
     // `enabled` must still be `true` — otherwise opening the diff tab
     // on an idle workspace silently runs without a watcher and the
     // diff panel falls through to its own internal fallback (no visible
@@ -333,7 +336,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
 
     try {
       render(<WorkspaceView />)
-      await screen.findByTestId('bottom-drawer-mock')
+      await screen.findByTestId('dock-panel-mock')
 
       // First render: agent idle + tab='editor' → enabled: false
       expect(useGitStatus).toHaveBeenCalledWith(
@@ -341,11 +344,11 @@ describe('WorkspaceView lifted-subscription contract', () => {
         expect.objectContaining({ watch: true, enabled: false })
       )
 
-      // Flip the tab to diff via the BottomDrawer mock's exposed button.
+      // Flip the tab to diff via the DockPanel mock's exposed button.
       // After re-render, useGitStatus must be called with enabled: true
       // — and because the agent is STILL idle (mockImplementation is
       // persistent across re-renders), that `true` can only come from
-      // the `bottomDrawerTab === 'diff'` arm, which is what this test is
+      // the `dockTab === 'diff'` arm, which is what this test is
       // meant to exercise. (Round-2 verify caught a subtle bug here:
       // mockReturnValueOnce only covered the first call, so the
       // re-render fell back to the active default and the assertion
@@ -357,6 +360,51 @@ describe('WorkspaceView lifted-subscription contract', () => {
       expect(useGitStatus).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ watch: true, enabled: true })
+      )
+    } finally {
+      if (originalImpl) {
+        useAgentStatusMock.mockImplementation(originalImpl)
+      }
+    }
+  })
+
+  test('WorkspaceView passes enabled: false when idle diff dock is closed', async () => {
+    const idleAgentStatus: AgentStatus = {
+      isActive: false,
+      agentType: null,
+      modelId: null,
+      modelDisplayName: null,
+      version: null,
+      sessionId: null,
+      agentSessionId: null,
+      contextWindow: null,
+      cost: null,
+      rateLimits: null,
+      numTurns: 0,
+      toolCalls: { total: 0, byType: {}, active: null },
+      recentToolCalls: [],
+      testRun: null,
+    }
+    const useAgentStatusMock = vi.mocked(useAgentStatus)
+    const originalImpl = useAgentStatusMock.getMockImplementation()
+    useAgentStatusMock.mockImplementation(() => idleAgentStatus)
+
+    try {
+      render(<WorkspaceView />)
+      await screen.findByTestId('dock-panel-mock')
+
+      fireEvent.click(screen.getByTestId('mock-switch-to-diff'))
+      expect(useGitStatus).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ watch: true, enabled: true })
+      )
+
+      vi.mocked(useGitStatus).mockClear()
+      fireEvent.click(screen.getByTestId('mock-close-dock'))
+
+      expect(useGitStatus).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ watch: true, enabled: false })
       )
     } finally {
       if (originalImpl) {

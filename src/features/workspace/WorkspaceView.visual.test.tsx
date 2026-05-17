@@ -277,13 +277,13 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(workspace.className).not.toContain('border-')
     })
 
-    test('BottomDrawer uses subtle border for separation', () => {
+    test('DockPanel uses prototype border for separation', () => {
       render(<WorkspaceView />)
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
+      const dockPanel = screen.getByTestId('dock-panel')
 
-      // BottomDrawer has border-t border-white/5 for subtle separation
-      expect(bottomDrawer.className).toContain('border-t')
-      expect(bottomDrawer.className).toContain('border-white/5')
+      // Bottom-docked DockPanel keeps its border on the edge facing terminal.
+      expect(dockPanel.className).toContain('border-t')
+      expect(dockPanel.className).toContain('border-[rgba(74,68,79,0.3)]')
     })
 
     test('sidebar session cards have no visible borders', () => {
@@ -315,15 +315,15 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
 
       expect(screen.getByTestId('session-tabs')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-      expect(screen.getByTestId('bottom-drawer')).toBeInTheDocument()
+      expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
 
-    test('bottom drawer has Editor/Diff tabs, FILES tab has file explorer (v2)', async () => {
+    test('dock panel has Editor/Diff tabs, FILES tab has file explorer (v2)', async () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      // Editor and Diff Viewer tabs are in bottom drawer
+      // Editor and Diff Viewer tabs are in dock panel
       expect(screen.getByText('Editor')).toBeInTheDocument()
       expect(screen.getByText('Diff Viewer')).toBeInTheDocument()
 

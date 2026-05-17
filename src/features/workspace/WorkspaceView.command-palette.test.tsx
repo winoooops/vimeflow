@@ -38,8 +38,8 @@ vi.mock('./components/TerminalZone', () => ({
   },
 }))
 
-vi.mock('./components/BottomDrawer', () => ({
-  default: (): ReactElement => <div data-testid="bottom-drawer" />,
+vi.mock('./components/DockPanel', () => ({
+  default: (): ReactElement => <div data-testid="dock-panel" />,
 }))
 
 vi.mock('../agent-status/components/AgentStatusPanel', () => ({

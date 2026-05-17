@@ -142,13 +142,13 @@ describe('WorkspaceView', () => {
     })
   })
 
-  test('renders all five zones (icon rail, sidebar, terminal, bottom drawer, agent status panel)', () => {
+  test('renders all five zones (icon rail, sidebar, terminal, dock panel, agent status panel)', () => {
     render(<WorkspaceView />)
 
     expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument() // BottomDrawer
+    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument() // DockPanel
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
   })
 
@@ -397,14 +397,120 @@ describe('WorkspaceView', () => {
     }
   })
 
-  test('BottomDrawer is present below TerminalZone', () => {
+  test('DockPanel is present below TerminalZone', () => {
     render(<WorkspaceView />)
 
-    // BottomDrawer should render with Editor tab active
+    // DockPanel should render with Editor tab active
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /diff viewer/i })
     ).toBeInTheDocument()
+  })
+
+  test('with dockPosition=left, DockPanel renders before TerminalZone in the inner flex', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    await user.click(screen.getByRole('button', { name: /dock: left/i }))
+
+    const inner = screen.getByTestId('dock-canvas-wrapper')
+    expect(inner).toHaveStyle({ flexDirection: 'row' })
+
+    const children = Array.from(inner.children)
+
+    const dockIndex = children.findIndex(
+      (child) => child.getAttribute('data-testid') === 'dock-panel'
+    )
+
+    const terminalIndex = children.findIndex(
+      (child) => child.getAttribute('data-testid') === 'terminal-zone-wrapper'
+    )
+
+    expect(dockIndex).toBeLessThan(terminalIndex)
+  })
+
+  test('with dockPosition=right, DockPanel renders after TerminalZone in the inner flex', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    await user.click(screen.getByRole('button', { name: /dock: right/i }))
+
+    const inner = screen.getByTestId('dock-canvas-wrapper')
+    expect(inner).toHaveStyle({ flexDirection: 'row' })
+
+    const children = Array.from(inner.children)
+
+    const dockIndex = children.findIndex(
+      (child) => child.getAttribute('data-testid') === 'dock-panel'
+    )
+
+    const terminalIndex = children.findIndex(
+      (child) => child.getAttribute('data-testid') === 'terminal-zone-wrapper'
+    )
+
+    expect(dockIndex).toBeGreaterThan(terminalIndex)
+  })
+
+  test('with dockPosition=bottom, inner flex direction is column', () => {
+    render(<WorkspaceView />)
+
+    expect(screen.getByTestId('dock-canvas-wrapper')).toHaveStyle({
+      flexDirection: 'column',
+    })
+  })
+
+  test('closed left dock renders DockPeekButton before TerminalZone', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    await user.click(screen.getByRole('button', { name: /dock: left/i }))
+    await user.click(screen.getByRole('button', { name: /collapse panel/i }))
+
+    const inner = screen.getByTestId('dock-canvas-wrapper')
+
+    const peek = screen.getByRole('button', {
+      name: /show panel docked left/i,
+    })
+    const terminal = screen.getByTestId('terminal-zone-wrapper')
+
+    expect(inner).toContainElement(peek)
+    expect(inner).toContainElement(terminal)
+
+    const children = Array.from(inner.children)
+    expect(children.indexOf(peek)).toBeLessThan(children.indexOf(terminal))
+  })
+
+  test('closed bottom dock renders DockPeekButton after TerminalZone', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    await user.click(screen.getByRole('button', { name: /collapse panel/i }))
+
+    const inner = screen.getByTestId('dock-canvas-wrapper')
+    const peek = screen.getByLabelText('Show panel docked bottom')
+    const terminal = screen.getByTestId('terminal-zone-wrapper')
+    const children = Array.from(inner.children)
+
+    expect(children.indexOf(peek)).toBeGreaterThan(children.indexOf(terminal))
+  })
+
+  test('closed right dock renders DockPeekButton after TerminalZone', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    await user.click(screen.getByRole('button', { name: /dock: right/i }))
+    await user.click(screen.getByRole('button', { name: /collapse panel/i }))
+
+    const inner = screen.getByTestId('dock-canvas-wrapper')
+
+    const peek = screen.getByRole('button', {
+      name: /show panel docked right/i,
+    })
+    const terminal = screen.getByTestId('terminal-zone-wrapper')
+
+    const children = Array.from(inner.children)
+
+    expect(children.indexOf(peek)).toBeGreaterThan(children.indexOf(terminal))
   })
 
   test('main workspace area uses flex-col layout', () => {

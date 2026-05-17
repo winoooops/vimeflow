@@ -108,7 +108,7 @@ const switchToFilesTab = async (user: User): Promise<void> => {
  *
  * These tests verify full user workflows and interactions between components:
  * - Session switching updates terminal and activity panels
- * - BottomDrawer tab switching (Editor/Diff)
+ * - DockPanel tab switching (Editor/Diff)
  * - Collapsible sections expand/collapse in Agent Activity
  */
 describe('WorkspaceView Integration Tests', () => {
@@ -217,43 +217,41 @@ describe('WorkspaceView Integration Tests', () => {
     })
   })
 
-  describe('BottomDrawer tab switching', () => {
+  describe('DockPanel tab switching', () => {
     test('clicking Editor tab shows Editor panel', async (): Promise<void> => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
+      const dockPanel = screen.getByTestId('dock-panel')
 
       // Editor should be active by default
-      const editorPanel = within(bottomDrawer).queryByTestId('editor-panel')
+      const editorPanel = within(dockPanel).queryByTestId('editor-panel')
       expect(editorPanel).toBeInTheDocument()
 
       // Click Editor tab explicitly to verify it works
-      const editorTab = within(bottomDrawer).getByText('Editor')
+      const editorTab = within(dockPanel).getByText('Editor')
       await user.click(editorTab)
 
       // EditorPanel should still be visible
-      expect(
-        within(bottomDrawer).getByTestId('editor-panel')
-      ).toBeInTheDocument()
+      expect(within(dockPanel).getByTestId('editor-panel')).toBeInTheDocument()
     })
 
     test('clicking Diff Viewer tab shows Diff panel', async (): Promise<void> => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
+      const dockPanel = screen.getByTestId('dock-panel')
 
       // Click Diff Viewer tab
-      const diffTab = within(bottomDrawer).getByText('Diff Viewer')
+      const diffTab = within(dockPanel).getByText('Diff Viewer')
       await user.click(diffTab)
 
       // DiffPanel should be visible
-      expect(within(bottomDrawer).getByTestId('diff-panel')).toBeInTheDocument()
+      expect(within(dockPanel).getByTestId('diff-panel')).toBeInTheDocument()
 
       // EditorPanel should not be visible
       expect(
-        within(bottomDrawer).queryByTestId('editor-panel')
+        within(dockPanel).queryByTestId('editor-panel')
       ).not.toBeInTheDocument()
     })
 
@@ -261,24 +259,22 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
+      const dockPanel = screen.getByTestId('dock-panel')
 
       // Click Diff Viewer tab
-      await user.click(within(bottomDrawer).getByText('Diff Viewer'))
+      await user.click(within(dockPanel).getByText('Diff Viewer'))
 
       // Verify Diff is shown
-      expect(within(bottomDrawer).getByTestId('diff-panel')).toBeInTheDocument()
+      expect(within(dockPanel).getByTestId('diff-panel')).toBeInTheDocument()
 
       // Click Editor tab
-      await user.click(within(bottomDrawer).getByText('Editor'))
+      await user.click(within(dockPanel).getByText('Editor'))
 
       // Editor should be shown, Diff should be hidden
-      expect(
-        within(bottomDrawer).getByTestId('editor-panel')
-      ).toBeInTheDocument()
+      expect(within(dockPanel).getByTestId('editor-panel')).toBeInTheDocument()
 
       expect(
-        within(bottomDrawer).queryByTestId('diff-panel')
+        within(dockPanel).queryByTestId('diff-panel')
       ).not.toBeInTheDocument()
     })
 
@@ -286,17 +282,18 @@ describe('WorkspaceView Integration Tests', () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
-      const diffTab = within(bottomDrawer).getByText('Diff Viewer')
+      const dockPanel = screen.getByTestId('dock-panel')
+      const diffTab = within(dockPanel).getByText('Diff Viewer')
 
       // Click Diff Viewer tab
       await user.click(diffTab)
 
       // Diff tab should have active styling
       const diffButton = diffTab.closest('button')
-      expect(diffButton).toHaveClass('text-primary')
-      expect(diffButton).toHaveClass('border-b-2')
-      expect(diffButton).toHaveClass('border-primary')
+      expect(diffButton).toHaveClass('rounded-md')
+      expect(diffButton).toHaveClass('bg-[rgba(226,199,255,0.08)]')
+      expect(diffButton).toHaveClass('border-[rgba(203,166,247,0.3)]')
+      expect(diffButton).toHaveClass('text-[#e2c7ff]')
     })
   })
 
@@ -334,10 +331,10 @@ describe('WorkspaceView Integration Tests', () => {
       // The editor should no longer show "No file selected"
       await waitFor(
         () => {
-          const bottomDrawer = screen.getByTestId('bottom-drawer')
+          const dockPanel = screen.getByTestId('dock-panel')
 
           const noFileMessage =
-            within(bottomDrawer).queryByText(/no file selected/i)
+            within(dockPanel).queryByText(/no file selected/i)
 
           expect(noFileMessage).not.toBeInTheDocument()
         },
@@ -368,10 +365,10 @@ describe('WorkspaceView Integration Tests', () => {
       // but we can verify the "no file selected" message is gone
       await waitFor(
         () => {
-          const bottomDrawer = screen.getByTestId('bottom-drawer')
+          const dockPanel = screen.getByTestId('dock-panel')
 
           const noFileMessage =
-            within(bottomDrawer).queryByText(/no file selected/i)
+            within(dockPanel).queryByText(/no file selected/i)
 
           expect(noFileMessage).not.toBeInTheDocument()
         },
@@ -400,10 +397,10 @@ describe('WorkspaceView Integration Tests', () => {
       // Wait for file to load
       await waitFor(
         () => {
-          const bottomDrawer = screen.getByTestId('bottom-drawer')
+          const dockPanel = screen.getByTestId('dock-panel')
 
           const noFileMessage =
-            within(bottomDrawer).queryByText(/no file selected/i)
+            within(dockPanel).queryByText(/no file selected/i)
 
           expect(noFileMessage).not.toBeInTheDocument()
         },
@@ -412,8 +409,8 @@ describe('WorkspaceView Integration Tests', () => {
 
       // VimStatusBar should not show the [+] dirty indicator
       // The status bar is in the editor panel
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
-      const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+      const dockPanel = screen.getByTestId('dock-panel')
+      const editorPanel = within(dockPanel).getByTestId('editor-panel')
 
       // Look for dirty indicator [+] in vim status bar
       const dirtyIndicator = within(editorPanel).queryByText('[+]')
@@ -455,17 +452,17 @@ describe('WorkspaceView Integration Tests', () => {
       // Wait for file to load
       await waitFor(
         () => {
-          const bottomDrawer = screen.getByTestId('bottom-drawer')
+          const dockPanel = screen.getByTestId('dock-panel')
 
           const noFileMessage =
-            within(bottomDrawer).queryByText(/no file selected/i)
+            within(dockPanel).queryByText(/no file selected/i)
           expect(noFileMessage).not.toBeInTheDocument()
         },
         { timeout: 2000 }
       )
 
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
-      const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+      const dockPanel = screen.getByTestId('dock-panel')
+      const editorPanel = within(dockPanel).getByTestId('editor-panel')
 
       // Initially no dirty indicator
       expect(within(editorPanel).queryByText('[+]')).not.toBeInTheDocument()
@@ -505,9 +502,9 @@ describe('WorkspaceView Integration Tests', () => {
 
       await waitFor(
         () => {
-          const bottomDrawer = screen.getByTestId('bottom-drawer')
+          const dockPanel = screen.getByTestId('dock-panel')
           expect(
-            within(bottomDrawer).queryByText(/no file selected/i)
+            within(dockPanel).queryByText(/no file selected/i)
           ).not.toBeInTheDocument()
         },
         { timeout: 2000 }
@@ -522,8 +519,8 @@ describe('WorkspaceView Integration Tests', () => {
 
       // Wait for dirty state to update
       await waitFor(() => {
-        const bottomDrawer = screen.getByTestId('bottom-drawer')
-        const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+        const dockPanel = screen.getByTestId('dock-panel')
+        const editorPanel = within(dockPanel).getByTestId('editor-panel')
         expect(within(editorPanel).getByText('[+]')).toBeInTheDocument()
       })
 
@@ -556,9 +553,9 @@ describe('WorkspaceView Integration Tests', () => {
 
       await waitFor(
         () => {
-          const bottomDrawer = screen.getByTestId('bottom-drawer')
+          const dockPanel = screen.getByTestId('dock-panel')
           expect(
-            within(bottomDrawer).queryByText(/no file selected/i)
+            within(dockPanel).queryByText(/no file selected/i)
           ).not.toBeInTheDocument()
         },
         { timeout: 2000 }
@@ -572,8 +569,8 @@ describe('WorkspaceView Integration Tests', () => {
       })
 
       await waitFor(() => {
-        const bottomDrawer = screen.getByTestId('bottom-drawer')
-        const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+        const dockPanel = screen.getByTestId('dock-panel')
+        const editorPanel = within(dockPanel).getByTestId('editor-panel')
         expect(within(editorPanel).getByText('[+]')).toBeInTheDocument()
       })
 
@@ -598,9 +595,9 @@ describe('WorkspaceView Integration Tests', () => {
       })
 
       // New file should be opened (no "No file selected" message)
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
+      const dockPanel = screen.getByTestId('dock-panel')
       expect(
-        within(bottomDrawer).queryByText(/no file selected/i)
+        within(dockPanel).queryByText(/no file selected/i)
       ).not.toBeInTheDocument()
     })
 
@@ -623,9 +620,9 @@ describe('WorkspaceView Integration Tests', () => {
 
       await waitFor(
         () => {
-          const bottomDrawer = screen.getByTestId('bottom-drawer')
+          const dockPanel = screen.getByTestId('dock-panel')
           expect(
-            within(bottomDrawer).queryByText(/no file selected/i)
+            within(dockPanel).queryByText(/no file selected/i)
           ).not.toBeInTheDocument()
         },
         { timeout: 2000 }
@@ -639,8 +636,8 @@ describe('WorkspaceView Integration Tests', () => {
       })
 
       await waitFor(() => {
-        const bottomDrawer = screen.getByTestId('bottom-drawer')
-        const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+        const dockPanel = screen.getByTestId('dock-panel')
+        const editorPanel = within(dockPanel).getByTestId('editor-panel')
         expect(within(editorPanel).getByText('[+]')).toBeInTheDocument()
       })
 
@@ -664,9 +661,9 @@ describe('WorkspaceView Integration Tests', () => {
       })
 
       // New file should be opened
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
+      const dockPanel = screen.getByTestId('dock-panel')
       expect(
-        within(bottomDrawer).queryByText(/no file selected/i)
+        within(dockPanel).queryByText(/no file selected/i)
       ).not.toBeInTheDocument()
     })
 
@@ -689,9 +686,9 @@ describe('WorkspaceView Integration Tests', () => {
 
       await waitFor(
         () => {
-          const bottomDrawer = screen.getByTestId('bottom-drawer')
+          const dockPanel = screen.getByTestId('dock-panel')
           expect(
-            within(bottomDrawer).queryByText(/no file selected/i)
+            within(dockPanel).queryByText(/no file selected/i)
           ).not.toBeInTheDocument()
         },
         { timeout: 2000 }
@@ -705,8 +702,8 @@ describe('WorkspaceView Integration Tests', () => {
       })
 
       await waitFor(() => {
-        const bottomDrawer = screen.getByTestId('bottom-drawer')
-        const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+        const dockPanel = screen.getByTestId('dock-panel')
+        const editorPanel = within(dockPanel).getByTestId('editor-panel')
         expect(within(editorPanel).getByText('[+]')).toBeInTheDocument()
       })
 
@@ -730,8 +727,8 @@ describe('WorkspaceView Integration Tests', () => {
       })
 
       // Should still be on first file (dirty indicator still shown)
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
-      const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+      const dockPanel = screen.getByTestId('dock-panel')
+      const editorPanel = within(dockPanel).getByTestId('editor-panel')
       expect(within(editorPanel).getByText('[+]')).toBeInTheDocument()
     })
   })
@@ -769,17 +766,17 @@ describe('WorkspaceView Integration Tests', () => {
       // Wait for file to load
       await waitFor(
         () => {
-          const bottomDrawer = screen.getByTestId('bottom-drawer')
+          const dockPanel = screen.getByTestId('dock-panel')
 
           const noFileMessage =
-            within(bottomDrawer).queryByText(/no file selected/i)
+            within(dockPanel).queryByText(/no file selected/i)
           expect(noFileMessage).not.toBeInTheDocument()
         },
         { timeout: 2000 }
       )
 
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
-      const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+      const dockPanel = screen.getByTestId('dock-panel')
+      const editorPanel = within(dockPanel).getByTestId('editor-panel')
 
       // Initially no dirty indicator
       expect(within(editorPanel).queryByText('[+]')).not.toBeInTheDocument()
@@ -832,16 +829,16 @@ describe('WorkspaceView Integration Tests', () => {
       // Wait for file to load
       await waitFor(
         () => {
-          const bottomDrawer = screen.getByTestId('bottom-drawer')
+          const dockPanel = screen.getByTestId('dock-panel')
           expect(
-            within(bottomDrawer).queryByText(/no file selected/i)
+            within(dockPanel).queryByText(/no file selected/i)
           ).not.toBeInTheDocument()
         },
         { timeout: 2000 }
       )
 
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
-      const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+      const dockPanel = screen.getByTestId('dock-panel')
+      const editorPanel = within(dockPanel).getByTestId('editor-panel')
 
       // Initially no dirty indicator
       expect(within(editorPanel).queryByText('[+]')).not.toBeInTheDocument()
@@ -892,16 +889,16 @@ describe('WorkspaceView Integration Tests', () => {
       // Wait for file to load
       await waitFor(
         () => {
-          const bottomDrawer = screen.getByTestId('bottom-drawer')
+          const dockPanel = screen.getByTestId('dock-panel')
           expect(
-            within(bottomDrawer).queryByText(/no file selected/i)
+            within(dockPanel).queryByText(/no file selected/i)
           ).not.toBeInTheDocument()
         },
         { timeout: 2000 }
       )
 
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
-      const editorPanel = within(bottomDrawer).getByTestId('editor-panel')
+      const dockPanel = screen.getByTestId('dock-panel')
+      const editorPanel = within(dockPanel).getByTestId('editor-panel')
 
       // Initially no dirty indicator (file is unmodified)
       expect(within(editorPanel).queryByText('[+]')).not.toBeInTheDocument()

@@ -19,7 +19,9 @@ import { FilesView } from './components/FilesView'
 import { SessionsView } from './components/SessionsView'
 import { StatusBar } from './components/StatusBar'
 import { TerminalZone } from './components/TerminalZone'
-import BottomDrawer from './components/BottomDrawer'
+import { DockPeekButton } from './components/DockPeekButton'
+import DockPanel from './components/DockPanel'
+import type { DockPosition } from './components/DockSwitcher'
 import { AgentStatusPanel } from '../agent-status/components/AgentStatusPanel'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
@@ -55,6 +57,8 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'sessions', label: 'SESSIONS' },
   { id: 'files', label: 'FILES' },
 ]
+
+type DockTab = 'editor' | 'diff'
 
 export const WorkspaceView = (): ReactElement => {
   const workspaceRef = useRef<HTMLDivElement>(null)
@@ -348,19 +352,28 @@ export const WorkspaceView = (): ReactElement => {
   // async load failure inside CodeEditor, vim :w save failure).
   const [fileError, setFileError] = useState<string | null>(null)
 
-  // Bottom drawer controlled state
-  const [bottomDrawerTab, setBottomDrawerTab] = useState<'editor' | 'diff'>(
-    'editor'
-  )
+  // Dock panel controlled state.
+  const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
+  const [isDockOpen, setIsDockOpen] = useState(true)
+  const [dockTab, setDockTab] = useState<DockTab>('editor')
+
+  // Vertical dock height is lifted so the value survives DockPanel unmounts.
+  const verticalDockResize = useResizable({
+    initial: 400,
+    min: 150,
+    max: 640,
+    direction: 'vertical',
+    // Bottom dock grows when dragging up from its top edge; top dock grows
+    // when dragging down from its bottom edge.
+    invert: dockPosition === 'bottom',
+  })
 
   const [selectedDiffFile, setSelectedDiffFile] =
     useState<SelectedDiffFile | null>(null)
 
-  const [isBottomDrawerCollapsed, setIsBottomDrawerCollapsed] = useState(false)
-
   const gitStatus = useGitStatus(activeCwd, {
     watch: true,
-    enabled: agentStatus.isActive || bottomDrawerTab === 'diff',
+    enabled: agentStatus.isActive || (isDockOpen && dockTab === 'diff'),
   })
 
   // Open a file directly (no unsaved-changes guard). Errors were previously
@@ -543,13 +556,13 @@ export const WorkspaceView = (): ReactElement => {
   // Handle opening a diff file from AgentStatusPanel
   const handleOpenDiff = useCallback(
     (file: ChangedFile): void => {
-      setBottomDrawerTab('diff')
+      setDockTab('diff')
       setSelectedDiffFile({
         path: file.path,
         staged: file.staged,
         cwd: activeCwd,
       })
-      setIsBottomDrawerCollapsed(false)
+      setIsDockOpen(true)
     },
     [activeCwd]
   )
@@ -558,6 +571,45 @@ export const WorkspaceView = (): ReactElement => {
   useEffect(() => {
     setSelectedDiffFile(null)
   }, [activeCwd])
+
+  const dockCanvasFlexDirection: CSSProperties['flexDirection'] =
+    dockPosition === 'top' || dockPosition === 'bottom' ? 'column' : 'row'
+
+  const dockBeforeTerminal = dockPosition === 'top' || dockPosition === 'left'
+  const terminalFitDeferred = isDragging || verticalDockResize.isDragging
+
+  const dockOrPeek = isDockOpen ? (
+    <DockPanel
+      selectedFilePath={editorBuffer.filePath}
+      content={editorBuffer.currentContent}
+      onContentChange={editorBuffer.updateContent}
+      onSave={() => {
+        void handleVimSave()
+      }}
+      isDirty={editorBuffer.isDirty}
+      isLoading={editorBuffer.isLoading}
+      cwd={activeCwd}
+      gitStatus={gitStatus}
+      tab={dockTab}
+      onTabChange={setDockTab}
+      position={dockPosition}
+      onPositionChange={setDockPosition}
+      onClose={() => setIsDockOpen(false)}
+      verticalSize={verticalDockResize.size}
+      onVerticalResizeMouseDown={verticalDockResize.handleMouseDown}
+      isVerticalResizing={verticalDockResize.isDragging}
+      onVerticalSizeAdjust={verticalDockResize.adjustBy}
+      selectedDiffFile={selectedDiffFile}
+      onSelectedDiffFileChange={setSelectedDiffFile}
+    />
+  ) : (
+    <DockPeekButton
+      position={dockPosition}
+      onOpen={() => {
+        setIsDockOpen(true)
+      }}
+    />
+  )
 
   return (
     <div
@@ -631,7 +683,7 @@ export const WorkspaceView = (): ReactElement => {
         />
       </div>
 
-      {/* Main workspace area - TerminalZone + BottomDrawer.
+      {/* Main workspace area - TerminalZone + DockPanel.
           `relative` establishes a containing block so the fileError
           banner's `absolute` positioning is scoped to this column
           rather than climbing to the viewport. */}
@@ -644,41 +696,34 @@ export const WorkspaceView = (): ReactElement => {
           onNew={createSession}
         />
 
-        <TerminalZone
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSessionCwdChange={updatePaneCwd}
-          deferTerminalFit={isDragging}
-          loading={loading}
-          onPaneReady={notifyPaneReady}
-          onSessionRestart={restartSession}
-          service={terminalService}
-          setSessionActivePane={setSessionActivePane}
-          setSessionLayout={setSessionLayout}
-          addPane={addPane}
-          removePane={removePane}
-          modKey={preferModifier === 'meta' ? '⌘' : 'Ctrl'}
-        />
-
-        {/* Bottom Drawer - Editor + Diff Viewer */}
-        <BottomDrawer
-          selectedFilePath={editorBuffer.filePath}
-          content={editorBuffer.currentContent}
-          onContentChange={editorBuffer.updateContent}
-          onSave={() => {
-            void handleVimSave()
-          }}
-          isDirty={editorBuffer.isDirty}
-          isLoading={editorBuffer.isLoading}
-          cwd={activeCwd}
-          gitStatus={gitStatus}
-          activeTab={bottomDrawerTab}
-          onTabChange={setBottomDrawerTab}
-          isCollapsed={isBottomDrawerCollapsed}
-          onCollapsedChange={setIsBottomDrawerCollapsed}
-          selectedDiffFile={selectedDiffFile}
-          onSelectedDiffFileChange={setSelectedDiffFile}
-        />
+        <div
+          data-testid="dock-canvas-wrapper"
+          className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+          style={{ flexDirection: dockCanvasFlexDirection }}
+        >
+          {dockBeforeTerminal ? dockOrPeek : null}
+          <div
+            data-testid="terminal-zone-wrapper"
+            className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+          >
+            <TerminalZone
+              sessions={sessions}
+              activeSessionId={activeSessionId}
+              onSessionCwdChange={updatePaneCwd}
+              deferTerminalFit={terminalFitDeferred}
+              loading={loading}
+              onPaneReady={notifyPaneReady}
+              onSessionRestart={restartSession}
+              service={terminalService}
+              setSessionActivePane={setSessionActivePane}
+              setSessionLayout={setSessionLayout}
+              addPane={addPane}
+              removePane={removePane}
+              modKey={preferModifier === 'meta' ? '⌘' : 'Ctrl'}
+            />
+          </div>
+          {!dockBeforeTerminal ? dockOrPeek : null}
+        </div>
 
         {(fileError !== null || infoMessage !== null) && (
           <div className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2">

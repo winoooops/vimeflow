@@ -84,13 +84,13 @@ import { WorkspaceView } from './WorkspaceView'
 
 describe('Feature 23: Final Phase 2 Verification', () => {
   describe('1. 5-zone layout renders', () => {
-    test('renders icon rail, sidebar, terminal, bottom drawer, and activity zones', () => {
+    test('renders icon rail, sidebar, terminal, dock panel, and activity zones', () => {
       render(<WorkspaceView />)
 
       expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-      expect(screen.getByTestId('bottom-drawer')).toBeInTheDocument()
+      expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
   })
@@ -155,7 +155,7 @@ describe('Feature 23: Final Phase 2 Verification', () => {
     })
   })
 
-  describe('4. Sidebar FILES tab has file explorer and bottom drawer has Editor/Diff', () => {
+  describe('4. Sidebar FILES tab has file explorer and dock panel has Editor/Diff', () => {
     test('sidebar FILES tab displays file explorer', async () => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
@@ -166,13 +166,13 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       expect(screen.getByText('File Explorer')).toBeInTheDocument()
     })
 
-    test('bottom drawer displays Editor and Diff Viewer tabs', () => {
+    test('dock panel displays Editor and Diff Viewer tabs', () => {
       render(<WorkspaceView />)
 
-      const bottomDrawer = screen.getByTestId('bottom-drawer')
+      const dockPanel = screen.getByTestId('dock-panel')
 
-      expect(bottomDrawer).toBeInTheDocument()
-      // Editor and Diff tabs are in bottom drawer, not sidebar
+      expect(dockPanel).toBeInTheDocument()
+      // Editor and Diff tabs are in dock panel, not sidebar
       expect(screen.getByText('Editor')).toBeInTheDocument()
       expect(screen.getByText('Diff Viewer')).toBeInTheDocument()
     })
@@ -255,7 +255,7 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-      expect(screen.getByTestId('bottom-drawer')).toBeInTheDocument()
+      expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
   })
