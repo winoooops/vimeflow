@@ -187,9 +187,10 @@ dragging changes the available terminal width just as sidebar dragging does.
 
 ### jsdom test strategy
 
-Since `getBoundingClientRect()` returns zero in jsdom, all WorkspaceView test
-files that render `WorkspaceView` (`.test.tsx`, `.integration.test.tsx`, etc.)
-must mock `useElasticContainer` at the module level:
+Two categories of WorkspaceView tests, handled differently:
+
+**All existing WorkspaceView test files** (`.test.tsx`, `.integration.test.tsx`,
+etc.) add a module-level mock to avoid zero-dimension throws:
 
 ```ts
 vi.mock('../../hooks/useElasticContainer', () => ({
@@ -206,8 +207,35 @@ vi.mock('../../hooks/useElasticContainer', () => ({
 }))
 ```
 
-The issue \#217 integration test overrides `size` per test to drive the
-lifecycle assertion.
+**Issue \#217 persistence test** lives in a **new, separate file**
+(`WorkspaceView.elastic.test.tsx`) that does **not** mock `useElasticContainer`.
+It uses the real hook with DOM stubs:
+
+```ts
+// ResizeObserver stub
+vi.stubGlobal(
+  'ResizeObserver',
+  class {
+    observe = vi.fn()
+    disconnect = vi.fn()
+    unobserve = vi.fn()
+  }
+)
+// Realistic container dimensions (avoids the zero-dim throw)
+vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+  width: 1200,
+  height: 800,
+  top: 0,
+  left: 0,
+  right: 1200,
+  bottom: 800,
+  x: 0,
+  y: 0,
+  toJSON: () => undefined,
+} as DOMRect)
+```
+
+This cleanly separates mocked tests from the real-hook persistence proof.
 
 ---
 
@@ -326,8 +354,11 @@ export const TERMINAL_ZONE_ELASTIC_CONFIG = {
 /**
  * Per-pane elastic config descriptor for TerminalZone's 1–4 pane splits.
  * The terminal zone can render 1, 2, 3, or 4 panes simultaneously; each pane
- * gets its own useElasticContainer instance. The config shape matches
- * UseElasticContainerOptions so future wiring can spread it directly.
+ * gets its own useElasticContainer instance.
+ *
+ * This interface intentionally omits `containerRef` and `axis` — those are
+ * call-site concerns (the caller supplies the ref to the pane's parent element
+ * and knows its axis). It is NOT directly spreadable into UseElasticContainerOptions.
  *
  * Out of scope for this PR — data structure is defined here to avoid a future
  * breaking change to panelConfig.ts when pane resize is implemented.
