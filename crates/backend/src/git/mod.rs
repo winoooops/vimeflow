@@ -54,9 +54,11 @@ async fn run_git_with_timeout(mut cmd: Command) -> Result<std::process::Output, 
 
             #[cfg(windows)]
             {
-                let _ = std::process::Command::new("taskkill")
-                    .args(["/F", "/PID", &child_id.to_string()])
-                    .status();
+                let _ = tokio::task::spawn_blocking(move || {
+                    let _ = Command::new("taskkill")
+                        .args(["/F", "/PID", &child_id.to_string()])
+                        .status();
+                });
             }
 
             Err(format!(
@@ -406,8 +408,20 @@ fn parse_git_status(output: &str) -> Vec<ChangedFile> {
                     });
                 }
             }
-            "UU" | "AA" | "DD" | "AU" | "UA" | "DU" | "UD" => {
-                // Merge conflict codes — show as unstaged modified
+            "DD" | "DU" | "UD" => {
+                // Delete-style merge conflicts should not try to open a
+                // missing worktree file as modified.
+                files.push(ChangedFile {
+                    path,
+                    status: ChangedFileStatus::Deleted,
+                    staged: false,
+                    insertions: None,
+                    deletions: None,
+                });
+            }
+            "UU" | "AA" | "AU" | "UA" => {
+                // Merge conflict codes without a deletion side are shown as
+                // unstaged modified until the UI grows conflict-specific state.
                 files.push(ChangedFile {
                     path,
                     status: ChangedFileStatus::Modified,
@@ -1285,6 +1299,30 @@ mod tests {
         assert_eq!(files[1].path, "new_file.rs");
         assert!(matches!(files[1].status, ChangedFileStatus::Modified));
         assert!(!files[1].staged, "Second AM entry should be unstaged");
+    }
+
+    #[test]
+    fn test_parse_git_status_merge_conflict_modified() {
+        let output = "UU conflicted.rs\0";
+        let files = parse_git_status(output);
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "conflicted.rs");
+        assert!(matches!(files[0].status, ChangedFileStatus::Modified));
+        assert!(!files[0].staged);
+    }
+
+    #[test]
+    fn test_parse_git_status_merge_conflict_deleted() {
+        for code in ["DD", "DU", "UD"] {
+            let output = format!("{} deleted.rs\0", code);
+            let files = parse_git_status(&output);
+
+            assert_eq!(files.len(), 1, "{} should produce one entry", code);
+            assert_eq!(files[0].path, "deleted.rs");
+            assert!(matches!(files[0].status, ChangedFileStatus::Deleted));
+            assert!(!files[0].staged);
+        }
     }
 
     #[test]

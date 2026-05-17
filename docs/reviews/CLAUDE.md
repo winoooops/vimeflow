@@ -48,14 +48,14 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality   | 67       | 20   | 2026-05-16   |
 | [Accessibility](patterns/accessibility.md)                           | a11y           | 25       | 6    | 2026-05-09   |
 | [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns | 38       | 10   | 2026-05-16   |
-| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend        | 1        | 0    | 2026-05-04   |
+| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend        | 2        | 1    | 2026-05-17   |
 | [Command Injection](patterns/command-injection.md)                   | security       | 7        | 3    | 2026-05-02   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)             | security       | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                   | security       | 3        | 1    | 2026-04-20   |
 | [Preflight Checks](patterns/preflight-checks.md)                     | error-handling | 1        | 0    | 2026-04-20   |
 | [CSP Configuration](patterns/csp-configuration.md)                   | security       | 8        | 5    | 2026-05-16   |
 | [PTY Session Management](patterns/pty-session-management.md)         | backend        | 7        | 2    | 2026-05-13   |
-| [Git Operations](patterns/git-operations.md)                         | correctness    | 17       | 7    | 2026-05-16   |
+| [Git Operations](patterns/git-operations.md)                         | correctness    | 18       | 8    | 2026-05-17   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)         | editor         | 12       | 0    | 2026-04-11   |
 | [Error Surfacing](patterns/error-surfacing.md)                       | error-handling | 27       | 7    | 2026-05-16   |
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files          | 4        | 0    | 2026-04-10   |

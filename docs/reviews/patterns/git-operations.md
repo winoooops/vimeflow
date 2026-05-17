@@ -2,8 +2,8 @@
 id: git-operations
 category: correctness
 created: 2026-04-09
-last_updated: 2026-05-16
-ref_count: 7
+last_updated: 2026-05-17
+ref_count: 8
 ---
 
 # Git Operations
@@ -167,3 +167,12 @@ between display and mutation operations.
 - **Finding:** The first `RM`/`CM` fix only emitted a second entry when the porcelain worktree status was `M`. `RD` still showed only the staged rename and omitted the unstaged delete on the destination path; `RC` similarly lost the worktree copy half.
 - **Fix:** Dispatch rename/copy worktree status bytes into second unstaged entries for modified, deleted, added, renamed, and copied states. Added regression tests for `RD` and `RC`.
 - **Commit:** _(see git log for the PR #214 rename worktree-status review-fix commit)_
+
+### 18. Delete-style merge conflicts mapped to modified files
+
+- **Source:** github-claude | PR #214 | 2026-05-17
+- **Severity:** LOW
+- **File:** `crates/backend/src/git/mod.rs`
+- **Finding:** `parse_git_status` mapped every merge-conflict XY code to `Modified`/unstaged. Delete-style conflict codes (`DD`, `DU`, `UD`) can point at files missing from the worktree, so the diff sidebar showed a modified file and the viewer could try to open a path that no longer exists.
+- **Fix:** Split `DD`/`DU`/`UD` into `Deleted`/unstaged while keeping non-delete conflict codes as `Modified`. Added regression coverage for the deleted conflict mapping and a control case for `UU`.
+- **Commit:** _(see git log for the PR #214 merge-conflict status review-fix commit)_
