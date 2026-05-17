@@ -670,3 +670,5 @@ Last 3 commits unlock the side-dock UX; 1-4 are foundational.
   rendered app against `https://claude.ai/design/p/e9c4e751-...` to
   catch token drift (esp. the `rgba(...)` borders that don't map
   cleanly to Tailwind defaults — they go in `tailwind.config.js`).
+
+<!-- codex-reviewed: 2026-05-17T05:47:17Z -->
