@@ -2164,3 +2164,5 @@ Spec coverage check, run after writing the plan:
 - §Test strategy — every "(new)" / "(kept)" / "(dropped)" item from the spec maps to a Task step.
 - §Implementation plan — 1:1 with Tasks 1-8.
 - §Risks (xterm fit + drag handle gating + visual diff) — Task 7.4 (drag handle gating), Task 7.7 (xterm fit verification), final smoke test (visual diff).
+
+<!-- codex-reviewed: 2026-05-17T06:07:03Z -->
