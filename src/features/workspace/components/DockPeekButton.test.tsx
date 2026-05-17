@@ -17,7 +17,9 @@ describe('DockPeekButton', () => {
   test('bottom: renders label and expand_less icon', () => {
     render(<DockPeekButton position="bottom" onOpen={vi.fn()} />)
 
-    const button = screen.getByRole('button', { name: /show panel/i })
+    const button = screen.getByRole('button', {
+      name: /show panel docked bottom/i,
+    })
     expect(button).toHaveTextContent(/show panel/i)
     expect(within(button).getByText('expand_less')).toBeInTheDocument()
   })
@@ -47,7 +49,9 @@ describe('DockPeekButton', () => {
     const onOpen = vi.fn()
     render(<DockPeekButton position="bottom" onOpen={onOpen} />)
 
-    await user.click(screen.getByRole('button', { name: /show panel/i }))
+    await user.click(
+      screen.getByRole('button', { name: /show panel docked bottom/i })
+    )
 
     expect(onOpen).toHaveBeenCalled()
   })
@@ -55,10 +59,9 @@ describe('DockPeekButton', () => {
   test('bottom: width spans full available, height is 26px', () => {
     render(<DockPeekButton position="bottom" onOpen={vi.fn()} />)
 
-    expect(screen.getByRole('button', { name: /show panel/i })).toHaveClass(
-      'h-[26px]',
-      'w-full'
-    )
+    expect(
+      screen.getByRole('button', { name: /show panel docked bottom/i })
+    ).toHaveClass('h-[26px]', 'w-full')
   })
 
   test('top: width spans full available, height is 26px', () => {

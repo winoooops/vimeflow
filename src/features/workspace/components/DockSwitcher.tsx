@@ -13,9 +13,6 @@ const OPTIONS: { id: DockPosition; label: string }[] = [
   { id: 'right', label: 'Right' },
 ]
 
-/**
- * DockSwitcher - compact layout-position picker for DockPanel.
- */
 export const DockSwitcher = ({
   position,
   onPick,

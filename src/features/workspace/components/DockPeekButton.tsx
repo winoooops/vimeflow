@@ -16,14 +16,11 @@ const ICON: Record<DockPosition, string> = {
 
 const ARIA: Record<DockPosition, string> = {
   top: 'Show panel docked top',
-  bottom: 'Show panel',
+  bottom: 'Show panel docked bottom',
   left: 'Show panel docked left',
   right: 'Show panel docked right',
 }
 
-/**
- * DockPeekButton - edge affordance rendered in place of a closed DockPanel.
- */
 export const DockPeekButton = ({
   position,
   onOpen,

@@ -487,7 +487,7 @@ describe('WorkspaceView', () => {
     await user.click(screen.getByRole('button', { name: /collapse panel/i }))
 
     const inner = screen.getByTestId('dock-canvas-wrapper')
-    const peek = screen.getByRole('button', { name: /show panel/i })
+    const peek = screen.getByLabelText('Show panel docked bottom')
     const terminal = screen.getByTestId('terminal-zone-wrapper')
     const children = Array.from(inner.children)
 

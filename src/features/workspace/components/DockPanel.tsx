@@ -54,9 +54,6 @@ const DRAWER_MIN = 150
 const DRAWER_MAX = 640
 const SIDE_DOCK_BASIS = '40%'
 
-/**
- * DockPanel - Editor and Diff Viewer panel docked to the workspace edge.
- */
 const DockPanel = ({
   position,
   tab,
