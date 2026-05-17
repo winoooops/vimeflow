@@ -8,9 +8,17 @@
 
 Replace `src/features/workspace/components/BottomDrawer.tsx` (Editor + Diff
 tabs, bottom-only, 48px tab strip) with a `DockPanel` component matching the
-runnable prototype: three tabs (Editor / Diff Viewer / Files), a dock-position
-switcher (bottom / left / right), and rounded-chip active-tab styling. The
-panel is positionable inside the main canvas, not just bottom-anchored.
+runnable prototype: the same **two tabs** (Editor / Diff Viewer), a
+dock-position switcher (bottom / left / right), and rounded-chip active-tab
+styling. The panel is positionable inside the main canvas, not just
+bottom-anchored.
+
+> **Scope note (2026-05-17):** the prototype renders a third `Files` tab in
+> the dock, but vimeflow already exposes the Files tree in the sidebar
+> (`SessionsView` + `FilesView` top-tab switcher, #185). Duplicating it inside
+> the dock is rejected to avoid two file trees with diverging state. The
+> `DockFilesPanel` component and `filesOnFileSelect` prop introduced in
+> earlier drafts of this spec are dropped from scope.
 
 ## Why now
 
@@ -18,9 +26,10 @@ The original §4.8 spec in `docs/design/handoff/README.md` calls for "Tab strip
 at top (28 px) + 26 px peek button when collapsed." A narrow CSS fix on those
 two numbers (PR-archive tag `archive/166-narrow-fix`, sha `f789ec0`) was
 attempted and reverted on 2026-05-16 because the prototype shows a
-substantially richer component — Files tab, a `DockSwitcher` layout group,
-rounded-chip tabs, 34px header (not 28px), repositionable in the main canvas.
-§4.8 was incomplete; the prototype is the real target.
+substantially richer component — a `DockSwitcher` layout group, rounded-chip
+tabs, 34px header (not 28px), repositionable in the main canvas. §4.8 was
+incomplete; the prototype is the real target (minus the Files tab — see
+Goal scope note).
 
 ## Source of truth
 
@@ -84,10 +93,10 @@ src/features/workspace/`):
 
   Total: 9 file edits (2 renames + 1 import + 2 mocks + 4 mention sites).
 
-- **Three tabs**: `Editor`, `Diff Viewer`, **`Files`** (new). The Files tab
-  is wired to a new `DockFilesPanel` component (see §4); we do NOT reuse
-  the sidebar's existing `FilesPanel.tsx` directly because that component
-  is shaped for the 272 px sidebar context, not a full-width dock pane.
+- **Two tabs**: `Editor`, `Diff Viewer` (unchanged from current
+  BottomDrawer). The prototype's `Files` tab is intentionally NOT carried
+  over — see Goal scope note. The sidebar's Files tab (#185) remains the
+  single canonical file tree.
 - **`DockSwitcher` subcomponent** (mirrors the prototype's
   `splitview.jsx:757-804` shape but lives in our codebase). Three glyph
   buttons (bottom / left / right). Active state styling per prototype.
@@ -107,8 +116,8 @@ src/features/workspace/`):
   - **`right` dock collapsed** → peek at terminal's right edge, glyph
     `chevron_right`, label hidden or vertically oriented.
     Vertical-edge variants ship icon-only in v1; vertical text layout is
-    a polish ticket. Label was previously `▴ show editor & diff` but is
-    now `show panel` to reflect the third (Files) tab.
+    a polish ticket. Label is `show panel` (was `▴ show editor & diff` in
+    earlier drafts).
 - **Active-tab styling**: rounded chip (bg `rgba(226,199,255,0.08)`,
   1 px border `rgba(203,166,247,0.3)`, color `#e2c7ff`, 26 px tall,
   `border-radius: 6px`, `JetBrains Mono` 10.5px). Replaces the current
@@ -116,7 +125,7 @@ src/features/workspace/`):
 - **Header**: 34 px, bg `#0d0d1c`, 1 px bottom border `rgba(74,68,79,0.25)`,
   padding `0 8px`, gap `4px`.
 - **Test refactor**: `BottomDrawer.test.tsx` → `DockPanel.test.tsx`. New
-  test files: `DockSwitcher.test.tsx`, `DockFilesPanel.test.tsx`. Existing
+  test files: `DockSwitcher.test.tsx`, `DockPeekButton.test.tsx`. Existing
   `WorkspaceView.*.test.tsx` mocks of `BottomDrawer` updated to `DockPanel`.
 
 ### Renames + import-site updates
@@ -152,7 +161,7 @@ Variable renames inside `WorkspaceView.tsx` worth calling out:
 
 ```tsx
 type DockPosition = 'bottom' | 'left' | 'right'
-type DockTab = 'editor' | 'diff' | 'files'
+type DockTab = 'editor' | 'diff' // 'files' rejected — see Goal scope note
 
 interface DockPanelBaseProps {
   /** Which edge of the main canvas the panel docks to. */
@@ -178,10 +187,6 @@ interface DockPanelBaseProps {
   isLoading?: boolean
   cwd?: string
   gitStatus?: UseGitStatusReturn
-
-  /** New for Files tab. Forwarded to DockFilesPanel as `onFileSelect`.
-   *  Signature matches WorkspaceView's existing guarded handler. */
-  filesOnFileSelect: (node: { id: string; type: 'file' | 'folder' }) => void
 }
 type SelectedDiffControl =
   | { selectedDiffFile?: undefined; onSelectedDiffFileChange?: undefined }
@@ -214,15 +219,13 @@ type, smaller surface area.)
   ├─ Header (34 px, bg #0d0d1c, border facing terminal)
   │    ├─ Tab strip (left, gap 4)
   │    │     ├─ Editor   (rounded chip)
-  │    │     ├─ Diff Viewer
-  │    │     └─ Files
+  │    │     └─ Diff Viewer
   │    ├─ Spacer (flex: 1)
   │    ├─ DockSwitcher (compact, mr-1)
   │    └─ Close button (24×24, collapse caret icon by position)
   └─ Content area (flex: 1)
        ├─ Editor → CodeEditor
-       ├─ Diff → DiffPanelContent
-       └─ Files → DockFilesPanel  (§4)
+       └─ Diff → DiffPanelContent
 ```
 
 ### Visual tokens (mirror prototype exactly)
@@ -339,7 +342,7 @@ illustrative — not a binding contract on every coordinate.
 
 ```tsx
 type DockPosition = 'bottom' | 'left' | 'right'
-type DockTab = 'editor' | 'diff' | 'files'
+type DockTab = 'editor' | 'diff'
 
 // Inside WorkspaceView:
 const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
@@ -407,84 +410,6 @@ The peek button participates in the same `dockBefore` ordering as the open
 DockPanel: for `dockPosition === 'left'`, it sits on the terminal's left
 edge (so clicking it expands the dock back out to the left). For `right`
 and `bottom`, it sits after TerminalZone.
-
-## DockFilesPanel — new docked Files tab
-
-`src/features/workspace/components/panels/DockFilesPanel.tsx`. Separate
-from the sidebar's `FilesPanel.tsx` (which is shaped for the 272 px
-sidebar context). The docked variant:
-
-- Uses the full panel width — no 272 px constraint.
-- Shares the underlying `FileTree` component
-  (`src/features/files/components/FileTree.tsx`) for the actual tree
-  rendering. Only the wrapper / context-menu actions differ.
-- Initial implementation: same data source as `FilesPanel.tsx`
-  (`mockFileTree` from `src/features/files/data/mockFileTree.ts`).
-  Future PR wires it to the real filesystem service.
-
-### Props + file-open callback path
-
-```tsx
-interface DockFilesPanelProps {
-  /** Fires when the user activates a file (click / Enter).
-   *  Signature matches WorkspaceView's `handleFileSelect`: `node.id`
-   *  must be the **full filesystem path**, not the FileTree internal
-   *  stable ID (which is just the leaf name, e.g. `node-auth-ts`).
-   *  See "Path mapping" below. */
-  onFileSelect: (node: { id: string; type: 'file' | 'folder' }) => void
-}
-```
-
-### Path mapping
-
-`FileTree` (the shared rendering primitive) emits
-`onNodeSelect: (node, fullPath) => void` where `node.id` is the leaf
-name and `fullPath` is the resolved filesystem path. `WorkspaceView`'s
-`handleFileSelect` expects `node.id` to BE the filesystem path
-(it does `const filePath = node.id`).
-
-`DockFilesPanel` MUST bridge the two by mirroring the sidebar
-`FilesPanel` pattern (`FilesPanel.tsx:27-28`):
-
-```tsx
-<FileTree
-  nodes={...}
-  contextMenuActions={...}
-  onNodeSelect={(node, fullPath) =>
-    onFileSelect({ ...node, id: fullPath })
-  }
-/>
-```
-
-If `DockFilesPanel` forwards the raw `node` without remapping `id`,
-the dirty-state guard in `handleFileSelect` runs against a bogus path
-and `openFileSafely` fails. The mock-tree case is identical: the
-mock IDs are stable strings like `'node-auth-ts'`, and the spec test
-`'click on a leaf file calls onFileSelect with the node'` asserts the
-remapped `{ ...node, id: fullPath }` payload, not the raw node.
-
-`WorkspaceView` passes its existing **`handleFileSelect`** (the
-unsaved-changes-guarded handler at `WorkspaceView.tsx:401-420` already
-wired to the sidebar `<FileExplorer onFileSelect={handleFileSelect} />`)
-as `onFileSelect`. Concretely:
-
-```tsx
-<DockPanel
-  ...
-  filesOnFileSelect={handleFileSelect}
-/>
-```
-
-`handleFileSelect` takes `{ id, type }`, checks for unsaved changes via
-`editorBuffer.isDirty`, and either shows the unsaved-changes dialog or
-calls `openFileSafely(filePath)`. DockPanel forwards `filesOnFileSelect`
-to `<DockFilesPanel onFileSelect={...} />` when the active tab is
-`files`. This preserves the existing unsaved-changes dialog flow —
-clicking a file in the docked tree triggers the same guard as clicking
-in the sidebar tree. The raw `openFileSafely` is **not** used directly
-here because it bypasses the dirty-state check.
-
-Tests live alongside as `DockFilesPanel.test.tsx`.
 
 ## Closed-state peek button — `DockPeekButton`
 
@@ -564,8 +489,8 @@ component.
 
 - `renders header at 34 px tall` (assert the wrapping `<div>` has
   `h-[34px]`).
-- `renders 3 tabs: Editor / Diff Viewer / Files`
-  (`getAllByRole('tab').length === 3`).
+- `renders 2 tabs: Editor / Diff Viewer`
+  (`getAllByRole('tab').length === 2`).
 - `active tab uses rounded-chip styling` — assert the active tab has
   the Tailwind classes that map to the prototype's
   `rgba(226,199,255,0.08)` bg + `rgba(203,166,247,0.3)` border.
@@ -577,15 +502,6 @@ component.
 - `inactive tab has transparent border` (1 px border, color
   `rgba(0,0,0,0)`).
 - `data-position attribute reflects position prop` — three cases.
-- `Files tab routes to DockFilesPanel, not CodeEditor` —
-  render with `tab="files"` (controlled), assert
-  `getByTestId('dock-files-panel')`. Note: because `tab` is fully
-  controlled, the test renders directly with the desired tab — there
-  is no click-to-switch flow inside DockPanel itself. A separate
-  test asserts that clicking the Files tab calls
-  `onTabChange('files')`.
-- `forwards filesOnFileSelect to DockFilesPanel when tab=files` —
-  mock DockFilesPanel; assert the prop arrives identity-equal.
 
 ### `DockSwitcher.test.tsx` (new)
 
@@ -602,13 +518,6 @@ component.
 - `renders chevron_right icon (no label) for position=right`
 - `aria-label varies by position` (3 cases)
 - `clicking calls onOpen`
-
-### `DockFilesPanel.test.tsx` (new)
-
-- `renders the file tree`
-- `click on a leaf file calls onFileSelect with the node`
-- `does NOT call onFileSelect when clicking a directory expander`
-  (mirrors sidebar `FilesPanel.test.tsx` semantics).
 
 ### `WorkspaceView.*.test.tsx` updates
 
@@ -634,17 +543,15 @@ follow the steps.
    (`dockPosition` is always `'bottom'`).
 3. `feat(dock-panel): restyle header to 34px + rounded-chip tabs`
    — visual-only commit. Updates DockPanel.tsx + DockPanel.test.tsx.
-4. `feat(dock-panel): add Files tab + DockFilesPanel`
-   — new file + new tab + WorkspaceView wiring `filesOnFileSelect`.
-5. `feat(dock-switcher): add DockSwitcher subcomponent`
+4. `feat(dock-switcher): add DockSwitcher subcomponent`
    — new component + tests, not yet rendered in DockPanel.
-6. `feat(dock-panel): mount DockSwitcher in DockPanel header`
+5. `feat(dock-panel): mount DockSwitcher in DockPanel header`
    — wires DockSwitcher between tab strip and close button, but
    `onPositionChange` is a no-op for now.
-7. `feat(workspace): make main canvas react to dockPosition`
+6. `feat(workspace): make main canvas react to dockPosition`
    — adds the inner flex wrapper, `flex-direction` swap, `dockBefore`
    ordering. DockSwitcher now actually moves the panel.
-8. `feat(dock-peek): add DockPeekButton + render when !isDockOpen`
+7. `feat(dock-peek): add DockPeekButton + render when !isDockOpen`
    — new component + tests + WorkspaceView wiring for all 3 positions.
 
 Last 3 commits unlock the side-dock UX; 1-4 are foundational.
