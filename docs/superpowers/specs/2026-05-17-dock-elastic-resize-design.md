@@ -673,3 +673,5 @@ useElasticContainer              useResizable
   unmounted `DockPanel`).
 - Touch / pointer-events resize — mouse and keyboard only, matching the current
   sidebar.
+
+<!-- codex-reviewed: 2026-05-17T17:16:23Z -->
