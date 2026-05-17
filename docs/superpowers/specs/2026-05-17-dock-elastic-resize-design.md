@@ -243,20 +243,55 @@ lifecycle assertion.
 
 ### 6.4 `WorkspaceView.integration.test.tsx` additions (issue \#217)
 
-Required by issue \#217 — proves that vertical size survives `isDockOpen` flip:
+The test uses the **real** `useElasticContainer` hook (not mocked) to prove that
+resize state actually lives in `WorkspaceView` — a mock that always returns a
+fixed size cannot distinguish correct from incorrect architecture.
+
+jsdom stubs required (in `beforeEach`):
+
+```ts
+// ResizeObserver stub
+vi.stubGlobal(
+  'ResizeObserver',
+  class {
+    observe = vi.fn()
+    disconnect = vi.fn()
+    unobserve = vi.fn()
+  }
+)
+
+// Return realistic dimensions so useElasticContainer does not throw
+vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+  width: 1200,
+  height: 800,
+  top: 0,
+  left: 0,
+  right: 1200,
+  bottom: 800,
+  x: 0,
+  y: 0,
+  toJSON: () => undefined,
+} as DOMRect)
+```
+
+Test sequence (proves issue \#217 invariant):
 
 1. Render `WorkspaceView`
-2. Mock `useElasticContainer` to expose a controlled `size` value (avoids DOM measurement in jsdom)
-3. Set `size = 500`; assert `dock-panel` has `height: 500px`
-4. Click the collapse button — assert `DockPanel` unmounts
+2. Fire `mousedown` + `mousemove` + `mouseup` on `getByTestId('resize-handle')`
+   to produce a non-default size (e.g. delta = +100 px)
+3. Assert `dock-panel` style reflects the new height
+4. Click collapse — assert `DockPanel` unmounts
 5. Click `DockPeekButton` — assert `DockPanel` remounts
-6. Assert `dock-panel` still has `height: 500px` (not the initial value)
+6. Assert `dock-panel` still has the height from step 3 (not the initial value)
 
-Additional integration tests:
+This fails if someone accidentally co-locates resize state inside `DockPanel`
+(remount would reset to `initialPercent`, not the user-set value).
 
-- Switching `dockPosition` from `bottom` to `right` preserves the horizontal
-  size independently (the two elastic instances are separate)
-- Switching `dockPosition` from `right` to `left` keeps horizontal size
+Additional integration tests (real hook, same stubs):
+
+- Position switch `bottom → right`: horizontal size retains its initial value;
+  vertical size is independent and retains its value
+- Position switch `right → left`: horizontal size persists across position flip
 
 ---
 
@@ -328,8 +363,12 @@ export const KEYBOARD_STEP_SHIFT_PX = 100
 from `panelConfig.ts` — pixel bounds for ARIA come from the
 `verticalPixelMin`/`verticalPixelMax`/`horizontalPixelMin`/`horizontalPixelMax`
 props (live values from `useElasticContainer`). `WorkspaceView.tsx` spreads
-`DOCK_ELASTIC_CONFIG` into each `useElasticContainer` call. The terminal pane
-configs are defined here but not wired in this PR.
+`DOCK_ELASTIC_CONFIG` into each `useElasticContainer` call. The terminal zone
+and pane configs (`TERMINAL_ZONE_ELASTIC_CONFIG`, `TERMINAL_PANE_ELASTIC_CONFIGS`,
+`PaneElasticConfig`) are forward-looking data definitions only — they are not
+wired to any hook in this PR and do not affect `UseElasticContainerOptions`'s
+required `containerRef`/`axis` fields. They establish the shape for future PRs
+without requiring spreading the full config object directly.
 
 ---
 
@@ -465,7 +504,7 @@ export interface UseElasticContainerResult extends UseResizableResult {
   pixelMax: number
   // Note: UseResizableResult now also includes:
   //   resetToSize(px, explicitMin?, explicitMax?): void
-  //   sizeRef: RefObject<number>
+  //   sizeRef: MutableRefObject<number>
 }
 ```
 
@@ -515,28 +554,38 @@ Then calls **`resetToSize(newInitial, newMin, newMax)`** with explicit bounds.
 
 #### `ResizeObserver` re-clamp
 
-On each observation, computes fresh `newMin`/`newMax` (integer-safe). Calls
-`setPixelMin`/`setPixelMax` (for ARIA + re-renders).
+`useElasticContainer` maintains:
 
-`useElasticContainer` maintains an `isDraggingRef: MutableRefObject<boolean>`,
-kept in sync with `useResizable.isDragging` via a `useLayoutEffect` (fires
-before paint, so the ref is current when any ResizeObserver callback fires in
-the same frame).
+- `isDraggingRef: MutableRefObject<boolean>` — kept in sync with
+  `useResizable.isDragging` via `useLayoutEffect` (fires before paint, so the
+  ref is current when any ResizeObserver callback fires in the same frame).
+- `pixelMinRef / pixelMaxRef: MutableRefObject<number>` — updated synchronously
+  with `setPixelMin`/`setPixelMax` to allow callbacks to read latest bounds.
+- `pendingReclampRef: MutableRefObject<boolean>` — set when a re-clamp is
+  deferred to post-drag.
 
-On each observation, the callback computes `newMin`/`newMax` (integer-safe,
-with tiny-container guard applied). Synchronously writes
-`pixelMinRef.current = newMin` and `pixelMaxRef.current = newMax`. Calls
-`setPixelMin(newMin)`, `setPixelMax(newMax)` for ARIA + re-renders.
+On each observation, the callback:
 
-**During active drag (`isDraggingRef.current === true`):** defers `resetToSize`
-but updates refs and enqueues state updates. Marks a pending-reclamp flag
-(`pendingReclampRef.current = true`). **After `mouseup`** (detected via a
-`useEffect` on `isDragging` that fires when it transitions `true → false`):
-calls `resetToSize(sizeRef.current, pixelMinRef.current, pixelMaxRef.current)`
-if `pendingReclampRef.current` is true, then clears the flag.
+1. Computes `newMin`/`newMax` (integer-safe, tiny-container guard applied).
+2. Synchronously writes `pixelMinRef.current = newMin`, `pixelMaxRef.current = newMax`.
+3. Calls `setPixelMin(newMin)`, `setPixelMax(newMax)`.
 
-**When not dragging:** reads the current committed size via `sizeRef.current`.
-Calls `resetToSize(sizeRef.current, newMin, newMax)`.
+**During active drag:** defers `resetToSize` (avoids disrupting the in-progress
+drag). Sets `pendingReclampRef.current = true`. The `setPixelMin`/`setPixelMax`
+state update causes a re-render → `useResizable` is called with fresh `min`/`max`
+→ its drag effect re-registers with new bounds on the next render. Subsequent
+`mousemove` events are clamped by the fresh bounds after that render. There is
+a one-frame window where in-progress RAF sizes may be clamped against previous
+bounds — this is the documented acceptable race.
+
+**After `mouseup`** (detected via `useEffect` watching `isDragging`, firing on
+`true → false` transition): calls
+`resetToSize(sizeRef.current, pixelMinRef.current, pixelMaxRef.current)` if
+`pendingReclampRef.current` is true, then clears the flag. This closes the
+case where no `mousemove` fired after the bounds update.
+
+**When not dragging:** calls `resetToSize(sizeRef.current, newMin, newMax)`
+immediately (no deferral needed).
 
 #### Tiny-container guard
 
@@ -544,8 +593,9 @@ If `pixelMin >= pixelMax` after integer rounding (exact threshold depends on
 fractional CSS pixels returned by `getBoundingClientRect()` and the configured
 percent values; not a fixed pixel dimension), the hook silently forces
 `pixelMax = pixelMin` in production and throws an invariant error in
-development. (No `console.warn` — the project lint rule blocks all `console.*`
-calls; an invariant throw is the correct dev-mode signal.)
+development. Use `import.meta.env.DEV` (Vite's dev-mode flag, available in
+this renderer) to guard the throw — do not use `process.env.NODE_ENV`.
+(No `console.warn` — the project lint rule blocks all `console.*` calls.)
 The result is equal bounds (`min === max`), which is valid input for
 `useResizable` — `clampSize(value, n, n)` always returns `n` correctly.
 The 5 %–80 % invariant is relaxed for this edge case ("size stays at
