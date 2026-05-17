@@ -7,7 +7,7 @@ import type {
 } from '../types'
 import type { SessionList } from '../../../bindings'
 import { isDesktop } from '../../../lib/environment'
-import { TauriTerminalService } from './tauriTerminalService'
+import { DesktopTerminalService } from './desktopTerminalService'
 
 /**
  * Terminal service interface for PTY operations
@@ -60,14 +60,20 @@ export interface ITerminalService {
   ): Promise<() => void>
 
   /**
-   * Subscribe to PTY exit events
+   * Subscribe to PTY exit events. Resolves after the underlying transport
+   * listener is attached and rejects if listener setup fails.
    */
-  onExit(callback: (sessionId: string, code: number | null) => void): () => void
+  onExit(
+    callback: (sessionId: string, code: number | null) => void
+  ): Promise<() => void>
 
   /**
-   * Subscribe to PTY error events
+   * Subscribe to PTY error events. Resolves after the underlying transport
+   * listener is attached and rejects if listener setup fails.
    */
-  onError(callback: (sessionId: string, message: string) => void): () => void
+  onError(
+    callback: (sessionId: string, message: string) => void
+  ): Promise<() => void>
 
   /**
    * List all sessions with their status (Alive or Exited)
@@ -128,7 +134,7 @@ export class MockTerminalService implements ITerminalService {
       this.emitData(sessionId, `$ `)
     }, 100)
 
-    // Mock returns the cwd that was requested. Real Tauri side resolves
+    // Mock returns the cwd that was requested. Real Desktop side resolves
     // '~' to the absolute home dir; we keep the mock pass-through so test
     // expectations stay deterministic without depending on the host.
     return Promise.resolve({ sessionId, pid, cwd: params.cwd })
@@ -261,26 +267,28 @@ export class MockTerminalService implements ITerminalService {
 
   onExit(
     callback: (sessionId: string, code: number | null) => void
-  ): () => void {
+  ): Promise<() => void> {
     this.exitCallbacks.push(callback)
 
-    return () => {
+    return Promise.resolve(() => {
       const index = this.exitCallbacks.indexOf(callback)
       if (index > -1) {
         this.exitCallbacks.splice(index, 1)
       }
-    }
+    })
   }
 
-  onError(callback: (sessionId: string, message: string) => void): () => void {
+  onError(
+    callback: (sessionId: string, message: string) => void
+  ): Promise<() => void> {
     this.errorCallbacks.push(callback)
 
-    return () => {
+    return Promise.resolve(() => {
       const index = this.errorCallbacks.indexOf(callback)
       if (index > -1) {
         this.errorCallbacks.splice(index, 1)
       }
-    }
+    })
   }
 
   // Test helpers
@@ -374,21 +382,21 @@ export class MockTerminalService implements ITerminalService {
   }
 }
 
-// Singleton Tauri service — all panes share one set of global event listeners.
+// Singleton desktop service — all panes share one set of global event listeners.
 // Without this, each TerminalPane mounts its own listeners and PTY events
 // are processed N times as panes accumulate.
-let tauriServiceInstance: TauriTerminalService | null = null
+let desktopServiceInstance: DesktopTerminalService | null = null
 
 /**
  * Service factory - returns appropriate service based on environment.
- * TauriTerminalService is a singleton; MockTerminalService is per-call
+ * DesktopTerminalService is a singleton; MockTerminalService is per-call
  * so each test/pane gets isolated mock state.
  */
 export function createTerminalService(): ITerminalService {
   if (isDesktop()) {
-    tauriServiceInstance ??= new TauriTerminalService()
+    desktopServiceInstance ??= new DesktopTerminalService()
 
-    return tauriServiceInstance
+    return desktopServiceInstance
   }
 
   return new MockTerminalService()

@@ -1,0 +1,29 @@
+# Linux AppImage packaging for Vimeflow.
+# macOS and Windows targets are deferred to a follow-up PR.
+
+appId: io.vimeflow.app
+productName: Vimeflow
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+
+extraResources:
+  - from: target/release/vimeflow-backend
+    to: bin/vimeflow-backend
+
+asar: true
+
+linux:
+  target:
+    - AppImage
+  category: Development
+  artifactName: vimeflow-${version}-x64.AppImage
+  icon: build/icon.png
+
+publish: null

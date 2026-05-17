@@ -6,6 +6,11 @@ import simpleGit from 'simple-git'
 import { parse as parseDiffText } from 'diff2html'
 import { fileApiPlugin } from './vite-plugin-files'
 import packageJson from './package.json' with { type: 'json' }
+import {
+  addDevReactRefreshNonce,
+  ensureDevReactRefreshNonce,
+} from './electron/csp'
+import { electronStartupArgs } from './electron/sandbox'
 import type {
   ChangedFile,
   FileDiff,
@@ -19,6 +24,7 @@ import {
 
 const git = simpleGit()
 const repoRoot = process.cwd()
+const devReactRefreshNonce = ensureDevReactRefreshNonce()
 
 /**
  * Validate that a file path is repo-relative and doesn't escape the repo.
@@ -500,6 +506,17 @@ function gitApiPlugin(): Plugin {
   }
 }
 
+function reactRefreshNoncePlugin(): Plugin {
+  return {
+    name: 'vimeflow-react-refresh-nonce',
+    apply: 'serve',
+    enforce: 'post',
+    transformIndexHtml(html): string {
+      return addDevReactRefreshNonce(html, devReactRefreshNonce)
+    },
+  }
+}
+
 /**
  * Parse unified diff output into FileDiff structure
  */
@@ -594,6 +611,7 @@ export default defineConfig(({ mode }) => ({
   base: './',
   plugins: [
     react(),
+    reactRefreshNoncePlugin(),
     gitApiPlugin(),
     fileApiPlugin(),
     ...(mode === 'electron'
@@ -620,7 +638,12 @@ export default defineConfig(({ mode }) => ({
               entry: 'electron/main.ts',
               onstart: async ({ startup }): Promise<void> => {
                 try {
-                  await startup(['.'])
+                  // DEV ONLY: keep Electron's renderer sandbox enabled unless
+                  // a developer explicitly opts out for a Linux host that cannot
+                  // launch Chromium's sandbox. Use VIMEFLOW_NO_SANDBOX=1 rather
+                  // than inferring the weaker mode from CI or headless display
+                  // state.
+                  await startup(electronStartupArgs())
                 } catch (error: unknown) {
                   const message =
                     error instanceof Error

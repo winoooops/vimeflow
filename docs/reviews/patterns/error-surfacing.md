@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-05-03
-ref_count: 5
+last_updated: 2026-05-16
+ref_count: 7
 ---
 
 # Error Surfacing
@@ -260,3 +260,21 @@ failed" must mean the editor shows the original file, not the requested one.
   - Exit non-zero AND stderr non-empty → real failure → `Err(format!("git_branch: {stderr}"))` so `useGitBranch`'s `catch` path surfaces an error state rather than masking it.
     Added a Rust test that simulates a corrupted `.git/config` to exercise the non-detached, non-not-a-repo failure path. Code-review heuristic: when mapping `Command::output()` results, the "non-success" branch must be split into the specific expected non-error case AND a catch-all error — never assume every non-success exit is the expected case. Use flags like `-q` to make the expected case unambiguous (silent stderr); reject anything else.
 - **Commit:** _(see git log for the cycle-3 fix commit on PR #190)_
+
+### 26. Fire-and-forget listener initialization swallowed backend subscription failures
+
+- **Source:** github-claude | PR #211 round 1 | 2026-05-16
+- **Severity:** LOW
+- **File:** `src/features/terminal/services/desktopTerminalService.ts`
+- **Finding:** `onExit()` and `onError()` registered callbacks and then called `void this.ensureListeners()`. If the backend `listen()` IPC rejected, the promise rejection was intentionally discarded. The subscription looked installed to the caller, but exit/error events would never arrive and no diagnostic would explain why. Same `void promise` family as earlier IPC failures: if an async setup step is fire-and-forget because the API must remain synchronous, the abstraction still needs to catch and route the failure somewhere visible.
+- **Fix:** Added an async helper that awaits `ensureListeners()` and reports failures through the service's listener-init diagnostic path. `onExit()` and `onError()` now fire that helper instead of discarding the raw promise. Added tests that mock listener failure and assert the diagnostic is emitted.
+- **Commit:** _(see git log for the PR #211 round-1 fix commit)_
+
+### 27. Listener-init diagnostics still left callers with a dead subscription handle
+
+- **Source:** github-claude | PR #214 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/services/desktopTerminalService.ts`
+- **Finding:** The first fix for `onExit()` / `onError()` listener setup caught backend `listen()` failures and logged a diagnostic, but the public methods still returned a normal unsubscribe function. Callers had no way to observe that the underlying IPC listeners were not attached, and the failed callbacks stayed registered until disposal.
+- **Fix:** Make `onExit()` and `onError()` return `Promise<unsubscribe>` like `onData()`. They now await listener attachment, reject on setup failure, and remove the just-added callback before propagating the error. React call sites track the async unsubscribe so cleanup still works if an effect unmounts before setup resolves.
+- **Commit:** _(see git log for the PR #214 listener-init propagation review-fix commit)_

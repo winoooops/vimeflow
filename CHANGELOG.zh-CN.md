@@ -22,6 +22,45 @@ Security 和 Fixed 条目若存在对应模式应加以链接；按 `docs/review
 
 ## [Unreleased]
 
+### Electron 迁移（Tauri → Electron + Rust 旁路）
+
+桌面外壳在三次合入的 PR 中（含与之并行的 PR-A/B/C 设计/计划轨道，最终在 #209 中一并落地）从 Tauri 2 迁移到 Electron 42。这一序列之后，唯一的桌面运行时是 Electron，唯一发布的 Rust 二进制是 `vimeflow-backend` 旁路进程——它由 Electron 通过 stdio 的 LSP 帧 JSON IPC 启动并通信。整体架构见 `docs/superpowers/plans/2026-05-13-electron-rust-backend-migration.md`；各阶段设计文档落在 `2026-05-13` 至 `2026-05-15`；复盘见 `docs/superpowers/retros/2026-05-16-electron-migration.md`。
+
+#### Added
+
+- Electron 外壳与 Rust 旁路接线和原有的 Tauri 主机并存，使过渡期两种运行时可以同时工作。新增文件：`electron/main.ts`（BrowserWindow + `ipcMain.handle('backend:invoke')` + 旁路进程编排）、`electron/preload.ts`（`contextBridge.exposeInMainWorld('vimeflow', { invoke, listen })`）、`electron/sidecar.ts`（LSP `Content-Length` 帧解析 + 挂起请求映射 + 监听器注册表 + 干净 EOF → SIGTERM → SIGKILL 关停升级）、`electron/ipc-channels.ts`、`electron/backend-methods.ts`（生产方法白名单，含 `e2e-test` 门控的额外项）。一并打包了运行时中立的 Rust 后端改动（`BackendState` + `_inner` 助手——"PR-A" 意图）、旁路 IPC 管道（`src-tauri/src/runtime/ipc.rs` + `src-tauri/src/bin/vimeflow-backend.rs`——"PR-B" 意图）以及前端桥（`src/lib/backend.ts`——"PR-C" 意图），使 Electron 外壳成为可能。Tauri 在期间继续可用——`npm run tauri:dev` 与 `npm run electron:dev` 并行工作，直到 PR-D3。
+  ([#209](https://github.com/winoooops/vimeflow/pull/209), `105f0ec`)
+  - 设计文档：`docs/superpowers/specs/2026-05-13-pr-a-runtime-neutral-rust-backend-design.md`、`2026-05-13-pr-b-rust-sidecar-ipc-design.md`、`2026-05-14-pr-c-frontend-backend-bridge-design.md`、`2026-05-14-pr-d1-electron-shell-sidecar-wiring-design.md`。
+- 通过 `electron-builder` 实现 AppImage 打包（暂时只支持 Linux；macOS / Windows / 签名 / 自动更新都列为后续跟进项）。仓库根目录新增 `electron-builder.yml`：Linux AppImage 目标、`directories.output: release`、`extraResources` 将旁路二进制放到 `<resources>/bin/vimeflow-backend`，以匹配 `electron/main.ts` 通过 `process.resourcesPath/bin/<BINARY>` 的解析路径。新增 `build/icon.png`（512×512，来源于现在已删除的 `src-tauri/icons/icon.png`）。新增 `electron:build` npm 脚本：依次执行 type-check → `vite build --mode electron` → `cargo build --release --bin vimeflow-backend` → `electron-builder --linux AppImage`。产生的 `release/vimeflow-<version>-x64.AppImage`（约 146 MB）在没有 SUID `chrome-sandbox` 的开发主机上需用 `--no-sandbox` 启动；缺少 `libfuse2` 的主机可改用 `--appimage-extract-and-run` 回退。
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`) —
+  设计文档：[`2026-05-15-pr-d3-tauri-removal-design.md`](docs/superpowers/specs/2026-05-15-pr-d3-tauri-removal-design.md)；
+  实施计划：[`2026-05-15-pr-d3-tauri-removal.md`](docs/superpowers/plans/2026-05-15-pr-d3-tauri-removal.md)。
+
+#### Changed
+
+- E2E 流水线从 `tauri-driver` + `browserName: 'wry'` 切换到 `@wdio/electron-service` + `browserName: 'electron'`，覆盖三个 WDIO 套件（`tests/e2e/{core,terminal,agent}/wdio.conf.ts`）。新增 `tests/e2e/shared/electron-app.ts` 暴露 `appEntryPoint`（打包后的 `dist-electron/main.js`）与 `appArgs`（`--no-sandbox` + `--user-data-dir=<mkdtempSync>`，用于跨 worker 的 app-data 隔离）。`test:e2e:build` 重写为构建渲染进程 + Electron 打包 + 旁路（`--features e2e-test`），不再构建 Tauri 应用二进制。CI 的 `e2e.yml` 移除 `tauri-driver` 安装步骤、`webkit2gtk-driver` apt 依赖以及 `WEBKIT_DISABLE_DMABUF_RENDERER` 环境变量。原有的 11 个 E2E spec 文件无需改动。
+  ([#210](https://github.com/winoooops/vimeflow/pull/210), `96aed26`) —
+  设计文档：[`2026-05-15-pr-d2-e2e-electron-driver-swap-design.md`](docs/superpowers/specs/2026-05-15-pr-d2-e2e-electron-driver-swap-design.md)。
+- TypeScript 服务类从 `Tauri*Service` 重命名为 `Desktop*Service`（PR-C 明确将这一重命名延后到 PR-D）。`TauriTerminalService` → `DesktopTerminalService`（文件同步改名 `tauriTerminalService.ts` → `desktopTerminalService.ts`）；`TauriGitService` → `DesktopGitService`；`TauriFileSystemService` → `DesktopFileSystemService`。工厂调用点、姊妹测试文件，以及 `useSessionManager.test.ts`、`useTerminal.ts`、`terminal/types/index.ts` 中的过期注释一并更新。
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+- `src/lib/backend.ts` 收敛为对 `window.vimeflow.{invoke,listen}` 的薄包装委托。`@tauri-apps/api/core` + `/event` 的回退分支按 PR-C `§2.5` 跨 PR 合约预言的行数被一次性删除。新增 `requireBridge()` 助手：当 preload 未能暴露桥时抛出带有上下文的 `Error`（缓解 spec `§4.1 R3` 中描述的"`!` 非空断言遇到慢速 preload" 风险）。`UnlistenFn` 上的 `called`-guard 幂等包装保留，用于 React StrictMode 的双重清理保护。
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+- CI：从 `.github/workflows/e2e.yml` 的 apt 安装步骤中移除 `libwebkit2gtk-4.1-dev`、`libgtk-3-dev`、`libappindicator3-dev`、`librsvg2-dev`、`patchelf`。在 Tauri Cargo 依赖被移除之后，旁路二进制不再链接 `webkit2gtk-rs`，这些系统依赖完全失去意义。保留 `xvfb`（无头 Electron 运行仍需）。
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+- 将 Rust crate 目录从 `src-tauri/` 重命名为 `crates/backend/`，并在仓库根目录引入 Cargo workspace manifest（`./Cargo.toml`）。`.cargo/config.toml` 现在位于仓库根目录，确保 `TS_RS_EXPORT_DIR` 稳定指向 `src/bindings/`；此前未跟踪的 crate 本地 lockfile 被仓库根目录跟踪的 `Cargo.lock` 取代。CI、npm 脚本、Electron 开发/打包路径、lint/spell 忽略规则，以及当前文档都已指向 workspace 布局。
+  （当前分支）
+
+#### Removed
+
+- 整个 Tauri 运行时面：`src-tauri/src/main.rs`（Tauri 主机入口）、`src-tauri/src/lib.rs::run()`（从 170 行收敛到 6 行的 `pub mod` 声明）、`src-tauri/src/runtime/tauri_bridge.rs`（`TauriEventSink` 适配器）、`terminal/`、`filesystem/`、`git/`、`agent/` 中共 20 个 `#[tauri::command]` 包装函数（IPC 路由器直接调用 `BackendState` 方法；这些包装在 PR-A/B 之后就是纯死代码），以及对这些名字的 `mod.rs` 再导出。所有 `pub(crate) fn xxx_inner` 助手与 `#[cfg(test)] pub fn xxx` 测试别名都被保留（测试直接调用 cfg(test) 别名，不需要 `tauri::State`；`cargo test` 数量与 PR-D2 基线逐字节一致）。
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+- Tauri 专属文件：`src-tauri/{build.rs, tauri.conf.json, capabilities/, icons/}`（共 15 个图标；`icon.png` 在删除前已先复制到 `build/icon.png`）。Cargo 依赖 `tauri`、`tauri-plugin-log`、`tauri-build`，以及 `dev-dependencies` 中的 `tauri = features = ["test"]`。`[lib] crate-type` 从 `["staticlib", "cdylib", "rlib"]` 收敛到 `["rlib"]`（前两个仅为 Tauri 移动绑定路径存在）。`default-run = "vimeflow"` → `default-run = "vimeflow-backend"`。
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+- `package.json` 中的 `@tauri-apps/api`（生产依赖）和 `@tauri-apps/cli`（开发依赖）；`tauri:dev` 与 `tauri:build` npm 脚本；`keywords` 中的 `"tauri"` 已替换为 `"electron"`。`package-lock.json` 已重新生成。
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+- 删除 `.github/workflows/tauri-build.yml`。该工作流原本跨 Ubuntu / macOS / Windows 运行 `npx tauri build --ci`，在 `tauri:build` 脚本与 `@tauri-apps/cli` 移除后立刻失效；替代的跨平台 `electron:build` 矩阵列为后续跟进项。
+  ([#211](https://github.com/winoooops/vimeflow/pull/211), `c5433da`)
+
 ### UI Handoff 迁移
 
 #### Added

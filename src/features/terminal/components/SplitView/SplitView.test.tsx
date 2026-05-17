@@ -110,8 +110,8 @@ const makeMockService = (): ITerminalService => ({
   resize: vi.fn(() => Promise.resolve(undefined)),
   kill: vi.fn(() => Promise.resolve(undefined)),
   onData: vi.fn(() => Promise.resolve((): void => undefined)),
-  onExit: vi.fn((): (() => void) => (): void => undefined),
-  onError: vi.fn((): (() => void) => (): void => undefined),
+  onExit: vi.fn(() => Promise.resolve((): void => undefined)),
+  onError: vi.fn(() => Promise.resolve((): void => undefined)),
   listSessions: vi.fn(() =>
     Promise.resolve({ sessions: [], activeSessionId: null })
   ),

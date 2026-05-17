@@ -71,7 +71,7 @@ export interface PTYSpawnParams {
    * spawns) don't pollute arbitrary cwd values with bookkeeping dirs.
    *
    * Round 8, Finding 3 (claude MEDIUM): previously hardcoded `true` in
-   * `tauriTerminalService.spawn`, so every spawn — including throwaway test
+   * `desktopTerminalService.spawn`, so every spawn — including throwaway test
    * sessions, integration runs in `/tmp`, and any third-party project root —
    * created a `.vimeflow/sessions/` tree that showed up in `git status`.
    */

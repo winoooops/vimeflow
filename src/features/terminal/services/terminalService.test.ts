@@ -271,7 +271,7 @@ describe('MockTerminalService', () => {
       })
 
       const onExit = vi.fn()
-      service.onExit(onExit)
+      await service.onExit(onExit)
 
       await service.kill({ sessionId })
 
@@ -333,7 +333,7 @@ describe('MockTerminalService', () => {
 
     test('onExit registers callback', async () => {
       const callback = vi.fn()
-      const unsubscribe = service.onExit(callback)
+      const unsubscribe = await service.onExit(callback)
 
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
@@ -349,7 +349,7 @@ describe('MockTerminalService', () => {
 
     test('onExit with null code', async () => {
       const callback = vi.fn()
-      service.onExit(callback)
+      await service.onExit(callback)
 
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',
@@ -363,7 +363,7 @@ describe('MockTerminalService', () => {
 
     test('onError registers callback', async () => {
       const callback = vi.fn()
-      const unsubscribe = service.onError(callback)
+      const unsubscribe = await service.onError(callback)
 
       const { sessionId } = await service.spawn({
         shell: '/bin/bash',

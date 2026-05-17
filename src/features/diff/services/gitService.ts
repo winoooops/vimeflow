@@ -123,8 +123,8 @@ export class HttpGitService implements GitService {
   }
 }
 
-/** Tauri implementation calling Rust backend via invoke() */
-export class TauriGitService implements GitService {
+/** Desktop implementation calling Rust backend via invoke() */
+export class DesktopGitService implements GitService {
   private readonly cwd: string
 
   constructor(cwd = '.') {
@@ -177,11 +177,11 @@ export const createGitService = (cwd = '.'): GitService => {
     return new MockGitService()
   }
 
-  // Check if running on the desktop host (Tauri today, Electron in PR-D)
+  // Check if running on the desktop host (Electron)
   if (isDesktop()) {
-    return new TauriGitService(cwd)
+    return new DesktopGitService(cwd)
   }
 
-  // Fallback to HTTP service (for Vite dev mode without Tauri)
+  // Fallback to HTTP service (for Vite dev mode without Electron)
   return new HttpGitService()
 }

@@ -2,8 +2,8 @@
 id: git-operations
 category: correctness
 created: 2026-04-09
-last_updated: 2026-05-02
-ref_count: 5
+last_updated: 2026-05-17
+ref_count: 8
 ---
 
 # Git Operations
@@ -149,3 +149,30 @@ between display and mutation operations.
 - **Finding:** Round-1 added a guard `hunkIndex !== undefined && base !== undefined && base !== null` to reject hunk-level mutations against branch-comparison views. But the consumer of `base` — `buildGitDiffArgs` — uses `baseBranch?.trim()` and falsy-checks the result, so empty strings and whitespace-only strings are treated as "no base" and produce a working-tree diff. The guard's stricter "any non-undefined non-null" check disagreed: a client sending `{ base: "" }` gets a 400 even though the server-side diff would have aligned with the working-tree mutation source. Same finding-class as the round-1 #14 issue itself — a contract that depends on alignment but isn't enforced consistently across the participating call sites.
 - **Fix:** Tightened both guards to `typeof base === 'string' && base.trim() !== ''` so they share `buildGitDiffArgs`'s trim-then-falsy sentinel for "no base in effect". Empty/whitespace strings now consistently mean "no base"; only a meaningful branch-comparison value triggers the rejection. (A shared `isActiveBranch(b: unknown): b is string` helper would centralize this further; deferred as a small follow-up.)
 - **Commit:** _(see git log for the round-2 fix commit)_
+
+### 16. Rename/copy status drops worktree-modified half
+
+- **Source:** github-claude | PR #214 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/git/mod.rs`
+- **Finding:** `parse_git_status` treated all `R*`/`C*` porcelain entries as a single staged rename/copy, so `RM` and `CM` omitted the unstaged modification on the destination path.
+- **Fix:** Preserve the staged rename/copy entry and add a second unstaged modified entry when the porcelain worktree status is `M`, with regression tests for `RM` and `CM`.
+- **Commit:** _(see git log for the PR #214 review-fix commit)_
+
+### 17. Rename/copy status drops worktree-deleted/copied half
+
+- **Source:** github-claude | PR #214 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/git/mod.rs`
+- **Finding:** The first `RM`/`CM` fix only emitted a second entry when the porcelain worktree status was `M`. `RD` still showed only the staged rename and omitted the unstaged delete on the destination path; `RC` similarly lost the worktree copy half.
+- **Fix:** Dispatch rename/copy worktree status bytes into second unstaged entries for modified, deleted, added, renamed, and copied states. Added regression tests for `RD` and `RC`.
+- **Commit:** _(see git log for the PR #214 rename worktree-status review-fix commit)_
+
+### 18. Delete-style merge conflicts mapped to modified files
+
+- **Source:** github-claude | PR #214 | 2026-05-17
+- **Severity:** LOW
+- **File:** `crates/backend/src/git/mod.rs`
+- **Finding:** `parse_git_status` mapped every merge-conflict XY code to `Modified`/unstaged. Delete-style conflict codes (`DD`, `DU`, `UD`) can point at files missing from the worktree, so the diff sidebar showed a modified file and the viewer could try to open a path that no longer exists.
+- **Fix:** Split `DD`/`DU`/`UD` into `Deleted`/unstaged while keeping non-delete conflict codes as `Modified`. Added regression coverage for the deleted conflict mapping and a control case for `UU`.
+- **Commit:** _(see git log for the PR #214 merge-conflict status review-fix commit)_

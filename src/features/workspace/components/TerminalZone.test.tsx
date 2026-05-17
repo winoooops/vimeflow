@@ -23,10 +23,16 @@ const mockService: ITerminalService = {
       // eslint-disable-next-line @typescript-eslint/no-empty-function
       Promise.resolve((): void => {})
   ),
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  onExit: vi.fn((): (() => void) => (): void => {}),
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  onError: vi.fn((): (() => void) => (): void => {}),
+  onExit: vi.fn(
+    (): Promise<() => void> =>
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      Promise.resolve((): void => {})
+  ),
+  onError: vi.fn(
+    (): Promise<() => void> =>
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      Promise.resolve((): void => {})
+  ),
   listSessions: vi.fn().mockResolvedValue({
     activeSessionId: null,
     sessions: [],

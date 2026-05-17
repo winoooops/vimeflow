@@ -4,9 +4,9 @@ Project context for OpenAI Codex code review.
 
 ## Project
 
-Vimeflow is a Tauri desktop application (Rust backend + React/TypeScript frontend) for managing terminal-first AI coding agent workspaces.
+Vimeflow is an Electron desktop application (Rust sidecar + React/TypeScript frontend) for managing terminal-first AI coding agent workspaces.
 
-**Current state:** The Tauri/Rust backend exists under `src-tauri/` with PTY, filesystem, git, and agent-observability modules. The frontend is a workspace shell with terminal sessions, file/editor/diff panels, command palette, and the agent status panel. The UI handoff migration is in progress; see `docs/roadmap/progress.yaml`.
+**Current state:** The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with PTY, filesystem, git, and agent-observability modules. The frontend is a workspace shell with terminal sessions, file/editor/diff panels, command palette, and the agent status panel. The UI handoff migration is in progress; see `docs/roadmap/progress.yaml`.
 
 ## Architecture
 
@@ -21,7 +21,7 @@ src/
 ├── bindings/                   # Generated Rust -> TypeScript types
 ├── features/
 │   ├── workspace/              # Workspace assembly, shell components, session state
-│   ├── terminal/               # xterm.js + Tauri terminal service
+│   ├── terminal/               # xterm.js + DesktopTerminalService IPC bridge
 │   ├── agent-status/           # Live Claude Code / Codex observability panel
 │   ├── files/                  # File explorer data/services/components
 │   ├── editor/                 # CodeMirror editor, file buffers, vim mode
@@ -29,8 +29,10 @@ src/
 │   └── command-palette/        # Vim-style command palette
 └── test/setup.ts               # Vitest setup
 
-src-tauri/
+crates/backend/
 ├── src/
+│   ├── bin/vimeflow-backend.rs # Electron sidecar binary entry point
+│   ├── runtime/                # BackendState, IPC router, EventSink trait
 │   ├── terminal/               # PTY commands, cache, bridge, state
 │   ├── filesystem/             # List/read/write commands with scope validation
 │   ├── git/                    # Git status/diff/watch support
@@ -85,7 +87,7 @@ Follow the review process and checklist defined in `agents/code-reviewer.md`. Ke
 - Gather context via `git diff`, understand scope, read surrounding code
 - Apply confidence-based filtering: only report issues you are >80% confident about
 - Consolidate similar issues instead of listing each separately
-- Check security (CRITICAL), code quality (HIGH), React/UI patterns (HIGH), Tauri/IPC patterns (HIGH), performance (MEDIUM), best practices (LOW)
+- Check security (CRITICAL), code quality (HIGH), React/UI patterns (HIGH), Electron/sidecar IPC patterns (HIGH), performance (MEDIUM), best practices (LOW)
 - For AI-generated code: prioritize behavioral regressions, security assumptions, hidden coupling, unnecessary complexity
 
 **Full review agent spec**: `agents/code-reviewer.md`

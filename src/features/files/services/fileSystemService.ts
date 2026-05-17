@@ -21,7 +21,7 @@ const joinPath = (parent: string, name: string): string => {
   return parent.endsWith('/') ? `${parent}${name}` : `${parent}/${name}`
 }
 
-// Convert a Tauri filesystem entry to a FileNode, using the canonical
+// Convert a Desktop filesystem entry to a FileNode, using the canonical
 // full path as the `id`. Previously the id was a module-level counter
 // (`fs-${nextMockId++}`) that incremented on every listDir call, so
 // the same entry received a different id each time the user navigated
@@ -40,7 +40,7 @@ const toFileNode = (entry: FileEntry, parentPath: string): FileNode => {
   }
 }
 
-class TauriFileSystemService implements IFileSystemService {
+class DesktopFileSystemService implements IFileSystemService {
   async listDir(path: string): Promise<FileNode[]> {
     const entries = await invoke<FileEntry[]>('list_dir', {
       request: { path },
@@ -90,20 +90,20 @@ class MockFileSystemService implements IFileSystemService {
 
   readFile(): Promise<string> {
     // Mock implementation — returns placeholder content for browser/test mode.
-    // This service is only used in browser mode (not Tauri).
+    // This service is only used in browser mode (not desktop).
     return Promise.resolve('// Mock file content')
   }
 
   writeFile(): Promise<void> {
     // Mock implementation - no-op
-    // This service is only used in browser mode (not Tauri)
+    // This service is only used in browser mode (not desktop)
     return Promise.resolve()
   }
 }
 
 export const createFileSystemService = (): IFileSystemService => {
   if (isDesktop()) {
-    return new TauriFileSystemService()
+    return new DesktopFileSystemService()
   }
 
   return new MockFileSystemService()

@@ -148,7 +148,7 @@ export interface RecentToolCall {
   /**
    * True when this entry is a Write/Edit on a path that matches a
    * known test-file convention. Sourced from the originating Rust
-   * AgentToolCallEvent — see `src-tauri/src/agent/test_runners/test_file_patterns.rs`.
+   * AgentToolCallEvent — see `crates/backend/src/agent/adapter/claude_code/test_runners/test_file_patterns.rs`.
    */
   isTestFile: boolean
 }

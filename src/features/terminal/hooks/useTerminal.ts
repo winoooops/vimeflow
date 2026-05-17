@@ -55,7 +55,7 @@ export interface UseTerminalOptions {
   terminal: Terminal | null
 
   /**
-   * Terminal service (MockTerminalService or TauriTerminalService)
+   * Terminal service (MockTerminalService or DesktopTerminalService)
    */
   service: ITerminalService
 
@@ -335,7 +335,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           return
         }
 
-        // Tauri invoke() throws strings, not Error objects
+        // Backend invoke() throws strings, not Error objects
         const errorMessage =
           err instanceof Error
             ? err.message
@@ -435,6 +435,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // function and a cancellation flag so the cleanup path correctly tears down
     // even if the effect cleanup runs before the promise resolves.
     let unsubscribeData: (() => void) | null = null
+    let unsubscribeExit: (() => void) | null = null
+    let unsubscribeError: (() => void) | null = null
     let dataSubscriptionCancelled = false
     let releasePaneReady: (() => void) | null = null
 
@@ -471,15 +473,38 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       }
     })()
 
-    const unsubscribeExit = service.onExit(handleExit)
-    const unsubscribeError = service.onError(handleError)
+    void (async (): Promise<void> => {
+      const unsubscribe = await service.onExit(handleExit)
+
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (dataSubscriptionCancelled) {
+        unsubscribe()
+
+        return
+      }
+
+      unsubscribeExit = unsubscribe
+    })()
+
+    void (async (): Promise<void> => {
+      const unsubscribe = await service.onError(handleError)
+
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (dataSubscriptionCancelled) {
+        unsubscribe()
+
+        return
+      }
+
+      unsubscribeError = unsubscribe
+    })()
 
     return (): void => {
       dataSubscriptionCancelled = true
       releasePaneReady?.()
       unsubscribeData?.()
-      unsubscribeExit()
-      unsubscribeError()
+      unsubscribeExit?.()
+      unsubscribeError?.()
     }
   }, [terminal, session, service])
 

@@ -2,6 +2,10 @@ import { app, BrowserWindow, ipcMain, net, protocol, session } from 'electron'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isAllowedBackendMethod } from './backend-methods'
+import {
+  developmentContentSecurityPolicy,
+  packagedContentSecurityPolicy,
+} from './csp'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 
@@ -41,55 +45,15 @@ const resolveSidecarBin = (): string => {
     return path.join(process.resourcesPath, 'bin', BINARY_NAME)
   }
 
-  return path.resolve(
-    __dirname,
-    '..',
-    'src-tauri',
-    'target',
-    'debug',
-    BINARY_NAME
-  )
+  return path.resolve(__dirname, '..', 'target', 'debug', BINARY_NAME)
 }
-
-const packagedContentSecurityPolicy = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "connect-src 'self'",
-].join('; ')
-
-const devContentSecurityPolicy = [
-  "default-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-  "script-src 'self' 'unsafe-eval' http://localhost:* http://127.0.0.1:*",
-  "style-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
-  "img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*",
-  "font-src 'self' data: http://localhost:* http://127.0.0.1:*",
-  "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-].join('; ')
-
-// E2E adds 'unsafe-inline' to script-src so @wdio/electron-service /
-// chromedriver can inject its inline bootstrap script into the renderer.
-// Scoped to isE2eRuntime() (env or --vimeflow-e2e CLI arg) so regular
-// `npm run electron:dev` keeps the stricter dev CSP.
-const devE2eContentSecurityPolicy = [
-  "default-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-  "script-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
-  "style-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*",
-  "img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*",
-  "font-src 'self' data: http://localhost:* http://127.0.0.1:*",
-  "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-].join('; ')
 
 const installContentSecurityPolicy = (): void => {
   if (app.isPackaged) {
     return
   }
 
-  const csp = isE2eRuntime()
-    ? devE2eContentSecurityPolicy
-    : devContentSecurityPolicy
+  const csp = developmentContentSecurityPolicy(isE2eRuntime())
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const responseHeaders = Object.fromEntries(

@@ -1,7 +1,8 @@
 node_modules
 dist
 coverage
-src-tauri/target
+target
+crates/backend/bindings
 playwright-report
 .lifeline-planner
 *.min.js

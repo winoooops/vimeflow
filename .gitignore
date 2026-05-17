@@ -39,10 +39,8 @@ test-results/
 *~
 .DS_Store
 
-# Tauri
-src-tauri/target/
-src-tauri/gen/
-src-tauri/Cargo.lock
+# Rust workspace
+/target/
 
 # TypeScript
 *.tsbuildinfo
@@ -108,3 +106,8 @@ feedbacak*.png
 /.claude_settings_cli.json
 /handoff.md
 /dyn_trait_test
+
+# Electron-builder packaging
+!build/
+!build/icon.png
+release/

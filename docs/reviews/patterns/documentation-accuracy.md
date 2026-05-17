@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-09
-ref_count: 19
+last_updated: 2026-05-16
+ref_count: 20
 ---
 
 # Documentation Accuracy
@@ -531,3 +531,111 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** A test-side comment justifying the `overflow-x-clip` assertion read `// see List.tsx:session-scroll for the WebKitGTK phantom-gutter rationale`. The pointer was correct on the day it was written but encodes two future-rot risks: (a) `List.tsx` may rename / move / restructure, breaking the breadcrumb silently because no test references the file by symbol; (b) a reader looking at the test in isolation has no local explanation and may delete the assertion thinking it is redundant. Same finding-class as #50 / #51 (task-reference smells), generalized: any inline comment that points OUT of the current file at all — to a sibling file, an issue, a PR, a "see also" — is rot-prone. Self-contained or absent are the only safe options.
 - **Fix:** Dropped the comment entirely. The class assertions (`thin-scrollbar`, `overflow-x-clip`, `min-h-0`) are self-documenting — the production-side comment in `AgentStatusPanel.tsx` carries the WHY, and that comment is co-located with the code it explains. Code-review heuristic: when justifying a non-obvious assertion in a test, prefer a one-line inline reason that names the platform / spec-quirk directly (e.g. `// CSS spec coerces overflow-x:visible → auto when y is auto`); if the production file already carries that reason, the test does not need to repeat it OR point at it. The pointer form fails closed over time; inline-or-nothing fails open.
 - **Commit:** _(see git log for the cycle-1 fix commit on PR #195)_
+
+### 56. No-op build-script wrapper implied an environment contract that no longer existed
+
+- **Source:** github-claude | PR #211 round 1 | 2026-05-16
+- **Severity:** LOW
+- **File:** `package.json`
+- **Finding:** `electron:build` still ran `cross-env vite build --mode electron` after the script stopped assigning any environment variables. With no `KEY=value` arguments, `cross-env` adds no behavior; it only makes the build script look as if an environment-normalization step is required. Because other scripts in the same file still legitimately use `cross-env VITE_E2E=1 ...`, the no-op wrapper was especially easy to mistake for intentional platform handling rather than leftover metadata.
+- **Fix:** Removed `cross-env` from `electron:build`, leaving `vite build --mode electron` directly. The dependency stays because the E2E scripts still use it with actual environment assignments. Code-review heuristic: when deleting or moving env vars in npm scripts, scan the remaining command for wrappers whose only purpose was those vars; a no-op wrapper is stale operational documentation.
+- **Commit:** _(see git log for the PR #211 round-1 fix commit)_
+
+### 57. Review round/finding labels leaked into permanent source comments and test names
+
+- **Source:** github-claude | PR #211 round 2 | 2026-05-16
+- **Severity:** LOW
+- **File:** `src/features/terminal/services/desktopTerminalService.ts`, `src/features/terminal/services/desktopTerminalService.test.ts`
+- **Finding:** The `enableAgentBridge` default comment started with `Round 8, Finding 3 (claude MEDIUM)`, and three tests used `round 8 F3:` prefixes. The factual reason for the default was useful, but the review-cycle label is process metadata that becomes meaningless outside the PR transcript and pollutes CI output when tests fail. Same recurrence as #47 / #50 / #51: review IDs, task steps, and migration-section labels belong in PR descriptions, commit messages, or the KB, not source.
+- **Fix:** Collapsed the source comment to the stable invariant: default false prevents ad-hoc spawns from creating `.vimeflow/sessions` trees. Renamed the three tests to describe only the behavior under test. Code-review heuristic: before committing review-loop fixes, grep changed source and tests for `round`, `finding`, `PR #`, `cycle`, and task-step tokens.
+- **Commit:** _(see git log for the PR #211 round-2 fix commit)_
+
+### 58. Roadmap phase marked done while a child DoD stayed pending
+
+- **Source:** github-claude | PR #212 round 1 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `docs/roadmap/progress.yaml`
+- **Finding:** The `electron-migration` phase was marked `status: done` while its `em-d5` DoD remained `status: pending`. The child note said the final E2E workflow signal still needed to land, so downstream agents reading the phase state could skip work that the same record still listed as incomplete.
+- **Fix:** Changed the phase back to `in_progress`, rewrote the phase note to distinguish completed runtime cutover from the pending main-branch E2E workflow signal, and removed the inaccurate claim that PR-D3 merge CI had already satisfied the E2E DoD.
+- **Commit:** same commit as this entry
+
+### 59. Migration sequence counts disagreed across tracker and retrospective docs
+
+- **Source:** github-claude | PR #212 round 1 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `docs/roadmap/progress.yaml`, `docs/superpowers/retros/2026-05-16-electron-migration.md`
+- **Finding:** The progress tracker described the Electron migration as a "6-PR sequence", the phase name said "4-PR sequence", and the retrospective simultaneously said "4-PR sequence" and "three merged PRs." All numbers pointed at real concepts, but none named the unit being counted, so first-time readers could not tell whether the authoritative count was PRs, tracks, or merged commits.
+- **Fix:** Standardized the wording to "three merged PRs / six design tracks" across the progress tracker and retrospective, with the TL;DR explicitly naming PR-A through PR-D3 as design tracks and #209 through #211 as the merged GitHub PRs.
+- **Commit:** same commit as this entry
+
+### 60. Bridge subscription snippet used a self-referential import path
+
+- **Source:** github-claude | PR #212 round 1 | 2026-05-16
+- **Severity:** LOW
+- **File:** `rules/rust/patterns.md`
+- **Finding:** A TypeScript snippet labeled as the renderer bridge subscriber imported `listen` from `../../lib/backend` while its file comment named `src/lib/backend.ts`. Read literally, the snippet imported the bridge from itself via a path that exits the source root, conflicting with the path-alias form used in the TypeScript rules file.
+- **Fix:** Removed the misleading file-path comment and switched the import to `@/lib/backend`, matching the established path-alias convention and avoiding any implied self-import.
+- **Commit:** same commit as this entry
+
+### 61. Crate-relative Rust paths in repo-root docs fail lookup from agent context
+
+- **Source:** github-claude | PR #212 round 2 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `rules/rust/patterns.md`, `rules/rust/testing.md`
+- **Finding:** Rust rules prose cited files like `src/git/mod.rs` and `src/bin/vimeflow-backend.rs`, which are valid only from the `src-tauri/` crate directory. Agents read rules files from the repo root, so those paths failed lookup and made the concrete examples appear nonexistent.
+- **Fix:** Rewrote the rules references to repo-root paths (`src-tauri/src/git/mod.rs`, `src-tauri/src/runtime/ipc.rs`, `src-tauri/src/bin/vimeflow-backend.rs`) and swept the same crate-relative wording from PR #212's progress and changelog entries.
+- **Commit:** same commit as this entry
+
+### 62. Terminology fix applied to tracker and retro but missed historical roadmap breadcrumb
+
+- **Source:** github-claude | PR #212 round 2 | 2026-05-16
+- **Severity:** LOW
+- **File:** `docs/roadmap/tauri-migration-roadmap.md`
+- **Finding:** Round 1 standardized the Electron migration wording to "three merged PRs / six design tracks" in `progress.yaml` and the retrospective, but the historical Tauri roadmap still pointed readers to a `progress.yaml` entry "summarizing the 6-PR sequence." That preserved the exact ambiguity the previous finding was meant to remove.
+- **Fix:** Updated the breadcrumb to say `three merged PRs / six design tracks`, matching the live progress tracker and retrospective wording.
+- **Commit:** same commit as this entry
+
+### 63. English-term spacing survived after replacing the term with Chinese prose
+
+- **Source:** github-claude | PR #212 round 2 | 2026-05-16
+- **Severity:** LOW
+- **File:** `README.zh-CN.md`
+- **Finding:** A Chinese README bullet changed an English runtime term to `旁路` but kept the spacing pattern used around the old English word, producing `订阅 旁路事件总线`. Chinese continuous prose should not retain that inter-word space.
+- **Fix:** Removed the stray space so the phrase reads `订阅旁路事件总线`.
+- **Commit:** same commit as this entry
+
+### 64. Path sweep fixed prose but missed code-block comments in the same rules file
+
+- **Source:** github-claude | PR #212 round 3 | 2026-05-16
+- **Severity:** MEDIUM
+- **File:** `rules/rust/patterns.md`
+- **Finding:** Round 2 fixed crate-relative Rust paths in prose but missed two code-block comments and one EventSink prose reference in the same file: `src/runtime/state.rs`, `src/terminal/commands.rs`, and `src/runtime/event_sink.rs`. Agents reading from the repo root would still search the frontend `src/` tree and fail to locate the Rust files.
+- **Fix:** Prefixed all three remaining references with `src-tauri/`, including the illustrative code comments, so every file pointer in the rules file uses the same repo-root convention.
+- **Commit:** same commit as this entry
+
+### 65. AppImage smoke command hardcoded the current package version
+
+- **Source:** github-claude | PR #212 round 3 | 2026-05-16
+- **Severity:** LOW
+- **File:** `README.md`
+- **Finding:** The AppImage smoke section described the generic output path `release/vimeflow-<version>-x64.AppImage` but the copy-paste command below hardcoded `release/vimeflow-0.1.0-x64.AppImage`. After a version bump, the command would fail with a file-not-found error.
+- **Fix:** Changed the command to use `release/vimeflow-*.AppImage` for both `chmod` and launch, keeping it copy-pasteable across version bumps.
+- **Commit:** same commit as this entry
+
+### 66. Bootstrap snippet appends duplicate local-exclude entries on repeat runs
+
+- **Source:** github-claude | PR #212 round 3 | 2026-05-16
+- **Severity:** LOW
+- **File:** `CLAUDE.md`, `docs/decisions/2026-05-16-in-repo-skills-setup.md`
+- **Finding:** The Lifeline skills bootstrap snippets used `echo 'skills/' >> .git/info/exclude`, which appends duplicate `skills/` lines if the user runs the setup twice. The surrounding `ln -sfn` commands were already idempotent, so this one non-idempotent line made the snippet noisier than necessary.
+- **Fix:** Replaced both appends with `grep -qxF ... || echo ...`, preserving the local exclude behavior while making repeated runs no-op clean.
+- **Commit:** same commit as this entry
+
+### 67. English README event-bus wording survived a partial Tauri terminology sweep
+
+- **Source:** github-claude | PR #212 round 4 | 2026-05-16
+- **Severity:** LOW
+- **File:** `README.md`
+- **Finding:** The Agent Status Sidebar section updated adjacent bullets from Tauri terminology to sidecar terminology, and the Chinese README equivalent changed to `旁路事件总线`, but the English Frontend panel bullet still said `subscribing to the Tauri event bus`.
+- **Fix:** Changed the phrase to `subscribing to the sidecar event bus`, matching the surrounding Electron/sidecar terminology.
+- **Commit:** same commit as this entry

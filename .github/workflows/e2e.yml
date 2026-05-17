@@ -5,7 +5,10 @@ on:
     branches:
       - main
     paths:
-      - 'src-tauri/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/**'
       - 'src/**'
       - 'electron/**'
       - 'tests/e2e/**'
@@ -17,7 +20,10 @@ on:
     branches:
       - main
     paths:
-      - 'src-tauri/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/**'
       - 'src/**'
       - 'electron/**'
       - 'tests/e2e/**'
@@ -54,29 +60,19 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
-          # Key the cargo cache against the e2e-test feature so the shared
-          # cache with `tauri-build` (which doesn't enable e2e-test) doesn't
-          # mask recompiles triggered by this job.
+          workspaces: .
+          # Key the cargo cache against the e2e-test feature so cache
+          # entries from non-e2e CI jobs don't mask recompiles triggered
+          # by this job.
           shared-key: e2e-test
 
       - name: Install system dependencies
-        # libwebkit2gtk / libgtk / libappindicator / librsvg / patchelf are
-        # still required at link time because the sidecar binary
-        # (cargo build --bin vimeflow-backend) compiles against the
-        # vimeflow_lib crate, which still pulls in the Tauri dependency
-        # graph (tauri -> wry -> webkit2gtk-rs). PR-D3 removes the Tauri
-        # dep itself, after which these system packages can be dropped
-        # too. xvfb is required by xvfb-run for headless Electron runs.
+        # xvfb is required by xvfb-run for headless Electron runs.
+        # All GTK/webkit2gtk apt deps were dropped in PR-D3 once the
+        # sidecar binary stopped link-pulling the Tauri dependency graph.
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            xvfb
+          sudo apt-get install -y xvfb
 
       - name: Install npm dependencies
         run: npm ci
@@ -85,13 +81,13 @@ jobs:
         run: npm run test:e2e:build
 
       - name: Run core E2E suite
-        run: xvfb-run --auto-servernum npm run test:e2e
+        run: xvfb-run --auto-servernum npm run test:e2e:core:run
 
       - name: Run terminal E2E suite
-        run: xvfb-run --auto-servernum npm run test:e2e:terminal
+        run: xvfb-run --auto-servernum npm run test:e2e:terminal:run
 
       - name: Run agent E2E suite
-        run: xvfb-run --auto-servernum npm run test:e2e:agent
+        run: xvfb-run --auto-servernum npm run test:e2e:agent:run
 
       - name: Upload E2E diagnostics on failure
         if: failure()
@@ -99,7 +95,7 @@ jobs:
         with:
           name: e2e-diagnostics-${{ github.run_id }}
           path: |
-            src-tauri/target/debug/vimeflow-backend
+            target/debug/vimeflow-backend
             dist/
             dist-electron/
           retention-days: 3
