@@ -81,11 +81,11 @@ describe('File explorer → editor flow', () => {
       )
     }
 
-    // BottomDrawer header shows the selected file (or "No file").
+    // DockPanel header shows the selected file (or "No file").
     await browser.waitUntil(
       async () => {
-        const bottomDrawer = await $('[data-testid="bottom-drawer"]')
-        const text = await bottomDrawer.getText()
+        const dockPanel = await $('[data-testid="dock-panel"]')
+        const text = await dockPanel.getText()
         return text.includes(FIXTURE_NAME)
       },
       {

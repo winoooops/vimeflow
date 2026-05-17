@@ -4,12 +4,8 @@ import { describe, test, expect, vi } from 'vitest'
 import { DockSwitcher } from './DockSwitcher'
 
 describe('DockSwitcher', () => {
-  test('renders four buttons: top / bottom / left / right', () => {
+  test('renders bottom / left / right buttons', () => {
     render(<DockSwitcher position="bottom" onPick={vi.fn()} />)
-
-    expect(
-      screen.getByRole('button', { name: /dock: top/i })
-    ).toBeInTheDocument()
 
     expect(
       screen.getByRole('button', { name: /dock: bottom/i })
@@ -22,6 +18,14 @@ describe('DockSwitcher', () => {
     expect(
       screen.getByRole('button', { name: /dock: right/i })
     ).toBeInTheDocument()
+  })
+
+  test('does not render a Top button (deferred to follow-up)', () => {
+    render(<DockSwitcher position="bottom" onPick={vi.fn()} />)
+
+    expect(
+      screen.queryByRole('button', { name: /dock: top/i })
+    ).not.toBeInTheDocument()
   })
 
   test('does not render a Hidden button', () => {
@@ -53,8 +57,8 @@ describe('DockSwitcher', () => {
     const onPick = vi.fn()
     render(<DockSwitcher position="bottom" onPick={onPick} />)
 
-    await user.click(screen.getByRole('button', { name: /dock: top/i }))
+    await user.click(screen.getByRole('button', { name: /dock: right/i }))
 
-    expect(onPick).toHaveBeenCalledWith('top')
+    expect(onPick).toHaveBeenCalledWith('right')
   })
 })

@@ -6,11 +6,12 @@ interface DockPeekButtonProps {
   onOpen: () => void
 }
 
+// Peek icons point toward the expansion direction.
 const ICON: Record<DockPosition, string> = {
   top: 'expand_more',
   bottom: 'expand_less',
-  left: 'chevron_left',
-  right: 'chevron_right',
+  left: 'chevron_right',
+  right: 'chevron_left',
 }
 
 const ARIA: Record<DockPosition, string> = {

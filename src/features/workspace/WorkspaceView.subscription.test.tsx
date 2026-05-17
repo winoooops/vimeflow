@@ -134,6 +134,7 @@ interface MockDockPanelProps {
   gitStatus?: unknown
   tab?: 'editor' | 'diff'
   onTabChange?: (tab: 'editor' | 'diff') => void
+  onClose?: () => void
 }
 
 interface MockSidebarProps {
@@ -183,6 +184,7 @@ vi.mock('./components/DockPanel', () => ({
   default: ({
     gitStatus = undefined,
     onTabChange,
+    onClose,
   }: MockDockPanelProps): ReactElement => {
     capturedDockPanelProps.gitStatus = gitStatus
 
@@ -197,6 +199,9 @@ vi.mock('./components/DockPanel', () => ({
           onClick={() => onTabChange?.('diff')}
         >
           switch to diff
+        </button>
+        <button data-testid="mock-close-dock" onClick={onClose}>
+          close dock
         </button>
       </div>
     )
@@ -355,6 +360,51 @@ describe('WorkspaceView lifted-subscription contract', () => {
       expect(useGitStatus).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ watch: true, enabled: true })
+      )
+    } finally {
+      if (originalImpl) {
+        useAgentStatusMock.mockImplementation(originalImpl)
+      }
+    }
+  })
+
+  test('WorkspaceView passes enabled: false when idle diff dock is closed', async () => {
+    const idleAgentStatus: AgentStatus = {
+      isActive: false,
+      agentType: null,
+      modelId: null,
+      modelDisplayName: null,
+      version: null,
+      sessionId: null,
+      agentSessionId: null,
+      contextWindow: null,
+      cost: null,
+      rateLimits: null,
+      numTurns: 0,
+      toolCalls: { total: 0, byType: {}, active: null },
+      recentToolCalls: [],
+      testRun: null,
+    }
+    const useAgentStatusMock = vi.mocked(useAgentStatus)
+    const originalImpl = useAgentStatusMock.getMockImplementation()
+    useAgentStatusMock.mockImplementation(() => idleAgentStatus)
+
+    try {
+      render(<WorkspaceView />)
+      await screen.findByTestId('dock-panel-mock')
+
+      fireEvent.click(screen.getByTestId('mock-switch-to-diff'))
+      expect(useGitStatus).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ watch: true, enabled: true })
+      )
+
+      vi.mocked(useGitStatus).mockClear()
+      fireEvent.click(screen.getByTestId('mock-close-dock'))
+
+      expect(useGitStatus).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ watch: true, enabled: false })
       )
     } finally {
       if (originalImpl) {

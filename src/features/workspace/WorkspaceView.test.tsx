@@ -429,14 +429,14 @@ describe('WorkspaceView', () => {
     expect(dockIndex).toBeLessThan(terminalIndex)
   })
 
-  test('with dockPosition=top, DockPanel renders above TerminalZone in the inner flex', async () => {
+  test('with dockPosition=right, DockPanel renders after TerminalZone in the inner flex', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    await user.click(screen.getByRole('button', { name: /dock: top/i }))
+    await user.click(screen.getByRole('button', { name: /dock: right/i }))
 
     const inner = screen.getByTestId('dock-canvas-wrapper')
-    expect(inner).toHaveStyle({ flexDirection: 'column' })
+    expect(inner).toHaveStyle({ flexDirection: 'row' })
 
     const children = Array.from(inner.children)
 
@@ -448,7 +448,7 @@ describe('WorkspaceView', () => {
       (child) => child.getAttribute('data-testid') === 'terminal-zone-wrapper'
     )
 
-    expect(dockIndex).toBeLessThan(terminalIndex)
+    expect(dockIndex).toBeGreaterThan(terminalIndex)
   })
 
   test('with dockPosition=bottom, inner flex direction is column', () => {
@@ -494,23 +494,23 @@ describe('WorkspaceView', () => {
     expect(children.indexOf(peek)).toBeGreaterThan(children.indexOf(terminal))
   })
 
-  test('closed top dock renders DockPeekButton before TerminalZone', async () => {
+  test('closed right dock renders DockPeekButton after TerminalZone', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    await user.click(screen.getByRole('button', { name: /dock: top/i }))
+    await user.click(screen.getByRole('button', { name: /dock: right/i }))
     await user.click(screen.getByRole('button', { name: /collapse panel/i }))
 
     const inner = screen.getByTestId('dock-canvas-wrapper')
 
     const peek = screen.getByRole('button', {
-      name: /show panel docked top/i,
+      name: /show panel docked right/i,
     })
     const terminal = screen.getByTestId('terminal-zone-wrapper')
 
     const children = Array.from(inner.children)
 
-    expect(children.indexOf(peek)).toBeLessThan(children.indexOf(terminal))
+    expect(children.indexOf(peek)).toBeGreaterThan(children.indexOf(terminal))
   })
 
   test('main workspace area uses flex-col layout', () => {

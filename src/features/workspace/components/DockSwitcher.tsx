@@ -8,7 +8,6 @@ interface DockSwitcherProps {
 }
 
 const OPTIONS: { id: DockPosition; label: string }[] = [
-  { id: 'top', label: 'Top' },
   { id: 'bottom', label: 'Bottom' },
   { id: 'left', label: 'Left' },
   { id: 'right', label: 'Right' },

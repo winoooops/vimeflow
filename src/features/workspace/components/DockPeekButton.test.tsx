@@ -22,23 +22,24 @@ describe('DockPeekButton', () => {
     expect(within(button).getByText('expand_less')).toBeInTheDocument()
   })
 
-  test('left: renders chevron_left, no visible label', () => {
+  // Peek icons point toward the expansion direction, not the collapse direction.
+  test('left: renders chevron_right icon, no visible label', () => {
     render(<DockPeekButton position="left" onOpen={vi.fn()} />)
 
     const button = screen.getByRole('button', {
       name: /show panel docked left/i,
     })
     expect(button).not.toHaveTextContent(/show panel/i)
-    expect(within(button).getByText('chevron_left')).toBeInTheDocument()
+    expect(within(button).getByText('chevron_right')).toBeInTheDocument()
   })
 
-  test('right: renders chevron_right', () => {
+  test('right: renders chevron_left icon', () => {
     render(<DockPeekButton position="right" onOpen={vi.fn()} />)
 
     const button = screen.getByRole('button', {
       name: /show panel docked right/i,
     })
-    expect(within(button).getByText('chevron_right')).toBeInTheDocument()
+    expect(within(button).getByText('chevron_left')).toBeInTheDocument()
   })
 
   test('clicking calls onOpen', async () => {

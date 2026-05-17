@@ -89,6 +89,22 @@ describe('DockPanel', () => {
     expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
   })
 
+  test('exposes editor panel as a named region', () => {
+    renderDockPanel({ tab: 'editor' })
+
+    expect(
+      screen.getByRole('region', { name: /code editor/i })
+    ).toBeInTheDocument()
+  })
+
+  test('exposes diff panel as a named region', () => {
+    renderDockPanel({ tab: 'diff' })
+
+    expect(
+      screen.getByRole('region', { name: /diff viewer/i })
+    ).toBeInTheDocument()
+  })
+
   test('passes selectedFilePath to CodeEditor', () => {
     renderDockPanel({ selectedFilePath: '/home/user/test.ts' })
 

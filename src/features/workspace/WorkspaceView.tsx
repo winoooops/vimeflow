@@ -373,7 +373,7 @@ export const WorkspaceView = (): ReactElement => {
 
   const gitStatus = useGitStatus(activeCwd, {
     watch: true,
-    enabled: agentStatus.isActive || dockTab === 'diff',
+    enabled: agentStatus.isActive || (isDockOpen && dockTab === 'diff'),
   })
 
   // Open a file directly (no unsaved-changes guard). Errors were previously
