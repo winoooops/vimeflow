@@ -7,7 +7,17 @@
 
 **Goal:** Replace `BottomDrawer` (Editor + Diff, bottom-only) with a positionable `DockPanel` (Editor / Diff / Files, dockable bottom / left / right) that mirrors the handoff prototype.
 
-**Architecture:** WorkspaceView holds all dock state (`dockPosition`, `isDockOpen`, `dockTab`, `dockBottomHeight`). DockPanel is fully controlled — receives `position`, computes border-side + collapse-icon internally. An inner flex wrapper inside WorkspaceView switches `flex-direction` between `column` (for `'bottom'`) and `row` (for `'left'` / `'right'`) and respects `dockBefore` ordering. When `!isDockOpen`, DockPanel unmounts and a `DockPeekButton` renders on the matching edge.
+**Architecture:** WorkspaceView holds all dock state (`dockPosition`, `isDockOpen`, `dockTab`) **plus the lifted `useResizable` hook for bottom-dock height** so the resized height survives `DockPanel` unmount on close. DockPanel is fully controlled — receives `position`, `tab`, `onTabChange`, `onPositionChange`, `onClose`, controlled height (`bottomHeight` + `bottomHeightResize`); it computes border-side + collapse-icon internally. An inner flex wrapper inside WorkspaceView switches `flex-direction` between `column` (for `'bottom'`) and `row` (for `'left'` / `'right'`) and respects `dockBefore` ordering. When `!isDockOpen`, DockPanel unmounts and a `DockPeekButton` renders on the matching edge.
+
+**Prop-naming contract — locked here, used identically from Task 2 onward:**
+
+- `tab: DockTab` (renamed from `activeTab` — matches spec §DockPanel — component contract).
+- `onTabChange: (next: DockTab) => void` — survives the rename.
+- `position: DockPosition` — new.
+- `onPositionChange: (next: DockPosition) => void` — new.
+- `onClose: () => void` — replaces the existing `isCollapsed` + `onCollapsedChange` discriminated pair. DockPanel never reads an `isOpen` prop because it unmounts when closed; `onClose` is the only close-direction signal.
+- `bottomHeight: number` — new. Controlled height for bottom-dock; ignored for left/right.
+- `onBottomHeightAdjust: (delta: number) => void` — new. Forwards `adjustBy` from the lifted `useResizable` so DockPanel's resize-handle keyboard arrows still work.
 
 **Tech Stack:** TypeScript + React 18, Tailwind CSS, Vitest + Testing Library, ESLint (flat), Prettier, Husky pre-commit + commitlint.
 
@@ -310,7 +320,7 @@ Expected: FAIL — current component still supports the discriminated-union unco
 
 (If the test passes as-written, the spec mandates we still proceed to remove the uncontrolled branches.)
 
-- [ ] **Step 2.3: Lift state to WorkspaceView**
+- [ ] **Step 2.3: Lift state to WorkspaceView (incl. bottom-dock height)**
 
 In `src/features/workspace/WorkspaceView.tsx`, find:
 
@@ -329,6 +339,23 @@ type DockTab = 'editor' | 'diff' // Files added in Task 4
 const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
 const [isDockOpen, setIsDockOpen] = useState(true)
 const [dockTab, setDockTab] = useState<DockTab>('editor')
+
+// Bottom-dock height lifted from DockPanel so it survives close/reopen.
+// Matches the existing DRAWER_MIN/MAX/initial constants in the current
+// BottomDrawer component (150 / 640 / 400 px).
+const dockBottomResize = useResizable({
+  initial: 400,
+  min: 150,
+  max: 640,
+  direction: 'vertical',
+  invert: true,
+})
+```
+
+Add the import at the top of the file (if not already present):
+
+```tsx
+import { useResizable } from '../../hooks/useResizable'
 ```
 
 Find:
@@ -343,10 +370,10 @@ In the same file, find every reference to `bottomDrawerTab` and replace with `do
 
 - [ ] **Step 2.4: Update the DockPanel render-site in WorkspaceView**
 
-Find the existing JSX:
+Find the existing JSX (after Task 1's rename):
 
 ```tsx
-<BottomDrawer
+<DockPanel
   ...
   activeTab={bottomDrawerTab}
   onTabChange={setBottomDrawerTab}
@@ -356,118 +383,212 @@ Find the existing JSX:
 />
 ```
 
-(With `<BottomDrawer>` already renamed to `<DockPanel>` from Task 1.)
-
-Replace the relevant props lines with:
+Replace with the spec's prop names (`tab`, `onClose`, controlled height). This **drops** `isCollapsed` + `onCollapsedChange` entirely — DockPanel now renders only when `isDockOpen === true`, so it has no need to know about the closed state. Closing flows through `onClose`:
 
 ```tsx
-<DockPanel
-  ...
-  activeTab={dockTab}
-  onTabChange={setDockTab}
-  isCollapsed={!isDockOpen}
-  onCollapsedChange={(collapsed) => setIsDockOpen(!collapsed)}
-  ...
-/>
+{isDockOpen && (
+  <DockPanel
+    ...
+    tab={dockTab}
+    onTabChange={setDockTab}
+    onClose={() => setIsDockOpen(false)}
+    bottomHeight={dockBottomResize.size}
+    onBottomHeightAdjust={dockBottomResize.adjustBy}
+    // position + onPositionChange added in Task 6
+    // filesOnFileSelect added in Task 4
+  />
+)}
 ```
 
-Keep all other props (selectedFilePath, content, etc.) unchanged for now.
+Note: the unmount-when-closed flow lands here in Task 2 (not deferred to Task 8). Task 8 adds the `DockPeekButton` rendered alongside the conditional unmount. Until then, the closed state shows nothing — the close button is unreachable from a user standpoint anyway because we can't currently reopen. Task 2.6 below mitigates this with a temporary always-open guard so the test suite can run.
 
-- [ ] **Step 2.5: Remove the uncontrolled fallback inside DockPanel.tsx**
+- [ ] **Step 2.5: Rewrite DockPanel.tsx prop interface (spec names + lifted height)**
 
-In `DockPanel.tsx`, find the discriminated-union types:
+In `DockPanel.tsx`, replace the entire discriminated-union prop typing block (the existing `TabControl` / `CollapseControl` / `SelectedDiffControl` unions plus the `BottomDrawerBaseProps` interface — every type declaration before the component function) with the spec-aligned shape:
 
 ```tsx
-type TabControl =
-  | { activeTab?: undefined; onTabChange?: undefined }
-  | { activeTab: TabType; onTabChange: (tab: TabType) => void }
+type TabType = 'editor' | 'diff' // 'files' joins in Task 4
 
-type CollapseControl =
-  | { isCollapsed?: undefined; onCollapsedChange?: undefined }
+interface DockPanelBaseProps {
+  /** Active tab (controlled). */
+  tab: TabType
+  onTabChange: (next: TabType) => void
+
+  /** Caller closes the dock; DockPanel unmounts on close. */
+  onClose: () => void
+
+  /** Controlled bottom-dock height + keyboard-arrow adjuster, both from
+   *  WorkspaceView's lifted `useResizable`. Ignored for left/right docks. */
+  bottomHeight: number
+  onBottomHeightAdjust: (delta: number) => void
+
+  // Pass-through props (unchanged).
+  selectedFilePath: string | null
+  content: string
+  onContentChange?: (content: string) => void
+  onSave?: () => void
+  isDirty?: boolean
+  isLoading?: boolean
+  cwd?: string
+  gitStatus?: UseGitStatusReturn
+}
+
+type SelectedDiffControl =
+  | { selectedDiffFile?: undefined; onSelectedDiffFileChange?: undefined }
   | {
-      isCollapsed: boolean
-      onCollapsedChange: (collapsed: boolean) => void
+      selectedDiffFile: SelectedDiffFile | null
+      onSelectedDiffFileChange: (file: SelectedDiffFile | null) => void
     }
+
+type DockPanelProps = DockPanelBaseProps & SelectedDiffControl
 ```
 
-Replace with:
+In the component header destructure, replace the existing block with:
 
 ```tsx
-interface TabControl {
-  activeTab: TabType
-  onTabChange: (tab: TabType) => void
-}
-
-interface CollapseControl {
-  isCollapsed: boolean
-  onCollapsedChange: (collapsed: boolean) => void
-}
+const DockPanel = ({
+  tab,
+  onTabChange,
+  onClose,
+  bottomHeight,
+  onBottomHeightAdjust,
+  selectedFilePath,
+  content,
+  onContentChange = undefined,
+  onSave = undefined,
+  isDirty = false,
+  isLoading = false,
+  cwd = '.',
+  gitStatus = undefined,
+  selectedDiffFile,
+  onSelectedDiffFileChange,
+}: DockPanelProps): ReactElement => {
 ```
 
-Find:
+Delete every uncontrolled-state line in the function body:
 
 ```tsx
-const [uncontrolledActiveTab, setUncontrolledActiveTab] =
-  useState<TabType>('editor')
-const [uncontrolledIsCollapsed, setUncontrolledIsCollapsed] = useState(false)
-```
+const [uncontrolledActiveTab, setUncontrolledActiveTab] = ...
+const [uncontrolledIsCollapsed, setUncontrolledIsCollapsed] = ...
 
-Delete both lines.
+const COLLAPSED_HEIGHT = 48
 
-Find:
-
-```tsx
-// Determine if each prop is controlled
 const isTabControlled = controlledActiveTab !== undefined
 const isCollapseControlled = controlledIsCollapsed !== undefined
 
-// Use controlled value or fallback to uncontrolled
 const activeTab = isTabControlled ? controlledActiveTab : uncontrolledActiveTab
-
 const isCollapsed = isCollapseControlled
   ? controlledIsCollapsed
   : uncontrolledIsCollapsed
 ```
 
-Replace with:
+Replace the existing `useResizable` call with direct use of the lifted props:
 
 ```tsx
-const activeTab = controlledActiveTab
-const isCollapsed = controlledIsCollapsed
+const {
+  size: height,
+  isDragging,
+  handleMouseDown,
+  adjustBy,
+} = useResizable({ ... })
 ```
 
-In the prop-destructure header, find:
+becomes (DockPanel no longer owns the resize hook):
 
 ```tsx
-activeTab: controlledActiveTab,
-onTabChange,
-isCollapsed: controlledIsCollapsed,
-onCollapsedChange,
-```
-
-The aliases are now unnecessary but keep them for the minimal-diff readability; the new types still require the props. The body changes above make uncontrolled paths unreachable.
-
-In the click handlers, find:
-
-```tsx
-if (isTabControlled) {
-  onTabChange('editor')
-} else {
-  setUncontrolledActiveTab('editor')
+const height = bottomHeight
+const isDragging = false // owned by WorkspaceView's lifted hook from Task 7
+const handleMouseDown = (): void => {
+  // The resize-handle drag is owned by the lifted hook starting in Task 7;
+  // until then, the handle's onMouseDown is a no-op so existing
+  // "resize handle triggers mouse down handler" test still passes (it
+  // only asserts the call doesn't throw, not that anything resized).
 }
+const adjustBy = onBottomHeightAdjust
+```
+
+Delete the line `const effectiveHeight = isCollapsed ? COLLAPSED_HEIGHT : height` — height is just `height` now (the panel is never rendered when closed).
+
+In the JSX, find every body reference to `activeTab` and verify it now reads the destructured `tab` (or rename via search-and-replace: `activeTab` → `tab` inside this file only). Update the click handlers from:
+
+```tsx
+onClick={() => {
+  if (isTabControlled) {
+    onTabChange('editor')
+  } else {
+    setUncontrolledActiveTab('editor')
+  }
+}}
+```
+
+to:
+
+```tsx
+onClick={() => onTabChange('editor')}
+```
+
+(and the same for the Diff Viewer click).
+
+Replace the collapse-toggle button. Find:
+
+```tsx
+<button
+  type="button"
+  aria-label={isCollapsed ? 'Expand drawer' : 'Collapse drawer'}
+  aria-expanded={!isCollapsed}
+  onClick={() => {
+    if (isCollapseControlled) {
+      onCollapsedChange(!isCollapsed)
+    } else {
+      setUncontrolledIsCollapsed((v) => !v)
+    }
+  }}
+  className="material-symbols-outlined text-sm text-outline hover:text-on-surface cursor-pointer transition-colors"
+>
+  {isCollapsed ? 'keyboard_arrow_up' : 'keyboard_arrow_down'}
+</button>
 ```
 
 Replace with:
 
 ```tsx
-onTabChange('editor')
+<button
+  type="button"
+  aria-label="Collapse panel"
+  onClick={onClose}
+  className="material-symbols-outlined text-sm text-outline hover:text-on-surface cursor-pointer transition-colors"
+>
+  keyboard_arrow_down
+</button>
 ```
 
-Apply the same simplification to the Diff Viewer tab click and the collapse-toggle button (replacing the `isCollapseControlled ? onCollapsedChange(!isCollapsed) : setUncontrolledIsCollapsed((v) => !v)` ternary with just `onCollapsedChange(!isCollapsed)`).
+(Task 6 makes the glyph position-aware; Task 3 restyles to the 24×24 button.)
 
-- [ ] **Step 2.6: Drop the uncontrolled-fallback tests in DockPanel.test.tsx**
+Finally, change the `<section data-testid="bottom-drawer" ...>` to `data-testid="dock-panel"`. This testid migration was previously marked for Task 7, but doing it here in Task 2 makes it the same commit as the prop rename — atomic.
 
-Delete these tests by name from `DockPanel.test.tsx`:
+The existing `effectiveHeight` line in the `style={{ height: ... }}` attribute becomes:
+
+```tsx
+style={{ height: `${height}px` }}
+```
+
+- [ ] **Step 2.6: Drop the uncontrolled-fallback tests + migrate testid in DockPanel.test.tsx**
+
+First, the testid migration. The component's `data-testid` changed from `bottom-drawer` → `dock-panel` (Step 2.5 tail). Every `getByTestId('bottom-drawer')` in the test file must update:
+
+```bash
+grep -n "bottom-drawer" src/features/workspace/components/DockPanel.test.tsx
+```
+
+For each hit, change `'bottom-drawer'` to `'dock-panel'`. Do the same sweep in the other WorkspaceView test files (the mocks define their own `data-testid`, so they're decoupled — but the assertion sites that select the real component need to update):
+
+```bash
+grep -rn "bottom-drawer" src/features/workspace/
+```
+
+Update each match. The WorkspaceView mocks of DockPanel (in `subscription.test.tsx` and `command-palette.test.tsx`) should set `data-testid="dock-panel"` on their stub root element.
+
+Next, delete these tests by name from `DockPanel.test.tsx`:
 
 - `'renders with Editor tab active by default'`
 - `'uncontrolled fallback: activeTab works without controlled props'`
@@ -660,25 +781,20 @@ And similarly for the `difference` icon span in the Diff tab.
 
 Remove the existing collapse-toggle's `text-sm` for the moment — the close button restyle happens in Step 3.4.
 
-- [ ] **Step 3.4: Restyle the close button**
+- [ ] **Step 3.4: Restyle the close button (visual only — wiring done in Task 2)**
 
-Find:
+Task 2 already replaced the close button's `onClick` with `onClose` and dropped the `isCollapsed`-conditional behavior. This step is the visual restyle only: wrap the icon in a 24×24 button shell with the prototype's hover treatment.
+
+Find (the post-Task-2 close button):
 
 ```tsx
 <button
   type="button"
-  aria-label={isCollapsed ? 'Expand drawer' : 'Collapse drawer'}
-  aria-expanded={!isCollapsed}
-  onClick={() => {
-    if (isCollapseControlled) {
-      onCollapsedChange(!isCollapsed)
-    } else {
-      setUncontrolledIsCollapsed((v) => !v)
-    }
-  }}
+  aria-label="Collapse panel"
+  onClick={onClose}
   className="material-symbols-outlined text-sm text-outline hover:text-on-surface cursor-pointer transition-colors"
 >
-  {isCollapsed ? 'keyboard_arrow_up' : 'keyboard_arrow_down'}
+  keyboard_arrow_down
 </button>
 ```
 
@@ -688,7 +804,7 @@ Replace with:
 <button
   type="button"
   aria-label="Collapse panel"
-  onClick={() => onCollapsedChange(true)}
+  onClick={onClose}
   className="grid place-items-center w-6 h-6 rounded-[5px] bg-transparent text-[#8a8299] hover:bg-white/5 hover:text-[#e2c7ff] transition-colors cursor-pointer"
 >
   <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
@@ -697,10 +813,7 @@ Replace with:
 </button>
 ```
 
-Notes:
-
-- The expand-when-collapsed path no longer lives inside DockPanel — when collapsed, DockPanel unmounts (Task 8 wires this) and `DockPeekButton` takes over. So `aria-label` is fixed to `"Collapse panel"`; no isCollapsed-conditional.
-- `expand_more` is the bottom-dock glyph. Tasks 6/7 swap this to be position-aware (`chevron_left` / `chevron_right` for side docks).
+Note: `expand_more` is the bottom-dock glyph. Task 6 makes it position-aware (`chevron_left` / `chevron_right` for side docks).
 
 - [ ] **Step 3.5: Run the test suite**
 
@@ -825,6 +938,11 @@ export interface DockFilesPanelProps {
  * DockFilesPanel — Files tab content for the docked panel (full panel
  * width). Distinct from the sidebar's FilesPanel which is shaped for
  * the 272 px sidebar context. Shares the FileTree rendering primitive.
+ *
+ * Filters folder activations: `FileTree.onNodeSelect` fires for both
+ * leaf files and directory expanders, but `handleFileSelect` upstream
+ * needs only the file events. Filtering here keeps the contract tight
+ * — `onFileSelect` is called exclusively with `type === 'file'`.
  */
 export const DockFilesPanel = ({
   onFileSelect,
@@ -837,6 +955,9 @@ export const DockFilesPanel = ({
       nodes={mockFileTree}
       contextMenuActions={contextMenuActions}
       onNodeSelect={(node, fullPath) => {
+        if (node.type !== 'file') {
+          return
+        }
         onFileSelect({ ...node, id: fullPath })
       }}
     />
@@ -1459,12 +1580,10 @@ describe('Dock position layout (Task 7 of #166)', () => {
     const inner = screen.getByTestId('dock-canvas-wrapper')
     expect(inner).toHaveStyle({ flexDirection: 'row' })
 
-    // DOM order: DockPanel before TerminalZone
+    // DOM order: DockPanel before TerminalZone (testid migrated in Task 2.5)
     const children = Array.from(inner.children)
     const dockIdx = children.findIndex(
-      (c) =>
-        c.getAttribute('data-testid') === 'bottom-drawer' ||
-        c.getAttribute('data-testid') === 'dock-panel'
+      (c) => c.getAttribute('data-testid') === 'dock-panel'
     )
     const termIdx = children.findIndex(
       (c) => c.getAttribute('data-testid') === 'terminal-zone-wrapper'
@@ -1557,15 +1676,13 @@ Move all the existing TerminalZone props into the `<TerminalZone ... />` placeho
 
 - [ ] **Step 7.4: Add side-dock sizing inside DockPanel.tsx**
 
-The outer panel `<section>` currently sets `style={{ height: ... }}` only. For side docks, we need `flex: 0 0 40%` instead of a height.
-
-Find:
+After Tasks 2-6, the `<section data-testid="dock-panel" style={{ height: ... }}>` element drives bottom-dock height only. For side docks, swap the style to a flex-basis. Find:
 
 ```tsx
 return (
   <section
-    data-testid="bottom-drawer"
-    style={{ height: `${effectiveHeight}px` }}
+    data-testid="dock-panel"
+    style={{ height: `${height}px` }}
     className="shrink-0 bg-slate-900/95 backdrop-blur-2xl border-t border-white/5 flex flex-col z-30 relative"
   >
 ```
@@ -1577,7 +1694,7 @@ const SIDE_DOCK_BASIS = '40%'
 
 const containerStyle =
   position === 'bottom'
-    ? { height: `${effectiveHeight}px` }
+    ? { height: `${height}px` }
     : { flex: `0 0 ${SIDE_DOCK_BASIS}` as const }
 
 const borderClass =
@@ -1606,28 +1723,15 @@ Also gate the resize handle on `position === 'bottom'`. Find the resize-handle `
 
 (The exact existing block is ~30 lines around `role="separator"`; preserve its contents and just wrap the whole thing in the conditional.)
 
-- [ ] **Step 7.5: Update the WorkspaceView.subscription.test.tsx mock**
+- [ ] **Step 7.5: Update the WorkspaceView mocks with new layout-related props**
 
-Find:
+Task 2 already renamed `MockBottomDrawerProps` → `MockDockPanelProps` and set `data-testid="dock-panel"` on the mock root. Task 6 added `position` / `onPositionChange`. Task 4 added `filesOnFileSelect`. After Task 7, the only addition is none new — but verify the mock interfaces in both files now match the live DockPanel signature:
 
-```tsx
-vi.mock('./components/DockPanel', () => ({
-  default: ({ ... }: MockBottomDrawerProps): ReactElement => {
+```bash
+grep -n "MockDockPanelProps\|interface Mock" src/features/workspace/WorkspaceView.subscription.test.tsx src/features/workspace/WorkspaceView.command-palette.test.tsx
 ```
 
-The mock currently returns a `<div>` representing the panel without a `data-testid`. Make it set `data-testid="dock-panel"` so the new WorkspaceView layout assertion finds it:
-
-```tsx
-vi.mock('./components/DockPanel', () => ({
-  default: ({ ... }: MockDockPanelProps): ReactElement => (
-    <div data-testid="dock-panel">{/* existing mock content */}</div>
-  ),
-}))
-```
-
-Rename `MockBottomDrawerProps` → `MockDockPanelProps` in the same file and add the new `position` / `onPositionChange` / `filesOnFileSelect` props to the interface.
-
-Do the equivalent rename + testid in `WorkspaceView.command-palette.test.tsx`.
+Each `MockDockPanelProps` should declare every required prop from `DockPanelBaseProps` (the v1 set: `tab`, `onTabChange`, `onClose`, `bottomHeight`, `onBottomHeightAdjust`, `position`, `onPositionChange`, `filesOnFileSelect`, `selectedFilePath`, `content`). If TypeScript complains, add the missing prop to the mock interface.
 
 - [ ] **Step 7.6: Run all WorkspaceView tests**
 
@@ -1637,7 +1741,7 @@ npx vitest run src/features/workspace/
 
 Expected: all pass. The new `'Dock position layout'` tests are GREEN. The existing `'BottomDrawer is present below TerminalZone'` test in `WorkspaceView.test.tsx` may need updating: the panel is now inside `dock-canvas-wrapper`, not a direct sibling of `Tabs`. Update its query.
 
-- [ ] **Step 7.7: Manual verification (xterm fit)**
+- [ ] **Step 7.7: Manual verification (xterm fit) — BLOCKING**
 
 Run the app:
 
@@ -1645,11 +1749,28 @@ Run the app:
 npm run dev
 ```
 
-Open three sessions. Click each DockSwitcher button in turn (bottom → left → right → bottom). Verify:
+Open three sessions. Click each DockSwitcher button in turn (bottom → left → right → bottom). Verify both:
 
 - The terminal does not clip / overflow when the panel docks left or right.
-- Switching layouts triggers an xterm fit (the prompt re-renders correctly).
-- If xterm clips: gate the layout flip with a `requestAnimationFrame` so the new container size is measured first. Add a TODO comment if this needs follow-up work; do not block the commit.
+- Switching layouts triggers an xterm fit (the prompt re-renders correctly without manual resize).
+
+**If xterm clips:** do one of the two below — do NOT commit while the clipping reproduces.
+
+1. **Preferred (fix in this PR):** Wrap the layout transition with a one-frame defer so xterm sees the new container before measuring:
+
+   ```tsx
+   useEffect(() => {
+     const frame = requestAnimationFrame(() => {
+       // Trigger a no-op resize on every TerminalPane so FitAddon re-fits.
+       paneRefs.current.forEach((ref) => ref?.refit())
+     })
+     return () => cancelAnimationFrame(frame)
+   }, [dockPosition, isDockOpen])
+   ```
+
+   Add a `refit()` method on TerminalPane that calls its FitAddon. Include the call signature in the same commit as Task 7.
+
+2. **Fallback (explicit deferral):** If the rAF approach doesn't resolve the issue, open a new GitHub issue titled `fix(terminal): re-fit xterm after dock-position change` referencing this plan, label `bug`, and add a `// TODO(#NNN)` comment at the dockPosition state-change site. Commit `feat(workspace): main canvas reacts to dockPosition` WITHOUT the bug present — meaning if it ships broken, revert Task 7's WorkspaceView edit and pause the plan. Do not ship a known clipping regression.
 
 - [ ] **Step 7.8: Run lint + type-check**
 
