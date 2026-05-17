@@ -232,9 +232,14 @@ type, smaller surface area.)
   `border-right` for `left`, `border-left` for `right`. Color
   `rgba(74,68,79,0.3)`.
 - **Sizing**:
-  - `position === 'bottom'` → height driven by the existing
-    `useResizable` hook (200-640 px, defaults to 400 px — unchanged from
-    BottomDrawer).
+  - `position === 'bottom'` → height driven by the **lifted** `useResizable`
+    hook. State is **lifted to WorkspaceView** as `dockBottomHeight: number`
+    - `setDockBottomHeight` so the user's resized height survives a
+      close/reopen cycle (the previous `BottomDrawer` collapsed in place via
+      `effectiveHeight`, so the height never had to survive unmount; the new
+      DockPanel unmounts on close — see DockPeekButton — so we have to lift).
+      Range: 150-640 px (matches the existing BottomDrawer `DRAWER_MIN=150`,
+      not 200 as a draft note erroneously had); default 400 px.
   - `position === 'left' | 'right'` → `flex: 0 0 40%` (fixed 40% width).
     Horizontal resize is deferred (see "Out of scope"); the 40% literal
     lives in `DockPanel.tsx` as a `SIDE_DOCK_BASIS = '40%'` constant
@@ -340,12 +345,23 @@ type DockTab = 'editor' | 'diff' | 'files'
 const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
 const [isDockOpen, setIsDockOpen] = useState(true)
 const [dockTab, setDockTab] = useState<DockTab>('editor')
+
+// Bottom-dock height is lifted so it survives DockPanel unmount on close.
+// `useResizable` returns `{ size, isDragging, handleMouseDown, adjustBy }`;
+// we pass `size` and `setSize`/`adjustBy` into DockPanel as controlled props.
+const dockHeightResize = useResizable({
+  initial: 400,
+  min: 150,
+  max: 640,
+  direction: 'vertical',
+  invert: true,
+})
 ```
 
-`dockSize` (prototype `tweaks.dockSize`, 20-70% clamp) is **not lifted in
-v1** — vertical dock uses the existing `useResizable` (kept inside
-DockPanel for bottom-dock only), and side docks use a fixed 40% width.
-Lifting `dockSize` is a follow-up for horizontal-resize work.
+Horizontal dock size (`dockSize` in the prototype, `flex: 0 0 40%` here) is
+**not lifted in v1** — side docks use a fixed 40% width and have no resize
+handle. Lifting `dockSize` is a follow-up for the horizontal-resize work
+called out under "Out of scope."
 
 ### Main-canvas layout reactivity
 
@@ -410,10 +426,42 @@ sidebar context). The docked variant:
 
 ```tsx
 interface DockFilesPanelProps {
-  /** Fires when the user activates a file (click / Enter). */
-  onFileSelect: (node: FileNode) => void
+  /** Fires when the user activates a file (click / Enter).
+   *  Signature matches WorkspaceView's `handleFileSelect`: `node.id`
+   *  must be the **full filesystem path**, not the FileTree internal
+   *  stable ID (which is just the leaf name, e.g. `node-auth-ts`).
+   *  See "Path mapping" below. */
+  onFileSelect: (node: { id: string; type: 'file' | 'folder' }) => void
 }
 ```
+
+### Path mapping
+
+`FileTree` (the shared rendering primitive) emits
+`onNodeSelect: (node, fullPath) => void` where `node.id` is the leaf
+name and `fullPath` is the resolved filesystem path. `WorkspaceView`'s
+`handleFileSelect` expects `node.id` to BE the filesystem path
+(it does `const filePath = node.id`).
+
+`DockFilesPanel` MUST bridge the two by mirroring the sidebar
+`FilesPanel` pattern (`FilesPanel.tsx:27-28`):
+
+```tsx
+<FileTree
+  nodes={...}
+  contextMenuActions={...}
+  onNodeSelect={(node, fullPath) =>
+    onFileSelect({ ...node, id: fullPath })
+  }
+/>
+```
+
+If `DockFilesPanel` forwards the raw `node` without remapping `id`,
+the dirty-state guard in `handleFileSelect` runs against a bogus path
+and `openFileSafely` fails. The mock-tree case is identical: the
+mock IDs are stable strings like `'node-auth-ts'`, and the spec test
+`'click on a leaf file calls onFileSelect with the node'` asserts the
+remapped `{ ...node, id: fullPath }` payload, not the raw node.
 
 `WorkspaceView` passes its existing **`handleFileSelect`** (the
 unsaved-changes-guarded handler at `WorkspaceView.tsx:401-420` already
@@ -530,7 +578,12 @@ component.
   `rgba(0,0,0,0)`).
 - `data-position attribute reflects position prop` — three cases.
 - `Files tab routes to DockFilesPanel, not CodeEditor` —
-  click Files tab, assert `getByTestId('dock-files-panel')`.
+  render with `tab="files"` (controlled), assert
+  `getByTestId('dock-files-panel')`. Note: because `tab` is fully
+  controlled, the test renders directly with the desired tab — there
+  is no click-to-switch flow inside DockPanel itself. A separate
+  test asserts that clicking the Files tab calls
+  `onTabChange('files')`.
 - `forwards filesOnFileSelect to DockFilesPanel when tab=files` —
   mock DockFilesPanel; assert the prop arrives identity-equal.
 
