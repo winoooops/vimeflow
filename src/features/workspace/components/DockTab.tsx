@@ -21,6 +21,12 @@ interface DockTabProps {
     | 'chevron_right'
   onClose: () => void
   compactActions?: boolean
+  /**
+   * Which side the compact actions dropdown opens toward.
+   * 'left' = left-docks (opens rightward). 'right' = right-docks (opens leftward).
+   * Defaults to 'right'. Prefer over inferring from collapseIconName.
+   */
+  menuAlign?: 'left' | 'right'
   /** Slot rendered between the tab strip spacer and the file-path/close cluster. */
   children?: ReactNode
 }
@@ -46,12 +52,17 @@ export const DockTab = ({
   collapseIconName,
   onClose,
   compactActions = false,
+  menuAlign = 'right',
   children = undefined,
 }: DockTabProps): ReactElement => {
   const actionsMenuId = useId()
   const [actionsOpen, setActionsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  // Tracks whether the most recent close was layout-driven (compactActions→false)
+  // vs. an explicit user action. Only user-action closes return focus to the trigger
+  // (which may be unmounted in a layout-driven close).
+  const layoutDrivenCloseRef = useRef(false)
 
   useEffect(() => {
     if (!actionsOpen) {
@@ -71,18 +82,26 @@ export const DockTab = ({
     }
   }, [actionsOpen])
 
-  // Return focus to trigger when the menu closes so keyboard users are not stranded.
+  // Return focus to trigger when the menu closes via a user action.
+  // Layout-driven closes (compactActions→false) skip this because the trigger
+  // button is unmounted at the same time — triggerRef.current would be null.
   const prevActionsOpenRef = useRef(false)
   useEffect(() => {
-    if (prevActionsOpenRef.current && !actionsOpen) {
+    if (
+      prevActionsOpenRef.current &&
+      !actionsOpen &&
+      !layoutDrivenCloseRef.current
+    ) {
       triggerRef.current?.focus()
     }
+    layoutDrivenCloseRef.current = false
     prevActionsOpenRef.current = actionsOpen
   }, [actionsOpen])
 
   // Clear actionsOpen when compact menu is no longer rendered.
   useEffect((): void => {
     if (!compactActions) {
+      layoutDrivenCloseRef.current = true
       setActionsOpen(false)
     }
   }, [compactActions])
@@ -99,11 +118,7 @@ export const DockTab = ({
     setActionsOpen(false)
   }
 
-  // F3: align dropdown toward the center of the screen so it stays on-screen.
-  // chevron_left = left dock → open rightward (left-0)
-  // chevron_right = right dock → open leftward (right-0)
-  const menuAlignClass =
-    collapseIconName === 'chevron_left' ? 'left-0' : 'right-0'
+  const menuAlignClass = menuAlign === 'left' ? 'left-0' : 'right-0'
 
   return (
     <div

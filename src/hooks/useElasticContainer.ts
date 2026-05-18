@@ -129,16 +129,17 @@ export const useElasticContainer = ({
 
     const rect = containerElement.getBoundingClientRect()
     const dimension = axis === 'horizontal' ? rect.width : rect.height
-    const { newMin, newMax } = computeBounds(dimension)
 
-    // Mount-time degenerate guard: throw inside useLayoutEffect so React
-    // propagates it to an error boundary (unlike ResizeObserver callbacks,
-    // which run outside React's event loop and bypass error boundaries).
-    if (import.meta.env.DEV && newMin >= newMax) {
+    // Check dimension before computeBounds applies the 1-px floor — a zero
+    // dimension means the container is hidden or collapsed at mount, which
+    // is a configuration error the caller should fix.
+    if (import.meta.env.DEV && dimension <= 0) {
       throw new Error(
-        `useElasticContainer: degenerate container at mount — pixelMin(${newMin}) >= pixelMax(${newMax}). Container may be zero-width/height.`
+        `useElasticContainer: container has zero ${axis === 'horizontal' ? 'width' : 'height'} at mount. The element may be hidden or not yet laid out.`
       )
     }
+
+    const { newMin, newMax } = computeBounds(dimension)
 
     const effectiveInitial =
       initialPercentRef.current ??

@@ -307,6 +307,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
           collapseIconName={collapseIconName}
           onClose={onClose}
           compactActions={compactActions}
+          menuAlign={position === 'left' ? 'left' : 'right'}
         >
           <DockSwitcher position={position} onPick={onPositionChange} />
         </DockTab>

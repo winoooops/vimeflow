@@ -8,12 +8,6 @@ export const DOCK_VERTICAL_ELASTIC_CONFIG = {
   initialPercent: 0.3,
 } as const
 
-/** Vertical-axis elastic config for the dock panel (top/bottom positions). */
-export const DOCK_VERTICAL_ELASTIC_CONFIG = DOCK_ELASTIC_CONFIG
-
-/** Horizontal-axis elastic config for the dock panel (left/right positions). */
-export const DOCK_HORIZONTAL_ELASTIC_CONFIG = DOCK_ELASTIC_CONFIG
-
 /**
  * Elastic config for the horizontal dock axis (left/right positions).
  * 15% of a 1200 px canvas = 180 px, wide enough to render the compact
