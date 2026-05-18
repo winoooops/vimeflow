@@ -113,7 +113,7 @@ export const useElasticContainer = ({
           )
         }
 
-        newMax = newMin
+        newMax = newMin + 1
       }
 
       return { newMin, newMax }
