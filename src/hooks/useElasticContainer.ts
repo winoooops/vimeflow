@@ -61,6 +61,20 @@ export const useElasticContainer = ({
   const isDraggingRef = useRef(false)
   const pendingClampRef = useRef(false)
 
+  // desiredPercentRef tracks the user's intended proportional size so that
+  // a window shrink→expand cycle restores the panel to the original proportion
+  // rather than staying at the clamped pixel value.
+  const desiredPercentRef = useRef(
+    initialPercentRef.current ??
+      (minPercentRef.current + maxPercentRef.current) / 2
+  )
+  // Current observed container dimension; used to convert pixel→percent on drag end.
+  const dimensionRef = useRef(0)
+  // Incremented each time the ResizeObserver drives a size change, so the
+  // useLayoutEffect below can distinguish observer-driven from user-driven updates.
+  const observerUpdateCountRef = useRef(0)
+  const prevObserverUpdateCountRef = useRef(0)
+
   const resizable = useResizable({
     initial: 0,
     min: pixelMin,
@@ -78,18 +92,38 @@ export const useElasticContainer = ({
   }, [isDragging])
 
   /* eslint-disable react-hooks/exhaustive-deps */
-  // sizeRef/pixelMinRef/pixelMaxRef are stable refs — their identity never
-  // changes and .current mutations are not reactive, so they are intentionally
-  // omitted from the dep array (exhaustive-deps would add them but refs are
-  // never the right reactive trigger).
+  // sizeRef/pixelMinRef/pixelMaxRef/dimensionRef/desiredPercentRef are stable refs —
+  // their identity never changes and .current mutations are not reactive.
   useEffect(() => {
     if (isDragging || !pendingClampRef.current) {
       return
     }
 
     pendingClampRef.current = false
-    resetToSize(sizeRef.current, pixelMinRef.current, pixelMaxRef.current)
+
+    const targetPx =
+      dimensionRef.current > 0
+        ? Math.round(dimensionRef.current * desiredPercentRef.current)
+        : sizeRef.current
+    resetToSize(targetPx, pixelMinRef.current, pixelMaxRef.current)
   }, [isDragging, resetToSize])
+
+  // Update desiredPercent when the user explicitly changes size (drag end or keyboard).
+  // Skip updates caused by the ResizeObserver (observerUpdateCount changed) so that
+  // container shrink→expand cycles restore the user's original proportion.
+  useLayoutEffect(() => {
+    if (prevObserverUpdateCountRef.current !== observerUpdateCountRef.current) {
+      prevObserverUpdateCountRef.current = observerUpdateCountRef.current
+
+      return
+    }
+    if (dimensionRef.current > 0) {
+      desiredPercentRef.current = Math.min(
+        Math.max(sizeRef.current / dimensionRef.current, minPercentRef.current),
+        maxPercentRef.current
+      )
+    }
+  }, [resizable.size])
   /* eslint-enable react-hooks/exhaustive-deps */
 
   const computeBounds = useCallback(
@@ -139,12 +173,15 @@ export const useElasticContainer = ({
       )
     }
 
+    dimensionRef.current = dimension
+
     const { newMin, newMax } = computeBounds(dimension)
 
     const effectiveInitial =
       initialPercentRef.current ??
       (minPercentRef.current + maxPercentRef.current) / 2
     const nextInitial = clampSize(dimension * effectiveInitial, newMin, newMax)
+    desiredPercentRef.current = effectiveInitial
 
     pixelMinRef.current = newMin
     pixelMaxRef.current = newMax
@@ -160,11 +197,14 @@ export const useElasticContainer = ({
           ? entry.contentRect.width
           : entry.contentRect.height
 
+      dimensionRef.current = nextDimension
+
       const { newMin: resizedMin, newMax: resizedMax } =
         computeBounds(nextDimension)
 
       pixelMinRef.current = resizedMin
       pixelMaxRef.current = resizedMax
+      observerUpdateCountRef.current += 1
       setPixelMin(resizedMin)
       setPixelMax(resizedMax)
 
@@ -174,7 +214,12 @@ export const useElasticContainer = ({
         return
       }
 
-      resetToSize(sizeRef.current, resizedMin, resizedMax)
+      // Use desiredPercentRef so shrink→expand cycles restore the user's
+      // original proportion rather than anchoring to a clamped pixel value.
+      const proportionalPx = Math.round(
+        nextDimension * desiredPercentRef.current
+      )
+      resetToSize(proportionalPx, resizedMin, resizedMax)
     })
 
     observer.observe(containerElement)

@@ -124,6 +124,15 @@ export const DockTab = ({
     <div
       className="relative flex h-[34px] min-w-0 items-center gap-1 border-b border-[rgba(74,68,79,0.25)] bg-[#0d0d1c] px-2"
       onKeyDown={compactActions ? handleCompactKeyDown : undefined}
+      onBlurCapture={
+        compactActions
+          ? (e): void => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                setActionsOpen(false)
+              }
+            }
+          : undefined
+      }
     >
       <div className="flex min-w-0 shrink-0 gap-1">
         <button
