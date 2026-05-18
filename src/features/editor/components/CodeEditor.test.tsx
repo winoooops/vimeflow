@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { CodeEditor } from './CodeEditor'
+import { createRef } from 'react'
+import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
 import * as useCodeMirrorModule from '../hooks/useCodeMirror'
 import * as useVimModeModule from '../hooks/useVimMode'
 import * as languageServiceModule from '../services/languageService'
@@ -14,6 +15,7 @@ vi.mock('../services/languageService')
 describe('CodeEditor', () => {
   const mockEditorView = {
     destroy: vi.fn(),
+    focus: vi.fn(),
     state: { doc: { toString: (): string => 'test content' } },
   }
 
@@ -215,5 +217,36 @@ describe('CodeEditor', () => {
         onChange: onContentChange,
       })
     )
+  })
+
+  test('passes shouldAutoFocus to useCodeMirror', () => {
+    render(
+      <CodeEditor filePath="/home/user/test.ts" content="" shouldAutoFocus />
+    )
+
+    expect(mockUseCodeMirror).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shouldAutoFocus: true,
+      })
+    )
+  })
+
+  test('ref focus returns true when editorView is ready', () => {
+    const ref = createRef<CodeEditorHandle>()
+
+    render(<CodeEditor ref={ref} filePath="/test.ts" content="hello" />)
+
+    expect(ref.current).not.toBeNull()
+    expect(ref.current!.focus()).toBe(true)
+    expect(mockEditorView.focus).toHaveBeenCalledOnce()
+  })
+
+  test('ref focus returns false when no file is loaded', () => {
+    const ref = createRef<CodeEditorHandle>()
+
+    render(<CodeEditor ref={ref} filePath={null} content="" />)
+
+    expect(ref.current).not.toBeNull()
+    expect(ref.current!.focus()).toBe(false)
   })
 })

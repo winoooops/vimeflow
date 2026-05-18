@@ -4,6 +4,10 @@ import type { LayoutId, Session } from '../../sessions/types'
 // SplitView barrel — keeps usePaneShortcuts decoupled from a
 // sibling component's re-export surface.
 import { LAYOUTS } from '../components/SplitView/layouts'
+import {
+  DIALOG_SELECTOR,
+  DOCK_CONTAINER_ID,
+} from '../../workspace/containerIds'
 
 // Derive the cycle order from the canonical LAYOUTS record so a future
 // LayoutId added in `layouts.ts` automatically participates in ⌘\
@@ -35,6 +39,8 @@ export interface UsePaneShortcutsOptions {
   /** Defaults to `'ctrl'` — the safer behavior for non-Mac shells
    *  where the toolbar already shows `Ctrl`. */
   preferModifier?: PaneShortcutModifier
+  onTerminalZoneFocus?: () => void
+  isTerminalContainerActive?: boolean
 }
 
 export const usePaneShortcuts = ({
@@ -43,13 +49,19 @@ export const usePaneShortcuts = ({
   setSessionActivePane,
   setSessionLayout,
   preferModifier = 'ctrl',
+  onTerminalZoneFocus = undefined,
+  isTerminalContainerActive = undefined,
 }: UsePaneShortcutsOptions): void => {
   const sessionsRef = useRef(sessions)
   const activeSessionIdRef = useRef(activeSessionId)
   const preferModifierRef = useRef(preferModifier)
+  const onTerminalZoneFocusRef = useRef(onTerminalZoneFocus)
+  const isTerminalContainerActiveRef = useRef(isTerminalContainerActive)
   sessionsRef.current = sessions
   activeSessionIdRef.current = activeSessionId
   preferModifierRef.current = preferModifier
+  onTerminalZoneFocusRef.current = onTerminalZoneFocus
+  isTerminalContainerActiveRef.current = isTerminalContainerActive
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -90,6 +102,53 @@ export const usePaneShortcuts = ({
       const digitMatch = /^Digit([1-4])$/.exec(event.code)
       if (digitMatch) {
         const paneIndex = Number.parseInt(digitMatch[1], 10) - 1
+
+        // Dialog guard covers the full digit-key path — both reclaim and
+        // pane-switch — so Ctrl+1-4 is fully suppressed while any modal is open.
+        if (document.querySelector(DIALOG_SELECTOR)) {
+          return
+        }
+
+        const isTerminalContainerActiveValue =
+          isTerminalContainerActiveRef.current
+        const onTerminalZoneFocusValue = onTerminalZoneFocusRef.current
+
+        if (
+          isTerminalContainerActiveValue !== undefined &&
+          onTerminalZoneFocusValue !== undefined
+        ) {
+          const activeElement = document.activeElement
+
+          if (!isTerminalContainerActiveValue) {
+            if (
+              activeElement?.closest(
+                `[data-container-id="${DOCK_CONTAINER_ID}"]`
+              )
+            ) {
+              onTerminalZoneFocusValue()
+              event.preventDefault()
+              event.stopPropagation()
+
+              return
+            } else {
+              return
+            }
+          } else if (paneIndex < activeSession.panes.length) {
+            const target = activeSession.panes[paneIndex]
+            if (target.active) {
+              if (activeElement?.closest('.xterm-helper-textarea')) {
+                return
+              }
+
+              onTerminalZoneFocusValue()
+              event.preventDefault()
+              event.stopPropagation()
+
+              return
+            }
+          }
+        }
+
         // Out-of-range: let the key propagate so terminal apps (vim,
         // tmux, etc.) can use ⌘N for their own purposes. The toolbar
         // advertises "⌘+1-4 focus pane" — reserving the slot when

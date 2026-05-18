@@ -1,7 +1,8 @@
 import { render, screen, within, fireEvent } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import DockPanel from './DockPanel'
+import { createRef } from 'react'
+import DockPanel, { type DockPanelHandle } from './DockPanel'
 import * as useCodeMirrorModule from '../../editor/hooks/useCodeMirror'
 import * as useVimModeModule from '../../editor/hooks/useVimMode'
 import * as languageServiceModule from '../../editor/services/languageService'
@@ -41,6 +42,7 @@ const renderDockPanel = (
 describe('DockPanel', () => {
   const mockEditorView = {
     destroy: vi.fn(),
+    focus: vi.fn(),
     state: { doc: { toString: (): string => 'test content' } },
   }
 
@@ -380,5 +382,126 @@ describe('DockPanel', () => {
       expect.anything(),
       expect.objectContaining({ enabled: false })
     )
+  })
+
+  describe('focus highlight', () => {
+    test('isFocused=true applies mauve border to bottom junction edge', () => {
+      renderDockPanel({ isFocused: true, position: 'bottom' })
+
+      // border-t is the edge class; border-[color] is the shared shorthand
+      const section = screen.getByTestId('dock-panel')
+      expect(section).toHaveClass('border-t')
+      expect(section).toHaveClass('border-[#cba6f7]')
+    })
+
+    test('isFocused=false uses neutral bottom junction edge', () => {
+      renderDockPanel({ isFocused: false, position: 'bottom' })
+      const section = screen.getByTestId('dock-panel')
+
+      expect(section).toHaveClass('border-t')
+      expect(section).toHaveClass('border-[rgba(74,68,79,0.3)]')
+      expect(section).not.toHaveClass('border-[#cba6f7]')
+    })
+
+    test('isFocused=true applies box shadow', () => {
+      renderDockPanel({ isFocused: true })
+
+      expect(screen.getByTestId('dock-panel').style.boxShadow).toBeTruthy()
+    })
+
+    test('isFocused=true renders a complete focus outline overlay', () => {
+      renderDockPanel({ isFocused: true })
+
+      expect(screen.getByTestId('dock-focus-outline')).toHaveClass(
+        'border-[#cba6f7]'
+      )
+    })
+
+    test('dock container suppresses native browser focus outline', () => {
+      renderDockPanel({ isFocused: true })
+
+      expect(screen.getByTestId('dock-panel')).toHaveClass('focus:outline-none')
+    })
+
+    test('diff focus target suppresses native browser focus outline', () => {
+      renderDockPanel({ isFocused: true, tab: 'diff' })
+
+      expect(screen.getByTestId('diff-focus-target')).toHaveClass(
+        'focus:outline-none'
+      )
+    })
+
+    test('isFocused=false has no box shadow', () => {
+      renderDockPanel({ isFocused: false })
+
+      expect(screen.getByTestId('dock-panel').style.boxShadow).toBe('')
+      expect(screen.queryByTestId('dock-focus-outline')).not.toBeInTheDocument()
+    })
+  })
+
+  test('ref focusEditor delegates to CodeEditor when editor is ready', () => {
+    const ref = createRef<DockPanelHandle>()
+
+    renderDockPanel({
+      ref,
+      tab: 'editor',
+      selectedFilePath: '/home/user/test.ts',
+    })
+
+    expect(ref.current).not.toBeNull()
+    expect(ref.current!.focusEditor()).toBe(true)
+    expect(mockEditorView.focus).toHaveBeenCalledOnce()
+  })
+
+  test('ref focusEditor returns false when no editorView is ready', () => {
+    vi.spyOn(useCodeMirrorModule, 'useCodeMirror').mockReturnValueOnce({
+      editorView: null,
+      updateContent: vi.fn(),
+      setContainer: vi.fn(),
+    })
+    const ref = createRef<DockPanelHandle>()
+
+    renderDockPanel({
+      ref,
+      tab: 'editor',
+      selectedFilePath: '/home/user/test.ts',
+    })
+
+    expect(ref.current).not.toBeNull()
+    expect(ref.current!.focusEditor()).toBe(false)
+  })
+
+  test('ref focusEditor falls back to section focus when editorView returns false', () => {
+    // Simulates Ctrl+e with dock open but no file loaded (filePath=null → editorView missing).
+    // focusEditor() should call sectionRef.focus() so the container captures keyboard input.
+    vi.spyOn(useCodeMirrorModule, 'useCodeMirror').mockReturnValueOnce({
+      editorView: null,
+      updateContent: vi.fn(),
+      setContainer: vi.fn(),
+    })
+    const ref = createRef<DockPanelHandle>()
+    renderDockPanel({ ref, tab: 'editor', selectedFilePath: null })
+
+    expect(ref.current).not.toBeNull()
+    const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus')
+
+    const result = ref.current!.focusEditor()
+
+    // Returns false because editorView is unavailable
+    expect(result).toBe(false)
+    // And the section element gets focused as fallback
+    expect(focusSpy).toHaveBeenCalled()
+
+    focusSpy.mockRestore()
+  })
+
+  test('ref focusDiff focuses the diff wrapper', () => {
+    const ref = createRef<DockPanelHandle>()
+
+    renderDockPanel({ ref, tab: 'diff' })
+
+    expect(ref.current).not.toBeNull()
+    ref.current!.focusDiff()
+    expect(screen.getByTestId('diff-focus-target')).toHaveFocus()
   })
 })

@@ -2,8 +2,8 @@
 import { describe, test, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactElement } from 'react'
-import { TerminalZone } from './TerminalZone'
+import { createRef, type ReactElement } from 'react'
+import { TerminalZone, type TerminalZoneHandle } from './TerminalZone'
 import { mockSessions } from '../data/mockSessions'
 import type { LayoutId, Session } from '../../sessions/types'
 import type { TerminalPaneProps } from '../../terminal/components/TerminalPane'
@@ -50,6 +50,7 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
       mode,
       onCwdChange,
       deferFit,
+      showFocusHighlight,
       onRestart,
       onClose,
       session,
@@ -64,6 +65,7 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
         data-restored={pane.restoreData ? 'true' : 'false'}
         data-mode={mode}
         data-defer-fit={deferFit ? 'true' : 'false'}
+        data-show-focus-highlight={showFocusHighlight ? 'true' : 'false'}
         data-session-name={session.name}
         data-is-active={isActive ? 'true' : 'false'}
         data-session-agent-type={session.agentType}
@@ -144,6 +146,67 @@ describe('TerminalZone', () => {
     expect(rootElement).toHaveClass('flex-col')
     expect(rootElement).toHaveClass('flex-1')
     expect(rootElement).toHaveClass('min-h-0')
+  })
+
+  test('isZoneFocused=false applies opacity dim class', () => {
+    const isZoneFocused = false
+
+    render(<TerminalZone {...defaultProps} isZoneFocused={isZoneFocused} />)
+
+    expect(screen.getByTestId('terminal-zone')).toHaveClass('opacity-[0.65]')
+  })
+
+  test('isZoneFocused=false suppresses active terminal pane highlight', () => {
+    const isZoneFocused = false
+
+    render(<TerminalZone {...defaultProps} isZoneFocused={isZoneFocused} />)
+
+    expect(screen.getAllByTestId('terminal-pane-mock')[0]).toHaveAttribute(
+      'data-show-focus-highlight',
+      'false'
+    )
+  })
+
+  test('isZoneFocused=true by default does not apply dim class', () => {
+    render(<TerminalZone {...defaultProps} />)
+
+    expect(screen.getByTestId('terminal-zone')).not.toHaveClass(
+      'opacity-[0.65]'
+    )
+
+    expect(screen.getAllByTestId('terminal-pane-mock')[0]).toHaveAttribute(
+      'data-show-focus-highlight',
+      'true'
+    )
+  })
+
+  test('ref exposes focusActivePane returning false when no sessions exist', () => {
+    const ref = createRef<TerminalZoneHandle>()
+
+    render(
+      <TerminalZone
+        ref={ref}
+        {...defaultProps}
+        sessions={[]}
+        activeSessionId={null}
+      />
+    )
+
+    expect(ref.current).not.toBeNull()
+    expect(ref.current!.focusActivePane()).toBe(false)
+  })
+
+  test('pointer down marks terminal container active', async () => {
+    const user = userEvent.setup()
+    const onContainerFocus = vi.fn()
+
+    render(
+      <TerminalZone {...defaultProps} onContainerFocus={onContainerFocus} />
+    )
+
+    await user.click(screen.getByTestId('terminal-zone'))
+
+    expect(onContainerFocus).toHaveBeenCalled()
   })
 
   // TerminalPane integration tests (Feature #30)

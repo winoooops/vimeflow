@@ -1,10 +1,22 @@
-import type { MouseEvent, ReactElement } from 'react'
-import { CodeEditor } from '../../editor/components/CodeEditor'
+/* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */
+import {
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactElement,
+} from 'react'
+import {
+  CodeEditor,
+  type CodeEditorHandle,
+} from '../../editor/components/CodeEditor'
 import { DiffPanelContent } from '../../diff/components/DiffPanelContent'
 import { DockSwitcher, type DockPosition } from './DockSwitcher'
 import { DockTab } from './DockTab'
 import type { SelectedDiffFile } from '../../diff/types'
 import type { UseGitStatusReturn } from '../../diff/hooks/useGitStatus'
+import { DOCK_CONTAINER_ID } from '../containerIds'
 
 type TabType = 'editor' | 'diff'
 
@@ -46,153 +58,248 @@ interface DockPanelBaseProps {
   cwd?: string
   /** Optional shared git status from WorkspaceView. */
   gitStatus?: UseGitStatusReturn
+  isFocused?: boolean
+  onContainerFocus?: () => void
 }
 
 type DockPanelProps = DockPanelBaseProps & SelectedDiffControl
+
+export interface DockPanelHandle {
+  focusEditor(): boolean
+  focusDiff(): void
+}
 
 const DRAWER_MIN = 150
 const DRAWER_MAX = 640
 const SIDE_DOCK_BASIS = '40%'
 
-const DockPanel = ({
-  position,
-  tab,
-  onTabChange,
-  onPositionChange,
-  onClose,
-  verticalSize,
-  onVerticalResizeMouseDown,
-  isVerticalResizing,
-  onVerticalSizeAdjust,
-  selectedFilePath,
-  content,
-  onContentChange = undefined,
-  onSave = undefined,
-  isDirty = false,
-  isLoading = false,
-  cwd = '.',
-  gitStatus = undefined,
-  selectedDiffFile,
-  onSelectedDiffFileChange,
-}: DockPanelProps): ReactElement => {
-  const isVerticalDock = position === 'top' || position === 'bottom'
+const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
+  function DockPanel(
+    {
+      position,
+      tab,
+      onTabChange,
+      onPositionChange,
+      onClose,
+      verticalSize,
+      onVerticalResizeMouseDown,
+      isVerticalResizing,
+      onVerticalSizeAdjust,
+      selectedFilePath,
+      content,
+      onContentChange = undefined,
+      onSave = undefined,
+      isDirty = false,
+      isLoading = false,
+      cwd = '.',
+      gitStatus = undefined,
+      isFocused = false,
+      onContainerFocus = undefined,
+      selectedDiffFile,
+      onSelectedDiffFileChange,
+    }: DockPanelProps,
+    ref
+  ): ReactElement {
+    const isVerticalDock = position === 'top' || position === 'bottom'
+    const sectionRef = useRef<HTMLElement>(null)
+    const diffWrapperRef = useRef<HTMLDivElement>(null)
+    const editorHandleRef = useRef<CodeEditorHandle | null>(null)
 
-  const containerStyle = isVerticalDock
-    ? { height: `${verticalSize}px` }
-    : { flex: `0 0 ${SIDE_DOCK_BASIS}` as const }
+    useImperativeHandle(ref, () => ({
+      focusEditor(): boolean {
+        if (editorHandleRef.current) {
+          const ok = editorHandleRef.current.focus()
 
-  const borderClass =
-    position === 'top'
-      ? 'border-b border-[rgba(74,68,79,0.3)]'
-      : position === 'bottom'
-        ? 'border-t border-[rgba(74,68,79,0.3)]'
-        : position === 'left'
-          ? 'border-r border-[rgba(74,68,79,0.3)]'
-          : 'border-l border-[rgba(74,68,79,0.3)]'
+          if (!ok) {
+            sectionRef.current?.focus()
+          }
 
-  const collapseIconName =
-    position === 'top'
-      ? 'expand_less'
-      : position === 'bottom'
-        ? 'expand_more'
-        : position === 'left'
-          ? 'chevron_left'
-          : 'chevron_right'
+          return ok
+        }
 
-  const resizeHandleEdgeClass = position === 'top' ? 'bottom-0' : 'top-0'
-  const sectionAriaLabel = tab === 'editor' ? 'Code editor' : 'Diff viewer'
+        sectionRef.current?.focus()
 
-  return (
-    <section
-      data-testid="dock-panel"
-      data-position={position}
-      aria-label={sectionAriaLabel}
-      style={containerStyle}
-      className={`relative z-30 flex shrink-0 flex-col bg-[#121221] ${borderClass}`}
-    >
-      {isVerticalDock && (
-        <div
-          data-testid="resize-handle"
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Resize panel"
-          aria-valuenow={verticalSize}
-          aria-valuemin={DRAWER_MIN}
-          aria-valuemax={DRAWER_MAX}
-          tabIndex={0}
-          onMouseDown={onVerticalResizeMouseDown}
-          onKeyDown={(e): void => {
-            const step = e.shiftKey ? 100 : 20
-            const growKey = position === 'top' ? 'ArrowDown' : 'ArrowUp'
-            const shrinkKey = position === 'top' ? 'ArrowUp' : 'ArrowDown'
+        return false
+      },
+      focusDiff(): void {
+        if (diffWrapperRef.current) {
+          diffWrapperRef.current.focus()
 
-            if (e.key === growKey) {
-              e.preventDefault()
-              onVerticalSizeAdjust(step)
-            } else if (e.key === shrinkKey) {
-              e.preventDefault()
-              onVerticalSizeAdjust(-step)
-            } else if (e.key === 'Home') {
-              e.preventDefault()
-              onVerticalSizeAdjust(DRAWER_MIN - verticalSize)
-            } else if (e.key === 'End') {
-              e.preventDefault()
-              onVerticalSizeAdjust(DRAWER_MAX - verticalSize)
-            }
-          }}
-          className={`absolute ${resizeHandleEdgeClass} left-0 right-0 h-1 cursor-ns-resize transition-colors hover:bg-primary/20 focus:bg-primary/40 focus:outline-none ${
-            isVerticalResizing ? 'bg-primary/30' : ''
-          }`}
-        />
-      )}
+          return
+        }
 
-      <DockTab
-        tab={tab}
-        onTabChange={onTabChange}
-        selectedFilePath={selectedFilePath}
-        collapseIconName={collapseIconName}
-        onClose={onClose}
+        sectionRef.current?.focus()
+      },
+    }))
+
+    const handlePointerDown = (event: PointerEvent<HTMLElement>): void => {
+      // onContainerFocus is NOT called here — onFocus (bubbling) covers
+      // both pointer and keyboard Tab paths, avoiding a double invocation
+      // on every click (pointer → child-focus bubbles → onFocus fires too).
+      const target =
+        event.target instanceof Element ? event.target : event.currentTarget
+
+      if (
+        !target.closest(
+          'button,input,textarea,a,select,[tabindex]:not([tabindex="-1"])'
+        )
+      ) {
+        sectionRef.current?.focus()
+      }
+    }
+
+    const containerStyle = isVerticalDock
+      ? { height: `${verticalSize}px` }
+      : { flex: `0 0 ${SIDE_DOCK_BASIS}` as const }
+
+    // Border edge varies by position; color literals are kept static so
+    // Tailwind JIT can scan and emit both border-[#cba6f7] and
+    // border-[rgba(74,68,79,0.3)] in the production CSS bundle.
+    const borderEdge =
+      position === 'top'
+        ? 'border-b'
+        : position === 'bottom'
+          ? 'border-t'
+          : position === 'left'
+            ? 'border-r'
+            : 'border-l'
+
+    const borderClass = isFocused
+      ? `${borderEdge} border-[#cba6f7]`
+      : `${borderEdge} border-[rgba(74,68,79,0.3)]`
+
+    const collapseIconName =
+      position === 'top'
+        ? 'expand_less'
+        : position === 'bottom'
+          ? 'expand_more'
+          : position === 'left'
+            ? 'chevron_left'
+            : 'chevron_right'
+
+    const resizeHandleEdgeClass = position === 'top' ? 'bottom-0' : 'top-0'
+    const sectionAriaLabel = tab === 'editor' ? 'Code editor' : 'Diff viewer'
+
+    return (
+      <section
+        ref={sectionRef}
+        data-testid="dock-panel"
+        data-position={position}
+        data-container-id={DOCK_CONTAINER_ID}
+        aria-label={sectionAriaLabel}
+        tabIndex={-1}
+        style={{
+          ...containerStyle,
+          boxShadow: isFocused
+            ? '0 0 0 1px #cba6f7 inset, 0 0 0 6px rgba(203,166,247,0.12)'
+            : undefined,
+          transition: 'box-shadow 220ms ease',
+        }}
+        onPointerDown={handlePointerDown}
+        onFocus={onContainerFocus}
+        className={`relative z-30 flex shrink-0 flex-col bg-[#121221] focus:outline-none ${borderClass}`}
       >
-        <DockSwitcher position={position} onPick={onPositionChange} />
-      </DockTab>
+        {isFocused ? (
+          <span
+            data-testid="dock-focus-outline"
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-40 border border-[#cba6f7]"
+          />
+        ) : null}
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {tab === 'editor' && (
+        {isVerticalDock && (
           <div
-            data-testid="editor-panel"
-            className="flex min-h-0 flex-1 overflow-hidden"
-          >
-            <CodeEditor
-              filePath={selectedFilePath}
-              content={content}
-              onContentChange={onContentChange}
-              onSave={onSave}
-              isDirty={isDirty}
-              isLoading={isLoading}
-            />
-          </div>
+            data-testid="resize-handle"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize panel"
+            aria-valuenow={verticalSize}
+            aria-valuemin={DRAWER_MIN}
+            aria-valuemax={DRAWER_MAX}
+            tabIndex={0}
+            onMouseDown={onVerticalResizeMouseDown}
+            onKeyDown={(e): void => {
+              const step = e.shiftKey ? 100 : 20
+              const growKey = position === 'top' ? 'ArrowDown' : 'ArrowUp'
+              const shrinkKey = position === 'top' ? 'ArrowUp' : 'ArrowDown'
+
+              if (e.key === growKey) {
+                e.preventDefault()
+                onVerticalSizeAdjust(step)
+              } else if (e.key === shrinkKey) {
+                e.preventDefault()
+                onVerticalSizeAdjust(-step)
+              } else if (e.key === 'Home') {
+                e.preventDefault()
+                onVerticalSizeAdjust(DRAWER_MIN - verticalSize)
+              } else if (e.key === 'End') {
+                e.preventDefault()
+                onVerticalSizeAdjust(DRAWER_MAX - verticalSize)
+              }
+            }}
+            className={`absolute ${resizeHandleEdgeClass} left-0 right-0 h-1 cursor-ns-resize transition-colors hover:bg-primary/20 focus:bg-primary/40 focus:outline-none ${
+              isVerticalResizing ? 'bg-primary/30' : ''
+            }`}
+          />
         )}
 
-        {tab === 'diff' && (
-          <div
-            data-testid="diff-panel"
-            className="flex min-h-0 flex-1 overflow-hidden"
-          >
-            {selectedDiffFile !== undefined ? (
-              <DiffPanelContent
-                cwd={cwd}
-                gitStatus={gitStatus}
-                selectedFile={selectedDiffFile}
-                onSelectedFileChange={onSelectedDiffFileChange}
+        <DockTab
+          tab={tab}
+          onTabChange={onTabChange}
+          selectedFilePath={selectedFilePath}
+          collapseIconName={collapseIconName}
+          onClose={onClose}
+        >
+          <DockSwitcher position={position} onPick={onPositionChange} />
+        </DockTab>
+
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {tab === 'editor' && (
+            <div
+              data-testid="editor-panel"
+              className="flex min-h-0 flex-1 overflow-hidden"
+            >
+              <CodeEditor
+                ref={editorHandleRef}
+                filePath={selectedFilePath}
+                content={content}
+                onContentChange={onContentChange}
+                onSave={onSave}
+                isDirty={isDirty}
+                isLoading={isLoading}
+                shouldAutoFocus={isFocused}
               />
-            ) : (
-              <DiffPanelContent cwd={cwd} gitStatus={gitStatus} />
-            )}
-          </div>
-        )}
-      </div>
-    </section>
-  )
-}
+            </div>
+          )}
+
+          {tab === 'diff' && (
+            <div
+              data-testid="diff-panel"
+              className="flex min-h-0 flex-1 overflow-hidden"
+            >
+              <div
+                data-testid="diff-focus-target"
+                ref={diffWrapperRef}
+                tabIndex={-1}
+                className="flex min-h-0 flex-1 focus:outline-none"
+              >
+                {selectedDiffFile !== undefined ? (
+                  <DiffPanelContent
+                    cwd={cwd}
+                    gitStatus={gitStatus}
+                    selectedFile={selectedDiffFile}
+                    onSelectedFileChange={onSelectedDiffFileChange}
+                  />
+                ) : (
+                  <DiffPanelContent cwd={cwd} gitStatus={gitStatus} />
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+    )
+  }
+)
 
 export default DockPanel

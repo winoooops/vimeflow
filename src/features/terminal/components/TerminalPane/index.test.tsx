@@ -1,11 +1,12 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { createRef } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { UseGitBranchReturn } from '../../../diff/hooks/useGitBranch'
 import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
 import type { Session } from '../../../sessions/types'
 import type { BodyHandle, BodyProps } from './Body'
-import { TerminalPane } from './index'
+import { TerminalPane, type TerminalPaneHandle } from './index'
 
 const bodyPropsSpy = vi.hoisted(() => vi.fn())
 const focusTerminalSpy = vi.hoisted(() => vi.fn())
@@ -290,6 +291,26 @@ describe('TerminalPane index', () => {
     })
   })
 
+  test('active pane can suppress focus highlight while staying full opacity', () => {
+    const showFocusHighlight = false
+
+    render(
+      <TerminalPane {...baseProps} showFocusHighlight={showFocusHighlight} />
+    )
+
+    expect(screen.getByTestId('terminal-pane-wrapper')).not.toHaveAttribute(
+      'data-focused'
+    )
+
+    expect(screen.getByTestId('terminal-pane-wrapper')).toHaveStyle({
+      opacity: '1',
+    })
+
+    expect(screen.getByTestId('terminal-pane-focus-ring')).toHaveStyle({
+      border: '1px solid rgba(74,68,79,0.22)',
+    })
+  })
+
   test('does not focus on initial mount with pane.active=true', () => {
     render(
       <TerminalPane {...baseProps} pane={{ ...baseProps.pane, active: true }} />
@@ -357,5 +378,38 @@ describe('TerminalPane index', () => {
     )
 
     expect(focusTerminalSpy).toHaveBeenCalledTimes(2)
+  })
+
+  test('ref handle focuses terminal body when ready', () => {
+    const ref = createRef<TerminalPaneHandle>()
+
+    render(<TerminalPane ref={ref} {...baseProps} />)
+
+    expect(ref.current).not.toBeNull()
+    expect(ref.current!.focusTerminal()).toBe(true)
+    expect(focusTerminalSpy).toHaveBeenCalledOnce()
+  })
+
+  test('ref handle returns false when terminal body is not mounted', () => {
+    const ref = createRef<TerminalPaneHandle>()
+
+    const completedSession: Session = {
+      ...session,
+      status: 'completed',
+      panes: [{ ...session.panes[0], status: 'completed' }],
+    }
+
+    render(
+      <TerminalPane
+        ref={ref}
+        {...baseProps}
+        mode="awaiting-restart"
+        session={completedSession}
+        pane={completedSession.panes[0]}
+      />
+    )
+
+    expect(ref.current).not.toBeNull()
+    expect(ref.current!.focusTerminal()).toBe(false)
   })
 })
