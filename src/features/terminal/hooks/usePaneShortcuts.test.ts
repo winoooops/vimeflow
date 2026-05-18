@@ -338,3 +338,161 @@ describe('usePaneShortcuts', () => {
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 })
+
+describe('usePaneShortcuts container reclaim extensions', () => {
+  const attachFakeDock = (): HTMLElement => {
+    const element = document.createElement('div')
+    element.setAttribute('data-container-id', 'dock')
+    element.setAttribute('tabindex', '-1')
+    document.body.appendChild(element)
+    element.focus()
+
+    return element
+  }
+
+  const removeFakeDock = (element: HTMLElement): void => {
+    document.body.removeChild(element)
+  }
+
+  const blurActiveElement = (): void => {
+    const activeElement = document.activeElement as HTMLElement | null
+    activeElement?.blur?.()
+  }
+
+  test('Ctrl+1 from focused dock consumes key and calls onTerminalZoneFocus', () => {
+    const onTerminalZoneFocus = vi.fn()
+    const dockElement = attachFakeDock()
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'single', ['p0'])],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: false,
+        onTerminalZoneFocus,
+      })
+    )
+
+    const event = fire('1', { ctrlKey: true })
+
+    expect(onTerminalZoneFocus).toHaveBeenCalledOnce()
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
+
+    removeFakeDock(dockElement)
+  })
+
+  test('Ctrl+1 from stale dock state outside dock passes through', () => {
+    const onTerminalZoneFocus = vi.fn()
+    blurActiveElement()
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'single', ['p0'])],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: false,
+        onTerminalZoneFocus,
+      })
+    )
+
+    const event = fire('1', { ctrlKey: true })
+
+    expect(onTerminalZoneFocus).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
+  test('Ctrl+1 in a dialog passes through regardless of container state', () => {
+    const onTerminalZoneFocus = vi.fn()
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    const inner = document.createElement('button')
+    dialog.appendChild(inner)
+    document.body.appendChild(dialog)
+    inner.focus()
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'single', ['p0'])],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: false,
+        onTerminalZoneFocus,
+      })
+    )
+
+    const event = fire('1', { ctrlKey: true })
+
+    expect(onTerminalZoneFocus).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(dialog)
+  })
+
+  test('Ctrl+1 on active pane inside xterm helper textarea passes through', () => {
+    const onTerminalZoneFocus = vi.fn()
+    const textarea = document.createElement('textarea')
+    textarea.className = 'xterm-helper-textarea'
+    document.body.appendChild(textarea)
+    textarea.focus()
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'single', ['p0'])],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
+        onTerminalZoneFocus,
+      })
+    )
+
+    const event = fire('1', { ctrlKey: true })
+
+    expect(onTerminalZoneFocus).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(textarea)
+  })
+
+  test('Ctrl+1 on active pane outside xterm reclaims terminal focus', () => {
+    const onTerminalZoneFocus = vi.fn()
+    blurActiveElement()
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'single', ['p0'])],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
+        onTerminalZoneFocus,
+      })
+    )
+
+    const event = fire('1', { ctrlKey: true })
+
+    expect(onTerminalZoneFocus).toHaveBeenCalledOnce()
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
+  })
+
+  test('omitted reclaim params preserve already-active pass-through behavior', () => {
+    const setSessionActivePane = vi.fn()
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+      })
+    )
+
+    const event = fire('1', { ctrlKey: true })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+})

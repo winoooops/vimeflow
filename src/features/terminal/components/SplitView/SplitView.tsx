@@ -1,10 +1,20 @@
 // cspell:ignore vsplit hsplit
-import type { ReactElement } from 'react'
+/* eslint-disable react/require-default-props */
+import {
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  type ReactElement,
+} from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Pane, Session } from '../../../sessions/types'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
-import { TerminalPane, type TerminalPaneMode } from '../TerminalPane'
+import {
+  TerminalPane,
+  type TerminalPaneHandle,
+  type TerminalPaneMode,
+} from '../TerminalPane'
 import { EmptySlot } from './EmptySlot'
 import { LAYOUTS } from './layouts'
 
@@ -21,6 +31,12 @@ export interface SplitViewProps {
   onAddPane?: (sessionId: string) => void
   onClosePane?: (sessionId: string, paneId: string) => void
   deferTerminalFit?: boolean
+  showPaneFocusHighlight?: boolean
+}
+
+export interface SplitViewHandle {
+  /** Focuses the active TerminalPane. Returns true if the pane was ready. */
+  focusActivePane(): boolean
 }
 
 const paneMode = (pane: Pane): TerminalPaneMode => {
@@ -54,78 +70,115 @@ export const selectVisiblePanes = (
   return sliced
 }
 
-export const SplitView = ({
-  session,
-  service,
-  isActive,
-  onSessionCwdChange = undefined,
-  onPaneReady = undefined,
-  onSessionRestart = undefined,
-  onSetActivePane = undefined,
-  onAddPane = undefined,
-  onClosePane = undefined,
-  deferTerminalFit = false,
-}: SplitViewProps): ReactElement => {
-  const layout = LAYOUTS[session.layout]
+export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
+  function SplitView(
+    {
+      session,
+      service,
+      isActive,
+      onSessionCwdChange = undefined,
+      onPaneReady = undefined,
+      onSessionRestart = undefined,
+      onSetActivePane = undefined,
+      onAddPane = undefined,
+      onClosePane = undefined,
+      deferTerminalFit = false,
+      showPaneFocusHighlight = true,
+    }: SplitViewProps,
+    ref
+  ): ReactElement {
+    const layout = LAYOUTS[session.layout]
+    const outerDivRef = useRef<HTMLDivElement>(null)
 
-  const visiblePanes = selectVisiblePanes(session.panes, layout.capacity)
+    const paneHandleRefs = useRef<Map<string, TerminalPaneHandle | null>>(
+      new Map()
+    )
 
-  const emptySlotIndices =
-    session.panes.length < layout.capacity
-      ? Array.from(
-          { length: layout.capacity - session.panes.length },
-          (_, index) => session.panes.length + index
-        )
-      : []
+    useImperativeHandle(ref, () => ({
+      focusActivePane(): boolean {
+        const activePane = session.panes.find((pane) => pane.active)
+        if (!activePane) {
+          outerDivRef.current?.focus()
 
-  const gridTemplateAreas = layout.areas
-    .map((row) => `"${row.join(' ')}"`)
-    .join(' ')
+          return false
+        }
 
-  return (
-    <div
-      data-testid="split-view"
-      data-session-id={session.id}
-      data-layout={session.layout}
-      className="grid h-full w-full gap-2 bg-surface p-2.5"
-      style={{
-        gridTemplateColumns: layout.cols,
-        gridTemplateRows: layout.rows,
-        gridTemplateAreas,
-      }}
-    >
-      {/* eslint-disable-next-line react/jsx-boolean-value -- framer-motion: `initial={false}` skips the entry animation for children already mounted. Omitting `initial` reverts to the default (animate on mount) — semantically distinct. */}
-      <AnimatePresence initial={false}>
-        {visiblePanes.map((pane, i) => {
-          const mode = paneMode(pane)
+        const handle = paneHandleRefs.current.get(activePane.id)
+        if (!handle) {
+          outerDivRef.current?.focus()
 
-          return (
-            <motion.div
-              key={pane.id}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={SLOT_FADE_TRANSITION}
-              // Skip the dispatch when this slot's pane is already
-              // active. applyActivePane returns the same reference
-              // on no-op, but expressing the guard at the call site
-              // keeps the semantic clean: every click that survives
-              // this handler is a real focus change. Mirrors the
-              // already-active escape-hatch in usePaneShortcuts.
-              onClick={
-                pane.active
-                  ? undefined
-                  : (): void => onSetActivePane?.(session.id, pane.id)
-              }
-              data-testid="split-view-slot"
-              data-pane-id={pane.id}
-              data-pty-id={pane.ptyId}
-              data-mode={mode}
-              data-cwd={pane.cwd}
-              className="relative min-h-0 min-w-0"
-              style={{ gridArea: `p${i}` }}
-            >
-              {/* F16 (codex connector P1, carried over from pre-5b TerminalZone):
+          return false
+        }
+
+        const focused = handle.focusTerminal()
+        if (!focused) {
+          outerDivRef.current?.focus()
+        }
+
+        return focused
+      },
+    }))
+
+    const visiblePanes = selectVisiblePanes(session.panes, layout.capacity)
+
+    const emptySlotIndices =
+      session.panes.length < layout.capacity
+        ? Array.from(
+            { length: layout.capacity - session.panes.length },
+            (_, index) => session.panes.length + index
+          )
+        : []
+
+    const gridTemplateAreas = layout.areas
+      .map((row) => `"${row.join(' ')}"`)
+      .join(' ')
+
+    return (
+      <div
+        ref={outerDivRef}
+        data-testid="split-view"
+        data-session-id={session.id}
+        data-layout={session.layout}
+        tabIndex={-1}
+        className="grid h-full w-full gap-2 bg-surface p-2.5"
+        style={{
+          gridTemplateColumns: layout.cols,
+          gridTemplateRows: layout.rows,
+          gridTemplateAreas,
+        }}
+      >
+        {/* eslint-disable-next-line react/jsx-boolean-value -- framer-motion: `initial={false}` skips the entry animation for children already mounted. Omitting `initial` reverts to the default (animate on mount) — semantically distinct. */}
+        <AnimatePresence initial={false}>
+          {visiblePanes.map((pane, i) => {
+            const mode = paneMode(pane)
+
+            return (
+              <motion.div
+                key={pane.id}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={SLOT_FADE_TRANSITION}
+                // Skip the dispatch when this slot's pane is already
+                // active. applyActivePane returns the same reference
+                // on no-op, but expressing the guard at the call site
+                // keeps the semantic clean: every click that survives
+                // this handler is a real focus change. Mirrors the
+                // already-active escape-hatch in usePaneShortcuts.
+                onClick={
+                  pane.active
+                    ? undefined
+                    : (): void => onSetActivePane?.(session.id, pane.id)
+                }
+                data-testid="split-view-slot"
+                data-pane-id={pane.id}
+                data-pty-id={pane.ptyId}
+                data-mode={mode}
+                data-cwd={pane.cwd}
+                className="relative min-h-0 min-w-0"
+                style={{ gridArea: `p${i}` }}
+              >
+                {/* F16 (codex connector P1, carried over from pre-5b TerminalZone):
                   keying TerminalPane by `pane.ptyId` (NOT `pane.id`) forces a
                   clean useTerminal subtree unmount + remount whenever a
                   restartSession rotates the pane's PTY handle. Without the
@@ -134,46 +187,51 @@ export const SplitView = ({
                   nowhere until reload. The outer slot wrapper above keys
                   by `pane.id` so layout slot identity is preserved across
                   restarts. */}
-              <TerminalPane
-                key={pane.ptyId}
-                session={session}
-                pane={pane}
-                service={service}
-                mode={mode}
-                onCwdChange={(cwd) =>
-                  onSessionCwdChange?.(session.id, pane.id, cwd)
-                }
-                onPaneReady={onPaneReady}
-                onRestart={onSessionRestart}
-                onClose={
-                  session.panes.length > 1 && onClosePane
-                    ? onClosePane
-                    : undefined
-                }
-                isActive={isActive}
-                deferFit={deferTerminalFit}
-              />
-            </motion.div>
-          )
-        })}
-        {onAddPane
-          ? emptySlotIndices.map((slotIndex) => (
-              <motion.div
-                key={`empty-${slotIndex}`}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={SLOT_FADE_TRANSITION}
-                data-testid="split-view-empty-slot"
-                data-slot-index={slotIndex}
-                className="relative min-h-0 min-w-0"
-                style={{ gridArea: `p${slotIndex}` }}
-              >
-                <EmptySlot sessionId={session.id} onAddPane={onAddPane} />
+                <TerminalPane
+                  key={pane.ptyId}
+                  ref={(handle): void => {
+                    paneHandleRefs.current.set(pane.id, handle)
+                  }}
+                  session={session}
+                  pane={pane}
+                  service={service}
+                  mode={mode}
+                  onCwdChange={(cwd) =>
+                    onSessionCwdChange?.(session.id, pane.id, cwd)
+                  }
+                  onPaneReady={onPaneReady}
+                  onRestart={onSessionRestart}
+                  onClose={
+                    session.panes.length > 1 && onClosePane
+                      ? onClosePane
+                      : undefined
+                  }
+                  isActive={isActive}
+                  deferFit={deferTerminalFit}
+                  showFocusHighlight={showPaneFocusHighlight}
+                />
               </motion.div>
-            ))
-          : null}
-      </AnimatePresence>
-    </div>
-  )
-}
+            )
+          })}
+          {onAddPane
+            ? emptySlotIndices.map((slotIndex) => (
+                <motion.div
+                  key={`empty-${slotIndex}`}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={SLOT_FADE_TRANSITION}
+                  data-testid="split-view-empty-slot"
+                  data-slot-index={slotIndex}
+                  className="relative min-h-0 min-w-0"
+                  style={{ gridArea: `p${slotIndex}` }}
+                >
+                  <EmptySlot sessionId={session.id} onAddPane={onAddPane} />
+                </motion.div>
+              ))
+            : null}
+        </AnimatePresence>
+      </div>
+    )
+  }
+)

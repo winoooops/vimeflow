@@ -18,9 +18,12 @@ import { SidebarStatusHeader } from './components/SidebarStatusHeader'
 import { FilesView } from './components/FilesView'
 import { SessionsView } from './components/SessionsView'
 import { StatusBar } from './components/StatusBar'
-import { TerminalZone } from './components/TerminalZone'
+import {
+  TerminalZone,
+  type TerminalZoneHandle,
+} from './components/TerminalZone'
 import { DockPeekButton } from './components/DockPeekButton'
-import DockPanel from './components/DockPanel'
+import DockPanel, { type DockPanelHandle } from './components/DockPanel'
 import type { DockPosition } from './components/DockSwitcher'
 import { AgentStatusPanel } from '../agent-status/components/AgentStatusPanel'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
@@ -37,6 +40,7 @@ import {
   usePaneShortcuts,
   type PaneShortcutModifier,
 } from '../terminal/hooks/usePaneShortcuts'
+import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
@@ -46,6 +50,11 @@ import {
   WORKSPACE_TAB_KEYS,
 } from './commands/buildWorkspaceCommands'
 import type { ChangedFile, SelectedDiffFile } from '../diff/types'
+import {
+  DOCK_CONTAINER_ID,
+  TERMINAL_CONTAINER_ID,
+  type FocusTarget,
+} from './containerIds'
 
 const SIDEBAR_MIN = 240
 const SIDEBAR_MAX = 560
@@ -124,14 +133,6 @@ export const WorkspaceView = (): ReactElement => {
 
     return detected.startsWith('mac') ? 'meta' : 'ctrl'
   }, [])
-
-  usePaneShortcuts({
-    sessions,
-    activeSessionId,
-    setSessionActivePane,
-    setSessionLayout,
-    preferModifier,
-  })
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
@@ -357,6 +358,112 @@ export const WorkspaceView = (): ReactElement => {
   const [isDockOpen, setIsDockOpen] = useState(true)
   const [dockTab, setDockTab] = useState<DockTab>('editor')
 
+  const [activeContainerId, setActiveContainerId] = useState<string>(
+    TERMINAL_CONTAINER_ID
+  )
+  const [focusRequestSeq, setFocusRequestSeq] = useState(0)
+  const pendingFocusTarget = useRef<FocusTarget | null>(null)
+  const terminalZoneRef = useRef<TerminalZoneHandle>(null)
+  const dockPanelRef = useRef<DockPanelHandle>(null)
+
+  const requestFocus = useCallback((target: FocusTarget): void => {
+    pendingFocusTarget.current = target
+    setFocusRequestSeq((value) => value + 1)
+  }, [])
+
+  useLayoutEffect(() => {
+    const target = pendingFocusTarget.current
+    if (!target) {
+      return
+    }
+
+    pendingFocusTarget.current = null
+
+    if (target === 'terminal') {
+      terminalZoneRef.current?.focusActivePane()
+
+      return
+    }
+
+    if (target === 'editor') {
+      dockPanelRef.current?.focusEditor()
+
+      return
+    }
+
+    dockPanelRef.current?.focusDiff()
+  }, [focusRequestSeq])
+
+  const openDock = useCallback(
+    (tab?: DockTab): void => {
+      const nextTab = tab ?? dockTab
+      if (tab) {
+        setDockTab(tab)
+      }
+
+      setIsDockOpen(true)
+      setActiveContainerId(DOCK_CONTAINER_ID)
+      requestFocus(nextTab)
+    },
+    [dockTab, requestFocus]
+  )
+
+  const claimTerminal = useCallback((): void => {
+    setActiveContainerId(TERMINAL_CONTAINER_ID)
+    requestFocus('terminal')
+  }, [requestFocus])
+
+  const closeDock = useCallback((): void => {
+    setIsDockOpen(false)
+    claimTerminal()
+  }, [claimTerminal])
+
+  const onTerminalZoneFocus = useCallback((): void => {
+    setActiveContainerId(TERMINAL_CONTAINER_ID)
+    requestFocus('terminal')
+  }, [requestFocus])
+
+  const handleSetActiveSessionId = useCallback(
+    (id: string): void => {
+      setActiveSessionId(id)
+      claimTerminal()
+    },
+    [claimTerminal, setActiveSessionId]
+  )
+
+  const handleCreateSession = useCallback((): void => {
+    createSession()
+    claimTerminal()
+  }, [claimTerminal, createSession])
+
+  const handleRemoveSession = useCallback(
+    (sessionId: string): void => {
+      const wasActive = sessionId === activeSessionId
+      removeSession(sessionId)
+      if (wasActive) {
+        claimTerminal()
+      }
+    },
+    [activeSessionId, claimTerminal, removeSession]
+  )
+
+  usePaneShortcuts({
+    sessions,
+    activeSessionId,
+    setSessionActivePane,
+    setSessionLayout,
+    preferModifier,
+    onTerminalZoneFocus,
+    isTerminalContainerActive: activeContainerId === TERMINAL_CONTAINER_ID,
+  })
+
+  useDockShortcuts({
+    activeContainerId,
+    openDock,
+    claimTerminal,
+    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+  })
+
   // Vertical dock height is lifted so the value survives DockPanel unmounts.
   const verticalDockResize = useResizable({
     initial: 400,
@@ -556,15 +663,14 @@ export const WorkspaceView = (): ReactElement => {
   // Handle opening a diff file from AgentStatusPanel
   const handleOpenDiff = useCallback(
     (file: ChangedFile): void => {
-      setDockTab('diff')
       setSelectedDiffFile({
         path: file.path,
         staged: file.staged,
         cwd: activeCwd,
       })
-      setIsDockOpen(true)
+      openDock('diff')
     },
-    [activeCwd]
+    [activeCwd, openDock]
   )
 
   // Belt-and-suspenders: clear selection on cwd change
@@ -580,6 +686,7 @@ export const WorkspaceView = (): ReactElement => {
 
   const dockOrPeek = isDockOpen ? (
     <DockPanel
+      ref={dockPanelRef}
       selectedFilePath={editorBuffer.filePath}
       content={editorBuffer.currentContent}
       onContentChange={editorBuffer.updateContent}
@@ -594,21 +701,20 @@ export const WorkspaceView = (): ReactElement => {
       onTabChange={setDockTab}
       position={dockPosition}
       onPositionChange={setDockPosition}
-      onClose={() => setIsDockOpen(false)}
+      onClose={closeDock}
       verticalSize={verticalDockResize.size}
       onVerticalResizeMouseDown={verticalDockResize.handleMouseDown}
       isVerticalResizing={verticalDockResize.isDragging}
       onVerticalSizeAdjust={verticalDockResize.adjustBy}
       selectedDiffFile={selectedDiffFile}
       onSelectedDiffFileChange={setSelectedDiffFile}
-    />
-  ) : (
-    <DockPeekButton
-      position={dockPosition}
-      onOpen={() => {
-        setIsDockOpen(true)
+      isFocused={activeContainerId === DOCK_CONTAINER_ID}
+      onContainerFocus={() => {
+        setActiveContainerId(DOCK_CONTAINER_ID)
       }}
     />
+  ) : (
+    <DockPeekButton position={dockPosition} onOpen={() => openDock()} />
   )
 
   return (
@@ -649,9 +755,9 @@ export const WorkspaceView = (): ReactElement => {
                 hidden={activeTab !== 'sessions'}
                 sessions={sessions}
                 activeSessionId={activeSessionId}
-                onSessionClick={setActiveSessionId}
-                onCreateSession={createSession}
-                onRemoveSession={removeSession}
+                onSessionClick={handleSetActiveSessionId}
+                onCreateSession={handleCreateSession}
+                onRemoveSession={handleRemoveSession}
                 onRenameSession={renameSession}
                 onReorderSessions={reorderSessions}
               />
@@ -691,9 +797,9 @@ export const WorkspaceView = (): ReactElement => {
         <Tabs
           sessions={sessions}
           activeSessionId={activeSessionId}
-          onSelect={setActiveSessionId}
-          onClose={removeSession}
-          onNew={createSession}
+          onSelect={handleSetActiveSessionId}
+          onClose={handleRemoveSession}
+          onNew={handleCreateSession}
         />
 
         <div
@@ -707,6 +813,7 @@ export const WorkspaceView = (): ReactElement => {
             className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
           >
             <TerminalZone
+              ref={terminalZoneRef}
               sessions={sessions}
               activeSessionId={activeSessionId}
               onSessionCwdChange={updatePaneCwd}
@@ -720,6 +827,10 @@ export const WorkspaceView = (): ReactElement => {
               addPane={addPane}
               removePane={removePane}
               modKey={preferModifier === 'meta' ? '⌘' : 'Ctrl'}
+              isZoneFocused={activeContainerId === TERMINAL_CONTAINER_ID}
+              onContainerPointerDown={() => {
+                setActiveContainerId(TERMINAL_CONTAINER_ID)
+              }}
             />
           </div>
           {!dockBeforeTerminal ? dockOrPeek : null}

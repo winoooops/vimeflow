@@ -96,6 +96,7 @@ export interface UseCodeMirrorOptions {
   language: Extension | null
   onSave: () => void
   onChange?: (content: string) => void
+  shouldAutoFocus?: boolean
 }
 
 export interface UseCodeMirrorReturn {
@@ -113,11 +114,13 @@ export interface UseCodeMirrorReturn {
 export function useCodeMirror(
   options: UseCodeMirrorOptions
 ): UseCodeMirrorReturn {
-  const { initialContent, language, onSave, onChange } = options
+  const { initialContent, language, onSave, onChange, shouldAutoFocus } =
+    options
   const [editorView, setEditorView] = useState<EditorView | null>(null)
   const onSaveRef = useRef(onSave)
   const onChangeRef = useRef(onChange)
   const initialContentRef = useRef(initialContent)
+  const shouldAutoFocusRef = useRef(shouldAutoFocus ?? true)
 
   // Update `initialContentRef` synchronously during render (not via
   // useEffect). `setContainer` runs during the commit phase when React
@@ -129,6 +132,7 @@ export function useCodeMirror(
   // "latest value" pattern — unlike setState, they don't trigger a
   // re-render.
   initialContentRef.current = initialContent
+  shouldAutoFocusRef.current = shouldAutoFocus ?? true
 
   // onSave / onChange aren't read synchronously during render, so they
   // can use the normal effect-based ref update pattern.
@@ -215,7 +219,9 @@ export function useCodeMirror(
         return
       }
       view.requestMeasure()
-      view.focus()
+      if (shouldAutoFocusRef.current) {
+        view.focus()
+      }
     })
   }, [])
 
@@ -267,7 +273,9 @@ export function useCodeMirror(
     })
 
     // Focus editor after content load
-    view.focus()
+    if (shouldAutoFocusRef.current) {
+      view.focus()
+    }
   }, [])
 
   return {

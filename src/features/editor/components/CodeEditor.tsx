@@ -1,5 +1,11 @@
-import type { ReactElement } from 'react'
-import { useEffect, useMemo } from 'react'
+/* eslint-disable react/require-default-props */
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  type ReactElement,
+} from 'react'
 import { useCodeMirror } from '../hooks/useCodeMirror'
 import { useVimMode } from '../hooks/useVimMode'
 import { VimStatusBar } from './VimStatusBar'
@@ -21,105 +27,130 @@ interface CodeEditorProps {
   isDirty?: boolean
   /** Render a loading overlay while an async file read is in flight. */
   isLoading?: boolean
+  shouldAutoFocus?: boolean
 }
 
-export const CodeEditor = ({
-  filePath,
-  content,
-  onContentChange = undefined,
-  onSave = undefined,
-  isDirty = false,
-  isLoading = false,
-}: CodeEditorProps): ReactElement => {
-  // Language extension is driven off the filename only. Memoize on
-  // `fileName` so typing (which re-renders via onContentChange) does
-  // NOT rebuild the language extension every keystroke — an non-memoized
-  // call would hand a fresh Extension object to useCodeMirror's
-  // language-update effect on every render, triggering a full
-  // Compartment.reconfigure() per keypress and visibly flickering
-  // syntax highlighting as the parser restarted from scratch.
-  const fileName = filePath ? (filePath.split('/').pop() ?? '') : ''
+export interface CodeEditorHandle {
+  /** Returns true if editorView focused, false if no file is loaded. */
+  focus(): boolean
+}
 
-  const language = useMemo(
-    () => (fileName ? getLanguageExtension(fileName) : null),
-    [fileName]
-  )
+export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
+  function CodeEditor(
+    {
+      filePath,
+      content,
+      onContentChange = undefined,
+      onSave = undefined,
+      isDirty = false,
+      isLoading = false,
+      shouldAutoFocus = false,
+    }: CodeEditorProps,
+    ref
+  ): ReactElement {
+    // Language extension is driven off the filename only. Memoize on
+    // `fileName` so typing (which re-renders via onContentChange) does
+    // NOT rebuild the language extension every keystroke — an non-memoized
+    // call would hand a fresh Extension object to useCodeMirror's
+    // language-update effect on every render, triggering a full
+    // Compartment.reconfigure() per keypress and visibly flickering
+    // syntax highlighting as the parser restarted from scratch.
+    const fileName = filePath ? (filePath.split('/').pop() ?? '') : ''
 
-  // `onSave` is required for vim :w to work. CodeEditor used to fall back
-  // to writing via a stashed fileSystemService if the caller forgot to
-  // pass onSave, but that path silently swallowed write errors and
-  // bypassed the error-surfacing improvements in WorkspaceView. We now
-  // require the caller to own the save lifecycle.
-  const handleSave = (): void => {
-    onSave?.()
-  }
+    const language = useMemo(
+      () => (fileName ? getLanguageExtension(fileName) : null),
+      [fileName]
+    )
 
-  const { editorView, updateContent, setContainer } = useCodeMirror({
-    initialContent: content,
-    language,
-    onSave: handleSave,
-    onChange: onContentChange,
-  })
-
-  const vimMode = useVimMode(editorView)
-
-  // Push prop content into CodeMirror whenever the caller updates it
-  // (e.g. a new file is opened and `useEditorBuffer` swaps the buffer
-  // content). `updateContent` no-ops when the CodeMirror doc already
-  // matches, so echo-back from user edits (typing → onContentChange →
-  // buffer state → content prop → updateContent) does not loop.
-  useEffect(() => {
-    if (filePath === null) {
-      return
+    // `onSave` is required for vim :w to work. CodeEditor used to fall back
+    // to writing via a stashed fileSystemService if the caller forgot to
+    // pass onSave, but that path silently swallowed write errors and
+    // bypassed the error-surfacing improvements in WorkspaceView. We now
+    // require the caller to own the save lifecycle.
+    const handleSave = (): void => {
+      onSave?.()
     }
 
-    updateContent(content)
-  }, [content, filePath, updateContent])
+    const { editorView, updateContent, setContainer } = useCodeMirror({
+      initialContent: content,
+      language,
+      onSave: handleSave,
+      onChange: onContentChange,
+      shouldAutoFocus,
+    })
 
-  if (!filePath) {
-    // `min-h-0` matches the invariant the main return path establishes:
-    // every flex child in CodeEditor must be prevented from growing
-    // past its bounded parent. No visible bug today because the
-    // placeholder is trivially short, but keeping the invariant
-    // consistent across both branches means a future richer placeholder
-    // (file picker, tips widget, animated illustration) won't silently
-    // reintroduce the flex `min-height: auto` scroll bug.
+    const vimMode = useVimMode(editorView)
+
+    useImperativeHandle(ref, () => ({
+      focus(): boolean {
+        if (!filePath || !editorView) {
+          return false
+        }
+
+        editorView.focus()
+
+        return true
+      },
+    }))
+
+    // Push prop content into CodeMirror whenever the caller updates it
+    // (e.g. a new file is opened and `useEditorBuffer` swaps the buffer
+    // content). `updateContent` no-ops when the CodeMirror doc already
+    // matches, so echo-back from user edits (typing → onContentChange →
+    // buffer state → content prop → updateContent) does not loop.
+    useEffect(() => {
+      if (filePath === null) {
+        return
+      }
+
+      updateContent(content)
+    }, [content, filePath, updateContent])
+
+    if (!filePath) {
+      // `min-h-0` matches the invariant the main return path establishes:
+      // every flex child in CodeEditor must be prevented from growing
+      // past its bounded parent. No visible bug today because the
+      // placeholder is trivially short, but keeping the invariant
+      // consistent across both branches means a future richer placeholder
+      // (file picker, tips widget, animated illustration) won't silently
+      // reintroduce the flex `min-height: auto` scroll bug.
+      return (
+        <div
+          className="flex min-h-0 flex-1 items-center justify-center text-on-surface-variant"
+          data-testid="no-file-selected"
+        >
+          No file selected
+        </div>
+      )
+    }
+
     return (
-      <div
-        className="flex min-h-0 flex-1 items-center justify-center text-on-surface-variant"
-        data-testid="no-file-selected"
-      >
-        No file selected
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          <div
+            ref={setContainer}
+            data-testid="codemirror-container"
+            className="h-full w-full"
+          />
+          {isLoading && (
+            <div
+              role="status"
+              aria-live="polite"
+              aria-label="Loading file"
+              data-testid="code-editor-loading"
+              className="absolute inset-0 flex items-center justify-center bg-surface/70 backdrop-blur-sm z-10"
+            >
+              <div className="flex items-center gap-2 text-sm text-on-surface-variant font-inter">
+                <span className="material-symbols-outlined animate-spin text-base">
+                  progress_activity
+                </span>
+                <span>Loading…</span>
+              </div>
+            </div>
+          )}
+        </div>
+        <VimStatusBar vimMode={vimMode} isDirty={isDirty} />
       </div>
     )
   }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="relative min-h-0 flex-1 overflow-hidden">
-        <div
-          ref={setContainer}
-          data-testid="codemirror-container"
-          className="h-full w-full"
-        />
-        {isLoading && (
-          <div
-            role="status"
-            aria-live="polite"
-            aria-label="Loading file"
-            data-testid="code-editor-loading"
-            className="absolute inset-0 flex items-center justify-center bg-surface/70 backdrop-blur-sm z-10"
-          >
-            <div className="flex items-center gap-2 text-sm text-on-surface-variant font-inter">
-              <span className="material-symbols-outlined animate-spin text-base">
-                progress_activity
-              </span>
-              <span>Loading…</span>
-            </div>
-          </div>
-        )}
-      </div>
-      <VimStatusBar vimMode={vimMode} isDirty={isDirty} />
-    </div>
-  )
-}
+)

@@ -1,11 +1,16 @@
 // cspell:ignore vsplit hsplit
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { createRef } from 'react'
 import { describe, test, expect, vi } from 'vitest'
 import type { UseGitBranchReturn } from '../../../diff/hooks/useGitBranch'
 import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
 import type { BodyHandle, BodyProps } from '../TerminalPane/Body'
-import { SplitView, selectVisiblePanes } from './SplitView'
+import {
+  SplitView,
+  selectVisiblePanes,
+  type SplitViewHandle,
+} from './SplitView'
 import type { LayoutId, Pane, Session } from '../../../sessions/types'
 import type { ITerminalService } from '../../services/terminalService'
 
@@ -291,6 +296,26 @@ describe('SplitView - multi-pane layouts', () => {
     expect(activeWrapper).toHaveAttribute('data-focused', 'true')
     expect(activeWrapper).toHaveStyle({ opacity: '1' })
   })
+
+  test('showPaneFocusHighlight=false suppresses active pane marker without dimming active pane', () => {
+    const showPaneFocusHighlight = false
+
+    render(
+      <SplitView
+        session={makeSession('vsplit', 2, 1)}
+        service={makeMockService()}
+        isActive
+        showPaneFocusHighlight={showPaneFocusHighlight}
+      />
+    )
+
+    const activeWrapper = within(
+      screen.getAllByTestId('split-view-slot')[1]
+    ).getByTestId('terminal-pane-wrapper')
+
+    expect(activeWrapper).not.toHaveAttribute('data-focused')
+    expect(activeWrapper).toHaveStyle({ opacity: '1' })
+  })
 })
 
 describe('SplitView - under-capacity', () => {
@@ -444,6 +469,44 @@ describe('SplitView - no PTY lifecycle IPC', () => {
     )
 
     expect(service.spawn).not.toHaveBeenCalled()
+  })
+})
+
+describe('SplitView - imperative focus handle', () => {
+  test('focusActivePane returns true when active pane body is ready', () => {
+    const ref = createRef<SplitViewHandle>()
+
+    render(
+      <SplitView
+        ref={ref}
+        session={makeSession('single', 1)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+
+    expect(ref.current).not.toBeNull()
+    expect(ref.current!.focusActivePane()).toBe(true)
+  })
+
+  test('focusActivePane returns false when no active pane exists', () => {
+    const ref = createRef<SplitViewHandle>()
+    const session = makeSession('single', 1)
+
+    render(
+      <SplitView
+        ref={ref}
+        session={{
+          ...session,
+          panes: session.panes.map((pane) => ({ ...pane, active: false })),
+        }}
+        service={makeMockService()}
+        isActive
+      />
+    )
+
+    expect(ref.current).not.toBeNull()
+    expect(ref.current!.focusActivePane()).toBe(false)
   })
 })
 
