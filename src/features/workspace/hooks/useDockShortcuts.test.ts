@@ -237,6 +237,30 @@ describe('useDockShortcuts', () => {
     document.body.removeChild(cmEditor)
   })
 
+  test('Ctrl+b does not fire claimTerminal when CodeMirror has focus (vim scroll-back guard)', () => {
+    // vim normal mode: Ctrl+b scrolls one page backward — must not trigger claimTerminal.
+    // CodeMirror lives inside the dock section, so both activeContainerId and closest() checks
+    // would pass without the !inCodeMirror guard.
+    const props = makeProps({ activeContainerId: DOCK_CONTAINER_ID })
+
+    const cmEditor = document.createElement('div')
+    cmEditor.className = 'cm-editor'
+    const cmContent = document.createElement('div')
+    cmContent.setAttribute('contenteditable', 'true')
+    cmContent.className = 'cm-content'
+    cmEditor.appendChild(cmContent)
+    document.body.appendChild(cmEditor)
+    cmContent.focus()
+
+    renderHook(() => useDockShortcuts(props))
+    const event = fire('b', { ctrlKey: true })
+
+    expect(props.claimTerminal).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(cmEditor)
+  })
+
   test('Ctrl+g does not fire when CodeMirror has focus (vim print location guard)', () => {
     // CodeMirror vim: Ctrl+g prints file/line info — must not switch to diff.
     const props = makeProps()

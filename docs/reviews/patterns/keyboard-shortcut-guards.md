@@ -144,3 +144,17 @@ against three classes of false-fire:
 - **Fix:** Restored file-level eslint-disable comments with an explanatory rationale
   (`-- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults`).
 - **Commit:** `fix(workspace): address round-4 Claude review findings on focus highlight PR`
+
+### 10. Ctrl+b from CodeMirror incorrectly fires claimTerminal
+
+- **Source:** github-claude | PR #218 | 2026-05-18
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/hooks/useDockShortcuts.ts`
+- **Finding:** The `Ctrl+b` handler's guard checked `activeContainerId === DOCK_CONTAINER_ID`
+  and `closest('[data-container-id="dock"]')`, but not `!inCodeMirror`. Because CodeMirror
+  lives inside the dock `<section>`, both checks pass when the editor has focus — causing
+  `claimTerminal` to fire and yank focus to the terminal during vim/Emacs editing (vim: page-back,
+  Emacs: backward-char).
+- **Fix:** Added `!inCodeMirror &&` to the `key === 'b'` condition, mirroring the guard already
+  applied to `e`/`g`. Added companion test verifying Ctrl+b does not fire from CodeMirror.
+- **Commit:** `fix(workspace): address round-5 Claude review finding on focus highlight PR`

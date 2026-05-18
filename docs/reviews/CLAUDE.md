@@ -63,4 +63,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing        | 18       | 6    | 2026-05-16   |
 | [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 3        | 1    | 2026-05-07   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
-| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 9        | 0    | 2026-05-18   |
+| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 10       | 0    | 2026-05-18   |

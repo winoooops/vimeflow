@@ -98,6 +98,7 @@ export const useDockShortcuts = ({
       if (key === 'b') {
         const activeElement = document.activeElement
         if (
+          !inCodeMirror &&
           activeContainerIdRef.current === DOCK_CONTAINER_ID &&
           activeElement?.closest(`[data-container-id="${DOCK_CONTAINER_ID}"]`)
         ) {
