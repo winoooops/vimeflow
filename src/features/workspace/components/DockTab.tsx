@@ -172,9 +172,12 @@ export const DockTab = ({
               className={`absolute ${menuAlignClass} top-[28px] z-50 flex min-w-[190px] flex-col gap-2 rounded-lg border border-[rgba(74,68,79,0.35)] bg-[#0d0d1c] p-2 shadow-xl`}
               onClick={() => setActionsOpen(false)}
             >
+              {/* stopPropagation so clicking the read-only path label does not
+                  bubble to the container's onClick and close the menu */}
               <span
                 className="max-w-[210px] truncate px-1 font-mono text-[10px] text-outline"
                 title={selectedFilePath ?? ''}
+                onClick={(e): void => e.stopPropagation()}
               >
                 {displayPath}
               </span>

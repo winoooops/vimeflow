@@ -111,12 +111,6 @@ export const useElasticContainer = ({
       let newMax = Math.floor(dimension * configuredMax)
 
       if (newMin >= newMax) {
-        if (import.meta.env.DEV) {
-          throw new Error(
-            `useElasticContainer: degenerate container: pixelMin(${newMin}) >= pixelMax(${newMax})`
-          )
-        }
-
         newMax = newMin + 1
       }
 
@@ -136,6 +130,15 @@ export const useElasticContainer = ({
     const rect = containerElement.getBoundingClientRect()
     const dimension = axis === 'horizontal' ? rect.width : rect.height
     const { newMin, newMax } = computeBounds(dimension)
+
+    // Mount-time degenerate guard: throw inside useLayoutEffect so React
+    // propagates it to an error boundary (unlike ResizeObserver callbacks,
+    // which run outside React's event loop and bypass error boundaries).
+    if (import.meta.env.DEV && newMin >= newMax) {
+      throw new Error(
+        `useElasticContainer: degenerate container at mount — pixelMin(${newMin}) >= pixelMax(${newMax}). Container may be zero-width/height.`
+      )
+    }
 
     const effectiveInitial =
       initialPercentRef.current ??
