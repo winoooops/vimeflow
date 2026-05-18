@@ -96,11 +96,9 @@ export const useElasticContainer = ({
         configuredMax > 1 ||
         configuredMin >= configuredMax
       ) {
-        if (import.meta.env.DEV) {
-          throw new Error(
-            `useElasticContainer: invalid percent bounds minPercent=${configuredMin} maxPercent=${configuredMax}`
-          )
-        }
+        throw new Error(
+          `useElasticContainer: invalid percent bounds minPercent=${configuredMin} maxPercent=${configuredMax}`
+        )
       }
 
       const newMin = Math.ceil(dimension * configuredMin)

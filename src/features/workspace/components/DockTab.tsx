@@ -157,6 +157,8 @@ export const DockTab = ({
             <div
               ref={menuRef}
               id={actionsMenuId}
+              role="menu"
+              aria-label="Dock actions"
               data-testid="dock-actions-menu"
               className={`absolute ${menuAlignClass} top-[28px] z-50 flex min-w-[190px] flex-col gap-2 rounded-lg border border-[rgba(74,68,79,0.35)] bg-[#0d0d1c] p-2 shadow-xl`}
               onClick={() => setActionsOpen(false)}
