@@ -172,3 +172,27 @@ against three classes of false-fire:
 - **Fix:** Removed the direct `onContainerFocus?.()` call from `handlePointerDown` in both
   components; `onFocus` alone covers pointer and keyboard Tab paths.
 - **Commit:** `fix(workspace): address round-6 Claude review findings on focus highlight PR`
+
+### 12. onTerminalZoneFocus duplicated claimTerminal — divergence risk
+
+- **Source:** github-claude | PR #218 | 2026-05-18
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `onTerminalZoneFocus` was byte-for-byte identical to `claimTerminal`. If
+  `claimTerminal` later gains extra logic (telemetry, dock-state persistence), the
+  keyboard-reclaim path would silently diverge with no type error or failing test.
+- **Fix:** Removed the redundant `onTerminalZoneFocus` callback and passed `claimTerminal`
+  directly: `onTerminalZoneFocus: claimTerminal`.
+- **Commit:** `fix(workspace): address round-7 Claude review findings on focus highlight PR`
+
+### 13. Dialog guard in usePaneShortcuts only covered reclaim path, not pane-switch fallthrough
+
+- **Source:** github-claude | PR #218 | 2026-05-18
+- **Severity:** LOW
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** `document.querySelector(DIALOG_SELECTOR)` was only checked inside the reclaim
+  `if` block. Ctrl+2 with a dialog open and terminal active (pane 2 not active) would still
+  call `setSessionActivePane` via the pre-existing pane-switch path.
+- **Fix:** Hoisted the dialog guard to the top of the `digitMatch` block so it covers both
+  reclaim and pane-switch paths symmetrically.
+- **Commit:** `fix(workspace): address round-7 Claude review findings on focus highlight PR`

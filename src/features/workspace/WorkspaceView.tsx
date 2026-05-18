@@ -418,11 +418,6 @@ export const WorkspaceView = (): ReactElement => {
     claimTerminal()
   }, [claimTerminal])
 
-  const onTerminalZoneFocus = useCallback((): void => {
-    setActiveContainerId(TERMINAL_CONTAINER_ID)
-    requestFocus('terminal')
-  }, [requestFocus])
-
   const handleSetActiveSessionId = useCallback(
     (id: string): void => {
       setActiveSessionId(id)
@@ -453,7 +448,7 @@ export const WorkspaceView = (): ReactElement => {
     setSessionActivePane,
     setSessionLayout,
     preferModifier,
-    onTerminalZoneFocus,
+    onTerminalZoneFocus: claimTerminal,
     isTerminalContainerActive: activeContainerId === TERMINAL_CONTAINER_ID,
   })
 

@@ -103,6 +103,12 @@ export const usePaneShortcuts = ({
       if (digitMatch) {
         const paneIndex = Number.parseInt(digitMatch[1], 10) - 1
 
+        // Dialog guard covers the full digit-key path — both reclaim and
+        // pane-switch — so Ctrl+1-4 is fully suppressed while any modal is open.
+        if (document.querySelector(DIALOG_SELECTOR)) {
+          return
+        }
+
         const isTerminalContainerActiveValue =
           isTerminalContainerActiveRef.current
         const onTerminalZoneFocusValue = onTerminalZoneFocusRef.current
@@ -112,10 +118,6 @@ export const usePaneShortcuts = ({
           onTerminalZoneFocusValue !== undefined
         ) {
           const activeElement = document.activeElement
-
-          if (document.querySelector(DIALOG_SELECTOR)) {
-            return
-          }
 
           if (!isTerminalContainerActiveValue) {
             if (
