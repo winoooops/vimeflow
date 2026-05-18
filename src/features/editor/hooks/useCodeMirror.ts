@@ -120,7 +120,7 @@ export function useCodeMirror(
   const onSaveRef = useRef(onSave)
   const onChangeRef = useRef(onChange)
   const initialContentRef = useRef(initialContent)
-  const shouldAutoFocusRef = useRef(shouldAutoFocus ?? true)
+  const shouldAutoFocusRef = useRef(shouldAutoFocus ?? false)
 
   // Update `initialContentRef` synchronously during render (not via
   // useEffect). `setContainer` runs during the commit phase when React
@@ -132,7 +132,7 @@ export function useCodeMirror(
   // "latest value" pattern — unlike setState, they don't trigger a
   // re-render.
   initialContentRef.current = initialContent
-  shouldAutoFocusRef.current = shouldAutoFocus ?? true
+  shouldAutoFocusRef.current = shouldAutoFocus ?? false
 
   // onSave / onChange aren't read synchronously during render, so they
   // can use the normal effect-based ref update pattern.
@@ -219,7 +219,11 @@ export function useCodeMirror(
         return
       }
       view.requestMeasure()
-      if (shouldAutoFocusRef.current) {
+      // Guard with hasFocus: the synchronous useLayoutEffect path in
+      // WorkspaceView may have already focused the editor in the same
+      // commit cycle. Without this guard, the RAF fires ~16ms later and
+      // steals focus back from any panel that gained it in between.
+      if (shouldAutoFocusRef.current && !view.hasFocus) {
         view.focus()
       }
     })

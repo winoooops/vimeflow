@@ -983,3 +983,85 @@ describe('WorkspaceView Integration Tests', () => {
     })
   })
 })
+
+describe('WorkspaceView focus orchestration', () => {
+  beforeEach(() => {
+    vi.spyOn(useCodeMirrorModule, 'useCodeMirror').mockImplementation(
+      createMockUseCodeMirror()
+    )
+
+    vi.spyOn(useVimModeModule, 'useVimMode').mockImplementation(
+      createMockUseVimMode()
+    )
+  })
+
+  test('initial state: terminal zone is focused, dock does not have focus outline', async () => {
+    render(<WorkspaceView />)
+
+    // Dock starts open but terminal is the active container
+    await waitFor(() => {
+      expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
+    })
+
+    const terminalZone = screen.getByTestId('terminal-zone')
+    const dockPanel = screen.getByTestId('dock-panel')
+
+    // Terminal zone should be at full opacity (active)
+    expect(terminalZone.className).not.toContain('opacity-[0.65]')
+    // Dock should NOT have the focus outline span
+    expect(
+      dockPanel.querySelector('[data-testid="dock-focus-outline"]')
+    ).toBeNull()
+  })
+
+  test('clicking dock claims dock focus: terminal dims, dock shows focus outline', async () => {
+    render(<WorkspaceView />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
+    })
+
+    // Click a non-interactive part of the dock panel
+    const dockPanel = screen.getByTestId('dock-panel')
+    dockPanel.focus() // simulate focus entering dock via onFocus
+
+    await waitFor(() => {
+      // Terminal zone should dim when dock is active
+      const terminalZone = screen.getByTestId('terminal-zone')
+      expect(terminalZone.className).toContain('opacity-[0.65]')
+    })
+
+    // Dock should show focus outline
+    expect(
+      dockPanel.querySelector('[data-testid="dock-focus-outline"]')
+    ).not.toBeNull()
+  })
+
+  test('closing the dock returns container focus to terminal', async () => {
+    render(<WorkspaceView />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
+    })
+
+    // Give focus to dock first
+    const dockPanel = screen.getByTestId('dock-panel')
+    dockPanel.focus()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('terminal-zone').className).toContain(
+        'opacity-[0.65]'
+      )
+    })
+
+    // Close the dock by clicking its close button
+    const closeButton = screen.getByRole('button', { name: /collapse/i })
+    await userEvent.click(closeButton)
+
+    await waitFor(() => {
+      // Terminal zone should be back at full opacity
+      const terminalZone = screen.getByTestId('terminal-zone')
+      expect(terminalZone.className).not.toContain('opacity-[0.65]')
+    })
+  })
+})

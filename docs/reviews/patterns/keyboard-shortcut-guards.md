@@ -196,3 +196,41 @@ against three classes of false-fire:
 - **Fix:** Hoisted the dialog guard to the top of the `digitMatch` block so it covers both
   reclaim and pane-switch paths symmetrically.
 - **Commit:** `fix(workspace): address round-7 Claude review findings on focus highlight PR`
+
+### 14. useCodeMirror RAF focus fires after useLayoutEffect with no hasFocus guard
+
+- **Source:** github-claude | PR #218 | 2026-05-18
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/hooks/useCodeMirror.ts`
+- **Finding:** When `shouldAutoFocus` is true and both the RAF path (on mount) and the
+  synchronous `useLayoutEffect` path (via `focusRequestSeq`) target the same editor,
+  the RAF fires ~16ms later and can steal focus back from any panel that gained focus
+  between React's commit phase and the animation frame.
+- **Fix:** Added `!view.hasFocus` guard: `if (shouldAutoFocusRef.current && !view.hasFocus) { view.focus() }`.
+  The RAF becomes a fallback rather than an unconditional override.
+- **Commit:** `fix(workspace): address round-8 Claude review findings on focus highlight PR`
+
+### 15. useCodeMirror defaults shouldAutoFocus ?? true, opposite of CodeEditor false default
+
+- **Source:** github-claude | PR #218 | 2026-05-18
+- **Severity:** LOW
+- **File:** `src/features/editor/hooks/useCodeMirror.ts`
+- **Finding:** `shouldAutoFocus ?? true` defaults to opt-in auto-focus when the prop is
+  absent, but `CodeEditor` defaults `shouldAutoFocus = false`. Any future caller omitting
+  the prop would silently steal keyboard focus.
+- **Fix:** Changed both `?? true` to `?? false` so the hook's standalone behavior matches
+  typical embedded usage.
+- **Commit:** `fix(workspace): address round-8 Claude review findings on focus highlight PR`
+
+### 16. WorkspaceView focus orchestration lacked integration test coverage
+
+- **Source:** github-claude | PR #218 | 2026-05-18
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.integration.test.tsx`
+- **Finding:** The `activeContainerId` state machine, `focusRequestSeq` queue,
+  `openDock`/`claimTerminal`/`closeDock` helpers, and session-intent wrappers had no
+  assertions at the `WorkspaceView` level.
+- **Fix:** Added three integration tests: (1) initial state — terminal focused, no dock
+  focus outline; (2) clicking dock claims dock focus (terminal dims); (3) closing dock
+  returns container focus to terminal.
+- **Commit:** `fix(workspace): address round-8 Claude review findings on focus highlight PR`
