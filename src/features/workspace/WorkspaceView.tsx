@@ -32,6 +32,7 @@ import { CommandPalette } from '../command-palette/CommandPalette'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
 import { clampSize, useResizable } from '../../hooks/useResizable'
+import { useElasticContainer } from '../../hooks/useElasticContainer'
 import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
@@ -55,6 +56,10 @@ import {
   TERMINAL_CONTAINER_ID,
   type FocusTarget,
 } from './containerIds'
+import {
+  DOCK_VERTICAL_ELASTIC_CONFIG,
+  DOCK_HORIZONTAL_ELASTIC_CONFIG,
+} from './panelConfig'
 
 const SIDEBAR_MIN = 240
 const SIDEBAR_MAX = 560
@@ -354,6 +359,7 @@ export const WorkspaceView = (): ReactElement => {
   const [fileError, setFileError] = useState<string | null>(null)
 
   // Dock panel controlled state.
+  const dockCanvasRef = useRef<HTMLDivElement>(null)
   const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
   const [isDockOpen, setIsDockOpen] = useState(true)
   const [dockTab, setDockTab] = useState<DockTab>('editor')
@@ -459,15 +465,19 @@ export const WorkspaceView = (): ReactElement => {
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
   })
 
-  // Vertical dock height is lifted so the value survives DockPanel unmounts.
-  const verticalDockResize = useResizable({
-    initial: 400,
-    min: 150,
-    max: 640,
-    direction: 'vertical',
-    // Bottom dock grows when dragging up from its top edge; top dock grows
-    // when dragging down from its bottom edge.
+  // One elastic size per axis so values survive dock unmounts and position changes.
+  const verticalDockElastic = useElasticContainer({
+    containerRef: dockCanvasRef,
+    axis: 'vertical',
+    ...DOCK_VERTICAL_ELASTIC_CONFIG,
     invert: dockPosition === 'bottom',
+  })
+
+  const horizontalDockElastic = useElasticContainer({
+    containerRef: dockCanvasRef,
+    axis: 'horizontal',
+    ...DOCK_HORIZONTAL_ELASTIC_CONFIG,
+    invert: dockPosition === 'right',
   })
 
   const [selectedDiffFile, setSelectedDiffFile] =
@@ -677,7 +687,11 @@ export const WorkspaceView = (): ReactElement => {
     dockPosition === 'top' || dockPosition === 'bottom' ? 'column' : 'row'
 
   const dockBeforeTerminal = dockPosition === 'top' || dockPosition === 'left'
-  const terminalFitDeferred = isDragging || verticalDockResize.isDragging
+
+  const terminalFitDeferred =
+    isDragging ||
+    verticalDockElastic.isDragging ||
+    horizontalDockElastic.isDragging
 
   const dockOrPeek = isDockOpen ? (
     <DockPanel
@@ -697,10 +711,18 @@ export const WorkspaceView = (): ReactElement => {
       position={dockPosition}
       onPositionChange={setDockPosition}
       onClose={closeDock}
-      verticalSize={verticalDockResize.size}
-      onVerticalResizeMouseDown={verticalDockResize.handleMouseDown}
-      isVerticalResizing={verticalDockResize.isDragging}
-      onVerticalSizeAdjust={verticalDockResize.adjustBy}
+      verticalSize={verticalDockElastic.size}
+      onVerticalResizeMouseDown={verticalDockElastic.handleMouseDown}
+      isVerticalResizing={verticalDockElastic.isDragging}
+      onVerticalSizeAdjust={verticalDockElastic.adjustBy}
+      verticalPixelMin={verticalDockElastic.pixelMin}
+      verticalPixelMax={verticalDockElastic.pixelMax}
+      horizontalSize={horizontalDockElastic.size}
+      onHorizontalResizeMouseDown={horizontalDockElastic.handleMouseDown}
+      isHorizontalResizing={horizontalDockElastic.isDragging}
+      onHorizontalSizeAdjust={horizontalDockElastic.adjustBy}
+      horizontalPixelMin={horizontalDockElastic.pixelMin}
+      horizontalPixelMax={horizontalDockElastic.pixelMax}
       selectedDiffFile={selectedDiffFile}
       onSelectedDiffFileChange={setSelectedDiffFile}
       isFocused={activeContainerId === DOCK_CONTAINER_ID}
@@ -798,6 +820,7 @@ export const WorkspaceView = (): ReactElement => {
         />
 
         <div
+          ref={dockCanvasRef}
           data-testid="dock-canvas-wrapper"
           className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
           style={{ flexDirection: dockCanvasFlexDirection }}

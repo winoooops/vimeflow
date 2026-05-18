@@ -3,6 +3,7 @@ import {
   forwardRef,
   useImperativeHandle,
   useRef,
+  type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
   type ReactElement,
@@ -17,6 +18,11 @@ import { DockTab } from './DockTab'
 import type { SelectedDiffFile } from '../../diff/types'
 import type { UseGitStatusReturn } from '../../diff/hooks/useGitStatus'
 import { DOCK_CONTAINER_ID } from '../containerIds'
+import {
+  DOCK_INLINE_ACTIONS_MIN_WIDTH_PX,
+  KEYBOARD_STEP_PX,
+  KEYBOARD_STEP_SHIFT_PX,
+} from '../panelConfig'
 
 type TabType = 'editor' | 'diff'
 
@@ -37,14 +43,21 @@ interface DockPanelBaseProps {
   onPositionChange: (next: DockPosition) => void
   /** Caller closes the dock; DockPanel unmounts on close. */
   onClose: () => void
-  /** Controlled top/bottom dock size from WorkspaceView's lifted useResizable. */
+  /** Controlled height for top/bottom docks. */
   verticalSize: number
-  /** Mouse handler from the lifted vertical resize hook. Ignored for side docks. */
   onVerticalResizeMouseDown: (event: MouseEvent) => void
-  /** Drag state from the lifted vertical resize hook. Ignored for side docks. */
   isVerticalResizing: boolean
-  /** Keyboard adjuster from WorkspaceView's lifted useResizable. */
   onVerticalSizeAdjust: (delta: number) => void
+  /** Live pixel bounds from useElasticContainer for ARIA and Home/End. */
+  verticalPixelMin: number
+  verticalPixelMax: number
+  /** Controlled width for left/right docks. */
+  horizontalSize: number
+  onHorizontalResizeMouseDown: (event: MouseEvent) => void
+  isHorizontalResizing: boolean
+  onHorizontalSizeAdjust: (delta: number) => void
+  horizontalPixelMin: number
+  horizontalPixelMax: number
 
   selectedFilePath: string | null
   /** Current buffer content, owned by the parent `useEditorBuffer`. */
@@ -69,10 +82,6 @@ export interface DockPanelHandle {
   focusDiff(): void
 }
 
-const DRAWER_MIN = 150
-const DRAWER_MAX = 640
-const SIDE_DOCK_BASIS = '40%'
-
 const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
   function DockPanel(
     {
@@ -85,6 +94,14 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       onVerticalResizeMouseDown,
       isVerticalResizing,
       onVerticalSizeAdjust,
+      verticalPixelMin,
+      verticalPixelMax,
+      horizontalSize,
+      onHorizontalResizeMouseDown,
+      isHorizontalResizing,
+      onHorizontalSizeAdjust,
+      horizontalPixelMin,
+      horizontalPixelMax,
       selectedFilePath,
       content,
       onContentChange = undefined,
@@ -150,7 +167,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
 
     const containerStyle = isVerticalDock
       ? { height: `${verticalSize}px` }
-      : { flex: `0 0 ${SIDE_DOCK_BASIS}` as const }
+      : { width: `${horizontalSize}px` }
 
     // Border edge varies by position; color literals are kept static so
     // Tailwind JIT can scan and emit both border-[#cba6f7] and
@@ -177,8 +194,50 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
             ? 'chevron_left'
             : 'chevron_right'
 
-    const resizeHandleEdgeClass = position === 'top' ? 'bottom-0' : 'top-0'
     const sectionAriaLabel = tab === 'editor' ? 'Code editor' : 'Diff viewer'
+
+    const compactActions =
+      !isVerticalDock && horizontalSize < DOCK_INLINE_ACTIONS_MIN_WIDTH_PX
+
+    const handleVerticalKeyDown = (e: KeyboardEvent): void => {
+      const step = e.shiftKey ? KEYBOARD_STEP_SHIFT_PX : KEYBOARD_STEP_PX
+      const growKey = position === 'top' ? 'ArrowDown' : 'ArrowUp'
+      const shrinkKey = position === 'top' ? 'ArrowUp' : 'ArrowDown'
+
+      if (e.key === growKey) {
+        e.preventDefault()
+        onVerticalSizeAdjust(step)
+      } else if (e.key === shrinkKey) {
+        e.preventDefault()
+        onVerticalSizeAdjust(-step)
+      } else if (e.key === 'Home') {
+        e.preventDefault()
+        onVerticalSizeAdjust(verticalPixelMin - verticalSize)
+      } else if (e.key === 'End') {
+        e.preventDefault()
+        onVerticalSizeAdjust(verticalPixelMax - verticalSize)
+      }
+    }
+
+    const handleHorizontalKeyDown = (e: KeyboardEvent): void => {
+      const step = e.shiftKey ? KEYBOARD_STEP_SHIFT_PX : KEYBOARD_STEP_PX
+      const growKey = position === 'left' ? 'ArrowRight' : 'ArrowLeft'
+      const shrinkKey = position === 'left' ? 'ArrowLeft' : 'ArrowRight'
+
+      if (e.key === growKey) {
+        e.preventDefault()
+        onHorizontalSizeAdjust(step)
+      } else if (e.key === shrinkKey) {
+        e.preventDefault()
+        onHorizontalSizeAdjust(-step)
+      } else if (e.key === 'Home') {
+        e.preventDefault()
+        onHorizontalSizeAdjust(horizontalPixelMin - horizontalSize)
+      } else if (e.key === 'End') {
+        e.preventDefault()
+        onHorizontalSizeAdjust(horizontalPixelMax - horizontalSize)
+      }
+    }
 
     return (
       <section
@@ -207,38 +266,36 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
           />
         ) : null}
 
-        {isVerticalDock && (
+        {isVerticalDock ? (
           <div
             data-testid="resize-handle"
             role="separator"
             aria-orientation="horizontal"
             aria-label="Resize panel"
             aria-valuenow={verticalSize}
-            aria-valuemin={DRAWER_MIN}
-            aria-valuemax={DRAWER_MAX}
+            aria-valuemin={verticalPixelMin}
+            aria-valuemax={verticalPixelMax}
             tabIndex={0}
             onMouseDown={onVerticalResizeMouseDown}
-            onKeyDown={(e): void => {
-              const step = e.shiftKey ? 100 : 20
-              const growKey = position === 'top' ? 'ArrowDown' : 'ArrowUp'
-              const shrinkKey = position === 'top' ? 'ArrowUp' : 'ArrowDown'
-
-              if (e.key === growKey) {
-                e.preventDefault()
-                onVerticalSizeAdjust(step)
-              } else if (e.key === shrinkKey) {
-                e.preventDefault()
-                onVerticalSizeAdjust(-step)
-              } else if (e.key === 'Home') {
-                e.preventDefault()
-                onVerticalSizeAdjust(DRAWER_MIN - verticalSize)
-              } else if (e.key === 'End') {
-                e.preventDefault()
-                onVerticalSizeAdjust(DRAWER_MAX - verticalSize)
-              }
-            }}
-            className={`absolute ${resizeHandleEdgeClass} left-0 right-0 h-1 cursor-ns-resize transition-colors hover:bg-primary/20 focus:bg-primary/40 focus:outline-none ${
+            onKeyDown={handleVerticalKeyDown}
+            className={`absolute ${position === 'top' ? 'bottom-0' : 'top-0'} left-0 right-0 h-1 cursor-ns-resize transition-colors hover:bg-primary/20 focus:bg-primary/40 focus:outline-none ${
               isVerticalResizing ? 'bg-primary/30' : ''
+            }`}
+          />
+        ) : (
+          <div
+            data-testid="resize-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize panel"
+            aria-valuenow={horizontalSize}
+            aria-valuemin={horizontalPixelMin}
+            aria-valuemax={horizontalPixelMax}
+            tabIndex={0}
+            onMouseDown={onHorizontalResizeMouseDown}
+            onKeyDown={handleHorizontalKeyDown}
+            className={`absolute ${position === 'right' ? 'left-0' : 'right-0'} top-0 bottom-0 w-1 cursor-col-resize transition-colors hover:bg-primary/20 focus:bg-primary/40 focus:outline-none ${
+              isHorizontalResizing ? 'bg-primary/30' : ''
             }`}
           />
         )}
@@ -249,6 +306,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
           selectedFilePath={selectedFilePath}
           collapseIconName={collapseIconName}
           onClose={onClose}
+          compactActions={compactActions}
         >
           <DockSwitcher position={position} onPick={onPositionChange} />
         </DockTab>

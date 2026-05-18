@@ -121,6 +121,19 @@ vi.mock('../diff/hooks/useGitStatus', () => ({
   ),
 }))
 
+vi.mock('../../hooks/useElasticContainer', () => ({
+  useElasticContainer: vi.fn(() => ({
+    size: 400,
+    isDragging: false,
+    handleMouseDown: vi.fn(),
+    adjustBy: vi.fn(),
+    resetToSize: vi.fn(),
+    sizeRef: { current: 400 },
+    pixelMin: 40,
+    pixelMax: 640,
+  })),
+}))
+
 const capturedPanelProps: { agentStatus?: AgentStatus; gitStatus?: unknown } =
   {}
 const capturedDockPanelProps: { gitStatus?: unknown } = {}

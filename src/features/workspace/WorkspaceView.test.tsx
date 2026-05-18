@@ -49,6 +49,19 @@ vi.mock('../terminal/hooks/usePaneShortcuts', () => ({
   usePaneShortcuts: vi.fn(),
 }))
 
+vi.mock('../../hooks/useElasticContainer', () => ({
+  useElasticContainer: vi.fn(() => ({
+    size: 400,
+    isDragging: false,
+    handleMouseDown: vi.fn(),
+    adjustBy: vi.fn(),
+    resetToSize: vi.fn(),
+    sizeRef: { current: 400 },
+    pixelMin: 40,
+    pixelMax: 640,
+  })),
+}))
+
 // Capture AgentStatusPanel's props (specifically `onOpenFile`) so the
 // new handleOpenTestFile tests can invoke the handler directly without
 // rendering the full panel and synthesizing a test-row click.
@@ -464,6 +477,7 @@ describe('WorkspaceView', () => {
     render(<WorkspaceView />)
 
     await user.click(screen.getByRole('button', { name: /dock: left/i }))
+    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
     await user.click(screen.getByRole('button', { name: /collapse panel/i }))
 
     const inner = screen.getByTestId('dock-canvas-wrapper')
@@ -499,6 +513,7 @@ describe('WorkspaceView', () => {
     render(<WorkspaceView />)
 
     await user.click(screen.getByRole('button', { name: /dock: right/i }))
+    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
     await user.click(screen.getByRole('button', { name: /collapse panel/i }))
 
     const inner = screen.getByTestId('dock-canvas-wrapper')

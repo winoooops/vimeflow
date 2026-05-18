@@ -13,6 +13,18 @@ const terminalZonePropsSpy = vi.hoisted(() => vi.fn())
 // Mock all WorkspaceView dependencies
 vi.mock('../sessions/hooks/useSessionManager')
 vi.mock('../../hooks/useResizable')
+vi.mock('../../hooks/useElasticContainer', () => ({
+  useElasticContainer: vi.fn(() => ({
+    size: 400,
+    isDragging: false,
+    handleMouseDown: vi.fn(),
+    adjustBy: vi.fn(),
+    resetToSize: vi.fn(),
+    sizeRef: { current: 400 },
+    pixelMin: 40,
+    pixelMax: 640,
+  })),
+}))
 vi.mock('./hooks/useNotifyInfo')
 vi.mock('../agent-status/hooks/useAgentStatus')
 vi.mock('../diff/hooks/useGitStatus')
@@ -142,6 +154,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       isDragging: false,
       handleMouseDown: vi.fn(),
       adjustBy: vi.fn(),
+      resetToSize: vi.fn(),
+      sizeRef: { current: 272 },
     })
 
     // Mock useNotifyInfo

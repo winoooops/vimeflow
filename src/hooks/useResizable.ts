@@ -4,6 +4,7 @@ import {
   useRef,
   useEffect,
   useLayoutEffect,
+  type MutableRefObject,
 } from 'react'
 
 export const clampSize = (value: number, min: number, max: number): number =>
@@ -52,6 +53,14 @@ export interface UseResizableResult {
    * mouse-driven adjustment.
    */
   adjustBy: (delta: number) => void
+  /**
+   * Set size to an absolute pixel value, clamped to [min, max].
+   * Pass explicitMin/explicitMax to bypass stale closure bounds when this is
+   * called alongside bound state updates from ResizeObserver callbacks.
+   */
+  resetToSize: (px: number, explicitMin?: number, explicitMax?: number) => void
+  /** Synchronous read of the last committed size; safe to read in callbacks. */
+  sizeRef: MutableRefObject<number>
 }
 
 export const useResizable = ({
@@ -266,5 +275,30 @@ export const useResizable = ({
     [min, max, cancelPendingSize, commitSize]
   )
 
-  return { size, isDragging, handleMouseDown, adjustBy }
+  const resetToSize = useCallback(
+    (px: number, explicitMin?: number, explicitMax?: number): void => {
+      const clampMin = explicitMin ?? min
+      const clampMax = explicitMax ?? max
+      cancelPendingSize()
+      const nextSize = clampSize(px, clampMin, clampMax)
+
+      commitSize(nextSize)
+      previewSize.current = nextSize
+
+      if (isDraggingRef.current) {
+        startPos.current = currentPos.current
+        startSize.current = nextSize
+      }
+    },
+    [min, max, cancelPendingSize, commitSize]
+  )
+
+  return {
+    size,
+    isDragging,
+    handleMouseDown,
+    adjustBy,
+    resetToSize,
+    sizeRef,
+  }
 }

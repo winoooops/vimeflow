@@ -69,6 +69,19 @@ vi.mock('../terminal/services/terminalService', () => ({
   })),
 }))
 
+vi.mock('../../hooks/useElasticContainer', () => ({
+  useElasticContainer: vi.fn(() => ({
+    size: 400,
+    isDragging: false,
+    handleMouseDown: vi.fn(),
+    adjustBy: vi.fn(),
+    resetToSize: vi.fn(),
+    sizeRef: { current: 400 },
+    pixelMin: 40,
+    pixelMax: 640,
+  })),
+}))
+
 // Mock CodeMirror hooks for unsaved changes tests
 let mockOnChange: ((content: string) => void) | undefined
 let mockOnSave: (() => void) | undefined

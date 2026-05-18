@@ -84,6 +84,58 @@ describe('DockTab', () => {
     ).toBeTruthy()
   })
 
+  test('compactActions hides auxiliary controls behind a more button', async () => {
+    const user = userEvent.setup()
+    render(
+      <DockTab
+        tab="editor"
+        onTabChange={vi.fn()}
+        selectedFilePath="~/src/app.tsx"
+        collapseIconName="chevron_left"
+        onClose={vi.fn()}
+        compactActions
+      >
+        <div>Switcher slot</div>
+      </DockTab>
+    )
+
+    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
+    expect(screen.queryByText('Switcher slot')).not.toBeInTheDocument()
+    expect(screen.queryByText('src/app.tsx')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
+
+    expect(screen.getByTestId('dock-actions-menu')).toBeInTheDocument()
+    expect(screen.getByText('Switcher slot')).toBeInTheDocument()
+    expect(screen.getByText('src/app.tsx')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /collapse panel/i })
+    ).toBeInTheDocument()
+  })
+
+  test('compactActions closes the menu on Escape', async () => {
+    const user = userEvent.setup()
+    render(
+      <DockTab
+        tab="editor"
+        onTabChange={vi.fn()}
+        selectedFilePath={null}
+        collapseIconName="chevron_left"
+        onClose={vi.fn()}
+        compactActions
+      >
+        <div>Switcher slot</div>
+      </DockTab>
+    )
+
+    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
+    expect(screen.getByTestId('dock-actions-menu')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByTestId('dock-actions-menu')).not.toBeInTheDocument()
+  })
+
   test('clicking the close button calls onClose', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
