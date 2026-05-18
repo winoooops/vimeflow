@@ -478,6 +478,35 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
+  test('Ctrl+1 from dock with vsplit (pane 1 active): calls onTerminalZoneFocus but does NOT switch pane', () => {
+    const onTerminalZoneFocus = vi.fn()
+    const setSessionActivePane = vi.fn()
+    const dockEl = attachFakeDock()
+    dockEl.focus()
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'], 1)], // p1 is active
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: false,
+        onTerminalZoneFocus,
+      })
+    )
+
+    const event = fire('1', { ctrlKey: true })
+
+    // Focus is reclaimed — container callback fired
+    expect(onTerminalZoneFocus).toHaveBeenCalledOnce()
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
+
+    // But pane should NOT be switched — the return prevents fallthrough
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+
+    removeFakeDock(dockEl)
+  })
+
   test('omitted reclaim params preserve already-active pass-through behavior', () => {
     const setSessionActivePane = vi.fn()
 

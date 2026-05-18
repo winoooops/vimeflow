@@ -64,7 +64,7 @@ export interface TerminalZoneProps {
    */
   modKey?: '⌘' | 'Ctrl'
   isZoneFocused?: boolean
-  onContainerPointerDown?: () => void
+  onContainerFocus?: () => void
 }
 
 export interface TerminalZoneHandle {
@@ -88,12 +88,18 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       removePane,
       modKey = 'Ctrl',
       isZoneFocused = true,
-      onContainerPointerDown = undefined,
+      onContainerFocus = undefined,
     }: TerminalZoneProps,
     ref
   ): ReactElement {
     const outerDivRef = useRef<HTMLDivElement>(null)
     const activeSplitViewRef = useRef<SplitViewHandle | null>(null)
+
+    const setActiveSplitViewRefFn = useRef(
+      (handle: SplitViewHandle | null): void => {
+        activeSplitViewRef.current = handle
+      }
+    )
 
     useImperativeHandle(ref, () => ({
       focusActivePane(): boolean {
@@ -113,7 +119,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
     }))
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>): void => {
-      onContainerPointerDown?.()
+      onContainerFocus?.()
 
       const target =
         event.target instanceof Element ? event.target : event.currentTarget
@@ -166,7 +172,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
         } transition-opacity duration-[220ms]`}
         onPointerDown={handlePointerDown}
         onFocus={(): void => {
-          onContainerPointerDown?.()
+          onContainerFocus?.()
         }}
       >
         {showToolbar ? (
@@ -245,13 +251,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                   className={`absolute inset-0 ${isActive ? '' : 'hidden'}`}
                 >
                   <SplitView
-                    ref={
-                      isActive
-                        ? (handle): void => {
-                            activeSplitViewRef.current = handle
-                          }
-                        : null
-                    }
+                    ref={isActive ? setActiveSplitViewRefFn.current : null}
                     session={session}
                     service={service}
                     isActive={isActive}

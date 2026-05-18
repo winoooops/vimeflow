@@ -828,7 +828,7 @@ export const WorkspaceView = (): ReactElement => {
               removePane={removePane}
               modKey={preferModifier === 'meta' ? '⌘' : 'Ctrl'}
               isZoneFocused={activeContainerId === TERMINAL_CONTAINER_ID}
-              onContainerPointerDown={() => {
+              onContainerFocus={() => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
               }}
             />

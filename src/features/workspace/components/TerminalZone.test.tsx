@@ -198,18 +198,15 @@ describe('TerminalZone', () => {
 
   test('pointer down marks terminal container active', async () => {
     const user = userEvent.setup()
-    const onContainerPointerDown = vi.fn()
+    const onContainerFocus = vi.fn()
 
     render(
-      <TerminalZone
-        {...defaultProps}
-        onContainerPointerDown={onContainerPointerDown}
-      />
+      <TerminalZone {...defaultProps} onContainerFocus={onContainerFocus} />
     )
 
     await user.click(screen.getByTestId('terminal-zone'))
 
-    expect(onContainerPointerDown).toHaveBeenCalled()
+    expect(onContainerFocus).toHaveBeenCalled()
   })
 
   // TerminalPane integration tests (Feature #30)

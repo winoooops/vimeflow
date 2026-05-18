@@ -121,6 +121,8 @@ export const usePaneShortcuts = ({
               onTerminalZoneFocusValue()
               event.preventDefault()
               event.stopPropagation()
+
+              return
             } else {
               return
             }

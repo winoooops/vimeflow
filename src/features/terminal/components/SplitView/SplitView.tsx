@@ -2,6 +2,7 @@
 /* eslint-disable react/require-default-props */
 import {
   forwardRef,
+  useCallback,
   useImperativeHandle,
   useRef,
   type ReactElement,
@@ -92,6 +93,27 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
 
     const paneHandleRefs = useRef<Map<string, TerminalPaneHandle | null>>(
       new Map()
+    )
+
+    const paneRefSetters = useRef<
+      Map<string, (h: TerminalPaneHandle | null) => void>
+    >(new Map())
+
+    const getPaneRefSetter = useCallback(
+      (id: string): ((h: TerminalPaneHandle | null) => void) => {
+        if (!paneRefSetters.current.has(id)) {
+          paneRefSetters.current.set(id, (h) => {
+            if (h === null) {
+              paneHandleRefs.current.delete(id)
+            } else {
+              paneHandleRefs.current.set(id, h)
+            }
+          })
+        }
+
+        return paneRefSetters.current.get(id)!
+      },
+      []
     )
 
     useImperativeHandle(ref, () => ({
@@ -189,9 +211,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                   restarts. */}
                 <TerminalPane
                   key={pane.ptyId}
-                  ref={(handle): void => {
-                    paneHandleRefs.current.set(pane.id, handle)
-                  }}
+                  ref={getPaneRefSetter(pane.id)}
                   session={session}
                   pane={pane}
                   service={service}
