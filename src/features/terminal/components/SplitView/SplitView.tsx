@@ -1,5 +1,5 @@
+/* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */
 // cspell:ignore vsplit hsplit
-/* eslint-disable react/require-default-props */
 import {
   forwardRef,
   useCallback,
@@ -105,6 +105,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
           paneRefSetters.current.set(id, (h) => {
             if (h === null) {
               paneHandleRefs.current.delete(id)
+              paneRefSetters.current.delete(id)
             } else {
               paneHandleRefs.current.set(id, h)
             }

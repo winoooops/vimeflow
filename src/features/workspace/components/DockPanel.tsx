@@ -1,4 +1,4 @@
-/* eslint-disable react/require-default-props */
+/* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */
 import {
   forwardRef,
   useImperativeHandle,
@@ -151,16 +151,21 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       ? { height: `${verticalSize}px` }
       : { flex: `0 0 ${SIDE_DOCK_BASIS}` as const }
 
-    const borderColor = isFocused ? '#cba6f7' : 'rgba(74,68,79,0.3)'
-
-    const borderClass =
+    // Border edge varies by position; color literals are kept static so
+    // Tailwind JIT can scan and emit both border-[#cba6f7] and
+    // border-[rgba(74,68,79,0.3)] in the production CSS bundle.
+    const borderEdge =
       position === 'top'
-        ? `border-b border-[${borderColor}]`
+        ? 'border-b'
         : position === 'bottom'
-          ? `border-t border-[${borderColor}]`
+          ? 'border-t'
           : position === 'left'
-            ? `border-r border-[${borderColor}]`
-            : `border-l border-[${borderColor}]`
+            ? 'border-r'
+            : 'border-l'
+
+    const borderClass = isFocused
+      ? `${borderEdge} border-[#cba6f7]`
+      : `${borderEdge} border-[rgba(74,68,79,0.3)]`
 
     const collapseIconName =
       position === 'top'

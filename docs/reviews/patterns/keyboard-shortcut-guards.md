@@ -105,3 +105,42 @@ against three classes of false-fire:
 - **Fix:** Exported `DIALOG_SELECTOR` from `src/features/workspace/containerIds.ts` and
   imported it in both hooks, removing the local definitions.
 - **Commit:** `fix(workspace): address round-2 Claude review findings on focus highlight PR`
+
+### 7. Tailwind JIT cannot detect border color in dynamic template literal
+
+- **Source:** github-claude | PR #218 | 2026-05-18
+- **Severity:** HIGH
+- **File:** `src/features/workspace/components/DockPanel.tsx`
+- **Finding:** Refactoring `borderClass` to use `border-[${borderColor}]` with a variable
+  meant Tailwind JIT's static scanner could not emit `border-[rgba(74,68,79,0.3)]` in the
+  production CSS bundle, causing the unfocused junction border to disappear. Color values
+  in Tailwind arbitrary-value classes must appear as complete literal strings.
+- **Fix:** Extracted `borderEdge` (position-dependent, variable) and kept color literals
+  static: `` `${borderEdge} border-[#cba6f7]` `` and `` `${borderEdge} border-[rgba(74,68,79,0.3)]` ``.
+  Both color strings are literal substrings visible to the Tailwind JIT scanner.
+- **Commit:** `fix(workspace): address round-4 Claude review findings on focus highlight PR`
+
+### 8. paneRefSetters map accumulates stale closures on pane unmount
+
+- **Source:** github-claude | PR #218 | 2026-05-18
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** `getPaneRefSetter` cleaned up `paneHandleRefs` on `null` (unmount) but never
+  deleted the corresponding setter from `paneRefSetters`, causing the factory map to grow
+  without bound across pane create/destroy cycles.
+- **Fix:** Added `paneRefSetters.current.delete(id)` alongside `paneHandleRefs.current.delete(id)`
+  in the null branch of each setter.
+- **Commit:** `fix(workspace): address round-4 Claude review findings on focus highlight PR`
+
+### 9. forwardRef components require file-level eslint-disable for require-default-props
+
+- **Source:** github-claude | PR #218 | 2026-05-18
+- **Severity:** LOW
+- **File:** `DockPanel.tsx`, `TerminalZone.tsx`, `SplitView.tsx`, `TerminalPane/index.tsx`
+- **Finding:** `react/require-default-props { functions: 'defaultArguments' }` does not
+  recognize inline destructuring defaults inside `forwardRef` wrappers — it sees the
+  interface declaration but cannot trace through the `forwardRef()` call to find the
+  inner function's defaults. File-level disables are necessary for `forwardRef` components.
+- **Fix:** Restored file-level eslint-disable comments with an explanatory rationale
+  (`-- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults`).
+- **Commit:** `fix(workspace): address round-4 Claude review findings on focus highlight PR`
