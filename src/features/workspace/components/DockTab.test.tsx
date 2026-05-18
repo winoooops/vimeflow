@@ -212,4 +212,80 @@ describe('DockTab', () => {
     const closeButton = screen.getByRole('button', { name: /collapse panel/i })
     expect(within(closeButton).getByText('chevron_left')).toBeInTheDocument()
   })
+
+  // F1: actionsOpen is cleared when compactActions transitions to false
+  test('menu is hidden and actionsOpen resets when compactActions changes to false', async () => {
+    const user = userEvent.setup()
+
+    const { rerender } = render(
+      <DockTab
+        tab="editor"
+        onTabChange={vi.fn()}
+        selectedFilePath={null}
+        collapseIconName="chevron_left"
+        onClose={vi.fn()}
+        compactActions
+      />
+    )
+
+    // Open the menu
+    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
+    expect(screen.getByTestId('dock-actions-menu')).toBeInTheDocument()
+
+    // Widen the dock → compactActions goes false
+    rerender(
+      <DockTab
+        tab="editor"
+        onTabChange={vi.fn()}
+        selectedFilePath={null}
+        collapseIconName="chevron_left"
+        onClose={vi.fn()}
+      />
+    )
+
+    // Menu element is gone (not rendered) and actionsOpen was cleared,
+    // so narrowing again should not auto-open the menu
+    expect(screen.queryByTestId('dock-actions-menu')).not.toBeInTheDocument()
+
+    // Narrow again → compactActions back to true; menu must NOT auto-open
+    rerender(
+      <DockTab
+        tab="editor"
+        onTabChange={vi.fn()}
+        selectedFilePath={null}
+        collapseIconName="chevron_left"
+        onClose={vi.fn()}
+        compactActions
+      />
+    )
+
+    expect(screen.queryByTestId('dock-actions-menu')).not.toBeInTheDocument()
+  })
+
+  // F4: clicking the trigger button a second time closes the menu
+  test('clicking the trigger button while menu is open closes it', async () => {
+    const user = userEvent.setup()
+    render(
+      <DockTab
+        tab="editor"
+        onTabChange={vi.fn()}
+        selectedFilePath={null}
+        collapseIconName="chevron_left"
+        onClose={vi.fn()}
+        compactActions
+      />
+    )
+
+    const triggerButton = screen.getByRole('button', {
+      name: /more dock actions/i,
+    })
+
+    // First click: open
+    await user.click(triggerButton)
+    expect(screen.getByTestId('dock-actions-menu')).toBeInTheDocument()
+
+    // Second click: close
+    await user.click(triggerButton)
+    expect(screen.queryByTestId('dock-actions-menu')).not.toBeInTheDocument()
+  })
 })

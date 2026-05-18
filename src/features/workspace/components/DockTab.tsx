@@ -70,6 +70,13 @@ export const DockTab = ({
     }
   }, [actionsOpen])
 
+  // F1: clear actionsOpen when compact menu is no longer rendered
+  useEffect((): void => {
+    if (!compactActions) {
+      setActionsOpen(false)
+    }
+  }, [compactActions])
+
   const displayPath = selectedFilePath
     ? selectedFilePath.replace(/^~\//, '')
     : 'No file'
@@ -81,6 +88,12 @@ export const DockTab = ({
 
     setActionsOpen(false)
   }
+
+  // F3: align dropdown toward the center of the screen so it stays on-screen.
+  // chevron_left = left dock → open rightward (left-0)
+  // chevron_right = right dock → open leftward (right-0)
+  const menuAlignClass =
+    collapseIconName === 'chevron_left' ? 'left-0' : 'right-0'
 
   return (
     <div
@@ -124,7 +137,12 @@ export const DockTab = ({
             aria-label="More dock actions"
             aria-controls={actionsMenuId}
             aria-expanded={actionsOpen}
-            onClick={() => setActionsOpen((isOpen) => !isOpen)}
+            onMouseDown={(e): void => {
+              // F4: stop the document mousedown listener from firing so that
+              // onClick is the sole toggle — prevents close→reopen on same click.
+              e.stopPropagation()
+            }}
+            onClick={(): void => setActionsOpen((prev) => !prev)}
             className="grid h-6 w-6 cursor-pointer place-items-center rounded-[5px] bg-transparent text-[#8a8299] transition-colors hover:bg-white/5 hover:text-[#e2c7ff] focus:bg-white/5 focus:text-[#e2c7ff] focus:outline-none"
           >
             <span
@@ -140,7 +158,7 @@ export const DockTab = ({
               ref={menuRef}
               id={actionsMenuId}
               data-testid="dock-actions-menu"
-              className="absolute right-0 top-[28px] z-50 flex min-w-[190px] flex-col gap-2 rounded-lg border border-[rgba(74,68,79,0.35)] bg-[#0d0d1c] p-2 shadow-xl"
+              className={`absolute ${menuAlignClass} top-[28px] z-50 flex min-w-[190px] flex-col gap-2 rounded-lg border border-[rgba(74,68,79,0.35)] bg-[#0d0d1c] p-2 shadow-xl`}
               onClick={() => setActionsOpen(false)}
             >
               <span
