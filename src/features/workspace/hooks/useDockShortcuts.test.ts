@@ -214,4 +214,48 @@ describe('useDockShortcuts', () => {
 
     document.body.removeChild(terminalZone)
   })
+
+  test('Ctrl+e does not fire when CodeMirror has focus (vim scroll guard)', () => {
+    // CodeMirror vim: Ctrl+e scrolls viewport down — must not be stolen.
+    const props = makeProps()
+
+    const cmEditor = document.createElement('div')
+    cmEditor.className = 'cm-editor'
+    const cmContent = document.createElement('div')
+    cmContent.setAttribute('contenteditable', 'true')
+    cmContent.className = 'cm-content'
+    cmEditor.appendChild(cmContent)
+    document.body.appendChild(cmEditor)
+    cmContent.focus()
+
+    renderHook(() => useDockShortcuts(props))
+    const event = fire('e', { ctrlKey: true })
+
+    expect(props.openDock).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(cmEditor)
+  })
+
+  test('Ctrl+g does not fire when CodeMirror has focus (vim print location guard)', () => {
+    // CodeMirror vim: Ctrl+g prints file/line info — must not switch to diff.
+    const props = makeProps()
+
+    const cmEditor = document.createElement('div')
+    cmEditor.className = 'cm-editor'
+    const cmContent = document.createElement('div')
+    cmContent.setAttribute('contenteditable', 'true')
+    cmContent.className = 'cm-content'
+    cmEditor.appendChild(cmContent)
+    document.body.appendChild(cmEditor)
+    cmContent.focus()
+
+    renderHook(() => useDockShortcuts(props))
+    const event = fire('g', { ctrlKey: true })
+
+    expect(props.openDock).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(cmEditor)
+  })
 })

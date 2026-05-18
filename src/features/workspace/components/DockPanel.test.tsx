@@ -388,15 +388,19 @@ describe('DockPanel', () => {
     test('isFocused=true applies mauve border to bottom junction edge', () => {
       renderDockPanel({ isFocused: true, position: 'bottom' })
 
-      expect(screen.getByTestId('dock-panel')).toHaveClass('border-t-[#cba6f7]')
+      // border-t is the edge class; border-[color] is the shared shorthand
+      const section = screen.getByTestId('dock-panel')
+      expect(section).toHaveClass('border-t')
+      expect(section).toHaveClass('border-[#cba6f7]')
     })
 
     test('isFocused=false uses neutral bottom junction edge', () => {
       renderDockPanel({ isFocused: false, position: 'bottom' })
       const section = screen.getByTestId('dock-panel')
 
-      expect(section).toHaveClass('border-t-[rgba(74,68,79,0.3)]')
-      expect(section).not.toHaveClass('border-t-[#cba6f7]')
+      expect(section).toHaveClass('border-t')
+      expect(section).toHaveClass('border-[rgba(74,68,79,0.3)]')
+      expect(section).not.toHaveClass('border-[#cba6f7]')
     })
 
     test('isFocused=true applies box shadow', () => {
@@ -465,6 +469,30 @@ describe('DockPanel', () => {
 
     expect(ref.current).not.toBeNull()
     expect(ref.current!.focusEditor()).toBe(false)
+  })
+
+  test('ref focusEditor falls back to section focus when editorView returns false', () => {
+    // Simulates Ctrl+e with dock open but no file loaded (filePath=null → editorView missing).
+    // focusEditor() should call sectionRef.focus() so the container captures keyboard input.
+    vi.spyOn(useCodeMirrorModule, 'useCodeMirror').mockReturnValueOnce({
+      editorView: null,
+      updateContent: vi.fn(),
+      setContainer: vi.fn(),
+    })
+    const ref = createRef<DockPanelHandle>()
+    renderDockPanel({ ref, tab: 'editor', selectedFilePath: null })
+
+    expect(ref.current).not.toBeNull()
+    const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus')
+
+    const result = ref.current!.focusEditor()
+
+    // Returns false because editorView is unavailable
+    expect(result).toBe(false)
+    // And the section element gets focused as fallback
+    expect(focusSpy).toHaveBeenCalled()
+
+    focusSpy.mockRestore()
   })
 
   test('ref focusDiff focuses the diff wrapper', () => {

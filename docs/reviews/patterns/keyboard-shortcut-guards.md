@@ -54,6 +54,44 @@ against three classes of false-fire:
   template literal: `` `[data-container-id="${DOCK_CONTAINER_ID}"]` ``.
 - **Commit:** `fix(workspace): address round-2 Claude review findings on focus highlight PR`
 
+### 4. Ctrl+e/g also stolen from CodeMirror vim mode
+
+- **Source:** github-claude | PR #218 | 2026-05-18
+- **Severity:** HIGH
+- **File:** `src/features/workspace/hooks/useDockShortcuts.ts`
+- **Finding:** After adding the `inTerminalZone` guard, `Ctrl+e` (vim scroll-viewport-down) and
+  `Ctrl+g` (vim print file location) were still consumed by the capture-phase listener when
+  CodeMirror had focus. `inCodeMirror` was explicitly exempted from the `isTextEntry` pass-through
+  so that dock shortcuts could fire from other panels, but this also meant dock shortcuts fired
+  _over_ CodeMirror vim bindings. The fix requires a symmetric guard for both surfaces.
+- **Fix:** Extended the guard to `if ((key === 'e' || key === 'g') && (inTerminalZone || inCodeMirror)) { return }`.
+  Added two unit tests covering the vim-mode collision path.
+- **Commit:** `fix(workspace): address round-3 Claude review findings on focus highlight PR`
+
+### 5. focusEditor() silently drops DOM focus when editorView returns false
+
+- **Source:** github-claude | PR #218 | 2026-05-18
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/DockPanel.tsx`
+- **Finding:** `DockPanel.focusEditor()` did not check the boolean return of
+  `editorHandleRef.current.focus()`. When no file is loaded (`filePath=null`), the `CodeEditorHandle`
+  returns `false` and focuses nothing, but the fallback `sectionRef.current?.focus()` branch
+  was only reached when the handle itself was null — not when the handle existed but `focus()` failed.
+  Result: visual focus ring appears (dock marked active) with no keyboard target.
+- **Fix:** `const ok = editorHandleRef.current.focus(); if (!ok) { sectionRef.current?.focus(); } return ok`
+- **Commit:** `fix(workspace): address round-3 Claude review findings on focus highlight PR`
+
+### 6. borderClass contained redundant Tailwind side-specific color utilities
+
+- **Source:** github-claude | PR #218 | 2026-05-18
+- **Severity:** LOW
+- **File:** `src/features/workspace/components/DockPanel.tsx`
+- **Finding:** Each branch of the `borderClass` ternary applied both `border-[color]` (all sides)
+  and `border-{side}-[color]` (side-specific override), producing dead redundant classes since only
+  one border edge has non-zero width.
+- **Fix:** Extracted `borderColor` constant and simplified each branch to `border-{edge} border-[${borderColor}]`.
+- **Commit:** `fix(workspace): address round-3 Claude review findings on focus highlight PR`
+
 ### 3. DIALOG_SELECTOR duplicated verbatim across both shortcut hooks
 
 - **Source:** github-claude | PR #218 | 2026-05-18

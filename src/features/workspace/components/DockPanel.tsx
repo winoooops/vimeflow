@@ -108,7 +108,13 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     useImperativeHandle(ref, () => ({
       focusEditor(): boolean {
         if (editorHandleRef.current) {
-          return editorHandleRef.current.focus()
+          const ok = editorHandleRef.current.focus()
+
+          if (!ok) {
+            sectionRef.current?.focus()
+          }
+
+          return ok
         }
 
         sectionRef.current?.focus()
@@ -145,22 +151,16 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       ? { height: `${verticalSize}px` }
       : { flex: `0 0 ${SIDE_DOCK_BASIS}` as const }
 
+    const borderColor = isFocused ? '#cba6f7' : 'rgba(74,68,79,0.3)'
+
     const borderClass =
       position === 'top'
-        ? isFocused
-          ? 'border-b border-[#cba6f7] border-b-[#cba6f7]'
-          : 'border-b border-[rgba(74,68,79,0.3)] border-b-[rgba(74,68,79,0.3)]'
+        ? `border-b border-[${borderColor}]`
         : position === 'bottom'
-          ? isFocused
-            ? 'border-t border-[#cba6f7] border-t-[#cba6f7]'
-            : 'border-t border-[rgba(74,68,79,0.3)] border-t-[rgba(74,68,79,0.3)]'
+          ? `border-t border-[${borderColor}]`
           : position === 'left'
-            ? isFocused
-              ? 'border-r border-[#cba6f7] border-r-[#cba6f7]'
-              : 'border-r border-[rgba(74,68,79,0.3)] border-r-[rgba(74,68,79,0.3)]'
-            : isFocused
-              ? 'border-l border-[#cba6f7] border-l-[#cba6f7]'
-              : 'border-l border-[rgba(74,68,79,0.3)] border-l-[rgba(74,68,79,0.3)]'
+            ? `border-r border-[${borderColor}]`
+            : `border-l border-[${borderColor}]`
 
     const collapseIconName =
       position === 'top'
