@@ -158,3 +158,17 @@ against three classes of false-fire:
 - **Fix:** Added `!inCodeMirror &&` to the `key === 'b'` condition, mirroring the guard already
   applied to `e`/`g`. Added companion test verifying Ctrl+b does not fire from CodeMirror.
 - **Commit:** `fix(workspace): address round-5 Claude review finding on focus highlight PR`
+
+### 11. onContainerFocus double-invocation on pointer clicks
+
+- **Source:** github-claude | PR #218 | 2026-05-18
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/DockPanel.tsx`,
+  `src/features/workspace/components/TerminalZone.tsx`
+- **Finding:** `handlePointerDown` called `onContainerFocus?.()` directly, then a child
+  element got focus and the `onFocus` (bubbling) handler fired the same callback again.
+  Today harmless (idempotent `setActiveContainerId`), but any future consumer with
+  observable side-effects would see 2-3× invocations per click.
+- **Fix:** Removed the direct `onContainerFocus?.()` call from `handlePointerDown` in both
+  components; `onFocus` alone covers pointer and keyboard Tab paths.
+- **Commit:** `fix(workspace): address round-6 Claude review findings on focus highlight PR`

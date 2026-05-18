@@ -119,8 +119,8 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
     }))
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>): void => {
-      onContainerFocus?.()
-
+      // onContainerFocus is NOT called here — onFocus (bubbling) covers
+      // both pointer and keyboard Tab paths, avoiding a double invocation.
       const target =
         event.target instanceof Element ? event.target : event.currentTarget
 

@@ -133,8 +133,9 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     }))
 
     const handlePointerDown = (event: PointerEvent<HTMLElement>): void => {
-      onContainerFocus?.()
-
+      // onContainerFocus is NOT called here — onFocus (bubbling) covers
+      // both pointer and keyboard Tab paths, avoiding a double invocation
+      // on every click (pointer → child-focus bubbles → onFocus fires too).
       const target =
         event.target instanceof Element ? event.target : event.currentTarget
 

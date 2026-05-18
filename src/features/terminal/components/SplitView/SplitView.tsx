@@ -105,7 +105,9 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
           paneRefSetters.current.set(id, (h) => {
             if (h === null) {
               paneHandleRefs.current.delete(id)
-              paneRefSetters.current.delete(id)
+              // paneRefSetters entry kept intentionally: stable closure over
+              // `id`, safe to reuse on remount (avoids extra ref cycle after
+              // ptyId key change on terminal restart).
             } else {
               paneHandleRefs.current.set(id, h)
             }
