@@ -4,6 +4,10 @@ import type { LayoutId, Session } from '../../sessions/types'
 // SplitView barrel — keeps usePaneShortcuts decoupled from a
 // sibling component's re-export surface.
 import { LAYOUTS } from '../components/SplitView/layouts'
+import {
+  DIALOG_SELECTOR,
+  DOCK_CONTAINER_ID,
+} from '../../workspace/containerIds'
 
 // Derive the cycle order from the canonical LAYOUTS record so a future
 // LayoutId added in `layouts.ts` automatically participates in ⌘\
@@ -17,9 +21,6 @@ import { LAYOUTS } from '../components/SplitView/layouts'
 const LAYOUT_CYCLE: readonly LayoutId[] = Object.values(LAYOUTS).map(
   (layout) => layout.id
 )
-
-const DIALOG_SELECTOR =
-  '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),[role="alertdialog"]:not([hidden]):not([aria-hidden="true"])'
 
 /** Which modifier the toolbar hint advertises — and therefore the only
  *  one we intercept on this platform. Restricting to a single modifier
@@ -117,7 +118,11 @@ export const usePaneShortcuts = ({
           }
 
           if (!isTerminalContainerActiveValue) {
-            if (activeElement?.closest('[data-container-id="dock"]')) {
+            if (
+              activeElement?.closest(
+                `[data-container-id="${DOCK_CONTAINER_ID}"]`
+              )
+            ) {
               onTerminalZoneFocusValue()
               event.preventDefault()
               event.stopPropagation()

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import {
+  DIALOG_SELECTOR,
   DOCK_CONTAINER_ID,
   TERMINAL_CONTAINER_ID,
   type FocusTarget,
@@ -13,9 +14,6 @@ export interface UseDockShortcutsParams {
   claimTerminal: () => void
   modKey: '⌘' | 'Ctrl'
 }
-
-const DIALOG_SELECTOR =
-  '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),[role="alertdialog"]:not([hidden]):not([aria-hidden="true"])'
 
 export const useDockShortcuts = ({
   activeContainerId,
@@ -73,6 +71,13 @@ export const useDockShortcuts = ({
       }
 
       const key = event.key.toLowerCase()
+
+      // Ctrl+e / Ctrl+g: do not steal readline shortcuts when xterm has focus.
+      // Ctrl+b is exempt — it only fires when dock is active (checked below),
+      // so it can never originate from xterm.
+      if ((key === 'e' || key === 'g') && inTerminalZone) {
+        return
+      }
 
       if (key === 'e') {
         event.preventDefault()

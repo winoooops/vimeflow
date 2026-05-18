@@ -172,4 +172,46 @@ describe('useDockShortcuts', () => {
 
     expect(props.openDock).not.toHaveBeenCalled()
   })
+
+  test('Ctrl+e does not fire when focus is inside terminal zone (xterm readline guard)', () => {
+    // xterm uses a hidden textarea for PTY input; Ctrl+e is readline "end-of-line".
+    // The hook must pass through when the event originates from the terminal zone.
+    const props = makeProps()
+
+    const terminalZone = document.createElement('div')
+    terminalZone.setAttribute('data-container-id', TERMINAL_CONTAINER_ID)
+    const xtermTextarea = document.createElement('textarea')
+    xtermTextarea.className = 'xterm-helper-textarea'
+    terminalZone.appendChild(xtermTextarea)
+    document.body.appendChild(terminalZone)
+    xtermTextarea.focus()
+
+    renderHook(() => useDockShortcuts(props))
+    const event = fire('e', { ctrlKey: true })
+
+    expect(props.openDock).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(terminalZone)
+  })
+
+  test('Ctrl+g does not fire when focus is inside terminal zone (xterm abort guard)', () => {
+    const props = makeProps()
+
+    const terminalZone = document.createElement('div')
+    terminalZone.setAttribute('data-container-id', TERMINAL_CONTAINER_ID)
+    const xtermTextarea = document.createElement('textarea')
+    xtermTextarea.className = 'xterm-helper-textarea'
+    terminalZone.appendChild(xtermTextarea)
+    document.body.appendChild(terminalZone)
+    xtermTextarea.focus()
+
+    renderHook(() => useDockShortcuts(props))
+    const event = fire('g', { ctrlKey: true })
+
+    expect(props.openDock).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(terminalZone)
+  })
 })
