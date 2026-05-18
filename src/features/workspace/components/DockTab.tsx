@@ -1,5 +1,7 @@
 import {
+  useEffect,
   useId,
+  useRef,
   useState,
   type KeyboardEvent,
   type ReactElement,
@@ -48,6 +50,25 @@ export const DockTab = ({
 }: DockTabProps): ReactElement => {
   const actionsMenuId = useId()
   const [actionsOpen, setActionsOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!actionsOpen) {
+      return
+    }
+
+    const handleOutsideClick = (event: MouseEvent): void => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setActionsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+
+    return (): void => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+    }
+  }, [actionsOpen])
 
   const displayPath = selectedFilePath
     ? selectedFilePath.replace(/^~\//, '')
@@ -116,6 +137,7 @@ export const DockTab = ({
 
           {actionsOpen && (
             <div
+              ref={menuRef}
               id={actionsMenuId}
               data-testid="dock-actions-menu"
               className="absolute right-0 top-[28px] z-50 flex min-w-[190px] flex-col gap-2 rounded-lg border border-[rgba(74,68,79,0.35)] bg-[#0d0d1c] p-2 shadow-xl"

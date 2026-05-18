@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, test, expect, vi } from 'vitest'
 import { DockTab } from './DockTab'
@@ -111,6 +111,35 @@ describe('DockTab', () => {
     expect(
       screen.getByRole('button', { name: /collapse panel/i })
     ).toBeInTheDocument()
+  })
+
+  test('compact menu closes when clicking outside', async () => {
+    const user = userEvent.setup()
+    render(
+      <DockTab
+        tab="editor"
+        onTabChange={vi.fn()}
+        selectedFilePath={null}
+        collapseIconName="chevron_left"
+        onClose={vi.fn()}
+        compactActions
+      >
+        <div>Switcher slot</div>
+      </DockTab>
+    )
+
+    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
+    expect(screen.getByTestId('dock-actions-menu')).toBeInTheDocument()
+
+    // Fire mousedown on document.body — outside the menu; wrap in act so
+    // the React state update from the listener is flushed before asserting.
+    act(() => {
+      document.body.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true })
+      )
+    })
+
+    expect(screen.queryByTestId('dock-actions-menu')).not.toBeInTheDocument()
   })
 
   test('compactActions closes the menu on Escape', async () => {

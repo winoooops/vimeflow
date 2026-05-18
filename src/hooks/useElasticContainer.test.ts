@@ -179,6 +179,16 @@ describe('useElasticContainer', () => {
     expect(result.current.size).toBeLessThanOrEqual(320)
   })
 
+  test('minPercent 0.15 computes pixelMin as ceil(1200 * 0.15) = 180', () => {
+    const { result } = renderElastic({
+      axis: 'horizontal',
+      minPercent: 0.15,
+      maxPercent: 0.8,
+    })
+
+    expect(result.current.pixelMin).toBe(Math.ceil(CONTAINER_WIDTH * 0.15))
+  })
+
   test('disconnects ResizeObserver on unmount', () => {
     const { unmount } = renderElastic()
 
