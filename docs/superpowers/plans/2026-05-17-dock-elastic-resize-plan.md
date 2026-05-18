@@ -12,30 +12,31 @@
 
 ## File Map
 
-| Action | File | Purpose |
-|--------|------|---------|
-| CREATE | `src/features/workspace/panelConfig.ts` | All size-tuning constants |
-| MODIFY | `src/hooks/useResizable.ts` | Add `resetToSize` + expose `sizeRef` |
-| MODIFY | `src/hooks/useResizable.test.ts` | Tests for new methods |
-| CREATE | `src/hooks/useElasticContainer.ts` | Percent-bound resize hook |
-| CREATE | `src/hooks/useElasticContainer.test.ts` | Hook unit tests |
-| MODIFY | `src/features/workspace/components/DockPanel.tsx` | New props + horizontal handle |
-| MODIFY | `src/features/workspace/components/DockPanel.test.tsx` | Tests for horizontal handle |
-| MODIFY | `src/features/workspace/WorkspaceView.tsx` | Wire elastic containers |
-| MODIFY | `src/features/workspace/WorkspaceView.test.tsx` | Add useElasticContainer mock |
-| MODIFY | `src/features/workspace/WorkspaceView.integration.test.tsx` | Add useElasticContainer mock |
-| MODIFY | `src/features/workspace/WorkspaceView.command-palette.test.tsx` | Add useElasticContainer mock |
-| MODIFY | `src/features/workspace/WorkspaceView.notifyInfo.test.tsx` | Add useElasticContainer mock |
-| MODIFY | `src/features/workspace/WorkspaceView.subscription.test.tsx` | Add useElasticContainer mock |
-| MODIFY | `src/features/workspace/WorkspaceView.verification.test.tsx` | Add useElasticContainer mock |
-| MODIFY | `src/features/workspace/WorkspaceView.visual.test.tsx` | Add useElasticContainer mock |
-| CREATE | `src/features/workspace/WorkspaceView.elastic.test.tsx` | Issue #217 persistence proof |
+| Action | File                                                            | Purpose                              |
+| ------ | --------------------------------------------------------------- | ------------------------------------ |
+| CREATE | `src/features/workspace/panelConfig.ts`                         | All size-tuning constants            |
+| MODIFY | `src/hooks/useResizable.ts`                                     | Add `resetToSize` + expose `sizeRef` |
+| MODIFY | `src/hooks/useResizable.test.ts`                                | Tests for new methods                |
+| CREATE | `src/hooks/useElasticContainer.ts`                              | Percent-bound resize hook            |
+| CREATE | `src/hooks/useElasticContainer.test.ts`                         | Hook unit tests                      |
+| MODIFY | `src/features/workspace/components/DockPanel.tsx`               | New props + horizontal handle        |
+| MODIFY | `src/features/workspace/components/DockPanel.test.tsx`          | Tests for horizontal handle          |
+| MODIFY | `src/features/workspace/WorkspaceView.tsx`                      | Wire elastic containers              |
+| MODIFY | `src/features/workspace/WorkspaceView.test.tsx`                 | Add useElasticContainer mock         |
+| MODIFY | `src/features/workspace/WorkspaceView.integration.test.tsx`     | Add useElasticContainer mock         |
+| MODIFY | `src/features/workspace/WorkspaceView.command-palette.test.tsx` | Add useElasticContainer mock         |
+| MODIFY | `src/features/workspace/WorkspaceView.notifyInfo.test.tsx`      | Add useElasticContainer mock         |
+| MODIFY | `src/features/workspace/WorkspaceView.subscription.test.tsx`    | Add useElasticContainer mock         |
+| MODIFY | `src/features/workspace/WorkspaceView.verification.test.tsx`    | Add useElasticContainer mock         |
+| MODIFY | `src/features/workspace/WorkspaceView.visual.test.tsx`          | Add useElasticContainer mock         |
+| CREATE | `src/features/workspace/WorkspaceView.elastic.test.tsx`         | Issue #217 persistence proof         |
 
 ---
 
 ## Task 1: Create `panelConfig.ts`
 
 **Files:**
+
 - Create: `src/features/workspace/panelConfig.ts`
 
 - [ ] **Step 1: Write the file**
@@ -106,6 +107,7 @@ git commit -m "feat(resize): add panelConfig.ts — single tuning surface for al
 ## Task 2: Extend `useResizable` with `resetToSize` and `sizeRef`
 
 **Files:**
+
 - Modify: `src/hooks/useResizable.ts`
 - Modify: `src/hooks/useResizable.test.ts`
 
@@ -114,95 +116,100 @@ git commit -m "feat(resize): add panelConfig.ts — single tuning surface for al
 Append to `src/hooks/useResizable.test.ts` (inside the `describe('useResizable', ...)` block, before its closing `}`):
 
 ```typescript
-  describe('resetToSize', () => {
-    test('sets size to clamped value', () => {
-      const { result } = renderHook(() =>
-        useResizable({ initial: 256, min: 100, max: 500 })
-      )
+describe('resetToSize', () => {
+  test('sets size to clamped value', () => {
+    const { result } = renderHook(() =>
+      useResizable({ initial: 256, min: 100, max: 500 })
+    )
 
-      act(() => {
-        result.current.resetToSize(300)
-      })
-
-      expect(result.current.size).toBe(300)
+    act(() => {
+      result.current.resetToSize(300)
     })
 
-    test('clamps to min when value is below min', () => {
-      const { result } = renderHook(() =>
-        useResizable({ initial: 256, min: 100, max: 500 })
-      )
-
-      act(() => {
-        result.current.resetToSize(50)
-      })
-
-      expect(result.current.size).toBe(100)
-    })
-
-    test('clamps to max when value is above max', () => {
-      const { result } = renderHook(() =>
-        useResizable({ initial: 256, min: 100, max: 500 })
-      )
-
-      act(() => {
-        result.current.resetToSize(600)
-      })
-
-      expect(result.current.size).toBe(500)
-    })
-
-    test('uses explicit bounds when provided, bypassing closure min/max', () => {
-      const { result } = renderHook(() =>
-        useResizable({ initial: 256, min: 100, max: 500 })
-      )
-
-      act(() => {
-        result.current.resetToSize(800, 50, 900)
-      })
-
-      expect(result.current.size).toBe(800)
-    })
-
-    test('updates previewSize so adjustBy baseline is fresh after reset', async () => {
-      const { result } = renderHook(() =>
-        useResizable({ initial: 256, min: 100, max: 500, updateMode: 'commit-on-end' })
-      )
-
-      act(() => {
-        result.current.resetToSize(400)
-      })
-
-      act(() => {
-        result.current.adjustBy(0)
-      })
-
-      await waitFor(() => {
-        expect(result.current.size).toBe(400)
-      })
-    })
+    expect(result.current.size).toBe(300)
   })
 
-  describe('sizeRef', () => {
-    test('sizeRef.current matches size on initial render', () => {
-      const { result } = renderHook(() =>
-        useResizable({ initial: 256, min: 100, max: 500 })
-      )
+  test('clamps to min when value is below min', () => {
+    const { result } = renderHook(() =>
+      useResizable({ initial: 256, min: 100, max: 500 })
+    )
 
-      expect(result.current.sizeRef.current).toBe(256)
+    act(() => {
+      result.current.resetToSize(50)
     })
 
-    test('sizeRef.current updates synchronously after resetToSize', () => {
-      const { result } = renderHook(() =>
-        useResizable({ initial: 256, min: 100, max: 500 })
-      )
+    expect(result.current.size).toBe(100)
+  })
 
-      act(() => {
-        result.current.resetToSize(350)
+  test('clamps to max when value is above max', () => {
+    const { result } = renderHook(() =>
+      useResizable({ initial: 256, min: 100, max: 500 })
+    )
+
+    act(() => {
+      result.current.resetToSize(600)
+    })
+
+    expect(result.current.size).toBe(500)
+  })
+
+  test('uses explicit bounds when provided, bypassing closure min/max', () => {
+    const { result } = renderHook(() =>
+      useResizable({ initial: 256, min: 100, max: 500 })
+    )
+
+    act(() => {
+      result.current.resetToSize(800, 50, 900)
+    })
+
+    expect(result.current.size).toBe(800)
+  })
+
+  test('updates previewSize so adjustBy baseline is fresh after reset', async () => {
+    const { result } = renderHook(() =>
+      useResizable({
+        initial: 256,
+        min: 100,
+        max: 500,
+        updateMode: 'commit-on-end',
       })
+    )
 
-      expect(result.current.sizeRef.current).toBe(350)
+    act(() => {
+      result.current.resetToSize(400)
+    })
+
+    act(() => {
+      result.current.adjustBy(0)
+    })
+
+    await waitFor(() => {
+      expect(result.current.size).toBe(400)
     })
   })
+})
+
+describe('sizeRef', () => {
+  test('sizeRef.current matches size on initial render', () => {
+    const { result } = renderHook(() =>
+      useResizable({ initial: 256, min: 100, max: 500 })
+    )
+
+    expect(result.current.sizeRef.current).toBe(256)
+  })
+
+  test('sizeRef.current updates synchronously after resetToSize', () => {
+    const { result } = renderHook(() =>
+      useResizable({ initial: 256, min: 100, max: 500 })
+    )
+
+    act(() => {
+      result.current.resetToSize(350)
+    })
+
+    expect(result.current.sizeRef.current).toBe(350)
+  })
+})
 ```
 
 - [ ] **Step 2: Run tests to confirm they fail**
@@ -251,29 +258,29 @@ import {
 Add `resetToSize` callback inside `useResizable` (after the `adjustBy` definition):
 
 ```typescript
-  const resetToSize = useCallback(
-    (px: number, explicitMin?: number, explicitMax?: number): void => {
-      const clampMin = explicitMin ?? min
-      const clampMax = explicitMax ?? max
-      cancelPendingSize()
-      const nextSize = clampSize(px, clampMin, clampMax)
-      commitSize(nextSize)
-      // Unconditionally sync previewSize so adjustBy baseline is fresh
-      // even in commit-on-end mode (where commitSize doesn't update previewSize).
-      previewSize.current = nextSize
-      if (isDraggingRef.current) {
-        startPos.current = currentPos.current
-        startSize.current = nextSize
-      }
-    },
-    [min, max, cancelPendingSize, commitSize]
-  )
+const resetToSize = useCallback(
+  (px: number, explicitMin?: number, explicitMax?: number): void => {
+    const clampMin = explicitMin ?? min
+    const clampMax = explicitMax ?? max
+    cancelPendingSize()
+    const nextSize = clampSize(px, clampMin, clampMax)
+    commitSize(nextSize)
+    // Unconditionally sync previewSize so adjustBy baseline is fresh
+    // even in commit-on-end mode (where commitSize doesn't update previewSize).
+    previewSize.current = nextSize
+    if (isDraggingRef.current) {
+      startPos.current = currentPos.current
+      startSize.current = nextSize
+    }
+  },
+  [min, max, cancelPendingSize, commitSize]
+)
 ```
 
 Update the return statement:
 
 ```typescript
-  return { size, isDragging, handleMouseDown, adjustBy, resetToSize, sizeRef }
+return { size, isDragging, handleMouseDown, adjustBy, resetToSize, sizeRef }
 ```
 
 - [ ] **Step 4: Run tests to confirm they pass**
@@ -296,6 +303,7 @@ git commit -m "feat(resize): add resetToSize + expose sizeRef on useResizable"
 ## Task 3: Create `useElasticContainer`
 
 **Files:**
+
 - Create: `src/hooks/useElasticContainer.ts`
 - Create: `src/hooks/useElasticContainer.test.ts`
 
@@ -377,14 +385,21 @@ const renderElastic = (
 describe('useElasticContainer', () => {
   test('initializes size from initialPercent × container dimension', () => {
     // 0.3 × 1200 = 360
-    const { result } = renderElastic({ axis: 'horizontal', initialPercent: 0.3 })
+    const { result } = renderElastic({
+      axis: 'horizontal',
+      initialPercent: 0.3,
+    })
     expect(result.current.size).toBe(360)
   })
 
   test('initializes pixelMin and pixelMax from percent config', () => {
     // minPercent 0.05 × 1200 → ceil(60) = 60
     // maxPercent 0.80 × 1200 → floor(960) = 960
-    const { result } = renderElastic({ axis: 'horizontal', minPercent: 0.05, maxPercent: 0.8 })
+    const { result } = renderElastic({
+      axis: 'horizontal',
+      minPercent: 0.05,
+      maxPercent: 0.8,
+    })
     expect(result.current.pixelMin).toBe(60)
     expect(result.current.pixelMax).toBe(960)
   })
@@ -397,7 +412,12 @@ describe('useElasticContainer', () => {
 
   test('defaults initialPercent to midpoint when not provided', () => {
     // midpoint = (0.05 + 0.80) / 2 = 0.425; 0.425 × 1200 = 510
-    const { result } = renderElastic({ axis: 'horizontal', minPercent: 0.05, maxPercent: 0.8, initialPercent: undefined as unknown as number })
+    const { result } = renderElastic({
+      axis: 'horizontal',
+      minPercent: 0.05,
+      maxPercent: 0.8,
+      initialPercent: undefined as unknown as number,
+    })
     expect(result.current.size).toBe(510)
   })
 
@@ -422,18 +442,31 @@ describe('useElasticContainer', () => {
   })
 
   test('ResizeObserver re-clamp updates pixelMin/pixelMax on container resize', () => {
-    const { result } = renderElastic({ axis: 'horizontal', minPercent: 0.05, maxPercent: 0.8 })
+    const { result } = renderElastic({
+      axis: 'horizontal',
+      minPercent: 0.05,
+      maxPercent: 0.8,
+    })
 
     // Simulate container resize to 800px wide
     act(() => {
       vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
         width: 800,
         height: CONTAINER_HEIGHT,
-        top: 0, left: 0, right: 800, bottom: CONTAINER_HEIGHT,
-        x: 0, y: 0, toJSON: () => undefined,
+        top: 0,
+        left: 0,
+        right: 800,
+        bottom: CONTAINER_HEIGHT,
+        x: 0,
+        y: 0,
+        toJSON: () => undefined,
       } as DOMRect)
       observerCallback?.(
-        [{ contentRect: { width: 800, height: CONTAINER_HEIGHT } } as ResizeObserverEntry],
+        [
+          {
+            contentRect: { width: 800, height: CONTAINER_HEIGHT },
+          } as ResizeObserverEntry,
+        ],
         {} as ResizeObserver
       )
     })
@@ -444,12 +477,21 @@ describe('useElasticContainer', () => {
   })
 
   test('ResizeObserver clamps size when container shrinks below current size', () => {
-    const { result } = renderElastic({ axis: 'horizontal', minPercent: 0.05, maxPercent: 0.8, initialPercent: 0.7 })
+    const { result } = renderElastic({
+      axis: 'horizontal',
+      minPercent: 0.05,
+      maxPercent: 0.8,
+      initialPercent: 0.7,
+    })
     // Initial: 0.7 × 1200 = 840px
 
     act(() => {
       observerCallback?.(
-        [{ contentRect: { width: 400, height: CONTAINER_HEIGHT } } as ResizeObserverEntry],
+        [
+          {
+            contentRect: { width: 400, height: CONTAINER_HEIGHT },
+          } as ResizeObserverEntry,
+        ],
         {} as ResizeObserver
       )
     })
@@ -496,7 +538,11 @@ import {
   type RefObject,
   type MutableRefObject,
 } from 'react'
-import { useResizable, clampSize, type UseResizableResult } from './useResizable'
+import {
+  useResizable,
+  clampSize,
+  type UseResizableResult,
+} from './useResizable'
 
 export interface UseElasticContainerOptions {
   /**
@@ -612,7 +658,9 @@ export const useElasticContainer = ({
   useLayoutEffect(() => {
     const el = containerRef.current
     if (!el) {
-      throw new Error('useElasticContainer: containerRef.current is null at mount')
+      throw new Error(
+        'useElasticContainer: containerRef.current is null at mount'
+      )
     }
 
     const rect = el.getBoundingClientRect()
@@ -620,7 +668,8 @@ export const useElasticContainer = ({
     const { newMin, newMax } = computeBounds(dimension)
 
     const effectiveInitial =
-      initialPercentRef.current ?? (minPercentRef.current + maxPercentRef.current) / 2
+      initialPercentRef.current ??
+      (minPercentRef.current + maxPercentRef.current) / 2
     const newInitial = clampSize(dimension * effectiveInitial, newMin, newMax)
 
     pixelMinRef.current = newMin
@@ -633,7 +682,9 @@ export const useElasticContainer = ({
       const entry = entries[0]
       if (!entry) return
       const dim =
-        axis === 'horizontal' ? entry.contentRect.width : entry.contentRect.height
+        axis === 'horizontal'
+          ? entry.contentRect.width
+          : entry.contentRect.height
 
       const { newMin: rMin, newMax: rMax } = computeBounds(dim)
 
@@ -694,6 +745,7 @@ git commit -m "feat(resize): add useElasticContainer — percent-bound ResizeObs
 ## Task 4: Update `DockPanel` — new props + horizontal resize handle
 
 **Files:**
+
 - Modify: `src/features/workspace/components/DockPanel.tsx`
 - Modify: `src/features/workspace/components/DockPanel.test.tsx`
 
@@ -737,90 +789,98 @@ const renderDockPanel = (
 Then add these new tests (append inside the `describe('DockPanel', ...)` block):
 
 ```typescript
-  test('renders horizontal resize handle for left dock', () => {
-    renderDockPanel({ position: 'left' })
-    const handle = screen.getByTestId('resize-handle')
-    expect(handle).toBeInTheDocument()
-    expect(handle).toHaveAttribute('aria-orientation', 'vertical')
-  })
+test('renders horizontal resize handle for left dock', () => {
+  renderDockPanel({ position: 'left' })
+  const handle = screen.getByTestId('resize-handle')
+  expect(handle).toBeInTheDocument()
+  expect(handle).toHaveAttribute('aria-orientation', 'vertical')
+})
 
-  test('renders horizontal resize handle for right dock', () => {
-    renderDockPanel({ position: 'right' })
-    const handle = screen.getByTestId('resize-handle')
-    expect(handle).toBeInTheDocument()
-    expect(handle).toHaveAttribute('aria-orientation', 'vertical')
-  })
+test('renders horizontal resize handle for right dock', () => {
+  renderDockPanel({ position: 'right' })
+  const handle = screen.getByTestId('resize-handle')
+  expect(handle).toBeInTheDocument()
+  expect(handle).toHaveAttribute('aria-orientation', 'vertical')
+})
 
-  test('horizontal resize handle is on right edge for left dock', () => {
-    renderDockPanel({ position: 'left' })
-    const handle = screen.getByTestId('resize-handle')
-    expect(handle.className).toMatch(/right-0/)
-  })
+test('horizontal resize handle is on right edge for left dock', () => {
+  renderDockPanel({ position: 'left' })
+  const handle = screen.getByTestId('resize-handle')
+  expect(handle.className).toMatch(/right-0/)
+})
 
-  test('horizontal resize handle is on left edge for right dock', () => {
-    renderDockPanel({ position: 'right' })
-    const handle = screen.getByTestId('resize-handle')
-    expect(handle.className).toMatch(/left-0/)
-  })
+test('horizontal resize handle is on left edge for right dock', () => {
+  renderDockPanel({ position: 'right' })
+  const handle = screen.getByTestId('resize-handle')
+  expect(handle.className).toMatch(/left-0/)
+})
 
-  test('side dock uses controlled width from horizontalSize prop', () => {
-    renderDockPanel({ position: 'left', horizontalSize: 480 })
-    expect(screen.getByTestId('dock-panel')).toHaveStyle({ width: '480px' })
-  })
+test('side dock uses controlled width from horizontalSize prop', () => {
+  renderDockPanel({ position: 'left', horizontalSize: 480 })
+  expect(screen.getByTestId('dock-panel')).toHaveStyle({ width: '480px' })
+})
 
-  test('side dock does not use flex basis', () => {
-    renderDockPanel({ position: 'right', horizontalSize: 360 })
-    const panel = screen.getByTestId('dock-panel')
-    expect(panel).not.toHaveStyle({ flex: '0 0 40%' })
-  })
+test('side dock does not use flex basis', () => {
+  renderDockPanel({ position: 'right', horizontalSize: 360 })
+  const panel = screen.getByTestId('dock-panel')
+  expect(panel).not.toHaveStyle({ flex: '0 0 40%' })
+})
 
-  test('horizontal handle mousedown calls onHorizontalResizeMouseDown', () => {
-    const onHorizontalResizeMouseDown = vi.fn()
-    renderDockPanel({ position: 'left', onHorizontalResizeMouseDown })
-    fireEvent.mouseDown(screen.getByTestId('resize-handle'))
-    expect(onHorizontalResizeMouseDown).toHaveBeenCalled()
-  })
+test('horizontal handle mousedown calls onHorizontalResizeMouseDown', () => {
+  const onHorizontalResizeMouseDown = vi.fn()
+  renderDockPanel({ position: 'left', onHorizontalResizeMouseDown })
+  fireEvent.mouseDown(screen.getByTestId('resize-handle'))
+  expect(onHorizontalResizeMouseDown).toHaveBeenCalled()
+})
 
-  test('left dock ArrowRight grows horizontal size', async () => {
-    const user = userEvent.setup()
-    const onHorizontalSizeAdjust = vi.fn()
-    renderDockPanel({ position: 'left', onHorizontalSizeAdjust })
-    screen.getByTestId('resize-handle').focus()
-    await user.keyboard('{ArrowRight}')
-    expect(onHorizontalSizeAdjust).toHaveBeenCalledWith(20)
-  })
+test('left dock ArrowRight grows horizontal size', async () => {
+  const user = userEvent.setup()
+  const onHorizontalSizeAdjust = vi.fn()
+  renderDockPanel({ position: 'left', onHorizontalSizeAdjust })
+  screen.getByTestId('resize-handle').focus()
+  await user.keyboard('{ArrowRight}')
+  expect(onHorizontalSizeAdjust).toHaveBeenCalledWith(20)
+})
 
-  test('left dock ArrowLeft shrinks horizontal size', async () => {
-    const user = userEvent.setup()
-    const onHorizontalSizeAdjust = vi.fn()
-    renderDockPanel({ position: 'left', onHorizontalSizeAdjust })
-    screen.getByTestId('resize-handle').focus()
-    await user.keyboard('{ArrowLeft}')
-    expect(onHorizontalSizeAdjust).toHaveBeenCalledWith(-20)
-  })
+test('left dock ArrowLeft shrinks horizontal size', async () => {
+  const user = userEvent.setup()
+  const onHorizontalSizeAdjust = vi.fn()
+  renderDockPanel({ position: 'left', onHorizontalSizeAdjust })
+  screen.getByTestId('resize-handle').focus()
+  await user.keyboard('{ArrowLeft}')
+  expect(onHorizontalSizeAdjust).toHaveBeenCalledWith(-20)
+})
 
-  test('right dock ArrowLeft grows horizontal size (invert)', async () => {
-    const user = userEvent.setup()
-    const onHorizontalSizeAdjust = vi.fn()
-    renderDockPanel({ position: 'right', onHorizontalSizeAdjust })
-    screen.getByTestId('resize-handle').focus()
-    await user.keyboard('{ArrowLeft}')
-    expect(onHorizontalSizeAdjust).toHaveBeenCalledWith(20)
-  })
+test('right dock ArrowLeft grows horizontal size (invert)', async () => {
+  const user = userEvent.setup()
+  const onHorizontalSizeAdjust = vi.fn()
+  renderDockPanel({ position: 'right', onHorizontalSizeAdjust })
+  screen.getByTestId('resize-handle').focus()
+  await user.keyboard('{ArrowLeft}')
+  expect(onHorizontalSizeAdjust).toHaveBeenCalledWith(20)
+})
 
-  test('vertical handle aria-valuemin/max come from verticalPixelMin/Max props', () => {
-    renderDockPanel({ position: 'bottom', verticalPixelMin: 75, verticalPixelMax: 900 })
-    const handle = screen.getByTestId('resize-handle')
-    expect(handle).toHaveAttribute('aria-valuemin', '75')
-    expect(handle).toHaveAttribute('aria-valuemax', '900')
+test('vertical handle aria-valuemin/max come from verticalPixelMin/Max props', () => {
+  renderDockPanel({
+    position: 'bottom',
+    verticalPixelMin: 75,
+    verticalPixelMax: 900,
   })
+  const handle = screen.getByTestId('resize-handle')
+  expect(handle).toHaveAttribute('aria-valuemin', '75')
+  expect(handle).toHaveAttribute('aria-valuemax', '900')
+})
 
-  test('horizontal handle aria-valuemin/max come from horizontalPixelMin/Max props', () => {
-    renderDockPanel({ position: 'left', horizontalPixelMin: 60, horizontalPixelMax: 960 })
-    const handle = screen.getByTestId('resize-handle')
-    expect(handle).toHaveAttribute('aria-valuemin', '60')
-    expect(handle).toHaveAttribute('aria-valuemax', '960')
+test('horizontal handle aria-valuemin/max come from horizontalPixelMin/Max props', () => {
+  renderDockPanel({
+    position: 'left',
+    horizontalPixelMin: 60,
+    horizontalPixelMax: 960,
   })
+  const handle = screen.getByTestId('resize-handle')
+  expect(handle).toHaveAttribute('aria-valuemin', '60')
+  expect(handle).toHaveAttribute('aria-valuemax', '960')
+})
 ```
 
 - [ ] **Step 2: Run tests to confirm they fail**
@@ -1109,6 +1169,7 @@ git commit -m "feat(dock): add horizontal resize handle + percent-bound ARIA pro
 ## Task 5: Wire `useElasticContainer` into `WorkspaceView`
 
 **Files:**
+
 - Modify: `src/features/workspace/WorkspaceView.tsx`
 - Modify: `src/features/workspace/WorkspaceView.test.tsx`
 - Modify: `src/features/workspace/WorkspaceView.integration.test.tsx`
@@ -1152,6 +1213,7 @@ Expected: all PASS (before the WorkspaceView changes — mocks prevent the jsdom
 **3a. Add import for `useElasticContainer` and `DOCK_ELASTIC_CONFIG`:**
 
 Find the imports section and add:
+
 ```typescript
 import { useElasticContainer } from '../../hooks/useElasticContainer'
 import { DOCK_ELASTIC_CONFIG } from './panelConfig'
@@ -1162,62 +1224,69 @@ Remove the old import of `clampSize` if it was only used for vertical dock (chec
 **3b. Add `dockCanvasRef` just before the `dockPosition` state:**
 
 ```typescript
-  // Ref to the dock-canvas-wrapper div; used by useElasticContainer to measure
-  // the available area for percent-based bounds.
-  const dockCanvasRef = useRef<HTMLDivElement>(null)
+// Ref to the dock-canvas-wrapper div; used by useElasticContainer to measure
+// the available area for percent-based bounds.
+const dockCanvasRef = useRef<HTMLDivElement>(null)
 ```
 
 **3c. Replace the `verticalDockResize = useResizable(...)` block (lines ~361-369 in the original) with two elastic instances:**
 
 Remove:
+
 ```typescript
-  // Vertical dock height is lifted so the value survives DockPanel unmounts.
-  const verticalDockResize = useResizable({
-    initial: 400,
-    min: 150,
-    max: 640,
-    direction: 'vertical',
-    // Bottom dock grows when dragging up from its top edge; top dock grows
-    // when dragging down from its bottom edge.
-    invert: dockPosition === 'bottom',
-  })
+// Vertical dock height is lifted so the value survives DockPanel unmounts.
+const verticalDockResize = useResizable({
+  initial: 400,
+  min: 150,
+  max: 640,
+  direction: 'vertical',
+  // Bottom dock grows when dragging up from its top edge; top dock grows
+  // when dragging down from its bottom edge.
+  invert: dockPosition === 'bottom',
+})
 ```
 
 Add:
-```typescript
-  // Two separate elastic instances — one per axis — so each size survives
-  // dock position switches and DockPanel unmounts independently.
-  const verticalDockElastic = useElasticContainer({
-    containerRef: dockCanvasRef,
-    axis: 'vertical',
-    ...DOCK_ELASTIC_CONFIG,
-    invert: dockPosition === 'bottom',
-  })
 
-  const horizontalDockElastic = useElasticContainer({
-    containerRef: dockCanvasRef,
-    axis: 'horizontal',
-    ...DOCK_ELASTIC_CONFIG,
-    invert: dockPosition === 'right',
-  })
+```typescript
+// Two separate elastic instances — one per axis — so each size survives
+// dock position switches and DockPanel unmounts independently.
+const verticalDockElastic = useElasticContainer({
+  containerRef: dockCanvasRef,
+  axis: 'vertical',
+  ...DOCK_ELASTIC_CONFIG,
+  invert: dockPosition === 'bottom',
+})
+
+const horizontalDockElastic = useElasticContainer({
+  containerRef: dockCanvasRef,
+  axis: 'horizontal',
+  ...DOCK_ELASTIC_CONFIG,
+  invert: dockPosition === 'right',
+})
 ```
 
 **3d. Update `terminalFitDeferred` (line ~579 in original):**
 
 Change:
+
 ```typescript
-  const terminalFitDeferred = isDragging || verticalDockResize.isDragging
+const terminalFitDeferred = isDragging || verticalDockResize.isDragging
 ```
 
 To:
+
 ```typescript
-  const terminalFitDeferred =
-    isDragging || verticalDockElastic.isDragging || horizontalDockElastic.isDragging
+const terminalFitDeferred =
+  isDragging ||
+  verticalDockElastic.isDragging ||
+  horizontalDockElastic.isDragging
 ```
 
 **3e. Update the `<DockPanel>` call site (lines ~582-604 in original):**
 
 Replace:
+
 ```tsx
       verticalSize={verticalDockResize.size}
       onVerticalResizeMouseDown={verticalDockResize.handleMouseDown}
@@ -1226,6 +1295,7 @@ Replace:
 ```
 
 With:
+
 ```tsx
       verticalSize={verticalDockElastic.size}
       onVerticalResizeMouseDown={verticalDockElastic.handleMouseDown}
@@ -1244,6 +1314,7 @@ With:
 **3f. Add `ref={dockCanvasRef}` to the `dock-canvas-wrapper` div (line ~700 in original):**
 
 Change:
+
 ```tsx
         <div
           data-testid="dock-canvas-wrapper"
@@ -1253,6 +1324,7 @@ Change:
 ```
 
 To:
+
 ```tsx
         <div
           ref={dockCanvasRef}
@@ -1301,6 +1373,7 @@ git commit -m "feat(workspace): wire useElasticContainer — replace vertical us
 ## Task 6: Issue #217 — Size persistence integration test
 
 **Files:**
+
 - Create: `src/features/workspace/WorkspaceView.elastic.test.tsx`
 
 - [ ] **Step 1: Write the test file**
@@ -1585,22 +1658,22 @@ git commit -m "test(workspace): prove vertical size persists across dock close/r
 
 ### Spec coverage check
 
-| Spec requirement | Covered by |
-|---|---|
-| Horizontal resize handle on left/right docks | Task 4 (DockPanel), Task 5 (WorkspaceView) |
-| Drag handle on inner edge (right of left, left of right) | Task 4 — `position === 'right' ? 'left-0' : 'right-0'` |
-| Keyboard resize (ArrowLeft/Right) for horizontal | Task 4 — `handleHorizontalKeyDown` |
-| Percent-based bounds (5%–80%) | Task 1 (panelConfig), Task 3 (useElasticContainer) |
-| `panelConfig.ts` as single tuning surface | Task 1 |
-| `useElasticContainer` shared hook | Task 3 |
-| `resetToSize` + `sizeRef` on `useResizable` | Task 2 |
-| Size survives dock close/reopen (issue #217) | Task 6 |
-| Re-clamp on container resize (ResizeObserver) | Task 3 |
-| Post-drag re-clamp | Task 3 |
-| ARIA `aria-valuemin`/`aria-valuemax` from live pixel bounds | Task 4 |
-| Terminal fit deferral includes horizontal drag | Task 5, step 3d |
-| All existing WorkspaceView tests still pass | Task 5, step 5 |
-| `panelConfig.ts` — terminal configs defined (out of scope wiring) | Task 1 |
+| Spec requirement                                                  | Covered by                                             |
+| ----------------------------------------------------------------- | ------------------------------------------------------ |
+| Horizontal resize handle on left/right docks                      | Task 4 (DockPanel), Task 5 (WorkspaceView)             |
+| Drag handle on inner edge (right of left, left of right)          | Task 4 — `position === 'right' ? 'left-0' : 'right-0'` |
+| Keyboard resize (ArrowLeft/Right) for horizontal                  | Task 4 — `handleHorizontalKeyDown`                     |
+| Percent-based bounds (5%–80%)                                     | Task 1 (panelConfig), Task 3 (useElasticContainer)     |
+| `panelConfig.ts` as single tuning surface                         | Task 1                                                 |
+| `useElasticContainer` shared hook                                 | Task 3                                                 |
+| `resetToSize` + `sizeRef` on `useResizable`                       | Task 2                                                 |
+| Size survives dock close/reopen (issue #217)                      | Task 6                                                 |
+| Re-clamp on container resize (ResizeObserver)                     | Task 3                                                 |
+| Post-drag re-clamp                                                | Task 3                                                 |
+| ARIA `aria-valuemin`/`aria-valuemax` from live pixel bounds       | Task 4                                                 |
+| Terminal fit deferral includes horizontal drag                    | Task 5, step 3d                                        |
+| All existing WorkspaceView tests still pass                       | Task 5, step 5                                         |
+| `panelConfig.ts` — terminal configs defined (out of scope wiring) | Task 1                                                 |
 
 ### No placeholders found ✓
 
