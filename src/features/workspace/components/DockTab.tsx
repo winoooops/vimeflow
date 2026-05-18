@@ -51,6 +51,7 @@ export const DockTab = ({
   const actionsMenuId = useId()
   const [actionsOpen, setActionsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!actionsOpen) {
@@ -70,7 +71,16 @@ export const DockTab = ({
     }
   }, [actionsOpen])
 
-  // F1: clear actionsOpen when compact menu is no longer rendered
+  // Return focus to trigger when the menu closes so keyboard users are not stranded.
+  const prevActionsOpenRef = useRef(false)
+  useEffect(() => {
+    if (prevActionsOpenRef.current && !actionsOpen) {
+      triggerRef.current?.focus()
+    }
+    prevActionsOpenRef.current = actionsOpen
+  }, [actionsOpen])
+
+  // Clear actionsOpen when compact menu is no longer rendered.
   useEffect((): void => {
     if (!compactActions) {
       setActionsOpen(false)
@@ -133,12 +143,13 @@ export const DockTab = ({
       {compactActions ? (
         <div className="relative shrink-0">
           <button
+            ref={triggerRef}
             type="button"
             aria-label="More dock actions"
             aria-controls={actionsMenuId}
             aria-expanded={actionsOpen}
             onMouseDown={(e): void => {
-              // F4: stop the document mousedown listener from firing so that
+              // Stop the document mousedown listener from firing so that
               // onClick is the sole toggle — prevents close→reopen on same click.
               e.stopPropagation()
             }}
@@ -157,8 +168,6 @@ export const DockTab = ({
             <div
               ref={menuRef}
               id={actionsMenuId}
-              role="menu"
-              aria-label="Dock actions"
               data-testid="dock-actions-menu"
               className={`absolute ${menuAlignClass} top-[28px] z-50 flex min-w-[190px] flex-col gap-2 rounded-lg border border-[rgba(74,68,79,0.35)] bg-[#0d0d1c] p-2 shadow-xl`}
               onClick={() => setActionsOpen(false)}

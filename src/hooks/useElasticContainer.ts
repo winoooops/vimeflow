@@ -77,6 +77,11 @@ export const useElasticContainer = ({
     isDraggingRef.current = isDragging
   }, [isDragging])
 
+  /* eslint-disable react-hooks/exhaustive-deps */
+  // sizeRef/pixelMinRef/pixelMaxRef are stable refs — their identity never
+  // changes and .current mutations are not reactive, so they are intentionally
+  // omitted from the dep array (exhaustive-deps would add them but refs are
+  // never the right reactive trigger).
   useEffect(() => {
     if (isDragging || !pendingClampRef.current) {
       return
@@ -84,7 +89,8 @@ export const useElasticContainer = ({
 
     pendingClampRef.current = false
     resetToSize(sizeRef.current, pixelMinRef.current, pixelMaxRef.current)
-  }, [isDragging, resetToSize, sizeRef])
+  }, [isDragging, resetToSize])
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const computeBounds = useCallback(
     (dimension: number): { newMin: number; newMax: number } => {
