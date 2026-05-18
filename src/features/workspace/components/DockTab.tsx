@@ -103,6 +103,10 @@ export const DockTab = ({
     if (!compactActions) {
       layoutDrivenCloseRef.current = true
       setActionsOpen(false)
+      // If the menu was already closed, setActionsOpen is a no-op and the
+      // [actionsOpen] effect never fires, so the flag would stay true
+      // permanently. Reset it here to avoid blocking the next focus-return.
+      layoutDrivenCloseRef.current = false
     }
   }, [compactActions])
 
@@ -170,7 +174,6 @@ export const DockTab = ({
             ref={triggerRef}
             type="button"
             aria-label="More dock actions"
-            aria-controls={actionsMenuId}
             aria-expanded={actionsOpen}
             onMouseDown={(e): void => {
               // Stop the document mousedown listener from firing so that

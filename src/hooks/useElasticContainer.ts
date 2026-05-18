@@ -197,6 +197,10 @@ export const useElasticContainer = ({
           ? entry.contentRect.width
           : entry.contentRect.height
 
+      if (nextDimension <= 0) {
+        return
+      }
+
       dimensionRef.current = nextDimension
 
       const { newMin: resizedMin, newMax: resizedMax } =
