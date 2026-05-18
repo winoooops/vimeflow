@@ -31,6 +31,14 @@ const renderDockPanel = (
     onVerticalResizeMouseDown: vi.fn(),
     isVerticalResizing: false,
     onVerticalSizeAdjust: vi.fn(),
+    verticalPixelMin: 40,
+    verticalPixelMax: 640,
+    horizontalSize: 360,
+    onHorizontalResizeMouseDown: vi.fn(),
+    isHorizontalResizing: false,
+    onHorizontalSizeAdjust: vi.fn(),
+    horizontalPixelMin: 40,
+    horizontalPixelMax: 640,
     selectedFilePath: null,
     content: '',
     ...overrides,
@@ -137,10 +145,32 @@ describe('DockPanel', () => {
     expect(screen.getByTestId('resize-handle')).toBeInTheDocument()
   })
 
-  test('does not render resize handle for side docks', () => {
+  test('renders horizontal resize handle for left dock', () => {
     renderDockPanel({ position: 'left' })
 
-    expect(screen.queryByTestId('resize-handle')).not.toBeInTheDocument()
+    const handle = screen.getByTestId('resize-handle')
+    expect(handle).toBeInTheDocument()
+    expect(handle).toHaveAttribute('aria-orientation', 'vertical')
+  })
+
+  test('renders horizontal resize handle for right dock', () => {
+    renderDockPanel({ position: 'right' })
+
+    const handle = screen.getByTestId('resize-handle')
+    expect(handle).toBeInTheDocument()
+    expect(handle).toHaveAttribute('aria-orientation', 'vertical')
+  })
+
+  test('horizontal resize handle is on right edge for left dock', () => {
+    renderDockPanel({ position: 'left' })
+
+    expect(screen.getByTestId('resize-handle').className).toMatch(/right-0/)
+  })
+
+  test('horizontal resize handle is on left edge for right dock', () => {
+    renderDockPanel({ position: 'right' })
+
+    expect(screen.getByTestId('resize-handle').className).toMatch(/left-0/)
   })
 
   test('has controlled height from WorkspaceView for bottom dock', () => {
@@ -149,10 +179,18 @@ describe('DockPanel', () => {
     expect(screen.getByTestId('dock-panel')).toHaveStyle({ height: '420px' })
   })
 
-  test('uses fixed flex basis for side docks', () => {
-    renderDockPanel({ position: 'right' })
+  test('side dock uses controlled width from horizontalSize prop', () => {
+    renderDockPanel({ position: 'left', horizontalSize: 480 })
 
-    expect(screen.getByTestId('dock-panel')).toHaveStyle({ flex: '0 0 40%' })
+    expect(screen.getByTestId('dock-panel')).toHaveStyle({ width: '480px' })
+  })
+
+  test('side dock does not use flex basis', () => {
+    renderDockPanel({ position: 'right', horizontalSize: 360 })
+
+    expect(screen.getByTestId('dock-panel')).not.toHaveStyle({
+      flex: '0 0 40%',
+    })
   })
 
   test('resize handle forwards mouse down to lifted resize hook', () => {
@@ -162,6 +200,15 @@ describe('DockPanel', () => {
     fireEvent.mouseDown(screen.getByTestId('resize-handle'), { clientY: 100 })
 
     expect(onVerticalResizeMouseDown).toHaveBeenCalled()
+  })
+
+  test('horizontal handle mousedown calls onHorizontalResizeMouseDown', () => {
+    const onHorizontalResizeMouseDown = vi.fn()
+    renderDockPanel({ position: 'left', onHorizontalResizeMouseDown })
+
+    fireEvent.mouseDown(screen.getByTestId('resize-handle'))
+
+    expect(onHorizontalResizeMouseDown).toHaveBeenCalled()
   })
 
   test('bottom resize handle keyboard arrows call onVerticalSizeAdjust', async () => {
@@ -185,6 +232,102 @@ describe('DockPanel', () => {
     await user.keyboard('{ArrowDown}')
 
     expect(onVerticalSizeAdjust).toHaveBeenCalledWith(20)
+  })
+
+  test('left dock ArrowRight grows horizontal size', async () => {
+    const user = userEvent.setup()
+    const onHorizontalSizeAdjust = vi.fn()
+    renderDockPanel({ position: 'left', onHorizontalSizeAdjust })
+
+    screen.getByTestId('resize-handle').focus()
+    await user.keyboard('{ArrowRight}')
+
+    expect(onHorizontalSizeAdjust).toHaveBeenCalledWith(20)
+  })
+
+  test('left dock ArrowLeft shrinks horizontal size', async () => {
+    const user = userEvent.setup()
+    const onHorizontalSizeAdjust = vi.fn()
+    renderDockPanel({ position: 'left', onHorizontalSizeAdjust })
+
+    screen.getByTestId('resize-handle').focus()
+    await user.keyboard('{ArrowLeft}')
+
+    expect(onHorizontalSizeAdjust).toHaveBeenCalledWith(-20)
+  })
+
+  test('right dock ArrowLeft grows horizontal size', async () => {
+    const user = userEvent.setup()
+    const onHorizontalSizeAdjust = vi.fn()
+    renderDockPanel({ position: 'right', onHorizontalSizeAdjust })
+
+    screen.getByTestId('resize-handle').focus()
+    await user.keyboard('{ArrowLeft}')
+
+    expect(onHorizontalSizeAdjust).toHaveBeenCalledWith(20)
+  })
+
+  test('vertical handle aria-valuemin and aria-valuemax come from props', () => {
+    renderDockPanel({
+      position: 'bottom',
+      verticalPixelMin: 75,
+      verticalPixelMax: 900,
+    })
+
+    const handle = screen.getByTestId('resize-handle')
+    expect(handle).toHaveAttribute('aria-valuemin', '75')
+    expect(handle).toHaveAttribute('aria-valuemax', '900')
+  })
+
+  test('horizontal handle aria-valuemin and aria-valuemax come from props', () => {
+    renderDockPanel({
+      position: 'left',
+      horizontalPixelMin: 60,
+      horizontalPixelMax: 960,
+    })
+
+    const handle = screen.getByTestId('resize-handle')
+    expect(handle).toHaveAttribute('aria-valuemin', '60')
+    expect(handle).toHaveAttribute('aria-valuemax', '960')
+  })
+
+  test('narrow side dock keeps dock switcher in compact actions menu', async () => {
+    const user = userEvent.setup()
+    renderDockPanel({ position: 'left', horizontalSize: 360 })
+
+    expect(
+      screen.queryByRole('button', { name: /dock: left/i })
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
+
+    expect(
+      screen.getByRole('button', { name: /dock: left/i })
+    ).toBeInTheDocument()
+  })
+
+  test('wide side dock keeps dock switcher inline', () => {
+    renderDockPanel({ position: 'left', horizontalSize: 480 })
+
+    expect(
+      screen.getByRole('button', { name: /dock: left/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: /more dock actions/i })
+    ).not.toBeInTheDocument()
+  })
+
+  test('bottom dock keeps dock switcher inline', () => {
+    renderDockPanel({ position: 'bottom' })
+
+    expect(
+      screen.getByRole('button', { name: /dock: bottom/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: /more dock actions/i })
+    ).not.toBeInTheDocument()
   })
 
   test('renders controlled active tab', () => {
@@ -299,8 +442,11 @@ describe('DockPanel', () => {
     }
   )
 
-  test('mounts DockSwitcher in header with current position', () => {
-    renderDockPanel({ position: 'left' })
+  test('mounts DockSwitcher with current position in compact menu for side docks', async () => {
+    const user = userEvent.setup()
+    renderDockPanel({ position: 'left', horizontalSize: 360 })
+
+    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
 
     const leftSwitcherButton = screen.getByRole('button', {
       name: /dock: left/i,

@@ -792,4 +792,99 @@ describe('useResizable', () => {
 
     expect(result.current.size).toBe(100)
   })
+
+  describe('resetToSize', () => {
+    test('sets size to clamped value', () => {
+      const { result } = renderHook(() =>
+        useResizable({ initial: 256, min: 100, max: 500 })
+      )
+
+      act(() => {
+        result.current.resetToSize(300)
+      })
+
+      expect(result.current.size).toBe(300)
+    })
+
+    test('clamps to min when value is below min', () => {
+      const { result } = renderHook(() =>
+        useResizable({ initial: 256, min: 100, max: 500 })
+      )
+
+      act(() => {
+        result.current.resetToSize(50)
+      })
+
+      expect(result.current.size).toBe(100)
+    })
+
+    test('clamps to max when value is above max', () => {
+      const { result } = renderHook(() =>
+        useResizable({ initial: 256, min: 100, max: 500 })
+      )
+
+      act(() => {
+        result.current.resetToSize(600)
+      })
+
+      expect(result.current.size).toBe(500)
+    })
+
+    test('uses explicit bounds when provided, bypassing closure min/max', () => {
+      const { result } = renderHook(() =>
+        useResizable({ initial: 256, min: 100, max: 500 })
+      )
+
+      act(() => {
+        result.current.resetToSize(800, 50, 900)
+      })
+
+      expect(result.current.size).toBe(800)
+    })
+
+    test('updates previewSize so adjustBy baseline is fresh after reset', async () => {
+      const { result } = renderHook(() =>
+        useResizable({
+          initial: 256,
+          min: 100,
+          max: 500,
+          updateMode: 'commit-on-end',
+        })
+      )
+
+      act(() => {
+        result.current.resetToSize(400)
+      })
+
+      act(() => {
+        result.current.adjustBy(0)
+      })
+
+      await waitFor(() => {
+        expect(result.current.size).toBe(400)
+      })
+    })
+  })
+
+  describe('sizeRef', () => {
+    test('sizeRef.current matches size on initial render', () => {
+      const { result } = renderHook(() =>
+        useResizable({ initial: 256, min: 100, max: 500 })
+      )
+
+      expect(result.current.sizeRef.current).toBe(256)
+    })
+
+    test('sizeRef.current updates synchronously after resetToSize', () => {
+      const { result } = renderHook(() =>
+        useResizable({ initial: 256, min: 100, max: 500 })
+      )
+
+      act(() => {
+        result.current.resetToSize(350)
+      })
+
+      expect(result.current.sizeRef.current).toBe(350)
+    })
+  })
 })
