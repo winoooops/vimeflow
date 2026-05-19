@@ -12,18 +12,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { CanvasAddon } from '@xterm/addon-canvas'
-// xterm 6.x ships only a DOM renderer in core; WebGL and Canvas2D come from
-// addons. The DOM renderer ignores `customGlyphs` and renders every cell from
-// the font — so block elements (▀ ▄ █) used by Claude Code's startup logo
-// fall back to Pure Nerd Font (the only bundled font containing them), whose
-// em-square (711/-45 = 75.6% content) doesn't match JetBrains Mono's cell
-// (1020/-300 = 132% content), producing visible horizontal gaps between rows.
-// Loading either WebGL or Canvas2D switches xterm to a renderer that honors
-// customGlyphs and draws block elements from canvas paths flush to the cell
-// edges. We prefer WebGL for performance and fall back to Canvas2D when WebGL
-// is unavailable (jsdom, headless CI, GPU driver issues, or context loss
-// under memory pressure). If both addon constructors throw, xterm reverts to
-// DOM rendering — the logo will look broken but the terminal still works.
+// WebGL→Canvas2D→DOM renderer chain keeps customGlyphs active for block-element glyphs (see PR #228).
 import { catppuccinMocha, toXtermTheme } from '../../theme/catppuccin-mocha'
 import {
   useTerminal,
@@ -302,12 +291,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     const cached = terminalCache.get(sessionId)
     let newTerminal: Terminal
     let fitAddon: FitAddon
-    // Renderer addons attached to the new terminal in the else branch below.
-    // Kept in the effect closure so cleanup can dispose them before the
-    // terminal itself. Exactly one — or neither — is non-null after the
-    // attach block: WebGL is tried first, Canvas2D only if WebGL throws,
-    // and the cached branch skips the attach entirely (the addon already
-    // lives on the cached terminal and is disposed when the terminal is).
+    // Renderer addons (at most one non-null) — kept in closure so cleanup disposes them before the terminal.
     let webglAddon: WebglAddon | null = null
     let webglContextLossDisposable: { dispose: () => void } | null = null
     let canvasAddon: CanvasAddon | null = null

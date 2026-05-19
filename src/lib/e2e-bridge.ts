@@ -9,17 +9,7 @@ const isVisible = (el: HTMLElement): boolean => {
   return r.width > 0 && r.height > 0
 }
 
-// xterm's `.xterm-rows` is only populated by the DOM renderer. With the
-// WebGL or Canvas2D renderer addons attached (PR #228), rendering moves
-// to a <canvas> and `.xterm-rows` stays empty — so any DOM-textContent
-// probe returns ''. Read from `terminal.buffer.active` instead; the
-// buffer is renderer-independent and always reflects the live PTY
-// output. Scope the read to the visible viewport (viewportY ..
-// viewportY + terminal.rows) so the result matches the prior
-// `.xterm-rows.textContent` semantics — iterating `buffer.length` would
-// also return up to `scrollback` (10k) rows of historical content,
-// breaking E2E assertions that expect an "empty" terminal after `clear`
-// or that compare visible state across commands.
+// Reads the visible viewport via xterm's buffer API — used when canvas renderers leave `.xterm-rows` empty.
 const bufferToText = (terminal: Terminal): string => {
   const buffer = terminal.buffer.active
   const start = buffer.viewportY
@@ -35,25 +25,13 @@ const bufferToText = (terminal: Terminal): string => {
   return lines.join('\n').replace(/\n+$/, '')
 }
 
-// Resolve a `sessionId` for the given container so we can look up the
-// xterm Terminal instance in `terminalCache`. The container may be:
-//   - the session-level `terminal-pane` wrapper (data-session-id)
-//   - a `split-view-slot` (data-pty-id — multi-pane sessions, PR #199)
-//   - a `terminal-pane-wrapper` (no id; walk up to the session pane)
-// `terminalCache` is keyed by whatever `Body` received as its
-// `sessionId` prop, which matches `data-session-id` on the outer pane.
-// We try ancestor walk first (cheap), then dataset-ptyId (covers
-// multi-pane callers that look up by PTY handle).
+// terminalCache is keyed by `pane.ptyId` (Body's `sessionId` prop). Find Body's `data-pty-id` descendant; fall back to the container's own data-pty-id when callers pass it directly.
 const resolveCacheKey = (container: HTMLElement): string | null => {
-  if (container.dataset.sessionId) {
-    return container.dataset.sessionId
-  }
-
-  const sessionPane = container.closest<HTMLElement>(
-    '[data-testid="terminal-pane"][data-session-id]'
+  const ptyEl = container.querySelector<HTMLElement>(
+    '[data-testid="terminal-pane"][data-pty-id]'
   )
-  if (sessionPane?.dataset.sessionId) {
-    return sessionPane.dataset.sessionId
+  if (ptyEl?.dataset.ptyId) {
+    return ptyEl.dataset.ptyId
   }
 
   return container.dataset.ptyId ?? null

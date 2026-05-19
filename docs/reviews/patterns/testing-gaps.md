@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-14
-ref_count: 23
+last_updated: 2026-05-19
+ref_count: 24
 ---
 
 # Testing Gaps
@@ -498,3 +498,12 @@ filesystem scope restrictions).
 - **Finding:** The factory test named `returns TauriGitService when isDesktop() is true (via vimeflow)` was byte-for-byte identical to the preceding `isDesktop() is true` test. Because the suite mocked `isDesktop`, the test never set `window.vimeflow` and never exercised the real OR-detection branch it claimed to cover.
 - **Fix:** Removed the duplicate factory test and kept the actual `window.vimeflow` signal coverage in `src/lib/environment.test.ts`. Code-review heuristic: when a test name includes a specific runtime signal ("via vimeflow", "via Tauri", "via env"), the body must manipulate that signal or call the real helper that observes it; otherwise the test is only duplicate branch coverage with a misleading title.
 - **Commit:** _(see git log for the PR #208 round-1 fix commit)_
+
+### 50. e2e-bridge buffer-API fallback had zero coverage; production cache-key bug hidden behind happy-path fixtures
+
+- **Source:** github-claude | PR #228 round 2 | 2026-05-19
+- **Severity:** HIGH
+- **File:** `src/lib/e2e-bridge.test.ts`, `src/lib/e2e-bridge.ts`
+- **Finding:** `readPaneBuffer` gained a new buffer-API fallback path in PR #228 (for canvas/WebGL renderers that leave `.xterm-rows` empty), but all 5 existing tests called `buildSessionWrapper` which always populated `.xterm-rows` — so every test exited at the early DOM-text return and never reached the `terminalCache` branch. `bufferToText` and `resolveCacheKey` were untested. The gap masked a production cache-key bug: `terminalCache` is keyed by `pane.ptyId` (Body's `sessionId` prop) but `resolveCacheKey` was extracting `data-session-id` from `TerminalZone` (the workspace `session.id`) — a different value. A canvas-renderer terminal would silently return `''` for every E2E read, failing every multi-tab and pty-spawn spec while the unit suite stayed green.
+- **Fix:** Updated `buildSessionWrapper` to mirror production DOM — Body's inner container (`[data-testid="terminal-pane"][data-pty-id]`) nests inside the focused pane-wrapper. Rewrote `resolveCacheKey` to descendant-search for `data-pty-id` (the real cache key) with a self-only fallback. Added four tests: cache-hit on the canvas path, a deliberate tie-break where `sess-fix` and `pty-0` both have cache entries (only `pty-0` wins), viewport-scoping respected against scrollback, and the cache-miss empty-string case. Code-review heuristic: when adding a behavioral fallback path, the test fixture's data shape (DOM attributes, cache keys, mock buffer layout) must mirror production — happy-path fixtures that simplify the production shape are how silent-regression bugs survive review.
+- **Commit:** same commit as this entry
