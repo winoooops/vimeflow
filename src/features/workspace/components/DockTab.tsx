@@ -7,6 +7,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { Tooltip } from '../../../components/Tooltip'
 
 export type DockTabType = 'editor' | 'diff'
 
@@ -139,57 +140,71 @@ export const DockTab = ({
       }
     >
       <div className="flex min-w-0 shrink-0 gap-1">
-        <button
-          type="button"
-          aria-pressed={tab === 'editor'}
-          onClick={() => onTabChange('editor')}
-          className={tabButtonClass(tab === 'editor', compactActions)}
-          aria-label="Editor"
-        >
-          <span className={tabIconClass(tab === 'editor')} aria-hidden="true">
-            code
-          </span>
-          {!compactActions && <span>Editor</span>}
-        </button>
+        <Tooltip content="Editor" shortcut={['Mod', 'E']} placement="bottom">
+          <button
+            type="button"
+            aria-pressed={tab === 'editor'}
+            onClick={() => onTabChange('editor')}
+            className={tabButtonClass(tab === 'editor', compactActions)}
+            aria-label="Editor"
+          >
+            <span className={tabIconClass(tab === 'editor')} aria-hidden="true">
+              code
+            </span>
+            {!compactActions && <span>Editor</span>}
+          </button>
+        </Tooltip>
 
-        <button
-          type="button"
-          aria-pressed={tab === 'diff'}
-          onClick={() => onTabChange('diff')}
-          className={tabButtonClass(tab === 'diff', compactActions)}
-          aria-label="Diff Viewer"
+        <Tooltip
+          content="Diff Viewer"
+          shortcut={['Mod', 'G']}
+          placement="bottom"
         >
-          <span className={tabIconClass(tab === 'diff')} aria-hidden="true">
-            difference
-          </span>
-          {!compactActions && <span>Diff Viewer</span>}
-        </button>
+          <button
+            type="button"
+            aria-pressed={tab === 'diff'}
+            onClick={() => onTabChange('diff')}
+            className={tabButtonClass(tab === 'diff', compactActions)}
+            aria-label="Diff Viewer"
+          >
+            <span className={tabIconClass(tab === 'diff')} aria-hidden="true">
+              difference
+            </span>
+            {!compactActions && <span>Diff Viewer</span>}
+          </button>
+        </Tooltip>
       </div>
 
       <div className="min-w-0 flex-1" />
 
       {compactActions ? (
         <div className="relative shrink-0">
-          <button
-            ref={triggerRef}
-            type="button"
-            aria-label="More dock actions"
-            aria-expanded={actionsOpen}
-            onMouseDown={(e): void => {
-              // Stop the document mousedown listener from firing so that
-              // onClick is the sole toggle — prevents close→reopen on same click.
-              e.stopPropagation()
-            }}
-            onClick={(): void => setActionsOpen((prev) => !prev)}
-            className="grid h-6 w-6 cursor-pointer place-items-center rounded-[5px] bg-transparent text-[#8a8299] transition-colors hover:bg-white/5 hover:text-[#e2c7ff] focus:bg-white/5 focus:text-[#e2c7ff] focus:outline-none"
+          <Tooltip
+            content="More dock actions"
+            placement="bottom"
+            disabled={actionsOpen}
           >
-            <span
-              className="material-symbols-outlined text-[16px]"
-              aria-hidden="true"
+            <button
+              ref={triggerRef}
+              type="button"
+              aria-label="More dock actions"
+              aria-expanded={actionsOpen}
+              onMouseDown={(e): void => {
+                // Stop the document mousedown listener from firing so that
+                // onClick is the sole toggle — prevents close→reopen on same click.
+                e.stopPropagation()
+              }}
+              onClick={(): void => setActionsOpen((prev) => !prev)}
+              className="grid h-6 w-6 cursor-pointer place-items-center rounded-[5px] bg-transparent text-[#8a8299] transition-colors hover:bg-white/5 hover:text-[#e2c7ff] focus:bg-white/5 focus:text-[#e2c7ff] focus:outline-none"
             >
-              more_horiz
-            </span>
-          </button>
+              <span
+                className="material-symbols-outlined text-[16px]"
+                aria-hidden="true"
+              >
+                more_horiz
+              </span>
+            </button>
+          </Tooltip>
 
           {actionsOpen && (
             <div
@@ -211,19 +226,21 @@ export const DockTab = ({
 
               <div className="flex items-center justify-between gap-2">
                 {children}
-                <button
-                  type="button"
-                  aria-label="Collapse panel"
-                  onClick={onClose}
-                  className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-[5px] bg-transparent text-[#8a8299] transition-colors hover:bg-white/5 hover:text-[#e2c7ff]"
-                >
-                  <span
-                    className="material-symbols-outlined text-[14px]"
-                    aria-hidden="true"
+                <Tooltip content="Collapse panel" placement="bottom">
+                  <button
+                    type="button"
+                    aria-label="Collapse panel"
+                    onClick={onClose}
+                    className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-[5px] bg-transparent text-[#8a8299] transition-colors hover:bg-white/5 hover:text-[#e2c7ff]"
                   >
-                    {collapseIconName}
-                  </span>
-                </button>
+                    <span
+                      className="material-symbols-outlined text-[14px]"
+                      aria-hidden="true"
+                    >
+                      {collapseIconName}
+                    </span>
+                  </button>
+                </Tooltip>
               </div>
             </div>
           )}
@@ -239,19 +256,21 @@ export const DockTab = ({
             >
               {displayPath}
             </span>
-            <button
-              type="button"
-              aria-label="Collapse panel"
-              onClick={onClose}
-              className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-[5px] bg-transparent text-[#8a8299] transition-colors hover:bg-white/5 hover:text-[#e2c7ff]"
-            >
-              <span
-                className="material-symbols-outlined text-[14px]"
-                aria-hidden="true"
+            <Tooltip content="Collapse panel" placement="bottom">
+              <button
+                type="button"
+                aria-label="Collapse panel"
+                onClick={onClose}
+                className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-[5px] bg-transparent text-[#8a8299] transition-colors hover:bg-white/5 hover:text-[#e2c7ff]"
               >
-                {collapseIconName}
-              </span>
-            </button>
+                <span
+                  className="material-symbols-outlined text-[14px]"
+                  aria-hidden="true"
+                >
+                  {collapseIconName}
+                </span>
+              </button>
+            </Tooltip>
           </div>
         </>
       )}

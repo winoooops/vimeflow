@@ -6,6 +6,7 @@ import type { LayoutId } from '../../../sessions/types'
 // `layouts.ts` module is the canonical home for `LAYOUTS`.
 import { LAYOUTS } from '../SplitView/layouts'
 import { LayoutGlyph } from './LayoutGlyph'
+import { Tooltip } from '../../../../components/Tooltip'
 
 export interface LayoutSwitcherProps {
   activeLayoutId: LayoutId
@@ -37,36 +38,43 @@ export const LayoutSwitcher = ({
       const isActive = activeLayoutId === layout.id
 
       return (
-        <button
-          key={layout.id}
-          type="button"
-          title={layout.name}
-          aria-label={layout.name}
-          // `aria-pressed="true"` on the active button is the
-          // canonical toggle-button signal — AT (VoiceOver, NVDA)
-          // announce it as "pressed", which is the correct state for
-          // a layout that's already selected. Adding `aria-disabled`
-          // alongside (cycle 10 tried this) creates a contradiction:
-          // ATs read "pressed AND dimmed" which implies the control
-          // is broken, not "the selected layout". The onClick gate
-          // below already disables Space/Enter on the active button,
-          // so the ARIA state is faithful and complete.
-          aria-pressed={isActive}
-          data-active={isActive ? 'true' : undefined}
-          // Skip the callback when the button represents the already-
-          // active layout. setSessionLayout has its own same-layout
-          // no-op guard, but expressing that here keeps the contract
-          // honest: onPick is called only when the active layout
-          // actually changes. Callers wiring different mutations
-          // downstream (e.g. analytics events) won't see spurious
-          // ticks for re-clicks of the active button.
-          onClick={isActive ? undefined : (): void => onPick(layout.id)}
-          className={`${BASE_BUTTON} ${
-            isActive ? ACTIVE_BUTTON : INACTIVE_BUTTON
-          }`}
-        >
-          <LayoutGlyph layoutId={layout.id} />
-        </button>
+        // Tooltip carries only the layout name — no shortcut chip.
+        // The `Mod+\` shortcut cycles to the NEXT layout, not to the
+        // specific one a user is hovering. Showing the chip per
+        // button would advertise "press Mod+\ to switch to THIS
+        // layout" which is misleading — the actual landing layout
+        // depends on which layout is currently active (Claude review
+        // on PR #224 cycle 3, MEDIUM finding, 83% confidence).
+        <Tooltip key={layout.id} content={layout.name} placement="bottom">
+          <button
+            type="button"
+            aria-label={layout.name}
+            // `aria-pressed="true"` on the active button is the
+            // canonical toggle-button signal — AT (VoiceOver, NVDA)
+            // announce it as "pressed", which is the correct state for
+            // a layout that's already selected. Adding `aria-disabled`
+            // alongside (cycle 10 tried this) creates a contradiction:
+            // ATs read "pressed AND dimmed" which implies the control
+            // is broken, not "the selected layout". The onClick gate
+            // below already disables Space/Enter on the active button,
+            // so the ARIA state is faithful and complete.
+            aria-pressed={isActive}
+            data-active={isActive ? 'true' : undefined}
+            // Skip the callback when the button represents the already-
+            // active layout. setSessionLayout has its own same-layout
+            // no-op guard, but expressing that here keeps the contract
+            // honest: onPick is called only when the active layout
+            // actually changes. Callers wiring different mutations
+            // downstream (e.g. analytics events) won't see spurious
+            // ticks for re-clicks of the active button.
+            onClick={isActive ? undefined : (): void => onPick(layout.id)}
+            className={`${BASE_BUTTON} ${
+              isActive ? ACTIVE_BUTTON : INACTIVE_BUTTON
+            }`}
+          >
+            <LayoutGlyph layoutId={layout.id} />
+          </button>
+        </Tooltip>
       )
     })}
   </div>

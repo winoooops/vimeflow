@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { Tooltip } from '../../../components/Tooltip'
 
 export type DockPosition = 'top' | 'bottom' | 'left' | 'right'
 
@@ -23,21 +24,25 @@ export const DockSwitcher = ({
       const active = option.id === position
 
       return (
-        <button
+        <Tooltip
           key={option.id}
-          type="button"
-          title={`Dock: ${option.label}`}
-          aria-label={`Dock: ${option.label}`}
-          aria-pressed={active}
-          onClick={() => onPick(option.id)}
-          className={`inline-flex h-[22px] w-[26px] cursor-pointer items-center justify-center rounded-[5px] border transition-colors ${
-            active
-              ? 'bg-[rgba(203,166,247,0.15)] border-[rgba(203,166,247,0.45)] text-[#cba6f7]'
-              : 'border-transparent bg-transparent text-[#8a8299] hover:text-[#e2c7ff]'
-          }`}
+          content={`Dock: ${option.label}`}
+          placement="bottom"
         >
-          <DockGlyph position={option.id} />
-        </button>
+          <button
+            type="button"
+            aria-label={`Dock: ${option.label}`}
+            aria-pressed={active}
+            onClick={() => onPick(option.id)}
+            className={`inline-flex h-[22px] w-[26px] cursor-pointer items-center justify-center rounded-[5px] border transition-colors ${
+              active
+                ? 'bg-[rgba(203,166,247,0.15)] border-[rgba(203,166,247,0.45)] text-[#cba6f7]'
+                : 'border-transparent bg-transparent text-[#8a8299] hover:text-[#e2c7ff]'
+            }`}
+          >
+            <DockGlyph position={option.id} />
+          </button>
+        </Tooltip>
       )
     })}
   </div>
