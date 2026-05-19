@@ -218,7 +218,9 @@ This independence matters because the dominant agent flow we care about — `git
 
 ### Debounce semantics
 
-`git-head-changed` shares the 300 ms debounce window with `git-status-changed`. Rationale: a single `git commit` mutates `.git/HEAD` _and_ `.git/index` _and_ working-tree files in rapid succession. Emitting `git-head-changed` immediately on the first HEAD touch would race the index/worktree settle; debouncing them together delivers one cohesive update.
+`git-head-changed` shares the 300 ms debounce window with `git-status-changed`. Rationale: a single `git switch <branch>` mutates `<git_dir>/HEAD` _and_ rewrites working-tree files (the checkout) _and_ updates `<git_dir>/index` in rapid succession. Emitting `git-head-changed` immediately on the first HEAD touch would race the index/worktree settle; debouncing them together delivers one cohesive update.
+
+(Note: a normal `git commit` on an attached branch does NOT mutate `<git_dir>/HEAD` — it updates the branch ref under `<git_dir>/refs/heads/`, and `HEAD` remains a `ref:` line pointing at it. HEAD-file mutations happen on switch / checkout / detached-state commit / rebase / bisect. The classification step in §3 is correct for those cases.)
 
 ### No replay / no cursor protocol
 
@@ -227,6 +229,14 @@ This is a notification ("HEAD may have moved — re-fetch via `git_branch` IPC")
 ### Fan-out scope
 
 Per-bucket, identical to `git-status-changed`: the event's `cwds` list contains only the subscribers of _this_ bucket (this `toplevel`). Pane A in main and Pane B in linked worktree `feat-x` are in different buckets, so a HEAD move in `feat-x` produces one event whose `cwds` includes only Pane B's cwd — Pane A is untouched.
+
+### Initial emit on subscribe (covers pre-repo upgrade)
+
+The existing watcher emits `git-status-changed` for a single cwd at the end of `start_git_watcher_inner` (`watcher.rs:577, 802, 816, 855, 888, 1004`) so a freshly-subscribed pane refreshes its status immediately, even before any FS event arrives. We add a symmetric `emit_git_head_changed(events, vec![cwd])` at the same call sites.
+
+This covers the pre-repo → linked-worktree upgrade case (§5): when `start_pre_repo_watcher_inner` later transitions to `start_git_watcher_inner` (because `git worktree add` made the directory a repo), the new initial `git-head-changed` emit causes `useGitBranch` to re-fetch and pick up the now-resolvable branch name. Without this emit, the hook would stay at `null` until the user manually refreshed OR the agent moved HEAD again.
+
+Worktree removal is **not** symmetric — there is no transition emit on teardown. Instead, the recursive working-tree watch sees the `Remove` event for `<git_dir>/HEAD` (now-deleted), which the §3 path classifier matches (`p == git_dir.join("HEAD")`) and flips `head_dirty`. The debounced fan-out emits `git-head-changed` to the bucket's remaining subscribers, the hook re-fetches, `git_branch` returns `Err`, the chip drops. The existing path classification covers this without a special teardown emit.
 
 ---
 
@@ -419,28 +429,34 @@ Test naming follows `test_<function>_<scenario>_<expected>` (per `rules/rust/tes
 3. `test_polling_emits_head_changed_on_clean_branch_switch_with_unchanged_status_hash` — fixture where `hash_git_status` returns the same value before and after `git switch`, but `<git_dir>/HEAD` contents differ; assert the polling thread emits `git-head-changed` (and NOT a redundant `git-status-changed`).
 4. `test_stop_git_watcher_inner_handles_duplicate_starts` — call `start_git_watcher_inner(cwd)` twice, then `stop_git_watcher_inner(cwd)` twice. After the first stop, the bucket still exists. After the second stop, the bucket is gone. (Direct test of the refcount fix in §2.)
 
-### Rust integration tests (in `crates/backend/tests/`)
+### Rust unit tests for worktree integration scenarios
 
-A new file `tests/git_watcher_worktree.rs`. Fixtures live in `crates/backend/src/git/test_helpers.rs` — extend with:
+The original draft routed these through `crates/backend/tests/`, but `test_helpers.rs` and `git_branch_inner` are `pub(crate)` — not visible from external integration-test crates. Per `rules/rust/testing.md`, these belong as **unit tests** in the existing `#[cfg(test)] mod tests` blocks at the bottom of `watcher.rs` and `mod.rs`. The same module access is what current watcher tests use (`watcher.rs:1294`), so no new test-only `pub` exports are needed.
+
+Fixtures live in `crates/backend/src/git/test_helpers.rs` — extend with:
 
 ```rust
 /// Create a main repo + N linked worktrees in a tempdir under $HOME.
 /// Caller commits one file in the main repo first so worktree branches
 /// have a parent commit. Returns (TempDir, main_path, worktree_paths).
-pub fn create_main_repo_with_worktrees(branches: &[&str])
+pub(crate) fn create_main_repo_with_worktrees(branches: &[&str])
     -> (TempDir, PathBuf, Vec<PathBuf>) { … }
 ```
 
-Tests (each `#[tokio::test]`):
+Tests in `watcher.rs#[cfg(test)] mod tests` (each `#[tokio::test]`):
 
 1. `test_head_change_in_main_emits_for_main_only` — subscribe to main and a linked worktree, run `git -C <main> switch -c <new>`, assert one `git-head-changed` with `cwds: [main]` and zero events for the worktree's cwd.
 2. `test_head_change_in_worktree_emits_for_worktree_only` — symmetric.
-3. `test_detached_head_in_worktree_returns_short_sha` — `git -C <worktree> switch --detach <sha>`, call `git_branch_inner(<worktree>)`, assert it returns the abbreviated SHA (7 chars).
-4. `test_real_git_error_still_returns_err` — call `git_branch_inner` against a path that's under `$HOME` but is NOT a repo, assert the result is `Err` (not `Ok("")`). Protects against the regression codex flagged in §4.
-5. `test_pre_repo_upgrades_to_linked_worktree` — subscribe to a path that isn't yet a repo, run `git worktree add` from outside to create it, wait for the next poll cycle, assert subscription transitions and the next HEAD movement fires `git-head-changed`.
-6. `test_two_worktrees_independent_head_events` — three subscribers across main + two linked worktrees, switch branches in one worktree, assert only that subscriber sees `git-head-changed`.
+3. `test_pre_repo_upgrades_to_linked_worktree_and_emits_initial_head_event` — subscribe to a path that isn't yet a repo, run `git worktree add` from outside to create it, wait for the next poll cycle, assert subscription transitions and the **initial** `git-head-changed` emit (from §3 "Initial emit on subscribe") fires immediately on upgrade.
+4. `test_two_worktrees_independent_head_events` — three subscribers across main + two linked worktrees, switch branches in one worktree, assert only that subscriber sees `git-head-changed`.
+5. `test_worktree_removal_emits_head_changed_for_disappearing_worktree` — subscribe to a linked worktree, `git worktree remove` it, assert `git-head-changed` fires (path classifier matches the `Remove` event on `<git_dir>/HEAD`) and the next `git_branch_inner` call returns `Err`.
 
-All tests use `FakeEventSink` (`runtime::FakeEventSink`) and inspect emitted events via the existing helper that filters by event name.
+Tests in `mod.rs#[cfg(test)] mod tests` (`#[tokio::test]`):
+
+6. `test_git_branch_detached_head_in_worktree_returns_short_sha` — extends the existing `test_git_branch_returns_empty_for_detached_head` at `mod.rs:1757`. After this spec, the expected return changes from `""` to the abbreviated SHA. Update the existing test name + assertion in the same commit.
+7. `test_git_branch_non_repo_cwd_still_returns_err` — call `git_branch_inner` against a `$HOME`-rooted path that is NOT a repo, assert `Err` (not `Ok("")`). Protects against the regression codex flagged in §4. Mirrors the existing `test_git_branch_returns_error_for_non_repo_cwd` at `mod.rs:1804`.
+
+All tests use `FakeEventSink` (`runtime::FakeEventSink` — publicly re-exported at `runtime/mod.rs:13`) and inspect emitted events via the same helpers existing watcher tests use.
 
 ### React hook tests (Vitest + Testing Library)
 
