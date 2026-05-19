@@ -455,8 +455,12 @@ describe('useSessionManager', () => {
 
     // Final state: original Exited tabs preserved + the freshly spawned tab.
     await waitFor(() => expect(result.current.sessions).toHaveLength(3))
-    expect(result.current.sessions[0].panes[0].ptyId).toBe('fresh-1')
-    expect(result.current.sessions[0].status).toBe('running')
+    expect(result.current.sessions.map((s) => s.panes[0].ptyId)).toEqual([
+      'stale-1',
+      'stale-2',
+      'fresh-1',
+    ])
+    expect(result.current.sessions[2].status).toBe('running')
     // Exited tabs remain so the user can Restart them.
     expect(
       result.current.sessions.filter((s) => s.status === 'completed')
@@ -609,10 +613,10 @@ describe('useSessionManager', () => {
     expect(restored!.cwd).toBe('/home/user/projects/foo')
   })
 
-  // F4 specific: with existing tabs, the new tab must be PREPENDED in the
+  // F4 specific: with existing tabs, the new tab must be APPENDED in the
   // reorderSessions call (matching the React-state insertion order so cache
   // and view agree on the post-create arrangement).
-  test('F4: createSession persists prepended order to cache when other tabs exist', async () => {
+  test('F4: createSession persists appended order to cache when other tabs exist', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 'existing-1',
@@ -656,22 +660,22 @@ describe('useSessionManager', () => {
     // Wrap in waitFor — the active id updates AFTER spawn resolves and React
     // flushes the setSessions/setActiveSessionIdState batch.
     await waitFor(() =>
-      expect(result.current.sessions[0].panes[0].ptyId).toBe('new-tab')
+      expect(result.current.sessions[2].panes[0].ptyId).toBe('new-tab')
     )
-    const createdSessionId = result.current.sessions[0].id
+    const createdSessionId = result.current.sessions[2].id
 
     expect(result.current.activeSessionId).toBe(createdSessionId)
     await waitFor(() =>
       expect(service.setActiveSession).toHaveBeenCalledWith('new-tab')
     )
 
-    // Order: new tab first (matches the [newSession, ...prev] prepend),
-    // then the two existing tabs in their original order.
+    // Order: existing tabs keep their original order, then the new tab
+    // lands at the bottom (matches the [...prev, newSession] append).
     await waitFor(() =>
       expect(service.reorderSessions).toHaveBeenCalledWith([
-        'new-tab',
         'existing-1',
         'existing-2',
+        'new-tab',
       ])
     )
   })
@@ -2362,10 +2366,9 @@ describe('useSessionManager', () => {
       service.reorderSessions as ReturnType<typeof vi.fn>
     ).mock.calls.map((call) => call[0] as string[])
 
-    // The most recent reorder must contain both ids.
+    // The most recent reorder must contain both ids in append order.
     const lastReorder = reorderCalls[reorderCalls.length - 1]
-    expect(lastReorder).toEqual(expect.arrayContaining(['tab-1', 'tab-2']))
-    expect(lastReorder).toHaveLength(2)
+    expect(lastReorder).toEqual(['tab-1', 'tab-2'])
   })
 
   // F2 (round 2): if the user creates a tab via createSession while the
@@ -2400,7 +2403,11 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(service.spawn).toHaveBeenCalled())
     await waitFor(() => expect(result.current.sessions).toHaveLength(1))
     expect(result.current.sessions[0].panes[0].ptyId).toBe('in-flight-tab')
-    expect(result.current.activeSessionId).toBe(result.current.sessions[0].id)
+
+    const createdSessionId = result.current.sessions.find((s) =>
+      s.panes.some((pane) => pane.ptyId === 'in-flight-tab')
+    )?.id
+    expect(result.current.activeSessionId).toBe(createdSessionId)
 
     // Now the restore IPC resolves with a snapshot taken BEFORE the new tab
     // was added to the cache (it only contains a previously-existing tab).
@@ -2423,14 +2430,14 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     // BOTH sessions must be present after restore resolves — the in-flight
-    // tab must NOT be wiped out by the snapshot. Order: in-flight first
-    // (matches the createSession prepend convention), then restored tabs.
+    // tab must NOT be wiped out by the snapshot. Restored tabs keep their
+    // cache order, then the in-flight creation lands at the bottom.
     const ptyIds = result.current.sessions.map((s) => s.panes[0].ptyId)
-    expect(ptyIds).toEqual(['in-flight-tab', 'cached-tab'])
+    expect(ptyIds).toEqual(['cached-tab', 'in-flight-tab'])
 
     // Active id stays on the user's most recent intent (the in-flight tab),
     // not the cached id. createSession's optimistic active update wins.
-    expect(result.current.activeSessionId).toBe(result.current.sessions[0].id)
+    expect(result.current.activeSessionId).toBe(createdSessionId)
   })
 
   // Round 4, Finding 1 (codex P1) regression test.
