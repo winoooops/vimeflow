@@ -506,3 +506,5 @@ Recorded as a checklist in the implementation plan (NOT in this spec): open two 
 - **Additive.** No existing test should fail. The `.git/HEAD` watch path conceptually moves from `toplevel.join(".git/HEAD")` to `git_dir.join("HEAD")`, but in the main-repo case those are bit-identical. The shape change is "watch the parent dir non-recursively and filter by full path," which existing main-repo tests don't probe.
 - **Frontend `git_branch` IPC contract change** (`Ok("")` → `Ok(short-sha)` for detached HEAD) is observable but backward-compatible: the hook treats both as non-empty strings; `Err` cases are unchanged. The visible behavior change is "the chip now appears in detached state instead of disappearing."
 - **`stop_git_watcher_inner` refcount fix** (described in §2) is a prerequisite. Land it first as its own commit so the worktree work doesn't compound an existing latent bug into a regression for the no-op case.
+
+<!-- codex-reviewed: 2026-05-19T08:55:18Z -->
