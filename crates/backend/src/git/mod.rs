@@ -1033,12 +1033,30 @@ pub(crate) async fn git_branch_inner(cwd: String) -> Result<String, String> {
     }
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.trim().is_empty() {
-        // Detached HEAD has no symbolic ref; the frontend treats empty as no branch.
-        return Ok(String::new());
+    if !stderr.trim().is_empty() {
+        return Err(format!("git_branch: {stderr}"));
     }
 
-    Err(format!("git_branch: {stderr}"))
+    let mut rev = Command::new("git");
+    rev.arg("-C")
+        .arg(&safe_cwd)
+        .arg("rev-parse")
+        .arg("--short=7")
+        .arg("--verify")
+        .arg("HEAD")
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let rev_out = run_git_with_timeout(rev).await?;
+
+    if rev_out.status.success() {
+        let sha = String::from_utf8(rev_out.stdout)
+            .map_err(|e| format!("git_branch rev-parse utf8: {}", e))?
+            .trim()
+            .to_string();
+        return Ok(sha);
+    }
+
+    Ok(String::new())
 }
 
 #[cfg(test)]
@@ -1754,7 +1772,7 @@ copy to copy.txt
     }
 
     #[tokio::test]
-    async fn test_git_branch_returns_empty_for_detached_head() {
+    async fn test_git_branch_detached_head_returns_short_sha() {
         use std::process::Command;
 
         let tmp = home_tempdir();
@@ -1772,8 +1790,20 @@ copy to copy.txt
 
         configure_test_git(repo_path);
 
+        std::fs::write(repo_path.join("seed"), "seed").expect("failed to write seed");
+        let add_out = Command::new("git")
+            .args(["add", "."])
+            .current_dir(repo_path)
+            .output()
+            .expect("git add failed");
+        assert!(
+            add_out.status.success(),
+            "git add must succeed: {}",
+            String::from_utf8_lossy(&add_out.stderr)
+        );
+
         let commit_out = Command::new("git")
-            .args(["commit", "--allow-empty", "-m", "init"])
+            .args(["commit", "-m", "seed"])
             .current_dir(repo_path)
             .output()
             .expect("git commit failed");
@@ -1783,21 +1813,44 @@ copy to copy.txt
             String::from_utf8_lossy(&commit_out.stderr)
         );
 
-        let checkout_out = Command::new("git")
-            .args(["checkout", "--detach", "HEAD"])
+        let rev_out = Command::new("git")
+            .args(["rev-parse", "HEAD"])
             .current_dir(repo_path)
             .output()
-            .expect("git checkout failed");
+            .expect("git rev-parse failed");
         assert!(
-            checkout_out.status.success(),
-            "git checkout must succeed: {}",
-            String::from_utf8_lossy(&checkout_out.stderr)
+            rev_out.status.success(),
+            "git rev-parse must succeed: {}",
+            String::from_utf8_lossy(&rev_out.stderr)
+        );
+        let full_sha = String::from_utf8(rev_out.stdout)
+            .expect("sha should be utf8")
+            .trim()
+            .to_string();
+
+        let switch_out = Command::new("git")
+            .args(["switch", "--detach", &full_sha])
+            .current_dir(repo_path)
+            .output()
+            .expect("git switch failed");
+        assert!(
+            switch_out.status.success(),
+            "git switch must succeed: {}",
+            String::from_utf8_lossy(&switch_out.stderr)
         );
 
         let path = repo_path.to_string_lossy().to_string();
         let branch = git_branch(path).await.expect("git_branch");
 
-        assert_eq!(branch, "");
+        assert_eq!(
+            branch.len(),
+            7,
+            "short SHA should be exactly 7 chars: {branch:?}"
+        );
+        assert!(
+            full_sha.starts_with(&branch),
+            "short SHA must be a prefix of the full SHA: short={branch} full={full_sha}"
+        );
     }
 
     #[tokio::test]

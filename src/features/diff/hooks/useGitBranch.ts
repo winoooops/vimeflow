@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { invoke } from '../../../lib/backend'
+import { invoke, listen, type UnlistenFn } from '../../../lib/backend'
 
 export interface UseGitBranchOptions {
   /** When false, returns empty state and skips IPC. */
@@ -12,6 +12,11 @@ export interface UseGitBranchReturn {
   error: Error | null
   refresh: () => void
   idle: boolean
+}
+
+interface GitHeadChangedPayload {
+  /** List of current working directory paths subscribed to the watcher */
+  cwds: string[]
 }
 
 const isValidCwd = (cwd: string): boolean => {
@@ -56,6 +61,7 @@ export const useGitBranch = (
   // (don't blank the Header — the previous branch is still correct for
   // this cwd; just refresh it in place once the IPC returns).
   const lastFetchedCwdRef = useRef<string | null>(null)
+  const unlistenRef = useRef<UnlistenFn | null>(null)
 
   useEffect(() => {
     if (!enabled || !isValidCwd(cwd)) {
@@ -114,6 +120,79 @@ export const useGitBranch = (
       cancelled = true
     }
   }, [cwd, enabled, refreshKey])
+
+  useEffect((): (() => void) | undefined => {
+    if (!enabled || !isValidCwd(cwd)) {
+      return undefined
+    }
+
+    let mounted = true
+    let listenerAttached = false
+    let watcherStarted = false
+
+    const setupWatch = async (): Promise<void> => {
+      try {
+        const unlisten = await listen<GitHeadChangedPayload>(
+          'git-head-changed',
+          (payload) => {
+            if (payload.cwds.includes(cwd)) {
+              refresh()
+            }
+          }
+        )
+
+        if (!mounted) {
+          unlisten()
+
+          return
+        }
+
+        unlistenRef.current = unlisten
+        listenerAttached = true
+
+        await invoke('start_git_watcher', { cwd })
+        watcherStarted = true
+
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (mounted) {
+          refresh()
+        }
+      } catch (err) {
+        if (mounted) {
+          setError(
+            err instanceof Error
+              ? err
+              : new Error('Failed to start git branch watcher')
+          )
+        }
+      }
+    }
+
+    const setupPromise = setupWatch()
+
+    return (): void => {
+      mounted = false
+
+      const cleanup = async (): Promise<void> => {
+        if (listenerAttached && unlistenRef.current) {
+          unlistenRef.current()
+          unlistenRef.current = null
+        }
+
+        await setupPromise.catch(() => {
+          // setup errored — nothing to stop
+        })
+
+        if (watcherStarted) {
+          await invoke('stop_git_watcher', { cwd }).catch(() => {
+            // Best-effort cleanup — swallow errors
+          })
+        }
+      }
+
+      void cleanup()
+    }
+  }, [cwd, enabled, refresh])
 
   return { branch, loading, error, refresh, idle }
 }
