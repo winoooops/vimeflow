@@ -54,15 +54,6 @@ export interface TerminalZoneProps {
   setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
   addPane: (sessionId: string) => void
   removePane: (sessionId: string, paneId: string) => void
-  /**
-   * Modifier glyph for the toolbar hint ('⌘' on macOS, 'Ctrl' on other
-   * platforms). Sourced from `WorkspaceView` so the visible label and
-   * `usePaneShortcuts.preferModifier` (which gates which modifier the
-   * hook intercepts) share a single platform-detection site and can
-   * never drift. Defaults to `'Ctrl'` for tests / sandboxed renders
-   * that don't pass it explicitly.
-   */
-  modKey?: '⌘' | 'Ctrl'
   isZoneFocused?: boolean
   onContainerFocus?: () => void
 }
@@ -86,7 +77,6 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       setSessionLayout,
       addPane,
       removePane,
-      modKey = 'Ctrl',
       isZoneFocused = true,
       onContainerFocus = undefined,
     }: TerminalZoneProps,
@@ -175,6 +165,20 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
           onContainerFocus?.()
         }}
       >
+        {/*
+          The static keyboard-shortcut legend that used to live in
+          this toolbar (`Mod+1-4 pane · Mod+\ layout · Mod+e editor ·
+          Mod+g diff · Mod+b back`) was removed during the tooltip
+          rollout — three of the five shortcuts are now surfaced via
+          per-button tooltips (Mod+1-4 on pane slots, Mod+E on the
+          Editor tab, Mod+G on the Diff Viewer tab). The remaining
+          two — Mod+\ (cycle layout) and Mod+B (focus terminal from
+          dock) — currently have NO in-UI discovery surface. See
+          https://github.com/winoooops/vimeflow/issues/225 for the
+          follow-up that introduces a focus-aware status-bar or
+          adjacent-affordance pattern. Do NOT re-introduce a static
+          legend here without coordinating with that issue.
+        */}
         {showToolbar ? (
           <div
             data-testid="layout-toolbar"
@@ -184,22 +188,6 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
               activeLayoutId={activeSession.layout}
               onPick={onPickLayout}
             />
-            <span className="ml-auto hidden items-center gap-1 font-mono text-xs text-on-surface-muted sm:inline-flex">
-              <kbd className="rounded bg-on-surface/10 px-1">{modKey}</kbd>
-              <span>+1-4 pane</span>
-              <span>·</span>
-              <kbd className="rounded bg-on-surface/10 px-1">{modKey}</kbd>
-              <span>+{'\\'} layout</span>
-              <span>·</span>
-              <kbd className="rounded bg-on-surface/10 px-1">{modKey}</kbd>
-              <span>+e editor</span>
-              <span>·</span>
-              <kbd className="rounded bg-on-surface/10 px-1">{modKey}</kbd>
-              <span>+g diff</span>
-              <span>·</span>
-              <kbd className="rounded bg-on-surface/10 px-1">{modKey}</kbd>
-              <span>+b back</span>
-            </span>
           </div>
         ) : null}
 

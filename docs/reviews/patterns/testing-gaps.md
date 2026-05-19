@@ -499,7 +499,17 @@ filesystem scope restrictions).
 - **Fix:** Removed the duplicate factory test and kept the actual `window.vimeflow` signal coverage in `src/lib/environment.test.ts`. Code-review heuristic: when a test name includes a specific runtime signal ("via vimeflow", "via Tauri", "via env"), the body must manipulate that signal or call the real helper that observes it; otherwise the test is only duplicate branch coverage with a misleading title.
 - **Commit:** _(see git log for the PR #208 round-1 fix commit)_
 
-### 50. e2e-bridge buffer-API fallback had zero coverage; production cache-key bug hidden behind happy-path fixtures
+### 50. Negative tooltip assertion fired before the open-delay elapsed — guard branch effectively untested
+
+- **Source:** github-claude | PR #224 round 1 | 2026-05-19
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/DockTab.test.tsx`
+- **Finding:** A new test guarding `disabled={actionsOpen}` on the More-button Tooltip asserted `queryByRole('tooltip')` was absent immediately after `user.hover(...)`. The `Tooltip` primitive has a default 250 ms hover delay, so the tooltip would still be absent at that moment regardless of the `disabled` value — the negative assertion was true both with and without the guard, leaving the regression target uncovered. Codex verify (`/lifeline:upsource-review` cycle 1) flagged this on top of the original Claude finding; the human-eye lint missed it.
+- **Fix:** Inserted `await new Promise((resolve) => { setTimeout(resolve, 300) })` between the hover and the absence-assertion so the assertion runs PAST the tooltip's 250 ms open-delay window. With the wait, removing `disabled={actionsOpen}` would let the tooltip appear and the test fails. Comment in code cites the codex-verify finding so a future reader doesn't simplify the wait away.
+- **Commit:** _(see git log for the PR #224 cycle-1 fix commit)_
+- **Heuristic:** When asserting absence of a delayed UI element (tooltip, dropdown, animated reveal), the test MUST wait through the delay first. The same gotcha applies to `@floating-ui/react`-backed popovers, custom hover hints, and any `setTimeout`/`requestAnimationFrame`-gated render. Default useful waits: 300 ms (≥ floating-ui's 250 ms hover delay) for tooltips, 400 ms for `safePolygon` exits, frame-driven motion needs `vi.advanceTimersByTime` or `userEvent.setup({ advanceTimers })`.
+
+### 51. e2e-bridge buffer-API fallback had zero coverage; production cache-key bug hidden behind happy-path fixtures
 
 - **Source:** github-claude | PR #228 round 2 | 2026-05-19
 - **Severity:** HIGH

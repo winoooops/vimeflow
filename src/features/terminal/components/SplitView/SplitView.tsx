@@ -18,6 +18,7 @@ import {
 } from '../TerminalPane'
 import { EmptySlot } from './EmptySlot'
 import { LAYOUTS } from './layouts'
+import { Tooltip } from '../../../../components/Tooltip'
 
 const SLOT_FADE_TRANSITION = { duration: 0.08, ease: 'easeOut' } as const
 
@@ -203,36 +204,57 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                 className="relative min-h-0 min-w-0"
                 style={{ gridArea: `p${i}` }}
               >
-                {/* F16 (codex connector P1, carried over from pre-5b TerminalZone):
-                  keying TerminalPane by `pane.ptyId` (NOT `pane.id`) forces a
-                  clean useTerminal subtree unmount + remount whenever a
-                  restartSession rotates the pane's PTY handle. Without the
-                  key swap, the stale useTerminal ref stays bound to the
-                  dead pre-restart PTY and typing into the pane goes
-                  nowhere until reload. The outer slot wrapper above keys
-                  by `pane.id` so layout slot identity is preserved across
-                  restarts. */}
-                <TerminalPane
-                  key={pane.ptyId}
-                  ref={getPaneRefSetter(pane.id)}
-                  session={session}
-                  pane={pane}
-                  service={service}
-                  mode={mode}
-                  onCwdChange={(cwd) =>
-                    onSessionCwdChange?.(session.id, pane.id, cwd)
-                  }
-                  onPaneReady={onPaneReady}
-                  onRestart={onSessionRestart}
-                  onClose={
-                    session.panes.length > 1 && onClosePane
-                      ? onClosePane
-                      : undefined
-                  }
-                  isActive={isActive}
-                  deferFit={deferTerminalFit}
-                  showFocusHighlight={showPaneFocusHighlight}
-                />
+                {/* Inner Tooltip wrapper. The motion.div above carries
+                  the click handler + grid placement; this inner Tooltip
+                  attaches floating-ui hover handlers to a plain div so
+                  the `cloneElement` merge doesn't have to negotiate
+                  with framer-motion's prop-handling. The plain div
+                  fills its parent so hover detection still covers the
+                  whole slot. Disabled when the pane is active —
+                  nothing to hint at, and overlaying an active
+                  terminal with a popover would interfere. */}
+                <Tooltip
+                  content={`Focus pane ${i + 1}`}
+                  shortcut={['Mod', String(i + 1)]}
+                  disabled={pane.active}
+                  placement="top"
+                >
+                  <div
+                    data-testid="split-view-slot-inner"
+                    className="h-full w-full"
+                  >
+                    {/* F16 (codex connector P1, carried over from pre-5b TerminalZone):
+                    keying TerminalPane by `pane.ptyId` (NOT `pane.id`) forces a
+                    clean useTerminal subtree unmount + remount whenever a
+                    restartSession rotates the pane's PTY handle. Without the
+                    key swap, the stale useTerminal ref stays bound to the
+                    dead pre-restart PTY and typing into the pane goes
+                    nowhere until reload. The outer slot wrapper above keys
+                    by `pane.id` so layout slot identity is preserved across
+                    restarts. */}
+                    <TerminalPane
+                      key={pane.ptyId}
+                      ref={getPaneRefSetter(pane.id)}
+                      session={session}
+                      pane={pane}
+                      service={service}
+                      mode={mode}
+                      onCwdChange={(cwd) =>
+                        onSessionCwdChange?.(session.id, pane.id, cwd)
+                      }
+                      onPaneReady={onPaneReady}
+                      onRestart={onSessionRestart}
+                      onClose={
+                        session.panes.length > 1 && onClosePane
+                          ? onClosePane
+                          : undefined
+                      }
+                      isActive={isActive}
+                      deferFit={deferTerminalFit}
+                      showFocusHighlight={showPaneFocusHighlight}
+                    />
+                  </div>
+                </Tooltip>
               </motion.div>
             )
           })}

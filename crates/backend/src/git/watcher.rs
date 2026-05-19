@@ -250,6 +250,11 @@ struct RepoWatcher {
     /// happens at the watcher level, not at the subscriber level.
     subscribers: HashMap<String, u32>,
 
+    /// Canonical per-worktree gitdir. In the main worktree this is
+    /// `<toplevel>/.git`; in a linked worktree this is the corresponding
+    /// `<main>/.git/worktrees/<name>` directory.
+    _git_dir: PathBuf,
+
     /// The notify watcher instance. Wrapped in `Arc<Mutex<_>>` so the
     /// polling thread can dynamically register newly-created directories
     /// as `NonRecursive` watches (non-recursive inotify does NOT extend
@@ -274,6 +279,15 @@ struct RepoWatcher {
     /// HEAD only moves on commit/checkout. The active reader is the
     /// polling thread; this field roots the Arc.
     _last_status_hash: Arc<Mutex<Option<u64>>>,
+
+    /// Cached `<git_dir>/HEAD` content for the polling fallback. This is
+    /// independent from the status hash because a clean branch switch can
+    /// move HEAD without changing `git status --porcelain`.
+    _last_head_content: Arc<Mutex<Option<String>>>,
+
+    /// Set by the notify callback when it sees `<git_dir>/HEAD`; consumed by
+    /// the debounce trailing edge.
+    _head_dirty: Arc<AtomicBool>,
 }
 
 /// Handle to a pre-repo watcher (watching a directory that is not yet a git repo)
@@ -312,7 +326,8 @@ pub struct GitWatcherState {
     /// keyed by canonical input cwd
     pre_repo_watchers: Arc<Mutex<HashMap<PathBuf, PreRepoWatcher>>>,
 
-    /// Side-map: frontend's original cwd string → canonical repo toplevel.
+    /// Side-map: frontend's original cwd string → (canonical repo toplevel,
+    /// canonical per-worktree gitdir).
     /// Populated on every successful `start_git_watcher_inner` repo-path
     /// insertion; consumed by `stop_git_watcher_inner` to find the right
     /// `repo_watchers` bucket without re-running `rev-parse --show-toplevel`
@@ -324,10 +339,10 @@ pub struct GitWatcherState {
     /// `resolve_toplevel` would fail, the repo-bucket lookup would be
     /// skipped, and the polling thread (kept alive by the un-removed
     /// RepoWatcher) would keep firing `hash_git_status` forever.
-    cwd_to_toplevel: Arc<Mutex<HashMap<String, PathBuf>>>,
+    cwd_to_repo: Arc<Mutex<HashMap<String, (PathBuf, PathBuf)>>>,
 
     /// Side-map: frontend's original cwd string → canonicalized PathBuf
-    /// for **pre-repo** entries. Same role as `cwd_to_toplevel` but for
+    /// for **pre-repo** entries. Same role as `cwd_to_repo` but for
     /// the non-repo path: populated by `start_pre_repo_watcher_inner`,
     /// consumed by `stop_git_watcher_inner` to find the `pre_repo_watchers`
     /// bucket without re-running `validate_cwd`.
@@ -354,6 +369,14 @@ struct GitStatusChangedPayload {
     cwds: Vec<String>,
 }
 
+/// Payload emitted when git HEAD content may have changed.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitHeadChangedPayload {
+    /// List of input cwds that should refresh their branch label.
+    cwds: Vec<String>,
+}
+
 /// Resolve the git toplevel for a given cwd. Uses `run_sync_with_timeout`
 /// so a hung `git rev-parse` (NFS stall, `.git/index.lock` held by a
 /// crashed process, etc.) can't park the polling thread forever.
@@ -375,6 +398,82 @@ fn resolve_toplevel(cwd: &std::path::Path) -> Result<PathBuf, String> {
     let toplevel = toplevel_str.trim();
 
     Ok(PathBuf::from(toplevel))
+}
+
+/// Resolve the per-worktree gitdir for a given cwd.
+///
+/// `--path-format=absolute` is required because plain `--git-dir` can return
+/// paths relative to the pane cwd. We canonicalize before scope validation so
+/// symlinks inside `.git/` resolve to the actual watched directory.
+fn resolve_git_dir(cwd: &std::path::Path) -> Result<PathBuf, String> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C")
+        .arg(cwd)
+        .arg("rev-parse")
+        .arg("--path-format=absolute")
+        .arg("--git-dir")
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let output = run_sync_with_timeout(cmd, SYNC_GIT_TIMEOUT)?;
+
+    if !output.status.success() {
+        return Err("Not a git repository".to_string());
+    }
+
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let path = PathBuf::from(raw.trim());
+
+    path.canonicalize()
+        .map_err(|e| format!("canonicalize git_dir: {}", e))
+}
+
+/// `<git_dir>/HEAD` exactly. Full-path equality prevents working-tree files
+/// named `HEAD` from being misclassified as branch changes.
+fn path_is_git_head(path: &std::path::Path, git_dir: &std::path::Path) -> bool {
+    path == git_dir.join("HEAD")
+}
+
+/// `<git_dir>/index` exactly.
+fn path_is_git_index(path: &std::path::Path, git_dir: &std::path::Path) -> bool {
+    path == git_dir.join("index")
+}
+
+/// Any top-level path inside `git_dir`. The gitdir watch is non-recursive, but
+/// this still lets the shared notify callback drop gitdir-side noise such as
+/// `config`, `packed-refs`, and `COMMIT_EDITMSG`.
+fn path_is_inside_git_dir(path: &std::path::Path, git_dir: &std::path::Path) -> bool {
+    path.parent() == Some(git_dir)
+}
+
+/// Returns true iff `reader` produces content different from the cached
+/// `last_content`. Always updates `last_content` on a successful read.
+///
+/// Seeding behaviour: when `last_content` is `None` and the read succeeds,
+/// the cache is seeded with the current content and the function returns
+/// `false`. This is intentional — the first observation establishes the
+/// baseline and must not be treated as a change, because every fresh
+/// subscription already emits an initial `git-head-changed` (see
+/// `start_git_watcher_inner`'s initial-emit path). Returning `true` here
+/// would double-fire on every subscribe.
+///
+/// Read errors return `false` and leave `last_content` untouched, so a
+/// transient `<git_dir>/HEAD` read failure (NFS stall, worktree removed,
+/// permissions) doesn't poison the cache.
+fn detect_head_change_with<R, E>(last_content: &mut Option<String>, reader: R) -> bool
+where
+    R: FnOnce() -> Result<String, E>,
+{
+    let current = match reader() {
+        Ok(content) => content,
+        Err(_) => return false,
+    };
+
+    let changed = match last_content.as_deref() {
+        Some(previous) => previous != current,
+        None => false,
+    };
+    *last_content = Some(current);
+    changed
 }
 
 /// Hash the current `git status --porcelain=v1 -z --untracked-files=all`
@@ -423,10 +522,9 @@ fn hash_git_status(toplevel: &Path) -> Result<u64, String> {
 ///      inotify watch descriptors accumulate until `max_user_watches` is
 ///      exhausted.
 ///
-/// The explicit `.git/index` and `.git/HEAD` additions in
-/// `start_git_watcher_inner` (which DO need to be watched so staging /
-/// commits fire events) are the ONLY `.git/*` paths that should end up
-/// registered with notify.
+/// The explicit per-worktree gitdir watch in `start_git_watcher_inner`
+/// covers top-level git metadata files such as `HEAD` and `index` without
+/// recursing into `.git/objects`.
 fn enumerate_dirs(toplevel: &std::path::Path) -> Vec<PathBuf> {
     use std::ffi::OsStr;
 
@@ -483,7 +581,7 @@ fn start_git_watcher_inner(
     // `upgrade_to_repo_watcher`, or just a re-subscription after `git init`),
     // the old `cwd_to_safe_pre_repo` mapping is now obsolete. Leaving it
     // would just be a tiny memory leak — stop_git_watcher_inner consults
-    // `cwd_to_toplevel` first so the stale entry can't cause incorrect
+    // `cwd_to_repo` first so the stale entry can't cause incorrect
     // routing — but tidiness wins.
     // Capture the prior pre-repo mapping (if any) but do NOT clean up
     // `pre_repo_watchers` yet. The decision depends on which branch of
@@ -520,11 +618,14 @@ fn start_git_watcher_inner(
         }
     };
 
+    let git_dir =
+        resolve_git_dir(&safe_cwd).and_then(|path| validate_cwd(&path.to_string_lossy()))?;
+
     // Repo-transition path. Only NOW can we safely clean up the prior
     // `pre_repo_watchers` entry for this cwd: the subscriber is moving
     // from pre-repo to repo, so any leftover subscriber row under the
     // old safe_cwd would never be reached again (stop_git_watcher
-    // routes via `cwd_to_toplevel` once we register below). Doing this
+    // routes via `cwd_to_repo` once we register below). Doing this
     // BEFORE `resolve_toplevel` would have been wrong for the still-
     // pre-repo re-subscription case, where `start_pre_repo_watcher_inner`
     // needs the existing refcount to bump rather than recreate from 1
@@ -555,7 +656,7 @@ fn start_git_watcher_inner(
     // lock-free; phase 3 re-acquires A only for the final
     // check-then-insert.
     //
-    // While holding A here, ALSO insert into `cwd_to_toplevel` (lock B).
+    // While holding A here, ALSO insert into `cwd_to_repo` (lock B).
     // `stop_git_watcher_inner` always releases B before acquiring A, so
     // start holding A→B simultaneously is deadlock-free. Without the A+B
     // overlap, a concurrent stop could slip in between A's release and
@@ -569,11 +670,12 @@ fn start_git_watcher_inner(
         if let Some(watcher) = repo_watchers.get_mut(&toplevel) {
             *watcher.subscribers.entry(cwd.to_string()).or_insert(0) += 1;
             state
-                .cwd_to_toplevel
+                .cwd_to_repo
                 .lock()
-                .expect("failed to lock cwd_to_toplevel")
-                .insert(cwd.to_string(), toplevel.clone());
+                .expect("failed to lock cwd_to_repo")
+                .insert(cwd.to_string(), (toplevel.clone(), git_dir.clone()));
             drop(repo_watchers);
+            emit_git_head_changed(&events, vec![cwd.to_string()]);
             emit_git_status_changed(&events, vec![cwd.to_string()]);
             return Ok(());
         }
@@ -582,6 +684,10 @@ fn start_git_watcher_inner(
     // ── Phase 2: build watcher state OUTSIDE locks ────────────────────
     let state_clone = state.clone();
     let last_status_hash = Arc::new(Mutex::new(hash_git_status(&toplevel).ok()));
+    let last_head_content = Arc::new(Mutex::new(
+        std::fs::read_to_string(git_dir.join("HEAD")).ok(),
+    ));
+    let head_dirty = Arc::new(AtomicBool::new(false));
     let stop_flag = Arc::new(AtomicBool::new(false));
     let poll_stop_signal = WatcherStopSignal::new();
     let debounce_tx = {
@@ -589,6 +695,7 @@ fn start_git_watcher_inner(
         let state = state_clone.clone();
         let toplevel = toplevel.clone();
         let stop_flag = stop_flag.clone();
+        let head_dirty = head_dirty.clone();
 
         // Production callers ignore the completion flag — `stop_flag` plus
         // the Drop semantics of the captured Arcs are enough for shutdown.
@@ -597,7 +704,10 @@ fn start_git_watcher_inner(
         let (tx, _completed) = spawn_trailing_debounce_thread(
             stop_flag,
             Duration::from_millis(DEBOUNCE_MS),
-            move || emit_for_all_subscribers(&events, &state, &toplevel),
+            move || {
+                let head_was_dirty = head_dirty.swap(false, Ordering::AcqRel);
+                emit_for_all_subscribers(&events, &state, &toplevel, head_was_dirty);
+            },
         );
         tx
     };
@@ -606,6 +716,8 @@ fn start_git_watcher_inner(
     let notify_watcher = {
         let toplevel = toplevel.clone();
         let debounce_tx = debounce_tx.clone();
+        let git_dir = git_dir.clone();
+        let head_dirty = head_dirty.clone();
 
         notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
             let event = match res {
@@ -628,7 +740,23 @@ fn start_git_watcher_inner(
                 return;
             }
 
-            if debounce_tx.send(()).is_err() {
+            let mut should_forward = false;
+            for path in &event.paths {
+                if path_is_git_head(path, &git_dir) {
+                    head_dirty.store(true, Ordering::Release);
+                    should_forward = true;
+                } else if path_is_git_index(path, &git_dir) {
+                    should_forward = true;
+                } else if path_is_inside_git_dir(path, &git_dir) {
+                    // Drop gitdir-side noise. HEAD and index are handled
+                    // above; config, packed-refs, COMMIT_EDITMSG, etc. do
+                    // not require a branch or status refresh.
+                } else {
+                    should_forward = true;
+                }
+            }
+
+            if should_forward && debounce_tx.send(()).is_err() {
                 log::debug!(
                     "Git watcher debounce thread stopped for {}",
                     toplevel.display()
@@ -659,29 +787,23 @@ fn start_git_watcher_inner(
             dirs_guard.insert(dir);
         }
 
-        // Also watch .git/index and .git/HEAD (non-recursive — never recurse
-        // into .git/ because .git/objects/ would explode the watch count).
-        let git_index = toplevel.join(".git/index");
-        if git_index.exists() {
-            if let Err(e) = watcher_guard.watch(&git_index, RecursiveMode::NonRecursive) {
-                log::warn!("Failed to watch .git/index: {}", e);
-            }
-        }
-
-        let git_head = toplevel.join(".git/HEAD");
-        if git_head.exists() {
-            if let Err(e) = watcher_guard.watch(&git_head, RecursiveMode::NonRecursive) {
-                log::warn!("Failed to watch .git/HEAD: {}", e);
+        // Watch the per-worktree gitdir directory instead of individual files.
+        // Git updates HEAD and index by atomic rename-replace; directory
+        // watches survive those inode swaps, direct file watches do not.
+        if git_dir.exists() {
+            if let Err(e) = watcher_guard.watch(&git_dir, RecursiveMode::NonRecursive) {
+                log::warn!("Failed to watch {}: {}", git_dir.display(), e);
             }
         }
     }
 
-    // Start polling fallback thread with two jobs on the same 10s tick:
-    //   (1) Change detection — hashes `git status --porcelain=v1 -z`
+    // Start polling fallback thread with three jobs on the same 10s tick:
+    //   (1) HEAD detection — compares cached `<git_dir>/HEAD` contents.
+    //   (2) Status detection — hashes `git status --porcelain=v1 -z`
     //       output. Unlike HEAD-only comparison, this catches every
     //       panel-visible change: staging, unstaging, editing tracked
     //       files, creating/deleting untracked files.
-    //   (2) Dynamic dir registration — re-enumerates non-ignored dirs and
+    //   (3) Dynamic dir registration — re-enumerates non-ignored dirs and
     //       registers any not yet watched. Compensates for non-recursive
     //       inotify's inability to extend into post-startup directories.
     let poll_toplevel = toplevel.clone();
@@ -689,8 +811,10 @@ fn start_git_watcher_inner(
     let poll_state = state_clone.clone();
     let poll_thread_stop_signal = poll_stop_signal.clone();
     let poll_last_status_hash = last_status_hash.clone();
+    let poll_last_head_content = last_head_content.clone();
     let poll_watcher = watcher_arc.clone();
     let poll_watched_dirs = watched_dirs.clone();
+    let poll_git_dir = git_dir.clone();
 
     std::thread::spawn(move || {
         loop {
@@ -698,7 +822,25 @@ fn start_git_watcher_inner(
                 break;
             }
 
-            // (1) Change detection via status hash.
+            // (1) Change detection via HEAD contents. This is independent
+            // from status because a clean branch switch can leave porcelain
+            // output unchanged.
+            let head_changed = {
+                let mut last = poll_last_head_content
+                    .lock()
+                    .expect("failed to lock last_head_content");
+                detect_head_change_with(&mut last, || {
+                    std::fs::read_to_string(poll_git_dir.join("HEAD"))
+                })
+            };
+            if head_changed {
+                let cwds = collect_subscriber_cwds(&poll_state, &poll_toplevel);
+                if !cwds.is_empty() {
+                    emit_git_head_changed(&poll_events, cwds);
+                }
+            }
+
+            // (2) Change detection via status hash.
             if let Ok(current_hash) = hash_git_status(&poll_toplevel) {
                 let changed = {
                     let mut last = poll_last_status_hash
@@ -711,11 +853,11 @@ fn start_git_watcher_inner(
                     changed
                 };
                 if changed {
-                    emit_for_all_subscribers(&poll_events, &poll_state, &poll_toplevel);
+                    emit_for_all_subscribers(&poll_events, &poll_state, &poll_toplevel, false);
                 }
             }
 
-            // (2) Register any newly-created non-ignored directories.
+            // (3) Register any newly-created non-ignored directories.
             let new_dirs: Vec<PathBuf> = {
                 let current = enumerate_dirs(&poll_toplevel);
                 let watched = poll_watched_dirs
@@ -758,11 +900,14 @@ fn start_git_watcher_inner(
 
     let repo_watcher = RepoWatcher {
         subscribers,
+        _git_dir: git_dir.clone(),
         _watcher: watcher_arc,
         _watched_dirs: watched_dirs,
         stop_flag,
         poll_stop_signal,
         _last_status_hash: last_status_hash,
+        _last_head_content: last_head_content,
+        _head_dirty: head_dirty,
     };
 
     // ── Phase 3: re-check and insert under lock A ─────────────────────
@@ -777,7 +922,7 @@ fn start_git_watcher_inner(
     //       refcount as if we were a phase-1 hit.
     //   (b) Common case: no race; insert the new watcher.
     //
-    // `cwd_to_toplevel.insert` happens while lock A is still held, same
+    // `cwd_to_repo.insert` happens while lock A is still held, same
     // reasoning as phase 1 — closes the TOCTOU window where a concurrent
     // stop could read empty B, then read empty A, and silently leak the
     // watcher.
@@ -793,26 +938,28 @@ fn start_git_watcher_inner(
             // which stops its debounce and polling threads.
             *existing.subscribers.entry(cwd.to_string()).or_insert(0) += 1;
             state
-                .cwd_to_toplevel
+                .cwd_to_repo
                 .lock()
-                .expect("failed to lock cwd_to_toplevel")
-                .insert(cwd.to_string(), toplevel.clone());
+                .expect("failed to lock cwd_to_repo")
+                .insert(cwd.to_string(), (toplevel.clone(), git_dir.clone()));
             drop(repo_watchers);
             // `repo_watcher` (local) drops here.
+            emit_git_head_changed(&events, vec![cwd.to_string()]);
             emit_git_status_changed(&events, vec![cwd.to_string()]);
             return Ok(());
         }
 
         repo_watchers.insert(toplevel.clone(), repo_watcher);
         state
-            .cwd_to_toplevel
+            .cwd_to_repo
             .lock()
-            .expect("failed to lock cwd_to_toplevel")
-            .insert(cwd.to_string(), toplevel);
+            .expect("failed to lock cwd_to_repo")
+            .insert(cwd.to_string(), (toplevel, git_dir));
         drop(repo_watchers);
     }
 
     // Emit initial event using the frontend's original cwd string.
+    emit_git_head_changed(&events, vec![cwd.to_string()]);
     emit_git_status_changed(&events, vec![cwd.to_string()]);
 
     Ok(())
@@ -852,6 +999,7 @@ fn start_pre_repo_watcher_inner(
             .expect("failed to lock cwd_to_safe_pre_repo")
             .insert(cwd.to_string(), safe_cwd.clone());
 
+        emit_git_head_changed(&events, vec![cwd.to_string()]);
         emit_git_status_changed(&events, vec![cwd.to_string()]);
 
         return Ok(());
@@ -884,7 +1032,8 @@ fn start_pre_repo_watcher_inner(
         .expect("failed to lock cwd_to_safe_pre_repo")
         .insert(cwd.to_string(), safe_cwd);
 
-    // Emit initial event with the frontend's original cwd string
+    // Emit initial events with the frontend's original cwd string
+    emit_git_head_changed(&events, vec![cwd.to_string()]);
     emit_git_status_changed(&events, vec![cwd.to_string()]);
 
     Ok(())
@@ -1001,6 +1150,7 @@ fn restore_pre_repo_subscribers(
         }
     }
 
+    emit_git_head_changed(&events, subscriber_cwds.clone());
     emit_git_status_changed(&events, subscriber_cwds);
 
     Ok(())
@@ -1081,15 +1231,15 @@ fn upgrade_to_repo_watcher(
         // restore the remaining count directly under the repo watcher so
         // the frontend receives one initial event instead of N.
         if refcount > 1 {
-            let toplevel = state
-                .cwd_to_toplevel
+            let repo = state
+                .cwd_to_repo
                 .lock()
-                .map_err(|e| format!("Failed to lock cwd_to_toplevel: {}", e))?
+                .map_err(|e| format!("Failed to lock cwd_to_repo: {}", e))?
                 .get(&original_cwd)
                 .cloned();
 
-            match toplevel {
-                Some(toplevel) => {
+            match repo {
+                Some((toplevel, _git_dir)) => {
                     let mut repo_watchers = state
                         .repo_watchers
                         .lock()
@@ -1152,38 +1302,38 @@ pub(crate) async fn stop_git_watcher_backend(
 /// Synchronous core of `stop_git_watcher`. Owns its state clone so it can
 /// be called from the blocking pool.
 fn stop_git_watcher_inner(cwd: String, state: GitWatcherState) -> Result<(), String> {
-    // First: look up the repo-toplevel from the side-map populated by
+    // First: look up the repo metadata from the side-map populated by
     // `start_git_watcher_inner`. This is critical — re-running
     // `resolve_toplevel(&safe_cwd)` at stop time would fail if `.git`
     // was removed mid-session (agent ran `rm -rf .git`, force-reset,
     // `git filter-repo` etc.), silently skipping the repo-watcher
     // removal and leaking the polling thread. Using the recorded
     // mapping is correct even when the repo no longer resolves.
-    let recorded_toplevel: Option<PathBuf> = {
-        let mut map = state
-            .cwd_to_toplevel
+    let recorded_repo: Option<(PathBuf, PathBuf)> = {
+        let map = state
+            .cwd_to_repo
             .lock()
-            .map_err(|e| format!("Failed to lock cwd_to_toplevel: {}", e))?;
-        // `remove` here is optimistic: if the later repo-watcher lookup
-        // finds nothing, we've also cleaned up the side-map so a future
-        // idempotent stop is a pure no-op. If we stopped the watcher
-        // successfully, the map entry is no longer needed either.
-        map.remove(&cwd)
+            .map_err(|e| format!("Failed to lock cwd_to_repo: {}", e))?;
+        map.get(&cwd).cloned()
     };
 
-    if let Some(canonical) = recorded_toplevel {
+    if let Some((canonical, _git_dir)) = recorded_repo {
         let mut repo_watchers = state
             .repo_watchers
             .lock()
             .map_err(|e| format!("Failed to lock repo_watchers: {}", e))?;
 
         if let Some(watcher) = repo_watchers.get_mut(&canonical) {
+            let mut remove_cwd_mapping = false;
             if let Some(count) = watcher.subscribers.get_mut(&cwd) {
                 *count = count.saturating_sub(1);
 
                 if *count == 0 {
                     watcher.subscribers.remove(&cwd);
+                    remove_cwd_mapping = true;
                 }
+            } else {
+                remove_cwd_mapping = true;
             }
 
             // If no more subscribers, remove the watcher (its Drop fires
@@ -1192,11 +1342,23 @@ fn stop_git_watcher_inner(cwd: String, state: GitWatcherState) -> Result<(), Str
                 repo_watchers.remove(&canonical);
             }
 
+            if remove_cwd_mapping {
+                state
+                    .cwd_to_repo
+                    .lock()
+                    .map_err(|e| format!("Failed to lock cwd_to_repo: {}", e))?
+                    .remove(&cwd);
+            }
+
             return Ok(());
         }
         // Recorded mapping but no watcher — fall through (possible if
-        // upgrade/teardown race removed the watcher but not the map
-        // entry; the map-removal above already cleaned up).
+        // upgrade/teardown race removed the watcher but not the map entry).
+        state
+            .cwd_to_repo
+            .lock()
+            .map_err(|e| format!("Failed to lock cwd_to_repo: {}", e))?
+            .remove(&cwd);
     }
 
     // No recorded toplevel → pre-repo watcher path. Look up the canonical
@@ -1205,19 +1367,16 @@ fn stop_git_watcher_inner(cwd: String, state: GitWatcherState) -> Result<(), Str
     // pre-existing watchers from before this side-map existed in long-
     // running sessions, though there shouldn't be any in practice).
     //
-    // The side-map removal here is symmetric with `cwd_to_toplevel.remove`
-    // above: it cleans up the map regardless of whether we successfully
-    // stop the watcher, so a future idempotent stop is a pure no-op.
     let recorded_pre_repo: Option<PathBuf> = {
-        let mut map = state
+        let map = state
             .cwd_to_safe_pre_repo
             .lock()
             .map_err(|e| format!("Failed to lock cwd_to_safe_pre_repo: {}", e))?;
-        map.remove(&cwd)
+        map.get(&cwd).cloned()
     };
 
-    let safe_cwd = match recorded_pre_repo {
-        Some(p) => p,
+    let safe_cwd = match &recorded_pre_repo {
+        Some(p) => p.clone(),
         None => {
             // No recorded mapping. Try live validation as a last resort;
             // if even that fails (cwd no longer exists), there's truly
@@ -1235,48 +1394,86 @@ fn stop_git_watcher_inner(cwd: String, state: GitWatcherState) -> Result<(), Str
         .map_err(|e| format!("Failed to lock pre_repo_watchers: {}", e))?;
 
     if let Some(watcher) = pre_repo_watchers.get_mut(&safe_cwd) {
+        let mut remove_cwd_mapping = false;
         if let Some(count) = watcher.subscribers.get_mut(&cwd) {
             *count = count.saturating_sub(1);
 
             if *count == 0 {
                 watcher.subscribers.remove(&cwd);
+                remove_cwd_mapping = true;
             }
+        } else {
+            remove_cwd_mapping = true;
         }
 
         if watcher.subscribers.is_empty() {
             pre_repo_watchers.remove(&safe_cwd);
         }
 
+        if remove_cwd_mapping {
+            state
+                .cwd_to_safe_pre_repo
+                .lock()
+                .map_err(|e| format!("Failed to lock cwd_to_safe_pre_repo: {}", e))?
+                .remove(&cwd);
+        }
+
         return Ok(());
+    }
+
+    if recorded_pre_repo.is_some() {
+        state
+            .cwd_to_safe_pre_repo
+            .lock()
+            .map_err(|e| format!("Failed to lock cwd_to_safe_pre_repo: {}", e))?
+            .remove(&cwd);
     }
 
     // Watcher not found — this is ok (idempotent stop)
     Ok(())
 }
 
-/// Emit git-status-changed event for all subscribers of a repo
+fn collect_subscriber_cwds(state: &GitWatcherState, toplevel: &std::path::Path) -> Vec<String> {
+    let repo_watchers = state
+        .repo_watchers
+        .lock()
+        .expect("failed to lock repo_watchers");
+
+    repo_watchers
+        .get(toplevel)
+        .map(|watcher| {
+            // Subscriber keys are the frontend's original cwd strings — emit
+            // them as-is so listener's `event.cwds.includes(myCwd)` matches.
+            watcher.subscribers.keys().cloned().collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Emit git status/head events for all subscribers of a repo.
 fn emit_for_all_subscribers(
     events: &Arc<dyn EventSink>,
     state: &GitWatcherState,
     toplevel: &std::path::Path,
+    head_was_dirty: bool,
 ) {
-    let cwds: Vec<String> = {
-        let repo_watchers = state
-            .repo_watchers
-            .lock()
-            .expect("failed to lock repo_watchers");
-
-        if let Some(watcher) = repo_watchers.get(toplevel) {
-            // Subscriber keys are the frontend's original cwd strings — emit
-            // them as-is so listener's `event.cwds.includes(myCwd)` matches.
-            watcher.subscribers.keys().cloned().collect()
-        } else {
-            vec![]
-        }
-    };
+    let cwds = collect_subscriber_cwds(state, toplevel);
 
     if !cwds.is_empty() {
+        if head_was_dirty {
+            emit_git_head_changed(events, cwds.clone());
+        }
         emit_git_status_changed(events, cwds);
+    }
+}
+
+/// Emit a git-head-changed event
+fn emit_git_head_changed(events: &Arc<dyn EventSink>, cwds: Vec<String>) {
+    let payload = GitHeadChangedPayload { cwds };
+    let result =
+        serialize_event(&payload).and_then(|payload| events.emit_json("git-head-changed", payload));
+
+    if let Err(e) = result {
+        log::error!("Failed to emit git-head-changed: {}", e);
     }
 }
 
@@ -1293,10 +1490,13 @@ fn emit_git_status_changed(events: &Arc<dyn EventSink>, cwds: Vec<String>) {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_helpers::{configure_test_git, home_tempdir};
+    use super::super::test_helpers::{
+        configure_test_git, create_main_repo_with_worktrees, home_tempdir,
+    };
     use super::*;
     use crate::runtime::FakeEventSink;
     use std::fs;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::sync::{mpsc, Arc};
     use tempfile::TempDir;
@@ -1314,6 +1514,401 @@ mod tests {
         configure_test_git(temp.path());
 
         temp
+    }
+
+    fn test_setup() -> (GitWatcherState, Arc<FakeEventSink>, Arc<dyn EventSink>) {
+        let state = GitWatcherState::new();
+        let recording = Arc::new(FakeEventSink::new());
+        let sink: Arc<dyn EventSink> = recording.clone();
+
+        (state, recording, sink)
+    }
+
+    fn payload_includes_cwd(payload: &serde_json::Value, cwd: &str) -> bool {
+        payload["cwds"]
+            .as_array()
+            .map(|cwds| cwds.iter().any(|value| value.as_str() == Some(cwd)))
+            .unwrap_or(false)
+    }
+
+    fn wait_for_next_event(
+        sink: &FakeEventSink,
+        event_name: &str,
+        baseline: usize,
+        timeout_ms: u64,
+    ) -> Result<(), String> {
+        if sink.wait_for_count(event_name, baseline + 1, Duration::from_millis(timeout_ms)) {
+            Ok(())
+        } else {
+            Err(format!(
+                "did not see {event_name} #{} within {timeout_ms}ms",
+                baseline + 1
+            ))
+        }
+    }
+
+    fn run_git(repo: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .output()
+            .expect("git command failed");
+        assert!(
+            output.status.success(),
+            "git {:?} must succeed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn commit_seed(repo: &Path) {
+        fs::write(repo.join("seed"), "seed").expect("failed to write seed");
+        run_git(repo, &["add", "."]);
+        run_git(repo, &["commit", "-m", "seed"]);
+    }
+
+    #[tokio::test]
+    async fn test_stop_git_watcher_inner_handles_duplicate_starts() {
+        let repo = create_temp_repo();
+        let cwd = repo.path().to_string_lossy().to_string();
+        let (state, _recording, sink) = test_setup();
+
+        start_git_watcher_inner(&cwd, sink.clone(), &state).expect("start 1");
+        start_git_watcher_inner(&cwd, sink.clone(), &state).expect("start 2");
+
+        stop_git_watcher_inner(cwd.clone(), state.clone()).expect("stop 1");
+        {
+            let toplevel = resolve_toplevel(Path::new(&cwd)).expect("resolve");
+            let toplevel_key =
+                validate_cwd(&toplevel.to_string_lossy()).expect("toplevel should validate");
+            let watchers = state
+                .repo_watchers
+                .lock()
+                .expect("failed to lock repo_watchers");
+            assert!(
+                watchers.contains_key(&toplevel_key),
+                "bucket must survive first stop while refcount is still > 0"
+            );
+        }
+
+        stop_git_watcher_inner(cwd.clone(), state.clone()).expect("stop 2");
+        {
+            let toplevel = resolve_toplevel(Path::new(&cwd)).expect("resolve");
+            let toplevel_key =
+                validate_cwd(&toplevel.to_string_lossy()).expect("toplevel should validate");
+            let watchers = state
+                .repo_watchers
+                .lock()
+                .expect("failed to lock repo_watchers");
+            assert!(
+                !watchers.contains_key(&toplevel_key),
+                "bucket must be removed on the last stop"
+            );
+        }
+    }
+
+    #[test]
+    fn test_resolve_git_dir_returns_dotgit_in_main_repo() {
+        let repo = create_temp_repo();
+        let git_dir = resolve_git_dir(repo.path()).expect("resolve");
+        let expected = repo.path().join(".git").canonicalize().expect("canon");
+
+        assert_eq!(git_dir, expected);
+    }
+
+    #[test]
+    fn test_resolve_git_dir_returns_worktree_subdir_in_linked_worktree() {
+        let (_tmp, main, worktrees) = create_main_repo_with_worktrees(&["feat"]);
+        let git_dir = resolve_git_dir(&worktrees[0]).expect("resolve");
+        let expected = main
+            .join(".git/worktrees/wt-0")
+            .canonicalize()
+            .expect("canon");
+
+        assert_eq!(git_dir, expected);
+    }
+
+    #[test]
+    fn test_resolve_git_dir_errors_outside_a_repo() {
+        let temp = home_tempdir();
+        let result = resolve_git_dir(temp.path());
+
+        assert!(result.is_err(), "expected Err for non-repo, got {result:?}");
+    }
+
+    #[test]
+    fn test_path_is_git_head_matches_full_path_only() {
+        let git_dir = PathBuf::from("/tmp/foo/.git");
+        let user_head = PathBuf::from("/tmp/foo/some-dir/HEAD");
+        let real_head = git_dir.join("HEAD");
+
+        assert!(!path_is_git_head(&user_head, &git_dir));
+        assert!(path_is_git_head(&real_head, &git_dir));
+    }
+
+    #[test]
+    fn test_path_is_git_head_does_not_match_packed_refs() {
+        let git_dir = PathBuf::from("/tmp/foo/.git");
+        let packed_refs = git_dir.join("packed-refs");
+
+        assert!(!path_is_git_head(&packed_refs, &git_dir));
+    }
+
+    #[test]
+    fn test_path_is_inside_git_dir_filters_gitdir_noise() {
+        let git_dir = PathBuf::from("/tmp/foo/.git");
+
+        assert!(path_is_inside_git_dir(&git_dir.join("config"), &git_dir));
+        assert!(path_is_inside_git_dir(
+            &git_dir.join("packed-refs"),
+            &git_dir
+        ));
+        assert!(!path_is_inside_git_dir(
+            &PathBuf::from("/tmp/foo/src/lib.rs"),
+            &git_dir
+        ));
+        assert!(!path_is_inside_git_dir(
+            &git_dir.join("hooks").join("pre-commit"),
+            &git_dir
+        ));
+    }
+
+    #[test]
+    fn test_git_head_changed_payload_serializes_camel_case_cwds() {
+        let payload = GitHeadChangedPayload {
+            cwds: vec!["/home/u/repo".to_string()],
+        };
+        let json = serde_json::to_string(&payload).expect("serialize");
+
+        assert_eq!(json, r#"{"cwds":["/home/u/repo"]}"#);
+    }
+
+    #[test]
+    fn test_emit_git_head_changed_writes_to_sink() {
+        let (_state, recording, sink) = test_setup();
+
+        emit_git_head_changed(&sink, vec!["/home/u/repo".to_string()]);
+
+        let recorded = recording.recorded();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0].0, "git-head-changed");
+        assert!(payload_includes_cwd(&recorded[0].1, "/home/u/repo"));
+    }
+
+    #[test]
+    fn test_detect_head_change_returns_false_on_first_read_but_seeds_cache() {
+        let mut last: Option<String> = None;
+        let changed = detect_head_change_with(&mut last, || {
+            Ok::<_, std::io::Error>("ref: refs/heads/main\n".to_string())
+        });
+
+        assert!(!changed, "first read seeds the cache without emitting");
+        assert_eq!(last.as_deref(), Some("ref: refs/heads/main\n"));
+    }
+
+    #[test]
+    fn test_detect_head_change_returns_false_when_content_identical() {
+        let mut last: Option<String> = Some("ref: refs/heads/main\n".to_string());
+        let changed = detect_head_change_with(&mut last, || {
+            Ok::<_, std::io::Error>("ref: refs/heads/main\n".to_string())
+        });
+
+        assert!(!changed);
+    }
+
+    #[test]
+    fn test_detect_head_change_returns_true_when_ref_differs() {
+        let mut last: Option<String> = Some("ref: refs/heads/main\n".to_string());
+        let changed = detect_head_change_with(&mut last, || {
+            Ok::<_, std::io::Error>("ref: refs/heads/feat\n".to_string())
+        });
+
+        assert!(changed);
+        assert_eq!(last.as_deref(), Some("ref: refs/heads/feat\n"));
+    }
+
+    #[test]
+    fn test_detect_head_change_returns_false_when_read_errs() {
+        let mut last: Option<String> = Some("ref: refs/heads/main\n".to_string());
+        let changed = detect_head_change_with::<_, std::io::Error>(&mut last, || {
+            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "gone"))
+        });
+
+        assert!(!changed);
+        assert_eq!(last.as_deref(), Some("ref: refs/heads/main\n"));
+    }
+
+    #[tokio::test]
+    async fn test_start_git_watcher_emits_initial_git_head_changed() {
+        let repo = create_temp_repo();
+        commit_seed(repo.path());
+        let cwd = repo.path().to_string_lossy().to_string();
+        let (state, recording, sink) = test_setup();
+
+        start_git_watcher_inner(&cwd, sink.clone(), &state).expect("start");
+
+        let recorded = recording.recorded();
+        assert!(
+            recorded
+                .iter()
+                .any(|(name, payload)| name == "git-head-changed"
+                    && payload_includes_cwd(payload, &cwd)),
+            "expected initial git-head-changed for the new subscriber"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_head_change_in_main_emits_git_head_changed() {
+        let repo = create_temp_repo();
+        commit_seed(repo.path());
+        let cwd = repo.path().to_string_lossy().to_string();
+        let (state, recording, sink) = test_setup();
+        start_git_watcher_inner(&cwd, sink.clone(), &state).expect("start");
+
+        let baseline = recording.count("git-head-changed");
+        run_git(repo.path(), &["switch", "-c", "feat"]);
+
+        wait_for_next_event(&recording, "git-head-changed", baseline, 2_000).expect("head event");
+    }
+
+    #[tokio::test]
+    async fn test_head_watch_survives_atomic_rename_replace() {
+        let repo = create_temp_repo();
+        commit_seed(repo.path());
+        let cwd = repo.path().to_string_lossy().to_string();
+        let (state, recording, sink) = test_setup();
+        start_git_watcher_inner(&cwd, sink.clone(), &state).expect("start");
+
+        let baseline1 = recording.count("git-head-changed");
+        run_git(repo.path(), &["switch", "-c", "feat-a"]);
+        wait_for_next_event(&recording, "git-head-changed", baseline1, 2_000).expect("first emit");
+
+        let baseline2 = recording.count("git-head-changed");
+        run_git(repo.path(), &["switch", "-c", "feat-b"]);
+        wait_for_next_event(&recording, "git-head-changed", baseline2, 2_000).expect("second emit");
+    }
+
+    #[tokio::test]
+    async fn test_head_change_in_worktree_emits_for_worktree_only() {
+        let (_tmp, main, worktrees) = create_main_repo_with_worktrees(&["feat"]);
+        let main_cwd = main.to_string_lossy().to_string();
+        let worktree_cwd = worktrees[0].to_string_lossy().to_string();
+        let (state, recording, sink) = test_setup();
+
+        start_git_watcher_inner(&main_cwd, sink.clone(), &state).expect("start main");
+        start_git_watcher_inner(&worktree_cwd, sink.clone(), &state).expect("start worktree");
+        let baseline = recording.count("git-head-changed");
+
+        run_git(&worktrees[0], &["switch", "-c", "feat2"]);
+
+        wait_for_next_event(&recording, "git-head-changed", baseline, 2_000)
+            .expect("head event for worktree");
+        let recorded = recording.recorded();
+        let new_head_events: Vec<_> = recorded
+            .iter()
+            .filter(|(name, _)| name == "git-head-changed")
+            .skip(baseline)
+            .collect();
+        assert!(
+            new_head_events.iter().any(|(_, payload)| {
+                payload_includes_cwd(payload, &worktree_cwd)
+                    && !payload_includes_cwd(payload, &main_cwd)
+            }),
+            "git-head-changed must list only the worktree cwd, got: {new_head_events:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pre_repo_upgrades_to_linked_worktree_and_emits_initial_head_event() {
+        let (tmp, main, _worktrees) = create_main_repo_with_worktrees(&[]);
+        let worktree = tmp.path().join("wt-pending");
+        fs::create_dir(&worktree).expect("failed to create pending worktree dir");
+        let worktree_cwd = worktree.to_string_lossy().to_string();
+        let (state, recording, sink) = test_setup();
+
+        start_git_watcher_inner(&worktree_cwd, sink.clone(), &state).expect("subscribe pre-repo");
+        run_git(
+            &main,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "feat",
+                worktree.to_str().expect("worktree path should be utf8"),
+            ],
+        );
+
+        let baseline = recording.count("git-head-changed");
+        let result = upgrade_to_repo_watcher(
+            validate_cwd(&worktree_cwd).expect("worktree cwd should validate"),
+            sink.clone(),
+            state.clone(),
+        );
+        assert!(result.is_ok(), "upgrade should succeed: {result:?}");
+
+        wait_for_next_event(&recording, "git-head-changed", baseline, 2_000)
+            .expect("initial git-head-changed on upgrade");
+    }
+
+    #[tokio::test]
+    async fn test_two_worktrees_independent_head_events() {
+        let (_tmp, main, worktrees) = create_main_repo_with_worktrees(&["feat-a", "feat-b"]);
+        let main_cwd = main.to_string_lossy().to_string();
+        let worktree_a_cwd = worktrees[0].to_string_lossy().to_string();
+        let worktree_b_cwd = worktrees[1].to_string_lossy().to_string();
+        let (state, recording, sink) = test_setup();
+
+        start_git_watcher_inner(&main_cwd, sink.clone(), &state).expect("start main");
+        start_git_watcher_inner(&worktree_a_cwd, sink.clone(), &state).expect("start wt a");
+        start_git_watcher_inner(&worktree_b_cwd, sink.clone(), &state).expect("start wt b");
+        let baseline = recording.count("git-head-changed");
+
+        run_git(&worktrees[0], &["switch", "-c", "feat-a-2"]);
+        wait_for_next_event(&recording, "git-head-changed", baseline, 2_000)
+            .expect("head event for wt a");
+
+        let recorded = recording.recorded();
+        let new_head_events: Vec<_> = recorded
+            .iter()
+            .filter(|(name, _)| name == "git-head-changed")
+            .skip(baseline)
+            .collect();
+        assert!(
+            new_head_events
+                .iter()
+                .any(|(_, payload)| payload_includes_cwd(payload, &worktree_a_cwd)),
+            "wt-a should receive its own git-head-changed event"
+        );
+        assert!(
+            new_head_events
+                .iter()
+                .all(|(_, payload)| !payload_includes_cwd(payload, &worktree_b_cwd)),
+            "wt-b must not receive git-head-changed for wt-a, got: {new_head_events:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_worktree_removal_drops_branch() {
+        let (_tmp, main, worktrees) = create_main_repo_with_worktrees(&["feat"]);
+        let worktree_cwd = worktrees[0].to_string_lossy().to_string();
+        let (state, _recording, sink) = test_setup();
+
+        start_git_watcher_inner(&worktree_cwd, sink.clone(), &state).expect("start worktree");
+        run_git(
+            &main,
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                worktrees[0].to_str().expect("worktree path should be utf8"),
+            ],
+        );
+
+        let result = crate::git::git_branch_inner(worktree_cwd).await;
+        assert!(
+            result.is_err(),
+            "git_branch must Err after worktree removal, got {result:?}"
+        );
     }
 
     #[test]
@@ -1386,12 +1981,18 @@ mod tests {
         drop(repo_watchers);
 
         let events = sink.recorded();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].0, "git-status-changed");
-        assert_eq!(
-            events[0].1["cwds"].as_array().expect("cwds array")[0].as_str(),
-            Some(cwd.as_str())
-        );
+        let head_events: Vec<_> = events
+            .iter()
+            .filter(|(event, _)| event == "git-head-changed")
+            .collect();
+        let status_events: Vec<_> = events
+            .iter()
+            .filter(|(event, _)| event == "git-status-changed")
+            .collect();
+        assert_eq!(head_events.len(), 1);
+        assert_eq!(status_events.len(), 1);
+        assert!(payload_includes_cwd(&head_events[0].1, &cwd));
+        assert!(payload_includes_cwd(&status_events[0].1, &cwd));
     }
 
     #[test]

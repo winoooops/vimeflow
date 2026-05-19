@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import { LayoutSwitcher } from './LayoutSwitcher'
@@ -53,5 +53,22 @@ describe('LayoutSwitcher', () => {
     render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
 
     expect(screen.getByRole('group')).toHaveAccessibleName('Pane layout')
+  })
+
+  // Layout buttons render the layout name only — no shortcut chip.
+  // `Mod+\` cycles to the NEXT layout (usePaneShortcuts), not to any
+  // specific one, so attaching the chip to individual layout buttons
+  // would advertise a per-layout shortcut that doesn't exist (Claude
+  // review on PR #224 cycle 3, MEDIUM finding). If a future refactor
+  // introduces per-layout shortcuts (e.g. Mod+1..Mod+5 picker keys),
+  // re-add the chip and flip this assertion.
+  test('hovering a layout button shows a plain tooltip (no shortcut chip)', async () => {
+    const user = userEvent.setup()
+    render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
+
+    await user.hover(screen.getByRole('button', { name: 'Single' }))
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveTextContent('Single')
+    expect(within(tip).queryByTestId('tooltip-shortcut')).toBeNull()
   })
 })

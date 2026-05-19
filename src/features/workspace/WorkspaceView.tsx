@@ -844,7 +844,6 @@ export const WorkspaceView = (): ReactElement => {
               setSessionLayout={setSessionLayout}
               addPane={addPane}
               removePane={removePane}
-              modKey={preferModifier === 'meta' ? '⌘' : 'Ctrl'}
               isZoneFocused={activeContainerId === TERMINAL_CONTAINER_ID}
               onContainerFocus={() => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
