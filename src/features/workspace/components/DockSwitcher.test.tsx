@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, test, expect, vi } from 'vitest'
 import { DockSwitcher } from './DockSwitcher'
@@ -66,5 +66,16 @@ describe('DockSwitcher', () => {
     await user.click(screen.getByRole('button', { name: /dock: right/i }))
 
     expect(onPick).toHaveBeenCalledWith('right')
+  })
+
+  test('hovering a position button shows a plain Dock: <position> tooltip', async () => {
+    const user = userEvent.setup()
+    render(<DockSwitcher position="bottom" onPick={vi.fn()} />)
+
+    await user.hover(screen.getByRole('button', { name: /dock: top/i }))
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveTextContent('Dock: Top')
+    // Dock position has no keyboard shortcut — the chip must not render.
+    expect(within(tip).queryByTestId('tooltip-shortcut')).toBeNull()
   })
 })
