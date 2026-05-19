@@ -547,7 +547,7 @@ describe('SplitView - click-to-focus', () => {
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(2)
   })
 
-  test('hovering an inactive pane shows a focus tooltip with the Ctrl+N hint', async () => {
+  test('hovering an inactive pane shows a focus tooltip with the Mod+N shortcut chip', async () => {
     const user = userEvent.setup()
 
     render(
@@ -563,6 +563,8 @@ describe('SplitView - click-to-focus', () => {
 
     const tip = await screen.findByRole('tooltip')
     expect(tip).toHaveTextContent('Focus pane 2')
+    // Assertion is platform-safe: `formatShortcut` renders `⌘2` on
+    // macOS and `Ctrl+2` elsewhere — both contain the digit.
     expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('2')
   })
 
@@ -580,6 +582,14 @@ describe('SplitView - click-to-focus', () => {
     const inners = screen.getAllByTestId('split-view-slot-inner')
     await user.hover(inners[0])
 
+    // Wait past the Tooltip's 250 ms hover delay before asserting
+    // absence. Without this wait the assertion runs before any
+    // tooltip could appear and would still pass even if
+    // `disabled={pane.active}` regressed — making the negative
+    // assertion meaningless. See testing-gaps #50 for the heuristic.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 300)
+    })
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 })
