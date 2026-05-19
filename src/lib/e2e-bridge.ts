@@ -1,10 +1,57 @@
+import type { Terminal } from '@xterm/xterm'
 import { invoke } from './backend'
 import { getAllPtySessionIds } from '../features/terminal/ptySessionMap'
+import { terminalCache } from '../features/terminal/components/TerminalPane/Body'
 
 const isVisible = (el: HTMLElement): boolean => {
   const r = el.getBoundingClientRect()
 
   return r.width > 0 && r.height > 0
+}
+
+// xterm's `.xterm-rows` is only populated by the DOM renderer. With the
+// WebGL or Canvas2D renderer addons attached (PR #228), rendering moves
+// to a <canvas> and `.xterm-rows` stays empty — so any DOM-textContent
+// probe returns ''. Read from `terminal.buffer.active` instead; the
+// buffer is renderer-independent and always reflects the live PTY
+// output. Trims trailing whitespace per line and drops trailing empty
+// lines so the probe matches what `.xterm-rows.textContent` used to
+// return for an active session.
+const bufferToText = (terminal: Terminal): string => {
+  const buffer = terminal.buffer.active
+  const lines: string[] = []
+  for (let i = 0; i < buffer.length; i++) {
+    const line = buffer.getLine(i)
+    if (line) {
+      lines.push(line.translateToString(true))
+    }
+  }
+
+  return lines.join('\n').replace(/\n+$/, '')
+}
+
+// Resolve a `sessionId` for the given container so we can look up the
+// xterm Terminal instance in `terminalCache`. The container may be:
+//   - the session-level `terminal-pane` wrapper (data-session-id)
+//   - a `split-view-slot` (data-pty-id — multi-pane sessions, PR #199)
+//   - a `terminal-pane-wrapper` (no id; walk up to the session pane)
+// `terminalCache` is keyed by whatever `Body` received as its
+// `sessionId` prop, which matches `data-session-id` on the outer pane.
+// We try ancestor walk first (cheap), then dataset-ptyId (covers
+// multi-pane callers that look up by PTY handle).
+const resolveCacheKey = (container: HTMLElement): string | null => {
+  if (container.dataset.sessionId) {
+    return container.dataset.sessionId
+  }
+
+  const sessionPane = container.closest<HTMLElement>(
+    '[data-testid="terminal-pane"][data-session-id]'
+  )
+  if (sessionPane?.dataset.sessionId) {
+    return sessionPane.dataset.sessionId
+  }
+
+  return container.dataset.ptyId ?? null
 }
 
 const findActivePane = (): HTMLElement | null => {
@@ -40,15 +87,25 @@ export const readPaneBuffer = (container: HTMLElement): string => {
   const focusedWrapper = container.querySelector<HTMLElement>(
     '[data-testid="terminal-pane-wrapper"][data-focused="true"]'
   )
+  const scope = focusedWrapper ?? container
 
-  const rows = (focusedWrapper ?? container).querySelector<HTMLElement>(
-    '.xterm-rows'
-  )
-  if (!rows) {
-    return ''
+  const rows = scope.querySelector<HTMLElement>('.xterm-rows')
+  const domText = rows?.textContent ?? ''
+  if (domText.trim().length > 0) {
+    return domText
   }
 
-  return rows.textContent
+  // DOM read empty — WebGL/Canvas2D renderer is rendering to <canvas>.
+  // Fall back to xterm's buffer API via terminalCache.
+  const cacheKey = resolveCacheKey(scope)
+  if (cacheKey) {
+    const entry = terminalCache.get(cacheKey)
+    if (entry) {
+      return bufferToText(entry.terminal)
+    }
+  }
+
+  return domText
 }
 
 const readVisibleTerminalBuffer = (): string => {
