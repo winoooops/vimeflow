@@ -153,6 +153,14 @@ export const useGitBranch = (
         await invoke('start_git_watcher', { cwd })
         watcherStarted = true
 
+        // Guarded by `mounted` because React cleanup could have fired
+        // during the invoke await — a setState on an unmounted component
+        // is a no-op in React 18 production but still an anti-pattern
+        // (and a wasted fetch in Strict Mode's double-invocation).
+        // TypeScript's flow analysis can't see the cleanup closure below
+        // mutate `mounted` across the await, so the lint rule has to be
+        // suppressed at this exact line. Same disable + rationale as
+        // useGitStatus.ts:160-167.
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (mounted) {
           refresh()

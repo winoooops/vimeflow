@@ -445,6 +445,20 @@ fn path_is_inside_git_dir(path: &std::path::Path, git_dir: &std::path::Path) -> 
     path.parent() == Some(git_dir)
 }
 
+/// Returns true iff `reader` produces content different from the cached
+/// `last_content`. Always updates `last_content` on a successful read.
+///
+/// Seeding behaviour: when `last_content` is `None` and the read succeeds,
+/// the cache is seeded with the current content and the function returns
+/// `false`. This is intentional — the first observation establishes the
+/// baseline and must not be treated as a change, because every fresh
+/// subscription already emits an initial `git-head-changed` (see
+/// `start_git_watcher_inner`'s initial-emit path). Returning `true` here
+/// would double-fire on every subscribe.
+///
+/// Read errors return `false` and leave `last_content` untouched, so a
+/// transient `<git_dir>/HEAD` read failure (NFS stall, worktree removed,
+/// permissions) doesn't poison the cache.
 fn detect_head_change_with<R, E>(last_content: &mut Option<String>, reader: R) -> bool
 where
     R: FnOnce() -> Result<String, E>,
@@ -1136,6 +1150,7 @@ fn restore_pre_repo_subscribers(
         }
     }
 
+    emit_git_head_changed(&events, subscriber_cwds.clone());
     emit_git_status_changed(&events, subscriber_cwds);
 
     Ok(())
