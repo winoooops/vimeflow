@@ -165,6 +165,20 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
           onContainerFocus?.()
         }}
       >
+        {/*
+          The static keyboard-shortcut legend that used to live in
+          this toolbar (`Mod+1-4 pane · Mod+\ layout · Mod+e editor ·
+          Mod+g diff · Mod+b back`) was removed during the tooltip
+          rollout — three of the five shortcuts are now surfaced via
+          per-button tooltips (Mod+1-4 on pane slots, Mod+E on the
+          Editor tab, Mod+G on the Diff Viewer tab). The remaining
+          two — Mod+\ (cycle layout) and Mod+B (focus terminal from
+          dock) — currently have NO in-UI discovery surface. See
+          https://github.com/winoooops/vimeflow/issues/225 for the
+          follow-up that introduces a focus-aware status-bar or
+          adjacent-affordance pattern. Do NOT re-introduce a static
+          legend here without coordinating with that issue.
+        */}
         {showToolbar ? (
           <div
             data-testid="layout-toolbar"
