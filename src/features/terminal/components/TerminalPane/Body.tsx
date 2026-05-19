@@ -11,19 +11,19 @@ import {
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
-// WebGL renderer re-enabled after the 2026-05 migration from Tauri to Electron
-// (see docs/superpowers/retros/2026-05-16-electron-migration.md). Chromium
-// supports WebGL2 natively, so the renderer can draw all cells against a single
-// shared glyph atlas with no per-row subpixel rounding. This is what makes
-// block-character ASCII art (e.g. Claude Code's startup logo, built from ▀ ▄ █)
-// render as a single connected shape instead of disconnected horizontal slabs
-// under the Canvas2D renderer.
-//
-// WebglAddon construction can still fail — jsdom test environments have no
-// WebGL2 context, headless CI builds may disable the GPU, and Chromium itself
-// can drop a WebGL context under memory pressure (handled via onContextLoss).
-// Both failure paths fall back silently to the default Canvas2D renderer; the
-// terminal must keep working even without hardware acceleration.
+import { CanvasAddon } from '@xterm/addon-canvas'
+// xterm 6.x ships only a DOM renderer in core; WebGL and Canvas2D come from
+// addons. The DOM renderer ignores `customGlyphs` and renders every cell from
+// the font — so block elements (▀ ▄ █) used by Claude Code's startup logo
+// fall back to Pure Nerd Font (the only bundled font containing them), whose
+// em-square (711/-45 = 75.6% content) doesn't match JetBrains Mono's cell
+// (1020/-300 = 132% content), producing visible horizontal gaps between rows.
+// Loading either WebGL or Canvas2D switches xterm to a renderer that honors
+// customGlyphs and draws block elements from canvas paths flush to the cell
+// edges. We prefer WebGL for performance and fall back to Canvas2D when WebGL
+// is unavailable (jsdom, headless CI, GPU driver issues, or context loss
+// under memory pressure). If both addon constructors throw, xterm reverts to
+// DOM rendering — the logo will look broken but the terminal still works.
 import { catppuccinMocha, toXtermTheme } from '../../theme/catppuccin-mocha'
 import {
   useTerminal,
@@ -302,13 +302,15 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     const cached = terminalCache.get(sessionId)
     let newTerminal: Terminal
     let fitAddon: FitAddon
-    // WebGL addon attached to the new terminal in the else branch below. Kept
-    // in the effect closure so cleanup can dispose it before the terminal
-    // itself. May remain null when WebGL2 is unavailable (jsdom, headless CI,
-    // GPU driver issues) or when the cached branch is taken — in both cases
-    // the Canvas2D renderer is in use and there is nothing to clean up here.
+    // Renderer addons attached to the new terminal in the else branch below.
+    // Kept in the effect closure so cleanup can dispose them before the
+    // terminal itself. Exactly one — or neither — is non-null after the
+    // attach block: WebGL is tried first, Canvas2D only if WebGL throws,
+    // and the cached branch skips the attach entirely (the addon already
+    // lives on the cached terminal and is disposed when the terminal is).
     let webglAddon: WebglAddon | null = null
     let webglContextLossDisposable: { dispose: () => void } | null = null
+    let canvasAddon: CanvasAddon | null = null
     let fitFrameId: number | null = null
     let lastFitSize: { width: number; height: number } | null = null
 
@@ -401,7 +403,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         cursorBlink: true,
         fontSize: 14,
         fontFamily:
-          '"JetBrains Mono", "Pure Nerd Font", "Courier New", Courier, monospace',
+          '"JetBrains Mono", "JetBrainsMono Nerd Font", "Pure Nerd Font", "Courier New", Courier, monospace',
         theme: toXtermTheme(catppuccinMocha),
         scrollback: 10000,
         allowProposedApi: true,
@@ -416,17 +418,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       // called first (it needs the canvas elements xterm creates in open()).
       newTerminal.open(node)
 
-      // Attempt to enable hardware-accelerated rendering. Falls back silently
-      // to the default Canvas2D renderer when construction fails (jsdom test
-      // environments, headless CI without WebGL2, GPU driver issues, etc.) —
-      // Canvas2D is a working renderer, so the failure is intentionally
-      // non-fatal. See the file-level comment for why WebGL matters
-      // (block-character glyphs, e.g. Claude Code's logo).
+      // Try WebGL first (fastest); fall back to Canvas2D if WebGL is
+      // unavailable. Both renderers honor customGlyphs. See the file-level
+      // comment for why this matters and what happens if both fail.
       try {
         const addon = new WebglAddon()
-        // Drop the addon when Chromium loses the GPU context under memory
-        // pressure. xterm.js reverts to Canvas2D automatically once the
-        // WebGL addon is disposed; no manual re-attach is required.
         webglContextLossDisposable = addon.onContextLoss(() => {
           addon.dispose()
           webglAddon = null
@@ -435,10 +431,13 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         newTerminal.loadAddon(addon)
         webglAddon = addon
       } catch {
-        // Construction or activation failed — Canvas2D fallback is already
-        // active. No need to surface the error: it is expected in test envs
-        // and headless builds, and there is no actionable user-facing
-        // recovery beyond "your terminal still works".
+        try {
+          const addon = new CanvasAddon()
+          newTerminal.loadAddon(addon)
+          canvasAddon = addon
+        } catch {
+          // Both renderer addons failed — xterm reverts to its DOM renderer.
+        }
       }
 
       // Fit terminal to container — guard against hidden (display:none) containers
@@ -555,14 +554,16 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       resizeDisposable.dispose()
       node.removeEventListener('focusin', handleFocusIn)
       node.removeEventListener('focusout', handleFocusOut)
-      // Dispose the WebGL addon (and its onContextLoss subscription) before
-      // the terminal itself — order matters: the addon holds references to
-      // the terminal's renderer state and must clean up while that state is
-      // still valid.
+      // Dispose the renderer addon (and any WebGL context-loss subscription)
+      // before the terminal itself — order matters: the addon holds
+      // references to the terminal's renderer state and must clean up while
+      // that state is still valid. At most one renderer addon is non-null.
       webglContextLossDisposable?.dispose()
       webglContextLossDisposable = null
       webglAddon?.dispose()
       webglAddon = null
+      canvasAddon?.dispose()
+      canvasAddon = null
       const entry = terminalCache.get(sessionId)
       if (entry) {
         entry.terminal.dispose()

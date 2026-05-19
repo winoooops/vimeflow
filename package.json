@@ -58,6 +58,7 @@
     "@fontsource-variable/manrope": "^5.2.8",
     "@fontsource-variable/material-symbols-outlined": "^5.2.43",
     "@replit/codemirror-vim": "^6.3.0",
+    "@xterm/addon-canvas": "^0.7.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
@@ -65,6 +66,11 @@
     "framer-motion": "^12.38.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
+  },
+  "overrides": {
+    "@xterm/addon-canvas": {
+      "@xterm/xterm": "$@xterm/xterm"
+    }
   },
   "devDependencies": {
     "@commitlint/cli": "^19",

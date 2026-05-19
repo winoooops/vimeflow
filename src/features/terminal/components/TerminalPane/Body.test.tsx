@@ -4,6 +4,7 @@ import { createRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
+import { CanvasAddon } from '@xterm/addon-canvas'
 import {
   Body,
   clearTerminalCache,
@@ -66,6 +67,15 @@ vi.mock('@xterm/addon-webgl', () => ({
   }),
 }))
 
+// Canvas2D addon: default mock returns an instance. Pairs with the
+// throwing WebglAddon mock above so Body.tsx exercises its
+// WebGL→Canvas2D fallback path on every render. Individual tests can
+// override with `vi.mocked(CanvasAddon).mockImplementationOnce(...)`
+// to simulate the both-failed path.
+vi.mock('@xterm/addon-canvas', () => ({
+  CanvasAddon: vi.fn(),
+}))
+
 // Mock useTerminal hook
 vi.mock('../../hooks/useTerminal', () => ({
   useTerminal: vi.fn(),
@@ -82,6 +92,7 @@ describe('Body', () => {
     options: Record<string, unknown>
   }
   let mockFitAddon: { fit: ReturnType<typeof vi.fn> }
+  let mockCanvasAddon: { dispose: ReturnType<typeof vi.fn> }
   let mockUseTerminal: UseTerminalReturn
   let defaultMockService: ITerminalService
 
@@ -112,6 +123,11 @@ describe('Body', () => {
       fit: vi.fn(),
     }
 
+    // Mock Canvas2D addon — the default fallback when WebGL throws.
+    mockCanvasAddon = {
+      dispose: vi.fn(),
+    }
+
     // Mock useTerminal hook return value
     mockUseTerminal = {
       session: {
@@ -133,6 +149,7 @@ describe('Body', () => {
     // Setup mocks
     vi.mocked(Terminal).mockImplementation(() => mockTerminal as never)
     vi.mocked(FitAddon).mockImplementation(() => mockFitAddon as never)
+    vi.mocked(CanvasAddon).mockImplementation(() => mockCanvasAddon as never)
     vi.mocked(useTerminal).mockReturnValue(mockUseTerminal)
   })
 
@@ -227,11 +244,12 @@ describe('Body', () => {
 
   test('falls back to Canvas2D renderer when WebGL addon construction throws', async () => {
     // The shared `vi.mock('@xterm/addon-webgl', ...)` at the top of the
-    // file already configures the constructor to throw, simulating the
-    // jsdom test environment (no WebGL2 context). Body.tsx must catch
-    // this and continue mounting with the default Canvas2D renderer —
-    // otherwise the renderer would crash on every CI run and in any
-    // headless / GPU-disabled Chromium build.
+    // file already configures the WebglAddon constructor to throw,
+    // simulating the jsdom test environment (no WebGL2 context). Body.tsx
+    // must catch this and load CanvasAddon instead — without a renderer
+    // addon, xterm 6.x falls back to its DOM renderer, which ignores
+    // `customGlyphs: true` and renders block elements (▀ ▄ █) from font
+    // glyphs, producing visible gaps in Claude Code's startup logo.
     expect(() => {
       render(
         <Body
@@ -244,11 +262,44 @@ describe('Body', () => {
 
     await waitFor(() => {
       expect(WebglAddon).toHaveBeenCalled()
+      expect(CanvasAddon).toHaveBeenCalled()
       expect(mockTerminal.open).toHaveBeenCalled()
     })
 
-    // The throwing addon must NOT be attached via loadAddon — only the
-    // FitAddon (the working one) should reach the terminal.
+    // The throwing WebglAddon must NOT reach loadAddon; CanvasAddon (the
+    // working fallback) must reach it alongside FitAddon.
+    expect(mockTerminal.loadAddon).toHaveBeenCalledWith(mockFitAddon)
+    expect(mockTerminal.loadAddon).toHaveBeenCalledWith(mockCanvasAddon)
+    expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(2)
+    expect(screen.getByTestId('terminal-pane')).toBeInTheDocument()
+  })
+
+  test('falls through to DOM renderer when both WebGL and Canvas2D throw', async () => {
+    // Mirror the worst-case path: no GPU AND no 2D canvas context. Body.tsx
+    // must not crash; xterm will silently use its DOM renderer (broken
+    // block-element glyphs, but a functional terminal — better than a
+    // crashed app).
+    vi.mocked(CanvasAddon).mockImplementationOnce(() => {
+      throw new Error('2D canvas context unavailable')
+    })
+
+    expect(() => {
+      render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+    }).not.toThrow()
+
+    await waitFor(() => {
+      expect(WebglAddon).toHaveBeenCalled()
+      expect(CanvasAddon).toHaveBeenCalled()
+      expect(mockTerminal.open).toHaveBeenCalled()
+    })
+
+    // Only FitAddon was actually loaded — both renderer addons threw.
     expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(1)
     expect(mockTerminal.loadAddon).toHaveBeenCalledWith(mockFitAddon)
     expect(screen.getByTestId('terminal-pane')).toBeInTheDocument()
