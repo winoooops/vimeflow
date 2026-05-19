@@ -145,6 +145,21 @@ describe('DockPanel', () => {
     expect(screen.getByTestId('resize-handle')).toBeInTheDocument()
   })
 
+  test('resize handle has z-index so it paints above the DockTab header', () => {
+    // Regression for the bottom-dock "can't resize" bug: the handle is
+    // a `position:absolute` sibling of the `position:relative` DockTab.
+    // Both default to `z-index: auto`, and DOM order ties resolve to the
+    // later sibling, so without an explicit z-index the DockTab paints
+    // over the handle and swallows every mousedown at the boundary.
+    for (const position of ['bottom', 'top', 'left', 'right'] as const) {
+      const { unmount } = renderDockPanel({ position })
+
+      expect(screen.getByTestId('resize-handle').className).toMatch(/\bz-10\b/)
+
+      unmount()
+    }
+  })
+
   test('renders horizontal resize handle for left dock', () => {
     renderDockPanel({ position: 'left' })
 
