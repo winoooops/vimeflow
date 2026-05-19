@@ -17,7 +17,7 @@ export const CommandResults = ({
   <div
     id="command-palette-listbox"
     role="listbox"
-    className="p-2 overflow-y-auto max-h-96"
+    className="thin-scrollbar p-2 overflow-y-auto max-h-96"
   >
     {filteredResults.map((command, index) => (
       <motion.div

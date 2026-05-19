@@ -83,7 +83,7 @@ describe('CommandResultItem', () => {
     expect(description).toHaveClass('text-sm')
   })
 
-  test('selected state applies correct background styles without border', () => {
+  test('selected state applies bg tint and 2px left-accent border', () => {
     const mockOnSelect = vi.fn()
 
     render(
@@ -97,7 +97,8 @@ describe('CommandResultItem', () => {
 
     const option = screen.getByRole('option')
     expect(option).toHaveClass('bg-primary-container/10')
-    expect(option).not.toHaveClass('border')
+    expect(option).toHaveClass('border-l-2')
+    expect(option).toHaveClass('border-primary-container')
   })
 
   test('selected state applies filled icon variation', () => {
@@ -117,7 +118,7 @@ describe('CommandResultItem', () => {
     expect(icon).toHaveClass('text-primary-container')
   })
 
-  test('unselected state applies hover background styles', () => {
+  test('unselected state applies hover background and transparent left border placeholder', () => {
     const mockOnSelect = vi.fn()
 
     render(
@@ -132,6 +133,8 @@ describe('CommandResultItem', () => {
     const option = screen.getByRole('option')
     expect(option).toHaveClass('hover:bg-surface-container-highest/50')
     expect(option).not.toHaveClass('bg-primary-container/10')
+    expect(option).toHaveClass('border-l-2')
+    expect(option).toHaveClass('border-transparent')
   })
 
   test('unselected state applies outlined icon variation', () => {

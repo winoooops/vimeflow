@@ -20,8 +20,8 @@ export const CommandResultItem = ({
     aria-selected={isSelected}
     onClick={onSelect}
     className={`
-        group px-3 py-2.5 rounded-xl flex items-center justify-between cursor-pointer transition-all
-        ${isSelected ? 'bg-primary-container/10' : 'hover:bg-surface-container-highest/50'}
+        group px-3 py-2.5 rounded-xl flex items-center justify-between cursor-pointer transition-all border-l-2
+        ${isSelected ? 'bg-primary-container/10 border-primary-container' : 'border-transparent hover:bg-surface-container-highest/50'}
       `}
   >
     <div className="flex items-center gap-3">
