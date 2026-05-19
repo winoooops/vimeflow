@@ -97,6 +97,10 @@ Design specs: [`2026-04-12-agent-status-sidebar/`](docs/superpowers/specs/2026-0
 - Commit-msg hook: conventional commits via commitlint
 - Pre-push hook: full Vitest run
 
+### Linked worktrees inside the repo
+
+If you create linked worktrees inside the project, for example `git worktree add .claude/worktrees/feat-x ...`, add `.claude/worktrees/` to `.gitignore`. Otherwise the directory appears as untracked in `git status` from the main repo, and the watcher fires extra `git-status-changed` events for filesystem activity inside the worktree. Branch labels and the diff panel still stay correct; the watcher is just chattier than necessary.
+
 ## Changelog
 
 See [`CHANGELOG.md`](./CHANGELOG.md) (English) or [`CHANGELOG.zh-CN.md`](./CHANGELOG.zh-CN.md) (简体中文) for the linear timeline of notable changes. Each entry may cross-link review patterns from [`docs/reviews/`](./docs/reviews/CLAUDE.md) that it applied, updated, or created — so the CHANGELOG is the _when_ and `docs/reviews/` is the _why_.
