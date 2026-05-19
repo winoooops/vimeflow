@@ -1684,3 +1684,5 @@ git commit -m "docs(readme): recommend gitignore for nested linked worktrees"
 ## Plan Complete
 
 Plan committed. **STOP HERE** — control returns to `/lifeline:planner` for codex plan-complete review. Do NOT chain to `executing-plans` or `subagent-driven-development`. The implementation phase begins after codex review (Step 9.C of the planner skill) finishes and any findings are applied.
+
+<!-- codex-reviewed: 2026-05-19T09:12:26Z -->
