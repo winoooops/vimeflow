@@ -177,7 +177,9 @@ export const useSessionManager = (
               !session.panes.some((pane) => inMemoryPtyIds.has(pane.ptyId))
           )
 
-          return [...prev, ...restoredOnly]
+          // Keep restored cache order first; sessions created during the
+          // restore window are user-created additions and append after it.
+          return [...restoredOnly, ...prev]
         })
       })
     },
@@ -243,7 +245,7 @@ export const useSessionManager = (
     onExit: (ptyId) => onPtyExitRef.current(ptyId),
   })
 
-  // Create session — spawn + prepend, then mark the pane as 'attach'.
+  // Create session — spawn + append, then mark the pane as 'attach'.
   //
   // The PTY is created up-front in this hook (so we get the canonical id and
   // pid for state). We then populate restoreData with empty replay/buffered
@@ -340,7 +342,7 @@ export const useSessionManager = (
               activity: { ...emptyActivity },
             }
 
-            const next = [newSession, ...prev]
+            const next = [...prev, newSession]
             // F13 (claude MEDIUM): do NOT call the throwing getActivePane
             // inside the setSessions updater — a transient invariant
             // violation (5b multi-pane edits) would abort the React state
