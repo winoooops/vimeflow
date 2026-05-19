@@ -23,9 +23,17 @@ import {
   useRole,
   type Placement,
 } from '@floating-ui/react'
+import { formatShortcut, type ShortcutInput } from '../lib/formatShortcut'
 
 export interface TooltipProps {
   content: ReactNode
+  /**
+   * Optional keyboard shortcut shown as a single chip on the right side
+   * of the tooltip (Zed-style). Accepts a single key or a chord array
+   * (e.g. `['Mod', 'E']`). Display formatting is platform-aware — see
+   * `formatShortcut`.
+   */
+  shortcut?: ShortcutInput
   children: ReactElement
   placement?: Placement
   delayMs?: number
@@ -35,12 +43,18 @@ export interface TooltipProps {
 }
 
 const TOOLTIP_CLASSES =
-  'pointer-events-none z-50 rounded-lg shadow-lg px-3 py-2 ' +
+  'pointer-events-none z-50 rounded-md shadow-lg px-3 py-1.5 ' +
   'bg-surface-container-high/90 backdrop-blur-md backdrop-saturate-150 ' +
+  'border border-outline-variant/20 ' +
   'text-xs text-on-surface'
+
+const SHORTCUT_CHIP_CLASSES =
+  'shrink-0 rounded bg-on-surface/10 px-1.5 py-0.5 font-mono text-[10px] ' +
+  'text-on-surface-variant'
 
 export const Tooltip = ({
   content,
+  shortcut = undefined,
   children,
   placement = 'top',
   delayMs = 250,
@@ -116,7 +130,19 @@ export const Tooltip = ({
             }
             {...getFloatingProps()}
           >
-            {content}
+            {shortcut !== undefined ? (
+              <div className="flex items-center gap-3">
+                <span className="min-w-0 flex-1">{content}</span>
+                <kbd
+                  data-testid="tooltip-shortcut"
+                  className={SHORTCUT_CHIP_CLASSES}
+                >
+                  {formatShortcut(shortcut)}
+                </kbd>
+              </div>
+            ) : (
+              content
+            )}
           </div>
         </FloatingPortal>
       )}

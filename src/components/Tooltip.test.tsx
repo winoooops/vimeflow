@@ -179,6 +179,37 @@ describe('Tooltip', () => {
     expect(tip).toHaveClass('backdrop-blur-md')
   })
 
+  test('renders a shortcut chip when shortcut prop is provided', async () => {
+    const user = userEvent.setup()
+    render(
+      <Tooltip content="Open Editor" shortcut={['Mod', 'E']} delayMs={0}>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveTextContent('Open Editor')
+    // Don't assert exact glyph (platform-dependent); just confirm the
+    // chip element is present and contains the key letter.
+    const chip = screen.getByTestId('tooltip-shortcut')
+    expect(chip).toBeInTheDocument()
+    expect(chip).toHaveTextContent('E')
+  })
+
+  test('omits the shortcut chip when shortcut prop is absent', async () => {
+    const user = userEvent.setup()
+    render(
+      <Tooltip content="Open Editor" delayMs={0}>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+    await screen.findByRole('tooltip')
+    expect(screen.queryByTestId('tooltip-shortcut')).not.toBeInTheDocument()
+  })
+
   test('clears stale open state when tooltip becomes disabled mid-flight', async () => {
     const user = userEvent.setup()
 

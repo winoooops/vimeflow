@@ -54,15 +54,6 @@ export interface TerminalZoneProps {
   setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
   addPane: (sessionId: string) => void
   removePane: (sessionId: string, paneId: string) => void
-  /**
-   * Modifier glyph for the toolbar hint ('⌘' on macOS, 'Ctrl' on other
-   * platforms). Sourced from `WorkspaceView` so the visible label and
-   * `usePaneShortcuts.preferModifier` (which gates which modifier the
-   * hook intercepts) share a single platform-detection site and can
-   * never drift. Defaults to `'Ctrl'` for tests / sandboxed renders
-   * that don't pass it explicitly.
-   */
-  modKey?: '⌘' | 'Ctrl'
   isZoneFocused?: boolean
   onContainerFocus?: () => void
 }
@@ -86,7 +77,6 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       setSessionLayout,
       addPane,
       removePane,
-      modKey = 'Ctrl',
       isZoneFocused = true,
       onContainerFocus = undefined,
     }: TerminalZoneProps,
@@ -184,22 +174,6 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
               activeLayoutId={activeSession.layout}
               onPick={onPickLayout}
             />
-            <span className="ml-auto hidden items-center gap-1 font-mono text-xs text-on-surface-muted sm:inline-flex">
-              <kbd className="rounded bg-on-surface/10 px-1">{modKey}</kbd>
-              <span>+1-4 pane</span>
-              <span>·</span>
-              <kbd className="rounded bg-on-surface/10 px-1">{modKey}</kbd>
-              <span>+{'\\'} layout</span>
-              <span>·</span>
-              <kbd className="rounded bg-on-surface/10 px-1">{modKey}</kbd>
-              <span>+e editor</span>
-              <span>·</span>
-              <kbd className="rounded bg-on-surface/10 px-1">{modKey}</kbd>
-              <span>+g diff</span>
-              <span>·</span>
-              <kbd className="rounded bg-on-surface/10 px-1">{modKey}</kbd>
-              <span>+b back</span>
-            </span>
           </div>
         ) : null}
 

@@ -546,6 +546,42 @@ describe('SplitView - click-to-focus', () => {
 
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(2)
   })
+
+  test('hovering an inactive pane shows a focus tooltip with the Ctrl+N hint', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+
+    const inners = screen.getAllByTestId('split-view-slot-inner')
+    await user.hover(inners[1])
+
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveTextContent('Focus pane 2')
+    expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('2')
+  })
+
+  test('hovering the active pane does not show a focus tooltip', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+
+    const inners = screen.getAllByTestId('split-view-slot-inner')
+    await user.hover(inners[0])
+
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
 })
 
 describe('SplitView - close pane', () => {
