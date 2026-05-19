@@ -427,6 +427,14 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
           addon.dispose()
           webglAddon = null
           webglContextLossDisposable = null
+          // Reattach Canvas2D so customGlyphs survives WebGL context loss.
+          try {
+            const fallback = new CanvasAddon()
+            newTerminal.loadAddon(fallback)
+            canvasAddon = fallback
+          } catch {
+            // Canvas2D also unavailable — xterm reverts to DOM rendering.
+          }
         })
         newTerminal.loadAddon(addon)
         webglAddon = addon

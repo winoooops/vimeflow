@@ -57,21 +57,14 @@ vi.mock('@xterm/addon-fit', () => ({
   FitAddon: vi.fn(),
 }))
 
-// WebGL addon: default mock throws on construction to mirror jsdom
-// (no WebGL2 context). Body.tsx must catch this and fall back to the
-// Canvas2D renderer without crashing. Individual tests can override
-// the mock with `vi.mocked(WebglAddon).mockImplementationOnce(...)`.
+// Throws by default — mirrors jsdom's missing WebGL2 context.
 vi.mock('@xterm/addon-webgl', () => ({
   WebglAddon: vi.fn().mockImplementation(() => {
     throw new Error('WebGL2 context unavailable')
   }),
 }))
 
-// Canvas2D addon: default mock returns an instance. Pairs with the
-// throwing WebglAddon mock above so Body.tsx exercises its
-// WebGL→Canvas2D fallback path on every render. Individual tests can
-// override with `vi.mocked(CanvasAddon).mockImplementationOnce(...)`
-// to simulate the both-failed path.
+// Succeeds by default — pairs with the throwing WebglAddon to exercise the WebGL→Canvas2D fallback.
 vi.mock('@xterm/addon-canvas', () => ({
   CanvasAddon: vi.fn(),
 }))
@@ -243,13 +236,7 @@ describe('Body', () => {
   })
 
   test('falls back to Canvas2D renderer when WebGL addon construction throws', async () => {
-    // The shared `vi.mock('@xterm/addon-webgl', ...)` at the top of the
-    // file already configures the WebglAddon constructor to throw,
-    // simulating the jsdom test environment (no WebGL2 context). Body.tsx
-    // must catch this and load CanvasAddon instead — without a renderer
-    // addon, xterm 6.x falls back to its DOM renderer, which ignores
-    // `customGlyphs: true` and renders block elements (▀ ▄ █) from font
-    // glyphs, producing visible gaps in Claude Code's startup logo.
+    // WebglAddon throws (top-level mock); Body.tsx must load CanvasAddon instead so customGlyphs stays active.
     expect(() => {
       render(
         <Body
@@ -275,10 +262,7 @@ describe('Body', () => {
   })
 
   test('falls through to DOM renderer when both WebGL and Canvas2D throw', async () => {
-    // Mirror the worst-case path: no GPU AND no 2D canvas context. Body.tsx
-    // must not crash; xterm will silently use its DOM renderer (broken
-    // block-element glyphs, but a functional terminal — better than a
-    // crashed app).
+    // No GPU AND no 2D context — Body.tsx must mount without crashing; xterm reverts to DOM rendering.
     vi.mocked(CanvasAddon).mockImplementationOnce(() => {
       throw new Error('2D canvas context unavailable')
     })

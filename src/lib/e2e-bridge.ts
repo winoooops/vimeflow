@@ -14,13 +14,18 @@ const isVisible = (el: HTMLElement): boolean => {
 // to a <canvas> and `.xterm-rows` stays empty — so any DOM-textContent
 // probe returns ''. Read from `terminal.buffer.active` instead; the
 // buffer is renderer-independent and always reflects the live PTY
-// output. Trims trailing whitespace per line and drops trailing empty
-// lines so the probe matches what `.xterm-rows.textContent` used to
-// return for an active session.
+// output. Scope the read to the visible viewport (viewportY ..
+// viewportY + terminal.rows) so the result matches the prior
+// `.xterm-rows.textContent` semantics — iterating `buffer.length` would
+// also return up to `scrollback` (10k) rows of historical content,
+// breaking E2E assertions that expect an "empty" terminal after `clear`
+// or that compare visible state across commands.
 const bufferToText = (terminal: Terminal): string => {
   const buffer = terminal.buffer.active
+  const start = buffer.viewportY
+  const end = start + terminal.rows
   const lines: string[] = []
-  for (let i = 0; i < buffer.length; i++) {
+  for (let i = start; i < end; i++) {
     const line = buffer.getLine(i)
     if (line) {
       lines.push(line.translateToString(true))
