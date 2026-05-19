@@ -55,19 +55,20 @@ describe('LayoutSwitcher', () => {
     expect(screen.getByRole('group')).toHaveAccessibleName('Pane layout')
   })
 
-  // The shortcut chip is `Mod+\` for every layout button. This is
-  // intentional: `\` cycles through layouts (usePaneShortcuts), so the
-  // hint applies uniformly to all 5 buttons. Asserting the chip is
-  // present and contains the backslash documents that intent so a
-  // future refactor that gives each button its own shortcut can't
-  // pass the type-checker silently.
-  test('hovering a layout button shows a tooltip with the cycle-shortcut chip', async () => {
+  // Layout buttons render the layout name only — no shortcut chip.
+  // `Mod+\` cycles to the NEXT layout (usePaneShortcuts), not to any
+  // specific one, so attaching the chip to individual layout buttons
+  // would advertise a per-layout shortcut that doesn't exist (Claude
+  // review on PR #224 cycle 3, MEDIUM finding). If a future refactor
+  // introduces per-layout shortcuts (e.g. Mod+1..Mod+5 picker keys),
+  // re-add the chip and flip this assertion.
+  test('hovering a layout button shows a plain tooltip (no shortcut chip)', async () => {
     const user = userEvent.setup()
     render(<LayoutSwitcher activeLayoutId="single" onPick={vi.fn()} />)
 
     await user.hover(screen.getByRole('button', { name: 'Single' }))
     const tip = await screen.findByRole('tooltip')
     expect(tip).toHaveTextContent('Single')
-    expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('\\')
+    expect(within(tip).queryByTestId('tooltip-shortcut')).toBeNull()
   })
 })

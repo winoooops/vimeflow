@@ -38,12 +38,14 @@ export const LayoutSwitcher = ({
       const isActive = activeLayoutId === layout.id
 
       return (
-        <Tooltip
-          key={layout.id}
-          content={layout.name}
-          shortcut={['Mod', '\\']}
-          placement="bottom"
-        >
+        // Tooltip carries only the layout name — no shortcut chip.
+        // The `Mod+\` shortcut cycles to the NEXT layout, not to the
+        // specific one a user is hovering. Showing the chip per
+        // button would advertise "press Mod+\ to switch to THIS
+        // layout" which is misleading — the actual landing layout
+        // depends on which layout is currently active (Claude review
+        // on PR #224 cycle 3, MEDIUM finding, 83% confidence).
+        <Tooltip key={layout.id} content={layout.name} placement="bottom">
           <button
             type="button"
             aria-label={layout.name}
