@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import {
   Body,
   clearTerminalCache,
@@ -55,7 +56,15 @@ vi.mock('@xterm/addon-fit', () => ({
   FitAddon: vi.fn(),
 }))
 
-// WebGL addon intentionally not loaded — broken in Tauri webview (PR #33)
+// WebGL addon: default mock throws on construction to mirror jsdom
+// (no WebGL2 context). Body.tsx must catch this and fall back to the
+// Canvas2D renderer without crashing. Individual tests can override
+// the mock with `vi.mocked(WebglAddon).mockImplementationOnce(...)`.
+vi.mock('@xterm/addon-webgl', () => ({
+  WebglAddon: vi.fn().mockImplementation(() => {
+    throw new Error('WebGL2 context unavailable')
+  }),
+}))
 
 // Mock useTerminal hook
 vi.mock('../../hooks/useTerminal', () => ({
@@ -216,7 +225,34 @@ describe('Body', () => {
     })
   })
 
-  // WebGL addon test removed — addon disabled due to broken WebGL2 in Tauri webview
+  test('falls back to Canvas2D renderer when WebGL addon construction throws', async () => {
+    // The shared `vi.mock('@xterm/addon-webgl', ...)` at the top of the
+    // file already configures the constructor to throw, simulating the
+    // jsdom test environment (no WebGL2 context). Body.tsx must catch
+    // this and continue mounting with the default Canvas2D renderer —
+    // otherwise the renderer would crash on every CI run and in any
+    // headless / GPU-disabled Chromium build.
+    expect(() => {
+      render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+    }).not.toThrow()
+
+    await waitFor(() => {
+      expect(WebglAddon).toHaveBeenCalled()
+      expect(mockTerminal.open).toHaveBeenCalled()
+    })
+
+    // The throwing addon must NOT be attached via loadAddon — only the
+    // FitAddon (the working one) should reach the terminal.
+    expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(1)
+    expect(mockTerminal.loadAddon).toHaveBeenCalledWith(mockFitAddon)
+    expect(screen.getByTestId('terminal-pane')).toBeInTheDocument()
+  })
 
   test('opens terminal in container', async () => {
     render(
