@@ -16,15 +16,16 @@
 
 Files modified or created in this plan:
 
-| File                                                                    | Responsibility                                                                                          | Action                                         |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `crates/backend/src/git/watcher.rs`                                     | Watcher core: subscription, FS watch, debounce, polling, event emission. All of §2, §3, the bulk of §5. | Modify (additions + refactor)                  |
-| `crates/backend/src/git/mod.rs`                                         | `git_branch` IPC: branch-name fallback to short SHA. §4 contract change.                                | Modify (one function + tests)                  |
-| `crates/backend/src/git/test_helpers.rs`                                | Worktree fixture used by new unit tests.                                                                | Modify (add `create_main_repo_with_worktrees`) |
-| `src/features/diff/hooks/useGitBranch.ts`                               | Event subscription + watcher lifecycle in the hook. §4 in full.                                         | Modify (add second effect)                     |
-| `src/features/diff/hooks/useGitBranch.test.ts`                          | Vitest hook tests for the event subscription. §6.                                                       | Modify (add tests)                             |
-| `src/features/terminal/components/TerminalPane/HeaderMetadata.test.tsx` | Render tests for SHA-shaped branch values. §6.                                                          | Modify (add tests)                             |
-| `README.md`                                                             | One-line note recommending `.claude/worktrees/` in `.gitignore`. §7 risks.                              | Modify (small docs note)                       |
+| File                                           | Responsibility                                                                                          | Action                                         |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `crates/backend/src/git/watcher.rs`            | Watcher core: subscription, FS watch, debounce, polling, event emission. All of §2, §3, the bulk of §5. | Modify (additions + refactor)                  |
+| `crates/backend/src/git/mod.rs`                | `git_branch` IPC: branch-name fallback to short SHA. §4 contract change.                                | Modify (one function + tests)                  |
+| `crates/backend/src/git/test_helpers.rs`       | Worktree fixture used by new unit tests.                                                                | Modify (add `create_main_repo_with_worktrees`) |
+| `src/features/diff/hooks/useGitBranch.ts`      | Event subscription + watcher lifecycle in the hook. §4 in full.                                         | Modify (add second effect)                     |
+| `src/features/diff/hooks/useGitBranch.test.ts` | Vitest hook tests for the event subscription. §6.                                                       | Modify (add tests)                             |
+| `README.md`                                    | One-line note recommending `.claude/worktrees/` in `.gitignore`. §7 risks.                              | Modify (small docs note)                       |
+
+`HeaderMetadata.tsx` is intentionally NOT in this list: it renders any non-null branch string with `text-on-surface-muted` (verified at `HeaderMetadata.tsx:27-30`). Short-SHA strings render identically to branch names — no component change, no new test needed. Existing `HeaderMetadata.test.tsx` already covers the "branch is any string" case.
 
 The watcher.rs file is large (~1800 lines today) but its existing co-located test module is the right place for the new tests per `rules/rust/testing.md`. Do NOT split watcher.rs in this plan — the changes here are additive and the file's responsibility is unchanged.
 
@@ -67,7 +68,7 @@ Add to `mod tests` in `watcher.rs`:
 async fn test_stop_git_watcher_inner_handles_duplicate_starts() {
     let repo = create_temp_repo();
     let cwd = repo.path().to_string_lossy().to_string();
-    let (state, sink) = test_setup();
+    let (state, recording, sink) = test_setup();
 
     // Two starts for the same cwd.
     start_git_watcher_inner(&cwd, sink.clone(), &state).expect("start 1");
@@ -103,20 +104,33 @@ async fn test_stop_git_watcher_inner_handles_duplicate_starts() {
 }
 ```
 
-`test_setup()` is a helper colocated with existing tests; if not present, add:
+`test_setup()` is a helper colocated with existing tests; if not present, add. **Important:** hold a concrete `Arc<RecordingEventSink>` clone alongside the `Arc<dyn EventSink>` — the trait has no `as_any` downcast, and `RecordingEventSink` (aliased as `FakeEventSink`) is the only sink with `recorded()` / `wait_for_count()` access.
 
 ```rust
-fn test_setup() -> (GitWatcherState, std::sync::Arc<dyn EventSink>) {
+use crate::runtime::test_event_sink::RecordingEventSink;
+
+fn test_setup() -> (GitWatcherState, std::sync::Arc<RecordingEventSink>, std::sync::Arc<dyn EventSink>) {
     let state = GitWatcherState::new();
-    let sink: std::sync::Arc<dyn EventSink> =
-        std::sync::Arc::new(FakeEventSink::new());
-    (state, sink)
+    let recording = std::sync::Arc::new(RecordingEventSink::new());
+    let sink: std::sync::Arc<dyn EventSink> = recording.clone();
+    (state, recording, sink)
+}
+
+/// Recorded payloads are `serde_json::Value`, not strings. Check membership
+/// through the JSON shape rather than substring-matching the Debug repr.
+fn payload_includes_cwd(payload: &serde_json::Value, cwd: &str) -> bool {
+    payload["cwds"]
+        .as_array()
+        .map(|arr| arr.iter().any(|v| v.as_str() == Some(cwd)))
+        .unwrap_or(false)
 }
 ```
 
+Use the `recording: Arc<RecordingEventSink>` handle for assertions and the `sink: Arc<dyn EventSink>` handle when passing into watcher code. `RecordingEventSink::wait_for_count(event, count, timeout)` is the right primitive when waiting for an event to arrive (no manual `clear()` — instead, snapshot the pre-action count and assert post-action count grew).
+
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p vimeflow-backend test_stop_git_watcher_inner_handles_duplicate_starts -- --nocapture`
+Run: `cargo test -p vimeflow test_stop_git_watcher_inner_handles_duplicate_starts -- --nocapture`
 Expected: FAIL — second `stop_git_watcher_inner` is a silent no-op today (bucket remains).
 
 - [ ] **Step 3: Replace `remove` with peek-then-conditional-remove in `stop_git_watcher_inner`**
@@ -227,12 +241,12 @@ fn stop_git_watcher_inner(cwd: String, state: GitWatcherState) -> Result<(), Str
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cargo test -p vimeflow-backend test_stop_git_watcher_inner_handles_duplicate_starts -- --nocapture`
+Run: `cargo test -p vimeflow test_stop_git_watcher_inner_handles_duplicate_starts -- --nocapture`
 Expected: PASS.
 
 Also run the full watcher test suite to confirm no regressions:
 
-Run: `cargo test -p vimeflow-backend --lib git::watcher::tests`
+Run: `cargo test -p vimeflow --lib git::watcher::tests`
 Expected: all tests PASS.
 
 - [ ] **Step 5: Commit**
@@ -297,7 +311,7 @@ fn test_resolve_git_dir_errors_outside_a_repo() {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p vimeflow-backend resolve_git_dir -- --nocapture`
+Run: `cargo test -p vimeflow resolve_git_dir -- --nocapture`
 Expected: FAIL with "function not found" or compile error.
 
 - [ ] **Step 3: Add `resolve_git_dir` next to `resolve_toplevel` in `watcher.rs`**
@@ -341,7 +355,7 @@ fn resolve_git_dir(cwd: &std::path::Path) -> Result<PathBuf, String> {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p vimeflow-backend resolve_git_dir -- --nocapture`
+Run: `cargo test -p vimeflow resolve_git_dir -- --nocapture`
 Expected: PASS.
 
 - [ ] **Step 5: Widen `cwd_to_toplevel` to carry the `(toplevel, gitdir)` tuple**
@@ -408,7 +422,7 @@ Initialize it in the Phase-2 construction site (around `watcher.rs:830-870`).
 
 - [ ] **Step 7: Run all watcher tests + the new ones**
 
-Run: `cargo test -p vimeflow-backend --lib git::watcher::tests`
+Run: `cargo test -p vimeflow --lib git::watcher::tests`
 Expected: all PASS, including `test_resolve_git_dir_*`.
 
 If the test for `test_stop_git_watcher_inner_handles_duplicate_starts` (Task 1) fails because of the rename, update it to use `cwd_to_repo` and destructure `(toplevel, _gitdir)`.
@@ -442,47 +456,47 @@ async fn test_head_watch_survives_atomic_rename_replace() {
         .current_dir(repo.path()).status().unwrap();
 
     let cwd = repo.path().to_string_lossy().to_string();
-    let (state, sink) = test_setup();
-    let fake = sink.as_any().downcast_ref::<FakeEventSink>().unwrap();
+    let (state, recording, sink) = test_setup();
     start_git_watcher_inner(&cwd, sink.clone(), &state).expect("start");
 
     // First HEAD movement.
+    let baseline1 = recording.count("git-head-changed");
     Command::new("git").args(["switch", "-c", "feat-a"])
         .current_dir(repo.path()).status().unwrap();
-    wait_for_event(fake, "git-head-changed", 2_000).expect("first emit");
-    fake.clear();
+    wait_for_next_event(&recording, "git-head-changed", baseline1, 2_000).expect("first emit");
 
     // SECOND HEAD movement — would fail on direct-file-watch implementations
     // because git's rename-replace invalidates the file's inode watch.
+    let baseline2 = recording.count("git-head-changed");
     Command::new("git").args(["switch", "-c", "feat-b"])
         .current_dir(repo.path()).status().unwrap();
-    wait_for_event(fake, "git-head-changed", 2_000)
+    wait_for_next_event(&recording, "git-head-changed", baseline2, 2_000)
         .expect("second emit (rename-replace must not break the watch)");
 }
 ```
 
-`wait_for_event` is a polling helper around the FakeEventSink. If not present, add (next to other test helpers):
+`wait_for_next_event` wraps `RecordingEventSink::wait_for_count` to express the test pattern "I expect ONE MORE event after the current baseline." Add next to other test helpers:
 
 ```rust
-fn wait_for_event(
-    sink: &FakeEventSink,
+fn wait_for_next_event(
+    sink: &RecordingEventSink,
     event_name: &str,
+    baseline: usize,
     timeout_ms: u64,
 ) -> Result<(), String> {
-    let start = std::time::Instant::now();
-    while start.elapsed().as_millis() < timeout_ms as u128 {
-        if sink.recorded().iter().any(|(name, _)| name == event_name) {
-            return Ok(());
-        }
-        std::thread::sleep(std::time::Duration::from_millis(50));
+    if sink.wait_for_count(event_name, baseline + 1, std::time::Duration::from_millis(timeout_ms)) {
+        Ok(())
+    } else {
+        Err(format!("did not see {event_name} #{} within {timeout_ms}ms", baseline + 1))
     }
-    Err(format!("did not see {event_name} within {timeout_ms}ms"))
 }
 ```
 
+Test pattern: snapshot `recording.count(event)` BEFORE the action, then call `wait_for_next_event(&recording, event, baseline, timeout)`. Avoids a `clear()` method we don't have.
+
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p vimeflow-backend test_head_watch_survives_atomic_rename_replace -- --nocapture`
+Run: `cargo test -p vimeflow test_head_watch_survives_atomic_rename_replace -- --nocapture`
 Expected: FAIL (today's per-file watch goes stale after the first rename; second `git switch` doesn't emit).
 
 - [ ] **Step 3: Change watch registration to watch the gitdir non-recursively**
@@ -512,7 +526,7 @@ Remove the previous `git_index = toplevel.join(".git/index")` and `git_head = to
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cargo test -p vimeflow-backend test_head_watch_survives_atomic_rename_replace -- --nocapture`
+Run: `cargo test -p vimeflow test_head_watch_survives_atomic_rename_replace -- --nocapture`
 Expected: PASS.
 
 It will likely fail until Task 4 (classification + emit) and Task 6 (debounce wiring) are done. **In that case**, skip ahead — write the test, leave it as `#[ignore]` with a comment `TODO: enable after Task 6`, commit Task 3 with the watch change only, then un-ignore after Task 6.
@@ -538,7 +552,7 @@ Add to `mod tests`:
 
 ```rust
 #[test]
-fn test_head_classification_matches_full_path_only() {
+fn test_path_is_git_head_matches_full_path_only() {
     // A working-tree file whose name happens to be "HEAD" must NOT be
     // misclassified as a git HEAD change.
     let git_dir = PathBuf::from("/tmp/foo/.git");
@@ -552,17 +566,32 @@ fn test_head_classification_matches_full_path_only() {
 }
 
 #[test]
-fn test_head_classification_ignores_packed_refs() {
+fn test_path_is_git_head_does_not_match_packed_refs() {
     let git_dir = PathBuf::from("/tmp/foo/.git");
     let packed_refs = git_dir.join("packed-refs");
     assert!(!path_is_git_head(&packed_refs, &git_dir));
+}
+
+#[test]
+fn test_path_is_inside_git_dir_filters_gitdir_noise() {
+    let git_dir = PathBuf::from("/tmp/foo/.git");
+    assert!(path_is_inside_git_dir(&git_dir.join("config"), &git_dir));
+    assert!(path_is_inside_git_dir(&git_dir.join("packed-refs"), &git_dir));
+    // Working-tree paths are NOT inside git_dir.
+    assert!(!path_is_inside_git_dir(
+        &PathBuf::from("/tmp/foo/src/lib.rs"), &git_dir));
+    // Subdirs of git_dir (e.g. hooks/, refs/heads/) have `parent() == git_dir/<sub>`,
+    // not git_dir itself — they correctly DON'T match. NonRecursive watch on
+    // git_dir never surfaces those paths anyway.
+    assert!(!path_is_inside_git_dir(
+        &git_dir.join("hooks").join("pre-commit"), &git_dir));
 }
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p vimeflow-backend path_is_git_head -- --nocapture`
-Expected: FAIL — `path_is_git_head` doesn't exist.
+Run: `cargo test -p vimeflow path_is_git -- --nocapture`
+Expected: FAIL — `path_is_git_head` and friends don't exist.
 
 - [ ] **Step 3: Add the classifier and the `head_dirty` flag**
 
@@ -578,33 +607,54 @@ struct RepoWatcher {
 }
 ```
 
-Add the helper near other private helpers:
+Add the classification helpers near other private helpers. There are THREE relevant categories of path the notify callback may receive (because the single `RecommendedWatcher` serves both the recursive working-tree watch on `<toplevel>` and the non-recursive gitdir watch on `<git_dir>`):
 
 ```rust
-/// True if `path` is exactly `<git_dir>/HEAD`. Compares by full-path
-/// equality rather than filename so a user file like
-/// `<toplevel>/some-dir/HEAD` (delivered by the working-tree recursive
-/// watch into the same notify callback) is not misclassified.
+/// `<git_dir>/HEAD` exactly.
 fn path_is_git_head(path: &std::path::Path, git_dir: &std::path::Path) -> bool {
     path == git_dir.join("HEAD")
 }
+
+/// `<git_dir>/index` exactly.
+fn path_is_git_index(path: &std::path::Path, git_dir: &std::path::Path) -> bool {
+    path == git_dir.join("index")
+}
+
+/// Any path inside `git_dir` (top level only — `NonRecursive` watch doesn't
+/// surface deeper paths, but we still gate). Used to recognize gitdir-side
+/// noise (config, packed-refs, COMMIT_EDITMSG, hooks/, …) that should be
+/// dropped instead of forwarded to the debounce thread.
+fn path_is_inside_git_dir(path: &std::path::Path, git_dir: &std::path::Path) -> bool {
+    path.parent() == Some(git_dir)
+}
 ```
 
-In the notify callback that already exists in `start_git_watcher_inner` (find it by searching for the closure that calls the debounce-channel `tx.send(())`), add classification BEFORE the existing forward:
+In the notify callback inside `start_git_watcher_inner` (find it by searching for the closure that calls `debounce_tx.send(())`), classify by full-path equality AND gate the forward so gitdir-side noise doesn't reach the debounce thread:
 
 ```rust
 let git_dir_for_callback = git_dir.clone();
 let head_dirty_for_callback = head_dirty.clone();
 
-// inside the closure:
+// inside the closure — replaces the existing unconditional forward:
 if let Ok(event) = result {
+    let mut should_forward = false;
     for p in &event.paths {
         if path_is_git_head(p, &git_dir_for_callback) {
             head_dirty_for_callback.store(true, Ordering::Release);
-            break;
+            should_forward = true;
+        } else if path_is_git_index(p, &git_dir_for_callback) {
+            should_forward = true;
+        } else if path_is_inside_git_dir(p, &git_dir_for_callback) {
+            // config / packed-refs / COMMIT_EDITMSG / hooks/ etc. — drop.
+            // Branch name unchanged, working-tree state unchanged: no event needed.
+        } else {
+            // Outside git_dir → working-tree event from the recursive watch.
+            should_forward = true;
         }
     }
-    let _ = debounce_tx.send(());
+    if should_forward {
+        let _ = debounce_tx.send(());
+    }
 }
 ```
 
@@ -618,8 +668,8 @@ and stored in `RepoWatcher`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p vimeflow-backend path_is_git_head -- --nocapture`
-Expected: PASS.
+Run: `cargo test -p vimeflow path_is_git -- --nocapture`
+Expected: PASS (all three classifier tests).
 
 - [ ] **Step 5: Commit**
 
@@ -653,11 +703,10 @@ fn test_git_head_changed_payload_serializes_camel_case_cwds() {
 #[test]
 fn test_emit_git_head_changed_writes_to_sink() {
     let (_state, sink) = test_setup();
-    let fake = sink.as_any().downcast_ref::<FakeEventSink>().unwrap();
 
     emit_git_head_changed(&sink, vec!["/home/u/repo".to_string()]);
 
-    let recorded = fake.recorded();
+    let recorded = recording.recorded();
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].0, "git-head-changed");
     assert!(recorded[0].1.contains("/home/u/repo"));
@@ -666,7 +715,7 @@ fn test_emit_git_head_changed_writes_to_sink() {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p vimeflow-backend git_head_changed -- --nocapture`
+Run: `cargo test -p vimeflow git_head_changed -- --nocapture`
 Expected: FAIL — `GitHeadChangedPayload` / `emit_git_head_changed` don't exist.
 
 - [ ] **Step 3: Add the payload and helper next to their `git-status-changed` siblings**
@@ -699,7 +748,7 @@ fn emit_git_head_changed(events: &Arc<dyn EventSink>, cwds: Vec<String>) {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p vimeflow-backend git_head_changed -- --nocapture`
+Run: `cargo test -p vimeflow git_head_changed -- --nocapture`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -731,21 +780,20 @@ async fn test_head_change_in_main_emits_git_head_changed() {
         .current_dir(repo.path()).status().unwrap();
 
     let cwd = repo.path().to_string_lossy().to_string();
-    let (state, sink) = test_setup();
-    let fake = sink.as_any().downcast_ref::<FakeEventSink>().unwrap();
+    let (state, recording, sink) = test_setup();
     start_git_watcher_inner(&cwd, sink.clone(), &state).expect("start");
 
-    fake.clear();
+    let baseline = recording.count("git-head-changed");
     Command::new("git").args(["switch", "-c", "feat"])
         .current_dir(repo.path()).status().unwrap();
 
-    wait_for_event(fake, "git-head-changed", 2_000).expect("head event");
+    wait_for_next_event(&recording, "git-head-changed", baseline, 2_000).expect("head event");
 }
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p vimeflow-backend test_head_change_in_main_emits_git_head_changed -- --nocapture`
+Run: `cargo test -p vimeflow test_head_change_in_main_emits_git_head_changed -- --nocapture`
 Expected: FAIL — no emit path yet.
 
 - [ ] **Step 3: Extend the fan-out helper and the debounce emit**
@@ -789,7 +837,7 @@ emit_for_all_subscribers(&events, &state, &toplevel, head_was_dirty);
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p vimeflow-backend git::watcher::tests --lib`
+Run: `cargo test -p vimeflow git::watcher::tests --lib`
 Expected: all PASS, including `test_head_change_in_main_emits_git_head_changed` and the un-ignored `test_head_watch_survives_atomic_rename_replace`.
 
 - [ ] **Step 5: Commit**
@@ -821,12 +869,11 @@ async fn test_start_git_watcher_emits_initial_git_head_changed() {
         .current_dir(repo.path()).status().unwrap();
 
     let cwd = repo.path().to_string_lossy().to_string();
-    let (state, sink) = test_setup();
-    let fake = sink.as_any().downcast_ref::<FakeEventSink>().unwrap();
+    let (state, recording, sink) = test_setup();
 
     start_git_watcher_inner(&cwd, sink.clone(), &state).expect("start");
 
-    let recorded = fake.recorded();
+    let recorded = recording.recorded();
     assert!(recorded.iter().any(|(n, p)| n == "git-head-changed" && p.contains(&cwd)),
         "expected initial git-head-changed for the new subscriber, got {:?}",
         recorded.iter().map(|(n, _)| n).collect::<Vec<_>>());
@@ -835,7 +882,7 @@ async fn test_start_git_watcher_emits_initial_git_head_changed() {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cargo test -p vimeflow-backend test_start_git_watcher_emits_initial_git_head_changed -- --nocapture`
+Run: `cargo test -p vimeflow test_start_git_watcher_emits_initial_git_head_changed -- --nocapture`
 Expected: FAIL — only `git-status-changed` is emitted today.
 
 - [ ] **Step 3: Pair every single-cwd `emit_git_status_changed` with `emit_git_head_changed`**
@@ -853,7 +900,7 @@ The `emit_for_all_subscribers` path (multi-cwd, triggered by FS events) is NOT t
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p vimeflow-backend test_start_git_watcher_emits_initial_git_head_changed -- --nocapture`
+Run: `cargo test -p vimeflow test_start_git_watcher_emits_initial_git_head_changed -- --nocapture`
 Expected: PASS.
 
 Also confirm: the existing `test_start_git_watcher_emits_initial_git_status_changed`-style test (if one exists) still passes.
@@ -873,111 +920,170 @@ git commit -m "feat(git-watcher): emit initial git-head-changed on subscribe"
 
 - Modify: `crates/backend/src/git/watcher.rs:684-745` (the polling thread block)
 
-- [ ] **Step 1: Write the failing test**
+**The hard part:** in a real watcher process, the notify thread AND the polling thread both call `emit_git_head_changed` on HEAD movement. An end-to-end test where you `git switch` and assert the event fires CAN'T distinguish "notify caught it" from "polling caught it." Codex flagged this in plan review: testing the polling fallback end-to-end requires either disabling notify (no clean way in `notify` crate) or testing the comparator directly.
+
+Extract the HEAD-content comparison into a free function and unit-test it directly. The polling thread then becomes a thin caller.
+
+- [ ] **Step 1: Write the failing tests for the comparator**
 
 Add to `mod tests`:
 
 ```rust
-#[tokio::test]
-async fn test_polling_emits_head_changed_on_clean_switch_with_unchanged_status() {
-    let repo = create_temp_repo();
-    fs::write(repo.path().join("seed"), "seed").unwrap();
-    Command::new("git").args(["add", "."]).current_dir(repo.path()).status().unwrap();
-    Command::new("git").args(["commit", "-m", "seed"])
-        .current_dir(repo.path()).status().unwrap();
-    // Create a second branch BEFORE we start the watcher so switching to it
-    // doesn't reorder commits in a way that changes status output.
-    Command::new("git").args(["branch", "other"])
-        .current_dir(repo.path()).status().unwrap();
+#[test]
+fn test_detect_head_change_returns_true_on_first_read() {
+    // Initial state: no cached content yet → first read is a "change".
+    let mut last: Option<String> = None;
+    let changed = detect_head_change_with(&mut last, || {
+        Ok::<_, std::io::Error>("ref: refs/heads/main\n".to_string())
+    });
+    assert!(changed);
+    assert_eq!(last.as_deref(), Some("ref: refs/heads/main\n"));
+}
 
-    let cwd = repo.path().to_string_lossy().to_string();
-    let (state, sink) = test_setup();
-    let fake = sink.as_any().downcast_ref::<FakeEventSink>().unwrap();
-    start_git_watcher_inner(&cwd, sink.clone(), &state).expect("start");
-    fake.clear();
+#[test]
+fn test_detect_head_change_returns_false_when_content_identical() {
+    let mut last: Option<String> = Some("ref: refs/heads/main\n".to_string());
+    let changed = detect_head_change_with(&mut last, || {
+        Ok::<_, std::io::Error>("ref: refs/heads/main\n".to_string())
+    });
+    assert!(!changed);
+}
 
-    // Simulate inotify being unreliable: switch via plumbing so the file
-    // event might be missed (we can't easily disable notify in tests, but
-    // we CAN verify the polling thread emits independently — wait longer
-    // than POLL_INTERVAL_SECS=10 and assert the event fired without our
-    // having to rely on the notify path).
-    Command::new("git").args(["switch", "other"])
-        .current_dir(repo.path()).status().unwrap();
+#[test]
+fn test_detect_head_change_returns_true_when_ref_differs() {
+    let mut last: Option<String> = Some("ref: refs/heads/main\n".to_string());
+    let changed = detect_head_change_with(&mut last, || {
+        Ok::<_, std::io::Error>("ref: refs/heads/feat\n".to_string())
+    });
+    assert!(changed);
+    assert_eq!(last.as_deref(), Some("ref: refs/heads/feat\n"));
+}
 
-    // Wait up to one poll interval + slack.
-    wait_for_event(fake, "git-head-changed", 12_000).expect("head event");
+#[test]
+fn test_detect_head_change_returns_false_when_read_errs() {
+    // Worktree removed, permissions, etc. — last_content stays as-is.
+    let mut last: Option<String> = Some("ref: refs/heads/main\n".to_string());
+    let changed = detect_head_change_with::<_, std::io::Error>(&mut last, || {
+        Err(std::io::Error::new(std::io::ErrorKind::NotFound, "gone"))
+    });
+    assert!(!changed);
+    assert_eq!(last.as_deref(), Some("ref: refs/heads/main\n"));
 }
 ```
 
-(The test is slow — 10-12 s. Run it under `--release` or accept the wall-clock cost; alternatively make `POLL_INTERVAL_SECS` configurable via env in test builds. For the plan we accept the wall-clock cost on first run; CI can `--test-threads=1` if needed.)
+- [ ] **Step 2: Run tests to verify they fail**
 
-- [ ] **Step 2: Run test to verify it fails**
+Run: `cargo test -p vimeflow detect_head_change -- --nocapture`
+Expected: FAIL — `detect_head_change_with` doesn't exist.
 
-Run: `cargo test -p vimeflow-backend test_polling_emits_head_changed_on_clean_switch_with_unchanged_status -- --nocapture`
-Expected: FAIL if you can suppress notify; PASS today by coincidence because notify still catches it. Treat the assertion as "we don't depend on the notify path" — if the test passes today, that's because notify covered it; the polling path independence still needs the code change for NFS/FUSE reliability. Comment in the test:
+- [ ] **Step 3: Add the comparator and integrate into the polling thread**
 
-```rust
-// This test asserts emission within ~one poll interval. On platforms
-// where notify is reliable it can pass before the poll fires; we add
-// the polling-path code change for NFS/FUSE robustness regardless.
-```
-
-- [ ] **Step 3: Add HEAD-content caching to `RepoWatcher` and compare in the polling thread**
-
-Add field:
+Add near `hash_git_status` in `watcher.rs`:
 
 ```rust
-struct RepoWatcher {
-    // ...
-    last_head_content: Arc<Mutex<Option<String>>>,
-}
-```
-
-Initialize in Phase-2 builder:
-
-```rust
-let initial_head = std::fs::read_to_string(git_dir.join("HEAD")).ok();
-let last_head_content = Arc::new(Mutex::new(initial_head));
-```
-
-Inside the polling thread (around `watcher.rs:695`), add an independent comparison alongside the existing `hash_git_status` check:
-
-```rust
-// (Existing) status-hash comparison emits git-status-changed.
-let status_changed = /* existing block */;
-
-// (NEW) HEAD-content comparison emits git-head-changed independently.
-// hash_git_status does NOT cover HEAD moves on a clean tree, so a
-// `git switch <branch>` against an unmodified tree must be caught here.
-let head_changed = {
-    match std::fs::read_to_string(poll_git_dir.join("HEAD")) {
+/// True iff reading HEAD via `reader` produces content different from
+/// `last_content`. Always updates `last_content` on success. Returns false
+/// on first read with no cached content (the caller should treat the first
+/// successful read as the baseline, NOT as a change — flipping the polarity
+/// would emit a spurious `git-head-changed` immediately on subscribe; that
+/// initial emit is already covered by Task 7's start-of-subscription path).
+fn detect_head_change_with<R, E>(
+    last_content: &mut Option<String>,
+    reader: R,
+) -> bool
+where
+    R: FnOnce() -> Result<String, E>,
+{
+    match reader() {
         Ok(current) => {
-            let mut last = poll_last_head_content.lock().unwrap();
-            let differs = last.as_deref() != Some(current.as_str());
-            if differs {
-                *last = Some(current);
+            let differs = last_content.as_deref() != Some(current.as_str());
+            *last_content = Some(current);
+            // First-read case: differs is true because `None != Some(_)`. The
+            // initial emit on subscribe (Task 7) covers this separately; we
+            // return false here to avoid double-emit.
+            if last_content.is_some() && differs {
+                let was_first = matches!(last_content, Some(_)) && last_content.as_ref().map(|s| s.is_empty()).unwrap_or(false);
+                let _ = was_first;
+                differs
+            } else {
+                differs
             }
-            differs
         }
-        // Read errors (worktree removed, permissions) are not "head
-        // changed" — they'll be visible to git_branch IPC on next call.
         Err(_) => false,
     }
-};
+}
+```
 
+Wait — the "first read isn't a change" logic is fiddly. Cleaner: only return `true` when `last_content` was `Some(prev)` and `prev != current`:
+
+```rust
+fn detect_head_change_with<R, E>(
+    last_content: &mut Option<String>,
+    reader: R,
+) -> bool
+where
+    R: FnOnce() -> Result<String, E>,
+{
+    let current = match reader() {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let differs = match last_content.as_deref() {
+        Some(prev) => prev != current,
+        None => false, // First successful read seeds the cache without emitting.
+    };
+    *last_content = Some(current);
+    differs
+}
+```
+
+Update the first test accordingly: `test_detect_head_change_returns_true_on_first_read` becomes `test_detect_head_change_returns_false_on_first_read_but_seeds_cache`:
+
+```rust
+#[test]
+fn test_detect_head_change_returns_false_on_first_read_but_seeds_cache() {
+    let mut last: Option<String> = None;
+    let changed = detect_head_change_with(&mut last, || {
+        Ok::<_, std::io::Error>("ref: refs/heads/main\n".to_string())
+    });
+    assert!(!changed, "first read seeds the cache without emitting");
+    assert_eq!(last.as_deref(), Some("ref: refs/heads/main\n"));
+}
+```
+
+The polling thread then becomes a thin caller around this helper:
+
+```rust
+// Inside the polling-thread closure, alongside the existing status-hash compare:
+let head_changed = {
+    let mut last = poll_last_head_content.lock().unwrap();
+    detect_head_change_with(&mut last, || {
+        std::fs::read_to_string(poll_git_dir.join("HEAD"))
+    })
+};
 if head_changed {
     let cwds = collect_subscriber_cwds(&poll_state, &poll_toplevel);
     if !cwds.is_empty() {
         emit_git_head_changed(&poll_events, cwds);
     }
 }
-
-if status_changed {
-    emit_for_all_subscribers(/* head_was_dirty: */ false, ...);
-}
 ```
 
-(Clone `git_dir` and `last_head_content` into the polling thread's captures alongside the existing `poll_toplevel`, `poll_state`, etc.)
+Seed the cache at `RepoWatcher` construction (Phase 2 builder):
+
+```rust
+let initial_head = std::fs::read_to_string(git_dir.join("HEAD")).ok();
+let last_head_content = Arc::new(Mutex::new(initial_head));
+```
+
+Note: the initial seed bypasses `detect_head_change_with` (no comparator runs); first poll-cycle read will compare against the seeded content.
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cargo test -p vimeflow detect_head_change -- --nocapture`
+Expected: PASS (all four comparator tests).
+
+Optional end-to-end check (slow, depends on POLL_INTERVAL_SECS=10): add a separate `#[tokio::test] #[ignore] async fn` that performs the live `git switch` and waits ~12 s. Marked `#[ignore]` so it doesn't slow normal CI runs; run with `cargo test -- --ignored` for manual verification.
 
 Extract a small helper for the subscriber-list collection if the body repeats too much:
 
@@ -991,10 +1097,14 @@ fn collect_subscriber_cwds(state: &GitWatcherState, toplevel: &std::path::Path) 
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+Add `last_head_content` to `RepoWatcher`:
 
-Run: `cargo test -p vimeflow-backend test_polling_emits_head_changed_on_clean_switch_with_unchanged_status -- --nocapture --test-threads=1`
-Expected: PASS within ~12 s.
+```rust
+struct RepoWatcher {
+    // ...
+    last_head_content: Arc<Mutex<Option<String>>>,
+}
+```
 
 - [ ] **Step 5: Commit**
 
@@ -1046,10 +1156,10 @@ Also confirm `test_git_branch_returns_error_for_non_repo_cwd` (around `mod.rs:18
 
 - [ ] **Step 2: Run tests to verify the detached test now fails**
 
-Run: `cargo test -p vimeflow-backend test_git_branch_detached_head_returns_short_sha -- --nocapture`
+Run: `cargo test -p vimeflow test_git_branch_detached_head_returns_short_sha -- --nocapture`
 Expected: FAIL — current impl returns `""`.
 
-Also run: `cargo test -p vimeflow-backend test_git_branch_returns_error_for_non_repo_cwd -- --nocapture`
+Also run: `cargo test -p vimeflow test_git_branch_returns_error_for_non_repo_cwd -- --nocapture`
 Expected: PASS (we want it to keep passing after the change).
 
 - [ ] **Step 3: Implement the short-SHA fallback in `git_branch_inner`**
@@ -1112,7 +1222,7 @@ pub(crate) async fn git_branch_inner(cwd: String) -> Result<String, String> {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p vimeflow-backend test_git_branch_ -- --nocapture`
+Run: `cargo test -p vimeflow test_git_branch_ -- --nocapture`
 Expected: all `test_git_branch_*` PASS, including:
 
 - `test_git_branch_returns_default_branch_for_unborn_repo`
@@ -1402,19 +1512,19 @@ async fn test_head_change_in_worktree_emits_for_worktree_only() {
         create_main_repo_with_worktrees(&["feat"]);
     let main_cwd = main.to_string_lossy().to_string();
     let wt_cwd = wts[0].to_string_lossy().to_string();
-    let (state, sink) = test_setup();
-    let fake = sink.as_any().downcast_ref::<FakeEventSink>().unwrap();
+    let (state, recording, sink) = test_setup();
 
     start_git_watcher_inner(&main_cwd, sink.clone(), &state).expect("start main");
     start_git_watcher_inner(&wt_cwd, sink.clone(), &state).expect("start wt");
-    fake.clear();
+    let baseline = recording.count("git-head-changed");
 
     Command::new("git").args(["switch", "-c", "feat2"])
         .current_dir(&wts[0]).status().unwrap();
 
-    wait_for_event(fake, "git-head-changed", 2_000).expect("head event for worktree");
+    wait_for_next_event(&recording, "git-head-changed", baseline, 2_000)
+        .expect("head event for worktree");
     // The wt event must list ONLY the worktree cwd.
-    let recorded = fake.recorded();
+    let recorded = recording.recorded();
     let head_events: Vec<_> = recorded
         .iter()
         .filter(|(n, _)| n == "git-head-changed")
@@ -1438,8 +1548,7 @@ async fn test_pre_repo_upgrades_to_linked_worktree_and_emits_initial_head_event(
     // Subscribe BEFORE the worktree exists — pre-repo path.
     let wt_cwd = wt.to_string_lossy().to_string();
     std::fs::create_dir(&wt).unwrap();
-    let (state, sink) = test_setup();
-    let fake = sink.as_any().downcast_ref::<FakeEventSink>().unwrap();
+    let (state, recording, sink) = test_setup();
     start_git_watcher_inner(&wt_cwd, sink.clone(), &state).expect("subscribe pre-repo");
 
     // Now create the worktree.
@@ -1448,9 +1557,18 @@ async fn test_pre_repo_upgrades_to_linked_worktree_and_emits_initial_head_event(
 
     // Re-subscribe to trigger the pre-repo → repo upgrade. (In production,
     // the upgrade fires on the next subscription start for the same cwd.)
-    start_git_watcher_inner(&wt_cwd, sink.clone(), &state).expect("re-subscribe post-upgrade");
+    // Trigger the production upgrade path directly. The pre-repo polling
+    // thread calls upgrade_to_repo_watcher every POLL_INTERVAL_SECS; calling
+    // it here makes the test deterministic and exercises the same function
+    // the polling thread calls.
+    let baseline = recording.count("git-head-changed");
+    upgrade_to_repo_watcher(
+        validate_cwd(&wt_cwd).unwrap(),
+        sink.clone(),
+        state.clone(),
+    );
 
-    wait_for_event(fake, "git-head-changed", 2_000)
+    wait_for_next_event(&recording, "git-head-changed", baseline, 2_000)
         .expect("initial git-head-changed on upgrade");
 }
 
@@ -1458,8 +1576,7 @@ async fn test_pre_repo_upgrades_to_linked_worktree_and_emits_initial_head_event(
 async fn test_two_worktrees_independent_head_events() {
     let (_tmp, main, wts) =
         create_main_repo_with_worktrees(&["feat-a", "feat-b"]);
-    let (state, sink) = test_setup();
-    let fake = sink.as_any().downcast_ref::<FakeEventSink>().unwrap();
+    let (state, recording, sink) = test_setup();
 
     let main_cwd = main.to_string_lossy().to_string();
     let wt_a_cwd = wts[0].to_string_lossy().to_string();
@@ -1468,13 +1585,13 @@ async fn test_two_worktrees_independent_head_events() {
     start_git_watcher_inner(&main_cwd, sink.clone(), &state).unwrap();
     start_git_watcher_inner(&wt_a_cwd, sink.clone(), &state).unwrap();
     start_git_watcher_inner(&wt_b_cwd, sink.clone(), &state).unwrap();
-    fake.clear();
+    let baseline = recording.count("git-head-changed");
 
     Command::new("git").args(["switch", "-c", "feat-a-2"])
         .current_dir(&wts[0]).status().unwrap();
-    wait_for_event(fake, "git-head-changed", 2_000).unwrap();
+    wait_for_next_event(&recording, "git-head-changed", baseline, 2_000).unwrap();
 
-    let recorded = fake.recorded();
+    let recorded = recording.recorded();
     let payloads_with_wt_b: Vec<_> = recorded.iter()
         .filter(|(n, p)| n == "git-head-changed" && p.contains(&wt_b_cwd))
         .collect();
@@ -1488,7 +1605,7 @@ async fn test_worktree_removal_drops_branch() {
     let (_tmp, main, wts) =
         create_main_repo_with_worktrees(&["feat"]);
     let wt_cwd = wts[0].to_string_lossy().to_string();
-    let (state, sink) = test_setup();
+    let (state, recording, sink) = test_setup();
     start_git_watcher_inner(&wt_cwd, sink.clone(), &state).unwrap();
 
     Command::new("git").args(["worktree", "remove", "--force",
@@ -1504,10 +1621,10 @@ async fn test_worktree_removal_drops_branch() {
 
 - [ ] **Step 3: Run the new tests**
 
-Run: `cargo test -p vimeflow-backend git::watcher::tests::test_head_change_in_worktree -- --nocapture`
-Run: `cargo test -p vimeflow-backend git::watcher::tests::test_pre_repo_upgrades -- --nocapture`
-Run: `cargo test -p vimeflow-backend git::watcher::tests::test_two_worktrees_independent -- --nocapture`
-Run: `cargo test -p vimeflow-backend git::watcher::tests::test_worktree_removal_drops_branch -- --nocapture`
+Run: `cargo test -p vimeflow git::watcher::tests::test_head_change_in_worktree -- --nocapture`
+Run: `cargo test -p vimeflow git::watcher::tests::test_pre_repo_upgrades -- --nocapture`
+Run: `cargo test -p vimeflow git::watcher::tests::test_two_worktrees_independent -- --nocapture`
+Run: `cargo test -p vimeflow git::watcher::tests::test_worktree_removal_drops_branch -- --nocapture`
 
 Expected: all PASS.
 
