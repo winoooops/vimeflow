@@ -1462,3 +1462,5 @@ None at spec-write time. All Q1-Q6 forks from Step 2 of the
 planner are resolved; the only conditional left is the runtime
 value of `SETTINGS_FOLLOWUP_ISSUE_NUMBER`, which is substituted
 pre-merge per §11.2.
+
+<!-- codex-reviewed: 2026-05-20T13:36:53Z -->
