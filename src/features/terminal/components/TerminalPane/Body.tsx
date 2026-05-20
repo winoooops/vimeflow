@@ -21,6 +21,7 @@ import {
 } from '../../hooks/useTerminal'
 import { type ITerminalService } from '../../services/terminalService'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
+import { parseAgentCwdHint } from './agentCwdHint'
 import { parseOsc7Cwd } from './osc7'
 import '@xterm/xterm/css/xterm.css'
 
@@ -180,6 +181,31 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const flushFitRef = useRef<(() => void) | null>(null)
   const flushFitSessionIdRef = useRef<string | null>(null)
   const pendingDeferredFitFlushRef = useRef(false)
+  const agentCwdOutputBufferRef = useRef('')
+  const lastAgentCwdHintRef = useRef<string | null>(null)
+
+  // Store callbacks in refs to avoid terminal recreation when they change
+  const onCwdChangeRef = useRef(onCwdChange)
+  useEffect(() => {
+    onCwdChangeRef.current = onCwdChange
+  }, [onCwdChange])
+
+  useEffect(() => {
+    agentCwdOutputBufferRef.current = ''
+    lastAgentCwdHintRef.current = null
+  }, [sessionId])
+
+  const handleTerminalOutput = (data: string): void => {
+    const output = `${agentCwdOutputBufferRef.current}${data}`
+    const cwdHint = parseAgentCwdHint(output)
+
+    agentCwdOutputBufferRef.current = output.slice(-4096)
+
+    if (cwdHint && cwdHint !== lastAgentCwdHintRef.current) {
+      lastAgentCwdHintRef.current = cwdHint
+      onCwdChangeRef.current?.(cwdHint)
+    }
+  }
 
   // Use terminal hook for PTY lifecycle management
   const {
@@ -194,6 +220,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     env,
     restoredFrom,
     onPaneReady,
+    onOutput: handleTerminalOutput,
     mode,
   })
 
@@ -209,12 +236,6 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       unregisterPtySession(sessionId)
     }
   }, [sessionId, ptySession?.id, ptySession?.cwd])
-
-  // Store callbacks in refs to avoid terminal recreation when they change
-  const onCwdChangeRef = useRef(onCwdChange)
-  useEffect(() => {
-    onCwdChangeRef.current = onCwdChange
-  }, [onCwdChange])
 
   // P1 Fix: Store resize callback in ref to avoid terminal recreation when it changes
   const resizeRef = useRef(resize)

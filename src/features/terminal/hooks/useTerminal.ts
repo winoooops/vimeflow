@@ -88,6 +88,13 @@ export interface UseTerminalOptions {
   onPaneReady?: NotifyPaneReady
 
   /**
+   * Optional callback for PTY output chunks that passed the session and
+   * cursor-dedupe filters. Consumers can inspect agent-emitted terminal text
+   * without subscribing to the shared terminal service separately.
+   */
+  onOutput?: (data: string) => void
+
+  /**
    * Explicit lifecycle mode. When omitted, falls back to legacy inference
    * (`attach` if `restoredFrom` is set, else `spawn`) so existing call
    * sites that haven't migrated to the explicit prop continue to work.
@@ -142,6 +149,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     env,
     restoredFrom,
     onPaneReady,
+    onOutput,
     mode,
   } = options
 
@@ -180,6 +188,11 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   useEffect(() => {
     onPaneReadyRef.current = onPaneReady
   }, [onPaneReady])
+
+  const onOutputRef = useRef(onOutput)
+  useEffect(() => {
+    onOutputRef.current = onOutput
+  }, [onOutput])
 
   // Store restoredFrom in a ref to prevent effect dependency cycles
   const restoredFromRef = useRef(restoredFrom)
@@ -256,6 +269,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         for (const event of restore.bufferedEvents) {
           if (event.offsetStart >= cursorRef.current) {
             terminal.write(event.data)
+            onOutputRef.current?.(event.data)
 
             const writtenEnd = event.offsetStart + event.byteLen
             if (writtenEnd > cursorRef.current) {
@@ -386,6 +400,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         // already written (replay or earlier live/buffered event).
         if (offsetStart >= cursorRef.current) {
           terminal.write(data)
+          onOutputRef.current?.(data)
           // Advance the cursor by the producer's raw byte count, not by the
           // length of `data`. Lossy UTF-8 in the producer (invalid bytes →
           // U+FFFD = 3 bytes when re-encoded) would otherwise drift the

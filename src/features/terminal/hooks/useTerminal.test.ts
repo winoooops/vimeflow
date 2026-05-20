@@ -122,6 +122,32 @@ describe('useTerminal', () => {
     expect(mockTerminal.write).toHaveBeenCalledWith('Hello from PTY\r\n')
   })
 
+  test('reports accepted PTY output chunks', async () => {
+    const onOutput = vi.fn()
+
+    const { result } = renderHook(() =>
+      useTerminal({
+        terminal: mockTerminal,
+        service: mockService,
+        cwd: '/home/user',
+        onOutput,
+      })
+    )
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('running')
+    })
+
+    const sessionId = result.current.session!.id
+
+    mockService.emit('data', {
+      sessionId,
+      data: 'Hello from PTY\r\n',
+    })
+
+    expect(onOutput).toHaveBeenCalledWith('Hello from PTY\r\n')
+  })
+
   test('handles keyboard input from xterm', async () => {
     const { result } = renderHook(() =>
       useTerminal({
@@ -554,6 +580,7 @@ describe('useTerminal', () => {
 
     test('writes replay data before draining buffered events', async () => {
       const writes: string[] = []
+      const onOutput = vi.fn()
       vi.mocked(mockTerminal.write).mockImplementation(
         (data: string | Uint8Array) => {
           writes.push(
@@ -574,6 +601,7 @@ describe('useTerminal', () => {
             replayEndOffset: 50,
             bufferedEvents: [{ data: 'BUFFERED', offsetStart: 50, byteLen: 8 }],
           },
+          onOutput,
         })
       )
 
@@ -585,6 +613,8 @@ describe('useTerminal', () => {
       expect(writes[0]).toBe('REPLAY')
       // Then buffered events
       expect(writes[1]).toBe('BUFFERED')
+      expect(onOutput).toHaveBeenCalledOnce()
+      expect(onOutput).toHaveBeenCalledWith('BUFFERED')
     })
 
     test('flushes buffered events with cursor filter (offsetStart >= replayEndOffset)', async () => {

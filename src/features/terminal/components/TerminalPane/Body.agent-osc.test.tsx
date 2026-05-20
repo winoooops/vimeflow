@@ -1,4 +1,4 @@
-// cspell:ignore worktree
+// cspell:ignore worktree worktrees
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, render, waitFor } from '@testing-library/react'
 import { Terminal } from '@xterm/xterm'
@@ -184,6 +184,79 @@ describe('Body agent-emitted OSC 7', () => {
 
     await waitFor(() => {
       expect(onCwdChange).toHaveBeenCalledWith('/tmp/worktree')
+    })
+
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('updates cwd when Claude EnterWorktree output arrives through PTY output', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/old"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/old')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '● Entering worktree(/home/will/projects/vimeflow/.claude/worktrees/dummy)\r\n' +
+          '  ⎿  Switched to worktree on branch dummy\r\n'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith(
+        '/home/will/projects/vimeflow/.claude/worktrees/dummy'
+      )
+    })
+
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('reassembles split Claude EnterWorktree output before updating cwd', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/old"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/old')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    const firstChunk = '● Entering worktree(/tmp/'
+
+    act(() => {
+      service.emitData('pty-agent', firstChunk)
+      service.emitData(
+        'pty-agent',
+        'dummy)\r\n',
+        new TextEncoder().encode(firstChunk).length
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/tmp/dummy')
     })
 
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
