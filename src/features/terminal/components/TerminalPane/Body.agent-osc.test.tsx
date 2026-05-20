@@ -307,6 +307,40 @@ describe('Body agent-emitted OSC 7', () => {
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
+  test('resolves agent cd hints against a preceding OSC 7 cwd update', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/old"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/old')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '\x1b]7;file://host/tmp/worktree\x07! cd child\r\n'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/tmp/worktree/child')
+    })
+
+    expect(onCwdChange).toHaveBeenCalledWith('/tmp/worktree')
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
   test('keeps agent OSC 7 updates isolated to the receiving pane', async () => {
     const service = createService()
     const onFirstCwdChange = vi.fn()

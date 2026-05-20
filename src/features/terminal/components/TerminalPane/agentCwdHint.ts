@@ -2,10 +2,10 @@
 import { parseOsc7Cwd } from './osc7'
 
 const ANSI_ESCAPE_PATTERN =
-  /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][\s\S]*?(?:\x07|\x1b\\))/g
+  /\x1b(?:\][\s\S]*?(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])/g
 
 const CLAUDE_WORKTREE_PATTERN =
-  /(?:^|[\r\n])(?:[^\S\r\n]*(?:[^\w\s(/\\:]+[^\S\r\n]*)?)Entering worktree\(([^)\r\n]+)\)/g
+  /(?:^|[\r\n])(?:[^\S\r\n]*(?:[^\w\s(/\\:]+[^\S\r\n]*)?)Entering worktree\(([^\r\n]+)\)[ \t]*(?=$|[\r\n])/g
 
 const AGENT_CD_PATTERN =
   /(?:^|[\r\n])(?:[^\S\r\n]*(?:!\s*|[^\w\s(/\\:!$]+[^\S\r\n]*Ran\s+))cd(?:[ \t]+([^\r\n]+?))?[ \t]*(?=$|[\r\n])/g

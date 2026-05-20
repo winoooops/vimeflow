@@ -17,6 +17,22 @@ describe('parseAgentCwdHint', () => {
     ).toBe('/tmp/dummy')
   })
 
+  test('strips OSC sequences before parsing Claude output', () => {
+    expect(
+      parseAgentCwdHint(
+        '\x1b]7;file://host/ignored\x07● Entering worktree(/tmp/dummy)\r\n'
+      )
+    ).toBe('/tmp/dummy')
+  })
+
+  test('preserves closing parens inside Claude worktree paths', () => {
+    expect(
+      parseAgentCwdHint(
+        'Entering worktree(/home/user/.claude/worktrees/feature/(org)-fix)\r\n'
+      )
+    ).toBe('/home/user/.claude/worktrees/feature/(org)-fix')
+  })
+
   test('returns the latest valid worktree path in a chunk', () => {
     expect(
       parseAgentCwdHint(

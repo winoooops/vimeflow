@@ -2,6 +2,7 @@
 import type { ReactElement } from 'react'
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -24,6 +25,8 @@ import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
 import { parseAgentCwdHint } from './agentCwdHint'
 import { parseOsc7Cwd } from './osc7'
 import '@xterm/xterm/css/xterm.css'
+
+const AGENT_CWD_HINT_BUFFER_SIZE = 4096
 
 // Module-level cache of terminal instances per sessionId.
 //
@@ -197,7 +200,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     lastAgentCwdHintRef.current = null
   }, [cwd, sessionId])
 
-  const handleTerminalOutput = (data: string): void => {
+  const handleTerminalOutput = useCallback((data: string): void => {
     const output = `${agentCwdOutputBufferRef.current}${data}`
 
     const lastLineBreakIndex = Math.max(
@@ -206,7 +209,9 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     )
 
     if (lastLineBreakIndex === -1) {
-      agentCwdOutputBufferRef.current = output.slice(-4096)
+      agentCwdOutputBufferRef.current = output.slice(
+        -AGENT_CWD_HINT_BUFFER_SIZE
+      )
 
       return
     }
@@ -214,7 +219,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     const completeOutput = output.slice(0, lastLineBreakIndex + 1)
     agentCwdOutputBufferRef.current = output
       .slice(lastLineBreakIndex + 1)
-      .slice(-4096)
+      .slice(-AGENT_CWD_HINT_BUFFER_SIZE)
     const cwdHint = parseAgentCwdHint(completeOutput, agentCwdRef.current)
 
     if (
@@ -226,7 +231,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       lastAgentCwdHintRef.current = cwdHint
       onCwdChangeRef.current?.(cwdHint)
     }
-  }
+  }, [])
 
   // Use terminal hook for PTY lifecycle management
   const {
@@ -483,6 +488,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       newTerminal.parser.registerOscHandler(7, (data) => {
         const path = parseOsc7Cwd(data)
         if (path) {
+          agentCwdRef.current = path
+          lastAgentCwdHintRef.current = null
           onCwdChangeRef.current?.(path)
         }
 
