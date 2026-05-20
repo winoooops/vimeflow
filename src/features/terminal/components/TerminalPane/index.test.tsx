@@ -311,9 +311,24 @@ describe('TerminalPane index', () => {
     })
   })
 
-  test('does not focus on initial mount with pane.active=true', () => {
+  test('focuses on initial mount when pane.active=true', () => {
+    // A freshly-created pane (createSession, addPane, restored active pane on
+    // app launch) mounts already active and never transitions false→true. The
+    // rising-edge effect must therefore treat the first run as a focus event,
+    // otherwise the active terminal stays unfocused until the user clicks it.
     render(
       <TerminalPane {...baseProps} pane={{ ...baseProps.pane, active: true }} />
+    )
+
+    expect(focusTerminalSpy).toHaveBeenCalledOnce()
+  })
+
+  test('does not focus on initial mount when pane.active=false', () => {
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+      />
     )
 
     expect(focusTerminalSpy).not.toHaveBeenCalled()
@@ -383,7 +398,15 @@ describe('TerminalPane index', () => {
   test('ref handle focuses terminal body when ready', () => {
     const ref = createRef<TerminalPaneHandle>()
 
-    render(<TerminalPane ref={ref} {...baseProps} />)
+    // Render inactive so the mount-time auto-focus path does not fire — this
+    // test isolates the imperative ref handle from the rising-edge effect.
+    render(
+      <TerminalPane
+        ref={ref}
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+      />
+    )
 
     expect(ref.current).not.toBeNull()
     expect(ref.current!.focusTerminal()).toBe(true)
