@@ -4,6 +4,8 @@ import { parseOsc7Cwd } from './osc7'
 const ANSI_ESCAPE_PATTERN =
   /\x1b(?:\][\s\S]*?(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])/g
 
+const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/
+
 const CLAUDE_WORKTREE_PATTERN =
   /(?:^|[\r\n])(?:[^\S\r\n]*(?:[^\w\s(/\\:]+[^\S\r\n]*)?)Entering worktree\(([^\r\n]+)\)[ \t]*(?=$|[\r\n])/g
 
@@ -32,7 +34,7 @@ const readQuotedTarget = (
 
     if (quote === '"' && char === '\\') {
       const next = source[index + 1]
-      if (next) {
+      if (next && !/[\\A-Za-z0-9._-]/.test(next)) {
         target = `${target}${next}`
         index += 1
 
@@ -55,7 +57,7 @@ const readBareTarget = (
   }
 
   return {
-    target: match[1].replace(/\\(.)/g, '$1'),
+    target: match[1].replace(/\\([^\\A-Za-z0-9._-])/g, '$1'),
     rest: match[2],
   }
 }
@@ -103,8 +105,37 @@ const normalizePosixPath = (path: string): string => {
   return `/${parts.join('/')}`
 }
 
+const normalizeWindowsDrivePath = (path: string): string => {
+  const separator = path.includes('\\') && !path.includes('/') ? '\\' : '/'
+  const slashPath = path.replace(/\\/g, '/')
+  const drive = slashPath.slice(0, 2)
+  const parts: string[] = []
+
+  for (const part of slashPath.slice(2).split('/')) {
+    if (!part || part === '.') {
+      continue
+    }
+
+    if (part === '..') {
+      parts.pop()
+
+      continue
+    }
+
+    parts.push(part)
+  }
+
+  const normalized = `${drive}/${parts.join('/')}`
+
+  return separator === '\\' ? normalized.replace(/\//g, '\\') : normalized
+}
+
 const normalizePath = (path: string): string =>
-  path.startsWith('/') ? normalizePosixPath(path) : path
+  path.startsWith('/')
+    ? normalizePosixPath(path)
+    : WINDOWS_DRIVE_PATH.test(path)
+      ? normalizeWindowsDrivePath(path)
+      : path
 
 const resolveCdPath = (target: string, currentCwd?: string): string | null => {
   const absoluteTarget = parseOsc7Cwd(target)
@@ -112,11 +143,18 @@ const resolveCdPath = (target: string, currentCwd?: string): string | null => {
     return normalizePath(absoluteTarget)
   }
 
-  if (!currentCwd?.startsWith('/')) {
-    return null
+  if (currentCwd?.startsWith('/')) {
+    return normalizePosixPath(`${currentCwd}/${target}`)
   }
 
-  return normalizePosixPath(`${currentCwd}/${target}`)
+  if (currentCwd && WINDOWS_DRIVE_PATH.test(currentCwd)) {
+    const separator =
+      currentCwd.includes('\\') && !currentCwd.includes('/') ? '\\' : '/'
+
+    return normalizeWindowsDrivePath(`${currentCwd}${separator}${target}`)
+  }
+
+  return null
 }
 
 export const parseAgentCwdHint = (

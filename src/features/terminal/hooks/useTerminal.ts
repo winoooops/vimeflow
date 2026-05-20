@@ -194,6 +194,21 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     onOutputRef.current = onOutput
   }, [onOutput])
 
+  const writeTerminalOutput = useCallback(
+    (targetTerminal: Terminal, data: string): void => {
+      if (!onOutputRef.current) {
+        targetTerminal.write(data)
+
+        return
+      }
+
+      targetTerminal.write(data, () => {
+        onOutputRef.current?.(data)
+      })
+    },
+    []
+  )
+
   // Store restoredFrom in a ref to prevent effect dependency cycles
   const restoredFromRef = useRef(restoredFrom)
 
@@ -268,8 +283,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         // NOT by `encoder.encode(event.data).length` — see RestoreData jsdoc.
         for (const event of restore.bufferedEvents) {
           if (event.offsetStart >= cursorRef.current) {
-            terminal.write(event.data)
-            onOutputRef.current?.(event.data)
+            writeTerminalOutput(terminal, event.data)
 
             const writtenEnd = event.offsetStart + event.byteLen
             if (writtenEnd > cursorRef.current) {
@@ -381,7 +395,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // OSC 7 updates cwd continuously; including it here would kill the PTY on every cd.
     // restoredFrom intentionally excluded — it's read from restoredFromRef at init time.
     // Including it would cause infinite loops as object identity changes.
-  }, [terminal, service, shell, env])
+  }, [terminal, service, shell, env, writeTerminalOutput])
 
   // Listen to PTY data events
   useEffect(() => {
@@ -399,8 +413,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         // Cursor dedupe: drop events whose offset predates what we've
         // already written (replay or earlier live/buffered event).
         if (offsetStart >= cursorRef.current) {
-          terminal.write(data)
-          onOutputRef.current?.(data)
+          writeTerminalOutput(terminal, data)
           // Advance the cursor by the producer's raw byte count, not by the
           // length of `data`. Lossy UTF-8 in the producer (invalid bytes →
           // U+FFFD = 3 bytes when re-encoded) would otherwise drift the
@@ -521,7 +534,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       unsubscribeExit?.()
       unsubscribeError?.()
     }
-  }, [terminal, session, service])
+  }, [terminal, session, service, writeTerminalOutput])
 
   // Handle keyboard input from xterm
   useEffect(() => {

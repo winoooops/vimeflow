@@ -68,6 +68,46 @@ describe('parseAgentCwdHint', () => {
     )
   })
 
+  test('resolves relative cd commands from a Windows forward-slash cwd', () => {
+    expect(
+      parseAgentCwdHint(
+        '! cd .claude/worktrees\r\n' + '! cd codex-agent-osc7-cwd\r\n',
+        'C:/Users/will/projects/vimeflow'
+      )
+    ).toBe(
+      'C:/Users/will/projects/vimeflow/.claude/worktrees/codex-agent-osc7-cwd'
+    )
+  })
+
+  test('resolves relative cd commands from a Windows backslash cwd', () => {
+    expect(
+      parseAgentCwdHint(
+        '! cd .claude\\worktrees\r\n' + '! cd codex-agent-osc7-cwd\r\n',
+        'C:\\Users\\will\\projects\\vimeflow'
+      )
+    ).toBe(
+      'C:\\Users\\will\\projects\\vimeflow\\.claude\\worktrees\\codex-agent-osc7-cwd'
+    )
+  })
+
+  test('accepts bare absolute Windows cd targets', () => {
+    expect(
+      parseAgentCwdHint(
+        '! cd C:\\Users\\will\\projects\\vimeflow\\.claude\\worktrees\\dummy\r\n',
+        'C:\\Users\\will\\projects\\vimeflow'
+      )
+    ).toBe('C:\\Users\\will\\projects\\vimeflow\\.claude\\worktrees\\dummy')
+  })
+
+  test('accepts quoted absolute Windows cd targets', () => {
+    expect(
+      parseAgentCwdHint(
+        '! cd "C:\\Users\\will\\projects\\vimeflow\\.claude\\worktrees\\dummy"\r\n',
+        'C:\\Users\\will\\projects\\vimeflow'
+      )
+    ).toBe('C:\\Users\\will\\projects\\vimeflow\\.claude\\worktrees\\dummy')
+  })
+
   test('uses reset narration as the final cwd when Claude rejects a cd', () => {
     expect(
       parseAgentCwdHint(

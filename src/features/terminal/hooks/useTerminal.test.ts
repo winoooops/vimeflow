@@ -7,10 +7,12 @@ import { MockTerminalService } from '../services/terminalService'
 // Mock xterm Terminal with test helpers
 interface MockTerminal extends Terminal {
   _mockTriggerData: (data: string) => void
+  _mockFlushWrites: () => void
 }
 
 const createMockTerminal = (): MockTerminal => {
   const listeners = new Map<string, ((data: string) => void)[]>()
+  const pendingWriteCallbacks: (() => void)[] = []
 
   return {
     onData: vi.fn((callback: (data: string) => void) => {
@@ -27,12 +29,22 @@ const createMockTerminal = (): MockTerminal => {
         }),
       }
     }),
-    write: vi.fn(),
+    write: vi.fn((_data: string | Uint8Array, callback?: () => void) => {
+      if (callback) {
+        pendingWriteCallbacks.push(callback)
+      }
+    }),
     clear: vi.fn(),
     dispose: vi.fn(),
     _mockTriggerData: (data: string) => {
       const callbacks = listeners.get('data') ?? []
       callbacks.forEach((cb) => cb(data))
+    },
+    _mockFlushWrites: () => {
+      const callbacks = pendingWriteCallbacks.splice(0)
+      callbacks.forEach((callback) => {
+        callback()
+      })
     },
   } as unknown as MockTerminal
 }
@@ -144,6 +156,9 @@ describe('useTerminal', () => {
       sessionId,
       data: 'Hello from PTY\r\n',
     })
+
+    expect(onOutput).not.toHaveBeenCalled()
+    mockTerminal._mockFlushWrites()
 
     expect(onOutput).toHaveBeenCalledWith('Hello from PTY\r\n')
   })
@@ -580,12 +595,17 @@ describe('useTerminal', () => {
 
     test('writes replay data before draining buffered events', async () => {
       const writes: string[] = []
+      const writeCallbacks: (() => void)[] = []
       const onOutput = vi.fn()
       vi.mocked(mockTerminal.write).mockImplementation(
-        (data: string | Uint8Array) => {
+        (data: string | Uint8Array, callback?: () => void) => {
           writes.push(
             typeof data === 'string' ? data : new TextDecoder().decode(data)
           )
+
+          if (callback) {
+            writeCallbacks.push(callback)
+          }
         }
       )
 
@@ -613,6 +633,12 @@ describe('useTerminal', () => {
       expect(writes[0]).toBe('REPLAY')
       // Then buffered events
       expect(writes[1]).toBe('BUFFERED')
+      expect(onOutput).not.toHaveBeenCalled()
+
+      writeCallbacks.forEach((callback) => {
+        callback()
+      })
+
       expect(onOutput).toHaveBeenCalledOnce()
       expect(onOutput).toHaveBeenCalledWith('BUFFERED')
     })

@@ -64,8 +64,9 @@ class FakeTerminal {
 
   private readonly oscHandlers = new Map<number, OscHandler>()
 
-  readonly write = vi.fn((data: string): void => {
+  readonly write = vi.fn((data: string, callback?: () => void): void => {
     this.parseOsc(data)
+    callback?.()
   })
 
   private parseOsc(data: string): void {
