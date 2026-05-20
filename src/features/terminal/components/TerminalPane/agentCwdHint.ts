@@ -73,10 +73,14 @@ const parseCdTarget = (rawCommand: string | undefined): string | null => {
       ? readQuotedTarget(source, source[0] as '"' | "'")
       : readBareTarget(source)
 
-  if (!parsed || parsed.rest.trim()) {
-    const rest = parsed?.rest.trim()
-    if (!rest || rest.startsWith('&&') || rest.startsWith(';')) {
-      return parsed?.target ?? null
+  if (!parsed) {
+    return null
+  }
+
+  if (parsed.rest.trim()) {
+    const rest = parsed.rest.trim()
+    if (rest.startsWith('&&') || rest.startsWith(';')) {
+      return parsed.target
     }
 
     return null
