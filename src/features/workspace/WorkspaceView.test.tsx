@@ -206,14 +206,22 @@ describe('WorkspaceView', () => {
     expect(container).toHaveClass('h-screen')
   })
 
-  test('passes active project to IconRail', () => {
+  test('renders IconRail identity and utility buttons', () => {
     render(<WorkspaceView />)
 
     const iconRail = screen.getByTestId('icon-rail')
 
-    // IconRail should render with at least one project button
-    const projectButtons = iconRail.querySelectorAll('button[aria-label]')
-    expect(projectButtons.length).toBeGreaterThan(0)
+    expect(
+      within(iconRail).getByRole('img', { name: 'Account' })
+    ).toHaveTextContent('w')
+
+    expect(
+      within(iconRail).getByRole('button', { name: 'Command Palette' })
+    ).toBeInTheDocument()
+
+    expect(
+      within(iconRail).getByRole('button', { name: 'Settings' })
+    ).toHaveAttribute('aria-disabled', 'true')
   })
 
   test('passes sessions to Sidebar', () => {
@@ -246,18 +254,18 @@ describe('WorkspaceView', () => {
     expect(panel).toBeInTheDocument()
   })
 
-  test('renders navigation items in IconRail', () => {
+  test('renders rail utility actions in IconRail', () => {
     render(<WorkspaceView />)
 
-    // IconRail should render navigation items (Dashboard, Source Control, etc.)
+    const iconRail = screen.getByTestId('icon-rail')
+
     expect(
-      screen.getByRole('button', { name: 'Dashboard' })
+      within(iconRail).getByRole('button', { name: 'Command Palette' })
     ).toBeInTheDocument()
 
     expect(
-      screen.getByRole('button', { name: 'Source Control' })
+      within(iconRail).getByRole('button', { name: 'Settings' })
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
   })
 
   test('defaults to first session as active', async () => {
@@ -384,15 +392,17 @@ describe('WorkspaceView', () => {
     await screen.findByRole('button', { name: 'session 2' })
   })
 
-  test('handles navigation item clicks', () => {
+  test('opens command palette from the rail command button', async () => {
+    const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    // Navigation items should be clickable
-    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
-    expect(dashboardButton).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Command palette' })).toBeNull()
 
-    // Click should not crash (navigation items have onClick handlers)
-    dashboardButton.click()
+    await user.click(screen.getByRole('button', { name: 'Command Palette' }))
+
+    expect(
+      screen.getByRole('dialog', { name: 'Command palette' })
+    ).toBeInTheDocument()
   })
 
   test('handles session switch callback', () => {

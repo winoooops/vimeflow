@@ -44,13 +44,13 @@ The original `DESIGN.md` specified a 4-zone layout. Later Stitch screens added a
 └──┴─────────┴────────────────────────────────────────────────┘
 ```
 
-| Zone               | Width              | Surface                      | Purpose                                                                                                        |
-| ------------------ | ------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **Icon rail**      | `48px`             | `--surface-container-lowest` | Brand mark (V) at top. Project/navigation actions, palette, settings, and user affordances.                    |
-| **Sidebar**        | `272px` resizable  | `--surface-container-low`    | **Sessions** and **Files** tabs. Shows session rows and file tree scoped to the active pane cwd.               |
-| **Main canvas**    | flex               | `--surface`                  | Hosts session tabs, layout switcher, `SplitView` terminal panes, and the dockable Editor/Diff `DockPanel`.     |
-| **Activity panel** | auto / collapsible | `--surface-container-low`    | Status dot, meters (context, 5h usage, turns), current action, activity feed. Scoped to the active pane's PTY. |
-| **Status bar**     | `24px tall`        | `--surface-container-lowest` | Global: `vimeflow` - version - context smiley - turn count - `⌘K` hint.                                        |
+| Zone               | Width              | Surface                      | Purpose                                                                                                                                                                                          |
+| ------------------ | ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Icon rail**      | `48px`             | `--surface-container-lowest` | User avatar at top. Palette + Settings at bottom. No area switchers — Files lives in the sidebar Files tab; Editor and Diff live in the dock; Context arrives with the deferred Settings dialog. |
+| **Sidebar**        | `272px` resizable  | `--surface-container-low`    | **Sessions** and **Files** tabs. Shows session rows and file tree scoped to the active pane cwd. Context arrives with the deferred Settings dialog.                                              |
+| **Main canvas**    | flex               | `--surface`                  | Hosts session tabs, layout switcher, `SplitView` terminal panes, and the dockable Editor/Diff `DockPanel`.                                                                                       |
+| **Activity panel** | auto / collapsible | `--surface-container-low`    | Status dot, meters (context, 5h usage, turns), current action, activity feed. Scoped to the active pane's PTY.                                                                                   |
+| **Status bar**     | `24px tall`        | `--surface-container-lowest` | Global: `vimeflow` - version - context smiley - turn count - `Ctrl+:` hint.                                                                                                                      |
 
 ### Rules
 
@@ -192,7 +192,7 @@ Implementation must match §4.1 exactly. If a new state is added, extend `Sessio
 
 ### 5.4 `CommandPalette`
 
-- ⌘K / Ctrl+K toggle, globally.
+- Ctrl+: toggle, globally.
 - Overlay z-index 100. Backdrop: `blur(14px) saturate(120%)` on `rgba(13,13,28,0.55)` -- this is the **Lens Blur** in action.
 - Input auto-focuses. ↑/↓ navigate, ⏎ runs, Esc closes.
 - Result rows: `icon - :command (mono) - label (body) - hint (muted)`.
@@ -211,7 +211,7 @@ Drives off a single integer `pct`. Breakpoints in `tokens.ts::contextSmiley`. Vi
 - **Status-dot glow** -- the 3-ring outer shadow uses the dot's own color at 40-45% alpha. Do not substitute drop-shadows; they compound poorly against glass.
 - **Approval affordance** -- `awaiting` state surfaces two buttons: primary gradient for Approve, ghost for Deny. Approving snaps state to `running` without a page reload; the activity feed prepends a `user` event with the choice.
 - **Session switching** -- clicking a session in the sidebar swaps the active session tab and terminal canvas, preserving open dock state where possible, and animates the activity panel contents -- not the panel itself.
-- **Keyboard shortcuts** -- `Mod+1-4` focuses panes, `Mod+\` cycles layout, `Mod+E` opens/focuses Editor, `Mod+G` opens/focuses Diff, `Mod+B` returns focus to Terminal, `⌘K` / `Ctrl+K` toggles the command palette, Esc closes overlays. Issue #225 tracks the remaining in-UI discovery surface for `Mod+\` and `Mod+B`.
+- **Keyboard shortcuts** -- `Mod+1-4` focuses panes, `Mod+\` cycles layout, `Mod+E` opens/focuses Editor, `Mod+G` opens/focuses Diff, `Mod+B` returns focus to Terminal, `Ctrl+:` toggles the command palette, Esc closes overlays. Issue #225 tracks the remaining in-UI discovery surface for `Mod+\` and `Mod+B`.
 
 ---
 

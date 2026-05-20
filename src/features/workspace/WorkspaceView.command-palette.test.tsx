@@ -35,7 +35,24 @@ vi.mock('../terminal/hooks/usePaneShortcuts')
 
 // Mock child components to keep test focused on integration
 vi.mock('./components/IconRail', () => ({
-  IconRail: (): ReactElement => <div data-testid="icon-rail" />,
+  IconRail: ({
+    onCommand = undefined,
+  }: {
+    onCommand?: () => void
+    settingsIssueNumber: number
+  }): ReactElement => (
+    <div data-testid="icon-rail">
+      <button
+        type="button"
+        aria-label="Command Palette"
+        onClick={(): void => {
+          onCommand?.()
+        }}
+      >
+        palette
+      </button>
+    </div>
+  ),
 }))
 
 vi.mock('../../components/sidebar/Sidebar', () => ({
@@ -489,5 +506,18 @@ describe('WorkspaceView - Command Palette Integration', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
+  })
+
+  test('rail command button opens the palette', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    expect(screen.queryByRole('dialog', { name: 'Command palette' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Command Palette' }))
+
+    expect(
+      screen.getByRole('dialog', { name: 'Command palette' })
+    ).toBeInTheDocument()
   })
 })

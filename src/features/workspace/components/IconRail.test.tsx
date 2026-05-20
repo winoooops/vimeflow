@@ -1,185 +1,120 @@
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { IconRail } from './IconRail'
-import { mockNavigationItems, mockSettingsItem } from '../data/mockNavigation'
 
 describe('IconRail', () => {
-  test('renders with 48px width', () => {
-    render(
-      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
-    )
-
-    const rail = screen.getByTestId('icon-rail')
-    expect(rail).toHaveClass('w-12') // 48px (12 * 4 = 48)
+  test('renders the identity slot with default "w"', () => {
+    render(<IconRail settingsIssueNumber={1} />)
+    const avatar = screen.getByRole('img', { name: 'Account' })
+    expect(avatar).toHaveTextContent('w')
   })
 
-  test('uses bg-surface with border-r border-white/5', () => {
-    render(
-      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
-    )
-
-    const rail = screen.getByTestId('icon-rail')
-    expect(rail).toHaveClass('bg-surface')
-    expect(rail).toHaveClass('border-r')
-    expect(rail).toHaveClass('border-white/5')
+  test('renders a custom initial from identity prop', () => {
+    render(<IconRail settingsIssueNumber={1} identity={{ initial: 'M' }} />)
+    expect(screen.getByRole('img', { name: 'Account' })).toHaveTextContent('M')
   })
 
-  test('renders all navigation items', () => {
-    render(
-      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
-    )
-
-    expect(
-      screen.getByRole('button', { name: 'Dashboard' })
-    ).toBeInTheDocument()
-
-    expect(
-      screen.getByRole('button', { name: 'Source Control' })
-    ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Debugger' })).toBeInTheDocument()
+  test('truncates a multi-char initial to the first grapheme', () => {
+    render(<IconRail settingsIssueNumber={1} identity={{ initial: 'AB' }} />)
+    expect(screen.getByRole('img', { name: 'Account' })).toHaveTextContent('A')
   })
 
-  test('renders settings item at bottom', () => {
-    render(
-      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
-    )
-
-    const settingsButton = screen.getByRole('button', { name: 'Settings' })
-    expect(settingsButton).toBeInTheDocument()
+  test('preserves an emoji grapheme via Array.from', () => {
+    render(<IconRail settingsIssueNumber={1} identity={{ initial: '🚀' }} />)
+    expect(screen.getByRole('img', { name: 'Account' })).toHaveTextContent('🚀')
   })
 
-  test('bookmark buttons have flat-bookmark class', () => {
+  test('falls back to "Account" when ariaLabel is an empty string', () => {
     render(
-      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+      <IconRail
+        settingsIssueNumber={1}
+        identity={{ initial: 'w', ariaLabel: '' }}
+      />
     )
+    const avatar = screen.getByRole('img', { name: 'Account' })
 
-    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
-    expect(dashboardButton).toHaveClass('flat-bookmark')
+    expect(avatar).toHaveAttribute('aria-label', 'Account')
   })
 
-  test('bookmarks have correct dimensions (w-8 h-12)', () => {
-    render(
-      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
-    )
+  test('renders the command palette button with stable aria-label', () => {
+    render(<IconRail settingsIssueNumber={1} />)
+    const button = screen.getByRole('button', { name: 'Command Palette' })
 
-    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
-    expect(dashboardButton).toHaveClass('w-8')
-    expect(dashboardButton).toHaveClass('h-12')
+    expect(button).toBeInTheDocument()
+    expect(screen.getByTestId('icon-rail-search-icon')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
+    expect(screen.getByText('search')).toHaveClass('material-symbols-outlined')
   })
 
-  test('bookmarks have correct color backgrounds', () => {
-    render(
-      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
-    )
-
-    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
-
-    const sourceControlButton = screen.getByRole('button', {
-      name: 'Source Control',
-    })
-    const debuggerButton = screen.getByRole('button', { name: 'Debugger' })
-    const settingsButton = screen.getByRole('button', { name: 'Settings' })
-
-    expect(dashboardButton).toHaveClass('bg-emerald-500')
-    expect(sourceControlButton).toHaveClass('bg-amber-500')
-    expect(debuggerButton).toHaveClass('bg-rose-500')
-    // Settings uses a plain icon style, not a colored bookmark
-    expect(settingsButton).toBeInTheDocument()
-  })
-
-  test('bookmarks contain Material Symbols icons', () => {
-    render(
-      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
-    )
-
-    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
-
-    // Icon text should be present in the button
-    expect(within(dashboardButton).getByText('dashboard')).toBeInTheDocument()
-  })
-
-  test('shows item name as tooltip on hover', async () => {
+  test('fires onCommand when the command palette button is clicked', async () => {
     const user = userEvent.setup()
-    render(
-      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
-    )
+    const onCommand = vi.fn()
+    render(<IconRail settingsIssueNumber={1} onCommand={onCommand} />)
 
-    await user.hover(screen.getByRole('button', { name: 'Dashboard' }))
+    await user.click(screen.getByRole('button', { name: 'Command Palette' }))
 
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Dashboard')
+    expect(onCommand).toHaveBeenCalledTimes(1)
   })
 
-  test('shows settings item name as tooltip on hover', async () => {
+  test('renders the settings button as aria-disabled and interpolates the issue number on hover', async () => {
     const user = userEvent.setup()
-    render(
-      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+    render(<IconRail settingsIssueNumber={42} />)
+    const settings = screen.getByRole('button', { name: 'Settings' })
+
+    expect(settings).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByTestId('icon-rail-settings-icon')).toHaveAttribute(
+      'aria-hidden',
+      'true'
     )
 
-    await user.hover(
-      screen.getByRole('button', { name: mockSettingsItem.name })
+    expect(screen.getByText('settings')).toHaveClass(
+      'material-symbols-outlined'
     )
 
-    expect(await screen.findByRole('tooltip')).toHaveTextContent(
-      mockSettingsItem.name
-    )
+    await user.hover(settings)
+
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip).toHaveTextContent('Settings panel coming — see issue #42')
   })
 
-  test('calls onClick when navigation item is clicked', async () => {
-    const handleClick = vi.fn()
+  test('does NOT fire onSettings when the disabled gear is clicked', async () => {
     const user = userEvent.setup()
+    const onSettings = vi.fn()
+    render(<IconRail settingsIssueNumber={42} onSettings={onSettings} />)
 
-    const items = [
-      {
-        ...mockNavigationItems[0],
-        onClick: handleClick,
-      },
-    ]
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
 
-    render(<IconRail items={items} settingsItem={mockSettingsItem} />)
-
-    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
-    await user.click(dashboardButton)
-
-    expect(handleClick).toHaveBeenCalledTimes(1)
+    expect(onSettings).not.toHaveBeenCalled()
   })
 
-  test('calls onClick when settings item is clicked', async () => {
-    const handleClick = vi.fn()
-    const user = userEvent.setup()
+  test('ignores items and settingsItem props for backward compatibility', () => {
+    const noop = vi.fn()
 
-    const settingsItem = {
-      ...mockSettingsItem,
-      onClick: handleClick,
-    }
-
-    render(<IconRail items={mockNavigationItems} settingsItem={settingsItem} />)
-
-    const settingsButton = screen.getByRole('button', { name: 'Settings' })
-    await user.click(settingsButton)
-
-    expect(handleClick).toHaveBeenCalledTimes(1)
-  })
-
-  test('renders with empty items array', () => {
-    render(<IconRail items={[]} settingsItem={mockSettingsItem} />)
-
-    // Should still render settings button
-    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
-  })
-
-  test('navigation items appear before settings in DOM order', () => {
     render(
-      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+      <IconRail
+        settingsIssueNumber={1}
+        items={[
+          {
+            id: 'a',
+            name: 'A',
+            icon: 'add',
+            color: 'bg-red-500',
+            onClick: noop,
+          },
+        ]}
+        settingsItem={{
+          id: 'settings',
+          name: 'Settings',
+          icon: 'settings',
+          color: 'bg-indigo-500',
+          onClick: noop,
+        }}
+      />
     )
-
-    const buttons = screen.getAllByRole('button')
-    const dashboardButton = screen.getByRole('button', { name: 'Dashboard' })
-    const settingsButton = screen.getByRole('button', { name: 'Settings' })
-
-    const dashboardIndex = buttons.indexOf(dashboardButton)
-    const settingsIndex = buttons.indexOf(settingsButton)
-
-    expect(dashboardIndex).toBeLessThan(settingsIndex)
+    expect(screen.queryAllByRole('button')).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'A' })).toBeNull()
   })
 })
