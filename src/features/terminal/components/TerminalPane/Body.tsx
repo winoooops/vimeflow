@@ -21,6 +21,7 @@ import {
 } from '../../hooks/useTerminal'
 import { type ITerminalService } from '../../services/terminalService'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
+import { parseOsc7Cwd } from './osc7'
 import '@xterm/xterm/css/xterm.css'
 
 // Module-level cache of terminal instances per sessionId.
@@ -435,25 +436,12 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       // Fit terminal to container — guard against hidden (display:none) containers
       didInitialFit = fitInitialWhenReady(fitAddon)
 
-      // Register OSC 7 handler for cwd tracking
-      // Shells emit: \e]7;file://hostname/path\a on every cd
+      // Register OSC 7 handler for cwd tracking. Shell prompts and agent/tool
+      // output both arrive through xterm's parser, so this stays pane-local.
       newTerminal.parser.registerOscHandler(7, (data) => {
-        try {
-          const url = new URL(data)
-          let path = decodeURIComponent(url.pathname)
-          // Windows: new URL("file://host/C:/Users/...").pathname → "/C:/Users/..."
-          // Strip the leading slash before a drive letter so Rust canonicalize works
-          if (/^\/[A-Za-z]:/.test(path)) {
-            path = path.slice(1)
-          }
-          if (path) {
-            onCwdChangeRef.current?.(path)
-          }
-        } catch {
-          // Not a valid URL — some shells emit plain paths
-          if (data.startsWith('/')) {
-            onCwdChangeRef.current?.(data)
-          }
+        const path = parseOsc7Cwd(data)
+        if (path) {
+          onCwdChangeRef.current?.(path)
         }
 
         return true
