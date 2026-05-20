@@ -71,7 +71,12 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
   ): ReactElement {
     const agent = agentForPane(pane)
     const bodyRef = useRef<BodyHandle>(null)
-    const wasActiveRef = useRef(pane.active)
+    // Seeded `undefined` (NOT `pane.active`) so the first effect run can detect
+    // initial mount distinctly from a stable `true → true` re-render. A pane
+    // born active (createSession, addPane, restored on app launch) must focus
+    // on first paint — otherwise its xterm stays unfocused with no transition
+    // for the rising-edge branch below to catch.
+    const wasActiveRef = useRef<boolean | undefined>(undefined)
     const [ptyStatus, setPtyStatus] = useState<PtyStatus>('idle')
     const [isCollapsed, setIsCollapsed] = useState(false)
 
@@ -91,7 +96,9 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     const isFocusHighlightVisible = isPaneActive && showFocusHighlight
 
     useEffect(() => {
-      if (pane.active && !wasActiveRef.current) {
+      // Fire on `undefined → true` (initial mount active) AND `false → true`
+      // (existing rising edge). Stable `true → true` re-renders are skipped.
+      if (pane.active && wasActiveRef.current !== true) {
         bodyRef.current?.focusTerminal()
       }
       wasActiveRef.current = pane.active
