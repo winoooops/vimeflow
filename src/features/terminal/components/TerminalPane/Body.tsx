@@ -187,7 +187,6 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const agentCwdOutputBufferRef = useRef('')
   const cwdPropRef = useRef(cwd)
   const agentCwdRef = useRef(cwd)
-  const lastAgentCwdHintRef = useRef<string | null>(null)
 
   // Store callbacks in refs to avoid terminal recreation when they change
   const onCwdChangeRef = useRef(onCwdChange)
@@ -198,13 +197,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   useEffect(() => {
     cwdPropRef.current = cwd
     agentCwdRef.current = cwd
-    lastAgentCwdHintRef.current = null
   }, [cwd])
 
   useEffect(() => {
     agentCwdOutputBufferRef.current = ''
     agentCwdRef.current = cwdPropRef.current
-    lastAgentCwdHintRef.current = null
   }, [sessionId])
 
   const handleTerminalOutput = useCallback((data: string): void => {
@@ -229,13 +226,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       .slice(-AGENT_CWD_HINT_BUFFER_SIZE)
     const cwdHint = parseAgentCwdHint(completeOutput, agentCwdRef.current)
 
-    if (
-      cwdHint &&
-      cwdHint !== agentCwdRef.current &&
-      cwdHint !== lastAgentCwdHintRef.current
-    ) {
+    if (cwdHint && cwdHint !== agentCwdRef.current) {
       agentCwdRef.current = cwdHint
-      lastAgentCwdHintRef.current = cwdHint
       onCwdChangeRef.current?.(cwdHint)
     }
   }, [])
@@ -496,7 +488,6 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         const path = parseOsc7Cwd(data)
         if (path && path !== agentCwdRef.current) {
           agentCwdRef.current = path
-          lastAgentCwdHintRef.current = null
           onCwdChangeRef.current?.(path)
         }
 
