@@ -1,10 +1,40 @@
+import type { Terminal } from '@xterm/xterm'
 import { invoke } from './backend'
 import { getAllPtySessionIds } from '../features/terminal/ptySessionMap'
+import { terminalCache } from '../features/terminal/components/TerminalPane/Body'
 
 const isVisible = (el: HTMLElement): boolean => {
   const r = el.getBoundingClientRect()
 
   return r.width > 0 && r.height > 0
+}
+
+// Reads the visible viewport via xterm's buffer API — used when canvas renderers leave `.xterm-rows` empty.
+const bufferToText = (terminal: Terminal): string => {
+  const buffer = terminal.buffer.active
+  const start = buffer.viewportY
+  const end = start + terminal.rows
+  const lines: string[] = []
+  for (let i = start; i < end; i++) {
+    const line = buffer.getLine(i)
+    if (line) {
+      lines.push(line.translateToString(true))
+    }
+  }
+
+  return lines.join('\n').replace(/\n+$/, '')
+}
+
+// terminalCache is keyed by `pane.ptyId` (Body's `sessionId` prop). Find Body's `data-pty-id` descendant; fall back to the container's own data-pty-id when callers pass it directly.
+const resolveCacheKey = (container: HTMLElement): string | null => {
+  const ptyEl = container.querySelector<HTMLElement>(
+    '[data-testid="terminal-pane"][data-pty-id]'
+  )
+  if (ptyEl?.dataset.ptyId) {
+    return ptyEl.dataset.ptyId
+  }
+
+  return container.dataset.ptyId ?? null
 }
 
 const findActivePane = (): HTMLElement | null => {
@@ -40,15 +70,25 @@ export const readPaneBuffer = (container: HTMLElement): string => {
   const focusedWrapper = container.querySelector<HTMLElement>(
     '[data-testid="terminal-pane-wrapper"][data-focused="true"]'
   )
+  const scope = focusedWrapper ?? container
 
-  const rows = (focusedWrapper ?? container).querySelector<HTMLElement>(
-    '.xterm-rows'
-  )
-  if (!rows) {
-    return ''
+  const rows = scope.querySelector<HTMLElement>('.xterm-rows')
+  const domText = rows?.textContent ?? ''
+  if (domText.trim().length > 0) {
+    return domText
   }
 
-  return rows.textContent
+  // DOM read empty — WebGL/Canvas2D renderer is rendering to <canvas>.
+  // Fall back to xterm's buffer API via terminalCache.
+  const cacheKey = resolveCacheKey(scope)
+  if (cacheKey) {
+    const entry = terminalCache.get(cacheKey)
+    if (entry) {
+      return bufferToText(entry.terminal)
+    }
+  }
+
+  return domText
 }
 
 const readVisibleTerminalBuffer = (): string => {

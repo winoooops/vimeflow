@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-14
-ref_count: 23
+last_updated: 2026-05-19
+ref_count: 24
 ---
 
 # Testing Gaps
@@ -508,3 +508,21 @@ filesystem scope restrictions).
 - **Fix:** Inserted `await new Promise((resolve) => { setTimeout(resolve, 300) })` between the hover and the absence-assertion so the assertion runs PAST the tooltip's 250 ms open-delay window. With the wait, removing `disabled={actionsOpen}` would let the tooltip appear and the test fails. Comment in code cites the codex-verify finding so a future reader doesn't simplify the wait away.
 - **Commit:** _(see git log for the PR #224 cycle-1 fix commit)_
 - **Heuristic:** When asserting absence of a delayed UI element (tooltip, dropdown, animated reveal), the test MUST wait through the delay first. The same gotcha applies to `@floating-ui/react`-backed popovers, custom hover hints, and any `setTimeout`/`requestAnimationFrame`-gated render. Default useful waits: 300 ms (≥ floating-ui's 250 ms hover delay) for tooltips, 400 ms for `safePolygon` exits, frame-driven motion needs `vi.advanceTimersByTime` or `userEvent.setup({ advanceTimers })`.
+
+### 51. e2e-bridge buffer-API fallback had zero coverage; production cache-key bug hidden behind happy-path fixtures
+
+- **Source:** github-claude | PR #228 round 2 | 2026-05-19
+- **Severity:** HIGH
+- **File:** `src/lib/e2e-bridge.test.ts`, `src/lib/e2e-bridge.ts`
+- **Finding:** `readPaneBuffer` gained a new buffer-API fallback path in PR #228 (for canvas/WebGL renderers that leave `.xterm-rows` empty), but all 5 existing tests called `buildSessionWrapper` which always populated `.xterm-rows` — so every test exited at the early DOM-text return and never reached the `terminalCache` branch. `bufferToText` and `resolveCacheKey` were untested. The gap masked a production cache-key bug: `terminalCache` is keyed by `pane.ptyId` (Body's `sessionId` prop) but `resolveCacheKey` was extracting `data-session-id` from `TerminalZone` (the workspace `session.id`) — a different value. A canvas-renderer terminal would silently return `''` for every E2E read, failing every multi-tab and pty-spawn spec while the unit suite stayed green.
+- **Fix:** Updated `buildSessionWrapper` to mirror production DOM — Body's inner container (`[data-testid="terminal-pane"][data-pty-id]`) nests inside the focused pane-wrapper. Rewrote `resolveCacheKey` to descendant-search for `data-pty-id` (the real cache key) with a self-only fallback. Added four tests: cache-hit on the canvas path, a deliberate tie-break where `sess-fix` and `pty-0` both have cache entries (only `pty-0` wins), viewport-scoping respected against scrollback, and the cache-miss empty-string case. Code-review heuristic: when adding a behavioral fallback path, the test fixture's data shape (DOM attributes, cache keys, mock buffer layout) must mirror production — happy-path fixtures that simplify the production shape are how silent-regression bugs survive review.
+- **Commit:** same commit as this entry
+
+### 52. onContextLoss runtime handler structurally unreachable behind a throw-by-default mock
+
+- **Source:** github-claude | PR #228 round 3 | 2026-05-19
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/Body.test.tsx`, `src/features/terminal/components/TerminalPane/Body.tsx`
+- **Finding:** `Body.tsx`'s `onContextLoss` callback runs real side-effect logic (`addon.dispose()`, null two closure refs, construct + load `CanvasAddon`) — the realistic GPU-context-loss path that this PR was filed to keep working. But the module-level `vi.mock('@xterm/addon-webgl')` always THROWS in the constructor, so the `try` block exits at `new WebglAddon()` before `addon.onContextLoss(cb)` is ever called. The callback is never registered in any test, let alone invoked. A regression in the handler (forgetting `newTerminal.loadAddon(fallback)`, mis-ordering null assignments so cleanup double-disposes, etc.) passes every test in the file silently.
+- **Fix:** Added two tests that use `vi.mocked(WebglAddon).mockImplementationOnce(() => ({ onContextLoss: cb => { captured = cb; return { dispose } }, dispose }))` to override the throw default. The first captures the handler, invokes it, asserts the WebGL addon was disposed AND `CanvasAddon` was constructed AND `loadAddon` was called with the canvas addon. The second simulates worst-case (context-loss AND CanvasAddon throws) and asserts no crash + only FitAddon/WebGL reached loadAddon. Code-review heuristic: when a module-level mock throws by default to model the dominant test environment (jsdom = no WebGL2), success-path branches reachable only AFTER the constructor succeeds (like `addon.onContextLoss(cb)` registration) are structurally unreachable. Override the mock per-test (`mockImplementationOnce`) to exercise those paths.
+- **Commit:** same commit as this entry

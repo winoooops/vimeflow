@@ -10,8 +10,9 @@ import {
 } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-// WebGL addon disabled — causes blank terminal in Tauri's webview (WebView2/WebKit)
-// due to broken WebGL2 context. Canvas2D renderer works fine. See PR #33.
+import { WebglAddon } from '@xterm/addon-webgl'
+import { CanvasAddon } from '@xterm/addon-canvas'
+// WebGL→Canvas2D→DOM renderer chain keeps customGlyphs active for block-element glyphs (see PR #228).
 import { catppuccinMocha, toXtermTheme } from '../../theme/catppuccin-mocha'
 import {
   useTerminal,
@@ -290,6 +291,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     const cached = terminalCache.get(sessionId)
     let newTerminal: Terminal
     let fitAddon: FitAddon
+    // Renderer addons (at most one non-null) — kept in closure so cleanup disposes them before the terminal.
+    let webglAddon: WebglAddon | null = null
+    let webglContextLossDisposable: { dispose: () => void } | null = null
+    let canvasAddon: CanvasAddon | null = null
     let fitFrameId: number | null = null
     let lastFitSize: { width: number; height: number } | null = null
 
@@ -382,7 +387,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         cursorBlink: true,
         fontSize: 14,
         fontFamily:
-          '"JetBrains Mono", "Pure Nerd Font", "Courier New", Courier, monospace',
+          '"JetBrains Mono", "JetBrainsMono Nerd Font", "Pure Nerd Font", "Courier New", Courier, monospace',
         theme: toXtermTheme(catppuccinMocha),
         scrollback: 10000,
         allowProposedApi: true,
@@ -393,9 +398,39 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       newTerminal.loadAddon(fitAddon)
       fitAddonRef.current = fitAddon
 
-      // WebGL addon intentionally disabled — see comment at top of file.
-      // Open terminal in container
+      // Open terminal in container — WebglAddon requires open() to have been
+      // called first (it needs the canvas elements xterm creates in open()).
       newTerminal.open(node)
+
+      // Try WebGL first (fastest); fall back to Canvas2D if WebGL is
+      // unavailable. Both renderers honor customGlyphs. See the file-level
+      // comment for why this matters and what happens if both fail.
+      try {
+        const addon = new WebglAddon()
+        webglContextLossDisposable = addon.onContextLoss(() => {
+          addon.dispose()
+          webglAddon = null
+          webglContextLossDisposable = null
+          // Reattach Canvas2D so customGlyphs survives WebGL context loss.
+          try {
+            const fallback = new CanvasAddon()
+            newTerminal.loadAddon(fallback)
+            canvasAddon = fallback
+          } catch {
+            // Canvas2D also unavailable — xterm reverts to DOM rendering.
+          }
+        })
+        newTerminal.loadAddon(addon)
+        webglAddon = addon
+      } catch {
+        try {
+          const addon = new CanvasAddon()
+          newTerminal.loadAddon(addon)
+          canvasAddon = addon
+        } catch {
+          // Both renderer addons failed — xterm reverts to its DOM renderer.
+        }
+      }
 
       // Fit terminal to container — guard against hidden (display:none) containers
       didInitialFit = fitInitialWhenReady(fitAddon)
@@ -511,6 +546,16 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       resizeDisposable.dispose()
       node.removeEventListener('focusin', handleFocusIn)
       node.removeEventListener('focusout', handleFocusOut)
+      // Dispose the renderer addon (and any WebGL context-loss subscription)
+      // before the terminal itself — order matters: the addon holds
+      // references to the terminal's renderer state and must clean up while
+      // that state is still valid. At most one renderer addon is non-null.
+      webglContextLossDisposable?.dispose()
+      webglContextLossDisposable = null
+      webglAddon?.dispose()
+      webglAddon = null
+      canvasAddon?.dispose()
+      canvasAddon = null
       const entry = terminalCache.get(sessionId)
       if (entry) {
         entry.terminal.dispose()

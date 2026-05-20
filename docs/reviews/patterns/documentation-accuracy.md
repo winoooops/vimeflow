@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-16
-ref_count: 20
+last_updated: 2026-05-19
+ref_count: 21
 ---
 
 # Documentation Accuracy
@@ -638,4 +638,31 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `README.md`
 - **Finding:** The Agent Status Sidebar section updated adjacent bullets from Tauri terminology to sidecar terminology, and the Chinese README equivalent changed to `旁路事件总线`, but the English Frontend panel bullet still said `subscribing to the Tauri event bus`.
 - **Fix:** Changed the phrase to `subscribing to the sidecar event bus`, matching the surrounding Electron/sidecar terminology.
+- **Commit:** same commit as this entry
+
+### 68. bufferToText read full scrollback while its comment claimed `.xterm-rows` equivalence
+
+- **Source:** github-claude | PR #228 round 1 | 2026-05-19
+- **Severity:** MEDIUM
+- **File:** `src/lib/e2e-bridge.ts`
+- **Finding:** The new `bufferToText` helper iterated `buffer.length` (total lines including up to 10k scrollback rows) while its own comment claimed the result "matches what `.xterm-rows.textContent` used to return for an active session". The DOM-renderer path it replaced only exposed `terminal.rows` of visible content, so the equivalence claim was false. E2E assertions that test for content ABSENCE (after `clear`, or comparing visible state between commands) could spuriously match stale scrollback.
+- **Fix:** Scoped the read to the visible viewport — `const start = buffer.viewportY; const end = start + terminal.rows;` — so the result mirrors the prior DOM semantics. Rewrote the comment to describe what's actually scoped (visible viewport, not full scrollback) and called out the failure mode the scrollback-iterating version would have caused.
+- **Commit:** same commit as this entry
+
+### 69. Multi-line inline comments in test mock setup violated the one-short-line rule
+
+- **Source:** github-claude | PR #228 round 1 | 2026-05-19
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/Body.test.tsx`
+- **Finding:** Four 4–7 line comment blocks were added to explain mock setup and test scenarios. `CLAUDE.md` states "Never write multi-paragraph docstrings or multi-line comment blocks — one short line max." The same rule applies to test files; multi-line comment blocks drift from the code they describe as the suite evolves, and signal to future contributors that verbose blocks are acceptable.
+- **Fix:** Collapsed each block to a single descriptive line (e.g. `// Throws by default — mirrors jsdom's missing WebGL2 context.`). Local codex verify caught the same class of mistake on a new comment introduced in `Body.tsx onContextLoss` during this cycle's fix; collapsed that too before commit.
+- **Commit:** same commit as this entry
+
+### 70. Round-1 collapse missed sibling multi-line blocks in e2e-bridge.ts and Body.tsx
+
+- **Source:** github-claude | PR #228 round 2 | 2026-05-19
+- **Severity:** LOW
+- **File:** `src/lib/e2e-bridge.ts`, `src/features/terminal/components/TerminalPane/Body.tsx`
+- **Finding:** Round 1's KB entry #69 fixed multi-line comments only in `Body.test.tsx` and in `Body.tsx onContextLoss`. Round 2's review flagged four more blocks left untouched: the 11-line `bufferToText` rationale and the 9-line `resolveCacheKey` description in `e2e-bridge.ts`, the 12-line file-level renderer-chain rationale in `Body.tsx`, and the 6-line addon-declaration explanation in `Body.tsx`. The rule applies whether the block describes test wiring or production code; the rationale belongs in PR descriptions and commit messages, not in inline blocks that drift as the API evolves.
+- **Fix:** Collapsed each of the four blocks to a single descriptive line. Code-review heuristic: when a round-N review catches a comment-style violation, the fix should sweep the entire diff (not just the one cited block) — the cited line is usually a sample, and sibling violations elsewhere in the diff will be flagged in round N+1 anyway.
 - **Commit:** same commit as this entry

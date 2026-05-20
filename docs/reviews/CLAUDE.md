@@ -43,9 +43,9 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 4        | 3    | 2026-05-07   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 5        | 0    | 2026-05-09   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 2        | 0    | 2026-05-04   |
-| [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 51       | 23   | 2026-05-19   |
+| [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 52       | 24   | 2026-05-19   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 3        | 1    | 2026-04-09   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 67       | 20   | 2026-05-16   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 70       | 21   | 2026-05-19   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 25       | 6    | 2026-05-09   |
 | [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 38       | 10   | 2026-05-16   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-17   |
