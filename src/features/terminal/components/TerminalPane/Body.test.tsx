@@ -289,6 +289,90 @@ describe('Body', () => {
     expect(screen.getByTestId('terminal-pane')).toBeInTheDocument()
   })
 
+  test('reattaches Canvas2D when WebGL context is lost at runtime', async () => {
+    // GPU drops the WebGL2 context post-mount; the registered onContextLoss
+    // handler must dispose the WebGL addon and load CanvasAddon so block
+    // chars keep rendering via customGlyphs instead of falling to DOM.
+    let capturedHandler: (() => void) | null = null
+    const webglDispose = vi.fn()
+    const contextLossDispose = vi.fn()
+    vi.mocked(WebglAddon).mockImplementationOnce(
+      () =>
+        ({
+          onContextLoss: (cb: () => void) => {
+            capturedHandler = cb
+
+            return { dispose: contextLossDispose }
+          },
+          dispose: webglDispose,
+        }) as unknown as WebglAddon
+    )
+
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    await waitFor(() => {
+      expect(WebglAddon).toHaveBeenCalledTimes(1)
+      expect(capturedHandler).not.toBeNull()
+    })
+
+    // Pre-loss: FitAddon + WebGL addon loaded; CanvasAddon NOT yet constructed.
+    expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(2)
+    expect(CanvasAddon).not.toHaveBeenCalled()
+
+    // Simulate GPU context loss — invoke the captured handler.
+    capturedHandler!()
+
+    // Post-loss: WebGL addon disposed, CanvasAddon constructed and loaded.
+    expect(webglDispose).toHaveBeenCalledTimes(1)
+    expect(CanvasAddon).toHaveBeenCalledTimes(1)
+    expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(3)
+    expect(mockTerminal.loadAddon).toHaveBeenLastCalledWith(mockCanvasAddon)
+  })
+
+  test('reverts to DOM renderer when both WebGL context loss AND Canvas2D fallback fail', async () => {
+    // Worst-case runtime path: GPU drops mid-session AND the headless build can't make a 2D context.
+    let capturedHandler: (() => void) | null = null
+    vi.mocked(WebglAddon).mockImplementationOnce(
+      () =>
+        ({
+          onContextLoss: (cb: () => void) => {
+            capturedHandler = cb
+
+            return { dispose: vi.fn() }
+          },
+          dispose: vi.fn(),
+        }) as unknown as WebglAddon
+    )
+
+    vi.mocked(CanvasAddon).mockImplementationOnce(() => {
+      throw new Error('2D canvas context unavailable')
+    })
+
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    await waitFor(() => {
+      expect(capturedHandler).not.toBeNull()
+    })
+
+    expect(() => capturedHandler!()).not.toThrow()
+    expect(CanvasAddon).toHaveBeenCalledTimes(1)
+    // CanvasAddon threw → only FitAddon + the original WebGL load reached loadAddon.
+    expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(2)
+    expect(mockTerminal.loadAddon).not.toHaveBeenCalledWith(mockCanvasAddon)
+  })
+
   test('opens terminal in container', async () => {
     render(
       <Body
