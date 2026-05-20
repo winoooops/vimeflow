@@ -80,6 +80,7 @@ class FakeTerminal {
 
 const createService = (): ControlledTerminalService => {
   const dataCallbacks = new Set<DataCallback>()
+  const nextOffsets = new Map<string, number>()
 
   return {
     spawn: vi.fn().mockResolvedValue({
@@ -110,11 +111,13 @@ const createService = (): ControlledTerminalService => {
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-    emitData(sessionId: string, data: string, offsetStart = 0): void {
+    emitData(sessionId: string, data: string, offsetStart?: number): void {
+      const offset = offsetStart ?? nextOffsets.get(sessionId) ?? 0
       const byteLen = new TextEncoder().encode(data).length
+      nextOffsets.set(sessionId, offset + byteLen)
 
       dataCallbacks.forEach((callback) => {
-        callback(sessionId, data, offsetStart, byteLen)
+        callback(sessionId, data, offset, byteLen)
       })
     },
   }
@@ -244,19 +247,61 @@ describe('Body agent-emitted OSC 7', () => {
       expect(service.onData).toHaveBeenCalled()
     })
 
-    const firstChunk = '● Entering worktree(/tmp/'
-
     act(() => {
-      service.emitData('pty-agent', firstChunk)
-      service.emitData(
-        'pty-agent',
-        'dummy)\r\n',
-        new TextEncoder().encode(firstChunk).length
-      )
+      service.emitData('pty-agent', '● Entering worktree(/tmp/')
+      service.emitData('pty-agent', 'dummy)\r\n')
     })
 
     await waitFor(() => {
       expect(onCwdChange).toHaveBeenCalledWith('/tmp/dummy')
+    })
+
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('tracks Claude Bash cd commands across worktree-relative paths', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/home/will/projects/vimeflow"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/home/will/projects/vimeflow')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '! cd .claude/worktrees/\r\n' + '(Bash completed with no output)\r\n'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith(
+        '/home/will/projects/vimeflow/.claude/worktrees'
+      )
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '! cd codex-agent-osc7-cwd\r\n' + '(Bash completed with no output)\r\n'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith(
+        '/home/will/projects/vimeflow/.claude/worktrees/codex-agent-osc7-cwd'
+      )
     })
 
     expect(service.updateSessionCwd).not.toHaveBeenCalled()

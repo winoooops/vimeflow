@@ -182,6 +182,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const flushFitSessionIdRef = useRef<string | null>(null)
   const pendingDeferredFitFlushRef = useRef(false)
   const agentCwdOutputBufferRef = useRef('')
+  const agentCwdRef = useRef(cwd)
   const lastAgentCwdHintRef = useRef<string | null>(null)
 
   // Store callbacks in refs to avoid terminal recreation when they change
@@ -192,16 +193,36 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
   useEffect(() => {
     agentCwdOutputBufferRef.current = ''
+    agentCwdRef.current = cwd
     lastAgentCwdHintRef.current = null
-  }, [sessionId])
+  }, [cwd, sessionId])
 
   const handleTerminalOutput = (data: string): void => {
     const output = `${agentCwdOutputBufferRef.current}${data}`
-    const cwdHint = parseAgentCwdHint(output)
 
-    agentCwdOutputBufferRef.current = output.slice(-4096)
+    const lastLineBreakIndex = Math.max(
+      output.lastIndexOf('\n'),
+      output.lastIndexOf('\r')
+    )
 
-    if (cwdHint && cwdHint !== lastAgentCwdHintRef.current) {
+    if (lastLineBreakIndex === -1) {
+      agentCwdOutputBufferRef.current = output.slice(-4096)
+
+      return
+    }
+
+    const completeOutput = output.slice(0, lastLineBreakIndex + 1)
+    agentCwdOutputBufferRef.current = output
+      .slice(lastLineBreakIndex + 1)
+      .slice(-4096)
+    const cwdHint = parseAgentCwdHint(completeOutput, agentCwdRef.current)
+
+    if (
+      cwdHint &&
+      cwdHint !== agentCwdRef.current &&
+      cwdHint !== lastAgentCwdHintRef.current
+    ) {
+      agentCwdRef.current = cwdHint
       lastAgentCwdHintRef.current = cwdHint
       onCwdChangeRef.current?.(cwdHint)
     }
