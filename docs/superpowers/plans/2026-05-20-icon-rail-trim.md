@@ -935,3 +935,5 @@ No spec requirement is missing a corresponding task or step.
 - `IconRailProps` matches the spec §7.1 interface verbatim in Step 2.4. The `WorkspaceView` call site in Step 2.6 passes the required `settingsIssueNumber` and the optional `onCommand` + legacy `items` / `settingsItem`, all of which line up.
 
 No drift detected.
+
+<!-- codex-reviewed: 2026-05-20T13:51:33Z -->
