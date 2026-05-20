@@ -999,7 +999,7 @@ phases:
         status: done
         commit: 4795671
         pr: 204
-        notes: 'Pane lifecycle mutations + "+ click to add pane" placeholder in empty slots + X-close on per-pane chrome. Spec: docs/superpowers/specs/2026-05-12-step-5c-2-pane-lifecycle-design.md. Plan: docs/superpowers/plans/2026-05-12-step-5c-2-pane-lifecycle.md.'
+        notes: 'Pane lifecycle mutations + "+ click to add pane" placeholder in empty slots + X-close on per-pane chrome + auto-shrink layout on pane close. Spec: docs/superpowers/specs/2026-05-12-step-5c-2-pane-lifecycle-design.md. Plan: docs/superpowers/plans/2026-05-12-step-5c-2-pane-lifecycle.md.'
       - id: ui-s5d
         name: 'Auto-grow on layout pick (parallel PTY fan-out)'
         status: pending

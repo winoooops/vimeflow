@@ -61,7 +61,7 @@ DockPanel positioning ([#215](https://github.com/winoooops/vimeflow/pull/215)), 
 
 **Files.** `src/features/terminal/components/SplitView/`, `src/features/terminal/components/LayoutSwitcher/`, `src/features/terminal/hooks/usePaneShortcuts.ts`, `src/features/sessions/hooks/useSessionManager.ts`, `src/features/workspace/components/TerminalZone.tsx`.
 
-**DoD.** All 5 layouts render correctly using `minmax(0, 1fr)`; users can focus panes, cycle layouts, add panes into empty slots, and close non-last panes. Auto-grow on selecting a larger layout is still pending as step 5d.
+**DoD.** All 5 layouts render correctly using `minmax(0, 1fr)`; users can focus panes, cycle layouts, add panes into empty slots, and close non-last panes with auto-shrink to the smallest fitting layout. Auto-grow on selecting a larger layout is still pending as step 5d.
 
 **Risks.** Bare `1fr` columns shrinking to content. Use `minmax(0, 1fr)` everywhere — covered in §3 of handoff.
 

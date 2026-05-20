@@ -43,7 +43,7 @@ cargo clippy -- -W clippy::all           # Rust linting with all warnings
 4. **XXE** — XML parsers configured securely? External entities disabled?
 5. **Broken Access** — IPC commands validate caller context? File access scoped to allowed directories?
 6. **Misconfiguration** — Debug mode off in release builds? Electron context isolation and preload exposure least-privilege? DevTools disabled or explicitly justified in production?
-7. **XSS / Webview Injection** — CSP configured in tauri.conf.json? Output escaped? No `innerHTML` with IPC data?
+7. **XSS / Renderer Injection** — CSP configured via `session.webRequest.onHeadersReceived` in `electron/main.ts` or a `Content-Security-Policy` meta tag? Output escaped? No `innerHTML` with IPC data?
 8. **Insecure Deserialization** — IPC payloads deserialized safely on Rust side? serde attributes restrictive?
 9. **Known Vulnerabilities** — `npm audit` and `cargo audit` both clean?
 10. **Insufficient Logging** — Security-relevant events logged? Error details not exposed to webview?
