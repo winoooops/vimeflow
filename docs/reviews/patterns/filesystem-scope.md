@@ -2,7 +2,7 @@
 id: filesystem-scope
 category: security
 created: 2026-04-09
-last_updated: 2026-05-03
+last_updated: 2026-05-20
 ref_count: 3
 ---
 
@@ -10,9 +10,10 @@ ref_count: 3
 
 ## Summary
 
-Tauri IPC commands that access the filesystem must validate paths against an
-allowlist. The webview is an untrusted boundary — a compromised renderer could
-enumerate sensitive directories without scope restrictions.
+Sidecar IPC commands that access the filesystem must validate paths against an
+allowlist. The renderer is an untrusted boundary — a compromised renderer could
+enumerate sensitive directories without scope restrictions. Older findings below
+preserve their original Tauri-era paths.
 
 ## Findings
 

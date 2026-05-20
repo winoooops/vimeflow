@@ -145,12 +145,14 @@ In this system, depth is a feeling, not a feature. "Up" is "Brighter," not "Shad
 - **Icon Rail:** Project avatars (2-letter abbreviation, rounded-lg). Active = pill-shaped backlight using `primary-container` at 20% opacity.
 - **Tabs:** Active indicated by `border-b-2 border-primary` and weight shift. No full-width bottom lines.
 
-### Layout: The 4-Zone Architecture
+### Layout: Current Workspace Shell
 
 1. **Icon Rail (Far Left, 48px):** `surface-container-low/80` + `backdrop-blur-xl`. Project avatars top, `+` and `⚙` bottom.
-2. **Sidebar (Left, 260px):** `surface-container-low`. Top: agent session list. Bottom: context switcher (Files/Editor/Diff) with content panel.
-3. **Terminal Zone (Center, flexible):** `surface`. Tabbed terminal panes. One agent PTY + optional shell tabs.
-4. **Agent Activity (Right, 280px):** `surface-container-low`. Pinned status/context/usage. Collapsible sections for files, tools, tests, usage details.
+2. **Sidebar (Left, 272px default, resizable):** `surface-container-low`. Sessions and Files tabs; file tree follows the active pane cwd.
+3. **Main Canvas (Center, flexible):** `surface`. Browser-style session tabs, layout switcher, and `SplitView` terminal canvas with `single`, `vsplit`, `hsplit`, `threeRight`, and `quad` layouts.
+4. **DockPanel (inside Main Canvas):** Editor / Diff surfaces, dockable bottom / top / left / right with elastic resizing.
+5. **Agent Activity (Right, auto/collapsible):** `surface-container-low`. Pinned status/context/usage. Collapsible sections for files, tools, tests, usage details, scoped to the active pane's PTY.
+6. **Status Bar (Bottom, 24px):** `surface-container-lowest`. Global status and command hints.
 
 ### Session List Items
 

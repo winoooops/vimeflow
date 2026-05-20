@@ -62,17 +62,17 @@ A PR titled "feat(agent): codex adapter stage 2" has spec
 spec lists files under "File touch list". For a representative round of
 that PR:
 
-| File                                                        | In/Out | Why                                                               |
-| ----------------------------------------------------------- | ------ | ----------------------------------------------------------------- |
-| `src-tauri/src/agent/adapter/codex/*.rs`                    | IN     | Net-new, listed in plan.                                          |
-| `src-tauri/src/agent/types.rs`                              | IN     | `CostMetrics.total_cost_usd: Option<f64>` is the spec's IPC bump. |
-| `src-tauri/src/agent/adapter/claude_code/statusline.rs`     | IN     | Required by the IPC bump (parser must update to wrap in `Some`).  |
-| `src/bindings/CostMetrics.ts`                               | IN     | Generated artifact for the IPC bump.                              |
-| `src/features/agent-status/components/BudgetMetrics.tsx`    | IN     | Frontend null handling for the IPC bump.                          |
-| `src-tauri/src/git/mod.rs`                                  | OUT    | Rustfmt reflows in unrelated git command body.                    |
-| `src-tauri/src/agent/detector.rs`                           | OUT    | Rustfmt-only changes; no logic delta.                             |
-| `src-tauri/src/agent/adapter/claude_code/test_runners/*.rs` | OUT    | Import-order swap only.                                           |
-| `src-tauri/tests/transcript_*.rs`                           | OUT    | Pure formatting reflows.                                          |
+| File                                                             | In/Out | Why                                                               |
+| ---------------------------------------------------------------- | ------ | ----------------------------------------------------------------- |
+| `crates/backend/src/agent/adapter/codex/*.rs`                    | IN     | Net-new, listed in plan.                                          |
+| `crates/backend/src/agent/types.rs`                              | IN     | `CostMetrics.total_cost_usd: Option<f64>` is the spec's IPC bump. |
+| `crates/backend/src/agent/adapter/claude_code/statusline.rs`     | IN     | Required by the IPC bump (parser must update to wrap in `Some`).  |
+| `src/bindings/CostMetrics.ts`                                    | IN     | Generated artifact for the IPC bump.                              |
+| `src/features/agent-status/components/BudgetMetrics.tsx`         | IN     | Frontend null handling for the IPC bump.                          |
+| `crates/backend/src/git/mod.rs`                                  | OUT    | Rustfmt reflows in unrelated git command body.                    |
+| `crates/backend/src/agent/detector.rs`                           | OUT    | Rustfmt-only changes; no logic delta.                             |
+| `crates/backend/src/agent/adapter/claude_code/test_runners/*.rs` | OUT    | Import-order swap only.                                           |
+| `crates/backend/tests/transcript_*.rs`                           | OUT    | Pure formatting reflows.                                          |
 
 The OUT rows belong in a separate `chore(fmt):` commit on `main` or in
 no commit at all (let some other PR pick up the formatting drift).

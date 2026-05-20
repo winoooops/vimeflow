@@ -35,10 +35,15 @@ Replaces the previous 6-phase chat-based roadmap. The core change: the primary w
 | Editor view         | Wired — CodeMirror editor, vim mode, file buffers, sidecar/Vite file services                            |
 | Command Palette     | Wired — fuzzy registry, Ctrl+: trigger, workspace tab actions                                            |
 | Packaging           | **Linux AppImage** via electron-builder; macOS / Windows / signing / auto-update are deferred follow-ups |
-| UI handoff          | **In progress** — steps 1-3 merged; step 4 Single TerminalPane shipped (#190); step 5 mid-flight         |
+| UI handoff          | **In progress** — steps 1-5c2 merged; multi-pane SplitView + DockPanel shipped; 5d/polish remain         |
 | State management    | Pending — session persistence/store remains on the future roadmap                                        |
 
 ---
+
+The phase details below preserve the original Tauri-targeting roadmap. Treat
+the table above and `docs/roadmap/progress.yaml` as the current-state source of
+truth; Tauri command names in the historical sections are not current
+implementation guidance.
 
 ## Phase 1: Tauri Scaffold + CI Green ✅
 

@@ -124,7 +124,7 @@ When reviewing React UI code, also check:
 - **Unnecessary re-renders** — Missing memoization for expensive computations
 - **Missing loading/error states** — IPC `invoke()` calls without pending/error fallback UI
 - **Stale closures** — Event handlers capturing stale state values
-- **Event listener leaks** — Tauri `listen()` calls without `unlisten()` on component unmount
+- **Event listener leaks** — `window.vimeflow.listen()` calls without `unlisten()` on component unmount
 
 ```tsx
 // BAD: Missing dependency, stale closure
@@ -150,14 +150,14 @@ useEffect(() => {
 }
 ```
 
-### Tauri/IPC Patterns (HIGH)
+### Electron/Sidecar IPC Patterns (HIGH)
 
-When reviewing Tauri IPC code:
+When reviewing Electron renderer, preload, main-process, or Rust-sidecar IPC code:
 
-- **IPC payload validation** — `#[tauri::command]` handlers must validate input on the Rust side; never trust data from the webview
-- **Return type consistency** — Rust command return types must match TypeScript `invoke<T>()` expectations; mismatches cause silent runtime failures
-- **State mutation safety** — Tauri managed state behind `Mutex<T>` — check for deadlock potential (nested locks, long-held locks across await points)
-- **Event listener cleanup** — Frontend `listen()` calls must store and call the `unlisten` function on component unmount
+- **IPC payload validation** — `BackendState` command handlers and `_inner` helpers must validate input on the Rust side; never trust data from the renderer
+- **Return type consistency** — Rust sidecar response types and generated TypeScript bindings must match `window.vimeflow.invoke<T>()` expectations
+- **State mutation safety** — Shared backend state behind locks must avoid nested locks and long-held locks across await points
+- **Event listener cleanup** — Frontend `window.vimeflow.listen()` calls must store and call the `unlisten` function on component unmount
 
 ### Backend Patterns (HIGH)
 
@@ -165,7 +165,7 @@ When reviewing Rust backend code:
 
 - **Unvalidated input** — Command parameters used without validation or bounds checking
 - **File system access validation** — User-influenced paths must be resolved and checked against allowed directories
-- **IPC input validation** — All `#[tauri::command]` parameters must be validated before use
+- **IPC input validation** — All sidecar command inputs must be validated before use
 - **Unbounded queries** — `SELECT *` or queries without LIMIT on large tables
 - **N+1 queries** — Fetching related data in a loop instead of a join/batch
 - **Missing timeouts** — External HTTP calls without timeout configuration

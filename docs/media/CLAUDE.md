@@ -1,6 +1,6 @@
 # Media — Visual Documentation Assets
 
-Image and animation assets referenced by `README.md` and `README.zh-CN.md`. Captured manually from a running `tauri:dev` build.
+Image and animation assets referenced by `README.md` and `README.zh-CN.md`. Capture new assets from a running `npm run electron:dev` build. Older assets may predate the Electron migration; keep captions accurate when replacing them.
 
 ## Inventory
 

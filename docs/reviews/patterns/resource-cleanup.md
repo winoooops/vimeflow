@@ -2,7 +2,7 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-04-14
+last_updated: 2026-05-20
 ref_count: 3
 ---
 
@@ -10,9 +10,10 @@ ref_count: 3
 
 ## Summary
 
-Services that register global event listeners (especially Tauri IPC listeners)
-must be disposed on unmount. Creating a new service instance per component
-mount without cleanup causes listener accumulation and duplicate event handling.
+Services that register global event listeners (especially
+`window.vimeflow.listen()` or legacy Tauri IPC listeners) must be disposed on
+unmount. Creating a new service instance per component mount without cleanup
+causes listener accumulation and duplicate event handling.
 
 ## Findings
 

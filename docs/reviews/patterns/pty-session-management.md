@@ -2,7 +2,7 @@
 id: pty-session-management
 category: backend
 created: 2026-04-09
-last_updated: 2026-05-13
+last_updated: 2026-05-20
 ref_count: 2
 ---
 
@@ -10,9 +10,10 @@ ref_count: 2
 
 ## Summary
 
-PTY sessions in Tauri must handle lifecycle carefully: validate IPC inputs,
-prevent session ID reuse conflicts, avoid blocking async runtime threads, and
-never log terminal input (may contain secrets).
+PTY sessions in the Rust sidecar must handle lifecycle carefully: validate IPC
+inputs, prevent session ID reuse conflicts, avoid blocking async runtime
+threads, and never log terminal input (may contain secrets). Older findings
+below preserve their original Tauri-era file paths for auditability.
 
 ## Findings
 

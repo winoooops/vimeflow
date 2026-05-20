@@ -2,22 +2,19 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-05-16
+last_updated: 2026-05-20
 ref_count: 6
 ---
 
-# E2E Testing (WDIO + tauri-driver + WebKitGTK)
+# E2E Testing
 
 ## Summary
 
-WebdriverIO + tauri-driver on Linux is a long chain of processes —
-WDIO launcher → workers → tauri-driver → WebKitWebDriver → the Tauri
-app — and each hop has sharp edges that produce identical-looking
-"invalid session id" / "Failed to match capabilities" / "unsupported
-operation" failures. Nine distinct causes encountered while landing
-the E2E infrastructure in PR #70; root-causing any one of them
-requires treating the session-lifecycle messages as generic symptoms
-and following the actual process chain.
+Current E2E coverage uses WebdriverIO with `@wdio/electron-service` for the
+Electron shell. Older findings below document the previous WebdriverIO +
+tauri-driver + WebKitGTK chain; keep the process-lifecycle debugging lesson, but
+do not reintroduce tauri-driver or WebKit-specific workarounds into the current
+Electron path.
 
 ## Findings
 

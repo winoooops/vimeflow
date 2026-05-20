@@ -8,7 +8,7 @@ Start with `UNIFIED.md` — it's authoritative and resolves Stitch drift. Fall b
 
 ### `UNIFIED.md` — authoritative
 
-Canonical spec layered on top of `DESIGN.md`. Defines the 5-zone layout (icon rail · sidebar · view tabs · main canvas · activity panel · status bar), the full agent-session-state contract (`running` / `awaiting` / `completed` / `errored` / `idle`), TypeScript component APIs (`SessionCard`, `StatusDot`, `ActivityPanel`, `CommandPalette`, `ContextSmiley`), and an anti-patterns list. When any value conflicts with Stitch `code.html` files, UNIFIED wins.
+Canonical spec layered on top of `DESIGN.md`. Defines the current shell layout (icon rail · sidebar · main canvas with session tabs, SplitView, and DockPanel · activity panel · status bar), the full agent-session-state contract (`running` / `awaiting` / `completed` / `errored` / `idle`), TypeScript component APIs (`SessionCard`, `StatusDot`, `ActivityPanel`, `CommandPalette`, `ContextSmiley`), and an anti-patterns list. When any value conflicts with Stitch `code.html` files, UNIFIED wins.
 
 ### `tokens.css` / `tokens.ts`
 
@@ -24,13 +24,13 @@ Complete design system specification: color theory, surface hierarchy, typograph
 
 Each subdirectory contains a reference screenshot and the HTML implementation produced by Google Stitch:
 
-| Directory          | Screen          | What It Shows                                                                                                                                                         |
-| ------------------ | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent_workspace/` | Agent Workspace | Primary application view — terminal pane with agent output, session list in sidebar, context switcher (Files/Editor/Diff), agent activity panel with status and usage |
-| `code_editor/`     | Code Editor     | Tabbed file editor, syntax-highlighted code, line number gutter, minimap, vim status bar, file tree in sidebar                                                        |
-| `files_explorer/`  | Files Explorer  | File tree with breadcrumbs, folder expand/collapse, git status badges (M/A/D), drag-and-drop with drop zones, glassmorphism context menu                              |
-| `git_diff/`        | Git Diff Viewer | Side-by-side diff with added/removed highlighting, hunk navigation, Stage Hunk/Discard actions, changed files sidebar, floating glassmorphism legend                  |
-| `command_palette/` | Command Palette | Centered overlay modal, search with `:command` syntax, filtered result list, keyboard navigation hints                                                                |
+| Directory          | Screen          | What It Shows                                                                                                                                                                    |
+| ------------------ | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent_workspace/` | Agent Workspace | Historical primary application view — terminal pane with agent output, session list in sidebar, context switcher (Files/Editor/Diff), agent activity panel with status and usage |
+| `code_editor/`     | Code Editor     | Tabbed file editor, syntax-highlighted code, line number gutter, minimap, vim status bar, file tree in sidebar                                                                   |
+| `files_explorer/`  | Files Explorer  | File tree with breadcrumbs, folder expand/collapse, git status badges (M/A/D), drag-and-drop with drop zones, glassmorphism context menu                                         |
+| `git_diff/`        | Git Diff Viewer | Side-by-side diff with added/removed highlighting, hunk navigation, Stage Hunk/Discard actions, changed files sidebar, floating glassmorphism legend                             |
+| `command_palette/` | Command Palette | Centered overlay modal, search with `:command` syntax, filtered result list, keyboard navigation hints                                                                           |
 
 **Deprecated**: `chat_or_main/` — Chat view replaced by terminal-based agent interaction (see `agent_workspace/`). Kept for historical reference only.
 
@@ -60,15 +60,18 @@ These components appear across screens with consistent structure:
 
 - **Icon Rail** (48px, far left) — Project avatars, `+` new project, `⚙` settings
 - **Sidebar** (260px) — Agent session list (top), context switcher tabs with content (bottom)
-- **Terminal Tab Bar** (terminal zone top) — Agent and shell tabs
+- **Session Tabs + SplitView** (main canvas top/body) — session tabs, layout switcher, and 1-4 terminal panes
+- **DockPanel** (main canvas dock) — Editor / Diff surfaces, docked bottom/top/left/right
 - **Agent Activity Panel** (280px, right) — Status, context window, usage, collapsible sections
 - **Command Palette** (overlay) — `:` trigger, Lens Blur background
 
 Extract these once as shared React components. The HTML in each screen shows them in context.
 
-## Viewing the Runnable Prototype (Claude Design)
+## Viewing Prototypes
 
-`UNIFIED.md` §9 calls out a runnable prototype — streaming terminal, state transitions, command palette, all five zones wired together. It lives in the **Claude Design** project, not this repo. We don't mirror it locally (would drag in HTML, JS, and asset files that drift from the spec the moment it's re-generated). View it via `claude-in-chrome` CDP instead.
+The current in-repo handoff prototype lives in `docs/design/handoff/prototype/` and covers the multi-pane shell, SplitView layouts, activity panel, dock, command palette, and screenshots. Use it first for current handoff migration work.
+
+`UNIFIED.md` §9 also references an older runnable Claude Design project — streaming terminal, state transitions, command palette, all five zones wired together. Treat it as historical/contextual unless a task explicitly asks for the Claude-hosted prototype.
 
 **Project URL:** `https://claude.ai/design/p/e9c4e751-f5ca-40eb-9ce7-611948803ce4`
 
@@ -80,7 +83,7 @@ Extract these once as shared React components. The HTML in each screen shows the
 4. To read rendered text: `get_page_text` on the tab, or `javascript_tool` to pull the iframe's `src` then `navigate` that URL to inspect raw HTML.
 5. To capture visuals for spec comparison: `take_screenshot` (or `gif_creator` for interaction sequences).
 
-**Other files in the Claude Design project:** `Handoff.html` (the merge guide — already consumed into this repo) and `tokens.ts` (empty placeholder; real content lives in `docs/design/tokens.ts`).
+**Other files in the Claude Design project:** `Handoff.html` (the merge guide — consumed into `docs/design/handoff/`) and `tokens.ts` (empty placeholder; real content lives in `docs/design/tokens.ts`).
 
 ## Additional Material
 

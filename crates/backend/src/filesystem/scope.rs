@@ -1,7 +1,7 @@
 //! Filesystem sandbox primitives.
 //!
 //! These helpers enforce the `$HOME`-rooted sandbox boundary for all
-//! Tauri filesystem IPC commands. They are the single source of truth
+//! sidecar filesystem IPC commands. They are the single source of truth
 //! for symlink refusal, canonicalization, and scope checks.
 //!
 //! **Do not inline these checks in command modules.** Every sandbox
