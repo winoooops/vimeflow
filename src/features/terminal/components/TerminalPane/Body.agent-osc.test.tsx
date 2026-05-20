@@ -381,6 +381,59 @@ describe('Body agent-emitted OSC 7', () => {
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
+  test('does not roll back an agent-advanced cwd when the parent commits an earlier cwd', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    const { rerender } = render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/old"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/old')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '\x1b]7;file://host/tmp/worktree\x07! cd child\r\n'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/tmp/worktree/child')
+    })
+
+    rerender(
+      <Body
+        sessionId="pty-agent"
+        cwd="/tmp/worktree"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/old')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    act(() => {
+      service.emitData('pty-agent', '! cd grandchild\r\n')
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/tmp/worktree/child/grandchild')
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalledWith('/tmp/worktree/grandchild')
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
   test('ignores OSC 7 updates for the current cwd', async () => {
     const service = createService()
     const onCwdChange = vi.fn()

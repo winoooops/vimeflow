@@ -108,6 +108,15 @@ describe('parseAgentCwdHint', () => {
     ).toBe('C:\\Users\\will\\projects\\vimeflow\\.claude\\worktrees\\dummy')
   })
 
+  test('unescapes double backslashes in quoted Windows cd targets', () => {
+    expect(
+      parseAgentCwdHint(
+        '! cd "C:\\\\Users\\\\will\\\\projects\\\\vimeflow"\r\n',
+        'C:\\Users\\will'
+      )
+    ).toBe('C:\\Users\\will\\projects\\vimeflow')
+  })
+
   test('uses reset narration as the final cwd when Claude rejects a cd', () => {
     expect(
       parseAgentCwdHint(

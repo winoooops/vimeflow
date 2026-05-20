@@ -1,4 +1,4 @@
-const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/
+export const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/
 const WINDOWS_FILE_URL_DRIVE_PATH = /^\/[A-Za-z]:[\\/]/
 
 const decodePathname = (pathname: string): string => {

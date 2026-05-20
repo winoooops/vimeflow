@@ -28,6 +28,22 @@ import '@xterm/xterm/css/xterm.css'
 
 const AGENT_CWD_HINT_BUFFER_SIZE = 4096
 
+const toComparablePath = (path: string): string => path.replace(/\\/g, '/')
+
+const trimTrailingSlashes = (path: string): string =>
+  path === '/' ? path : path.replace(/\/+$/g, '')
+
+const isDescendantPath = (path: string, possibleParent: string): boolean => {
+  const normalizedPath = trimTrailingSlashes(toComparablePath(path))
+  const normalizedParent = trimTrailingSlashes(toComparablePath(possibleParent))
+
+  if (normalizedParent === '/') {
+    return normalizedPath !== '/' && normalizedPath.startsWith('/')
+  }
+
+  return normalizedPath.startsWith(`${normalizedParent}/`)
+}
+
 // Module-level cache of terminal instances per sessionId.
 //
 // HISTORICAL NOTE (corrected 2026-05-09): the original comment claimed
@@ -196,7 +212,9 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
   useEffect(() => {
     cwdPropRef.current = cwd
-    agentCwdRef.current = cwd
+    if (!isDescendantPath(agentCwdRef.current, cwd)) {
+      agentCwdRef.current = cwd
+    }
   }, [cwd])
 
   useEffect(() => {

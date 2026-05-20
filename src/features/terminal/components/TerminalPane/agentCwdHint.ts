@@ -1,10 +1,8 @@
 // cspell:ignore WORKTREE
-import { parseOsc7Cwd } from './osc7'
+import { parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
 
 const ANSI_ESCAPE_PATTERN =
   /\x1b(?:\][\s\S]*?(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])/g
-
-const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/
 
 const CLAUDE_WORKTREE_PATTERN =
   /(?:^|[\r\n])(?:[^\S\r\n]*(?:[^\w\s(/\\:]+[^\S\r\n]*)?)Entering worktree\(([^\r\n]+)\)[ \t]*(?=$|[\r\n])/g
@@ -34,6 +32,13 @@ const readQuotedTarget = (
 
     if (quote === '"' && char === '\\') {
       const next = source[index + 1]
+      if (next === '\\') {
+        target = `${target}\\`
+        index += 1
+
+        continue
+      }
+
       if (next && !/[\\A-Za-z0-9._-]/.test(next)) {
         target = `${target}${next}`
         index += 1
