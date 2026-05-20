@@ -1,5 +1,5 @@
 const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/
-const WINDOWS_FILE_URL_DRIVE_PATH = /^\/[A-Za-z]:/
+const WINDOWS_FILE_URL_DRIVE_PATH = /^\/[A-Za-z]:[\\/]/
 
 const decodePathname = (pathname: string): string => {
   try {
@@ -31,14 +31,16 @@ export const parseOsc7Cwd = (data: string): string | null => {
     return plainPath
   }
 
+  let url: URL
   try {
-    const url = new URL(data)
-    if (url.protocol !== 'file:') {
-      return null
-    }
-
-    return normalizeAbsolutePath(decodePathname(url.pathname))
+    url = new URL(data)
   } catch {
-    return normalizeAbsolutePath(data)
+    return null
   }
+
+  if (url.protocol !== 'file:') {
+    return null
+  }
+
+  return normalizeAbsolutePath(decodePathname(url.pathname))
 }

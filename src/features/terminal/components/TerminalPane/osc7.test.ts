@@ -29,6 +29,10 @@ describe('parseOsc7Cwd', () => {
     )
   })
 
+  test('keeps POSIX paths with a colon in the first segment absolute', () => {
+    expect(parseOsc7Cwd('file://host/a:repo')).toBe('/a:repo')
+  })
+
   test('accepts plain absolute fallback paths', () => {
     expect(parseOsc7Cwd('/tmp/worktree')).toBe('/tmp/worktree')
     expect(parseOsc7Cwd('C:\\Users\\will\\project')).toBe(
