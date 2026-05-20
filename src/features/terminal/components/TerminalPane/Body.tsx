@@ -204,33 +204,40 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     agentCwdRef.current = cwdPropRef.current
   }, [sessionId])
 
-  const handleTerminalOutput = useCallback((data: string): void => {
-    const output = `${agentCwdOutputBufferRef.current}${data}`
-
-    const lastLineBreakIndex = Math.max(
-      output.lastIndexOf('\n'),
-      output.lastIndexOf('\r')
-    )
-
-    if (lastLineBreakIndex === -1) {
-      agentCwdOutputBufferRef.current = output.slice(
-        -AGENT_CWD_HINT_BUFFER_SIZE
-      )
-
-      return
-    }
-
-    const completeOutput = output.slice(0, lastLineBreakIndex + 1)
-    agentCwdOutputBufferRef.current = output
-      .slice(lastLineBreakIndex + 1)
-      .slice(-AGENT_CWD_HINT_BUFFER_SIZE)
-    const cwdHint = parseAgentCwdHint(completeOutput, agentCwdRef.current)
+  const applyAgentCwdHint = useCallback((output: string): void => {
+    const cwdHint = parseAgentCwdHint(output, agentCwdRef.current)
 
     if (cwdHint && cwdHint !== agentCwdRef.current) {
       agentCwdRef.current = cwdHint
       onCwdChangeRef.current?.(cwdHint)
     }
   }, [])
+
+  const handleTerminalOutput = useCallback(
+    (data: string): void => {
+      const output = `${agentCwdOutputBufferRef.current}${data}`
+
+      const lastLineBreakIndex = Math.max(
+        output.lastIndexOf('\n'),
+        output.lastIndexOf('\r')
+      )
+
+      if (lastLineBreakIndex === -1) {
+        agentCwdOutputBufferRef.current = output.slice(
+          -AGENT_CWD_HINT_BUFFER_SIZE
+        )
+
+        return
+      }
+
+      const completeOutput = output.slice(0, lastLineBreakIndex + 1)
+      agentCwdOutputBufferRef.current = output
+        .slice(lastLineBreakIndex + 1)
+        .slice(-AGENT_CWD_HINT_BUFFER_SIZE)
+      applyAgentCwdHint(completeOutput)
+    },
+    [applyAgentCwdHint]
+  )
 
   // Use terminal hook for PTY lifecycle management
   const {
@@ -284,6 +291,20 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   useEffect(() => {
     onPtyStatusChangeRef.current?.(status)
   }, [status])
+
+  useEffect(() => {
+    if (status !== 'exited' && status !== 'error') {
+      return
+    }
+
+    const pendingOutput = agentCwdOutputBufferRef.current
+    if (!pendingOutput) {
+      return
+    }
+
+    agentCwdOutputBufferRef.current = ''
+    applyAgentCwdHint(`${pendingOutput}\r\n`)
+  }, [applyAgentCwdHint, status])
 
   useLayoutEffect(() => {
     const wasDeferred = previousDeferFitRef.current

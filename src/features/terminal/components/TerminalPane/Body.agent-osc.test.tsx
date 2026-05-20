@@ -27,10 +27,12 @@ vi.mock('@xterm/addon-canvas', () => ({
 }))
 
 type DataCallback = Parameters<ITerminalService['onData']>[0]
+type ExitCallback = Parameters<ITerminalService['onExit']>[0]
 type OscHandler = (data: string) => boolean
 
 interface ControlledTerminalService extends ITerminalService {
   emitData(sessionId: string, data: string, offsetStart?: number): void
+  emitExit(sessionId: string, code?: number | null): void
 }
 
 class FakeTerminal {
@@ -82,6 +84,7 @@ class FakeTerminal {
 
 const createService = (): ControlledTerminalService => {
   const dataCallbacks = new Set<DataCallback>()
+  const exitCallbacks = new Set<ExitCallback>()
   const nextOffsets = new Map<string, number>()
 
   return {
@@ -100,9 +103,13 @@ const createService = (): ControlledTerminalService => {
         dataCallbacks.delete(callback)
       })
     }),
-    onExit: vi.fn(
-      (): Promise<() => void> => Promise.resolve((): void => undefined)
-    ),
+    onExit: vi.fn((callback: ExitCallback): Promise<() => void> => {
+      exitCallbacks.add(callback)
+
+      return Promise.resolve((): void => {
+        exitCallbacks.delete(callback)
+      })
+    }),
     onError: vi.fn(
       (): Promise<() => void> => Promise.resolve((): void => undefined)
     ),
@@ -120,6 +127,11 @@ const createService = (): ControlledTerminalService => {
 
       dataCallbacks.forEach((callback) => {
         callback(sessionId, data, offset, byteLen)
+      })
+    },
+    emitExit(sessionId: string, code: number | null = 0): void {
+      exitCallbacks.forEach((callback) => {
+        callback(sessionId, code)
       })
     },
   }
@@ -425,6 +437,43 @@ describe('Body agent-emitted OSC 7', () => {
 
     act(() => {
       service.emitData('pty-agent', '\r\n')
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/tmp/worktree/child')
+    })
+
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('flushes a buffered cwd hint when the PTY exits without a newline', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/tmp/worktree"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/tmp/worktree')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+      expect(service.onExit).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData('pty-agent', '! cd child')
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalled()
+
+    act(() => {
+      service.emitExit('pty-agent')
     })
 
     await waitFor(() => {
