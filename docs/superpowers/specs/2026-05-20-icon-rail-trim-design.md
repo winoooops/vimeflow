@@ -135,30 +135,37 @@ In scope:
   `onSettings`. Reading the prop, not the DOM attribute, keeps the
   click path synchronous and avoids a `getAttribute` round-trip
   through the rendered element.
-- Update `docs/design/UNIFIED.md` in four places so UNIFIED stays
-  the accurate post-merge source of truth for the rail + palette
-  shortcut. All four edits are the same in spirit (replace
-  `⌘K` / `⌘K / Ctrl+K` with `Ctrl+:`, the binding actually
-  implemented by `useCommandPalette.ts:20`):
-  - **§2 line 47** (rail row of the 5-zone table): rewrite to
+- Update `docs/design/UNIFIED.md` in five places so UNIFIED
+  stays the accurate post-merge source of truth for the rail
+  - palette shortcut + sidebar contents:
+  * **§2 line 47** (rail row of the 5-zone table): rewrite to
     "User avatar at top. Palette + Settings at bottom. No area
-    switchers — Files lives in the sidebar Files tab; Editor and
-    Diff live in the dock; Context arrives with the deferred
-    Settings dialog."
-  - **§2 line 51** (status-bar row): change the
+    switchers — Files lives in the sidebar Files tab; Editor
+    and Diff live in the dock; Context arrives with the
+    deferred Settings dialog."
+  * **§2 line 48** (sidebar row): change "Three tabs:
+    **Sessions**, **Files**, **Context**" to "Two tabs:
+    **Sessions**, **Files**. Context arrives with the deferred
+    Settings dialog." The current code only registers
+    `sessions` + `files` (see
+    `WorkspaceView.tsx:70-73`); UNIFIED's three-tab claim is
+    aspirational copy. Bringing it in sync removes the
+    contradiction the rail-row edit would otherwise create.
+  * **§2 line 51** (status-bar row): change the
     keyboard-shortcut hint from `⌘K` to `Ctrl+:`.
-  - **§5.4 line 193** (CommandPalette contract): change the
+  * **§5.4 line 193** (CommandPalette contract): change the
     "globally" toggle line from "⌘K / Ctrl+K toggle, globally"
     to "Ctrl+: toggle, globally".
-  - **§6 line 212** (interaction rules): change the
-    `⌘K palette` fragment in the "Keyboard shortcuts" bullet to
-    `Ctrl+: palette`. The other shortcuts on that line
-    (editor / diff / files / terminal) are out of scope for this
-    PR — they belong to a separate audit.
+  * **§6 line 212** (interaction rules): change the
+    `⌘K palette` fragment in the "Keyboard shortcuts" bullet
+    to `Ctrl+: palette`. The other shortcuts on that line
+    (editor / diff / files / terminal) are out of scope for
+    this PR — they belong to a separate audit.
 
-  UNIFIED's `⌘K` was aspirational copy that has never matched
-  the implementation; bringing all four lines in sync here closes
-  the inconsistency codex would otherwise re-flag forever.
+  UNIFIED's `⌘K` and three-tab claims were aspirational copy
+  that has never matched the implementation; bringing all five
+  lines in sync here closes the inconsistencies codex would
+  otherwise re-flag forever.
 
 - Token sweep: replace every inline-style hex/rgba in the prototype
   with the closest existing Tailwind semantic token from
@@ -317,8 +324,8 @@ open path that calls `palette.open()` directly.
 | `src/features/command-palette/CommandPalette.test.tsx`    | inject props in tests               | +20 / -5                   |
 | `src/features/command-palette/hooks/useCommandPalette.ts` | unchanged (caller moves)            | 0 / 0                      |
 | `src/features/workspace/data/mockNavigation.ts`           | empty `items`                       | +1 / -10                   |
-| `docs/design/UNIFIED.md`                                  | rewrite lines 47, 51, 193, 212      | +4 / -4                    |
-| **total**                                                 |                                     | **~+165 / -76 = ~+89 net** |
+| `docs/design/UNIFIED.md`                                  | rewrite lines 47, 48, 51, 193, 212  | +5 / -5                    |
+| **total**                                                 |                                     | **~+166 / -77 = ~+89 net** |
 
 The token sweep (prototype hex/rgba → Tailwind semantic tokens, §6) is
 folded into the IconRail rewrite numbers above.
@@ -822,7 +829,7 @@ empty-array contract; see §9 for the test plan.
 
 ### 7.5 `docs/design/UNIFIED.md`
 
-Four single-line replacements (cross-referenced from §2's
+Five single-line replacements (cross-referenced from §2's
 in-scope list):
 
 ```
@@ -835,6 +842,16 @@ in-scope list):
    switchers — Files lives in the sidebar Files tab; Editor and
    Diff live in the dock; Context arrives with the deferred
    Settings dialog."
+```
+
+```
+- Sidebar row (line 48, old):
+  "Three tabs: **Sessions**, **Files**, **Context**. Shows project
+   switcher at top."
+
+- Sidebar row (line 48, new):
+  "Two tabs: **Sessions**, **Files**. Context arrives with the
+   deferred Settings dialog. Shows project switcher at top."
 ```
 
 ```
@@ -865,7 +882,7 @@ in-scope list):
    diff - ⌘⇧F files - ⌘⇧T terminal - Esc closes overlays..."
 ```
 
-The four edits above are the complete UNIFIED scope for this PR.
+The five edits above are the complete UNIFIED scope for this PR.
 The other shortcuts on line 212 (`⌘⇧E editor`, `⌘⇧D diff`,
 `⌘⇧F files`, `⌘⇧T terminal`) are left alone — they require a
 separate audit against the implementation that is out of scope
@@ -1006,6 +1023,13 @@ keeps the boilerplate manageable:
 // src/features/command-palette/CommandPalette.testUtils.tsx
 // Co-located with the file it supports — the project does not
 // use separate `__test-helpers__` directories.
+//
+// Explicit `vi` import: this file is NOT a `*.test.*` file, so
+// ESLint does not grant Vitest globals here and tsconfig.json
+// does not declare them. Without the explicit import, every
+// `vi.fn()` and `ReturnType<typeof vi.fn>` below would fail
+// type-check.
+import { vi } from 'vitest'
 import { render } from '@testing-library/react'
 import { CommandPalette } from './CommandPalette'
 import type { CommandPaletteState, Command } from './registry/types'
@@ -1070,9 +1094,16 @@ the same test should still pass because the keyboard listener
 moves with the hook. One addition:
 
 - **`WorkspaceView.command-palette.test.tsx`** — new case: **rail's
-  command button opens the palette**. Find the command-palette
-  button by `aria-label="Command Palette"`, click it, assert the
-  palette dialog (`role="dialog"`) is in the DOM.
+  command button opens the palette**.
+  - The existing file mocks `IconRail` as
+    `<div data-testid="icon-rail" />`. Update the mock to render
+    a real `<button aria-label="Command Palette">` that calls the
+    `onCommand` prop forwarded from `WorkspaceView`. The mock
+    stays minimal — it does NOT need to render the identity slot
+    or the settings button.
+  - The new case then: query the button by
+    `aria-label="Command Palette"`, click it, assert the palette
+    dialog (`role="dialog"`) is in the DOM.
 
 The other `WorkspaceView.*.test.tsx` files
 (`elastic.test.tsx`, `integration.test.tsx`, `notifyInfo.test.tsx`,
@@ -1239,9 +1270,15 @@ real codebase as a feature spec + PRs.
   sweep across every existing surface. File a separate issue
   when ready.
 - Real implementation of any of the 10 other placeholder panes.
-- `~/.config/vimeflow/aliases.toml` file format and IPC for
-  reading / writing it (subset of the Coding Agents pane work;
-  can be split out if scope creeps).
+
+Note on the Coding Agents pane: the alias persistence layer
+(`~/.config/vimeflow/aliases.toml` format + read / write IPC)
+**is** part of this issue's scope — the pane is non-functional
+without it. If implementation reveals the IPC is heavier than
+expected, split it into a prerequisite issue (e.g.
+`feat(backend): aliases.toml IPC`) and block this issue on the
+split, rather than shipping the pane against an in-memory
+fallback that would mislead users.
 
 ## Dependencies
 
@@ -1289,45 +1326,62 @@ real codebase as a feature spec + PRs.
 ### 11.1 Commit sequence (single PR)
 
 Per Approach 1 (selected in Step 3), the migration lands as one
-PR with four commits so reviewers can audit each concern in
-isolation. Commits in order:
+PR with three commits so reviewers can audit each concern in
+isolation. The commit sequencing has been deliberately kept
+**type-check-clean at every intermediate revision** — every
+commit on its own can be checked out and `tsc -b` will pass.
+Commits in order:
 
-1. **`refactor(command-palette): hoist useCommandPalette into WorkspaceView`**
+1. **`refactor(command-palette): hoist useCommandPalette into WorkspaceView`** _(atomic)_
+
+   This commit bundles the palette refactor and the
+   `WorkspaceView` wiring change into a single atomic change
+   because they MUST land together — `CommandPalette` becomes
+   controlled (new required props) at the same instant that
+   `WorkspaceView` starts supplying those props. Splitting them
+   into separate commits would leave an intermediate revision
+   that fails `tsc -b`.
    - Move `useCommandPalette(commands)` call from
-     `CommandPalette.tsx` into `WorkspaceView.tsx`.
+     `CommandPalette.tsx` into `WorkspaceView.tsx` (declared as
+     `const commandPalette = useCommandPalette(workspaceCommands)`).
    - Refactor `CommandPalette.tsx` to accept controlled props
      (`state`, `filteredResults`, `clampedSelectedIndex`,
      `close`, `setQuery`, `selectIndex`).
-   - Add `renderPalette()` test helper at
-     `src/features/command-palette/CommandPalette.testUtils.tsx`.
-   - Update `CommandPalette.test.tsx` to use the helper.
+   - Update `WorkspaceView.tsx`'s `<CommandPalette ...>` call site
+     to pass those controlled props from `commandPalette.*`.
+   - Add `CommandPalette.testUtils.tsx` (§9.2) co-located with
+     the file; update `CommandPalette.test.tsx` to use the helper.
    - `useCommandPalette.test.ts` and
      `useCommandPalette.staleClosure.test.ts` remain untouched.
    - Verification: `Ctrl+:` keyboard shortcut still toggles the
-     palette; tests pass.
-2. **`refactor(workspace): trim icon rail to identity + bottom utilities`**
+     palette; `tsc -b` passes; tests pass.
+
+2. **`refactor(workspace): trim icon rail + wire command button`** _(atomic)_
+
+   Bundles the rail rewrite and the `WorkspaceView`-side wiring
+   for the new rail props because the rail's new
+   `settingsIssueNumber` is required, so the rail and its caller
+   MUST update together.
    - Rewrite `IconRail.tsx` per §7.1 (identity slot, spacer,
      command + settings buttons; hardcoded icons + tooltips;
-     new optional props).
+     new optional props plus required `settingsIssueNumber`).
+   - Update `WorkspaceView.tsx`:
+     - Declare `SETTINGS_FOLLOWUP_ISSUE_NUMBER = 0` constant.
+     - Pass `commandPalette.open` to the rail as `onCommand`.
+     - Pass `settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}`.
    - Empty `mockNavigationItems` array; preserve
      `mockSettingsItem` export shape (§7.4).
    - Rewrite `mockNavigation.test.ts` (§9.5).
    - Rewrite `IconRail.test.tsx` per §9.1.
-   - Mechanical sweep of `WorkspaceView.*.test.tsx` siblings to
-     drop dropped-icon assertions (§9.3).
-3. **`feat(workspace): wire rail command button to palette + settings stub`**
-   - Update `WorkspaceView.tsx` to:
-     - Call the hoisted hook
-       (`const commandPalette = useCommandPalette(workspaceCommands)`).
-     - Pass `commandPalette.open` to `IconRail` as `onCommand`.
-     - Pass the controlled props to `CommandPalette`.
-     - Declare `SETTINGS_FOLLOWUP_ISSUE_NUMBER = 0` constant.
-   - Add the "rail's command button opens the palette" case to
-     `WorkspaceView.command-palette.test.tsx` (§9.3).
-4. **`docs(design): bring UNIFIED in sync with rail trim`**
-   - Apply the four UNIFIED edits per §7.5 (lines 47, 51, 193,
-     212 — rail row, status-bar shortcut, palette contract,
-     interaction-rules shortcut).
+   - Update mocks in `WorkspaceView.command-palette.test.tsx`
+     and other `WorkspaceView.*.test.tsx` siblings (§9.3) to
+     match the new rail shape; add the "rail's command button
+     opens the palette" case.
+
+3. **`docs(design): bring UNIFIED in sync with rail trim`**
+   - Apply the five UNIFIED edits per §7.5 (lines 47, 48, 51,
+     193, 212 — rail row, sidebar row, status-bar shortcut,
+     palette contract, interaction-rules shortcut).
    - This commit is doc-only.
 
 The handoff-files import (`docs/design/rail/`) landed earlier in
