@@ -168,11 +168,15 @@ Refactors `CommandPalette` into a controlled render component and moves the hook
   }
   ```
 
-- [ ] **Step 1.5: Run the test, expect FAIL (CommandPalette doesn't accept new props yet)**
+- [ ] **Step 1.5: Run the test, expect FAIL (palette ignores new props)**
 
   Run: `npx vitest run src/features/command-palette/CommandPalette.test.tsx`
 
-  Expected: TypeScript / runtime error about unknown props (`state`, `filteredResults`, etc.) on `<CommandPalette>`. This confirms the component still uses its internal hook.
+  Expected: The new cases fail because React silently ignores unknown DOM-prop-style props on a custom component — the existing `CommandPalette` (which still calls its internal `useCommandPalette()`) reads `commands` and nothing else. The new test cases either:
+  - `queryByRole('dialog')` returns null when `state.isOpen` is `true` (the prop is ignored; the internal hook keeps `isOpen` at `false` because no `Ctrl+:` was pressed), so the `getByRole(... 'Command palette')` assertion throws "Unable to find role dialog"; OR
+  - The backdrop click never fires the `close` spy because the backdrop element wasn't rendered.
+
+  TypeScript will NOT raise an error at this stage because `npx vitest run` does not run `tsc -b` and React itself does not validate prop shape. Run `npm run type-check` separately if you want to see the TS-level mismatch; that's not required for this step.
 
 - [ ] **Step 1.6: Refactor `CommandPalette.tsx` to controlled props**
 
@@ -397,6 +401,7 @@ This commit is atomic because adding the new required `settingsIssueNumber` prop
   ```tsx
   import { describe, test, expect, vi } from 'vitest'
   import { render, screen } from '@testing-library/react'
+  import userEvent from '@testing-library/user-event'
   import { IconRail } from './IconRail'
 
   describe('IconRail', () => {
@@ -454,21 +459,20 @@ This commit is atomic because adding the new required `settingsIssueNumber` prop
       expect(onCommand).toHaveBeenCalledTimes(1)
     })
 
-    test('renders the settings button as aria-disabled and interpolates the issue number', () => {
+    test('renders the settings button as aria-disabled and interpolates the issue number on hover', async () => {
+      const user = userEvent.setup()
       render(<IconRail settingsIssueNumber={42} />)
       const settings = screen.getByRole('button', { name: 'Settings' })
       expect(settings.getAttribute('aria-disabled')).toBe('true')
-      // The tooltip content sits on a wrapping element managed by
-      // <Tooltip> — assertion uses `title` if Tooltip applies it,
-      // or a fallback querying the rendered tooltip content if the
-      // Tooltip primitive renders a Radix-like data attribute.
-      expect(
-        settings
-          .closest('[data-tooltip-content]')
-          ?.getAttribute('data-tooltip-content') ??
-          settings.getAttribute('title') ??
-          ''
-      ).toContain('issue #42')
+
+      // The Tooltip primitive (src/components/Tooltip.tsx) wraps
+      // the button with Floating UI's `useRole({ role: 'tooltip' })`
+      // and renders the tooltip body inside a FloatingPortal only
+      // while the target is hovered or focused. Drive that path
+      // explicitly — without the hover, no tooltip element exists.
+      await user.hover(settings)
+      const tooltip = await screen.findByRole('tooltip')
+      expect(tooltip).toHaveTextContent('Settings panel coming — see issue #42')
     })
 
     test('does NOT fire onSettings when the disabled gear is clicked', () => {
@@ -800,13 +804,41 @@ Doc-only commit. Five single-line edits per spec §7.5. No code, no tests.
 
 - [ ] **Step 3.2: Verify the five edits landed**
 
-  Run: `grep -n "Ctrl+:" docs/design/UNIFIED.md`
+  Run each check below. All five must pass before committing.
 
-  Expected output: at least 3 matches (lines 51, 193, 212). Lines 47 and 48 don't include `Ctrl+:` but contain the new rail / sidebar copy.
+  Shortcut edits (lines 51, 193, 212 — should now use `Ctrl+:`):
 
-  Run: `grep -n "⌘K" docs/design/UNIFIED.md`
+  ```bash
+  grep -nc "Ctrl+:" docs/design/UNIFIED.md
+  ```
 
-  Expected output: empty (no remaining `⌘K` references on lines 47-212; the other shortcuts on line 212 use `⌘⇧E` etc., which are unrelated).
+  Expected output: `3` (or higher if other contexts pick up the same string). If less than 3, one of lines 51 / 193 / 212 wasn't updated.
+
+  Rail copy (line 47):
+
+  ```bash
+  grep -nF "User avatar at top. Palette + Settings at bottom." docs/design/UNIFIED.md
+  ```
+
+  Expected output: one match showing line 47 with the new copy.
+
+  Sidebar copy (line 48):
+
+  ```bash
+  grep -nF "Two tabs: **Sessions**, **Files**." docs/design/UNIFIED.md
+  ```
+
+  Expected output: one match showing line 48 with the new copy.
+
+  No stale `⌘K` references remain (the negative check uses `!` so the command exits 0 when nothing matches; without `!`, `grep` exits 1 on no-match and would fail a strict-mode runner):
+
+  ```bash
+  ! grep -nF "⌘K" docs/design/UNIFIED.md
+  ```
+
+  Expected: the command exits 0 (negation of "no match found"). If it fails (exits non-zero), `⌘K` is still present somewhere in the file — find the line and update it.
+
+  The other shortcuts on line 212 (`⌘⇧E`, `⌘⇧D`, `⌘⇧F`, `⌘⇧T`) are deliberately preserved and DO contain `⌘`, which is fine — only the bare `⌘K` is being removed.
 
 - [ ] **Step 3.3: Commit Task 3**
 
