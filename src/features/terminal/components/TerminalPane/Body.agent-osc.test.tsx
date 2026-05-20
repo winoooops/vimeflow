@@ -30,9 +30,20 @@ type DataCallback = Parameters<ITerminalService['onData']>[0]
 type ExitCallback = Parameters<ITerminalService['onExit']>[0]
 type OscHandler = (data: string) => boolean
 
+let deferWriteCallbacks = false
+const pendingWriteCallbacks: (() => void)[] = []
+
 interface ControlledTerminalService extends ITerminalService {
   emitData(sessionId: string, data: string, offsetStart?: number): void
   emitExit(sessionId: string, code?: number | null): void
+}
+
+const flushPendingWriteCallbacks = (): void => {
+  const callbacks = pendingWriteCallbacks.splice(0)
+
+  callbacks.forEach((callback) => {
+    callback()
+  })
 }
 
 class FakeTerminal {
@@ -69,6 +80,12 @@ class FakeTerminal {
 
   readonly write = vi.fn((data: string, callback?: () => void): void => {
     this.parseOsc(data)
+    if (deferWriteCallbacks && callback) {
+      pendingWriteCallbacks.push(callback)
+
+      return
+    }
+
     callback?.()
   })
 
@@ -174,6 +191,8 @@ const StatefulBody = ({
 
 describe('Body agent-emitted OSC 7', () => {
   beforeEach(() => {
+    deferWriteCallbacks = false
+    pendingWriteCallbacks.length = 0
     vi.mocked(Terminal).mockImplementation(() => new FakeTerminal() as never)
     vi.mocked(FitAddon).mockImplementation(
       () =>
@@ -195,6 +214,8 @@ describe('Body agent-emitted OSC 7', () => {
   })
 
   afterEach(() => {
+    deferWriteCallbacks = false
+    pendingWriteCallbacks.length = 0
     vi.clearAllMocks()
     clearTerminalCache()
   })
@@ -527,6 +548,48 @@ describe('Body agent-emitted OSC 7', () => {
 
     act(() => {
       service.emitExit('pty-agent')
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/tmp/worktree/child')
+    })
+
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('flushes a late write callback cwd hint after PTY exit', async () => {
+    deferWriteCallbacks = true
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/tmp/worktree"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/tmp/worktree')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+      expect(service.onExit).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData('pty-agent', '! cd child')
+    })
+
+    act(() => {
+      service.emitExit('pty-agent')
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalled()
+
+    act(() => {
+      flushPendingWriteCallbacks()
     })
 
     await waitFor(() => {

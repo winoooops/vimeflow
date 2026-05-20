@@ -204,6 +204,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const cwdPropRef = useRef(cwd)
   const agentCwdRef = useRef(cwd)
 
+  const terminalStatusRef = useRef<'idle' | 'running' | 'exited' | 'error'>(
+    'idle'
+  )
+
   // Store callbacks in refs to avoid terminal recreation when they change
   const onCwdChangeRef = useRef(onCwdChange)
   useEffect(() => {
@@ -231,6 +235,16 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     }
   }, [])
 
+  const flushAgentCwdOutputBuffer = useCallback((): void => {
+    const pendingOutput = agentCwdOutputBufferRef.current
+    if (!pendingOutput) {
+      return
+    }
+
+    agentCwdOutputBufferRef.current = ''
+    applyAgentCwdHint(`${pendingOutput}\r\n`)
+  }, [applyAgentCwdHint])
+
   const handleTerminalOutput = useCallback(
     (data: string): void => {
       const output = `${agentCwdOutputBufferRef.current}${data}`
@@ -245,6 +259,13 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
           -AGENT_CWD_HINT_BUFFER_SIZE
         )
 
+        if (
+          terminalStatusRef.current === 'exited' ||
+          terminalStatusRef.current === 'error'
+        ) {
+          flushAgentCwdOutputBuffer()
+        }
+
         return
       }
 
@@ -253,8 +274,15 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         .slice(lastLineBreakIndex + 1)
         .slice(-AGENT_CWD_HINT_BUFFER_SIZE)
       applyAgentCwdHint(completeOutput)
+
+      if (
+        terminalStatusRef.current === 'exited' ||
+        terminalStatusRef.current === 'error'
+      ) {
+        flushAgentCwdOutputBuffer()
+      }
     },
-    [applyAgentCwdHint]
+    [applyAgentCwdHint, flushAgentCwdOutputBuffer]
   )
 
   // Use terminal hook for PTY lifecycle management
@@ -273,6 +301,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     onOutput: handleTerminalOutput,
     mode,
   })
+  terminalStatusRef.current = status
 
   // Bridge workspace sessionId ↔ PTY sessionId for agent detection.
   // Use the PTY session's resolved cwd (absolute path from Rust),
@@ -315,14 +344,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       return
     }
 
-    const pendingOutput = agentCwdOutputBufferRef.current
-    if (!pendingOutput) {
-      return
-    }
-
-    agentCwdOutputBufferRef.current = ''
-    applyAgentCwdHint(`${pendingOutput}\r\n`)
-  }, [applyAgentCwdHint, status])
+    flushAgentCwdOutputBuffer()
+  }, [flushAgentCwdOutputBuffer, status])
 
   useLayoutEffect(() => {
     const wasDeferred = previousDeferFitRef.current
