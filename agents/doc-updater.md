@@ -23,17 +23,17 @@ You are a documentation specialist focused on keeping codemaps and documentation
 npx tsx scripts/codemaps/generate.ts    # Generate codemaps
 npx madge --image graph.svg src/        # Frontend dependency graph
 npx jsdoc2md src/**/*.ts                # Extract JSDoc from frontend
-cargo doc --no-deps                     # Generate Rust API docs for src-tauri
+cargo doc --manifest-path crates/backend/Cargo.toml --no-deps
 ```
 
 ## Codemap Workflow
 
 ### 1. Analyze Repository
 
-- Identify project structure (`src/` for frontend, `src-tauri/` for Rust backend, `tauri.conf.json` for config)
+- Identify project structure (`src/` for frontend, `electron/` for Electron main/preload, `crates/backend/` for Rust sidecar)
 - Map directory structure for both frontend and backend
-- Find entry points (`src/main.tsx`, `src-tauri/src/main.rs`)
-- Detect framework patterns (React components, Tauri commands, IPC types)
+- Find entry points (`src/main.tsx`, `electron/main.ts`, `electron/preload.ts`, `crates/backend/src/bin/vimeflow-backend.rs`)
+- Detect framework patterns (React components, Electron preload services, sidecar IPC commands, generated bindings)
 
 ### 2. Analyze Modules
 
@@ -47,7 +47,7 @@ Output structure:
 docs/CODEMAPS/
 ├── INDEX.md          # Overview of all areas
 ├── frontend.md       # Frontend structure (src/)
-├── tauri-backend.md  # Rust backend structure (src-tauri/src/)
+├── backend.md        # Rust sidecar structure (crates/backend/src/)
 ├── ipc.md            # IPC commands, events, and shared types
 ├── integrations.md   # External services (Claude API, etc.)
 └── workers.md        # Background tasks

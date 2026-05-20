@@ -1,8 +1,8 @@
 # Vimeflow — Full App Shell Handoff
 
-A handoff package for implementing the **Vimeflow** desktop terminal app shell in your Tauri/Rust + React-TS-Tailwind codebase.
+A handoff package for implementing the **Vimeflow** desktop terminal app shell in the current Electron + Rust-sidecar + React/TypeScript/Tailwind codebase.
 
-This bundle contains a complete, working HTML/React prototype of the entire Vimeflow application surface — multi-pane agent terminals, sessions, activity panel, bottom diff/editor panel, command palette, and global chrome. Use it as the **visual + behavioural source of truth** while you build the real thing.
+This bundle contains a complete, working HTML/React prototype of the entire Vimeflow application surface — multi-pane agent terminals, sessions, activity panel, dockable editor/diff panel, command palette, and global chrome. Use it as the **visual + behavioural source of truth** while you build the real thing.
 
 ---
 
@@ -13,8 +13,8 @@ The files in `prototype/` are a **design reference**, not production code to cop
 They were authored as a single-file HTML React+Babel prototype because that medium produced the highest-fidelity, fastest-iterating reference. **Do not lift the JSX directly into your app.** Instead:
 
 1. Read the prototype + this README.
-2. Recreate each component in your existing **React 18 + TypeScript + Tailwind** stack, using your component primitives, your icon library, your routing, and your real backend bindings.
-3. Wire pane state, sessions, and agent narratives to your **Tauri/Rust** backend (file watching, PTY processes, agent lifecycle, etc.).
+2. Recreate each component in the existing **React 19 + TypeScript + Tailwind** stack, using the repo's component primitives, Material Symbols icon font, routing, and generated sidecar bindings.
+3. Wire pane state, sessions, and agent narratives to the **Electron preload + `vimeflow-backend` Rust sidecar** (`window.vimeflow.{invoke,listen}`, PTY processes, file/git watchers, agent lifecycle, etc.).
 4. Match the **visual fidelity pixel-for-pixel** — colours, spacing, typography, focus rings, transitions are all specified below.
 
 The prototype's localStorage-backed `tweaks` system, `window.parent.postMessage` edit-mode protocol, and inline-style chains are **prototype-only conveniences**. Drop them in your real implementation.
@@ -69,6 +69,8 @@ Vimeflow is a desktop-class IDE-meets-terminal for orchestrating multiple AI cod
 | Bottom panel           | flex: `1 1 40%` when open                                    | collapsible                     |
 | Activity panel (right) | ~284 px when expanded, **36 px when collapsed**              | follows pane focus              |
 | Status bar             | 24 px fixed                                                  | global, always visible          |
+
+Production note: the prototype calls the lower surface "Bottom panel" and includes a Files tab there. The current app maps this to `DockPanel`: Editor and Diff dock bottom / top / left / right with elastic resize, while Files remains a tab in the left sidebar.
 
 All widths assume `display: flex` with `flex: 1, minWidth: 0` chains so panes never overflow. **Critical**: any CSS Grid that lays out terminal panes must use `grid-template-columns: minmax(0, 1fr) ...` — bare `1fr` lets content force min-widths and breaks the layout.
 
@@ -213,6 +215,8 @@ Follows pane focus — when user clicks Claude pane, the panel header shows `CLA
 
 ### 4.8 Bottom panel (Editor / Diff / Files)
 
+Prototype surface. In production this is `DockPanel`, currently shipping Editor and Diff only; the Files surface is the sidebar Files tab.
+
 - Tab strip at top (28 px): three tabs `<> Editor`, `≡ Diff Viewer`, `📁 Files`. Active tab gets agent-accent underline (2px). Right side: collapse `✕` button.
 - **Editor tab**: tab strip of open files (`auth.ts`, `session.ts`, `auth.test.ts`) with dirty dot, then code area with line numbers (44 px gutter `#6c7086`), syntax-highlighted by token type (keyword `#cba6f7`, string `#a6e3a1`, fn `#89b4fa`, var `#f5e0dc`, comment `#6c7086`, type `#fab387`, tag `#f38ba8`).
 - **Diff tab**: file list on left (220 px) with `+/-` counts and status badge, side-by-side hunk viewer on right with line numbers and tone-coded backgrounds (add: `rgba(125,239,161,0.08)`, rem: `rgba(255,148,165,0.08)`).
@@ -311,7 +315,7 @@ All shortcuts respect `e.metaKey || e.ctrlKey` so they work on Linux/Windows too
 
 ### 5.5 Terminal narrative streaming
 
-For the prototype, each pane streams a scripted array of lines on a 1.4–2.3s random interval. In production, replace with **real PTY output via Tauri's process API** — the line types (meta/prompt/agent/tool/output/patch) are a useful structuring abstraction; classify real output into them in your renderer.
+For the prototype, each pane streams a scripted array of lines on a 1.4–2.3s random interval. In production, this is **real PTY output from `vimeflow-backend` through `DesktopTerminalService`**; the line types (meta/prompt/agent/tool/output/patch) are a useful structuring abstraction if renderer-side classification is added later.
 
 Pause rule: when `paused` (i.e., session.state !== 'running'), stop streaming new lines but keep already-streamed lines visible.
 
@@ -494,21 +498,21 @@ export type AgentId = keyof typeof AGENTS
 
 ---
 
-## 7. Tauri/Rust integration notes
+## 7. Electron/Rust sidecar integration notes
 
-The prototype mocks all data. Real integration:
+The prototype mocks all data. The current production integration is:
 
-| Prototype                       | Replace with                                                                                                             |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `VIMEFLOW_PANE_SCRIPTS`         | PTY stream from `tauri::process::Command` per pane, streamed via channel + classified into line types in the JS renderer |
-| `VIMEFLOW_SESSIONS`             | Rust-side session registry; expose via `invoke('list_sessions')`                                                         |
-| `VIMEFLOW_TREE`                 | `notify` filewatcher + git status from `git2` crate                                                                      |
-| `VIMEFLOW_DIFF_HUNK` / `_FILES` | `git2::Repository::diff_workdir_to_index` then serialize to TS                                                           |
-| `VIMEFLOW_EDITOR_FILE`          | Read file contents on click, syntax-highlight client-side (Shiki)                                                        |
-| Activity panel context/usage    | Subscribe to agent CLI's session telemetry (Claude Code: `~/.claude/sessions/`, Codex: similar)                          |
-| Cache history                   | Aggregate from session history files                                                                                     |
+| Prototype                       | Current integration                                                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `VIMEFLOW_PANE_SCRIPTS`         | PTY streams from `portable-pty` in `crates/backend/src/terminal/`, emitted as `pty-data` events over LSP-framed stdio IPC |
+| `VIMEFLOW_SESSIONS`             | Rust-side `SessionCache`; exposed through `invoke('list_sessions')`, `spawn_pty`, `kill_pty`, `reorder_sessions`          |
+| `VIMEFLOW_TREE`                 | Sidecar filesystem commands plus live git status/watch support                                                            |
+| `VIMEFLOW_DIFF_HUNK` / `_FILES` | Sidecar git diff/status commands, including live HEAD/branch/worktree support                                             |
+| `VIMEFLOW_EDITOR_FILE`          | Sidecar file read/write commands, surfaced through the editor buffer hooks                                                |
+| Activity panel context/usage    | `useAgentStatus` subscribes to sidecar `agent-*` events from Claude Code and Codex adapters                               |
+| Cache history                   | Session cache and agent transcript/history sources, adapter-specific                                                      |
 
-The terminal pane's input footer should route keystrokes to the underlying PTY; status pip reflects Tauri-side process health.
+The terminal pane routes keystrokes to the underlying PTY through `DesktopTerminalService`; status pips reflect sidecar PTY health and agent detection state.
 
 ---
 
@@ -544,9 +548,14 @@ To view the prototype locally: serve `docs/design/handoff/prototype/` over any s
 
 ## 9. Implementation order suggestion
 
+Status as of 2026-05-20: production has completed this sequence through
+SplitView pane lifecycle and has also shipped DockPanel positioning, shared
+focus shortcuts, elastic dock resize, command-palette result styling, and
+tooltip shortcut chips. Use `docs/roadmap/progress.yaml` for current status.
+
 1. **Tokens + Tailwind config** (§6) — get the design system loaded.
 2. **App shell layout** — icon rail + sidebar + main column + status bar. Empty placeholders for the inner regions. This locks in the proportions.
-3. **Sidebar sessions list + session tabs** — read data from Rust mocks.
+3. **Sidebar sessions list + session tabs** — read data from the session manager backed by sidecar session restore.
 4. **Single TerminalPane** — header + scroll body + footer, wired to a real PTY for one agent. Ignore split-view at first.
 5. **SplitView grid** — add the 5 layouts and pane focus. **Use `minmax(0, 1fr)`**.
 6. **Activity panel** — start with always-expanded; add the collapse rail later.

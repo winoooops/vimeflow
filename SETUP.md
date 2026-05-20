@@ -1,18 +1,19 @@
 # Vimeflow Setup Guide
 
-This guide covers the current local setup for the Tauri desktop app, frontend
-tooling, git hooks, and CI parity checks.
+This guide covers the current local setup for the Electron desktop app,
+`vimeflow-backend` Rust sidecar, frontend tooling, git hooks, and CI parity
+checks.
 
 ## Prerequisites
 
 - **Node.js >=22** - `package.json` permits Node 22+, while CI and `.nvmrc`
   use Node 24. Prefer `nvm use` before installing dependencies.
-- **Rust stable** - required for `src-tauri/`, `cargo test`, Tauri dev, and
-  binding generation.
+- **Rust stable** - required for `crates/backend/`, sidecar builds, Cargo
+  tests, and binding generation.
 - **Git** - required for hooks, Vite dev git APIs, and PR workflow.
-- **Linux system packages** - required for Tauri build/test on Linux:
-  `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libappindicator3-dev`,
-  `librsvg2-dev`, and `patchelf`.
+- **Linux system packages** - `xvfb` is required for headless Electron E2E
+  runs in CI. Electron ships Chromium, so the old Tauri WebKitGTK packages are
+  no longer part of the normal setup.
 
 ## Install
 
@@ -33,7 +34,7 @@ npm run lint
 npm run format:check
 npm run type-check
 npm test
-cd src-tauri && cargo test
+cargo test --manifest-path crates/backend/Cargo.toml
 ```
 
 When Rust types exported to `src/bindings/` change, also run:
@@ -46,13 +47,12 @@ For desktop build parity:
 
 ```bash
 npm run build
-npm run tauri:build
+npm run electron:build
 ```
 
-For E2E parity, install `tauri-driver` and run the WebdriverIO suites:
+For E2E parity, run the WebdriverIO Electron suites:
 
 ```bash
-cargo install tauri-driver
 npm run test:e2e:build
 npm run test:e2e:all
 ```
@@ -61,15 +61,18 @@ npm run test:e2e:all
 
 ```bash
 npm run dev          # Vite dev server at localhost:5173
-npm run tauri:dev    # Tauri shell + Rust backend
+npm run electron:dev # Electron shell + Rust sidecar
 npm run lint         # ESLint
 npm run format       # Prettier write
 npm run type-check   # tsc -b
 npm test             # Vitest
 ```
 
-`npm run tauri:dev` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` for Linux/Wayland
-WebKitGTK stability.
+On Linux dev hosts without a working Chromium sandbox, use:
+
+```bash
+VIMEFLOW_NO_SANDBOX=1 npm run electron:dev
+```
 
 ## What Is Configured
 
@@ -94,9 +97,7 @@ WebKitGTK stability.
 
 - `.github/workflows/ci-checks.yml` - lint, format check, type check, Vitest,
   Rust tests, and generated binding verification
-- `.github/workflows/tauri-build.yml` - macOS, Windows, and Ubuntu Tauri builds
-  for app-affecting changes
-- `.github/workflows/e2e.yml` - Linux WebdriverIO + tauri-driver smoke suites
+- `.github/workflows/e2e.yml` - Linux WebdriverIO + Electron smoke suites
   for app-affecting changes
 - `.github/workflows/claude-review.yml` - Claude Code PR review
 - `.github/workflows/codex-review.yml.disabled` - historical Codex workflow,
@@ -111,16 +112,17 @@ npm run prepare
 git config core.hooksPath .husky
 ```
 
-### Vite and Tauri use different ports
+### Vite port conflicts
 
-The Tauri config points at `http://localhost:5173`, matching Vite's default
-port. If Vite falls back to another port because 5173 is occupied, stop the
-conflicting process before running `npm run tauri:dev`.
+Electron dev mode expects Vite's default port (`http://localhost:5173`). If
+Vite falls back to another port because 5173 is occupied, stop the conflicting
+process before running `npm run electron:dev`.
 
-### Linux Tauri build fails with missing WebKitGTK packages
+### Linux AppImage will not launch
 
-Install the Linux packages listed under prerequisites. The GitHub Actions
-workflows are the authoritative package list for CI.
+On dev hosts without a SUID Chromium sandbox, launch with `--no-sandbox` or
+set `VIMEFLOW_NO_SANDBOX=1` during development. On hosts without `libfuse2`,
+use AppImage's `--appimage-extract-and-run --no-sandbox` fallback.
 
 ### Generated bindings are out of date
 

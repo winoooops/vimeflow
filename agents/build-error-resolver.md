@@ -72,19 +72,19 @@ For each error:
 | `the trait X is not implemented for Y` | Add `#[derive(Serialize, Deserialize)]` or implement the required trait |
 | `mismatched types`                     | Check function signature vs. call site; fix type or add conversion      |
 | `feature X is not enabled`             | Add feature flag to `Cargo.toml` dependency: `features = ["X"]`         |
-| `cannot find -lxxx` / linker error     | Install system dependency (e.g., `libwebkit2gtk-4.0-dev` on Linux)      |
+| `cannot find -lxxx` / linker error     | Install the missing native dependency reported by Cargo or the packager |
 | `unresolved import`                    | Check `mod` declarations, `use` paths, and `pub` visibility             |
 | `unused variable / import`             | Prefix with `_` or remove; `cargo clippy` will identify these           |
 
-### 5. Tauri-Specific Build Issues
+### 5. Electron/Sidecar Build Issues
 
-| Error                                  | Fix                                                                           |
-| -------------------------------------- | ----------------------------------------------------------------------------- |
-| `tauri.conf.json` schema errors        | Validate against Tauri config schema; check `identifier`, `build.distDir`     |
-| Missing system deps (Linux)            | Install `libwebkit2gtk-4.0-dev`, `libappindicator3-dev`, `librsvg2-dev`       |
-| Missing system deps (macOS)            | Xcode command line tools: `xcode-select --install`                            |
-| `#[tauri::command]` signature mismatch | Ensure Rust return type is `Result<T, String>` or serializable type           |
-| Build config mismatch                  | Verify `build.distDir` in `tauri.conf.json` points to correct frontend output |
+| Error                          | Fix                                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Electron builder config errors | Validate `electron-builder` configuration, output directories, and sidecar extra resources       |
+| Missing system deps (Linux)    | Install AppImage/FUSE dependencies when packaging or run with the documented no-sandbox fallback |
+| Missing system deps (macOS)    | Xcode command line tools: `xcode-select --install`                                               |
+| Sidecar IPC schema mismatch    | Ensure Rust response types match generated bindings and renderer `invoke<T>()` expectations      |
+| Build config mismatch          | Verify Vite output, Electron main/preload build output, and sidecar binary path                  |
 
 ## DO and DON'T
 
@@ -123,9 +123,9 @@ rm -rf node_modules/.cache dist && npm run build
 # Reinstall frontend dependencies
 rm -rf node_modules package-lock.json && npm install
 
-# Clear Rust / Tauri build cache
+# Clear Rust / sidecar build cache
 cargo clean
-rm -rf src-tauri/target
+rm -rf crates/backend/target
 
 # Fix ESLint auto-fixable
 npx eslint . --fix
@@ -135,7 +135,7 @@ npx eslint . --fix
 
 - `npx tsc --noEmit` exits with code 0
 - `cargo check` exits with code 0
-- `npm run build` and `cargo tauri build` complete successfully
+- `npm run build`, `cargo check --manifest-path crates/backend/Cargo.toml`, and `npm run electron:build` complete successfully
 - No new errors introduced
 - Minimal lines changed (< 5% of affected file)
 - Tests still passing

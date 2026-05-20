@@ -118,16 +118,16 @@ Create detailed steps with:
 
 ## Worked Example: Adding Conversation Export Feature
 
-Here is a complete plan showing the level of detail expected. This demonstrates the Tauri planning pattern: backend command, frontend invocation, IPC types, and cross-layer tests.
+Here is a complete plan showing the level of detail expected. This demonstrates the current Electron sidecar planning pattern: backend command, frontend invocation, IPC types, and cross-layer tests.
 
 ```markdown
 # Implementation Plan: Conversation Export
 
 ## Overview
 
-Allow users to export conversations as JSON or Markdown files. The Rust backend
+Allow users to export conversations as JSON or Markdown files. The Rust sidecar
 serializes conversation data; the frontend provides a dialog to choose format and
-destination; progress is streamed via Tauri events.
+destination; progress is streamed via sidecar events.
 
 ## Requirements
 
@@ -138,25 +138,25 @@ destination; progress is streamed via Tauri events.
 
 ## Architecture Changes
 
-- New Tauri command: `export_conversation` in `src-tauri/src/commands/export.rs`
+- New sidecar command: `export_conversation` in `crates/backend/src/export.rs`
 - New IPC types: `ExportFormat` enum, `ExportProgress` event payload in shared types
 - New component: `ExportDialog.tsx` — format picker + invoke + progress display
-- Update: `src-tauri/src/main.rs` — register new command handler
+- Update: `crates/backend/src/runtime/commands.rs` — register new command handler
 
 ## Implementation Steps
 
 ### Phase 1: Rust Backend (2 files)
 
-1. **Create export command handler** (File: src-tauri/src/commands/export.rs)
-   - Action: Implement `#[tauri::command] async fn export_conversation(id, format, path)`
+1. **Create export command handler** (File: crates/backend/src/export.rs)
+   - Action: Implement `BackendState::export_conversation(id, format, path)`
      that reads conversation from SQLite, serializes to JSON or Markdown, writes to disk
-     using Tauri's path API
-   - Why: Heavy I/O and serialization belong in the Rust backend, not the webview
+     after validating the destination path
+   - Why: Heavy I/O and serialization belong in the Rust sidecar, not the renderer
    - Dependencies: None
    - Risk: Medium — must validate path is writable, handle large conversations
 
-2. **Add progress events** (File: src-tauri/src/commands/export.rs)
-   - Action: Emit `export-progress` events via `app_handle.emit_all()` during serialization
+2. **Add progress events** (File: crates/backend/src/export.rs)
+   - Action: Emit `export-progress` events through `EventSink` during serialization
    - Why: Large conversations need progress feedback to avoid perceived hang
    - Dependencies: Step 1
    - Risk: Low
@@ -164,22 +164,21 @@ destination; progress is streamed via Tauri events.
 ### Phase 2: Frontend (2 files)
 
 3. **Create ExportDialog component** (File: src/components/ExportDialog.tsx)
-   - Action: Modal with format picker (JSON/Markdown), file save dialog via
-     `@tauri-apps/api/dialog`, invoke `export_conversation` command, show progress bar
+   - Action: Modal with format picker (JSON/Markdown), save destination selection through the existing Electron/preload service, invoke `export_conversation`, show progress bar
    - Why: User-facing export flow with feedback
    - Dependencies: Step 1 (command must exist)
    - Risk: Low
 
 4. **Add IPC type definitions** (File: src/types/ipc.ts)
    - Action: Define `ExportFormat`, `ExportProgress`, and `ExportResult` TypeScript types
-     matching the Rust `#[tauri::command]` signatures
+     matching the Rust sidecar command contract and generated bindings
    - Why: Type alignment across the IPC boundary prevents runtime failures
    - Dependencies: Step 1 (must match Rust types)
    - Risk: Low
 
 ### Phase 3: Testing (3 test files)
 
-5. **Rust unit tests for serialization** (File: src-tauri/src/commands/export.rs)
+5. **Rust unit tests for serialization** (File: crates/backend/src/export.rs)
    - Action: `#[cfg(test)]` module with tests for JSON and Markdown serialization,
      edge cases (empty conversation, special characters, very long messages)
    - Why: Verify serialization correctness without IPC overhead
@@ -191,7 +190,7 @@ destination; progress is streamed via Tauri events.
      returned file matches expected content
    - Why: Validate the full IPC path — TS invoke → Rust command → file output
    - Dependencies: Steps 1, 4
-   - Risk: Medium — requires built Tauri app or test harness
+   - Risk: Medium — requires built Electron app or test harness
 
 7. **E2E export flow test** (File: tests/e2e/export.spec.ts)
    - Action: Open conversation → click Export → select format → verify file created

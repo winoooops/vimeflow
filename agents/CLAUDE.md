@@ -1,6 +1,6 @@
 # Agents — Specialized AI Agent Definitions
 
-Standalone markdown specs defining purpose, tools, model, and behavior for each agent. Each agent is self-contained and can operate without knowledge of other agents. All are tailored for the Tauri/TypeScript/Rust stack with IPC-aware patterns.
+Standalone markdown specs defining purpose, tools, model, and behavior for each agent. Each agent is self-contained and can operate without knowledge of other agents. All are tailored for the Electron/TypeScript/Rust-sidecar stack with IPC-aware patterns.
 
 ## Agent Inventory
 
@@ -13,24 +13,24 @@ Standalone markdown specs defining purpose, tools, model, and behavior for each 
 
 ### Development Phase
 
-| Agent                    | Model  | Purpose                                                 |
-| ------------------------ | ------ | ------------------------------------------------------- |
-| `code-reviewer.md`       | Sonnet | General code quality, patterns, security review         |
-| `tdd-guide.md`           | Sonnet | TDD enforcement (Red-Green-Refactor), 80%+ coverage     |
-| `typescript-reviewer.md` | Sonnet | TypeScript/JS type safety, async correctness, Tauri IPC |
+| Agent                    | Model  | Purpose                                                   |
+| ------------------------ | ------ | --------------------------------------------------------- |
+| `code-reviewer.md`       | Sonnet | General code quality, patterns, security review           |
+| `tdd-guide.md`           | Sonnet | TDD enforcement (Red-Green-Refactor), 80%+ coverage       |
+| `typescript-reviewer.md` | Sonnet | TypeScript/JS type safety, async correctness, sidecar IPC |
 
 ### Infrastructure & Security
 
-| Agent                     | Model  | Purpose                                           |
-| ------------------------- | ------ | ------------------------------------------------- |
-| `build-error-resolver.md` | Sonnet | TypeScript/Rust build errors, minimal diffs       |
-| `security-reviewer.md`    | Sonnet | OWASP Top 10, secrets, injection, Tauri allowlist |
+| Agent                     | Model  | Purpose                                                |
+| ------------------------- | ------ | ------------------------------------------------------ |
+| `build-error-resolver.md` | Sonnet | TypeScript/Rust build errors, minimal diffs            |
+| `security-reviewer.md`    | Sonnet | OWASP Top 10, secrets, injection, Electron/sidecar IPC |
 
 ### Testing & Maintenance
 
 | Agent                 | Model  | Purpose                                          |
 | --------------------- | ------ | ------------------------------------------------ |
-| `e2e-runner.md`       | Sonnet | Playwright E2E tests for Tauri webview           |
+| `e2e-runner.md`       | Sonnet | WebdriverIO E2E tests for Electron desktop shell |
 | `refactor-cleaner.md` | Sonnet | Dead code removal, unused exports, consolidation |
 | `doc-updater.md`      | Haiku  | Codemaps, documentation generation               |
 

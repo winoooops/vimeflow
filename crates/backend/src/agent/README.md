@@ -1,6 +1,6 @@
 # `agent` — Vimeflow Backend Agent Module
 
-This module owns everything that detects a CLI coding agent inside a PTY session, extracts its status / transcript / tool-call data, and emits Tauri events the frontend agent panel listens for. The design is centred on a single `AgentAdapter<R>` trait that lets each supported agent plug into a shared watcher pipeline.
+This module owns everything that detects a CLI coding agent inside a PTY session, extracts its status / transcript / tool-call data, and emits sidecar events the frontend agent panel listens for. The design is centred on a single `AgentAdapter` trait that lets each supported agent plug into a shared watcher pipeline.
 
 **Supported today:** Claude Code (Stage 1, [#152](https://github.com/winoooops/vimeflow/pull/152)) and Codex (Stage 2, [#154](https://github.com/winoooops/vimeflow/pull/154)). Aider / etc. are future stages — adding a new adapter is purely additive against the trait.
 
@@ -27,18 +27,18 @@ java -jar /path/to/plantuml.jar -tsvg crates/backend/src/agent/architecture.puml
 
 Legend:
 
-| Stereotype          | Means                                                                                    |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| `<<trait>>`         | Rust trait — the interface contract                                                      |
-| `<<struct>>`        | Concrete struct (with fields if any)                                                     |
-| `<<enum>>`          | Enum                                                                                     |
-| `<<inherent>>`      | Inherent `impl` block on a trait object — methods callable on `Arc<dyn AgentAdapter<R>>` |
-| `<<pub(crate) fn>>` | Free function (the orchestrator)                                                         |
-| `<<module>>`        | Helper module (free fns)                                                                 |
-| `..\|>`             | `impl Trait for Struct` (Rust's "realizes")                                              |
-| `*--`               | Composition (owns)                                                                       |
-| `o--`               | Aggregation (holds reference / Arc-clone)                                                |
-| `..>`               | Dependency (calls / returns)                                                             |
+| Stereotype          | Means                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| `<<trait>>`         | Rust trait — the interface contract                                                   |
+| `<<struct>>`        | Concrete struct (with fields if any)                                                  |
+| `<<enum>>`          | Enum                                                                                  |
+| `<<inherent>>`      | Inherent `impl` block on a trait object — methods callable on `Arc<dyn AgentAdapter>` |
+| `<<pub(crate) fn>>` | Free function (the orchestrator)                                                      |
+| `<<module>>`        | Helper module (free fns)                                                              |
+| `..\|>`             | `impl Trait for Struct` (Rust's "realizes")                                           |
+| `*--`               | Composition (owns)                                                                    |
+| `o--`               | Aggregation (holds reference / Arc-clone)                                             |
+| `..>`               | Dependency (calls / returns)                                                          |
 
 ---
 
@@ -52,26 +52,26 @@ crates/backend/src/agent/
 ├── architecture.svg         ← rendered (committed; regenerated from .puml)
 │
 ├── mod.rs                   ← module root + re-exports
-├── commands.rs              ← Tauri command: detect_agent_in_session
+├── commands.rs              ← BackendState helper: detect_agent_in_session
 ├── detector.rs              ← cmdline-based agent detection (agent-agnostic)
 ├── types.rs                 ← IPC contract types: AgentType, AgentStatusEvent, AgentToolCallEvent, etc.
 │
 └── adapter/
-    ├── mod.rs               ← trait AgentAdapter<R>, impl<R> dyn AgentAdapter<R>, NoOpAdapter, Tauri commands
+    ├── mod.rs               ← trait AgentAdapter, impl dyn AgentAdapter, NoOpAdapter, watcher entry helpers
     ├── base/
-    │   ├── mod.rs           ← thin orchestration facade (start_for<R>, re-exports)
+    │   ├── mod.rs           ← thin orchestration facade (start_for, re-exports)
     │   ├── diagnostics.rs   ← watcher.event / slow_event / tx_path_change support types
     │   ├── path_security.rs ← StatusSource trust_root enforcement
     │   ├── transcript_state.rs ← TranscriptState/Handle/StartStatus registry
     │   └── watcher_runtime.rs  ← notify watcher, inline read, polling fallback, WatcherHandle
     ├── types.rs             ← StatusSource, ParsedStatus, ValidateTranscriptError
     ├── claude_code/
-    │   ├── mod.rs           ← ClaudeCodeAdapter (impl AgentAdapter<R>)
+    │   ├── mod.rs           ← ClaudeCodeAdapter (impl AgentAdapter)
     │   ├── statusline.rs    ← Claude's status.json parser
     │   ├── transcript.rs    ← Claude's JSONL tail loop + per-line parsing
     │   └── test_runners/    ← vitest / cargo-test parser ecosystem
     └── codex/
-        ├── mod.rs           ← CodexAdapter (impl AgentAdapter<R>); per-attach Mutex<Option<PathBuf>> threads the rollout path from status_source to the transcript tailer
+        ├── mod.rs           ← CodexAdapter (impl AgentAdapter); per-attach Mutex<Option<PathBuf>> threads the rollout path from status_source to the transcript tailer
         ├── locator.rs       ← CodexSessionLocator: schema-driven SQLite discovery (logs DB → thread_id, threads DB → rollout_path) + Linux /proc fast-paths (resume cmdline, fd cohort, recent state) + FS-scan fallback
         ├── parser.rs        ← Codex rollout JSONL fold: session_meta + turn_context + event_msg.{task_started, task_complete, token_count} → AgentStatusEvent (driven by last_token_usage, not lifetime totals)
         └── transcript.rs    ← Codex rollout JSONL tail loop; reuses claude_code/test_runners/* to emit AgentToolCallEvent / AgentTurnEvent / test-run signals
@@ -83,7 +83,7 @@ crates/backend/src/agent/
 
 Everything outside `agent::adapter::*` interacts with the agent module through three calls — that's it.
 
-### `<dyn AgentAdapter<R>>::for_attach`
+### `<dyn AgentAdapter>::for_attach`
 
 ```rust
 pub fn for_attach(
@@ -93,7 +93,7 @@ pub fn for_attach(
 ) -> Result<Arc<Self>, String>
 ```
 
-Constructs the right adapter for a detected agent type. Returns `Arc<dyn AgentAdapter<R>>`:
+Constructs the right adapter for a detected agent type. Returns `Arc<dyn AgentAdapter>`:
 
 - `AgentType::ClaudeCode` → `ClaudeCodeAdapter` (`pid`/`pty_start` discarded)
 - `AgentType::Codex` → `CodexAdapter::new(pid, pty_start)`
@@ -101,23 +101,25 @@ Constructs the right adapter for a detected agent type. Returns `Arc<dyn AgentAd
 
 > **Resolved 2026-05-05** by [`docs/superpowers/specs/2026-05-05-codex-adapter-trait-simplification-design.md`](../../../docs/superpowers/specs/2026-05-05-codex-adapter-trait-simplification-design.md) (issue [#156](https://github.com/winoooops/vimeflow/issues/156)): `BindContext` is now private to `codex/`, the old bind error type is deleted, the trait method is `status_source(cwd, sid) -> Result<_, String>`, and codex's cold-start retry lives inside `CodexAdapter::status_source` via the `retry_locator` helper.
 
-### `<dyn AgentAdapter<R>>::start`
+### `<dyn AgentAdapter>::start`
 
 ```rust
 pub fn start(
     self: Arc<Self>,
-    app: AppHandle<R>,
+    events: Arc<dyn EventSink>,
+    pty_state: PtyState,
+    transcript_state: TranscriptState,
     session_id: String,
     cwd: PathBuf,
     state: AgentWatcherState,
 ) -> Result<(), String>
 ```
 
-Starts the watcher pipeline for a PTY session. **Owns the full lifecycle:** removes any pre-existing handle for `session_id`, logs the active-watcher count, builds the new pipeline, inserts the resulting `WatcherHandle` into `state`. The Tauri command never touches `state` directly — that's the deep-module property.
+Starts the watcher pipeline for a PTY session. **Owns the full lifecycle:** removes any pre-existing handle for `session_id`, logs the active-watcher count, builds the new pipeline, inserts the resulting `WatcherHandle` into `state`. The `BackendState` IPC method delegates into this helper; frontend-supplied input never mutates watcher state directly.
 
 `pid` is the detected agent PID (returned by `detector::detect_agent`), not the shell PID at the PTY root — Codex's `logs.process_uuid` indexes by the codex child PID. `pty_start` is captured at PTY spawn (`ManagedSession.started_at`) so the logs query can filter out PID-reuse and stale-loaded-thread matches. Both arguments are stored on `CodexAdapter` at construction (`CodexAdapter::new(pid, pty_start)` via the `for_attach(agent_type, pid, pty_start)` factory). The codex adapter wraps them in a private `BindContext` for its locator on each `status_source` call. `base::start_for` invokes `adapter.status_source(cwd, session_id)` once and codex's internal retry lives in `retry_locator` (5 attempts, 4 × 100ms inter-attempt sleeps, 400ms sleep budget on full exhaustion). Claude's impl ignores these fields — Claude's `status_source(cwd, sid)` is infallible.
 
-### `<dyn AgentAdapter<R>>::stop`
+### `<dyn AgentAdapter>::stop`
 
 ```rust
 pub fn stop(state: &AgentWatcherState, session_id: &str) -> bool
@@ -125,33 +127,38 @@ pub fn stop(state: &AgentWatcherState, session_id: &str) -> bool
 
 Stops the pipeline by dropping the `WatcherHandle` for `session_id`. Returns `true` if a handle was removed. The handle's `Drop` cascades — see [Lifecycle section](#lifecycle-watcherhandle-drop-cascade) below.
 
-### Tauri command (production entry point)
+### BackendState / IPC entry point
 
 ```rust
-#[tauri::command]
-pub async fn start_agent_watcher(
-    app_handle: tauri::AppHandle,                       // ≡ AppHandle<Wry>
-    state: tauri::State<'_, AgentWatcherState>,
-    pty_state: tauri::State<'_, crate::terminal::PtyState>,
-    session_id: String,
-) -> Result<(), String>
+impl BackendState {
+    pub async fn start_agent_watcher(&self, session_id: String) -> Result<(), String> {
+        crate::agent::adapter::start_agent_watcher_inner(
+            self.pty.clone(),
+            self.agents.clone(),
+            self.transcripts.clone(),
+            self.events.clone(),
+            session_id,
+        )
+        .await
+    }
+}
 ```
 
-Backend re-runs detection (`pty_state.get_pid` + `detector::detect_agent`) so the agent-type input is never frontend-supplied. Avoids TOCTOU between frontend detection and watcher start, and matches the project's "validate inputs server-side" pattern.
+The sidecar re-runs detection (`pty_state.get_pid` + `detector::detect_agent`) so the agent-type input is never frontend-supplied. Avoids TOCTOU between frontend detection and watcher start, and matches the project's "validate inputs server-side" pattern.
 
 ---
 
 ## The trait (provider hooks)
 
 ```rust
-pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
+pub trait AgentAdapter: Send + Sync + 'static {
     fn agent_type(&self) -> AgentType;
     fn status_source(&self, cwd: &Path, session_id: &str) -> Result<StatusSource, String>;
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String>;
-    fn validate_transcript(&self, raw: &str) -> Result<PathBuf, String>;
+    fn validate_transcript(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError>;
     fn tail_transcript(
         &self,
-        app: AppHandle<R>,
+        events: Arc<dyn EventSink>,
         session_id: String,
         cwd: Option<PathBuf>,
         transcript_path: PathBuf,
@@ -159,15 +166,15 @@ pub trait AgentAdapter<R: tauri::Runtime>: Send + Sync + 'static {
 }
 ```
 
-Each method is a "provider hook" — every concrete adapter implements all five. The trait is generic over `R: tauri::Runtime` so production (`R = Wry`) and `tauri::test::mock_builder()`-driven integration tests (`R = MockRuntime`) share a single contract.
+Each method is a "provider hook" — every concrete adapter implements all five. Events are emitted through the runtime-neutral `EventSink` trait, so production (`StdoutEventSink`) and tests (`FakeEventSink`) share a single contract.
 
-| Hook                  | Returns                            | Responsibility                                                                                                                       |
-| --------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `agent_type`          | `AgentType`                        | Self-identification — used in logs and event payloads.                                                                               |
-| `status_source`       | `Result<StatusSource, String>`     | Where the agent writes its status snapshot, plus the trust root the path must canonicalize under. Failures surface as `Err(String)`. |
-| `parse_status`        | `Result<ParsedStatus, String>`     | Parse one status snapshot into the typed `AgentStatusEvent` IPC payload. Optional transcript path.                                   |
-| `validate_transcript` | `Result<PathBuf, String>`          | Canonicalize and reject any transcript path outside this provider's trust root.                                                      |
-| `tail_transcript`     | `Result<TranscriptHandle, String>` | Spawn the per-line tail loop end-to-end — including in-flight tool-call tracking and `TestRunEmitter`.                               |
+| Hook                  | Returns                                    | Responsibility                                                                                                                       |
+| --------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `agent_type`          | `AgentType`                                | Self-identification — used in logs and event payloads.                                                                               |
+| `status_source`       | `Result<StatusSource, String>`             | Where the agent writes its status snapshot, plus the trust root the path must canonicalize under. Failures surface as `Err(String)`. |
+| `parse_status`        | `Result<ParsedStatus, String>`             | Parse one status snapshot into the typed `AgentStatusEvent` IPC payload. Optional transcript path.                                   |
+| `validate_transcript` | `Result<PathBuf, ValidateTranscriptError>` | Canonicalize and reject any transcript path outside this provider's trust root.                                                      |
+| `tail_transcript`     | `Result<TranscriptHandle, String>`         | Spawn the per-line tail loop end-to-end — including in-flight tool-call tracking and `TestRunEmitter`.                               |
 
 `TranscriptHandle::Drop` only signals stop (sets `stop_flag`); explicit `TranscriptHandle::stop(self)` joins. This matches today's `transcript.rs:94-108` behavior — Stage 1 preserves it.
 
@@ -180,7 +187,7 @@ Each method is a "provider hook" — every concrete adapter implements all five.
 Stateless struct (zero fields). Each hook delegates to a sibling module under `claude_code/`:
 
 ```rust
-impl<R: tauri::Runtime> AgentAdapter<R> for ClaudeCodeAdapter {
+impl AgentAdapter for ClaudeCodeAdapter {
     fn agent_type(&self) -> AgentType { AgentType::ClaudeCode }
     fn status_source(&self, cwd, sid) -> Result<StatusSource, String> {
         Ok(StatusSource {
@@ -191,11 +198,11 @@ impl<R: tauri::Runtime> AgentAdapter<R> for ClaudeCodeAdapter {
     fn parse_status(&self, sid, raw) -> Result<ParsedStatus, String> {
         statusline::parse_statusline(sid, raw)  // shaped to ParsedStatus
     }
-    fn validate_transcript(&self, raw) -> Result<PathBuf, String> {
+    fn validate_transcript(&self, raw) -> Result<PathBuf, ValidateTranscriptError> {
         transcript::validate_transcript_path(raw)  // ~/.claude jail
     }
-    fn tail_transcript(&self, app, sid, cwd, path) -> Result<TranscriptHandle, String> {
-        transcript::start_tailing(app, sid, path, cwd)
+    fn tail_transcript(&self, events, sid, cwd, path) -> Result<TranscriptHandle, String> {
+        transcript::start_tailing(events, sid, path, cwd)
     }
 }
 ```
@@ -208,14 +215,14 @@ The Claude-Code-specific submodules under `adapter/claude_code/`:
 
 ### `NoOpAdapter`
 
-Stage 1 fallback for `AgentType::Codex` / `Aider` / `Generic` until a real adapter ships. One field, one constructor:
+Fallback for `AgentType::Aider` / `Generic` until real adapters ship. One field, one constructor:
 
 ```rust
 pub(crate) struct NoOpAdapter {
     agent_type: AgentType,
 }
 
-impl<R: tauri::Runtime> AgentAdapter<R> for NoOpAdapter {
+impl AgentAdapter for NoOpAdapter {
     fn agent_type(&self) -> AgentType { self.agent_type.clone() }
     fn status_source(&self, cwd, sid) -> Result<StatusSource, String> {
         // Same path Claude uses → watcher's create_dir_all + watch
@@ -226,12 +233,14 @@ impl<R: tauri::Runtime> AgentAdapter<R> for NoOpAdapter {
         })
     }
     fn parse_status(&self, _, _) -> Result<ParsedStatus, String>  { Err("…no status parser".into()) }
-    fn validate_transcript(&self, _) -> Result<PathBuf, String>    { Err("…no transcript validator".into()) }
+    fn validate_transcript(&self, _) -> Result<PathBuf, ValidateTranscriptError> {
+        Err(ValidateTranscriptError::Other("…no transcript validator".into()))
+    }
     fn tail_transcript(&self, _, _, _, _) -> Result<TranscriptHandle, String> { Err("…no tailer".into()) }
 }
 ```
 
-**Why this exists:** if `for_attach` returned `Err` for unsupported variants, the frontend's exit-collapse path (`useAgentStatus.ts:139-154`, gated on `watcherStartedRef.current`) would never run after a Codex / Aider session exits — the panel would stay in `isActive: true` indefinitely. `NoOpAdapter` returns Claude's status path so the watcher starts successfully (no events ever fire because nothing writes to that path under non-Claude agents), `watcherStartedRef.current` flips to `true`, and exit-collapse runs naturally. See spec IDEA "NoOpAdapter for non-Claude agents in for_attach" for the full rationale.
+**Why this exists:** if `for_attach` returned `Err` for unsupported variants, the frontend's exit-collapse path (gated on `watcherStartedRef.current`) would never run after an unsupported agent session exits — the panel would stay in `isActive: true` indefinitely. `NoOpAdapter` returns the standard `.vimeflow/sessions/{sid}/status.json` path so the watcher starts successfully (no events ever fire because unsupported agents do not write that file), `watcherStartedRef.current` flips to `true`, and exit-collapse runs naturally. Codex no longer uses this path; it has a real adapter.
 
 ---
 
@@ -258,16 +267,18 @@ pub struct ParsedStatus {
 ## The orchestrator (`base::start_for`)
 
 ```rust
-pub(crate) fn start_for<R: tauri::Runtime>(
-    adapter: Arc<dyn AgentAdapter<R>>,
-    app: AppHandle<R>,
+pub(crate) fn start_for(
+    adapter: Arc<dyn AgentAdapter>,
+    events: Arc<dyn EventSink>,
+    pty_state: PtyState,
+    transcript_state: TranscriptState,
     session_id: String,
     cwd: PathBuf,
     state: AgentWatcherState,
 ) -> Result<(), String>
 ```
 
-Lives in `adapter/base/mod.rs`. **Private (`pub(crate)`) — production callers never see it; they go through `<dyn AgentAdapter<R>>::start`, which delegates here.**
+Lives in `adapter/base/mod.rs`. **Private (`pub(crate)`) — production callers never see it; they go through `<dyn AgentAdapter>::start`, which delegates here.**
 
 `base/mod.rs` stays intentionally small. It resolves the adapter's `StatusSource`, delegates trust-root checks to `base/path_security.rs`, removes any existing watcher for the session, logs the active-watcher count, delegates runtime construction to `base/watcher_runtime.rs`, then inserts the resulting `WatcherHandle` into `AgentWatcherState`.
 
@@ -343,10 +354,10 @@ pub struct TranscriptState {
 
 impl TranscriptState {
     pub fn new() -> Self { … }
-    pub fn start_or_replace<R: Runtime>(
+    pub fn start_or_replace(
         &self,
-        adapter: Arc<dyn AgentAdapter<R>>,
-        app: AppHandle<R>,
+        adapter: Arc<dyn AgentAdapter>,
+        events: Arc<dyn EventSink>,
         session_id: String,
         transcript_path: PathBuf,
         cwd: Option<PathBuf>,
@@ -358,15 +369,15 @@ impl TranscriptState {
 pub enum TranscriptStartStatus { Started, Replaced, AlreadyRunning }
 ```
 
-Tauri-managed via `lib.rs`'s `.manage(TranscriptState::new())`. **Visibility:** `pub #[doc(hidden)]` — production code goes through the trait surface (`AgentAdapter::start`), but four `tests/transcript_*.rs` integration tests drive `TranscriptState::start_or_replace` directly to isolate transcript-parsing assertions from watcher-orchestration assertions. `#[doc(hidden)]` keeps it out of generated docs; a doc-comment on each pub item warns "Test-only public surface — production code MUST use AgentAdapter::start instead."
+Constructed once inside `BackendState` and passed into watcher startup. **Visibility:** `pub #[doc(hidden)]` — production code goes through the trait surface (`AgentAdapter::start`), but `crates/backend/tests/transcript_*.rs` integration tests drive `TranscriptState::start_or_replace` directly to isolate transcript-parsing assertions from watcher-orchestration assertions. `#[doc(hidden)]` keeps it out of generated docs; a doc-comment on each pub item warns "Test-only public surface — production code MUST use AgentAdapter::start instead."
 
-`start_or_replace` takes `Arc<dyn AgentAdapter<R>>` so the registry can route the spawn through `adapter.tail_transcript(…)` without re-coupling `base` to any specific adapter. The replace-vs-keep identity check on `(transcript_path, cwd)` is unchanged — only the spawn site changes.
+`start_or_replace` takes `Arc<dyn AgentAdapter>` so the registry can route the spawn through `adapter.tail_transcript(…)` without re-coupling `base` to any specific adapter. The replace-vs-keep identity check on `(transcript_path, cwd)` is unchanged — only the spawn site changes.
 
 ---
 
 ## Claude parser JSON boundary
 
-There is intentionally **no** shared `agent::adapter::json` module. Only Claude uses JSON parser helpers today, so shared adapter-level helpers would be premature until Codex / Aider prove the same abstraction is useful.
+There is intentionally **no** shared `agent::adapter::json` module. Claude and Codex parse different JSON shapes, and neither has yet proven a shared adapter-level helper abstraction. Keep parser helpers provider-private until a later adapter demonstrates the same shape is useful.
 
 Parser flow calls **domain functions** first — the call site reads as Claude concepts, not JSON paths:
 
@@ -399,9 +410,9 @@ Full rationale and rejected alternatives in [`docs/decisions/2026-05-03-claude-p
 
 ## Detection (agent-agnostic)
 
-`detector.rs` is shared across every adapter — it inspects the PTY process tree and matches the bare binary name (`claude`, `codex`, `aider`) against `AgentType` variants. No adapter-specific logic; the result feeds `<dyn AgentAdapter<R>>::for_attach`.
+`detector.rs` is shared across every adapter — it inspects the PTY process tree and matches the bare binary name (`claude`, `codex`, `aider`) against `AgentType` variants. No adapter-specific logic; the result feeds `<dyn AgentAdapter>::for_attach`.
 
-`commands.rs::detect_agent_in_session` is the Tauri command the frontend polls every 2s.
+`commands.rs::detect_agent_in_session_inner` is reached through `BackendState::detect_agent_in_session`, which the frontend polls through `window.vimeflow.invoke`.
 
 ---
 
@@ -411,4 +422,4 @@ Full rationale and rejected alternatives in [`docs/decisions/2026-05-03-claude-p
 - **`docs/superpowers/plans/2026-05-03-claude-adapter-refactor-stage-1.md`** — the implementation plan (14 tasks, 91 bite-sized steps, exact code).
 - **`docs/decisions/2026-05-03-claude-parser-json-boundary.md`** — why parser helpers stay Claude-private until a second adapter exists.
 - **`rules/common/design-philosophy.md`** — the deep-module / interface-discipline principles this design is grounded in.
-- **`rules/rust/patterns.md`** — Tauri command shape, managed state, event system.
+- **`rules/rust/patterns.md`** — `BackendState`, `_inner` helper, and `EventSink` patterns.

@@ -17,7 +17,7 @@ When invoked:
    - If required checks are failing or pending, stop and report that review should wait for green CI.
    - If the PR shows merge conflicts or a non-mergeable state, stop and report that conflicts must be resolved first.
    - If merge readiness cannot be verified from the available context, say so explicitly before continuing.
-3. Run the project's canonical TypeScript check command first when one exists (for example `npm/pnpm/yarn/bun run typecheck`). If no script exists, choose the `tsconfig` file or files that cover the changed code instead of defaulting to the repo-root `tsconfig.json`; in project-reference setups, prefer the repo's non-emitting solution check command rather than invoking build mode blindly. Otherwise use `tsc --noEmit -p <relevant-config>`. Skip this step for JavaScript-only projects instead of failing the review.
+3. Run the project's canonical TypeScript check command first when one exists (for example this repo uses `npm run type-check`). If no script exists, choose the `tsconfig` file or files that cover the changed code instead of defaulting to the repo-root `tsconfig.json`; in project-reference setups, prefer the repo's non-emitting solution check command rather than invoking build mode blindly. Otherwise use `tsc --noEmit -p <relevant-config>`. Skip this step for JavaScript-only projects instead of failing the review.
 4. Run `eslint . --ext .ts,.tsx,.js,.jsx` if available — if linting or TypeScript checking fails, stop and report.
 5. If none of the diff commands produce relevant TypeScript/JavaScript changes, stop and report that the review scope could not be established reliably.
 6. Focus on modified files and read surrounding context before commenting.
@@ -66,19 +66,19 @@ You DO NOT refactor or rewrite code — you report findings only.
 - **Callback-style async**: Mixing callbacks with `async/await` — standardise on promises
 - **`==` instead of `===`**: Use strict equality throughout
 
-### HIGH -- Tauri IPC Safety
+### HIGH -- Electron/Sidecar IPC Safety
 
-- **Type misalignment across IPC**: `invoke()` call arguments and return type must exactly match the `#[tauri::command]` Rust signature — mismatches cause silent runtime failures
+- **Type misalignment across IPC**: `window.vimeflow.invoke()` call arguments and return type must match the Rust sidecar command contract and generated bindings
 - **Non-serializable IPC payloads**: Data crossing the IPC boundary must be JSON-serializable — `Date`, `Map`, `Set`, `BigInt`, functions, and `undefined` cannot cross; convert before sending
-- **Unhandled `invoke()` errors**: Every `invoke()` call must have `.catch()` or be wrapped in `try/catch` — Rust commands can return `Result::Err` at any time
-- **Missing event listener cleanup**: `listen()` / `onEvent()` calls return an `unlisten` function — must be called on component unmount to prevent memory leaks and double-firing
+- **Unhandled `invoke()` errors**: Every `invoke()` call must have `.catch()` or be wrapped in `try/catch` — sidecar commands can fail at any time
+- **Missing event listener cleanup**: `window.vimeflow.listen()` calls return an `unlisten` function — must be called on component unmount to prevent memory leaks and double-firing
 
-### HIGH -- Webview Environment
+### HIGH -- Electron Renderer Environment
 
-- **Assuming Node.js APIs**: VIBM runs in a Tauri webview, not Node.js — `fs`, `path`, `child_process`, `process.env` are unavailable; use Tauri APIs (`@tauri-apps/api`) or invoke Rust commands instead
+- **Assuming unrestricted Node.js APIs**: Vimeflow's renderer talks through the Electron preload bridge; use `window.vimeflow` or feature services instead of direct `fs`, `path`, `child_process`, or `process.env` access from React code
 - **Missing input validation at boundaries**: No schema validation (zod) on data received from IPC responses or external sources
-- **Direct file system access**: Use `@tauri-apps/api/path` and Tauri's `fs` plugin for file operations, not browser APIs or Node.js polyfills
-- **`window.__TAURI__` without guard**: Always check availability or use the `@tauri-apps/api` package which handles this internally
+- **Direct file system access**: Use the sidecar-backed filesystem services (`list_dir`, `read_file`, `write_file`) rather than browser APIs, Node polyfills, or ad hoc preload methods
+- **Bypassing the preload contract**: Do not import Electron APIs directly in renderer components; keep the context-isolated `window.vimeflow` bridge as the renderer boundary
 
 ### MEDIUM -- React / UI Framework (when applicable)
 
@@ -105,7 +105,7 @@ You DO NOT refactor or rewrite code — you report findings only.
 ## Diagnostic Commands
 
 ```bash
-npm run typecheck --if-present       # Canonical TypeScript check when the project defines one
+npm run type-check --if-present      # Canonical TypeScript check in this repo
 tsc --noEmit -p <relevant-config>    # Fallback type check for the tsconfig that owns the changed files
 eslint . --ext .ts,.tsx,.js,.jsx    # Linting
 prettier --check .                  # Format check

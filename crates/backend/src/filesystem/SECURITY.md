@@ -7,8 +7,8 @@
 
 ## Purpose
 
-This module is the Tauri IPC boundary for all filesystem access. Any
-code that reads or writes user files from the frontend webview MUST go
+This module is the sidecar IPC boundary for all filesystem access. Any
+code that reads or writes user files from the Electron renderer MUST go
 through one of the three commands in this directory (`list_dir`,
 `read_file`, `write_file`). No other module in `crates/backend` should open
 files on behalf of the webview.
@@ -92,7 +92,7 @@ The module guarantees to callers:
    either the old contents or the new, never a partial write.
 3. Commands never follow a symlink on the leaf segment.
 4. `..` in user input is rejected before any filesystem syscall.
-5. The three `#[tauri::command]` entry points never invoke `unsafe`
+5. The three sidecar command entry points never invoke `unsafe`
    Rust.
 
 ## Deferred Work
@@ -115,7 +115,7 @@ compile unit today.
 - We commit to `cargo fuzz` (see below) — fuzz harnesses live more
   naturally against a dedicated crate.
 - A CVE in this module prompts a desire to version and changelog it
-  independently of the Tauri app.
+  independently of the desktop app.
 
 ### Fuzz testing (issue #40, task 5)
 

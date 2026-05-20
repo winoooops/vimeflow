@@ -101,7 +101,7 @@ Chat messages use `role="article"` with an `aria-label` identifying the sender:
 </div>
 
 // Agent message
-<div role="article" aria-label="Message from VIBM Agent" className="...">
+<div role="article" aria-label="Message from Vimeflow Agent" className="...">
   {/* avatar + content */}
 </div>
 ```

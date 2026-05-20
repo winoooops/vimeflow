@@ -4,11 +4,11 @@
 
 This spec extends the foundation in `DESIGN.md` (tokens, surface hierarchy, typography, do's/don'ts -- still valid) with three things that were missing or contradicted across Stitch patches:
 
-1. **A canonical layout** (§2) -- resolves the 4-zone vs. 5-zone conflict.
+1. **A canonical layout** (§2) -- resolves the 4-zone / 5-zone / DockPanel drift.
 2. **A full agent-state contract** (§4) -- so users can tell what happened hours later.
 3. **Concrete component contracts** (§5) -- the API agents must honor when implementing.
 
-For quick cross-reference, the runnable prototype lives in the Claude Design project (not mirrored into this repo — view via the `claude-in-chrome` CDP recipe in `docs/design/CLAUDE.md` → "Viewing the Runnable Prototype"). Tokens are exported as code at `docs/design/tokens.css` and `docs/design/tokens.ts`.
+For quick cross-reference, use the in-repo handoff prototype under `docs/design/handoff/prototype/` first. The older Claude Design project is historical/contextual and is described in `docs/design/CLAUDE.md`. Tokens are exported as code at `docs/design/tokens.css` and `docs/design/tokens.ts`.
 
 ---
 
@@ -25,47 +25,49 @@ If a value appears in both this file and a Stitch `code.html`, use the value her
 
 ---
 
-## 2. The Five-Zone Layout
+## 2. The Current Shell Layout
 
-The original `DESIGN.md` specified a 4-zone layout. Later Stitch screens added a top navigation bar, a bookmark rail, and a bottom drawer, producing three incompatible shells. **Resolution:** five peer zones (rail · sidebar · main canvas · activity panel · status bar), no top nav, no bottom drawer. View tabs are a sub-row _inside_ the main canvas -- they are not a peer zone.
+The original `DESIGN.md` specified a 4-zone layout. Later Stitch screens added a top navigation bar, a bookmark rail, and a bottom drawer, producing incompatible shells. **Resolution:** the production shell has five outer zones (rail · sidebar · main canvas · activity panel · status bar), no top nav, and a dockable Editor/Diff `DockPanel` _inside_ the main canvas. Session tabs and the layout toolbar are sub-rows of the main canvas -- they are not peer zones.
 
 ```
 ┌──┬─────────┬────────────────────────────────────┬──────────┐
-│  │         │  View tabs  (terminal | editor...)   │          │
+│  │         │  Session tabs                         │          │
 │R │         ├────────────────────────────────────┤          │
-│a │ Sidebar │                                    │ Activity │
-│i │         │   Main canvas (current view)       │  panel   │
+│a │ Sidebar │  Layout toolbar (when sessions)    │ Activity │
+│i │         ├────────────────────────────────────┤  panel   │
 │l │         │                                    │          │
-│  │         │                                    │          │
+│  │         │   SplitView terminal canvas       │          │
+│  │         ├────────────────────────────────────┤          │
+│  │         │   DockPanel: Editor / Diff         │          │
 │  │         ├────────────────────────────────────┴──────────┤
 │  │         │   Status bar (global)                          │
 └──┴─────────┴────────────────────────────────────────────────┘
 ```
 
-| Zone               | Width                 | Surface                      | Purpose                                                                                                                                                                         |
-| ------------------ | --------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Icon rail**      | `48px`                | `--surface-container-lowest` | Brand mark (V) at top. Area switchers (Agent / Files / Editor / Diff / Context). Palette + settings + user at bottom.                                                           |
-| **Sidebar**        | `272px` (248 compact) | `--surface-container-low`    | Three tabs: **Sessions**, **Files**, **Context**. Shows project switcher at top.                                                                                                |
-| **Main canvas**    | flex                  | `--surface`                  | Hosts the current view. A `40px` **view-tabs sub-row** sits at the top (`--surface`) for terminal / editor / diff / files switching -- sub-row of main canvas, not a peer zone. |
-| **Activity panel** | `320px`               | `--surface-container-low`    | Status dot, meters (context, 5h usage, turns), current action, activity feed. Optional -- collapsible on narrow windows, but always visible >=1280px.                           |
-| **Status bar**     | `24px tall`           | `--surface-container-lowest` | Global: `vimeflow` - version - context smiley - turn count - `⌘K` hint.                                                                                                         |
+| Zone               | Width              | Surface                      | Purpose                                                                                                        |
+| ------------------ | ------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Icon rail**      | `48px`             | `--surface-container-lowest` | Brand mark (V) at top. Project/navigation actions, palette, settings, and user affordances.                    |
+| **Sidebar**        | `272px` resizable  | `--surface-container-low`    | **Sessions** and **Files** tabs. Shows session rows and file tree scoped to the active pane cwd.               |
+| **Main canvas**    | flex               | `--surface`                  | Hosts session tabs, layout switcher, `SplitView` terminal panes, and the dockable Editor/Diff `DockPanel`.     |
+| **Activity panel** | auto / collapsible | `--surface-container-low`    | Status dot, meters (context, 5h usage, turns), current action, activity feed. Scoped to the active pane's PTY. |
+| **Status bar**     | `24px tall`        | `--surface-container-lowest` | Global: `vimeflow` - version - context smiley - turn count - `⌘K` hint.                                        |
 
 ### Rules
 
 - **No floating brand header.** The brand mark lives at the top of the icon rail only. Rail, not banner.
-- **View tabs are scoped to the main region.** They switch the _view of the current session_. They do NOT span the full header width; the sidebar sits flush against them.
-- **No bottom drawer.** Editor, diff, files, and context all mount in the main canvas, not a drawer. Drawers were a Stitch detour -- they fight the 5-zone layout.
+- **Session tabs and layout controls are scoped to the main region.** They do NOT span the full header width; the sidebar sits flush against them.
+- **DockPanel is inside the main canvas.** The old `BottomDrawer` component is gone. Editor and Diff mount in `DockPanel`, which can dock bottom / top / left / right and resize elastically. Files remains a sidebar tab in the current app.
 - **No persistent chat pane.** Agent interaction happens in the **Terminal** view. The deprecated `chat_or_main/` directory should not be referenced for new work.
 
 ---
 
-## 3. Views (what renders in the main canvas)
+## 3. Main Canvas Surfaces
 
-All four mount inside the main canvas. Switching is instant -- no page-level transitions.
+The main canvas is terminal-first. Session tabs select the active session; `SplitView` renders the active session's terminal panes; `DockPanel` hosts Editor / Diff when open. Files live in the sidebar.
 
 ### 3.1 Terminal (Agent Workspace)
 
-The primary view. Streams an agent narrative.
+The primary surface. It renders 1-4 xterm.js panes for the active session using `single`, `vsplit`, `hsplit`, `threeRight`, or `quad`.
 
 - **Prompt line:** `{success-muted} path` - `{primary-container} git:(branch)` - `{on-surface} cmd`
 - **Agent output:** prefixed with `∴` in `--primary-container` at column 0.
@@ -74,23 +76,23 @@ The primary view. Streams an agent narrative.
 - **Input bar:** pinned bottom, status dot, `>` prompt in `--primary-container`. Placeholder: `send a message or command (:help)`.
 - **Streaming behavior:** one event every 1.3-2s while state is `running`; stops immediately the moment state leaves `running` (i.e. on `awaiting`, `completed`, `errored`, or `idle`).
 
-### 3.2 Editor
+### 3.2 Editor (DockPanel)
 
 - Breadcrumb header with `MODIFIED` badge when dirty.
 - Gutter: right-aligned line numbers in `--outline-variant`, `tabular-nums`, 40px wide.
 - Cursor line: `background: rgba(203,166,247,0.06)` + `border-left: 2px solid --primary-container`.
 - Status bar (inside the view, 24px): `TS - Ln X, Col Y - UTF-8 - LF ─── ● agent is editing`.
 
-### 3.3 Diff
+### 3.3 Diff (DockPanel)
 
 - Two-column side-by-side. Left label: `HEAD`. Right label: `WORKING`.
 - Changed-files rail on the left (240px): each row with `M|A|D` indicator + `+N / −N`.
 - Commit meta strip at top: short SHA chip, commit subject, `author - relative-time`.
 - Footer action bar: `Reject` (secondary) + `Stage hunk` (primary gradient).
 
-### 3.4 Files
+### 3.4 Files (Sidebar)
 
-Full-canvas tree. Git status indicators on modified files: `M` (`#f0c674`), `A` (`--success-muted`), `D` (`--tertiary`). Expanding a file opens the **Editor** view with that file focused.
+Sidebar tree. Git status indicators on modified files: `M` (`#f0c674`), `A` (`--success-muted`), `D` (`--tertiary`). Selecting a file opens it in the Editor dock surface with dirty-file guards.
 
 ---
 
@@ -208,8 +210,8 @@ Drives off a single integer `pct`. Breakpoints in `tokens.ts::contextSmiley`. Vi
 - **Streaming terminal** -- agent output arrives token-by-token. Each new line fades up 4-6px over 180ms. The cursor block (`--primary-container`, `8×15px`) blinks at 1.1s steps when input is active.
 - **Status-dot glow** -- the 3-ring outer shadow uses the dot's own color at 40-45% alpha. Do not substitute drop-shadows; they compound poorly against glass.
 - **Approval affordance** -- `awaiting` state surfaces two buttons: primary gradient for Approve, ghost for Deny. Approving snaps state to `running` without a page reload; the activity feed prepends a `user` event with the choice.
-- **Session switching** -- clicking a session in the sidebar swaps the main canvas content, preserves the current view (terminal stays terminal, editor stays editor), and animates the activity panel contents -- not the panel itself.
-- **Keyboard shortcuts** -- ⌘K palette - ⌘⇧E editor - ⌘⇧D diff - ⌘⇧F files - ⌘⇧T terminal - Esc closes overlays. Document discoverable via `:help`.
+- **Session switching** -- clicking a session in the sidebar swaps the active session tab and terminal canvas, preserving open dock state where possible, and animates the activity panel contents -- not the panel itself.
+- **Keyboard shortcuts** -- `Mod+1-4` focuses panes, `Mod+\` cycles layout, `Mod+E` opens/focuses Editor, `Mod+G` opens/focuses Diff, `Mod+B` returns focus to Terminal, `⌘K` / `Ctrl+K` toggles the command palette, Esc closes overlays. Issue #225 tracks the remaining in-UI discovery surface for `Mod+\` and `Mod+B`.
 
 ---
 
@@ -228,7 +230,7 @@ Do not invent a third density. If a user asks for more density, tighten the _con
 
 - ❌ **Top navigation bar spanning the full window** -- violates the 5-zone layout.
 - ❌ **Bookmark-style icon rail with rounded 64px tiles** -- the rail is 48px, icons are 18-22px.
-- ❌ **Bottom drawer for the editor** -- editor is a view, not a drawer.
+- ❌ **Legacy BottomDrawer** -- use the current `DockPanel` pattern for Editor/Diff; do not reintroduce the old bottom-only drawer.
 - ❌ **Emoji as primary iconography** -- use Material Symbols Outlined. Emoji is reserved for the context smiley only.
 - ❌ **Pure `#000` backgrounds** -- always use a `--surface-*` token. The terminal view is `--surface` (`#121221`), never black.
 - ❌ **1px borders for sectioning** -- tonal shift only. Use `outline-variant` at <=15% alpha if you truly must.

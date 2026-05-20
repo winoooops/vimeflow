@@ -67,7 +67,7 @@ For each design decision, document:
 
 ### 2. Scalability (Desktop Context)
 
-- Data volume handling (large conversation histories, many sessions)
+- Data volume handling (large session histories, transcripts, and many panes)
 - Memory footprint management (efficient caching, lazy loading)
 - Startup time optimization (deferred initialization, background loading)
 - Concurrent operation safety (async Rust, Mutex-guarded state)
@@ -128,16 +128,16 @@ For each design decision, document:
 For significant architectural decisions, create ADRs:
 
 ```markdown
-# ADR-001: Use SQLite for Local Conversation Storage
+# ADR-001: Use SQLite for Local Session Metadata
 
 ## Context
 
-VIBM needs persistent storage for coding agent conversations, sessions, and metadata
-on the user's local machine. Must handle thousands of conversations with fast search.
+Vimeflow needs persistent storage for coding agent sessions, transcripts, and metadata
+on the user's local machine. Must handle thousands of sessions with fast search.
 
 ## Decision
 
-Use SQLite via rusqlite in the Tauri backend with WAL mode enabled.
+Use SQLite via rusqlite in the Rust sidecar with WAL mode enabled.
 
 ## Consequences
 
@@ -151,8 +151,8 @@ Use SQLite via rusqlite in the Tauri backend with WAL mode enabled.
 
 ### Negative
 
-- Single-writer limitation (mitigated by Mutex-guarded access in Tauri state)
-- No built-in real-time subscriptions (use Tauri events instead)
+- Single-writer limitation (mitigated by `BackendState` ownership and narrow locks)
+- No built-in real-time subscriptions (use sidecar events instead)
 - Schema migrations must be managed in application code
 
 ### Alternatives Considered
@@ -221,31 +221,31 @@ Watch for these architectural anti-patterns:
 - **Leaky Interface**: Public APIs that force callers to manage validation,
   retries, cleanup, or internal state ordering
 
-## Project-Specific Architecture (VIBM)
+## Project-Specific Architecture (Vimeflow)
 
-Architecture for a Tauri desktop application — coding agent conversation manager:
+Architecture for an Electron desktop application — terminal-first AI coding agent workspace manager:
 
 ### Current Architecture
 
-- **Frontend**: TypeScript webview (React), IPC invoke calls to Rust backend
-- **Backend**: Rust (Tauri commands, managed state via `tauri::State`, event system)
-- **Storage**: Local SQLite via rusqlite (WAL mode, FTS5 for search)
-- **IPC**: Tauri command/event system (JSON serialization boundary)
-- **AI Integration**: Claude API calls from Rust backend, streamed to frontend via events
+- **Frontend**: React + TypeScript renderer, routed through the Electron preload `window.vimeflow` bridge
+- **Backend**: Rust sidecar under `crates/backend/`, centered on `BackendState` and runtime-neutral command helpers
+- **Storage**: Project filesystem and git state; agent adapters read external agent state such as Codex SQLite databases when needed
+- **IPC**: Electron main process spawns the sidecar and communicates over LSP-framed JSON stdio; preload exposes typed `invoke` / `listen`
+- **AI Integration**: Terminal-first CLI agents (Claude Code, Codex) run in PTY panes and are detected/observed by the sidecar
 
 ### Key Design Decisions
 
-1. **Tauri IPC Boundary**: All heavy logic in Rust; frontend is a thin UI layer invoking commands
-2. **Managed State**: Application state behind `Mutex<T>` in Tauri managed state
-3. **Event-Driven Updates**: Tauri event system for real-time streaming and progress feedback
+1. **Sidecar IPC Boundary**: All privileged filesystem, PTY, git, and agent-observability logic lives in Rust; the renderer invokes commands through preload services
+2. **Managed State**: `BackendState` owns terminal, filesystem, git, transcript, and agent-watcher state with narrow synchronization boundaries
+3. **Event-Driven Updates**: `EventSink` publishes stdout, git, and agent events back to the renderer
 4. **Immutable Patterns**: Spread operators in TypeScript, owned values in Rust
-5. **Many Small Files**: High cohesion, low coupling across both `src/` and `src-tauri/src/`
+5. **Feature Modules**: High cohesion, low coupling across both `src/features/` and `crates/backend/src/`
 
 ### Scalability Plan (Desktop Context)
 
-- **100 conversations**: Current architecture sufficient
-- **1K conversations**: Add pagination, lazy loading, indexed search via FTS5
-- **10K conversations**: Background indexing, virtual scrolling in UI, database vacuuming
-- **100K conversations**: Conversation archival, incremental search, memory-mapped reads
+- **100 sessions**: Current architecture sufficient
+- **1K sessions**: Add pagination, lazy loading, indexed search via FTS5
+- **10K sessions**: Background indexing, virtual scrolling in UI, database vacuuming
+- **100K sessions**: Transcript archival, incremental search, memory-mapped reads
 
 **Remember**: Good architecture enables rapid development, easy maintenance, and confident scaling. The best architecture is simple, clear, and follows established patterns.

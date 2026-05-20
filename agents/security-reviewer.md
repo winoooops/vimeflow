@@ -42,13 +42,13 @@ cargo clippy -- -W clippy::all           # Rust linting with all warnings
 3. **Sensitive Data** — API keys/tokens stored securely (OS keychain, not plaintext)? Logs sanitized? PII not leaked?
 4. **XXE** — XML parsers configured securely? External entities disabled?
 5. **Broken Access** — IPC commands validate caller context? File access scoped to allowed directories?
-6. **Misconfiguration** — Debug mode off in release builds? Tauri allowlist least-privilege? DevTools disabled in production?
+6. **Misconfiguration** — Debug mode off in release builds? Electron context isolation and preload exposure least-privilege? DevTools disabled or explicitly justified in production?
 7. **XSS / Webview Injection** — CSP configured in tauri.conf.json? Output escaped? No `innerHTML` with IPC data?
 8. **Insecure Deserialization** — IPC payloads deserialized safely on Rust side? serde attributes restrictive?
 9. **Known Vulnerabilities** — `npm audit` and `cargo audit` both clean?
 10. **Insufficient Logging** — Security-relevant events logged? Error details not exposed to webview?
 
-> **Desktop note**: CSRF and CORS are generally not relevant for Tauri desktop apps (no cross-origin web requests to local backend). Focus instead on IPC injection and webview XSS.
+> **Desktop note**: CSRF and CORS are generally not relevant for this single-user Electron desktop app. Focus instead on IPC injection, preload exposure, sidecar command validation, and renderer XSS.
 
 ### 3. Code Pattern Review
 
@@ -67,19 +67,19 @@ Flag these patterns immediately:
 | No rate limiting              | HIGH     | Add `express-rate-limit`        |
 | Logging passwords/secrets     | MEDIUM   | Sanitize log output             |
 
-## Tauri-Specific Security
+## Electron/Sidecar Security
 
-- **Tauri allowlist review** — Audit `tauri.conf.json` for least privilege; disable unused APIs (shell, fs, dialog, http) and scope allowed paths narrowly
-- **IPC boundary validation** — All `#[tauri::command]` handlers must validate and sanitize inputs; the webview is an untrusted boundary
+- **Preload bridge review** — Audit the `window.vimeflow` API for least privilege; expose only explicit invoke/listen helpers and avoid leaking raw Node/Electron primitives into the renderer
+- **IPC boundary validation** — All sidecar command handlers and `_inner` helpers must validate and sanitize inputs; the renderer is an untrusted boundary
 - **`unsafe` code audit** — Every `unsafe` block must have a `// SAFETY:` comment explaining the invariant; flag any `unsafe` without justification
-- **CSP for webview** — Content Security Policy must be set in `tauri.conf.json` security section; disallow `unsafe-inline` and `unsafe-eval` in production
-- **No shell execution with user input** — Never pass IPC-received data to `std::process::Command` or Tauri shell plugin without strict allowlisting
-- **File system scoping** — Tauri's `fs` scope in the allowlist must restrict access to app-specific directories only
+- **Renderer hardening** — Keep context isolation enabled, avoid `nodeIntegration` in the renderer, and keep CSP tight enough to block injected script execution in production
+- **No shell execution with user input** — Never pass IPC-received data to `std::process::Command` or Electron shell APIs without strict allowlisting
+- **File system scoping** — All renderer-initiated file access must go through the Rust sidecar filesystem sandbox and stay within its documented scope
 
 ## Key Principles
 
 1. **Defense in Depth** — Multiple layers of security
-2. **Least Privilege** — Minimum permissions required (Tauri allowlist, fs scope)
+2. **Least Privilege** — Minimum preload surface, sidecar command surface, and filesystem scope
 3. **Fail Securely** — Errors should not expose data
 4. **Don't Trust Input** — Validate and sanitize everything at the IPC boundary
 5. **Update Regularly** — Keep both npm and Cargo dependencies current

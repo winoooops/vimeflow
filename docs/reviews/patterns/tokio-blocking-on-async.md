@@ -2,7 +2,7 @@
 id: tokio-blocking-on-async
 category: backend
 created: 2026-05-04
-last_updated: 2026-05-17
+last_updated: 2026-05-20
 ref_count: 1
 ---
 
@@ -10,17 +10,14 @@ ref_count: 1
 
 ## Summary
 
-`#[tauri::command] pub async fn` runs on a tokio worker thread. Any
+Async sidecar command handlers run on Tokio worker threads. Any
 `std::thread::sleep`, blocking filesystem I/O (`std::fs::canonicalize`,
-`std::fs::read_to_string` against large files), CPU-bound loops, or
-synchronous SQLite queries inside that command body block the worker
-until they return — starving every other future scheduled on the same
-thread. The repo's git-watcher command demonstrates the correct shape:
-keep the synchronous "inner" function but call it from the async outer
-via `tokio::task::spawn_blocking(move || inner(...))`. When wrapping
-sync work for an async Tauri command, prefer cloning `&State<T>` /
-`AppHandle<R>` references into owned values BEFORE the move, then
-threading them into the blocking closure.
+`std::fs::read_to_string` against large files), CPU-bound loops, or synchronous
+SQLite queries inside that async body block the worker until they return —
+starving every other future scheduled on the same thread. Keep synchronous
+`*_inner` work isolated and call it via `tokio::task::spawn_blocking(move ||
+inner(...))` when it cannot be made async. Older findings below preserve their
+original Tauri command wording.
 
 ## Findings
 

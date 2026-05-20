@@ -34,24 +34,25 @@ Full xterm.js terminal integrated with the `vimeflow-backend` Rust sidecar via E
 
 - **DesktopTerminalService** — singleton renderer-side bridge between xterm.js and `portable-pty` (renamed from `TauriTerminalService` in PR-D3)
 - Rust PTY commands: spawn, write, resize, kill — dispatched through `BackendState` methods; stdout streamed via `StdoutEventSink` events
-- Session caching per tab, multi-tab terminal support
+- Session caching per tab plus per-session multi-pane terminal layouts
 - ResizeObserver + FitAddon for responsive terminal sizing
 - WebGL renderer with Catppuccin Mocha theme
 
-### Workspace Shell (Phase 2 + UI Handoff Steps 1-3)
+### Workspace Shell (Phase 2 + UI Handoff)
 
 A terminal-first workspace inspired by IDE + terminal multiplexer patterns:
 
 - **Icon Rail** — project avatars and navigation
-- **Sidebar** — handoff-styled session list with status indicators, subtitles, state pills, and line deltas
+- **Sidebar** — Sessions / Files tabs, handoff-styled session rows, status indicators, subtitles, state pills, and line deltas
 - **Session Tabs** — browser-style tabs wired to `useSessionManager`
-- **Terminal Zone** — primary workspace area (xterm.js terminals)
-- **Bottom Drawer** — editor and diff panels under the terminal zone
-- **Agent Activity Panel** — status, metrics, collapsible sections
-- **Context Switcher** — Files / Editor / Diff tabs in a top tab bar
+- **Terminal Zone** — primary workspace area with `SplitView` layouts (`single`, `vsplit`, `hsplit`, `threeRight`, `quad`) and 1-4 real xterm.js panes per session
+- **Layout Switcher** — toolbar for passive layout changes plus `Mod+1-4` pane focus and `Mod+\` layout cycling
+- **DockPanel** — editor and diff panels docked bottom / top / left / right with elastic resizing and keyboard-adjustable handles
+- **Agent Activity Panel** — status, metrics, collapsible sections, scoped to the active pane's PTY
+- **Context Switcher** — Sessions / Files tabs in the left sidebar; Editor / Diff live in the dock
 - **Status Bar** — compact workspace status row
 
-Current UI handoff progress is tracked in [`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml): steps 1-3 are done (`#171`, `#173`, `#174`); the single `TerminalPane` handoff step is next.
+Current UI handoff progress is tracked in [`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml). Steps 1-5c2 are done (`#171`, `#173`, `#174`, `#190`, `#198`, `#199`, `#203`, `#204`), and follow-up chrome work has landed for DockPanel positioning / elastic resize / shared focus / shortcut tooltips (`#215`, `#218`, `#219`, `#224`). Remaining visual work includes auto-grow on layout pick, activity-panel polish, and the open shortcut-discovery issue for `Mod+\` / `Mod+B` ([#225](https://github.com/winoooops/vimeflow/issues/225)).
 
 ### Agent Status Sidebar (Phase 4)
 
@@ -75,15 +76,15 @@ Design specs: [`2026-04-12-agent-status-sidebar/`](docs/superpowers/specs/2026-0
 
 ### Feature Modules
 
-| Module              | Description                                                                                                                 |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **terminal**        | xterm.js + sidecar PTY IPC bridge, session management                                                                       |
-| **editor**          | IDE-style tabbed editor — CodeMirror 6, vim mode (@replit/codemirror-vim), vim status bar                                   |
-| **diff**            | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard)                                      |
-| **files**           | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop                                             |
-| **command-palette** | Vim-style `:` palette (global shortcut, fuzzy match, namespace drill-in) — built-in command registry shipping incrementally |
-| **agent-status**    | Real-time agent observability panel — multi-agent (Claude Code + Codex) via the `AgentAdapter` trait                        |
-| **workspace**       | Layout shell composing all zones above                                                                                      |
+| Module              | Description                                                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **terminal**        | xterm.js + sidecar PTY IPC bridge, session management                                                                         |
+| **editor**          | IDE-style tabbed editor — CodeMirror 6, vim mode (@replit/codemirror-vim), vim status bar                                     |
+| **diff**            | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard)                                        |
+| **files**           | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop                                               |
+| **command-palette** | Vim-style `:` palette (global shortcut, fuzzy match, namespace drill-in) — built-in command registry shipping incrementally   |
+| **agent-status**    | Real-time agent observability panel — multi-agent (Claude Code + Codex) via the `AgentAdapter` trait                          |
+| **workspace**       | Layout shell composing the rail, sidebar, session tabs, SplitView terminal canvas, dock panel, status bar, and activity panel |
 
 ![Editor with vim mode — `:w` typed, status bar shows -- NORMAL --](docs/media/editor-vim.png)
 
@@ -219,7 +220,7 @@ docs/design/DESIGN.md       # UI design system (single source of truth)
 
 src/
 ├── features/
-│   ├── workspace/          # Workspace shell, session tabs/sidebar, bottom drawer
+│   ├── workspace/          # Workspace shell, session tabs/sidebar, DockPanel
 │   ├── terminal/           # xterm.js + DesktopTerminalService IPC bridge
 │   ├── editor/             # Tabbed code editor with CodeMirror 6 + vim mode
 │   ├── diff/               # Lazygit-style diff viewer
@@ -276,15 +277,15 @@ Lifeline is the dedicated workflow plugin for Vimeflow's AI-native development l
 
 ## Roadmap
 
-| Phase      | Status      | Description                                                      |
-| ---------- | ----------- | ---------------------------------------------------------------- |
-| Phase 1    | Done        | Tauri scaffold, Rust compilation, CI green                       |
-| Phase 2    | Done        | Workspace layout shell (4-zone grid, all components)             |
-| Phase 3    | Done        | Terminal core (xterm.js + sidecar PTY IPC)                       |
-| Phase 4    | Done        | Agent status sidebar (detection, statusline bridge, UI)          |
-| UI Handoff | In progress | Steps 1-3 done: tokens/registry, app shell, sidebar/session tabs |
-| Phase 5    | Planned     | Session management + persistence/state                           |
-| Phase 6+   | Planned     | Remaining watcher, context-panel, usage, and desktop polish work |
+| Phase      | Status      | Description                                                                 |
+| ---------- | ----------- | --------------------------------------------------------------------------- |
+| Phase 1    | Done        | Historical Tauri scaffold; superseded by the Electron sidecar runtime       |
+| Phase 2    | Done        | Workspace layout shell                                                      |
+| Phase 3    | Done        | Terminal core (xterm.js + Electron-sidecar PTY IPC)                         |
+| Phase 4    | Done        | Agent status sidebar (Claude Code / Codex detection, telemetry, UI)         |
+| UI Handoff | In progress | Multi-pane terminal canvas and DockPanel landed; remaining polish continues |
+| Phase 5    | Planned     | Durable session persistence/state                                           |
+| Phase 6+   | Planned     | Remaining context, usage, and desktop polish work                           |
 
 Progress tracked in [`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml).
 
