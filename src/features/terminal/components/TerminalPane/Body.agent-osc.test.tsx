@@ -1,6 +1,7 @@
 // cspell:ignore worktree worktrees
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, render, waitFor } from '@testing-library/react'
+import { type ReactElement, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -132,6 +133,32 @@ const restoreData = (sessionId: string, cwd: string): RestoreData => ({
   replayEndOffset: 0,
   bufferedEvents: [],
 })
+
+const StatefulBody = ({
+  initialCwd,
+  service,
+  onCwdChange,
+}: {
+  initialCwd: string
+  service: ITerminalService
+  onCwdChange: (cwd: string) => void
+}): ReactElement => {
+  const [cwd, setCwd] = useState(initialCwd)
+
+  return (
+    <Body
+      sessionId="pty-agent"
+      cwd={cwd}
+      service={service}
+      restoredFrom={restoreData('pty-agent', initialCwd)}
+      mode="attach"
+      onCwdChange={(nextCwd): void => {
+        setCwd(nextCwd)
+        onCwdChange(nextCwd)
+      }}
+    />
+  )
+}
 
 describe('Body agent-emitted OSC 7', () => {
   beforeEach(() => {
@@ -339,6 +366,71 @@ describe('Body agent-emitted OSC 7', () => {
     })
 
     expect(onCwdChange).toHaveBeenCalledWith('/tmp/worktree')
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('ignores OSC 7 updates for the current cwd', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/tmp/worktree"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/tmp/worktree')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData('pty-agent', '\x1b]7;file://host/tmp/worktree\x07')
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalled()
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('preserves a split agent cd hint across an OSC cwd prop update', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <StatefulBody
+        initialCwd="/old"
+        service={service}
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '\x1b]7;file://host/tmp/worktree\x07! cd child'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/tmp/worktree')
+    })
+
+    act(() => {
+      service.emitData('pty-agent', '\r\n')
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/tmp/worktree/child')
+    })
+
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 

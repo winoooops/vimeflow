@@ -185,6 +185,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const flushFitSessionIdRef = useRef<string | null>(null)
   const pendingDeferredFitFlushRef = useRef(false)
   const agentCwdOutputBufferRef = useRef('')
+  const cwdPropRef = useRef(cwd)
   const agentCwdRef = useRef(cwd)
   const lastAgentCwdHintRef = useRef<string | null>(null)
 
@@ -195,10 +196,16 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   }, [onCwdChange])
 
   useEffect(() => {
-    agentCwdOutputBufferRef.current = ''
+    cwdPropRef.current = cwd
     agentCwdRef.current = cwd
     lastAgentCwdHintRef.current = null
-  }, [cwd, sessionId])
+  }, [cwd])
+
+  useEffect(() => {
+    agentCwdOutputBufferRef.current = ''
+    agentCwdRef.current = cwdPropRef.current
+    lastAgentCwdHintRef.current = null
+  }, [sessionId])
 
   const handleTerminalOutput = useCallback((data: string): void => {
     const output = `${agentCwdOutputBufferRef.current}${data}`
@@ -487,7 +494,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       // output both arrive through xterm's parser, so this stays pane-local.
       newTerminal.parser.registerOscHandler(7, (data) => {
         const path = parseOsc7Cwd(data)
-        if (path) {
+        if (path && path !== agentCwdRef.current) {
           agentCwdRef.current = path
           lastAgentCwdHintRef.current = null
           onCwdChangeRef.current?.(path)
