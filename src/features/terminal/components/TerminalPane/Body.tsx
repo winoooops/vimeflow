@@ -341,19 +341,19 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
             -AGENT_CWD_HINT_BUFFER_SIZE
           )
 
-      if (cwdHint) {
+      if (cwdHint !== null) {
         logAgentCwdDebug('text-hint', {
           sessionId,
           previousCwd,
           nextCwd: cwdHint,
           changed: cwdHint !== previousCwd,
         })
-      }
 
-      if (shouldApplyCwdHint) {
-        agentCwdSourceRef.current = 'text-hint'
-        agentCwdRef.current = cwdHint
-        onCwdChangeRef.current?.(cwdHint)
+        if (shouldApplyCwdHint) {
+          agentCwdSourceRef.current = 'text-hint'
+          agentCwdRef.current = cwdHint
+          onCwdChangeRef.current?.(cwdHint)
+        }
       }
     },
     [sessionId]
