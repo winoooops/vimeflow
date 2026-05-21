@@ -55,13 +55,14 @@ export interface SessionManager {
   restartSession: (id: string) => void
   renameSession: (id: string, name: string) => void
   reorderSessions: (reordered: Session[]) => void
+  /** Update a pane's live cwd and the backend PTY cwd cache. */
   updatePaneCwd: (sessionId: string, paneId: string, cwd: string) => void
   updatePaneAgentType: (
     sessionId: string,
     paneId: string,
     agentType: Session['agentType']
   ) => void
-  /** Compatibility wrapper until workspace consumers migrate to pane ids. */
+  /** Update the stable session baseline cwd; terminal output uses pane cwd. */
   updateSessionCwd: (id: string, cwd: string) => void
   /** Compatibility wrapper until workspace consumers migrate to pane ids. */
   updateSessionAgentType: (id: string, agentType: Session['agentType']) => void
@@ -1192,23 +1193,18 @@ export const useSessionManager = (
     []
   )
 
-  const updateSessionCwd = useCallback(
-    (id: string, cwd: string): void => {
-      const target = sessionsRef.current.find((s) => s.id === id)
-      if (!target) {
-        return
-      }
+  const updateSessionCwd = useCallback((id: string, cwd: string): void => {
+    const target = sessionsRef.current.find((s) => s.id === id)
+    if (!target) {
+      return
+    }
 
-      setSessions((prev) =>
-        prev.map((session) =>
-          session.id === id ? { ...session, workingDirectory: cwd } : session
-        )
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === id ? { ...session, workingDirectory: cwd } : session
       )
-
-      updatePaneCwd(id, getActivePane(target).id, cwd)
-    },
-    [updatePaneCwd]
-  )
+    )
+  }, [])
 
   const updateSessionAgentType = useCallback(
     (id: string, agentType: Session['agentType']): void => {

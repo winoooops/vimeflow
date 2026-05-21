@@ -1882,7 +1882,7 @@ describe('useSessionManager', () => {
     )
   })
 
-  test('updateSessionCwd updates local state and calls IPC', async () => {
+  test('updateSessionCwd updates session cwd without touching pane cwd', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 's1',
@@ -1908,10 +1908,8 @@ describe('useSessionManager', () => {
     act(() => result.current.updateSessionCwd('s1', '/home/user'))
 
     expect(result.current.sessions[0].workingDirectory).toBe('/home/user')
-    expect(result.current.sessions[0].panes[0].cwd).toBe('/home/user')
-    await waitFor(() =>
-      expect(service.updateSessionCwd).toHaveBeenCalledWith('s1', '/home/user')
-    )
+    expect(result.current.sessions[0].panes[0].cwd).toBe('/tmp')
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
   test('updateSessionAgentType persists detected agent identity in local session state', async () => {
