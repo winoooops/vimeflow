@@ -36,6 +36,13 @@ export interface CostMetrics {
 
 export interface AgentStatus {
   isActive: boolean
+  /**
+   * True after a previously detected agent disappears while the PTY remains
+   * alive. Consumers that render pane chrome use this to return to shell
+   * styling immediately, while the activity panel can still hold final
+   * metrics during its exit window.
+   */
+  agentExited: boolean
   agentType: 'claude-code' | 'codex' | 'aider' | 'generic' | null
   modelId: string | null
   modelDisplayName: string | null

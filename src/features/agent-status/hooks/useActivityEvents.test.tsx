@@ -5,6 +5,7 @@ import type { AgentStatus } from '../types'
 
 const baseStatus: AgentStatus = {
   isActive: true,
+  agentExited: false,
   agentType: 'claude-code',
   modelId: null,
   modelDisplayName: null,
