@@ -88,7 +88,6 @@ export const applyAddPane = (
     ...session,
     panes,
     status: deriveSessionStatus(panes),
-    workingDirectory: newPane.cwd,
     agentType: newPane.agentType,
   }
 
@@ -144,7 +143,6 @@ export const applyRemovePane = (
     panes,
     layout: autoShrinkLayoutFor(panes.length, currentLayoutId),
     status: deriveSessionStatus(panes),
-    workingDirectory: activePane?.cwd ?? session.workingDirectory,
     agentType: activePane?.agentType ?? session.agentType,
   }
 

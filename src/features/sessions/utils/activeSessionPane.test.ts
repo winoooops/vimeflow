@@ -104,7 +104,7 @@ const makeSession = (
 })
 
 describe('applyActivePane', () => {
-  test('flips active flag and re-derives workingDirectory and agentType', () => {
+  test('flips active flag and preserves session workingDirectory', () => {
     const sessions: Session[] = [
       makeSession('s1', [
         makePane('p0', {
@@ -122,7 +122,7 @@ describe('applyActivePane', () => {
     expect(updated.panes.filter((pane) => pane.active)).toHaveLength(1)
     expect(updated.panes.find((pane) => pane.id === 'p1')?.active).toBe(true)
     expect(updated.panes.find((pane) => pane.id === 'p0')?.active).toBe(false)
-    expect(updated.workingDirectory).toBe('/tmp/p1')
+    expect(updated.workingDirectory).toBe('/tmp/p0')
     expect(updated.agentType).toBe('codex')
   })
 

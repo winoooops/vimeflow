@@ -213,7 +213,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   const restoredFromRef = useRef(restoredFrom)
 
   // Store cwd in a ref — used only at spawn time, not as an effect dependency.
-  // OSC 7 updates session.workingDirectory which flows here as `cwd`, but we
+  // OSC 7 updates the pane cwd which flows here as `cwd`, but we
   // must NOT respawn the PTY when the shell changes directory.
   const cwdRef = useRef(cwd)
   cwdRef.current = cwd

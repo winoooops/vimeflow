@@ -693,7 +693,7 @@ export const useSessionManager = (
       void (async (): Promise<void> => {
         try {
           const result = await service.spawn({
-            cwd: activePane.cwd,
+            cwd: session.workingDirectory,
             env: {},
             enableAgentBridge: true,
           })
@@ -1135,12 +1135,10 @@ export const useSessionManager = (
           const panes = session.panes.map((pane) =>
             pane.id === paneId ? { ...pane, cwd } : pane
           )
-          const activePane = panes.find((pane) => pane.active)
 
           return {
             ...session,
             panes,
-            workingDirectory: activePane?.cwd ?? session.workingDirectory,
           }
         })
       )
@@ -1200,6 +1198,12 @@ export const useSessionManager = (
       if (!target) {
         return
       }
+
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === id ? { ...session, workingDirectory: cwd } : session
+        )
+      )
 
       updatePaneCwd(id, getActivePane(target).id, cwd)
     },
