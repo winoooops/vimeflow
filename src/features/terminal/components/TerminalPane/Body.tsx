@@ -271,11 +271,24 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     const shouldApplyCwdHint =
       cwdHint !== null && cwdHint !== agentCwdRef.current
 
-    agentCwdHintContextRef.current = shouldApplyCwdHint
-      ? ''
-      : getAgentCwdHintContext(outputWithContext).slice(
-          -AGENT_CWD_HINT_BUFFER_SIZE
-        )
+    // Carry a tail of output forward so anchor patterns whose path arrives
+    // in a later PTY chunk can still match. `getAgentCwdHintContext` only
+    // preserves Claude startup banner context (≤6 safe lines); on its own
+    // it loses anchor lines like `Switched to worktree on branch X` when
+    // the indented path lands in the next chunk. Union them — banner
+    // context guarantees the startup-home-cwd gate sees its header, the
+    // raw tail catches anchor-spanning-chunks.
+    if (shouldApplyCwdHint) {
+      agentCwdHintContextRef.current = ''
+    } else {
+      const tail = outputWithContext.slice(-AGENT_CWD_HINT_BUFFER_SIZE)
+
+      const startupContext = getAgentCwdHintContext(outputWithContext).slice(
+        -AGENT_CWD_HINT_BUFFER_SIZE
+      )
+      agentCwdHintContextRef.current =
+        startupContext.length > tail.length ? startupContext : tail
+    }
 
     if (cwdHint !== null) {
       logAgentCwdDebug('text-hint', {
