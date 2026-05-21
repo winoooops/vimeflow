@@ -97,6 +97,7 @@ const createMockSession = (id: string, name: string): Session => ({
       agentType: 'claude-code',
       status: 'running',
       active: true,
+      activityPanelCollapsed: null,
     },
   ],
   createdAt: '2024-01-01T00:00:00Z',

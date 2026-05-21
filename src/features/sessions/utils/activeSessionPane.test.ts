@@ -82,6 +82,7 @@ const makePane = (id: string, overrides: Partial<Pane> = {}): Pane => ({
   agentType: 'generic',
   status: 'running',
   active: false,
+  activityPanelCollapsed: null,
   ...overrides,
 })
 

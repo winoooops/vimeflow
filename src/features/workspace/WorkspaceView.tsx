@@ -219,9 +219,14 @@ export const WorkspaceView = (): ReactElement => {
     [agentStatus.agentType]
   )
 
+  // `agentStatusToSessionStatus` reads only `agentStatus.isActive`. Depend on
+  // that primitive so the memo doesn't re-run on every render when
+  // `useAgentStatus` produces a new object reference (which it does on every
+  // tick of its underlying stream subscription).
   const activityPanelStatus = useMemo(
     () => agentStatusToSessionStatus(agentStatus),
-    [agentStatus]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [agentStatus.isActive]
   )
 
   const handleActivityPanelCollapsed = useCallback(

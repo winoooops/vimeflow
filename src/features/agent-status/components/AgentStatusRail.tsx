@@ -12,12 +12,23 @@ export interface AgentStatusRailProps {
 
 const RAIL_WIDTH_PX = 44
 
+// Bucket fill tones — semantic mapping per the bucket-redesign spec.
+// These literals mirror tokens defined in `docs/design/tokens.ts`
+// (semantic.tertiary, semantic.error, semantic.successMuted, primary.base);
+// `tokens.ts` is the design reference and is NOT imported from `src/` (see
+// the rationale in `TokenCache.tsx`). If the palette migrates, update these
+// constants in lockstep with tokens.ts.
+const TONE_DANGER = '#ff94a5' // semantic.tertiary
+const TONE_WARN = '#ffb4ab' // semantic.error
+const TONE_HEALTHY = '#7defa1' // semantic.successMuted
+const TONE_NEUTRAL = '#e2c7ff' // primary.base
+
 const contextTone = (pct: number, accent: string): string => {
   if (pct > 90) {
-    return '#ff94a5'
+    return TONE_DANGER
   }
   if (pct > 75) {
-    return '#ffb4ab'
+    return TONE_WARN
   }
 
   return accent
@@ -25,13 +36,13 @@ const contextTone = (pct: number, accent: string): string => {
 
 const cacheTone = (rate: number): string => {
   if (rate >= 70) {
-    return '#7defa1'
+    return TONE_HEALTHY
   }
   if (rate >= 40) {
-    return '#e2c7ff'
+    return TONE_NEUTRAL
   }
 
-  return '#ff94a5'
+  return TONE_DANGER
 }
 
 export const AgentStatusRail = ({
