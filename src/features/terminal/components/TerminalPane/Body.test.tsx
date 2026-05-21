@@ -1472,6 +1472,65 @@ describe('Body', () => {
       expect(mockService.updateSessionCwd).not.toHaveBeenCalled()
     })
 
+    test('preserves file:// URL host for Windows UNC cwd updates', async () => {
+      const mockService = {
+        spawn: vi.fn().mockResolvedValue({ sessionId: 'pty-1', pid: 123 }),
+        write: vi.fn().mockResolvedValue(undefined),
+        resize: vi.fn().mockResolvedValue(undefined),
+        kill: vi.fn().mockResolvedValue(undefined),
+        updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+        onData: vi.fn(() =>
+          // eslint-disable-next-line @typescript-eslint/no-empty-function
+          Promise.resolve((): void => {})
+        ),
+        onExit: vi.fn(() =>
+          // eslint-disable-next-line @typescript-eslint/no-empty-function
+          Promise.resolve((): void => {})
+        ),
+        onError: vi.fn(() =>
+          // eslint-disable-next-line @typescript-eslint/no-empty-function
+          Promise.resolve((): void => {})
+        ),
+        listSessions: vi.fn().mockResolvedValue({
+          activeSessionId: null,
+          sessions: [],
+        }),
+        setActiveSession: vi.fn().mockResolvedValue(undefined),
+        reorderSessions: vi.fn().mockResolvedValue(undefined),
+      }
+
+      const onCwdChange = vi.fn()
+
+      render(
+        <Body
+          sessionId="test-session"
+          cwd="C:/Users/will"
+          service={mockService}
+          onCwdChange={onCwdChange}
+        />
+      )
+
+      await waitFor(() => {
+        expect(mockTerminal.parser.registerOscHandler).toHaveBeenCalledWith(
+          7,
+          expect.any(Function)
+        )
+      })
+
+      const oscHandler = vi.mocked(mockTerminal.parser.registerOscHandler).mock
+        .calls[0]?.[1]
+
+      ;(oscHandler as ((data: string) => void) | undefined)?.(
+        'file://server/share/project'
+      )
+
+      await waitFor(() => {
+        expect(onCwdChange).toHaveBeenCalledWith('//server/share/project')
+      })
+
+      expect(mockService.updateSessionCwd).not.toHaveBeenCalled()
+    })
+
     test('forwards plain absolute path to onCwdChange', async () => {
       const mockService = {
         spawn: vi.fn().mockResolvedValue({ sessionId: 'pty-1', pid: 123 }),

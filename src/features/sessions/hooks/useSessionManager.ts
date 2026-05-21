@@ -55,13 +55,22 @@ export interface SessionManager {
   restartSession: (id: string) => void
   renameSession: (id: string, name: string) => void
   reorderSessions: (reordered: Session[]) => void
+  /** Update a pane's live cwd and the backend PTY cwd cache. */
   updatePaneCwd: (sessionId: string, paneId: string, cwd: string) => void
   updatePaneAgentType: (
     sessionId: string,
     paneId: string,
     agentType: Session['agentType']
   ) => void
-  /** Compatibility wrapper until workspace consumers migrate to pane ids. */
+  /**
+   * Update the stable session baseline cwd in React state only.
+   *
+   * This intentionally does not call `service.updateSessionCwd`; callers that
+   * need to sync a live PTY cwd to the backend must use `updatePaneCwd`.
+   *
+   * @deprecated Use `updatePaneCwd` for live pane cwd changes that must sync to
+   * the backend. This wrapper only updates the stable session baseline cwd.
+   */
   updateSessionCwd: (id: string, cwd: string) => void
   /** Compatibility wrapper until workspace consumers migrate to pane ids. */
   updateSessionAgentType: (id: string, agentType: Session['agentType']) => void
@@ -692,8 +701,13 @@ export const useSessionManager = (
 
       void (async (): Promise<void> => {
         try {
+          // New panes start from the stable session baseline. The active pane
+          // cwd is live per-pane state and may point at an agent task path; do
+          // not leak that pane-local agent context into fresh shells.
+          const spawnCwd = session.workingDirectory
+
           const result = await service.spawn({
-            cwd: activePane.cwd,
+            cwd: spawnCwd,
             env: {},
             enableAgentBridge: true,
           })
@@ -1135,12 +1149,10 @@ export const useSessionManager = (
           const panes = session.panes.map((pane) =>
             pane.id === paneId ? { ...pane, cwd } : pane
           )
-          const activePane = panes.find((pane) => pane.active)
 
           return {
             ...session,
             panes,
-            workingDirectory: activePane?.cwd ?? session.workingDirectory,
           }
         })
       )
@@ -1194,17 +1206,27 @@ export const useSessionManager = (
     []
   )
 
-  const updateSessionCwd = useCallback(
-    (id: string, cwd: string): void => {
-      const target = sessionsRef.current.find((s) => s.id === id)
-      if (!target) {
-        return
-      }
+  const updateSessionCwd = useCallback((id: string, cwd: string): void => {
+    const target = sessionsRef.current.find((s) => s.id === id)
+    if (!target) {
+      return
+    }
 
-      updatePaneCwd(id, getActivePane(target).id, cwd)
-    },
-    [updatePaneCwd]
-  )
+    if (import.meta.env.DEV && import.meta.env.MODE !== 'test') {
+      // eslint-disable-next-line no-console
+      console.warn(
+        'updateSessionCwd is deprecated; use updatePaneCwd for live PTY cwd sync'
+      )
+    }
+
+    // State-only baseline update. `updatePaneCwd` is the live PTY cwd path and
+    // is responsible for calling `service.updateSessionCwd`.
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === id ? { ...session, workingDirectory: cwd } : session
+      )
+    )
+  }, [])
 
   const updateSessionAgentType = useCallback(
     (id: string, agentType: Session['agentType']): void => {

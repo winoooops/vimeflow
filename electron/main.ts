@@ -135,8 +135,54 @@ type InvokeEnvelope =
 let sidecar: Sidecar | null = null
 let quitting = false
 
+const RENDERER_DIAGNOSTIC_PREFIXES = [
+  '[vimeflow:terminal-cwd]',
+  '[vimeflow:git-branch]',
+]
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const rendererConsoleLevelName = (level: number): string => {
+  switch (level) {
+    case 0:
+      return 'verbose'
+    case 1:
+      return 'info'
+    case 2:
+      return 'warning'
+    case 3:
+      return 'error'
+    default:
+      return 'unknown'
+  }
+}
+
+const installRendererDiagnosticLogging = (win: BrowserWindow): void => {
+  if (app.isPackaged) {
+    return
+  }
+
+  win.webContents.on(
+    'console-message',
+    (_event, level, message, line, sourceId) => {
+      if (
+        !RENDERER_DIAGNOSTIC_PREFIXES.some((prefix) =>
+          message.startsWith(prefix)
+        )
+      ) {
+        return
+      }
+
+      const source = sourceId.length > 0 ? ` (${sourceId}:${String(line)})` : ''
+
+      // eslint-disable-next-line no-console
+      console.info(
+        `[renderer:${rendererConsoleLevelName(level)}] ${message}${source}`
+      )
+    }
+  )
+}
 
 const isBackendInvokePayload = (
   payload: unknown
@@ -167,6 +213,8 @@ const createWindow = (): void => {
       preload: path.join(__dirname, 'preload.mjs'),
     },
   })
+
+  installRendererDiagnosticLogging(win)
 
   const devUrl = process.env.VITE_DEV_SERVER_URL
 
