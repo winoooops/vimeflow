@@ -593,7 +593,7 @@ describe('useTerminal', () => {
       expect(mockTerminal.write).toHaveBeenCalledWith('Restored output\r\n')
     })
 
-    test('writes replay data before draining buffered events', async () => {
+    test('writes replay data before draining buffered events without reporting restored output', async () => {
       const writes: string[] = []
       const writeCallbacks: (() => void)[] = []
       const onOutput = vi.fn()
@@ -634,13 +634,7 @@ describe('useTerminal', () => {
       // Then buffered events
       expect(writes[1]).toBe('BUFFERED')
       expect(onOutput).not.toHaveBeenCalled()
-
-      writeCallbacks.forEach((callback) => {
-        callback()
-      })
-
-      expect(onOutput).toHaveBeenCalledOnce()
-      expect(onOutput).toHaveBeenCalledWith('BUFFERED')
+      expect(writeCallbacks).toHaveLength(0)
     })
 
     test('flushes buffered events with cursor filter (offsetStart >= replayEndOffset)', async () => {

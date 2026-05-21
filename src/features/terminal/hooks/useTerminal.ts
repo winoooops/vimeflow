@@ -294,7 +294,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         // NOT by `encoder.encode(event.data).length` — see RestoreData jsdoc.
         for (const event of restore.bufferedEvents) {
           if (event.offsetStart >= cursorRef.current) {
-            writeTerminalOutput(terminal, event.data)
+            terminal.write(event.data)
 
             const writtenEnd = event.offsetStart + event.byteLen
             if (writtenEnd > cursorRef.current) {
