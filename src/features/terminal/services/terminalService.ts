@@ -392,11 +392,10 @@ export class MockTerminalService implements ITerminalService {
   }
 
   setSessionActivityPanelCollapsed(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _request: SetSessionActivityPanelCollapsedRequest
   ): Promise<void> {
     // Mock no-op
-    void _request
-
     return Promise.resolve()
   }
 }

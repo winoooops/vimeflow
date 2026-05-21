@@ -3164,6 +3164,96 @@ describe('useSessionManager', () => {
     ).toBeNull()
   })
 
+  test('setPaneActivityPanelCollapsed does NOT clobber a newer queued same-direction optimistic value when an earlier same-direction call fails', async () => {
+    // Claude review cycle 4 caught this: when A(true) and C(true) race and
+    // A fails, a value-equality guard sees `pane=true !== A.collapsed=true`
+    // as false and rolls C's optimistic true back to null — even though C
+    // owns the latest optimistic state. The fix switches to chain-head
+    // identity ownership so A's failure can never displace C.
+    const service = createMockService()
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty-1',
+      pid: 123,
+      cwd: '/home/user',
+    })
+
+    let rejectFirst: ((err: Error) => void) | null = null
+    let resolveSecond: (() => void) | null = null
+    service.setSessionActivityPanelCollapsed = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectFirst = reject
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveSecond = resolve
+          })
+      )
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.createSession())
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    const session = result.current.sessions[0]
+    const pane = session.panes[0]
+
+    let first: Promise<void> = Promise.resolve()
+    let second: Promise<void> = Promise.resolve()
+
+    act(() => {
+      first = absorbExpectedRejection(
+        result.current.setPaneActivityPanelCollapsed(session.id, pane.id, true)
+      )
+
+      // Same direction — both true. The value-equality guard CANNOT
+      // distinguish A from C here.
+      second = result.current.setPaneActivityPanelCollapsed(
+        session.id,
+        pane.id,
+        true
+      )
+    })
+
+    expect(result.current.sessions[0].panes[0].activityPanelCollapsed).toBe(
+      true
+    )
+
+    await waitFor(() =>
+      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledTimes(1)
+    )
+
+    await act(async () => {
+      rejectFirst?.(new Error('first IPC failed'))
+      await first
+    })
+
+    // A failed but C is still the head of the chain — pane must stay true.
+    expect(result.current.sessions[0].panes[0].activityPanelCollapsed).toBe(
+      true
+    )
+
+    await waitFor(() =>
+      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledTimes(2)
+    )
+
+    await act(async () => {
+      resolveSecond?.()
+      await second
+    })
+
+    expect(result.current.sessions[0].panes[0].activityPanelCollapsed).toBe(
+      true
+    )
+  })
+
   test('setPaneActivityPanelCollapsed rolls back to a previously-successful sibling value when a later queued IPC fails', async () => {
     const service = createMockService()
     service.spawn = vi.fn().mockResolvedValue({

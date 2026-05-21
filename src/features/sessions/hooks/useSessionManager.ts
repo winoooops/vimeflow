@@ -1324,28 +1324,35 @@ export const useSessionManager = (
 
         const liveBaseline =
           liveEntry !== undefined ? liveEntry.originalValue : originalValue
+        // Ownership-by-identity: we roll back ONLY when our tail is still
+        // the latest in the chain. Comparing `p.activityPanelCollapsed`
+        // against this call's `collapsed` would mis-fire when two
+        // same-direction calls (A=true, C=true) race — A's failure would
+        // value-match C's optimistic state and clobber it. The identity
+        // check sidesteps that: any newer queued call has already
+        // displaced our tail in the Map, so we silently defer to it.
+        const isHead = liveEntry?.tail === tail
 
-        setSessions((prev) =>
-          prev.map((s) => {
-            if (s.id !== sessionId) {
-              return s
-            }
+        if (isHead) {
+          setSessions((prev) =>
+            prev.map((s) => {
+              if (s.id !== sessionId) {
+                return s
+              }
 
-            return {
-              ...s,
-              panes: s.panes.map((p) => {
-                if (p.id !== paneId) {
-                  return p
-                }
-                if (p.activityPanelCollapsed !== collapsed) {
-                  return p
-                }
+              return {
+                ...s,
+                panes: s.panes.map((p) => {
+                  if (p.id !== paneId) {
+                    return p
+                  }
 
-                return { ...p, activityPanelCollapsed: liveBaseline }
-              }),
-            }
-          })
-        )
+                  return { ...p, activityPanelCollapsed: liveBaseline }
+                }),
+              }
+            })
+          )
+        }
         throw err
       } finally {
         if (collapseChainRef.current.get(chainKey)?.tail === tail) {

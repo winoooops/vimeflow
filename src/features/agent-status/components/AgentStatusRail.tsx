@@ -98,7 +98,7 @@ export const AgentStatusRail = ({
       {isRunning && (
         <span
           data-testid="running-dot"
-          className="h-1.5 w-1.5 animate-pulse rounded-full"
+          className="h-1.5 w-1.5 rounded-full motion-safe:animate-pulse"
           style={{
             background: agent.accent,
             boxShadow: `0 0 10px ${agent.accent}`,
