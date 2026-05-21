@@ -23,16 +23,18 @@ import {
 } from '../../hooks/useTerminal'
 import { type ITerminalService } from '../../services/terminalService'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
+import {
+  type AgentCwdSource,
+  isDescendantPath,
+  shouldIgnoreStaleOsc7Cwd,
+  stripCarriageReturnOverwrites,
+  toComparablePath,
+} from './agentCwdGuard'
 import { getAgentCwdHintContext, parseAgentCwdHint } from './agentCwdHint'
 import { parseOsc7Cwd } from './osc7'
 import '@xterm/xterm/css/xterm.css'
 
 const AGENT_CWD_HINT_BUFFER_SIZE = 4096
-const OSC7_SEQUENCE_PATTERN = /\x1b\]7;[\s\S]*?(?:\x07|\x1b\\)/g
-
-type AgentCwdSource = 'osc7' | 'prop' | 'text-hint'
-
-const toComparablePath = (path: string): string => path.replace(/\\/g, '/')
 
 const logAgentCwdDebug = (
   event: string,
@@ -45,99 +47,6 @@ const logAgentCwdDebug = (
   // eslint-disable-next-line no-console
   console.info(`[vimeflow:terminal-cwd] ${event} ${JSON.stringify(details)}`)
 }
-
-const trimTrailingSlashes = (path: string): string =>
-  path === '/' ? path : path.replace(/\/+$/g, '')
-
-const isDescendantPath = (path: string, possibleParent: string): boolean => {
-  const normalizedPath = trimTrailingSlashes(toComparablePath(path))
-  const normalizedParent = trimTrailingSlashes(toComparablePath(possibleParent))
-
-  if (!normalizedParent) {
-    return false
-  }
-
-  if (normalizedParent === '/') {
-    return normalizedPath !== '/' && normalizedPath.startsWith('/')
-  }
-
-  return normalizedPath.startsWith(`${normalizedParent}/`)
-}
-
-const getWorktreeParentPath = (path: string): string | null => {
-  const normalizedPath = trimTrailingSlashes(toComparablePath(path))
-  const lastSeparatorIndex = normalizedPath.lastIndexOf('/')
-  if (lastSeparatorIndex === -1) {
-    return null
-  }
-
-  const parentPath = normalizedPath.slice(0, lastSeparatorIndex)
-  const parentName = parentPath.slice(parentPath.lastIndexOf('/') + 1)
-
-  const grandparentPath = parentPath.slice(0, parentPath.lastIndexOf('/'))
-
-  const grandparentName = grandparentPath.slice(
-    grandparentPath.lastIndexOf('/') + 1
-  )
-
-  return parentName === 'worktrees' && grandparentName === '.claude'
-    ? parentPath
-    : null
-}
-
-const isWorktreeSiblingPath = (
-  path: string,
-  possibleSibling: string
-): boolean => {
-  const normalizedPath = trimTrailingSlashes(toComparablePath(path))
-
-  const normalizedSibling = trimTrailingSlashes(
-    toComparablePath(possibleSibling)
-  )
-
-  const parentPath = getWorktreeParentPath(normalizedPath)
-
-  return (
-    normalizedPath !== normalizedSibling &&
-    parentPath !== null &&
-    parentPath === getWorktreeParentPath(normalizedSibling)
-  )
-}
-
-const shouldIgnoreStaleOsc7Cwd = (
-  currentCwd: string,
-  nextCwd: string,
-  currentSource: AgentCwdSource
-): boolean =>
-  currentSource === 'text-hint' &&
-  (isDescendantPath(currentCwd, nextCwd) ||
-    isWorktreeSiblingPath(currentCwd, nextCwd))
-
-const stripCarriageReturnOverwrites = (output: string): string =>
-  output
-    .split('\n')
-    .map((line, index, lines) => {
-      if (index === lines.length - 1) {
-        return line
-      }
-
-      const lineWithoutTerminator = line.endsWith('\r')
-        ? line.slice(0, -1)
-        : line
-
-      const overwriteIndex = lineWithoutTerminator.lastIndexOf('\r')
-
-      const visibleLine =
-        overwriteIndex === -1
-          ? lineWithoutTerminator
-          : lineWithoutTerminator.slice(overwriteIndex + 1)
-
-      return `${visibleLine}\n`
-    })
-    .join('')
-
-const countOsc7Sequences = (output: string): number =>
-  output.match(OSC7_SEQUENCE_PATTERN)?.length ?? 0
 
 // Module-level cache of terminal instances per sessionId.
 //
@@ -297,7 +206,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const pendingDeferredFitFlushRef = useRef(false)
   const agentCwdOutputBufferRef = useRef('')
   const agentCwdHintContextRef = useRef('')
-  const restoreOsc7SuppressionsRef = useRef(0)
+  const isRestoringOutputRef = useRef(false)
   const cwdPropRef = useRef(cwd)
   const agentCwdRef = useRef(cwd)
   const agentCwdSourceRef = useRef<AgentCwdSource>('prop')
@@ -338,7 +247,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   useEffect(() => {
     agentCwdOutputBufferRef.current = ''
     agentCwdHintContextRef.current = ''
-    restoreOsc7SuppressionsRef.current = 0
+    isRestoringOutputRef.current = false
     agentCwdRef.current = cwdPropRef.current
     agentCwdSourceRef.current = 'prop'
   }, [sessionId])
@@ -429,7 +338,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       return
     }
 
-    agentCwdSourceRef.current = 'osc7'
+    agentCwdSourceRef.current = 'user-input'
     logAgentCwdDebug('user-input', {
       sessionId,
       agentCwd: agentCwdRef.current,
@@ -437,8 +346,12 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     })
   }, [sessionId])
 
-  const handleRestoreOutput = useCallback((output: string): void => {
-    restoreOsc7SuppressionsRef.current += countOsc7Sequences(output)
+  const handleRestoreStart = useCallback((): void => {
+    isRestoringOutputRef.current = true
+  }, [])
+
+  const handleRestoreEnd = useCallback((): void => {
+    isRestoringOutputRef.current = false
   }, [])
 
   // Use terminal hook for PTY lifecycle management
@@ -455,7 +368,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     restoredFrom,
     onPaneReady,
     onOutput: handleTerminalOutput,
-    onRestoreOutput: handleRestoreOutput,
+    onRestoreStart: handleRestoreStart,
+    onRestoreEnd: handleRestoreEnd,
     onInput: handleTerminalInput,
     mode,
   })
@@ -708,11 +622,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         const path = parseOsc7Cwd(data)
         const previousCwd = agentCwdRef.current
 
-        const shouldSuppressRestoreOsc7 = restoreOsc7SuppressionsRef.current > 0
-
-        if (shouldSuppressRestoreOsc7) {
-          restoreOsc7SuppressionsRef.current -= 1
-        }
+        const shouldSuppressRestoreOsc7 = isRestoringOutputRef.current
 
         const shouldIgnore =
           path !== null &&

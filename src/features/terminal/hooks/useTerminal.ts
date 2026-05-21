@@ -102,6 +102,14 @@ export interface UseTerminalOptions {
   onRestoreOutput?: (data: string) => void
 
   /**
+   * Optional restore lifecycle callbacks. `onRestoreStart` fires immediately
+   * before historical replay/buffered output is written to xterm; `onRestoreEnd`
+   * fires after the final restore write callback.
+   */
+  onRestoreStart?: () => void
+  onRestoreEnd?: () => void
+
+  /**
    * Optional callback for user keyboard input before it is forwarded to the PTY.
    */
   onInput?: (data: string) => void
@@ -163,6 +171,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     onPaneReady,
     onOutput,
     onRestoreOutput,
+    onRestoreStart,
+    onRestoreEnd,
     onInput,
     mode,
   } = options
@@ -212,6 +222,16 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   useEffect(() => {
     onRestoreOutputRef.current = onRestoreOutput
   }, [onRestoreOutput])
+
+  const onRestoreStartRef = useRef(onRestoreStart)
+  useEffect(() => {
+    onRestoreStartRef.current = onRestoreStart
+  }, [onRestoreStart])
+
+  const onRestoreEndRef = useRef(onRestoreEnd)
+  useEffect(() => {
+    onRestoreEndRef.current = onRestoreEnd
+  }, [onRestoreEnd])
 
   const onInputRef = useRef(onInput)
   useEffect(() => {
@@ -320,12 +340,24 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           ].join('')
         )
 
-        // Write replay data first; the cursor is already initialized to
-        // restore.replayEndOffset (set when the ref was created).
-        terminal.write(restore.replayData)
+        const restoredOutputChunks = [
+          restore.replayData,
+          ...restoredBufferedEvents.map((event) => event.data),
+        ].filter((data) => data.length > 0)
 
-        for (const event of restoredBufferedEvents) {
-          terminal.write(event.data)
+        if (restoredOutputChunks.length > 0) {
+          onRestoreStartRef.current?.()
+
+          restoredOutputChunks.forEach((data, index) => {
+            const isLastChunk = index === restoredOutputChunks.length - 1
+            if (isLastChunk && onRestoreEndRef.current) {
+              terminal.write(data, onRestoreEndRef.current)
+
+              return
+            }
+
+            terminal.write(data)
+          })
         }
 
         // Create session object from restore data

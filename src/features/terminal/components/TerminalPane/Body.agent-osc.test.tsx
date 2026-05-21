@@ -1030,7 +1030,7 @@ describe('Body agent-emitted OSC 7', () => {
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
-  test('resets pending restored OSC 7 suppressions when session id changes', async () => {
+  test('clears restore OSC 7 suppression after restore writes finish without parser events', async () => {
     skipOscParsing = true
 
     const service = createService()
@@ -1038,7 +1038,7 @@ describe('Body agent-emitted OSC 7', () => {
     const replayData = '\x1b]7;file://host/repo/restored\x07'
     const replayEndOffset = new TextEncoder().encode(replayData).length
 
-    const { rerender } = render(
+    render(
       <Body
         sessionId="pty-old"
         cwd="/repo/old"
@@ -1058,31 +1058,13 @@ describe('Body agent-emitted OSC 7', () => {
     })
 
     skipOscParsing = false
-    const terminalCreateCount = vi.mocked(Terminal).mock.calls.length
-
-    rerender(
-      <Body
-        sessionId="pty-new"
-        cwd="/repo/new"
-        service={service}
-        restoredFrom={restoreData('pty-new', '/repo/new')}
-        mode="attach"
-        onCwdChange={onCwdChange}
-      />
-    )
-
-    await waitFor(() => {
-      expect(vi.mocked(Terminal).mock.calls.length).toBeGreaterThan(
-        terminalCreateCount
-      )
-    })
 
     act(() => {
-      getLatestTerminal().write('\x1b]7;file://host/repo/new/live\x07')
+      getLatestTerminal().write('\x1b]7;file://host/repo/live\x07')
     })
 
     await waitFor(() => {
-      expect(onCwdChange).toHaveBeenCalledWith('/repo/new/live')
+      expect(onCwdChange).toHaveBeenCalledWith('/repo/live')
     })
 
     expect(service.updateSessionCwd).not.toHaveBeenCalled()

@@ -643,6 +643,63 @@ describe('useTerminal', () => {
       expect(writeCallbacks).toHaveLength(0)
     })
 
+    test('marks the restore phase until the final restored write callback fires', async () => {
+      const writes: string[] = []
+      const writeCallbacks: (() => void)[] = []
+      const lifecycleEvents: string[] = []
+
+      const onRestoreStart = vi.fn(() => {
+        lifecycleEvents.push('start')
+      })
+
+      const onRestoreEnd = vi.fn(() => {
+        lifecycleEvents.push('end')
+      })
+
+      vi.mocked(mockTerminal.write).mockImplementation(
+        (data: string | Uint8Array, callback?: () => void) => {
+          writes.push(
+            typeof data === 'string' ? data : new TextDecoder().decode(data)
+          )
+
+          if (callback) {
+            writeCallbacks.push(callback)
+          }
+        }
+      )
+
+      renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: 'REPLAY',
+            replayEndOffset: 50,
+            bufferedEvents: [{ data: 'BUFFERED', offsetStart: 50, byteLen: 8 }],
+          },
+          onRestoreStart,
+          onRestoreEnd,
+        })
+      )
+
+      await waitFor(() => {
+        expect(writes).toEqual(['REPLAY', 'BUFFERED'])
+      })
+
+      expect(onRestoreStart).toHaveBeenCalledOnce()
+      expect(onRestoreEnd).not.toHaveBeenCalled()
+      expect(lifecycleEvents).toEqual(['start'])
+      expect(writeCallbacks).toHaveLength(1)
+
+      writeCallbacks[0]()
+
+      expect(onRestoreEnd).toHaveBeenCalledOnce()
+      expect(lifecycleEvents).toEqual(['start', 'end'])
+    })
+
     test('flushes buffered events with cursor filter (offsetStart >= replayEndOffset)', async () => {
       const writes: string[] = []
       vi.mocked(mockTerminal.write).mockImplementation(

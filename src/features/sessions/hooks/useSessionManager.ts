@@ -1212,6 +1212,13 @@ export const useSessionManager = (
       return
     }
 
+    if (import.meta.env.DEV && import.meta.env.MODE !== 'test') {
+      // eslint-disable-next-line no-console
+      console.warn(
+        'updateSessionCwd is deprecated; use updatePaneCwd for live PTY cwd sync'
+      )
+    }
+
     // State-only baseline update. `updatePaneCwd` is the live PTY cwd path and
     // is responsible for calling `service.updateSessionCwd`.
     setSessions((prev) =>
