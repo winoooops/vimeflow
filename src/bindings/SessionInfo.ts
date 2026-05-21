@@ -4,4 +4,9 @@ import type { SessionStatus } from './SessionStatus'
 /**
  * Single session info returned by list_sessions
  */
-export type SessionInfo = { id: string; cwd: string; status: SessionStatus }
+export type SessionInfo = {
+  id: string
+  cwd: string
+  status: SessionStatus
+  activityPanelCollapsed?: boolean | null
+}

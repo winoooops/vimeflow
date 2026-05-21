@@ -17,6 +17,7 @@ export type { SessionStatus } from './SessionStatus'
 export type { SetActiveSessionRequest } from './SetActiveSessionRequest'
 export type { ReorderSessionsRequest } from './ReorderSessionsRequest'
 export type { UpdateSessionCwdRequest } from './UpdateSessionCwdRequest'
+export type { SetSessionActivityPanelCollapsedRequest } from './SetSessionActivityPanelCollapsedRequest'
 
 // Filesystem types
 export type { ListDirRequest } from './ListDirRequest'

@@ -109,6 +109,16 @@ impl BackendState {
         crate::terminal::commands::update_session_cwd_inner(&self.sessions, request)
     }
 
+    pub fn set_session_activity_panel_collapsed(
+        &self,
+        request: crate::terminal::types::SetSessionActivityPanelCollapsedRequest,
+    ) -> Result<(), String> {
+        crate::terminal::commands::set_session_activity_panel_collapsed_inner(
+            &self.sessions,
+            request,
+        )
+    }
+
     pub fn list_dir(
         &self,
         request: crate::filesystem::types::ListDirRequest,

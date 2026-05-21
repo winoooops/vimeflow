@@ -1,3 +1,8 @@
+import anthropicMark from '../assets/vendor-icons/anthropic.svg'
+import openaiMark from '../assets/vendor-icons/openai.svg'
+import type { AgentStatus } from '../features/agent-status/types'
+import type { SessionStatus } from '../features/sessions/types'
+
 interface AgentDef {
   id: string
   name: string
@@ -60,3 +65,31 @@ export const AGENTS = {
 export type AgentId = keyof typeof AGENTS
 
 export type Agent = (typeof AGENTS)[AgentId]
+
+export const agentTypeToRegistryKey = (
+  agentType: AgentStatus['agentType']
+): AgentId => {
+  switch (agentType) {
+    case 'claude-code':
+      return 'claude'
+    case 'codex':
+      return 'codex'
+    default:
+      return 'shell'
+  }
+}
+
+export const agentStatusToSessionStatus = (
+  agentStatus: AgentStatus
+): SessionStatus => (agentStatus.isActive ? 'running' : 'paused')
+
+export const vendorMarkFor = (agentId: AgentId): string | null => {
+  switch (agentId) {
+    case 'claude':
+      return anthropicMark
+    case 'codex':
+      return openaiMark
+    default:
+      return null
+  }
+}

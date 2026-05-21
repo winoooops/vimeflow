@@ -14,6 +14,7 @@ export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
     agentType: 'generic',
     status,
     active: true,
+    activityPanelCollapsed: info.activityPanelCollapsed ?? null,
   } satisfies Pane
 
   const pane: Pane =

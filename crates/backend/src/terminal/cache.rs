@@ -21,6 +21,9 @@ pub struct CachedSession {
     pub created_at: String, // ISO-8601 UTC
     pub exited: bool,
     pub last_exit_code: Option<i32>,
+    /// Per-pane UI preference for the right activity panel.
+    #[serde(default)]
+    pub activity_panel_collapsed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -278,6 +281,7 @@ mod tests {
                         created_at: "2026-04-25T07:30:00Z".into(),
                         exited: false,
                         last_exit_code: None,
+                        activity_panel_collapsed: None,
                     },
                 );
                 Ok(())
@@ -516,6 +520,7 @@ mod tests {
                         created_at: "2026-04-26T00:00:00Z".into(),
                         exited: false,
                         last_exit_code: None,
+                        activity_panel_collapsed: None,
                     },
                 );
                 d.sessions.insert(
@@ -525,6 +530,7 @@ mod tests {
                         created_at: "2026-04-26T00:01:00Z".into(),
                         exited: true,
                         last_exit_code: None,
+                        activity_panel_collapsed: None,
                     },
                 );
                 Ok(())
@@ -554,5 +560,59 @@ mod tests {
         assert_eq!(snap.session_order.len(), 0);
         assert_eq!(snap.sessions.len(), 0);
         assert!(snap.active_session_id.is_none());
+    }
+
+    #[test]
+    fn activity_panel_collapsed_round_trips_through_disk() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("sessions.json");
+
+        let cache = SessionCache::load(path.clone()).unwrap();
+        cache
+            .mutate(|d| {
+                d.sessions.insert(
+                    "pty-1".into(),
+                    CachedSession {
+                        cwd: "/home/x".into(),
+                        created_at: "2026-05-21T00:00:00Z".into(),
+                        exited: false,
+                        last_exit_code: None,
+                        activity_panel_collapsed: Some(true),
+                    },
+                );
+                Ok(())
+            })
+            .unwrap();
+
+        let reloaded = SessionCache::load(path).unwrap().snapshot();
+        let session = reloaded.sessions.get("pty-1").unwrap();
+        assert_eq!(session.activity_panel_collapsed, Some(true));
+    }
+
+    #[test]
+    fn missing_activity_panel_collapsed_field_loads_as_none() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("sessions.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "version": 1,
+                "active_session_id": null,
+                "session_order": ["pty-legacy"],
+                "sessions": {
+                    "pty-legacy": {
+                        "cwd": "/legacy",
+                        "created_at": "2026-05-20T00:00:00Z",
+                        "exited": false,
+                        "last_exit_code": null
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let cache = SessionCache::load(path).unwrap().snapshot();
+        let session = cache.sessions.get("pty-legacy").unwrap();
+        assert_eq!(session.activity_panel_collapsed, None);
     }
 }

@@ -147,6 +147,9 @@ pub struct SessionInfo {
     pub id: String,
     pub cwd: String,
     pub status: SessionStatus,
+    #[cfg_attr(test, ts(optional))]
+    #[cfg_attr(test, ts(type = "boolean | null"))]
+    pub activity_panel_collapsed: Option<bool>,
 }
 
 /// Response payload for list_sessions command
@@ -182,4 +185,15 @@ pub struct ReorderSessionsRequest {
 pub struct UpdateSessionCwdRequest {
     pub id: String,
     pub cwd: String,
+}
+
+/// Request payload for set_session_activity_panel_collapsed command.
+/// `id` is a PTY id — same convention as SetActiveSessionRequest.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SetSessionActivityPanelCollapsedRequest {
+    pub id: String,
+    pub collapsed: bool,
 }

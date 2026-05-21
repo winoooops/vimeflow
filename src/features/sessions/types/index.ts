@@ -31,6 +31,9 @@ export interface Pane {
 
   /** Exactly one pane per session has `active === true`. */
   active: boolean
+
+  /** Per-pane collapse preference for the right activity panel. */
+  activityPanelCollapsed?: boolean | null
 }
 
 export interface Session {

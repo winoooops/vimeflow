@@ -26,6 +26,7 @@ import { DockPeekButton } from './components/DockPeekButton'
 import DockPanel, { type DockPanelHandle } from './components/DockPanel'
 import type { DockPosition } from './components/DockSwitcher'
 import { AgentStatusPanel } from '../agent-status/components/AgentStatusPanel'
+import { AgentStatusRail } from '../agent-status/components/AgentStatusRail'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
@@ -47,6 +48,11 @@ import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
+import {
+  AGENTS,
+  agentStatusToSessionStatus,
+  agentTypeToRegistryKey,
+} from '../../agents/registry'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -108,6 +114,7 @@ export const WorkspaceView = (): ReactElement => {
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
+    setPaneActivityPanelCollapsed,
     setSessionActivePane,
     setSessionLayout,
     addPane,
@@ -195,6 +202,37 @@ export const WorkspaceView = (): ReactElement => {
   const activePanePtyId = activePane?.ptyId
 
   const agentStatus = useAgentStatus(activePanePtyId ?? null)
+  const activityPanelCollapsed = activePane?.activityPanelCollapsed ?? false
+
+  const activityPanelAgent = useMemo(
+    () => AGENTS[agentTypeToRegistryKey(agentStatus.agentType)],
+    [agentStatus.agentType]
+  )
+
+  const activityPanelStatus = useMemo(
+    () => agentStatusToSessionStatus(agentStatus),
+    [agentStatus]
+  )
+
+  const handleActivityPanelCollapsed = useCallback(
+    async (collapsed: boolean): Promise<void> => {
+      if (!activeSessionId || !activePane) {
+        return
+      }
+
+      try {
+        await setPaneActivityPanelCollapsed(
+          activeSessionId,
+          activePane.id,
+          collapsed
+        )
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        notifyInfo(`Couldn't update activity panel: ${message}`)
+      }
+    },
+    [activePane, activeSessionId, notifyInfo, setPaneActivityPanelCollapsed]
+  )
 
   // Bridge: when the detector resolves a live agent for the active
   // session, write it into Session.agentType. This is the single source
@@ -901,14 +939,37 @@ export const WorkspaceView = (): ReactElement => {
         <StatusBar />
       </div>
 
-      {/* Agent Status Panel — self-manages width (0↔280px) */}
-      <AgentStatusPanel
-        agentStatus={agentStatus}
-        cwd={activeCwd}
-        gitStatus={gitStatus}
-        onOpenDiff={handleOpenDiff}
-        onOpenFile={handleOpenTestFile}
-      />
+      <div
+        data-testid="activity-panel-shell"
+        className="h-full shrink-0 overflow-hidden transition-[width] duration-[220ms] ease-pane"
+        style={{ width: activityPanelCollapsed ? 36 : 280 }}
+      >
+        {activityPanelCollapsed ? (
+          <AgentStatusRail
+            agent={activityPanelAgent}
+            contextUsedPercentage={
+              agentStatus.contextWindow?.usedPercentage ?? null
+            }
+            isRunning={agentStatus.isActive}
+            onExpand={() => {
+              void handleActivityPanelCollapsed(false)
+            }}
+          />
+        ) : (
+          <AgentStatusPanel
+            agentStatus={agentStatus}
+            cwd={activeCwd}
+            gitStatus={gitStatus}
+            onOpenDiff={handleOpenDiff}
+            onOpenFile={handleOpenTestFile}
+            agent={activityPanelAgent}
+            status={activityPanelStatus}
+            onCollapse={() => {
+              void handleActivityPanelCollapsed(true)
+            }}
+          />
+        )}
+      </div>
 
       {/* Unsaved Changes Dialog — shows the CURRENTLY dirty file, not the
           destination the user is switching to. */}

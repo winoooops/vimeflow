@@ -152,6 +152,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       reorderSessions: vi.fn(),
       updatePaneCwd: vi.fn(),
       updatePaneAgentType: vi.fn(),
+      setPaneActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
       restoreData: new Map(),
@@ -258,6 +259,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       setActiveSession: vi.fn().mockResolvedValue(undefined),
       reorderSessions: vi.fn().mockResolvedValue(undefined),
       updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+      setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     })
   })
 

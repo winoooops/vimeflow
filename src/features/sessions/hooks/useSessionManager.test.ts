@@ -9,6 +9,16 @@ import {
   registerPtySession,
 } from '../../terminal/ptySessionMap'
 
+const absorbExpectedRejection = async (
+  promise: Promise<void>
+): Promise<void> => {
+  try {
+    await promise
+  } catch {
+    return
+  }
+}
+
 const createMockService = (): ITerminalService => ({
   spawn: vi
     .fn()
@@ -38,6 +48,7 @@ const createMockService = (): ITerminalService => ({
   setActiveSession: vi.fn().mockResolvedValue(undefined),
   reorderSessions: vi.fn().mockResolvedValue(undefined),
   updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+  setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
 })
 
 describe('useSessionManager', () => {
@@ -2864,6 +2875,120 @@ describe('useSessionManager', () => {
     expect(updated.panes[0].cwd).toBe('/new/cwd')
     expect(updated.workingDirectory).toBe('/new/cwd')
     expect(service.updateSessionCwd).toHaveBeenCalledWith('pty-1', '/new/cwd')
+  })
+
+  test('setPaneActivityPanelCollapsed optimistically updates and persists', async () => {
+    const service = createMockService()
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty-1',
+      pid: 123,
+      cwd: '/home/user',
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.createSession())
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    const session = result.current.sessions[0]
+    const pane = session.panes[0]
+
+    await act(async () => {
+      await result.current.setPaneActivityPanelCollapsed(
+        session.id,
+        pane.id,
+        true
+      )
+    })
+
+    expect(result.current.sessions[0].panes[0].activityPanelCollapsed).toBe(
+      true
+    )
+
+    expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledWith({
+      id: pane.ptyId,
+      collapsed: true,
+    })
+  })
+
+  test('setPaneActivityPanelCollapsed keeps latest optimistic value when an older IPC rejects', async () => {
+    const service = createMockService()
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty-1',
+      pid: 123,
+      cwd: '/home/user',
+    })
+
+    let rejectFirst: ((err: Error) => void) | null = null
+    let resolveSecond: (() => void) | null = null
+    service.setSessionActivityPanelCollapsed = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectFirst = reject
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveSecond = resolve
+          })
+      )
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.createSession())
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    const session = result.current.sessions[0]
+    const pane = session.panes[0]
+
+    let first: Promise<void> = Promise.resolve()
+    let second: Promise<void> = Promise.resolve()
+    act(() => {
+      first = absorbExpectedRejection(
+        result.current.setPaneActivityPanelCollapsed(session.id, pane.id, true)
+      )
+
+      second = result.current.setPaneActivityPanelCollapsed(
+        session.id,
+        pane.id,
+        false
+      )
+    })
+
+    expect(result.current.sessions[0].panes[0].activityPanelCollapsed).toBe(
+      false
+    )
+
+    await waitFor(() =>
+      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledTimes(1)
+    )
+
+    await act(async () => {
+      rejectFirst?.(new Error('first IPC failed'))
+      await first
+    })
+
+    await waitFor(() =>
+      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledTimes(2)
+    )
+
+    await act(async () => {
+      resolveSecond?.()
+      await second
+    })
+
+    expect(result.current.sessions[0].panes[0].activityPanelCollapsed).toBe(
+      false
+    )
   })
 
   describe('setSessionLayout', () => {

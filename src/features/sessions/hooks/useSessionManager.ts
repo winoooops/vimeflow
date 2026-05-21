@@ -32,6 +32,26 @@ import { useSessionRestore } from './useSessionRestore'
 
 export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
 
+const absorbCollapseQueueFailure = async (
+  promise: Promise<void>
+): Promise<void> => {
+  try {
+    await promise
+  } catch {
+    return
+  }
+}
+
+const persistActivityPanelCollapsed = async (
+  service: ITerminalService,
+  prior: Promise<void>,
+  id: string,
+  collapsed: boolean
+): Promise<void> => {
+  await absorbCollapseQueueFailure(prior)
+  await service.setSessionActivityPanelCollapsed({ id, collapsed })
+}
+
 export interface SessionManager {
   sessions: Session[]
   activeSessionId: string | null
@@ -61,6 +81,11 @@ export interface SessionManager {
     paneId: string,
     agentType: Session['agentType']
   ) => void
+  setPaneActivityPanelCollapsed: (
+    sessionId: string,
+    paneId: string,
+    collapsed: boolean
+  ) => Promise<void>
   /** Compatibility wrapper until workspace consumers migrate to pane ids. */
   updateSessionCwd: (id: string, cwd: string) => void
   /** Compatibility wrapper until workspace consumers migrate to pane ids. */
@@ -281,6 +306,7 @@ export const useSessionManager = (
   // and fires the auto-create that the round-10 comment promised.
   const [pendingSpawns, setPendingSpawns] = useState(0)
   const pendingPaneOps = useRef<Set<string>>(new Set())
+  const collapseChainRef = useRef<Map<string, Promise<void>>>(new Map())
 
   const createSession = useCallback((): void => {
     setPendingSpawns((c) => c + 1)
@@ -333,6 +359,7 @@ export const useSessionManager = (
                   agentType: 'generic',
                   status: 'running',
                   active: true,
+                  activityPanelCollapsed: null,
                   pid: result.pid,
                   restoreData,
                 },
@@ -733,6 +760,7 @@ export const useSessionManager = (
             agentType: 'generic',
             status: 'running',
             active: true,
+            activityPanelCollapsed: null,
             pid: result.pid,
             restoreData,
           }
@@ -1194,6 +1222,82 @@ export const useSessionManager = (
     []
   )
 
+  const setPaneActivityPanelCollapsed = useCallback(
+    async (
+      sessionId: string,
+      paneId: string,
+      collapsed: boolean
+    ): Promise<void> => {
+      const session = sessionsRef.current.find((s) => s.id === sessionId)
+      const pane = session?.panes.find((p) => p.id === paneId)
+      if (!session || !pane) {
+        return
+      }
+
+      const previous = pane.activityPanelCollapsed ?? null
+
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id !== sessionId
+            ? s
+            : {
+                ...s,
+                panes: s.panes.map((p) =>
+                  p.id !== paneId
+                    ? p
+                    : { ...p, activityPanelCollapsed: collapsed }
+                ),
+              }
+        )
+      )
+
+      const chainKey = `${sessionId}:${paneId}`
+      const prior = collapseChainRef.current.get(chainKey) ?? Promise.resolve()
+
+      const next = persistActivityPanelCollapsed(
+        service,
+        prior,
+        pane.ptyId,
+        collapsed
+      )
+      const tail = absorbCollapseQueueFailure(next)
+
+      collapseChainRef.current.set(chainKey, tail)
+
+      try {
+        await next
+      } catch (err) {
+        setSessions((prev) =>
+          prev.map((s) => {
+            if (s.id !== sessionId) {
+              return s
+            }
+
+            return {
+              ...s,
+              panes: s.panes.map((p) => {
+                if (p.id !== paneId) {
+                  return p
+                }
+                if (p.activityPanelCollapsed !== collapsed) {
+                  return p
+                }
+
+                return { ...p, activityPanelCollapsed: previous }
+              }),
+            }
+          })
+        )
+        throw err
+      } finally {
+        if (collapseChainRef.current.get(chainKey) === tail) {
+          collapseChainRef.current.delete(chainKey)
+        }
+      }
+    },
+    [service]
+  )
+
   const updateSessionCwd = useCallback(
     (id: string, cwd: string): void => {
       const target = sessionsRef.current.find((s) => s.id === id)
@@ -1233,6 +1337,7 @@ export const useSessionManager = (
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
+    setPaneActivityPanelCollapsed,
     updateSessionCwd,
     updateSessionAgentType,
     // Round 12 F2: expose the ref-backed Map. Identity is stable across

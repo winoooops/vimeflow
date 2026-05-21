@@ -1,5 +1,12 @@
 import { test, expect } from 'vitest'
-import { AGENTS, type AgentId } from './registry'
+import type { AgentStatus } from '../features/agent-status/types'
+import {
+  AGENTS,
+  agentStatusToSessionStatus,
+  agentTypeToRegistryKey,
+  vendorMarkFor,
+  type AgentId,
+} from './registry'
 
 const ALL_AGENTS: readonly AgentId[] = ['claude', 'codex', 'gemini', 'shell']
 
@@ -50,4 +57,53 @@ test('shell is yellow with null model and title-cased name', () => {
   expect(AGENTS.shell.glyph).toBe('$')
   expect(AGENTS.shell.model).toBeNull()
   expect(AGENTS.shell.name).toBe('Shell')
+})
+
+test('agentTypeToRegistryKey maps claude-code to claude', () => {
+  expect(agentTypeToRegistryKey('claude-code')).toBe('claude')
+})
+
+test('agentTypeToRegistryKey maps codex to codex', () => {
+  expect(agentTypeToRegistryKey('codex')).toBe('codex')
+})
+
+test.each(['aider', 'generic', null] as const)(
+  'agentTypeToRegistryKey maps %s to shell',
+  (agentType) => {
+    expect(agentTypeToRegistryKey(agentType)).toBe('shell')
+  }
+)
+
+test('agentTypeToRegistryKey falls back to shell for unknown values', () => {
+  expect(
+    agentTypeToRegistryKey('mystery-cli' as unknown as AgentStatus['agentType'])
+  ).toBe('shell')
+})
+
+test('agentStatusToSessionStatus reports running when isActive', () => {
+  expect(agentStatusToSessionStatus({ isActive: true } as AgentStatus)).toBe(
+    'running'
+  )
+})
+
+test('agentStatusToSessionStatus reports paused when not isActive', () => {
+  expect(agentStatusToSessionStatus({ isActive: false } as AgentStatus)).toBe(
+    'paused'
+  )
+})
+
+test('vendorMarkFor returns an asset URL for claude and codex', () => {
+  const claudeMark = vendorMarkFor('claude')
+  const codexMark = vendorMarkFor('codex')
+
+  expect(claudeMark).toEqual(expect.any(String))
+  expect(codexMark).toEqual(expect.any(String))
+  expect(claudeMark).not.toBe('')
+  expect(codexMark).not.toBe('')
+  expect(claudeMark).not.toBe(codexMark)
+})
+
+test('vendorMarkFor returns null for shell and gemini', () => {
+  expect(vendorMarkFor('shell')).toBeNull()
+  expect(vendorMarkFor('gemini')).toBeNull()
 })
