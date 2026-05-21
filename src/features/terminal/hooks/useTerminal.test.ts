@@ -706,10 +706,11 @@ describe('useTerminal', () => {
       expect(lifecycleEvents).toEqual(['start', 'output', 'end'])
     })
 
-    test('does not fire restore start without a matching restore end callback', async () => {
+    test('warns and skips restore start without a matching restore end callback', async () => {
       const writes: string[] = []
       const writeCallbacks: (() => void)[] = []
       const onRestoreStart = vi.fn()
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
       vi.mocked(mockTerminal.write).mockImplementation(
         (data: string | Uint8Array, callback?: () => void) => {
@@ -736,15 +737,20 @@ describe('useTerminal', () => {
             bufferedEvents: [{ data: 'BUFFERED', offsetStart: 50, byteLen: 8 }],
           },
           onRestoreStart,
-        })
+        } as unknown as Parameters<typeof useTerminal>[0])
       )
 
       await waitFor(() => {
         expect(writes).toEqual(['REPLAY', 'BUFFERED'])
       })
 
+      expect(warn).toHaveBeenCalledWith(
+        'useTerminal restore lifecycle callbacks must be provided together'
+      )
       expect(onRestoreStart).not.toHaveBeenCalled()
       expect(writeCallbacks).toHaveLength(0)
+
+      warn.mockRestore()
     })
 
     test('flushes buffered events with cursor filter (offsetStart >= replayEndOffset)', async () => {

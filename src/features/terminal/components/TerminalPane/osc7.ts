@@ -1,6 +1,10 @@
 export const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/
 const WINDOWS_FILE_URL_DRIVE_PATH = /^\/[A-Za-z]:[\\/]/
 
+export interface ParseOsc7CwdOptions {
+  preserveFileUrlHost?: boolean
+}
+
 export const normalizePosixPath = (path: string): string => {
   const parts: string[] = []
 
@@ -78,7 +82,27 @@ const normalizeAbsolutePath = (pathname: string): string | null => {
   return null
 }
 
-export const parseOsc7Cwd = (data: string): string | null => {
+const fileUrlPathname = (url: URL, options: ParseOsc7CwdOptions): string => {
+  const pathname = decodePathname(url.pathname)
+  const shouldPreserveHost = options.preserveFileUrlHost ?? true
+
+  if (
+    !shouldPreserveHost ||
+    !url.hostname ||
+    url.hostname === 'localhost' ||
+    WINDOWS_FILE_URL_DRIVE_PATH.test(pathname) ||
+    (pathname.startsWith('//') && !pathname.startsWith('///'))
+  ) {
+    return pathname
+  }
+
+  return `//${url.hostname}${pathname.startsWith('/') ? pathname : `/${pathname}`}`
+}
+
+export const parseOsc7Cwd = (
+  data: string,
+  options: ParseOsc7CwdOptions = {}
+): string | null => {
   const plainPath = normalizeAbsolutePath(data)
   if (plainPath) {
     return plainPath
@@ -95,5 +119,5 @@ export const parseOsc7Cwd = (data: string): string | null => {
     return null
   }
 
-  return normalizeAbsolutePath(decodePathname(url.pathname))
+  return normalizeAbsolutePath(fileUrlPathname(url, options))
 }

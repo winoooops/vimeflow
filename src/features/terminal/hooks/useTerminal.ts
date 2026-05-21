@@ -48,7 +48,7 @@ export type NotifyPaneReady = (
  */
 export type UseTerminalMode = 'attach' | 'spawn' | 'awaiting-restart'
 
-export interface UseTerminalOptions {
+interface UseTerminalBaseOptions {
   /**
    * xterm.js Terminal instance
    */
@@ -102,15 +102,6 @@ export interface UseTerminalOptions {
   onRestoreOutput?: (data: string) => void
 
   /**
-   * Optional paired restore lifecycle callbacks. When both are provided,
-   * `onRestoreStart` fires immediately before historical replay/buffered output
-   * is written to xterm and `onRestoreEnd` fires after the final restore write
-   * callback.
-   */
-  onRestoreStart?: () => void
-  onRestoreEnd?: () => void
-
-  /**
    * Optional callback for user keyboard input before it is forwarded to the PTY.
    */
   onInput?: (data: string) => void
@@ -127,6 +118,24 @@ export interface UseTerminalOptions {
    */
   mode?: UseTerminalMode
 }
+
+type RestoreLifecycleOptions =
+  | {
+      /**
+       * Restore lifecycle callbacks must be provided as a pair. `onRestoreStart`
+       * fires immediately before historical replay/buffered output is written to
+       * xterm; `onRestoreEnd` fires after the final restore write callback.
+       */
+      onRestoreStart: () => void
+      onRestoreEnd: () => void
+    }
+  | {
+      onRestoreStart?: undefined
+      onRestoreEnd?: undefined
+    }
+
+export type UseTerminalOptions = UseTerminalBaseOptions &
+  RestoreLifecycleOptions
 
 export interface UseTerminalReturn {
   /**
@@ -233,6 +242,17 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   useEffect(() => {
     onRestoreEndRef.current = onRestoreEnd
   }, [onRestoreEnd])
+
+  useEffect(() => {
+    if (Boolean(onRestoreStart) === Boolean(onRestoreEnd)) {
+      return
+    }
+
+    // eslint-disable-next-line no-console
+    console.warn(
+      'useTerminal restore lifecycle callbacks must be provided together'
+    )
+  }, [onRestoreStart, onRestoreEnd])
 
   const onInputRef = useRef(onInput)
   useEffect(() => {

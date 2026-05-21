@@ -6,6 +6,8 @@ export const subtitle = (session: Session): string => {
     return session.currentAction
   }
 
+  // Legacy persisted/test sessions can predate pane arrays; keep their
+  // baseline working directory usable until storage migration is complete.
   const activePaneCwd = Array.isArray(session.panes)
     ? findActivePane(session)?.cwd
     : undefined

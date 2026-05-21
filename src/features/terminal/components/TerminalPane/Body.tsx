@@ -31,10 +31,18 @@ import {
   toComparablePath,
 } from './agentCwdGuard'
 import { getAgentCwdHintContext, parseAgentCwdHint } from './agentCwdHint'
-import { parseOsc7Cwd } from './osc7'
+import { parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
 import '@xterm/xterm/css/xterm.css'
 
 const AGENT_CWD_HINT_BUFFER_SIZE = 4096
+
+const shouldPreserveOsc7FileUrlHost = (currentCwd?: string): boolean =>
+  Boolean(
+    currentCwd &&
+    (WINDOWS_DRIVE_PATH.test(currentCwd) ||
+      currentCwd.startsWith('\\\\') ||
+      (currentCwd.startsWith('//') && !currentCwd.startsWith('///')))
+  )
 
 const logAgentCwdDebug = (
   event: string,
@@ -619,8 +627,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       // Register OSC 7 handler for cwd tracking. Shell prompts and agent/tool
       // output both arrive through xterm's parser, so this stays pane-local.
       newTerminal.parser.registerOscHandler(7, (data) => {
-        const path = parseOsc7Cwd(data)
         const previousCwd = agentCwdRef.current
+
+        const path = parseOsc7Cwd(data, {
+          preserveFileUrlHost: shouldPreserveOsc7FileUrlHost(previousCwd),
+        })
 
         const shouldSuppressRestoreOsc7 = isRestoringOutputRef.current
 

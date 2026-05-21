@@ -14,13 +14,15 @@ describe('parseOsc7Cwd', () => {
   })
 
   test('decodes URL-encoded path characters', () => {
-    expect(parseOsc7Cwd('file://host/home/user/my%20project')).toBe(
+    expect(parseOsc7Cwd('file://localhost/home/user/my%20project')).toBe(
       '/home/user/my project'
     )
   })
 
   test('keeps malformed percent escapes instead of dropping the cwd update', () => {
-    expect(parseOsc7Cwd('file://host/home/user/100%')).toBe('/home/user/100%')
+    expect(parseOsc7Cwd('file://localhost/home/user/100%')).toBe(
+      '/home/user/100%'
+    )
   })
 
   test('normalizes Windows drive paths from file URLs', () => {
@@ -30,7 +32,7 @@ describe('parseOsc7Cwd', () => {
   })
 
   test('keeps POSIX paths with a colon in the first segment absolute', () => {
-    expect(parseOsc7Cwd('file://host/a:repo')).toBe('/a:repo')
+    expect(parseOsc7Cwd('file://localhost/a:repo')).toBe('/a:repo')
   })
 
   test('accepts plain absolute fallback paths', () => {
@@ -51,6 +53,20 @@ describe('parseOsc7Cwd', () => {
     expect(parseOsc7Cwd('file://host//server/share')).toBe('//server/share')
     expect(parseOsc7Cwd('//server/share')).toBe('//server/share')
     expect(parseOsc7Cwd('///tmp/worktree')).toBe('/tmp/worktree')
+  })
+
+  test('preserves non-local file URL hostnames as UNC paths', () => {
+    expect(parseOsc7Cwd('file://server/share/project')).toBe(
+      '//server/share/project'
+    )
+  })
+
+  test('can ignore non-local file URL hostnames for POSIX OSC 7 emitters', () => {
+    expect(
+      parseOsc7Cwd('file://workstation/home/user/my%20project', {
+        preserveFileUrlHost: false,
+      })
+    ).toBe('/home/user/my project')
   })
 
   test('rejects non-file URLs and relative paths', () => {
