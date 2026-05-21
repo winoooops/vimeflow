@@ -597,6 +597,7 @@ describe('useTerminal', () => {
       const writes: string[] = []
       const writeCallbacks: (() => void)[] = []
       const onOutput = vi.fn()
+      const onRestoreOutput = vi.fn()
       vi.mocked(mockTerminal.write).mockImplementation(
         (data: string | Uint8Array, callback?: () => void) => {
           writes.push(
@@ -622,6 +623,7 @@ describe('useTerminal', () => {
             bufferedEvents: [{ data: 'BUFFERED', offsetStart: 50, byteLen: 8 }],
           },
           onOutput,
+          onRestoreOutput,
         })
       )
 
@@ -634,6 +636,10 @@ describe('useTerminal', () => {
       // Then buffered events
       expect(writes[1]).toBe('BUFFERED')
       expect(onOutput).not.toHaveBeenCalled()
+      expect(onRestoreOutput).toHaveBeenCalledOnce()
+      expect(onRestoreOutput).toHaveBeenCalledWith(
+        ['REPLAY', 'BUFFERED'].join('')
+      )
       expect(writeCallbacks).toHaveLength(0)
     })
 

@@ -80,6 +80,7 @@ class FakeTerminal {
 
   private readonly oscHandlers = new Map<number, OscHandler>()
   private readonly inputHandlers = new Set<(data: string) => void>()
+  private oscBuffer = ''
 
   readonly write = vi.fn((data: string, callback?: () => void): void => {
     this.parseOsc(data)
@@ -99,12 +100,20 @@ class FakeTerminal {
   }
 
   private parseOsc(data: string): void {
+    this.oscBuffer += data
     const oscPattern = /\x1b\](\d+);([\s\S]*?)(?:\x07|\x1b\\)/g
+    let lastMatchEnd = 0
 
-    for (const match of data.matchAll(oscPattern)) {
+    for (const match of this.oscBuffer.matchAll(oscPattern)) {
       const handler = this.oscHandlers.get(Number(match[1]))
       handler?.(match[2] ?? '')
+      lastMatchEnd = (match.index ?? 0) + match[0].length
     }
+
+    const remaining = this.oscBuffer.slice(lastMatchEnd)
+    const partialOscStart = remaining.lastIndexOf('\x1b]')
+    this.oscBuffer =
+      partialOscStart === -1 ? '' : remaining.slice(partialOscStart)
   }
 }
 
@@ -170,6 +179,15 @@ const restoreData = (sessionId: string, cwd: string): RestoreData => ({
   replayData: '',
   replayEndOffset: 0,
   bufferedEvents: [],
+})
+
+const bufferedEvent = (
+  data: string,
+  offsetStart = 0
+): RestoreData['bufferedEvents'][number] => ({
+  data,
+  offsetStart,
+  byteLen: new TextEncoder().encode(data).length,
 })
 
 const getLatestTerminal = (): FakeTerminal => {
@@ -697,6 +715,52 @@ describe('Body agent-emitted OSC 7', () => {
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
+  test('accepts sibling OSC 7 outside the Claude worktree directory', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/app"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/app')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        'Entering worktree(/app/worktrees/service-a)\r\n'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/app/worktrees/service-a')
+    })
+
+    onCwdChange.mockClear()
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '\x1b]7;file://host/app/worktrees/service-b\x07'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/app/worktrees/service-b')
+    })
+
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
   test('accepts sibling worktree OSC 7 after user shell input', async () => {
     const service = createService()
     const onCwdChange = vi.fn()
@@ -862,6 +926,100 @@ describe('Body agent-emitted OSC 7', () => {
     })
 
     expect(onCwdChange).not.toHaveBeenCalled()
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('ignores OSC 7 updates replayed from restored terminal history', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    const replayData =
+      '\x1b]7;file://host/repo/old\x07' +
+      'historical output\r\n' +
+      '\x1b]7;file://host/repo/intermediate\x07'
+    const replayEndOffset = new TextEncoder().encode(replayData).length
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/repo/current"
+        service={service}
+        restoredFrom={{
+          ...restoreData('pty-agent', '/repo/current'),
+          replayData,
+          replayEndOffset,
+        }}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalled()
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '\x1b]7;file://host/repo/live\x07',
+        replayEndOffset
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/repo/live')
+    })
+
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('ignores OSC 7 updates split across restored buffered events', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    const replayData = '\x1b]7;file://host/repo/buffered'
+    const bufferedData = '\x07'
+    const replayEndOffset = new TextEncoder().encode(replayData).length
+
+    const bufferedEndOffset =
+      replayEndOffset + new TextEncoder().encode(bufferedData).length
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/repo/current"
+        service={service}
+        restoredFrom={{
+          ...restoreData('pty-agent', '/repo/current'),
+          replayData,
+          replayEndOffset,
+          bufferedEvents: [bufferedEvent(bufferedData, replayEndOffset)],
+        }}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalled()
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '\x1b]7;file://host/repo/live\x07',
+        bufferedEndOffset
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/repo/live')
+    })
+
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 

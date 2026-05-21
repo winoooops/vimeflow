@@ -28,6 +28,7 @@ import { parseOsc7Cwd } from './osc7'
 import '@xterm/xterm/css/xterm.css'
 
 const AGENT_CWD_HINT_BUFFER_SIZE = 4096
+const OSC7_SEQUENCE_PATTERN = /\x1b\]7;[\s\S]*?(?:\x07|\x1b\\)/g
 
 type AgentCwdSource = 'osc7' | 'prop' | 'text-hint'
 
@@ -69,7 +70,15 @@ const getWorktreeParentPath = (path: string): string | null => {
   const parentPath = normalizedPath.slice(0, lastSeparatorIndex)
   const parentName = parentPath.slice(parentPath.lastIndexOf('/') + 1)
 
-  return parentName === 'worktrees' ? parentPath : null
+  const grandparentPath = parentPath.slice(0, parentPath.lastIndexOf('/'))
+
+  const grandparentName = grandparentPath.slice(
+    grandparentPath.lastIndexOf('/') + 1
+  )
+
+  return parentName === 'worktrees' && grandparentName === '.claude'
+    ? parentPath
+    : null
 }
 
 const isWorktreeSiblingPath = (
@@ -122,6 +131,9 @@ const stripCarriageReturnOverwrites = (output: string): string =>
       return `${visibleLine}\n`
     })
     .join('')
+
+const countOsc7Sequences = (output: string): number =>
+  output.match(OSC7_SEQUENCE_PATTERN)?.length ?? 0
 
 // Module-level cache of terminal instances per sessionId.
 //
@@ -281,6 +293,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const pendingDeferredFitFlushRef = useRef(false)
   const agentCwdOutputBufferRef = useRef('')
   const agentCwdHintContextRef = useRef('')
+  const restoreOsc7SuppressionsRef = useRef(0)
   const cwdPropRef = useRef(cwd)
   const agentCwdRef = useRef(cwd)
   const agentCwdSourceRef = useRef<AgentCwdSource>('prop')
@@ -419,6 +432,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     })
   }, [sessionId])
 
+  const handleRestoreOutput = useCallback((output: string): void => {
+    restoreOsc7SuppressionsRef.current += countOsc7Sequences(output)
+  }, [])
+
   // Use terminal hook for PTY lifecycle management
   const {
     session: ptySession,
@@ -433,6 +450,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     restoredFrom,
     onPaneReady,
     onOutput: handleTerminalOutput,
+    onRestoreOutput: handleRestoreOutput,
     onInput: handleTerminalInput,
     mode,
   })
@@ -685,8 +703,15 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         const path = parseOsc7Cwd(data)
         const previousCwd = agentCwdRef.current
 
+        const shouldSuppressRestoreOsc7 = restoreOsc7SuppressionsRef.current > 0
+
+        if (shouldSuppressRestoreOsc7) {
+          restoreOsc7SuppressionsRef.current -= 1
+        }
+
         const shouldIgnore =
           path !== null &&
+          !shouldSuppressRestoreOsc7 &&
           shouldIgnoreStaleOsc7Cwd(
             agentCwdRef.current,
             path,
@@ -699,8 +724,12 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
           previousCwd,
           nextCwd: path,
           changed: path !== null && path !== previousCwd,
-          ignored: shouldIgnore,
+          ignored: shouldIgnore || shouldSuppressRestoreOsc7,
         })
+
+        if (shouldSuppressRestoreOsc7) {
+          return true
+        }
 
         if (path && path === agentCwdRef.current) {
           agentCwdSourceRef.current = 'osc7'

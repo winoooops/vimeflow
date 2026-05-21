@@ -95,6 +95,13 @@ export interface UseTerminalOptions {
   onOutput?: (data: string) => void
 
   /**
+   * Optional callback for historical replay/buffered output written while
+   * attaching to an existing PTY. This is intentionally separate from
+   * `onOutput` because restore writes must not be treated as live output.
+   */
+  onRestoreOutput?: (data: string) => void
+
+  /**
    * Optional callback for user keyboard input before it is forwarded to the PTY.
    */
   onInput?: (data: string) => void
@@ -155,6 +162,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     restoredFrom,
     onPaneReady,
     onOutput,
+    onRestoreOutput,
     onInput,
     mode,
   } = options
@@ -199,6 +207,11 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   useEffect(() => {
     onOutputRef.current = onOutput
   }, [onOutput])
+
+  const onRestoreOutputRef = useRef(onRestoreOutput)
+  useEffect(() => {
+    onRestoreOutputRef.current = onRestoreOutput
+  }, [onRestoreOutput])
 
   const onInputRef = useRef(onInput)
   useEffect(() => {
@@ -282,25 +295,37 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
 
         didSpawnSessionRef.current = false // We did NOT spawn this session
 
-        // Write replay data first; the cursor is already initialized to
-        // restore.replayEndOffset (set when the ref was created).
-        terminal.write(restore.replayData)
-
         // Drain buffered events captured at restore-time, advancing the
-        // cursor with each write. The orchestrator's notifyPaneReady drain
+        // cursor with each accepted event. The orchestrator's notifyPaneReady drain
         // (in the data-subscribe effect) may re-deliver the same events
         // along with any that arrived later — cursor dedupe filters them.
         // Cursor advances by `event.byteLen` (the producer's raw byte count),
         // NOT by `encoder.encode(event.data).length` — see RestoreData jsdoc.
+        const restoredBufferedEvents: typeof restore.bufferedEvents = []
         for (const event of restore.bufferedEvents) {
           if (event.offsetStart >= cursorRef.current) {
-            terminal.write(event.data)
+            restoredBufferedEvents.push(event)
 
             const writtenEnd = event.offsetStart + event.byteLen
             if (writtenEnd > cursorRef.current) {
               cursorRef.current = writtenEnd
             }
           }
+        }
+
+        onRestoreOutputRef.current?.(
+          [
+            restore.replayData,
+            ...restoredBufferedEvents.map((event) => event.data),
+          ].join('')
+        )
+
+        // Write replay data first; the cursor is already initialized to
+        // restore.replayEndOffset (set when the ref was created).
+        terminal.write(restore.replayData)
+
+        for (const event of restoredBufferedEvents) {
+          terminal.write(event.data)
         }
 
         // Create session object from restore data
