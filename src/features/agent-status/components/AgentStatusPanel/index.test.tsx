@@ -8,6 +8,7 @@ import { AgentStatusPanel } from '.'
 
 const inactiveAgentStatus: AgentStatus = {
   isActive: false,
+  agentExited: false,
   agentType: null,
   modelId: null,
   modelDisplayName: null,
@@ -26,6 +27,7 @@ const inactiveAgentStatus: AgentStatus = {
 const activeAgentStatus: AgentStatus = {
   ...inactiveAgentStatus,
   isActive: true,
+  agentExited: false,
   agentType: 'claude-code',
   modelId: 'claude-3-5-sonnet-20241022',
   modelDisplayName: 'Claude 3.5 Sonnet',

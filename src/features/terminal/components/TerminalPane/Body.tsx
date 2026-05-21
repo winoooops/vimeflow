@@ -1,7 +1,9 @@
 /* eslint-disable react/require-default-props */
+// cspell:ignore worktree worktrees
 import type { ReactElement } from 'react'
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -21,7 +23,38 @@ import {
 } from '../../hooks/useTerminal'
 import { type ITerminalService } from '../../services/terminalService'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
+import {
+  type AgentCwdSource,
+  isDescendantPath,
+  shouldIgnoreStaleOsc7Cwd,
+  stripCarriageReturnOverwrites,
+  toComparablePath,
+} from './agentCwdGuard'
+import { getAgentCwdHintContext, parseAgentCwdHint } from './agentCwdHint'
+import { parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
 import '@xterm/xterm/css/xterm.css'
+
+const AGENT_CWD_HINT_BUFFER_SIZE = 4096
+
+const shouldPreserveOsc7FileUrlHost = (currentCwd?: string): boolean =>
+  Boolean(
+    currentCwd &&
+    (WINDOWS_DRIVE_PATH.test(currentCwd) ||
+      currentCwd.startsWith('\\\\') ||
+      (currentCwd.startsWith('//') && !currentCwd.startsWith('///')))
+  )
+
+const logAgentCwdDebug = (
+  event: string,
+  details: Record<string, boolean | string | null>
+): void => {
+  if (!import.meta.env.DEV || import.meta.env.MODE === 'test') {
+    return
+  }
+
+  // eslint-disable-next-line no-console
+  console.info(`[vimeflow:terminal-cwd] ${event} ${JSON.stringify(details)}`)
+}
 
 // Module-level cache of terminal instances per sessionId.
 //
@@ -179,6 +212,154 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const flushFitRef = useRef<(() => void) | null>(null)
   const flushFitSessionIdRef = useRef<string | null>(null)
   const pendingDeferredFitFlushRef = useRef(false)
+  const agentCwdOutputBufferRef = useRef('')
+  const agentCwdHintContextRef = useRef('')
+  const isRestoringOutputRef = useRef(false)
+  const cwdPropRef = useRef(cwd)
+  const agentCwdRef = useRef(cwd)
+  const agentCwdSourceRef = useRef<AgentCwdSource>('prop')
+  const sessionIdRef = useRef(sessionId)
+  sessionIdRef.current = sessionId
+
+  const terminalStatusRef = useRef<'idle' | 'running' | 'exited' | 'error'>(
+    'idle'
+  )
+
+  // Store callbacks in refs to avoid terminal recreation when they change
+  const onCwdChangeRef = useRef(onCwdChange)
+  useEffect(() => {
+    onCwdChangeRef.current = onCwdChange
+  }, [onCwdChange])
+
+  useEffect(() => {
+    const previousCwd = agentCwdRef.current
+
+    cwdPropRef.current = cwd
+    if (
+      toComparablePath(agentCwdRef.current) !== toComparablePath(cwd) &&
+      !isDescendantPath(agentCwdRef.current, cwd)
+    ) {
+      agentCwdOutputBufferRef.current = ''
+      agentCwdHintContextRef.current = ''
+      agentCwdRef.current = cwd
+      agentCwdSourceRef.current = 'prop'
+    }
+
+    logAgentCwdDebug('prop-cwd', {
+      sessionId,
+      previousCwd,
+      propCwd: cwd,
+      agentCwd: agentCwdRef.current,
+      changed: previousCwd !== agentCwdRef.current,
+    })
+  }, [cwd, sessionId])
+
+  useEffect(() => {
+    agentCwdOutputBufferRef.current = ''
+    agentCwdHintContextRef.current = ''
+    isRestoringOutputRef.current = false
+    agentCwdRef.current = cwdPropRef.current
+    agentCwdSourceRef.current = 'prop'
+  }, [sessionId])
+
+  const applyAgentCwdHint = useCallback((output: string): void => {
+    const previousCwd = agentCwdRef.current
+    const visibleOutput = stripCarriageReturnOverwrites(output)
+    const outputWithContext = `${agentCwdHintContextRef.current}${visibleOutput}`
+    const cwdHint = parseAgentCwdHint(outputWithContext, previousCwd)
+
+    const shouldApplyCwdHint =
+      cwdHint !== null && cwdHint !== agentCwdRef.current
+
+    agentCwdHintContextRef.current = shouldApplyCwdHint
+      ? ''
+      : getAgentCwdHintContext(outputWithContext).slice(
+          -AGENT_CWD_HINT_BUFFER_SIZE
+        )
+
+    if (cwdHint !== null) {
+      logAgentCwdDebug('text-hint', {
+        sessionId: sessionIdRef.current,
+        previousCwd,
+        nextCwd: cwdHint,
+        changed: cwdHint !== previousCwd,
+      })
+
+      if (shouldApplyCwdHint) {
+        agentCwdSourceRef.current = 'text-hint'
+        agentCwdRef.current = cwdHint
+        onCwdChangeRef.current?.(cwdHint)
+      }
+    }
+  }, [])
+
+  const flushAgentCwdOutputBuffer = useCallback((): void => {
+    const pendingOutput = agentCwdOutputBufferRef.current
+    if (!pendingOutput) {
+      return
+    }
+
+    agentCwdOutputBufferRef.current = ''
+    applyAgentCwdHint(`${pendingOutput}\r\n`)
+  }, [applyAgentCwdHint])
+
+  const handleTerminalOutput = useCallback(
+    (data: string): void => {
+      const output = `${agentCwdOutputBufferRef.current}${data}`
+
+      const lastLineBreakIndex = output.lastIndexOf('\n')
+
+      if (lastLineBreakIndex === -1) {
+        agentCwdOutputBufferRef.current = output.slice(
+          -AGENT_CWD_HINT_BUFFER_SIZE
+        )
+
+        if (
+          terminalStatusRef.current === 'exited' ||
+          terminalStatusRef.current === 'error'
+        ) {
+          flushAgentCwdOutputBuffer()
+        }
+
+        return
+      }
+
+      const completeOutput = output.slice(0, lastLineBreakIndex + 1)
+      agentCwdOutputBufferRef.current = output
+        .slice(lastLineBreakIndex + 1)
+        .slice(-AGENT_CWD_HINT_BUFFER_SIZE)
+      applyAgentCwdHint(completeOutput)
+
+      if (
+        terminalStatusRef.current === 'exited' ||
+        terminalStatusRef.current === 'error'
+      ) {
+        flushAgentCwdOutputBuffer()
+      }
+    },
+    [applyAgentCwdHint, flushAgentCwdOutputBuffer]
+  )
+
+  const handleTerminalInput = useCallback((): void => {
+    if (agentCwdSourceRef.current !== 'text-hint') {
+      return
+    }
+
+    agentCwdSourceRef.current = 'user-input'
+    logAgentCwdDebug('user-input', {
+      sessionId,
+      agentCwd: agentCwdRef.current,
+      unlocked: true,
+    })
+  }, [sessionId])
+
+  const handleRestoreStart = useCallback((): void => {
+    isRestoringOutputRef.current = true
+  }, [])
+
+  const handleRestoreEnd = useCallback((): void => {
+    isRestoringOutputRef.current = false
+  }, [])
 
   // Use terminal hook for PTY lifecycle management
   const {
@@ -193,8 +374,13 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     env,
     restoredFrom,
     onPaneReady,
+    onOutput: handleTerminalOutput,
+    onRestoreStart: handleRestoreStart,
+    onRestoreEnd: handleRestoreEnd,
+    onInput: handleTerminalInput,
     mode,
   })
+  terminalStatusRef.current = status
 
   // Bridge workspace sessionId ↔ PTY sessionId for agent detection.
   // Use the PTY session's resolved cwd (absolute path from Rust),
@@ -208,12 +394,6 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       unregisterPtySession(sessionId)
     }
   }, [sessionId, ptySession?.id, ptySession?.cwd])
-
-  // Store callbacks in refs to avoid terminal recreation when they change
-  const onCwdChangeRef = useRef(onCwdChange)
-  useEffect(() => {
-    onCwdChangeRef.current = onCwdChange
-  }, [onCwdChange])
 
   // P1 Fix: Store resize callback in ref to avoid terminal recreation when it changes
   const resizeRef = useRef(resize)
@@ -237,6 +417,14 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   useEffect(() => {
     onPtyStatusChangeRef.current?.(status)
   }, [status])
+
+  useEffect(() => {
+    if (status !== 'exited' && status !== 'error') {
+      return
+    }
+
+    flushAgentCwdOutputBuffer()
+  }, [flushAgentCwdOutputBuffer, status])
 
   useLayoutEffect(() => {
     const wasDeferred = previousDeferFitRef.current
@@ -435,25 +623,47 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       // Fit terminal to container — guard against hidden (display:none) containers
       didInitialFit = fitInitialWhenReady(fitAddon)
 
-      // Register OSC 7 handler for cwd tracking
-      // Shells emit: \e]7;file://hostname/path\a on every cd
+      // Register OSC 7 handler for cwd tracking. Shell prompts and agent/tool
+      // output both arrive through xterm's parser, so this stays pane-local.
       newTerminal.parser.registerOscHandler(7, (data) => {
-        try {
-          const url = new URL(data)
-          let path = decodeURIComponent(url.pathname)
-          // Windows: new URL("file://host/C:/Users/...").pathname → "/C:/Users/..."
-          // Strip the leading slash before a drive letter so Rust canonicalize works
-          if (/^\/[A-Za-z]:/.test(path)) {
-            path = path.slice(1)
-          }
-          if (path) {
-            onCwdChangeRef.current?.(path)
-          }
-        } catch {
-          // Not a valid URL — some shells emit plain paths
-          if (data.startsWith('/')) {
-            onCwdChangeRef.current?.(data)
-          }
+        const previousCwd = agentCwdRef.current
+
+        const path = parseOsc7Cwd(data, {
+          preserveFileUrlHost: shouldPreserveOsc7FileUrlHost(previousCwd),
+        })
+
+        const shouldSuppressRestoreOsc7 = isRestoringOutputRef.current
+
+        const shouldIgnore =
+          path !== null &&
+          !shouldSuppressRestoreOsc7 &&
+          shouldIgnoreStaleOsc7Cwd(
+            agentCwdRef.current,
+            path,
+            agentCwdSourceRef.current
+          )
+
+        logAgentCwdDebug('osc7', {
+          sessionId,
+          raw: data,
+          previousCwd,
+          nextCwd: path,
+          changed: path !== null && path !== previousCwd,
+          ignored: shouldIgnore || shouldSuppressRestoreOsc7,
+        })
+
+        if (shouldSuppressRestoreOsc7) {
+          return true
+        }
+
+        if (path && path === agentCwdRef.current) {
+          agentCwdSourceRef.current = 'osc7'
+        } else if (path && !shouldIgnore) {
+          agentCwdOutputBufferRef.current = ''
+          agentCwdHintContextRef.current = ''
+          agentCwdRef.current = path
+          agentCwdSourceRef.current = 'osc7'
+          onCwdChangeRef.current?.(path)
         }
 
         return true

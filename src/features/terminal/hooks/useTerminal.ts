@@ -48,7 +48,7 @@ export type NotifyPaneReady = (
  */
 export type UseTerminalMode = 'attach' | 'spawn' | 'awaiting-restart'
 
-export interface UseTerminalOptions {
+interface UseTerminalBaseOptions {
   /**
    * xterm.js Terminal instance
    */
@@ -88,6 +88,25 @@ export interface UseTerminalOptions {
   onPaneReady?: NotifyPaneReady
 
   /**
+   * Optional callback for PTY output chunks that passed the session and
+   * cursor-dedupe filters. Consumers can inspect agent-emitted terminal text
+   * without subscribing to the shared terminal service separately.
+   */
+  onOutput?: (data: string) => void
+
+  /**
+   * Optional callback for historical replay/buffered output written while
+   * attaching to an existing PTY. This is intentionally separate from
+   * `onOutput` because restore writes must not be treated as live output.
+   */
+  onRestoreOutput?: (data: string) => void
+
+  /**
+   * Optional callback for user keyboard input before it is forwarded to the PTY.
+   */
+  onInput?: (data: string) => void
+
+  /**
    * Explicit lifecycle mode. When omitted, falls back to legacy inference
    * (`attach` if `restoredFrom` is set, else `spawn`) so existing call
    * sites that haven't migrated to the explicit prop continue to work.
@@ -99,6 +118,24 @@ export interface UseTerminalOptions {
    */
   mode?: UseTerminalMode
 }
+
+type RestoreLifecycleOptions =
+  | {
+      /**
+       * Restore lifecycle callbacks must be provided as a pair. `onRestoreStart`
+       * fires immediately before historical replay/buffered output is written to
+       * xterm; `onRestoreEnd` fires after the final restore write callback.
+       */
+      onRestoreStart: () => void
+      onRestoreEnd: () => void
+    }
+  | {
+      onRestoreStart?: undefined
+      onRestoreEnd?: undefined
+    }
+
+export type UseTerminalOptions = UseTerminalBaseOptions &
+  RestoreLifecycleOptions
 
 export interface UseTerminalReturn {
   /**
@@ -142,6 +179,11 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     env,
     restoredFrom,
     onPaneReady,
+    onOutput,
+    onRestoreOutput,
+    onRestoreStart,
+    onRestoreEnd,
+    onInput,
     mode,
   } = options
 
@@ -181,11 +223,51 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     onPaneReadyRef.current = onPaneReady
   }, [onPaneReady])
 
+  const onOutputRef = useRef(onOutput)
+  useEffect(() => {
+    onOutputRef.current = onOutput
+  }, [onOutput])
+
+  const onRestoreOutputRef = useRef(onRestoreOutput)
+  useEffect(() => {
+    onRestoreOutputRef.current = onRestoreOutput
+  }, [onRestoreOutput])
+
+  const onRestoreStartRef = useRef(onRestoreStart)
+  useEffect(() => {
+    onRestoreStartRef.current = onRestoreStart
+  }, [onRestoreStart])
+
+  const onRestoreEndRef = useRef(onRestoreEnd)
+  useEffect(() => {
+    onRestoreEndRef.current = onRestoreEnd
+  }, [onRestoreEnd])
+
+  const onInputRef = useRef(onInput)
+  useEffect(() => {
+    onInputRef.current = onInput
+  }, [onInput])
+
+  const writeTerminalOutput = useCallback(
+    (targetTerminal: Terminal, data: string): void => {
+      if (!onOutputRef.current) {
+        targetTerminal.write(data)
+
+        return
+      }
+
+      targetTerminal.write(data, () => {
+        onOutputRef.current?.(data)
+      })
+    },
+    []
+  )
+
   // Store restoredFrom in a ref to prevent effect dependency cycles
   const restoredFromRef = useRef(restoredFrom)
 
   // Store cwd in a ref — used only at spawn time, not as an effect dependency.
-  // OSC 7 updates session.workingDirectory which flows here as `cwd`, but we
+  // OSC 7 updates the pane cwd which flows here as `cwd`, but we
   // must NOT respawn the PTY when the shell changes directory.
   const cwdRef = useRef(cwd)
   cwdRef.current = cwd
@@ -243,25 +325,66 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
 
         didSpawnSessionRef.current = false // We did NOT spawn this session
 
-        // Write replay data first; the cursor is already initialized to
-        // restore.replayEndOffset (set when the ref was created).
-        terminal.write(restore.replayData)
-
         // Drain buffered events captured at restore-time, advancing the
-        // cursor with each write. The orchestrator's notifyPaneReady drain
+        // cursor with each accepted event. The orchestrator's notifyPaneReady drain
         // (in the data-subscribe effect) may re-deliver the same events
         // along with any that arrived later — cursor dedupe filters them.
         // Cursor advances by `event.byteLen` (the producer's raw byte count),
         // NOT by `encoder.encode(event.data).length` — see RestoreData jsdoc.
+        const restoredBufferedEvents: typeof restore.bufferedEvents = []
         for (const event of restore.bufferedEvents) {
           if (event.offsetStart >= cursorRef.current) {
-            terminal.write(event.data)
+            restoredBufferedEvents.push(event)
 
             const writtenEnd = event.offsetStart + event.byteLen
             if (writtenEnd > cursorRef.current) {
               cursorRef.current = writtenEnd
             }
           }
+        }
+
+        const restoredOutputParts = [
+          restore.replayData,
+          ...restoredBufferedEvents.map((event) => event.data),
+        ]
+
+        const restoredOutput = restoredOutputParts.join('')
+
+        const restoredOutputChunks = restoredOutputParts.filter(
+          (data) => data.length > 0
+        )
+
+        const restoreStart = onRestoreStartRef.current
+        const restoreEnd = onRestoreEndRef.current
+        const hasRestoreOutput = Boolean(onRestoreOutputRef.current)
+
+        const restoreEndCallback =
+          restoredOutputChunks.length > 0 && restoreStart && restoreEnd
+            ? restoreEnd
+            : undefined
+
+        const finishRestore = (): void => {
+          onRestoreOutputRef.current?.(restoredOutput)
+          restoreEndCallback?.()
+        }
+
+        if (restoreStart && restoreEndCallback) {
+          restoreStart()
+        }
+
+        if (restoredOutputChunks.length > 0) {
+          restoredOutputChunks.forEach((data, index) => {
+            const isLastChunk = index === restoredOutputChunks.length - 1
+            if (isLastChunk && (hasRestoreOutput || restoreEndCallback)) {
+              terminal.write(data, finishRestore)
+
+              return
+            }
+
+            terminal.write(data)
+          })
+        } else {
+          finishRestore()
         }
 
         // Create session object from restore data
@@ -367,7 +490,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     // OSC 7 updates cwd continuously; including it here would kill the PTY on every cd.
     // restoredFrom intentionally excluded — it's read from restoredFromRef at init time.
     // Including it would cause infinite loops as object identity changes.
-  }, [terminal, service, shell, env])
+  }, [terminal, service, shell, env, writeTerminalOutput])
 
   // Listen to PTY data events
   useEffect(() => {
@@ -385,7 +508,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
         // Cursor dedupe: drop events whose offset predates what we've
         // already written (replay or earlier live/buffered event).
         if (offsetStart >= cursorRef.current) {
-          terminal.write(data)
+          writeTerminalOutput(terminal, data)
           // Advance the cursor by the producer's raw byte count, not by the
           // length of `data`. Lossy UTF-8 in the producer (invalid bytes →
           // U+FFFD = 3 bytes when re-encoded) would otherwise drift the
@@ -506,7 +629,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
       unsubscribeExit?.()
       unsubscribeError?.()
     }
-  }, [terminal, session, service])
+  }, [terminal, session, service, writeTerminalOutput])
 
   // Handle keyboard input from xterm
   useEffect(() => {
@@ -515,6 +638,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     }
 
     const handleInput = (data: string): void => {
+      onInputRef.current?.(data)
+
       // Guard writes after PTY exit to avoid rejected writes
       if (isMountedRef.current && status === 'running') {
         const writeAsync = async (): Promise<void> => {

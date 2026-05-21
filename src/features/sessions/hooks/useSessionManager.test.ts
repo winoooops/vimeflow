@@ -1,3 +1,4 @@
+// cspell:ignore worktrees
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useSessionManager } from './useSessionManager'
@@ -1892,7 +1893,7 @@ describe('useSessionManager', () => {
     )
   })
 
-  test('updateSessionCwd updates local state and calls IPC', async () => {
+  test('updateSessionCwd updates session cwd without touching pane cwd', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 's1',
@@ -1918,9 +1919,8 @@ describe('useSessionManager', () => {
     act(() => result.current.updateSessionCwd('s1', '/home/user'))
 
     expect(result.current.sessions[0].workingDirectory).toBe('/home/user')
-    await waitFor(() =>
-      expect(service.updateSessionCwd).toHaveBeenCalledWith('s1', '/home/user')
-    )
+    expect(result.current.sessions[0].panes[0].cwd).toBe('/tmp')
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
   test('updateSessionAgentType persists detected agent identity in local session state', async () => {
@@ -2843,7 +2843,7 @@ describe('useSessionManager', () => {
     warnSpy.mockRestore()
   })
 
-  test('updatePaneCwd updates pane cwd and mirrors to Rust via pane ptyId', async () => {
+  test('updatePaneCwd updates pane cwd without changing session cwd', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 'pty-1',
@@ -2873,7 +2873,7 @@ describe('useSessionManager', () => {
 
     const updated = result.current.sessions[0]
     expect(updated.panes[0].cwd).toBe('/new/cwd')
-    expect(updated.workingDirectory).toBe('/new/cwd')
+    expect(updated.workingDirectory).toBe('/old')
     expect(service.updateSessionCwd).toHaveBeenCalledWith('pty-1', '/new/cwd')
   })
 
@@ -3197,7 +3197,7 @@ describe('useSessionManager', () => {
       })
     }
 
-    test('addPane spawns in the active pane cwd and appends an active pane', async () => {
+    test('addPane spawns in the session cwd and appends an active pane', async () => {
       const service = createSequentialSpawnService()
 
       const { result } = renderHook(() =>
@@ -3209,6 +3209,14 @@ describe('useSessionManager', () => {
 
       ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
 
+      act(() => {
+        result.current.updatePaneCwd(
+          sessionId,
+          'p0',
+          '/workspace/.claude/worktrees/test-branch'
+        )
+      })
+
       await addSecondPane(result, sessionId)
 
       const session = result.current.sessions[0]
@@ -3218,7 +3226,12 @@ describe('useSessionManager', () => {
         enableAgentBridge: true,
       })
       expect(session.panes).toHaveLength(2)
-      expect(session.panes[0]).toMatchObject({ id: 'p0', active: false })
+      expect(session.panes[0]).toMatchObject({
+        id: 'p0',
+        cwd: '/workspace/.claude/worktrees/test-branch',
+        active: false,
+      })
+
       expect(session.panes[1]).toMatchObject({
         id: 'p1',
         ptyId: 'pty-1',

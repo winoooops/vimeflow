@@ -148,7 +148,7 @@ describe('applyAddPane', () => {
     })
   })
 
-  test('re-derives workingDirectory and agentType from new active pane', () => {
+  test('preserves workingDirectory and re-derives agentType from new active pane', () => {
     const result = applyAddPane(
       [mockSession()],
       's0',
@@ -156,7 +156,7 @@ describe('applyAddPane', () => {
       2
     )
 
-    expect(result.sessions[0].workingDirectory).toBe('/tmp/scratch')
+    expect(result.sessions[0].workingDirectory).toBe('/home/test')
     expect(result.sessions[0].agentType).toBe('codex')
   })
 
@@ -257,7 +257,7 @@ describe('applyRemovePane', () => {
       active: true,
     })
     expect(result.newActivePtyId).toBe('pty-0')
-    expect(result.sessions[0].workingDirectory).toBe('/dir-0')
+    expect(result.sessions[0].workingDirectory).toBe('/home/test')
     expect(result.sessions[0].agentType).toBe('claude-code')
   })
 

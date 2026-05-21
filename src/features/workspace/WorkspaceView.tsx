@@ -244,25 +244,17 @@ export const WorkspaceView = (): ReactElement => {
     [activePane, activeSessionId, notifyInfo, setPaneActivityPanelCollapsed]
   )
 
-  // Bridge: when the detector resolves a live agent for the active
-  // session, write it into Session.agentType. This is the single source
-  // of truth — chrome consumers (Tab strip, Header chip, Footer
-  // prompt-marker, RestartAffordance) all read agentForSession(session)
-  // and follow naturally. AgentStatusPanel is NOT in this set; it reads
-  // useAgentStatus directly.
+  // Bridge: keep pane chrome in sync with agent detection for the active
+  // pane. Live detections stamp the agent identity; an explicit
+  // agentExited signal means useAgentStatus previously detected an agent
+  // and then confirmed it exited while the PTY stayed alive, so the pane
+  // should return to shell chrome even if the activity panel is still in
+  // its exit-hold window.
   //
-  // Only writes on isActive=true with non-null agentType. isActive=false
-  // is ambiguous (tab just activated / EXIT_HOLD window / agent gone but
-  // shell alive — detector returns None) so we leave Session.agentType
-  // untouched. Once detected, it sticks until PTY exit.
-  //
-  // Status guard: skip the write when the active session has already
-  // exited (status completed/errored). useAgentStatus keeps isActive
-  // true for EXIT_HOLD_MS (5s) after the agent process disappears; if
-  // the PTY also exits during that window, the reset effect below sets
-  // agentType='generic' on the completed session — without this guard
-  // a re-render that re-fires the bridge would write the stale agent
-  // back, ping-ponging against the reset.
+  // Status guard: skip writes when the active session has already exited
+  // (status completed/errored). The PTY-exit reset effect below owns that
+  // path; without this guard, a delayed status update could re-stamp stale
+  // agent chrome onto a completed session.
   const activeSessionStatus = activeSession?.status
   useEffect(() => {
     if (!activeSessionId) {
@@ -274,18 +266,33 @@ export const WorkspaceView = (): ReactElement => {
     if (agentStatus.sessionId !== activePanePtyId) {
       return
     }
-    if (!agentStatus.isActive || !agentStatus.agentType) {
-      return
-    }
     if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
       return
     }
-    updatePaneAgentType(activeSessionId, activePaneId, agentStatus.agentType)
+
+    if (agentStatus.agentExited) {
+      updatePaneAgentType(activeSessionId, activePaneId, 'generic')
+
+      return
+    }
+
+    if (agentStatus.isActive) {
+      if (agentStatus.agentType) {
+        updatePaneAgentType(
+          activeSessionId,
+          activePaneId,
+          agentStatus.agentType
+        )
+      }
+
+      return
+    }
   }, [
     activeSessionId,
     activePaneId,
     activePanePtyId,
     activeSessionStatus,
+    agentStatus.agentExited,
     agentStatus.isActive,
     agentStatus.agentType,
     agentStatus.sessionId,

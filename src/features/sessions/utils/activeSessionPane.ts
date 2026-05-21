@@ -36,8 +36,8 @@ export const getActivePane = (session: Session): Pane => {
   return actives[0]
 }
 
-/** Flip the active pane inside one session and re-derive materialized
- * session fields from the new active pane.
+/** Flip the active pane inside one session and re-derive active-pane
+ * materialized fields from the new active pane.
  *
  * Pure helper — no side effects. No-op branches (missing session,
  * missing pane, already-active target) return the same `sessions`
@@ -82,7 +82,6 @@ export const applyActivePane = (
   const updatedSession: Session = {
     ...session,
     panes,
-    workingDirectory: target.cwd,
     agentType: target.agentType,
   }
 

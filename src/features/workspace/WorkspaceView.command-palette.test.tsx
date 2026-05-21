@@ -189,6 +189,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       await import('../agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue({
       isActive: false,
+      agentExited: false,
       agentType: null,
       modelId: null,
       modelDisplayName: null,
@@ -320,6 +321,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       await import('../agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue({
       isActive: true,
+      agentExited: false,
       agentType: 'codex',
       modelId: null,
       modelDisplayName: null,
@@ -346,6 +348,54 @@ describe('WorkspaceView - Command Palette Integration', () => {
     )
   })
 
+  test('resets active pane chrome to shell after a detected agent exits', async () => {
+    const activeSession = mockSessions[0]
+    mockSessions[0] = {
+      ...activeSession,
+      agentType: 'codex',
+      panes: activeSession.panes.map((pane) => ({
+        ...pane,
+        agentType: 'codex',
+      })),
+    }
+
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue({
+      isActive: true,
+      agentExited: true,
+      agentType: 'codex',
+      modelId: null,
+      modelDisplayName: null,
+      version: null,
+      sessionId: 'pty-session-1',
+      agentSessionId: null,
+      contextWindow: null,
+      cost: null,
+      rateLimits: null,
+      numTurns: 0,
+      toolCalls: { total: 0, byType: {}, active: null },
+      recentToolCalls: [],
+      testRun: null,
+    })
+
+    render(<WorkspaceView />)
+
+    await waitFor(() =>
+      expect(mockSessionManager.updatePaneAgentType).toHaveBeenCalledWith(
+        'session-1',
+        'p0',
+        'generic'
+      )
+    )
+  })
+
+  test('does not reset pane chrome before detection reports an agent', () => {
+    render(<WorkspaceView />)
+
+    expect(mockSessionManager.updatePaneAgentType).not.toHaveBeenCalled()
+  })
+
   test('does not apply stale agent status from another session to the active shell tab', async () => {
     mockSessions[1] = {
       ...mockSessions[1],
@@ -357,6 +407,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       await import('../agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue({
       isActive: true,
+      agentExited: false,
       agentType: 'claude-code',
       modelId: null,
       modelDisplayName: null,

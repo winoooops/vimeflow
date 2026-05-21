@@ -7,10 +7,12 @@ import { MockTerminalService } from '../services/terminalService'
 // Mock xterm Terminal with test helpers
 interface MockTerminal extends Terminal {
   _mockTriggerData: (data: string) => void
+  _mockFlushWrites: () => void
 }
 
 const createMockTerminal = (): MockTerminal => {
   const listeners = new Map<string, ((data: string) => void)[]>()
+  const pendingWriteCallbacks: (() => void)[] = []
 
   return {
     onData: vi.fn((callback: (data: string) => void) => {
@@ -27,12 +29,22 @@ const createMockTerminal = (): MockTerminal => {
         }),
       }
     }),
-    write: vi.fn(),
+    write: vi.fn((_data: string | Uint8Array, callback?: () => void) => {
+      if (callback) {
+        pendingWriteCallbacks.push(callback)
+      }
+    }),
     clear: vi.fn(),
     dispose: vi.fn(),
     _mockTriggerData: (data: string) => {
       const callbacks = listeners.get('data') ?? []
       callbacks.forEach((cb) => cb(data))
+    },
+    _mockFlushWrites: () => {
+      const callbacks = pendingWriteCallbacks.splice(0)
+      callbacks.forEach((callback) => {
+        callback()
+      })
     },
   } as unknown as MockTerminal
 }
@@ -120,6 +132,35 @@ describe('useTerminal', () => {
     })
 
     expect(mockTerminal.write).toHaveBeenCalledWith('Hello from PTY\r\n')
+  })
+
+  test('reports accepted PTY output chunks', async () => {
+    const onOutput = vi.fn()
+
+    const { result } = renderHook(() =>
+      useTerminal({
+        terminal: mockTerminal,
+        service: mockService,
+        cwd: '/home/user',
+        onOutput,
+      })
+    )
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('running')
+    })
+
+    const sessionId = result.current.session!.id
+
+    mockService.emit('data', {
+      sessionId,
+      data: 'Hello from PTY\r\n',
+    })
+
+    expect(onOutput).not.toHaveBeenCalled()
+    mockTerminal._mockFlushWrites()
+
+    expect(onOutput).toHaveBeenCalledWith('Hello from PTY\r\n')
   })
 
   test('handles keyboard input from xterm', async () => {
@@ -552,13 +593,20 @@ describe('useTerminal', () => {
       expect(mockTerminal.write).toHaveBeenCalledWith('Restored output\r\n')
     })
 
-    test('writes replay data before draining buffered events', async () => {
+    test('reports restored output after the final restore write callback', async () => {
       const writes: string[] = []
+      const writeCallbacks: (() => void)[] = []
+      const onOutput = vi.fn()
+      const onRestoreOutput = vi.fn()
       vi.mocked(mockTerminal.write).mockImplementation(
-        (data: string | Uint8Array) => {
+        (data: string | Uint8Array, callback?: () => void) => {
           writes.push(
             typeof data === 'string' ? data : new TextDecoder().decode(data)
           )
+
+          if (callback) {
+            writeCallbacks.push(callback)
+          }
         }
       )
 
@@ -574,6 +622,8 @@ describe('useTerminal', () => {
             replayEndOffset: 50,
             bufferedEvents: [{ data: 'BUFFERED', offsetStart: 50, byteLen: 8 }],
           },
+          onOutput,
+          onRestoreOutput,
         })
       )
 
@@ -585,6 +635,81 @@ describe('useTerminal', () => {
       expect(writes[0]).toBe('REPLAY')
       // Then buffered events
       expect(writes[1]).toBe('BUFFERED')
+      expect(onOutput).not.toHaveBeenCalled()
+
+      expect(onRestoreOutput).not.toHaveBeenCalled()
+      expect(writeCallbacks).toHaveLength(1)
+
+      writeCallbacks[0]()
+
+      expect(onRestoreOutput).toHaveBeenCalledOnce()
+      expect(onRestoreOutput).toHaveBeenCalledWith(
+        ['REPLAY', 'BUFFERED'].join('')
+      )
+    })
+
+    test('marks the restore phase until the final restored write callback fires', async () => {
+      const writes: string[] = []
+      const writeCallbacks: (() => void)[] = []
+      const lifecycleEvents: string[] = []
+
+      const onRestoreStart = vi.fn(() => {
+        lifecycleEvents.push('start')
+      })
+
+      const onRestoreOutput = vi.fn(() => {
+        lifecycleEvents.push('output')
+      })
+
+      const onRestoreEnd = vi.fn(() => {
+        lifecycleEvents.push('end')
+      })
+
+      vi.mocked(mockTerminal.write).mockImplementation(
+        (data: string | Uint8Array, callback?: () => void) => {
+          writes.push(
+            typeof data === 'string' ? data : new TextDecoder().decode(data)
+          )
+
+          if (callback) {
+            writeCallbacks.push(callback)
+          }
+        }
+      )
+
+      renderHook(() =>
+        useTerminal({
+          terminal: mockTerminal,
+          service: mockService,
+          restoredFrom: {
+            sessionId: 'session-1',
+            cwd: '/tmp',
+            pid: 1234,
+            replayData: 'REPLAY',
+            replayEndOffset: 50,
+            bufferedEvents: [{ data: 'BUFFERED', offsetStart: 50, byteLen: 8 }],
+          },
+          onRestoreStart,
+          onRestoreOutput,
+          onRestoreEnd,
+        })
+      )
+
+      await waitFor(() => {
+        expect(writes).toEqual(['REPLAY', 'BUFFERED'])
+      })
+
+      expect(onRestoreStart).toHaveBeenCalledOnce()
+      expect(onRestoreOutput).not.toHaveBeenCalled()
+      expect(onRestoreEnd).not.toHaveBeenCalled()
+      expect(lifecycleEvents).toEqual(['start'])
+      expect(writeCallbacks).toHaveLength(1)
+
+      writeCallbacks[0]()
+
+      expect(onRestoreOutput).toHaveBeenCalledOnce()
+      expect(onRestoreEnd).toHaveBeenCalledOnce()
+      expect(lifecycleEvents).toEqual(['start', 'output', 'end'])
     })
 
     test('flushes buffered events with cursor filter (offsetStart >= replayEndOffset)', async () => {

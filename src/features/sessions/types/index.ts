@@ -41,7 +41,7 @@ export interface Session {
   projectId: string
   name: string // user-assigned or derived from prompt
   status: SessionStatus
-  /** Derived from `getActivePane(session).cwd`; retained for existing chrome. */
+  /** Stable session/project cwd used as the baseline for new panes. */
   workingDirectory: string
   /** Derived from `getActivePane(session).agentType`; retained for existing chrome. */
   agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
