@@ -19,6 +19,18 @@ interface GitHeadChangedPayload {
   cwds: string[]
 }
 
+const logGitBranchDebug = (
+  event: string,
+  details: Record<string, boolean | string | null>
+): void => {
+  if (!import.meta.env.DEV || import.meta.env.MODE === 'test') {
+    return
+  }
+
+  // eslint-disable-next-line no-console
+  console.info(`[vimeflow:git-branch] ${event} ${JSON.stringify(details)}`)
+}
+
 const isValidCwd = (cwd: string): boolean => {
   if (cwd.length === 0) {
     return false
@@ -85,6 +97,8 @@ export const useGitBranch = (
 
     const fetchBranch = async (): Promise<void> => {
       try {
+        logGitBranchDebug('fetch-start', { cwd, isNewCwd })
+
         if (isNewCwd) {
           // Clear here so a cwd change blanks stale data BEFORE the new
           // fetch resolves. Same-cwd re-fetches (refresh, enabled-toggle)
@@ -100,10 +114,19 @@ export const useGitBranch = (
 
         if (!cancelled) {
           const trimmed = result.trim()
+          logGitBranchDebug('fetch-success', {
+            cwd,
+            branch: trimmed === '' ? null : trimmed,
+            empty: trimmed === '',
+          })
           setBranch(trimmed === '' ? null : trimmed)
         }
       } catch (err) {
         if (!cancelled) {
+          logGitBranchDebug('fetch-error', {
+            cwd,
+            error: err instanceof Error ? err.message : String(err),
+          })
           setBranch(null)
           setError(err instanceof Error ? err : new Error(String(err)))
         }
@@ -167,6 +190,11 @@ export const useGitBranch = (
         }
       } catch (err) {
         if (mounted) {
+          logGitBranchDebug('watcher-error', {
+            cwd,
+            error: err instanceof Error ? err.message : String(err),
+          })
+
           setError(
             err instanceof Error
               ? err

@@ -55,6 +55,28 @@ describe('parseAgentCwdHint', () => {
     )
   })
 
+  test('uses Claude startup home cwd before resolving relative worktree cd commands', () => {
+    expect(
+      parseAgentCwdHint(
+        'Claude Code v2.1.145\r\n' +
+          'Opus 4.7 with max effort\r\n' +
+          '~/projects/vimeflow\r\n' +
+          '! cd .claude/worktrees/\r\n' +
+          '(Bash completed with no output)\r\n' +
+          '! cd codex-agent-osc7-cwd\r\n',
+        '/home/will'
+      )
+    ).toBe(
+      '/home/will/projects/vimeflow/.claude/worktrees/codex-agent-osc7-cwd'
+    )
+  })
+
+  test('resolves home-relative Claude Bash cd commands', () => {
+    expect(
+      parseAgentCwdHint('! cd ~/projects/vimeflow\r\n', '/home/will')
+    ).toBe('/home/will/projects/vimeflow')
+  })
+
   test('resolves Codex CLI cd transcript lines from the current cwd', () => {
     expect(
       parseAgentCwdHint(

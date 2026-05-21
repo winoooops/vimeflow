@@ -13,8 +13,11 @@ const AGENT_CD_PATTERN =
 const CLAUDE_CWD_RESET_PATTERN =
   /(?:^|[\r\n])(?:[^\S\r\n]*(?:[^\w\s(/\\:]+[^\S\r\n]*)?)Shell cwd was reset to ([^\r\n]+)/g
 
+const AGENT_HOME_CWD_PATTERN =
+  /(?:^|[\r\n])[^\S\r\n]*(~[\\/][^\r\n]+?)[ \t]*(?=$|[\r\n])/g
+
 type CwdEvent =
-  | { index: number; kind: 'absolute'; path: string }
+  | { index: number; kind: 'path'; path: string }
   | { index: number; kind: 'cd'; target: string }
 
 const readQuotedTarget = (
@@ -69,7 +72,7 @@ const readBareTarget = (
 
 const parseCdTarget = (rawCommand: string | undefined): string | null => {
   const source = rawCommand?.trim()
-  if (!source || source === '-' || source.startsWith('~')) {
+  if (!source || source === '-' || source === '~' || /^~[^\\/]/.test(source)) {
     return null
   }
 
@@ -146,10 +149,62 @@ const normalizePath = (path: string): string =>
       ? normalizeWindowsDrivePath(path)
       : path
 
+const posixHomeFromCwd = (currentCwd: string): string | null => {
+  const match = /^\/(?:home|Users)\/[^/]+/.exec(currentCwd)
+
+  return match?.[0] ?? null
+}
+
+const windowsHomeFromCwd = (currentCwd: string): string | null => {
+  const match = /^[A-Za-z]:[\\/]Users[\\/][^\\/]+/.exec(currentCwd)
+
+  return match?.[0] ?? null
+}
+
+const resolveHomePath = (path: string, currentCwd?: string): string | null => {
+  if (!currentCwd || (!path.startsWith('~/') && !path.startsWith('~\\'))) {
+    return null
+  }
+
+  const currentHome = currentCwd.startsWith('/')
+    ? posixHomeFromCwd(currentCwd)
+    : WINDOWS_DRIVE_PATH.test(currentCwd)
+      ? windowsHomeFromCwd(currentCwd)
+      : null
+
+  if (!currentHome) {
+    return null
+  }
+
+  const suffix = path.slice(2)
+  if (currentHome.startsWith('/')) {
+    return `${currentHome}/${suffix.replace(/\\/g, '/')}`
+  }
+
+  const separator =
+    currentHome.includes('\\') && !currentHome.includes('/') ? '\\' : '/'
+
+  return `${currentHome}${separator}${suffix}`
+}
+
+const resolvePathHint = (path: string, currentCwd?: string): string | null => {
+  const absolutePath = parseOsc7Cwd(path)
+  if (absolutePath) {
+    return normalizePath(absolutePath)
+  }
+
+  const homePath = resolveHomePath(path, currentCwd)
+  if (homePath) {
+    return normalizePath(homePath)
+  }
+
+  return null
+}
+
 const resolveCdPath = (target: string, currentCwd?: string): string | null => {
-  const absoluteTarget = parseOsc7Cwd(target)
-  if (absoluteTarget) {
-    return normalizePath(absoluteTarget)
+  const pathHint = resolvePathHint(target, currentCwd)
+  if (pathHint) {
+    return pathHint
   }
 
   if (currentCwd?.startsWith('/')) {
@@ -179,17 +234,15 @@ export const parseAgentCwdHint = (
       continue
     }
 
-    const path = parseOsc7Cwd(rawPath)
-    if (path) {
-      events.push({ index: match.index, kind: 'absolute', path })
-    }
+    events.push({ index: match.index, kind: 'path', path: rawPath })
   }
 
   for (const match of normalizedData.matchAll(CLAUDE_CWD_RESET_PATTERN)) {
-    const path = parseOsc7Cwd(match[1].trim())
-    if (path) {
-      events.push({ index: match.index, kind: 'absolute', path })
-    }
+    events.push({ index: match.index, kind: 'path', path: match[1].trim() })
+  }
+
+  for (const match of normalizedData.matchAll(AGENT_HOME_CWD_PATTERN)) {
+    events.push({ index: match.index, kind: 'path', path: match[1].trim() })
   }
 
   for (const match of normalizedData.matchAll(AGENT_CD_PATTERN)) {
@@ -206,8 +259,8 @@ export const parseAgentCwdHint = (
 
   for (const event of events) {
     const path =
-      event.kind === 'absolute'
-        ? normalizePath(event.path)
+      event.kind === 'path'
+        ? resolvePathHint(event.path, nextCwd)
         : resolveCdPath(event.target, nextCwd)
 
     if (path) {

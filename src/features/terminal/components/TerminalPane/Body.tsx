@@ -30,6 +30,18 @@ const AGENT_CWD_HINT_BUFFER_SIZE = 4096
 
 const toComparablePath = (path: string): string => path.replace(/\\/g, '/')
 
+const logAgentCwdDebug = (
+  event: string,
+  details: Record<string, boolean | string | null>
+): void => {
+  if (!import.meta.env.DEV || import.meta.env.MODE === 'test') {
+    return
+  }
+
+  // eslint-disable-next-line no-console
+  console.info(`[vimeflow:terminal-cwd] ${event} ${JSON.stringify(details)}`)
+}
+
 const trimTrailingSlashes = (path: string): string =>
   path === '/' ? path : path.replace(/\/+$/g, '')
 
@@ -215,25 +227,48 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   }, [onCwdChange])
 
   useEffect(() => {
+    const previousCwd = agentCwdRef.current
+
     cwdPropRef.current = cwd
     if (!isDescendantPath(agentCwdRef.current, cwd)) {
       agentCwdRef.current = cwd
     }
-  }, [cwd])
+
+    logAgentCwdDebug('prop-cwd', {
+      sessionId,
+      previousCwd,
+      propCwd: cwd,
+      agentCwd: agentCwdRef.current,
+      changed: previousCwd !== agentCwdRef.current,
+    })
+  }, [cwd, sessionId])
 
   useEffect(() => {
     agentCwdOutputBufferRef.current = ''
     agentCwdRef.current = cwdPropRef.current
   }, [sessionId])
 
-  const applyAgentCwdHint = useCallback((output: string): void => {
-    const cwdHint = parseAgentCwdHint(output, agentCwdRef.current)
+  const applyAgentCwdHint = useCallback(
+    (output: string): void => {
+      const previousCwd = agentCwdRef.current
+      const cwdHint = parseAgentCwdHint(output, previousCwd)
 
-    if (cwdHint && cwdHint !== agentCwdRef.current) {
-      agentCwdRef.current = cwdHint
-      onCwdChangeRef.current?.(cwdHint)
-    }
-  }, [])
+      if (cwdHint) {
+        logAgentCwdDebug('text-hint', {
+          sessionId,
+          previousCwd,
+          nextCwd: cwdHint,
+          changed: cwdHint !== previousCwd,
+        })
+      }
+
+      if (cwdHint && cwdHint !== agentCwdRef.current) {
+        agentCwdRef.current = cwdHint
+        onCwdChangeRef.current?.(cwdHint)
+      }
+    },
+    [sessionId]
+  )
 
   const flushAgentCwdOutputBuffer = useCallback((): void => {
     const pendingOutput = agentCwdOutputBufferRef.current
@@ -548,6 +583,16 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       // output both arrive through xterm's parser, so this stays pane-local.
       newTerminal.parser.registerOscHandler(7, (data) => {
         const path = parseOsc7Cwd(data)
+        const previousCwd = agentCwdRef.current
+
+        logAgentCwdDebug('osc7', {
+          sessionId,
+          raw: data,
+          previousCwd,
+          nextCwd: path,
+          changed: path !== null && path !== previousCwd,
+        })
+
         if (path && path !== agentCwdRef.current) {
           agentCwdRef.current = path
           onCwdChangeRef.current?.(path)
