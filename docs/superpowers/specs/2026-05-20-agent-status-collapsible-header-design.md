@@ -477,8 +477,10 @@ path) get `None`.
 
 ### 3.4 Frontend — bindings
 
-ts-rs runs under `cargo test`. After the Rust changes land, regenerating
-TS bindings updates:
+ts-rs runs under the project's `npm run generate:bindings` script (which
+internally invokes `cargo test --manifest-path crates/backend/Cargo.toml
+export_bindings && prettier --write src/bindings/`). After the Rust
+changes land, regenerating TS bindings updates:
 
 - `src/bindings/SessionInfo.ts` — gains
   `activityPanelCollapsed: boolean | null`.
@@ -548,9 +550,26 @@ The mutator:
 
 1. Optimistically updates the matching `Pane.activityPanelCollapsed` via
    `setSessions(prev => ...)` — same pattern as `updatePaneCwd`.
-2. Invokes
+2. **Enqueues** the IPC call into a per-pane FIFO chain (one in-flight IPC
+   per pane id), then awaits its turn before calling
    `invoke('set_session_activity_panel_collapsed', { request: { id: ptyId, collapsed } })`
    (resolving `ptyId` from the targeted pane).
+
+   The Rust-side mutex only guarantees the **arrival order at the lock** is
+   serialized; it does not guarantee that the _user's click order_ equals
+   the _order requests reach the backend_. Without frontend FIFO chaining,
+   two rapid clicks (`true` then `false`) could race over IPC and land at
+   the backend in reverse order, persisting `true` even though the user's
+   last click set `false`. The FIFO chain pins arrival order to click
+   order, so the persisted state is always the user's last click.
+
+   Implementation: `useSessionManager` holds a private
+   `Map<paneId, Promise<void>>` (via `useRef`). Each call replaces the
+   pane's chain head with `chain.then(() => invokeIpc())`. Subsequent
+   calls for the same pane await the prior chain. Different panes are
+   independent (separate chain heads). The map entry is cleared when its
+   chain settles to empty so the map doesn't leak across long sessions.
+
 3. On IPC failure: reverts the optimistic update **only if no superseding
    call has run in the meantime**, then rejects the returned Promise with
    the IPC error message. The race-safe revert rule:
@@ -560,7 +579,8 @@ The mutator:
 next`** (i.e., this call's optimistic write is still the current
      state). If a later call has set a different value, leave it alone —
      the newer state is the user's latest intent.
-   - This makes rapid toggle correct under any IPC ordering: see §5.2.
+   - Combined with the FIFO chain, this makes rapid toggle correct under
+     any IPC ordering: see §5.2.
 
    The mutator does NOT call `notifyInfo` directly — `useSessionManager`
    does not own that channel. The caller (`WorkspaceView`) wraps the
@@ -625,7 +645,13 @@ const handleCollapse = useCallback(
       notifyInfo(`Couldn't update activity panel: ${(err as Error).message}`)
     }
   },
-  [activeSessionId, focusedPane?.id, setPaneActivityPanelCollapsed, notifyInfo]
+  // Depend on `focusedPane` (the full object), not just `focusedPane?.id`.
+  // Even though only `.id` is read at the call site, listing the whole
+  // object satisfies exhaustive-deps and protects against future code that
+  // reads additional fields (e.g. `.ptyId` after a future refactor) — the
+  // closure re-creates whenever pane identity changes, even when `.id`
+  // stays the same string.
+  [activeSessionId, focusedPane, setPaneActivityPanelCollapsed, notifyInfo]
 )
 
 // Render — replaces the current unconditional <AgentStatusPanel/> call.
@@ -762,19 +788,19 @@ the "no visible borders — tonal depth only" rule from `DESIGN.md`.
 
 **Dimensions & tokens.**
 
-| Element           | Spec                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rail width        | `36 px` (fixed, not flex)                                                                                                                                                                                                                                                                                                                                      |
-| Outer container   | `flex h-full flex-col items-center py-2.5 gap-2.5 bg-surface-container`                                                                                                                                                                                                                                                                                        |
-| Chevron button    | `26 × 26 px`, `rounded-md`, `text-outline` hover→`text-on-surface`                                                                                                                                                                                                                                                                                             |
-| Vendor mark       | `14 × 14 px` masked span (see §4.3); `text-outline-variant`                                                                                                                                                                                                                                                                                                    |
-| Glyph chip        | `24 × 24 px`, `rounded-md` (smaller than header's 26 px), same colors as the header chip                                                                                                                                                                                                                                                                       |
-| Context bar track | `w-1 h-16` (4 × 64 px), `rounded-full`, `bg-outline/30`                                                                                                                                                                                                                                                                                                        |
-| Context bar fill  | absolute, `bottom-0 left-0 right-0`, height = `${contextUsedPercentage ?? 0}%`, **inline** `style={{ background: warning ? 'var(--color-error)' : agent.accent }}` (agent accents are runtime hex values — same inline-style rule from §2 for the glyph chip applies here)                                                                                     |
-| Warning threshold | `warning = (contextUsedPercentage ?? 0) > 85` — single-prop computation matching the `AgentStatusRailProps` contract in §2. The `var(--color-error)` reference resolves to the project's coral token via the Tailwind-generated CSS variable; the runtime read keeps the warning color token-aware without losing inline-style flexibility for the accent path |
-| `% ctx` label     | rotated `writing-mode: vertical-rl; transform: rotate(180deg)`, `font-mono text-[9px] text-on-surface-muted tracking-[0.08em]`                                                                                                                                                                                                                                 |
-| Spacer            | `flex-1` between label and the running dot                                                                                                                                                                                                                                                                                                                     |
-| Running dot       | `6 × 6 px`, `rounded-full`, `bg-{agent.accent}`, `box-shadow: 0 0 8px agent.accent`, `animate-pulse` (Tailwind built-in)                                                                                                                                                                                                                                       |
+| Element           | Spec                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rail width        | `36 px` (fixed, not flex)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Outer container   | `flex h-full flex-col items-center py-2.5 gap-2.5 bg-surface-container`                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Chevron button    | `26 × 26 px`, `rounded-md`, `text-outline` hover→`text-on-surface`                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Vendor mark       | `14 × 14 px` masked span (see §4.3); `text-outline-variant`                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Glyph chip        | `24 × 24 px`, `rounded-md` (smaller than header's 26 px), same colors as the header chip                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Context bar track | `w-1 h-16` (4 × 64 px), `rounded-full`, `bg-outline/30`                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Context bar fill  | absolute, `bottom-0 left-0 right-0`, height = `${contextUsedPercentage ?? 0}%`. Two render paths keep dynamic and token colors separate (Tailwind v3 doesn't expose `--color-*` vars for theme colors): when `warning === true`, render the fill as `<div className="bg-error" />` with no inline `background`; otherwise render `<div style={{ background: agent.accent }} />`. The error path uses the Tailwind utility (token-aware); the accent path uses inline style (dynamic runtime hex from `AGENTS[id].accent`) |
+| Warning threshold | `warning = (contextUsedPercentage ?? 0) > 85` — single-prop computation matching the `AgentStatusRailProps` contract in §2                                                                                                                                                                                                                                                                                                                                                                                                |
+| `% ctx` label     | rotated `writing-mode: vertical-rl; transform: rotate(180deg)`, `font-mono text-[9px] text-on-surface-muted tracking-[0.08em]`                                                                                                                                                                                                                                                                                                                                                                                            |
+| Spacer            | `flex-1` between label and the running dot                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Running dot       | `6 × 6 px`, `rounded-full`, `bg-{agent.accent}`, `box-shadow: 0 0 8px agent.accent`, `animate-pulse` (Tailwind built-in)                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 The rail does NOT render a context bar when `contextUsedPercentage === null`
 — it shows the track only. The `% ctx` label renders `--` in that case.
@@ -870,18 +896,27 @@ agent identity updates.
 **Trigger.** User clicks the chevron several times in quick succession; or
 clicks resolve before the IPC roundtrip for the previous click finishes.
 
-**Behavior.** The Rust side serializes through `cache.mutate()` (one
-in-flight mutator at a time, lock held through the disk flush — see the
-existing "mutate_holds_lock_through_flush" test). On the frontend, each
-click triggers an optimistic update + IPC. Two correctness properties:
+**Behavior.** Correctness rests on two independent mechanisms:
 
-- _Persisted state_ matches the **last submitted IPC**, regardless of
-  arrival order at the OS level. This is guaranteed by the Rust mutex.
-- _Optimistic local state_ matches the **last click**, regardless of how
-  IPC failures resolve. This is guaranteed by the §3.5 race-safe revert:
-  on IPC failure, the mutator reverts **only if the optimistic value it
-  wrote is still the current state**. A later click that wrote a different
-  value bypasses the revert (the newer write is preserved).
+- The frontend's **per-pane FIFO chain** (§3.5 step 2) guarantees IPC
+  requests arrive at the backend in click order — without this, a later
+  click could overtake an earlier one over IPC and persist the wrong
+  final value. The Rust `cache.mutate()` mutex then serializes the
+  writes at the lock in the order they arrived (which is now the user's
+  click order), and the lock is held through the disk flush (the existing
+  `mutate_holds_lock_through_flush` test pins this).
+- The frontend's **race-safe revert** (§3.5 step 3) keeps the optimistic
+  local state aligned with the user's last click even when an
+  intermediate IPC fails: revert only fires when the optimistic value
+  the failing call wrote is still current. A later click that already
+  overwrote it bypasses the revert.
+
+Together these give the two correctness properties:
+
+- _Persisted state_ matches the **user's last click**, regardless of
+  network or scheduling latencies.
+- _Optimistic local state_ matches the **user's last click**, regardless
+  of which intermediate IPCs fail.
 
 The combined invariant: **the user sees the panel match their last click,
 and on reload the panel matches the last successful persist**. The two
@@ -1025,7 +1060,7 @@ mergable on its own. Each step's outputs feed the next.
    - Extend `CachedSession` and `SessionInfo` with the new field.
    - Add `SetSessionActivityPanelCollapsedRequest` + `set_session_activity_panel_collapsed_inner` in `commands.rs`.
    - Wire the new method on `BackendState` and the router branch in `ipc.rs`.
-   - Regenerate ts-rs bindings via `cargo test`.
+   - Regenerate ts-rs bindings via `npm run generate:bindings` (runs `cargo test … export_bindings` + `prettier --write src/bindings/`).
    - Land with all Rust unit tests from §6.1.
 3. **Frontend types + helpers.**
    - Extend `Pane` type, update `sessionFromInfo`, update every other Pane construction site per §3.5's table.
