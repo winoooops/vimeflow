@@ -102,9 +102,10 @@ export interface UseTerminalOptions {
   onRestoreOutput?: (data: string) => void
 
   /**
-   * Optional restore lifecycle callbacks. `onRestoreStart` fires immediately
-   * before historical replay/buffered output is written to xterm; `onRestoreEnd`
-   * fires after the final restore write callback.
+   * Optional paired restore lifecycle callbacks. When both are provided,
+   * `onRestoreStart` fires immediately before historical replay/buffered output
+   * is written to xterm and `onRestoreEnd` fires after the final restore write
+   * callback.
    */
   onRestoreStart?: () => void
   onRestoreEnd?: () => void
@@ -333,25 +334,35 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           }
         }
 
-        onRestoreOutputRef.current?.(
-          [
-            restore.replayData,
-            ...restoredBufferedEvents.map((event) => event.data),
-          ].join('')
-        )
+        const restoredOutput = [
+          restore.replayData,
+          ...restoredBufferedEvents.map((event) => event.data),
+        ].join('')
 
         const restoredOutputChunks = [
           restore.replayData,
           ...restoredBufferedEvents.map((event) => event.data),
         ].filter((data) => data.length > 0)
 
-        if (restoredOutputChunks.length > 0) {
-          onRestoreStartRef.current?.()
+        const restoreStart = onRestoreStartRef.current
+        const restoreEnd = onRestoreEndRef.current
 
+        const restoreEndCallback =
+          restoredOutputChunks.length > 0 && restoreStart && restoreEnd
+            ? restoreEnd
+            : undefined
+
+        if (restoreStart && restoreEndCallback) {
+          restoreStart()
+        }
+
+        onRestoreOutputRef.current?.(restoredOutput)
+
+        if (restoredOutputChunks.length > 0) {
           restoredOutputChunks.forEach((data, index) => {
             const isLastChunk = index === restoredOutputChunks.length - 1
-            if (isLastChunk && onRestoreEndRef.current) {
-              terminal.write(data, onRestoreEndRef.current)
+            if (isLastChunk && restoreEndCallback) {
+              terminal.write(data, restoreEndCallback)
 
               return
             }
