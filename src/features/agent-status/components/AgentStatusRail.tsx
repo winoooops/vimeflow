@@ -21,8 +21,14 @@ export const RAIL_WIDTH_PX = 44
 // `tokens.ts` is the design reference and is NOT imported from `src/` (see
 // the rationale in `TokenCache.tsx`). If the palette migrates, update these
 // constants in lockstep with tokens.ts.
-const TONE_DANGER = '#ff94a5' // semantic.tertiary
-const TONE_WARN = '#ffb4ab' // semantic.error
+// Annotations match the runtime hex values to their `docs/design/tokens.ts`
+// names. Severity hierarchy: DANGER > WARN > NEUTRAL/HEALTHY. The Catppuccin
+// Mocha palette names are non-obvious — `semantic.tertiary` is the strong
+// pink (highest severity), `semantic.error` is the softer coral
+// (intermediate). If the palette migrates, update each constant from the
+// named token so the severity ordering survives.
+const TONE_DANGER = '#ff94a5' // semantic.tertiary  (strong pink, peak severity)
+const TONE_WARN = '#ffb4ab' // semantic.error      (soft coral, warning)
 const TONE_HEALTHY = '#7defa1' // semantic.successMuted
 const TONE_NEUTRAL = '#e2c7ff' // primary.base
 

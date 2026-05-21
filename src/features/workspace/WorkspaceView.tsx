@@ -222,15 +222,14 @@ export const WorkspaceView = (): ReactElement => {
     [agentStatus.agentType]
   )
 
-  // Inlined ternary instead of useMemo: the computation is a single
-  // primitive ternary that React reconciles cheaply, and a memo with the
-  // full `agentStatus` dep would re-run every stream tick anyway
-  // (`useAgentStatus` re-emits a new object each event). A partial-dep memo
-  // with an eslint suppression silently stales the moment the helper grows
-  // a second field read.
-  const activityPanelStatus: SessionStatus = agentStatus.isActive
-    ? 'running'
-    : 'paused'
+  // Source the header status from the active pane's lifecycle, not from the
+  // agent's `isActive` flag. After a PTY exits, `agentStatus.isActive` flips
+  // to false and the `running` → `paused` ternary would silently mislabel
+  // terminal states (`completed`, `errored`) as paused, complete with a
+  // pulsing dot. The pane's own `status` is the source of truth for
+  // running/paused/completed/errored — agent activity stays an orthogonal
+  // signal that the "live" pulse next to the agent chip already reflects.
+  const activityPanelStatus: SessionStatus = activePane?.status ?? 'paused'
 
   const handleActivityPanelCollapsed = useCallback(
     async (collapsed: boolean): Promise<void> => {
@@ -246,7 +245,12 @@ export const WorkspaceView = (): ReactElement => {
         )
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error)
-        notifyInfo(`Couldn't update activity panel: ${message}`)
+        // 'Error: ' prefix is a minimal severity signal until the
+        // notification API gains a typed level. Without it, a banner styled
+        // identically to routine `notifyInfo` messages can be mistaken for a
+        // status update when it actually means the persist failed and the
+        // optimistic UI just snapped back.
+        notifyInfo(`Error: Couldn't update activity panel: ${message}`)
       }
     },
     [activePane, activeSessionId, notifyInfo, setPaneActivityPanelCollapsed]
