@@ -27,6 +27,8 @@ import DockPanel, { type DockPanelHandle } from './components/DockPanel'
 import type { DockPosition } from './components/DockSwitcher'
 import { AgentStatusPanel } from '../agent-status/components/AgentStatusPanel'
 import { AgentStatusRail } from '../agent-status/components/AgentStatusRail'
+import { cacheHitRate } from '../agent-status/utils/cacheRate'
+import type { CurrentUsageState } from '../agent-status/types'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
@@ -67,6 +69,14 @@ import {
   DOCK_VERTICAL_ELASTIC_CONFIG,
   DOCK_HORIZONTAL_ELASTIC_CONFIG,
 } from './panelConfig'
+
+const cacheHitPercentage = (
+  usage: CurrentUsageState | null | undefined
+): number | null => {
+  const rate = cacheHitRate(usage)
+
+  return rate === null ? null : Math.round(rate * 100)
+}
 
 // Filed before merge — see the PR description for the issue body.
 // `0` is intentionally a loud placeholder; the gear tooltip
@@ -942,7 +952,7 @@ export const WorkspaceView = (): ReactElement => {
       <div
         data-testid="activity-panel-shell"
         className="h-full shrink-0 overflow-hidden transition-[width] duration-[220ms] ease-pane"
-        style={{ width: activityPanelCollapsed ? 36 : 280 }}
+        style={{ width: activityPanelCollapsed ? 44 : 280 }}
       >
         {activityPanelCollapsed ? (
           <AgentStatusRail
@@ -950,6 +960,9 @@ export const WorkspaceView = (): ReactElement => {
             contextUsedPercentage={
               agentStatus.contextWindow?.usedPercentage ?? null
             }
+            cacheHitRate={cacheHitPercentage(
+              agentStatus.contextWindow?.currentUsage
+            )}
             isRunning={agentStatus.isActive}
             onExpand={() => {
               void handleActivityPanelCollapsed(false)
