@@ -1257,7 +1257,15 @@ export const useSessionManager = (
         return
       }
 
-      const chainKey = `${sessionId}:${paneId}`
+      // Capture ptyId at call entry. Pane ids (`p0`, `p1`, ...) are reused
+      // by `nextFreePaneId` when a pane is removed and a new one is created
+      // in the same session, but ptyId is a per-spawn backend identifier
+      // that never recycles. We use it for BOTH the chain key AND the
+      // state-update predicate so a late persist/failure for a removed pane
+      // cannot contaminate a freshly-spawned replacement that happens to
+      // reuse the same React pane id.
+      const panePtyId = pane.ptyId
+      const chainKey = panePtyId
       const existing = collapseChainRef.current.get(chainKey)
 
       // Read pane.activityPanelCollapsed only on the FIRST call per chain run;
@@ -1281,7 +1289,7 @@ export const useSessionManager = (
             : {
                 ...s,
                 panes: s.panes.map((p) =>
-                  p.id !== paneId
+                  p.ptyId !== panePtyId
                     ? p
                     : { ...p, activityPanelCollapsed: collapsed }
                 ),
@@ -1324,13 +1332,16 @@ export const useSessionManager = (
 
         const liveBaseline =
           liveEntry !== undefined ? liveEntry.originalValue : originalValue
-        // Ownership-by-identity: we roll back ONLY when our tail is still
-        // the latest in the chain. Comparing `p.activityPanelCollapsed`
-        // against this call's `collapsed` would mis-fire when two
-        // same-direction calls (A=true, C=true) race — A's failure would
-        // value-match C's optimistic state and clobber it. The identity
-        // check sidesteps that: any newer queued call has already
-        // displaced our tail in the Map, so we silently defer to it.
+        // Ownership-by-identity: we roll back AND propagate the error ONLY
+        // when our tail is still the latest in the chain. Comparing
+        // `p.activityPanelCollapsed` against this call's `collapsed` would
+        // mis-fire when two same-direction calls (A=true, C=true) race —
+        // A's failure would value-match C's optimistic state and clobber
+        // it. The identity check sidesteps that: any newer queued call has
+        // already displaced our tail in the Map, so we silently defer to
+        // it — both the UI rollback AND the re-throw must stay inside the
+        // guard, otherwise the user sees an error notification for a
+        // superseded call whose newer sibling owns the visible outcome.
         const isHead = liveEntry?.tail === tail
 
         if (isHead) {
@@ -1343,7 +1354,11 @@ export const useSessionManager = (
               return {
                 ...s,
                 panes: s.panes.map((p) => {
-                  if (p.id !== paneId) {
+                  // Match by ptyId so a stale rollback for a removed pane
+                  // can never clobber a freshly-spawned pane that reused
+                  // the same React pane id. If the original pane is gone,
+                  // the find returns no match and setSessions is a no-op.
+                  if (p.ptyId !== panePtyId) {
                     return p
                   }
 
@@ -1352,8 +1367,8 @@ export const useSessionManager = (
               }
             })
           )
+          throw err
         }
-        throw err
       } finally {
         if (collapseChainRef.current.get(chainKey)?.tail === tail) {
           collapseChainRef.current.delete(chainKey)

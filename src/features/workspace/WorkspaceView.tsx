@@ -50,11 +50,8 @@ import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
-import {
-  AGENTS,
-  agentStatusToSessionStatus,
-  agentTypeToRegistryKey,
-} from '../../agents/registry'
+import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
+import type { SessionStatus } from '../sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -219,15 +216,15 @@ export const WorkspaceView = (): ReactElement => {
     [agentStatus.agentType]
   )
 
-  // `agentStatusToSessionStatus` reads only `agentStatus.isActive`. Depend on
-  // that primitive so the memo doesn't re-run on every render when
-  // `useAgentStatus` produces a new object reference (which it does on every
-  // tick of its underlying stream subscription).
-  const activityPanelStatus = useMemo(
-    () => agentStatusToSessionStatus(agentStatus),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [agentStatus.isActive]
-  )
+  // Inlined ternary instead of useMemo: the computation is a single
+  // primitive ternary that React reconciles cheaply, and a memo with the
+  // full `agentStatus` dep would re-run every stream tick anyway
+  // (`useAgentStatus` re-emits a new object each event). A partial-dep memo
+  // with an eslint suppression silently stales the moment the helper grows
+  // a second field read.
+  const activityPanelStatus: SessionStatus = agentStatus.isActive
+    ? 'running'
+    : 'paused'
 
   const handleActivityPanelCollapsed = useCallback(
     async (collapsed: boolean): Promise<void> => {

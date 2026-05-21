@@ -3254,6 +3254,94 @@ describe('useSessionManager', () => {
     )
   })
 
+  test('setPaneActivityPanelCollapsed superseded calls resolve silently — no throw to bubble into UI notifications', async () => {
+    // Claude review cycle 3 caught this: the catch block re-threw `err`
+    // unconditionally, so a rapid toggle (collapse then expand, where the
+    // collapse IPC fails) would surface an error toast from the WorkspaceView
+    // notifyInfo bridge — even though the user's most recent action (expand)
+    // already succeeded and the UI shows the correct state. The fix moves the
+    // throw inside the `if (isHead)` guard so only the call that still owns
+    // the chain head propagates failure to callers.
+    const service = createMockService()
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty-1',
+      pid: 123,
+      cwd: '/home/user',
+    })
+
+    let rejectFirst: ((err: Error) => void) | null = null
+    let resolveSecond: (() => void) | null = null
+    service.setSessionActivityPanelCollapsed = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectFirst = reject
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveSecond = resolve
+          })
+      )
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.createSession())
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    const session = result.current.sessions[0]
+    const pane = session.panes[0]
+
+    let first: Promise<void> = Promise.resolve()
+    let second: Promise<void> = Promise.resolve()
+
+    act(() => {
+      // Note: NOT wrapped in absorbExpectedRejection — the post-cycle-6
+      // contract is that a superseded call resolves cleanly. If `first`
+      // rejects, the `await first` below will throw and fail the test,
+      // catching any regression that re-introduces unconditional re-throw.
+      first = result.current.setPaneActivityPanelCollapsed(
+        session.id,
+        pane.id,
+        true
+      )
+
+      second = result.current.setPaneActivityPanelCollapsed(
+        session.id,
+        pane.id,
+        false
+      )
+    })
+
+    await waitFor(() =>
+      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledTimes(1)
+    )
+
+    await act(async () => {
+      rejectFirst?.(new Error('first IPC failed'))
+      // If the catch re-throws, `await first` rejects and the test fails.
+      await first
+    })
+
+    await waitFor(() =>
+      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledTimes(2)
+    )
+
+    await act(async () => {
+      resolveSecond?.()
+      await second
+    })
+
+    expect(result.current.sessions[0].panes[0].activityPanelCollapsed).toBe(
+      false
+    )
+  })
+
   test('setPaneActivityPanelCollapsed rolls back to a previously-successful sibling value when a later queued IPC fails', async () => {
     const service = createMockService()
     service.spawn = vi.fn().mockResolvedValue({
