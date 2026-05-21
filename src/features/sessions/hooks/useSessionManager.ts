@@ -67,6 +67,9 @@ export interface SessionManager {
    *
    * This intentionally does not call `service.updateSessionCwd`; callers that
    * need to sync a live PTY cwd to the backend must use `updatePaneCwd`.
+   *
+   * @deprecated Use `updatePaneCwd` for live pane cwd changes that must sync to
+   * the backend. This wrapper only updates the stable session baseline cwd.
    */
   updateSessionCwd: (id: string, cwd: string) => void
   /** Compatibility wrapper until workspace consumers migrate to pane ids. */
