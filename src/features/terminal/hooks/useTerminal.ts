@@ -243,17 +243,6 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     onRestoreEndRef.current = onRestoreEnd
   }, [onRestoreEnd])
 
-  useEffect(() => {
-    if (Boolean(onRestoreStart) === Boolean(onRestoreEnd)) {
-      return
-    }
-
-    // eslint-disable-next-line no-console
-    console.warn(
-      'useTerminal restore lifecycle callbacks must be provided together'
-    )
-  }, [onRestoreStart, onRestoreEnd])
-
   const onInputRef = useRef(onInput)
   useEffect(() => {
     onInputRef.current = onInput
@@ -367,29 +356,35 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
 
         const restoreStart = onRestoreStartRef.current
         const restoreEnd = onRestoreEndRef.current
+        const hasRestoreOutput = Boolean(onRestoreOutputRef.current)
 
         const restoreEndCallback =
           restoredOutputChunks.length > 0 && restoreStart && restoreEnd
             ? restoreEnd
             : undefined
 
+        const finishRestore = (): void => {
+          onRestoreOutputRef.current?.(restoredOutput)
+          restoreEndCallback?.()
+        }
+
         if (restoreStart && restoreEndCallback) {
           restoreStart()
         }
 
-        onRestoreOutputRef.current?.(restoredOutput)
-
         if (restoredOutputChunks.length > 0) {
           restoredOutputChunks.forEach((data, index) => {
             const isLastChunk = index === restoredOutputChunks.length - 1
-            if (isLastChunk && restoreEndCallback) {
-              terminal.write(data, restoreEndCallback)
+            if (isLastChunk && (hasRestoreOutput || restoreEndCallback)) {
+              terminal.write(data, finishRestore)
 
               return
             }
 
             terminal.write(data)
           })
+        } else {
+          finishRestore()
         }
 
         // Create session object from restore data

@@ -218,6 +218,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const cwdPropRef = useRef(cwd)
   const agentCwdRef = useRef(cwd)
   const agentCwdSourceRef = useRef<AgentCwdSource>('prop')
+  const sessionIdRef = useRef(sessionId)
+  sessionIdRef.current = sessionId
 
   const terminalStatusRef = useRef<'idle' | 'running' | 'exited' | 'error'>(
     'idle'
@@ -260,39 +262,36 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     agentCwdSourceRef.current = 'prop'
   }, [sessionId])
 
-  const applyAgentCwdHint = useCallback(
-    (output: string): void => {
-      const previousCwd = agentCwdRef.current
-      const visibleOutput = stripCarriageReturnOverwrites(output)
-      const outputWithContext = `${agentCwdHintContextRef.current}${visibleOutput}`
-      const cwdHint = parseAgentCwdHint(outputWithContext, previousCwd)
+  const applyAgentCwdHint = useCallback((output: string): void => {
+    const previousCwd = agentCwdRef.current
+    const visibleOutput = stripCarriageReturnOverwrites(output)
+    const outputWithContext = `${agentCwdHintContextRef.current}${visibleOutput}`
+    const cwdHint = parseAgentCwdHint(outputWithContext, previousCwd)
 
-      const shouldApplyCwdHint =
-        cwdHint !== null && cwdHint !== agentCwdRef.current
+    const shouldApplyCwdHint =
+      cwdHint !== null && cwdHint !== agentCwdRef.current
 
-      agentCwdHintContextRef.current = shouldApplyCwdHint
-        ? ''
-        : getAgentCwdHintContext(outputWithContext).slice(
-            -AGENT_CWD_HINT_BUFFER_SIZE
-          )
+    agentCwdHintContextRef.current = shouldApplyCwdHint
+      ? ''
+      : getAgentCwdHintContext(outputWithContext).slice(
+          -AGENT_CWD_HINT_BUFFER_SIZE
+        )
 
-      if (cwdHint !== null) {
-        logAgentCwdDebug('text-hint', {
-          sessionId,
-          previousCwd,
-          nextCwd: cwdHint,
-          changed: cwdHint !== previousCwd,
-        })
+    if (cwdHint !== null) {
+      logAgentCwdDebug('text-hint', {
+        sessionId: sessionIdRef.current,
+        previousCwd,
+        nextCwd: cwdHint,
+        changed: cwdHint !== previousCwd,
+      })
 
-        if (shouldApplyCwdHint) {
-          agentCwdSourceRef.current = 'text-hint'
-          agentCwdRef.current = cwdHint
-          onCwdChangeRef.current?.(cwdHint)
-        }
+      if (shouldApplyCwdHint) {
+        agentCwdSourceRef.current = 'text-hint'
+        agentCwdRef.current = cwdHint
+        onCwdChangeRef.current?.(cwdHint)
       }
-    },
-    [sessionId]
-  )
+    }
+  }, [])
 
   const flushAgentCwdOutputBuffer = useCallback((): void => {
     const pendingOutput = agentCwdOutputBufferRef.current

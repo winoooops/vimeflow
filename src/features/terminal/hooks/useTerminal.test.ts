@@ -593,7 +593,7 @@ describe('useTerminal', () => {
       expect(mockTerminal.write).toHaveBeenCalledWith('Restored output\r\n')
     })
 
-    test('writes replay data before draining buffered events without reporting restored output', async () => {
+    test('reports restored output after the final restore write callback', async () => {
       const writes: string[] = []
       const writeCallbacks: (() => void)[] = []
       const onOutput = vi.fn()
@@ -636,11 +636,16 @@ describe('useTerminal', () => {
       // Then buffered events
       expect(writes[1]).toBe('BUFFERED')
       expect(onOutput).not.toHaveBeenCalled()
+
+      expect(onRestoreOutput).not.toHaveBeenCalled()
+      expect(writeCallbacks).toHaveLength(1)
+
+      writeCallbacks[0]()
+
       expect(onRestoreOutput).toHaveBeenCalledOnce()
       expect(onRestoreOutput).toHaveBeenCalledWith(
         ['REPLAY', 'BUFFERED'].join('')
       )
-      expect(writeCallbacks).toHaveLength(0)
     })
 
     test('marks the restore phase until the final restored write callback fires', async () => {
@@ -695,62 +700,16 @@ describe('useTerminal', () => {
       })
 
       expect(onRestoreStart).toHaveBeenCalledOnce()
-      expect(onRestoreOutput).toHaveBeenCalledOnce()
+      expect(onRestoreOutput).not.toHaveBeenCalled()
       expect(onRestoreEnd).not.toHaveBeenCalled()
-      expect(lifecycleEvents).toEqual(['start', 'output'])
+      expect(lifecycleEvents).toEqual(['start'])
       expect(writeCallbacks).toHaveLength(1)
 
       writeCallbacks[0]()
 
+      expect(onRestoreOutput).toHaveBeenCalledOnce()
       expect(onRestoreEnd).toHaveBeenCalledOnce()
       expect(lifecycleEvents).toEqual(['start', 'output', 'end'])
-    })
-
-    test('warns and skips restore start without a matching restore end callback', async () => {
-      const writes: string[] = []
-      const writeCallbacks: (() => void)[] = []
-      const onRestoreStart = vi.fn()
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-
-      vi.mocked(mockTerminal.write).mockImplementation(
-        (data: string | Uint8Array, callback?: () => void) => {
-          writes.push(
-            typeof data === 'string' ? data : new TextDecoder().decode(data)
-          )
-
-          if (callback) {
-            writeCallbacks.push(callback)
-          }
-        }
-      )
-
-      renderHook(() =>
-        useTerminal({
-          terminal: mockTerminal,
-          service: mockService,
-          restoredFrom: {
-            sessionId: 'session-1',
-            cwd: '/tmp',
-            pid: 1234,
-            replayData: 'REPLAY',
-            replayEndOffset: 50,
-            bufferedEvents: [{ data: 'BUFFERED', offsetStart: 50, byteLen: 8 }],
-          },
-          onRestoreStart,
-        } as unknown as Parameters<typeof useTerminal>[0])
-      )
-
-      await waitFor(() => {
-        expect(writes).toEqual(['REPLAY', 'BUFFERED'])
-      })
-
-      expect(warn).toHaveBeenCalledWith(
-        'useTerminal restore lifecycle callbacks must be provided together'
-      )
-      expect(onRestoreStart).not.toHaveBeenCalled()
-      expect(writeCallbacks).toHaveLength(0)
-
-      warn.mockRestore()
     })
 
     test('flushes buffered events with cursor filter (offsetStart >= replayEndOffset)', async () => {
