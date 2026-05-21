@@ -1,10 +1,9 @@
-import type { ReactElement } from 'react'
+import { useId, type ReactElement } from 'react'
 
 export interface BucketProps {
   pct: number
   color: string
   label: string
-  uid: string
   title?: string
 }
 
@@ -20,13 +19,19 @@ export const Bucket = ({
   pct,
   color,
   label,
-  uid,
   title = '',
 }: BucketProps): ReactElement => {
+  // useId yields a per-instance unique string (e.g. ":r3:") that React
+  // guarantees won't collide between renders or component instances. SVG
+  // <defs> ids live in the document's global namespace for inline SVG, so
+  // using a caller-supplied prop here would silently corrupt rendering if
+  // two buckets ever shared the same value. Sanitize the colons so they
+  // can be embedded in url(#...) references without escaping.
+  const reactId = useId().replace(/:/g, '')
   const clamped = Math.max(0, Math.min(100, pct))
-  const fillId = `bucket-fill-${uid}`
-  const glassId = `bucket-glass-${uid}`
-  const clipId = `bucket-clip-${uid}`
+  const fillId = `bucket-fill-${reactId}`
+  const glassId = `bucket-glass-${reactId}`
+  const clipId = `bucket-clip-${reactId}`
   const labelKey = label.toLowerCase()
 
   return (
@@ -176,7 +181,7 @@ const BucketLiquid = ({
         x={0}
         y={top + amp}
         width={dims.w}
-        height={dims.h - (top + amp)}
+        height={Math.max(0, dims.h - (top + amp))}
         fill={fillUrl}
       />
       <g style={{ transform: `translateY(${top - amp / 2}px)` }}>

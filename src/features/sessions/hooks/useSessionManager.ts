@@ -52,6 +52,11 @@ const persistActivityPanelCollapsed = async (
   await service.setSessionActivityPanelCollapsed({ id, collapsed })
 }
 
+interface CollapseChainEntry {
+  tail: Promise<void>
+  originalValue: boolean | null
+}
+
 export interface SessionManager {
   sessions: Session[]
   activeSessionId: string | null
@@ -315,7 +320,13 @@ export const useSessionManager = (
   // and fires the auto-create that the round-10 comment promised.
   const [pendingSpawns, setPendingSpawns] = useState(0)
   const pendingPaneOps = useRef<Set<string>>(new Set())
-  const collapseChainRef = useRef<Map<string, Promise<void>>>(new Map())
+  // Chain entry carries the persisted-pre-call value alongside the in-flight
+  // tail. originalValue is captured once per chain run — when the first call
+  // for a (sessionId, paneId) starts — and reused by every subsequent call
+  // that piggybacks on the chain. The tail acquired during back-to-back
+  // failures rolls UI back to originalValue, not to whichever optimistic
+  // value happened to be on screen when the call was issued.
+  const collapseChainRef = useRef<Map<string, CollapseChainEntry>>(new Map())
 
   const createSession = useCallback((): void => {
     setPendingSpawns((c) => c + 1)
@@ -1246,8 +1257,23 @@ export const useSessionManager = (
         return
       }
 
-      const previous = pane.activityPanelCollapsed ?? null
+      const chainKey = `${sessionId}:${paneId}`
+      const existing = collapseChainRef.current.get(chainKey)
 
+      // Read pane.activityPanelCollapsed only on the FIRST call per chain run;
+      // every reentrant call (B issued while A is in flight) reads stale
+      // optimistic state and would set originalValue to whatever the previous
+      // call optimistically wrote. existing.originalValue carries the
+      // pre-A persisted truth forward so a B-rollback after A also failed
+      // restores UI to backend ground truth — not to A's speculative value.
+      // The explicit `existing !== undefined` check is required because
+      // `null` is a valid persisted value (un-collapsed default); `??` here
+      // would collapse a legitimate null baseline into the stale-fallback
+      // path and capture A's optimistic value as B's rollback target.
+      const originalValue =
+        existing !== undefined
+          ? existing.originalValue
+          : (pane.activityPanelCollapsed ?? null)
       setSessions((prev) =>
         prev.map((s) =>
           s.id !== sessionId
@@ -1263,8 +1289,7 @@ export const useSessionManager = (
         )
       )
 
-      const chainKey = `${sessionId}:${paneId}`
-      const prior = collapseChainRef.current.get(chainKey) ?? Promise.resolve()
+      const prior = existing?.tail ?? Promise.resolve()
 
       const next = persistActivityPanelCollapsed(
         service,
@@ -1274,11 +1299,32 @@ export const useSessionManager = (
       )
       const tail = absorbCollapseQueueFailure(next)
 
-      collapseChainRef.current.set(chainKey, tail)
+      collapseChainRef.current.set(chainKey, { tail, originalValue })
 
       try {
         await next
+        // Persist succeeded — advance the chain's known-good baseline so a
+        // later queued failure (mixed success/fail case) rolls back to THIS
+        // call's value rather than the pre-chain value. Mutating the entry in
+        // place is safe and necessary: any queued caller after this point
+        // reads `existing?.originalValue` to seed its own rollback baseline
+        // and must see the just-persisted value, not the original.
+        const current = collapseChainRef.current.get(chainKey)
+        if (current !== undefined) {
+          current.originalValue = collapsed
+        }
       } catch (err) {
+        // Capture liveBaseline NOW — `finally` will delete the chain entry
+        // before React processes the setSessions updater, so reading inside
+        // the updater would always see `undefined`. Same `null`-is-data
+        // caveat as the originalValue read above: use an explicit existence
+        // check so a legitimate `null` baseline isn't collapsed into the
+        // closure-snapshot fallback path.
+        const liveEntry = collapseChainRef.current.get(chainKey)
+
+        const liveBaseline =
+          liveEntry !== undefined ? liveEntry.originalValue : originalValue
+
         setSessions((prev) =>
           prev.map((s) => {
             if (s.id !== sessionId) {
@@ -1295,14 +1341,14 @@ export const useSessionManager = (
                   return p
                 }
 
-                return { ...p, activityPanelCollapsed: previous }
+                return { ...p, activityPanelCollapsed: liveBaseline }
               }),
             }
           })
         )
         throw err
       } finally {
-        if (collapseChainRef.current.get(chainKey) === tail) {
+        if (collapseChainRef.current.get(chainKey)?.tail === tail) {
           collapseChainRef.current.delete(chainKey)
         }
       }

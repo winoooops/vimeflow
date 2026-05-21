@@ -78,7 +78,6 @@ export const AgentStatusRail = ({
           pct={ctxPct}
           color={contextTone(ctxPct, agent.accent)}
           label="CTX"
-          uid={`ctx-${agent.id}`}
           title={`Context: ${Math.round(ctxPct)}%`}
         />
       )}
@@ -89,7 +88,6 @@ export const AgentStatusRail = ({
             pct={cachePct}
             color={cacheTone(cachePct)}
             label="CACHE"
-            uid={`cache-${agent.id}`}
             title={`Cache hit rate: ${Math.round(cachePct)}%`}
           />
         </div>

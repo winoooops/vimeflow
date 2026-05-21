@@ -2991,6 +2991,260 @@ describe('useSessionManager', () => {
     )
   })
 
+  test('setPaneActivityPanelCollapsed rolls back to pre-chain value when two IPC calls fail in sequence', async () => {
+    const service = createMockService()
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty-1',
+      pid: 123,
+      cwd: '/home/user',
+    })
+
+    let rejectFirst: ((err: Error) => void) | null = null
+    let rejectSecond: ((err: Error) => void) | null = null
+    service.setSessionActivityPanelCollapsed = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectFirst = reject
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectSecond = reject
+          })
+      )
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.createSession())
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    const session = result.current.sessions[0]
+    const pane = session.panes[0]
+    // Pre-chain ground truth: pane starts un-collapsed (null in our model).
+    expect(pane.activityPanelCollapsed).toBeNull()
+
+    let first: Promise<void> = Promise.resolve()
+    let second: Promise<void> = Promise.resolve()
+
+    act(() => {
+      first = absorbExpectedRejection(
+        result.current.setPaneActivityPanelCollapsed(session.id, pane.id, true)
+      )
+
+      second = absorbExpectedRejection(
+        result.current.setPaneActivityPanelCollapsed(session.id, pane.id, false)
+      )
+    })
+
+    // Both optimistic updates applied; latest wins on screen.
+    expect(result.current.sessions[0].panes[0].activityPanelCollapsed).toBe(
+      false
+    )
+
+    // Wait for the first IPC call to be issued before triggering its rejection;
+    // the second call is chained behind the first and can't start its own IPC
+    // until first's persistActivityPanelCollapsed resolves (or rejects).
+    await waitFor(() =>
+      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledTimes(1)
+    )
+
+    await act(async () => {
+      rejectFirst?.(new Error('first IPC failed'))
+      await first
+    })
+
+    await waitFor(() =>
+      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledTimes(2)
+    )
+
+    await act(async () => {
+      rejectSecond?.(new Error('second IPC failed'))
+      await second
+    })
+
+    // Both calls failed; UI must reconcile to the backend's untouched value
+    // (null), NOT to the first call's optimistic `true`.
+    expect(
+      result.current.sessions[0].panes[0].activityPanelCollapsed
+    ).toBeNull()
+  })
+
+  test('setPaneActivityPanelCollapsed preserves a null baseline across queued calls even after the optimistic render has committed', async () => {
+    // Codex review cycle 2 caught this: if A optimistically sets `true`
+    // and React commits before B is issued, `sessionsRef.current` shows A's
+    // optimistic value. The fix must NOT collapse a legitimate `null`
+    // baseline into A's stale optimistic value via nullish-coalescing.
+    const service = createMockService()
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty-1',
+      pid: 123,
+      cwd: '/home/user',
+    })
+
+    let rejectFirst: ((err: Error) => void) | null = null
+    let rejectSecond: ((err: Error) => void) | null = null
+    service.setSessionActivityPanelCollapsed = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectFirst = reject
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectSecond = reject
+          })
+      )
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.createSession())
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    const session = result.current.sessions[0]
+    const pane = session.panes[0]
+    expect(pane.activityPanelCollapsed).toBeNull()
+
+    // Fire A in its own act — React commits A's optimistic `true` before B
+    // is issued. This is the scenario the cycle-1 fix missed.
+    let first: Promise<void> = Promise.resolve()
+
+    act(() => {
+      first = absorbExpectedRejection(
+        result.current.setPaneActivityPanelCollapsed(session.id, pane.id, true)
+      )
+    })
+
+    expect(result.current.sessions[0].panes[0].activityPanelCollapsed).toBe(
+      true
+    )
+
+    let second: Promise<void> = Promise.resolve()
+
+    act(() => {
+      second = absorbExpectedRejection(
+        result.current.setPaneActivityPanelCollapsed(session.id, pane.id, false)
+      )
+    })
+
+    await waitFor(() =>
+      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledTimes(1)
+    )
+
+    await act(async () => {
+      rejectFirst?.(new Error('first IPC failed'))
+      await first
+    })
+
+    await waitFor(() =>
+      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledTimes(2)
+    )
+
+    await act(async () => {
+      rejectSecond?.(new Error('second IPC failed'))
+      await second
+    })
+
+    // Both calls failed. Backend never persisted anything, so UI must
+    // reconcile to the original null — NOT to A's optimistic true that was
+    // briefly observable through sessionsRef.current.
+    expect(
+      result.current.sessions[0].panes[0].activityPanelCollapsed
+    ).toBeNull()
+  })
+
+  test('setPaneActivityPanelCollapsed rolls back to a previously-successful sibling value when a later queued IPC fails', async () => {
+    const service = createMockService()
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty-1',
+      pid: 123,
+      cwd: '/home/user',
+    })
+
+    let resolveFirst: (() => void) | null = null
+    let rejectSecond: ((err: Error) => void) | null = null
+    service.setSessionActivityPanelCollapsed = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirst = resolve
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectSecond = reject
+          })
+      )
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.createSession())
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    const session = result.current.sessions[0]
+    const pane = session.panes[0]
+
+    let first: Promise<void> = Promise.resolve()
+    let second: Promise<void> = Promise.resolve()
+
+    act(() => {
+      first = result.current.setPaneActivityPanelCollapsed(
+        session.id,
+        pane.id,
+        true
+      )
+
+      second = absorbExpectedRejection(
+        result.current.setPaneActivityPanelCollapsed(session.id, pane.id, false)
+      )
+    })
+
+    // Both optimistic updates applied; latest wins on screen.
+    expect(result.current.sessions[0].panes[0].activityPanelCollapsed).toBe(
+      false
+    )
+
+    await waitFor(() =>
+      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledTimes(1)
+    )
+
+    await act(async () => {
+      resolveFirst?.()
+      await first
+    })
+
+    await waitFor(() =>
+      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledTimes(2)
+    )
+
+    await act(async () => {
+      rejectSecond?.(new Error('second IPC failed'))
+      await second
+    })
+
+    // The second call failed; rollback must restore to the first call's
+    // SUCCESSFUL persisted value (true), NOT to the pre-chain value (null).
+    expect(result.current.sessions[0].panes[0].activityPanelCollapsed).toBe(
+      true
+    )
+  })
+
   describe('setSessionLayout', () => {
     test('updates session.layout when target session exists and layout differs', async () => {
       const service = createMockService()

@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-16
+last_updated: 2026-05-21
 ref_count: 10
 ---
 
@@ -377,7 +377,14 @@ prevent showing previous data.
 - **Fix:** Stage `UnlistenFn`s in a local array until all backend listeners attach. On any failure, reset `initPromise` to `null`, call each staged unlisten in a guarded cleanup loop, and rethrow so awaited callers still see the failure. Only publish staged unlisteners to `this.unlistenFns` after the full listener set is attached. Added regression coverage for partial-listener cleanup and successful retry after failure.
 - **Commit:** _(see git log for the PR #211 round-1 fix commit)_
 
-### 38. Dispose can invalidate an async singleton init while the init is still publishing resources
+### 39. Optimistic-update chain rolled back to A's speculative value (not pre-A truth) when two queued IPCs both failed; nullish-coalescing also collapsed legitimate `null` baselines
+
+- **Source:** github-claude | PR #238 round 1 | 2026-05-21
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** `setPaneActivityPanelCollapsed` queues persists through a chain ref so multiple toggles applied back-to-back serialise. The original rollback path read `previous = pane.activityPanelCollapsed` AT CALL TIME — by the time call B is issued, that read already reflects A's optimistic update, so a double-IPC-failure (A=true, B=false both reject) restored UI to A's speculative `true` while the backend was still at the pre-chain `null`. The fix carries the pre-chain value forward inside the chain entry itself; codex verify cycles 1 and 2 then surfaced two follow-on bugs: (a) the chain-stored baseline must ADVANCE after each successful persist so a mixed-success/failure pair (A succeeds, B fails) rolls back to A's value rather than past it, and (b) `existing?.originalValue ?? fallback` collapses a legitimate `null` baseline into the fallback path (`??` treats `null` as "missing"), causing the same UI/backend desync when B is issued after A's render commits but before any IPC succeeds.
+- **Fix:** Chain ref value type became `{ tail: Promise<void>; originalValue: boolean | null }`. On each call, `originalValue` is captured ONCE per chain run via explicit existence check (`existing !== undefined ? existing.originalValue : fallback`) so `null` survives. After `await next` succeeds, the chain entry is mutated in place — `current.originalValue = collapsed` — so queued siblings see the advancing baseline. The catch path snapshots `liveBaseline` BEFORE the setSessions updater (the `finally` deletes the chain entry before React processes the updater) using the same explicit-existence check, then rolls back to the captured value when the guard says we still own the latest optimistic write. Three regression tests cover: (1) double-fail rolls to pre-chain null; (2) mixed success/fail rolls to the successful sibling's value; (3) double-fail with B issued AFTER A's render-commit still rolls to null.
+- **Commit:** _(see git log for the PR #238 upsource-review cycle commit)_
 
 - **Source:** github-claude | PR #211 round 2 | 2026-05-16
 - **Severity:** MEDIUM
