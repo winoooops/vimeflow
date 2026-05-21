@@ -81,6 +81,7 @@ const session: Session = {
       agentType: 'claude-code',
       status: 'running',
       active: true,
+      activityPanelCollapsed: null,
     },
   ],
   createdAt: '2026-05-08T10:00:00Z',

@@ -17,6 +17,7 @@ const mockPane = (overrides: Partial<Pane> = {}): Pane => ({
   agentType: 'generic',
   status: 'running',
   active: true,
+  activityPanelCollapsed: null,
   ...overrides,
 })
 
@@ -134,6 +135,7 @@ describe('applyAddPane', () => {
     agentType: 'generic',
     status: 'running',
     active: true,
+    activityPanelCollapsed: null,
   }
 
   test('appends pane and flips existing pane to inactive', () => {

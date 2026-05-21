@@ -31,6 +31,15 @@ export interface Pane {
 
   /** Exactly one pane per session has `active === true`. */
   active: boolean
+
+  /** Per-pane collapse preference for the right activity panel.
+   *  `null` = not yet persisted (pre-feature default). `true` / `false` =
+   *  persisted state. `undefined` is NOT a valid runtime value — every
+   *  init path (`createSession`, `sessionFromInfo`) sets the field
+   *  explicitly to `null`, and the Rust IPC contract is non-optional.
+   *  See `setPaneActivityPanelCollapsed` for the existence-vs-nullish
+   *  reasoning that depends on this invariant. */
+  activityPanelCollapsed: boolean | null
 }
 
 export interface Session {

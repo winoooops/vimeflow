@@ -25,6 +25,7 @@ const makeSession = (
     agentType: 'generic',
     status: 'running',
     active: index === activeIndex,
+    activityPanelCollapsed: null,
   })),
   createdAt: '2026-05-12T00:00:00Z',
   lastActivityAt: '2026-05-12T00:00:00Z',

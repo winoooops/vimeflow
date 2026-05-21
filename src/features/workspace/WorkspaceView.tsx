@@ -25,7 +25,16 @@ import {
 import { DockPeekButton } from './components/DockPeekButton'
 import DockPanel, { type DockPanelHandle } from './components/DockPanel'
 import type { DockPosition } from './components/DockSwitcher'
-import { AgentStatusPanel } from '../agent-status/components/AgentStatusPanel'
+import {
+  AgentStatusPanel,
+  PANEL_WIDTH_PX,
+} from '../agent-status/components/AgentStatusPanel'
+import {
+  AgentStatusRail,
+  RAIL_WIDTH_PX,
+} from '../agent-status/components/AgentStatusRail'
+import { cacheHitRate } from '../agent-status/utils/cacheRate'
+import type { CurrentUsageState } from '../agent-status/types'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
@@ -47,6 +56,8 @@ import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
+import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
+import type { SessionStatus } from '../sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -61,6 +72,14 @@ import {
   DOCK_VERTICAL_ELASTIC_CONFIG,
   DOCK_HORIZONTAL_ELASTIC_CONFIG,
 } from './panelConfig'
+
+const cacheHitPercentage = (
+  usage: CurrentUsageState | null | undefined
+): number | null => {
+  const rate = cacheHitRate(usage)
+
+  return rate === null ? null : Math.round(rate * 100)
+}
 
 // Filed before merge — see the PR description for the issue body.
 // `0` is intentionally a loud placeholder; the gear tooltip
@@ -108,6 +127,7 @@ export const WorkspaceView = (): ReactElement => {
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
+    setPaneActivityPanelCollapsed,
     setSessionActivePane,
     setSessionLayout,
     addPane,
@@ -195,6 +215,46 @@ export const WorkspaceView = (): ReactElement => {
   const activePanePtyId = activePane?.ptyId
 
   const agentStatus = useAgentStatus(activePanePtyId ?? null)
+  const activityPanelCollapsed = activePane?.activityPanelCollapsed ?? false
+
+  const activityPanelAgent = useMemo(
+    () => AGENTS[agentTypeToRegistryKey(agentStatus.agentType)],
+    [agentStatus.agentType]
+  )
+
+  // Source the header status from the active pane's lifecycle, not from the
+  // agent's `isActive` flag. After a PTY exits, `agentStatus.isActive` flips
+  // to false and the `running` → `paused` ternary would silently mislabel
+  // terminal states (`completed`, `errored`) as paused, complete with a
+  // pulsing dot. The pane's own `status` is the source of truth for
+  // running/paused/completed/errored — agent activity stays an orthogonal
+  // signal that the "live" pulse next to the agent chip already reflects.
+  const activityPanelStatus: SessionStatus = activePane?.status ?? 'paused'
+
+  const handleActivityPanelCollapsed = useCallback(
+    async (collapsed: boolean): Promise<void> => {
+      if (!activeSessionId || !activePane) {
+        return
+      }
+
+      try {
+        await setPaneActivityPanelCollapsed(
+          activeSessionId,
+          activePane.id,
+          collapsed
+        )
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        // 'Error: ' prefix is a minimal severity signal until the
+        // notification API gains a typed level. Without it, a banner styled
+        // identically to routine `notifyInfo` messages can be mistaken for a
+        // status update when it actually means the persist failed and the
+        // optimistic UI just snapped back.
+        notifyInfo(`Error: Couldn't update activity panel: ${message}`)
+      }
+    },
+    [activePane, activeSessionId, notifyInfo, setPaneActivityPanelCollapsed]
+  )
 
   // Bridge: keep pane chrome in sync with agent detection for the active
   // pane. Live detections stamp the agent identity; an explicit
@@ -908,14 +968,42 @@ export const WorkspaceView = (): ReactElement => {
         <StatusBar />
       </div>
 
-      {/* Agent Status Panel — self-manages width (0↔280px) */}
-      <AgentStatusPanel
-        agentStatus={agentStatus}
-        cwd={activeCwd}
-        gitStatus={gitStatus}
-        onOpenDiff={handleOpenDiff}
-        onOpenFile={handleOpenTestFile}
-      />
+      <div
+        data-testid="activity-panel-shell"
+        className="h-full shrink-0 overflow-hidden transition-[width] duration-[220ms] ease-pane"
+        style={{
+          width: activityPanelCollapsed ? RAIL_WIDTH_PX : PANEL_WIDTH_PX,
+        }}
+      >
+        {activityPanelCollapsed ? (
+          <AgentStatusRail
+            agent={activityPanelAgent}
+            contextUsedPercentage={
+              agentStatus.contextWindow?.usedPercentage ?? null
+            }
+            cacheHitPercentage={cacheHitPercentage(
+              agentStatus.contextWindow?.currentUsage
+            )}
+            isRunning={agentStatus.isActive}
+            onExpand={() => {
+              void handleActivityPanelCollapsed(false)
+            }}
+          />
+        ) : (
+          <AgentStatusPanel
+            agentStatus={agentStatus}
+            cwd={activeCwd}
+            gitStatus={gitStatus}
+            onOpenDiff={handleOpenDiff}
+            onOpenFile={handleOpenTestFile}
+            agent={activityPanelAgent}
+            status={activityPanelStatus}
+            onCollapse={() => {
+              void handleActivityPanelCollapsed(true)
+            }}
+          />
+        )}
+      </div>
 
       {/* Unsaved Changes Dialog — shows the CURRENTLY dirty file, not the
           destination the user is switching to. */}

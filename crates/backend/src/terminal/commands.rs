@@ -296,6 +296,7 @@ pub(crate) async fn spawn_pty_inner(
                 created_at,
                 exited: false,
                 last_exit_code: None,
+                activity_panel_collapsed: None,
             },
         );
         data.session_order.push(request.session_id.clone());
@@ -520,6 +521,7 @@ pub(crate) fn list_sessions_inner(
             id: id.clone(),
             cwd: cached.cwd,
             status,
+            activity_panel_collapsed: cached.activity_panel_collapsed,
         });
     }
 
@@ -686,6 +688,20 @@ pub(crate) fn update_session_cwd_inner(
             Ok(())
         }
         None => Err("unknown session".into()),
+    })
+}
+
+pub(crate) fn set_session_activity_panel_collapsed_inner(
+    cache: &Arc<crate::terminal::cache::SessionCache>,
+    request: SetSessionActivityPanelCollapsedRequest,
+) -> Result<(), String> {
+    cache.mutate(|d| {
+        let session = d
+            .sessions
+            .get_mut(&request.id)
+            .ok_or_else(|| format!("session not found: {}", request.id))?;
+        session.activity_panel_collapsed = Some(request.collapsed);
+        Ok(())
     })
 }
 
@@ -1276,6 +1292,7 @@ mod tests {
                         created_at: "2026-04-25T00:00:00Z".to_string(),
                         exited: false,
                         last_exit_code: None,
+                        activity_panel_collapsed: None,
                     },
                 );
                 data.session_order.push(id.clone());
@@ -1553,6 +1570,7 @@ mod tests {
                         created_at: "2026-04-25T00:00:00Z".into(),
                         exited: false,
                         last_exit_code: None,
+                        activity_panel_collapsed: None,
                     },
                 );
                 Ok(())
@@ -1613,6 +1631,7 @@ mod tests {
                         created_at: "2026-04-25T00:00:00Z".into(),
                         exited: false,
                         last_exit_code: None,
+                        activity_panel_collapsed: None,
                     },
                 );
                 d.active_session_id = Some("phantom".into());
@@ -2016,6 +2035,88 @@ mod tests {
         );
     }
 
+    #[test]
+    fn set_session_activity_panel_collapsed_inner_updates_cache() {
+        let (_state, cache, _events, _temp_dir) = create_test_state_with_cache();
+        cache
+            .mutate(|d| {
+                d.sessions.insert(
+                    "pty-1".into(),
+                    super::super::cache::CachedSession {
+                        cwd: "/home/x".into(),
+                        created_at: "2026-05-21T00:00:00Z".into(),
+                        exited: false,
+                        last_exit_code: None,
+                        activity_panel_collapsed: None,
+                    },
+                );
+                Ok(())
+            })
+            .unwrap();
+
+        set_session_activity_panel_collapsed_inner(
+            &cache,
+            SetSessionActivityPanelCollapsedRequest {
+                id: "pty-1".into(),
+                collapsed: true,
+            },
+        )
+        .unwrap();
+
+        let snap = cache.snapshot();
+        assert_eq!(
+            snap.sessions.get("pty-1").unwrap().activity_panel_collapsed,
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn set_session_activity_panel_collapsed_inner_errors_when_session_missing() {
+        let (_state, cache, _events, _temp_dir) = create_test_state_with_cache();
+
+        let err = set_session_activity_panel_collapsed_inner(
+            &cache,
+            SetSessionActivityPanelCollapsedRequest {
+                id: "ghost-pty".into(),
+                collapsed: true,
+            },
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("session not found"),
+            "expected `session not found` error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn list_sessions_surfaces_activity_panel_collapsed() {
+        let (state, cache, _events, _temp_dir) = create_test_state_with_cache();
+        cache
+            .mutate(|d| {
+                d.sessions.insert(
+                    "pty-1".into(),
+                    super::super::cache::CachedSession {
+                        cwd: "/home/x".into(),
+                        created_at: "2026-05-21T00:00:00Z".into(),
+                        exited: false,
+                        last_exit_code: None,
+                        activity_panel_collapsed: Some(true),
+                    },
+                );
+                d.session_order.push("pty-1".into());
+                Ok(())
+            })
+            .unwrap();
+
+        let list = list_sessions_inner(&state, &cache).unwrap();
+        let info = list
+            .sessions
+            .iter()
+            .find(|s| s.id == "pty-1")
+            .expect("session must surface");
+        assert_eq!(info.activity_panel_collapsed, Some(true));
+    }
+
     /// Round 4, Finding 3 (codex P2) regression test.
     ///
     /// The pre-fix `reorder_sessions` flow was:
@@ -2058,6 +2159,7 @@ mod tests {
                             created_at: "2026-04-25T00:00:00Z".into(),
                             exited: false,
                             last_exit_code: None,
+                            activity_panel_collapsed: None,
                         },
                     );
                 }
@@ -2103,6 +2205,7 @@ mod tests {
                             created_at: "2026-04-25T00:00:00Z".into(),
                             exited: false,
                             last_exit_code: None,
+                            activity_panel_collapsed: None,
                         },
                     );
                     Ok(())

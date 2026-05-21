@@ -32,6 +32,31 @@ import { useSessionRestore } from './useSessionRestore'
 
 export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
 
+const absorbCollapseQueueFailure = async (
+  promise: Promise<void>
+): Promise<void> => {
+  try {
+    await promise
+  } catch {
+    return
+  }
+}
+
+const persistActivityPanelCollapsed = async (
+  service: ITerminalService,
+  prior: Promise<void>,
+  id: string,
+  collapsed: boolean
+): Promise<void> => {
+  await absorbCollapseQueueFailure(prior)
+  await service.setSessionActivityPanelCollapsed({ id, collapsed })
+}
+
+interface CollapseChainEntry {
+  tail: Promise<void>
+  originalValue: boolean | null
+}
+
 export interface SessionManager {
   sessions: Session[]
   activeSessionId: string | null
@@ -62,6 +87,11 @@ export interface SessionManager {
     paneId: string,
     agentType: Session['agentType']
   ) => void
+  setPaneActivityPanelCollapsed: (
+    sessionId: string,
+    paneId: string,
+    collapsed: boolean
+  ) => Promise<void>
   /**
    * Update the stable session baseline cwd in React state only.
    *
@@ -290,6 +320,13 @@ export const useSessionManager = (
   // and fires the auto-create that the round-10 comment promised.
   const [pendingSpawns, setPendingSpawns] = useState(0)
   const pendingPaneOps = useRef<Set<string>>(new Set())
+  // Chain entry carries the persisted-pre-call value alongside the in-flight
+  // tail. originalValue is captured once per chain run — when the first call
+  // for a (sessionId, paneId) starts — and reused by every subsequent call
+  // that piggybacks on the chain. The tail acquired during back-to-back
+  // failures rolls UI back to originalValue, not to whichever optimistic
+  // value happened to be on screen when the call was issued.
+  const collapseChainRef = useRef<Map<string, CollapseChainEntry>>(new Map())
 
   const createSession = useCallback((): void => {
     setPendingSpawns((c) => c + 1)
@@ -342,6 +379,7 @@ export const useSessionManager = (
                   agentType: 'generic',
                   status: 'running',
                   active: true,
+                  activityPanelCollapsed: null,
                   pid: result.pid,
                   restoreData,
                 },
@@ -747,6 +785,7 @@ export const useSessionManager = (
             agentType: 'generic',
             status: 'running',
             active: true,
+            activityPanelCollapsed: null,
             pid: result.pid,
             restoreData,
           }
@@ -1206,6 +1245,139 @@ export const useSessionManager = (
     []
   )
 
+  const setPaneActivityPanelCollapsed = useCallback(
+    async (
+      sessionId: string,
+      paneId: string,
+      collapsed: boolean
+    ): Promise<void> => {
+      const session = sessionsRef.current.find((s) => s.id === sessionId)
+      const pane = session?.panes.find((p) => p.id === paneId)
+      if (!session || !pane) {
+        return
+      }
+
+      // Capture ptyId at call entry. Pane ids (`p0`, `p1`, ...) are reused
+      // by `nextFreePaneId` when a pane is removed and a new one is created
+      // in the same session, but ptyId is a per-spawn backend identifier
+      // that never recycles. We use it for BOTH the chain key AND the
+      // state-update predicate so a late persist/failure for a removed pane
+      // cannot contaminate a freshly-spawned replacement that happens to
+      // reuse the same React pane id.
+      const panePtyId = pane.ptyId
+      const chainKey = panePtyId
+      const existing = collapseChainRef.current.get(chainKey)
+
+      // Read pane.activityPanelCollapsed only on the FIRST call per chain run;
+      // every reentrant call (B issued while A is in flight) reads stale
+      // optimistic state and would set originalValue to whatever the previous
+      // call optimistically wrote. existing.originalValue carries the
+      // pre-A persisted truth forward so a B-rollback after A also failed
+      // restores UI to backend ground truth — not to A's speculative value.
+      // The explicit `existing !== undefined` check is required because
+      // `null` is a valid persisted value (un-collapsed default); `??` here
+      // would collapse a legitimate null baseline into the stale-fallback
+      // path and capture A's optimistic value as B's rollback target.
+      const originalValue =
+        existing !== undefined
+          ? existing.originalValue
+          : (pane.activityPanelCollapsed ?? null)
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id !== sessionId
+            ? s
+            : {
+                ...s,
+                panes: s.panes.map((p) =>
+                  p.ptyId !== panePtyId
+                    ? p
+                    : { ...p, activityPanelCollapsed: collapsed }
+                ),
+              }
+        )
+      )
+
+      const prior = existing?.tail ?? Promise.resolve()
+
+      const next = persistActivityPanelCollapsed(
+        service,
+        prior,
+        pane.ptyId,
+        collapsed
+      )
+      const tail = absorbCollapseQueueFailure(next)
+
+      collapseChainRef.current.set(chainKey, { tail, originalValue })
+
+      try {
+        await next
+        // Persist succeeded — advance the chain's known-good baseline so a
+        // later queued failure (mixed success/fail case) rolls back to THIS
+        // call's value rather than the pre-chain value. Mutating the entry in
+        // place is safe and necessary: any queued caller after this point
+        // reads `existing?.originalValue` to seed its own rollback baseline
+        // and must see the just-persisted value, not the original.
+        const current = collapseChainRef.current.get(chainKey)
+        if (current !== undefined) {
+          current.originalValue = collapsed
+        }
+      } catch (err) {
+        // Capture liveBaseline NOW — `finally` will delete the chain entry
+        // before React processes the setSessions updater, so reading inside
+        // the updater would always see `undefined`. Same `null`-is-data
+        // caveat as the originalValue read above: use an explicit existence
+        // check so a legitimate `null` baseline isn't collapsed into the
+        // closure-snapshot fallback path.
+        const liveEntry = collapseChainRef.current.get(chainKey)
+
+        const liveBaseline =
+          liveEntry !== undefined ? liveEntry.originalValue : originalValue
+        // Ownership-by-identity: we roll back AND propagate the error ONLY
+        // when our tail is still the latest in the chain. Comparing
+        // `p.activityPanelCollapsed` against this call's `collapsed` would
+        // mis-fire when two same-direction calls (A=true, C=true) race —
+        // A's failure would value-match C's optimistic state and clobber
+        // it. The identity check sidesteps that: any newer queued call has
+        // already displaced our tail in the Map, so we silently defer to
+        // it — both the UI rollback AND the re-throw must stay inside the
+        // guard, otherwise the user sees an error notification for a
+        // superseded call whose newer sibling owns the visible outcome.
+        const isHead = liveEntry?.tail === tail
+
+        if (isHead) {
+          setSessions((prev) =>
+            prev.map((s) => {
+              if (s.id !== sessionId) {
+                return s
+              }
+
+              return {
+                ...s,
+                panes: s.panes.map((p) => {
+                  // Match by ptyId so a stale rollback for a removed pane
+                  // can never clobber a freshly-spawned pane that reused
+                  // the same React pane id. If the original pane is gone,
+                  // the find returns no match and setSessions is a no-op.
+                  if (p.ptyId !== panePtyId) {
+                    return p
+                  }
+
+                  return { ...p, activityPanelCollapsed: liveBaseline }
+                }),
+              }
+            })
+          )
+          throw err
+        }
+      } finally {
+        if (collapseChainRef.current.get(chainKey)?.tail === tail) {
+          collapseChainRef.current.delete(chainKey)
+        }
+      }
+    },
+    [service]
+  )
+
   const updateSessionCwd = useCallback((id: string, cwd: string): void => {
     const target = sessionsRef.current.find((s) => s.id === id)
     if (!target) {
@@ -1255,6 +1427,7 @@ export const useSessionManager = (
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
+    setPaneActivityPanelCollapsed,
     updateSessionCwd,
     updateSessionAgentType,
     // Round 12 F2: expose the ref-backed Map. Identity is stable across

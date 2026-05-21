@@ -42,6 +42,7 @@ const createTestSession = (sessionId: string, cwd: string): Session => ({
       agentType: 'generic',
       status: 'running',
       active: true,
+      activityPanelCollapsed: null,
     },
   ],
   createdAt: '2026-05-08T00:00:00Z',

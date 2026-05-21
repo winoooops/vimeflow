@@ -92,6 +92,7 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
     // dragging the real panel and its hooks into this test file.
     return <div data-testid="agent-status-panel" />
   },
+  PANEL_WIDTH_PX: 280,
 }))
 
 // Mock terminal service to return initial session data synchronously
@@ -130,6 +131,7 @@ vi.mock('../terminal/services/terminalService', () => ({
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
   })),
 }))
 

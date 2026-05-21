@@ -515,6 +515,24 @@ describe('DesktopTerminalService', () => {
       })
     })
 
+    test('setSessionActivityPanelCollapsed invokes set_session_activity_panel_collapsed', async () => {
+      const mockInvoke = vi.fn().mockResolvedValue(undefined)
+      vi.mocked(invoke).mockImplementation(mockInvoke)
+
+      const testService = new DesktopTerminalService()
+      await testService.setSessionActivityPanelCollapsed({
+        id: 's1',
+        collapsed: true,
+      })
+
+      expect(mockInvoke).toHaveBeenCalledWith(
+        'set_session_activity_panel_collapsed',
+        {
+          request: { id: 's1', collapsed: true },
+        }
+      )
+    })
+
     test('onData callback receives offsetStart from pty-data event', async () => {
       const captured: {
         sessionId: string

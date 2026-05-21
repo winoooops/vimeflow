@@ -163,6 +163,57 @@
   background: #4a444f;
 }
 
+/* Agent activity rail bucket animations.
+   Two opposing sine-wave translations create the ripple; vfSlosh tilts
+   the whole liquid mass < 1deg. Honors prefers-reduced-motion. */
+@keyframes vfWaveA {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes vfWaveB {
+  from {
+    transform: translateX(-50%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes vfSlosh {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  50% {
+    transform: translateX(0.4px) rotate(0.6deg);
+  }
+}
+
+.vf-bucket-wave-a {
+  animation: vfWaveA 3.4s linear infinite;
+}
+
+.vf-bucket-wave-b {
+  animation: vfWaveB 4.8s linear infinite;
+}
+
+.vf-bucket-slosh {
+  animation: vfSlosh 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vf-bucket-wave-a,
+  .vf-bucket-wave-b,
+  .vf-bucket-slosh {
+    animation: none;
+  }
+}
+
 /* Diff viewer styling */
 .diff-added {
   background-color: rgba(166, 227, 161, 0.15);

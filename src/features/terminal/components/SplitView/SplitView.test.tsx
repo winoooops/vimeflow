@@ -80,6 +80,7 @@ const makeSession = (
       agentType: 'generic',
       status: 'running',
       active: i === activeIndex,
+      activityPanelCollapsed: null,
       pid: 1000 + i,
       restoreData: {
         sessionId: `pty-${i}`,
@@ -123,6 +124,7 @@ const makeMockService = (): ITerminalService => ({
   setActiveSession: vi.fn(() => Promise.resolve(undefined)),
   reorderSessions: vi.fn(() => Promise.resolve(undefined)),
   updateSessionCwd: vi.fn(() => Promise.resolve(undefined)),
+  setSessionActivityPanelCollapsed: vi.fn(() => Promise.resolve(undefined)),
 })
 
 describe('SplitView - single layout', () => {
@@ -638,6 +640,7 @@ describe('selectVisiblePanes', () => {
     agentType: 'generic',
     status: 'running',
     active,
+    activityPanelCollapsed: null,
     pid: 1,
   })
 

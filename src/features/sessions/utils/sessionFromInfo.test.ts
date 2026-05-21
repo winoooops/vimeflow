@@ -6,6 +6,7 @@ const aliveInfo = (id: string, cwd: string): SessionInfo => ({
   id,
   cwd,
   status: { kind: 'Alive', pid: 1234, replay_data: '', replay_end_offset: 0n },
+  activityPanelCollapsed: null,
 })
 
 describe('sessionFromInfo (pre-pane shape)', () => {
@@ -23,6 +24,7 @@ describe('sessionFromInfo (pre-pane shape)', () => {
       id: 'pty-2',
       cwd: '/x',
       status: { kind: 'Exited', last_exit_code: null },
+      activityPanelCollapsed: null,
     }
     const session = sessionFromInfo(info, 0)
     expect(session.status).toBe('completed')
@@ -45,10 +47,47 @@ describe('sessionFromInfo (pre-pane shape)', () => {
       id: 'pty-2',
       cwd: '/x',
       status: { kind: 'Exited', last_exit_code: null },
+      activityPanelCollapsed: null,
     }
     const session = sessionFromInfo(info, 0)
     expect(session.panes).toHaveLength(1)
     expect(session.panes[0].status).toBe('completed')
     expect(session.panes[0].restoreData).toBeUndefined()
+  })
+
+  test('reads activityPanelCollapsed from SessionInfo onto the first pane', () => {
+    const session = sessionFromInfo(
+      {
+        id: 'pty-1',
+        cwd: '/home/x',
+        status: {
+          kind: 'Alive',
+          pid: 1234,
+          replay_data: '',
+          replay_end_offset: 0n,
+        },
+        activityPanelCollapsed: true,
+      },
+      0
+    )
+    expect(session.panes[0].activityPanelCollapsed).toBe(true)
+  })
+
+  test('defaults activityPanelCollapsed to null when SessionInfo carries null', () => {
+    const session = sessionFromInfo(
+      {
+        id: 'pty-2',
+        cwd: '/home/y',
+        status: {
+          kind: 'Alive',
+          pid: 5678,
+          replay_data: '',
+          replay_end_offset: 0n,
+        },
+        activityPanelCollapsed: null,
+      },
+      0
+    )
+    expect(session.panes[0].activityPanelCollapsed).toBeNull()
   })
 })

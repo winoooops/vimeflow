@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { WorkspaceView } from './WorkspaceView'
 import * as useCodeMirrorModule from '../editor/hooks/useCodeMirror'
 import * as useVimModeModule from '../editor/hooks/useVimMode'
+import { createTerminalService } from '../terminal/services/terminalService'
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../terminal/components/TerminalPane', () => ({
@@ -67,6 +68,7 @@ vi.mock('../terminal/services/terminalService', () => ({
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
   })),
 }))
 
@@ -319,6 +321,41 @@ describe('WorkspaceView Integration Tests', () => {
 
       expect(panel).toBeInTheDocument()
       // Panel is a shell — collapsible sections will be added in sub-specs 5-7
+    })
+
+    test('clicking the header chevron renders the rail; clicking the rail chevron returns to the panel', async () => {
+      const user = userEvent.setup()
+      render(<WorkspaceView />)
+
+      await screen.findByRole('button', { name: 'session 1' })
+      expect(
+        screen.getByTestId('agent-status-panel-header')
+      ).toBeInTheDocument()
+
+      await user.click(
+        screen.getByRole('button', { name: /collapse activity panel/i })
+      )
+
+      expect(await screen.findByTestId('agent-status-rail')).toBeInTheDocument()
+
+      const serviceResults = vi.mocked(createTerminalService).mock.results
+      const serviceResult = serviceResults[serviceResults.length - 1]
+
+      const service = serviceResult?.value as {
+        setSessionActivityPanelCollapsed: ReturnType<typeof vi.fn>
+      }
+      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledWith({
+        id: 'sess-1',
+        collapsed: true,
+      })
+
+      await user.click(
+        screen.getByRole('button', { name: /expand activity panel/i })
+      )
+
+      expect(
+        await screen.findByTestId('agent-status-panel-header')
+      ).toBeInTheDocument()
     })
   })
 
@@ -1071,7 +1108,9 @@ describe('WorkspaceView focus orchestration', () => {
     })
 
     // Close the dock by clicking its close button
-    const closeButton = screen.getByRole('button', { name: /collapse/i })
+    const closeButton = screen.getByRole('button', {
+      name: /^collapse panel$/i,
+    })
     await userEvent.click(closeButton)
 
     await waitFor(() => {

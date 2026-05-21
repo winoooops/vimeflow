@@ -18,6 +18,7 @@ const baseSession: Omit<Session, 'agentType'> = {
       agentType: 'generic',
       status: 'running',
       active: true,
+      activityPanelCollapsed: null,
     },
   ],
   createdAt: '2026-05-06T00:00:00Z',
@@ -68,6 +69,7 @@ const basePane: Omit<Pane, 'agentType'> = {
   cwd: '~',
   status: 'running',
   active: true,
+  activityPanelCollapsed: null,
 }
 
 describe('agentForPane', () => {

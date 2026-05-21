@@ -1,19 +1,22 @@
 import { useMemo, type ReactElement } from 'react'
-import type { AgentStatus } from '../types'
-import { ContextBucket } from './ContextBucket'
-import { TokenCache } from './TokenCache'
-import { ToolCallSummary } from './ToolCallSummary'
-import { FilesChanged } from './FilesChanged'
-import { TestResults } from './TestResults'
-import { ActivityFooter } from './ActivityFooter'
-import { ActivityFeed } from './ActivityFeed'
-import { useActivityEvents } from '../hooks/useActivityEvents'
+import type { Agent } from '../../../../agents/registry'
+import type { AgentStatus } from '../../types'
+import type { SessionStatus } from '../../../sessions/types'
+import { ContextBucket } from '../ContextBucket'
+import { TokenCache } from '../TokenCache'
+import { ToolCallSummary } from '../ToolCallSummary'
+import { FilesChanged } from '../FilesChanged'
+import { TestResults } from '../TestResults'
+import { ActivityFooter } from '../ActivityFooter'
+import { ActivityFeed } from '../ActivityFeed'
+import { useActivityEvents } from '../../hooks/useActivityEvents'
 import {
   useGitStatus,
   type UseGitStatusReturn,
-} from '../../diff/hooks/useGitStatus'
-import { sumLines } from '../../diff/utils/sumLines'
-import type { ChangedFile } from '../../diff/types'
+} from '../../../diff/hooks/useGitStatus'
+import { sumLines } from '../../../diff/utils/sumLines'
+import type { ChangedFile } from '../../../diff/types'
+import { AgentStatusPanelHeader } from './Header'
 
 interface AgentStatusPanelProps {
   agentStatus: AgentStatus
@@ -21,9 +24,16 @@ interface AgentStatusPanelProps {
   onOpenDiff: (file: ChangedFile) => void
   onOpenFile?: (path: string) => void
   gitStatus?: UseGitStatusReturn
+  agent: Agent
+  status: SessionStatus
+  onCollapse: () => void
 }
 
-const PANEL_WIDTH_PX = 280
+// Exported so WorkspaceView can target this width as the
+// `transition-[width]` end state when expanding the activity-panel shell.
+// Keeping the literal here as the single source of truth prevents the
+// parent's animation target from drifting away from the actual panel width.
+export const PANEL_WIDTH_PX = 280
 const DEFAULT_CONTEXT_WINDOW_SIZE = 200_000
 
 export const AgentStatusPanel = ({
@@ -32,6 +42,9 @@ export const AgentStatusPanel = ({
   onOpenDiff,
   onOpenFile = undefined,
   gitStatus = undefined,
+  agent,
+  status: sessionStatus,
+  onCollapse,
 }: AgentStatusPanelProps): ReactElement => {
   const status = agentStatus
   const events = useActivityEvents(status)
@@ -68,6 +81,12 @@ export const AgentStatusPanel = ({
         width: `${PANEL_WIDTH_PX}px`,
       }}
     >
+      <AgentStatusPanelHeader
+        agent={agent}
+        status={sessionStatus}
+        onCollapse={onCollapse}
+      />
+
       <div className="flex flex-col gap-2 p-2">
         <ContextBucket
           usedPercentage={status.contextWindow?.usedPercentage ?? null}

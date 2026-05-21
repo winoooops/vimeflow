@@ -1,8 +1,10 @@
 import { describe, test, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { AgentStatusPanel } from './AgentStatusPanel'
-import type { AgentStatus } from '../types'
-import * as useGitStatusModule from '../../diff/hooks/useGitStatus'
+import userEvent from '@testing-library/user-event'
+import { AGENTS } from '../../../../agents/registry'
+import type { AgentStatus } from '../../types'
+import * as useGitStatusModule from '../../../diff/hooks/useGitStatus'
+import { AgentStatusPanel } from '.'
 
 const inactiveAgentStatus: AgentStatus = {
   isActive: false,
@@ -47,7 +49,7 @@ const activeAgentStatus: AgentStatus = {
   },
 }
 
-vi.mock('../../diff/hooks/useGitStatus', () => ({
+vi.mock('../../../diff/hooks/useGitStatus', () => ({
   useGitStatus: (): {
     files: {
       path: string
@@ -89,6 +91,9 @@ vi.mock('../../diff/hooks/useGitStatus', () => ({
 const defaultProps = {
   cwd: '/test',
   onOpenDiff: vi.fn(),
+  agent: AGENTS.shell,
+  status: 'paused' as const,
+  onCollapse: (): void => undefined,
 }
 
 describe('AgentStatusPanel', () => {
@@ -130,6 +135,7 @@ describe('AgentStatusPanel', () => {
   test('does not render StatusCard inside the panel', () => {
     render(
       <AgentStatusPanel
+        {...defaultProps}
         agentStatus={activeAgentStatus}
         cwd="/tmp/repo"
         onOpenDiff={vi.fn()}
@@ -142,6 +148,7 @@ describe('AgentStatusPanel', () => {
   test('footer renders aggregated git-diff line totals', () => {
     render(
       <AgentStatusPanel
+        {...defaultProps}
         agentStatus={activeAgentStatus}
         cwd="/tmp/repo"
         onOpenDiff={vi.fn()}
@@ -167,6 +174,7 @@ describe('AgentStatusPanel', () => {
     try {
       render(
         <AgentStatusPanel
+          {...defaultProps}
           agentStatus={activeAgentStatus}
           cwd="/tmp/repo"
           onOpenDiff={vi.fn()}
@@ -233,7 +241,10 @@ describe('AgentStatusPanel', () => {
     )
 
     const toolCallsHeader = screen.getByRole('button', { name: /tool calls/i })
-    const activityHeader = screen.getByRole('button', { name: /activity/i })
+
+    const activityHeader = screen.getByRole('button', {
+      name: /activity\s*1/i,
+    })
 
     expect(toolCallsHeader.compareDocumentPosition(activityHeader)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING
@@ -280,7 +291,7 @@ describe('AgentStatusPanel', () => {
 
     expect(screen.getAllByText('Edit').length).toBeGreaterThan(0)
     expect(
-      screen.getByRole('button', { name: /activity/i })
+      screen.getByRole('button', { name: /activity\s*1/i })
     ).toBeInTheDocument()
   })
 
@@ -352,7 +363,7 @@ describe('AgentStatusPanel', () => {
     /* eslint-disable testing-library/no-node-access */
     const scrollable = panel.querySelector('.thin-scrollbar')
 
-    const staticTop = panel.firstElementChild
+    const staticTop = panel.children.item(1)
     expect(staticTop).not.toBeNull()
     expect(staticTop?.lastElementChild).toBe(tokenCache)
 
@@ -366,5 +377,30 @@ describe('AgentStatusPanel', () => {
     expect(
       positionRelativeToScrollable & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
+  })
+
+  test('renders Header above the body with the provided agent status and onCollapse', async () => {
+    const onCollapse = vi.fn()
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={inactiveAgentStatus}
+        cwd="/home/x"
+        agent={AGENTS.claude}
+        status="paused"
+        onCollapse={onCollapse}
+      />
+    )
+
+    const header = screen.getByTestId('agent-status-panel-header')
+    const body = screen.getByTestId('token-cache')
+    expect(
+      header.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /collapse activity panel/i })
+    )
+    expect(onCollapse).toHaveBeenCalledTimes(1)
   })
 })

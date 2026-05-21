@@ -46,6 +46,7 @@ const createDefaultMockService = (): ITerminalService =>
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
   }) as ITerminalService
 
 // Mock xterm modules
@@ -1420,6 +1421,7 @@ describe('Body', () => {
         resize: vi.fn().mockResolvedValue(undefined),
         kill: vi.fn().mockResolvedValue(undefined),
         updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+        setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
         onData: vi.fn(() =>
           // eslint-disable-next-line @typescript-eslint/no-empty-function
           Promise.resolve((): void => {})
@@ -1479,6 +1481,7 @@ describe('Body', () => {
         resize: vi.fn().mockResolvedValue(undefined),
         kill: vi.fn().mockResolvedValue(undefined),
         updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+        setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
         onData: vi.fn(() =>
           // eslint-disable-next-line @typescript-eslint/no-empty-function
           Promise.resolve((): void => {})
@@ -1538,6 +1541,7 @@ describe('Body', () => {
         resize: vi.fn().mockResolvedValue(undefined),
         kill: vi.fn().mockResolvedValue(undefined),
         updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+        setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
         onData: vi.fn(() =>
           // eslint-disable-next-line @typescript-eslint/no-empty-function
           Promise.resolve((): void => {})

@@ -75,6 +75,7 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
   AgentStatusPanel: (): ReactElement => (
     <div data-testid="agent-status-panel" />
   ),
+  PANEL_WIDTH_PX: 280,
 }))
 
 vi.mock('../editor/components/UnsavedChangesDialog', () => ({
@@ -97,6 +98,7 @@ const createMockSession = (id: string, name: string): Session => ({
       agentType: 'claude-code',
       status: 'running',
       active: true,
+      activityPanelCollapsed: null,
     },
   ],
   createdAt: '2024-01-01T00:00:00Z',
@@ -152,6 +154,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       reorderSessions: vi.fn(),
       updatePaneCwd: vi.fn(),
       updatePaneAgentType: vi.fn(),
+      setPaneActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
       restoreData: new Map(),
@@ -259,6 +262,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       setActiveSession: vi.fn().mockResolvedValue(undefined),
       reorderSessions: vi.fn().mockResolvedValue(undefined),
       updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+      setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     })
   })
 

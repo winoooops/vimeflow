@@ -40,6 +40,7 @@ const mockService: ITerminalService = {
   setActiveSession: vi.fn().mockResolvedValue(undefined),
   reorderSessions: vi.fn().mockResolvedValue(undefined),
   updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+  setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
 }
 
 // Mock TerminalPane to avoid xterm.js issues in tests
@@ -450,6 +451,7 @@ describe('TerminalZone', () => {
           agentType: 'generic',
           status: 'running',
           active: true,
+          activityPanelCollapsed: null,
           pid: 1001,
           restoreData: {
             sessionId: 'pty-a',
@@ -467,6 +469,7 @@ describe('TerminalZone', () => {
           agentType: 'generic',
           status: 'running',
           active: false,
+          activityPanelCollapsed: null,
           pid: 1002,
           restoreData: {
             sessionId: 'pty-b',
