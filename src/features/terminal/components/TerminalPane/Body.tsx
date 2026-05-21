@@ -56,6 +56,29 @@ const isDescendantPath = (path: string, possibleParent: string): boolean => {
   return normalizedPath.startsWith(`${normalizedParent}/`)
 }
 
+const stripCarriageReturnOverwrites = (output: string): string =>
+  output
+    .split('\n')
+    .map((line, index, lines) => {
+      if (index === lines.length - 1) {
+        return line
+      }
+
+      const lineWithoutTerminator = line.endsWith('\r')
+        ? line.slice(0, -1)
+        : line
+
+      const overwriteIndex = lineWithoutTerminator.lastIndexOf('\r')
+
+      const visibleLine =
+        overwriteIndex === -1
+          ? lineWithoutTerminator
+          : lineWithoutTerminator.slice(overwriteIndex + 1)
+
+      return `${visibleLine}\n`
+    })
+    .join('')
+
 // Module-level cache of terminal instances per sessionId.
 //
 // HISTORICAL NOTE (corrected 2026-05-09): the original comment claimed
@@ -258,7 +281,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const applyAgentCwdHint = useCallback(
     (output: string): void => {
       const previousCwd = agentCwdRef.current
-      const outputWithContext = `${agentCwdHintContextRef.current}${output}`
+      const visibleOutput = stripCarriageReturnOverwrites(output)
+      const outputWithContext = `${agentCwdHintContextRef.current}${visibleOutput}`
       const cwdHint = parseAgentCwdHint(outputWithContext, previousCwd)
 
       agentCwdHintContextRef.current = cwdHint
@@ -298,10 +322,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     (data: string): void => {
       const output = `${agentCwdOutputBufferRef.current}${data}`
 
-      const lastLineBreakIndex = Math.max(
-        output.lastIndexOf('\n'),
-        output.lastIndexOf('\r')
-      )
+      const lastLineBreakIndex = output.lastIndexOf('\n')
 
       if (lastLineBreakIndex === -1) {
         agentCwdOutputBufferRef.current = output.slice(

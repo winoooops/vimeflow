@@ -320,6 +320,36 @@ describe('Body agent-emitted OSC 7', () => {
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
+  test('ignores cwd hints overwritten by carriage-return progress output', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/old"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/old')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        'Entering worktree(/tmp/fake)\rprogress 50%\n'
+      )
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalled()
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
   test('tracks Claude Bash cd commands across worktree-relative paths', async () => {
     const service = createService()
     const onCwdChange = vi.fn()
