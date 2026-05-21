@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-19
+last_updated: 2026-05-20
 ref_count: 24
 ---
 
@@ -525,4 +525,13 @@ filesystem scope restrictions).
 - **File:** `src/features/terminal/components/TerminalPane/Body.test.tsx`, `src/features/terminal/components/TerminalPane/Body.tsx`
 - **Finding:** `Body.tsx`'s `onContextLoss` callback runs real side-effect logic (`addon.dispose()`, null two closure refs, construct + load `CanvasAddon`) — the realistic GPU-context-loss path that this PR was filed to keep working. But the module-level `vi.mock('@xterm/addon-webgl')` always THROWS in the constructor, so the `try` block exits at `new WebglAddon()` before `addon.onContextLoss(cb)` is ever called. The callback is never registered in any test, let alone invoked. A regression in the handler (forgetting `newTerminal.loadAddon(fallback)`, mis-ordering null assignments so cleanup double-disposes, etc.) passes every test in the file silently.
 - **Fix:** Added two tests that use `vi.mocked(WebglAddon).mockImplementationOnce(() => ({ onContextLoss: cb => { captured = cb; return { dispose } }, dispose }))` to override the throw default. The first captures the handler, invokes it, asserts the WebGL addon was disposed AND `CanvasAddon` was constructed AND `loadAddon` was called with the canvas addon. The second simulates worst-case (context-loss AND CanvasAddon throws) and asserts no crash + only FitAddon/WebGL reached loadAddon. Code-review heuristic: when a module-level mock throws by default to model the dominant test environment (jsdom = no WebGL2), success-path branches reachable only AFTER the constructor succeeds (like `addon.onContextLoss(cb)` registration) are structurally unreachable. Override the mock per-test (`mockImplementationOnce`) to exercise those paths.
+- **Commit:** same commit as this entry
+
+### 53. Keyboard event-plumbing contracts dropped during hook-extraction refactor
+
+- **Source:** github-claude | PR #236 cycle 3 | 2026-05-20
+- **Severity:** MEDIUM
+- **File:** `src/features/command-palette/hooks/useCommandPalette.test.ts`
+- **Finding:** PR #236 hoisted `useCommandPalette` out of `CommandPalette.tsx` and rewrote `CommandPalette.test.tsx` as a 9-test controlled-render suite. The old integration suite (15 tests, including keyboard-event-plumbing assertions) was retired correctly, and the keyboard state-transition tests were carried over to `useCommandPalette.test.ts`. But four behavioral contracts on the global capture-phase listener were left behind: (1) `preventDefault` + `stopPropagation` on open, (2) same on close, (3) `event.repeat` suppression (the key-hold flicker guard), and (4) capture-phase priority over a child element's `stopPropagation`. The hook still implements all four at `useCommandPalette.ts:256-265`, but no test exercises them. A future refactor that drops `{ capture: true }`, swaps the `event.repeat` guard for a debouncer, or removes the `preventDefault` calls would pass every test while silently allowing browser/Electron shortcut leakage or key-hold flicker.
+- **Fix:** Added four tests to the existing `describe('keyboard trigger - Ctrl+:')` block. Each dispatches a real `KeyboardEvent`, spies on the relevant event methods, and asserts the observable outcome (spy invocation + palette state). The repeat-suppression test specifically opens the palette via a non-repeat event FIRST, then dispatches the repeat event — testing only the closed-state case would let a buggy implementation that closes on repeat-while-open slip through. The capture-phase test attaches a child listener that calls `event.stopPropagation()` during bubble phase; the hook must still fire because it's registered with `{ capture: true }`. Code-review heuristic: when a refactor splits a component into a hook + render component, behavioral contracts on the hook's side-effect surface (event plumbing, listener phase, repeat guards) must migrate as tests on the hook — not implicitly assumed because "the old integration test was deleted". Audit the OLD test file's expectations before deleting it; any assertion that survives the API change but doesn't show up in the new file is a regression-window gap.
 - **Commit:** same commit as this entry

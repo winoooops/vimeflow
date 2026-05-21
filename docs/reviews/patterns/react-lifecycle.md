@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-12
+last_updated: 2026-05-20
 ref_count: 5
 ---
 
@@ -177,3 +177,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** SplitView clamped via `session.panes.slice(0, layout.capacity)` and protected the invariant with `if (import.meta.env.DEV && panes.length > capacity) throw`. The DEV throw catches the case in fixtures + dev builds, but in production builds the silent prefix slice can drop the active pane whenever pane order and active index diverge (post-shrink, restored inconsistent state, etc.). Result: rendered grid shows an inactive pane while the real active PTY is hidden; `useAgentStatus(activePane?.ptyId)` and per-pane `useGitBranch`/`useGitStatus` follow the hidden active pane, so the visible-but-inactive pane and the agent-status panel point at different PTYs — a state where the user cannot reach the pane that's actually receiving terminal input. Class of bug: DEV-only invariant assertions paired with naive production fallbacks leave a silent failure mode in the actual ship target.
 - **Fix:** Extracted `selectVisiblePanes(panes, capacity)` as an exported pure helper inside `SplitView.tsx`. When the active pane's index in `panes` is `>= capacity`, the helper replaces the LAST visible slot with the active pane so focus/agent/cwd signals stay reachable. Otherwise returns the prefix slice unchanged. SplitView calls `selectVisiblePanes` in place of inline `.slice(...)`. DEV throw retained for early-warning during fixtures. Added 5 unit tests on the pure helper covering in-bounds slice, active-already-inside, last-slot replacement, exact-capacity-index, and the defensive no-active-pane fallback. Code-review heuristic: when a render-path has a DEV-only assertion, audit the production fallback for the same invariant — a release build with the assertion silenced should still produce a usable UI, not a different-than-intended one.
 - **Commit:** _(see git log for the cycle-2 fix commit on PR #199)_
+
+### 19. Hook-hoist refactor lost the joint invariant that justified an unguarded array access
+
+- **Source:** github-claude | PR #236 cycle 1 | 2026-05-20
+- **Severity:** MEDIUM
+- **File:** `src/features/command-palette/CommandPalette.tsx`
+- **Finding:** Hoisting `useCommandPalette` out of `CommandPalette.tsx` and into `WorkspaceView` turned `clampedSelectedIndex` and `filteredResults` from internally-derived state into independent props. The activeDescendantId expression `filteredResults[clampedSelectedIndex].id` was preserved verbatim from the pre-hoist code because the hook still guarantees the joint invariant `clampedSelectedIndex === -1 ⟺ filteredResults.length === 0`. Inside the hook, the invariant was automatic; across the prop boundary, it became an unstated contract — any future caller wiring `CommandPalette` directly (without `useCommandPalette`) can supply a mismatched pair (e.g. `clampedSelectedIndex=0`, `filteredResults=[]`) and crash the workspace error boundary with `TypeError: Cannot read properties of undefined (reading 'id')`. Class of bug: when a component's internal invariant gets externalized into prop space, the expressions that depended on the encapsulated form must be re-defended at the new boundary.
+- **Fix:** Guarded the lookup: compute `activeCommand = clampedSelectedIndex >= 0 ? filteredResults[clampedSelectedIndex] : undefined` first, then return `activeCommand ? \`command-${activeCommand.id}\` : undefined`. A mismatched-pair input now degrades to "no active descendant" instead of crashing. Added a regression test in `CommandPalette.test.tsx` that drives the unsafe input (`filteredResults: [], clampedSelectedIndex: 0`) and asserts the input has no `aria-activedescendant` attribute. Code-review heuristic: when a hook moves up a level via the controlled-component pattern, sweep every expression in the component that depended on co-derived state for an implicit invariant — and either defend it at the new prop boundary or encode the invariant in the type signature.
+- **Commit:** same commit as this entry

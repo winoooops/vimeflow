@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-19
+last_updated: 2026-05-20
 ref_count: 21
 ---
 
@@ -665,4 +665,22 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `src/lib/e2e-bridge.ts`, `src/features/terminal/components/TerminalPane/Body.tsx`
 - **Finding:** Round 1's KB entry #69 fixed multi-line comments only in `Body.test.tsx` and in `Body.tsx onContextLoss`. Round 2's review flagged four more blocks left untouched: the 11-line `bufferToText` rationale and the 9-line `resolveCacheKey` description in `e2e-bridge.ts`, the 12-line file-level renderer-chain rationale in `Body.tsx`, and the 6-line addon-declaration explanation in `Body.tsx`. The rule applies whether the block describes test wiring or production code; the rationale belongs in PR descriptions and commit messages, not in inline blocks that drift as the API evolves.
 - **Fix:** Collapsed each of the four blocks to a single descriptive line. Code-review heuristic: when a round-N review catches a comment-style violation, the fix should sweep the entire diff (not just the one cited block) — the cited line is usually a sample, and sibling violations elsewhere in the diff will be flagged in round N+1 anyway.
+- **Commit:** same commit as this entry
+
+### 71. Deprecated prop interface lacked `@deprecated` JSDoc, so IDE hovers and `no-deprecated` lint had no signal
+
+- **Source:** github-claude | PR #236 cycle 1 | 2026-05-20
+- **Severity:** LOW
+- **File:** `src/features/workspace/components/IconRail.tsx`
+- **Finding:** The rail-trim refactor kept `items?: NavigationItem[]` and `settingsItem?: NavigationItem` on `IconRailProps` for one cycle so external callers (and `WorkspaceView`'s existing call site) compile unchanged, but the component no longer destructures either prop — both are silently ignored. The deprecation intent was documented only inside `mockNavigation.ts`'s comment and the design spec; anyone reading `IconRailProps` in IDE hover-docs or via `tsc --explain` saw two ordinary optional props with no signal that they're no-ops. `eslint-plugin-typescript/no-unused-vars` doesn't catch typed-but-not-destructured props, so the omission was invisible to static analysis as well.
+- **Fix:** Added `/** @deprecated */` JSDoc with explicit rationale above each prop declaration in the interface. The annotation now surfaces in IDE tooltips and is reachable by `@typescript-eslint/no-deprecated` if that rule is enabled later. Cross-references the design spec section that owns the deprecation cycle. Code-review heuristic: when a refactor keeps props for backward compat but stops reading them, the `@deprecated` marker belongs ON the prop declaration — not in a sibling-file comment or a design doc that future contributors aren't required to read.
+- **Commit:** same commit as this entry
+
+### 72. IIFE-in-JSX with multi-line comment was the wrong shape for a typed two-branch guard
+
+- **Source:** github-claude | PR #236 cycle 2 | 2026-05-20
+- **Severity:** MEDIUM
+- **File:** `src/features/command-palette/CommandPalette.tsx`
+- **Finding:** Cycle 1's fix for the unguarded array access (KB react-lifecycle §19) inlined the guard as an `((): \`command-${string}\` | undefined => { ... })()`IIFE inside the`activeDescendantId`JSX prop. The IIFE was needed only to attach a template-literal return type that TypeScript wouldn't infer from a bare ternary, but it pulled a 7-line rationale comment into the JSX body — violating the project's "never write multi-paragraph docstrings or multi-line comment blocks — one short line max" rule from root`CLAUDE.md`. The cognitive overhead in JSX (readers may suspect early-return semantics) compounded the style violation; module-level helpers don't have either problem.
+- **Fix:** Extracted `getActiveDescendantId(clampedSelectedIndex, filteredResults): \`command-${string}\` | undefined` to a module-level helper above the component. The JSX prop becomes a single-line helper call. The 7-line rationale collapses to a single comment line on the helper that points at the react-lifecycle pattern entry (§19) for the full reasoning. Code-review heuristic: when a JSX expression needs (a) a typed return + (b) multi-line context, the right home is a module-level helper — not an IIFE in JSX. The IIFE is a syntactic shortcut that costs the file's readability budget twice (function object per render + comment-style violation) for one type-inference convenience.
 - **Commit:** same commit as this entry

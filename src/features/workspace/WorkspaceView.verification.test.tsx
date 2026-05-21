@@ -108,37 +108,26 @@ describe('Feature 23: Final Phase 2 Verification', () => {
     })
   })
 
-  describe('2. Icon rail shows navigation items', () => {
-    test('displays navigation bookmarks', () => {
+  describe('2. Icon rail shows utility actions', () => {
+    test('displays the account identity', () => {
       render(<WorkspaceView />)
 
-      // Check for navigation items in icon rail
-      const dashboardButton = screen.getByRole('button', {
-        name: 'Dashboard',
-      })
+      const account = screen.getByRole('img', { name: 'Account' })
 
-      expect(dashboardButton).toBeInTheDocument()
+      expect(account).toHaveTextContent('w')
     })
 
-    test('navigation items have colorful bookmarks', () => {
+    test('displays command palette and disabled settings buttons', () => {
       render(<WorkspaceView />)
 
-      // Should have Dashboard, Source Control, Debugger, Settings
       expect(
-        screen.getByRole('button', { name: 'Dashboard' })
+        screen.getByRole('button', { name: 'Command Palette' })
       ).toBeInTheDocument()
 
-      expect(
-        screen.getByRole('button', { name: 'Source Control' })
-      ).toBeInTheDocument()
-
-      expect(
-        screen.getByRole('button', { name: 'Debugger' })
-      ).toBeInTheDocument()
-
-      expect(
-        screen.getByRole('button', { name: 'Settings' })
-      ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      )
     })
   })
 

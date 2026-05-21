@@ -119,6 +119,140 @@ describe('useCommandPalette', () => {
         expect(result.current.state.isOpen).toBe(false)
       })
     })
+
+    test('Ctrl+: trigger calls preventDefault and stopPropagation when opening', async () => {
+      const { result } = renderHook(() => useCommandPalette())
+
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+      const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+      const stopPropagationSpy = vi.spyOn(event, 'stopPropagation')
+
+      act(() => {
+        document.dispatchEvent(event)
+      })
+
+      await waitFor(() => {
+        expect(result.current.state.isOpen).toBe(true)
+      })
+
+      expect(preventDefaultSpy).toHaveBeenCalled()
+      expect(stopPropagationSpy).toHaveBeenCalled()
+    })
+
+    test('Ctrl+: trigger calls preventDefault and stopPropagation when closing', async () => {
+      const { result } = renderHook(() => useCommandPalette())
+
+      act(() => {
+        result.current.open()
+      })
+
+      expect(result.current.state.isOpen).toBe(true)
+
+      const event = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+      const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+      const stopPropagationSpy = vi.spyOn(event, 'stopPropagation')
+
+      act(() => {
+        document.dispatchEvent(event)
+      })
+
+      await waitFor(() => {
+        expect(result.current.state.isOpen).toBe(false)
+      })
+
+      expect(preventDefaultSpy).toHaveBeenCalled()
+      expect(stopPropagationSpy).toHaveBeenCalled()
+    })
+
+    test('Ctrl+: trigger suppresses repeat events (key-hold flickering guard)', async () => {
+      // Real-world hardware sends repeat=true events while a key is held.
+      // The hook must short-circuit these via the `event.repeat` guard so
+      // holding the shortcut after a real toggle doesn't flicker the
+      // palette open/closed/open every ~30ms (the OS keyboard repeat
+      // rate). The load-bearing scenario is "first event opens, repeats
+      // must not close" — testing only the closed-state case would let a
+      // bug that ignores repeats while closed but closes on repeat while
+      // open slip through.
+      const { result } = renderHook(() => useCommandPalette())
+
+      act(() => {
+        const initialEvent = new KeyboardEvent('keydown', {
+          key: ':',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        document.dispatchEvent(initialEvent)
+      })
+
+      await waitFor(() => {
+        expect(result.current.state.isOpen).toBe(true)
+      })
+
+      const repeatEvent = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+        repeat: true,
+      })
+      const preventDefaultSpy = vi.spyOn(repeatEvent, 'preventDefault')
+      const stopPropagationSpy = vi.spyOn(repeatEvent, 'stopPropagation')
+
+      act(() => {
+        document.dispatchEvent(repeatEvent)
+      })
+
+      // The guard still consumes the event (preventDefault +
+      // stopPropagation are called so the keystroke doesn't leak to
+      // other listeners) but does NOT toggle the palette closed.
+      expect(preventDefaultSpy).toHaveBeenCalled()
+      expect(stopPropagationSpy).toHaveBeenCalled()
+      expect(result.current.state.isOpen).toBe(true)
+    })
+
+    test('capture-phase listener wins over child stopPropagation', async () => {
+      // A child element calling event.stopPropagation() during the bubbling
+      // phase must NOT prevent the global Ctrl+: toggle. The hook attaches
+      // with { capture: true } so it runs during the capture phase, before
+      // any descendant bubble-phase listener can interfere.
+      const { result } = renderHook(() => useCommandPalette())
+
+      const child = document.createElement('div')
+      document.body.appendChild(child)
+
+      const childListener = (event: KeyboardEvent): void => {
+        event.stopPropagation()
+      }
+      child.addEventListener('keydown', childListener)
+
+      act(() => {
+        const event = new KeyboardEvent('keydown', {
+          key: ':',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        child.dispatchEvent(event)
+      })
+
+      await waitFor(() => {
+        expect(result.current.state.isOpen).toBe(true)
+      })
+
+      child.removeEventListener('keydown', childListener)
+      child.remove()
+    })
   })
 
   describe('keyboard navigation - Escape', () => {

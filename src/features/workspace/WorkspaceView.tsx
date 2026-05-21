@@ -29,6 +29,7 @@ import { AgentStatusPanel } from '../agent-status/components/AgentStatusPanel'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
+import { useCommandPalette } from '../command-palette/hooks/useCommandPalette'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
 import { clampSize, useResizable } from '../../hooks/useResizable'
@@ -60,6 +61,11 @@ import {
   DOCK_VERTICAL_ELASTIC_CONFIG,
   DOCK_HORIZONTAL_ELASTIC_CONFIG,
 } from './panelConfig'
+
+// Filed before merge — see the PR description for the issue body.
+// `0` is intentionally a loud placeholder; the gear tooltip
+// renders "see issue #0" so a missed pre-merge bump is obvious.
+const SETTINGS_FOLLOWUP_ISSUE_NUMBER = 0
 
 const SIDEBAR_MIN = 240
 const SIDEBAR_MAX = 560
@@ -177,6 +183,7 @@ export const WorkspaceView = (): ReactElement => {
       notifyInfo,
     ]
   )
+  const commandPalette = useCommandPalette(workspaceCommands)
 
   const activeSession = activeSessionId
     ? sessions.find((s) => s.id === activeSessionId)
@@ -750,7 +757,12 @@ export const WorkspaceView = (): ReactElement => {
         } as CSSProperties
       }
     >
-      <IconRail items={mockNavigationItems} settingsItem={mockSettingsItem} />
+      <IconRail
+        settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
+        onCommand={commandPalette.open}
+        items={mockNavigationItems}
+        settingsItem={mockSettingsItem}
+      />
 
       {/* Sidebar - resizable */}
       <div className="relative flex h-full">
@@ -917,7 +929,14 @@ export const WorkspaceView = (): ReactElement => {
       {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
 
       {/* Command Palette — workspace-scoped command dispatcher */}
-      <CommandPalette commands={workspaceCommands} />
+      <CommandPalette
+        state={commandPalette.state}
+        filteredResults={commandPalette.filteredResults}
+        clampedSelectedIndex={commandPalette.clampedSelectedIndex}
+        close={commandPalette.close}
+        setQuery={commandPalette.setQuery}
+        selectIndex={commandPalette.selectIndex}
+      />
     </div>
   )
 }

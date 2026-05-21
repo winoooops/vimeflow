@@ -2,51 +2,143 @@ import type { ReactElement } from 'react'
 import { Tooltip } from '../../../components/Tooltip'
 import type { NavigationItem } from '../types'
 
-export interface IconRailProps {
-  items: NavigationItem[]
-  settingsItem: NavigationItem
+export interface IconRailIdentity {
+  initial: string
+  ariaLabel?: string
 }
 
-export const IconRail = ({
-  items,
-  settingsItem,
-}: IconRailProps): ReactElement => (
-  <div
-    className="relative flex h-full w-12 flex-col items-center justify-between bg-surface border-r border-white/5 py-3"
-    data-testid="icon-rail"
-  >
-    <div className="flex w-full flex-col items-center gap-3">
-      {items.map((item) => (
-        <div key={item.id} className="flex w-full justify-center">
-          <Tooltip content={item.name} placement="right">
-            <button
-              type="button"
-              onClick={item.onClick}
-              className={`flat-bookmark flex h-12 w-8 items-center justify-center ${item.color}`}
-              aria-label={item.name}
-            >
-              <span className="material-symbols-outlined mb-2 text-lg text-white">
-                {item.icon}
-              </span>
-            </button>
-          </Tooltip>
-        </div>
-      ))}
-    </div>
+export interface IconRailProps {
+  settingsIssueNumber: number
+  onCommand?: () => void
+  onSettings?: () => void
+  identity?: IconRailIdentity
+  /**
+   * @deprecated Ignored by the new rail body — the rail no longer
+   * iterates this array. Kept for one cycle so existing callers
+   * compile; will be removed once the Settings dialog (see issue
+   * referenced by `settingsIssueNumber`) lands. See
+   * `docs/superpowers/specs/2026-05-20-icon-rail-trim-design.md`
+   * §7.1 for the deprecation cycle.
+   */
+  items?: NavigationItem[]
+  /**
+   * @deprecated Ignored by the new rail body — the settings button is
+   * rendered with hardcoded icon, label, and tooltip text inside
+   * `IconRail`. Kept for one cycle so existing callers compile; will
+   * be removed alongside `items` once the Settings dialog lands.
+   */
+  settingsItem?: NavigationItem
+}
 
-    <div className="flex w-full justify-center">
-      <Tooltip content={settingsItem.name} placement="right">
-        <button
-          type="button"
-          onClick={settingsItem.onClick}
-          className="flex h-10 w-10 items-center justify-center rounded-lg text-on-surface/50 transition-colors hover:bg-surface-container hover:text-on-surface"
-          aria-label={settingsItem.name}
-        >
-          <span className="material-symbols-outlined text-xl">
-            {settingsItem.icon}
-          </span>
-        </button>
-      </Tooltip>
-    </div>
-  </div>
+interface RailBtnProps {
+  icon: RailIconName
+  accessibleName: string
+  tooltipContent: string
+  onClick?: () => void
+  ariaDisabled?: boolean
+}
+
+type RailIconName = 'search' | 'settings'
+
+const RailIcon = ({ icon }: { icon: RailIconName }): ReactElement => (
+  <span
+    aria-hidden="true"
+    data-testid={`icon-rail-${icon}-icon`}
+    className="material-symbols-outlined text-[18px]"
+  >
+    {icon}
+  </span>
 )
+
+const RailBtn = ({
+  icon,
+  accessibleName,
+  tooltipContent,
+  onClick = undefined,
+  ariaDisabled = false,
+}: RailBtnProps): ReactElement => (
+  <Tooltip content={tooltipContent} placement="right">
+    <button
+      type="button"
+      aria-label={accessibleName}
+      aria-disabled={ariaDisabled || undefined}
+      onClick={(): void => {
+        if (ariaDisabled) {
+          return
+        }
+        onClick?.()
+      }}
+      className={`
+        flex h-[34px] w-[34px] items-center justify-center rounded-lg
+        border border-transparent transition-colors duration-150 ease-out
+        ${
+          ariaDisabled
+            ? 'cursor-not-allowed text-on-surface-muted/60'
+            : 'cursor-pointer text-on-surface-muted hover:bg-primary/[0.06] hover:text-primary'
+        }
+      `}
+    >
+      <RailIcon icon={icon} />
+    </button>
+  </Tooltip>
+)
+
+export const IconRail = ({
+  settingsIssueNumber,
+  onCommand = undefined,
+  onSettings = undefined,
+  identity = undefined,
+}: IconRailProps): ReactElement => {
+  const initial = Array.from(identity?.initial ?? 'w')[0] ?? 'w'
+  const candidateAccountLabel = identity?.ariaLabel ?? 'Account'
+
+  const accountLabel =
+    candidateAccountLabel === '' ? 'Account' : candidateAccountLabel
+
+  const settingsTooltip = `Settings panel coming — see issue #${settingsIssueNumber}`
+
+  return (
+    <nav
+      data-testid="icon-rail"
+      className="
+        relative z-[5] flex h-full w-12 flex-col items-center
+        bg-surface-container-lowest border-r border-outline-variant/25
+        py-2.5
+      "
+    >
+      <Tooltip content={accountLabel} placement="right">
+        <div
+          role="img"
+          aria-label={accountLabel}
+          className="
+            mb-3.5 h-[30px] w-[30px] grid place-items-center
+            rounded-full border border-primary/35
+            bg-[linear-gradient(135deg,theme(colors.primary-deep),theme(colors.surface-container-low))]
+            font-display text-[12px] font-semibold text-primary
+            shadow-[0_4px_18px_rgba(203,166,247,0.25)]
+          "
+        >
+          {initial}
+        </div>
+      </Tooltip>
+
+      <div className="flex-1" aria-hidden="true" />
+
+      <div className="flex flex-col gap-1">
+        <RailBtn
+          icon="search"
+          accessibleName="Command Palette"
+          tooltipContent="Command Palette (Ctrl+:)"
+          onClick={onCommand}
+        />
+        <RailBtn
+          icon="settings"
+          accessibleName="Settings"
+          tooltipContent={settingsTooltip}
+          ariaDisabled
+          onClick={onSettings}
+        />
+      </div>
+    </nav>
+  )
+}
