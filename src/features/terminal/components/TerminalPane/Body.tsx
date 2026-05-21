@@ -53,6 +53,10 @@ const isDescendantPath = (path: string, possibleParent: string): boolean => {
   const normalizedPath = trimTrailingSlashes(toComparablePath(path))
   const normalizedParent = trimTrailingSlashes(toComparablePath(possibleParent))
 
+  if (!normalizedParent) {
+    return false
+  }
+
   if (normalizedParent === '/') {
     return normalizedPath !== '/' && normalizedPath.startsWith('/')
   }
@@ -334,6 +338,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   useEffect(() => {
     agentCwdOutputBufferRef.current = ''
     agentCwdHintContextRef.current = ''
+    restoreOsc7SuppressionsRef.current = 0
     agentCwdRef.current = cwdPropRef.current
     agentCwdSourceRef.current = 'prop'
   }, [sessionId])

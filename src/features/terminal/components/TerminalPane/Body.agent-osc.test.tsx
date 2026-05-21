@@ -31,6 +31,7 @@ type ExitCallback = Parameters<ITerminalService['onExit']>[0]
 type OscHandler = (data: string) => boolean
 
 let deferWriteCallbacks = false
+let skipOscParsing = false
 const pendingWriteCallbacks: (() => void)[] = []
 
 interface ControlledTerminalService extends ITerminalService {
@@ -100,6 +101,10 @@ class FakeTerminal {
   }
 
   private parseOsc(data: string): void {
+    if (skipOscParsing) {
+      return
+    }
+
     this.oscBuffer += data
     const oscPattern = /\x1b\](\d+);([\s\S]*?)(?:\x07|\x1b\\)/g
     let lastMatchEnd = 0
@@ -230,6 +235,7 @@ const StatefulBody = ({
 describe('Body agent-emitted OSC 7', () => {
   beforeEach(() => {
     deferWriteCallbacks = false
+    skipOscParsing = false
     pendingWriteCallbacks.length = 0
     vi.mocked(Terminal).mockImplementation(() => new FakeTerminal() as never)
     vi.mocked(FitAddon).mockImplementation(
@@ -253,6 +259,7 @@ describe('Body agent-emitted OSC 7', () => {
 
   afterEach(() => {
     deferWriteCallbacks = false
+    skipOscParsing = false
     pendingWriteCallbacks.length = 0
     vi.clearAllMocks()
     clearTerminalCache()
@@ -1023,6 +1030,64 @@ describe('Body agent-emitted OSC 7', () => {
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
+  test('resets pending restored OSC 7 suppressions when session id changes', async () => {
+    skipOscParsing = true
+
+    const service = createService()
+    const onCwdChange = vi.fn()
+    const replayData = '\x1b]7;file://host/repo/restored\x07'
+    const replayEndOffset = new TextEncoder().encode(replayData).length
+
+    const { rerender } = render(
+      <Body
+        sessionId="pty-old"
+        cwd="/repo/old"
+        service={service}
+        restoredFrom={{
+          ...restoreData('pty-old', '/repo/old'),
+          replayData,
+          replayEndOffset,
+        }}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    skipOscParsing = false
+    const terminalCreateCount = vi.mocked(Terminal).mock.calls.length
+
+    rerender(
+      <Body
+        sessionId="pty-new"
+        cwd="/repo/new"
+        service={service}
+        restoredFrom={restoreData('pty-new', '/repo/new')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(vi.mocked(Terminal).mock.calls.length).toBeGreaterThan(
+        terminalCreateCount
+      )
+    })
+
+    act(() => {
+      getLatestTerminal().write('\x1b]7;file://host/repo/new/live\x07')
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/repo/new/live')
+    })
+
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
   test('normalizes OSC 7 cwd paths before comparing repeated updates', async () => {
     const service = createService()
     const onCwdChange = vi.fn()
@@ -1137,6 +1202,48 @@ describe('Body agent-emitted OSC 7', () => {
     })
 
     expect(onCwdChange).not.toHaveBeenCalledWith('/unrelated/child')
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('clears a partial agent cd hint when cwd prop becomes empty', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    const { rerender } = render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/tmp/worktree"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/tmp/worktree')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData('pty-agent', '! cd child')
+    })
+
+    rerender(
+      <Body
+        sessionId="pty-agent"
+        cwd=""
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/tmp/worktree')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    act(() => {
+      service.emitData('pty-agent', '\r\n')
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalledWith('/tmp/worktree/child')
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
