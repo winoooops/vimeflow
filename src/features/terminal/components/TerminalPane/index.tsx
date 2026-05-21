@@ -1,4 +1,5 @@
 /* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */
+// cspell:ignore worktree
 import {
   forwardRef,
   useCallback,
@@ -11,6 +12,7 @@ import {
 } from 'react'
 import { useGitBranch } from '../../../diff/hooks/useGitBranch'
 import { useGitStatus } from '../../../diff/hooks/useGitStatus'
+import { useGitWorktree } from '../../../diff/hooks/useGitWorktree'
 import type { Pane, Session, SessionStatus } from '../../../sessions/types'
 import { agentForPane } from '../../../sessions/utils/agentForSession'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
@@ -115,6 +117,10 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       enabled: isActive,
     })
 
+    const { worktreeName } = useGitWorktree(pane.cwd, {
+      enabled: isActive,
+    })
+
     const { files, filesCwd } = useGitStatus(pane.cwd, {
       enabled: isActive,
     })
@@ -211,6 +217,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           agent={agent}
           session={session}
           pipStatus={pipStatus}
+          worktreeName={worktreeName}
           branch={branch}
           added={added}
           removed={removed}

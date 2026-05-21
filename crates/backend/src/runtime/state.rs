@@ -148,6 +148,10 @@ impl BackendState {
         crate::git::git_branch_inner(cwd).await
     }
 
+    pub async fn git_worktree_name(&self, cwd: String) -> Result<Option<String>, String> {
+        crate::git::git_worktree_name_inner(cwd).await
+    }
+
     pub async fn get_git_diff(
         &self,
         cwd: String,

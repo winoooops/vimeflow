@@ -1,3 +1,4 @@
+// cspell:ignore worktree
 import { describe, expect, test } from 'vitest'
 import { isAllowedBackendMethod } from './backend-methods'
 
@@ -20,6 +21,7 @@ describe('isAllowedBackendMethod', () => {
     'write_file',
     'git_status',
     'git_branch',
+    'git_worktree_name',
     'get_git_diff',
     'start_git_watcher',
     'stop_git_watcher',

@@ -1010,6 +1010,83 @@ pub async fn git_branch(cwd: String) -> Result<String, String> {
     git_branch_inner(cwd).await
 }
 
+/// Resolve the linked-worktree name for `cwd`, or `None` when `cwd` is the
+/// main checkout. Returns `Err` only when `cwd` is not a git repository or
+/// fails scope validation — callers can treat `Ok(None)` and any error
+/// symmetrically as "no worktree chip to display".
+#[cfg(test)]
+pub async fn git_worktree_name(cwd: String) -> Result<Option<String>, String> {
+    git_worktree_name_inner(cwd).await
+}
+
+pub(crate) async fn git_worktree_name_inner(cwd: String) -> Result<Option<String>, String> {
+    let safe_cwd = validate_cwd(&cwd)?;
+
+    let mut git_dir_cmd = Command::new("git");
+    git_dir_cmd
+        .arg("-C")
+        .arg(&safe_cwd)
+        .arg("rev-parse")
+        .arg("--path-format=absolute")
+        .arg("--git-dir")
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let git_dir_output = run_git_with_timeout(git_dir_cmd).await?;
+
+    if !git_dir_output.status.success() {
+        let stderr = String::from_utf8_lossy(&git_dir_output.stderr)
+            .trim()
+            .to_string();
+        return Err(format!("git_worktree_name git-dir: {stderr}"));
+    }
+
+    let git_dir_str = String::from_utf8(git_dir_output.stdout)
+        .map_err(|e| format!("git_worktree_name git-dir utf8: {}", e))?;
+    let git_dir = Path::new(git_dir_str.trim());
+
+    // A linked worktree's gitdir lives at `<repo>/.git/worktrees/<name>`.
+    // Anything else (most commonly `<repo>/.git`) is the main checkout.
+    let parent_name = git_dir
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|s| s.to_str());
+    let grandparent_name = git_dir
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::file_name)
+        .and_then(|s| s.to_str());
+
+    if parent_name != Some("worktrees") || grandparent_name != Some(".git") {
+        return Ok(None);
+    }
+
+    let mut top_cmd = Command::new("git");
+    top_cmd
+        .arg("-C")
+        .arg(&safe_cwd)
+        .arg("rev-parse")
+        .arg("--show-toplevel")
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let top_output = run_git_with_timeout(top_cmd).await?;
+
+    if !top_output.status.success() {
+        let stderr = String::from_utf8_lossy(&top_output.stderr)
+            .trim()
+            .to_string();
+        return Err(format!("git_worktree_name show-toplevel: {stderr}"));
+    }
+
+    let top_str = String::from_utf8(top_output.stdout)
+        .map_err(|e| format!("git_worktree_name show-toplevel utf8: {}", e))?;
+    let top = Path::new(top_str.trim());
+
+    Ok(top
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(str::to_string))
+}
+
 pub(crate) async fn git_branch_inner(cwd: String) -> Result<String, String> {
     let safe_cwd = validate_cwd(&cwd)?;
 
@@ -1061,7 +1138,9 @@ pub(crate) async fn git_branch_inner(cwd: String) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::test_helpers::{configure_test_git, home_tempdir};
+    use super::test_helpers::{
+        configure_test_git, create_main_repo_with_worktrees, home_tempdir,
+    };
     use super::*;
 
     // parse_numstat tests
@@ -1893,6 +1972,44 @@ copy to copy.txt
     #[tokio::test]
     async fn test_git_branch_rejects_out_of_scope_cwd() {
         let result = git_branch("/etc".to_string()).await;
+
+        assert!(result.is_err(), "expected error, got {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_git_worktree_name_returns_none_for_main_checkout() {
+        let (_tmp, main, _worktrees) = create_main_repo_with_worktrees(&[]);
+        let result = git_worktree_name(main.to_string_lossy().to_string()).await;
+
+        assert!(matches!(result, Ok(None)), "expected Ok(None), got {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_git_worktree_name_returns_basename_for_linked_worktree() {
+        let (_tmp, _main, worktrees) = create_main_repo_with_worktrees(&["feat"]);
+        let worktree_path = &worktrees[0];
+        let expected = worktree_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(str::to_string)
+            .expect("worktree path basename");
+
+        let result = git_worktree_name(worktree_path.to_string_lossy().to_string()).await;
+
+        assert_eq!(result, Ok(Some(expected)));
+    }
+
+    #[tokio::test]
+    async fn test_git_worktree_name_returns_error_for_non_repo() {
+        let tmp = home_tempdir();
+        let result = git_worktree_name(tmp.path().to_string_lossy().to_string()).await;
+
+        assert!(result.is_err(), "expected error, got {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_git_worktree_name_rejects_out_of_scope_cwd() {
+        let result = git_worktree_name("/etc".to_string()).await;
 
         assert!(result.is_err(), "expected error, got {:?}", result);
     }
