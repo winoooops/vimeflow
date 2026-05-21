@@ -14,6 +14,19 @@ export interface CommandPaletteProps {
   selectIndex: (index: number) => void
 }
 
+// Guards the indexed lookup so a mismatched (clampedSelectedIndex, filteredResults) pair degrades to "no active descendant" instead of crashing — see docs/reviews/patterns/react-lifecycle.md §19.
+const getActiveDescendantId = (
+  clampedSelectedIndex: number,
+  filteredResults: Command[]
+): `command-${string}` | undefined => {
+  const activeCommand =
+    clampedSelectedIndex >= 0
+      ? filteredResults[clampedSelectedIndex]
+      : undefined
+
+  return activeCommand ? `command-${activeCommand.id}` : undefined
+}
+
 export const CommandPalette = ({
   state,
   filteredResults,
@@ -57,23 +70,10 @@ export const CommandPalette = ({
           <CommandInput
             value={state.query}
             onChange={setQuery}
-            activeDescendantId={((): `command-${string}` | undefined => {
-              // Hoisting `useCommandPalette` into WorkspaceView made
-              // `clampedSelectedIndex` and `filteredResults` independent
-              // props instead of co-derived state. The hook still
-              // guarantees `clampedSelectedIndex === -1` when
-              // `filteredResults.length === 0`, but a future caller
-              // wiring this component directly could break that
-              // invariant. Guard against an undefined slot lookup so a
-              // mismatched pair degrades to "no active descendant"
-              // instead of crashing the workspace boundary.
-              const activeCommand =
-                clampedSelectedIndex >= 0
-                  ? filteredResults[clampedSelectedIndex]
-                  : undefined
-
-              return activeCommand ? `command-${activeCommand.id}` : undefined
-            })()}
+            activeDescendantId={getActiveDescendantId(
+              clampedSelectedIndex,
+              filteredResults
+            )}
           />
 
           {/* Divider */}
