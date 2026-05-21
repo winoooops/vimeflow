@@ -334,15 +334,16 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
           }
         }
 
-        const restoredOutput = [
+        const restoredOutputParts = [
           restore.replayData,
           ...restoredBufferedEvents.map((event) => event.data),
-        ].join('')
+        ]
 
-        const restoredOutputChunks = [
-          restore.replayData,
-          ...restoredBufferedEvents.map((event) => event.data),
-        ].filter((data) => data.length > 0)
+        const restoredOutput = restoredOutputParts.join('')
+
+        const restoredOutputChunks = restoredOutputParts.filter(
+          (data) => data.length > 0
+        )
 
         const restoreStart = onRestoreStartRef.current
         const restoreEnd = onRestoreEndRef.current

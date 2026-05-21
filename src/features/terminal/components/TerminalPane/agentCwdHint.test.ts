@@ -41,6 +41,18 @@ describe('parseAgentCwdHint', () => {
     ).toBe('/tmp/two')
   })
 
+  test('preserves POSIX UNC paths from agent cwd hints', () => {
+    expect(
+      parseAgentCwdHint('Entering worktree(//server/share/repo)\r\n')
+    ).toBe('//server/share/repo')
+
+    expect(parseAgentCwdHint('! cd //server/share/repo\r\n')).toBe(
+      '//server/share/repo'
+    )
+
+    expect(parseAgentCwdHint('! cd ///tmp/worktree\r\n')).toBe('/tmp/worktree')
+  })
+
   test('resolves Claude Bash cd commands from the current cwd', () => {
     expect(
       parseAgentCwdHint(

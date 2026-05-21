@@ -108,11 +108,13 @@ const parseCdTarget = (rawCommand: string | undefined): string | null => {
 }
 
 const normalizePath = (path: string): string =>
-  path.startsWith('/')
-    ? normalizePosixPath(path)
-    : WINDOWS_DRIVE_PATH.test(path)
-      ? normalizeWindowsDrivePath(path)
-      : path
+  path.startsWith('//') && !path.startsWith('///')
+    ? path
+    : path.startsWith('/')
+      ? normalizePosixPath(path)
+      : WINDOWS_DRIVE_PATH.test(path)
+        ? normalizeWindowsDrivePath(path)
+        : path
 
 const posixHomeFromCwd = (currentCwd: string): string | null => {
   const match = /^\/(?:home|Users)\/[^/]+/.exec(currentCwd)
