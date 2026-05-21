@@ -67,6 +67,12 @@ describe('parseAgentCwdHint', () => {
     )
   })
 
+  test('resolves relative cd commands from POSIX UNC current cwd', () => {
+    expect(parseAgentCwdHint('! cd child\r\n', '//server/share/repo')).toBe(
+      '//server/share/repo/child'
+    )
+  })
+
   test('uses Claude startup home cwd before resolving relative worktree cd commands', () => {
     expect(
       parseAgentCwdHint(
@@ -91,6 +97,29 @@ describe('parseAgentCwdHint', () => {
           'Plan mode off\r\n' +
           'Trusted workspace\r\n' +
           'Session restored\r\n' +
+          '~/projects/vimeflow\r\n' +
+          '! cd .claude/worktrees/codex-agent-osc7-cwd\r\n',
+        '/home/will'
+      )
+    ).toBe(
+      '/home/will/projects/vimeflow/.claude/worktrees/codex-agent-osc7-cwd'
+    )
+  })
+
+  test('keeps additional safe Claude startup lines across chunks', () => {
+    const context = getAgentCwdHintContext(
+      'Claude Code v2.1.145\r\n' +
+        'Opus 4.7 with max effort\r\n' +
+        'Plan mode off\r\n' +
+        'Trusted workspace\r\n' +
+        'Session restored\r\n' +
+        'Loaded tools\r\n' +
+        'Ready\r\n'
+    )
+
+    expect(
+      parseAgentCwdHint(
+        context +
           '~/projects/vimeflow\r\n' +
           '! cd .claude/worktrees/codex-agent-osc7-cwd\r\n',
         '/home/will'

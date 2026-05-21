@@ -26,6 +26,8 @@ const CLAUDE_STARTUP_HEADER_PATTERN = /^Claude Code v\d/
 const CLAUDE_STARTUP_CONTEXT_HEADER_PATTERN =
   /(?:^|[\r\n])Claude Code v\d[^\r\n]*/g
 
+const CLAUDE_STARTUP_MAX_CONTEXT_LINES = 6
+
 type CwdEvent =
   | { index: number; kind: 'path'; path: string }
   | { index: number; kind: 'cd'; target: string }
@@ -175,7 +177,7 @@ const resolveCdPath = (target: string, currentCwd?: string): string | null => {
   }
 
   if (currentCwd?.startsWith('/')) {
-    return normalizePosixPath(`${currentCwd}/${target}`)
+    return normalizePath(`${currentCwd}/${target}`)
   }
 
   if (currentCwd && WINDOWS_DRIVE_PATH.test(currentCwd)) {
@@ -221,7 +223,7 @@ const isClaudeStartupHomeCwd = (data: string, index: number): boolean => {
   const startupLines = lines.slice(headerIndex + 1)
 
   return (
-    startupLines.length <= 6 &&
+    startupLines.length <= CLAUDE_STARTUP_MAX_CONTEXT_LINES &&
     startupLines.every((line) => isSafeClaudeStartupLine(line))
   )
 }
@@ -249,7 +251,7 @@ export const getAgentCwdHintContext = (data: string): string => {
     .filter(Boolean)
 
   if (
-    startupLines.length > 3 ||
+    startupLines.length > CLAUDE_STARTUP_MAX_CONTEXT_LINES ||
     startupLines.some((line) => !isSafeClaudeStartupLine(line))
   ) {
     return ''
