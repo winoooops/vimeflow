@@ -424,6 +424,59 @@ describe('Body agent-emitted OSC 7', () => {
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
+  test('preserves Claude startup context across PTY chunk boundaries', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/home/will"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/home/will')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData('pty-agent', 'Claude Code v2.1.145\r\n')
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalled()
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        'Opus 4.7 with max effort\r\n' + '~/projects/vimeflow\r\n'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/home/will/projects/vimeflow')
+    })
+
+    act(() => {
+      service.emitData('pty-agent', '! cd .claude/worktrees/\r\n')
+      service.emitData('pty-agent', '! cd codex-agent-osc7-cwd\r\n')
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith(
+        '/home/will/projects/vimeflow/.claude/worktrees/codex-agent-osc7-cwd'
+      )
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalledWith(
+      '/home/will/projects/vimeflow/.claude/worktrees/.claude/worktrees/codex-agent-osc7-cwd'
+    )
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
   test('resolves agent cd hints against a preceding OSC 7 cwd update', async () => {
     const service = createService()
     const onCwdChange = vi.fn()

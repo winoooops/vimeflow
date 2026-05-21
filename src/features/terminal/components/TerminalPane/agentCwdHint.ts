@@ -18,6 +18,9 @@ const CLAUDE_STARTUP_HOME_CWD_PATTERN =
 
 const CLAUDE_STARTUP_HEADER_PATTERN = /^Claude Code v\d/
 
+const CLAUDE_STARTUP_CONTEXT_HEADER_PATTERN =
+  /(?:^|[\r\n])Claude Code v\d[^\r\n]*/g
+
 type CwdEvent =
   | { index: number; kind: 'path'; path: string }
   | { index: number; kind: 'cd'; target: string }
@@ -230,6 +233,13 @@ const nonEmptyLinesBefore = (data: string, index: number): string[] =>
     .map((line) => line.trim())
     .filter(Boolean)
 
+const isSafeClaudeStartupLine = (line: string): boolean =>
+  !line.startsWith('!') &&
+  !line.startsWith('$') &&
+  !line.includes('Entering worktree') &&
+  !line.includes('Shell cwd was reset to') &&
+  !line.includes('Ran cd ')
+
 const isClaudeStartupHomeCwd = (data: string, index: number): boolean => {
   const lines = nonEmptyLinesBefore(data, index)
   let headerIndex = -1
@@ -250,15 +260,40 @@ const isClaudeStartupHomeCwd = (data: string, index: number): boolean => {
 
   return (
     startupLines.length <= 3 &&
-    startupLines.every(
-      (line) =>
-        !line.startsWith('!') &&
-        !line.startsWith('$') &&
-        !line.includes('Entering worktree') &&
-        !line.includes('Shell cwd was reset to') &&
-        !line.includes('Ran cd ')
-    )
+    startupLines.every((line) => isSafeClaudeStartupLine(line))
   )
+}
+
+export const getAgentCwdHintContext = (data: string): string => {
+  const normalizedData = data.replace(ANSI_ESCAPE_PATTERN, '')
+  let headerStart = -1
+
+  for (const match of normalizedData.matchAll(
+    CLAUDE_STARTUP_CONTEXT_HEADER_PATTERN
+  )) {
+    headerStart = match.index + (match[0].startsWith('Claude Code') ? 0 : 1)
+  }
+
+  if (headerStart === -1) {
+    return ''
+  }
+
+  const context = normalizedData.slice(headerStart)
+
+  const startupLines = context
+    .split(/\r\n|\r|\n/)
+    .slice(1)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  if (
+    startupLines.length > 3 ||
+    startupLines.some((line) => !isSafeClaudeStartupLine(line))
+  ) {
+    return ''
+  }
+
+  return context
 }
 
 export const parseAgentCwdHint = (

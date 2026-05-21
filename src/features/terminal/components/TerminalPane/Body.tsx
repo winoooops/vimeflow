@@ -22,7 +22,7 @@ import {
 } from '../../hooks/useTerminal'
 import { type ITerminalService } from '../../services/terminalService'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
-import { parseAgentCwdHint } from './agentCwdHint'
+import { getAgentCwdHintContext, parseAgentCwdHint } from './agentCwdHint'
 import { parseOsc7Cwd } from './osc7'
 import '@xterm/xterm/css/xterm.css'
 
@@ -213,6 +213,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const flushFitSessionIdRef = useRef<string | null>(null)
   const pendingDeferredFitFlushRef = useRef(false)
   const agentCwdOutputBufferRef = useRef('')
+  const agentCwdHintContextRef = useRef('')
   const cwdPropRef = useRef(cwd)
   const agentCwdRef = useRef(cwd)
 
@@ -245,13 +246,21 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
   useEffect(() => {
     agentCwdOutputBufferRef.current = ''
+    agentCwdHintContextRef.current = ''
     agentCwdRef.current = cwdPropRef.current
   }, [sessionId])
 
   const applyAgentCwdHint = useCallback(
     (output: string): void => {
       const previousCwd = agentCwdRef.current
-      const cwdHint = parseAgentCwdHint(output, previousCwd)
+      const outputWithContext = `${agentCwdHintContextRef.current}${output}`
+      const cwdHint = parseAgentCwdHint(outputWithContext, previousCwd)
+
+      agentCwdHintContextRef.current = cwdHint
+        ? ''
+        : getAgentCwdHintContext(outputWithContext).slice(
+            -AGENT_CWD_HINT_BUFFER_SIZE
+          )
 
       if (cwdHint) {
         logAgentCwdDebug('text-hint', {
