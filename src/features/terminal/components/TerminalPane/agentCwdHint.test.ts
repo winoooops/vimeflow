@@ -71,6 +71,23 @@ describe('parseAgentCwdHint', () => {
     )
   })
 
+  test('uses Claude startup home cwd with additional safe banner lines', () => {
+    expect(
+      parseAgentCwdHint(
+        'Claude Code v2.1.145\r\n' +
+          'Opus 4.7 with max effort\r\n' +
+          'Plan mode off\r\n' +
+          'Trusted workspace\r\n' +
+          'Session restored\r\n' +
+          '~/projects/vimeflow\r\n' +
+          '! cd .claude/worktrees/codex-agent-osc7-cwd\r\n',
+        '/home/will'
+      )
+    ).toBe(
+      '/home/will/projects/vimeflow/.claude/worktrees/codex-agent-osc7-cwd'
+    )
+  })
+
   test('starts Claude startup context after a windows line ending', () => {
     expect(
       getAgentCwdHintContext(

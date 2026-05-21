@@ -219,7 +219,7 @@ const isClaudeStartupHomeCwd = (data: string, index: number): boolean => {
   const startupLines = lines.slice(headerIndex + 1)
 
   return (
-    startupLines.length <= 3 &&
+    startupLines.length <= 6 &&
     startupLines.every((line) => isSafeClaudeStartupLine(line))
   )
 }
