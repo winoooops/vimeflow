@@ -62,7 +62,12 @@ export interface SessionManager {
     paneId: string,
     agentType: Session['agentType']
   ) => void
-  /** Update the stable session baseline cwd; terminal output uses pane cwd. */
+  /**
+   * Update the stable session baseline cwd in React state only.
+   *
+   * This intentionally does not call `service.updateSessionCwd`; callers that
+   * need to sync a live PTY cwd to the backend must use `updatePaneCwd`.
+   */
   updateSessionCwd: (id: string, cwd: string) => void
   /** Compatibility wrapper until workspace consumers migrate to pane ids. */
   updateSessionAgentType: (id: string, agentType: Session['agentType']) => void
@@ -693,8 +698,13 @@ export const useSessionManager = (
 
       void (async (): Promise<void> => {
         try {
+          // New panes start from the stable session baseline. The active pane
+          // cwd is live per-pane state and may point at an agent task path; do
+          // not leak that pane-local agent context into fresh shells.
+          const spawnCwd = session.workingDirectory
+
           const result = await service.spawn({
-            cwd: session.workingDirectory,
+            cwd: spawnCwd,
             env: {},
             enableAgentBridge: true,
           })
@@ -1199,6 +1209,8 @@ export const useSessionManager = (
       return
     }
 
+    // State-only baseline update. `updatePaneCwd` is the live PTY cwd path and
+    // is responsible for calling `service.updateSessionCwd`.
     setSessions((prev) =>
       prev.map((session) =>
         session.id === id ? { ...session, workingDirectory: cwd } : session
