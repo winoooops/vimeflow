@@ -57,11 +57,23 @@ export const CommandPalette = ({
           <CommandInput
             value={state.query}
             onChange={setQuery}
-            activeDescendantId={
-              clampedSelectedIndex >= 0
-                ? `command-${filteredResults[clampedSelectedIndex].id}`
-                : undefined
-            }
+            activeDescendantId={((): `command-${string}` | undefined => {
+              // Hoisting `useCommandPalette` into WorkspaceView made
+              // `clampedSelectedIndex` and `filteredResults` independent
+              // props instead of co-derived state. The hook still
+              // guarantees `clampedSelectedIndex === -1` when
+              // `filteredResults.length === 0`, but a future caller
+              // wiring this component directly could break that
+              // invariant. Guard against an undefined slot lookup so a
+              // mismatched pair degrades to "no active descendant"
+              // instead of crashing the workspace boundary.
+              const activeCommand =
+                clampedSelectedIndex >= 0
+                  ? filteredResults[clampedSelectedIndex]
+                  : undefined
+
+              return activeCommand ? `command-${activeCommand.id}` : undefined
+            })()}
           />
 
           {/* Divider */}

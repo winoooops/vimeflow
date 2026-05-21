@@ -12,7 +12,21 @@ export interface IconRailProps {
   onCommand?: () => void
   onSettings?: () => void
   identity?: IconRailIdentity
+  /**
+   * @deprecated Ignored by the new rail body — the rail no longer
+   * iterates this array. Kept for one cycle so existing callers
+   * compile; will be removed once the Settings dialog (see issue
+   * referenced by `settingsIssueNumber`) lands. See
+   * `docs/superpowers/specs/2026-05-20-icon-rail-trim-design.md`
+   * §7.1 for the deprecation cycle.
+   */
   items?: NavigationItem[]
+  /**
+   * @deprecated Ignored by the new rail body — the settings button is
+   * rendered with hardcoded icon, label, and tooltip text inside
+   * `IconRail`. Kept for one cycle so existing callers compile; will
+   * be removed alongside `items` once the Settings dialog lands.
+   */
   settingsItem?: NavigationItem
 }
 

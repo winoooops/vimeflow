@@ -85,4 +85,23 @@ describe('CommandPalette', () => {
     expect(screen.getByText("Type '?' for help")).toBeInTheDocument()
     expect(screen.getByRole('dialog')).toHaveClass('z-[100]')
   })
+
+  test('survives mismatched clampedSelectedIndex without crashing the dialog', () => {
+    // A caller wiring CommandPalette without going through
+    // useCommandPalette could pass a non-negative index against an
+    // empty filteredResults array. The component must NOT crash on
+    // `filteredResults[idx].id` — the guard yields no
+    // aria-activedescendant instead.
+    renderPalette({
+      state: { isOpen: true },
+      filteredResults: [],
+      clampedSelectedIndex: 0,
+    })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+
+    expect(input).not.toHaveAttribute('aria-activedescendant')
+  })
 })
