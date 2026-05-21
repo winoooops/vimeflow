@@ -13,7 +13,7 @@ const AGENT_CD_PATTERN =
 const CLAUDE_CWD_RESET_PATTERN =
   /(?:^|[\r\n])(?:[^\S\r\n]*(?:[^\w\s(/\\:]+[^\S\r\n]*)?)Shell cwd was reset to ([^\r\n]+)/g
 
-const AGENT_HOME_CWD_PATTERN =
+const CLAUDE_STARTUP_HOME_CWD_PATTERN =
   /(?:^|[\r\n])[^\S\r\n]*(~[\\/][^\r\n]+?)[ \t]*(?=$|[\r\n])/g
 
 const CLAUDE_STARTUP_HEADER_PATTERN = /^Claude Code v\d/
@@ -281,7 +281,9 @@ export const parseAgentCwdHint = (
     events.push({ index: match.index, kind: 'path', path: match[1].trim() })
   }
 
-  for (const match of normalizedData.matchAll(AGENT_HOME_CWD_PATTERN)) {
+  for (const match of normalizedData.matchAll(
+    CLAUDE_STARTUP_HOME_CWD_PATTERN
+  )) {
     if (!isClaudeStartupHomeCwd(normalizedData, match.index)) {
       continue
     }
