@@ -1,4 +1,5 @@
 /* eslint-disable react/require-default-props */
+// cspell:ignore worktree worktrees
 import type { ReactElement } from 'react'
 import {
   forwardRef,
@@ -28,6 +29,8 @@ import '@xterm/xterm/css/xterm.css'
 
 const AGENT_CWD_HINT_BUFFER_SIZE = 4096
 
+type AgentCwdSource = 'osc7' | 'prop' | 'text-hint'
+
 const toComparablePath = (path: string): string => path.replace(/\\/g, '/')
 
 const logAgentCwdDebug = (
@@ -55,6 +58,47 @@ const isDescendantPath = (path: string, possibleParent: string): boolean => {
 
   return normalizedPath.startsWith(`${normalizedParent}/`)
 }
+
+const getWorktreeParentPath = (path: string): string | null => {
+  const normalizedPath = trimTrailingSlashes(toComparablePath(path))
+  const lastSeparatorIndex = normalizedPath.lastIndexOf('/')
+  if (lastSeparatorIndex === -1) {
+    return null
+  }
+
+  const parentPath = normalizedPath.slice(0, lastSeparatorIndex)
+  const parentName = parentPath.slice(parentPath.lastIndexOf('/') + 1)
+
+  return parentName === 'worktrees' ? parentPath : null
+}
+
+const isWorktreeSiblingPath = (
+  path: string,
+  possibleSibling: string
+): boolean => {
+  const normalizedPath = trimTrailingSlashes(toComparablePath(path))
+
+  const normalizedSibling = trimTrailingSlashes(
+    toComparablePath(possibleSibling)
+  )
+
+  const parentPath = getWorktreeParentPath(normalizedPath)
+
+  return (
+    normalizedPath !== normalizedSibling &&
+    parentPath !== null &&
+    parentPath === getWorktreeParentPath(normalizedSibling)
+  )
+}
+
+const shouldIgnoreStaleOsc7Cwd = (
+  currentCwd: string,
+  nextCwd: string,
+  currentSource: AgentCwdSource
+): boolean =>
+  currentSource === 'text-hint' &&
+  (isDescendantPath(currentCwd, nextCwd) ||
+    isWorktreeSiblingPath(currentCwd, nextCwd))
 
 const stripCarriageReturnOverwrites = (output: string): string =>
   output
@@ -239,6 +283,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const agentCwdHintContextRef = useRef('')
   const cwdPropRef = useRef(cwd)
   const agentCwdRef = useRef(cwd)
+  const agentCwdSourceRef = useRef<AgentCwdSource>('prop')
 
   const terminalStatusRef = useRef<'idle' | 'running' | 'exited' | 'error'>(
     'idle'
@@ -261,6 +306,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       agentCwdOutputBufferRef.current = ''
       agentCwdHintContextRef.current = ''
       agentCwdRef.current = cwd
+      agentCwdSourceRef.current = 'prop'
     }
 
     logAgentCwdDebug('prop-cwd', {
@@ -276,6 +322,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     agentCwdOutputBufferRef.current = ''
     agentCwdHintContextRef.current = ''
     agentCwdRef.current = cwdPropRef.current
+    agentCwdSourceRef.current = 'prop'
   }, [sessionId])
 
   const applyAgentCwdHint = useCallback(
@@ -285,7 +332,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       const outputWithContext = `${agentCwdHintContextRef.current}${visibleOutput}`
       const cwdHint = parseAgentCwdHint(outputWithContext, previousCwd)
 
-      agentCwdHintContextRef.current = cwdHint
+      const shouldApplyCwdHint =
+        cwdHint !== null && cwdHint !== agentCwdRef.current
+
+      agentCwdHintContextRef.current = shouldApplyCwdHint
         ? ''
         : getAgentCwdHintContext(outputWithContext).slice(
             -AGENT_CWD_HINT_BUFFER_SIZE
@@ -300,7 +350,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         })
       }
 
-      if (cwdHint && cwdHint !== agentCwdRef.current) {
+      if (cwdHint) {
+        agentCwdSourceRef.current = 'text-hint'
+      }
+
+      if (shouldApplyCwdHint) {
         agentCwdRef.current = cwdHint
         onCwdChangeRef.current?.(cwdHint)
       }
@@ -620,20 +674,28 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         const path = parseOsc7Cwd(data)
         const previousCwd = agentCwdRef.current
 
+        const shouldIgnore =
+          path !== null &&
+          shouldIgnoreStaleOsc7Cwd(
+            agentCwdRef.current,
+            path,
+            agentCwdSourceRef.current
+          )
+
         logAgentCwdDebug('osc7', {
           sessionId,
           raw: data,
           previousCwd,
           nextCwd: path,
           changed: path !== null && path !== previousCwd,
+          ignored: shouldIgnore,
         })
 
-        if (
-          path &&
-          path !== agentCwdRef.current &&
-          !isDescendantPath(agentCwdRef.current, path)
-        ) {
+        if (path && path === agentCwdRef.current) {
+          agentCwdSourceRef.current = 'osc7'
+        } else if (path && !shouldIgnore) {
           agentCwdRef.current = path
+          agentCwdSourceRef.current = 'osc7'
           onCwdChangeRef.current?.(path)
         }
 

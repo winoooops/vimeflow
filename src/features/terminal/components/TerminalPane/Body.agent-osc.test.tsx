@@ -634,6 +634,139 @@ describe('Body agent-emitted OSC 7', () => {
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
+  test('does not roll back an agent-advanced cwd when shell OSC 7 reports a sibling worktree', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/repo/.claude/worktrees/old"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/repo/.claude/worktrees/old')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        'Entering worktree(/repo/.claude/worktrees/feat)\r\n'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/repo/.claude/worktrees/feat')
+    })
+
+    onCwdChange.mockClear()
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '\x1b]7;file://host/repo/.claude/worktrees/old\x07'
+      )
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalled()
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('treats a no-op text hint as agent-owned before stale shell OSC 7 arrives', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/repo/.claude/worktrees/feat"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/repo/.claude/worktrees/feat')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        'Entering worktree(/repo/.claude/worktrees/feat)\r\n'
+      )
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalled()
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '\x1b]7;file://host/repo/.claude/worktrees/old\x07'
+      )
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalled()
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('accepts sibling worktree OSC 7 after the shell confirms the current cwd', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/repo/.claude/worktrees/old"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/repo/.claude/worktrees/old')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        'Entering worktree(/repo/.claude/worktrees/feat)\r\n'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/repo/.claude/worktrees/feat')
+    })
+
+    onCwdChange.mockClear()
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '\x1b]7;file://host/repo/.claude/worktrees/feat\x07'
+      )
+
+      service.emitData(
+        'pty-agent',
+        '\x1b]7;file://host/repo/.claude/worktrees/old\x07'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/repo/.claude/worktrees/old')
+    })
+
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
   test('ignores OSC 7 updates for the current cwd', async () => {
     const service = createService()
     const onCwdChange = vi.fn()
