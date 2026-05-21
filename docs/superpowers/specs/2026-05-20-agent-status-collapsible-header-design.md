@@ -1093,3 +1093,5 @@ mergable on its own. Each step's outputs feed the next.
 - Concurrent IPC at the Rust level beyond what `mutate_holds_lock_through_flush`
   already covers. The §5.2 rapid-toggle test runs at the frontend layer,
   where the race-safe revert guard lives.
+
+<!-- codex-reviewed: 2026-05-21T07:46:47Z -->
