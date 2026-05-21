@@ -29,7 +29,11 @@ interface AgentStatusPanelProps {
   onCollapse: () => void
 }
 
-const PANEL_WIDTH_PX = 280
+// Exported so WorkspaceView can target this width as the
+// `transition-[width]` end state when expanding the activity-panel shell.
+// Keeping the literal here as the single source of truth prevents the
+// parent's animation target from drifting away from the actual panel width.
+export const PANEL_WIDTH_PX = 280
 const DEFAULT_CONTEXT_WINDOW_SIZE = 200_000
 
 export const AgentStatusPanel = ({

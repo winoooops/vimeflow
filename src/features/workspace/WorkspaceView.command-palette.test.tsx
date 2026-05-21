@@ -75,6 +75,7 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
   AgentStatusPanel: (): ReactElement => (
     <div data-testid="agent-status-panel" />
   ),
+  PANEL_WIDTH_PX: 280,
 }))
 
 vi.mock('../editor/components/UnsavedChangesDialog', () => ({

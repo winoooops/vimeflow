@@ -25,8 +25,14 @@ import {
 import { DockPeekButton } from './components/DockPeekButton'
 import DockPanel, { type DockPanelHandle } from './components/DockPanel'
 import type { DockPosition } from './components/DockSwitcher'
-import { AgentStatusPanel } from '../agent-status/components/AgentStatusPanel'
-import { AgentStatusRail } from '../agent-status/components/AgentStatusRail'
+import {
+  AgentStatusPanel,
+  PANEL_WIDTH_PX,
+} from '../agent-status/components/AgentStatusPanel'
+import {
+  AgentStatusRail,
+  RAIL_WIDTH_PX,
+} from '../agent-status/components/AgentStatusRail'
 import { cacheHitRate } from '../agent-status/utils/cacheRate'
 import type { CurrentUsageState } from '../agent-status/types'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
@@ -961,7 +967,9 @@ export const WorkspaceView = (): ReactElement => {
       <div
         data-testid="activity-panel-shell"
         className="h-full shrink-0 overflow-hidden transition-[width] duration-[220ms] ease-pane"
-        style={{ width: activityPanelCollapsed ? 44 : 280 }}
+        style={{
+          width: activityPanelCollapsed ? RAIL_WIDTH_PX : PANEL_WIDTH_PX,
+        }}
       >
         {activityPanelCollapsed ? (
           <AgentStatusRail
@@ -969,7 +977,7 @@ export const WorkspaceView = (): ReactElement => {
             contextUsedPercentage={
               agentStatus.contextWindow?.usedPercentage ?? null
             }
-            cacheHitRate={cacheHitPercentage(
+            cacheHitPercentage={cacheHitPercentage(
               agentStatus.contextWindow?.currentUsage
             )}
             isRunning={agentStatus.isActive}

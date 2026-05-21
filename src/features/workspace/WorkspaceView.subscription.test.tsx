@@ -193,6 +193,7 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
 
     return <div data-testid="agent-status-panel-mock" />
   },
+  PANEL_WIDTH_PX: 280,
 }))
 
 vi.mock('./components/DockPanel', () => ({

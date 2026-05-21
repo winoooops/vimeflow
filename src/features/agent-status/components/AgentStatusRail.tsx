@@ -5,12 +5,15 @@ import { Bucket } from './Bucket'
 export interface AgentStatusRailProps {
   agent: Agent
   contextUsedPercentage: number | null
-  cacheHitRate: number | null
+  cacheHitPercentage: number | null
   isRunning: boolean
   onExpand: () => void
 }
 
-const RAIL_WIDTH_PX = 44
+// Exported so WorkspaceView can drive the `transition-[width]` animation on
+// the activity-panel shell against the rail's actual width, instead of a
+// duplicated magic number that can drift if the rail is resized.
+export const RAIL_WIDTH_PX = 44
 
 // Bucket fill tones — semantic mapping per the bucket-redesign spec.
 // These literals mirror tokens defined in `docs/design/tokens.ts`
@@ -48,12 +51,12 @@ const cacheTone = (rate: number): string => {
 export const AgentStatusRail = ({
   agent,
   contextUsedPercentage,
-  cacheHitRate,
+  cacheHitPercentage,
   isRunning,
   onExpand,
 }: AgentStatusRailProps): ReactElement => {
   const ctxPct = contextUsedPercentage
-  const cachePct = cacheHitRate
+  const cachePct = cacheHitPercentage
 
   return (
     <aside

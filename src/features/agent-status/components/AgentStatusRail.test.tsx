@@ -11,7 +11,7 @@ test('renders glyph chip, context bucket, cache bucket, and running dot when run
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={42}
-      cacheHitRate={75}
+      cacheHitPercentage={75}
       isRunning
       onExpand={() => undefined}
     />
@@ -30,7 +30,7 @@ test('context bucket tone shifts to coral above 90%', () => {
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={92}
-      cacheHitRate={null}
+      cacheHitPercentage={null}
       isRunning={notRunning}
       onExpand={() => undefined}
     />
@@ -46,7 +46,7 @@ test('context bucket tone is warm coral between 75 and 90%', () => {
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={80}
-      cacheHitRate={null}
+      cacheHitPercentage={null}
       isRunning={notRunning}
       onExpand={() => undefined}
     />
@@ -62,7 +62,7 @@ test('hides context bucket when contextUsedPercentage is null', () => {
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={null}
-      cacheHitRate={null}
+      cacheHitPercentage={null}
       isRunning={notRunning}
       onExpand={() => undefined}
     />
@@ -71,12 +71,12 @@ test('hides context bucket when contextUsedPercentage is null', () => {
   expect(screen.queryByTestId('bucket-ctx')).not.toBeInTheDocument()
 })
 
-test('hides cache bucket when cacheHitRate is null', () => {
+test('hides cache bucket when cacheHitPercentage is null', () => {
   render(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={50}
-      cacheHitRate={null}
+      cacheHitPercentage={null}
       isRunning={notRunning}
       onExpand={() => undefined}
     />
@@ -90,7 +90,7 @@ test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={null}
-      cacheHitRate={85}
+      cacheHitPercentage={85}
       isRunning={notRunning}
       onExpand={() => undefined}
     />
@@ -104,7 +104,7 @@ test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={null}
-      cacheHitRate={55}
+      cacheHitPercentage={55}
       isRunning={notRunning}
       onExpand={() => undefined}
     />
@@ -118,7 +118,7 @@ test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={null}
-      cacheHitRate={20}
+      cacheHitPercentage={20}
       isRunning={notRunning}
       onExpand={() => undefined}
     />
@@ -134,7 +134,7 @@ test('omits running dot when isRunning is false', () => {
     <AgentStatusRail
       agent={AGENTS.codex}
       contextUsedPercentage={50}
-      cacheHitRate={null}
+      cacheHitPercentage={null}
       isRunning={notRunning}
       onExpand={() => undefined}
     />
@@ -150,7 +150,7 @@ test('chevron expand button fires onExpand', async () => {
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={10}
-      cacheHitRate={null}
+      cacheHitPercentage={null}
       isRunning={notRunning}
       onExpand={onExpand}
     />
@@ -167,7 +167,7 @@ test('rail is 44px wide', () => {
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={50}
-      cacheHitRate={null}
+      cacheHitPercentage={null}
       isRunning={notRunning}
       onExpand={() => undefined}
     />
