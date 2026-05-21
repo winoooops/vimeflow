@@ -28,6 +28,28 @@ const CLAUDE_STARTUP_CONTEXT_HEADER_PATTERN =
 
 const CLAUDE_STARTUP_MAX_CONTEXT_LINES = 6
 
+// `- Path: <abs-path>` — Claude Code superpowers / EnterWorktree-style skill
+// reports announce the new worktree directory through a stable key-value line
+// even when the interactive shell deliberately does NOT receive an `cd` (to
+// avoid mutating the user's $PWD).
+const PATH_LABEL_PATTERN =
+  /(?:^|[\r\n])[^\S\r\n]*[-•*][ \t]+Path:[ \t]+([^\r\n]+?)[ \t]*(?=$|[\r\n])/g
+
+// Verb-phrase anchors that announce a worktree change. The absolute path is
+// emitted on a SUBSEQUENT line (possibly with intervening noise such as
+// `[ERROR] - (starship::print): Under a 'dumb' terminal`) so we match the
+// anchor as a position and then scan forward for the path token.
+const WORKTREE_ANCHOR_PATTERN =
+  /(?:^|[\r\n])[^\S\r\n]*(?:[^\w\s(/\\:]+[^\S\r\n]*)?(?:Created\s+and\s+entered(?:\s+the\s+\S+)?\s+worktree:|Switched\s+to\s+worktree(?:\s+on\s+branch\s+\S+)?)[ \t]*(?=$|[\r\n])/g
+
+// `Ran pwd` — Codex prints the command header on its own line and then
+// captures stdout below. The path is the first absolute-path-shaped token in
+// the captured block.
+const RAN_PWD_PATTERN =
+  /(?:^|[\r\n])(?:[^\S\r\n]*(?:[^\w\s(/\\:]+[^\S\r\n]*)?)Ran\s+pwd[ \t]*(?=$|[\r\n])/g
+
+const ANCHOR_LOOKAHEAD_LINES = 6
+
 type CwdEvent =
   | { index: number; kind: 'path'; path: string }
   | { index: number; kind: 'cd'; target: string }
@@ -197,6 +219,87 @@ const nonEmptyLinesBefore = (data: string, index: number): string[] =>
     .map((line) => line.trim())
     .filter(Boolean)
 
+const isAbsolutePathToken = (token: string): boolean =>
+  token.startsWith('/') ||
+  WINDOWS_DRIVE_PATH.test(token) ||
+  token.startsWith('\\\\')
+
+// True when the *last segment* of `path` looks like a file (has an
+// extension and does not start with `.` — `.claude` is a directory,
+// `main.rs` is not). Used to reject paths that follow an anchor but
+// are actually file references in error output.
+const looksLikeFilePath = (path: string): boolean => {
+  const lastSegment = path.split(/[/\\]/).pop() ?? ''
+
+  return /^[^.][^.\\/]*\.[A-Za-z0-9]+$/.test(lastSegment)
+}
+
+// Extract a path token from a single line — designed so the path must
+// occupy the trailing portion of the line (no extra text after it).
+// Skips a single leading non-path prefix character (e.g. `|`, `└`, `L`,
+// `*`) used by transcript tree renderers, but only when separated from
+// the path by whitespace.
+const PATH_LINE_PREFIX_PATTERN = /^[|└\-*•L]+\s*$/
+
+const extractAbsPathFromLine = (line: string): string | null => {
+  const trimmed = line.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  const tokens = trimmed.split(/\s+/)
+  const candidate = tokens[tokens.length - 1]
+  if (!isAbsolutePathToken(candidate)) {
+    return null
+  }
+
+  // Everything before the candidate token (joined back) must be empty or
+  // a recognized tree-renderer prefix. This rejects paths embedded in
+  // sentences such as error messages.
+  const lead = tokens.slice(0, -1).join(' ')
+  if (lead && !PATH_LINE_PREFIX_PATTERN.test(lead)) {
+    return null
+  }
+
+  if (looksLikeFilePath(candidate)) {
+    return null
+  }
+
+  return candidate
+}
+
+// Scan forward from `startIndex` in `data` up to `ANCHOR_LOOKAHEAD_LINES`
+// non-empty lines and return the first that contains an absolute-path
+// token at the trailing end of the line. Ignores empty lines, so noise
+// such as the `[ERROR] - (starship::print): Under a 'dumb' terminal`
+// preamble Codex emits before captured stdout does not consume the
+// budget.
+const findAbsPathAfter = (data: string, startIndex: number): string | null => {
+  const tail = data.slice(startIndex)
+  const lines = tail.split(/\r\n|\r|\n/)
+  let scanned = 0
+
+  // `lines[0]` is the remainder of the anchor's line — skip it.
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (!line.trim()) {
+      continue
+    }
+
+    const path = extractAbsPathFromLine(line)
+    if (path) {
+      return path
+    }
+
+    scanned += 1
+    if (scanned >= ANCHOR_LOOKAHEAD_LINES) {
+      break
+    }
+  }
+
+  return null
+}
+
 const isSafeClaudeStartupLine = (line: string): boolean =>
   !line.startsWith('!') &&
   !line.startsWith('$') &&
@@ -294,6 +397,31 @@ export const parseAgentCwdHint = (
     const target = parseCdTarget(match[1])
     if (target) {
       events.push({ index: match.index, kind: 'cd', target })
+    }
+  }
+
+  for (const match of normalizedData.matchAll(PATH_LABEL_PATTERN)) {
+    const candidate = match[1].trim()
+    if (!isAbsolutePathToken(candidate)) {
+      continue
+    }
+
+    events.push({ index: match.index, kind: 'path', path: candidate })
+  }
+
+  for (const match of normalizedData.matchAll(WORKTREE_ANCHOR_PATTERN)) {
+    const anchorEnd = match.index + match[0].length
+    const path = findAbsPathAfter(normalizedData, anchorEnd)
+    if (path) {
+      events.push({ index: match.index, kind: 'path', path })
+    }
+  }
+
+  for (const match of normalizedData.matchAll(RAN_PWD_PATTERN)) {
+    const anchorEnd = match.index + match[0].length
+    const path = findAbsPathAfter(normalizedData, anchorEnd)
+    if (path) {
+      events.push({ index: match.index, kind: 'path', path })
     }
   }
 

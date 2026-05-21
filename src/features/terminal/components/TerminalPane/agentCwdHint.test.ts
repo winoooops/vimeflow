@@ -250,4 +250,80 @@ describe('parseAgentCwdHint', () => {
       parseAgentCwdHint('$ cd .claude/worktrees', '/home/will/project')
     ).toBeNull()
   })
+
+  test('extracts Claude superpowers skill `- Path: <abs>` lines', () => {
+    // Mirrors the actual `EnterWorktree` skill report block — agents that
+    // intentionally avoid mutating $PWD still announce the worktree path
+    // through a stable label format.
+    expect(
+      parseAgentCwdHint(
+        'Worktree ready.\r\n\r\n' +
+          '- Path: /home/will/projects/simple-tui/.claude/worktrees/dummies-test\r\n' +
+          '- Branch: worktree-dummies-test\r\n' +
+          '- Clean working tree\r\n'
+      )
+    ).toBe('/home/will/projects/simple-tui/.claude/worktrees/dummies-test')
+  })
+
+  test('extracts path emitted under a `Switched to worktree on branch` anchor', () => {
+    // The path is indented on a subsequent line, not on the same line as the
+    // anchor — same shape as the superpowers skill's report header.
+    expect(
+      parseAgentCwdHint(
+        '  Switched to worktree on branch worktree-dummies-test\r\n' +
+          '  | /home/will/projects/simple-tui/.claude/worktrees/dummies-test\r\n'
+      )
+    ).toBe('/home/will/projects/simple-tui/.claude/worktrees/dummies-test')
+  })
+
+  test('extracts path emitted under a Codex `Created and entered ... worktree:` anchor', () => {
+    expect(
+      parseAgentCwdHint(
+        'Created and entered the dummy worktree:\r\n\r\n' +
+          '/home/will/projects/vimeflow/.claude/worktrees/codex-dummy-worktree\r\n\r\n' +
+          "It's on branch codex-dummy-worktree. I'll use that path as the working directory for follow-up commands.\r\n"
+      )
+    ).toBe(
+      '/home/will/projects/vimeflow/.claude/worktrees/codex-dummy-worktree'
+    )
+  })
+
+  test('extracts the path emitted under a `Ran pwd` anchor through starship noise', () => {
+    // Real Codex output from the screenshot: `Ran pwd` is followed by two
+    // `[ERROR] - (starship::print)` lines before the actual pwd output. The
+    // parser must skip noise and pick the first absolute path within a small
+    // window of lines.
+    expect(
+      parseAgentCwdHint(
+        'Ran pwd\r\n' +
+          "  L [ERROR] - (starship::print): Under a 'dumb' terminal (TERM=dumb).\r\n" +
+          "    [ERROR] - (starship::print): Under a 'dumb' terminal (TERM=dumb).\r\n" +
+          '    /home/will/projects/vimeflow/.claude/worktrees/codex-dummy-worktree\r\n'
+      )
+    ).toBe(
+      '/home/will/projects/vimeflow/.claude/worktrees/codex-dummy-worktree'
+    )
+  })
+
+  test('latest signal wins when multiple worktree announcements arrive in one chunk', () => {
+    expect(
+      parseAgentCwdHint(
+        '- Path: /tmp/old\r\n\r\n' +
+          'Created and entered the dummy worktree:\r\n\r\n' +
+          '/tmp/new\r\n'
+      )
+    ).toBe('/tmp/new')
+  })
+
+  test('does not treat unrelated absolute paths after the anchor as cwd hints', () => {
+    // The path after a `Ran pwd` anchor must look like a directory; a path
+    // with a file extension is almost certainly an error message or file
+    // reference, not the current cwd.
+    expect(
+      parseAgentCwdHint(
+        'Ran pwd\r\n' +
+          '  /home/will/projects/vimeflow/src/main.rs: error[E0123]\r\n'
+      )
+    ).toBeNull()
+  })
 })
