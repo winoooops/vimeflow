@@ -1,6 +1,6 @@
 // cspell:ignore codex worktree worktrees
 import { describe, expect, test } from 'vitest'
-import { parseAgentCwdHint } from './agentCwdHint'
+import { getAgentCwdHintContext, parseAgentCwdHint } from './agentCwdHint'
 
 describe('parseAgentCwdHint', () => {
   test('extracts Claude EnterWorktree absolute path hints', () => {
@@ -69,6 +69,14 @@ describe('parseAgentCwdHint', () => {
     ).toBe(
       '/home/will/projects/vimeflow/.claude/worktrees/codex-agent-osc7-cwd'
     )
+  })
+
+  test('starts Claude startup context after a windows line ending', () => {
+    expect(
+      getAgentCwdHintContext(
+        'previous output\r\nClaude Code v2.1.145\r\n~/projects/vimeflow'
+      )
+    ).toBe('Claude Code v2.1.145\r\n~/projects/vimeflow')
   })
 
   test('ignores bare home paths outside the Claude startup banner', () => {

@@ -1,7 +1,7 @@
 export const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/
 const WINDOWS_FILE_URL_DRIVE_PATH = /^\/[A-Za-z]:[\\/]/
 
-const normalizePosixPath = (path: string): string => {
+export const normalizePosixPath = (path: string): string => {
   const parts: string[] = []
 
   for (const part of path.split('/')) {
@@ -21,7 +21,7 @@ const normalizePosixPath = (path: string): string => {
   return `/${parts.join('/')}`
 }
 
-const normalizeWindowsDrivePath = (path: string): string => {
+export const normalizeWindowsDrivePath = (path: string): string => {
   const separator = path.includes('\\') && !path.includes('/') ? '\\' : '/'
   const slashPath = path.replace(/\\/g, '/')
   const drive = slashPath.slice(0, 2)

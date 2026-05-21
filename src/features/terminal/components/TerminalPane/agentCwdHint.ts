@@ -1,5 +1,10 @@
 // cspell:ignore WORKTREE
-import { parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
+import {
+  normalizePosixPath,
+  normalizeWindowsDrivePath,
+  parseOsc7Cwd,
+  WINDOWS_DRIVE_PATH,
+} from './osc7'
 
 const ANSI_ESCAPE_PATTERN =
   /\x1b(?:\][\s\S]*?(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])/g
@@ -100,51 +105,6 @@ const parseCdTarget = (rawCommand: string | undefined): string | null => {
   }
 
   return parsed.target
-}
-
-const normalizePosixPath = (path: string): string => {
-  const parts: string[] = []
-
-  for (const part of path.split('/')) {
-    if (!part || part === '.') {
-      continue
-    }
-
-    if (part === '..') {
-      parts.pop()
-
-      continue
-    }
-
-    parts.push(part)
-  }
-
-  return `/${parts.join('/')}`
-}
-
-const normalizeWindowsDrivePath = (path: string): string => {
-  const separator = path.includes('\\') && !path.includes('/') ? '\\' : '/'
-  const slashPath = path.replace(/\\/g, '/')
-  const drive = slashPath.slice(0, 2)
-  const parts: string[] = []
-
-  for (const part of slashPath.slice(2).split('/')) {
-    if (!part || part === '.') {
-      continue
-    }
-
-    if (part === '..') {
-      parts.pop()
-
-      continue
-    }
-
-    parts.push(part)
-  }
-
-  const normalized = `${drive}/${parts.join('/')}`
-
-  return separator === '\\' ? normalized.replace(/\//g, '\\') : normalized
 }
 
 const normalizePath = (path: string): string =>
@@ -271,7 +231,7 @@ export const getAgentCwdHintContext = (data: string): string => {
   for (const match of normalizedData.matchAll(
     CLAUDE_STARTUP_CONTEXT_HEADER_PATTERN
   )) {
-    headerStart = match.index + (match[0].startsWith('Claude Code') ? 0 : 1)
+    headerStart = match.index + match[0].indexOf('Claude Code')
   }
 
   if (headerStart === -1) {
