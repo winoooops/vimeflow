@@ -71,6 +71,19 @@ describe('parseAgentCwdHint', () => {
     )
   })
 
+  test('ignores bare home paths outside the Claude startup banner', () => {
+    expect(
+      parseAgentCwdHint('~/projects/vimeflow\r\n', '/home/will')
+    ).toBeNull()
+
+    expect(
+      parseAgentCwdHint(
+        'Here is a path example:\r\n~/projects/vimeflow\r\n',
+        '/home/will'
+      )
+    ).toBeNull()
+  })
+
   test('resolves home-relative Claude Bash cd commands', () => {
     expect(
       parseAgentCwdHint('! cd ~/projects/vimeflow\r\n', '/home/will')

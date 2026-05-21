@@ -16,6 +16,8 @@ const CLAUDE_CWD_RESET_PATTERN =
 const AGENT_HOME_CWD_PATTERN =
   /(?:^|[\r\n])[^\S\r\n]*(~[\\/][^\r\n]+?)[ \t]*(?=$|[\r\n])/g
 
+const CLAUDE_STARTUP_HEADER_PATTERN = /^Claude Code v\d/
+
 type CwdEvent =
   | { index: number; kind: 'path'; path: string }
   | { index: number; kind: 'cd'; target: string }
@@ -221,6 +223,44 @@ const resolveCdPath = (target: string, currentCwd?: string): string | null => {
   return null
 }
 
+const nonEmptyLinesBefore = (data: string, index: number): string[] =>
+  data
+    .slice(0, index)
+    .split(/\r\n|\r|\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+const isClaudeStartupHomeCwd = (data: string, index: number): boolean => {
+  const lines = nonEmptyLinesBefore(data, index)
+  let headerIndex = -1
+
+  for (let lineIndex = lines.length - 1; lineIndex >= 0; lineIndex -= 1) {
+    if (CLAUDE_STARTUP_HEADER_PATTERN.test(lines[lineIndex])) {
+      headerIndex = lineIndex
+
+      break
+    }
+  }
+
+  if (headerIndex === -1) {
+    return false
+  }
+
+  const startupLines = lines.slice(headerIndex + 1)
+
+  return (
+    startupLines.length <= 3 &&
+    startupLines.every(
+      (line) =>
+        !line.startsWith('!') &&
+        !line.startsWith('$') &&
+        !line.includes('Entering worktree') &&
+        !line.includes('Shell cwd was reset to') &&
+        !line.includes('Ran cd ')
+    )
+  )
+}
+
 export const parseAgentCwdHint = (
   data: string,
   currentCwd?: string
@@ -242,6 +282,10 @@ export const parseAgentCwdHint = (
   }
 
   for (const match of normalizedData.matchAll(AGENT_HOME_CWD_PATTERN)) {
+    if (!isClaudeStartupHomeCwd(normalizedData, match.index)) {
+      continue
+    }
+
     events.push({ index: match.index, kind: 'path', path: match[1].trim() })
   }
 
