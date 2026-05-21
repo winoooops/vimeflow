@@ -59,10 +59,12 @@ class FakeTerminal {
   }))
   readonly onData = vi.fn(
     (handler: (data: string) => void): { dispose: () => void } => {
-      void handler
+      this.inputHandlers.add(handler)
 
       return {
-        dispose: vi.fn(),
+        dispose: vi.fn(() => {
+          this.inputHandlers.delete(handler)
+        }),
       }
     }
   )
@@ -77,6 +79,7 @@ class FakeTerminal {
   }
 
   private readonly oscHandlers = new Map<number, OscHandler>()
+  private readonly inputHandlers = new Set<(data: string) => void>()
 
   readonly write = vi.fn((data: string, callback?: () => void): void => {
     this.parseOsc(data)
@@ -88,6 +91,12 @@ class FakeTerminal {
 
     callback?.()
   })
+
+  emitInput(data: string): void {
+    this.inputHandlers.forEach((handler) => {
+      handler(data)
+    })
+  }
 
   private parseOsc(data: string): void {
     const oscPattern = /\x1b\](\d+);([\s\S]*?)(?:\x07|\x1b\\)/g
@@ -162,6 +171,17 @@ const restoreData = (sessionId: string, cwd: string): RestoreData => ({
   replayEndOffset: 0,
   bufferedEvents: [],
 })
+
+const getLatestTerminal = (): FakeTerminal => {
+  const results = vi.mocked(Terminal).mock.results
+  const terminal = results[results.length - 1]?.value
+
+  if (!terminal) {
+    throw new Error('Expected terminal to be created')
+  }
+
+  return terminal as FakeTerminal
+}
 
 const StatefulBody = ({
   initialCwd,
@@ -674,6 +694,54 @@ describe('Body agent-emitted OSC 7', () => {
     })
 
     expect(onCwdChange).not.toHaveBeenCalled()
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('accepts sibling worktree OSC 7 after user shell input', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/repo/.claude/worktrees/old"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/repo/.claude/worktrees/old')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+      expect(getLatestTerminal().onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        'Entering worktree(/repo/.claude/worktrees/feat)\r\n'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/repo/.claude/worktrees/feat')
+    })
+
+    onCwdChange.mockClear()
+
+    act(() => {
+      getLatestTerminal().emitInput('cd /repo/.claude/worktrees/old\r')
+      service.emitData(
+        'pty-agent',
+        '\x1b]7;file://host/repo/.claude/worktrees/old\x07'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/repo/.claude/worktrees/old')
+    })
+
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 

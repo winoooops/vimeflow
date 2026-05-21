@@ -95,6 +95,11 @@ export interface UseTerminalOptions {
   onOutput?: (data: string) => void
 
   /**
+   * Optional callback for user keyboard input before it is forwarded to the PTY.
+   */
+  onInput?: (data: string) => void
+
+  /**
    * Explicit lifecycle mode. When omitted, falls back to legacy inference
    * (`attach` if `restoredFrom` is set, else `spawn`) so existing call
    * sites that haven't migrated to the explicit prop continue to work.
@@ -150,6 +155,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     restoredFrom,
     onPaneReady,
     onOutput,
+    onInput,
     mode,
   } = options
 
@@ -193,6 +199,11 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
   useEffect(() => {
     onOutputRef.current = onOutput
   }, [onOutput])
+
+  const onInputRef = useRef(onInput)
+  useEffect(() => {
+    onInputRef.current = onInput
+  }, [onInput])
 
   const writeTerminalOutput = useCallback(
     (targetTerminal: Terminal, data: string): void => {
@@ -543,6 +554,8 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
     }
 
     const handleInput = (data: string): void => {
+      onInputRef.current?.(data)
+
       // Guard writes after PTY exit to avoid rejected writes
       if (isMountedRef.current && status === 'running') {
         const writeAsync = async (): Promise<void> => {

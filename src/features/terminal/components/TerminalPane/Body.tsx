@@ -409,6 +409,19 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     [applyAgentCwdHint, flushAgentCwdOutputBuffer]
   )
 
+  const handleTerminalInput = useCallback((): void => {
+    if (agentCwdSourceRef.current !== 'text-hint') {
+      return
+    }
+
+    agentCwdSourceRef.current = 'osc7'
+    logAgentCwdDebug('user-input', {
+      sessionId,
+      agentCwd: agentCwdRef.current,
+      unlocked: true,
+    })
+  }, [sessionId])
+
   // Use terminal hook for PTY lifecycle management
   const {
     session: ptySession,
@@ -423,6 +436,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     restoredFrom,
     onPaneReady,
     onOutput: handleTerminalOutput,
+    onInput: handleTerminalInput,
     mode,
   })
   terminalStatusRef.current = status
