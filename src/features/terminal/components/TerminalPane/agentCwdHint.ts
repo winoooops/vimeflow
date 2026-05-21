@@ -11,7 +11,7 @@ const AGENT_CD_PATTERN =
   /(?:^|[\r\n])(?:[^\S\r\n]*(?:!\s*|[^\w\s(/\\:!$]+[^\S\r\n]*Ran\s+))cd(?:[ \t]+([^\r\n]+?))?[ \t]*(?=$|[\r\n])/g
 
 const CLAUDE_CWD_RESET_PATTERN =
-  /(?:^|[\r\n])(?:[^\S\r\n]*(?:[^\w\s(/\\:]+[^\S\r\n]*)?)Shell cwd was reset to ([^\r\n]+)/g
+  /(?:^|[\r\n])(?:[^\S\r\n]*(?:[^\w\s(/\\:]+[^\S\r\n]*)?)Shell cwd was reset to (\S+)/g
 
 const CLAUDE_STARTUP_HOME_CWD_PATTERN =
   /(?:^|[\r\n])[^\S\r\n]*(~[\\/][^\r\n]+?)[ \t]*(?=$|[\r\n])/g

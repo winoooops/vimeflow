@@ -231,7 +231,12 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     const previousCwd = agentCwdRef.current
 
     cwdPropRef.current = cwd
-    if (!isDescendantPath(agentCwdRef.current, cwd)) {
+    if (
+      toComparablePath(agentCwdRef.current) !== toComparablePath(cwd) &&
+      !isDescendantPath(agentCwdRef.current, cwd)
+    ) {
+      agentCwdOutputBufferRef.current = ''
+      agentCwdHintContextRef.current = ''
       agentCwdRef.current = cwd
     }
 
@@ -602,7 +607,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
           changed: path !== null && path !== previousCwd,
         })
 
-        if (path && path !== agentCwdRef.current) {
+        if (
+          path &&
+          path !== agentCwdRef.current &&
+          !isDescendantPath(agentCwdRef.current, path)
+        ) {
           agentCwdRef.current = path
           onCwdChangeRef.current?.(path)
         }

@@ -163,6 +163,15 @@ describe('parseAgentCwdHint', () => {
     ).toBe('/home/will/projects/vimeflow')
   })
 
+  test('ignores reset narration trailing context after the cwd path', () => {
+    expect(
+      parseAgentCwdHint(
+        'Shell cwd was reset to /home/will/projects/vimeflow (previous: /tmp)',
+        '/tmp'
+      )
+    ).toBe('/home/will/projects/vimeflow')
+  })
+
   test('rejects unsupported cwd hints', () => {
     expect(parseAgentCwdHint('Entering worktree(relative/path)')).toBeNull()
     expect(parseAgentCwdHint('cd .claude/worktrees')).toBeNull()

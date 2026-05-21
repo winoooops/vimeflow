@@ -564,6 +564,46 @@ describe('Body agent-emitted OSC 7', () => {
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
+  test('does not roll back an agent-advanced cwd when shell OSC 7 reports an ancestor cwd', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/repo"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/repo')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        'Entering worktree(/repo/.claude/worktrees/feat)\r\n'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/repo/.claude/worktrees/feat')
+    })
+
+    onCwdChange.mockClear()
+
+    act(() => {
+      service.emitData('pty-agent', '\x1b]7;file://host/repo\x07')
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalled()
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
   test('ignores OSC 7 updates for the current cwd', async () => {
     const service = createService()
     const onCwdChange = vi.fn()
@@ -588,6 +628,48 @@ describe('Body agent-emitted OSC 7', () => {
     })
 
     expect(onCwdChange).not.toHaveBeenCalled()
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('clears a partial agent cd hint when cwd prop changes to an unrelated path', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    const { rerender } = render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/tmp/worktree"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/tmp/worktree')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData('pty-agent', '! cd child')
+    })
+
+    rerender(
+      <Body
+        sessionId="pty-agent"
+        cwd="/unrelated"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/tmp/worktree')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    act(() => {
+      service.emitData('pty-agent', '\r\n')
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalledWith('/unrelated/child')
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
