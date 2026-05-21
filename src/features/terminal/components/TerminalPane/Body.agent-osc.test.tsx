@@ -794,6 +794,81 @@ describe('Body agent-emitted OSC 7', () => {
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
+  test('normalizes OSC 7 cwd paths before comparing repeated updates', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/old"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/old')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '\x1b]7;file://host/tmp/foo/../worktree\x07'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/tmp/worktree')
+    })
+
+    onCwdChange.mockClear()
+
+    act(() => {
+      service.emitData('pty-agent', '\x1b]7;file://host/tmp/worktree\x07')
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalled()
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
+  test('clears partial text-hint buffers when OSC 7 moves to another cwd', async () => {
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/old"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/old')}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData('pty-agent', '! cd stale')
+    })
+
+    act(() => {
+      service.emitData('pty-agent', '\x1b]7;file://host/tmp/worktree\x07\r\n')
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/tmp/worktree')
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalledWith('/tmp/worktree/stale')
+    expect(service.updateSessionCwd).not.toHaveBeenCalled()
+  })
+
   test('clears a partial agent cd hint when cwd prop changes to an unrelated path', async () => {
     const service = createService()
     const onCwdChange = vi.fn()

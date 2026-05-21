@@ -694,6 +694,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         if (path && path === agentCwdRef.current) {
           agentCwdSourceRef.current = 'osc7'
         } else if (path && !shouldIgnore) {
+          agentCwdOutputBufferRef.current = ''
+          agentCwdHintContextRef.current = ''
           agentCwdRef.current = path
           agentCwdSourceRef.current = 'osc7'
           onCwdChangeRef.current?.(path)

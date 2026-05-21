@@ -40,6 +40,13 @@ describe('parseOsc7Cwd', () => {
     )
   })
 
+  test('normalizes dot segments in absolute fallback paths', () => {
+    expect(parseOsc7Cwd('/tmp/foo/../worktree')).toBe('/tmp/worktree')
+    expect(parseOsc7Cwd('C:\\Users\\will\\..\\project')).toBe(
+      'C:\\Users\\project'
+    )
+  })
+
   test('rejects non-file URLs and relative paths', () => {
     expect(parseOsc7Cwd('https://example.com/home/user')).toBeNull()
     expect(parseOsc7Cwd('relative/path')).toBeNull()
