@@ -47,6 +47,12 @@ describe('parseOsc7Cwd', () => {
     )
   })
 
+  test('preserves POSIX UNC double-slash prefixes', () => {
+    expect(parseOsc7Cwd('file://host//server/share')).toBe('//server/share')
+    expect(parseOsc7Cwd('//server/share')).toBe('//server/share')
+    expect(parseOsc7Cwd('///tmp/worktree')).toBe('/tmp/worktree')
+  })
+
   test('rejects non-file URLs and relative paths', () => {
     expect(parseOsc7Cwd('https://example.com/home/user')).toBeNull()
     expect(parseOsc7Cwd('relative/path')).toBeNull()

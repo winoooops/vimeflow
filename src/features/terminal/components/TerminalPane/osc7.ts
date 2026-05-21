@@ -59,6 +59,10 @@ const normalizeAbsolutePath = (pathname: string): string | null => {
     ? pathname.slice(1)
     : pathname
 
+  if (path.startsWith('//') && !path.startsWith('///')) {
+    return path
+  }
+
   if (path.startsWith('/')) {
     return normalizePosixPath(path)
   }
