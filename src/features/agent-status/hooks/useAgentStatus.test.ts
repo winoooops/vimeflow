@@ -721,11 +721,77 @@ describe('useAgentStatus', () => {
       })
     })
 
-    // Advance timer to trigger next poll
-    vi.advanceTimersByTime(2000)
+    // Advance timer to trigger the next poll.
+    vi.advanceTimersByTime(500)
 
     await vi.waitFor(() => {
       expect(invoke).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  test('does not poll detection before event listeners are ready', async () => {
+    const listenEvents: string[] = []
+    const pendingListenResolves: ((unlisten: () => void) => void)[] = []
+
+    vi.mocked(listen).mockImplementation(((event: string) => {
+      listenEvents.push(event)
+
+      return new Promise((resolve) => {
+        pendingListenResolves.push(resolve)
+      })
+    }) as unknown as typeof listen)
+
+    renderHook(() => useAgentStatus('session-1'))
+
+    expect(listenEvents).toEqual(['agent-status'])
+
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+
+    expect(invoke).not.toHaveBeenCalledWith('detect_agent_in_session', {
+      sessionId: 'pty-session-1',
+    })
+
+    await act(async () => {
+      pendingListenResolves.shift()?.((): void => undefined)
+      await Promise.resolve()
+    })
+
+    expect(listenEvents).toEqual(['agent-status', 'agent-tool-call'])
+
+    await act(async () => {
+      pendingListenResolves.shift()?.((): void => undefined)
+      await Promise.resolve()
+    })
+
+    expect(listenEvents).toEqual([
+      'agent-status',
+      'agent-tool-call',
+      'agent-turn',
+    ])
+
+    await act(async () => {
+      pendingListenResolves.shift()?.((): void => undefined)
+      await Promise.resolve()
+    })
+
+    expect(listenEvents).toEqual([
+      'agent-status',
+      'agent-tool-call',
+      'agent-turn',
+      'test-run',
+    ])
+
+    await act(async () => {
+      pendingListenResolves.shift()?.((): void => undefined)
+      await Promise.resolve()
+    })
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('detect_agent_in_session', {
+        sessionId: 'pty-session-1',
+      })
     })
   })
 
@@ -1226,7 +1292,7 @@ describe('useAgentStatus', () => {
     //      detect_agent in start_agent_watcher returned None even
     //      though the polled detect_agent_in_session succeeded).
     //   3. Frontend's catch swallows; watcherStartedRef stays false.
-    //   4. Next 2s poll: detect_agent_in_session returns null
+    //   4. Next poll: detect_agent_in_session returns null
     //      (agent really exited).
     //   5. Pre-fix: collapse path early-returned because
     //      `if (!watcherStartedRef.current) return` — panel stuck
@@ -1279,12 +1345,15 @@ describe('useAgentStatus', () => {
       expect(result.current.agentType).toBe('claude-code')
     })
 
-    // Step 4: advance 2s for the next polling tick. Detection now
+    // Step 4: advance to the next polling tick. Detection now
     // returns null.
     await act(async () => {
-      vi.advanceTimersByTime(2000)
+      vi.advanceTimersByTime(500)
       await Promise.resolve()
     })
+
+    expect(result.current.agentExited).toBe(true)
+    expect(result.current.isActive).toBe(true)
 
     // Step 5/6: panel should collapse after EXIT_HOLD_MS (5s). With
     // the pre-fix behavior the early-return at the gate would prevent
@@ -1296,5 +1365,6 @@ describe('useAgentStatus', () => {
     })
 
     expect(result.current.isActive).toBe(false)
+    expect(result.current.agentExited).toBe(false)
   })
 })

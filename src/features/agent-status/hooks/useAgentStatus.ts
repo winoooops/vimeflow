@@ -15,7 +15,7 @@ import type {
 // ActivityFeed paginates this with a 'show more' control so the whole
 // buffer is reachable without overloading the initial render.
 const RECENT_TOOL_CALLS_LIMIT = 50
-const DETECTION_POLL_MS = 2000
+const DETECTION_POLL_MS = 500
 const EXIT_HOLD_MS = 5000
 
 const AGENT_TYPE_MAP = {
@@ -32,6 +32,7 @@ const isKnownAgentType = (
 
 const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
   isActive: false,
+  agentExited: false,
   agentType: null,
   modelId: null,
   modelDisplayName: null,
@@ -135,6 +136,9 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   // Track the collapse timeout so it can be cancelled if the agent
   // reappears before the 5s hold expires (e.g., brief detection gap).
   const collapseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Detection can start the backend watcher, whose replay events must not
+  // fire before the event listeners below are attached.
+  const listenersReadyRef = useRef(false)
 
   // Reset state when sessionId changes
   useEffect(() => {
@@ -157,6 +161,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       watcherStartInFlightRef.current = false
       watcherStartGenerationRef.current += 1
       knownPtyIdRef.current = undefined
+      listenersReadyRef.current = false
       if (collapseTimeoutRef.current) {
         clearTimeout(collapseTimeoutRef.current)
         collapseTimeoutRef.current = null
@@ -165,7 +170,8 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
     }
   }, [sessionId])
 
-  // Detection polling: poll detect_agent_in_session every 2s.
+  // Detection polling: poll detect_agent_in_session frequently enough that
+  // pane chrome returns to shell styling promptly after an agent exits.
   // On detection, update state. On agent exit, stop watchers and
   // hold final state for 5s before collapsing.
   const handleDetection = useCallback(async (sid: string): Promise<void> => {
@@ -206,6 +212,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
             ? {
                 ...prev,
                 isActive: true,
+                agentExited: false,
                 agentType: mapped,
               }
             : prev
@@ -290,13 +297,19 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         // session-change cleanup must still have the captured PTY id to retry.
         void stopWatchers(sid, knownPtyIdRef.current)
 
+        setStatus((prev) =>
+          prev.sessionId === sid ? { ...prev, agentExited: true } : prev
+        )
+
         // Hold final state for 5s, then collapse. Runs regardless of
         // watcherStartedRef — that's the F1 fix: a transient
         // start_agent_watcher failure no longer blocks collapse.
         collapseTimeoutRef.current = setTimeout(() => {
           collapseTimeoutRef.current = null
           setStatus((prev) =>
-            prev.sessionId === sid ? { ...prev, isActive: false } : prev
+            prev.sessionId === sid
+              ? { ...prev, isActive: false, agentExited: false }
+              : prev
           )
         }, EXIT_HOLD_MS)
       }
@@ -311,6 +324,10 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
     }
 
     const interval = setInterval(() => {
+      if (!listenersReadyRef.current) {
+        return
+      }
+
       void handleDetection(sessionId)
     }, DETECTION_POLL_MS)
 
@@ -334,6 +351,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
 
     const unlistenFns: (() => void)[] = []
     let cancelled = false
+    listenersReadyRef.current = false
 
     const addUnlisten = (fn: () => void): void => {
       if (cancelled) {
@@ -546,12 +564,14 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       // subscribe resolved. The linter can't see cross-await mutation.
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!cancelled) {
+        listenersReadyRef.current = true
         void handleDetection(sessionId)
       }
     })()
 
     return (): void => {
       cancelled = true
+      listenersReadyRef.current = false
 
       for (const unlisten of unlistenFns) {
         unlisten()

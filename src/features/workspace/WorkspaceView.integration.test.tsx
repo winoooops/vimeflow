@@ -17,6 +17,7 @@ vi.mock('../terminal/components/TerminalPane', () => ({
 vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   useAgentStatus: vi.fn(() => ({
     isActive: true,
+    agentExited: false,
     agentType: 'claude-code',
     modelId: null,
     modelDisplayName: null,
@@ -934,6 +935,7 @@ describe('WorkspaceView Integration Tests', () => {
         await import('../agent-status/hooks/useAgentStatus')
       vi.mocked(useAgentStatus).mockReturnValue({
         isActive: true,
+        agentExited: false,
         agentType: 'claude-code',
         modelId: 'sonnet-4-5',
         modelDisplayName: 'Sonnet 4.5',
@@ -973,6 +975,7 @@ describe('WorkspaceView Integration Tests', () => {
         await import('../agent-status/hooks/useAgentStatus')
       vi.mocked(useAgentStatus).mockReturnValue({
         isActive: true,
+        agentExited: false,
         agentType: 'claude-code',
         modelId: null,
         modelDisplayName: null,

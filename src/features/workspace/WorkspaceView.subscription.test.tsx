@@ -84,6 +84,7 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   useAgentStatus: vi.fn(
     (): AgentStatus => ({
       isActive: true,
+      agentExited: false,
       agentType: 'claude-code',
       modelId: null,
       modelDisplayName: null,
@@ -326,6 +327,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
     // codex caught in round-2 v1).
     const idleAgentStatus: AgentStatus = {
       isActive: false,
+      agentExited: false,
       agentType: null,
       modelId: null,
       modelDisplayName: null,
@@ -384,6 +386,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
   test('WorkspaceView passes enabled: false when idle diff dock is closed', async () => {
     const idleAgentStatus: AgentStatus = {
       isActive: false,
+      agentExited: false,
       agentType: null,
       modelId: null,
       modelDisplayName: null,
