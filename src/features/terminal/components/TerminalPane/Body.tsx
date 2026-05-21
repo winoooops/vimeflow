@@ -350,11 +350,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         })
       }
 
-      if (cwdHint) {
-        agentCwdSourceRef.current = 'text-hint'
-      }
-
       if (shouldApplyCwdHint) {
+        agentCwdSourceRef.current = 'text-hint'
         agentCwdRef.current = cwdHint
         onCwdChangeRef.current?.(cwdHint)
       }

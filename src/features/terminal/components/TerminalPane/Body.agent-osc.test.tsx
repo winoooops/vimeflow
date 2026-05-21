@@ -745,7 +745,7 @@ describe('Body agent-emitted OSC 7', () => {
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
-  test('treats a no-op text hint as agent-owned before stale shell OSC 7 arrives', async () => {
+  test('does not treat a no-op text hint as agent-owned before shell OSC 7 arrives', async () => {
     const service = createService()
     const onCwdChange = vi.fn()
 
@@ -780,7 +780,10 @@ describe('Body agent-emitted OSC 7', () => {
       )
     })
 
-    expect(onCwdChange).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith('/repo/.claude/worktrees/old')
+    })
+
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
