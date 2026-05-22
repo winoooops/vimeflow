@@ -93,14 +93,13 @@ Cleanup mode is the exception to the stay-on-branch rule above. Once the PR is r
 **Linked worktree (default for main agent, Lifeline, and subagents):**
 
 ```bash
-# From the linked worktree root (worktrees/<slug>), return to the primary checkout first
-cd ../..
+# Replace <repo-root> with the absolute path to the primary checkout
 # Use the same <slug> and <branch-name> from the worktree add step above
-git worktree remove worktrees/<slug>
-git branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
-git worktree prune                 # clean up stale worktree metadata
-git checkout main
-git pull --ff-only
+git -C <repo-root> worktree remove worktrees/<slug>
+git -C <repo-root> branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
+git -C <repo-root> worktree prune                 # clean up stale worktree metadata
+git -C <repo-root> checkout main
+git -C <repo-root> pull --ff-only
 ```
 
 **Primary-checkout override:**
