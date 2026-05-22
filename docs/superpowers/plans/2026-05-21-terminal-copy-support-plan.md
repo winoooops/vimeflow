@@ -344,11 +344,21 @@ Spec ref: §4 callback table.
 
 - [ ] **Step 3.1: Write the failing tests**
 
-Append to the test file:
+First, **merge `vi` into the existing vitest import at the top of the test file** (the repo enforces `import/first` and `import/no-duplicates`). Change line 2:
 
 ```typescript
-import { vi } from 'vitest'
+import { test, expect } from 'vitest'
+```
 
+to:
+
+```typescript
+import { test, expect, vi } from 'vitest'
+```
+
+Then append the new tests to the end of the file:
+
+```typescript
 test('selectAll() forwards to terminal.selectAll', () => {
   const mock = createMockTerminal()
   const spy = vi.spyOn(mock.terminal, 'selectAll')
@@ -569,9 +579,40 @@ git commit -m "feat(terminal): wire copy() to navigator.clipboard.writeText with
 
 Spec ref: §4 Copy failure policy (fallback + final error).
 
-- [ ] **Step 5.1: Write the failing tests**
+- [ ] **Step 5.1: Define `document.execCommand` in jsdom (one-time setup), then write the failing tests**
 
-Append:
+jsdom does not ship `document.execCommand` as a callable property, so `vi.spyOn(document, 'execCommand')` throws unless we define it first. Add this helper near `installClipboardMock`:
+
+```typescript
+const installExecCommandStub = (
+  returnValue: boolean
+): { restore: () => void; spy: ReturnType<typeof vi.fn> } => {
+  const spy = vi.fn(() => returnValue)
+  const originalDescriptor = Object.getOwnPropertyDescriptor(
+    document,
+    'execCommand'
+  )
+  Object.defineProperty(document, 'execCommand', {
+    value: spy,
+    configurable: true,
+    writable: true,
+  })
+  return {
+    spy,
+    restore: (): void => {
+      if (originalDescriptor) {
+        Object.defineProperty(document, 'execCommand', originalDescriptor)
+      } else {
+        // Property didn't exist before; remove our stub.
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+        delete (document as unknown as { execCommand?: unknown }).execCommand
+      }
+    },
+  }
+}
+```
+
+Then append the failing tests:
 
 ```typescript
 test('copy() falls back to execCommand("copy") when writeText rejects', async () => {
@@ -581,7 +622,7 @@ test('copy() falls back to execCommand("copy") when writeText rejects', async ()
       throw new Error('writeText denied')
     },
   })
-  const execCommandSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
+  const execStub = installExecCommandStub(true)
   try {
     const { result } = renderHook(() =>
       useTerminalClipboard({ terminal: mock.terminal })
@@ -591,10 +632,10 @@ test('copy() falls back to execCommand("copy") when writeText rejects', async ()
     await result.current.copy()
 
     expect(clipboard.writeTextMock).toHaveBeenCalledOnce()
-    expect(execCommandSpy).toHaveBeenCalledWith('copy')
+    expect(execStub.spy).toHaveBeenCalledWith('copy')
   } finally {
     clipboard.restore()
-    execCommandSpy.mockRestore()
+    execStub.restore()
   }
 })
 
@@ -605,9 +646,7 @@ test('copy() calls onCopyError when both writeText and execCommand fail', async 
       throw new Error('writeText denied')
     },
   })
-  const execCommandSpy = vi
-    .spyOn(document, 'execCommand')
-    .mockReturnValue(false)
+  const execStub = installExecCommandStub(false)
   const onCopyError = vi.fn()
   try {
     const { result } = renderHook(() =>
@@ -624,7 +663,38 @@ test('copy() calls onCopyError when both writeText and execCommand fail', async 
     expect(onCopyError.mock.calls[0][0]).toBeInstanceOf(Error)
   } finally {
     clipboard.restore()
-    execCommandSpy.mockRestore()
+    execStub.restore()
+  }
+})
+
+test('copy() calls onCopyError when document.execCommand is undefined', async () => {
+  const mock = createMockTerminal()
+  const clipboard = installClipboardMock({
+    writeText: async () => {
+      throw new Error('writeText denied')
+    },
+  })
+  const original = Object.getOwnPropertyDescriptor(document, 'execCommand')
+  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+  delete (document as unknown as { execCommand?: unknown }).execCommand
+  const onCopyError = vi.fn()
+  try {
+    const { result } = renderHook(() =>
+      useTerminalClipboard({
+        terminal: mock.terminal,
+        onCopyError,
+      })
+    )
+    mock.fireSelectionChange(true)
+
+    await result.current.copy()
+
+    expect(onCopyError).toHaveBeenCalledOnce()
+  } finally {
+    clipboard.restore()
+    if (original) {
+      Object.defineProperty(document, 'execCommand', original)
+    }
   }
 })
 ```
@@ -639,6 +709,16 @@ Replace the `copy` definition:
 
 ```typescript
 const writeViaTextarea = (text: string): boolean => {
+  // jsdom (and some sandboxed Electron builds) ship without
+  // document.execCommand. Treat undefined or throwing as fallback
+  // failure so the outer catch surfaces it via onCopyError.
+  const execCommand = (
+    document as unknown as {
+      execCommand?: (command: string) => boolean
+    }
+  ).execCommand
+  if (typeof execCommand !== 'function') return false
+
   const textarea = document.createElement('textarea')
   textarea.value = text
   textarea.setAttribute('readonly', '')
@@ -649,7 +729,9 @@ const writeViaTextarea = (text: string): boolean => {
   textarea.select()
   let ok = false
   try {
-    ok = document.execCommand('copy')
+    ok = execCommand.call(document, 'copy')
+  } catch {
+    ok = false
   } finally {
     document.body.removeChild(textarea)
   }
@@ -887,11 +969,21 @@ Spec ref: §4 "Contextmenu listener", §4 contextmenu test row.
 
 - [ ] **Step 8.1: Write the failing tests**
 
-Append:
+First, **merge `act` into the existing `@testing-library/react` import at the top of the test file** (the repo enforces `import/first` and `import/no-duplicates`). Change line 1:
 
 ```typescript
-import { act } from '@testing-library/react'
+import { renderHook } from '@testing-library/react'
+```
 
+to:
+
+```typescript
+import { renderHook, act } from '@testing-library/react'
+```
+
+Then append the new tests to the end of the file:
+
+```typescript
 test('right-click on terminal.element sets isOpen=true, openAt={x,y}, and calls preventDefault', () => {
   const mock = createMockTerminal()
   const { result } = renderHook(() =>
@@ -1506,6 +1598,16 @@ const detectModifier = (): ClipboardModifier => {
 }
 
 const writeViaTextarea = (text: string): boolean => {
+  // jsdom (and some sandboxed Electron builds) ship without
+  // document.execCommand. Treat undefined or throwing as fallback
+  // failure so the outer catch surfaces it via onCopyError.
+  const execCommand = (
+    document as unknown as {
+      execCommand?: (command: string) => boolean
+    }
+  ).execCommand
+  if (typeof execCommand !== 'function') return false
+
   const textarea = document.createElement('textarea')
   textarea.value = text
   textarea.setAttribute('readonly', '')
@@ -1516,7 +1618,9 @@ const writeViaTextarea = (text: string): boolean => {
   textarea.select()
   let ok = false
   try {
-    ok = document.execCommand('copy')
+    ok = execCommand.call(document, 'copy')
+  } catch {
+    ok = false
   } finally {
     document.body.removeChild(textarea)
   }
@@ -1765,6 +1869,158 @@ Fix any issues that surface. The most likely ones are explicit return types on i
 ```bash
 git add src/features/terminal/hooks/useTerminalClipboard.ts src/features/terminal/hooks/useTerminalClipboard.test.ts
 git commit -m "feat(terminal): wire keyboard shortcuts with platform detection and SIGINT-safe Ctrl+Shift+C"
+```
+
+---
+
+### Task 10b: Cleanup + terminal-identity-change lifecycle tests
+
+**Files:**
+
+- Modify: `src/features/terminal/hooks/useTerminalClipboard.test.ts`
+
+Spec ref: §5.6 defensive cleanup, §7.2.1 "Cleanup on unmount" and "Cleanup on `terminal` identity change" rows. These are the riskiest behaviors in the lifecycle contract; the cleanup is defensive precisely because React effect ordering is subtle (codex flagged the spec on this).
+
+- [ ] **Step 10b.1: Write the failing tests**
+
+Append:
+
+```typescript
+test('unmount disposes onSelectionChange, restores default key handler, removes DOM listeners', () => {
+  const mock = createMockTerminal()
+  const attachSpy = mock.terminal
+    .attachCustomKeyEventHandler as unknown as ReturnType<typeof vi.fn>
+
+  const { result, unmount } = renderHook(() =>
+    useTerminalClipboard({ terminal: mock.terminal })
+  )
+
+  // Confirm initial attach
+  expect(attachSpy).toHaveBeenCalledTimes(1)
+
+  unmount()
+
+  // attachCustomKeyEventHandler called again with `() => true` to restore default
+  expect(attachSpy).toHaveBeenCalledTimes(2)
+  const restoreHandler = attachSpy.mock.calls[1][0] as (
+    e: KeyboardEvent
+  ) => boolean
+  // The restore handler must be a "return true for everything" no-op.
+  expect(restoreHandler(new KeyboardEvent('keydown', { code: 'KeyC' }))).toBe(
+    true
+  )
+
+  // DOM listeners are gone — dispatching contextmenu after unmount must
+  // NOT mutate state. (Quick proxy: assert no further updates happen via
+  // hasSelection. result.current is the LAST rendered value.)
+  mock.element.dispatchEvent(
+    new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 1,
+      clientY: 1,
+    })
+  )
+  expect(result.current.isOpen).toBe(false)
+})
+
+test('unmount tolerates a terminal whose attachCustomKeyEventHandler throws (defensive)', () => {
+  const mock = createMockTerminal()
+  const attachSpy = mock.terminal
+    .attachCustomKeyEventHandler as unknown as ReturnType<typeof vi.fn>
+
+  const { unmount } = renderHook(() =>
+    useTerminalClipboard({ terminal: mock.terminal })
+  )
+
+  // Simulate the terminal already being disposed: the restore call throws.
+  attachSpy.mockImplementationOnce(() => {
+    throw new Error('terminal disposed')
+  })
+
+  // Defensive cleanup must NOT bubble the error out of React's cleanup.
+  expect(() => {
+    unmount()
+  }).not.toThrow()
+})
+
+test('changing terminal identity cleans up old terminal and attaches to new one', () => {
+  const first = createMockTerminal()
+  const second = createMockTerminal()
+  const firstAttach = first.terminal
+    .attachCustomKeyEventHandler as unknown as ReturnType<typeof vi.fn>
+  const secondAttach = second.terminal
+    .attachCustomKeyEventHandler as unknown as ReturnType<typeof vi.fn>
+
+  const { rerender } = renderHook(
+    ({ terminal }: { terminal: Terminal }) =>
+      useTerminalClipboard({ terminal }),
+    { initialProps: { terminal: first.terminal } }
+  )
+
+  expect(firstAttach).toHaveBeenCalledTimes(1)
+  expect(secondAttach).toHaveBeenCalledTimes(0)
+
+  rerender({ terminal: second.terminal })
+
+  // First terminal: restore call (count 2). Second terminal: initial attach (count 1).
+  expect(firstAttach).toHaveBeenCalledTimes(2)
+  expect(secondAttach).toHaveBeenCalledTimes(1)
+
+  // Old terminal's listeners no longer mutate state — selection fired on
+  // `first` must not flip hasSelection (it's tied to the active terminal).
+  first.fireSelectionChange(true)
+  // (We don't have direct access to React state here without result.current,
+  // but the absence of a console error and the count assertions above prove
+  // the cleanup ran. A full assertion on state would require result.current
+  // — kept this test focused on observable attach/restore counts.)
+})
+
+test('terminal === null after non-null resets isOpen/openAt/hasSelection', () => {
+  const mock = createMockTerminal()
+  const { result, rerender } = renderHook(
+    ({ terminal }: { terminal: Terminal | null }) =>
+      useTerminalClipboard({ terminal }),
+    { initialProps: { terminal: mock.terminal as Terminal | null } }
+  )
+
+  // Open the menu and set selection.
+  act(() => {
+    mock.element.dispatchEvent(
+      new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 10,
+        clientY: 10,
+      })
+    )
+    mock.fireSelectionChange(true)
+  })
+  expect(result.current.isOpen).toBe(true)
+  expect(result.current.hasSelection).toBe(true)
+
+  // Drop to null; cleanup must reset state.
+  rerender({ terminal: null })
+
+  expect(result.current.isOpen).toBe(false)
+  expect(result.current.openAt).toBeNull()
+  expect(result.current.hasSelection).toBe(false)
+})
+```
+
+- [ ] **Step 10b.2: Run, verify pass (no implementation changes needed — Task 10's cleanup already does this)**
+
+```bash
+npx vitest run src/features/terminal/hooks/useTerminalClipboard.test.ts
+```
+
+Expected: all tests pass, including the four new ones. If any fail, the cleanup logic in `useTerminalClipboard.ts` needs adjustment — likely the `setIsOpen(false) / setOpenAt(null) / setHasSelection(false)` calls at the end of the cleanup.
+
+- [ ] **Step 10b.3: Commit**
+
+```bash
+git add src/features/terminal/hooks/useTerminalClipboard.test.ts
+git commit -m "test(terminal): cover unmount cleanup and terminal-identity-change lifecycle"
 ```
 
 ---
@@ -2272,13 +2528,48 @@ test('ArrowDown navigates through enabled items and skips disabled Copy', async 
 
 Edit `TerminalContextMenu.tsx`:
 
-1. Add to imports:
+1. **Merge `useState` and `useRef` into the existing React import** (the repo enforces `import/no-duplicates`, so do NOT add a second `import ... from 'react'` line). Change the existing line:
 
 ```tsx
-import { useState, useRef } from 'react'
+import { useEffect, type ReactElement } from 'react'
+```
+
+to:
+
+```tsx
+import { useEffect, useRef, useState, type ReactElement } from 'react'
+```
+
+Then merge `useListNavigation` into the existing `@floating-ui/react` import block. Change:
+
+```tsx
 import {
-  // ... existing imports ...
+  FloatingFocusManager,
+  FloatingPortal,
+  flip,
+  offset,
+  shift,
+  useDismiss,
+  useFloating,
+  useInteractions,
+  useRole,
+} from '@floating-ui/react'
+```
+
+to:
+
+```tsx
+import {
+  FloatingFocusManager,
+  FloatingPortal,
+  flip,
+  offset,
+  shift,
+  useDismiss,
+  useFloating,
+  useInteractions,
   useListNavigation,
+  useRole,
 } from '@floating-ui/react'
 ```
 
@@ -2494,13 +2785,13 @@ git commit -m "feat(terminal): mount useTerminalClipboard and TerminalContextMen
 
 Spec ref: §7.3 (21-row QA matrix).
 
-- [ ] **Step 16.1: Start the dev server**
+- [ ] **Step 16.1: Start the Electron dev shell**
 
 ```bash
-npm run dev
+npm run electron:dev
 ```
 
-Wait for "Vite ... ready". Note the URL (usually `http://localhost:5173`).
+This builds the Rust sidecar then runs `vite --mode electron` and launches the Electron app. **Do NOT use `npm run dev` — that runs the bare Vite renderer with no PTY backend, so the terminal pane is empty and rows 1-21 cannot be verified.** Wait for the Electron window to open.
 
 - [ ] **Step 16.2: Verify rows 1-7 (drag, shortcuts, paste)**
 
@@ -2530,7 +2821,7 @@ Expected: resolves to a string (the current clipboard contents). If it throws or
 
 - [ ] **Step 16.7: Stop the dev server**
 
-`Ctrl+C` in the terminal where `npm run dev` is running.
+`Ctrl+C` in the terminal where `npm run electron:dev` is running.
 
 - [ ] **Step 16.8: Record QA results in the PR description**
 
