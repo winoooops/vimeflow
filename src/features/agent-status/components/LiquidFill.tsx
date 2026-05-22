@@ -1,4 +1,11 @@
-import { useEffect, useId, useMemo, useRef, type ReactElement } from 'react'
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react'
 import {
   useWaterCursor,
   type LiquidRefs,
@@ -85,7 +92,12 @@ export const LiquidFill = ({
   const sheenId = `liquid-sheen-${reactId}`
   const clipId = `liquid-clip-${reactId}`
 
-  const { w, h } = mode === 'bar' ? BAR_DIMS : BAR_DIMS
+  const [measured, setMeasured] = useState<{ w: number; h: number } | null>(
+    null
+  )
+
+  const { w, h } =
+    mode === 'bar' ? BAR_DIMS : (measured ?? { w: BAR_DIMS.w, h: BAR_DIMS.h })
   const geom = useMemo(() => computeGeom(w, h, pct), [w, h, pct])
 
   const wrapRef = useRef<HTMLDivElement | null>(null)
@@ -95,6 +107,30 @@ export const LiquidFill = ({
   const waveAAnimRef = useRef<SVGGElement | null>(null)
   const waveBAnimRef = useRef<SVGGElement | null>(null)
   const sheenRef = useRef<SVGEllipseElement | null>(null)
+
+  useEffect(() => {
+    if (mode !== 'fill' || wrapRef.current === null) {
+      return
+    }
+
+    const el = wrapRef.current
+
+    const ro = new ResizeObserver((entries) => {
+      if (entries.length === 0) {
+        return
+      }
+
+      const { width, height } = entries[0].contentRect
+
+      setMeasured({ w: Math.max(1, width), h: Math.max(1, height) })
+    })
+
+    ro.observe(el)
+
+    return (): void => {
+      ro.disconnect()
+    }
+  }, [mode])
 
   const refsRef = useRef<LiquidRefs | null>(null)
   useEffect(() => {
@@ -134,8 +170,8 @@ export const LiquidFill = ({
       style={{ display: mode === 'bar' ? 'inline-block' : undefined }}
     >
       <svg
-        width={mode === 'bar' ? w : '100%'}
-        height={mode === 'bar' ? h : '100%'}
+        width={mode === 'bar' ? w : (measured?.w ?? '100%')}
+        height={mode === 'bar' ? h : (measured?.h ?? '100%')}
         viewBox={`0 0 ${w} ${h}`}
         preserveAspectRatio={mode === 'bar' ? 'xMidYMid meet' : 'none'}
         aria-hidden={ariaHidden ? 'true' : undefined}

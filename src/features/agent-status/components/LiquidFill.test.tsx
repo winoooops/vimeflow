@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react'
-import { describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { LiquidFill } from './LiquidFill'
 
 // jsdom does not provide PointerEvent — see useWaterCursor.test.tsx
@@ -126,5 +126,80 @@ describe('LiquidFill — cursor hook integration', () => {
     })
     const slosh = screen.getByTestId('liquid-slosh')
     expect(slosh.getAttribute('data-interactive')).toBe('on')
+  })
+})
+
+type ROCallback = (entries: { contentRect: DOMRectReadOnly }[]) => void
+class MockResizeObserver {
+  static instances: MockResizeObserver[] = []
+  cb: ROCallback
+  constructor(cb: ROCallback) {
+    this.cb = cb
+    MockResizeObserver.instances.push(this)
+  }
+  observe = vi.fn()
+  unobserve = vi.fn()
+  disconnect = vi.fn()
+  trigger(rect: { width: number; height: number }): void {
+    this.cb([
+      {
+        contentRect: {
+          ...rect,
+          top: 0,
+          left: 0,
+          right: rect.width,
+          bottom: rect.height,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        } as DOMRectReadOnly,
+      },
+    ])
+  }
+}
+
+describe('LiquidFill — fill mode', () => {
+  beforeEach(() => {
+    MockResizeObserver.instances = []
+    const g = globalThis as unknown as { ResizeObserver: typeof ResizeObserver }
+
+    g.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
+  })
+
+  test('renders SVG with measured width/height attributes after ResizeObserver fires', () => {
+    const { container } = render(
+      <LiquidFill
+        mode="fill"
+        pct={50}
+        color="#cba6f7"
+        testId="lf-fill"
+        className="h-full w-full"
+      />
+    )
+    act(() => {
+      MockResizeObserver.instances[0]?.trigger({ width: 200, height: 72 })
+    })
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
+    const svg = container.querySelector('svg')
+    expect(svg?.getAttribute('viewBox')).toBe('0 0 200 72')
+    expect(svg?.getAttribute('preserveAspectRatio')).toBe('none')
+    // Spec §5: mode="fill" sets the SVG width/height attributes from the
+    // ResizeObserver measurement (not a percentage placeholder).
+    expect(svg?.getAttribute('width')).toBe('200')
+    expect(svg?.getAttribute('height')).toBe('72')
+  })
+
+  test('outer div carries the caller className', () => {
+    render(
+      <LiquidFill
+        mode="fill"
+        pct={50}
+        color="#cba6f7"
+        testId="lf-fill"
+        className="h-full w-full"
+      />
+    )
+    expect(screen.getByTestId('lf-fill').className).toContain('h-full')
+    expect(screen.getByTestId('lf-fill').className).toContain('w-full')
   })
 })
