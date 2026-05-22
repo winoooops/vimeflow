@@ -597,3 +597,5 @@ npm run type-check
   the codebase convention for local consistency; updating the rule
   doc is out of scope here but is a one-line follow-up if the team
   wants the rule to match practice.
+
+<!-- codex-reviewed: 2026-05-22T10:58:30Z -->
