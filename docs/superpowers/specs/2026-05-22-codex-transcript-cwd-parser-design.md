@@ -35,20 +35,33 @@ that reading wrong:
   pinned. ✓ correct for "where did the session start".
 - **`turn_context.payload.cwd`** is repeated on every turn but always
   equals the session-start cwd. It does NOT update when codex moves.
-  The v1 spec assumed it does; in practice it does not.
+  v1 spec assumed it does; in practice it does not. **v2 intentionally
+  IGNORES this field** — see "Why we skip `turn_context.cwd`" below.
 - **`response_item.payload.arguments.workdir`** (for `exec_command`
   function calls) DOES update — every time codex runs a command in a
   different directory, the `workdir` field on that function-call
   reflects the new directory. This is codex's de facto mid-session
   cwd signal.
 
-v2 therefore extracts cwd from **three sources** in priority order:
+v2 therefore extracts cwd from **two sources**:
 
 1. `session_meta.payload.cwd` — first transition at session start.
-2. `turn_context.payload.cwd` — kept as a defensive anchor (if a
-   future Codex schema does update it, we already capture).
-3. `response_item.payload.arguments.workdir` (parsed JSON, scoped to
+2. `response_item.payload.arguments.workdir` (parsed JSON, scoped to
    `payload.name == "exec_command"`) — the mid-session signal.
+
+**Why we skip `turn_context.cwd`.** It carries no information beyond
+`session_meta.cwd` (always equal). Worse: treating it as a live cwd
+source creates a regression. Sequence: `session_meta(A)` →
+`exec_command.workdir(B)` would correctly emit `agent-cwd=A` then
+`agent-cwd=B`. But the NEXT turn's `turn_context(A)` (still pinned to
+session start) would then emit `agent-cwd=A` again, falsely reverting
+the pane chip to the starting checkout on every reasoning-only turn.
+The codex review on this spec (HIGH finding 2026-05-22) caught this
+hazardous ordering. Dropping `turn_context` from the source list
+removes the bug at the design level. If future Codex versions
+actually start updating `turn_context.cwd` mid-session, we'd add it
+back behind a schema-version gate — but that's not a current
+problem.
 
 Transition semantics carry over from PR #239: track `last_cwd:
 Option<String>` across calls; emit `AgentCwdEvent` only on changes;
@@ -75,15 +88,16 @@ emitted nothing (no `turn_context` update).
 
 ### 1.2 What v2 changes from v1
 
-- Extraction logic is split into three helper functions (or one
-  unified dispatcher), one per source.
-- `extract_session_cwd` is renamed / supplemented by
-  `extract_codex_cwd` (or kept and joined by `extract_exec_workdir`)
-  to reflect that `workdir` extraction is now in scope.
+- Extraction logic is split into three helper functions (one per
+  source plus a dispatcher).
+- `extract_session_cwd` matches `session_meta` ONLY (not
+  `turn_context` — see "Why we skip `turn_context.cwd`" above).
+- New `extract_exec_workdir` helper for the mid-session signal.
+- New `extract_codex_cwd` dispatcher.
 - The doc comments and spec now correctly describe Codex's per-source
-  semantics — "session-start in `session_meta`/`turn_context`,
-  mid-session in `exec_command.workdir`" — rather than v1's
-  "session_meta + turn_context per-turn".
+  semantics — "session start from `session_meta`, mid-session from
+  `exec_command.workdir`" — rather than v1's "session_meta +
+  turn_context per-turn".
 
 ## 2. Scope
 
@@ -93,10 +107,12 @@ Behavior change in one implementation file; doc-comment and JSDoc
 edits in three further files complete the work cleanly:
 
 - **Behavior:** `crates/backend/src/agent/adapter/codex/transcript.rs`
-  — the actual extraction + emission logic. Three sources:
-  `session_meta.payload.cwd`, `turn_context.payload.cwd`, and
-  `response_item.payload.arguments.workdir` (parsed JSON; scoped to
-  function calls named `exec_command`).
+  — the actual extraction + emission logic. Two sources:
+  `session_meta.payload.cwd` (session-start anchor) and
+  `response_item.payload.arguments.workdir` (mid-session signal, parsed
+  JSON; scoped to function calls named `exec_command`).
+  **`turn_context.cwd` is intentionally NOT a source** — it would
+  cause false reverts. See 1.1.
 - **Doc-comment fix** on `AgentCwdEvent` in
   `crates/backend/src/agent/types.rs` (currently says cwd is sourced
   from "the structured `cwd` field that Claude Code (and Codex,
@@ -112,8 +128,8 @@ edits in three further files complete the work cleanly:
     the comment above the `agentStatus.cwd → updatePaneCwd` bridge).
 - Add private helpers in `codex/transcript.rs`:
   - `extract_session_cwd(&Value) -> Option<&str>` — pulls
-    `payload.cwd` when `type` is `session_meta` or `turn_context`,
-    empty-string filtered out.
+    `payload.cwd` when `type == "session_meta"` ONLY (not
+    `turn_context`). Empty-string filtered out.
   - `extract_exec_workdir(&Value) -> Option<String>` — pulls
     `payload.arguments.workdir` when `type == "response_item"` AND
     `payload.type == "function_call"` AND `payload.name ==
@@ -131,14 +147,21 @@ edits in three further files complete the work cleanly:
 - Imports: `crate::agent::events::emit_agent_cwd` and
   `crate::agent::types::AgentCwdEvent`.
 - Unit-test coverage:
-  - 4 tests for `extract_session_cwd` (session_meta + turn_context
-    positive; missing payload, missing cwd, empty string negatives).
+  - 4 tests for `extract_session_cwd` (session_meta positive;
+    `turn_context` REJECTED — defensive against re-introduction;
+    missing payload; empty string).
   - 6 tests for `extract_exec_workdir` (happy path; wrong event
     type; wrong function-call type; wrong tool name; malformed
     arguments JSON; missing workdir).
-  - 3 transition-semantics tests covering first-emit, dedup, and
-    multi-source transitions (session_meta → exec_command workdir).
-  - 1 end-to-end fixture-driven test in `start_tailing`.
+  - 4 transition-semantics tests covering first-emit, dedup across
+    sources, multi-source transitions (session_meta → exec_command
+    workdir), AND the regression case
+    (`session_meta(A) → exec_command(B) → turn_context(A)` MUST NOT
+    emit a third `agent-cwd=A` revert).
+  - 1 end-to-end fixture-driven test in `start_tailing` that
+    includes a `turn_context(A)` line after an `exec_command(B)` to
+    guard against re-introduction of the bug at the integration
+    layer.
 
 ### Out of scope (deferred, not lost)
 
@@ -196,11 +219,14 @@ The cwd-carrying shapes are:
 
 Empirical findings from rollouts on disk:
 
-- `session_meta.cwd` and `turn_context.cwd` carry the **session's
-  starting cwd** and are pinned for the life of the session. No
-  rollout in `~/.codex/sessions/` showed a `turn_context.cwd` value
-  different from its `session_meta.cwd`, even across long sessions
-  where codex was instructed to switch worktrees.
+- `session_meta.cwd` carries the **session's starting cwd** and is
+  pinned for the life of the session.
+- `turn_context.cwd` is repeated on every turn and equals
+  `session_meta.cwd` in every rollout checked, even across long
+  sessions where codex was instructed to switch worktrees.
+  **v2 ignores this field** — it is information-free at best and a
+  source of false-revert bugs at worst. See "Why we skip
+  `turn_context.cwd`" in section 1.
 - `exec_command.arguments` is a JSON-encoded **string**, not a
   nested object. Parsing it yields `{cmd, workdir, …}`. The
   `workdir` is codex's actual mid-session working directory and
@@ -222,13 +248,16 @@ keeps each individual helper small and unit-testable.
 ```rust
 /// Pull session-start cwd off a Codex rollout JSONL line.
 ///
-/// Returns `Some(cwd)` only for `session_meta` / `turn_context` entries.
-/// In practice both carry the SAME value (the session's starting cwd);
-/// `turn_context` is kept here as a defensive anchor in case a future
-/// Codex schema starts updating it. Empty strings filtered out.
+/// Returns `Some(cwd)` ONLY for `session_meta` entries — the
+/// session-start anchor. `turn_context.cwd` is intentionally NOT
+/// matched here: empirically it just repeats `session_meta.cwd`
+/// every turn (no information value), and treating it as a live cwd
+/// would cause false reverts on reasoning-only turns after an
+/// `exec_command.workdir` transition has already moved us to a new
+/// directory. See spec section 1.
 fn extract_session_cwd(value: &Value) -> Option<&str> {
     let event_type = value.get("type").and_then(Value::as_str)?;
-    if event_type != "session_meta" && event_type != "turn_context" {
+    if event_type != "session_meta" {
         return None;
     }
     value
@@ -344,19 +373,21 @@ call sites in the read loop (single-line + partial-line branches).
 - **Missing payload / missing field / wrong type → silently `None`.**
   All `?` and `.and_then(…)` short-circuits.
 - **Temporal granularity is per-exec_command, not per-line and not
-  per-turn.** This is the v2-corrected understanding. Codex emits
-  cwd transitions whenever it runs a tool command in a new
-  directory — typically the first exec_command after a "switch to
-  worktree X" instruction. Bare turn boundaries do NOT carry cwd
-  changes (the `turn_context.cwd` field is static across a session).
-  In practice this means the pane chip catches up to the new cwd
-  on the FIRST exec_command after a worktree switch, which is
-  usually within ~1s of codex's "switching to" message.
+  per-turn.** Codex emits cwd transitions whenever it runs a tool
+  command in a new directory — typically the first exec_command
+  after a "switch to worktree X" instruction. The pane chip catches
+  up to the new cwd on that first exec_command, usually within ~1s
+  of codex's "switching to" message.
 - **Reasoning-only turns don't emit.** A turn that produces only
   text + thinking (no tool calls) won't emit a transition. This is
   correct — codex hasn't "moved" yet, it's just thinking. The next
-  exec_command (or session start, or new session_meta on reattach)
-  fires.
+  exec_command (or new session_meta on reattach) fires.
+- **`turn_context` lines never emit.** Even though they carry a
+  `payload.cwd` field, the extractor dispatcher does not look at
+  them. This is the v2-codex-review fix: treating `turn_context.cwd`
+  as a live cwd would cause a false revert after every
+  reasoning-only turn that follows an `exec_command.workdir`
+  transition.
 
 ## 4. Components & files
 
@@ -364,7 +395,7 @@ call sites in the read loop (single-line + partial-line branches).
 
 | File                                                   | Change                                                                                                                                                                                                                                                                                      |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `crates/backend/src/agent/adapter/codex/transcript.rs` | Add 3 helpers (`extract_session_cwd`, `extract_exec_workdir`, `extract_codex_cwd`), thread `last_cwd: Option<String>` through `tail_loop` + `process_line`, add cwd extraction + transition emission, expand imports, 14 new tests (4 session_cwd + 6 exec_workdir + 3 transition + 1 e2e). |
+| `crates/backend/src/agent/adapter/codex/transcript.rs` | Add 3 helpers (`extract_session_cwd`, `extract_exec_workdir`, `extract_codex_cwd`), thread `last_cwd: Option<String>` through `tail_loop` + `process_line`, add cwd extraction + transition emission, expand imports, 15 new tests (4 session_cwd + 6 exec_workdir + 4 transition + 1 e2e). |
 | `crates/backend/src/agent/types.rs`                    | Edit the doc comment above `AgentCwdEvent` (line ~157–164) to describe both adapters' real shapes (Claude per-line, Codex per-exec_command).                                                                                                                                                |
 | `src/bindings/AgentCwdEvent.ts`                        | Regenerated by `npm run generate:bindings`. Not hand-edited.                                                                                                                                                                                                                                |
 | `src/features/agent-status/types/index.ts`             | Doc-only — update the JSDoc block above `cwd: string \| null` (around lines 54–62) to match the corrected source description. No type change.                                                                                                                                               |
@@ -436,13 +467,15 @@ with:
 /// JSONL:
 /// - **Claude Code** writes a top-level `cwd` field on every transcript
 ///   entry; transitions fire as soon as the next line is parsed.
-/// - **Codex** writes cwd in three places: `session_meta.payload.cwd`
-///   (once, at session start), `turn_context.payload.cwd` (per turn,
-///   pinned to the session-start value in practice), and
+/// - **Codex** writes cwd in two places the watcher reads:
+///   `session_meta.payload.cwd` (once, at session start) and
 ///   `response_item.payload.arguments.workdir` for `exec_command`
 ///   function calls (the mid-session signal — fires whenever codex
-///   runs a tool command in a new directory). The watcher reads all
-///   three.
+///   runs a tool command in a new directory). Codex also writes
+///   `turn_context.payload.cwd` on every turn, but the watcher
+///   intentionally ignores that field because it's pinned to the
+///   session-start value and would cause false reverts after a
+///   mid-session `exec_command.workdir` transition.
 ///
 /// In both cases this is the authoritative signal for "where the agent
 /// currently is" — it picks up tool-call-driven moves like Claude's
@@ -471,12 +504,12 @@ in the file.
 
 ### 5.2 `extract_session_cwd` unit tests (4)
 
-| Test                                            | Input shape                                      | Expected     |
-| ----------------------------------------------- | ------------------------------------------------ | ------------ |
-| `extract_session_cwd_session_meta_returns_cwd`  | `{"type":"session_meta","payload":{"cwd":"/x"}}` | `Some("/x")` |
-| `extract_session_cwd_turn_context_returns_cwd`  | `{"type":"turn_context","payload":{"cwd":"/x"}}` | `Some("/x")` |
-| `extract_session_cwd_other_type_returns_none`   | `{"type":"event_msg","payload":{"cwd":"/x"}}`    | `None`       |
-| `extract_session_cwd_empty_string_returns_none` | `{"type":"turn_context","payload":{"cwd":""}}`   | `None`       |
+| Test                                            | Input shape                                      | Expected                                                                  |
+| ----------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------- |
+| `extract_session_cwd_session_meta_returns_cwd`  | `{"type":"session_meta","payload":{"cwd":"/x"}}` | `Some("/x")`                                                              |
+| `extract_session_cwd_turn_context_returns_none` | `{"type":"turn_context","payload":{"cwd":"/x"}}` | `None` _(turn_context is intentionally NOT a cwd source — see section 1)_ |
+| `extract_session_cwd_other_type_returns_none`   | `{"type":"event_msg","payload":{"cwd":"/x"}}`    | `None`                                                                    |
+| `extract_session_cwd_empty_string_returns_none` | `{"type":"session_meta","payload":{"cwd":""}}`   | `None`                                                                    |
 
 ### 5.3 `extract_exec_workdir` unit tests (6)
 
@@ -489,21 +522,23 @@ in the file.
 | `extract_exec_workdir_malformed_arguments_json_returns_none` | `arguments` is `"{not json"`                                                                    | `None`       |
 | `extract_exec_workdir_missing_workdir_field_returns_none`    | `arguments={"cmd":"ls"}`                                                                        | `None`       |
 
-### 5.4 Transition semantics tests (3)
+### 5.4 Transition semantics tests (4)
 
 Drive `process_line` through a sequence of lines on a
 `FakeEventSink`. Each test sets up empty `last_cwd: None` + empty
 `in_flight`, calls `process_line` N times, then asserts.
 
-| Test                                                  | Sequence                                                                      | Expected `agent-cwd` |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------- |
-| `process_line_first_cwd_always_emits`                 | `session_meta(cwd=A)`                                                         | 1 (A)                |
-| `process_line_repeated_cwd_across_sources_suppresses` | `session_meta(cwd=A)` → `turn_context(cwd=A)` → `exec_command(workdir=A)`     | 1 (A)                |
-| `process_line_cwd_transition_across_sources_emits`    | `session_meta(cwd=A)` → `exec_command(workdir=B)` → `exec_command(workdir=A)` | 3 (A, B, A)          |
+| Test                                                           | Sequence                                                                      | Expected `agent-cwd`                                   |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `process_line_first_cwd_always_emits`                          | `session_meta(cwd=A)`                                                         | 1 (A)                                                  |
+| `process_line_repeated_cwd_across_sources_suppresses`          | `session_meta(cwd=A)` → `exec_command(workdir=A)`                             | 1 (A)                                                  |
+| `process_line_cwd_transition_across_sources_emits`             | `session_meta(cwd=A)` → `exec_command(workdir=B)` → `exec_command(workdir=A)` | 3 (A, B, A)                                            |
+| `process_line_turn_context_after_exec_command_does_not_revert` | `session_meta(cwd=A)` → `exec_command(workdir=B)` → `turn_context(cwd=A)`     | 2 (A, B) _(turn_context MUST NOT cause a revert to A)_ |
 
-The third test specifically covers the v2-critical case: a
-session_meta → exec_command transition (the real codex mid-session
-switch pattern).
+The third test covers the v2 mid-session switch pattern. The fourth
+test is the v2-critical regression guard: it locks in the codex
+review (HIGH finding 2026-05-22) — if anyone re-adds `turn_context`
+to the cwd source list, this test fires.
 
 ### 5.5 End-to-end watcher test (1)
 
@@ -518,13 +553,14 @@ fn start_tailing_emits_cwd_transitions_in_order() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let transcript_path = tmp.path().join("rollout.jsonl");
 
-    // 6 lines, 3 expected emissions:
+    // 7 lines, 3 expected emissions:
     //   1. session_meta cwd=/workspace/A             (emit)
-    //   2. turn_context cwd=/workspace/A             (suppressed — same)
+    //   2. turn_context cwd=/workspace/A             (no emit — extractor rejects turn_context)
     //   3. exec_command workdir=/workspace/B         (emit — transition)
     //   4. event_msg task_started                    (no emit)
     //   5. exec_command workdir=/workspace/B         (suppressed — same)
-    //   6. exec_command workdir=/workspace/A         (emit — transition back)
+    //   6. turn_context cwd=/workspace/A             (no emit — REGRESSION GUARD: must not revert to A)
+    //   7. exec_command workdir=/workspace/A         (emit — transition back)
     write_rollout(
         &transcript_path,
         &[
@@ -551,6 +587,9 @@ fn start_tailing_emits_cwd_transitions_in_order() {
                     "arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"
                 }
             }),
+            // Regression guard: turn_context pinned to A AFTER we moved
+            // to B via exec_command must NOT cause a revert to A.
+            json!({"timestamp":"2026-05-22T10:00:04.5Z","type":"turn_context","payload":{"turn_id":"t2","cwd":"/workspace/A"}}),
             json!({
                 "timestamp":"2026-05-22T10:00:05Z",
                 "type":"response_item",
