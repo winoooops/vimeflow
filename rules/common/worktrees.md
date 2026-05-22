@@ -93,7 +93,8 @@ Cleanup mode is the exception to the stay-on-branch rule above. Once the PR is r
 **Linked worktree (default for main agent, Lifeline, and subagents):**
 
 ```bash
-# From the primary checkout
+# From inside the linked worktree, return to the primary checkout first
+cd "$(git worktree list --porcelain | sed -n '1s/^worktree //p')"
 git worktree remove worktrees/<slug>
 git branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
 git worktree prune                 # clean up stale worktree metadata

@@ -76,7 +76,7 @@ VISUAL_VERIFICATION.md
 # Git worktrees (local per-agent checkouts)
 .claude/worktrees/
 .worktrees/
-worktrees/
+/worktrees/
 
 # Vimeflow runtime data (statusline sessions, etc.)
 .vimeflow/
