@@ -2191,3 +2191,5 @@ This list is for the writer of the plan to walk after committing. The plan execu
 2. **Placeholder scan** — none. Every code step shows the actual code.
 
 3. **Type consistency** — `LiquidRefs`, `LiquidFillProps`, `BucketProps` are defined once and reused. `Signal` union appears only inside the hook implementation. `LIQUID_DEFAULTS` is the single source of truth for tuning.
+
+<!-- codex-reviewed: 2026-05-22T11:15:32Z -->
