@@ -1,41 +1,47 @@
-# Codex Transcript Cwd Parser Implementation Plan
+# Codex Transcript Cwd Parser Implementation Plan (v2)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Port PR #239's `agent-cwd` extraction to the Codex transcript watcher so Codex panes get the same structured cwd channel Claude Code panes have, with the per-turn temporal contract documented in the spec.
+> **Revision history.** v1 of this plan was based on a v1 spec that assumed `turn_context.cwd` updates mid-session. Codex implemented v1 faithfully but the feature did not work end-to-end. v1's implementation commits (`cab6b73` → `dd95857`) and v1's plan/spec codex-reviewed footers were reverted. v2 (this plan) is rooted in the v2 spec at `docs/superpowers/specs/2026-05-22-codex-transcript-cwd-parser-design.md` and implements extraction from `session_meta.cwd` + `exec_command.workdir` only; `turn_context.cwd` is intentionally NOT a source.
 
-**Architecture:** Add a private `extract_session_cwd` helper to `codex/transcript.rs`. Thread `last_cwd: Option<String>` through the `tail_loop` and `process_line`. Pre-match cwd extraction emits `AgentCwdEvent` on transitions only. Update doc-comments + regenerate ts-rs binding. Update two frontend JSDoc blocks.
+**Goal:** Port PR #239's `agent-cwd` extraction to the Codex transcript watcher with the v2-corrected source model. Codex panes should emit `agent-cwd` transitions whenever codex switches its command working directory (via `exec_command.arguments.workdir`), without false reverts from `turn_context.cwd` (pinned to session start).
+
+**Architecture:** Three private helpers in `codex/transcript.rs`. `extract_session_cwd` matches `session_meta` ONLY. `extract_exec_workdir` matches `response_item.payload.type == "function_call"` AND `payload.name == "exec_command"`, parses the JSON-encoded `arguments` string, returns the `workdir` field. `extract_codex_cwd` dispatches between them. Pre-match cwd extraction in `process_line` emits `AgentCwdEvent` on transitions only. Update doc-comments + regenerate ts-rs binding. Update two frontend JSDoc blocks.
 
 **Tech Stack:** Rust (backend, `crates/backend`), `serde_json::Value`, `ts-rs` (binding regen), TypeScript (frontend doc-comments only).
 
-**Reference spec:** [`docs/superpowers/specs/2026-05-22-codex-transcript-cwd-parser-design.md`](../specs/2026-05-22-codex-transcript-cwd-parser-design.md) (codex-reviewed, 4 review passes).
+**Reference spec:** [`docs/superpowers/specs/2026-05-22-codex-transcript-cwd-parser-design.md`](../specs/2026-05-22-codex-transcript-cwd-parser-design.md) (v2, codex-reviewed).
+
+---
+
+## Important — exit-code handling for all `Run:` commands
+
+Do NOT pipe `Run:` commands through `| tail` or `| head`. In bash a piped command's exit code is the exit code of the LAST stage; `tail`'s exit code masks a failing `cargo test` / `npm test` / `npm run type-check` and the executing agent will read the run as a pass. Run commands unfiltered. The expected-output blocks below show what the relevant summary line looks like — verify it actually appears in the unfiltered output before continuing.
 
 ---
 
 ## File Structure
 
-- **Modify** `crates/backend/src/agent/adapter/codex/transcript.rs` — add `extract_session_cwd` helper, `last_cwd` state in `tail_loop`, `last_cwd` parameter on `process_line`, pre-match emission, two new imports, 11 new tests (7 helper + 3 transition + 1 e2e).
-- **Modify** `crates/backend/src/agent/types.rs` — update `AgentCwdEvent` doc comment (lines 157–164) to describe both adapters' real shapes; drop "pending follow-up" / "every transcript JSONL entry".
-- **Regenerate** `src/bindings/AgentCwdEvent.ts` — via `npm run generate:bindings` (runs `cargo test ... export_bindings && prettier --write src/bindings/`). Not hand-edited.
-- **Modify** `src/features/agent-status/types/index.ts` — JSDoc block above `cwd: string | null` field (lines 54–62) to drop "every transcript JSONL entry (Claude Code today; Codex follow-up)" and describe both adapters.
-- **Modify** `src/features/workspace/WorkspaceView.tsx` — comment block above `agentStatus.cwd → updatePaneCwd` bridge (lines 315–321), same correction.
+- **Modify** `crates/backend/src/agent/adapter/codex/transcript.rs` — add 3 helpers (`extract_session_cwd`, `extract_exec_workdir`, `extract_codex_cwd`), `last_cwd` state in `tail_loop`, `last_cwd` parameter on `process_line`, pre-match emission, two new imports, 15 new tests (4 session_cwd + 6 exec_workdir + 4 transition + 1 e2e).
+- **Modify** `crates/backend/src/agent/types.rs` — update `AgentCwdEvent` doc comment (lines 157–164) to describe the two-source Codex model (session_meta + exec_command.workdir) and the intentional `turn_context` skip.
+- **Regenerate** `src/bindings/AgentCwdEvent.ts` — via `npm run generate:bindings`. Not hand-edited.
+- **Modify** `src/features/agent-status/types/index.ts` — JSDoc block above `cwd: string | null` field (lines 54–62).
+- **Modify** `src/features/workspace/WorkspaceView.tsx` — comment block above `agentStatus.cwd → updatePaneCwd` bridge (lines 315–321).
 
-No new files. No new fixture files — tests use inline `json!()` values per the codebase convention in `codex/transcript.rs::start_tailing_replays_tool_calls_turns_and_test_runs` (around line 791).
+No new files. No fixture files — tests use inline `json!()` values per the codebase convention.
 
 ---
 
-## Task 1: Add `extract_session_cwd` helper with unit tests
+## Task 1: Add `extract_session_cwd` helper (session_meta only) with unit tests
 
 **Files:**
 
-- Modify: `crates/backend/src/agent/adapter/codex/transcript.rs` — add helper near top (above `validate_transcript_path`, around line 47), add 7 unit tests inside existing `#[cfg(test)] mod tests` block (at end of file, around line 736+).
+- Modify: `crates/backend/src/agent/adapter/codex/transcript.rs` — add helper near top (above `validate_transcript_path`, around line 47), add 4 unit tests inside existing `#[cfg(test)] mod tests` block.
 
-### Step 1: Write the failing tests
-
-- [ ] **Step 1: Add 7 unit tests at the bottom of the existing `#[cfg(test)] mod tests` block in `crates/backend/src/agent/adapter/codex/transcript.rs`** (just before the closing `}` of the module).
+- [ ] **Step 1: Add 4 unit tests at the bottom of the existing `#[cfg(test)] mod tests` block.**
 
 ```rust
-    // ---- extract_session_cwd unit tests (added by codex-transcript-cwd PR) ----
+    // ---- extract_session_cwd unit tests (v2: session_meta ONLY) ----
 
     #[test]
     fn extract_session_cwd_session_meta_returns_cwd() {
@@ -44,90 +50,53 @@ No new files. No new fixture files — tests use inline `json!()` values per the
     }
 
     #[test]
-    fn extract_session_cwd_turn_context_returns_cwd() {
+    fn extract_session_cwd_turn_context_returns_none() {
+        // v2 spec section 1: turn_context is INTENTIONALLY NOT a cwd source.
+        // Codex's turn_context.cwd is pinned to session-start and treating
+        // it as live would cause false reverts after exec_command transitions.
+        // This test is a defensive guard against re-introduction.
         let v = json!({"type": "turn_context", "payload": {"cwd": "/workspace/A"}});
-        assert_eq!(extract_session_cwd(&v), Some("/workspace/A"));
+        assert_eq!(extract_session_cwd(&v), None);
     }
 
     #[test]
-    fn extract_session_cwd_event_msg_returns_none() {
-        // Defensive: even if a future schema put `cwd` in event_msg.payload,
-        // the type gate rejects it. Session cwd only lives on session_meta
-        // + turn_context as of cli_version 0.132.0.
+    fn extract_session_cwd_other_type_returns_none() {
         let v = json!({"type": "event_msg", "payload": {"cwd": "/workspace/A"}});
         assert_eq!(extract_session_cwd(&v), None);
     }
 
     #[test]
-    fn extract_session_cwd_response_item_returns_none() {
-        // function_call arguments.workdir is per-command scratch, NOT
-        // session cwd. The type gate rejects response_item entirely.
-        let v = json!({
-            "type": "response_item",
-            "payload": {
-                "type": "function_call",
-                "arguments": "{\"workdir\":\"/workspace/A\"}"
-            }
-        });
-        assert_eq!(extract_session_cwd(&v), None);
-    }
-
-    #[test]
-    fn extract_session_cwd_missing_payload_returns_none() {
-        let v = json!({"type": "turn_context"});
-        assert_eq!(extract_session_cwd(&v), None);
-    }
-
-    #[test]
-    fn extract_session_cwd_missing_cwd_returns_none() {
-        let v = json!({"type": "turn_context", "payload": {}});
-        assert_eq!(extract_session_cwd(&v), None);
-    }
-
-    #[test]
     fn extract_session_cwd_empty_string_returns_none() {
-        let v = json!({"type": "turn_context", "payload": {"cwd": ""}});
+        let v = json!({"type": "session_meta", "payload": {"cwd": ""}});
         assert_eq!(extract_session_cwd(&v), None);
     }
 ```
 
-> **Note:** `serde_json::json` is already imported in the test module's `use serde_json::json;` line (around line 740 in the file).
+> `serde_json::json` is already imported via `use serde_json::json;` in the test module.
 
 - [ ] **Step 2: Run the tests to verify they fail with a compile error**
 
 Run: `cargo test -p vimeflow --lib extract_session_cwd`
 
-> **Important — exit-code handling for all `Run:` commands in this plan:**
-> Do NOT pipe these commands through `| tail` or `| head`. In bash a piped
-> command's exit code is the exit code of the LAST stage; `tail`'s exit
-> code masks a failing `cargo test` / `npm test` / `npm run type-check`
-> and the executing agent will read the run as a pass. If output volume
-> is a concern, use `2>&1 | tee /tmp/<name>.log` or check
-> `${PIPESTATUS[0]}` explicitly. The expected-output blocks below show
-> what the relevant summary line looks like — verify it actually appears
-> in the unfiltered output before continuing.
-
 Expected: `error[E0425]: cannot find function 'extract_session_cwd'` (red — the helper doesn't exist yet).
 
 - [ ] **Step 3: Add the `extract_session_cwd` helper near the top of `crates/backend/src/agent/adapter/codex/transcript.rs`**
 
-Insert this function immediately above the existing `pub(super) fn validate_transcript_path` (around line 47). Place it after the `type InFlightToolCalls = HashMap<…>;` declaration (around line 45).
+Insert immediately above `pub(super) fn validate_transcript_path` (around line 47), after the `type InFlightToolCalls = HashMap<…>;` declaration:
 
 ```rust
-/// Pull session-level cwd off a Codex rollout JSONL line.
+/// Pull session-start cwd off a Codex rollout JSONL line.
 ///
-/// Returns `Some(cwd)` only for the two event types that actually carry
-/// session cwd in the rollout schema as of `cli_version 0.132.0`:
-///   - `session_meta.payload.cwd` — fires once at session start.
-///   - `turn_context.payload.cwd` — fires per turn.
-///
-/// Empty strings are filtered out at the extraction site, matching the
-/// Claude Code transcript watcher's guard. Function-call
-/// `arguments.workdir` is per-command scratch and deliberately not
-/// considered session cwd.
+/// Returns `Some(cwd)` ONLY for `session_meta` entries — the
+/// session-start anchor. `turn_context.cwd` is intentionally NOT
+/// matched here: empirically it just repeats `session_meta.cwd`
+/// every turn (no information value), and treating it as a live cwd
+/// would cause false reverts on reasoning-only turns after an
+/// `exec_command.workdir` transition has already moved us to a new
+/// directory. See spec section 1.
 fn extract_session_cwd(value: &Value) -> Option<&str> {
     let event_type = value.get("type").and_then(Value::as_str)?;
-    if event_type != "session_meta" && event_type != "turn_context" {
+    if event_type != "session_meta" {
         return None;
     }
     value
@@ -142,23 +111,21 @@ fn extract_session_cwd(value: &Value) -> Option<&str> {
 
 Run: `cargo test -p vimeflow --lib extract_session_cwd`
 
-Expected: `test result: ok. 7 passed; 0 failed`.
+Expected: `test result: ok. 4 passed; 0 failed`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add crates/backend/src/agent/adapter/codex/transcript.rs
 git commit -m "$(cat <<'EOF'
-test(agent): add extract_session_cwd helper for codex rollouts
+test(agent): add extract_session_cwd for codex session_meta cwd
 
-Pure extraction helper scoped to session_meta + turn_context — the only
-two event types in the Codex rollout JSONL schema (cli_version 0.132.0)
-that carry session-level cwd. Seven unit tests cover the happy paths,
-the type-gate rejections, and the missing-field / empty-string guards.
-
-The helper is dead-code until Task 2 wires it into process_line; the
-function is not marked #[allow(dead_code)] because the unit tests count
-as uses for the dead-code lint.
+v2 spec implementation, Task 1. Pure extraction helper scoped to
+session_meta — the session-start anchor in Codex's rollout JSONL
+schema (cli_version 0.132.0). Four unit tests cover the happy path,
+the defensive turn_context-rejection (turn_context.cwd is pinned to
+session-start and intentionally NOT a cwd source per v2 spec
+section 1), other-event-type rejection, and empty-string guard.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -167,21 +134,183 @@ EOF
 
 ---
 
-## Task 2: Wire emission into `tail_loop` + `process_line`, with transition tests + e2e
+## Task 2: Add `extract_exec_workdir` helper (the mid-session signal)
+
+**Files:**
+
+- Modify: `crates/backend/src/agent/adapter/codex/transcript.rs` — add helper immediately below `extract_session_cwd`, add 6 unit tests in the test module.
+
+- [ ] **Step 1: Add 6 unit tests at the bottom of the test module, after the Task 1 tests.**
+
+```rust
+    // ---- extract_exec_workdir unit tests (the mid-session signal) ----
+
+    #[test]
+    fn extract_exec_workdir_happy_path() {
+        let v = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "c1",
+                "arguments": "{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"
+            }
+        });
+        assert_eq!(extract_exec_workdir(&v).as_deref(), Some("/workspace/B"));
+    }
+
+    #[test]
+    fn extract_exec_workdir_other_event_type_returns_none() {
+        // event_msg carrying a function_call-shaped payload should still
+        // be rejected — the outer event type gate is response_item.
+        let v = json!({
+            "type": "event_msg",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "arguments": "{\"workdir\":\"/x\"}"
+            }
+        });
+        assert_eq!(extract_exec_workdir(&v), None);
+    }
+
+    #[test]
+    fn extract_exec_workdir_non_function_call_returns_none() {
+        let v = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call",
+                "name": "exec_command",
+                "input": "{\"workdir\":\"/x\"}"
+            }
+        });
+        assert_eq!(extract_exec_workdir(&v), None);
+    }
+
+    #[test]
+    fn extract_exec_workdir_non_exec_command_returns_none() {
+        let v = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "read_file",
+                "arguments": "{\"path\":\"/x\"}"
+            }
+        });
+        assert_eq!(extract_exec_workdir(&v), None);
+    }
+
+    #[test]
+    fn extract_exec_workdir_malformed_arguments_json_returns_none() {
+        let v = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "arguments": "{not json"
+            }
+        });
+        assert_eq!(extract_exec_workdir(&v), None);
+    }
+
+    #[test]
+    fn extract_exec_workdir_missing_workdir_field_returns_none() {
+        let v = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "arguments": "{\"cmd\":\"ls\"}"
+            }
+        });
+        assert_eq!(extract_exec_workdir(&v), None);
+    }
+```
+
+- [ ] **Step 2: Run the tests to verify they fail with a compile error**
+
+Run: `cargo test -p vimeflow --lib extract_exec_workdir`
+
+Expected: `error[E0425]: cannot find function 'extract_exec_workdir'`.
+
+- [ ] **Step 3: Add the `extract_exec_workdir` helper immediately below `extract_session_cwd`**
+
+```rust
+/// Pull the mid-session workdir off a Codex `exec_command` function-call
+/// rollout entry. This is codex's de facto session cwd after the start
+/// (verified empirically — `turn_context.cwd` does not update on
+/// codex-driven cwd changes; `exec_command.arguments.workdir` does).
+///
+/// `arguments` is a JSON-encoded string per Codex's rollout schema —
+/// it must be parsed before reading `workdir`. Malformed JSON, missing
+/// fields, or empty strings all short-circuit to `None`.
+fn extract_exec_workdir(value: &Value) -> Option<String> {
+    if value.get("type").and_then(Value::as_str)? != "response_item" {
+        return None;
+    }
+    let payload = value.get("payload")?;
+    if payload.get("type").and_then(Value::as_str)? != "function_call" {
+        return None;
+    }
+    if payload.get("name").and_then(Value::as_str)? != "exec_command" {
+        return None;
+    }
+    let raw = payload.get("arguments").and_then(Value::as_str)?;
+    let args: Value = serde_json::from_str(raw).ok()?;
+    args.get("workdir")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `cargo test -p vimeflow --lib extract_exec_workdir`
+
+Expected: `test result: ok. 6 passed; 0 failed`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add crates/backend/src/agent/adapter/codex/transcript.rs
+git commit -m "$(cat <<'EOF'
+test(agent): add extract_exec_workdir for codex mid-session cwd
+
+v2 spec implementation, Task 2. Pulls the mid-session workdir off
+exec_command function-call rollout entries. The arguments field is a
+JSON-encoded string per Codex's schema; the helper parses it and
+extracts the workdir field, returning None on malformed JSON, missing
+fields, wrong tool names, or wrong event types.
+
+Six unit tests cover happy path, wrong-event-type rejection, wrong-
+function-call-type rejection, wrong-tool-name rejection, malformed-
+JSON rejection, and missing-workdir guard.
+
+Helper is dead-code until Task 3 wires it into process_line via the
+dispatcher.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+## Task 3: Wire `extract_codex_cwd` dispatcher + emission, with transition tests + e2e
 
 **Files:**
 
 - Modify: `crates/backend/src/agent/adapter/codex/transcript.rs`
   - Add 2 new `use` lines at the top (around line 21–23).
+  - Add `extract_codex_cwd` dispatcher immediately below `extract_exec_workdir`.
   - Add `let mut last_cwd: Option<String> = None;` in `tail_loop` (around line 141).
   - Extend `process_line` signature with `last_cwd: &mut Option<String>` (around line 195).
-  - Add cwd extraction + emission in `process_line` body (after the `match serde_json::from_str` early-return, before the existing `match value.get("type")...`).
-  - Update both `process_line(...)` call sites in `tail_loop` (around lines 159 and 177) to pass `&mut last_cwd`.
-  - Add 3 transition-semantics unit tests + 1 e2e test in the existing `mod tests` block.
+  - Add cwd extraction + emission in `process_line` body (after the `match serde_json::from_str` early-return, before the existing `match value.get("type")…`).
+  - Update both `process_line(...)` call sites in `tail_loop` (around lines 159 and 177).
+  - Add 4 transition-semantics tests + 1 e2e test in the test module.
 
-### Step 1: Write the failing tests
-
-- [ ] **Step 1: Add 3 transition tests + 1 e2e test at the bottom of `mod tests` in the same file, just after the 7 helper tests from Task 1.**
+- [ ] **Step 1: Add 4 transition tests + 1 e2e test at the bottom of the test module, after the Task 2 tests.**
 
 ```rust
     // ---- process_line transition-semantics tests ----
@@ -222,7 +351,7 @@ EOF
     }
 
     #[test]
-    fn process_line_repeated_cwd_suppresses() {
+    fn process_line_repeated_cwd_across_sources_suppresses() {
         let sink = Arc::new(FakeEventSink::new());
         let events: Arc<dyn EventSink> = sink.clone();
         let mut emitter = TestRunEmitter::new(events.clone());
@@ -232,8 +361,7 @@ EOF
 
         let lines = [
             r#"{"timestamp":"2026-05-22T10:00:00Z","type":"session_meta","payload":{"id":"sid","cwd":"/workspace/A"}}"#,
-            r#"{"timestamp":"2026-05-22T10:00:01Z","type":"turn_context","payload":{"turn_id":"t1","cwd":"/workspace/A"}}"#,
-            r#"{"timestamp":"2026-05-22T10:00:02Z","type":"turn_context","payload":{"turn_id":"t2","cwd":"/workspace/A"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/A\"}"}}"#,
         ];
         for line in lines {
             process_line(
@@ -258,7 +386,7 @@ EOF
     }
 
     #[test]
-    fn process_line_cwd_transition_emits() {
+    fn process_line_cwd_transition_across_sources_emits() {
         let sink = Arc::new(FakeEventSink::new());
         let events: Arc<dyn EventSink> = sink.clone();
         let mut emitter = TestRunEmitter::new(events.clone());
@@ -268,8 +396,8 @@ EOF
 
         let lines = [
             r#"{"timestamp":"2026-05-22T10:00:00Z","type":"session_meta","payload":{"id":"sid","cwd":"/workspace/A"}}"#,
-            r#"{"timestamp":"2026-05-22T10:00:01Z","type":"turn_context","payload":{"turn_id":"t1","cwd":"/workspace/B"}}"#,
-            r#"{"timestamp":"2026-05-22T10:00:02Z","type":"turn_context","payload":{"turn_id":"t2","cwd":"/workspace/A"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:02Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c2","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/A\"}"}}"#,
         ];
         for line in lines {
             process_line(
@@ -293,12 +421,61 @@ EOF
         assert_eq!(cwd_events[0].1["cwd"], "/workspace/A");
         assert_eq!(cwd_events[1].1["cwd"], "/workspace/B");
         assert_eq!(cwd_events[2].1["cwd"], "/workspace/A");
-        for (_name, payload) in &cwd_events {
-            assert_eq!(payload["sessionId"], "sid-1");
-        }
     }
 
-    // ---- end-to-end watcher test ----
+    /// v2-critical regression guard. Codex review on the v2 spec (HIGH)
+    /// flagged that including turn_context.cwd as a cwd source would
+    /// cause a false revert: after session_meta(A) → exec_command(B),
+    /// the next turn's turn_context(A) (pinned to session-start) would
+    /// emit agent-cwd=A and bounce the pane chip back. This test locks
+    /// in the v2 design decision to skip turn_context entirely.
+    /// If anyone re-adds turn_context to extract_session_cwd, this
+    /// test fires.
+    #[test]
+    fn process_line_turn_context_after_exec_command_does_not_revert() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let lines = [
+            r#"{"timestamp":"2026-05-22T10:00:00Z","type":"session_meta","payload":{"id":"sid","cwd":"/workspace/A"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:02Z","type":"turn_context","payload":{"turn_id":"t1","cwd":"/workspace/A"}}"#,
+        ];
+        for line in lines {
+            process_line(
+                line,
+                "sid-1",
+                None,
+                &events,
+                &mut emitter,
+                &mut in_flight,
+                &mut num_turns,
+                &mut last_cwd,
+            );
+        }
+
+        let cwd_events: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-cwd")
+            .collect();
+        assert_eq!(
+            cwd_events.len(),
+            2,
+            "turn_context.cwd MUST NOT emit a cwd event \
+             (would cause false revert to session-start after exec_command transition)"
+        );
+        assert_eq!(cwd_events[0].1["cwd"], "/workspace/A");
+        assert_eq!(cwd_events[1].1["cwd"], "/workspace/B");
+        // Crucially, last_cwd should still be B — the worktree we're in.
+        assert_eq!(last_cwd.as_deref(), Some("/workspace/B"));
+    }
+
+    // ---- end-to-end watcher test (with v2 regression guard inline) ----
 
     #[test]
     fn start_tailing_emits_cwd_transitions_in_order() {
@@ -307,46 +484,24 @@ EOF
         let tmp = tempfile::tempdir().expect("tempdir");
         let transcript_path = tmp.path().join("rollout.jsonl");
 
-        // 6 lines, 3 expected emissions:
-        //   1. session_meta cwd=/workspace/A   (emit)
-        //   2. turn_context cwd=/workspace/A   (suppressed)
-        //   3. turn_context cwd=/workspace/B   (emit)
-        //   4. event_msg noise                 (no cwd emit)
-        //   5. response_item noise             (no cwd emit)
-        //   6. turn_context cwd=/workspace/A   (emit)
+        // 7 lines, 3 expected emissions:
+        //   1. session_meta cwd=/workspace/A             (emit)
+        //   2. turn_context cwd=/workspace/A             (no emit — extractor rejects turn_context)
+        //   3. exec_command workdir=/workspace/B         (emit — transition)
+        //   4. event_msg task_started                    (no emit)
+        //   5. exec_command workdir=/workspace/B         (suppressed — same as last_cwd)
+        //   6. turn_context cwd=/workspace/A             (no emit — REGRESSION GUARD: must not revert)
+        //   7. exec_command workdir=/workspace/A         (emit — transition back)
         write_rollout(
             &transcript_path,
             &[
-                json!({
-                    "timestamp": "2026-05-22T10:00:00Z",
-                    "type": "session_meta",
-                    "payload": { "id": "sid-cwd", "cwd": "/workspace/A" }
-                }),
-                json!({
-                    "timestamp": "2026-05-22T10:00:01Z",
-                    "type": "turn_context",
-                    "payload": { "turn_id": "t1", "cwd": "/workspace/A" }
-                }),
-                json!({
-                    "timestamp": "2026-05-22T10:00:02Z",
-                    "type": "turn_context",
-                    "payload": { "turn_id": "t2", "cwd": "/workspace/B" }
-                }),
-                json!({
-                    "timestamp": "2026-05-22T10:00:03Z",
-                    "type": "event_msg",
-                    "payload": { "type": "task_started" }
-                }),
-                json!({
-                    "timestamp": "2026-05-22T10:00:04Z",
-                    "type": "response_item",
-                    "payload": { "type": "function_call", "call_id": "c1", "name": "noop", "arguments": "{}" }
-                }),
-                json!({
-                    "timestamp": "2026-05-22T10:00:05Z",
-                    "type": "turn_context",
-                    "payload": { "turn_id": "t3", "cwd": "/workspace/A" }
-                }),
+                json!({"timestamp":"2026-05-22T10:00:00Z","type":"session_meta","payload":{"id":"sid","cwd":"/workspace/A"}}),
+                json!({"timestamp":"2026-05-22T10:00:01Z","type":"turn_context","payload":{"turn_id":"t1","cwd":"/workspace/A"}}),
+                json!({"timestamp":"2026-05-22T10:00:02Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"}}),
+                json!({"timestamp":"2026-05-22T10:00:03Z","type":"event_msg","payload":{"type":"task_started"}}),
+                json!({"timestamp":"2026-05-22T10:00:04Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c2","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"}}),
+                json!({"timestamp":"2026-05-22T10:00:04.5Z","type":"turn_context","payload":{"turn_id":"t2","cwd":"/workspace/A"}}),
+                json!({"timestamp":"2026-05-22T10:00:05Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c3","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/A\"}"}}),
             ],
         );
 
@@ -379,13 +534,11 @@ EOF
     }
 ```
 
-> **Note:** `write_rollout`, `FakeEventSink`, `Arc`, `Duration`, `json!`, `Value`, and `tempfile` are all already imported / in-scope in this `mod tests` block — verify the `use` lines around line 738–740 include `use crate::runtime::FakeEventSink;` and `use serde_json::json;`. If any are missing, add them.
-
 - [ ] **Step 2: Run the new tests to verify they fail with a compile error**
 
 Run: `cargo test -p vimeflow --lib process_line_first_cwd_always_emits`
 
-Expected: compile error — `process_line` only takes 7 args (no `last_cwd`), `extract_session_cwd` is dead-code, no emission code in `process_line`. **Red.**
+Expected: compile error — `process_line` only takes 7 args, `extract_codex_cwd` doesn't exist, no emission code. **Red.**
 
 ### Step 2: Wire the implementation
 
@@ -394,54 +547,55 @@ Expected: compile error — `process_line` only takes 7 args (no `last_cwd`), `e
 Find the existing import block (around lines 19–23):
 
 ```rust
-use crate::agent::adapter::base::TranscriptHandle;
-use crate::agent::adapter::claude_code::test_runners::build::{maybe_build_snapshot, BuildArgs};
-use crate::agent::adapter::claude_code::test_runners::emitter::TestRunEmitter;
-use crate::agent::adapter::claude_code::test_runners::matcher::{match_command, MatchedCommand};
-use crate::agent::adapter::claude_code::test_runners::test_file_patterns::is_test_file;
-use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
-use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
-use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{emit_agent_tool_call, emit_agent_turn};
 use crate::agent::types::{AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
-use crate::runtime::EventSink;
 ```
 
-Modify the last two `use crate::agent::*` lines to add `emit_agent_cwd` and `AgentCwdEvent`:
+Modify to add `emit_agent_cwd` and `AgentCwdEvent`:
 
 ```rust
 use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn};
 use crate::agent::types::{AgentCwdEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
 ```
 
-- [ ] **Step 4: Add `last_cwd` state in `tail_loop`**
-
-Find `fn tail_loop(…)` (around line 130). At the top of the function body, locate this block (around lines 138–141):
+- [ ] **Step 4: Add the `extract_codex_cwd` dispatcher immediately below `extract_exec_workdir`**
 
 ```rust
-    let mut reader = BufReader::new(file);
-    let mut line_buf = String::new();
-    let mut partial_line = String::new();
+/// Dispatcher returning the observed cwd from whichever source carries
+/// it. Tries the session_meta path first (cheap, no JSON re-parse),
+/// falls back to the exec_command workdir path. Returns
+/// `Option<String>` because the workdir path must return owned strings
+/// (parsed JSON allocates).
+fn extract_codex_cwd(value: &Value) -> Option<String> {
+    if let Some(cwd) = extract_session_cwd(value) {
+        return Some(cwd.to_string());
+    }
+    extract_exec_workdir(value)
+}
+```
+
+- [ ] **Step 5: Add `last_cwd` state in `tail_loop`**
+
+Find `fn tail_loop(…)` (around line 130). Locate this block:
+
+```rust
     let mut in_flight: InFlightToolCalls = HashMap::new();
     let mut num_turns = 0_u32;
     let mut emitter = TestRunEmitter::new(events.clone());
 ```
 
-Add `let mut last_cwd: Option<String> = None;` immediately after `let mut num_turns = 0_u32;`:
+Add `let mut last_cwd: Option<String> = None;` after `num_turns`:
 
 ```rust
-    let mut reader = BufReader::new(file);
-    let mut line_buf = String::new();
-    let mut partial_line = String::new();
     let mut in_flight: InFlightToolCalls = HashMap::new();
     let mut num_turns = 0_u32;
     let mut last_cwd: Option<String> = None;
     let mut emitter = TestRunEmitter::new(events.clone());
 ```
 
-- [ ] **Step 5: Update the partial-line branch's `process_line` call (around lines 158–168)**
+- [ ] **Step 6: Update the partial-line branch's `process_line` call**
 
-Find:
+Find (around lines 158–168):
 
 ```rust
                 if !partial_line.is_empty() {
@@ -460,7 +614,7 @@ Find:
                 }
 ```
 
-Add `&mut last_cwd,` as the final argument:
+Add `&mut last_cwd,`:
 
 ```rust
                 if !partial_line.is_empty() {
@@ -480,9 +634,9 @@ Add `&mut last_cwd,` as the final argument:
                 }
 ```
 
-- [ ] **Step 6: Update the single-line branch's `process_line` call (around lines 176–185)**
+- [ ] **Step 7: Update the single-line branch's `process_line` call**
 
-Find:
+Find (around lines 176–185):
 
 ```rust
                 process_line(
@@ -511,7 +665,7 @@ Add `&mut last_cwd,`:
                 );
 ```
 
-- [ ] **Step 7: Extend `process_line` signature (around line 195) and add emission body**
+- [ ] **Step 8: Extend `process_line` signature (around line 195) and add emission body**
 
 Find:
 
@@ -552,20 +706,22 @@ fn process_line(
         Err(_) => return,
     };
 
-    // Emit agent-cwd on transitions only. Codex's rollout schema carries
-    // session cwd on `session_meta` (once) + `turn_context` (per turn);
-    // mid-turn cwd changes are not visible until the next turn boundary
-    // (see spec section 3.5).
-    if let Some(observed) = extract_session_cwd(&value) {
-        if last_cwd.as_deref().map_or(true, |seen| seen != observed) {
+    // Emit agent-cwd on transitions only. Codex's two cwd sources are
+    // session_meta.payload.cwd (session start) and
+    // response_item.payload.arguments.workdir for exec_command function
+    // calls (mid-session). turn_context.cwd is intentionally NOT a
+    // source — see spec section 1 and the regression test
+    // `process_line_turn_context_after_exec_command_does_not_revert`.
+    if let Some(observed) = extract_codex_cwd(&value) {
+        if last_cwd.as_deref().map_or(true, |seen| seen != observed.as_str()) {
             let event = AgentCwdEvent {
                 session_id: session_id.to_string(),
-                cwd: observed.to_string(),
+                cwd: observed.clone(),
             };
             if let Err(e) = emit_agent_cwd(events.as_ref(), &event) {
                 log::warn!("Failed to emit agent-cwd event: {}", e);
             }
-            *last_cwd = Some(observed.to_string());
+            *last_cwd = Some(observed);
         }
     }
 
@@ -573,19 +729,11 @@ fn process_line(
         Some("response_item") => {
 ```
 
-- [ ] **Step 8: Run all four new tests to verify they pass**
+- [ ] **Step 9: Run the new tests to verify they pass**
 
 Run: `cargo test -p vimeflow --lib codex::transcript`
 
-Expected: all 11 new tests in `codex::transcript::tests` pass (7 helper + 3 transition + 1 e2e), plus the existing tests in the module still pass. **Green.**
-
-If `start_tailing_emits_cwd_transitions_in_order` is flaky (occasional `assert_eq!(cwd_events.len(), 3)` fails because the tailer hasn't flushed yet), bump the first `std::thread::sleep(Duration::from_millis(750))` to `1000`. The existing `start_tailing_replays_tool_calls_turns_and_test_runs` uses 750ms successfully, so 750 should suffice.
-
-- [ ] **Step 9: Run the full codex transcript test module to catch regressions**
-
-Run: `cargo test -p vimeflow --lib codex::transcript::tests`
-
-Expected: `test result: ok. <N> passed; 0 failed`, where N is the pre-PR count plus 11.
+Expected: all 15 new tests (4 session_cwd + 6 exec_workdir + 4 transition + 1 e2e) pass, plus the existing tests in the module still pass.
 
 - [ ] **Step 10: Commit**
 
@@ -594,21 +742,25 @@ git add crates/backend/src/agent/adapter/codex/transcript.rs
 git commit -m "$(cat <<'EOF'
 feat(agent): emit agent-cwd from codex transcript watcher
 
-Wire extract_session_cwd into process_line and tail_loop. Track
-last_cwd across the read loop; emit AgentCwdEvent on transitions
-only, matching the Claude Code transcript watcher's contract (PR #239).
+v2 spec implementation, Task 3. Add extract_codex_cwd dispatcher that
+tries session_meta first, falls back to exec_command workdir. Thread
+last_cwd through tail_loop + process_line; emit AgentCwdEvent on
+transitions only, matching the Claude Code transcript watcher contract
+(PR #239).
 
-Per spec, the temporal granularity is per-turn (session_meta + turn_context)
-rather than per-line — Codex does not stamp every JSONL entry with cwd.
-Mid-turn worktree switches will lag by up to one turn until the next
-turn_context line is written. The frontend `agent-cwd` listener is
-agent-type-agnostic, so Codex panes pick up cwd tracking automatically.
+Critical v2 design point: turn_context.cwd is intentionally NOT a
+cwd source. It's pinned to session start in practice, and treating
+it as live would cause false reverts after exec_command.workdir
+transitions (codex review on the v2 spec caught this). Regression
+tests in process_line_turn_context_after_exec_command_does_not_revert
+and the e2e fixture lock in the v2 behavior.
 
-Tests:
-- 3 process_line transition-semantics tests (first-emit, dedup,
-  back-and-forth).
-- 1 end-to-end start_tailing test driving 6 lines through a
-  FakeEventSink and asserting exactly 3 cwd events in order.
+Tests added:
+- 4 process_line transition tests (first-emit, dedup across sources,
+  back-and-forth, turn_context-no-revert regression guard).
+- 1 end-to-end start_tailing test driving 7 lines through a
+  FakeEventSink and asserting exactly 3 cwd events in correct order
+  with no false revert.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -617,14 +769,14 @@ EOF
 
 ---
 
-## Task 3: Update `AgentCwdEvent` doc comment + regenerate ts-rs binding
+## Task 4: Update `AgentCwdEvent` doc comment + regenerate ts-rs binding
 
 **Files:**
 
 - Modify: `crates/backend/src/agent/types.rs` — doc comment block at lines 157–164.
 - Regenerate: `src/bindings/AgentCwdEvent.ts` — via `npm run generate:bindings`.
 
-- [ ] **Step 1: Replace the doc comment above `pub struct AgentCwdEvent` in `crates/backend/src/agent/types.rs`**
+- [ ] **Step 1: Replace the doc comment above `pub struct AgentCwdEvent`**
 
 Find this block (lines 157–164):
 
@@ -648,31 +800,34 @@ Replace with:
 /// JSONL:
 /// - **Claude Code** writes a top-level `cwd` field on every transcript
 ///   entry; transitions fire as soon as the next line is parsed.
-/// - **Codex** writes `payload.cwd` only on `session_meta` (once, at
-///   session start) and `turn_context` (per turn) entries; transitions
-///   therefore fire at session start and at each turn boundary, not
-///   mid-turn.
+/// - **Codex** writes cwd in two places the watcher reads:
+///   `session_meta.payload.cwd` (once, at session start) and
+///   `response_item.payload.arguments.workdir` for `exec_command`
+///   function calls (the mid-session signal — fires whenever codex
+///   runs a tool command in a new directory). Codex also writes
+///   `turn_context.payload.cwd` on every turn, but the watcher
+///   intentionally ignores that field because it's pinned to the
+///   session-start value and would cause false reverts after a
+///   mid-session `exec_command.workdir` transition.
 ///
 /// In both cases this is the authoritative signal for "where the agent
 /// currently is" — it picks up tool-call-driven moves like Claude's
-/// `EnterWorktree` that intentionally do NOT mutate the interactive
-/// shell's `$PWD`, so neither OSC 7 nor PTY text patterns can catch
-/// them.
+/// `EnterWorktree` and codex's "switch to worktree" navigation that
+/// intentionally do NOT mutate the interactive shell's `$PWD`, so
+/// neither OSC 7 nor PTY text patterns can catch them.
 ```
 
 - [ ] **Step 2: Regenerate the ts-rs binding**
 
 Run: `npm run generate:bindings`
 
-Expected output ends with prettier formatting summary (e.g. `src/bindings/AgentCwdEvent.ts ...ms`). No errors.
+Expected: prettier formatting summary; no errors.
 
 - [ ] **Step 3: Verify the regenerated binding picked up the new doc comment**
 
 Run: `git diff src/bindings/AgentCwdEvent.ts`
 
-Expected: the `/**…*/` JSDoc block at the top of the file changed from the "every transcript JSONL entry / Codex follow-up" wording to the new per-adapter shape description. The TypeScript type body (`export type AgentCwdEvent = { sessionId: string; cwd: string }`) is unchanged.
-
-If `git diff` shows extra changes outside the JSDoc, something else regenerated — investigate before continuing.
+Expected: the `/**…*/` JSDoc block at the top of the file changed from the "every transcript JSONL entry / Codex follow-up" wording to the new per-adapter shape description. The type body unchanged.
 
 - [ ] **Step 4: Confirm formatters pass**
 
@@ -685,17 +840,20 @@ Expected: both clean.
 ```bash
 git add crates/backend/src/agent/types.rs src/bindings/AgentCwdEvent.ts
 git commit -m "$(cat <<'EOF'
-docs(agent): update AgentCwdEvent doc comment for codex shape
+docs(agent): update AgentCwdEvent doc comment for v2 codex shape
 
-The doc previously claimed both adapters write cwd on "every transcript
-JSONL entry (Codex follow-up)". This PR is that follow-up, and the
-"every entry" claim is wrong for Codex — its rollout schema carries
-session cwd only on session_meta + turn_context entries. Updated doc
-describes both adapters' real field shapes (Claude per-line, Codex
-per-turn).
+v2 spec implementation, Task 4. Update the AgentCwdEvent doc comment
+to describe the two-source Codex cwd model accurately:
 
-The ts-rs binding at src/bindings/AgentCwdEvent.ts is regenerated to
-mirror the new doc comment.
+  - session_meta.payload.cwd (session start)
+  - exec_command.arguments.workdir (mid-session)
+
+Explicitly call out that turn_context.payload.cwd is intentionally
+NOT a source — it's pinned to session-start in practice and including
+it would cause false reverts.
+
+The ts-rs binding at src/bindings/AgentCwdEvent.ts is regenerated
+via npm run generate:bindings to mirror the new doc comment.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -704,7 +862,7 @@ EOF
 
 ---
 
-## Task 4: Update frontend JSDoc comments
+## Task 5: Update frontend JSDoc comments
 
 **Files:**
 
@@ -737,14 +895,15 @@ Replace the comment (keep the `cwd: string | null` line unchanged):
  * structured cwd channel in its transcript JSONL:
  * - **Claude Code** writes a top-level `cwd` on every entry; transitions
  *   fire as soon as the next line is parsed.
- * - **Codex** writes `payload.cwd` only on `session_meta` (once) and
- *   `turn_context` (per turn) entries; transitions fire at session start
- *   and at each turn boundary, not mid-turn.
+ * - **Codex** writes cwd in two read paths: `session_meta.payload.cwd`
+ *   (session start) and `response_item.payload.arguments.workdir` for
+ *   `exec_command` function calls (mid-session). `turn_context.cwd`
+ *   is intentionally NOT a source — pinned to session-start and would
+ *   cause false reverts.
  *
  * `null` before the first transition or for agents that don't expose a
  * transcript. The workspace bridge mirrors this into `pane.cwd` so the
- * Header chip + git branch follow tool-call-driven cwd changes (e.g.
- * Claude's built-in `EnterWorktree`).
+ * Header chip + git branch follow tool-call-driven cwd changes.
  */
 cwd: string | null
 ```
@@ -770,13 +929,16 @@ Replace with:
 // an `agent-cwd` event on transitions; the sources differ:
 //  - Claude Code stamps `cwd` on every transcript JSONL entry, so
 //    transitions surface as soon as the next line is parsed.
-//  - Codex carries `payload.cwd` only on `session_meta` + `turn_context`
-//    entries, so transitions surface at turn boundaries (per-turn,
-//    not mid-turn).
-// Tool-call-driven moves like Claude's built-in `EnterWorktree` do NOT
-// change the interactive shell's $PWD, so neither OSC 7 nor PTY text
-// patterns catch them — this bridge is what makes the worktree chip +
-// git branch follow agent-driven worktree switches.
+//  - Codex stamps cwd in session_meta.payload.cwd (session start) and
+//    response_item.payload.arguments.workdir for exec_command function
+//    calls (mid-session). turn_context.cwd is intentionally ignored
+//    by the backend — pinned to session-start and would cause false
+//    reverts.
+// Tool-call-driven moves like Claude's built-in `EnterWorktree` and
+// codex's "switch to worktree" navigation do NOT change the interactive
+// shell's $PWD, so neither OSC 7 nor PTY text patterns catch them —
+// this bridge is what makes the worktree chip + git branch follow
+// agent-driven worktree switches.
 ```
 
 - [ ] **Step 3: Confirm lints + types + tests pass**
@@ -790,12 +952,12 @@ Expected: all four clean.
 ```bash
 git add src/features/agent-status/types/index.ts src/features/workspace/WorkspaceView.tsx
 git commit -m "$(cat <<'EOF'
-docs(workspace): clarify agent-cwd source per adapter
+docs(workspace): clarify v2 agent-cwd source per adapter
 
-Mirrors the AgentCwdEvent doc comment update on the Rust side: drop
-the "Codex follow-up" / "every transcript JSONL entry" wording and
-describe each adapter's real cwd source (Claude per-line, Codex
-per-turn via session_meta + turn_context).
+v2 spec implementation, Task 5. Mirror the AgentCwdEvent doc comment
+update on the frontend side: drop the "Codex follow-up" / "every
+transcript JSONL entry" wording and describe Codex's two-source model
+explicitly (session_meta + exec_command.workdir, NOT turn_context).
 
 No behavior change.
 
@@ -806,7 +968,7 @@ EOF
 
 ---
 
-## Task 5: Final verification
+## Task 6: Final verification
 
 **Files:** none modified.
 
@@ -814,7 +976,7 @@ EOF
 
 Run: `cargo test -p vimeflow --lib`
 
-Expected: all tests pass. Note the test count — should be the pre-PR count plus 11 (the new tests added in Tasks 1 + 2).
+Expected: all tests pass. New tests added in Tasks 1–3 = 15.
 
 - [ ] **Step 2: Run the full frontend test suite**
 
@@ -832,43 +994,36 @@ Expected: all three clean.
 
 Run: `git log --oneline main..HEAD`
 
-Expected: four behavior/doc commits from Tasks 1–4 layered on top of
-the four `docs/` commits already produced by the `/lifeline:planner`
-phase (1 plan + 3 spec). Reverse-chronological order:
+Expected: five behavior/doc commits from Tasks 1–5 layered on top of
+the v2 planner artifacts:
 
 ```
-<sha> docs(workspace): clarify agent-cwd source per adapter            ← Task 4
-<sha> docs(agent): update AgentCwdEvent doc comment for codex shape    ← Task 3
-<sha> feat(agent): emit agent-cwd from codex transcript watcher        ← Task 2
-<sha> test(agent): add extract_session_cwd helper for codex rollouts   ← Task 1
-<sha> docs(plan): codex-transcript-cwd-parser                          ← planner
-<sha> docs(spec): mark spec codex-reviewed                             ← planner
-<sha> docs(spec): apply codex feedback                                 ← planner
-<sha> docs(spec): codex-transcript-cwd-parser                          ← planner
+<sha> docs(workspace): clarify v2 agent-cwd source per adapter            ← Task 5
+<sha> docs(agent): update AgentCwdEvent doc comment for v2 codex shape   ← Task 4
+<sha> feat(agent): emit agent-cwd from codex transcript watcher           ← Task 3
+<sha> test(agent): add extract_exec_workdir for codex mid-session cwd     ← Task 2
+<sha> test(agent): add extract_session_cwd for codex session_meta cwd     ← Task 1
+<sha> docs(plan): mark v2 plan codex-reviewed                             ← planner
+<sha> docs(plan): apply codex feedback (v2)                               ← planner (if any)
+<sha> docs(plan): redesign for v2 spec                                    ← planner
+<sha> docs(spec): mark v2 spec codex-reviewed
+<sha> docs(spec): apply codex feedback (drop turn_context as cwd source)
+<sha> docs(spec): redesign for correct codex schema (v2)
+<sha> docs(plan): mark plan codex-reviewed                                ← v1 (still in history)
+<sha> docs(plan): apply codex feedback                                    ← v1
+<sha> docs(plan): codex-transcript-cwd-parser                             ← v1
+<sha> docs(spec): mark spec codex-reviewed                                ← v1
+<sha> docs(spec): apply codex feedback                                    ← v1
+<sha> docs(spec): codex-transcript-cwd-parser                             ← v1
 ```
 
-Eight commits total. If you see fewer than eight, a task commit was
-skipped or squashed — investigate before pushing.
+(The v1 planner commits stay in history; codex's v1 implementation commits were `git reset`-ed away.)
 
 - [ ] **Step 5: Note the new file size in `codex/transcript.rs`** (informational only — does NOT block)
 
 Run: `wc -l crates/backend/src/agent/adapter/codex/transcript.rs`
 
-The file was 953 lines pre-PR and grows by roughly:
-
-- ~33 lines of behavior code (helper + signature + emission + state).
-- ~225 lines of tests (7 helper + 3 transition + 1 e2e + a tiny
-  `empty_in_flight` helper).
-
-Expected post-PR size: roughly **1180–1230 lines**. The exact number
-is brittle (formatter passes, comment density, etc.) — this step is
-informational. If the count is wildly outside that range (e.g.
-< 1100 or > 1300), check whether tests were dropped or duplicated
-before pushing. Otherwise, accept the size and move on.
-
-The file is now further over the rules' 800-line ceiling. This is
-acknowledged debt per spec section 2 "Out of scope" — a separate
-refactor PR splits it. **Do NOT split in this PR.**
+The file was 953 lines pre-PR and grows by roughly 50 behavior + 280 test lines = ~1280–1330 lines. The file is now further over the rules' 800-line ceiling. This is acknowledged debt per spec section 2 — a separate refactor PR splits it.
 
 - [ ] **Step 6: (No commit — verification only.)**
 
@@ -878,36 +1033,37 @@ If any step above failed, fix the underlying issue and re-run. Do not push until
 
 ## Self-Review Checklist
 
-Run this after the plan is written (already done during plan authoring — recorded here for the implementer):
+After writing the plan, the implementer should verify:
 
 **Spec coverage:**
 
-- ✅ Section 2 "In scope: codex/transcript.rs extraction + emission" → Tasks 1 + 2
-- ✅ Section 2 "In scope: AgentCwdEvent doc comment" → Task 3
-- ✅ Section 2 "In scope: ts-rs binding regenerated" → Task 3 Step 2
-- ✅ Section 2 "In scope: frontend JSDoc comments" → Task 4
-- ✅ Section 5.2 "7 extract_session_cwd unit tests" → Task 1 Step 1
-- ✅ Section 5.3 "3 transition tests" → Task 2 Step 1
-- ✅ Section 5.4 "1 e2e watcher test" → Task 2 Step 1 (final test block)
-- ✅ Section 5.5 "ts-rs regeneration verification via npm run generate:bindings" → Task 3 Step 2
-- ✅ Section 5.6 commands match what tasks invoke
+- ✅ Section 2 "In scope: codex/transcript.rs extraction + emission" → Tasks 1, 2, 3
+- ✅ Section 2 "In scope: AgentCwdEvent doc comment" → Task 4
+- ✅ Section 2 "In scope: ts-rs binding regenerated" → Task 4 Step 2
+- ✅ Section 2 "In scope: frontend JSDoc comments" → Task 5
+- ✅ Section 5.2 "4 extract_session_cwd unit tests (incl. turn_context-returns-None)" → Task 1
+- ✅ Section 5.3 "6 extract_exec_workdir unit tests" → Task 2
+- ✅ Section 5.4 "4 transition tests (incl. v2 regression guard)" → Task 3
+- ✅ Section 5.5 "1 e2e watcher test (with regression guard inline)" → Task 3
+- ✅ Section 5.6 "ts-rs regeneration via npm run generate:bindings" → Task 4 Step 2
 
-**Placeholder scan:** none — every code block is literal Rust / TS to paste; every command is exact.
+**v2 design decisions honored:**
 
-**Type consistency:** `extract_session_cwd` signature `(&Value) -> Option<&str>` matches between Task 1 (helper) and Task 2 (call site). `last_cwd: &mut Option<String>` matches between Task 2 Step 5/6/7 (signature) and tests (Task 2 Step 1).
+- ✅ `extract_session_cwd` matches `session_meta` ONLY (Task 1 Step 3).
+- ✅ `turn_context.cwd` extraction is rejected by a defensive test (Task 1 Step 1, second test).
+- ✅ The regression guard `process_line_turn_context_after_exec_command_does_not_revert` is present (Task 3 Step 1).
+- ✅ The e2e fixture includes a `turn_context(A)` after an `exec_command(B)` to lock in v2 at the integration layer (Task 3 Step 1).
 
 **Out-of-scope deferrals honored:**
 
 - Issue #234 — not touched. ✅
 - Shell-pwd-from-pane-1 bug — not touched. ✅
 - agentCwdHint pruning — not touched. ✅
-- codex/transcript.rs split — explicitly NOT split (Task 5 Step 5 calls it out). ✅
+- codex/transcript.rs split — explicitly NOT split (Task 6 Step 5 calls it out). ✅
 - codex/parser.rs — not touched. ✅
 
 ---
 
 ## Stop Condition
 
-This plan stops after Task 5. The next action — execution — is the user's choice, **not** a chained skill call from this plan. Control returns to `/lifeline:planner` so codex can review the plan before any implementation begins.
-
-<!-- codex-reviewed: 2026-05-22T12:42:45Z -->
+This plan stops after Task 6. The next action — execution — is the user's choice, **not** a chained skill call from this plan.
