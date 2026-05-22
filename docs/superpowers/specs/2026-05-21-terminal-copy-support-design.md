@@ -1071,7 +1071,7 @@ No `getByTestId` — all items have visible text labels.
 
 ### 7.3 Manual verification matrix (pre-merge QA)
 
-Runs against `npm run dev`. Each row gates the merge.
+Runs against `npm run electron:dev` (NOT `npm run dev` — that script runs the bare Vite renderer with no PTY backend, so the terminal pane is empty and these rows cannot be verified). Each row gates the merge.
 
 | #   | Scenario                                                    | Expected                                                           |
 | --- | ----------------------------------------------------------- | ------------------------------------------------------------------ |
