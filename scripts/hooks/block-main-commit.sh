@@ -122,7 +122,7 @@ fi
 #
 # If -C or --work-tree was used, run the check against that directory instead
 # of the current working directory — this prevents false positives when
-# agents use git -C worktrees/<branch> commit from the primary checkout.
+# agents use git -C worktrees/<slug> commit from the primary checkout.
 if [ -n "$git_target_dir" ]; then
   current_branch=$(git -C "$git_target_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 else

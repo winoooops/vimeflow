@@ -16,8 +16,8 @@
 | ------------------------------ | ---------------------------- | ----------------------------- |
 | Interactive main agent         | `worktrees/<slug>/`          | Feature branch (never `main`) |
 | Explicit primary-checkout work | Primary checkout (repo root) | Feature branch (never `main`) |
-| `/lifeline:loop` (autonomous)  | `worktrees/<branch>/`        | Feature branch                |
-| Dispatched parallel subagents  | `worktrees/<branch>/`        | Feature branch                |
+| `/lifeline:loop` (autonomous)  | `worktrees/<slug>/`          | Feature branch                |
+| Dispatched parallel subagents  | `worktrees/<slug>/`          | Feature branch                |
 | Read-only research             | Primary checkout             | `main` is fine                |
 
 ## Worktree Location
@@ -44,13 +44,13 @@ Each worktree is a complete working directory with its own `src/`, `node_modules
 
 ```bash
 # From the primary checkout
-git worktree add worktrees/<slug> -b feat/<name>
+git worktree add worktrees/<slug> -b <branch-name>
 cd worktrees/<slug>
 npm install
 # edit, commit, push, create PR — all from the linked worktree
 ```
 
-Or use Claude Code's built-in `EnterWorktree` if available, pointed at `worktrees/<slug>/`. This is the normal path when a main agent starts a feature.
+Use a descriptive feature branch such as `feat/<name>`, `fix/<name>`, or `refactor/<name>`. Do not rely on worktree helper defaults that may create the checkout outside `worktrees/<slug>/`.
 
 If the user explicitly asks the main agent to work in the primary checkout, use a feature branch there instead:
 
@@ -68,7 +68,7 @@ cd worktrees/<slug>
 npm install
 ```
 
-Or use Claude Code's built-in `EnterWorktree`, pointed at `worktrees/<slug>/`. This path applies to `/lifeline:loop` and any parallel dispatched agents.
+Use the explicit `worktrees/<slug>/` path above for `/lifeline:loop` and any parallel dispatched agents.
 
 ### ACTIVE
 
@@ -95,6 +95,7 @@ Cleanup mode is the exception to the stay-on-branch rule above. Once the PR is r
 ```bash
 # From inside the linked worktree, return to the primary checkout first
 cd "$(git worktree list --porcelain | sed -n '1s/^worktree //p')"
+# Use the same <slug> and <branch-name> from the worktree add step above
 git worktree remove worktrees/<slug>
 git branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
 git worktree prune                 # clean up stale worktree metadata

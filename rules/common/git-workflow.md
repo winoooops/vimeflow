@@ -39,7 +39,7 @@ When creating PRs:
 ## Branching
 
 - **Never commit to `main`** — always work on a feature branch (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `perf/`, `ci/`).
-- The **interactive main agent** defaults to a dedicated linked worktree under `worktrees/<slug>/` when starting feature work (`git worktree add worktrees/<slug> -b feat/<name>` or `EnterWorktree`). A dirty primary checkout should not block the work; isolate the feature in a worktree instead.
+- The **interactive main agent** defaults to a dedicated linked worktree under `worktrees/<slug>/` when starting feature work (`git worktree add worktrees/<slug> -b <branch-name>`). A dirty primary checkout should not block the work; isolate the feature in a worktree instead.
 - The **primary checkout** is used for writing feature work only when the user explicitly asks for it or the task must modify the exact checkout the user has open. Read-only tasks can happen there without a branch.
 - **Subagents and Lifeline autonomous runs** (`/lifeline:loop`, dispatched parallel agents) must each isolate themselves in their own dedicated worktree under `worktrees/<slug>/`. See [worktrees.md](./worktrees.md).
 
