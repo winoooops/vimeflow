@@ -117,6 +117,36 @@ describe('LiquidFill — bar mode geometry', () => {
 
     expect(lineCount).toBeGreaterThanOrEqual(48)
   })
+
+  test('wave path is spatially periodic at width/2 so the CSS keyframe loops seamlessly', () => {
+    const { container } = render(
+      <LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />
+    )
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG path attributes are not reachable via a11y queries
+    const a = container.querySelector('[data-testid="liquid-water-y-a"] path')
+    const d = a?.getAttribute('d') ?? ''
+
+    // Extract numeric L commands as [x, y] pairs.
+    const points = Array.from(d.matchAll(/L (-?\d+\.\d+),(-?\d+\.\d+)/g)).map(
+      (m) => [parseFloat(m[1]), parseFloat(m[2])] as [number, number]
+    )
+    // Path width = 22 * 2 = 44. Half-period offset = width/4 = 11.
+    // Sample a few points at +width/2 separation and compare y values.
+    // y(x) should equal y(x + width/2) within rounding tolerance because
+    // the wave has period = width/4 = 11 units, so width/2 = 22 = 2 full
+    // periods of separation.
+    const width = 44
+    const halfPath = width / 2
+    const tol = 0.01
+    const samples = points.filter(([x]) => x > 0 && x < halfPath - 2)
+    expect(samples.length).toBeGreaterThan(0)
+    for (const [x, y] of samples) {
+      const partner = points.find(([px]) => Math.abs(px - (x + halfPath)) < 0.5)
+      if (partner !== undefined) {
+        expect(Math.abs(partner[1] - y)).toBeLessThan(tol)
+      }
+    }
+  })
 })
 
 describe('LiquidFill — cursor hook integration', () => {

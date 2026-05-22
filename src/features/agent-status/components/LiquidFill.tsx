@@ -32,8 +32,13 @@ const buildWavePath = (
   totalH: number,
   phase: number
 ): string => {
-  // 2 full cycles across the path's width — matches the prior segment count.
-  const cycles = 2
+  // 4 full cycles across the path width gives a spatial period of
+  // width/4 = w/2 in user units (path width = w*2). This matches the
+  // `translateX(-50%)` keyframe in src/index.css, which moves the wave
+  // by w user units = exactly two periods, producing a seamless loop.
+  // Changing cycles without changing the keyframe creates a visible
+  // seam at every iteration.
+  const cycles = 4
   // Scale segment count with width so each segment stays around 1.5 px wide.
   // Rail Bucket (width=44) → 48 segments (~0.9 px each); ContextBucket
   // (width=400 at a 200 px gauge) → ~267 segments (~1.5 px each). The cap
@@ -75,8 +80,12 @@ const computeGeom = (w: number, h: number, pct: number): Geom => {
   const top = h - liquidH
   const ambientAmp = Math.min(1.8, w * 0.09)
   const baseFloor = top + ambientAmp + 0.5
+  // waveA at phase 0, waveB at phase 0.125. With cycles=4, the second
+  // wave is shifted by 0.5 cycles (180°) relative to the first — the
+  // maximum visible contrast that still preserves the seamless-loop
+  // invariant (both paths have the same period).
   const wavePathA = buildWavePath(w * 2, ambientAmp, h, 0)
-  const wavePathB = buildWavePath(w * 2, ambientAmp, h, 0.25)
+  const wavePathB = buildWavePath(w * 2, ambientAmp, h, 0.125)
 
   return { w, h, top, ambientAmp, baseFloor, wavePathA, wavePathB }
 }
