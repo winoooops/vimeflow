@@ -164,8 +164,8 @@ export const Tooltip = ({
   return (
     <>
       {cloneElement(children as ReactElement<Record<string, unknown>>, {
-        ref: mergedRef,
         ...getReferenceProps(children.props as Record<string, unknown>),
+        ref: mergedRef,
       })}
       {open && (
         <FloatingPortal>
