@@ -500,6 +500,57 @@ describe('Body agent-emitted OSC 7', () => {
     expect(service.updateSessionCwd).not.toHaveBeenCalled()
   })
 
+  test('detects worktree anchor + path when they arrive in separate PTY chunks', async () => {
+    // Regression: in real-world `EnterWorktree` runs the agent prints the
+    // anchor line ("Switched to worktree on branch X") in one PTY chunk
+    // and the absolute path on a following chunk. The cwd-hint context
+    // buffer must preserve the anchor so the path's chunk can complete
+    // the match.
+    const service = createService()
+    const onCwdChange = vi.fn()
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/home/will/projects/vimeflow-agent-cwd-regression"
+        service={service}
+        restoredFrom={restoreData(
+          'pty-agent',
+          '/home/will/projects/vimeflow-agent-cwd-regression'
+        )}
+        mode="attach"
+        onCwdChange={onCwdChange}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.onData).toHaveBeenCalled()
+    })
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        'Creating worktree(dummy)\r\n' +
+          '  Switched to worktree on branch worktree-dummy\r\n'
+      )
+    })
+
+    expect(onCwdChange).not.toHaveBeenCalled()
+
+    act(() => {
+      service.emitData(
+        'pty-agent',
+        '    /home/will/projects/vimeflow/.claude/worktrees/dummy\r\n'
+      )
+    })
+
+    await waitFor(() => {
+      expect(onCwdChange).toHaveBeenCalledWith(
+        '/home/will/projects/vimeflow/.claude/worktrees/dummy'
+      )
+    })
+  })
+
   test('preserves Claude startup context across PTY chunk boundaries', async () => {
     const service = createService()
     const onCwdChange = vi.fn()

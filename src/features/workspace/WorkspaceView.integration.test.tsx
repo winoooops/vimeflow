@@ -25,6 +25,7 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
     version: null,
     sessionId: null,
     agentSessionId: null,
+    cwd: null,
     contextWindow: null,
     cost: null,
     rateLimits: null,
@@ -979,6 +980,7 @@ describe('WorkspaceView Integration Tests', () => {
         version: '1.0',
         sessionId: 'sess-1',
         agentSessionId: 'a-1',
+        cwd: null,
         contextWindow: {
           usedPercentage: 30,
           contextWindowSize: 200000,
@@ -1019,6 +1021,7 @@ describe('WorkspaceView Integration Tests', () => {
         version: null,
         sessionId: 'sess-1',
         agentSessionId: null,
+        cwd: null,
         contextWindow: null,
         cost: null,
         rateLimits: null,

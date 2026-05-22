@@ -1,9 +1,11 @@
+// cspell:ignore worktree
 import type { ContextWindowStatus } from '../../../bindings/ContextWindowStatus'
 import type { RateLimits } from '../../../bindings/RateLimits'
 
 // Re-export bindings, but NOT AgentStatusEvent — we override it below
 // because ts-rs doesn't map Rust Option<T> to nullable TypeScript fields.
 export type {
+  AgentCwdEvent,
   AgentToolCallEvent,
   AgentTurnEvent,
   AgentDetectedEvent,
@@ -49,6 +51,15 @@ export interface AgentStatus {
   version: string | null
   sessionId: string | null
   agentSessionId: string | null
+  /**
+   * Agent-reported working directory, populated from the structured `cwd`
+   * field on every transcript JSONL entry (Claude Code today; Codex
+   * follow-up). `null` before the first transition or for agents that
+   * don't expose a transcript. The workspace bridge mirrors this into
+   * `pane.cwd` so the Header chip + git branch follow tool-call-driven
+   * cwd changes (e.g. Claude's built-in `EnterWorktree`).
+   */
+  cwd: string | null
 
   // Budget metrics
   contextWindow: ContextWindowState | null

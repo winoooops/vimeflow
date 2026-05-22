@@ -536,6 +536,17 @@ mod router {
                 let res = state.git_branch(p.cwd).await?;
                 serde_json::to_value(res).map_err(|e| format!("result encode: {e}"))
             }
+            "git_worktree_name" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    cwd: String,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                let res = state.git_worktree_name(p.cwd).await?;
+                serde_json::to_value(res).map_err(|e| format!("result encode: {e}"))
+            }
             "get_git_diff" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]
@@ -1764,6 +1775,23 @@ mod tests {
             matches!(&r_min, Err(msg) if !msg.starts_with("params:")),
             "expected non-params error, got {r_min:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn dispatch_git_worktree_name_is_a_known_method() {
+        // Regression: it's easy to add `BackendState::git_worktree_name` and
+        // forget to wire it into the match arm above. This test will fail
+        // with "unknown method" if the dispatch entry is missing.
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let params = serde_json::json!({"cwd": "/tmp/this-path-does-not-exist"});
+        let outcome = super::router::dispatch(state, "git_worktree_name", params).await;
+        match outcome {
+            Ok(_) => panic!("expected dispatch error for non-existent cwd"),
+            Err(msg) => assert!(
+                !msg.starts_with("unknown method:"),
+                "git_worktree_name must be a known method, got: {msg}"
+            ),
+        }
     }
 
     #[tokio::test]

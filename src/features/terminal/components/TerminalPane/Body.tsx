@@ -30,7 +30,7 @@ import {
   stripCarriageReturnOverwrites,
   toComparablePath,
 } from './agentCwdGuard'
-import { getAgentCwdHintContext, parseAgentCwdHint } from './agentCwdHint'
+import { parseAgentCwdHint } from './agentCwdHint'
 import { parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
 import '@xterm/xterm/css/xterm.css'
 
@@ -271,11 +271,20 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     const shouldApplyCwdHint =
       cwdHint !== null && cwdHint !== agentCwdRef.current
 
-    agentCwdHintContextRef.current = shouldApplyCwdHint
-      ? ''
-      : getAgentCwdHintContext(outputWithContext).slice(
-          -AGENT_CWD_HINT_BUFFER_SIZE
-        )
+    // Carry the last `AGENT_CWD_HINT_BUFFER_SIZE` bytes of output forward
+    // so anchor patterns whose path arrives in a later PTY chunk can still
+    // match. The raw tail is a strict superset of what
+    // `getAgentCwdHintContext` would yield (a filtered subset of the same
+    // buffer), so we just persist the tail directly — there's no separate
+    // startup-context union to maintain. `isClaudeStartupHomeCwd` sees
+    // the same header when the banner is within the trailing 4 KB.
+    if (shouldApplyCwdHint) {
+      agentCwdHintContextRef.current = ''
+    } else {
+      agentCwdHintContextRef.current = outputWithContext.slice(
+        -AGENT_CWD_HINT_BUFFER_SIZE
+      )
+    }
 
     if (cwdHint !== null) {
       logAgentCwdDebug('text-hint', {

@@ -154,6 +154,25 @@ pub struct AgentStatusEvent {
     pub rate_limits: RateLimits,
 }
 
+/// Event emitted when the agent's tracked working directory changes.
+///
+/// Sourced from the structured `cwd` field that Claude Code (and Codex,
+/// pending follow-up) writes on every transcript JSONL entry. This is the
+/// authoritative signal for "where the agent currently is" — it picks up
+/// tool-call-driven moves like `EnterWorktree` that intentionally do NOT
+/// mutate the interactive shell's `$PWD`, so neither OSC 7 nor PTY text
+/// patterns can catch them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCwdEvent {
+    /// PTY session ID
+    pub session_id: String,
+    /// Absolute working directory the agent reports itself to be in.
+    pub cwd: String,
+}
+
 /// Event emitted when a Claude transcript reveals the latest user-prompt count
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

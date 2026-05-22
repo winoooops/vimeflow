@@ -1,3 +1,4 @@
+// cspell:ignore worktree
 import type { ReactElement } from 'react'
 import type { Agent } from '../../../../agents/registry'
 import { StatusDot } from '../../../sessions/components/StatusDot'
@@ -9,6 +10,7 @@ export interface HeaderProps {
   agent: Agent
   session: Session
   pipStatus: SessionStatus
+  worktreeName: string | null
   branch: string | null
   added: number
   removed: number
@@ -22,6 +24,7 @@ export const Header = ({
   agent,
   session,
   pipStatus,
+  worktreeName,
   branch,
   added,
   removed,
@@ -65,6 +68,7 @@ export const Header = ({
 
       {!isCollapsed && (
         <HeaderMetadata
+          worktreeName={worktreeName}
           branch={branch}
           added={added}
           removed={removed}

@@ -1,4 +1,4 @@
-// cspell:ignore codex worktree worktrees
+// cspell:ignore codex worktree worktrees basenames alphanum polyrepo lookback Lookback
 import { describe, expect, test } from 'vitest'
 import { getAgentCwdHintContext, parseAgentCwdHint } from './agentCwdHint'
 
@@ -249,5 +249,215 @@ describe('parseAgentCwdHint', () => {
     expect(
       parseAgentCwdHint('$ cd .claude/worktrees', '/home/will/project')
     ).toBeNull()
+  })
+
+  test('extracts Claude superpowers skill `- Path: <abs>` lines', () => {
+    // Mirrors the actual `EnterWorktree` skill report block — agents that
+    // intentionally avoid mutating $PWD still announce the worktree path
+    // through a stable label format.
+    expect(
+      parseAgentCwdHint(
+        'Worktree ready.\r\n\r\n' +
+          '- Path: /home/will/projects/simple-tui/.claude/worktrees/dummies-test\r\n' +
+          '- Branch: worktree-dummies-test\r\n' +
+          '- Clean working tree\r\n'
+      )
+    ).toBe('/home/will/projects/simple-tui/.claude/worktrees/dummies-test')
+  })
+
+  test('extracts path emitted under a `Switched to worktree on branch` anchor', () => {
+    // The path is indented on a subsequent line, not on the same line as the
+    // anchor — same shape as the superpowers skill's report header.
+    expect(
+      parseAgentCwdHint(
+        '  Switched to worktree on branch worktree-dummies-test\r\n' +
+          '  | /home/will/projects/simple-tui/.claude/worktrees/dummies-test\r\n'
+      )
+    ).toBe('/home/will/projects/simple-tui/.claude/worktrees/dummies-test')
+  })
+
+  test('extracts path emitted under a Codex `Created and entered ... worktree:` anchor', () => {
+    expect(
+      parseAgentCwdHint(
+        'Created and entered the dummy worktree:\r\n\r\n' +
+          '/home/will/projects/vimeflow/.claude/worktrees/codex-dummy-worktree\r\n\r\n' +
+          "It's on branch codex-dummy-worktree. I'll use that path as the working directory for follow-up commands.\r\n"
+      )
+    ).toBe(
+      '/home/will/projects/vimeflow/.claude/worktrees/codex-dummy-worktree'
+    )
+  })
+
+  test('extracts the path emitted under a `Ran pwd` anchor through starship noise', () => {
+    // Real Codex output from the screenshot: `Ran pwd` is followed by two
+    // `[ERROR] - (starship::print)` lines before the actual pwd output. The
+    // parser must skip noise and pick the first absolute path within a small
+    // window of lines.
+    expect(
+      parseAgentCwdHint(
+        'Ran pwd\r\n' +
+          "  L [ERROR] - (starship::print): Under a 'dumb' terminal (TERM=dumb).\r\n" +
+          "    [ERROR] - (starship::print): Under a 'dumb' terminal (TERM=dumb).\r\n" +
+          '    /home/will/projects/vimeflow/.claude/worktrees/codex-dummy-worktree\r\n'
+      )
+    ).toBe(
+      '/home/will/projects/vimeflow/.claude/worktrees/codex-dummy-worktree'
+    )
+  })
+
+  test('latest signal wins when multiple worktree announcements arrive in one chunk', () => {
+    expect(
+      parseAgentCwdHint(
+        '- Path: /tmp/old\r\n\r\n' +
+          'Created and entered the dummy worktree:\r\n\r\n' +
+          '/tmp/new\r\n'
+      )
+    ).toBe('/tmp/new')
+  })
+
+  test('does not treat unrelated absolute paths after the anchor as cwd hints', () => {
+    // The path after a `Ran pwd` anchor must look like a directory; a path
+    // with a file extension is almost certainly an error message or file
+    // reference, not the current cwd.
+    expect(
+      parseAgentCwdHint(
+        'Ran pwd\r\n' +
+          '  /home/will/projects/vimeflow/src/main.rs: error[E0123]\r\n'
+      )
+    ).toBeNull()
+  })
+
+  test('accepts versioned worktree directory names like release-1.5', () => {
+    // Regression: `looksLikeFilePath` previously matched any single-dot
+    // basename with an alphanumeric extension and dropped the path. That
+    // misclassified semver-styled worktrees (`v2.0`, `release-1.5`,
+    // `feature-1.0`) as file references. The extension class now requires
+    // at least one letter, so pure-numeric suffixes pass through.
+    expect(
+      parseAgentCwdHint(
+        'Ran pwd\r\n' +
+          '  /home/will/projects/repo/.claude/worktrees/release-1.5\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/release-1.5')
+
+    expect(
+      parseAgentCwdHint(
+        'Ran pwd\r\n  /home/will/projects/repo/.claude/worktrees/v2.0\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/v2.0')
+  })
+
+  test('still rejects file-extension last segments like main.rs', () => {
+    // Negative companion to the versioned-dir test: real source files
+    // (extension starts with a letter) MUST still be rejected.
+    expect(
+      parseAgentCwdHint(
+        'Created and entered the dummy worktree:\r\n\r\n' +
+          '/home/will/projects/repo/src/main.rs\r\n'
+      )
+    ).toBeNull()
+  })
+
+  test('extracts anchored cwd paths that contain spaces', () => {
+    // Codex P2: paths with spaces (common on macOS — `Code Projects`,
+    // `Application Support`) were dropped because the old extractor
+    // split on whitespace and only inspected the last token. The new
+    // extractor takes the body-after-tree-prefix verbatim.
+    expect(
+      parseAgentCwdHint(
+        'Ran pwd\r\n' +
+          '  /Users/alice/Code Projects/repo/.claude/worktrees/foo\r\n'
+      )
+    ).toBe('/Users/alice/Code Projects/repo/.claude/worktrees/foo')
+  })
+
+  test('PATH_LABEL_PATTERN requires a worktree anchor in recent context', () => {
+    // Codex P1: bare `- Path:` matches in unrelated summaries (file
+    // listings, skill reports) should NOT update pane.cwd. The handler
+    // now looks back up to 10 non-empty lines for a worktree-related
+    // anchor phrase. With a matching anchor it fires; without it it
+    // returns null.
+    expect(
+      parseAgentCwdHint(
+        'Worktree ready.\r\n\r\n' +
+          '- Path: /home/will/projects/repo/.claude/worktrees/dummy\r\n' +
+          '- Branch: worktree-dummy\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/dummy')
+
+    expect(
+      parseAgentCwdHint(
+        'Summary of files I touched:\r\n\r\n' +
+          '- Path: /home/will/projects/repo/some-unrelated-directory\r\n'
+      )
+    ).toBeNull()
+  })
+
+  test('PATH_LABEL_PATTERN rejects file-like paths even with anchor', () => {
+    // Symmetric with the anchor-driven extractor: a worktree report
+    // emitting `- Path: /repo/main.rs` should still not update pane.cwd.
+    expect(
+      parseAgentCwdHint(
+        'Worktree ready.\r\n\r\n' +
+          '- Path: /home/will/projects/repo/src/main.rs\r\n'
+      )
+    ).toBeNull()
+  })
+
+  test('accepts worktree dirs with alpha-extension-shaped basenames', () => {
+    // Regression for Claude review cycle-2 MEDIUM: an earlier extension-
+    // regex heuristic over-matched any `[non-dot][chars].[alpha][alphanum]*`
+    // last segment, dropping legitimate polyrepo dir names like
+    // `project.api`, `feature.web`, `vimeflow.service`. The current
+    // denylist approach only rejects known source-file extensions.
+    expect(
+      parseAgentCwdHint(
+        'Created and entered the dummy worktree:\r\n\r\n' +
+          '/home/will/projects/repo/.claude/worktrees/project.api\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/project.api')
+
+    expect(
+      parseAgentCwdHint(
+        'Ran pwd\r\n' +
+          '  /home/will/projects/repo/.claude/worktrees/feature.web\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/feature.web')
+
+    expect(
+      parseAgentCwdHint(
+        'Worktree ready.\r\n\r\n' +
+          '- Path: /home/will/projects/repo/.claude/worktrees/vimeflow.service\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/vimeflow.service')
+  })
+
+  test('matches multi-word `Created and entered ... worktree` anchors', () => {
+    // Regression for Codex cycle-2.5 P2: the previous regex only allowed
+    // ONE token between `entered` and `worktree`, so `Created and entered
+    // the dummy worktree:` (two tokens: `the dummy`) dropped through.
+    // Now accepts up to 3 intermediate tokens in both the path-extraction
+    // anchor and the lookback-gate context anchor.
+    expect(
+      parseAgentCwdHint(
+        'Created and entered the dummy worktree:\r\n\r\n' +
+          '/home/will/projects/repo/.claude/worktrees/dummy\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/dummy')
+
+    expect(
+      parseAgentCwdHint(
+        'Created and entered the new dummy worktree:\r\n\r\n' +
+          '/home/will/projects/repo/.claude/worktrees/dummy\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/dummy')
+
+    // Lookback gate side: `- Path:` preceded by multi-word anchor.
+    expect(
+      parseAgentCwdHint(
+        'Created and entered the dummy worktree:\r\n\r\n' +
+          '- Path: /home/will/projects/repo/.claude/worktrees/dummy\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/dummy')
   })
 })

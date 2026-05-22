@@ -1,3 +1,4 @@
+// cspell:ignore worktree
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import { AGENTS } from '../../../../agents/registry'
@@ -43,6 +44,7 @@ const baseProps = {
   agent: AGENTS.claude,
   session,
   pipStatus: 'running' as const,
+  worktreeName: null,
   branch: 'feat/jose-auth',
   added: 48,
   removed: 12,
@@ -81,10 +83,24 @@ describe('Header', () => {
     expect(screen.queryByText('−12')).not.toBeInTheDocument()
   })
 
+  test('collapsed header also hides the worktree chip', () => {
+    render(<Header {...baseProps} isCollapsed worktreeName="agent-sidebar" />)
+
+    expect(screen.queryByTestId('worktree-chip')).not.toBeInTheDocument()
+  })
+
   test('null branch omits the branch segment', () => {
     render(<Header {...baseProps} branch={null} />)
 
     expect(screen.queryByText('feat/jose-auth')).not.toBeInTheDocument()
+  })
+
+  test('renders worktree chip when worktreeName is supplied', () => {
+    render(<Header {...baseProps} worktreeName="agent-sidebar" />)
+
+    expect(screen.getByTestId('worktree-chip')).toHaveTextContent(
+      'agent-sidebar'
+    )
   })
 
   test('collapse button fires onToggleCollapse', () => {

@@ -1,3 +1,4 @@
+// cspell:ignore worktree worktrees
 import { afterEach, describe, test, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { invoke, listen } from '../../../lib/backend'
@@ -217,6 +218,44 @@ describe('useAgentStatus', () => {
         sessionId: 'pty-session-1',
       })
     })
+  })
+
+  test('updates status.cwd when an agent-cwd event arrives for this session', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-cwd')?.length).toBeGreaterThanOrEqual(1)
+    })
+
+    expect(result.current.cwd).toBeNull()
+
+    act(() => {
+      emit('agent-cwd', {
+        sessionId: 'pty-session-1',
+        cwd: '/home/will/projects/vimeflow/.claude/worktrees/dummy',
+      })
+    })
+
+    expect(result.current.cwd).toBe(
+      '/home/will/projects/vimeflow/.claude/worktrees/dummy'
+    )
+  })
+
+  test('ignores agent-cwd events for other sessions', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-cwd')?.length).toBeGreaterThanOrEqual(1)
+    })
+
+    act(() => {
+      emit('agent-cwd', {
+        sessionId: 'pty-different-session',
+        cwd: '/home/will/projects/vimeflow/.claude/worktrees/dummy',
+      })
+    })
+
+    expect(result.current.cwd).toBeNull()
   })
 
   test('filters status events by sessionId', async () => {
@@ -780,6 +819,19 @@ describe('useAgentStatus', () => {
       'agent-status',
       'agent-tool-call',
       'agent-turn',
+      'agent-cwd',
+    ])
+
+    await act(async () => {
+      pendingListenResolves.shift()?.((): void => undefined)
+      await Promise.resolve()
+    })
+
+    expect(listenEvents).toEqual([
+      'agent-status',
+      'agent-tool-call',
+      'agent-turn',
+      'agent-cwd',
       'test-run',
     ])
 

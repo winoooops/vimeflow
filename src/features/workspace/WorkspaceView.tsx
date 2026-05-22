@@ -1,3 +1,4 @@
+// cspell:ignore worktree
 import type { CSSProperties, ReactElement } from 'react'
 import {
   useCallback,
@@ -309,6 +310,55 @@ export const WorkspaceView = (): ReactElement => {
     agentStatus.agentType,
     agentStatus.sessionId,
     updatePaneAgentType,
+  ])
+
+  // Mirror the agent's structured cwd into pane.cwd. The transcript JSONL
+  // (Claude Code today; Codex follow-up) stamps every entry with the
+  // agent's current cwd; the `agent-cwd` event surfaces transitions.
+  // Tool-call-driven moves like Claude's built-in `EnterWorktree` do NOT
+  // change the interactive shell's $PWD, so neither OSC 7 nor PTY text
+  // patterns catch them — this bridge is what makes the worktree chip +
+  // git branch follow agent-driven worktree switches.
+  //
+  // Guards (Codex review on PR #239): scope to the active pane's session;
+  // skip exited sessions; require the agent to be currently active so a
+  // post-exit `agentStatus.cwd` (the field is retained when an agent
+  // exits — only `isActive` / `agentExited` flip) cannot overwrite a
+  // shell-driven `pane.cwd` change; dedupe against pane.cwd to avoid IPC
+  // churn.
+  const activePaneCwd = activePane?.cwd
+  const agentCwd = agentStatus.cwd
+  const agentIsActive = agentStatus.isActive
+  const agentHasExited = agentStatus.agentExited
+  useEffect(() => {
+    if (!activeSessionId || !activePaneId || !activePanePtyId) {
+      return
+    }
+    if (agentStatus.sessionId !== activePanePtyId) {
+      return
+    }
+    if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
+      return
+    }
+    if (!agentIsActive || agentHasExited) {
+      return
+    }
+    if (!agentCwd || agentCwd === activePaneCwd) {
+      return
+    }
+
+    updatePaneCwd(activeSessionId, activePaneId, agentCwd)
+  }, [
+    activeSessionId,
+    activePaneId,
+    activePanePtyId,
+    activePaneCwd,
+    activeSessionStatus,
+    agentCwd,
+    agentHasExited,
+    agentIsActive,
+    agentStatus.sessionId,
+    updatePaneCwd,
   ])
 
   // Reset on PTY exit: when ANY session's status flips to completed or

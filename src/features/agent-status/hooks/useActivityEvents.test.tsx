@@ -12,6 +12,7 @@ const baseStatus: AgentStatus = {
   version: null,
   sessionId: 'session-1',
   agentSessionId: null,
+  cwd: null,
   contextWindow: null,
   cost: null,
   rateLimits: null,
