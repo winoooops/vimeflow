@@ -21,29 +21,25 @@ const buildWavePath = (
   totalH: number,
   phase: number
 ): string => {
-  const wavelength = width / 2
-  const segments = Math.ceil((width / wavelength) * 4)
+  // 2 full cycles across the path's width — matches the prior segment count.
+  const cycles = 2
+  // 32 line segments give smooth waves at our render sizes (22–~240 px wide).
+  const segments = 32
   const step = width / segments
   const phaseOffset = ((phase % 1) + 1) % 1
 
-  const startY =
-    phaseOffset < 0.5 ? amp * (phaseOffset * 2) : amp * (2 - phaseOffset * 2)
+  const yAt = (x: number): number => {
+    const t = (x / width + phaseOffset) * cycles
 
-  let d = `M 0,${startY}`
-
-  for (let i = 1; i <= segments; i++) {
-    const x = step * i
-    const cp1x = step * (i - 1) + step / 2
-    const cp2x = step * i - step / 2
-    const flipped = (i + Math.floor(phaseOffset * 2)) % 2 === 0
-    const targetY = flipped ? amp : 0
-
-    const sY = (i - 1 + Math.floor(phaseOffset * 2)) % 2 === 0 ? amp : 0
-
-    d += ` C ${cp1x},${sY} ${cp2x},${targetY} ${x},${targetY}`
+    return (amp * (1 - Math.cos(t * 2 * Math.PI))) / 2
   }
 
-  d += ` L ${width},${totalH} L 0,${totalH} Z`
+  let d = `M 0,${yAt(0).toFixed(4)}`
+  for (let i = 1; i <= segments; i++) {
+    const x = step * i
+    d += ` L ${x.toFixed(4)},${yAt(x).toFixed(4)}`
+  }
+  d += ` L ${width.toFixed(4)},${totalH} L 0,${totalH} Z`
 
   return d
 }

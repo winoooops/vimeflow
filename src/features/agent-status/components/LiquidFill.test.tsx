@@ -66,4 +66,26 @@ describe('LiquidFill — bar mode geometry', () => {
     expect(wrap).toBeInTheDocument()
     expect(wrap.className).toContain('some-class')
   })
+
+  test('wave-A and wave-B paths are actually phase-offset (different d strings)', () => {
+    const { container } = render(
+      <LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG path attributes are not reachable via a11y queries
+    const a = container.querySelector('[data-testid="liquid-water-y-a"] path')
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG path attributes are not reachable via a11y queries
+    const b = container.querySelector('[data-testid="liquid-water-y-b"] path')
+    expect(a).not.toBeNull()
+    expect(b).not.toBeNull()
+    // Different phase => different path data. Strip leading "M 0,..." since
+    // both share x=0; compare the bulk of the path.
+    const ad = (a?.getAttribute('d') ?? '').slice(20)
+    const bd = (b?.getAttribute('d') ?? '').slice(20)
+    expect(ad).not.toBe(bd)
+    // Both paths must reach the bottom and close — defensive sanity.
+    expect(ad).toMatch(/L \d/)
+    expect(bd).toMatch(/L \d/)
+  })
 })
