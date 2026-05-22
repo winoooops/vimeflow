@@ -909,3 +909,5 @@ Run this after the plan is written (already done during plan authoring — recor
 ## Stop Condition
 
 This plan stops after Task 5. The next action — execution — is the user's choice, **not** a chained skill call from this plan. Control returns to `/lifeline:planner` so codex can review the plan before any implementation begins.
+
+<!-- codex-reviewed: 2026-05-22T12:42:45Z -->
