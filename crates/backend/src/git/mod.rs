@@ -1055,14 +1055,26 @@ pub(crate) async fn git_worktree_name_inner(cwd: String) -> Result<Option<String
         .parent()
         .and_then(Path::file_name)
         .and_then(|s| s.to_str());
-    let grandparent_name = git_dir
-        .parent()
-        .and_then(Path::parent)
+    let grandparent = git_dir.parent().and_then(Path::parent);
+    let grandparent_name = grandparent
         .and_then(Path::file_name)
         .and_then(|s| s.to_str());
 
-    let grandparent_is_gitdir = grandparent_name
-        .is_some_and(|name| name == ".git" || name.ends_with(".git"));
+    // Confirm the grandparent is a gitdir root. Three accepted shapes:
+    //   - literally named `.git` (standard non-bare clone)
+    //   - ends in `.git` (e.g. `project.git` for `--separate-git-dir` or
+    //     bare repos that follow the `.git` naming convention)
+    //   - a bare repo created without the `.git` suffix
+    //     (`git init --bare /srv/repo` → gitdir root is `/srv/repo`).
+    //     For these we can't tell from the path alone, so probe for a
+    //     `HEAD` file inside the grandparent — present in every gitdir
+    //     root (bare or non-bare).
+    let grandparent_is_gitdir = match (grandparent, grandparent_name) {
+        (Some(gp), Some(name)) => {
+            name == ".git" || name.ends_with(".git") || gp.join("HEAD").is_file()
+        }
+        _ => false,
+    };
 
     if parent_name != Some("worktrees") || !grandparent_is_gitdir {
         return Ok(None);
@@ -2063,6 +2075,61 @@ copy to copy.txt
 
         let result = git_worktree_name(worktree.to_string_lossy().to_string()).await;
         assert_eq!(result, Ok(Some("wt-bare".to_string())));
+    }
+
+    #[tokio::test]
+    async fn test_git_worktree_name_handles_bare_repo_without_dot_git_suffix() {
+        // Regression for cycle-2 Codex P2: `git init --bare /srv/repo`
+        // creates a bare gitdir root without the `.git` suffix. The
+        // grandparent name is just `repo`, which fails both the
+        // `name == ".git"` and `name.ends_with(".git")` checks. The
+        // HEAD-file fallback rescues this case.
+        let tmp = home_tempdir();
+        let bare = tmp.path().join("repo-no-suffix");
+        std::process::Command::new("git")
+            .args(["init", "--bare", "--initial-branch=main"])
+            .arg(&bare)
+            .output()
+            .expect("git init --bare failed");
+
+        // Seed via clone-and-push (bare repos need at least one commit
+        // before `git worktree add` can create a linked worktree).
+        let seed = tmp.path().join("seed-no-suffix");
+        std::process::Command::new("git")
+            .args(["clone"])
+            .arg(&bare)
+            .arg(&seed)
+            .output()
+            .expect("git clone failed");
+        configure_test_git(&seed);
+        std::fs::write(seed.join("seed.txt"), "seed").expect("write seed");
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&seed)
+            .output()
+            .expect("git add failed");
+        std::process::Command::new("git")
+            .args(["commit", "-m", "seed"])
+            .current_dir(&seed)
+            .output()
+            .expect("git commit failed");
+        std::process::Command::new("git")
+            .args(["push", "origin", "main"])
+            .current_dir(&seed)
+            .output()
+            .expect("git push failed");
+
+        let worktree = tmp.path().join("wt-no-suffix");
+        std::process::Command::new("git")
+            .args(["worktree", "add", "-b", "feat"])
+            .arg(&worktree)
+            .arg("main")
+            .current_dir(&bare)
+            .output()
+            .expect("git worktree add failed");
+
+        let result = git_worktree_name(worktree.to_string_lossy().to_string()).await;
+        assert_eq!(result, Ok(Some("wt-no-suffix".to_string())));
     }
 
     #[tokio::test]

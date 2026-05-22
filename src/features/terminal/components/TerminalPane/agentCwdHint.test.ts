@@ -1,4 +1,4 @@
-// cspell:ignore codex worktree worktrees basenames alphanum polyrepo
+// cspell:ignore codex worktree worktrees basenames alphanum polyrepo lookback Lookback
 import { describe, expect, test } from 'vitest'
 import { getAgentCwdHintContext, parseAgentCwdHint } from './agentCwdHint'
 
@@ -430,5 +430,34 @@ describe('parseAgentCwdHint', () => {
           '- Path: /home/will/projects/repo/.claude/worktrees/vimeflow.service\r\n'
       )
     ).toBe('/home/will/projects/repo/.claude/worktrees/vimeflow.service')
+  })
+
+  test('matches multi-word `Created and entered ... worktree` anchors', () => {
+    // Regression for Codex cycle-2.5 P2: the previous regex only allowed
+    // ONE token between `entered` and `worktree`, so `Created and entered
+    // the dummy worktree:` (two tokens: `the dummy`) dropped through.
+    // Now accepts up to 3 intermediate tokens in both the path-extraction
+    // anchor and the lookback-gate context anchor.
+    expect(
+      parseAgentCwdHint(
+        'Created and entered the dummy worktree:\r\n\r\n' +
+          '/home/will/projects/repo/.claude/worktrees/dummy\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/dummy')
+
+    expect(
+      parseAgentCwdHint(
+        'Created and entered the new dummy worktree:\r\n\r\n' +
+          '/home/will/projects/repo/.claude/worktrees/dummy\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/dummy')
+
+    // Lookback gate side: `- Path:` preceded by multi-word anchor.
+    expect(
+      parseAgentCwdHint(
+        'Created and entered the dummy worktree:\r\n\r\n' +
+          '- Path: /home/will/projects/repo/.claude/worktrees/dummy\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/dummy')
   })
 })

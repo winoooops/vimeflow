@@ -39,8 +39,13 @@ const PATH_LABEL_PATTERN =
 // emitted on a SUBSEQUENT line (possibly with intervening noise such as
 // `[ERROR] - (starship::print): Under a 'dumb' terminal`) so we match the
 // anchor as a position and then scan forward for the path token.
+//
+// `Created\s+and\s+entered(?:\s+\S+){0,3}\s+worktree` allows 0-3 tokens
+// between `entered` and `worktree` so phrases like
+// `Created and entered the dummy worktree:` (two tokens) or
+// `Created and entered the new dummy worktree:` (three tokens) match.
 const WORKTREE_ANCHOR_PATTERN =
-  /(?:^|[\r\n])[^\S\r\n]*(?:[^\w\s(/\\:]+[^\S\r\n]*)?(?:Created\s+and\s+entered(?:\s+the\s+\S+)?\s+worktree:|Switched\s+to\s+worktree(?:\s+on\s+branch\s+\S+)?)[ \t]*(?=$|[\r\n])/g
+  /(?:^|[\r\n])[^\S\r\n]*(?:[^\w\s(/\\:]+[^\S\r\n]*)?(?:Created\s+and\s+entered(?:\s+\S+){0,3}\s+worktree:|Switched\s+to\s+worktree(?:\s+on\s+branch\s+\S+)?)[ \t]*(?=$|[\r\n])/g
 
 // `Ran pwd` — Codex prints the command header on its own line and then
 // captures stdout below. The path is the first absolute-path-shaped token in
@@ -56,8 +61,12 @@ const ANCHOR_LOOKAHEAD_LINES = 6
 // `PATH_LABEL_LOOKBACK_LINES` lines preceding the `- Path:` match. The
 // anchors mirror the verb phrases the EnterWorktree / superpowers worktree
 // skills emit just before their report block.
+//
+// `Created\s+and\s+entered(?:\s+\S+){0,3}\s+worktree` accepts 0-3 tokens
+// between `entered` and `worktree` (e.g. `the dummy`, `the new dummy`),
+// matching the WORKTREE_ANCHOR_PATTERN tolerance.
 const WORKTREE_CONTEXT_ANCHOR_PATTERN =
-  /(?:Worktree\s+ready|Switched\s+to\s+worktree|Created\s+and\s+entered(?:\s+\S+)?\s+worktree|Entered\s+worktree|Entering\s+worktree\()/i
+  /(?:Worktree\s+ready|Switched\s+to\s+worktree|Created\s+and\s+entered(?:\s+\S+){0,3}\s+worktree|Entered\s+worktree|Entering\s+worktree\()/i
 
 const PATH_LABEL_LOOKBACK_LINES = 10
 
