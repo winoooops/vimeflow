@@ -1,0 +1,92 @@
+@startuml
+title Agent Worktree Switch via EnterWorktree — Before vs After
+
+skinparam sequence {
+  ArrowColor #5C5470
+  LifeLineBorderColor #5C5470
+  ParticipantBorderColor #6C5CE7
+  ParticipantBackgroundColor #1E1A2E
+  ParticipantFontColor #E0DDE8
+  ActorBackgroundColor #1E1A2E
+  ActorBorderColor #6C5CE7
+  ActorFontColor #E0DDE8
+  GroupBorderColor #5C5470
+  GroupHeaderFontColor #FAB387
+  GroupBodyBackgroundColor #1E1A2E
+  DividerBackgroundColor #313244
+  DividerFontColor #FAB387
+}
+
+skinparam backgroundColor #0E0E1A
+skinparam noteBackgroundColor #313244
+skinparam noteBorderColor #5C5470
+skinparam noteFontColor #E0DDE8
+
+actor "Claude\n(agent)" as Claude #8839EF
+participant "Interactive\nShell ($PWD)" as Shell
+participant "Transcript\nJSONL" as JSONL
+participant "Body.tsx\n(OSC 7 + agentCwdHint)" as Body
+participant "Rust\ntranscript watcher" as Watcher
+participant "useAgentStatus" as Status
+participant "WorkspaceView\nbridge effect" as Workspace
+participant "updatePaneCwd" as Update
+participant "useGitBranch +\nuseGitWorktree" as GitHooks
+participant "Header\n(tree chip + branch)" as Header
+
+== BEFORE — OSC 7 + agentCwdHint only ==
+
+Claude -> Claude : Invoke built-in tool\n**EnterWorktree({ path: "/.../worktrees/dummy" })**
+note over Claude
+  Tool runs **inside Claude Code's host process**.
+  It mutates the **agent's** cwd, NOT the shell's.
+  Nothing is written to the PTY stream.
+end note
+
+Claude -[#FF6B6B]x Shell : (no `cd`, no OSC 7)
+Claude -[#FF6B6B]x Body : (no recognizable text\npattern in PTY output)
+
+note over Body #443344
+  Body.tsx receives some
+  rendered summary text, but
+  `Entering worktree(<name>)` /
+  `Ran cd ...` patterns
+  don't match. **No event fires.**
+end note
+
+note over Header #443344
+  pane.cwd stays at the
+  starting checkout.
+  Branch chip + worktree chip
+  point at the wrong worktree.
+end note
+
+== AFTER — same paths + new structured channel from JSONL ==
+
+Claude -> Claude : Invoke built-in tool\n**EnterWorktree({ path: "/.../worktrees/dummy" })**
+
+Claude -[#FF6B6B]x Shell : (still no `cd`, no OSC 7)
+Claude -[#FF6B6B]x Body : (still no PTY text match)
+
+Claude -[#10B981]> JSONL : write line with\n**top-level cwd = "/.../worktrees/dummy"**\n+ tool_use record
+
+JSONL -[#10B981]> Watcher : tail line
+Watcher -> Watcher : extract `cwd` field\nlast_cwd != observed?
+
+alt cwd changed
+  Watcher -[#10B981]> Status : **emit_agent_cwd**\n{ sessionId, cwd }
+  Status -> Status : filter by ptyId,\ndedupe vs prev.cwd
+  Status -[#10B981]> Workspace : agentStatus.cwd =\n"/.../worktrees/dummy"
+  Workspace -> Workspace : guard: active session +\nrunning + cwd != pane.cwd
+  Workspace -[#10B981]> Update : updatePaneCwd(\nsessionId, paneId, cwd)
+  Update -[#10B981]> GitHooks : pane.cwd changes
+  GitHooks -[#10B981]> Header : branch + worktree-name\nrefetch (~300 ms)
+
+  note over Header #2D4A3E
+    tree dummy
+    | worktree-dummy
+  end note
+else cwd unchanged
+  Watcher -[#FFC857]x Status : (no event — dedup)
+end
+
+@enduml
