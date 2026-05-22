@@ -100,6 +100,23 @@ describe('LiquidFill — bar mode geometry', () => {
     expect(ad).toMatch(/L \d/)
     expect(bd).toMatch(/L \d/)
   })
+
+  test('wave path segment density scales with width so wide containers stay smooth', () => {
+    const { container } = render(
+      <LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG path attributes are not reachable via a11y queries
+    const aPath = container.querySelector(
+      '[data-testid="liquid-water-y-a"] path'
+    )
+    const d = aPath?.getAttribute('d') ?? ''
+    // Count the L commands in the polyline — should be at least 48 plus
+    // the closing path (2 more L). At width = 22 * 2 = 44, max(48, 30) = 48.
+    const lineCount = (d.match(/ L /g) ?? []).length
+
+    expect(lineCount).toBeGreaterThanOrEqual(48)
+  })
 })
 
 describe('LiquidFill — cursor hook integration', () => {

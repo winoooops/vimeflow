@@ -34,8 +34,12 @@ const buildWavePath = (
 ): string => {
   // 2 full cycles across the path's width — matches the prior segment count.
   const cycles = 2
-  // 32 line segments give smooth waves at our render sizes (22–~240 px wide).
-  const segments = 32
+  // Scale segment count with width so each segment stays around 1.5 px wide.
+  // Rail Bucket (width=44) → 48 segments (~0.9 px each); ContextBucket
+  // (width=400 at a 200 px gauge) → ~267 segments (~1.5 px each). The cap
+  // at 48 keeps small buckets smooth; the linear scaling keeps wide
+  // gauges from looking polygonal.
+  const segments = Math.max(48, Math.ceil(width / 1.5))
   const step = width / segments
   const phaseOffset = ((phase % 1) + 1) % 1
 
