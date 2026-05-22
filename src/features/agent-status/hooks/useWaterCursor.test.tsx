@@ -192,6 +192,31 @@ describe('useWaterCursor — spring loop', () => {
     expect(refs.slosh.style.transform).toBe('')
   })
 
+  test('omitted tune is referentially stable across renders', () => {
+    mockMatchMedia(makeMql(false))
+    const addSpy = vi.fn()
+    const removeSpy = vi.fn()
+
+    const { rerender } = render(
+      <Harness refs={makeRefs()} addSpy={addSpy} removeSpy={removeSpy} />
+    )
+
+    // Initial mount registered the listeners.
+    expect(addSpy.mock.calls.map((c: string[]) => c[0])).toContain(
+      'pointermove'
+    )
+
+    // Re-render with a new refs object (simulates a parent state change).
+    rerender(
+      <Harness refs={makeRefs()} addSpy={addSpy} removeSpy={removeSpy} />
+    )
+
+    // Listeners should NOT have been removed and re-added.
+    expect(removeSpy.mock.calls.map((c: string[]) => c[0])).not.toContain(
+      'pointermove'
+    )
+  })
+
   test('rAF stops after spring settles on a still hover', async () => {
     mockMatchMedia(makeMql(false))
     const refs = makeRefs()

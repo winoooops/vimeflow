@@ -59,10 +59,12 @@ const initialVel = (): SignalState => ({
   sheenA: 0,
 })
 
+const EMPTY_TUNE: Partial<LiquidTune> = Object.freeze({}) as Partial<LiquidTune>
+
 export const useWaterCursor = (
   wrapRef: RefObject<HTMLElement | null>,
   refsRef: RefObject<LiquidRefs | null>,
-  tune: Partial<LiquidTune> = {}
+  tune: Partial<LiquidTune> = EMPTY_TUNE
 ): void => {
   useEffect(() => {
     const wrap = wrapRef.current
