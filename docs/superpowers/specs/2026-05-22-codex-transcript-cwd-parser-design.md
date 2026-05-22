@@ -711,3 +711,5 @@ benefit:
   the helper did what the spec described, but the spec described
   the wrong thing. End-to-end verification in a running app caught
   this; unit tests alone wouldn't have.
+
+<!-- codex-reviewed: 2026-05-22T17:50:46Z -->
