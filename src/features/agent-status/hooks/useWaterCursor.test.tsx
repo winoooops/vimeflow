@@ -191,4 +191,35 @@ describe('useWaterCursor — spring loop', () => {
     expect(refs.slosh.getAttribute('data-interactive')).toBeNull()
     expect(refs.slosh.style.transform).toBe('')
   })
+
+  test('rAF stops after spring settles on a still hover', async () => {
+    mockMatchMedia(makeMql(false))
+    const refs = makeRefs()
+
+    // Spy on rAF using the real implementation so frames still advance.
+    // vi.restoreAllMocks() in afterEach cleans this up.
+    const originalRaf = window.requestAnimationFrame.bind(window)
+
+    const spy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb) => originalRaf(cb))
+
+    render(<Harness refs={refs} addSpy={vi.fn()} removeSpy={vi.fn()} />)
+    const wrap = screen.getByTestId('wrap')
+    stubRect(wrap, 100, 100)
+
+    // Fire a single pointermove and let the spring fully settle
+    act(() => {
+      firePointer(wrap, 'pointermove', { clientX: 80, clientY: 50 })
+    })
+    await flushRaf(80) // well past settle time for omega=6.5
+
+    // Record rAF call count after settle
+    const callsAfterSettle = spy.mock.calls.length
+
+    // Advance another 16 frames — no new rAF should be scheduled
+    await flushRaf(16)
+
+    expect(spy.mock.calls.length).toBe(callsAfterSettle)
+  })
 })

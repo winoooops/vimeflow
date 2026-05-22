@@ -118,6 +118,7 @@ export const useWaterCursor = (
       target.skew = 0
       target.speedT = 0
       target.sheenA = 0
+      target.sheenX = 0
       ensureLoop()
     }
 
@@ -223,11 +224,14 @@ export const useWaterCursor = (
           target.lift === 0 &&
           target.skew === 0 &&
           target.speedT === 0 &&
-          target.sheenA === 0
-        if (settled && atRest) {
-          cur = initialTarget()
-          vel = initialVel()
-          clearInline()
+          target.sheenA === 0 &&
+          target.sheenX === 0
+        if (settled) {
+          if (atRest) {
+            cur = initialTarget()
+            vel = initialVel()
+            clearInline()
+          }
           rafId = null
 
           return
