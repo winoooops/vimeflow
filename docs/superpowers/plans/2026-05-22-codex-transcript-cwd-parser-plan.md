@@ -1072,3 +1072,5 @@ After writing the plan, the implementer should verify:
 ## Stop Condition
 
 This plan stops after Task 6. The next action — execution — is the user's choice, **not** a chained skill call from this plan.
+
+<!-- codex-reviewed: 2026-05-22T18:06:06Z -->
