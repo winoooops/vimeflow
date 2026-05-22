@@ -97,12 +97,15 @@ Cleanup mode is the exception to the stay-on-branch rule above. Once the PR is r
 git worktree remove worktrees/<slug>
 git branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
 git worktree prune                 # clean up stale worktree metadata
+git checkout main
+git pull --ff-only
 ```
 
 **Primary-checkout override:**
 
 ```bash
 git checkout main
+git pull --ff-only
 git branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
 ```
 
