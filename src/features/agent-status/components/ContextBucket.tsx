@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { LiquidFill } from './LiquidFill'
 
 export interface ContextBucketProps {
   usedPercentage: number | null
@@ -67,6 +68,18 @@ const getColorClass = (
   }
 }
 
+const hexForColorClass = (pct: number | null): string => {
+  if (pct !== null && pct >= 90) {
+    return '#ffb4ab' // tailwind.config.js:25 — error
+  }
+
+  if (pct !== null && pct >= 80) {
+    return '#ff94a5' // tailwind.config.js:21 — tertiary
+  }
+
+  return '#cba6f7' // tailwind.config.js:10 — primary-container
+}
+
 export const ContextBucket = ({
   usedPercentage,
   contextWindowSize,
@@ -115,17 +128,12 @@ export const ContextBucket = ({
             }}
           />
           {/* Fill */}
-          <div
-            className={`relative w-full bg-gradient-to-t ${colors.fill}`}
-            data-testid="bucket-fill"
-            style={{
-              height: `${effectivePct}%`,
-              transition: 'height 500ms ease',
-              boxShadow:
-                pct !== null && effectivePct > 0
-                  ? '0 -4px 12px var(--tw-shadow-color, rgba(203, 166, 247, 0.25))'
-                  : 'none',
-            }}
+          <LiquidFill
+            mode="fill"
+            pct={effectivePct}
+            color={hexForColorClass(pct)}
+            className="h-full w-full"
+            testId="bucket-fill"
           />
         </div>
 
