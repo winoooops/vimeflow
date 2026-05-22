@@ -23,7 +23,7 @@ export const LIQUID_DEFAULTS = {
   speedup: 1.02,
 } as const
 
-export type LiquidTune = typeof LIQUID_DEFAULTS
+export type LiquidTune = { [K in keyof typeof LIQUID_DEFAULTS]: number }
 
 export const useWaterCursor = (
   wrapRef: RefObject<HTMLElement | null>,
