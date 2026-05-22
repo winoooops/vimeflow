@@ -180,14 +180,13 @@ A worktree is likely stale if:
 ### Cleanup all stale worktrees
 
 ```bash
-# Remove each stale worktree
-git worktree remove worktrees/<stale-branch>
+# Replace <repo-root> with the absolute path to the primary checkout
+# Remove each stale worktree and its matching local branch
+git -C <repo-root> worktree remove worktrees/<stale-slug>
+git -C <repo-root> branch -D <stale-branch-name>
 
 # After removing worktrees, prune metadata
-git worktree prune
-
-# Delete merged local branches
-git branch --merged main | grep -v '^\*\|main' | xargs -r git branch -d
+git -C <repo-root> worktree prune
 ```
 
 ## Hook Enforcement
