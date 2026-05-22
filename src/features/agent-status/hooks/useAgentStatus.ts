@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke, listen } from '../../../lib/backend'
 import { getPtySessionId } from '../../terminal/ptySessionMap'
 import type {
+  AgentCwdEvent,
   AgentDetectedEvent,
   AgentStatus,
   AgentStatusEvent,
@@ -39,6 +40,7 @@ const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
   version: null,
   sessionId,
   agentSessionId: null,
+  cwd: null,
   contextWindow: null,
   cost: null,
   rateLimits: null,
@@ -535,6 +537,21 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       )
 
       addUnlisten(unlistenTurn)
+
+      const unlistenCwd = await listen<AgentCwdEvent>(
+        'agent-cwd',
+        (payload) => {
+          if (payload.sessionId !== resolvePtyId()) {
+            return
+          }
+
+          setStatus((prev) =>
+            prev.cwd === payload.cwd ? prev : { ...prev, cwd: payload.cwd }
+          )
+        }
+      )
+
+      addUnlisten(unlistenCwd)
 
       // test-run listener — must be attached before start_agent_watcher fires.
       // Without a backend snapshot cache in v1, missing the latest-of-replay

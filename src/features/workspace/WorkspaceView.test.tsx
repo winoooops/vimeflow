@@ -1,5 +1,6 @@
 /* eslint-disable testing-library/no-node-access */
 /* eslint-disable vitest/expect-expect */
+// cspell:ignore worktree worktrees
 import type { ReactElement } from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
@@ -10,10 +11,14 @@ import type { AgentStatus } from '../agent-status/types'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
 
-// Mock TerminalPane to avoid xterm.js issues in tests
+// Mock TerminalPane to avoid xterm.js issues in tests. Surface `pane.cwd`
+// as a data attribute so tests can observe the agent-cwd → pane.cwd bridge
+// without driving the full terminal mock surface.
 vi.mock('../terminal/components/TerminalPane', () => ({
-  TerminalPane: vi.fn(() => (
-    <div data-testid="terminal-pane-mock">Mocked TerminalPane</div>
+  TerminalPane: vi.fn(({ pane }: { pane?: { cwd?: string } }) => (
+    <div data-testid="terminal-pane-mock" data-cwd={pane?.cwd}>
+      Mocked TerminalPane
+    </div>
   )),
 }))
 
@@ -21,12 +26,14 @@ vi.mock('../terminal/components/TerminalPane', () => ({
 vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   useAgentStatus: vi.fn(() => ({
     isActive: true,
+    agentExited: false,
     agentType: 'claude-code',
     modelId: null,
     modelDisplayName: null,
     version: null,
     sessionId: null,
     agentSessionId: null,
+    cwd: null,
     contextWindow: null,
     cost: null,
     rateLimits: null,
@@ -960,6 +967,68 @@ describe('WorkspaceView', () => {
     expect(capturedAgentStatusPanelProps.agentStatus).toMatchObject({
       isActive: true,
       agentType: 'claude-code',
+    })
+  })
+
+  test('mirrors agentStatus.cwd into the active pane.cwd', async () => {
+    // Regression for #233: tool-call-driven worktree switches (e.g. Claude's
+    // built-in `EnterWorktree`) never mutate the interactive shell, so OSC 7
+    // and PTY text patterns can't catch them. The transcript JSONL stamps
+    // every entry with the agent's current cwd; useAgentStatus surfaces it
+    // via `agentStatus.cwd`, and WorkspaceView mirrors that into pane.cwd so
+    // the worktree chip + branch chip follow the agent.
+    vi.mocked(useAgentStatus).mockImplementation(
+      (sessionId: string | null): AgentStatus =>
+        sessionId === null
+          ? {
+              isActive: false,
+              agentExited: false,
+              agentType: null,
+              modelId: null,
+              modelDisplayName: null,
+              version: null,
+              sessionId: null,
+              agentSessionId: null,
+              cwd: null,
+              contextWindow: null,
+              cost: null,
+              rateLimits: null,
+              numTurns: 0,
+              toolCalls: { total: 0, byType: {}, active: null },
+              recentToolCalls: [],
+              testRun: null,
+            }
+          : {
+              isActive: true,
+              agentExited: false,
+              agentType: 'claude-code',
+              modelId: null,
+              modelDisplayName: null,
+              version: null,
+              sessionId,
+              agentSessionId: null,
+              cwd: '/home/user/projects/vimeflow/.claude/worktrees/dummy',
+              contextWindow: null,
+              cost: null,
+              rateLimits: null,
+              numTurns: 0,
+              toolCalls: { total: 0, byType: {}, active: null },
+              recentToolCalls: [],
+              testRun: null,
+            }
+    )
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+
+    const terminalPane = await screen.findByTestId('terminal-pane-mock')
+
+    await vi.waitFor(() => {
+      expect(terminalPane).toHaveAttribute(
+        'data-cwd',
+        '/home/user/projects/vimeflow/.claude/worktrees/dummy'
+      )
     })
   })
 })

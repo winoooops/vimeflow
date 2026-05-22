@@ -163,6 +163,75 @@ fn cargo_mixed_fixture_emits_test_run_with_groups() {
 }
 
 #[test]
+fn transcript_emits_agent_cwd_event_on_each_cwd_transition() {
+    // Real-world reproduction: Claude Code's built-in `EnterWorktree` tool
+    // switches the agent's working directory WITHOUT mutating the
+    // interactive shell. Every JSONL entry carries the agent's current cwd
+    // at the top level — that's the structured signal vimeflow needs to
+    // mirror into pane.cwd. The watcher must:
+    //   - emit on the first observed cwd (transition from None)
+    //   - emit again when cwd changes mid-session (e.g. EnterWorktree)
+    //   - NOT re-emit when consecutive lines share the same cwd (dedup)
+    let sink = Arc::new(FakeEventSink::new());
+
+    let tmp = tempfile::tempdir().expect("temp transcript dir");
+    let transcript_path = tmp.path().join("cwd.jsonl");
+    std::fs::write(
+        &transcript_path,
+        concat!(
+            // Line 1: starting cwd in the regression worktree.
+            r#"{"type":"user","timestamp":"2026-05-21T17:49:44.801Z","message":{"content":"create a dummy worktree and enter it"},"cwd":"/home/will/projects/vimeflow-agent-cwd-regression"}"#,
+            "\n",
+            // Line 2: same cwd — no new emit.
+            r#"{"type":"assistant","timestamp":"2026-05-21T17:49:53.818Z","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"rules/CLAUDE.md"}}]},"cwd":"/home/will/projects/vimeflow-agent-cwd-regression"}"#,
+            "\n",
+            // Line 3: EnterWorktree result — cwd is now the new worktree.
+            r#"{"type":"assistant","timestamp":"2026-05-21T17:50:18.255Z","message":{"content":[{"type":"tool_use","id":"toolu_2","name":"EnterWorktree","input":{"path":"/home/will/projects/vimeflow/.claude/worktrees/dummy"}}]},"cwd":"/home/will/projects/vimeflow/.claude/worktrees/dummy"}"#,
+            "\n",
+            // Line 4: subsequent tool calls in the new worktree — no new emit.
+            r#"{"type":"assistant","timestamp":"2026-05-21T17:50:30.000Z","message":{"content":[{"type":"tool_use","id":"toolu_3","name":"Bash","input":{"command":"ls"}}]},"cwd":"/home/will/projects/vimeflow/.claude/worktrees/dummy"}"#,
+            "\n",
+        ),
+    )
+    .expect("write transcript fixture");
+
+    let state = TranscriptState::new();
+    let adapter: Arc<dyn AgentAdapter> = Arc::new(ClaudeCodeAdapter);
+    state
+        .start_or_replace(
+            adapter,
+            sink.clone(),
+            "session-cwd".to_string(),
+            transcript_path,
+            None,
+        )
+        .expect("start watcher");
+
+    assert!(
+        sink.wait_for_count("agent-cwd", 2, Duration::from_secs(5)),
+        "expected one agent-cwd event per unique cwd value",
+    );
+    state.stop("session-cwd").ok();
+
+    let events: Vec<_> = sink
+        .recorded()
+        .into_iter()
+        .filter(|(event, _)| event == "agent-cwd")
+        .collect();
+    assert_eq!(events.len(), 2, "expected exactly two cwd transitions");
+    assert_eq!(events[0].1["sessionId"], "session-cwd");
+    assert_eq!(
+        events[0].1["cwd"],
+        "/home/will/projects/vimeflow-agent-cwd-regression",
+    );
+    assert_eq!(events[1].1["sessionId"], "session-cwd");
+    assert_eq!(
+        events[1].1["cwd"],
+        "/home/will/projects/vimeflow/.claude/worktrees/dummy",
+    );
+}
+
+#[test]
 fn replay_emits_only_latest_snapshot() {
     let sink = Arc::new(FakeEventSink::new());
 

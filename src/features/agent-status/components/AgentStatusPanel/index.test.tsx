@@ -15,6 +15,7 @@ const inactiveAgentStatus: AgentStatus = {
   version: null,
   sessionId: null,
   agentSessionId: null,
+  cwd: null,
   contextWindow: null,
   cost: null,
   rateLimits: null,

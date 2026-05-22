@@ -18,8 +18,8 @@ use super::test_runners::emitter::TestRunEmitter;
 use super::test_runners::matcher::{match_command, MatchedCommand};
 use crate::agent::adapter::base::TranscriptHandle;
 use crate::agent::adapter::types::ValidateTranscriptError;
-use crate::agent::events::{emit_agent_tool_call, emit_agent_turn};
-use crate::agent::types::{AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
+use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn};
+use crate::agent::types::{AgentCwdEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
 use crate::runtime::EventSink;
 
 /// Poll interval for checking new transcript lines
@@ -225,6 +225,10 @@ fn tail_loop(
     // In-flight tool calls: tool_use_id -> call details
     let mut in_flight: InFlightToolCalls = HashMap::new();
     let mut num_turns = 0_u32;
+    // Last agent-reported cwd. Tracked so consecutive lines that share the
+    // same `cwd` field don't re-emit. Initial `None` so the first observed
+    // cwd always fires a transition event.
+    let mut last_cwd: Option<String> = None;
 
     // Replay-aware emitter — buffers test-run snapshots during the initial
     // catch-up read and emits the latest one (only) on the first EOF. Once
@@ -260,6 +264,7 @@ fn tail_loop(
                     &mut emitter,
                     &mut in_flight,
                     &mut num_turns,
+                    &mut last_cwd,
                 );
             }
             Err(e) => {
@@ -279,6 +284,7 @@ fn process_line(
     emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
+    last_cwd: &mut Option<String>,
 ) {
     let value: Value = match serde_json::from_str(line) {
         Ok(v) => v,
@@ -287,6 +293,26 @@ fn process_line(
             return;
         }
     };
+
+    // Claude Code stamps every transcript line with its top-level `cwd`
+    // tracking. Surface transitions through `agent-cwd` so the frontend
+    // can mirror them into pane.cwd without depending on the interactive
+    // shell emitting OSC 7.
+    if let Some(observed) = value.get("cwd").and_then(Value::as_str) {
+        if !observed.is_empty()
+            && last_cwd.as_deref().map_or(true, |seen| seen != observed)
+        {
+            let event = AgentCwdEvent {
+                session_id: session_id.to_string(),
+                cwd: observed.to_string(),
+            };
+
+            if let Err(e) = emit_agent_cwd(events.as_ref(), &event) {
+                log::warn!("Failed to emit agent-cwd event: {}", e);
+            }
+            *last_cwd = Some(observed.to_string());
+        }
+    }
 
     match line_type(&value) {
         "assistant" => {
