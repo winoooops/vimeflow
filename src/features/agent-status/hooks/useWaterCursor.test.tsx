@@ -223,3 +223,54 @@ describe('useWaterCursor — spring loop', () => {
     expect(spy.mock.calls.length).toBe(callsAfterSettle)
   })
 })
+
+describe('useWaterCursor — runtime reduced-motion toggle', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test('change → matches:true detaches pointer listeners', () => {
+    const mql = makeMql(false)
+    mockMatchMedia(mql)
+    const addSpy = vi.fn()
+    const removeSpy = vi.fn()
+    render(<Harness refs={makeRefs()} addSpy={addSpy} removeSpy={removeSpy} />)
+    expect(addSpy.mock.calls.map((c: string[]) => c[0])).toContain(
+      'pointermove'
+    )
+
+    const changeListener = mql.addEventListener.mock.calls.find(
+      (c: unknown[]) => c[0] === 'change'
+    )?.[1] as ((e: { matches: boolean }) => void) | undefined
+    expect(changeListener).toBeDefined()
+    changeListener?.({ matches: true })
+
+    expect(removeSpy.mock.calls.map((c: string[]) => c[0])).toContain(
+      'pointermove'
+    )
+
+    expect(removeSpy.mock.calls.map((c: string[]) => c[0])).toContain(
+      'pointerleave'
+    )
+  })
+
+  test('change → matches:false reattaches pointer listeners', () => {
+    const mql = makeMql(true)
+    mockMatchMedia(mql)
+    const addSpy = vi.fn()
+    const removeSpy = vi.fn()
+    render(<Harness refs={makeRefs()} addSpy={addSpy} removeSpy={removeSpy} />)
+    expect(addSpy.mock.calls.map((c: string[]) => c[0])).not.toContain(
+      'pointermove'
+    )
+
+    const changeListener = mql.addEventListener.mock.calls.find(
+      (c: unknown[]) => c[0] === 'change'
+    )?.[1] as ((e: { matches: boolean }) => void) | undefined
+    changeListener?.({ matches: false })
+
+    expect(addSpy.mock.calls.map((c: string[]) => c[0])).toContain(
+      'pointermove'
+    )
+  })
+})

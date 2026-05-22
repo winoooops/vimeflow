@@ -70,9 +70,6 @@ export const useWaterCursor = (
       return
     }
     const mql = window.matchMedia('(prefers-reduced-motion: reduce)')
-    if (mql.matches) {
-      return
-    }
 
     const T: LiquidTune = { ...LIQUID_DEFAULTS, ...tune }
 
@@ -241,17 +238,49 @@ export const useWaterCursor = (
       rafId = requestAnimationFrame(step)
     }
 
-    wrap.addEventListener('pointermove', onMove)
-    wrap.addEventListener('pointerleave', onLeave)
+    let attached = false
 
-    return (): void => {
+    const attach = (): void => {
+      if (attached) {
+        return
+      }
+      wrap.addEventListener('pointermove', onMove)
+      wrap.addEventListener('pointerleave', onLeave)
+      attached = true
+    }
+
+    const detach = (): void => {
+      if (!attached) {
+        return
+      }
+      wrap.removeEventListener('pointermove', onMove)
+      wrap.removeEventListener('pointerleave', onLeave)
+      attached = false
       if (rafId !== null) {
         cancelAnimationFrame(rafId)
       }
       rafId = null
-      wrap.removeEventListener('pointermove', onMove)
-      wrap.removeEventListener('pointerleave', onLeave)
       clearInline()
+    }
+
+    const onMqlChange = (
+      e: MediaQueryListEvent | { matches: boolean }
+    ): void => {
+      if (e.matches) {
+        detach()
+      } else {
+        attach()
+      }
+    }
+    mql.addEventListener('change', onMqlChange as EventListener)
+
+    if (!mql.matches) {
+      attach()
+    }
+
+    return (): void => {
+      mql.removeEventListener('change', onMqlChange as EventListener)
+      detach()
     }
   }, [wrapRef, refsRef, tune])
 }
