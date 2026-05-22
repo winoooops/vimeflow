@@ -1,8 +1,31 @@
 import { createRef } from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import { Tooltip } from './Tooltip'
+
+const rect = ({
+  x,
+  y,
+  width,
+  height,
+}: {
+  x: number
+  y: number
+  width: number
+  height: number
+}): DOMRect =>
+  ({
+    x,
+    y,
+    width,
+    height,
+    top: y,
+    left: x,
+    right: x + width,
+    bottom: y + height,
+    toJSON: () => ({}),
+  }) as DOMRect
 
 describe('Tooltip', () => {
   test('returns children unchanged when disabled', () => {
@@ -163,6 +186,49 @@ describe('Tooltip', () => {
 
     expect(ref.current).toBeInstanceOf(HTMLButtonElement)
     expect(ref.current?.textContent).toBe('trigger')
+  })
+
+  test('anchors the floating element when the trigger has its own ref', async () => {
+    const user = userEvent.setup()
+    const ref = createRef<HTMLButtonElement>()
+
+    const getBoundingClientRect = vi.spyOn(
+      HTMLElement.prototype,
+      'getBoundingClientRect'
+    )
+
+    getBoundingClientRect.mockImplementation(function (
+      this: HTMLElement
+    ): DOMRect {
+      if (this === ref.current) {
+        return rect({ x: 300, y: 100, width: 80, height: 32 })
+      }
+
+      if (this.getAttribute('role') === 'tooltip') {
+        return rect({ x: 0, y: 0, width: 64, height: 28 })
+      }
+
+      return rect({ x: 0, y: 0, width: 0, height: 0 })
+    })
+
+    try {
+      render(
+        <Tooltip content="hello" delayMs={0} placement="right">
+          <button ref={ref} type="button">
+            trigger
+          </button>
+        </Tooltip>
+      )
+
+      await user.hover(screen.getByRole('button', { name: 'trigger' }))
+      const tip = await screen.findByRole('tooltip')
+
+      await waitFor(() => {
+        expect(tip.getAttribute('style')).toMatch(/translate\((?!0px, 0px)/)
+      })
+    } finally {
+      getBoundingClientRect.mockRestore()
+    }
   })
 
   test('appends className to the baseline classes', async () => {
