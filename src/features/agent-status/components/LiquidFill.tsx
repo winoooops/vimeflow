@@ -213,65 +213,73 @@ export const LiquidFill = ({
             data-testid="liquid-slosh"
             style={{ transformOrigin: `${w / 2}px ${h}px` }}
           >
-            <rect
-              data-testid="liquid-base"
-              x={0}
-              y={geom.baseFloor}
-              width={w}
-              height={Math.max(0, h - geom.baseFloor)}
-              fill={`url(#${fillId})`}
-            />
+            {geom.top < geom.h && (
+              <>
+                <rect
+                  data-testid="liquid-base"
+                  x={0}
+                  y={geom.baseFloor}
+                  width={w}
+                  height={Math.max(0, h - geom.baseFloor)}
+                  fill={`url(#${fillId})`}
+                />
 
-            <g
-              data-testid="liquid-water-y-a"
-              style={{
-                transform: `translateY(${geom.top - geom.ambientAmp / 2}px)`,
-                transition: 'transform 500ms ease',
-              }}
-            >
-              <g ref={waveAShiftRef} data-testid="liquid-wave-shift-a">
                 <g
-                  ref={waveAAnimRef}
-                  className="vf-liquid-wave-a"
-                  data-testid="liquid-wave-a-anim"
+                  data-testid="liquid-water-y-a"
+                  style={{
+                    transform: `translateY(${geom.top - geom.ambientAmp / 2}px)`,
+                    transition: 'transform 500ms ease',
+                  }}
                 >
-                  <path d={geom.wavePathA} fill={color} fillOpacity="0.55" />
+                  <g ref={waveAShiftRef} data-testid="liquid-wave-shift-a">
+                    <g
+                      ref={waveAAnimRef}
+                      className="vf-liquid-wave-a"
+                      data-testid="liquid-wave-a-anim"
+                    >
+                      <path
+                        d={geom.wavePathA}
+                        fill={color}
+                        fillOpacity="0.55"
+                      />
+                    </g>
+                  </g>
                 </g>
-              </g>
-            </g>
 
-            <g
-              data-testid="liquid-water-y-b"
-              style={{
-                transform: `translateY(${geom.top}px)`,
-                transition: 'transform 500ms ease',
-              }}
-            >
-              <g ref={waveBShiftRef} data-testid="liquid-wave-shift-b">
                 <g
-                  ref={waveBAnimRef}
-                  className="vf-liquid-wave-b"
-                  data-testid="liquid-wave-b-anim"
+                  data-testid="liquid-water-y-b"
+                  style={{
+                    transform: `translateY(${geom.top}px)`,
+                    transition: 'transform 500ms ease',
+                  }}
                 >
-                  <path
-                    d={geom.wavePathB}
-                    fill={`url(#${fillId})`}
-                    fillOpacity="0.95"
-                  />
+                  <g ref={waveBShiftRef} data-testid="liquid-wave-shift-b">
+                    <g
+                      ref={waveBAnimRef}
+                      className="vf-liquid-wave-b"
+                      data-testid="liquid-wave-b-anim"
+                    >
+                      <path
+                        d={geom.wavePathB}
+                        fill={`url(#${fillId})`}
+                        fillOpacity="0.95"
+                      />
+                    </g>
+                  </g>
                 </g>
-              </g>
-            </g>
 
-            <ellipse
-              ref={sheenRef}
-              data-testid="liquid-sheen"
-              cx={w / 2}
-              cy={geom.top}
-              rx={Math.max(3, w * 0.27)}
-              ry="0.8"
-              fill={`url(#${sheenId})`}
-              fillOpacity="0"
-            />
+                <ellipse
+                  ref={sheenRef}
+                  data-testid="liquid-sheen"
+                  cx={w / 2}
+                  cy={geom.top}
+                  rx={Math.max(3, w * 0.27)}
+                  ry="0.8"
+                  fill={`url(#${sheenId})`}
+                  fillOpacity="0"
+                />
+              </>
+            )}
           </g>
 
           {TICK_LEVELS.map((t) => {

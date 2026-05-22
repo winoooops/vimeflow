@@ -7,9 +7,9 @@ test('renders rounded percent, label, and tick marks at 25/50/75', () => {
 
   expect(screen.getByTestId('bucket-ctx-pct')).toHaveTextContent('74%')
   expect(screen.getByTestId('bucket-ctx-label')).toHaveTextContent('CTX')
-  expect(screen.getByTestId('bucket-tick-25')).toBeInTheDocument()
-  expect(screen.getByTestId('bucket-tick-50')).toBeInTheDocument()
-  expect(screen.getByTestId('bucket-tick-75')).toBeInTheDocument()
+  expect(screen.getByTestId('liquid-tick-25')).toBeInTheDocument()
+  expect(screen.getByTestId('liquid-tick-50')).toBeInTheDocument()
+  expect(screen.getByTestId('liquid-tick-75')).toBeInTheDocument()
 })
 
 test('clamps percent into [0, 100] without throwing', () => {
@@ -23,12 +23,12 @@ test('clamps percent into [0, 100] without throwing', () => {
 
 test('omits liquid when percent is 0', () => {
   render(<Bucket pct={0} color="#cba6f7" label="CTX" />)
-  expect(screen.queryByTestId('bucket-liquid')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('liquid-base')).not.toBeInTheDocument()
 })
 
 test('renders liquid layer when percent is positive', () => {
   render(<Bucket pct={42} color="#cba6f7" label="CTX" />)
-  expect(screen.getByTestId('bucket-liquid')).toBeInTheDocument()
+  expect(screen.getByTestId('liquid-base')).toBeInTheDocument()
 })
 
 test('label is rendered with mono tracking class for horizontal readability', () => {
