@@ -532,3 +532,5 @@ A  docs/superpowers/specs/2026-05-22-liquid-bucket-cursor-response-design.md
 
 No backend (`crates/backend/`) files change. No electron preload changes.
 No `package.json` changes.
+
+<!-- codex-reviewed: 2026-05-22T10:57:34Z -->
