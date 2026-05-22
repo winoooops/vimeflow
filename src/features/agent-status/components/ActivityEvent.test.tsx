@@ -1,10 +1,42 @@
-import { describe, test, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, test, expect, vi } from 'vitest'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ActivityEvent } from './ActivityEvent'
 import type { ToolActivityEvent } from '../types/activityEvent'
 
 const now = new Date('2026-04-22T12:00:00Z')
+
+const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(
+  window.navigator,
+  'clipboard'
+)
+
+afterEach(() => {
+  if (originalClipboardDescriptor) {
+    Object.defineProperty(
+      window.navigator,
+      'clipboard',
+      originalClipboardDescriptor
+    )
+
+    return
+  }
+
+  Reflect.deleteProperty(window.navigator, 'clipboard')
+})
+
+const setClipboard = (
+  clipboard:
+    | {
+        writeText: (text: string) => Promise<void>
+      }
+    | undefined
+): void => {
+  Object.defineProperty(window.navigator, 'clipboard', {
+    configurable: true,
+    value: clipboard,
+  })
+}
 
 const toolEvent = (
   overrides: Partial<ToolActivityEvent> = {}
@@ -357,22 +389,7 @@ describe('ActivityEvent — running state', () => {
 })
 
 describe('ActivityEvent — tooltip integration', () => {
-  // Unique-to-this-consumer concern: the body span only becomes a keyboard
-  // focus stop and a tooltip trigger when the text actually overflows. The
-  // hover-reveals-tooltip behavior is covered by Tooltip.test.tsx.
-  // jsdom reports scrollWidth and clientWidth as 0 without real layout, so
-  // mock the getters for the truncated path and leave defaults for the
-  // fits-in-container path.
-
-  test('marks body span as focusable with tabIndex 0 when truncated', async () => {
-    const scrollWidthSpy = vi
-      .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
-      .mockReturnValue(500)
-
-    const clientWidthSpy = vi
-      .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
-      .mockReturnValue(100)
-
+  test('marks every activity row as focusable with tabIndex 0', () => {
     render(
       <ActivityEvent
         event={{
@@ -389,20 +406,13 @@ describe('ActivityEvent — tooltip integration', () => {
       />
     )
 
-    await waitFor(() =>
-      expect(
-        screen.getByText(/Tooltip\.tsx/, { selector: 'span' })
-      ).toHaveAttribute('tabindex', '0')
+    expect(screen.getByRole('article', { name: 'EDIT' })).toHaveAttribute(
+      'tabindex',
+      '0'
     )
-
-    scrollWidthSpy.mockRestore()
-    clientWidthSpy.mockRestore()
   })
 
-  test('omits tabIndex and keeps tooltip disabled when body fits container', async () => {
-    // Default jsdom layout: scrollWidth = clientWidth = 0, so !isTruncated.
-    const user = userEvent.setup()
-
+  test('shows activity details even when the body fits in the row', async () => {
     render(
       <ActivityEvent
         event={{
@@ -418,12 +428,91 @@ describe('ActivityEvent — tooltip integration', () => {
       />
     )
 
-    const body = screen.getByText('short.tsx', { selector: 'span' })
-    expect(body).not.toHaveAttribute('tabindex')
+    const row = screen.getByRole('article', { name: 'READ' })
+    fireEvent.focus(row)
 
-    await user.hover(body)
-    // With Tooltip disabled, no floating element ever mounts.
-    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    const details = await screen.findByRole('dialog', {
+      name: 'READ activity details',
+    })
+
+    expect(details).toHaveTextContent('short.tsx')
+  })
+
+  test('shows full activity details on row hover and copies the body', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+
+    const body =
+      "pwd && echo '---' && git rev-parse --show-toplevel && npm run test -- --run src/features/agent-status/components/ActivityEvent.test.tsx"
+
+    setClipboard({ writeText })
+
+    render(
+      <ActivityEvent
+        event={{
+          id: 'e3',
+          kind: 'bash',
+          tool: 'Bash',
+          body,
+          timestamp: '2026-04-23T03:00:00Z',
+          status: 'done',
+          durationMs: 42,
+        }}
+        now={new Date('2026-04-23T03:01:00Z')}
+      />
+    )
+
+    const row = screen.getByRole('article', { name: 'BASH' })
+    fireEvent.focus(row)
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+
+    expect(details).toHaveTextContent(body)
+    await user.click(
+      within(details).getByRole('button', { name: 'Copy activity details' })
+    )
+
+    expect(writeText).toHaveBeenCalledWith(body)
+    expect(within(details).getByText('Copied')).toBeInTheDocument()
+  })
+
+  test('shows copy failure when the Clipboard API is unavailable', async () => {
+    const user = userEvent.setup()
+
+    setClipboard(undefined)
+
+    render(
+      <ActivityEvent
+        event={{
+          id: 'e4',
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'pnpm test',
+          timestamp: '2026-04-23T03:00:00Z',
+          status: 'done',
+          durationMs: 42,
+        }}
+        now={new Date('2026-04-23T03:01:00Z')}
+      />
+    )
+
+    const row = screen.getByRole('article', { name: 'BASH' })
+    fireEvent.focus(row)
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+
+    await user.click(
+      within(details).getByRole('button', { name: 'Copy activity details' })
+    )
+
+    expect(within(details).getByText('Failed')).toBeInTheDocument()
+    expect(
+      within(details).getByRole('button', { name: 'Copy failed, try again' })
+    ).toBeInTheDocument()
   })
 })
 

@@ -8,6 +8,7 @@ import {
   type Ref,
 } from 'react'
 import {
+  FloatingFocusManager,
   FloatingPortal,
   autoUpdate,
   flip,
@@ -25,7 +26,7 @@ import {
 } from '@floating-ui/react'
 import { formatShortcut, type ShortcutInput } from '../lib/formatShortcut'
 
-export interface TooltipProps {
+interface TooltipBaseProps {
   content: ReactNode
   /**
    * Optional keyboard shortcut shown as a single chip on the right side
@@ -42,8 +43,24 @@ export interface TooltipProps {
   className?: string
 }
 
-const TOOLTIP_CLASSES =
-  'pointer-events-none z-50 rounded-md shadow-lg px-3 py-1.5 ' +
+interface PassiveTooltipProps extends TooltipBaseProps {
+  interactive?: false
+  ariaLabel?: never
+}
+
+interface InteractiveTooltipProps extends TooltipBaseProps {
+  /**
+   * Allows pointer interaction inside the floating surface. Keep this off for
+   * passive labels so regular tooltips remain non-interactive descriptions.
+   */
+  interactive: true
+  ariaLabel: string
+}
+
+export type TooltipProps = PassiveTooltipProps | InteractiveTooltipProps
+
+const TOOLTIP_BASE_CLASSES =
+  'z-50 rounded-md shadow-lg px-3 py-1.5 ' +
   'bg-surface-container-high/90 backdrop-blur-md backdrop-saturate-150 ' +
   'border border-outline-variant/20 ' +
   'text-xs text-on-surface'
@@ -61,6 +78,8 @@ export const Tooltip = ({
   disabled = false,
   maxWidth = 320,
   className = '',
+  interactive = false,
+  ariaLabel = undefined,
 }: TooltipProps): ReactElement => {
   // `content != null` would admit falsy ReactNodes (`false`, `''`) and render
   // an empty floating box — these are common with the `cond && 'text'` idiom.
@@ -96,12 +115,12 @@ export const Tooltip = ({
   const { getReferenceProps, getFloatingProps } = useInteractions([
     useHover(context, {
       enabled,
-      delay: { open: delayMs, close: 0 },
+      delay: { open: delayMs, close: interactive ? 150 : 0 },
       handleClose: safePolygon(),
     }),
     useFocus(context, { enabled }),
     useDismiss(context, { enabled, escapeKey: true }),
-    useRole(context, { enabled, role: 'tooltip' }),
+    useRole(context, { enabled, role: interactive ? 'dialog' : 'tooltip' }),
   ])
 
   const childRef = isValidElement(children)
@@ -113,6 +132,35 @@ export const Tooltip = ({
     return children
   }
 
+  const interactionClass = interactive
+    ? 'pointer-events-auto'
+    : 'pointer-events-none'
+  const tooltipClasses = `${interactionClass} ${TOOLTIP_BASE_CLASSES}`
+  const classes = className ? `${tooltipClasses} ${className}` : tooltipClasses
+
+  const floatingSurface = (
+    <div
+      ref={refs.setFloating}
+      data-placement={resolvedPlacement}
+      style={{ ...floatingStyles, maxWidth }}
+      className={classes}
+      {...getFloatingProps(
+        ariaLabel === undefined ? undefined : { 'aria-label': ariaLabel }
+      )}
+    >
+      {shortcut !== undefined ? (
+        <div className="flex items-center gap-3">
+          <span className="min-w-0 flex-1">{content}</span>
+          <kbd data-testid="tooltip-shortcut" className={SHORTCUT_CHIP_CLASSES}>
+            {formatShortcut(shortcut)}
+          </kbd>
+        </div>
+      ) : (
+        content
+      )}
+    </div>
+  )
+
   return (
     <>
       {cloneElement(children as ReactElement<Record<string, unknown>>, {
@@ -121,29 +169,18 @@ export const Tooltip = ({
       })}
       {open && (
         <FloatingPortal>
-          <div
-            ref={refs.setFloating}
-            data-placement={resolvedPlacement}
-            style={{ ...floatingStyles, maxWidth }}
-            className={
-              className ? `${TOOLTIP_CLASSES} ${className}` : TOOLTIP_CLASSES
-            }
-            {...getFloatingProps()}
-          >
-            {shortcut !== undefined ? (
-              <div className="flex items-center gap-3">
-                <span className="min-w-0 flex-1">{content}</span>
-                <kbd
-                  data-testid="tooltip-shortcut"
-                  className={SHORTCUT_CHIP_CLASSES}
-                >
-                  {formatShortcut(shortcut)}
-                </kbd>
-              </div>
-            ) : (
-              content
-            )}
-          </div>
+          {interactive ? (
+            <FloatingFocusManager
+              context={context}
+              // eslint-disable-next-line react/jsx-boolean-value -- non-modal lets Tab leave the floating surface after reaching its controls.
+              modal={false}
+              initialFocus={-1}
+            >
+              {floatingSurface}
+            </FloatingFocusManager>
+          ) : (
+            floatingSurface
+          )}
         </FloatingPortal>
       )}
     </>

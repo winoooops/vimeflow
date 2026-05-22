@@ -1,5 +1,11 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, act } from '@testing-library/react'
+import {
+  render,
+  screen,
+  act,
+  fireEvent,
+  createEvent,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ActivityFeed } from './ActivityFeed'
 import type { ActivityEvent as ActivityEventType } from '../types/activityEvent'
@@ -97,6 +103,93 @@ describe('ActivityFeed', () => {
     expect(articles[2]).toHaveTextContent('src/third.ts')
   })
 
+  test('uses roving tabindex for activity rows', () => {
+    render(
+      <ActivityFeed
+        events={[
+          doneEvent('a', 'src/first.ts'),
+          doneEvent('b', 'src/second.ts'),
+          doneEvent('c', 'src/third.ts'),
+        ]}
+      />
+    )
+    const articles = screen.getAllByRole('article')
+
+    expect(articles[0]).toHaveAttribute('tabindex', '0')
+    expect(articles[1]).toHaveAttribute('tabindex', '-1')
+    expect(articles[2]).toHaveAttribute('tabindex', '-1')
+
+    act(() => {
+      articles[0].focus()
+    })
+    fireEvent.keyDown(articles[0], { key: 'ArrowDown' })
+
+    expect(articles[0]).toHaveAttribute('tabindex', '-1')
+    expect(articles[1]).toHaveAttribute('tabindex', '0')
+    expect(articles[1]).toHaveFocus()
+
+    fireEvent.keyDown(articles[1], { key: 'End' })
+
+    expect(articles[1]).toHaveAttribute('tabindex', '-1')
+    expect(articles[2]).toHaveAttribute('tabindex', '0')
+    expect(articles[2]).toHaveFocus()
+  })
+
+  test('prevents handled navigation keys at feed boundaries', () => {
+    render(
+      <ActivityFeed
+        events={[
+          doneEvent('a', 'src/first.ts'),
+          doneEvent('b', 'src/second.ts'),
+          doneEvent('c', 'src/third.ts'),
+        ]}
+      />
+    )
+    const articles = screen.getAllByRole('article')
+
+    const homeEvent = createEvent.keyDown(articles[0], { key: 'Home' })
+    fireEvent(articles[0], homeEvent)
+
+    expect(homeEvent.defaultPrevented).toBe(true)
+    expect(articles[0]).toHaveAttribute('tabindex', '0')
+
+    const upEvent = createEvent.keyDown(articles[0], { key: 'ArrowUp' })
+    fireEvent(articles[0], upEvent)
+
+    expect(upEvent.defaultPrevented).toBe(true)
+    expect(articles[0]).toHaveAttribute('tabindex', '0')
+
+    fireEvent.keyDown(articles[0], { key: 'End' })
+    expect(articles[2]).toHaveAttribute('tabindex', '0')
+
+    const downEvent = createEvent.keyDown(articles[2], { key: 'ArrowDown' })
+    fireEvent(articles[2], downEvent)
+
+    expect(downEvent.defaultPrevented).toBe(true)
+    expect(articles[2]).toHaveAttribute('tabindex', '0')
+  })
+
+  test('exposes activity rows as an ARIA feed', () => {
+    render(
+      <ActivityFeed
+        events={[
+          doneEvent('a', 'src/first.ts'),
+          doneEvent('b', 'src/second.ts'),
+          doneEvent('c', 'src/third.ts'),
+        ]}
+      />
+    )
+    const feed = screen.getByRole('feed', { name: 'Activity events' })
+    const articles = screen.getAllByRole('article')
+
+    expect(feed).toContainElement(articles[0])
+    expect(articles[0]).toHaveAttribute('aria-posinset', '1')
+    expect(articles[1]).toHaveAttribute('aria-posinset', '2')
+    expect(articles[2]).toHaveAttribute('aria-posinset', '3')
+    expect(articles[0]).toHaveAttribute('aria-setsize', '3')
+    expect(articles[2]).toHaveAttribute('aria-setsize', '3')
+  })
+
   test('rail layout element is present (last-resort testid)', () => {
     render(<ActivityFeed events={[doneEvent('a', 'src/a.ts')]} />)
 
@@ -108,8 +201,11 @@ describe('ActivityFeed', () => {
       doneEvent(`e${i}`, `src/${i}.ts`)
     )
     render(<ActivityFeed events={events} />)
+    const articles = screen.getAllByRole('article')
 
-    expect(screen.getAllByRole('article')).toHaveLength(10)
+    expect(articles).toHaveLength(10)
+    expect(articles[0]).toHaveAttribute('aria-setsize', '15')
+    expect(articles[9]).toHaveAttribute('aria-setsize', '15')
     expect(
       screen.getByRole('button', { name: /5 earlier events/i })
     ).toBeInTheDocument()

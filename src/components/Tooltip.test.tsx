@@ -1,7 +1,7 @@
 import { createRef } from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { Tooltip } from './Tooltip'
 
 describe('Tooltip', () => {
@@ -208,6 +208,76 @@ describe('Tooltip', () => {
     await user.hover(screen.getByRole('button', { name: 'trigger' }))
     await screen.findByRole('tooltip')
     expect(screen.queryByTestId('tooltip-shortcut')).not.toBeInTheDocument()
+  })
+
+  test('supports interactive floating content when requested', async () => {
+    const user = userEvent.setup()
+    const handleCopy = vi.fn()
+
+    render(
+      <Tooltip
+        content={
+          <button type="button" onClick={handleCopy}>
+            Copy
+          </button>
+        }
+        delayMs={0}
+        interactive
+        ariaLabel="Activity details"
+      >
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Activity details',
+    })
+
+    expect(dialog).toHaveClass('pointer-events-auto')
+    await user.click(within(dialog).getByRole('button', { name: 'Copy' }))
+    expect(handleCopy).toHaveBeenCalledTimes(1)
+  })
+
+  test('tabs from trigger into interactive floating content', async () => {
+    const user = userEvent.setup()
+    const handleCopy = vi.fn()
+
+    render(
+      <>
+        <Tooltip
+          content={
+            <button type="button" onClick={handleCopy}>
+              Copy
+            </button>
+          }
+          delayMs={0}
+          interactive
+          ariaLabel="Activity details"
+        >
+          <button type="button">trigger</button>
+        </Tooltip>
+        <button type="button">next action</button>
+      </>
+    )
+
+    const trigger = screen.getByRole('button', { name: 'trigger' })
+
+    await user.tab()
+    expect(trigger).toHaveFocus()
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Activity details',
+    })
+
+    await user.tab()
+
+    const copyButton = within(dialog).getByRole('button', { name: 'Copy' })
+    expect(copyButton).toHaveFocus()
+
+    await user.keyboard('{Enter}')
+    expect(handleCopy).toHaveBeenCalledTimes(1)
   })
 
   test('clears stale open state when tooltip becomes disabled mid-flight', async () => {

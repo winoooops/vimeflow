@@ -1,4 +1,12 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactElement,
+} from 'react'
 import { ActivityEvent } from './ActivityEvent'
 import { CollapsibleSection } from './CollapsibleSection'
 import type { ActivityEvent as ActivityEventType } from '../types/activityEvent'
@@ -16,6 +24,8 @@ const VISIBLE_WHEN_COLLAPSED = 10
 export const ActivityFeed = ({ events }: ActivityFeedProps): ReactElement => {
   const [now, setNow] = useState<Date>(() => new Date())
   const [showAll, setShowAll] = useState<boolean>(false)
+  const [activeEventId, setActiveEventId] = useState<string | null>(null)
+  const eventRefs = useRef<Map<string, HTMLElement>>(new Map())
 
   // Two separate effects — combining them into one `[hasRunning, events]`
   // dep list resets the interval on every event arrival, which stalls the
@@ -54,7 +64,62 @@ export const ActivityFeed = ({ events }: ActivityFeedProps): ReactElement => {
   }, [hasRunning])
 
   const overflow = events.length - VISIBLE_WHEN_COLLAPSED
-  const visible = showAll ? events : events.slice(0, VISIBLE_WHEN_COLLAPSED)
+
+  const visible = useMemo(
+    () => (showAll ? events : events.slice(0, VISIBLE_WHEN_COLLAPSED)),
+    [events, showAll]
+  )
+
+  const activeVisibleEventId =
+    activeEventId !== null &&
+    visible.some((event) => event.id === activeEventId)
+      ? activeEventId
+      : (visible[0]?.id ?? null)
+
+  useEffect(() => {
+    setActiveEventId((current) => {
+      if (visible.length === 0) {
+        return null
+      }
+
+      return current !== null && visible.some((event) => event.id === current)
+        ? current
+        : visible[0].id
+    })
+  }, [visible])
+
+  const handleEventKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLElement>, index: number): void => {
+      let nextIndex: number | null = null
+      const lastIndex = visible.length - 1
+
+      if (event.key === 'ArrowDown') {
+        nextIndex = Math.min(index + 1, lastIndex)
+      } else if (event.key === 'ArrowUp') {
+        nextIndex = Math.max(index - 1, 0)
+      } else if (event.key === 'Home') {
+        nextIndex = 0
+      } else if (event.key === 'End') {
+        nextIndex = lastIndex
+      }
+
+      if (nextIndex === null) {
+        return
+      }
+
+      event.preventDefault()
+
+      if (nextIndex === index) {
+        return
+      }
+
+      const nextEvent = visible[nextIndex]
+
+      setActiveEventId(nextEvent.id)
+      eventRefs.current.get(nextEvent.id)?.focus()
+    },
+    [visible]
+  )
 
   return (
     <CollapsibleSection title="Activity" count={events.length} defaultExpanded>
@@ -62,15 +127,35 @@ export const ActivityFeed = ({ events }: ActivityFeedProps): ReactElement => {
         <p className="text-xs text-on-surface-variant">No activity yet</p>
       ) : (
         <>
-          <div className="relative">
+          <div role="feed" aria-label="Activity events" className="relative">
             <div
               data-testid="activity-feed-rail"
               className="absolute left-3 top-0 bottom-0 w-px bg-outline-variant/40"
               aria-hidden="true"
             />
             <div className="relative flex flex-col">
-              {visible.map((event) => (
-                <ActivityEvent key={event.id} event={event} now={now} />
+              {visible.map((event, index) => (
+                <ActivityEvent
+                  key={event.id}
+                  event={event}
+                  now={now}
+                  rowRef={(element): void => {
+                    if (element) {
+                      eventRefs.current.set(event.id, element)
+
+                      return
+                    }
+
+                    eventRefs.current.delete(event.id)
+                  }}
+                  ariaPosInSet={index + 1}
+                  ariaSetSize={events.length}
+                  tabIndex={event.id === activeVisibleEventId ? 0 : -1}
+                  onFocus={(): void => setActiveEventId(event.id)}
+                  onKeyDown={(keyboardEvent): void =>
+                    handleEventKeyDown(keyboardEvent, index)
+                  }
+                />
               ))}
             </div>
           </div>

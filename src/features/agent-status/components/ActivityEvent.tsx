@@ -1,4 +1,12 @@
-import { useLayoutEffect, useRef, useState, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type FocusEventHandler,
+  type KeyboardEventHandler,
+  type ReactElement,
+  type Ref,
+} from 'react'
 import { Tooltip } from '../../../components/Tooltip'
 import { formatRelativeTime, formatDuration } from '../utils/relativeTime'
 import type {
@@ -7,8 +15,14 @@ import type {
 } from '../types/activityEvent'
 
 interface ActivityEventProps {
+  ariaPosInSet?: number
+  ariaSetSize?: number
   event: ActivityEventType
   now: Date
+  onFocus?: FocusEventHandler<HTMLElement>
+  onKeyDown?: KeyboardEventHandler<HTMLElement>
+  rowRef?: Ref<HTMLElement>
+  tabIndex?: 0 | -1
 }
 
 const KIND_ICON: Record<ActivityEventKind, string> = {
@@ -70,6 +84,103 @@ const getBodyClass = (kind: ActivityEventKind): string => {
   return 'text-xs text-on-surface font-mono'
 }
 
+const COPY_FEEDBACK_MS = 1500
+
+type CopyState = 'idle' | 'copied' | 'failed'
+
+const writeClipboardText = async (text: string): Promise<void> => {
+  const clipboard = (window.navigator as unknown as { clipboard?: Clipboard })
+    .clipboard
+
+  if (clipboard?.writeText === undefined) {
+    throw new Error('Clipboard API unavailable')
+  }
+
+  await clipboard.writeText(text)
+}
+
+interface ActivityTooltipContentProps {
+  body: string
+  label: string
+}
+
+const ActivityTooltipContent = ({
+  body,
+  label,
+}: ActivityTooltipContentProps): ReactElement => {
+  const [copyState, setCopyState] = useState<CopyState>('idle')
+
+  useEffect(() => {
+    setCopyState('idle')
+  }, [body])
+
+  useEffect(() => {
+    if (copyState === 'idle') {
+      return
+    }
+
+    const id = window.setTimeout(() => setCopyState('idle'), COPY_FEEDBACK_MS)
+
+    return (): void => window.clearTimeout(id)
+  }, [copyState])
+
+  const handleCopy = useCallback(async (): Promise<void> => {
+    try {
+      await writeClipboardText(body)
+      setCopyState('copied')
+    } catch {
+      setCopyState('failed')
+    }
+  }, [body])
+
+  const copyButtonLabel =
+    copyState === 'copied'
+      ? 'Copied activity details'
+      : copyState === 'failed'
+        ? 'Copy failed, try again'
+        : 'Copy activity details'
+
+  const copyFeedback =
+    copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Failed' : ''
+
+  return (
+    <div className="w-[min(30rem,calc(100vw-2rem))]">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="min-w-0 text-[10px] font-bold uppercase tracking-[0.12em] text-on-surface-variant">
+          {label}
+        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span
+            aria-live="polite"
+            className="min-w-10 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-on-surface-variant"
+          >
+            {copyFeedback}
+          </span>
+          <button
+            type="button"
+            aria-label={copyButtonLabel}
+            onClick={(): void => {
+              void handleCopy()
+            }}
+            className="inline-flex h-6 items-center gap-1 rounded-md bg-on-surface/10 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-on-surface-variant transition-colors hover:bg-on-surface/15 hover:text-on-surface focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container"
+          >
+            <span
+              className="material-symbols-outlined text-sm"
+              aria-hidden="true"
+            >
+              {copyState === 'copied' ? 'check' : 'content_copy'}
+            </span>
+            Copy
+          </button>
+        </div>
+      </div>
+      <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-container/60 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-on-surface">
+        {body}
+      </pre>
+    </div>
+  )
+}
+
 interface StatusChipsProps {
   event: ActivityEventType
 }
@@ -122,40 +233,19 @@ const StatusChips = ({ event }: StatusChipsProps): ReactElement | null => {
 }
 
 export const ActivityEvent = ({
+  ariaPosInSet = undefined,
+  ariaSetSize = undefined,
   event,
   now,
+  onFocus = undefined,
+  onKeyDown = undefined,
+  rowRef = undefined,
+  tabIndex = 0,
 }: ActivityEventProps): ReactElement => {
   const symbol = KIND_ICON[event.kind]
   const colorClass = KIND_COLOR[event.kind]
   const label = getLabel(event)
   const isRunning = event.status === 'running'
-
-  // Only surface the tooltip (and its keyboard focus stop) when the body
-  // actually overflows its container. Without this, a feed with many
-  // already-fitting rows adds redundant Tab stops proportional to event
-  // count and causes AT to double-announce content that's fully visible.
-  const bodyRef = useRef<HTMLSpanElement>(null)
-  const [isTruncated, setIsTruncated] = useState(false)
-
-  useLayoutEffect(() => {
-    const el = bodyRef.current
-    if (!el) {
-      return
-    }
-
-    const measure = (): void => {
-      setIsTruncated(el.scrollWidth > el.clientWidth)
-    }
-
-    measure()
-
-    const observer = new ResizeObserver(measure)
-    observer.observe(el)
-
-    return (): void => {
-      observer.disconnect()
-    }
-  }, [event.body])
 
   const timestampText = isRunning
     ? // Clamp negative deltas to zero so a tool whose emitted timestamp
@@ -165,50 +255,57 @@ export const ActivityEvent = ({
     : formatRelativeTime(event.timestamp, now)
 
   return (
-    <article aria-label={label} className="flex items-start gap-2 py-1">
-      <div className="relative">
-        <span
-          className={`material-symbols-outlined text-sm ${colorClass} w-6 h-6 rounded-md bg-surface-container-high flex items-center justify-center`}
-          aria-hidden="true"
-        >
-          {symbol}
-        </span>
-        {isRunning && (
+    <Tooltip
+      content={<ActivityTooltipContent body={event.body} label={label} />}
+      placement="left"
+      maxWidth={520}
+      interactive
+      ariaLabel={`${label} activity details`}
+      className="p-3"
+    >
+      <article
+        ref={rowRef}
+        aria-label={label}
+        aria-posinset={ariaPosInSet}
+        aria-setsize={ariaSetSize}
+        tabIndex={tabIndex}
+        onFocus={onFocus}
+        onKeyDown={onKeyDown}
+        className="flex items-start gap-2 rounded-md py-1 outline-none focus-visible:ring-1 focus-visible:ring-primary-container"
+      >
+        <div className="relative">
           <span
-            role="status"
-            aria-label="running"
-            className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-success animate-pulse"
-          />
-        )}
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2">
-          <span
-            className={`text-[10px] font-bold uppercase tracking-[0.12em] ${colorClass}`}
+            className={`material-symbols-outlined text-sm ${colorClass} w-6 h-6 rounded-md bg-surface-container-high flex items-center justify-center`}
+            aria-hidden="true"
           >
-            {label}
+            {symbol}
           </span>
-          <span className="text-[9px] font-mono text-outline">
-            {timestampText}
-          </span>
+          {isRunning && (
+            <span
+              role="status"
+              aria-label="running"
+              className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-success animate-pulse"
+            />
+          )}
         </div>
-        <Tooltip
-          content={event.body}
-          placement="left"
-          maxWidth={320}
-          disabled={!isTruncated}
-        >
-          <span
-            ref={bodyRef}
-            tabIndex={isTruncated ? 0 : undefined}
-            className={`mt-0.5 block truncate outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${getBodyClass(event.kind)}`}
-          >
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span
+              className={`text-[10px] font-bold uppercase tracking-[0.12em] ${colorClass}`}
+            >
+              {label}
+            </span>
+            <span className="text-[9px] font-mono text-outline">
+              {timestampText}
+            </span>
+          </div>
+          <span className={`mt-0.5 block truncate ${getBodyClass(event.kind)}`}>
             {event.body}
           </span>
-        </Tooltip>
-        <StatusChips event={event} />
-      </div>
-    </article>
+          <StatusChips event={event} />
+        </div>
+      </article>
+    </Tooltip>
   )
 }
