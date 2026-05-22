@@ -122,7 +122,7 @@ fi
 #
 # If -C or --work-tree was used, run the check against that directory instead
 # of the current working directory — this prevents false positives when
-# agents use git -C .claude/worktrees/<branch> commit from the primary checkout.
+# agents use git -C worktrees/<branch> commit from the primary checkout.
 if [ -n "$git_target_dir" ]; then
   current_branch=$(git -C "$git_target_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 else
@@ -135,7 +135,7 @@ if [ -z "$current_branch" ]; then
 fi
 
 if [ "$current_branch" = "main" ]; then
-  echo "BLOCKED: Cannot commit/push while on 'main'. Create a feature worktree first: git worktree add .claude/worktrees/<slug> -b feat/<name>" >&2
+  echo "BLOCKED: Cannot commit/push while on 'main'. Create a feature worktree first: git worktree add worktrees/<slug> -b feat/<name>" >&2
   echo "        (Use the primary checkout only when the user explicitly asks for that override.)" >&2
   exit 2
 fi

@@ -3,35 +3,35 @@
 ## Principles
 
 1. **`main` branch is sacred** — never commit directly to `main`. The primary checkout may stay on `main` while feature work happens in a linked worktree.
-2. **Main-agent feature work defaults to a worktree** — when the interactive main agent starts implementation work for a feature or fix, it creates/enters a dedicated linked worktree under `.claude/worktrees/<slug>/` on a feature branch (`feat/<name>`, `fix/<name>`, etc.) and commits there.
+2. **Main-agent feature work defaults to a worktree** — when the interactive main agent starts implementation work for a feature or fix, it creates/enters a dedicated linked worktree under `worktrees/<slug>/` on a feature branch (`feat/<name>`, `fix/<name>`, etc.) and commits there.
    - **Why:** defaulting to an isolated worktree keeps the primary checkout available for the user's app, ad hoc inspection, or unrelated local edits. A dirty primary checkout is not a reason to block feature work; create a worktree instead.
    - **Exception:** use the primary checkout only when the user explicitly asks for it, the task is read-only, or the work must modify the exact checkout the user has open.
-3. **Subagents and Lifeline runs use their own worktree** — any autonomous or parallel agent (`/lifeline:loop`, dispatched parallel agents) must be fully isolated under `.claude/worktrees/<slug>/` so it does not fight the user, the main agent, or another subagent for a working tree.
+3. **Subagents and Lifeline runs use their own worktree** — any autonomous or parallel agent (`/lifeline:loop`, dispatched parallel agents) must be fully isolated under `worktrees/<slug>/` so it does not fight the user, the main agent, or another subagent for a working tree.
 4. **Read-only tasks skip branching** — research, exploration, and answering questions can happen on `main` in the primary checkout. No branch needed.
 5. **Git commands start with `git`** — always invoke git as the first token in the command (e.g., `git push`, not `ENV=val git push` or `cd repo && git push`). This ensures the PreToolUse hook can reliably detect and guard git operations. This framework is designed for agents, not humans — compound shell expressions are unnecessary.
 
 ## Who Works Where
 
-| Actor                          | Location                      | Branch                        |
-| ------------------------------ | ----------------------------- | ----------------------------- |
-| Interactive main agent         | `.claude/worktrees/<slug>/`   | Feature branch (never `main`) |
-| Explicit primary-checkout work | Primary checkout (repo root)  | Feature branch (never `main`) |
-| `/lifeline:loop` (autonomous)  | `.claude/worktrees/<branch>/` | Feature branch                |
-| Dispatched parallel subagents  | `.claude/worktrees/<branch>/` | Feature branch                |
-| Read-only research             | Primary checkout              | `main` is fine                |
+| Actor                          | Location                     | Branch                        |
+| ------------------------------ | ---------------------------- | ----------------------------- |
+| Interactive main agent         | `worktrees/<slug>/`          | Feature branch (never `main`) |
+| Explicit primary-checkout work | Primary checkout (repo root) | Feature branch (never `main`) |
+| `/lifeline:loop` (autonomous)  | `worktrees/<branch>/`        | Feature branch                |
+| Dispatched parallel subagents  | `worktrees/<branch>/`        | Feature branch                |
+| Read-only research             | Primary checkout             | `main` is fine                |
 
 ## Worktree Location
 
-All agent worktrees live under `.claude/worktrees/` (gitignored, local-only):
+All agent worktrees live under `worktrees/` (gitignored, local-only):
 
 ```
 Vimeflow/                          ← primary checkout (user baseline / explicit override only)
+├── worktrees/                     ← gitignored (local-only)
+│   ├── feat-agent-sidebar/        ← main agent's feature checkout
+│   ├── feat-lifeline-retry/       ← Lifeline loop's full checkout
+│   └── refactor-parallel-a/       ← dispatched subagent's full checkout
 ├── .claude/
-│   ├── skills/                    ← tracked in git (pushed to repo)
-│   └── worktrees/                 ← gitignored (local-only)
-│       ├── feat-agent-sidebar/    ← main agent's feature checkout
-│       ├── feat-lifeline-retry/   ← Lifeline loop's full checkout
-│       └── refactor-parallel-a/   ← dispatched subagent's full checkout
+│   └── skills/                    ← tracked in git (pushed to repo)
 ├── src/
 └── ...
 ```
@@ -44,13 +44,13 @@ Each worktree is a complete working directory with its own `src/`, `node_modules
 
 ```bash
 # From the primary checkout
-git worktree add .claude/worktrees/<slug> -b feat/<name>
-cd .claude/worktrees/<slug>
+git worktree add worktrees/<slug> -b feat/<name>
+cd worktrees/<slug>
 npm install
 # edit, commit, push, create PR — all from the linked worktree
 ```
 
-Or use Claude Code's built-in `EnterWorktree` if available; it creates under `.claude/worktrees/` by default. This is the normal path when a main agent starts a feature.
+Or use Claude Code's built-in `EnterWorktree` if available, pointed at `worktrees/<slug>/`. This is the normal path when a main agent starts a feature.
 
 If the user explicitly asks the main agent to work in the primary checkout, use a feature branch there instead:
 
@@ -63,12 +63,12 @@ git checkout -b feat/<name>
 
 ```bash
 # From the primary checkout
-git worktree add .claude/worktrees/<slug> -b <branch-name>
-cd .claude/worktrees/<slug>
+git worktree add worktrees/<slug> -b <branch-name>
+cd worktrees/<slug>
 npm install
 ```
 
-Or use Claude Code's built-in `EnterWorktree` (creates under `.claude/worktrees/` by default). This path applies to `/lifeline:loop` and any parallel dispatched agents.
+Or use Claude Code's built-in `EnterWorktree`, pointed at `worktrees/<slug>/`. This path applies to `/lifeline:loop` and any parallel dispatched agents.
 
 ### ACTIVE
 
@@ -92,7 +92,7 @@ After the user merges or closes the PR:
 
 ```bash
 # From the primary checkout
-git worktree remove .claude/worktrees/<slug>
+git worktree remove worktrees/<slug>
 git branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
 git worktree prune                 # clean up stale worktree metadata
 ```
@@ -176,7 +176,7 @@ A worktree is likely stale if:
 
 ```bash
 # Remove each stale worktree
-git worktree remove .claude/worktrees/<stale-branch>
+git worktree remove worktrees/<stale-branch>
 
 # After removing worktrees, prune metadata
 git worktree prune
