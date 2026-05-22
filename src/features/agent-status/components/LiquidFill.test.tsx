@@ -1,6 +1,18 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
 import { LiquidFill } from './LiquidFill'
+
+// jsdom does not provide PointerEvent — see useWaterCursor.test.tsx
+// for the same shim.
+const firePointer = (
+  el: Element,
+  type: 'pointermove' | 'pointerleave',
+  init: Partial<MouseEventInit> = {}
+): void => {
+  el.dispatchEvent(
+    new MouseEvent(type, { bubbles: true, cancelable: true, ...init })
+  )
+}
 
 describe('LiquidFill — bar mode geometry', () => {
   test('renders SVG with viewBox "0 0 22 110"', () => {
@@ -87,5 +99,32 @@ describe('LiquidFill — bar mode geometry', () => {
     // Both paths must reach the bottom and close — defensive sanity.
     expect(ad).toMatch(/L \d/)
     expect(bd).toMatch(/L \d/)
+  })
+})
+
+describe('LiquidFill — cursor hook integration', () => {
+  test('pointermove on outer wrap sets data-interactive on slosh', async () => {
+    render(<LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />)
+    const wrap = screen.getByTestId('lf')
+    Object.defineProperty(wrap, 'getBoundingClientRect', {
+      value: () => ({
+        left: 0,
+        top: 0,
+        right: 22,
+        bottom: 110,
+        width: 22,
+        height: 110,
+        x: 0,
+        y: 0,
+        toJSON: (): Record<string, never> => ({}),
+      }),
+    })
+
+    await act(async () => {
+      firePointer(wrap, 'pointermove', { clientX: 11, clientY: 55 })
+      await new Promise((resolve) => setTimeout(resolve, 32))
+    })
+    const slosh = screen.getByTestId('liquid-slosh')
+    expect(slosh.getAttribute('data-interactive')).toBe('on')
   })
 })

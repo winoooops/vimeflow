@@ -1,5 +1,9 @@
-import { useId, useMemo, type ReactElement } from 'react'
-import { type LiquidTune } from '../hooks/useWaterCursor'
+import { useEffect, useId, useMemo, useRef, type ReactElement } from 'react'
+import {
+  useWaterCursor,
+  type LiquidRefs,
+  type LiquidTune,
+} from '../hooks/useWaterCursor'
 
 export interface LiquidFillProps {
   pct: number
@@ -73,21 +77,58 @@ export const LiquidFill = ({
   ariaHidden = true,
   className = undefined,
   testId = undefined,
-  tune: _tune = undefined,
+  tune = undefined,
 }: LiquidFillProps): ReactElement => {
-  void _tune // hook wiring comes in Task 6
-
   const reactId = useId().replace(/:/g, '')
   const fillId = `liquid-fill-${reactId}`
   const glassId = `liquid-glass-${reactId}`
   const sheenId = `liquid-sheen-${reactId}`
   const clipId = `liquid-clip-${reactId}`
 
-  const { w, h } = mode === 'bar' ? BAR_DIMS : BAR_DIMS // fill measured in Task 7
+  const { w, h } = mode === 'bar' ? BAR_DIMS : BAR_DIMS
   const geom = useMemo(() => computeGeom(w, h, pct), [w, h, pct])
+
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+  const sloshRef = useRef<SVGGElement | null>(null)
+  const waveAShiftRef = useRef<SVGGElement | null>(null)
+  const waveBShiftRef = useRef<SVGGElement | null>(null)
+  const waveAAnimRef = useRef<SVGGElement | null>(null)
+  const waveBAnimRef = useRef<SVGGElement | null>(null)
+  const sheenRef = useRef<SVGEllipseElement | null>(null)
+
+  const refsRef = useRef<LiquidRefs | null>(null)
+  useEffect(() => {
+    if (
+      sloshRef.current === null ||
+      waveAShiftRef.current === null ||
+      waveBShiftRef.current === null ||
+      waveAAnimRef.current === null ||
+      waveBAnimRef.current === null ||
+      sheenRef.current === null
+    ) {
+      refsRef.current = null
+
+      return
+    }
+
+    refsRef.current = {
+      slosh: sloshRef.current,
+      waveAShift: waveAShiftRef.current,
+      waveBShift: waveBShiftRef.current,
+      waveAAnim: waveAAnimRef.current,
+      waveBAnim: waveBAnimRef.current,
+      sheen: sheenRef.current,
+      waterTop: geom.top,
+      ambientAmp: geom.ambientAmp,
+      dims: { w, h },
+    }
+  }, [geom.top, geom.ambientAmp, w, h])
+
+  useWaterCursor(wrapRef, refsRef, tune)
 
   return (
     <div
+      ref={wrapRef}
       data-testid={testId}
       className={className}
       style={{ display: mode === 'bar' ? 'inline-block' : undefined }}
@@ -131,6 +172,7 @@ export const LiquidFill = ({
 
         <g clipPath={`url(#${clipId})`}>
           <g
+            ref={sloshRef}
             className="vf-liquid-slosh"
             data-testid="liquid-slosh"
             style={{ transformOrigin: `${w / 2}px ${h}px` }}
@@ -151,8 +193,9 @@ export const LiquidFill = ({
                 transition: 'transform 500ms ease',
               }}
             >
-              <g data-testid="liquid-wave-shift-a">
+              <g ref={waveAShiftRef} data-testid="liquid-wave-shift-a">
                 <g
+                  ref={waveAAnimRef}
                   className="vf-liquid-wave-a"
                   data-testid="liquid-wave-a-anim"
                 >
@@ -168,8 +211,9 @@ export const LiquidFill = ({
                 transition: 'transform 500ms ease',
               }}
             >
-              <g data-testid="liquid-wave-shift-b">
+              <g ref={waveBShiftRef} data-testid="liquid-wave-shift-b">
                 <g
+                  ref={waveBAnimRef}
                   className="vf-liquid-wave-b"
                   data-testid="liquid-wave-b-anim"
                 >
@@ -183,6 +227,7 @@ export const LiquidFill = ({
             </g>
 
             <ellipse
+              ref={sheenRef}
               data-testid="liquid-sheen"
               cx={w / 2}
               cy={geom.top}
