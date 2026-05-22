@@ -7,8 +7,9 @@
 # Returns exit 0 (allow) otherwise — feature branches are fine anywhere.
 #
 # Policy (see rules/common/worktrees.md):
-#   - Main agent works on a feature branch in the primary checkout.
-#   - Subagents / Lifeline runs work on a feature branch in a linked worktree.
+#   - Main-agent feature work defaults to a feature branch in a linked worktree.
+#   - Subagents / Lifeline runs each use their own feature-branch worktree.
+#   - Primary-checkout feature work is an explicit user-directed override.
 #   - Nobody commits to `main`, ever.
 #
 # Hook input (JSON on stdin) contains the tool parameters.
@@ -134,8 +135,8 @@ if [ -z "$current_branch" ]; then
 fi
 
 if [ "$current_branch" = "main" ]; then
-  echo "BLOCKED: Cannot commit/push while on 'main'. Check out a feature branch first: git checkout -b feat/<name>" >&2
-  echo "        (Subagents / Lifeline runs should create a worktree: git worktree add .claude/worktrees/<branch> -b <branch>)" >&2
+  echo "BLOCKED: Cannot commit/push while on 'main'. Create a feature worktree first: git worktree add .claude/worktrees/<slug> -b feat/<name>" >&2
+  echo "        (Use the primary checkout only when the user explicitly asks for that override.)" >&2
   exit 2
 fi
 

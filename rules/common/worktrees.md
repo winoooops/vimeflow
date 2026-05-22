@@ -2,31 +2,34 @@
 
 ## Principles
 
-1. **`main` branch is sacred** — never commit directly to `main`. The primary checkout is allowed (and expected) to be on a feature branch during active work.
-2. **Main agent works on a feature branch in the primary checkout** — the interactive Claude Code agent checks out `feat/<name>` (or `fix/`, `refactor/`, etc.) in the primary checkout and commits there. It does **not** create a worktree for itself.
-   - **Why:** the user runs the Vimeflow app from the primary checkout and watches the diff viewer live. Edits inside `.claude/worktrees/` are invisible to that view because the diff viewer only reflects its own cwd's working tree.
-3. **Subagents and Lifeline runs use a worktree** — any autonomous or parallel agent (`/lifeline:loop`, dispatched parallel agents) must be fully isolated under `.claude/worktrees/<branch>/` so it does not fight the user or the main agent for the working tree.
+1. **`main` branch is sacred** — never commit directly to `main`. The primary checkout may stay on `main` while feature work happens in a linked worktree.
+2. **Main-agent feature work defaults to a worktree** — when the interactive main agent starts implementation work for a feature or fix, it creates/enters a dedicated linked worktree under `.claude/worktrees/<slug>/` on a feature branch (`feat/<name>`, `fix/<name>`, etc.) and commits there.
+   - **Why:** defaulting to an isolated worktree keeps the primary checkout available for the user's app, ad hoc inspection, or unrelated local edits. A dirty primary checkout is not a reason to block feature work; create a worktree instead.
+   - **Exception:** use the primary checkout only when the user explicitly asks for it, the task is read-only, or the work must modify the exact checkout the user has open.
+3. **Subagents and Lifeline runs use their own worktree** — any autonomous or parallel agent (`/lifeline:loop`, dispatched parallel agents) must be fully isolated under `.claude/worktrees/<slug>/` so it does not fight the user, the main agent, or another subagent for a working tree.
 4. **Read-only tasks skip branching** — research, exploration, and answering questions can happen on `main` in the primary checkout. No branch needed.
 5. **Git commands start with `git`** — always invoke git as the first token in the command (e.g., `git push`, not `ENV=val git push` or `cd repo && git push`). This ensures the PreToolUse hook can reliably detect and guard git operations. This framework is designed for agents, not humans — compound shell expressions are unnecessary.
 
 ## Who Works Where
 
-| Actor                         | Location                      | Branch                        |
-| ----------------------------- | ----------------------------- | ----------------------------- |
-| Interactive main agent        | Primary checkout (repo root)  | Feature branch (never `main`) |
-| `/lifeline:loop` (autonomous) | `.claude/worktrees/<branch>/` | Feature branch                |
-| Dispatched parallel subagents | `.claude/worktrees/<branch>/` | Feature branch                |
-| Read-only research            | Primary checkout              | `main` is fine                |
+| Actor                          | Location                      | Branch                        |
+| ------------------------------ | ----------------------------- | ----------------------------- |
+| Interactive main agent         | `.claude/worktrees/<slug>/`   | Feature branch (never `main`) |
+| Explicit primary-checkout work | Primary checkout (repo root)  | Feature branch (never `main`) |
+| `/lifeline:loop` (autonomous)  | `.claude/worktrees/<branch>/` | Feature branch                |
+| Dispatched parallel subagents  | `.claude/worktrees/<branch>/` | Feature branch                |
+| Read-only research             | Primary checkout              | `main` is fine                |
 
 ## Worktree Location
 
-All subagent and Lifeline worktrees live under `.claude/worktrees/` (gitignored, local-only):
+All agent worktrees live under `.claude/worktrees/` (gitignored, local-only):
 
 ```
-Vimeflow/                          ← primary checkout (main agent works here on feat/* branch)
+Vimeflow/                          ← primary checkout (user baseline / explicit override only)
 ├── .claude/
 │   ├── skills/                    ← tracked in git (pushed to repo)
 │   └── worktrees/                 ← gitignored (local-only)
+│       ├── feat-agent-sidebar/    ← main agent's feature checkout
 │       ├── feat-lifeline-retry/   ← Lifeline loop's full checkout
 │       └── refactor-parallel-a/   ← dispatched subagent's full checkout
 ├── src/
@@ -37,34 +40,43 @@ Each worktree is a complete working directory with its own `src/`, `node_modules
 
 ## Lifecycle
 
-### Main agent (interactive) — feature branch in primary checkout
+### Main agent (interactive) — dedicated worktree by default
+
+```bash
+# From the primary checkout
+git worktree add .claude/worktrees/<slug> -b feat/<name>
+cd .claude/worktrees/<slug>
+npm install
+# edit, commit, push, create PR — all from the linked worktree
+```
+
+Or use Claude Code's built-in `EnterWorktree` if available; it creates under `.claude/worktrees/` by default. This is the normal path when a main agent starts a feature.
+
+If the user explicitly asks the main agent to work in the primary checkout, use a feature branch there instead:
 
 ```bash
 # From the primary checkout, starting on main
 git checkout -b feat/<name>
-# edit, commit, push, create PR — all from the primary checkout
 ```
-
-Do **not** run `EnterWorktree` reflexively at the start of an interactive task. Check out a feature branch instead so the user's diff viewer reflects your live edits.
 
 ### Subagent / Lifeline — dedicated worktree
 
 ```bash
 # From the primary checkout
-git worktree add .claude/worktrees/<branch-name> -b <branch-name>
-cd .claude/worktrees/<branch-name>
+git worktree add .claude/worktrees/<slug> -b <branch-name>
+cd .claude/worktrees/<slug>
 npm install
 ```
 
-Or use Claude Code's built-in: `EnterWorktree` (creates under `.claude/worktrees/` by default). This path applies to `/lifeline:loop` and any parallel dispatched agents.
+Or use Claude Code's built-in `EnterWorktree` (creates under `.claude/worktrees/` by default). This path applies to `/lifeline:loop` and any parallel dispatched agents.
 
 ### ACTIVE
 
-Agent works normally — edit, commit, push, create PR. Whether this happens in the primary checkout (main agent) or a linked worktree (subagent), the PR lifecycle is the same.
+Agent works normally — edit, commit, push, create PR. Whether this happens in a linked worktree (default) or a primary-checkout override, the PR lifecycle is the same.
 
 **Once a PR is created, the agent stays on that branch (or in that worktree) until the PR is resolved.** Do not switch back to `main` between creating the PR and the PR being merged or closed. This ensures review-fix cycles (`/lifeline:upsource-review`) happen in the correct working directory without branch switching.
 
-The PR lifecycle (primary checkout or linked worktree):
+The PR lifecycle:
 
 ```
 create PR → wait for review → fix findings → push → wait for review → ... → merged/closed
@@ -76,21 +88,21 @@ Only the **user** decides when a PR is merged. Agents do not merge PRs unless ex
 
 After the user merges or closes the PR:
 
-**Main agent (feature branch in primary checkout):**
+**Linked worktree (default for main agent, Lifeline, and subagents):**
+
+```bash
+# From the primary checkout
+git worktree remove .claude/worktrees/<slug>
+git branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
+git worktree prune                 # clean up stale worktree metadata
+```
+
+**Primary-checkout override:**
 
 ```bash
 git checkout main
 git pull
 git branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
-```
-
-**Subagent / Lifeline (linked worktree):**
-
-```bash
-# From the primary checkout
-git worktree remove .claude/worktrees/<branch-name>
-git branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
-git worktree prune                 # clean up stale worktree metadata
 ```
 
 > **Why `-D` not `-d`:** Because this repo mandates squash-and-merge, the feature branch's individual commits never become ancestors of `main` — only the single squash commit does. `git branch -d` refuses to delete a branch it considers "not fully merged" and will fail on every normal cleanup. Use `-D` unconditionally.
