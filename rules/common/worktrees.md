@@ -88,6 +88,8 @@ Only the **user** decides when a PR is merged. Agents do not merge PRs unless ex
 
 After the user merges or closes the PR:
 
+Cleanup mode is the exception to the stay-on-branch rule above. Once the PR is resolved, the agent must refresh the primary checkout's `main` from the remote default branch before starting another branch or worktree. This baseline-refresh action is required after linked-worktree cleanup and after primary-checkout override cleanup so the next feature never branches from stale `main`.
+
 **Linked worktree (default for main agent, Lifeline, and subagents):**
 
 ```bash
@@ -101,7 +103,6 @@ git worktree prune                 # clean up stale worktree metadata
 
 ```bash
 git checkout main
-git pull
 git branch -D <branch-name>       # squash-merge: -D is always required; -d would fail
 ```
 

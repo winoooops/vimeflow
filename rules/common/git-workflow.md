@@ -52,7 +52,7 @@ After creating a PR, the agent remains on the feature branch until the PR is res
 3. **Push fixes**: commit and push from the same branch
 4. **Repeat**: wait for next review cycle, fix, push
 5. **Done**: only the user merges or closes the PR
-6. **Cleanup**: after merge, remove the linked worktree and delete the local branch; for primary-checkout overrides, return to `main` and delete the local branch. See [worktrees.md](./worktrees.md).
+6. **Cleanup**: after merge, remove the linked worktree and delete the local branch; for primary-checkout overrides, return to `main` and delete the local branch. In both cases, refresh the primary checkout's `main` from the remote default branch before starting the next branch or worktree. See [worktrees.md](./worktrees.md).
 
 > For the full development process (planning, TDD, code review) before git operations,
 > see [development-workflow.md](./development-workflow.md).
