@@ -376,13 +376,19 @@ Proposed text:
 ```
 
 The `#[cfg_attr(test, derive(ts_rs::TS))]` + `ts(export)` attributes on
-`AgentCwdEvent` mean `cargo test` (under the existing project test
-config) regenerates `src/bindings/AgentCwdEvent.ts` with the new comment
-text. **The ts-rs binding itself is not hand-edited** — it's
-regenerated and committed alongside the Rust change. The two frontend
-JSDoc comments listed in 4.1 (`agent-status/types/index.ts` and
-`workspace/WorkspaceView.tsx`) ARE hand-edited; they live outside ts-rs
-and have to be updated manually.
+`AgentCwdEvent` regenerate `src/bindings/AgentCwdEvent.ts` with the
+new comment text. The canonical regeneration path in this repo is the
+`npm run generate:bindings` script — it runs
+`cargo test --manifest-path crates/backend/Cargo.toml export_bindings`
+to produce the ts-rs output, then `prettier --write src/bindings/` to
+format it. Skipping the prettier step (e.g. running just `cargo test`
+on its own) can leave raw generated formatting in the file and fail
+the `npm run format:check` gate. **The ts-rs binding itself is not
+hand-edited** — it's regenerated via `npm run generate:bindings` and
+committed alongside the Rust change. The two frontend JSDoc comments
+listed in 4.1 (`agent-status/types/index.ts` and
+`workspace/WorkspaceView.tsx`) ARE hand-edited; they live outside
+ts-rs and have to be updated manually.
 
 ## 5. Testing strategy
 
@@ -527,15 +533,25 @@ fn start_tailing_emits_cwd_transitions_in_order() {
 ### 5.5 ts-rs regeneration verification
 
 `AgentCwdEvent` already carries `#[cfg_attr(test, derive(ts_rs::TS))]` +
-`ts(export)`. Running `cargo test --lib` regenerates
-`src/bindings/AgentCwdEvent.ts` with the updated doc comment.
+`ts(export)`. Regeneration path:
+
+```bash
+npm run generate:bindings
+```
+
+which expands to
+`cargo test --manifest-path crates/backend/Cargo.toml export_bindings && prettier --write src/bindings/`.
+Running plain `cargo test --lib` will technically regenerate the file
+but leaves it un-formatted, which fails `npm run format:check`.
+
 Verification:
 
-- After running tests once locally, `git diff src/bindings/AgentCwdEvent.ts`
+- After `npm run generate:bindings`, `git diff src/bindings/AgentCwdEvent.ts`
   should show the doc-comment block changing to mention both adapters'
-  shapes (Claude per-line, Codex per-turn).
-- This is committed alongside the Rust change so reviewers see the
-  regenerated binding match the spec.
+  shapes (Claude per-line, Codex per-turn) and the file should already
+  be prettier-formatted (no further format step needed).
+- The regenerated binding is committed alongside the Rust change so
+  reviewers see the binding match the spec.
 
 ### 5.6 Commands
 
@@ -559,9 +575,17 @@ npm run type-check
 
 ### 5.7 Coverage expectation
 
-- New code: 100% covered (every branch in `extract_session_cwd` has a
-  dedicated unit test; transitions exercise both first-cwd and dedup
-  paths; the e2e test covers the read-loop integration).
+- **Extraction + transition behavior: 100% covered.** Every branch in
+  `extract_session_cwd` has a dedicated unit test; transitions exercise
+  first-cwd, dedup, and back-and-forth paths; the e2e test covers the
+  read-loop integration.
+- **Not covered:** the `emit_agent_cwd` error branch (the `log::warn`
+  on emission failure inside `process_line`). The branch is a defensive
+  logging path identical to the existing `emit_agent_tool_call` /
+  `emit_agent_turn` error branches in this file, which are also
+  untested; covering it would require a `FailingEventSink` test double
+  that doesn't exist today. Out of scope for this PR — flagged here
+  so the coverage claim isn't read as stronger than it is.
 - File-level coverage stays ≥80% per rules/common/testing.md.
 
 ### 5.8 Deviation log
