@@ -1,4 +1,4 @@
-// cspell:ignore codex worktree worktrees
+// cspell:ignore codex worktree worktrees basenames alphanum polyrepo
 import { describe, expect, test } from 'vitest'
 import { getAgentCwdHintContext, parseAgentCwdHint } from './agentCwdHint'
 
@@ -402,5 +402,33 @@ describe('parseAgentCwdHint', () => {
           '- Path: /home/will/projects/repo/src/main.rs\r\n'
       )
     ).toBeNull()
+  })
+
+  test('accepts worktree dirs with alpha-extension-shaped basenames', () => {
+    // Regression for Claude review cycle-2 MEDIUM: an earlier extension-
+    // regex heuristic over-matched any `[non-dot][chars].[alpha][alphanum]*`
+    // last segment, dropping legitimate polyrepo dir names like
+    // `project.api`, `feature.web`, `vimeflow.service`. The current
+    // denylist approach only rejects known source-file extensions.
+    expect(
+      parseAgentCwdHint(
+        'Created and entered the dummy worktree:\r\n\r\n' +
+          '/home/will/projects/repo/.claude/worktrees/project.api\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/project.api')
+
+    expect(
+      parseAgentCwdHint(
+        'Ran pwd\r\n' +
+          '  /home/will/projects/repo/.claude/worktrees/feature.web\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/feature.web')
+
+    expect(
+      parseAgentCwdHint(
+        'Worktree ready.\r\n\r\n' +
+          '- Path: /home/will/projects/repo/.claude/worktrees/vimeflow.service\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/vimeflow.service')
   })
 })

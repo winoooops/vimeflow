@@ -166,7 +166,6 @@ pub struct AgentStatusEvent {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)] // Consumed by the frontend agent-status hook + workspace bridge.
 pub struct AgentCwdEvent {
     /// PTY session ID
     pub session_id: String,

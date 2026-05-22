@@ -1,4 +1,4 @@
-// cspell:ignore WORKTREE LOOKBACK
+// cspell:ignore WORKTREE LOOKBACK polyrepo worktrees
 import {
   normalizePosixPath,
   normalizeWindowsDrivePath,
@@ -258,20 +258,104 @@ const isAbsolutePathToken = (token: string): boolean =>
   WINDOWS_DRIVE_PATH.test(token) ||
   token.startsWith('\\\\')
 
-// True when the *last segment* of `path` looks like a file (has an
-// extension and does not start with `.` — `.claude` is a directory,
-// `main.rs` is not). Used to reject paths that follow an anchor but
-// are actually file references in error output.
+// Source / config / docs file extensions that should NEVER appear in an
+// agent's worktree directory name. When the last segment of an extracted
+// path ends in one of these, it's almost certainly a file reference in
+// error / log output rather than a cwd announcement.
 //
-// The extension class requires at least one letter (`[A-Za-z][A-Za-z0-9]*`)
-// so versioned worktree directories with numeric-only suffixes — e.g.
-// `release-1.5`, `v2.0`, `feature-1.0` — are NOT misclassified as files.
-// Pure-numeric extensions are vanishingly rare for real source files but
-// extremely common for semver-style branch / worktree naming.
+// Denylist rather than heuristic: an earlier regex
+// (`/^[^.][^.\\/]*\.[A-Za-z][A-Za-z0-9]*$/`) tried to detect file-shaped
+// extensions structurally, which (a) misclassified semver dirs with
+// purely-numeric suffixes (`release-1.5`, `v2.0`) and (b) over-matched
+// real directory names like `project.api`, `feature.web`,
+// `vimeflow.service` — common in polyrepo / service-mesh layouts.
+// Enumerating the source/config extensions we expect to see in agent
+// transcripts is narrower and less prone to silent drops.
+const FILE_EXTENSION_DENYLIST = new Set([
+  // JS / TS family
+  'js',
+  'jsx',
+  'ts',
+  'tsx',
+  'mjs',
+  'cjs',
+  'mts',
+  'cts',
+  // System languages
+  'rs',
+  'go',
+  'c',
+  'cc',
+  'cpp',
+  'cxx',
+  'h',
+  'hh',
+  'hpp',
+  'm',
+  'mm',
+  'java',
+  'kt',
+  'swift',
+  'zig',
+  // Dynamic languages
+  'py',
+  'pyi',
+  'rb',
+  'php',
+  'pl',
+  'lua',
+  // Shell / scripts
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'ps1',
+  // Markup / docs
+  'md',
+  'mdx',
+  'rst',
+  'txt',
+  // Config / data
+  'json',
+  'jsonc',
+  'json5',
+  'yaml',
+  'yml',
+  'toml',
+  'ini',
+  'xml',
+  'html',
+  'htm',
+  'css',
+  'scss',
+  'sass',
+  'less',
+  // Locks / generated / misc
+  'lock',
+  'log',
+  'snap',
+])
+
+// True when the last segment of `path` looks like a file. A segment that
+// starts with `.` (e.g. `.claude`) is a hidden directory and never matches
+// even if its suffix happens to be in the denylist — that's correct: the
+// agent's cwd inside `.claude/worktrees/<x>` is structurally distinct from
+// touching a `.eslintrc`-style dotfile, which would never appear as the
+// trailing segment of a worktree path.
 const looksLikeFilePath = (path: string): boolean => {
   const lastSegment = path.split(/[/\\]/).pop() ?? ''
+  if (lastSegment === '' || lastSegment.startsWith('.')) {
+    return false
+  }
 
-  return /^[^.][^.\\/]*\.[A-Za-z][A-Za-z0-9]*$/.test(lastSegment)
+  const dotIndex = lastSegment.lastIndexOf('.')
+  if (dotIndex <= 0) {
+    return false
+  }
+
+  const ext = lastSegment.slice(dotIndex + 1).toLowerCase()
+
+  return FILE_EXTENSION_DENYLIST.has(ext)
 }
 
 // Tree-renderer prefixes that may appear before a path on its own line
