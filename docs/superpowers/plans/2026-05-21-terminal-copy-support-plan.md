@@ -2881,3 +2881,5 @@ Open the PR with a body that lists the §7.3 QA matrix rows and their pass/fail 
 | Modified | `src/features/terminal/components/TerminalPane/Body.tsx`        | ~+25          |
 
 Zero changes under `crates/backend/`, `electron/`, or any preload bridge. The `electron/backend-methods.ts` allowlist is untouched.
+
+<!-- codex-reviewed: 2026-05-22T14:49:51Z -->
