@@ -25,9 +25,34 @@ The keyframes and class names move out of bucket-specific territory because `Liq
 
 - [ ] **Step 1: Rename keyframes + classes in `src/index.css`**
 
-Replace lines 187-215 of `src/index.css` with:
+Replace lines 166-215 of `src/index.css` with the block below. **Wave
+directions are preserved exactly** from the current rules
+(`vfWaveA` = `0 → -50%`, `vfWaveB` = `-50% → 0`) — only the names
+change.
 
 ```css
+/* Liquid bucket animations (used by both Bucket and ContextBucket via
+   LiquidFill). Two opposing sine-wave translations create the ripple;
+   vfLiquidSlosh tilts the whole liquid mass < 1deg. Honors
+   prefers-reduced-motion. */
+@keyframes vfLiquidWaveA {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes vfLiquidWaveB {
+  from {
+    transform: translateX(-50%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
 @keyframes vfLiquidSlosh {
   0%,
   100% {
@@ -38,30 +63,12 @@ Replace lines 187-215 of `src/index.css` with:
   }
 }
 
-@keyframes vfLiquidWaveA {
-  from {
-    transform: translateX(-50%);
-  }
-  to {
-    transform: translateX(0);
-  }
-}
-
-@keyframes vfLiquidWaveB {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-
 .vf-liquid-wave-a {
-  animation: vfLiquidWaveA var(--vf-liquid-wave-a-dur, 3.4s) linear infinite;
+  animation: vfLiquidWaveA 3.4s linear infinite;
 }
 
 .vf-liquid-wave-b {
-  animation: vfLiquidWaveB var(--vf-liquid-wave-b-dur, 4.8s) linear infinite;
+  animation: vfLiquidWaveB 4.8s linear infinite;
 }
 
 .vf-liquid-slosh {
@@ -122,11 +129,25 @@ Failing test first. The skeleton attaches `pointermove` / `pointerleave` to `wra
 Create `src/features/agent-status/hooks/useWaterCursor.test.tsx`:
 
 ```tsx
-import { render } from '@testing-library/react'
+import { act, render } from '@testing-library/react'
 import { useEffect, useRef, type ReactElement } from 'react'
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import { useWaterCursor, type LiquidRefs } from './useWaterCursor'
+
+// jsdom does not provide PointerEvent. Use a MouseEvent dispatched with
+// the 'pointermove' / 'pointerleave' type — the listener key is the
+// event type string, and MouseEvent carries clientX / clientY which is
+// all the hook reads. This avoids touching src/test/setup.ts.
+const firePointer = (
+  el: Element,
+  type: 'pointermove' | 'pointerleave',
+  init: Partial<MouseEventInit> = {}
+): void => {
+  el.dispatchEvent(
+    new MouseEvent(type, { bubbles: true, cancelable: true, ...init })
+  )
+}
 
 interface MqlMock {
   matches: boolean
@@ -324,11 +345,11 @@ This task makes the hook actually drive the SVG. TDD: assert that a `pointermove
 
 - [ ] **Step 1: Append failing tests for the loop**
 
-Add to the bottom of `src/features/agent-status/hooks/useWaterCursor.test.tsx`:
+Add to the bottom of `src/features/agent-status/hooks/useWaterCursor.test.tsx`
+(the file already imports `act` and the `firePointer` helper at the top
+from Task 2; do not add new imports):
 
 ```tsx
-import { act } from '@testing-library/react'
-
 const flushRaf = async (frames: number): Promise<void> => {
   for (let i = 0; i < frames; i++) {
     await act(async () => {
@@ -336,6 +357,22 @@ const flushRaf = async (frames: number): Promise<void> => {
       await new Promise((r) => setTimeout(r, 16))
     })
   }
+}
+
+const stubRect = (el: Element, width: number, height: number): void => {
+  Object.defineProperty(el, 'getBoundingClientRect', {
+    value: () => ({
+      left: 0,
+      top: 0,
+      right: width,
+      bottom: height,
+      width,
+      height,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }),
+  })
 }
 
 describe('useWaterCursor — spring loop', () => {
@@ -350,27 +387,9 @@ describe('useWaterCursor — spring loop', () => {
       <Harness refs={refs} addSpy={vi.fn()} removeSpy={vi.fn()} />
     )
     const wrap = getByTestId('wrap')
-    Object.defineProperty(wrap, 'getBoundingClientRect', {
-      value: () => ({
-        left: 0,
-        top: 0,
-        right: 100,
-        bottom: 100,
-        width: 100,
-        height: 100,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      }),
-    })
+    stubRect(wrap, 100, 100)
     await act(async () => {
-      wrap.dispatchEvent(
-        new PointerEvent('pointermove', {
-          clientX: 80,
-          clientY: 50,
-          bubbles: true,
-        })
-      )
+      firePointer(wrap, 'pointermove', { clientX: 80, clientY: 50 })
     })
     await flushRaf(2)
     expect(refs.slosh.getAttribute('data-interactive')).toBe('on')
@@ -385,27 +404,13 @@ describe('useWaterCursor — spring loop', () => {
       <Harness refs={refs} addSpy={vi.fn()} removeSpy={vi.fn()} />
     )
     const wrap = getByTestId('wrap')
-    Object.defineProperty(wrap, 'getBoundingClientRect', {
-      value: () => ({
-        left: 0,
-        top: 0,
-        right: 100,
-        bottom: 100,
-        width: 100,
-        height: 100,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      }),
-    })
+    stubRect(wrap, 100, 100)
     await act(async () => {
-      wrap.dispatchEvent(
-        new PointerEvent('pointermove', { clientX: 80, clientY: 50 })
-      )
+      firePointer(wrap, 'pointermove', { clientX: 80, clientY: 50 })
     })
     await flushRaf(2)
     await act(async () => {
-      wrap.dispatchEvent(new PointerEvent('pointerleave'))
+      firePointer(wrap, 'pointerleave')
     })
     await flushRaf(80) // > 1s — well past spring settle at omega=6.5
     expect(refs.slosh.getAttribute('data-interactive')).toBeNull()
@@ -1043,7 +1048,7 @@ Create `src/features/agent-status/components/LiquidFill.tsx`:
 ```tsx
 import { useId, useMemo, type ReactElement } from 'react'
 
-import { LIQUID_DEFAULTS, type LiquidTune } from '../hooks/useWaterCursor'
+import { type LiquidTune } from '../hooks/useWaterCursor'
 
 export interface LiquidFillProps {
   pct: number
@@ -1306,11 +1311,35 @@ Wire the hook into `LiquidFill` so cursor movement on the outer wrap drives the 
 
 - [ ] **Step 1: Append failing test**
 
-Append to `src/features/agent-status/components/LiquidFill.test.tsx`:
+Update the top-level imports of `src/features/agent-status/components/LiquidFill.test.tsx`:
 
 ```tsx
-import { act } from '@testing-library/react'
+import { act, render } from '@testing-library/react'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 
+import { LiquidFill } from './LiquidFill'
+
+// jsdom does not provide PointerEvent — see useWaterCursor.test.tsx
+// for the same shim.
+const firePointer = (
+  el: Element,
+  type: 'pointermove' | 'pointerleave',
+  init: Partial<MouseEventInit> = {}
+): void => {
+  el.dispatchEvent(
+    new MouseEvent(type, { bubbles: true, cancelable: true, ...init })
+  )
+}
+```
+
+(The Task 5 file already had `render, describe, expect, test` — replace
+that import block with the one above. `beforeEach`, `vi`, and `act` are
+added now because the new test cases below use them. `firePointer` is
+defined once at the file top.)
+
+Then append the new test:
+
+```tsx
 describe('LiquidFill — cursor hook integration', () => {
   test('pointermove on outer wrap sets data-interactive on slosh', async () => {
     const { container, getByTestId } = render(
@@ -1331,13 +1360,7 @@ describe('LiquidFill — cursor hook integration', () => {
       }),
     })
     await act(async () => {
-      wrap.dispatchEvent(
-        new PointerEvent('pointermove', {
-          clientX: 11,
-          clientY: 55,
-          bubbles: true,
-        })
-      )
+      firePointer(wrap, 'pointermove', { clientX: 11, clientY: 55 })
       await new Promise((r) => setTimeout(r, 32))
     })
     const slosh = container.querySelector('[data-testid="liquid-slosh"]')
@@ -1356,7 +1379,7 @@ Expected: FAIL — `data-interactive` is null.
 In `src/features/agent-status/components/LiquidFill.tsx`, replace the `import` block at the top and the function body to:
 
 1. Import `useEffect`, `useRef` from React.
-2. Import `useWaterCursor` (already imported `LIQUID_DEFAULTS`/`LiquidTune`).
+2. Import `useWaterCursor` and the `LiquidRefs` type from the hook (`LiquidTune` was already imported in Task 5).
 3. Create refs for wrap, slosh, waveAShift, waveBShift, waveAAnim, waveBAnim, sheen.
 4. Pack them into a `LiquidRefs` value via `useEffect` (so geometry updates with `pct`).
 5. Call `useWaterCursor(wrapRef, refsRef, tune)`.
@@ -1367,7 +1390,6 @@ Patch `LiquidFill.tsx` — at the top of the file:
 import { useEffect, useId, useMemo, useRef, type ReactElement } from 'react'
 
 import {
-  LIQUID_DEFAULTS,
   useWaterCursor,
   type LiquidRefs,
   type LiquidTune,
@@ -1657,7 +1679,7 @@ describe('LiquidFill — fill mode', () => {
     ).ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
   })
 
-  test('renders SVG with measured width/height after ResizeObserver fires', async () => {
+  test('renders SVG with measured width/height attributes after ResizeObserver fires', async () => {
     const { container } = render(
       <LiquidFill
         mode="fill"
@@ -1673,6 +1695,10 @@ describe('LiquidFill — fill mode', () => {
     const svg = container.querySelector('svg')
     expect(svg?.getAttribute('viewBox')).toBe('0 0 200 72')
     expect(svg?.getAttribute('preserveAspectRatio')).toBe('none')
+    // Spec §5: mode="fill" sets the SVG width/height attributes from the
+    // ResizeObserver measurement (not a percentage placeholder).
+    expect(svg?.getAttribute('width')).toBe('200')
+    expect(svg?.getAttribute('height')).toBe('72')
   })
 
   test('outer div carries the caller className', () => {
@@ -1738,7 +1764,24 @@ import {
 } from 'react'
 ```
 
-Also update `computeGeom`'s wave-path call to scale wavelength with width — it already uses `w * 2`, so a wider gauge produces longer waves automatically. No further changes needed there.
+Then update the `<svg>` element's `width` and `height` attributes so
+they take the measured pixel values once `mode === 'fill'` has measured
+its container (falling back to `'100%'` only on the very first render,
+before the `ResizeObserver` has fired):
+
+```tsx
+<svg
+  width={mode === 'bar' ? w : (measured?.w ?? '100%')}
+  height={mode === 'bar' ? h : (measured?.h ?? '100%')}
+  viewBox={`0 0 ${w} ${h}`}
+  preserveAspectRatio={mode === 'bar' ? 'xMidYMid meet' : 'none'}
+  ...
+>
+```
+
+`computeGeom`'s wave-path call already scales wavelength with width
+(`w * 2`), so a wider gauge produces longer waves automatically — no
+further changes needed there.
 
 - [ ] **Step 4: Run all `LiquidFill` tests to verify they pass**
 
@@ -1837,12 +1880,57 @@ export const Bucket = ({
 
 - [ ] **Step 3: Update existing test assertions that target old SVG-internal test ids**
 
-Open `src/features/agent-status/components/Bucket.test.tsx` and rename any reference:
+**Spec contract note:** spec §6.1 says existing test ids "continue to
+pass because those test ids live on the SVG internals." This was a
+slight oversimplification — the SVG internals now live inside
+`LiquidFill`, which uses its own `liquid-*` test-id namespace. The test
+_semantics_ are preserved (same regressions, same structure) but the
+selector strings change. This is intentional and matches the §7 CSS
+rename. Apply the following selector renames in
+`src/features/agent-status/components/Bucket.test.tsx`:
 
-- `bucket-tick-25` / `bucket-tick-50` / `bucket-tick-75` → `liquid-tick-25` / `liquid-tick-50` / `liquid-tick-75`
-- `bucket-liquid` → `liquid-slosh` (or remove the assertion if the test is just checking liquid presence — `getByTestId('liquid-base')` is the cleaner replacement)
+| Old selector                                                                 | New selector                                                               |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `screen.getByTestId('bucket-tick-25')`                                       | `screen.getByTestId('liquid-tick-25')`                                     |
+| `screen.getByTestId('bucket-tick-50')`                                       | `screen.getByTestId('liquid-tick-50')`                                     |
+| `screen.getByTestId('bucket-tick-75')`                                       | `screen.getByTestId('liquid-tick-75')`                                     |
+| `screen.queryByTestId('bucket-liquid')` at pct=0 → `not.toBeInTheDocument()` | `screen.queryByTestId('liquid-base')` at pct=0 → `not.toBeInTheDocument()` |
+| `screen.getByTestId('bucket-liquid')` at pct>0 → `toBeInTheDocument()`       | `screen.getByTestId('liquid-base')` at pct>0 → `toBeInTheDocument()`       |
 
-If a test asserts on an old test id with no direct equivalent, replace it with an equivalent assertion that hits the new test id, or delete the test if it duplicates a `LiquidFill.test.tsx` regression.
+This requires `LiquidFill` to skip rendering the `<rect data-testid="liquid-base">`,
+the wave-y groups, the wave-shift groups, and the sheen ellipse when
+`pct <= 0`. Update Task 5's `LiquidFill.tsx` JSX accordingly during this
+task (or as a follow-up edit in this step):
+
+```tsx
+{geom.top < geom.h && (
+  <>
+    <rect
+      data-testid="liquid-base"
+      x={0}
+      y={geom.baseFloor}
+      width={w}
+      height={Math.max(0, h - geom.baseFloor)}
+      fill={`url(#${fillId})`}
+    />
+    <g data-testid="liquid-water-y-a" ...>...</g>
+    <g data-testid="liquid-water-y-b" ...>...</g>
+    <ellipse ref={sheenRef} data-testid="liquid-sheen" ... />
+  </>
+)}
+```
+
+The `geom.top < geom.h` predicate is true exactly when `pct > 0`
+(since `liquidH > 0` ⇔ `top < h`). When `pct === 0`, none of these
+elements render — matching the original `BucketLiquid` early-return
+behaviour at `Bucket.tsx:165-167`. The slosh wrapper and tick marks
+continue to render unconditionally so `liquid-slosh` and `liquid-tick-*`
+test ids are always available.
+
+Other `Bucket.test.tsx` selectors (`bucket-${labelKey}`,
+`bucket-${labelKey}-pct`, `bucket-${labelKey}-label`,
+`bucket-${labelKey}-pct-glyph`) are preserved by this task — `Bucket.tsx`
+still emits them on its own chrome.
 
 - [ ] **Step 4: Run `Bucket.test.tsx`, `LiquidFill.test.tsx`, and `useWaterCursor.test.tsx`**
 
@@ -1916,11 +2004,73 @@ c) Replace lines 117-130 (the `<div data-testid="bucket-fill" ...>` block) with:
 
 - [ ] **Step 3: Update `ContextBucket.test.tsx`**
 
-Open `src/features/agent-status/components/ContextBucket.test.tsx` and confirm the existing `bucket-fill` testid query continues to work — it now points to the LiquidFill outer `<div>` rather than the old gradient div, but the assertion target is the same.
+The existing file at `src/features/agent-status/components/ContextBucket.test.tsx`
+asserts on three categories of behaviour that no longer apply to the
+new `LiquidFill`-based fill:
 
-If any existing test reads `.style.height` or `.style.background` to assert on the gradient, replace it with an assertion against the rendered `LiquidFill`'s `data-testid="liquid-base"` element's `y` attribute (which scales with `pct`).
+1. **`fill.style.height === 'X%'`** — used by the `null state` block
+   (line 41) and the `fill height at various percentages` block
+   (lines 60-79). `LiquidFill`'s outer `<div>` does not set a `height`
+   style; instead, the wave-y groups carry inline `transform:
+translateY(...)` that moves with `pct`. Replace each
+   `fill.style.height` assertion with an assertion on the
+   `data-testid="liquid-base"` rect's `y` attribute, which equals
+   `top + ambientAmp + 0.5` = `(110 - (110 - 4) * pct / 100) + 1.8 + 0.5`.
+   At `pct=0` the `liquid-base` element is absent (see Task 8 Step 3
+   conditional render), so use `queryByTestId('liquid-base')` →
+   `not.toBeInTheDocument()` instead of a `y`-attribute assertion.
 
-Add a new test for the hex helper inside the same file:
+2. **`fill.className.toContain('from-primary-container/50')`** and the
+   matching `from-tertiary/50` and `from-error/50` assertions in the
+   `color shifts` block (lines 116-152). The new outer `<div>` only
+   carries the caller's `h-full w-full` className — Tailwind gradient
+   classes are no longer present. Replace each color-class assertion
+   with an assertion that the rendered `<linearGradient>` stops carry
+   the hex value `hexForColorClass(pct)` returns:
+
+   ```tsx
+   const stops = container.querySelectorAll('linearGradient stop')
+   // Two stops are emitted by the wave-fill gradient (defs > linearGradient with id `liquid-fill-*`).
+   // Both share the same stop-color (the gradient varies stop-opacity, not stop-color).
+   expect(stops[0]?.getAttribute('stop-color')).toBe('#cba6f7') // primary-container at <80
+   ```
+
+   The progress-bar (`bar.className.toContain('bg-primary-container')`),
+   percentage-text (`pct.className.toContain('text-primary-container')`),
+   and emoji-threshold assertions are **unchanged** — they don't touch
+   the gauge fill.
+
+3. The new `bucket-fill` selector at lines 40 / 63 / 70 / 77 / 116 / 130 /
+   144 / 160 continues to resolve. It now points to the `LiquidFill`
+   wrapper `<div>` instead of the old gradient `<div>`, but
+   `getByTestId('bucket-fill')` still returns a non-null element.
+
+Concrete edit list:
+
+- **`null state` block (lines 36-57)** — line 41:
+  `expect(fill.style.height).toBe('0%')` →
+  `expect(screen.queryByTestId('liquid-base')).not.toBeInTheDocument()`
+- **`fill height at various percentages` block (lines 59-80)** — for
+  each of the three tests at 50% / 74% / 90%, replace
+  `expect(fill.style.height).toBe('<N>%')` with:
+  ```tsx
+  const base = screen.getByTestId('liquid-base')
+  const expectedY = 110 - (110 - 4) * (N / 100) + 1.8 + 0.5
+  expect(parseFloat(base.getAttribute('y') ?? '0')).toBeCloseTo(expectedY, 1)
+  ```
+- **`color shifts` block (lines 112-152)** — for each of the three
+  threshold tests (primary at 50%, tertiary at 85%, error at 95%),
+  delete the two `fill.className.toContain('from-*')` /
+  `fill.className.toContain('to-*')` lines and replace with one assertion:
+  ```tsx
+  const stops = container.querySelectorAll('linearGradient stop')
+  expect(stops[0]?.getAttribute('stop-color')).toBe('<hex>') // '#cba6f7' / '#ff94a5' / '#ffb4ab'
+  ```
+  Keep the existing `bar.className.toContain('bg-*')` and
+  `pct.className.toContain('text-*')` assertions — they still apply.
+
+Add a new dedicated test for the hex helper (separate from the
+threshold tests above so the regression is named explicitly):
 
 ```tsx
 test('LiquidFill receives the correct hex for each threshold', () => {
