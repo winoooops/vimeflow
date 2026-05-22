@@ -173,7 +173,7 @@ const BucketLiquid = ({
 
   return (
     <g
-      className="vf-bucket-slosh"
+      className="vf-liquid-slosh"
       data-testid="bucket-liquid"
       style={{ transformOrigin: `${dims.w / 2}px ${dims.h}px` }}
     >
@@ -185,12 +185,12 @@ const BucketLiquid = ({
         fill={fillUrl}
       />
       <g style={{ transform: `translateY(${top - amp / 2}px)` }}>
-        <g className="vf-bucket-wave-a">
+        <g className="vf-liquid-wave-a">
           <path d={wavePath} fill={color} fillOpacity="0.55" />
         </g>
       </g>
       <g style={{ transform: `translateY(${top}px)` }}>
-        <g className="vf-bucket-wave-b">
+        <g className="vf-liquid-wave-b">
           <path d={wavePath} fill={fillUrl} fillOpacity="0.95" />
         </g>
       </g>
