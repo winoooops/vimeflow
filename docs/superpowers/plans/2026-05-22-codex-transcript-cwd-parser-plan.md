@@ -972,9 +972,14 @@ EOF
 
 **Files:** none modified.
 
-- [ ] **Step 1: Run the full backend test suite**
+- [ ] **Step 1: Run the full backend test suite (matches CI)**
 
-Run: `cargo test -p vimeflow --lib`
+Run: `cargo test -p vimeflow`
+
+This runs BOTH the lib tests (where the new tests in Tasks 1–3 live)
+AND the `crates/backend/tests/*` integration tests. Using `--lib`
+here would skip integration tests and could let an implementation
+pass the plan while failing CI's full backend gate.
 
 Expected: all tests pass. New tests added in Tasks 1–3 = 15.
 
