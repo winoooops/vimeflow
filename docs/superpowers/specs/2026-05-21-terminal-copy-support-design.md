@@ -22,7 +22,7 @@ browser's native paste event and forwards the pasted text through
 contributes to the paste path today.
 
 This spec describes a **frontend-only** addition that fills the gap. A new
-`useTerminalClipboard(terminal)` hook (under `src/features/terminal/hooks/`,
+`useTerminalClipboard({ terminal })` hook (under `src/features/terminal/hooks/`,
 matching the project's hook-per-concern pattern) implements copy-on-selection
 manually via `terminal.onSelectionChange` plus a mouseup gate (Section 5
 specifies the gating that prevents partial-drag selections from clobbering
@@ -400,24 +400,34 @@ returns `true` (pass-through) for any other event type. xterm invokes the
 custom key handler for `keydown` / `keyup` / `keypress`; without this gate
 a single `Ctrl+Shift+V` press would fire `paste()` twice (once on keydown,
 once on keyup). After the gate, the handler returns `false` (suppress
-xterm) ONLY for these combinations:
+xterm) for any combination matching a bound shortcut **regardless of
+selection state**, and runs the action only when its pre-condition is
+met. This split prevents the bound combo from leaking to the PTY when
+the action is a no-op (see "Selection-less suppression" below).
 
-| Modifier setting         | `event.code` | Required                                  | Forbidden                       | Action         |
-| ------------------------ | ------------ | ----------------------------------------- | ------------------------------- | -------------- |
-| `'meta'` (macOS)         | `'KeyC'`     | `metaKey` + `hasSelection()`              | `ctrlKey`, `altKey`, `shiftKey` | `void copy()`  |
-| `'meta'` (macOS)         | `'KeyV'`     | `metaKey` + `shiftKey`                    | `ctrlKey`, `altKey`             | `void paste()` |
-| `'ctrl'` (Linux/Windows) | `'KeyC'`     | `ctrlKey` + `shiftKey` + `hasSelection()` | `metaKey`, `altKey`             | `void copy()`  |
-| `'ctrl'` (Linux/Windows) | `'KeyV'`     | `ctrlKey` + `shiftKey`                    | `metaKey`, `altKey`             | `void paste()` |
+| Modifier setting         | `event.code` | Required modifiers     | Forbidden                       | Action when `hasSelection()` | Action when no selection                                         |
+| ------------------------ | ------------ | ---------------------- | ------------------------------- | ---------------------------- | ---------------------------------------------------------------- |
+| `'meta'` (macOS)         | `'KeyC'`     | `metaKey`              | `ctrlKey`, `altKey`, `shiftKey` | suppress + `void copy()`     | **pass-through** (return `true`; see invariant below)            |
+| `'meta'` (macOS)         | `'KeyV'`     | `metaKey` + `shiftKey` | `ctrlKey`, `altKey`             | suppress + `void paste()`    | suppress + `void paste()` (paste itself handles empty-clipboard) |
+| `'ctrl'` (Linux/Windows) | `'KeyC'`     | `ctrlKey` + `shiftKey` | `metaKey`, `altKey`             | suppress + `void copy()`     | **suppress + no-op** (see "Selection-less suppression" below)    |
+| `'ctrl'` (Linux/Windows) | `'KeyV'`     | `ctrlKey` + `shiftKey` | `metaKey`, `altKey`             | suppress + `void paste()`    | suppress + `void paste()`                                        |
 
 All other events return `true`. Key invariants:
 
 - **Linux/Windows `Ctrl+C` is NEVER intercepted** — must remain available
   for SIGINT delivery. The user opted into `Ctrl+Shift+C` in the planner's
   trigger-mechanism question.
-- **macOS `Cmd+C` with no selection** returns `true` (pass-through). The
-  binding gates on `hasSelection()`; with no selection the handler does
-  nothing and xterm proceeds with its default (which for `Cmd` is
-  effectively nothing — `Cmd` is not encoded into PTY input).
+- **Selection-less suppression for `Ctrl+Shift+C` (Linux/Windows).** When
+  the user presses `Ctrl+Shift+C` with no selection, the handler still
+  returns `false` so xterm does NOT process it. If we returned `true`,
+  xterm would forward `Ctrl+C` (the ASCII Shift+letter is the same code
+  point as the unshifted letter for Ctrl-modified input — `Ctrl+Shift+C`
+  produces `\x03`, identical to `Ctrl+C`) and inadvertently send SIGINT
+  to the running process. This is the bug codex flagged in the
+  whole-spec review; the suppression-without-action behavior fixes it.
+- **macOS `Cmd+C` with no selection** returns `true` (pass-through). On
+  macOS `Cmd` is not encoded into PTY input, so pass-through is safe —
+  xterm sees `Cmd+C` and emits nothing to the PTY (no SIGINT risk).
 - **Existing `Ctrl+V` / `Cmd+V` paste path is untouched.** The handler
   returns `true` for those; xterm's textarea-proxy paste continues to
   drive the legacy path.
@@ -477,21 +487,44 @@ implements it manually. The naive approach — copy on every
 start, and again on every mouse-move while the user drags. A copy at
 every fire would clobber the clipboard on every pixel of mouse motion.
 
-The gate uses two signals (selection change + mouseup):
+The gate uses three signals (mousedown + selection change + mouseup) so
+auto-copy only fires for **actual drag gestures** — not for
+`terminal.selectAll()` from the menu, not for keyboard-driven extensions,
+and not for any other programmatic selection:
 
 ```ts
 // Inside the same useEffect that owns the other listeners (see §4).
+// `element` is the already-narrowed HTMLElement from the contextmenu
+// listener block in §4 (same useEffect, same narrowing).
+let isDragging = false
 let pendingSelection = false
+
+const handleMouseDown = (event: MouseEvent): void => {
+  // Only left-button drag (button === 0) starts a copy gesture. Right-
+  // button mousedowns route to the contextmenu listener (§4); middle-
+  // button is unused.
+  if (event.button !== 0) return
+  isDragging = true
+  pendingSelection = false
+}
+
 const selectionDisposable = terminal.onSelectionChange(() => {
   const has = terminal.hasSelection()
   setHasSelection(has)
-  pendingSelection = has
+  // Only arm the copy when the selection happened DURING a drag.
+  // selectAll() from the menu, paste replaying selection, and
+  // programmatic selection from inside test fixtures will all fire
+  // onSelectionChange without `isDragging` being true — and so do
+  // NOT clobber the clipboard.
+  if (isDragging && has) {
+    pendingSelection = true
+  }
 })
 
 const handleMouseUp = (): void => {
-  if (!pendingSelection || !terminal.hasSelection()) {
-    return
-  }
+  if (!isDragging) return
+  isDragging = false
+  if (!pendingSelection || !terminal.hasSelection()) return
   pendingSelection = false
   // queueMicrotask trampoline so xterm's own mouseup handler (which
   // finalises the selection range) runs first; getSelection() then
@@ -502,23 +535,35 @@ const handleMouseUp = (): void => {
     }
   })
 }
-// `element` is the already-narrowed HTMLElement from the contextmenu
-// listener block in §4 (same useEffect, same narrowing).
+
+element.addEventListener('mousedown', handleMouseDown, { passive: true })
 element.addEventListener('mouseup', handleMouseUp, { passive: true })
 ```
 
-Cleanup disposes the `IDisposable` and removes the mouseup listener.
+Cleanup disposes the `IDisposable` and removes both DOM listeners.
 
-- **Selection going empty.** When `onSelectionChange` fires with
-  `hasSelection() === false`, `pendingSelection` is reset and no copy
-  happens; the clipboard is left untouched.
-- **Why mouseup, not a `setTimeout` debounce.** A timer loses correctness
-  near `Shift+Click` selection extensions (no mouseup-during-drag
-  transition). The mouseup approach mirrors how xterm itself wired
-  selection in the v5 implementation of `copyOnSelection` (before it
-  was removed). Keyboard-extended selections, which rarely happen in a
-  terminal, use the shortcut (§4) or the menu (§6) instead — neither
-  depends on mouseup.
+- **Drag released outside `terminal.element`.** If the user drags off
+  the terminal and releases the mouse over another DOM node, the
+  `mouseup` on `terminal.element` never fires. `isDragging` stays
+  `true` until the NEXT mousedown on the terminal, which resets it.
+  No spurious copy occurs because the gated mouseup runs only on
+  `terminal.element`. The user can retry by re-selecting; this matches
+  gnome-terminal's behavior.
+- **`selectAll()` from menu or programmatic selection.** These fire
+  `onSelectionChange` without `isDragging === true`, so
+  `pendingSelection` stays `false` and no copy runs. The user copies
+  the selectAll'd buffer via the menu's Copy item (or the shortcut)
+  rather than auto-copy.
+- **Selection going empty during drag.** When `onSelectionChange`
+  fires with `hasSelection() === false` mid-drag, `pendingSelection`
+  remains `false` (the gating `if` rejects empty selections). On
+  mouseup with empty selection, no copy happens. The clipboard is
+  left untouched.
+- **Why mouseup-tied-to-mousedown, not a `setTimeout` debounce.** A
+  timer loses correctness near `Shift+Click` selection extensions
+  (no mouseup-during-drag transition). The mousedown/mouseup
+  bracketing mirrors how xterm itself wired selection in the v5
+  implementation of `copyOnSelection` (before it was removed).
 
 ### 5.2 Mouse-reporting mode (vim, tmux, etc.)
 
@@ -653,17 +698,44 @@ Behavior in each scenario:
   `Body.tsx:753`. The hook's `useEffect` (deps
   `[terminal, preferModifier]`) sees `null → non-null` and attaches its
   three listeners.
-- **Session unmount.** React unmounts effects in reverse declaration
-  order. The hook's `useTerminalClipboard` call MUST appear in
-  `Body.tsx` source order **after** the Terminal-creation `useEffect`
-  block (or at least its cleanup must tolerate a disposed terminal),
-  so that the hook's cleanup runs BEFORE the Body.tsx cleanup at
-  `Body.tsx:780` disposes the Terminal. The hook's cleanup disposes
-  `onSelectionChange`, restores the default key handler with
-  `terminal.attachCustomKeyEventHandler(() => true)`, removes the
-  `contextmenu` and `mouseup` listeners via the narrowed `element`,
-  and resets `isOpen` / `openAt` / `hasSelection`. Then Body.tsx's
-  cleanup disposes the Terminal and deletes the cache entry.
+- **Session unmount.** The order in which the hook's effect cleanup
+  runs relative to the Terminal-creation effect's cleanup depends on
+  React's effect-ordering rules (which are subtle and have been
+  documented inconsistently across React releases). The hook's
+  cleanup is therefore **defensive**: every call that could fail on
+  a disposed terminal is guarded so the lifecycle is correct
+  regardless of order. Concretely:
+
+  ```ts
+  return () => {
+    try {
+      selectionDisposable.dispose() // xterm IDisposable — idempotent
+    } catch {
+      /* terminal already disposed; safe to swallow */
+    }
+    try {
+      terminal.attachCustomKeyEventHandler(() => true) // restore default
+    } catch {
+      /* terminal already disposed; restoration is moot */
+    }
+    // DOM listener removal is always safe — removing from a detached
+    // node is a no-op, not an error.
+    element.removeEventListener('contextmenu', handleContextMenu, {
+      capture: true,
+    })
+    element.removeEventListener('mousedown', handleMouseDown)
+    element.removeEventListener('mouseup', handleMouseUp)
+    setIsOpen(false)
+    setOpenAt(null)
+    setHasSelection(false)
+  }
+  ```
+
+  Then Body.tsx's own cleanup at `Body.tsx:778-781` disposes the
+  Terminal and deletes the cache entry — whether that runs before
+  or after the hook's cleanup is irrelevant under this defensive
+  pattern.
+
 - **Pane remount (e.g. layout switch).** Because the previous unmount
   cleanup deleted the cache entry, the next mount runs the `else`
   branch and creates a fresh Terminal. The hook attaches to the new
@@ -763,10 +835,68 @@ useEffect(() => {
 
 ### Accessibility contract
 
-The menu composes `useRole({ role: 'menu' })`,
-`useDismiss({ outsidePress: true, escapeKey: true })`, and
-`useListNavigation` from `@floating-ui/react`. Rendered into a
-`<FloatingPortal>` so ancestor `overflow:hidden` doesn't clip it.
+The menu composes the following `@floating-ui/react` primitives — all
+required for the contract to actually work (omitting any of them
+results in unfocused open, focus on disabled items, or stuck-Tab
+navigation):
+
+```typescript
+const listRef = useRef<Array<HTMLElement | null>>([])
+const [activeIndex, setActiveIndex] = useState<number | null>(null)
+const disabledIndices = canCopy ? [] : [0] // Copy = index 0; disabled when no selection
+
+const role = useRole(context, { role: 'menu' })
+const dismiss = useDismiss(context, { outsidePress: true, escapeKey: true })
+const listNavigation = useListNavigation(context, {
+  listRef,
+  activeIndex,
+  onNavigate: setActiveIndex,
+  loop: true, // wrap from last back to first
+  disabledIndices, // skip the disabled Copy item
+  openOnArrowKeyDown: false, // menu is opened via right-click, not arrow keys
+})
+
+const { getReferenceProps, getFloatingProps, getItemProps } = useInteractions([
+  role,
+  dismiss,
+  listNavigation,
+])
+
+// JSX shape:
+//   <FloatingPortal>
+//     {isOpen && (
+//       <FloatingFocusManager context={context} initialFocus={canCopy ? 0 : 1}>
+//         <div ref={refs.setFloating} {...getFloatingProps()} role="menu">
+//           <button ref={(n) => { listRef.current[0] = n }}
+//                   {...getItemProps({ onClick: ... })}
+//                   aria-disabled={!canCopy || undefined}>Copy</button>
+//           ... three more items ...
+//         </div>
+//       </FloatingFocusManager>
+//     )}
+//   </FloatingPortal>
+```
+
+Required pieces:
+
+- **`FloatingFocusManager`** — moves focus into the menu on open and
+  traps it inside; restores focus to the previously-focused element
+  on close. `initialFocus` points at index 0 (Copy) when enabled,
+  index 1 (Paste) otherwise.
+- **`useListNavigation` with `listRef`, `activeIndex`,
+  `onNavigate`** — drives the Arrow Down / Arrow Up focus transfer
+  between items. `listRef` is an array of refs to each `menuitem`
+  button; the hook reads it to find the next focusable target.
+- **`disabledIndices`** — array of indices that
+  `useListNavigation` skips during keyboard nav (Copy when
+  `!canCopy`).
+- **`loop: true`** — wrapping at the ends of the list.
+- **`getItemProps`** — must be spread onto each item's button. It
+  wires the keyboard event handlers and `tabIndex` management; without
+  it the focus contract is incomplete.
+
+Rendered into a `<FloatingPortal>` so ancestor `overflow:hidden`
+doesn't clip it.
 
 | Element           | Role       | Accessible name                 | Notes                                                                      |
 | ----------------- | ---------- | ------------------------------- | -------------------------------------------------------------------------- |
@@ -830,8 +960,10 @@ regardless of mount state.
 
 The single edit is approximately the diff below (line numbers shift as
 `Body.tsx` evolves). The hook call is placed **after** the
-Terminal-creation `useEffect` so its cleanup runs before the Terminal's
-own disposal (§5.6 React effect-ordering constraint):
+Terminal-creation `useEffect`. The hook's cleanup is **defensive** (see
+§5.6) so the placement order between the hook call and the
+Terminal-creation `useEffect` does not affect correctness — the
+cleanup tolerates a disposed terminal:
 
 ```diff
  const [terminal, setTerminal] = useState<Terminal | null>(null)
@@ -841,7 +973,17 @@ own disposal (§5.6 React effect-ordering constraint):
    // ... existing Terminal-creation logic (lines 481-786) ...
  }, [sessionId])
 
-+const clipboard = useTerminalClipboard({ terminal })
++const clipboard = useTerminalClipboard({
++  terminal,
++  // Without onPasteError wired, QA rows 6/11 fail silently if Electron
++  // denies clipboard-read. Implementer MUST decide a surface here
++  // (toast, status bar, console error via an opted-in logger). Linting
++  // policy in this repo disallows `console.*` directly; route through
++  // the project's existing logger or add an inline
++  // `// eslint-disable-next-line no-console` when necessary.
++  onPasteError: (error) => { /* TODO: surface */ },
++  onCopyError:  (error) => { /* TODO: surface */ },
++})
 
  return (
    <div data-testid="terminal-pane-body-wrapper" className="...">
@@ -863,6 +1005,16 @@ own disposal (§5.6 React effect-ordering constraint):
 `onCopy` / `onPaste` are wrapped in `() => { void clipboard.copy() }`
 because the menu prop expects `() => void`, not `() => Promise<void>`.
 
+**`onCopyError` / `onPasteError` surface is a load-bearing
+implementation decision.** Defaults to a no-op (§4), so if these are
+left empty, QA rows 6 and 11 will pass only when the Electron build
+grants `clipboard-read`. If the build denies it, the user sees Paste
+do nothing with no error indication. Pre-merge gate: either confirm
+`navigator.clipboard.readText()` resolves in the running Electron
+build (dev test), or wire an error surface. If neither, scope back
+the menu's Paste item and the `Ctrl/Cmd+Shift+V` shortcut to
+"see-Body.tsx-comment-pending-fix" before shipping.
+
 ### 7.2 Testing strategy
 
 Co-located test files per project convention:
@@ -879,35 +1031,37 @@ Mock `Terminal` is a stub implementing the hook's read surface
 `renderHook` from `@testing-library/react` drives lifecycle.
 `navigator.clipboard` is mocked via `vi.stubGlobal('navigator', { ... })`.
 
-| Test case                                                                                              | Surface                                           |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
-| `terminal === null` → all callbacks are no-ops, `hasSelection === false`                               | Null-terminal guard.                              |
-| Non-null terminal → attaches `onSelectionChange`, key handler, contextmenu and mouseup listeners       | Effect setup.                                     |
-| `hasSelection` flips via `terminal.onSelectionChange`                                                  | State sync.                                       |
-| `copy()` with empty selection → no-op                                                                  | §4 pre-condition.                                 |
-| `copy()` with non-empty selection → calls `writeText(text)`                                            | §4 happy path.                                    |
-| `copy()` when `writeText` rejects → falls back to `execCommand('copy')`                                | §4 copy-failure fallback.                         |
-| `copy()` when both fail → `onCopyErrorRef.current(error)`                                              | §4 final failure.                                 |
-| `paste()` when `clipboard.readText === undefined` → `onPasteError(Error)`                              | §5.4 Mode A.                                      |
-| `paste()` when `readText()` rejects → `onPasteError(error)`                                            | §5.4 Mode B.                                      |
-| `paste()` empty string from clipboard → silent no-op                                                   | §4 empty-paste contract.                          |
-| `paste()` non-empty string → calls `terminal.paste(text)`                                              | §4 happy path.                                    |
-| `selectAll()` → calls `terminal.selectAll()`                                                           | §4.                                               |
-| `clear()` → calls `terminal.clear()`, NOT `clearSelection()`                                           | §4 Clear semantics.                               |
-| Right-click on `terminal.element` → `isOpen=true`, `openAt={x,y}`, `preventDefault()`                  | §4 contextmenu listener.                          |
-| `close()` → `isOpen=false`, `openAt=null`; idempotent                                                  | §4 menu close.                                    |
-| Mouseup with non-empty selection → after microtask, `writeText` called                                 | §5.1 mouseup gate happy path.                     |
-| Mouseup with empty selection → no copy                                                                 | §5.1 gate negative path.                          |
-| `preferModifier='ctrl'` + `Ctrl+Shift+C` with selection → handler returns `false`, copy called         | §4 binding row.                                   |
-| `preferModifier='ctrl'` + `Ctrl+C` with selection → handler returns `true` (passes through for SIGINT) | §4 invariant: Linux/Win Ctrl+C never intercepted. |
-| `preferModifier='meta'` + `Cmd+C` with selection → handler returns `false`, copy called                | §4 binding row.                                   |
-| `preferModifier='meta'` + `Cmd+C` without selection → handler returns `true`                           | §4 invariant.                                     |
-| `preferModifier='ctrl'` + `Ctrl+Shift+V` → handler returns `false`, paste called                       | §4 binding row.                                   |
-| `preferModifier='meta'` + `Cmd+Shift+V` → handler returns `false`, paste called                        | §4 binding row.                                   |
-| `event.type === 'keyup'` for any binding → handler returns `true`                                      | §4 keydown-only gate.                             |
-| Cleanup on unmount → disposes sub, restores default key handler, removes DOM listeners                 | §4 cleanup.                                       |
-| Cleanup on `terminal` identity change → fresh attach on new                                            | §5.6 lifecycle.                                   |
-| Re-render with new `onCopyError` → effect does NOT re-attach                                           | §4 callback-freshness.                            |
+| Test case                                                                                                   | Surface                                                      |
+| ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `terminal === null` → all callbacks are no-ops, `hasSelection === false`                                    | Null-terminal guard.                                         |
+| Non-null terminal → attaches `onSelectionChange`, key handler, contextmenu and mouseup listeners            | Effect setup.                                                |
+| `hasSelection` flips via `terminal.onSelectionChange`                                                       | State sync.                                                  |
+| `copy()` with empty selection → no-op                                                                       | §4 pre-condition.                                            |
+| `copy()` with non-empty selection → calls `writeText(text)`                                                 | §4 happy path.                                               |
+| `copy()` when `writeText` rejects → falls back to `execCommand('copy')`                                     | §4 copy-failure fallback.                                    |
+| `copy()` when both fail → `onCopyErrorRef.current(error)`                                                   | §4 final failure.                                            |
+| `paste()` when `clipboard.readText === undefined` → `onPasteError(Error)`                                   | §5.4 Mode A.                                                 |
+| `paste()` when `readText()` rejects → `onPasteError(error)`                                                 | §5.4 Mode B.                                                 |
+| `paste()` empty string from clipboard → silent no-op                                                        | §4 empty-paste contract.                                     |
+| `paste()` non-empty string → calls `terminal.paste(text)`                                                   | §4 happy path.                                               |
+| `selectAll()` → calls `terminal.selectAll()`                                                                | §4.                                                          |
+| `clear()` → calls `terminal.clear()`, NOT `clearSelection()`                                                | §4 Clear semantics.                                          |
+| Right-click on `terminal.element` → `isOpen=true`, `openAt={x,y}`, `preventDefault()`                       | §4 contextmenu listener.                                     |
+| `close()` → `isOpen=false`, `openAt=null`; idempotent                                                       | §4 menu close.                                               |
+| Mouseup with non-empty selection → after microtask, `writeText` called                                      | §5.1 mouseup gate happy path.                                |
+| Mouseup with empty selection → no copy                                                                      | §5.1 gate negative path.                                     |
+| `selectAll()` then mouseup (no preceding mousedown) → no auto-copy                                          | §5.1 drag-gating regression test.                            |
+| `preferModifier='ctrl'` + `Ctrl+Shift+C` with selection → handler returns `false`, copy called              | §4 binding row.                                              |
+| `preferModifier='ctrl'` + `Ctrl+Shift+C` WITHOUT selection → handler returns `false`, no copy, no PTY input | §4 selection-less suppression (SIGINT-leak regression test). |
+| `preferModifier='ctrl'` + `Ctrl+C` with selection → handler returns `true` (passes through for SIGINT)      | §4 invariant: Linux/Win Ctrl+C never intercepted.            |
+| `preferModifier='meta'` + `Cmd+C` with selection → handler returns `false`, copy called                     | §4 binding row.                                              |
+| `preferModifier='meta'` + `Cmd+C` without selection → handler returns `true`                                | §4 invariant.                                                |
+| `preferModifier='ctrl'` + `Ctrl+Shift+V` → handler returns `false`, paste called                            | §4 binding row.                                              |
+| `preferModifier='meta'` + `Cmd+Shift+V` → handler returns `false`, paste called                             | §4 binding row.                                              |
+| `event.type === 'keyup'` for any binding → handler returns `true`                                           | §4 keydown-only gate.                                        |
+| Cleanup on unmount → disposes sub, restores default key handler, removes DOM listeners                      | §4 cleanup.                                                  |
+| Cleanup on `terminal` identity change → fresh attach on new                                                 | §5.6 lifecycle.                                              |
+| Re-render with new `onCopyError` → effect does NOT re-attach                                                | §4 callback-freshness.                                       |
 
 #### 7.2.2 `TerminalContextMenu.test.tsx` — coverage list
 
