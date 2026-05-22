@@ -95,7 +95,17 @@ No new files. No new fixture files — tests use inline `json!()` values per the
 
 - [ ] **Step 2: Run the tests to verify they fail with a compile error**
 
-Run: `cargo test -p vimeflow --lib extract_session_cwd 2>&1 | tail -20`
+Run: `cargo test -p vimeflow --lib extract_session_cwd`
+
+> **Important — exit-code handling for all `Run:` commands in this plan:**
+> Do NOT pipe these commands through `| tail` or `| head`. In bash a piped
+> command's exit code is the exit code of the LAST stage; `tail`'s exit
+> code masks a failing `cargo test` / `npm test` / `npm run type-check`
+> and the executing agent will read the run as a pass. If output volume
+> is a concern, use `2>&1 | tee /tmp/<name>.log` or check
+> `${PIPESTATUS[0]}` explicitly. The expected-output blocks below show
+> what the relevant summary line looks like — verify it actually appears
+> in the unfiltered output before continuing.
 
 Expected: `error[E0425]: cannot find function 'extract_session_cwd'` (red — the helper doesn't exist yet).
 
@@ -130,7 +140,7 @@ fn extract_session_cwd(value: &Value) -> Option<&str> {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cargo test -p vimeflow --lib extract_session_cwd 2>&1 | tail -15`
+Run: `cargo test -p vimeflow --lib extract_session_cwd`
 
 Expected: `test result: ok. 7 passed; 0 failed`.
 
@@ -373,7 +383,7 @@ EOF
 
 - [ ] **Step 2: Run the new tests to verify they fail with a compile error**
 
-Run: `cargo test -p vimeflow --lib process_line_first_cwd_always_emits 2>&1 | tail -20`
+Run: `cargo test -p vimeflow --lib process_line_first_cwd_always_emits`
 
 Expected: compile error — `process_line` only takes 7 args (no `last_cwd`), `extract_session_cwd` is dead-code, no emission code in `process_line`. **Red.**
 
@@ -565,7 +575,7 @@ fn process_line(
 
 - [ ] **Step 8: Run all four new tests to verify they pass**
 
-Run: `cargo test -p vimeflow --lib codex::transcript 2>&1 | tail -25`
+Run: `cargo test -p vimeflow --lib codex::transcript`
 
 Expected: all 11 new tests in `codex::transcript::tests` pass (7 helper + 3 transition + 1 e2e), plus the existing tests in the module still pass. **Green.**
 
@@ -573,7 +583,7 @@ If `start_tailing_emits_cwd_transitions_in_order` is flaky (occasional `assert_e
 
 - [ ] **Step 9: Run the full codex transcript test module to catch regressions**
 
-Run: `cargo test -p vimeflow --lib codex::transcript::tests 2>&1 | tail -8`
+Run: `cargo test -p vimeflow --lib codex::transcript::tests`
 
 Expected: `test result: ok. <N> passed; 0 failed`, where N is the pre-PR count plus 11.
 
@@ -666,7 +676,7 @@ If `git diff` shows extra changes outside the JSDoc, something else regenerated 
 
 - [ ] **Step 4: Confirm formatters pass**
 
-Run: `npm run format:check && npm run type-check 2>&1 | tail -8`
+Run: `npm run format:check && npm run type-check`
 
 Expected: both clean.
 
@@ -771,7 +781,7 @@ Replace with:
 
 - [ ] **Step 3: Confirm lints + types + tests pass**
 
-Run: `npm run lint && npm run format:check && npm run type-check && npm test 2>&1 | tail -10`
+Run: `npm run lint && npm run format:check && npm run type-check && npm test`
 
 Expected: all four clean.
 
@@ -802,19 +812,19 @@ EOF
 
 - [ ] **Step 1: Run the full backend test suite**
 
-Run: `cargo test -p vimeflow --lib 2>&1 | tail -10`
+Run: `cargo test -p vimeflow --lib`
 
 Expected: all tests pass. Note the test count — should be the pre-PR count plus 11 (the new tests added in Tasks 1 + 2).
 
 - [ ] **Step 2: Run the full frontend test suite**
 
-Run: `npm test 2>&1 | tail -10`
+Run: `npm test`
 
 Expected: all tests pass.
 
 - [ ] **Step 3: Run lint + format + type-check**
 
-Run: `npm run lint && npm run format:check && npm run type-check 2>&1 | tail -6`
+Run: `npm run lint && npm run format:check && npm run type-check`
 
 Expected: all three clean.
 
@@ -822,22 +832,43 @@ Expected: all three clean.
 
 Run: `git log --oneline main..HEAD`
 
-Expected: four behavior/doc commits beyond the spec commits — Tasks 1 through 4:
+Expected: four behavior/doc commits from Tasks 1–4 layered on top of
+the four `docs/` commits already produced by the `/lifeline:planner`
+phase (1 plan + 3 spec). Reverse-chronological order:
 
 ```
-<sha> docs(workspace): clarify agent-cwd source per adapter
-<sha> docs(agent): update AgentCwdEvent doc comment for codex shape
-<sha> feat(agent): emit agent-cwd from codex transcript watcher
-<sha> test(agent): add extract_session_cwd helper for codex rollouts
+<sha> docs(workspace): clarify agent-cwd source per adapter            ← Task 4
+<sha> docs(agent): update AgentCwdEvent doc comment for codex shape    ← Task 3
+<sha> feat(agent): emit agent-cwd from codex transcript watcher        ← Task 2
+<sha> test(agent): add extract_session_cwd helper for codex rollouts   ← Task 1
+<sha> docs(plan): codex-transcript-cwd-parser                          ← planner
+<sha> docs(spec): mark spec codex-reviewed                             ← planner
+<sha> docs(spec): apply codex feedback                                 ← planner
+<sha> docs(spec): codex-transcript-cwd-parser                          ← planner
 ```
 
-(Plus the three pre-existing `docs(spec):` commits from the planner phase.)
+Eight commits total. If you see fewer than eight, a task commit was
+skipped or squashed — investigate before pushing.
 
-- [ ] **Step 5: Check the new file size in `codex/transcript.rs`**
+- [ ] **Step 5: Note the new file size in `codex/transcript.rs`** (informational only — does NOT block)
 
 Run: `wc -l crates/backend/src/agent/adapter/codex/transcript.rs`
 
-Expected: 978–990 lines (was 953; added ~25 lines of behavior + ~150 lines of tests = ~25–35 line growth at the body level, ~150 line growth at the test-module level). The file is now further over the rules' 800-line ceiling. This is acknowledged debt per spec section 2 "Out of scope" — a separate refactor PR splits it. Do NOT split in this PR.
+The file was 953 lines pre-PR and grows by roughly:
+
+- ~33 lines of behavior code (helper + signature + emission + state).
+- ~225 lines of tests (7 helper + 3 transition + 1 e2e + a tiny
+  `empty_in_flight` helper).
+
+Expected post-PR size: roughly **1180–1230 lines**. The exact number
+is brittle (formatter passes, comment density, etc.) — this step is
+informational. If the count is wildly outside that range (e.g.
+< 1100 or > 1300), check whether tests were dropped or duplicated
+before pushing. Otherwise, accept the size and move on.
+
+The file is now further over the rules' 800-line ceiling. This is
+acknowledged debt per spec section 2 "Out of scope" — a separate
+refactor PR splits it. **Do NOT split in this PR.**
 
 - [ ] **Step 6: (No commit — verification only.)**
 
