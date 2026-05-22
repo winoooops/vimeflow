@@ -326,4 +326,81 @@ describe('parseAgentCwdHint', () => {
       )
     ).toBeNull()
   })
+
+  test('accepts versioned worktree directory names like release-1.5', () => {
+    // Regression: `looksLikeFilePath` previously matched any single-dot
+    // basename with an alphanumeric extension and dropped the path. That
+    // misclassified semver-styled worktrees (`v2.0`, `release-1.5`,
+    // `feature-1.0`) as file references. The extension class now requires
+    // at least one letter, so pure-numeric suffixes pass through.
+    expect(
+      parseAgentCwdHint(
+        'Ran pwd\r\n' +
+          '  /home/will/projects/repo/.claude/worktrees/release-1.5\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/release-1.5')
+
+    expect(
+      parseAgentCwdHint(
+        'Ran pwd\r\n  /home/will/projects/repo/.claude/worktrees/v2.0\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/v2.0')
+  })
+
+  test('still rejects file-extension last segments like main.rs', () => {
+    // Negative companion to the versioned-dir test: real source files
+    // (extension starts with a letter) MUST still be rejected.
+    expect(
+      parseAgentCwdHint(
+        'Created and entered the dummy worktree:\r\n\r\n' +
+          '/home/will/projects/repo/src/main.rs\r\n'
+      )
+    ).toBeNull()
+  })
+
+  test('extracts anchored cwd paths that contain spaces', () => {
+    // Codex P2: paths with spaces (common on macOS — `Code Projects`,
+    // `Application Support`) were dropped because the old extractor
+    // split on whitespace and only inspected the last token. The new
+    // extractor takes the body-after-tree-prefix verbatim.
+    expect(
+      parseAgentCwdHint(
+        'Ran pwd\r\n' +
+          '  /Users/alice/Code Projects/repo/.claude/worktrees/foo\r\n'
+      )
+    ).toBe('/Users/alice/Code Projects/repo/.claude/worktrees/foo')
+  })
+
+  test('PATH_LABEL_PATTERN requires a worktree anchor in recent context', () => {
+    // Codex P1: bare `- Path:` matches in unrelated summaries (file
+    // listings, skill reports) should NOT update pane.cwd. The handler
+    // now looks back up to 10 non-empty lines for a worktree-related
+    // anchor phrase. With a matching anchor it fires; without it it
+    // returns null.
+    expect(
+      parseAgentCwdHint(
+        'Worktree ready.\r\n\r\n' +
+          '- Path: /home/will/projects/repo/.claude/worktrees/dummy\r\n' +
+          '- Branch: worktree-dummy\r\n'
+      )
+    ).toBe('/home/will/projects/repo/.claude/worktrees/dummy')
+
+    expect(
+      parseAgentCwdHint(
+        'Summary of files I touched:\r\n\r\n' +
+          '- Path: /home/will/projects/repo/some-unrelated-directory\r\n'
+      )
+    ).toBeNull()
+  })
+
+  test('PATH_LABEL_PATTERN rejects file-like paths even with anchor', () => {
+    // Symmetric with the anchor-driven extractor: a worktree report
+    // emitting `- Path: /repo/main.rs` should still not update pane.cwd.
+    expect(
+      parseAgentCwdHint(
+        'Worktree ready.\r\n\r\n' +
+          '- Path: /home/will/projects/repo/src/main.rs\r\n'
+      )
+    ).toBeNull()
+  })
 })

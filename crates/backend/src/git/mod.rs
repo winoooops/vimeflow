@@ -1044,8 +1044,13 @@ pub(crate) async fn git_worktree_name_inner(cwd: String) -> Result<Option<String
         .map_err(|e| format!("git_worktree_name git-dir utf8: {}", e))?;
     let git_dir = Path::new(git_dir_str.trim());
 
-    // A linked worktree's gitdir lives at `<repo>/.git/worktrees/<name>`.
-    // Anything else (most commonly `<repo>/.git`) is the main checkout.
+    // A linked worktree's gitdir lives at `<gitdir-root>/worktrees/<name>`.
+    // For a standard non-bare clone the gitdir root is `<repo>/.git`; for a
+    // bare repo (e.g. `/srv/repos/project.git`) or a `--separate-git-dir`
+    // clone the root ends in `.git` rather than literally being `.git`, so
+    // accept any grandparent whose basename ends in `.git`. Anything else
+    // (most commonly the main checkout's `<repo>/.git`) is treated as
+    // not-a-linked-worktree.
     let parent_name = git_dir
         .parent()
         .and_then(Path::file_name)
@@ -1056,7 +1061,10 @@ pub(crate) async fn git_worktree_name_inner(cwd: String) -> Result<Option<String
         .and_then(Path::file_name)
         .and_then(|s| s.to_str());
 
-    if parent_name != Some("worktrees") || grandparent_name != Some(".git") {
+    let grandparent_is_gitdir = grandparent_name
+        .is_some_and(|name| name == ".git" || name.ends_with(".git"));
+
+    if parent_name != Some("worktrees") || !grandparent_is_gitdir {
         return Ok(None);
     }
 
@@ -1997,6 +2005,64 @@ copy to copy.txt
         let result = git_worktree_name(worktree_path.to_string_lossy().to_string()).await;
 
         assert_eq!(result, Ok(Some(expected)));
+    }
+
+    #[tokio::test]
+    async fn test_git_worktree_name_handles_bare_repo_worktree() {
+        // Regression: when the gitdir root is `project.git` (bare repo or
+        // `--separate-git-dir` clone) instead of `.git`, the grandparent
+        // check must still accept the gitdir as a linked-worktree root.
+        // Without this, the chip never appears for users who back their
+        // worktrees with a bare repo (common on Gitea/Forgejo mirrors and
+        // multi-worktree dev setups).
+        let tmp = home_tempdir();
+        let bare = tmp.path().join("project.git");
+        std::process::Command::new("git")
+            .args(["init", "--bare", "--initial-branch=main"])
+            .arg(&bare)
+            .output()
+            .expect("git init --bare failed");
+
+        // Bare repo needs at least one commit before `git worktree add` can
+        // create a linked worktree. Use a transient working tree to seed.
+        let seed = tmp.path().join("seed");
+        std::process::Command::new("git")
+            .args(["clone"])
+            .arg(&bare)
+            .arg(&seed)
+            .output()
+            .expect("git clone failed");
+        configure_test_git(&seed);
+        std::fs::write(seed.join("seed.txt"), "seed").expect("write seed");
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&seed)
+            .output()
+            .expect("git add failed");
+        std::process::Command::new("git")
+            .args(["commit", "-m", "seed"])
+            .current_dir(&seed)
+            .output()
+            .expect("git commit failed");
+        std::process::Command::new("git")
+            .args(["push", "origin", "main"])
+            .current_dir(&seed)
+            .output()
+            .expect("git push failed");
+
+        // Add a linked worktree of the bare repo. The gitdir for the new
+        // worktree resolves to `<tmp>/project.git/worktrees/wt-bare`.
+        let worktree = tmp.path().join("wt-bare");
+        std::process::Command::new("git")
+            .args(["worktree", "add", "-b", "feat"])
+            .arg(&worktree)
+            .arg("main")
+            .current_dir(&bare)
+            .output()
+            .expect("git worktree add failed");
+
+        let result = git_worktree_name(worktree.to_string_lossy().to_string()).await;
+        assert_eq!(result, Ok(Some("wt-bare".to_string())));
     }
 
     #[tokio::test]

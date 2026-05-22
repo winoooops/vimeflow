@@ -320,11 +320,16 @@ export const WorkspaceView = (): ReactElement => {
   // patterns catch them — this bridge is what makes the worktree chip +
   // git branch follow agent-driven worktree switches.
   //
-  // Same guards as the agent-type bridge above: scope to the active
-  // pane's session, skip exited sessions, dedupe against pane.cwd to
-  // avoid IPC churn.
+  // Guards (Codex review on PR #239): scope to the active pane's session;
+  // skip exited sessions; require the agent to be currently active so a
+  // post-exit `agentStatus.cwd` (the field is retained when an agent
+  // exits — only `isActive` / `agentExited` flip) cannot overwrite a
+  // shell-driven `pane.cwd` change; dedupe against pane.cwd to avoid IPC
+  // churn.
   const activePaneCwd = activePane?.cwd
   const agentCwd = agentStatus.cwd
+  const agentIsActive = agentStatus.isActive
+  const agentHasExited = agentStatus.agentExited
   useEffect(() => {
     if (!activeSessionId || !activePaneId || !activePanePtyId) {
       return
@@ -333,6 +338,9 @@ export const WorkspaceView = (): ReactElement => {
       return
     }
     if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
+      return
+    }
+    if (!agentIsActive || agentHasExited) {
       return
     }
     if (!agentCwd || agentCwd === activePaneCwd) {
@@ -347,6 +355,8 @@ export const WorkspaceView = (): ReactElement => {
     activePaneCwd,
     activeSessionStatus,
     agentCwd,
+    agentHasExited,
+    agentIsActive,
     agentStatus.sessionId,
     updatePaneCwd,
   ])

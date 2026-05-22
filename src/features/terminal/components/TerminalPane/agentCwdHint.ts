@@ -1,4 +1,4 @@
-// cspell:ignore WORKTREE
+// cspell:ignore WORKTREE LOOKBACK
 import {
   normalizePosixPath,
   normalizeWindowsDrivePath,
@@ -49,6 +49,40 @@ const RAN_PWD_PATTERN =
   /(?:^|[\r\n])(?:[^\S\r\n]*(?:[^\w\s(/\\:]+[^\S\r\n]*)?)Ran\s+pwd[ \t]*(?=$|[\r\n])/g
 
 const ANCHOR_LOOKAHEAD_LINES = 6
+
+// Worktree-related phrases that gate the PATH_LABEL_PATTERN handler. The
+// `- Path:` shape is generic enough that an agent's summary or file-listing
+// block can match it, so we require one of these anchor phrases within
+// `PATH_LABEL_LOOKBACK_LINES` lines preceding the `- Path:` match. The
+// anchors mirror the verb phrases the EnterWorktree / superpowers worktree
+// skills emit just before their report block.
+const WORKTREE_CONTEXT_ANCHOR_PATTERN =
+  /(?:Worktree\s+ready|Switched\s+to\s+worktree|Created\s+and\s+entered(?:\s+\S+)?\s+worktree|Entered\s+worktree|Entering\s+worktree\()/i
+
+const PATH_LABEL_LOOKBACK_LINES = 10
+
+const hasWorktreeContextNearby = (
+  data: string,
+  anchorIndex: number
+): boolean => {
+  const head = data.slice(0, anchorIndex)
+  const lines = head.split(/\r\n|\r|\n/).reverse()
+  let scanned = 0
+  for (const line of lines) {
+    if (!line.trim()) {
+      continue
+    }
+    if (WORKTREE_CONTEXT_ANCHOR_PATTERN.test(line)) {
+      return true
+    }
+    scanned += 1
+    if (scanned >= PATH_LABEL_LOOKBACK_LINES) {
+      break
+    }
+  }
+
+  return false
+}
 
 type CwdEvent =
   | { index: number; kind: 'path'; path: string }
@@ -228,44 +262,70 @@ const isAbsolutePathToken = (token: string): boolean =>
 // extension and does not start with `.` — `.claude` is a directory,
 // `main.rs` is not). Used to reject paths that follow an anchor but
 // are actually file references in error output.
+//
+// The extension class requires at least one letter (`[A-Za-z][A-Za-z0-9]*`)
+// so versioned worktree directories with numeric-only suffixes — e.g.
+// `release-1.5`, `v2.0`, `feature-1.0` — are NOT misclassified as files.
+// Pure-numeric extensions are vanishingly rare for real source files but
+// extremely common for semver-style branch / worktree naming.
 const looksLikeFilePath = (path: string): boolean => {
   const lastSegment = path.split(/[/\\]/).pop() ?? ''
 
-  return /^[^.][^.\\/]*\.[A-Za-z0-9]+$/.test(lastSegment)
+  return /^[^.][^.\\/]*\.[A-Za-z][A-Za-z0-9]*$/.test(lastSegment)
 }
 
-// Extract a path token from a single line — designed so the path must
-// occupy the trailing portion of the line (no extra text after it).
-// Skips a single leading non-path prefix character (e.g. `|`, `└`, `L`,
-// `*`) used by transcript tree renderers, but only when separated from
-// the path by whitespace.
-const PATH_LINE_PREFIX_PATTERN = /^[|└\-*•L]+\s*$/
+// Tree-renderer prefixes that may appear before a path on its own line
+// in agent transcripts (e.g. `└ /abs/path`, `| /abs/path`, `L /abs/path`).
+// Match either a single prefix char + whitespace OR a tight run of prefix
+// chars (e.g. `└──`). The trailing `\s*$` is intentionally absent — see
+// `extractAbsPathFromLine` for how this gets used.
+const PATH_LINE_PREFIX_PATTERN = /^[|└─\-*•L]+\s+/
 
+// Reject paths whose content past the leading drive (Unix `/...` or
+// Windows `C:/...`) carries a `:` outside that drive offset. Lines like
+// `/repo/src/main.rs: error[E0123]` would otherwise be matched whole by
+// the rewritten extractor below; the colon is a high-signal indicator
+// that the trailing portion is error/output formatting, not a directory.
+// Real Unix paths CAN contain `:` but it's vanishingly rare.
+const hasSuspiciousColon = (path: string): boolean => {
+  const driveColonOffset = WINDOWS_DRIVE_PATH.test(path) ? 1 : -1
+  for (let index = 0; index < path.length; index += 1) {
+    if (path[index] === ':' && index !== driveColonOffset) {
+      return true
+    }
+  }
+
+  return false
+}
+
+// Extract a path from a single line. The path is allowed to contain
+// spaces (e.g. `/Users/alice/Code Projects/repo`) because the path is
+// expected to occupy the WHOLE trimmed line minus an optional tree-
+// renderer prefix. This is stricter than `path-as-last-whitespace-token`
+// (which fails on spaces) but is gated by `hasSuspiciousColon` so error
+// lines like `/repo/main.rs: error[E0123]` are still rejected.
 const extractAbsPathFromLine = (line: string): string | null => {
   const trimmed = line.trim()
   if (!trimmed) {
     return null
   }
 
-  const tokens = trimmed.split(/\s+/)
-  const candidate = tokens[tokens.length - 1]
-  if (!isAbsolutePathToken(candidate)) {
+  const prefixMatch = PATH_LINE_PREFIX_PATTERN.exec(trimmed)
+  const body = prefixMatch ? trimmed.slice(prefixMatch[0].length) : trimmed
+
+  if (!isAbsolutePathToken(body)) {
     return null
   }
 
-  // Everything before the candidate token (joined back) must be empty or
-  // a recognized tree-renderer prefix. This rejects paths embedded in
-  // sentences such as error messages.
-  const lead = tokens.slice(0, -1).join(' ')
-  if (lead && !PATH_LINE_PREFIX_PATTERN.test(lead)) {
+  if (hasSuspiciousColon(body)) {
     return null
   }
 
-  if (looksLikeFilePath(candidate)) {
+  if (looksLikeFilePath(body)) {
     return null
   }
 
-  return candidate
+  return body
 }
 
 // Scan forward from `startIndex` in `data` up to `ANCHOR_LOOKAHEAD_LINES`
@@ -403,6 +463,22 @@ export const parseAgentCwdHint = (
   for (const match of normalizedData.matchAll(PATH_LABEL_PATTERN)) {
     const candidate = match[1].trim()
     if (!isAbsolutePathToken(candidate)) {
+      continue
+    }
+
+    // Symmetric with `extractAbsPathFromLine`: reject paths whose last
+    // segment looks like a file name. A skill that reports
+    // `- Path: /repo/src/main.rs` should NOT update pane.cwd.
+    if (looksLikeFilePath(candidate)) {
+      continue
+    }
+
+    // `- Path:` is a generic enough shape that file-listings and skill
+    // summaries can match it. Require a worktree-context anchor within
+    // `PATH_LABEL_LOOKBACK_LINES` to confirm this label is part of an
+    // EnterWorktree-style report block — otherwise pane.cwd can jump
+    // to an arbitrary path the user never asked for.
+    if (!hasWorktreeContextNearby(normalizedData, match.index)) {
       continue
     }
 
