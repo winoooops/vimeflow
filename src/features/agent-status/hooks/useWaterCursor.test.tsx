@@ -1,6 +1,4 @@
-// @ts-expect-error — act is unused here; Task 3 appends tests that call it
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { act, render } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { useEffect, useRef, type ReactElement } from 'react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { useWaterCursor, type LiquidRefs } from './useWaterCursor'
@@ -9,8 +7,6 @@ import { useWaterCursor, type LiquidRefs } from './useWaterCursor'
 // the 'pointermove' / 'pointerleave' type — the listener key is the
 // event type string, and MouseEvent carries clientX / clientY which is
 // all the hook reads. This avoids touching src/test/setup.ts.
-// @ts-expect-error — firePointer is unused here; Task 3 appends tests that call it
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const firePointer = (
   el: Element,
   type: 'pointermove' | 'pointerleave',
@@ -88,6 +84,30 @@ const makeRefs = (): LiquidRefs => ({
   dims: { w: 22, h: 110 },
 })
 
+const flushRaf = async (frames: number): Promise<void> => {
+  for (let i = 0; i < frames; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 16))
+    })
+  }
+}
+
+const stubRect = (el: Element, width: number, height: number): void => {
+  Object.defineProperty(el, 'getBoundingClientRect', {
+    value: () => ({
+      left: 0,
+      top: 0,
+      right: width,
+      bottom: height,
+      width,
+      height,
+      x: 0,
+      y: 0,
+      toJSON: (): Record<string, unknown> => ({}),
+    }),
+  })
+}
+
 describe('useWaterCursor — skeleton + reduced-motion gate', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -131,5 +151,44 @@ describe('useWaterCursor — skeleton + reduced-motion gate', () => {
     const kinds = removeSpy.mock.calls.map((c: string[]) => c[0])
     expect(kinds).toContain('pointermove')
     expect(kinds).toContain('pointerleave')
+  })
+})
+
+describe('useWaterCursor — spring loop', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test('pointermove writes data-interactive=on and non-zero rotate', async () => {
+    mockMatchMedia(makeMql(false))
+    const refs = makeRefs()
+    render(<Harness refs={refs} addSpy={vi.fn()} removeSpy={vi.fn()} />)
+    const wrap = screen.getByTestId('wrap')
+    stubRect(wrap, 100, 100)
+    act(() => {
+      firePointer(wrap, 'pointermove', { clientX: 80, clientY: 50 })
+    })
+    await flushRaf(2)
+    expect(refs.slosh.getAttribute('data-interactive')).toBe('on')
+    expect(refs.slosh.style.transform).toMatch(/rotate\(/)
+    expect(refs.slosh.style.transform).not.toMatch(/rotate\(0(\.0+)?deg\)/)
+  })
+
+  test('pointerleave settles back and clears inline', async () => {
+    mockMatchMedia(makeMql(false))
+    const refs = makeRefs()
+    render(<Harness refs={refs} addSpy={vi.fn()} removeSpy={vi.fn()} />)
+    const wrap = screen.getByTestId('wrap')
+    stubRect(wrap, 100, 100)
+    act(() => {
+      firePointer(wrap, 'pointermove', { clientX: 80, clientY: 50 })
+    })
+    await flushRaf(2)
+    act(() => {
+      firePointer(wrap, 'pointerleave')
+    })
+    await flushRaf(80) // > 1s — well past spring settle at omega=6.5
+    expect(refs.slosh.getAttribute('data-interactive')).toBeNull()
+    expect(refs.slosh.style.transform).toBe('')
   })
 })
