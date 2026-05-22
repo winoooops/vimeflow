@@ -1121,3 +1121,5 @@ All 21 rows must pass before merge.
 | **Convergence of `writeClipboardText` between this hook and `ActivityEvent.tsx:91`**                                                        | Approach 3 declined in the planner clarification. Re-evaluate if a third call site appears.                                            |
 | **Editor "Copy Path" implementation**                                                                                                       | Outside "terminal copy only" scope.                                                                                                    |
 | **Right-button mousedown suppression in mouse-reporting mode**                                                                              | Suppression risks breaking xterm's left-click selection. Revisit if a real workflow needs it.                                          |
+
+<!-- codex-reviewed: 2026-05-22T14:28:57Z -->
