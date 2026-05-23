@@ -242,7 +242,208 @@ Revised cost estimates (conservative, after codex feedback):
   because we're not inventing a RAII type.
 - **Total:** ~5–7 days, vs. the original ~2.5–3.5d estimate.
 
-## Prompt used
+---
+
+# Round 2 (2026-05-22)
+
+> **Reviewer:** codex-cli 0.133.0
+> **Subject:** the revised plan v1 above
+> **Prompt:** see "Prompts used" at the bottom.
+
+Codex was asked to (a) verify each of the 9 Round 1 findings is actually
+closed by v1's mapped step, and (b) surface any new issues introduced by
+the revision. Output: a partial-closure check plus 5 new findings.
+
+## Closure check on Round 1's revised plan (v1)
+
+| Finding                               | Closed by v1?                                                 |
+| ------------------------------------- | ------------------------------------------------------------- |
+| #1 `transcript_path` side channel     | **Partial** — move not backward-compatible. See R2.1.         |
+| #2 `StateDecoder` drops context       | **Partial** — Step 0 alone insufficient. See R2.2.            |
+| #3 Serde tolerance wording            | **Conditional** — DTO precision required. See R2.4.           |
+| #4 Codex location fit                 | **Partial** — `AttachContext` field set incomplete. See R2.3. |
+| #5 Path security as own service       | **Closed.**                                                   |
+| #6 `TranscriptState` adapter coupling | **Closed if B'' implemented exactly.**                        |
+| #7 CWD as runtime input               | **Mostly closed**, depends on `AttachContext` wording (R2.3). |
+| #8 IPC lifetime model                 | **Closed.**                                                   |
+| #9 Cost realism                       | **Mostly closed**, estimates depend on gaps above.            |
+
+## New findings (R2.1 – R2.5)
+
+### R2.1. Step 0's `transcript_path` move is not backward-compatible
+
+Moving `ParsedStatus.transcript_path` directly into `StatusSource` or
+`AttachContext` does not fit the current watcher flow. `StatusSource` is
+computed **once** in `base::start_for` at
+[`base/mod.rs:32`](./base/mod.rs), but `watcher_runtime` currently
+**re-discovers** transcript paths on **every** status update at
+[`base/watcher_runtime.rs:320`](./base/watcher_runtime.rs),
+[`base/watcher_runtime.rs:393`](./base/watcher_runtime.rs), and
+[`base/watcher_runtime.rs:485`](./base/watcher_runtime.rs). Claude's path
+is **dynamic JSON content** from
+[`claude_code/statusline.rs:215`](./claude_code/statusline.rs), while
+Codex's path is **locator output** currently smuggled through
+`resolved_rollout_path` at [`codex/mod.rs:85`](./codex/mod.rs).
+
+> 💡 IDEA
+>
+> - **I — Intent:** remove Codex's locator-to-parser mutex coupling
+>   before schema refactors.
+> - **D — Danger:** a one-time `StatusSource.transcript_path` preserves
+>   Codex but regresses Claude path changes and the watcher diagnostics
+>   around `tx_path`.
+> - **E — Explain:** there are **two path origins** today —
+>   static/source-bound for Codex, dynamic/status-payload-bound for
+>   Claude. A single static field can't represent both.
+> - **A — Alternatives:** introduce an explicit `TranscriptPathHint` /
+>   `StatusObservation` outside status state. `StatusSource` may carry
+>   a static hint; the status-parse path may carry a dynamic hint.
+
+### R2.2. Finding #2 is not closed by Step 0 alone
+
+`AttachContext` can carry `session_id`, but that does not make decoding
+context-free. Current decoders **stamp** the Vimeflow `session_id`
+**inside** `parse_status(&self, session_id, raw)` at
+[`mod.rs:34`](./mod.rs), Claude event construction at
+[`claude_code/statusline.rs:52`](./claude_code/statusline.rs), and Codex
+`into_event(session_id)` at [`codex/parser.rs:63`](./codex/parser.rs).
+The v1 table maps #2 to Step 0, but the real closure is B': decode to a
+provider-neutral `StatusSnapshot`, then runtime stamps `session_id`.
+
+> 💡 IDEA
+>
+> - **I — Intent:** keep `StateDecoder` reusable and not tied to PTY /
+>   frontend session IDs.
+> - **D — Danger:** passing `AttachContext` into `StateDecoder` just
+>   renames the old context dependency and keeps decoding coupled to
+>   runtime identity.
+> - **E — Explain:** provider JSON has the **agent** session identity;
+>   Vimeflow event identity belongs to runtime / session orchestration.
+> - **A — Alternatives:** `StateDecoder::decode(raw) -> StatusSnapshot`,
+>   then watcher runtime builds `AgentStatusEvent { session_id,
+...snapshot }`.
+
+### R2.3. `AttachContext` field set incomplete and wrong location
+
+The v1 table doesn't pin down the field set. Codex `BindContext` only
+carries `cwd`, `pid`, `pty_start` at
+[`codex/types.rs:14`](./codex/types.rs); `/proc` is hidden inside
+`SqliteFirstLocator` at [`codex/locator.rs:104`](./codex/locator.rs);
+transcript validators still call `dirs::home_dir()` directly at
+[`claude_code/transcript.rs:85`](./claude_code/transcript.rs) and
+[`codex/transcript.rs:116`](./codex/transcript.rs). `AttachContext`
+needs: `session_id`, `initial_cwd`, `shell_pid`, `agent_pid`,
+`pty_start`, `agent_type`, provider roots (`codex_home`, `claude_home`
+or a resolver), and `proc_root`. The type should live in a new
+`adapter/attach.rs` (or `adapter/context.rs`), **not `base/`** —
+locators and validators must not depend on watcher-runtime internals.
+
+> 💡 IDEA
+>
+> - **I — Intent:** make attach-time facts visible so Codex locator
+>   state stops leaking through adapter fields.
+> - **D — Danger:** if roots / proc / session fields stay hidden in
+>   provider objects, `AgentBindings` becomes the same opaque state
+>   bag as today's adapter.
+> - **E — Explain:** `base` owns orchestration; attach context is part
+>   of the adapter contract used by locator, binding factory, and
+>   tests.
+> - **A — Alternatives:** split `AttachContext` (immutable attach-time
+>   facts) from `SessionRuntimeContext` (live cwd from PtyState). Use
+>   `initial_cwd` for binding; keep live cwd lookup in `PtyState`.
+
+### R2.4. A' DTO precision is insufficient
+
+`#[serde(default)]` + catch-all variants is necessary but not
+sufficient. Concretely:
+
+- Claude `used_percentage` must be `Option<f64>` with
+  `#[serde(default)]`, not `f64`, so `null` reaches the computed
+  fallback at
+  [`claude_code/statusline.rs:97`](./claude_code/statusline.rs).
+- Codex `token_count.info` must be `#[serde(default)] info:
+Option<TokenCountInfoDto>`, and folding must update
+  `last_token_count_info` **only on `Some(info)`** to preserve the
+  prior-state behavior at [`codex/parser.rs:195`](./codex/parser.rs).
+- `#[serde(default)]` does **not** tolerate wrong-typed present
+  fields (e.g. integer where float expected); current `Value::as_*`
+  parsing is lenient. If wrong-type tolerance matters, DTO fields
+  need `deserialize_with = "..."` per field or `Value` fallback
+  wrappers.
+
+> 💡 IDEA
+>
+> - **I — Intent:** make schemas discoverable without turning upstream
+>   partial data into parse failures.
+> - **D — Danger:** plain serde DTOs can clear token state to zero on
+>   `info: None`, or reject a valid-but-partial line that current code
+>   silently ignores.
+> - **E — Explain:** `Option<T>` handles null/missing; it does not
+>   handle wrong-type drift. `default` only applies when a field is
+>   absent.
+> - **A — Alternatives:** define DTOs as **lossy contracts** — `Option`
+>   for nullable state, catch-all enum variants, and per-field
+>   tolerant helpers (`deserialize_with`) where current `Value`
+>   parsing defaults.
+
+### R2.5. B' missing explicit boundary for transcript-path extraction
+
+`TranscriptPathValidator` validates a raw path, but it does not answer
+**where the raw path came from**. The four traits fit location, status
+decoding, validation, and streaming — but **not** Claude's dynamic
+extraction from status JSON vs. Codex's static path from location.
+Without this boundary, either `StateDecoder` keeps returning non-state
+metadata, or `AgentBindings` hides another side channel.
+
+> 💡 IDEA
+>
+> - **I — Intent:** split provider concerns without losing the security
+>   boundary around transcript files.
+> - **D — Danger:** the new traits can recreate today's
+>   `ParsedStatus.transcript_path` leak under a different name.
+> - **E — Explain:** **extraction** and **validation** are separate
+>   concerns; validation cannot replace extraction.
+> - **A — Alternatives:** add `TranscriptPathSource` /
+>   `TranscriptPathResolver`; or make `StatusObservation` contain
+>   `{ status_snapshot, transcript_hint }` while keeping `StateDecoder`
+>   status-only.
+
+## Revised plan v2
+
+Key changes from v1:
+
+1. **Step 0 splits into 0a / 0b / 0c** (AttachContext, SessionRuntimeContext, TranscriptPathSource extraction).
+2. **B' becomes a 5-trait split** (adds `TranscriptPathSource`).
+3. **A' gets precise DTO specs** (per-field `Option<T> + #[serde(default)]`, Some-only fold for token state, wrong-type tolerance via custom deserializers).
+4. **`StateDecoder` returns `StatusSnapshot`** (no `session_id`); runtime composes `AgentStatusEvent { session_id, ...snapshot }`.
+
+| Step    | v1                       | v2                                                                                                                                                                                                                                                                                                                        | Addresses              |
+| ------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| **0a**  | "Seam prep"              | Define `AttachContext` in a **new** `crates/backend/src/agent/adapter/attach.rs` (NOT `base/`). Fields: `session_id`, `initial_cwd`, `shell_pid`, `agent_pid`, `pty_start`, `agent_type`, `codex_home`, `claude_home_or_resolver`, `proc_root`. Immutable attach-time facts.                                              | R2.3                   |
+| **0b**  | _(implicit)_             | Add `SessionRuntimeContext` (distinct from `AttachContext`): carries the live `PtyState` handle for cwd lookups. AttachContext = immutable; SessionRuntimeContext = live.                                                                                                                                                 | R2.3, #7               |
+| **0c**  | "move transcript_path"   | Introduce `TranscriptPathSource` extraction (trait or paired types): handles Claude's **dynamic** path (from status JSON) AND Codex's **static** path (from locator). `StatusSource` may carry a static hint; `StatusObservation` (returned by decoder) may carry a dynamic hint. Removes `ParsedStatus.transcript_path`. | #1, R2.1, R2.5         |
+| **A'**  | loose DTOs (vague)       | Loose DTOs with **precise** specs: `Option<T> + #[serde(default)]` on every nullable/missing field; fold must preserve token state on `info: None` (Codex); wrong-type tolerance via `deserialize_with` per field or `Value` fallback wrappers.                                                                           | #3, R2.4               |
+| **B'**  | 4-trait split            | **5-trait split**: `StatusSourceLocator`, `StateDecoder` (returns `StatusSnapshot`, **no `session_id`**), `TranscriptPathSource`, `TranscriptPathValidator`, `TranscriptStreamer`. Watcher runtime composes `AgentStatusEvent { session_id, ...snapshot }`.                                                               | #2, #4, #5, R2.2, R2.5 |
+| **B''** | TranscriptState re-shape | **Unchanged.** Preserve: per-session `start_gate` Mutex ([`transcript_state.rs:117`](./base/transcript_state.rs)), old-before-new stop order ([`transcript_state.rs:153`](./base/transcript_state.rs)), regression test at line 428.                                                                                      | #6                     |
+| **D'**  | `AgentWatcherService`    | **Unchanged.** Owns/clones `PtyState`, `AgentWatcherState`, `TranscriptState`, `EventSink`. `start(session_id)` builds `AttachContext` from live `PtyState`; `stop(session_id)` removes the watcher.                                                                                                                      | #7, #8                 |
+| **C**   | common tailer            | **Unchanged.** Still optional. Engine must support Codex `CompletionMode` + partial-line buffering.                                                                                                                                                                                                                       | n/a                    |
+
+### Revised cost estimates (post-Round-2)
+
+- 0a (AttachContext): **~0.5 day**
+- 0b (SessionRuntimeContext): **~0.25 day**
+- 0c (TranscriptPathSource extraction): **~1 day**
+- A' (precise DTOs + wrong-type tolerance): **~2 days**
+- B' (5-trait split + AttachContext plumbing): **~1.5 day**
+- B'' (TranscriptState re-shape): **~1.5 day**
+- D' (AgentWatcherService): **~0.5–1 day**
+- **Total v2: ~7–9 days** (vs. v1's ~5–7d, original ~2.5–3.5d)
+
+---
+
+## Prompts used
+
+### Round 1 prompt
 
 ```
 Read crates/backend/src/agent/adapter/README.md — a pre-refactor design
@@ -273,7 +474,30 @@ Output: numbered findings (max 10), each with an IDEA block per
 rules/common/idea-framework.md.
 ```
 
-To re-run:
+### Round 2 prompt
+
+```
+Round 2 of refactor roadmap review.
+
+Read:
+1. crates/backend/src/agent/adapter/README.md — original A->B->D proposal
+2. crates/backend/src/agent/adapter/REVIEW.md — your previous 9 findings +
+   REVISED sequence (Step 0 -> A' -> B' -> B'' -> D')
+
+Then re-read the actual code [list of files].
+
+Your job: critique the REVISED plan in REVIEW.md.
+
+PART 1 — VALIDATE previous 9 findings closure.
+PART 2 — NEW issues introduced by the revision (Step 0, A', B', B'', D', C).
+PART 3 — STOP CRITERION: if no new issues AND v1 closes all 9, say
+EXPLICITLY: "No new findings. The revised plan addresses all
+previously-raised issues."
+
+Otherwise: numbered findings (max 10), each with IDEA block.
+```
+
+To re-run any round:
 
 ```bash
 codex exec "<the prompt above>" < /dev/null
