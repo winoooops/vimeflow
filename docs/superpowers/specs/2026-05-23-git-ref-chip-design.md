@@ -33,7 +33,8 @@ The migration ships as two stacked PRs against the
   renders it as an ordinary lavender chip with the SHA in the branch slot.
 - **PR-B — detached HEAD signal + coral state (follow-up).** Adds a
   backend `git_head_state` IPC returning
-  `{ branch: Option<String>, sha: String, detached: bool }`. The frontend
+  `{ branch: Option<String>, sha: Option<String>, detached: bool }`
+  (full state table in §6.1). The frontend
   `useGitBranch` hook collapses this into a single display contract:
   `{ branch: string | null, detached: boolean }`, where the `branch`
   string carries **the value to display in the chip's branch slot** — the
@@ -459,15 +460,22 @@ Cases:
 
 `Header.test.tsx` is the parent-component test and currently asserts
 `worktree-chip` directly (lines 89, 101 at HEAD `a34d467`). The
-updates mirror §5.2:
+updates mirror §5.2 but the **negative-assertion target shifts**
+because the new chip still renders in the branch-only case:
 
-- Replace `queryByTestId('worktree-chip')` (negative assertion when
-  worktree is null) with `queryByTestId('git-ref-chip')`.
-- Replace `getByTestId('worktree-chip')` (positive assertion in the
-  worktree-present case) with `getByTestId('git-ref-chip')`.
-- The text-content assertion that includes the worktree name still
-  works against the new chip's combined label rendering, but should be
-  updated to look at `git-ref-chip-wt-label` for clarity.
+- Old line 89 (negative — worktreeName null, branch present):
+  `expect(queryByTestId('worktree-chip')).not.toBeInTheDocument()`.
+  Replacement: target the worktree-segment testid, not the outer chip
+  (the outer chip still renders to show the branch):
+  `expect(queryByTestId('git-ref-chip-wt-label')).not.toBeInTheDocument()`
+  *and* (for explicitness)
+  `expect(getByTestId('git-ref-chip-br-label')).toHaveTextContent('main')`.
+- Old line 101 (positive — worktree-present case):
+  `expect(getByTestId('worktree-chip')).toHaveTextContent(...)`.
+  Replacement: `expect(getByTestId('git-ref-chip-wt-label')).toHaveTextContent('feat-jose')`.
+- The text-content assertion for the branch name uses
+  `git-ref-chip-br-label` for both worktree-present and worktree-null
+  cases.
 
 No behavioural change to `Header.test.tsx` beyond the testid migration —
 all integration tests at the parent level still assert the same
@@ -521,50 +529,86 @@ The inner function preserves the **same error semantics** as
 `git_branch_inner` at HEAD `a34d467` — codex review pattern #25 in
 `docs/reviews/patterns/error-surfacing.md` requires `symbolic-ref -q`
 plus an empty-stderr-only fallback so real git errors don't get
-masked as detached HEAD:
+masked as detached HEAD. The new function also captures the SHA in
+the branch case (unlike `git_branch_inner` which only returned the
+branch name) so callers can use it without a second round-trip; for
+unborn repos the symbolic-ref still resolves the branch name even
+though `rev-parse HEAD` fails, so the resulting state is
+`{ branch: Some("main"), sha: None, detached: false }`.
+
+The implementation reuses the existing `Command::new("git")` +
+`run_git_with_timeout` pattern (see lines 1110-1158 of `git/mod.rs`
+at HEAD `a34d467`) — no new helper functions are introduced:
 
 ```rust
 pub(crate) async fn git_head_state_inner(cwd: String) -> Result<GitHeadState, String> {
     let safe_cwd = validate_cwd(&cwd)?;
 
     // 1. symbolic-ref -q --short HEAD
-    //    quiet flag suppresses the "not a symbolic ref" stderr line
+    //    The -q flag suppresses the "not a symbolic ref" stderr line
     //    so we can distinguish "detached" (empty stderr) from a real
     //    error (non-empty stderr).
-    let sym_out = run_symbolic_ref(&safe_cwd).await?;
+    let mut sym = Command::new("git");
+    sym.arg("-C").arg(&safe_cwd)
+       .arg("symbolic-ref").arg("-q").arg("--short").arg("HEAD")
+       .env("GIT_TERMINAL_PROMPT", "0");
+    let sym_out = run_git_with_timeout(sym).await?;
+
     if sym_out.status.success() {
-        let branch = utf8(&sym_out.stdout)?.trim().to_string();
-        let sha = try_rev_parse_short(&safe_cwd).await.ok().flatten();
+        let branch = String::from_utf8(sym_out.stdout)
+            .map_err(|e| format!("git_head_state utf8: {}", e))?
+            .trim()
+            .to_string();
+        // SHA in the branch case is best-effort. For unborn repos
+        // (branch resolves but `refs/heads/<branch>` has no commit
+        // yet) `rev-parse --verify HEAD` fails and we keep sha: None.
+        let sha = rev_parse_short_head(&safe_cwd).await;
         return Ok(GitHeadState { branch: Some(branch), sha, detached: false });
     }
+
     let stderr = String::from_utf8_lossy(&sym_out.stderr);
     if !stderr.trim().is_empty() {
         return Err(format!("git_head_state: {stderr}"));
     }
 
-    // 2. Empty stderr: HEAD is detached. rev-parse --short=7 --verify HEAD
-    //    confirms there is a commit; if it fails we fall through to
-    //    the unborn case.
-    if let Some(sha) = try_rev_parse_short(&safe_cwd).await.ok().flatten() {
+    // 2. Empty stderr: HEAD is detached. rev-parse confirms there's a
+    //    commit; if it fails we fall through to the corrupt-state
+    //    fallback at the end (preserves existing `Ok(String::new())`
+    //    behaviour from `git_branch_inner`).
+    if let Some(sha) = rev_parse_short_head(&safe_cwd).await {
         return Ok(GitHeadState { branch: None, sha: Some(sha), detached: true });
     }
 
-    // 3. Unborn: HEAD points at a ref that has no commits. Today
-    //    `git_branch_inner` returns "" here; the richer struct keeps
-    //    detached: false (the user is on a branch, just hasn't
-    //    committed) with sha: None.
+    // 3. Corrupt / unreachable HEAD — match the existing
+    //    `Ok(String::new())` behaviour: neutral state, no error.
     Ok(GitHeadState { branch: None, sha: None, detached: false })
+}
+
+/// Helper inlined alongside `git_head_state_inner` in the same module.
+/// Mirrors the rev-parse block at lines 1135-1156 of `git_branch_inner`;
+/// returns `None` for both unborn repos and corrupt states.
+async fn rev_parse_short_head(safe_cwd: &Path) -> Option<String> {
+    let mut rev = Command::new("git");
+    rev.arg("-C").arg(safe_cwd)
+       .arg("rev-parse").arg("--short=7").arg("--verify").arg("HEAD")
+       .env("GIT_TERMINAL_PROMPT", "0");
+    let out = run_git_with_timeout(rev).await.ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8(out.stdout).ok().map(|s| s.trim().to_string())
 }
 ```
 
-The three branches map to:
+The four observable states map to:
 
-| State           | `branch`            | `sha`         | `detached` | Notes                                            |
-|-----------------|---------------------|---------------|------------|--------------------------------------------------|
-| Normal branch   | `Some("feat/x")`    | `Some(sha)`   | `false`    | Both symbolic-ref + rev-parse succeed.           |
-| Detached HEAD   | `None`              | `Some(sha)`   | `true`     | symbolic-ref fails with empty stderr, rev-parse succeeds. |
-| Unborn          | `None`              | `None`        | `false`    | symbolic-ref fails with empty stderr, rev-parse also fails. |
-| Real git error  | (Err propagated)    | —             | —          | symbolic-ref fails with non-empty stderr.        |
+| State            | `branch`            | `sha`         | `detached` | How detected                                                       |
+|------------------|---------------------|---------------|------------|--------------------------------------------------------------------|
+| Normal branch    | `Some("feat/x")`    | `Some(sha)`   | `false`    | symbolic-ref succeeds; rev-parse succeeds.                         |
+| Unborn repo      | `Some("main")`      | `None`        | `false`    | symbolic-ref succeeds (HEAD ref still resolves); rev-parse fails.  |
+| Detached HEAD    | `None`              | `Some(sha)`   | `true`     | symbolic-ref fails with empty stderr; rev-parse succeeds.          |
+| Corrupt / weird  | `None`              | `None`        | `false`    | symbolic-ref fails with empty stderr; rev-parse also fails.        |
+| Real git error   | (Err propagated)    | —             | —          | symbolic-ref fails with non-empty stderr.                          |
 
 Per `reference_new_ipc_checklist`, four files change for the IPC:
 
