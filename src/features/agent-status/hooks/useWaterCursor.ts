@@ -66,6 +66,9 @@ export const useWaterCursor = (
   refsRef: RefObject<LiquidRefs | null>,
   tune: Partial<LiquidTune> = EMPTY_TUNE
 ): void => {
+  const { halo, omega, maxTilt, ampMax, maxShift, maxLift, meniscus, speedup } =
+    tune
+
   useEffect(() => {
     const wrap = wrapRef.current
     if (wrap === null) {
@@ -73,7 +76,17 @@ export const useWaterCursor = (
     }
     const mql = window.matchMedia('(prefers-reduced-motion: reduce)')
 
-    const T: LiquidTune = { ...LIQUID_DEFAULTS, ...tune }
+    const T: LiquidTune = {
+      ...LIQUID_DEFAULTS,
+      ...(halo !== undefined && { halo }),
+      ...(omega !== undefined && { omega }),
+      ...(maxTilt !== undefined && { maxTilt }),
+      ...(ampMax !== undefined && { ampMax }),
+      ...(maxShift !== undefined && { maxShift }),
+      ...(maxLift !== undefined && { maxLift }),
+      ...(meniscus !== undefined && { meniscus }),
+      ...(speedup !== undefined && { speedup }),
+    }
 
     const target = initialTarget()
     let cur = initialTarget()
@@ -347,11 +360,16 @@ export const useWaterCursor = (
       mql.removeEventListener('change', onMqlChange as EventListener)
       detach()
     }
-    // Effect deps intentionally narrow: wrapRef and refsRef are stable
-    // useRef objects (identity never changes); JSON.stringify(tune) covers
-    // tune VALUE changes without churning on object identity. The effect
-    // closure also reads refsRef.current internally — that's correct (it's
-    // a ref, not a reactive value).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wrapRef, refsRef, JSON.stringify(tune)])
+  }, [
+    wrapRef,
+    refsRef,
+    halo,
+    omega,
+    maxTilt,
+    ampMax,
+    maxShift,
+    maxLift,
+    meniscus,
+    speedup,
+  ])
 }

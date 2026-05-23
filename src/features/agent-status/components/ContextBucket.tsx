@@ -48,40 +48,55 @@ const getEmoji = (pct: number | null): string => {
   return '\u{1F975}'
 }
 
+type ColorTier = 'primary' | 'tertiary' | 'error'
+
+const getColorTier = (pct: number | null): ColorTier => {
+  if (pct !== null && pct >= 90) {
+    return 'error'
+  }
+  if (pct !== null && pct >= 80) {
+    return 'tertiary'
+  }
+
+  return 'primary'
+}
+
 const getColorClass = (
   pct: number | null
 ): { fill: string; bar: string; text: string } => {
-  if (pct !== null && pct >= 90) {
-    return {
-      fill: 'from-error/50 to-error',
-      bar: 'bg-error',
-      text: 'text-error',
-    }
-  }
-  if (pct !== null && pct >= 80) {
-    return {
-      fill: 'from-tertiary/50 to-tertiary',
-      bar: 'bg-tertiary',
-      text: 'text-tertiary',
-    }
-  }
-
-  return {
-    fill: 'from-primary-container/50 to-primary-container',
-    bar: 'bg-primary-container',
-    text: 'text-primary-container',
+  switch (getColorTier(pct)) {
+    case 'error':
+      return {
+        fill: 'from-error/50 to-error',
+        bar: 'bg-error',
+        text: 'text-error',
+      }
+    case 'tertiary':
+      return {
+        fill: 'from-tertiary/50 to-tertiary',
+        bar: 'bg-tertiary',
+        text: 'text-tertiary',
+      }
+    case 'primary':
+    default:
+      return {
+        fill: 'from-primary-container/50 to-primary-container',
+        bar: 'bg-primary-container',
+        text: 'text-primary-container',
+      }
   }
 }
 
 const hexForColorClass = (pct: number | null): string => {
-  if (pct !== null && pct >= 90) {
-    return LIQUID_COLOR_ERROR
+  switch (getColorTier(pct)) {
+    case 'error':
+      return LIQUID_COLOR_ERROR
+    case 'tertiary':
+      return LIQUID_COLOR_TERTIARY
+    case 'primary':
+    default:
+      return LIQUID_COLOR_PRIMARY_CONTAINER
   }
-  if (pct !== null && pct >= 80) {
-    return LIQUID_COLOR_TERTIARY
-  }
-
-  return LIQUID_COLOR_PRIMARY_CONTAINER
 }
 
 export const ContextBucket = ({

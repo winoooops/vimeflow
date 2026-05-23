@@ -483,6 +483,67 @@ describe('useWaterCursor — active flag resets before null guard (Round-3 F2)',
   })
 })
 
+// Round-5 Finding 1: tune dep key-order independence
+describe('useWaterCursor — tune dep key-order independence (Round-5 F1)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test('tune dep is order-independent — same values in different key order does not re-tear listeners', () => {
+    mockMatchMedia(makeMql(false))
+    const addSpy = vi.fn()
+    const removeSpy = vi.fn()
+
+    const HarnessWithTune = ({
+      tune,
+    }: {
+      tune: Partial<LiquidTune>
+    }): ReactElement => {
+      const wrapRef = useRef<HTMLDivElement>(null)
+      const refsRef = useRef<LiquidRefs | null>(makeRefs())
+
+      useEffect(() => {
+        if (wrapRef.current === null) {
+          return
+        }
+
+        const el = wrapRef.current
+        const origAdd = el.addEventListener.bind(el)
+        const origRemove = el.removeEventListener.bind(el)
+
+        el.addEventListener = ((...args: Parameters<typeof origAdd>) => {
+          addSpy(args[0])
+
+          return origAdd(...args)
+        }) as typeof el.addEventListener
+
+        el.removeEventListener = ((...args: Parameters<typeof origRemove>) => {
+          removeSpy(args[0])
+
+          return origRemove(...args)
+        }) as typeof el.removeEventListener
+      }, [])
+
+      useWaterCursor(wrapRef, refsRef, tune)
+
+      return <div ref={wrapRef} data-testid="wrap" />
+    }
+
+    const { rerender } = render(
+      <HarnessWithTune tune={{ halo: 70, omega: 6.5 }} />
+    )
+    expect(addSpy.mock.calls.map((c: string[]) => c[0])).toContain(
+      'pointermove'
+    )
+
+    // Re-render with the same values but different key order.
+    rerender(<HarnessWithTune tune={{ omega: 6.5, halo: 70 }} />)
+    expect(removeSpy.mock.calls.map((c: string[]) => c[0])).not.toContain(
+      'pointermove'
+    )
+  })
+})
+
 // Finding 3: detach() resets spring state so reduced-motion toggle OFF mid-hover
 // starts from initial values, not stale pre-detach tilt/amp.
 describe('useWaterCursor — detach resets spring state (Finding 3)', () => {
