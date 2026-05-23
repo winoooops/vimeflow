@@ -27,14 +27,25 @@ describe('LiquidFill — bar mode geometry', () => {
     expect(svg?.getAttribute('aria-hidden')).toBe('true')
   })
 
-  test('base rect y equals top + ambientAmp + 0.5', () => {
-    render(<LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />)
+  test('liquid-water-y-base wrapper translateY equals top + ambientAmp + 0.5', () => {
+    const { container } = render(
+      <LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />
+    )
 
     // pct=50 → liquidH=(110-4)*0.5=53 → top=57. ambientAmp = min(1.8, 22*0.09) = 1.8.
-    // base.y expected = 57 + 1.8 + 0.5 = 59.3
-    const baseRect = screen.getByTestId('liquid-base')
+    // baseFloor expected = 57 + 1.8 + 0.5 = 59.3
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
+    const wrapperEl = container.querySelector('[data-testid="liquid-water-y-base"]')
+    expect(wrapperEl).not.toBeNull()
+    const wrapper = wrapperEl as HTMLElement
+    expect(wrapper.style.transition).toBe('transform 500ms ease')
+    const match = /translateY\((.+?)px\)/.exec(wrapper.style.transform)
+    const ty = parseFloat(match?.[1] ?? '0')
+    expect(ty).toBeCloseTo(59.3, 1)
 
-    expect(parseFloat(baseRect.getAttribute('y') ?? '0')).toBeCloseTo(59.3, 1)
+    // base rect itself must have y=0 (positioning is on the wrapper)
+    const baseRect = screen.getByTestId('liquid-base')
+    expect(baseRect.getAttribute('y')).toBe('0')
   })
 
   test('renders tick marks at 25/50/75', () => {
@@ -235,16 +246,23 @@ describe('LiquidFill — sheen cy stability', () => {
 
 // Round-3 Finding 3: baseFloor is clamped to h at near-zero pct values.
 describe('LiquidFill — baseFloor clamp at near-full pct (Round-3 F3)', () => {
-  test('liquid-base y attribute does not exceed h=110 at pct=1', () => {
-    render(<LiquidFill mode="bar" pct={1} color="#cba6f7" testId="lf-f3" />)
+  test('liquid-water-y-base wrapper translateY does not exceed h=110 at pct=1', () => {
+    const { container } = render(
+      <LiquidFill mode="bar" pct={1} color="#cba6f7" testId="lf-f3" />
+    )
+
     // At pct=1 (w=22, h=110):
     // liquidH = (110-4)*(1/100) = 1.06; top = 108.94
     // ambientAmp = min(1.8, 22*0.09) = 1.8
     // baseFloor (unclamped) = 108.94 + 1.8 + 0.5 = 111.24 — exceeds h=110
     // After clamp: baseFloor = min(111.24, 110) = 110
-    const baseRect = screen.getByTestId('liquid-base')
-    const y = parseFloat(baseRect.getAttribute('y') ?? '999')
-    expect(y).toBeLessThanOrEqual(110)
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
+    const wrapperEl = container.querySelector('[data-testid="liquid-water-y-base"]')
+    expect(wrapperEl).not.toBeNull()
+    const wrapper = wrapperEl as HTMLElement
+    const match = /translateY\((.+?)px\)/.exec(wrapper.style.transform)
+    const ty = parseFloat(match?.[1] ?? '0')
+    expect(ty).toBeLessThanOrEqual(110)
   })
 })
 
@@ -297,5 +315,47 @@ describe('LiquidFill — fill mode', () => {
     )
     expect(screen.getByTestId('lf-fill').className).toContain('h-full')
     expect(screen.getByTestId('lf-fill').className).toContain('w-full')
+  })
+
+  // Round-4 F3: hide SVG before first ResizeObserver callback
+  test('SVG is visibility:hidden before ResizeObserver fires and clears after', () => {
+    const { container } = render(
+      <LiquidFill
+        mode="fill"
+        pct={50}
+        color="#cba6f7"
+        testId="lf-fill-vis"
+        className="h-full w-full"
+      />
+    )
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
+    const svg = container.querySelector('svg') as SVGElement
+    expect(svg.style.visibility).toBe('hidden')
+
+    act(() => {
+      MockResizeObserver.instances[0]?.trigger({ width: 200, height: 72 })
+    })
+    expect(svg.style.visibility).toBe('')
+  })
+})
+
+// Round-4 F2: glow prop applies drop-shadow filter to SVG
+describe('LiquidFill — glow prop', () => {
+  test('SVG has drop-shadow filter when glow=true', () => {
+    const { container } = render(
+      <LiquidFill mode="bar" pct={50} color="#cba6f7" glow testId="lf-glow" />
+    )
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
+    const svg = container.querySelector('svg') as SVGElement
+    expect(svg.style.filter).toMatch(/drop-shadow\(.*#cba6f7/)
+  })
+
+  test('SVG has no filter when glow is omitted', () => {
+    const { container } = render(
+      <LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf-no-glow" />
+    )
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
+    const svg = container.querySelector('svg') as SVGElement
+    expect(svg.style.filter).toBe('')
   })
 })

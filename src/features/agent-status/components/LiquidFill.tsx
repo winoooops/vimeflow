@@ -20,6 +20,7 @@ export interface LiquidFillProps {
   className?: string
   testId?: string
   tune?: Partial<LiquidTune>
+  glow?: boolean
 }
 
 const BAR_DIMS = { w: 22, h: 110 } as const
@@ -98,6 +99,7 @@ export const LiquidFill = ({
   className = undefined,
   testId = undefined,
   tune = undefined,
+  glow = false,
 }: LiquidFillProps): ReactElement => {
   const reactId = useId().replace(/:/g, '')
   const fillId = `liquid-fill-${reactId}`
@@ -198,7 +200,13 @@ export const LiquidFill = ({
         viewBox={`0 0 ${w} ${h}`}
         preserveAspectRatio={mode === 'bar' ? 'xMidYMid meet' : 'none'}
         aria-hidden={ariaHidden ? 'true' : undefined}
-        style={{ overflow: 'visible', display: 'block' }}
+        style={{
+          overflow: 'visible',
+          display: 'block',
+          visibility:
+            mode === 'fill' && measured === null ? 'hidden' : undefined,
+          ...(glow ? { filter: `drop-shadow(0 -4px 8px ${color}40)` } : {}),
+        }}
       >
         <defs>
           <linearGradient id={fillId} x1="0" y1="1" x2="0" y2="0">
@@ -238,14 +246,22 @@ export const LiquidFill = ({
           >
             {geom.top < geom.h && (
               <>
-                <rect
-                  data-testid="liquid-base"
-                  x={0}
-                  y={geom.baseFloor}
-                  width={w}
-                  height={Math.max(0, h - geom.baseFloor)}
-                  fill={`url(#${fillId})`}
-                />
+                <g
+                  data-testid="liquid-water-y-base"
+                  style={{
+                    transform: `translateY(${geom.baseFloor}px)`,
+                    transition: 'transform 500ms ease',
+                  }}
+                >
+                  <rect
+                    data-testid="liquid-base"
+                    x={0}
+                    y={0}
+                    width={w}
+                    height={Math.max(0, h - geom.baseFloor)}
+                    fill={`url(#${fillId})`}
+                  />
+                </g>
 
                 <g
                   data-testid="liquid-water-y-a"

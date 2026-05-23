@@ -136,6 +136,7 @@ export const ContextBucket = ({
             mode="fill"
             pct={effectivePct}
             color={hexForColorClass(pct)}
+            glow
             className="h-full w-full"
             testId="bucket-fill"
           />

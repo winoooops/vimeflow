@@ -56,37 +56,42 @@ describe('ContextBucket', () => {
   })
 
   describe('fill height at various percentages', () => {
-    test('renders 50% fill height', () => {
-      render(<ContextBucket {...defaultProps} usedPercentage={50} />)
+    const getWrapperTy = (container: HTMLElement): number => {
+      // eslint-disable-next-line testing-library/no-node-access -- SVG transform style is not reachable via a11y queries
+      const wrapperEl = container.querySelector('[data-testid="liquid-water-y-base"]')
+      expect(wrapperEl).not.toBeNull()
+      const wrapper = wrapperEl as HTMLElement
+      const match = /translateY\((.+?)px\)/.exec(wrapper.style.transform)
 
-      const base = screen.getByTestId('liquid-base')
-      const expectedY = 110 - (110 - 4) * (50 / 100) + 1.8 + 0.5
-      expect(parseFloat(base.getAttribute('y') ?? '0')).toBeCloseTo(
-        expectedY,
-        1
+      return parseFloat(match?.[1] ?? '0')
+    }
+
+    test('renders 50% fill height', () => {
+      const { container } = render(
+        <ContextBucket {...defaultProps} usedPercentage={50} />
       )
+
+      // baseFloor = top + ambientAmp + 0.5  (BAR_DIMS w=22, h=110)
+      const expectedY = 110 - (110 - 4) * (50 / 100) + 1.8 + 0.5
+      expect(getWrapperTy(container)).toBeCloseTo(expectedY, 1)
     })
 
     test('renders 74% fill height', () => {
-      render(<ContextBucket {...defaultProps} usedPercentage={74} />)
-
-      const base = screen.getByTestId('liquid-base')
-      const expectedY = 110 - (110 - 4) * (74 / 100) + 1.8 + 0.5
-      expect(parseFloat(base.getAttribute('y') ?? '0')).toBeCloseTo(
-        expectedY,
-        1
+      const { container } = render(
+        <ContextBucket {...defaultProps} usedPercentage={74} />
       )
+
+      const expectedY = 110 - (110 - 4) * (74 / 100) + 1.8 + 0.5
+      expect(getWrapperTy(container)).toBeCloseTo(expectedY, 1)
     })
 
     test('renders 90% fill height', () => {
-      render(<ContextBucket {...defaultProps} usedPercentage={90} />)
-
-      const base = screen.getByTestId('liquid-base')
-      const expectedY = 110 - (110 - 4) * (90 / 100) + 1.8 + 0.5
-      expect(parseFloat(base.getAttribute('y') ?? '0')).toBeCloseTo(
-        expectedY,
-        1
+      const { container } = render(
+        <ContextBucket {...defaultProps} usedPercentage={90} />
       )
+
+      const expectedY = 110 - (110 - 4) * (90 / 100) + 1.8 + 0.5
+      expect(getWrapperTy(container)).toBeCloseTo(expectedY, 1)
     })
   })
 
