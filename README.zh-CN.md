@@ -2,247 +2,115 @@
 
 <div align="center">
 
-**终端优先时代的 CLI Agent 控制面板**
+**面向 AI 编码代理的终端优先工作空间**
 
 [English](./README.md) | 简体中文
 
-</div>
-
-<div align="center">
-
-<img src="docs/media/hero-init.gif" alt="在 Vimeflow 中启动 Claude Code 会话并运行 /init — 代理面板自动识别并实时显示工具调用" width="900" />
-
-<sub>启动 <code>claude</code>，运行 <code>/init</code>，观察代理面板自动识别并实时显示工具调用。</sub>
+<img src="docs/media/hero-init.gif" alt="在 Vimeflow 中启动 Claude Code 会话并观察代理面板实时显示工具调用" width="900" />
 
 </div>
 
-> 一个 Electron 桌面应用，将终端会话、文件浏览器、代码编辑器和 Git Diff 统一到一个工作空间 — 专为 Claude Code、Codex 等 AI 编码代理打造。
+Vimeflow 是一个 Electron 桌面应用，使用 Rust `vimeflow-backend` 旁路进程。它把终端会话、多 pane 布局、文件浏览、代码编辑、Git Diff 审查、命令面板，以及 Claude Code / Codex 的实时可观测性集中在一个工作空间中。
 
-Vimeflow 是一个 **CLI 编码代理控制面板**，基于 Electron 42（渲染进程：React + TypeScript）与长期驻留的 `vimeflow-backend` Rust 旁路（PTY、文件系统、Git、代理可观测性）通过 LSP 帧 JSON IPC 协作构建。它在一个窗口内管理 AI 代理工作的终端会话、浏览文件、审查 Diff 和编辑代码 — 全部配备 Vim 风格快捷键和暗色氛围 UI。
+## 当前支持范围
 
-> 历史说明：Vimeflow 起初是 Tauri 2 桌面应用。Electron 迁移（[复盘](docs/superpowers/retros/2026-05-16-electron-migration.md)，PR [#209](https://github.com/winoooops/vimeflow/pull/209) / [#210](https://github.com/winoooops/vimeflow/pull/210) / [#211](https://github.com/winoooops/vimeflow/pull/211)）于 2026 年 5 月用 Electron + 运行时中立的 Rust 旁路替换了 Tauri 外壳。
+Vimeflow 目前**仅支持从源码构建和使用 0.1.0 版本**。
 
-但产品只是故事的一半。这个仓库也是**工程化 AI 原生开发**的试验场：自主代理循环从规格说明构建功能，由分层规则和专业代理管控。
+- 支持的版本线：`0.1.0`
+- 支持的打包目标：在本地从源码构建 Linux AppImage
+- 桌面运行时：Electron 42 + Rust 旁路，通过 LSP 帧 JSON IPC 通信
+- 代理可观测性：Claude Code 和 Codex
+- 暂不支持：托管二进制发布、macOS / Windows 打包、签名、自动更新
 
-## 已实现功能
+非 Linux 系统上的开发流程可能可用，但当前受支持的构建路径是源码检出加 Linux AppImage 目标。
 
-![Vimeflow 工作空间 — 图标栏、侧边栏、运行中的 Claude Code 会话和代理状态面板](docs/media/workspace-overview.png)
+## 从源码构建和运行
 
-### 终端核心（第 3 阶段）
+前置条件：
 
-完整的 xterm.js 终端，通过 Electron IPC 集成 `vimeflow-backend` Rust 旁路：
-
-- **DesktopTerminalService** — 渲染进程侧 xterm.js 与 `portable-pty` 之间的单例桥接（PR-D3 重命名自 `TauriTerminalService`）
-- Rust PTY 命令：spawn、write、resize、kill — 通过 `BackendState` 方法分发；stdout 经 `StdoutEventSink` 事件流式传输
-- 按标签页缓存会话，并支持每个会话的多 pane 终端布局
-- ResizeObserver + FitAddon 实现响应式终端尺寸
-- WebGL 渲染器 + Catppuccin Mocha 主题
-
-### 工作空间外壳（第 2 阶段 + UI Handoff）
-
-借鉴 IDE + 终端复用器模式的终端优先工作空间：
-
-- **图标栏** — 项目头像和导航
-- **侧边栏** — Sessions / Files 标签页，符合 handoff 设计的会话行、状态指示器、副标题、状态胶囊、行数变化
-- **会话标签页** — 通过 `useSessionManager` 驱动的浏览器风格标签
-- **终端区** — 主工作区域，使用 `SplitView` 布局（`single`、`vsplit`、`hsplit`、`threeRight`、`quad`），每个会话支持 1-4 个真实 xterm.js pane
-- **布局切换器** — 被动切换布局，并支持 `Mod+1-4` 聚焦 pane、`Mod+\` 循环布局
-- **DockPanel** — 编辑器和 Diff 面板，可停靠 bottom / top / left / right，支持弹性缩放和键盘调节
-- **代理活动面板** — 状态、指标、可折叠区域，并跟随当前活动 pane 的 PTY
-- **上下文切换器** — 左侧栏提供 Sessions / Files；Editor / Diff 位于 dock 中
-- **状态栏** — 紧凑的工作空间状态行
-
-当前 UI handoff 进度见 [`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml)。第 1-5c2 步已完成（`#171`、`#173`、`#174`、`#190`、`#198`、`#199`、`#203`、`#204`），DockPanel 停靠 / 弹性缩放 / 共享焦点 / 快捷键 tooltip 后续工作也已落地（`#215`、`#218`、`#219`、`#224`）。剩余视觉工作包括布局切换自动扩容、活动面板打磨，以及 `Mod+\` / `Mod+B` 的快捷键发现入口（[#225](https://github.com/winoooops/vimeflow/issues/225)）。
-
-### 代理状态侧边栏（第 4 阶段）
-
-实时代理可观察性面板，自动检测终端会话中运行的 AI 编码代理。自 [#154](https://github.com/winoooops/vimeflow/pull/154) 起同时支持 **Claude Code** 与 **Codex**，共用一套前端：
-
-- **`AgentAdapter` trait** — `crates/backend/src/agent/adapter/` 定义统一接口（`status_source` / `parse_status` / `validate_transcript` / `tail_transcript`），每种代理各自实现；监听管道、前端事件与面板 UI 与具体代理无关
-- **Claude Code 适配器**（`adapter/claude_code/`）— 每会话 shell 脚本把 Claude 的 statusline JSON 写入被监听文件；适配器解析后通过旁路事件发送（`agent-detected`、`agent-status`、`agent-tool-call`、`agent-disconnected`）
-- **Codex 适配器**（`adapter/codex/`）— 基于 schema 探测的 SQLite 定位器扫描 `~/.codex/*.sqlite`（logs DB → thread_id，threads DB → rollout JSONL 路径），辅以 Linux `/proc` 快速路径与 FS 扫描回退；将 `event_msg.token_count` 折叠为与 Claude 一致的 `AgentStatusEvent` 形状
-- **Rust 后端编排** — `crates/backend/src/agent/` 提供代理检测器（进程树轮询）、`base::start_for` 监听驱动（notify 文件变更 + 轮询回退），以及各适配器的 transcript JSONL tailer（用于工具调用 / 轮次 / 测试运行信号）
-- **前端面板** — `src/features/agent-status/` 包含订阅旁路事件总线的 `useAgentStatus` hook，以及组件：StatusCard（身份 + 模型徽章）、BudgetMetrics（自适应 ApiKey / Subscriber / Fallback 布局 — Codex 会话渲染 Subscriber 显示速率限额条；Claude API-key 会话渲染 Cost 单元）、ContextBucket（填充仪表 + 进度条；Codex 由 `last_token_usage` 驱动，Claude 由 `total_input_tokens` 驱动）、ToolCallSummary（聚合芯片）、RecentToolCalls、FilesChanged、TestResults 和 ActivityFooter
-- **自动折叠** — 未检测到代理时面板为 0px，检测到时动画展开到 280px，断开后保留最终状态 5 秒
-- **ts-rs 类型代码生成** — Rust 类型自动导出到 `src/bindings/`，前端可类型安全消费（`CostMetrics.totalCostUsd: number | null` 用以区分 Codex 不暴露 cost 的语义与 Claude 上报的实际花费）
-
-设计规格：[`2026-04-12-agent-status-sidebar/`](docs/superpowers/specs/2026-04-12-agent-status-sidebar/CLAUDE.md)（面板）· [`2026-05-02-claude-adapter-refactor-design.md`](docs/superpowers/specs/2026-05-02-claude-adapter-refactor-design.md)（trait 抽象，Stage 1）· [`2026-05-03-codex-adapter-stage-2-design.md`](docs/superpowers/specs/2026-05-03-codex-adapter-stage-2-design.md)（Codex 适配器，Stage 2）· [`2026-05-04-codex-adapter-stage-2-scope-expansion.md`](docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md)（已记录的偏离）
-
-<p align="center">
-  <img src="docs/media/agent-status-sidebar.png" alt="代理状态侧边栏 — 上下文计量器、Token 缓存、活动事件流、变更文件、测试面板" width="280" />
-</p>
-
-<p align="center"><sub>右侧面板特写 — 上下文计量器、Token 缓存、活动事件流、变更文件和测试面板。可由 Claude Code 或 Codex 会话经共享 <code>AgentAdapter</code> trait 驱动。</sub></p>
-
-### 功能模块
-
-| 模块                | 描述                                                                                    |
-| ------------------- | --------------------------------------------------------------------------------------- |
-| **terminal**        | xterm.js + 旁路 PTY IPC 桥接，会话管理                                                  |
-| **editor**          | IDE 风格标签编辑器 — CodeMirror 6、Vim 模式、语言扩展、Vim 状态栏                       |
-| **diff**            | Lazygit 风格 Git Diff 查看器（并排 + 统一视图，hunk 导航，暂存/丢弃）                   |
-| **files**           | 文件浏览树，面包屑导航，Git 状态徽章（M/A/D/U），拖放支持                               |
-| **command-palette** | Vim 风格 `:` 命令面板（全局快捷键、模糊匹配、命名空间下钻）— 内置命令注册表陆续交付中   |
-| **agent-status**    | 实时代理可观察性面板 — 通过 `AgentAdapter` trait 同时支持 Claude Code 与 Codex          |
-| **workspace**       | 组合图标栏、侧边栏、会话标签、SplitView 终端画布、DockPanel、状态栏和活动面板的布局外壳 |
-
-![编辑器与 Vim 模式 — 输入 `:w`，状态栏显示 -- NORMAL --](docs/media/editor-vim.png)
-
-![Diff 查看器 — 变更文件列表和带绿色新增行的差异块](docs/media/git-diff.png)
-
-### 质量保障
-
-- Vitest + Testing Library 覆盖前端/领域模块，Rust 测试覆盖后端模块
-- 无障碍优先的测试查询（`getByRole` 优于 `getByText`）
-- Pre-commit 钩子：对暂存文件运行 ESLint + Prettier
-- Commit-msg 钩子：commitlint 约定式提交
-- Pre-push 钩子：完整 Vitest 运行
-
-## 更新日志
-
-参见 [`CHANGELOG.zh-CN.md`](./CHANGELOG.zh-CN.md)（中文）或 [`CHANGELOG.md`](./CHANGELOG.md)（English）— 记录所有重要变更的线性时间线。每条记录可交叉链接 [`docs/reviews/`](./docs/reviews/CLAUDE.md) 中该变更应用、更新或新增的复盘模式 — CHANGELOG 记录"何时"，`docs/reviews/` 记录"为何"。
-
-## 技术栈
-
-| 层级       | 技术                                                   |
-| ---------- | ------------------------------------------------------ |
-| **桌面**   | Electron 42、Rust 旁路、portable-pty、tokio            |
-| **前端**   | React 19、TypeScript 5（严格模式）、Vite               |
-| **样式**   | Tailwind CSS v4、Catppuccin Mocha 语义化 Token         |
-| **终端**   | xterm.js 6、WebGL addon、FitAddon                      |
-| **编辑器** | CodeMirror 6、@replit/codemirror-vim（Vim 模式）       |
-| **动画**   | Framer Motion 12                                       |
-| **测试**   | Vitest 3、Testing Library                              |
-| **质量**   | ESLint 9（flat config）、Prettier 3、Husky、commitlint |
-| **Git**    | simple-git 3、diff2html 3                              |
-
-## 设计系统："黑曜石之眼"
-
-基于 Catppuccin Mocha 调色板的暗色氛围 UI — 将 UI 视为深邃虚空中的发光半透明层。
-
-- **无可见边框** — 使用色调深度和表面层级（8 级）
-- **玻璃态射** 用于浮动元素（60-80% 透明度，12-20px 模糊）
-- **字体**：Manrope（标题）、Inter（正文/标签）、JetBrains Mono（代码）
-- **语义化 Token**：`bg-surface-container`、`text-on-surface`、`text-primary` 等
-
-完整规格：[`docs/design/DESIGN.md`](docs/design/DESIGN.md)
-
-## 快速开始
+- Node.js >= 22；推荐使用 `.nvmrc` 中的 Node 24 以对齐 CI
+- `nvm` 是可选但推荐的 `.nvmrc` 读取工具；如果已通过其他工具启用 Node 24，可跳过 `nvm use`
+- Rust stable 工具链
+- Git
+- Linux（用于当前受支持的 AppImage 打包路径）
 
 ```bash
-# 前置条件：Node >= 22（推荐通过 .nvmrc 使用 Node 24 以对齐 CI），Rust 工具链
-nvm use                          # 使用 .nvmrc
+git clone https://github.com/winoooops/vimeflow.git
+cd vimeflow
+nvm use # 可选：切换到 .nvmrc 中的 Node 24
+npm ci
+```
 
-# 仅前端（无 Rust 后端）
-npm install
-npm run dev                      # Vite 开发服务器，localhost:5173
+从源码运行桌面应用：
 
-# 完整桌面应用（需要 Rust）
-npm run electron:dev             # Electron + Rust 旁路（vimeflow-backend）
+```bash
+npm run electron:dev
+```
 
-# Linux 开发主机没有可用 Chromium sandbox 时
+如果 Linux 主机没有可用的 Chromium sandbox：
+
+```bash
 VIMEFLOW_NO_SANDBOX=1 npm run electron:dev
-
-# 打包 Linux AppImage
-npm run electron:build           # 生成 release/vimeflow-<version>-x64.AppImage
-
-# 测试
-npm test                         # Vitest 测试套件
-npx vitest run src/path/file.test.tsx  # 单文件测试
-
-# 质量检查
-npm run lint                     # ESLint（类型检查）
-npm run format:check             # Prettier 检查
-npm run type-check               # tsc -b
 ```
 
-### Lifeline 插件安装
-
-自主开发工作流由专用的 [Lifeline Claude Code 插件](https://github.com/winoooops/lifeline)提供。Lifeline 是完整独立的工作流插件，提供 `/lifeline:planner`、`/lifeline:loop`、`/lifeline:review`、`/lifeline:request-pr`、`/lifeline:upsource-review` 和 `/lifeline:approve-pr`。
+构建受支持的 `0.1.0` AppImage：
 
 ```bash
-# 1. 注册 Lifeline marketplace（一次性）
-/plugin marketplace add winoooops/lifeline
-
-# 2. 安装插件
-/plugin install lifeline@lifeline
-
-# 3. 重载激活
-/reload-plugins
+npm run electron:build
+chmod +x release/vimeflow-*.AppImage
+./release/vimeflow-*.AppImage --no-sandbox
 ```
 
-安装后，Lifeline 会缓存在 Claude Code 的插件缓存中，并跨会话保留。项目本地说明见 [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup)。
+如果主机缺少 `libfuse2`，使用 AppImage 回退方式：
 
-> 由于[已知的 Claude Code 问题](https://github.com/anthropics/claude-code/issues/18949)，插件技能不会出现在 `/` 自动补全中。可选的自动补全变通方法见 [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup)。
-
-## 仓库结构
-
-```
-CLAUDE.md                   # AI 导航中心（代理从这里开始）
-ARCHITECT.md                # 架构决策、Electron 旁路 IPC 模式
-docs/design/DESIGN.md       # UI 设计系统（唯一真实来源）
-
-src/
-├── features/
-│   ├── workspace/          # 工作空间外壳、会话标签/侧边栏、DockPanel
-│   ├── terminal/           # xterm.js + DesktopTerminalService IPC 桥接
-│   ├── editor/             # CodeMirror 标签式代码编辑器
-│   ├── diff/               # Lazygit 风格 Diff 查看器
-│   ├── files/              # 文件浏览树
-│   ├── command-palette/    # Vim 风格命令面板
-│   └── agent-status/       # 实时代理可观察性面板
-├── components/             # 共享基础组件（Tooltip）
-├── hooks/                  # 共享 React hooks
-├── agents/                 # Agent 元数据 registry
-├── bindings/               # Rust -> TypeScript 生成类型
-└── test/                   # Vitest 配置
-
-Cargo.toml                  # Workspace 根 manifest（members = ["crates/backend"]）
-Cargo.lock                  # Workspace lockfile（仓库根目录跟踪）
-target/                     # Cargo workspace 构建目录（gitignored）
-.cargo/config.toml          # Cargo 环境：TS_RS_EXPORT_DIR = src/bindings/
-crates/                     # Rust workspace 成员
-└── backend/                # 从 src-tauri/ 重命名
-    ├── src/
-    │   ├── bin/
-    │   │   └── vimeflow-backend.rs  # 旁路二进制入口 — stdin/stdout LSP 帧 JSON IPC
-    │   ├── lib.rs                   # 仅模块声明（PR-D3 后折叠）
-    │   ├── runtime/                 # BackendState、IPC router、EventSink trait
-    │   ├── terminal/                # PTY 命令（_inner helper + BackendState 方法）
-    │   ├── filesystem/              # 列表/读/写命令，含 scope 验证
-    │   ├── git/                     # Git 状态、Diff、暂存/取消暂存
-    │   └── agent/                   # 代理检测器、statusline 监听器、transcript 解析器
-    ├── Cargo.toml                   # Crate manifest
-    └── README.md                    # Crate 级说明
-
-agents/                     # 10 个专业 AI 代理定义
-rules/                      # 分层开发标准（通用 + TS + Rust）
+```bash
+./release/vimeflow-*.AppImage --appimage-extract-and-run --no-sandbox
 ```
 
-## AI 原生开发流程
+## 使用 Vimeflow
 
-传统项目由人类编写代码，AI 辅助。Vimeflow 反转了这一模式：
+1. 使用 `npm run electron:dev` 或本地构建的 AppImage 启动 Vimeflow。
+2. 打开终端 pane，并运行 `claude` 或 `codex`。
+3. 在工作空间中拆分 pane、浏览文件、编辑代码并审查 Git Diff。
+4. 检测到受支持代理后，代理状态面板会自动显示。
 
-1. **人类编写规格说明** — 产品需求、设计系统、开发规则
-2. **Lifeline 构建功能** — 专用插件将规格分解为功能列表并逐步实现
-3. **专业代理审查工作** — 10 个 AI 代理分别负责规划、TDD、代码审查、安全和文档
-4. **规则管控一切** — 分层规则系统（通用层 + 语言特定层）确保一致性，无需人工逐次提交干预
+终端工作目录同步依赖 OSC 7。`zsh` 和 `fish` 通常会自动发送；`bash` 可运行：
 
-Lifeline 是 Vimeflow AI 原生开发循环的专用工作流插件。Vimeflow 本地使用说明见 [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup)，插件运行手册见 <https://github.com/winoooops/lifeline>。
+```bash
+./scripts/setup-shell-osc7.sh
+```
 
-## 路线图
+## Lifeline 与 Harness Engineering
 
-| 阶段       | 状态   | 描述                                                      |
-| ---------- | ------ | --------------------------------------------------------- |
-| 第 1 阶段  | 已完成 | 历史 Tauri 脚手架；已被 Electron sidecar runtime 取代     |
-| 第 2 阶段  | 已完成 | 工作空间布局外壳                                          |
-| 第 3 阶段  | 已完成 | 终端核心（xterm.js + Electron sidecar PTY IPC）           |
-| 第 4 阶段  | 已完成 | 代理状态侧边栏（Claude Code / Codex 检测、telemetry、UI） |
-| UI Handoff | 进行中 | 多 pane 终端画布和 DockPanel 已落地；剩余视觉打磨继续推进 |
-| 第 5 阶段  | 计划中 | 持久化会话状态                                            |
-| 第 6+ 阶段 | 计划中 | 剩余上下文、使用量和桌面打磨                              |
+这个仓库也是一个实践型 harness engineering 项目。Vimeflow 的开发流程使用 [Lifeline Claude Code 扩展](https://github.com/winoooops/lifeline) 来做规划、自主实现循环、代码审查、PR 请求、上游 review 处理和 PR 批准。
 
-进度跟踪：[`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml)
+项目本地安装说明见 [CLAUDE.md](./CLAUDE.md#lifeline-plugin-setup)。
+
+## 验证源码检出
+
+```bash
+npm run lint
+npm run format:check
+npm run type-check
+npm test
+cargo test --manifest-path crates/backend/Cargo.toml
+```
+
+Rust 类型变更后重新生成 TypeScript 绑定：
+
+```bash
+npm run generate:bindings
+```
+
+## 项目参考
+
+- 安装与环境细节：[SETUP.md](./SETUP.md)
+- 开发命令与代码风格：[DEVELOPMENT.md](./DEVELOPMENT.md)
+- 架构与 Electron 旁路 IPC：[ARCHITECT.md](./ARCHITECT.md)
+- 设计系统：[DESIGN.md](./DESIGN.md) 和 [docs/design/UNIFIED.md](./docs/design/UNIFIED.md)
+- 当前路线图状态：[docs/roadmap/progress.yaml](./docs/roadmap/progress.yaml)
+- 更新日志：[CHANGELOG.zh-CN.md](./CHANGELOG.zh-CN.md) / [CHANGELOG.md](./CHANGELOG.md)
+- 后端 crate 说明：[crates/backend/README.md](./crates/backend/README.md)
 
 ## 许可证
 
