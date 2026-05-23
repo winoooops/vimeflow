@@ -380,20 +380,31 @@ adapters all become implementation details.
    the engine design must absorb Codex's split-completion quirk to be
    useful.
 
-## Codex critique (2026-05-22)
+## Codex critique → converged v4-frozen plan (2026-05-22 → 2026-05-23)
 
-A codex review of this proposal surfaced **9 findings** that materially
-change the plan — including a factual error about serde tolerance, the
-absence of an `AttachContext` type, and the wrong shape for the proposed
-`AgentSession` facade.
+This proposal was iterated against codex across **5 rounds**; the loop
+converged on Round 5 with the explicit signal **"No new findings."**
 
-Read [`REVIEW.md`](./REVIEW.md) for the full findings + a **revised
-sequence (Step 0 → A' → B' → B'' → D', with C still optional)** that
-adds a mandatory "seam prep" step before any of the original directions
-land.
+Finding count per round: **9 → 5 → 5 → 3 → 0**. The plan version
+landed at **v4-frozen**.
 
-The revised total estimate is **~5–7 days** (vs. the ~2.5–3.5d in this
-file).
+The original A → B → D ordering proposed in this file is **superseded**.
+Read [`REVIEW.md`](./REVIEW.md) for the full critique log + the
+[**Final plan (v4-frozen)**](./REVIEW.md#final-plan-v4-frozen),
+which:
+
+- Adds a mandatory **Step 0** (`0a` AttachContext, `0b` SessionRuntimeContext, `0c` LocatedStatusSource + StatusSnapshot + TranscriptPathSource).
+- Splits A' into **A-status** (mandatory, before B') and **A-transcript** (optional, after D').
+- Promotes B to a **5-trait split** with `AgentBindings` composition + `AttachError` domain enum.
+- Treats `AgentWatcherService` (D') as a registry facade, not an RAII session value.
+
+The refactor branch is `refactor/agent-adapter`; each round + each
+implementation step lands as its own commit, with a single squash to
+`main` at the end.
+
+**Revised core-path estimate:** ~6.5–9 days (was ~2.5–3.5d in this
+file). Full delivery (including the optional A-transcript and C
+extensions): ~9.5–13 days.
 
 ## Cross-cutting smells worth fixing during the refactor
 

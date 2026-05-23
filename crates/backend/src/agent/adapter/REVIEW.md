@@ -1,13 +1,25 @@
-# Agent adapter — Codex critique of the refactor proposal
+# Agent adapter — iterative Codex critique log
 
-> **Date:** 2026-05-22
+> **Status:** ✅ **Converged after 5 rounds** (Round 5: "No new findings").
 > **Reviewer:** codex-cli 0.133.0 (default model, ChatGPT-account auth)
-> **Subject:** [`README.md`](./README.md) (the A→B→D refactor proposal)
-> **Prompt:** see "Prompt used" at the bottom.
+> **Subject:** the refactor proposal in [`README.md`](./README.md)
+> **Date range:** 2026-05-22 → 2026-05-23
 
-Codex was asked to identify dangers and blockers the proposal underestimated
-or missed. Output below is the verbatim list of findings, followed by a
-synthesis and a revised sequence.
+This file is an iterative-review log. Each round critiques the latest
+plan; findings get folded into a revised plan; the next round critiques
+the revision. Round 5 returned the stop signal.
+
+**Jump to the conclusion:** [Final plan (v4-frozen)](#final-plan-v4-frozen) ↓
+
+Iteration shape:
+
+| Round | Findings | Plan version  | Nature                                                   |
+| ----- | -------- | ------------- | -------------------------------------------------------- |
+| 1     | 9        | v1            | Architectural — entire concepts missing                  |
+| 2     | 5        | v2            | Specification gaps                                       |
+| 3     | 5        | v3            | Contract ambiguity + scope/visibility                    |
+| 4     | 3        | v4            | Tactical — locator wording, visibility scope, error-type |
+| 5     | **0**    | **v4-frozen** | **Convergence**                                          |
 
 ## Findings
 
@@ -800,6 +812,116 @@ locator impl + Codex retry relocation.
 
 ---
 
+# Round 5 (2026-05-23) — Convergence ✅
+
+> **Reviewer:** codex-cli 0.133.0
+> **Subject:** the v4 plan from Round 4
+> **Verdict:** **"No new findings. The revised plan addresses all previously-raised issues."**
+
+The iterative review loop has converged after 5 rounds.
+
+## Closure summary
+
+| Round 4 finding                              | Status                                                                                                                                                                                                                                                                                                                                               |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R4.1 locator wording + Codex retry ownership | **Closed** — with the constraint that retry wraps `CompositeLocator::resolve_rollout` at the composite level (not around SQLite/FS strategies individually). Retry policy stays private; a test-only override is fine but not part of the trait.                                                                                                     |
+| R4.2 `pub(crate)` for the 5-trait split      | **Closed** — coherent if the boundary lands at `BackendState` / IPC / generated event types. Direct adapter tests stay co-located module tests; no `#[cfg(test)] pub` aliases needed because external integration tests exercise the binary IPC, not adapter internals.                                                                              |
+| R4.3 `AttachError` domain enum               | **Closed** — with one constraint: keep subdomain errors internally where they carry useful classification. `AttachError` is attach/service-level; `LocatorError` stays provider-local underneath it; **`ValidateTranscriptError` stays separate** (it feeds `TxOutcome` diagnostics, not attach failures, and must not collapse into `AttachError`). |
+
+## Regression check (final)
+
+v4 does **not** reopen #1–#9, R2.1–R2.5, or R3.1–R3.5.
+
+## Cost honesty
+
+The **6.5–9 day core estimate is believable if scope stays core-only**:
+seam prep (0a/0b/0c) + status DTOs (A-status) + 5-trait split (B') +
+TranscriptState reshape (B'') + service facade (D').
+
+⚠️ **Inflation risk:** the estimate will inflate again if `A-transcript`
+or `C` sneak back into the core path. Treat both as strictly optional
+extensions, gated by a separate decision after D' lands.
+
+## Iteration shape
+
+| Round | Findings | Nature                                                                         |
+| ----- | -------- | ------------------------------------------------------------------------------ |
+| 1     | 9        | Architectural — entire concepts missing (`AttachContext`, path-source duality) |
+| 2     | 5        | Specification gaps — types named but not defined                               |
+| 3     | 5        | Contract ambiguity + scope/visibility decisions                                |
+| 4     | 3        | Tactical — locator wording, visibility scope, error type                       |
+| 5     | **0**    | **Convergence** — v4 holds under regression + closure checks                   |
+
+The decreasing finding count (9 → 5 → 5 → 3 → 0) reflects genuine
+convergence rather than codex losing interest: rounds 4 and 5 both
+included specific regression-check questions, and round 5 verified the
+v4 amendments concretely (Claude locator shape, retry containment,
+pub(crate) boundary location, error-enum sub-domains).
+
+---
+
+# Final plan (v4-frozen)
+
+This is the plan ready for implementation. Each step is its own commit
+on `refactor/agent-adapter`; the branch merges to `main` only when all
+core-path steps land.
+
+## Sequence
+
+| Step                          | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Estimate    |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| **0a**                        | Define `AttachContext` in new `crates/backend/src/agent/adapter/attach.rs`. Fields: `session_id`, `initial_cwd`, `shell_pid`, `agent_pid`, `pty_start`, `agent_type`, `codex_home`, `claude_home_or_resolver`, `proc_root`. Immutable attach-time facts.                                                                                                                                                                                                                               | ~0.5d       |
+| **0b**                        | Define `SessionRuntimeContext` (live `PtyState` handle for cwd lookups; distinct from `AttachContext`).                                                                                                                                                                                                                                                                                                                                                                                | ~0.25d      |
+| **0c**                        | Introduce `LocatedStatusSource { status_path, trust_root, static_transcript_hint }` + `StatusSnapshot` (decoder output, status-only) + `TranscriptPathSource` trait with `static_hint(&LocatedStatusSource)` (Codex) and `dynamic_hint(raw)` (Claude) methods. Remove `ParsedStatus.transcript_path` side channel.                                                                                                                                                                     | ~1d         |
+| **A-status**                  | Loose DTOs for STATUS only (`claude_code/statusline.rs` + `codex/parser.rs` state-fold). Per-field `Option<T> + #[serde(default)]`; Some-only fold for Codex token state; `deserialize_with` for wrong-type tolerance. **Defer transcript DTOs.**                                                                                                                                                                                                                                      | ~1d         |
+| **B'**                        | 5-trait split + `ClaudeStatusFileLocator` (trivial, stateless: returns `cwd/.vimeflow/sessions/<sid>/status.json`, `trust_root = cwd`, no static hint) + Codex retry folded into `CompositeLocator`'s `StatusSourceLocator` impl + `AgentBindings { agent_type, locator, decoder, transcript_paths, validator, streamer }` in `adapter/bindings.rs` + `AgentBindings::for_attach(&AttachContext) -> Result<Self, AttachError>`. All 5 traits and `AgentBindings` are **`pub(crate)`**. | ~2d         |
+| **B''**                       | `TranscriptState` re-shape to `Arc<dyn TranscriptStreamer>`. Narrow `start_or_replace` to `pub(crate)`. Preserve concurrency invariants (per-session `start_gate` Mutex, old-before-new stop order, regression test at line 428).                                                                                                                                                                                                                                                      | ~1.5d       |
+| **D'**                        | `AgentWatcherService` registry facade. Owns/clones `PtyState`, `AgentWatcherState`, `TranscriptState`, `EventSink`. `start(session_id)` builds `AttachContext` from live `PtyState`; `stop(session_id)` removes the watcher. **`AttachError` → `String` mapping happens at this boundary** (and at `start_agent_watcher_inner`).                                                                                                                                                       | ~0.5–1d     |
+| **Core total**                |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | **~6.5–9d** |
+| **A-transcript** _(optional)_ | Loose DTOs for TRANSCRIPT JSONL (`claude_code/transcript.rs` + `codex/transcript.rs`). Must preserve Codex `CompletionMode` + partial-line buffering. Lands AFTER D' — decide separately.                                                                                                                                                                                                                                                                                              | +1.5–2d     |
+| **C** _(optional)_            | Common tailer engine. Lands after A-transcript. Engine must absorb `CompletionMode` + partial-line buffering.                                                                                                                                                                                                                                                                                                                                                                          | +1.5–2d     |
+
+## Frozen implementation constraints
+
+These came out of the 5-round loop and must not be relitigated during
+implementation:
+
+1. **`ClaudeStatusFileLocator` is stateless and trivial** — no
+   `dirs::home_dir()` lookups inside it; its `static_transcript_hint`
+   is always `None` (Claude path is dynamic via `dynamic_hint`).
+2. **Codex retry lives inside `CompositeLocator::resolve_rollout`'s
+   `StatusSourceLocator` impl**, NOT around individual SQLite/FS
+   strategies. Retry policy stays private to the impl. Test-only
+   overrides are fine; they must not appear in the trait.
+3. **`pub(crate)` is the default** for all 5 traits + `AgentBindings`
+   - `TranscriptStreamer`. The only `#[doc(hidden)] pub` exception
+     remains `TranscriptHandle` (existing, documented at
+     [`base/transcript_state.rs:15`](./base/transcript_state.rs)).
+4. **Three error enums, three layers:**
+   - `LocatorError` — provider-local (Codex), inside the locator impl.
+   - `AttachError` — attach/service-level, wraps locator failures.
+   - `ValidateTranscriptError` — **stays separate** because it feeds
+     `TxOutcome` diagnostics in the runtime, not attach failures.
+5. **CWD is a live runtime input** — `AttachContext.initial_cwd` is
+   the attach-time snapshot; runtime callers (transcript replace,
+   test-runner cwd resolution) **must** read live cwd from
+   `PtyState` via `SessionRuntimeContext`, not from `AttachContext`.
+6. **A-transcript and C are gated by a separate decision after D'
+   lands.** Do not bundle them into the core PR scope.
+
+## Pre-flight references (per-step targets)
+
+| Step     | Files to touch                                                                                                                                                                                                                                       |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0a/0b    | new: `adapter/attach.rs` + `adapter/session_runtime.rs` (or co-located). edit: `adapter/mod.rs::resolve_bind_inputs` to populate AttachContext.                                                                                                      |
+| 0c       | new: `adapter/source.rs` (LocatedStatusSource + TranscriptPathSource). edit: `adapter/types.rs::ParsedStatus` (remove transcript_path). edit: `base/watcher_runtime.rs` (parse path now goes through TranscriptPathSource).                          |
+| A-status | edit: `claude_code/statusline.rs`, `codex/parser.rs`. add: status DTOs (Claude + Codex).                                                                                                                                                             |
+| B'       | new: `adapter/bindings.rs` (AgentBindings). new: 5 trait modules. new: `adapter/error.rs` (AttachError). edit: `claude_code/mod.rs`, `codex/mod.rs` (impls). edit: `codex/locator.rs` (retry move into CompositeLocator's StatusSourceLocator impl). |
+| B''      | edit: `base/transcript_state.rs` (Arc<dyn TranscriptStreamer> instead of Arc<dyn AgentAdapter>). narrow `start_or_replace` to pub(crate).                                                                                                            |
+| D'       | new: `adapter/service.rs` (AgentWatcherService). edit: `adapter/mod.rs::start_agent_watcher_inner` to delegate to the service + map AttachError.                                                                                                     |
+
+---
+
 ## Prompts used
 
 ### Round 1 prompt
@@ -854,6 +976,24 @@ EXPLICITLY: "No new findings. The revised plan addresses all
 previously-raised issues."
 
 Otherwise: numbered findings (max 10), each with IDEA block.
+```
+
+### Round 5 prompt
+
+```
+Round 5 of refactor roadmap review.
+
+Trajectory: 9 -> 5 -> 5 -> 3 findings. v4 should be very close to stable.
+
+CLOSURE CHECK on R4.1-R4.3 (locator wording, visibility scope, error type).
+REGRESSION CHECK on all prior findings.
+NEW ISSUES:
+- retry_locator fold into StatusSourceLocator
+- AttachError Send+Sync+'static across spawn_blocking
+- pub(crate) tractability vs crates/backend/tests
+- cost estimate stability
+
+STOP CRITERION: explicit "No new findings." if v4 holds.
 ```
 
 ### Round 4 prompt
