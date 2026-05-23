@@ -56,14 +56,14 @@ VIMEFLOW_NO_SANDBOX=1 npm run electron:dev
 
 ```bash
 npm run electron:build
-chmod +x release/vimeflow-0.1.0-x64.AppImage
-./release/vimeflow-0.1.0-x64.AppImage --no-sandbox
+chmod +x release/vimeflow-*.AppImage
+./release/vimeflow-*.AppImage --no-sandbox
 ```
 
 如果主机缺少 `libfuse2`，使用 AppImage 回退方式：
 
 ```bash
-./release/vimeflow-0.1.0-x64.AppImage --appimage-extract-and-run --no-sandbox
+./release/vimeflow-*.AppImage --appimage-extract-and-run --no-sandbox
 ```
 
 ## 使用 Vimeflow

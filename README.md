@@ -56,14 +56,14 @@ Build the supported `0.1.0` AppImage:
 
 ```bash
 npm run electron:build
-chmod +x release/vimeflow-0.1.0-x64.AppImage
-./release/vimeflow-0.1.0-x64.AppImage --no-sandbox
+chmod +x release/vimeflow-*.AppImage
+./release/vimeflow-*.AppImage --no-sandbox
 ```
 
 If the host does not provide `libfuse2`, use AppImage's fallback:
 
 ```bash
-./release/vimeflow-0.1.0-x64.AppImage --appimage-extract-and-run --no-sandbox
+./release/vimeflow-*.AppImage --appimage-extract-and-run --no-sandbox
 ```
 
 ## Use Vimeflow
