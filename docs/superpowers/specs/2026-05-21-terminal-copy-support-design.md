@@ -72,16 +72,19 @@ sandbox denies clipboard read.
   The existing browser-native `Ctrl+V` / `Cmd+V` paste path is **not
   modified**; both shortcuts must continue to deliver pasted text to the
   PTY via the existing `terminal.onData → write_pty` flow.
-- **Right-click context menu** with four items, mapped to specific xterm
+- **Right-click context menu** with two items in v1, mapped to specific xterm
   methods (no ambiguity):
   - **Copy** → calls `terminal.getSelection()` + writes to clipboard;
     disabled when `terminal.hasSelection() === false`.
   - **Paste** → reads clipboard + calls `terminal.paste(text)`.
-  - **Select All** → calls `terminal.selectAll()`.
-  - **Clear** → calls `terminal.clear()` (wipes the buffer / scrollback;
-    matches gnome-terminal / iTerm2 "Clear" UX). **Not** the same as
-    `terminal.clearSelection()` (which only deselects); selection clearing
-    is incidental to Copy and is not exposed as a menu item.
+
+  v1 deliberately ships with a two-item menu surface. The hook still
+  exposes `selectAll` and `clear` callbacks (§4) — they call
+  `terminal.selectAll()` and `terminal.clear()` respectively — so future
+  iterations can grow the menu without touching the hook, but no menu
+  item invokes them today. Selection-clearing is incidental to Copy and
+  is never exposed as a menu item (matches gnome-terminal / iTerm2).
+  Tracked in §7.5 future work.
 
   Feature-local under `src/features/terminal/components/`. Positioned at
   the click location, dismissed on outside click / `Escape` / item
@@ -216,9 +219,10 @@ Body.tsx (top level)
         <TerminalContextMenu                                           (NEW)
           isOpen={isOpen} position={openAt} onClose={close}
           onCopy={copy} onPaste={paste}
-          onSelectAll={selectAll} onClear={clear}
           canCopy={hasSelection}
         />
+        // Hook still exposes selectAll/clear (§4) but the v1 menu does
+        // not surface them — see §6.
       )
 ```
 
@@ -776,8 +780,10 @@ export interface TerminalContextMenuProps {
    *  unmounts. */
   onCopy: () => void // hook's `void copy()` — fire-and-forget
   onPaste: () => void // hook's `void paste()`
-  onSelectAll: () => void
-  onClear: () => void
+
+  // v1 ships only Copy + Paste — the hook still exposes `selectAll` /
+  // `clear` (§4) for callers, but no menu item invokes them. If a
+  // future iteration adds those items, the props go here.
 
   /** Whether the Copy item is enabled. Wired to the hook's
    *  `hasSelection`. When `false`, the item is rendered with
@@ -903,8 +909,6 @@ doesn't clip it.
 | Container `<div>` | `menu`     | `aria-label="Terminal actions"` | Mounted in a `FloatingPortal`.                                             |
 | Copy item         | `menuitem` | Visible text "Copy"             | `aria-disabled="true"` when `!canCopy`; `aria-disabled` omitted otherwise. |
 | Paste item        | `menuitem` | Visible text "Paste"            | Always enabled.                                                            |
-| Select All item   | `menuitem` | Visible text "Select All"       | Always enabled.                                                            |
-| Clear item        | `menuitem` | Visible text "Clear"            | Always enabled.                                                            |
 
 Icons (if added) are `<span class="material-symbols-outlined"
 aria-hidden="true">` per the project's Material Symbols convention
@@ -930,8 +934,7 @@ otherwise Paste). Disabled items are skipped by `useListNavigation`.
 
 When an item is activated:
 
-1. The item's handler (`onCopy` / `onPaste` / `onSelectAll` / `onClear`)
-   is called synchronously.
+1. The item's handler (`onCopy` / `onPaste`) is called synchronously.
 2. `onClose()` is called immediately after, in the same tick.
 
 The order matters for `copy()` and `paste()` because both are
@@ -994,10 +997,10 @@ cleanup tolerates a disposed terminal:
 +      onClose={clipboard.close}
 +      onCopy={() => { void clipboard.copy() }}
 +      onPaste={() => { void clipboard.paste() }}
-+      onSelectAll={clipboard.selectAll}
-+      onClear={clipboard.clear}
 +      canCopy={clipboard.hasSelection}
 +    />
+// Note: clipboard.selectAll and clipboard.clear are not surfaced via
+// the menu in v1 (§6); they remain on the hook for future iterations.
    </div>
  )
 ```
@@ -1082,15 +1085,15 @@ Runs against `npm run electron:dev` (NOT `npm run dev` — that script runs the 
 | 5   | Focus terminal, no selection; press `Cmd+C` (Mac)           | No-op.                                                             |
 | 6   | Press `Ctrl+Shift+V` / `Cmd+Shift+V` with text on clipboard | Text appears in terminal.                                          |
 | 7   | Press `Ctrl+V` / `Cmd+V` with text on clipboard             | Text appears (legacy path unaffected).                             |
-| 8   | Right-click in terminal                                     | Menu opens at click position; four items visible.                  |
+| 8   | Right-click in terminal                                     | Menu opens at click position; Copy + Paste items visible.          |
 | 9   | Right-click with no selection                               | Menu opens; Copy is `aria-disabled`.                               |
 | 10  | Right-click → Copy with selection                           | Clipboard has text; menu closes.                                   |
 | 11  | Right-click → Paste                                         | Clipboard text pasted; menu closes.                                |
-| 12  | Right-click → Select All                                    | Entire buffer is selected.                                         |
-| 13  | Right-click → Clear                                         | Buffer wiped; prompt line is line 1.                               |
-| 14  | Menu open, press Escape                                     | Menu closes.                                                       |
-| 15  | Menu open, click outside                                    | Menu closes.                                                       |
-| 16  | Menu open, Arrow Down through items                         | Focus moves; disabled Copy is skipped.                             |
+| 12  | Menu open, press Escape                                     | Menu closes.                                                       |
+| 13  | Menu open, click outside                                    | Menu closes.                                                       |
+| 14  | Menu open, Arrow Down when disabled Copy → stays on Paste   | Disabled Copy is skipped; loop wraps back to Paste.                |
+| 15  | Right-click on macOS                                        | Copy chip renders as `⌘C`; Paste chip renders as `⌘⇧V`.            |
+| 16  | Right-click on Linux/Windows                                | Copy chip renders as `Ctrl+Shift+C`; Paste chip as `Ctrl+Shift+V`. |
 | 17  | `vim` with `:set mouse=a`: drag without Shift               | No selection; events flow to vim.                                  |
 | 18  | vim mouse-mode: Shift+drag                                  | Native selection; auto-copy on release.                            |
 | 19  | vim mouse-mode: right-click                                 | Menu opens; vim receives a button-2 mousedown (accepted per §5.2). |
@@ -1121,5 +1124,6 @@ All 21 rows must pass before merge.
 | **Convergence of `writeClipboardText` between this hook and `ActivityEvent.tsx:91`**                                                        | Approach 3 declined in the planner clarification. Re-evaluate if a third call site appears.                                            |
 | **Editor "Copy Path" implementation**                                                                                                       | Outside "terminal copy only" scope.                                                                                                    |
 | **Right-button mousedown suppression in mouse-reporting mode**                                                                              | Suppression risks breaking xterm's left-click selection. Revisit if a real workflow needs it.                                          |
+| **Select All / Clear menu items**                                                                                                           | Trimmed from v1 to keep the menu surface minimal. The hook's `selectAll` / `clear` callbacks (§4) remain available so growing the menu later is a JSX-only change in `TerminalContextMenu`. |
 
 <!-- codex-reviewed: 2026-05-22T14:28:57Z -->

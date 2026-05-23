@@ -2048,8 +2048,6 @@ const baseProps = {
   onClose: vi.fn(),
   onCopy: vi.fn(),
   onPaste: vi.fn(),
-  onSelectAll: vi.fn(),
-  onClear: vi.fn(),
   canCopy: true,
 }
 
@@ -2060,7 +2058,7 @@ test('renders null when isOpen is false', () => {
   expect(container).toBeEmptyDOMElement()
 })
 
-test('renders a menu with four items when isOpen and canCopy', () => {
+test('renders a menu with Copy + Paste items when isOpen and canCopy', () => {
   render(
     <TerminalContextMenu
       {...baseProps}
@@ -2074,10 +2072,13 @@ test('renders a menu with four items when isOpen and canCopy', () => {
   ).toBeInTheDocument()
   expect(screen.getByRole('menuitem', { name: 'Copy' })).toBeInTheDocument()
   expect(screen.getByRole('menuitem', { name: 'Paste' })).toBeInTheDocument()
+  // v1 menu surface excludes Select All / Clear (spec §6); assert their absence.
   expect(
-    screen.getByRole('menuitem', { name: 'Select All' })
-  ).toBeInTheDocument()
-  expect(screen.getByRole('menuitem', { name: 'Clear' })).toBeInTheDocument()
+    screen.queryByRole('menuitem', { name: 'Select All' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('menuitem', { name: 'Clear' })
+  ).not.toBeInTheDocument()
 })
 ```
 
@@ -2095,8 +2096,8 @@ export interface TerminalContextMenuProps {
   onClose: () => void
   onCopy: () => void
   onPaste: () => void
-  onSelectAll: () => void
-  onClear: () => void
+  // v1 menu intentionally surfaces only Copy + Paste. The hook still
+  // exposes `selectAll` / `clear` (§4) for future iterations.
   canCopy: boolean
 }
 
@@ -2104,8 +2105,6 @@ export const TerminalContextMenu = ({
   isOpen,
   onCopy,
   onPaste,
-  onSelectAll,
-  onClear,
   canCopy,
 }: TerminalContextMenuProps): ReactElement | null => {
   if (!isOpen) return null
@@ -2122,12 +2121,6 @@ export const TerminalContextMenu = ({
       <button type="button" role="menuitem" onClick={onPaste}>
         Paste
       </button>
-      <button type="button" role="menuitem" onClick={onSelectAll}>
-        Select All
-      </button>
-      <button type="button" role="menuitem" onClick={onClear}>
-        Clear
-      </button>
     </div>
   )
 }
@@ -2141,7 +2134,7 @@ Expected: `2 passed`.
 
 ```bash
 git add src/features/terminal/components/TerminalContextMenu.tsx src/features/terminal/components/TerminalContextMenu.test.tsx
-git commit -m "feat(terminal): scaffold TerminalContextMenu with four menuitem buttons"
+git commit -m "feat(terminal): scaffold TerminalContextMenu with Copy + Paste menuitems"
 ```
 
 ---
@@ -2252,12 +2245,6 @@ return (
     <button type="button" role="menuitem" onClick={wrap(onPaste)}>
       Paste
     </button>
-    <button type="button" role="menuitem" onClick={wrap(onSelectAll)}>
-      Select All
-    </button>
-    <button type="button" role="menuitem" onClick={wrap(onClear)}>
-      Clear
-    </button>
   </div>
 )
 ```
@@ -2270,8 +2257,6 @@ export const TerminalContextMenu = ({
   onClose,
   onCopy,
   onPaste,
-  onSelectAll,
-  onClear,
   canCopy,
 }: TerminalContextMenuProps): ReactElement | null => {
 ```
@@ -2371,8 +2356,8 @@ export interface TerminalContextMenuProps {
   onClose: () => void
   onCopy: () => void
   onPaste: () => void
-  onSelectAll: () => void
-  onClear: () => void
+  // v1 menu surfaces only Copy + Paste. The hook still exposes
+  // selectAll / clear (§4) for future iterations.
   canCopy: boolean
 }
 
@@ -2382,8 +2367,6 @@ export const TerminalContextMenu = ({
   onClose,
   onCopy,
   onPaste,
-  onSelectAll,
-  onClear,
   canCopy,
 }: TerminalContextMenuProps): ReactElement | null => {
   const { refs, floatingStyles, context } = useFloating({
@@ -2454,12 +2437,6 @@ export const TerminalContextMenu = ({
           <button type="button" role="menuitem" onClick={wrap(onPaste)}>
             Paste
           </button>
-          <button type="button" role="menuitem" onClick={wrap(onSelectAll)}>
-            Select All
-          </button>
-          <button type="button" role="menuitem" onClick={wrap(onClear)}>
-            Clear
-          </button>
         </div>
       </FloatingFocusManager>
     </FloatingPortal>
@@ -2507,16 +2484,12 @@ test('ArrowDown navigates through enabled items and skips disabled Copy', async 
     />
   )
 
-  // Initial focus should be on Paste (index 1) because Copy is disabled.
+  // Initial focus should be on Paste (index 1) because Copy (index 0) is disabled.
   expect(screen.getByRole('menuitem', { name: 'Paste' })).toHaveFocus()
 
-  await user.keyboard('{ArrowDown}')
-  expect(screen.getByRole('menuitem', { name: 'Select All' })).toHaveFocus()
-
-  await user.keyboard('{ArrowDown}')
-  expect(screen.getByRole('menuitem', { name: 'Clear' })).toHaveFocus()
-
-  // Loop back to Paste (Copy is disabled and skipped)
+  // With v1's two-item menu and Copy disabled, Paste is the only enabled
+  // item. ArrowDown loops back to Paste itself (the disabled Copy is
+  // skipped per disabledIndices).
   await user.keyboard('{ArrowDown}')
   expect(screen.getByRole('menuitem', { name: 'Paste' })).toHaveFocus()
 })
@@ -2626,28 +2599,6 @@ const { getFloatingProps, getItemProps } = useInteractions([
           >
             Paste
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            ref={(node) => { listRef.current[2] = node }}
-            tabIndex={activeIndex === 2 ? 0 : -1}
-            {...getItemProps({
-              onClick: wrap(onSelectAll),
-            })}
-          >
-            Select All
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            ref={(node) => { listRef.current[3] = node }}
-            tabIndex={activeIndex === 3 ? 0 : -1}
-            {...getItemProps({
-              onClick: wrap(onClear),
-            })}
-          >
-            Clear
-          </button>
 ```
 
 - [ ] **Step 14.4: Run, verify pass**
@@ -2739,10 +2690,10 @@ Find the inner `<div ref={containerRef} ... />` and append a sibling `<TerminalC
         onPaste={(): void => {
           void clipboard.paste()
         }}
-        onSelectAll={clipboard.selectAll}
-        onClear={clipboard.clear}
         canCopy={clipboard.hasSelection}
       />
+      {/* clipboard.selectAll / clipboard.clear remain on the hook for
+          future menu growth but are not surfaced in v1 (spec §6). */}
 ```
 
 - [ ] **Step 15.5: Run the existing Body.tsx tests to make sure the integration didn't break anything**
@@ -2799,7 +2750,7 @@ For each row in spec §7.3 numbered 1 through 7, perform the action and confirm 
 
 - [ ] **Step 16.3: Verify rows 8-16 (right-click menu)**
 
-For each row, right-click in the terminal and verify the menu opens at the click position with all four items. Try the disabled-Copy state by clicking before selecting any text. Verify Escape and outside-click both dismiss. Verify ArrowDown skips the disabled Copy.
+For each row, right-click in the terminal and verify the menu opens at the click position with both items (Copy + Paste — v1 menu surface per spec §6). Try the disabled-Copy state by clicking before selecting any text. Verify Escape and outside-click both dismiss. Verify ArrowDown skips the disabled Copy and loops on Paste.
 
 - [ ] **Step 16.4: Verify rows 17-19 (vim mouse-mode)**
 
