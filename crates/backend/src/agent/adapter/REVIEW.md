@@ -1,5 +1,6 @@
 # Agent adapter — iterative Codex critique log
 
+> **Tracking issue:** [#246 — `refactor(agent-adapter): split monolithic trait into composable services`](https://github.com/winoooops/vimeflow/issues/246) (the single context anchor for all implementation PRs)
 > **Status:** ✅ **Converged after 5 rounds** (Round 5: "No new findings").
 > **Reviewer:** codex-cli 0.133.0 (default model, ChatGPT-account auth)
 > **Subject:** the refactor proposal in [`README.md`](./README.md)

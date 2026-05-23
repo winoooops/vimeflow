@@ -382,6 +382,8 @@ adapters all become implementation details.
 
 ## Codex critique → converged v4-frozen plan (2026-05-22 → 2026-05-23)
 
+> **Tracking issue:** [#246](https://github.com/winoooops/vimeflow/issues/246) — the umbrella issue for all implementation PRs landing this refactor. Reference it in every PR (`Part of #246`).
+
 This proposal was iterated against codex across **5 rounds**; the loop
 converged on Round 5 with the explicit signal **"No new findings."**
 
