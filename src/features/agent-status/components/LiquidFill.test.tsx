@@ -344,6 +344,7 @@ describe('LiquidFill — fill mode', () => {
 })
 
 // Round-4 F2: glow prop applies drop-shadow filter to SVG
+// Round-6 F1: glow filter uses color-mix() so non-hex color strings are valid
 describe('LiquidFill — glow prop', () => {
   test('SVG has drop-shadow filter when glow=true', () => {
     const { container } = render(
@@ -361,5 +362,24 @@ describe('LiquidFill — glow prop', () => {
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
     const svg = container.querySelector('svg') as SVGElement
     expect(svg.style.filter).toBe('')
+  })
+
+  test('glow filter uses color-mix() not hex-alpha suffix (round-6 F1)', () => {
+    const { container } = render(
+      <LiquidFill
+        mode="bar"
+        pct={50}
+        color="#cba6f7"
+        glow
+        testId="lf-glow-mix"
+      />
+    )
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
+    const svg = container.querySelector('svg') as SVGElement
+    expect(svg.style.filter).toContain(
+      'color-mix(in srgb, #cba6f7 25%, transparent)'
+    )
+    // Ensure the old hex-alpha form is NOT present
+    expect(svg.style.filter).not.toContain('#cba6f740')
   })
 })

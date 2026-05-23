@@ -2,6 +2,12 @@ import { describe, test, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ContextBucket, formatTokens, formatContextSize } from './ContextBucket'
 import type { ContextBucketProps } from './ContextBucket'
+import { BAR_DIMS, computeBaseFloor } from './LiquidFill'
+import {
+  LIQUID_COLOR_PRIMARY_CONTAINER,
+  LIQUID_COLOR_TERTIARY,
+  LIQUID_COLOR_ERROR,
+} from './liquidColors'
 
 const defaultProps: ContextBucketProps = {
   usedPercentage: 50,
@@ -73,8 +79,7 @@ describe('ContextBucket', () => {
         <ContextBucket {...defaultProps} usedPercentage={50} />
       )
 
-      // baseFloor = top + ambientAmp + 0.5  (BAR_DIMS w=22, h=110)
-      const expectedY = 110 - (110 - 4) * (50 / 100) + 1.8 + 0.5
+      const expectedY = computeBaseFloor(BAR_DIMS.w, BAR_DIMS.h, 50)
       expect(getWrapperTy(container)).toBeCloseTo(expectedY, 1)
     })
 
@@ -83,7 +88,7 @@ describe('ContextBucket', () => {
         <ContextBucket {...defaultProps} usedPercentage={74} />
       )
 
-      const expectedY = 110 - (110 - 4) * (74 / 100) + 1.8 + 0.5
+      const expectedY = computeBaseFloor(BAR_DIMS.w, BAR_DIMS.h, 74)
       expect(getWrapperTy(container)).toBeCloseTo(expectedY, 1)
     })
 
@@ -92,7 +97,7 @@ describe('ContextBucket', () => {
         <ContextBucket {...defaultProps} usedPercentage={90} />
       )
 
-      const expectedY = 110 - (110 - 4) * (90 / 100) + 1.8 + 0.5
+      const expectedY = computeBaseFloor(BAR_DIMS.w, BAR_DIMS.h, 90)
       expect(getWrapperTy(container)).toBeCloseTo(expectedY, 1)
     })
   })
@@ -137,7 +142,9 @@ describe('ContextBucket', () => {
       const stops = container.querySelectorAll(
         'linearGradient[id^="liquid-fill-"] stop'
       )
-      expect(stops[0]?.getAttribute('stop-color')).toBe('#cba6f7')
+      expect(stops[0]?.getAttribute('stop-color')).toBe(
+        LIQUID_COLOR_PRIMARY_CONTAINER
+      )
 
       const bar = screen.getByTestId('progress-bar-fill')
       expect(bar.className).toContain('bg-primary-container')
@@ -155,7 +162,7 @@ describe('ContextBucket', () => {
       const stops = container.querySelectorAll(
         'linearGradient[id^="liquid-fill-"] stop'
       )
-      expect(stops[0]?.getAttribute('stop-color')).toBe('#ff94a5')
+      expect(stops[0]?.getAttribute('stop-color')).toBe(LIQUID_COLOR_TERTIARY)
 
       const bar = screen.getByTestId('progress-bar-fill')
       expect(bar.className).toContain('bg-tertiary')
@@ -173,7 +180,7 @@ describe('ContextBucket', () => {
       const stops = container.querySelectorAll(
         'linearGradient[id^="liquid-fill-"] stop'
       )
-      expect(stops[0]?.getAttribute('stop-color')).toBe('#ffb4ab')
+      expect(stops[0]?.getAttribute('stop-color')).toBe(LIQUID_COLOR_ERROR)
 
       const bar = screen.getByTestId('progress-bar-fill')
       expect(bar.className).toContain('bg-error')

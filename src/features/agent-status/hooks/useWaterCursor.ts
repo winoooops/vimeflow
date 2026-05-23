@@ -157,7 +157,6 @@ export const useWaterCursor = (
         active = true
       }
       refs.slosh.style.transform = `rotate(${cur.tilt.toFixed(3)}deg)`
-      refs.slosh.style.transformOrigin = `${refs.dims.w / 2}px ${refs.dims.h}px`
 
       const tx = `translateY(${cur.lift.toFixed(3)}px) scaleY(${cur.amp.toFixed(
         4
@@ -310,6 +309,15 @@ export const useWaterCursor = (
       wrap.addEventListener('pointermove', onMove)
       wrap.addEventListener('pointerleave', onLeave)
       wrap.addEventListener('vfliquidwake', onWake)
+      // Set transform-origin once per attach lifecycle. The pivot derives
+      // from stable dims; React's JSX already sets the same value at mount,
+      // but clearInline() does NOT clear it (intentionally — see round-3
+      // F1). Writing here is belt-and-suspenders for the (rare) case where
+      // refs are rebuilt with different dims between attach cycles.
+      const refsNow = refsRef.current
+      if (refsNow !== null) {
+        refsNow.slosh.style.transformOrigin = `${refsNow.dims.w / 2}px ${refsNow.dims.h}px`
+      }
       attached = true
     }
 

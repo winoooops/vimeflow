@@ -23,7 +23,7 @@ export interface LiquidFillProps {
   glow?: boolean
 }
 
-const BAR_DIMS = { w: 22, h: 110 } as const
+export const BAR_DIMS = { w: 22, h: 110 } as const
 
 const TICK_LEVELS = [25, 50, 75] as const
 
@@ -75,12 +75,26 @@ interface Geom {
   wavePathB: string
 }
 
+/**
+ * Returns the y coordinate (in SVG user units) of the solid-fill body's
+ * top edge for a given container size and percentage. Exported for
+ * geometry assertions in consumer tests (e.g. ContextBucket.test.tsx).
+ */
+export const computeBaseFloor = (w: number, h: number, pct: number): number => {
+  const clamped = Math.max(0, Math.min(100, pct))
+  const liquidH = (h - 4) * (clamped / 100)
+  const top = h - liquidH
+  const ambientAmp = Math.min(1.8, w * 0.09)
+
+  return Math.min(top + ambientAmp + 0.5, h)
+}
+
 const computeGeom = (w: number, h: number, pct: number): Geom => {
   const clamped = Math.max(0, Math.min(100, pct))
   const liquidH = (h - 4) * (clamped / 100)
   const top = h - liquidH
   const ambientAmp = Math.min(1.8, w * 0.09)
-  const baseFloor = Math.min(top + ambientAmp + 0.5, h)
+  const baseFloor = computeBaseFloor(w, h, pct)
   // waveA at phase 0, waveB at phase 0.125. With cycles=4, the second
   // wave is shifted by 0.5 cycles (180°) relative to the first — the
   // maximum visible contrast that still preserves the seamless-loop
@@ -205,7 +219,11 @@ export const LiquidFill = ({
           display: 'block',
           visibility:
             mode === 'fill' && measured === null ? 'hidden' : undefined,
-          ...(glow ? { filter: `drop-shadow(0 -4px 8px ${color}40)` } : {}),
+          ...(glow
+            ? {
+                filter: `drop-shadow(0 -4px 8px color-mix(in srgb, ${color} 25%, transparent))`,
+              }
+            : {}),
         }}
       >
         <defs>
