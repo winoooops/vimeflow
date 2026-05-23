@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Vimeflow · Worktree + Branch in pane header</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #0d0d1c; color: #e3e0f7; font-family: 'Inter', system-ui, sans-serif; }
+  body {
+    background-image:
+      radial-gradient(1200px circle at 10% -10%, rgba(203,166,247,0.06), transparent 45%),
+      radial-gradient(900px circle at 100% 100%, rgba(168,200,255,0.035), transparent 50%);
+    padding: 48px 40px 96px;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  h1 {
+    font-family: 'Instrument Sans', system-ui; font-size: 28px; font-weight: 600;
+    letter-spacing: -0.02em; color: #e3e0f7; margin-bottom: 4px;
+  }
+  .sub {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: #8a8299; letter-spacing: 0.08em; text-transform: uppercase;
+    margin-bottom: 36px;
+  }
+  h2 {
+    font-family: 'Instrument Sans', system-ui; font-size: 16px; font-weight: 600;
+    color: #e3e0f7; margin: 36px 0 6px;
+  }
+  .h2sub { color: #8a8299; font-size: 12.5px; margin-bottom: 16px; }
+
+  /* Pane mockup chrome */
+  .pane {
+    background: #121221;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(74,68,79,0.22);
+    margin-bottom: 14px;
+  }
+  .pane.focused { outline: 2px solid #cba6f7; outline-offset: -2px;
+    box-shadow: 0 0 0 6px rgba(203,166,247,0.16), 0 8px 32px rgba(0,0,0,0.35);
+  }
+  .pane-header {
+    padding: 10px 12px;
+    background: linear-gradient(180deg, rgba(203,166,247,0.16), rgba(13,13,28,0));
+    border-bottom: 1px solid rgba(74,68,79,0.18);
+    display: flex; align-items: center; gap: 9px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    color: #cdc3d1;
+  }
+  .pane-body { padding: 14px 16px; min-height: 64px; }
+  .pane-body p {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: #cdc3d1; line-height: 1.55;
+  }
+
+  .agent-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 8px 3px 6px;
+    background: rgba(203,166,247,0.16);
+    border: 1px solid rgba(203,166,247,0.32);
+    border-radius: 6px;
+    color: #cba6f7; font-weight: 600; letter-spacing: 0.04em;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 999px; background: #50fa7b;
+         box-shadow: 0 0 6px #50fa7b;
+         animation: pulse 2s ease-in-out infinite; flex-shrink: 0; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:.5;transform:scale(.85);} }
+  .session { color: #cdc3d1; }
+  .meta-rel { color: #6c7086; }
+  .meta-sep { color: #4a444f; }
+  .changes-add { color: #7defa1; }
+  .changes-rem { color: #ff94a5; }
+  .closebtn {
+    margin-left: auto; width: 20px; height: 20px;
+    color: #6c7086; cursor: pointer; display: grid; place-items: center;
+    border-radius: 4px;
+  }
+  .closebtn:hover { background: rgba(255,255,255,0.04); color: #e2c7ff; }
+
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400; vertical-align: middle; }
+
+  /* === BEFORE (current ugly) === */
+  .before-tree {
+    display: inline-flex; align-items: baseline; gap: 4px;
+  }
+  .before-tree-icon { color: #f0c674; }
+  .before-tree-name { color: #cdc3d1; }
+  .before-branch { color: #8a8299; }
+
+  /* === OPTION 1: Segmented chip === */
+  .gitref-segmented {
+    display: inline-flex; align-items: stretch;
+    height: 22px;
+    background: rgba(13,13,28,0.55);
+    border: 1px solid rgba(74,68,79,0.4);
+    border-radius: 6px;
+    overflow: hidden;
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+  }
+  .gitref-segmented .seg {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 0 8px;
+  }
+  .gitref-segmented .seg-wt {
+    color: #cdc3d1;
+    background: rgba(255,255,255,0.02);
+  }
+  .gitref-segmented .seg-wt .material-symbols-outlined {
+    color: #c39eee; font-size: 13px;
+  }
+  .gitref-segmented .seg-divider {
+    width: 1px;
+    background: rgba(74,68,79,0.5);
+  }
+  .gitref-segmented .seg-br {
+    color: #e3e0f7;
+    font-weight: 500;
+  }
+  .gitref-segmented .seg-br .material-symbols-outlined {
+    color: #cba6f7; font-size: 12px;
+  }
+
+  /* === OPTION 2: Inline with custom glyphs === */
+  .gitref-inline {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 22px; padding: 0 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+  }
+  .gitref-inline .tag {
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .gitref-inline .tag-wt { color: #cdc3d1; }
+  .gitref-inline .tag-wt svg { color: #c39eee; }
+  .gitref-inline .tag-br { color: #e3e0f7; font-weight: 500; }
+  .gitref-inline .tag-br svg { color: #cba6f7; }
+  .gitref-inline .tag-link { color: #6c7086; }
+
+  /* === OPTION 3: Stacked with breadcrumb === */
+  .gitref-stacked {
+    display: inline-flex; align-items: center;
+    height: 22px; padding: 0 8px 0 6px;
+    background: rgba(203,166,247,0.06);
+    border: 1px solid rgba(203,166,247,0.20);
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    gap: 6px;
+  }
+  .gitref-stacked svg.gicon { color: #cba6f7; flex-shrink: 0; }
+  .gitref-stacked svg.wt-icon { color: #c39eee; flex-shrink: 0; }
+  .gitref-stacked .wt-prefix { color: #c39eee; display: inline-flex; align-items: center; gap: 3px; }
+  .gitref-stacked .branch-name { color: #e3e0f7; font-weight: 500; }
+  .gitref-stacked .arrow { color: #4a444f; font-size: 11px; }
+
+  /* === OPTION 4: Path-style breadcrumb === */
+  .gitref-path {
+    display: inline-flex; align-items: center; gap: 4px;
+    height: 22px; padding: 0 8px;
+    background: rgba(13,13,28,0.5);
+    border: 1px solid rgba(74,68,79,0.3);
+    border-radius: 999px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+  }
+  .gitref-path .repo { color: #6c7086; }
+  .gitref-path .sep { color: #4a444f; }
+  .gitref-path .wt { color: #c39eee; }
+  .gitref-path .branch { color: #cba6f7; font-weight: 500; }
+  .gitref-path svg { color: #cba6f7; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Worktree + branch in pane header</h1>
+<div class="sub">Same pane chrome · four alternatives for the git-ref segment</div>
+
+<!-- BEFORE -->
+<h2>Before</h2>
+<div class="h2sub">Tree emoji + worktree name + branch text — feels pasted on, the emoji breaks the system.</div>
+<div class="pane focused">
+  <div class="pane-header">
+    <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+    <span class="dot"></span><span class="session">session 1</span>
+    <span class="before-tree"><span class="before-tree-icon">🌳</span><span class="before-tree-name">dummy</span></span>
+    <span class="before-branch">worktree-dummy</span>
+    <span class="meta-sep">·</span>
+    <span class="meta-rel">27m ago</span>
+    <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+  </div>
+  <div class="pane-body"><p>Terminal output…</p></div>
+</div>
+
+<!-- OPTION 1 -->
+<h2>Option A — Segmented chip</h2>
+<div class="h2sub">Two-tone pill: worktree on the left (mauve folder icon), branch on the right (lavender git-branch icon). Hairline divider between. Reads as <em>one</em> ref with two facets.</div>
+<div class="pane focused">
+  <div class="pane-header">
+    <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+    <span class="dot"></span><span class="session">session 1</span>
+    <span class="gitref-segmented">
+      <span class="seg seg-wt"><span class="material-symbols-outlined">park</span>dummy</span>
+      <span class="seg-divider"></span>
+      <span class="seg seg-br">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="4" cy="3" r="1.5"/><circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="6" r="1.5"/>
+          <path d="M4 4.5v7"/><path d="M4 8c4 0 6-1 8-3"/>
+        </svg>
+        worktree-dummy
+      </span>
+    </span>
+    <span class="meta-sep">·</span>
+    <span class="meta-rel">27m ago</span>
+    <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+  </div>
+  <div class="pane-body"><p>Terminal output…</p></div>
+</div>
+
+<!-- OPTION 2 -->
+<h2>Option B — Inline with custom glyphs</h2>
+<div class="h2sub">No background — just an icon + label per fact, slot-into-line. The icons carry the semantics; the colors keep them apart.</div>
+<div class="pane focused">
+  <div class="pane-header">
+    <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+    <span class="dot"></span><span class="session">session 1</span>
+    <span class="gitref-inline">
+      <span class="tag tag-wt">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 4.5h4l1.5-1.5h6.5v9.5h-12V4.5z"/>
+        </svg>
+        dummy
+      </span>
+      <span class="tag-link">→</span>
+      <span class="tag tag-br">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="4" cy="3" r="1.5"/><circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="6" r="1.5"/>
+          <path d="M4 4.5v7"/><path d="M4 8c4 0 6-1 8-3"/>
+        </svg>
+        worktree-dummy
+      </span>
+    </span>
+    <span class="meta-sep">·</span>
+    <span class="meta-rel">27m ago</span>
+    <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+  </div>
+  <div class="pane-body"><p>Terminal output…</p></div>
+</div>
+
+<!-- OPTION 3 -->
+<h2>Option C — Subtle accented chip <span style="color:#7defa1;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;margin-left:8px;">[ updated ]</span></h2>
+<div class="h2sub">Each segment now carries its own micro-icon so neither is mistaken for a file path: a <strong>worktree-fork glyph</strong> labels the worktree, the <strong>git-branch glyph</strong> labels the branch. The leading lavender icon is gone — the chip is now a list of two labeled facts.</div>
+<div class="pane focused">
+  <div class="pane-header">
+    <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+    <span class="dot"></span><span class="session">session 1</span>
+    <span class="gitref-stacked">
+      <span class="wt-prefix">
+        <!-- worktree icon: a small fork — distinct from the branch icon -->
+        <svg class="wt-icon" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="4" cy="3" r="1.4"/>
+          <circle cx="10" cy="8" r="1.4"/>
+          <circle cx="10" cy="13" r="1.4"/>
+          <path d="M4 4.4v8.6"/>
+          <path d="M4 8c3 0 4.5-0.5 5.6-1.5"/>
+          <path d="M4 13h4.6"/>
+        </svg>
+        dummy
+      </span>
+      <span class="arrow">›</span>
+      <svg class="gicon" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="4" cy="3" r="1.5"/><circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="6" r="1.5"/>
+        <path d="M4 4.5v7"/><path d="M4 8c4 0 6-1 8-3"/>
+      </svg>
+      <span class="branch-name">worktree-dummy</span>
+    </span>
+    <span class="meta-sep">·</span>
+    <span class="meta-rel">27m ago</span>
+    <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+  </div>
+  <div class="pane-body"><p>Terminal output…</p></div>
+</div>
+
+<!-- OPTION 4 -->
+<h2>Option D — Path pill (Cursor-style)</h2>
+<div class="h2sub">Pill rendered as a "path" with breadcrumb chevrons — repo/worktree/branch. Most space-efficient; reads as a location.</div>
+<div class="pane focused">
+  <div class="pane-header">
+    <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+    <span class="dot"></span><span class="session">session 1</span>
+    <span class="gitref-path">
+      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="4" cy="3" r="1.5"/><circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="6" r="1.5"/>
+        <path d="M4 4.5v7"/><path d="M4 8c4 0 6-1 8-3"/>
+      </svg>
+      <span class="wt">dummy</span>
+      <span class="sep">/</span>
+      <span class="branch">worktree-dummy</span>
+    </span>
+    <span class="meta-sep">·</span>
+    <span class="meta-rel">27m ago</span>
+    <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+  </div>
+  <div class="pane-body"><p>Terminal output…</p></div>
+</div>
+
+<!-- Material Symbol worktree icon options -->
+<h2 style="margin-top: 56px;">Worktree icon — Material Symbols candidates</h2>
+<div class="h2sub">All native to the <code style="font-family:'JetBrains Mono',monospace;color:#cba6f7;">material-symbols-outlined</code> font already loaded in the app. Picked to read as "a tree with multiple nodes" rather than a folder or a file path.</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:20px;margin-bottom:28px;">
+
+<!-- account_tree -->
+<div>
+  <div class="cell-label" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6c7086;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:8px;">account_tree · recommended</div>
+  <div class="pane focused">
+    <div class="pane-header">
+      <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+      <span class="dot"></span><span class="session">session 1</span>
+      <span class="gitref-stacked">
+        <span class="wt-prefix">
+          <span class="material-symbols-outlined" style="font-size:13px;color:#c39eee;" >account_tree</span>
+          dummy
+        </span>
+        <span class="arrow">›</span>
+        <span class="material-symbols-outlined" style="font-size:13px;color:#cba6f7;">fork_right</span>
+        <span class="branch-name">worktree-dummy</span>
+      </span>
+      <span class="meta-sep">·</span><span class="meta-rel">27m ago</span>
+      <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- device_hub -->
+<div>
+  <div class="cell-label" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6c7086;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:8px;">device_hub</div>
+  <div class="pane focused">
+    <div class="pane-header">
+      <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+      <span class="dot"></span><span class="session">session 1</span>
+      <span class="gitref-stacked">
+        <span class="wt-prefix">
+          <span class="material-symbols-outlined" style="font-size:13px;color:#c39eee;">device_hub</span>
+          dummy
+        </span>
+        <span class="arrow">›</span>
+        <span class="material-symbols-outlined" style="font-size:13px;color:#cba6f7;">fork_right</span>
+        <span class="branch-name">worktree-dummy</span>
+      </span>
+      <span class="meta-sep">·</span><span class="meta-rel">27m ago</span>
+      <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- schema -->
+<div>
+  <div class="cell-label" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6c7086;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:8px;">schema</div>
+  <div class="pane focused">
+    <div class="pane-header">
+      <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+      <span class="dot"></span><span class="session">session 1</span>
+      <span class="gitref-stacked">
+        <span class="wt-prefix">
+          <span class="material-symbols-outlined" style="font-size:13px;color:#c39eee;">schema</span>
+          dummy
+        </span>
+        <span class="arrow">›</span>
+        <span class="material-symbols-outlined" style="font-size:13px;color:#cba6f7;">fork_right</span>
+        <span class="branch-name">worktree-dummy</span>
+      </span>
+      <span class="meta-sep">·</span><span class="meta-rel">27m ago</span>
+      <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- polyline -->
+<div>
+  <div class="cell-label" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6c7086;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:8px;">polyline</div>
+  <div class="pane focused">
+    <div class="pane-header">
+      <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+      <span class="dot"></span><span class="session">session 1</span>
+      <span class="gitref-stacked">
+        <span class="wt-prefix">
+          <span class="material-symbols-outlined" style="font-size:13px;color:#c39eee;">polyline</span>
+          dummy
+        </span>
+        <span class="arrow">›</span>
+        <span class="material-symbols-outlined" style="font-size:13px;color:#cba6f7;">fork_right</span>
+        <span class="branch-name">worktree-dummy</span>
+      </span>
+      <span class="meta-sep">·</span><span class="meta-rel">27m ago</span>
+      <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- family_history -->
+<div>
+  <div class="cell-label" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6c7086;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:8px;">family_history</div>
+  <div class="pane focused">
+    <div class="pane-header">
+      <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+      <span class="dot"></span><span class="session">session 1</span>
+      <span class="gitref-stacked">
+        <span class="wt-prefix">
+          <span class="material-symbols-outlined" style="font-size:13px;color:#c39eee;">family_history</span>
+          dummy
+        </span>
+        <span class="arrow">›</span>
+        <span class="material-symbols-outlined" style="font-size:13px;color:#cba6f7;">fork_right</span>
+        <span class="branch-name">worktree-dummy</span>
+      </span>
+      <span class="meta-sep">·</span><span class="meta-rel">27m ago</span>
+      <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- linked_services -->
+<div>
+  <div class="cell-label" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6c7086;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:8px;">linked_services</div>
+  <div class="pane focused">
+    <div class="pane-header">
+      <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+      <span class="dot"></span><span class="session">session 1</span>
+      <span class="gitref-stacked">
+        <span class="wt-prefix">
+          <span class="material-symbols-outlined" style="font-size:13px;color:#c39eee;">linked_services</span>
+          dummy
+        </span>
+        <span class="arrow">›</span>
+        <span class="material-symbols-outlined" style="font-size:13px;color:#cba6f7;">fork_right</span>
+        <span class="branch-name">worktree-dummy</span>
+      </span>
+      <span class="meta-sep">·</span><span class="meta-rel">27m ago</span>
+      <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- States & contexts -->
+<h2 style="margin-top: 56px;">Option C across states (with `account_tree` worktree icon)</h2>
+<div class="h2sub">With short worktree / long branch / no worktree / detached HEAD — handling edge cases.</div>
+
+<div class="pane focused">
+  <div class="pane-header">
+    <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+    <span class="dot"></span><span class="session">main session</span>
+    <span class="gitref-stacked">
+      <svg class="gicon" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="4" cy="3" r="1.5"/><circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="6" r="1.5"/>
+        <path d="M4 4.5v7"/><path d="M4 8c4 0 6-1 8-3"/>
+      </svg>
+      <span class="branch-name">main</span>
+    </span>
+    <span class="meta-sep">·</span><span class="meta-rel">just now</span>
+    <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+  </div>
+  <div class="pane-body"><p>(no worktree — just main branch on root; the worktree segment is omitted, leaving only the branch icon + name)</p></div>
+</div>
+
+<div class="pane focused">
+  <div class="pane-header">
+    <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+    <span class="dot"></span><span class="session">session 2</span>
+    <span class="gitref-stacked">
+      <span class="wt-prefix">
+        <svg class="wt-icon" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="4" cy="3" r="1.4"/>
+          <circle cx="10" cy="8" r="1.4"/>
+          <circle cx="10" cy="13" r="1.4"/>
+          <path d="M4 4.4v8.6"/>
+          <path d="M4 8c3 0 4.5-0.5 5.6-1.5"/>
+          <path d="M4 13h4.6"/>
+        </svg>
+        feat-tooltip
+      </span>
+      <span class="arrow">›</span>
+      <svg class="gicon" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="4" cy="3" r="1.5"/><circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="6" r="1.5"/>
+        <path d="M4 4.5v7"/><path d="M4 8c4 0 6-1 8-3"/>
+      </svg>
+      <span class="branch-name" style="max-width: 280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">feat/activity-tooltip-redesign-with-keymap-hints</span>
+    </span>
+    <span class="meta-sep">·</span><span class="meta-rel">3m ago</span>
+    <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+  </div>
+  <div class="pane-body"><p>(long branch name — ellipsizes at 280px so the chip never pushes the close button off-screen)</p></div>
+</div>
+
+<div class="pane focused">
+  <div class="pane-header">
+    <span class="agent-chip"><span class="material-symbols-outlined" style="font-size:12px;">bolt</span>CLAUDE</span>
+    <span class="dot" style="background:#ff94a5;box-shadow:0 0 6px #ff94a5;"></span><span class="session">detached</span>
+    <span class="gitref-stacked" style="background: rgba(255,148,165,0.06); border-color: rgba(255,148,165,0.25);">
+      <span class="wt-prefix" style="color:#ffb4ab;">
+        <svg class="wt-icon" style="color:#ffb4ab;" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="4" cy="3" r="1.4"/>
+          <circle cx="10" cy="8" r="1.4"/>
+          <circle cx="10" cy="13" r="1.4"/>
+          <path d="M4 4.4v8.6"/>
+          <path d="M4 8c3 0 4.5-0.5 5.6-1.5"/>
+          <path d="M4 13h4.6"/>
+        </svg>
+        dummy
+      </span>
+      <span class="arrow">›</span>
+      <svg class="gicon" style="color:#ff94a5" width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="4" cy="3" r="1.5"/><circle cx="4" cy="13" r="1.5"/><circle cx="12" cy="6" r="1.5"/>
+        <path d="M4 4.5v7"/><path d="M4 8c4 0 6-1 8-3"/>
+      </svg>
+      <span class="branch-name" style="color:#ff94a5;">a7f23c (detached)</span>
+    </span>
+    <span class="meta-sep">·</span><span class="meta-rel">8m ago</span>
+    <span class="closebtn"><span class="material-symbols-outlined" style="font-size:13px;">close</span></span>
+  </div>
+  <div class="pane-body"><p>(detached HEAD — chip turns coral to signal off-branch state)</p></div>
+</div>
+
+</div>
+</body>
+</html>
