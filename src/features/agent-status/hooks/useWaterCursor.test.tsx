@@ -361,22 +361,29 @@ describe('useWaterCursor — pure-wake does not activate hover state (Round-8 F1
     vi.restoreAllMocks()
   })
 
-  test('pure wake (pct change, no hover) does not set data-interactive', async () => {
+  test('pure wake (pct change, no hover) does not set data-interactive at any point', async () => {
     mockMatchMedia(makeMql(false))
     const refs = makeRefs()
     refs.waterTop = 50
 
-    render(<Harness refs={refs} addSpy={vi.fn()} removeSpy={vi.fn()} />)
+    // Spy on the slosh element's setAttribute calls so we catch any
+    // intra-frame 'data-interactive', 'on' write even if it's cleared
+    // by clearInline() in the same frame.
+    const setAttrSpy = vi.spyOn(refs.slosh, 'setAttribute')
 
+    render(<Harness refs={refs} addSpy={vi.fn()} removeSpy={vi.fn()} />)
     const wrap = screen.getByTestId('wrap')
     stubRect(wrap, 100, 100)
-    // No pointermove — just simulate a pct change → wake
     refs.waterTop = 30
     act(() => {
       wrap.dispatchEvent(new Event('vfliquidwake'))
     })
     await flushRaf(5)
-    expect(refs.slosh.getAttribute('data-interactive')).toBeNull()
+
+    const interactiveWrites = setAttrSpy.mock.calls.filter(
+      (c) => c[0] === 'data-interactive' && c[1] === 'on'
+    )
+    expect(interactiveWrites).toHaveLength(0)
   })
 })
 

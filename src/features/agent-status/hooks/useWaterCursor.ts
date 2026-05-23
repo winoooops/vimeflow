@@ -168,8 +168,8 @@ export const useWaterCursor = (
         target.sheenA !== 0 ||
         target.sheenX !== 0
 
-      if (hoverActive) {
-        if (!active) {
+      if (hoverActive || active) {
+        if (hoverActive && !active) {
           refs.slosh.setAttribute('data-interactive', 'on')
           active = true
         }
