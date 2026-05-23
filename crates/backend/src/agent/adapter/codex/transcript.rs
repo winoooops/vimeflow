@@ -18,8 +18,8 @@ use crate::agent::adapter::claude_code::test_runners::test_file_patterns::is_tes
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
 use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::adapter::types::ValidateTranscriptError;
-use crate::agent::events::{emit_agent_tool_call, emit_agent_turn};
-use crate::agent::types::{AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
+use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn};
+use crate::agent::types::{AgentCwdEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
 use crate::runtime::EventSink;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -43,6 +43,66 @@ struct InFlightToolCall {
 }
 
 type InFlightToolCalls = HashMap<String, InFlightToolCall>;
+
+/// Pull session-start cwd off a Codex rollout JSONL line.
+///
+/// Returns `Some(cwd)` ONLY for `session_meta` entries — the
+/// session-start anchor. `turn_context.cwd` is intentionally NOT
+/// matched here: empirically it just repeats `session_meta.cwd`
+/// every turn (no information value), and treating it as a live cwd
+/// would cause false reverts on reasoning-only turns after an
+/// `exec_command.workdir` transition has already moved us to a new
+/// directory. See spec section 1.
+fn extract_session_cwd(value: &Value) -> Option<&str> {
+    let event_type = value.get("type").and_then(Value::as_str)?;
+    if event_type != "session_meta" {
+        return None;
+    }
+    value
+        .get("payload")?
+        .get("cwd")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+}
+
+/// Pull the mid-session workdir off a Codex `exec_command` function-call
+/// rollout entry. This is codex's de facto session cwd after the start
+/// (verified empirically — `turn_context.cwd` does not update on
+/// codex-driven cwd changes; `exec_command.arguments.workdir` does).
+///
+/// `arguments` is a JSON-encoded string per Codex's rollout schema —
+/// it must be parsed before reading `workdir`. Malformed JSON, missing
+/// fields, or empty strings all short-circuit to `None`.
+fn extract_exec_workdir(value: &Value) -> Option<String> {
+    if value.get("type").and_then(Value::as_str)? != "response_item" {
+        return None;
+    }
+    let payload = value.get("payload")?;
+    if payload.get("type").and_then(Value::as_str)? != "function_call" {
+        return None;
+    }
+    if payload.get("name").and_then(Value::as_str)? != "exec_command" {
+        return None;
+    }
+    let raw = payload.get("arguments").and_then(Value::as_str)?;
+    let args: Value = serde_json::from_str(raw).ok()?;
+    args.get("workdir")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
+/// Dispatcher returning the observed cwd from whichever source carries
+/// it. Tries the session_meta path first (cheap, no JSON re-parse),
+/// falls back to the exec_command workdir path. Returns
+/// `Option<String>` because the workdir path must return owned strings
+/// (parsed JSON allocates).
+fn extract_codex_cwd(value: &Value) -> Option<String> {
+    if let Some(cwd) = extract_session_cwd(value) {
+        return Some(cwd.to_string());
+    }
+    extract_exec_workdir(value)
+}
 
 pub(super) fn validate_transcript_path(
     transcript_path: &str,
@@ -139,6 +199,7 @@ fn tail_loop(
     let mut partial_line = String::new();
     let mut in_flight: InFlightToolCalls = HashMap::new();
     let mut num_turns = 0_u32;
+    let mut last_cwd: Option<String> = None;
     let mut emitter = TestRunEmitter::new(events.clone());
 
     while !stop_flag.load(Ordering::Acquire) {
@@ -164,6 +225,7 @@ fn tail_loop(
                         &mut emitter,
                         &mut in_flight,
                         &mut num_turns,
+                        &mut last_cwd,
                     );
                     partial_line.clear();
                     continue;
@@ -182,6 +244,7 @@ fn tail_loop(
                     &mut emitter,
                     &mut in_flight,
                     &mut num_turns,
+                    &mut last_cwd,
                 );
             }
             Err(e) => {
@@ -200,11 +263,34 @@ fn process_line(
     emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
+    last_cwd: &mut Option<String>,
 ) {
     let value: Value = match serde_json::from_str(line) {
         Ok(value) => value,
         Err(_) => return,
     };
+
+    // Emit agent-cwd on transitions only. Codex's two cwd sources are
+    // session_meta.payload.cwd (session start) and
+    // response_item.payload.arguments.workdir for exec_command function
+    // calls (mid-session). turn_context.cwd is intentionally NOT a
+    // source — see spec section 1 and the regression test
+    // `process_line_turn_context_after_exec_command_does_not_revert`.
+    if let Some(observed) = extract_codex_cwd(&value) {
+        if last_cwd
+            .as_deref()
+            .map_or(true, |seen| seen != observed.as_str())
+        {
+            let event = AgentCwdEvent {
+                session_id: session_id.to_string(),
+                cwd: observed.clone(),
+            };
+            if let Err(e) = emit_agent_cwd(events.as_ref(), &event) {
+                log::warn!("Failed to emit agent-cwd event: {}", e);
+            }
+            *last_cwd = Some(observed);
+        }
+    }
 
     match value.get("type").and_then(Value::as_str) {
         Some("response_item") => {
@@ -949,5 +1035,333 @@ mod tests {
         });
 
         assert!(custom_tool_output_failed(&payload));
+    }
+
+    // ---- extract_session_cwd unit tests (v2: session_meta ONLY) ----
+
+    #[test]
+    fn extract_session_cwd_session_meta_returns_cwd() {
+        let v = json!({"type": "session_meta", "payload": {"cwd": "/workspace/A"}});
+        assert_eq!(extract_session_cwd(&v), Some("/workspace/A"));
+    }
+
+    #[test]
+    fn extract_session_cwd_turn_context_returns_none() {
+        // v2 spec section 1: turn_context is INTENTIONALLY NOT a cwd source.
+        // Codex's turn_context.cwd is pinned to session-start and treating
+        // it as live would cause false reverts after exec_command transitions.
+        // This test is a defensive guard against re-introduction.
+        let v = json!({"type": "turn_context", "payload": {"cwd": "/workspace/A"}});
+        assert_eq!(extract_session_cwd(&v), None);
+    }
+
+    #[test]
+    fn extract_session_cwd_other_type_returns_none() {
+        let v = json!({"type": "event_msg", "payload": {"cwd": "/workspace/A"}});
+        assert_eq!(extract_session_cwd(&v), None);
+    }
+
+    #[test]
+    fn extract_session_cwd_empty_string_returns_none() {
+        let v = json!({"type": "session_meta", "payload": {"cwd": ""}});
+        assert_eq!(extract_session_cwd(&v), None);
+    }
+
+    // ---- extract_exec_workdir unit tests (the mid-session signal) ----
+
+    #[test]
+    fn extract_exec_workdir_happy_path() {
+        let v = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "c1",
+                "arguments": "{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"
+            }
+        });
+        assert_eq!(extract_exec_workdir(&v).as_deref(), Some("/workspace/B"));
+    }
+
+    #[test]
+    fn extract_exec_workdir_other_event_type_returns_none() {
+        // event_msg carrying a function_call-shaped payload should still
+        // be rejected — the outer event type gate is response_item.
+        let v = json!({
+            "type": "event_msg",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "arguments": "{\"workdir\":\"/x\"}"
+            }
+        });
+        assert_eq!(extract_exec_workdir(&v), None);
+    }
+
+    #[test]
+    fn extract_exec_workdir_non_function_call_returns_none() {
+        let v = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call",
+                "name": "exec_command",
+                "input": "{\"workdir\":\"/x\"}"
+            }
+        });
+        assert_eq!(extract_exec_workdir(&v), None);
+    }
+
+    #[test]
+    fn extract_exec_workdir_non_exec_command_returns_none() {
+        let v = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "read_file",
+                "arguments": "{\"path\":\"/x\"}"
+            }
+        });
+        assert_eq!(extract_exec_workdir(&v), None);
+    }
+
+    #[test]
+    fn extract_exec_workdir_malformed_arguments_json_returns_none() {
+        let v = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "arguments": "{not json"
+            }
+        });
+        assert_eq!(extract_exec_workdir(&v), None);
+    }
+
+    #[test]
+    fn extract_exec_workdir_missing_workdir_field_returns_none() {
+        let v = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "arguments": "{\"cmd\":\"ls\"}"
+            }
+        });
+        assert_eq!(extract_exec_workdir(&v), None);
+    }
+
+    // ---- process_line transition-semantics tests ----
+
+    fn empty_in_flight() -> InFlightToolCalls {
+        HashMap::new()
+    }
+
+    #[test]
+    fn process_line_first_cwd_always_emits() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let line = r#"{"timestamp":"2026-05-22T10:00:00Z","type":"session_meta","payload":{"id":"sid","cwd":"/workspace/A"}}"#;
+        process_line(
+            line,
+            "sid-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+        );
+
+        let cwd_events: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-cwd")
+            .collect();
+        assert_eq!(cwd_events.len(), 1);
+        assert_eq!(cwd_events[0].1["cwd"], "/workspace/A");
+        assert_eq!(last_cwd.as_deref(), Some("/workspace/A"));
+    }
+
+    #[test]
+    fn process_line_repeated_cwd_across_sources_suppresses() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let lines = [
+            r#"{"timestamp":"2026-05-22T10:00:00Z","type":"session_meta","payload":{"id":"sid","cwd":"/workspace/A"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/A\"}"}}"#,
+        ];
+        for line in lines {
+            process_line(
+                line,
+                "sid-1",
+                None,
+                &events,
+                &mut emitter,
+                &mut in_flight,
+                &mut num_turns,
+                &mut last_cwd,
+            );
+        }
+
+        let cwd_events: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-cwd")
+            .collect();
+        assert_eq!(cwd_events.len(), 1);
+        assert_eq!(cwd_events[0].1["cwd"], "/workspace/A");
+    }
+
+    #[test]
+    fn process_line_cwd_transition_across_sources_emits() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let lines = [
+            r#"{"timestamp":"2026-05-22T10:00:00Z","type":"session_meta","payload":{"id":"sid","cwd":"/workspace/A"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:02Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c2","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/A\"}"}}"#,
+        ];
+        for line in lines {
+            process_line(
+                line,
+                "sid-1",
+                None,
+                &events,
+                &mut emitter,
+                &mut in_flight,
+                &mut num_turns,
+                &mut last_cwd,
+            );
+        }
+
+        let cwd_events: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-cwd")
+            .collect();
+        assert_eq!(cwd_events.len(), 3);
+        assert_eq!(cwd_events[0].1["cwd"], "/workspace/A");
+        assert_eq!(cwd_events[1].1["cwd"], "/workspace/B");
+        assert_eq!(cwd_events[2].1["cwd"], "/workspace/A");
+    }
+
+    /// v2-critical regression guard. Codex review on the v2 spec (HIGH)
+    /// flagged that including turn_context.cwd as a cwd source would
+    /// cause a false revert: after session_meta(A) → exec_command(B),
+    /// the next turn's turn_context(A) (pinned to session-start) would
+    /// emit agent-cwd=A and bounce the pane chip back. This test locks
+    /// in the v2 design decision to skip turn_context entirely.
+    /// If anyone re-adds turn_context to extract_session_cwd, this
+    /// test fires.
+    #[test]
+    fn process_line_turn_context_after_exec_command_does_not_revert() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let lines = [
+            r#"{"timestamp":"2026-05-22T10:00:00Z","type":"session_meta","payload":{"id":"sid","cwd":"/workspace/A"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"}}"#,
+            r#"{"timestamp":"2026-05-22T10:00:02Z","type":"turn_context","payload":{"turn_id":"t1","cwd":"/workspace/A"}}"#,
+        ];
+        for line in lines {
+            process_line(
+                line,
+                "sid-1",
+                None,
+                &events,
+                &mut emitter,
+                &mut in_flight,
+                &mut num_turns,
+                &mut last_cwd,
+            );
+        }
+
+        let cwd_events: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-cwd")
+            .collect();
+        assert_eq!(
+            cwd_events.len(),
+            2,
+            "turn_context.cwd MUST NOT emit a cwd event \
+             (would cause false revert to session-start after exec_command transition)"
+        );
+        assert_eq!(cwd_events[0].1["cwd"], "/workspace/A");
+        assert_eq!(cwd_events[1].1["cwd"], "/workspace/B");
+        // Crucially, last_cwd should still be B — the worktree we're in.
+        assert_eq!(last_cwd.as_deref(), Some("/workspace/B"));
+    }
+
+    // ---- end-to-end watcher test (with v2 regression guard inline) ----
+
+    #[test]
+    fn start_tailing_emits_cwd_transitions_in_order() {
+        let sink = Arc::new(FakeEventSink::new());
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let transcript_path = tmp.path().join("rollout.jsonl");
+
+        // 7 lines, 3 expected emissions:
+        //   1. session_meta cwd=/workspace/A             (emit)
+        //   2. turn_context cwd=/workspace/A             (no emit — extractor rejects turn_context)
+        //   3. exec_command workdir=/workspace/B         (emit — transition)
+        //   4. event_msg task_started                    (no emit)
+        //   5. exec_command workdir=/workspace/B         (suppressed — same as last_cwd)
+        //   6. turn_context cwd=/workspace/A             (no emit — REGRESSION GUARD: must not revert)
+        //   7. exec_command workdir=/workspace/A         (emit — transition back)
+        write_rollout(
+            &transcript_path,
+            &[
+                json!({"timestamp":"2026-05-22T10:00:00Z","type":"session_meta","payload":{"id":"sid","cwd":"/workspace/A"}}),
+                json!({"timestamp":"2026-05-22T10:00:01Z","type":"turn_context","payload":{"turn_id":"t1","cwd":"/workspace/A"}}),
+                json!({"timestamp":"2026-05-22T10:00:02Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"}}),
+                json!({"timestamp":"2026-05-22T10:00:03Z","type":"event_msg","payload":{"type":"task_started"}}),
+                json!({"timestamp":"2026-05-22T10:00:04Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c2","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"}}),
+                json!({"timestamp":"2026-05-22T10:00:04.5Z","type":"turn_context","payload":{"turn_id":"t2","cwd":"/workspace/A"}}),
+                json!({"timestamp":"2026-05-22T10:00:05Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c3","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/A\"}"}}),
+            ],
+        );
+
+        let handle = start_tailing(sink.clone(), "sid-cwd".to_string(), transcript_path, None)
+            .expect("start tailing");
+
+        std::thread::sleep(Duration::from_millis(750));
+        handle.stop();
+        std::thread::sleep(Duration::from_millis(100));
+
+        let cwd_events: Vec<Value> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(event, _)| event == "agent-cwd")
+            .map(|(_, payload)| payload)
+            .collect();
+
+        assert_eq!(cwd_events.len(), 3, "expected exactly 3 cwd transitions");
+        assert_eq!(cwd_events[0]["cwd"], "/workspace/A");
+        assert_eq!(cwd_events[1]["cwd"], "/workspace/B");
+        assert_eq!(cwd_events[2]["cwd"], "/workspace/A");
+        for ev in &cwd_events {
+            assert_eq!(ev["sessionId"], "sid-cwd");
+        }
     }
 }
