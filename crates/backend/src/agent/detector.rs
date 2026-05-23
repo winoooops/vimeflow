@@ -131,16 +131,14 @@ fn extract_binary_name(cmdline: &[String]) -> Option<String> {
 }
 
 /// Detect agent type from cmdline binary name
+///
+/// Delegates the binary-name → `AgentType` mapping to the central agent
+/// registry at [`crate::agent::config`] so adding a new agent only
+/// requires one new entry in `AGENT_SPECS`.
 fn detect_agent_from_cmdline<S: ProcessSource>(pid: u32, source: &S) -> Option<AgentType> {
     let cmdline = source.read_cmdline(pid)?;
     let binary_name = extract_binary_name(&cmdline)?;
-
-    match binary_name.as_str() {
-        "claude" => Some(AgentType::ClaudeCode),
-        "codex" => Some(AgentType::Codex),
-        "aider" => Some(AgentType::Aider),
-        _ => None,
-    }
+    crate::agent::config::agent_type_for_binary(&binary_name)
 }
 
 #[cfg(test)]
