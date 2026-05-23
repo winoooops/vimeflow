@@ -433,17 +433,19 @@ mod tests {
             stop_flags: Arc<Mutex<Vec<Arc<AtomicBool>>>>,
         }
 
+        impl crate::agent::adapter::types::TranscriptPathSource for OrderingAdapter {}
+
         impl AgentAdapter for OrderingAdapter {
             fn agent_type(&self) -> crate::agent::types::AgentType {
                 crate::agent::types::AgentType::ClaudeCode
             }
 
-            fn status_source(
+            fn located_status_source(
                 &self,
                 _cwd: &std::path::Path,
                 _session_id: &str,
-            ) -> Result<crate::agent::adapter::types::StatusSource, String> {
-                unreachable!("status_source not exercised in this test")
+            ) -> Result<crate::agent::adapter::types::LocatedStatusSource, String> {
+                unreachable!("located_status_source not exercised in this test")
             }
 
             fn parse_status(
@@ -460,6 +462,12 @@ mod tests {
             ) -> Result<PathBuf, crate::agent::adapter::types::ValidateTranscriptError>
             {
                 unreachable!("validate_transcript not exercised in this test")
+            }
+
+            fn transcript_path_source(
+                &self,
+            ) -> &dyn crate::agent::adapter::types::TranscriptPathSource {
+                self
             }
 
             fn tail_transcript(

@@ -30,13 +30,23 @@ use crate::terminal::PtyState;
 use base::{TranscriptHandle, TranscriptState};
 use claude_code::ClaudeCodeAdapter;
 use codex::CodexAdapter;
-use types::{ParsedStatus, StatusSource, ValidateTranscriptError};
+use types::{LocatedStatusSource, ParsedStatus, TranscriptPathSource, ValidateTranscriptError};
 
 /// Provider hooks for one CLI coding agent.
 pub trait AgentAdapter: Send + Sync + 'static {
     fn agent_type(&self) -> AgentType;
 
-    fn status_source(&self, cwd: &Path, session_id: &str) -> Result<StatusSource, String>;
+    /// Return the statusline location + attach-time transcript hint.
+    ///
+    /// Step 0c rename of the former `status_source`; the return type is
+    /// now [`LocatedStatusSource`] so attach-time transcript paths
+    /// (Codex's rollout path) reach the runtime through a typed field
+    /// instead of an adapter-private side channel.
+    fn located_status_source(
+        &self,
+        cwd: &Path,
+        session_id: &str,
+    ) -> Result<LocatedStatusSource, String>;
 
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String>;
 
@@ -49,6 +59,16 @@ pub trait AgentAdapter: Send + Sync + 'static {
         cwd: Option<PathBuf>,
         transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String>;
+
+    /// Return the [`TranscriptPathSource`] this adapter exposes.
+    ///
+    /// Step 0c addition: the watcher uses this accessor to resolve
+    /// transcript paths via the new trait instead of via the deprecated
+    /// `ParsedStatus.transcript_path` side channel. Step B' will pull
+    /// the trait out of `AgentAdapter` entirely; until then each
+    /// adapter implements `TranscriptPathSource` for itself and returns
+    /// `self`.
+    fn transcript_path_source(&self) -> &dyn TranscriptPathSource;
 }
 
 impl dyn AgentAdapter {
@@ -100,19 +120,26 @@ impl NoOpAdapter {
     }
 }
 
+impl TranscriptPathSource for NoOpAdapter {}
+
 impl AgentAdapter for NoOpAdapter {
     fn agent_type(&self) -> AgentType {
         self.agent_type
     }
 
-    fn status_source(&self, cwd: &Path, session_id: &str) -> Result<StatusSource, String> {
-        Ok(StatusSource {
-            path: cwd
+    fn located_status_source(
+        &self,
+        cwd: &Path,
+        session_id: &str,
+    ) -> Result<LocatedStatusSource, String> {
+        Ok(LocatedStatusSource {
+            status_path: cwd
                 .join(".vimeflow")
                 .join("sessions")
                 .join(session_id)
                 .join("status.json"),
             trust_root: cwd.to_path_buf(),
+            static_transcript_hint: None,
         })
     }
 
@@ -142,6 +169,10 @@ impl AgentAdapter for NoOpAdapter {
             self.agent_type
         ))
     }
+
+    fn transcript_path_source(&self) -> &dyn TranscriptPathSource {
+        self
+    }
 }
 
 /// Start watching an agent status source for a PTY session.
@@ -165,7 +196,7 @@ pub(crate) async fn start_agent_watcher_inner(
     )?;
     let cwd_path = attach.initial_cwd.clone();
     // `adapter.start(...)` walks into `base::start_for`, which calls
-    // `adapter.status_source(...)`. For codex sessions, that call runs a
+    // `adapter.located_status_source(...)`. For codex sessions, that call runs a
     // bounded retry (up to 5 attempts × 100 ms inter-attempt sleeps)
     // using `std::thread::sleep` because codex commits its `logs` row
     // ~300ms after the rollout file opens.
@@ -258,19 +289,40 @@ mod noop_tests {
     }
 
     #[test]
-    fn status_source_uses_claude_shaped_path() {
+    fn located_status_source_uses_claude_shaped_path() {
         let adapter = NoOpAdapter::new(AgentType::Aider);
         let cwd = PathBuf::from("/tmp/ws");
-        let src = <NoOpAdapter as AgentAdapter>::status_source(&adapter, &cwd, "sid")
+        let src = <NoOpAdapter as AgentAdapter>::located_status_source(&adapter, &cwd, "sid")
             .expect("noop adapter always resolves a status source");
         assert_eq!(
-            src.path,
+            src.status_path,
             cwd.join(".vimeflow")
                 .join("sessions")
                 .join("sid")
                 .join("status.json")
         );
         assert_eq!(src.trust_root, cwd);
+        // NoOp adapters never know a static transcript path — Step 0c
+        // contract: only Codex's locator returns Some.
+        assert_eq!(src.static_transcript_hint, None);
+    }
+
+    /// Step 0c: NoOpAdapter's `TranscriptPathSource` impl uses the
+    /// trait's default `None` for both methods. Pins the contract so a
+    /// future contributor doesn't accidentally override one of them
+    /// (which would change behavior for every "not yet implemented"
+    /// agent — Aider, Generic).
+    #[test]
+    fn noop_transcript_path_source_returns_none_for_both_hints() {
+        let adapter = NoOpAdapter::new(AgentType::Aider);
+        let tps = adapter.transcript_path_source();
+        let located = LocatedStatusSource {
+            status_path: PathBuf::from("/tmp/status.json"),
+            trust_root: PathBuf::from("/tmp"),
+            static_transcript_hint: Some("/tmp/ignored.jsonl".to_string()),
+        };
+        assert_eq!(tps.static_hint(&located), None);
+        assert_eq!(tps.dynamic_hint(r#"{"transcript_path":"/tmp/x"}"#), None);
     }
 
     #[test]

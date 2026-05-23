@@ -18,6 +18,21 @@ pub struct ParsedStatusline {
     pub transcript_path: Option<String>,
 }
 
+/// Lightweight `transcript_path` extractor — parses the JSON just
+/// enough to surface the field, no event construction.
+///
+/// Used by `TranscriptPathSource::dynamic_hint` for the Claude adapter
+/// so the watcher can resolve a fresh transcript path on every update
+/// without redoing the full `parse_statusline` work (the full parser
+/// runs once per update for `parse_status`; `dynamic_hint` runs against
+/// the same raw bytes). Returns `None` for malformed JSON, missing
+/// field, or any non-string value at the `transcript_path` key — the
+/// same lenience the private `transcript_path(Value)` helper applies.
+pub fn extract_transcript_path(raw: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    transcript_path(&value)
+}
+
 /// Parse raw JSON string from the statusline file into an `AgentStatusEvent`.
 ///
 /// All fields are optional — gracefully handles partial/evolving JSON.

@@ -4,16 +4,109 @@ use std::path::PathBuf;
 
 use crate::agent::types::AgentStatusEvent;
 
+/// Raw, untrusted, not-yet-validated transcript path emitted by either
+/// the locator at attach time (via
+/// [`TranscriptPathSource::static_hint`]) or the statusline decoder at
+/// each update (via [`TranscriptPathSource::dynamic_hint`]).
+/// Validation through `AgentAdapter::validate_transcript` converts a
+/// `RawPath` into a canonicalized `PathBuf` before any transcript
+/// tailing happens.
+///
+/// Type alias rather than newtype because every caller already works
+/// with `String`; a newtype would add ceremony without strengthening
+/// the safety boundary, which lives at `validate_transcript`.
+pub type RawPath = String;
+
+/// Located statusline source — what
+/// `AgentAdapter::located_status_source` returns at attach time.
+///
+/// Step 0c rename of the former `StatusSource`. The new
+/// `static_transcript_hint` field carries Codex's locator-known rollout
+/// path so the runtime can ask [`TranscriptPathSource::static_hint`]
+/// for it without depending on the adapter-private `Mutex` side channel
+/// (deprecated in 0c, kept in place for back-compat; targeted for
+/// removal in a later step).
 #[derive(Debug, Clone)]
-pub struct StatusSource {
-    pub path: PathBuf,
+pub struct LocatedStatusSource {
+    /// Filesystem path of the statusline file the watcher will observe.
+    pub status_path: PathBuf,
+    /// Directory used as the trust root by `path_security` checks when
+    /// validating any transcript path paired with this statusline.
     pub trust_root: PathBuf,
+    /// Transcript path known at attach time. `Some(_)` for Codex (the
+    /// locator resolves the rollout file before any statusline update);
+    /// `None` for Claude (the path is dynamic, arriving inside every
+    /// statusline JSON update — see
+    /// [`TranscriptPathSource::dynamic_hint`]).
+    ///
+    /// Held here so the runtime can pass a `&LocatedStatusSource` into
+    /// `static_hint` instead of threading the path through
+    /// `parse_status` as a side channel.
+    pub static_transcript_hint: Option<RawPath>,
 }
 
+/// Decoder output — provider-neutral status state.
+///
+/// Defined in step 0c per the v4-frozen plan; reserved for the
+/// state-decoder split (Step B') that moves status decoding off the
+/// `AgentAdapter` trait. For 0c the type exists but no caller consumes
+/// it directly — `parse_status` continues to return [`ParsedStatus`],
+/// which has lost its `transcript_path` field in this step.
+///
+/// Distinct from `ParsedStatus` in two ways: (a) `session_id` lives on
+/// the embedded event today and B' will lift it out so the decoder
+/// becomes session-id-free, and (b) `StatusSnapshot` never carries a
+/// transcript path — that lookup is fully owned by
+/// [`TranscriptPathSource`].
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct StatusSnapshot {
+    pub event: AgentStatusEvent,
+}
+
+/// Statusline-parser output as consumed by `base/watcher_runtime`.
+///
+/// Step 0c removed the `transcript_path: Option<String>` field — the
+/// runtime now resolves transcript paths via [`TranscriptPathSource`]
+/// instead of via this side channel.
 #[derive(Debug, Clone)]
 pub struct ParsedStatus {
     pub event: AgentStatusEvent,
-    pub transcript_path: Option<String>,
+}
+
+/// Where transcript paths come from. Broken out as a standalone trait
+/// per the v4-frozen plan so future Step B' can extract it cleanly
+/// from `AgentAdapter` without churning callers.
+///
+/// Per-provider contract:
+///
+/// - **Claude:** `static_hint` returns `None`; `dynamic_hint(raw)`
+///   extracts `transcript_path` from the statusline JSON on every
+///   update.
+/// - **Codex:** `static_hint(&located)` returns
+///   `located.static_transcript_hint.clone()` (the locator-known
+///   rollout path captured at attach time); `dynamic_hint` returns
+///   `None`.
+///
+/// The runtime asks `dynamic_hint` first (fresh-per-update Claude
+/// path) and falls back to `static_hint` (steady-state Codex path).
+/// If both return `None`, no transcript is tailed.
+pub trait TranscriptPathSource: Send + Sync {
+    /// Transcript path known at attach time. Default returns `None`;
+    /// Codex overrides to surface the rollout path stored in the
+    /// supplied [`LocatedStatusSource`].
+    fn static_hint(&self, located: &LocatedStatusSource) -> Option<RawPath> {
+        let _ = located;
+        None
+    }
+
+    /// Transcript path extracted from the raw statusline content on
+    /// every update. Default returns `None`; Claude overrides to parse
+    /// the JSON's `transcript_path` field.
+    fn dynamic_hint(&self, raw: &str) -> Option<RawPath> {
+        let _ = raw;
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

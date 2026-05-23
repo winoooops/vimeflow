@@ -10,7 +10,9 @@ use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 
 use crate::agent::adapter::base::TranscriptHandle;
-use crate::agent::adapter::types::{ParsedStatus, StatusSource, ValidateTranscriptError};
+use crate::agent::adapter::types::{
+    LocatedStatusSource, ParsedStatus, RawPath, TranscriptPathSource, ValidateTranscriptError,
+};
 use crate::agent::adapter::AgentAdapter;
 use crate::agent::types::AgentType;
 use crate::runtime::EventSink;
@@ -26,6 +28,14 @@ pub struct CodexAdapter {
     pty_start: SystemTime,
     codex_home: PathBuf,
     locator_cache: OnceLock<CompositeLocator>,
+    /// Deprecated as of Step 0c: the rollout path now flows through
+    /// `LocatedStatusSource.static_transcript_hint` →
+    /// `TranscriptPathSource::static_hint`. The field is kept (and
+    /// still populated) for back-compat — the
+    /// `parse_status_includes_resolved_rollout_path_when_available`
+    /// regression test pins the value so a later step can prove the
+    /// removal is a no-op. Slated for removal in a later step (B'/D')
+    /// once no caller reads it.
     resolved_rollout_path: Mutex<Option<PathBuf>>,
 }
 
@@ -68,12 +78,30 @@ fn default_codex_home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".codex"))
 }
 
+impl TranscriptPathSource for CodexAdapter {
+    /// Codex's transcript path is known at attach time and flows
+    /// through the locator into
+    /// `LocatedStatusSource.static_transcript_hint`. The runtime
+    /// supplies the same `LocatedStatusSource` on every update; we
+    /// just return what's already there.
+    fn static_hint(&self, located: &LocatedStatusSource) -> Option<RawPath> {
+        located.static_transcript_hint.clone()
+    }
+
+    // `dynamic_hint` defaults to `None` — Codex's rollout file path
+    // does not appear inside the statusline JSON stream.
+}
+
 impl AgentAdapter for CodexAdapter {
     fn agent_type(&self) -> AgentType {
         AgentType::Codex
     }
 
-    fn status_source(&self, cwd: &Path, _session_id: &str) -> Result<StatusSource, String> {
+    fn located_status_source(
+        &self,
+        cwd: &Path,
+        _session_id: &str,
+    ) -> Result<LocatedStatusSource, String> {
         let ctx = BindContext {
             cwd,
             pid: self.pid,
@@ -82,24 +110,37 @@ impl AgentAdapter for CodexAdapter {
 
         let location = retry_locator(|| self.locator().resolve_rollout(&ctx))?;
 
+        // Keep the deprecated mutex populated for back-compat (Step 0c
+        // user choice). The new static-hint path threads through
+        // `LocatedStatusSource.static_transcript_hint` below.
         if let Ok(mut slot) = self.resolved_rollout_path.lock() {
             *slot = Some(location.rollout_path.clone());
         }
 
-        Ok(StatusSource {
-            path: location.rollout_path,
+        let static_transcript_hint = Some(location.rollout_path.to_string_lossy().into_owned());
+
+        Ok(LocatedStatusSource {
+            status_path: location.rollout_path,
             trust_root: self.codex_home.clone(),
+            static_transcript_hint,
         })
     }
 
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
+        // The deprecated `transcript_path` field is gone from
+        // `ParsedStatus` as of Step 0c. The mutex is still read so the
+        // pinned regression test
+        // (`parse_status_includes_resolved_rollout_path_when_available`)
+        // can assert the field stays populated — that's how a future
+        // removal step can prove no caller observes it.
         let transcript_path = self
             .resolved_rollout_path
             .lock()
             .ok()
             .and_then(|slot| slot.as_ref().map(|path| path.to_string_lossy().to_string()));
+        let _ = transcript_path; // back-compat read; intentionally unused by parser
 
-        parser::parse_rollout(session_id, raw, transcript_path)
+        parser::parse_rollout(session_id, raw)
     }
 
     fn validate_transcript(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError> {
@@ -114,6 +155,10 @@ impl AgentAdapter for CodexAdapter {
         transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String> {
         transcript::start_tailing(events, session_id, transcript_path, cwd)
+    }
+
+    fn transcript_path_source(&self) -> &dyn TranscriptPathSource {
+        self
     }
 }
 
@@ -156,7 +201,11 @@ mod adapter_tests {
     use std::time::SystemTime;
 
     #[test]
-    fn parse_status_delegates_to_parser_with_transcript_path_none() {
+    fn parse_status_returns_event_without_transcript_path_field() {
+        // Step 0c: `ParsedStatus.transcript_path` was removed; the
+        // adapter's `parse_status` should now return only the event.
+        // This test pins that change: a successful parse populates the
+        // event correctly and there's no transcript_path to inspect.
         let adapter = CodexAdapter::new(12345, SystemTime::UNIX_EPOCH);
         let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
 "#;
@@ -164,11 +213,14 @@ mod adapter_tests {
             .expect("minimal codex status parses");
 
         assert_eq!(parsed.event.agent_session_id, "sess");
-        assert!(parsed.transcript_path.is_none());
     }
 
     #[test]
     fn parse_status_includes_resolved_rollout_path_when_available() {
+        // Back-compat regression test: the deprecated mutex is still
+        // populated by `located_status_source` so a future step that
+        // proves no caller reads it can land cleanly. Keep this until
+        // the mutex is actually removed (tracked under Step B'/D').
         let adapter = CodexAdapter::new(12345, SystemTime::UNIX_EPOCH);
         {
             let mut slot = adapter
@@ -183,10 +235,58 @@ mod adapter_tests {
         let parsed = <CodexAdapter as AgentAdapter>::parse_status(&adapter, "pty-1", raw)
             .expect("minimal codex status parses");
 
+        // The transcript path field is gone; what we still pin is that
+        // the deprecated slot holds the expected value (proving the
+        // back-compat write path is intact).
+        assert_eq!(parsed.event.agent_session_id, "sess");
         assert_eq!(
-            parsed.transcript_path.as_deref(),
-            Some("/tmp/codex-rollout.jsonl")
+            adapter
+                .resolved_rollout_path
+                .lock()
+                .ok()
+                .and_then(|slot| slot.clone()),
+            Some(PathBuf::from("/tmp/codex-rollout.jsonl")),
         );
+    }
+
+    /// Step 0c: the new transcript-path-resolution path goes through
+    /// `TranscriptPathSource::static_hint(&LocatedStatusSource)`.
+    /// Pin both directions of the contract: when the located source
+    /// carries `Some(_)`, Codex's static_hint surfaces it verbatim;
+    /// when it carries `None`, static_hint returns `None`.
+    #[test]
+    fn static_hint_returns_static_transcript_hint_from_located() {
+        let adapter = CodexAdapter::new(12345, SystemTime::UNIX_EPOCH);
+        let tps = adapter.transcript_path_source();
+
+        let with_hint = LocatedStatusSource {
+            status_path: PathBuf::from("/home/u/.codex/sessions/r.jsonl"),
+            trust_root: PathBuf::from("/home/u/.codex"),
+            static_transcript_hint: Some("/home/u/.codex/sessions/r.jsonl".to_string()),
+        };
+        assert_eq!(
+            tps.static_hint(&with_hint),
+            Some("/home/u/.codex/sessions/r.jsonl".to_string()),
+        );
+
+        let without_hint = LocatedStatusSource {
+            status_path: PathBuf::from("/tmp/x"),
+            trust_root: PathBuf::from("/tmp"),
+            static_transcript_hint: None,
+        };
+        assert_eq!(tps.static_hint(&without_hint), None);
+    }
+
+    /// Codex's `dynamic_hint` MUST stay `None` regardless of input —
+    /// the rollout file path never appears inside the JSONL statusline
+    /// stream. Defensive test: even with a payload that looks
+    /// transcript-pathy, Codex does not surface a dynamic hint.
+    #[test]
+    fn dynamic_hint_is_none_for_codex_regardless_of_raw() {
+        let adapter = CodexAdapter::new(12345, SystemTime::UNIX_EPOCH);
+        let tps = adapter.transcript_path_source();
+        let raw = r#"{"transcript_path":"/should/be/ignored"}"#;
+        assert_eq!(tps.dynamic_hint(raw), None);
     }
 
     #[test]
@@ -352,7 +452,7 @@ mod status_source_tests {
     }
 
     #[test]
-    fn status_source_returns_resolved_rollout_on_happy_path() {
+    fn located_status_source_returns_resolved_rollout_on_happy_path() {
         let codex_home = tempfile::tempdir().expect("tempdir");
         let pty_start = SystemTime::now() - Duration::from_secs(5);
         let rollout_path = seed_codex_home_with_thread(codex_home.path(), 999, pty_start);
@@ -360,21 +460,29 @@ mod status_source_tests {
         let adapter = CodexAdapter::with_home(999, pty_start, codex_home.path().to_path_buf());
         let cwd = codex_home.path().to_path_buf();
 
-        let src = <CodexAdapter as AgentAdapter>::status_source(&adapter, &cwd, "sid")
-            .expect("status_source should resolve");
+        let src = <CodexAdapter as AgentAdapter>::located_status_source(&adapter, &cwd, "sid")
+            .expect("located_status_source should resolve");
 
-        assert_eq!(src.path, rollout_path);
+        assert_eq!(src.status_path, rollout_path);
         assert_eq!(src.trust_root, codex_home.path());
+        // Step 0c: the located source now also surfaces the rollout
+        // path as a `static_transcript_hint` so the watcher can reach
+        // it via `TranscriptPathSource::static_hint` without the
+        // deprecated mutex side channel.
+        assert_eq!(
+            src.static_transcript_hint.as_deref(),
+            Some(rollout_path.to_string_lossy().as_ref()),
+        );
     }
 
     #[test]
-    fn status_source_returns_err_on_retry_exhausted() {
+    fn located_status_source_returns_err_on_retry_exhausted() {
         let codex_home = tempfile::tempdir().expect("tempdir");
         let adapter =
             CodexAdapter::with_home(999, SystemTime::now(), codex_home.path().to_path_buf());
         let cwd = codex_home.path().to_path_buf();
 
-        let err = <CodexAdapter as AgentAdapter>::status_source(&adapter, &cwd, "sid")
+        let err = <CodexAdapter as AgentAdapter>::located_status_source(&adapter, &cwd, "sid")
             .expect_err("empty codex_home should exhaust retry");
         assert!(err.contains("retry exhausted"), "got: {}", err);
     }
