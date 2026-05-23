@@ -171,6 +171,11 @@ export const LiquidFill = ({
       ambientAmp: geom.ambientAmp,
       dims: { w, h },
     }
+
+    // Wake the cursor hook's rAF loop so currentWaterTop catches up to the
+    // new waterTop — without this, a pct change after the hover spring has
+    // settled would let the sheen snap to the new water level.
+    wrapRef.current?.dispatchEvent(new Event('vfliquidwake'))
   }, [geom.top, geom.ambientAmp, w, h])
 
   useWaterCursor(wrapRef, refsRef, tune)

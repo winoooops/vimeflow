@@ -363,6 +363,48 @@ describe('useWaterCursor — tune prop identity stability (Finding 1)', () => {
 // jsdom does not faithfully simulate. Skipping dedicated test — the fix is
 // covered by code-review inspection and manual verification.
 
+// Finding 4: vfliquidwake restarts rAF loop when waterTop changes post-settle
+describe('useWaterCursor — vfliquidwake wake event (Finding 4)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test('vfliquidwake event restarts the spring loop so currentWaterTop catches up', async () => {
+    mockMatchMedia(makeMql(false))
+    const refs = makeRefs()
+
+    refs.waterTop = 50 // initial water level
+    render(<Harness refs={refs} addSpy={vi.fn()} removeSpy={vi.fn()} />)
+    const wrap = screen.getByTestId('wrap')
+
+    stubRect(wrap, 100, 100)
+    // Hover (do NOT leave) and let the spring fully settle so the rAF loop
+    // stops while currentWaterTop is still non-null (settled-hover scenario).
+    // This is the real bug path: atRest=false, so clearInline is not called
+    // and currentWaterTop stays at 50, but the rAF stops.
+    act(() => {
+      firePointer(wrap, 'pointermove', { clientX: 50, clientY: 50 })
+    })
+    await flushRaf(80) // well past settle for omega=6.5, rAF stopped
+    // At this point rAF is stopped but currentWaterTop ≈ 50. Simulate a pct change.
+    refs.waterTop = 30 // new water level (e.g., pct went up)
+    // Dispatch the wake event — this should restart the rAF loop so
+    // currentWaterTop can spring from 50 toward 30.
+    act(() => {
+      wrap.dispatchEvent(new Event('vfliquidwake'))
+    })
+    // After a few frames the sheen cy should be in-transit between old (~49.7)
+    // and new (~29.7) — not yet snapped to 29.7.
+    await flushRaf(5)
+    const cyAttr = refs.sheen.getAttribute('cy')
+    const cy = parseFloat(cyAttr ?? '0')
+
+    // Expected: cy is between the old (49.7) and new (29.7) waterTop, exclusive of both.
+    expect(cy).toBeGreaterThan(29.7)
+    expect(cy).toBeLessThan(49.7)
+  })
+})
+
 // Finding 3: detach() resets spring state so reduced-motion toggle OFF mid-hover
 // starts from initial values, not stale pre-detach tilt/amp.
 describe('useWaterCursor — detach resets spring state (Finding 3)', () => {

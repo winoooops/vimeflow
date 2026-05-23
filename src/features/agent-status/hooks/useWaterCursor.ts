@@ -127,6 +127,13 @@ export const useWaterCursor = (
       ensureLoop()
     }
 
+    // Triggered by LiquidFill when refs.waterTop changes. Restarts the rAF
+    // loop so currentWaterTop can spring-chase the new target instead of
+    // the React render snapping the sheen to the new level.
+    const onWake = (): void => {
+      ensureLoop()
+    }
+
     const apply = (): void => {
       const refs = refsRef.current
       if (refs === null) {
@@ -278,6 +285,7 @@ export const useWaterCursor = (
       }
       wrap.addEventListener('pointermove', onMove)
       wrap.addEventListener('pointerleave', onLeave)
+      wrap.addEventListener('vfliquidwake', onWake)
       attached = true
     }
 
@@ -287,6 +295,7 @@ export const useWaterCursor = (
       }
       wrap.removeEventListener('pointermove', onMove)
       wrap.removeEventListener('pointerleave', onLeave)
+      wrap.removeEventListener('vfliquidwake', onWake)
       attached = false
       if (rafId !== null) {
         cancelAnimationFrame(rafId)
