@@ -50,6 +50,8 @@ crates/backend/
 
 Quick reference: no semicolons, single quotes, trailing commas (es5), arrow-function components only, explicit return types on exports, no `console.log`, `test()` not `it()`, CSpell spell-checking, ESM-only.
 
+Commit messages for Codex-assisted changes must include the trailer `Co-Authored-By: codex <codex@openai.com>` exactly once at the end. See `rules/common/git-workflow.md` for the full commit format.
+
 **For complete standards**, read these files in `rules/`:
 
 - `rules/common/coding-style.md` — immutability, file organization, error handling, input validation
