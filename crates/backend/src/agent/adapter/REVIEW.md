@@ -441,6 +441,205 @@ Key changes from v1:
 
 ---
 
+# Round 3 (2026-05-22)
+
+> **Reviewer:** codex-cli 0.133.0
+> **Subject:** the v2 plan from Round 2
+
+Codex was asked to (a) verify closure on R2.1–R2.5, (b) regression-check
+the original 9, and (c) surface any new issues introduced by v2's
+reshape. Output: 5 new findings (R3.1–R3.5).
+
+## Closure check on Round 2's revised plan (v2)
+
+| Round 2 finding                             | Closed by v2?                                                                          |
+| ------------------------------------------- | -------------------------------------------------------------------------------------- |
+| R2.1 `transcript_path` move backward-compat | **Mostly.** `StatusObservation` vs `StatusSnapshot` wording still ambiguous. See R3.1. |
+| R2.2 Step 0 alone insufficient for #2       | **Closed.** `StatusSnapshot` + runtime session-id stamping is correct.                 |
+| R2.3 `AttachContext` field set + location   | **Mostly.** `AgentBindings` underspecified. See R3.2.                                  |
+| R2.4 A' DTO precision                       | **Closed.** Per-field `Option`, Some-only fold, wrong-type tolerance covered.          |
+| R2.5 transcript-path extraction boundary    | **Partial.** `TranscriptPathSource` direction right but contract unpinned. See R3.1.   |
+
+## Regression check on original 9 findings
+
+| Round 1 finding        | v2 status                                                                                           |
+| ---------------------- | --------------------------------------------------------------------------------------------------- |
+| #1, #4                 | **Conditionally closed.** Transcript-path extraction & Codex locator binding still under-specified. |
+| #2, #3, #5, #6, #7, #8 | **Not re-opened.**                                                                                  |
+| #9 (cost realism)      | **Improved**, but A' scope (status-only vs. full schema-first) determines whether estimate holds.   |
+
+## New findings (R3.1 – R3.5)
+
+### R3.1. `TranscriptPathSource`, `StatusObservation`, `StatusSnapshot` ownership overlap
+
+v2 says `StatusObservation` returned by the decoder may carry the
+dynamic hint, but it also says `StateDecoder` returns `StatusSnapshot`
+only. **Those cannot both be the stable contract.** Pin one flow before
+implementation: either `StateDecoder::decode(raw) -> StatusSnapshot`
+**and** `TranscriptPathSource::dynamic_hint(raw, &LocatedStatusSource) -> Option<RawTranscriptPath>`,
+or rename the decoder contract to return an observation that explicitly
+includes both status and hint.
+
+> 💡 IDEA
+>
+> - **I — Intent:** preserve Claude's per-update transcript extraction
+>   and Codex's once-bound rollout path without keeping
+>   `ParsedStatus.transcript_path`.
+> - **D — Danger:** the current wording can recreate today's non-state
+>   side channel in a new wrapper, or force duplicate raw-JSON parsing
+>   for Claude.
+> - **E — Explain:** the watcher extracts transcript paths on every
+>   parse path at [`base/watcher_runtime.rs:320`](./base/watcher_runtime.rs);
+>   Codex currently smuggles the located path through a mutex at
+>   [`codex/mod.rs:85`](./codex/mod.rs).
+> - **A — Alternatives:** introduce `LocatedStatusSource { status_path,
+trust_root, static_transcript_hint }` plus `StatusSnapshot`; let
+>   `TranscriptPathSource` select `dynamic_hint(raw)` for Claude and
+>   `static_hint` for Codex.
+
+### R3.2. `AgentBindings` needs to be specified as the per-attach owner, not just named
+
+v2 still does not define what `AgentBindings` owns, where it lives, or
+how the factory builds it from `AttachContext`. **This is where Codex's
+current stateful fields in [`codex/mod.rs:24`](./codex/mod.rs) must
+disappear** — otherwise the 5-trait split still hides `pid`, `pty_start`,
+roots, and resolved rollout state inside provider objects.
+
+> 💡 IDEA
+>
+> - **I — Intent:** replace the monolithic adapter with explicit
+>   provider capabilities.
+> - **D — Danger:** without a concrete binding struct, `AttachContext`
+>   exists but doesn't prevent opaque per-provider state bags.
+> - **E — Explain:** `start_agent_watcher_inner` currently resolves
+>   attach facts at [`mod.rs:148`](./mod.rs), then constructs one
+>   adapter object at [`mod.rs:151`](./mod.rs).
+> - **A — Alternatives:** add `crates/backend/src/agent/adapter/bindings.rs`
+>   with `AgentBindings { agent_type, locator, decoder, transcript_paths,
+validator, streamer }` and `AgentBindings::for_attach(&AttachContext)
+-> Result<Self, String>`.
+
+### R3.3. B'' needs an explicit visibility decision for `TranscriptStreamer`
+
+`TranscriptState::start_or_replace` is currently `pub` and takes
+`Arc<dyn AgentAdapter>` at
+[`base/transcript_state.rs:101`](./base/transcript_state.rs). If it
+changes to `Arc<dyn TranscriptStreamer>`, that trait must either be
+`#[doc(hidden)] pub` too, or `start_or_replace` must become
+`pub(crate)`. The current `TranscriptHandle::new` remains `pub(crate)`
+at [`base/transcript_state.rs:26`](./base/transcript_state.rs); that
+constraint must be preserved.
+
+> 💡 IDEA
+>
+> - **I — Intent:** decouple transcript lifecycle from the full adapter
+>   trait while preserving tested replace ordering.
+> - **D — Danger:** an unplanned visibility mix can either fail Rust's
+>   public-interface checks or accidentally widen the supported
+>   extension API.
+> - **E — Explain:** the existing `#[doc(hidden)] pub` surface is
+>   already a compromise because `TranscriptHandle` appears in a public
+>   trait signature.
+> - **A — Alternatives:** make `TranscriptStreamer` `#[doc(hidden)]
+pub` and keep the constructor gated, **or** reduce
+>   `TranscriptState::start_or_replace` to `pub(crate)` if integration
+>   tests don't need it.
+
+### R3.4. Locator split should expose only `CompositeLocator` as `StatusSourceLocator`
+
+v2 must explicitly say that `CompositeLocator` is the Codex
+`StatusSourceLocator`, while `SqliteFirstLocator` and `FsScanFallback`
+remain Codex-private strategies. Making each one a top-level locator
+would leak fallback policy and schema-drift dispatch out of
+[`codex/locator.rs:589`](./codex/locator.rs).
+
+> 💡 IDEA
+>
+> - **I — Intent:** make location replaceable without making the
+>   watcher runtime understand Codex internals.
+> - **D — Danger:** exposing each sub-locator separately pushes the
+>   `schema drift -> fs fallback` policy into `AgentBindings` or
+>   runtime code.
+> - **E — Explain:** today the fallback chain is cleanly contained in
+>   `CompositeLocator::resolve_rollout` at
+>   [`codex/locator.rs:603`](./codex/locator.rs).
+> - **A — Alternatives:** implement the new `StatusSourceLocator` only
+>   for `CompositeLocator`; keep `SqliteFirstLocator` / `FsScanFallback`
+>   under a Codex-private `CodexSessionLocator`.
+
+### R3.5. The ~7–9d estimate is realistic only if A' is status-first, not full schema-first
+
+The estimate is now much closer to reality, but A' still reads like
+the original "schema-first refactor" could include transcript tailers.
+If A' includes Claude AND Codex transcript DTO conversion, **2 days is
+still optimistic** given the stateful tail loops and Codex
+`CompletionMode` paths in
+[`codex/transcript.rs:28`](./codex/transcript.rs).
+
+> 💡 IDEA
+>
+> - **I — Intent:** give the refactor a believable budget after adding
+>   seam prep.
+> - **D — Danger:** undercounting A' recreates the original risk: one
+>   step touches status parsing, transcript parsing, watcher flow, and
+>   fixture contracts.
+> - **E — Explain:** status DTOs are bounded; full transcript DTO
+>   migration crosses both transcript tailers plus partial-line and
+>   replay behavior.
+> - **A — Alternatives:** **split A' into `A-status` (before B') and
+>   `A-transcript` (after B''/D')**, or explicitly defer transcript
+>   DTOs.
+
+## Revised plan v3
+
+Key changes from v2:
+
+1. **Pin the contract** between `StatusSource` / `StatusSnapshot` / `TranscriptPathSource`:
+   - `LocatedStatusSource { status_path, trust_root, static_transcript_hint }`
+   - `StatusSnapshot` (decoder output; status-only — no `session_id`, no transcript hint)
+   - `TranscriptPathSource` with `static_hint(&LocatedStatusSource)` (Codex) and `dynamic_hint(raw)` (Claude) methods
+2. **Specify `AgentBindings` concretely** in `crates/backend/src/agent/adapter/bindings.rs`: holds `{ agent_type, locator, decoder, transcript_paths, validator, streamer }`, built by `AgentBindings::for_attach(&AttachContext) -> Result<Self, String>`.
+3. **Lock down visibility**: `TranscriptStreamer` is `#[doc(hidden)] pub`; `TranscriptState::start_or_replace` narrows to `pub(crate)` if tests don't need it.
+4. **Constrain locator split**: only `CompositeLocator` implements `StatusSourceLocator`; `SqliteFirstLocator` / `FsScanFallback` stay Codex-private.
+5. **Split A' into `A-status` (early) and `A-transcript` (late)**:
+   - **`A-status`** lands **before B'** — status DTOs only (`statusline.rs` + `parser.rs` state-fold).
+   - **`A-transcript`** lands **after D'** — transcript JSONL DTOs (`claude_code/transcript.rs` + `codex/transcript.rs`). Must preserve Codex `CompletionMode` + partial-line buffering.
+
+### v3 ordering
+
+| Step                          | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Addresses                          |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| **0a**                        | Define `AttachContext` in `adapter/attach.rs` (immutable attach facts).                                                                                                                                                                                                                                                                                                                                                                                                                                  | R2.3                               |
+| **0b**                        | Define `SessionRuntimeContext` (live `PtyState` handle for cwd lookups).                                                                                                                                                                                                                                                                                                                                                                                                                                 | R2.3, #7                           |
+| **0c**                        | Introduce `LocatedStatusSource { status_path, trust_root, static_transcript_hint }` + `StatusSnapshot` + `TranscriptPathSource` with explicit `static_hint(&LocatedStatusSource) -> Option<RawPath>` (Codex) and `dynamic_hint(raw) -> Option<RawPath>` (Claude) methods. Remove `ParsedStatus.transcript_path` side channel.                                                                                                                                                                            | R2.1, R2.5, #1, R3.1               |
+| **A-status**                  | Loose DTOs for STATUS only (`statusline.rs` + `parser.rs` state-fold). Per-field `Option<T> + #[serde(default)]`, Some-only fold for Codex token state, `deserialize_with` for wrong-type tolerance. **Defer transcript DTOs to `A-transcript`.**                                                                                                                                                                                                                                                        | #3, R2.4, R3.5                     |
+| **B'**                        | 5-trait split, each `#[doc(hidden)] pub`: `StatusSourceLocator`, `StateDecoder` (returns `StatusSnapshot`), `TranscriptPathSource`, `TranscriptPathValidator`, `TranscriptStreamer`. **Only `CompositeLocator` implements `StatusSourceLocator`**; `SqliteFirstLocator` / `FsScanFallback` stay Codex-private. Define `AgentBindings { agent_type, locator, decoder, transcript_paths, validator, streamer }` in `adapter/bindings.rs` with `AgentBindings::for_attach(&AttachContext) -> Result<Self>`. | #2, #4, #5, R2.2, R2.5, R3.2, R3.4 |
+| **B''**                       | TranscriptState re-shape to `Arc<dyn TranscriptStreamer>`. Narrow `start_or_replace` to `pub(crate)` if integration tests don't need it. Preserve concurrency invariants ([`transcript_state.rs:117`](./base/transcript_state.rs), [`transcript_state.rs:153`](./base/transcript_state.rs), test at line 428).                                                                                                                                                                                           | #6, R3.3                           |
+| **D'**                        | `AgentWatcherService` registry facade. Unchanged shape.                                                                                                                                                                                                                                                                                                                                                                                                                                                  | #7, #8                             |
+| **A-transcript** _(deferred)_ | Loose DTOs for TRANSCRIPT JSONL (`claude_code/transcript.rs` + `codex/transcript.rs`). Must preserve Codex `CompletionMode` + partial-line buffering. Land AFTER D'.                                                                                                                                                                                                                                                                                                                                     | R3.5                               |
+| **C** _(optional)_            | Common tailer engine. Lands after `A-transcript`. Must still absorb Codex `CompletionMode` + partial-line buffering.                                                                                                                                                                                                                                                                                                                                                                                     | n/a                                |
+
+### Revised cost estimates (post-Round-3)
+
+**Core path (0a → 0b → 0c → A-status → B' → B'' → D'): ~6–8 days**
+
+- 0a (AttachContext): ~0.5d
+- 0b (SessionRuntimeContext): ~0.25d
+- 0c (`LocatedStatusSource` + `StatusSnapshot` + `TranscriptPathSource`): ~1d
+- A-status (status DTOs only): ~1d
+- B' (5-trait split + `AgentBindings` + locator scope): ~1.5d
+- B'' (TranscriptState re-shape + visibility): ~1.5d
+- D' (AgentWatcherService): ~0.5–1d
+
+**Optional extensions:**
+
+- A-transcript (transcript JSONL DTOs, after D'): +1.5–2d
+- C (common tailer engine, after A-transcript): +1.5–2d
+
+**Full delivery: ~9–12 days. Core-only: ~6–8 days.**
+
+---
+
 ## Prompts used
 
 ### Round 1 prompt
@@ -495,6 +694,28 @@ EXPLICITLY: "No new findings. The revised plan addresses all
 previously-raised issues."
 
 Otherwise: numbered findings (max 10), each with IDEA block.
+```
+
+### Round 3 prompt
+
+```
+Round 3 of refactor roadmap review.
+
+[Reads README.md + REVIEW.md (now containing Round 1 + Round 2 + v2 plan)
++ the actual code.]
+
+PART 1 — CLOSURE on R2.1-R2.5.
+PART 2 — REGRESSION check on the original 9.
+PART 3 — NEW issues introduced by v2:
+  - Step 0a/0b/0c boundaries
+  - 7-9d estimate realism
+  - TranscriptState re-shape (B'') visibility constraints
+  - AgentBindings concrete spec
+  - Locator subtrait split (CompositeLocator only?)
+PART 4 — STOP CRITERION: if no new issues, say EXPLICITLY:
+  "No new findings. The revised plan addresses all previously-raised issues."
+
+Otherwise: numbered findings prefixed R3.* (max 10), each with IDEA block.
 ```
 
 To re-run any round:
