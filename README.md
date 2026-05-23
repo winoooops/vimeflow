@@ -74,6 +74,12 @@ If the host does not provide `libfuse2`, use AppImage's fallback:
 3. Use the workspace to split panes, browse files, edit code, and review git diffs.
 4. The agent status panel appears when a supported agent is detected.
 
+**Run your beloved TUI in the same pane** — `nvim`, `htop`, `less`, and other full-screen tools render side-by-side with your agent session. The in-app terminal is a real PTY, so anything that works in your usual terminal works here too.
+
+<div align="center">
+  <img src="docs/media/terminal-nvim.png" alt="Neovim editing a file inside a Vimeflow terminal pane" width="900" />
+</div>
+
 For terminal working-directory sync, `zsh` and `fish` usually emit OSC 7 automatically. For `bash`, run:
 
 ```bash

@@ -74,6 +74,12 @@ chmod +x release/vimeflow-*.AppImage
 3. 在工作空间中拆分 pane、浏览文件、编辑代码并审查 Git Diff。
 4. 检测到受支持代理后，代理状态面板会自动显示。
 
+**在同一个 pane 中运行你心爱的 TUI** —— `nvim`、`htop`、`less` 等全屏工具可以和代理会话并排运行。应用内终端是真正的 PTY，本机终端能跑的程序在这里同样能跑。
+
+<div align="center">
+  <img src="docs/media/terminal-nvim.png" alt="Vimeflow 终端 pane 中正在编辑文件的 Neovim" width="900" />
+</div>
+
 终端工作目录同步依赖 OSC 7。`zsh` 和 `fish` 通常会自动发送；`bash` 可运行：
 
 ```bash

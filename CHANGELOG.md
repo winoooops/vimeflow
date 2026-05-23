@@ -11,6 +11,10 @@ This file records the supported user-facing state of Vimeflow. For the detailed 
 - Shortened the English and Chinese README files into source-build guides for the current `0.1.0` line, with deeper implementation details moved behind references.
 - Documented the Lifeline Claude Code extension and the repository's harness-engineering practice framing in both READMEs.
 
+### Fixed
+
+- Full-screen TUI applications (`nvim`, `htop`, `less`) now render correctly in the in-app terminal. Production builds previously froze on the first DECRQM mode-query escape sequence because esbuild's minifier mangled `@xterm/xterm`'s `requestMode` handler; the Vite minifier is now `terser`, which preserves the affected const-enum IIFE intact. (#249)
+
 ## [0.1.0] - Current Source-Supported Line
 
 ### Supported
