@@ -21,8 +21,10 @@ import {
   type RestoreData,
   type NotifyPaneReady,
 } from '../../hooks/useTerminal'
+import { useTerminalClipboard } from '../../hooks/useTerminalClipboard'
 import { type ITerminalService } from '../../services/terminalService'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
+import { TerminalContextMenu } from '../TerminalContextMenu'
 import {
   type AgentCwdSource,
   isDescendantPath,
@@ -785,6 +787,13 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     }
   }, [sessionId])
 
+  const clipboard = useTerminalClipboard({
+    terminal,
+    // TODO: surface clipboard failures via a visible status/error channel.
+    onCopyError: (): void => undefined,
+    onPasteError: (): void => undefined,
+  })
+
   return (
     <div
       data-testid="terminal-pane-body-wrapper"
@@ -795,6 +804,18 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         data-testid="terminal-pane"
         data-pty-id={sessionId}
         className="h-full w-full"
+      />
+      <TerminalContextMenu
+        isOpen={clipboard.isOpen}
+        position={clipboard.openAt}
+        onClose={clipboard.close}
+        onCopy={(): void => {
+          void clipboard.copy()
+        }}
+        onPaste={(): void => {
+          void clipboard.paste()
+        }}
+        canCopy={clipboard.hasSelection}
       />
     </div>
   )
