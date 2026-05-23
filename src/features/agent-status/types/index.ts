@@ -52,12 +52,19 @@ export interface AgentStatus {
   sessionId: string | null
   agentSessionId: string | null
   /**
-   * Agent-reported working directory, populated from the structured `cwd`
-   * field on every transcript JSONL entry (Claude Code today; Codex
-   * follow-up). `null` before the first transition or for agents that
-   * don't expose a transcript. The workspace bridge mirrors this into
-   * `pane.cwd` so the Header chip + git branch follow tool-call-driven
-   * cwd changes (e.g. Claude's built-in `EnterWorktree`).
+   * Agent-reported working directory, populated from each adapter's
+   * structured cwd channel in its transcript JSONL:
+   * - **Claude Code** writes a top-level `cwd` on every entry; transitions
+   *   fire as soon as the next line is parsed.
+   * - **Codex** writes cwd in two read paths: `session_meta.payload.cwd`
+   *   (session start) and `response_item.payload.arguments.workdir` for
+   *   `exec_command` function calls (mid-session). `turn_context.cwd`
+   *   is intentionally NOT a source — pinned to session-start and would
+   *   cause false reverts.
+   *
+   * `null` before the first transition or for agents that don't expose a
+   * transcript. The workspace bridge mirrors this into `pane.cwd` so the
+   * Header chip + git branch follow tool-call-driven cwd changes.
    */
   cwd: string | null
 

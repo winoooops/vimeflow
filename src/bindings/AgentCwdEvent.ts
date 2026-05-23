@@ -3,12 +3,25 @@
 /**
  * Event emitted when the agent's tracked working directory changes.
  *
- * Sourced from the structured `cwd` field that Claude Code (and Codex,
- * pending follow-up) writes on every transcript JSONL entry. This is the
- * authoritative signal for "where the agent currently is" — it picks up
- * tool-call-driven moves like `EnterWorktree` that intentionally do NOT
- * mutate the interactive shell's `$PWD`, so neither OSC 7 nor PTY text
- * patterns can catch them.
+ * Sourced from each adapter's structured cwd channel in its transcript
+ * JSONL:
+ * - **Claude Code** writes a top-level `cwd` field on every transcript
+ *   entry; transitions fire as soon as the next line is parsed.
+ * - **Codex** writes cwd in two places the watcher reads:
+ *   `session_meta.payload.cwd` (once, at session start) and
+ *   `response_item.payload.arguments.workdir` for `exec_command`
+ *   function calls (the mid-session signal — fires whenever codex
+ *   runs a tool command in a new directory). Codex also writes
+ *   `turn_context.payload.cwd` on every turn, but the watcher
+ *   intentionally ignores that field because it's pinned to the
+ *   session-start value and would cause false reverts after a
+ *   mid-session `exec_command.workdir` transition.
+ *
+ * In both cases this is the authoritative signal for "where the agent
+ * currently is" — it picks up tool-call-driven moves like Claude's
+ * `EnterWorktree` and codex's "switch to worktree" navigation that
+ * intentionally do NOT mutate the interactive shell's `$PWD`, so
+ * neither OSC 7 nor PTY text patterns can catch them.
  */
 export type AgentCwdEvent = {
   /**
