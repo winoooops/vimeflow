@@ -82,10 +82,10 @@ const cacheHitPercentage = (
   return rate === null ? null : Math.round(rate * 100)
 }
 
-// Filed before merge — see the PR description for the issue body.
-// `0` is intentionally a loud placeholder; the gear tooltip
-// renders "see issue #0" so a missed pre-merge bump is obvious.
-const SETTINGS_FOLLOWUP_ISSUE_NUMBER = 0
+// Follow-up tracked at https://github.com/winoooops/vimeflow/issues/252
+// (Settings dialog — Zed-style modal with 14 categories). Remove
+// this const and the gear's `aria-disabled` once the dialog lands.
+const SETTINGS_FOLLOWUP_ISSUE_NUMBER = 252
 
 const SIDEBAR_MIN = 240
 const SIDEBAR_MAX = 560
