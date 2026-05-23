@@ -1,21 +1,31 @@
-//! Attach-time context for the agent adapter.
+//! Attach-time and runtime context for the agent adapter.
 //!
-//! `AttachContext` carries the immutable facts known at the moment an agent
-//! adapter is attached to a PTY session. It is constructed once in
-//! `start_agent_watcher_inner` and will be threaded through the
-//! adapter-binding / locator / decoder / streamer chain by later steps of
-//! the refactor.
+//! Two related types live here so the SNAPSHOT-vs-LIVE distinction is
+//! visible at a glance:
+//!
+//! - [`AttachContext`] — the immutable facts known at the moment an agent
+//!   adapter is attached to a PTY session. Built once in
+//!   `start_agent_watcher_inner`; threaded through the adapter-binding /
+//!   locator / decoder / streamer chain by later refactor steps.
+//! - [`SessionRuntimeContext`] — a live handle to `PtyState` scoped to one
+//!   session, exposing accessors (currently just `live_cwd()`) that
+//!   re-query `PtyState` on every call. Used by callers that need the
+//!   CURRENT workspace cwd (which can change mid-session via the user's
+//!   shell `cd`), not the attach-time snapshot.
 //!
 //! Tracking: [#246](https://github.com/winoooops/vimeflow/issues/246)
-//! (Step 0a of the `refactor/agent-adapter` v4-frozen plan).
+//! (Steps 0a + 0b of the `refactor/agent-adapter` v4-frozen plan).
 //!
-//! **Constraint (v4-frozen #5):** `initial_cwd` is a SNAPSHOT taken at
-//! attach time. Runtime callers that need the live workspace cwd
-//! (transcript replace, test-runner cwd resolution) MUST read it from
-//! `PtyState` via the future `SessionRuntimeContext` (Step 0b), NOT from
-//! `AttachContext`.
+//! **Constraint (v4-frozen #5):** `AttachContext.initial_cwd` is a
+//! SNAPSHOT taken at attach time. Runtime callers that need the live
+//! workspace cwd (transcript replace, test-runner cwd resolution) MUST
+//! read it from `PtyState` via [`SessionRuntimeContext`], NOT from
+//! `AttachContext`. Future refactor steps (B''/D') will migrate the
+//! call site at `base/watcher_runtime.rs::maybe_start_transcript` from
+//! `&PtyState` + `session_id` to a `&SessionRuntimeContext` so the
+//! invariant is structural rather than convention-only.
 //!
-//! **Provider-neutral schema:** the struct intentionally has no
+//! **Provider-neutral schema:** [`AttachContext`] intentionally has no
 //! per-agent field names (no `codex_home`, no `claude_home`). All
 //! per-agent metadata lives in [`crate::agent::config`], the central
 //! registry; `provider_home` is resolved at attach time via
@@ -26,6 +36,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use crate::agent::types::AgentType;
+use crate::terminal::PtyState;
 
 /// Immutable attach-time facts. Built once per agent attach by
 /// `start_agent_watcher_inner` and consumed by adapter-binding code.
@@ -63,6 +74,65 @@ pub(crate) struct AttachContext {
     /// through to the FS-scan strategy when `None`. Populated via
     /// [`crate::agent::config::default_proc_root`].
     pub(crate) proc_root: Option<PathBuf>,
+}
+
+/// Live runtime handle for one PTY session.
+///
+/// Pairs a session id with a `PtyState` handle so callers can read the
+/// CURRENT workspace cwd on demand. Distinct from [`AttachContext`],
+/// whose `initial_cwd` is frozen at attach time.
+///
+/// Cheap to clone — `PtyState` internally wraps `Arc<Mutex<...>>`, so
+/// cloning this struct only bumps refcounts.
+///
+/// The `PtyState` handle is intentionally private: future refactor
+/// callers (transcript replace, test-runner snapshot building) receive
+/// `&SessionRuntimeContext` instead of `&PtyState` + `session_id`, and
+/// the only cwd path they can take is [`Self::live_cwd`]. That keeps
+/// v4-frozen constraint #5 — "live cwd comes from `PtyState` via
+/// `SessionRuntimeContext`, never from `AttachContext`" — structural.
+#[allow(dead_code)]
+#[derive(Clone)]
+pub(crate) struct SessionRuntimeContext {
+    /// Vimeflow PTY session id this runtime context is scoped to.
+    session_id: String,
+    /// Live PTY-state handle. Queried each call to [`Self::live_cwd`]
+    /// so a mid-session `cd` in the user's shell is observed
+    /// immediately.
+    pty_state: PtyState,
+}
+
+#[allow(dead_code)]
+impl SessionRuntimeContext {
+    /// Build a runtime context for `session_id` against the live
+    /// `PtyState`.
+    pub(crate) fn new(session_id: String, pty_state: PtyState) -> Self {
+        Self {
+            session_id,
+            pty_state,
+        }
+    }
+
+    /// The session id this context is scoped to. Provided so callers
+    /// that already need the id (logging, event composition) don't need
+    /// to thread it separately alongside the context.
+    pub(crate) fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    /// Read the LIVE cwd for this session, re-querying `PtyState` on
+    /// every call. Returns `None` when the PTY session is gone (killed,
+    /// expired, or never existed).
+    ///
+    /// Mirrors the type returned by the current call site at
+    /// `base/watcher_runtime.rs::maybe_start_transcript`
+    /// (`Option<PathBuf>`), so that a future step can swap the
+    /// `pty_state.get_cwd(...).map(PathBuf::from)` expression for
+    /// `runtime.live_cwd()` without touching the caller's downstream
+    /// `TranscriptState::start_or_replace(... cwd ...)` signature.
+    pub(crate) fn live_cwd(&self) -> Option<PathBuf> {
+        self.pty_state.get_cwd(&self.session_id).map(PathBuf::from)
+    }
 }
 
 #[cfg(test)]
@@ -145,5 +215,44 @@ mod tests {
         let first = attach.agent_type;
         let second = attach.agent_type;
         assert_eq!(first, second);
+    }
+
+    /// `SessionRuntimeContext::session_id` round-trips through the
+    /// constructor. Data-shape only; the live-cwd semantic test (plus
+    /// the cross-clone shared-state assertion) lives in
+    /// `adapter::mod::noop_tests` where `make_test_session` builds a
+    /// real PTY-backed `ManagedSession`.
+    #[test]
+    fn session_runtime_context_remembers_session_id() {
+        let runtime = SessionRuntimeContext::new("sid-runtime".to_string(), PtyState::new());
+        assert_eq!(runtime.session_id(), "sid-runtime");
+    }
+
+    /// On an empty `PtyState`, `live_cwd` returns `None` rather than
+    /// panicking or constructing an empty `PathBuf`. Pins the
+    /// "session-gone" branch — exercised in production when the PTY is
+    /// killed between the transcript-tail thread queuing a path
+    /// re-check and `PtyState` actually being read.
+    #[test]
+    fn session_runtime_context_live_cwd_is_none_for_missing_session() {
+        let runtime = SessionRuntimeContext::new("sid-missing".to_string(), PtyState::new());
+        assert_eq!(runtime.live_cwd(), None);
+    }
+
+    /// `Clone` impl exists and produces an identically-shaped handle:
+    /// same session id, same `None` cwd on an empty `PtyState`. Two
+    /// independent empty states would pass these assertions too, so
+    /// this is a smoke test, NOT a proof that clones share the
+    /// underlying `Arc`-backed `PtyState`. The shared-state invariant
+    /// is asserted by
+    /// `session_runtime_context_clone_shares_pty_state` in
+    /// `adapter::mod::noop_tests`, where the PTY-backed test helper
+    /// `make_test_session` lives.
+    #[test]
+    fn session_runtime_context_is_clone() {
+        let original = SessionRuntimeContext::new("sid-clone".to_string(), PtyState::new());
+        let cloned = original.clone();
+        assert_eq!(cloned.session_id(), original.session_id());
+        assert_eq!(cloned.live_cwd(), original.live_cwd());
     }
 }
