@@ -640,6 +640,166 @@ Key changes from v2:
 
 ---
 
+# Round 4 (2026-05-23)
+
+> **Reviewer:** codex-cli 0.133.0
+> **Subject:** the v3 plan from Round 3
+
+Codex was asked to (a) verify closure on R3.1–R3.5, (b) regression-check
+all prior findings, and (c) surface any new issues introduced by v3's
+contract-pinning. Output: **3 tactical findings** — meaningfully smaller
+than rounds 1–3, signaling convergence.
+
+## Closure check on Round 3's revised plan (v3)
+
+| Round 3 finding                                                       | Closed by v3?                                                                                                                       |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| R3.1 ownership overlap (`StatusSnapshot` / source / hint)             | **Closed.** `LocatedStatusSource` + `StatusSnapshot` + `TranscriptPathSource::{static_hint,dynamic_hint}` pin the contract cleanly. |
+| R3.2 `AgentBindings` concrete spec                                    | **Mostly closed.** Spec exists, but locator-wording in R4.1 affects it.                                                             |
+| R3.3 B'' visibility decision for `TranscriptStreamer`                 | **Closed on explicitness.** R4.2 pushes back on the _choice_ itself.                                                                |
+| R3.4 locator scope (only `CompositeLocator` is `StatusSourceLocator`) | **Mostly closed.** R4.1 corrects the wording — Claude still needs a (trivial) locator.                                              |
+| R3.5 A' split into `A-status` / `A-transcript`                        | **Closed.** Estimate and step ordering hold up.                                                                                     |
+
+## Regression check on all prior findings
+
+v3 does **not** re-open the original #1–#9 or R2.1–R2.5 beyond the
+locator/visibility/error-boundary issues called out below. If
+`A-transcript` never lands, the core path still makes sense; only the
+optional common-tailer extension is naturally blocked.
+
+## New findings (R4.1 – R4.3)
+
+### R4.1. `StatusSourceLocator` is worded as both provider-neutral and Codex-only
+
+v3 gives every `AgentBindings` a `locator`, but also says **"only
+`CompositeLocator` implements `StatusSourceLocator`"**. Taken literally,
+**Claude cannot construct bindings** even though it still needs a fixed
+`cwd/.vimeflow/sessions/<sid>/status.json` locator. Also pin Codex
+**retry ownership**: retry currently wraps `CompositeLocator::resolve_rollout`
+at [`codex/mod.rs:83`](./codex/mod.rs), while `CompositeLocator` itself
+only owns fallback dispatch at
+[`codex/locator.rs:603`](./codex/locator.rs).
+
+> 💡 IDEA
+>
+> - **I — Intent:** keep Codex sub-locator policy private while making
+>   location a uniform binding concern.
+> - **D — Danger:** a literal implementation either fails Claude
+>   bindings or moves Codex retry/fallback policy back into runtime
+>   glue.
+> - **E — Explain:** "Only `CompositeLocator`" should mean _only among
+>   Codex internals_, not globally.
+> - **A — Alternatives:** define a trivial
+>   `ClaudeStatusFileLocator` / `FixedStatusFileLocator` for Claude;
+>   move Codex retry **into** `CompositeLocator`'s `StatusSourceLocator`
+>   impl (so retry + fallback policy stay in one place).
+
+### R4.2. `#[doc(hidden)] pub` is over-applied to the 5-trait split
+
+The visibility decision is unambiguous, but **too broad**. v3 marks all
+five traits `#[doc(hidden)] pub`. Existing `#[doc(hidden)] pub` usage is
+a narrow workaround for types that leak through public signatures,
+documented at
+[`base/transcript_state.rs:15`](./base/transcript_state.rs). If B''
+narrows `TranscriptState::start_or_replace` to `pub(crate)` as planned,
+`TranscriptStreamer` no longer needs to be public either — and the
+other four traits never did.
+
+> 💡 IDEA
+>
+> - **I — Intent:** satisfy Rust visibility rules without publishing an
+>   adapter extension API.
+> - **D — Danger:** doc-hidden public traits still become part of
+>   `vimeflow_lib`'s public surface and make future signature changes
+>   harder.
+> - **E — Explain:** the broader backend pattern keeps runtime internals
+>   behind `BackendState`; `#[doc(hidden)] pub` types are exceptions,
+>   not the default.
+> - **A — Alternatives:** make `AgentBindings` and all five traits
+>   `pub(crate)` by default. Use `#[doc(hidden)] pub` only for a type
+>   that _must_ remain in an unavoidable public signature.
+
+### R4.3. `AgentBindings::for_attach -> Result<Self, String>` flattens too early
+
+The renderer still needs a bare string, but `AgentBindings::for_attach`
+is **below** the IPC boundary. v3 specifies `Result<Self, String>`,
+while the Rust pattern is **domain error internally, string at
+`BackendState` boundary** —
+[`rules/rust/patterns.md:97`](../../../../../rules/rust/patterns.md).
+Attach/location has meaningful variants: no detected agent, unsupported
+adapter, Codex retry exhausted, ambiguous candidates, schema-drift
+fallback failure, fatal DB/proc errors.
+
+> 💡 IDEA
+>
+> - **I — Intent:** preserve the current IPC rejection contract.
+> - **D — Danger:** flattening inside bindings repeats the old
+>   stringly-coupling problem and makes tests/diagnostics less precise.
+> - **E — Explain:** this code already introduced
+>   `ValidateTranscriptError` to avoid classifying adapter failures by
+>   message text.
+> - **A — Alternatives:** use `AttachError` / `LocateError` internally
+>   and map to `.to_string()` in `start_agent_watcher_inner` (or the
+>   eventual `AgentWatcherService`).
+
+## Revised plan v4
+
+Three tactical amendments on top of v3:
+
+1. **Claude gets a `ClaudeStatusFileLocator`** (trivial — builds the
+   `cwd/.vimeflow/sessions/<sid>/status.json` path). Codex's
+   `CompositeLocator` is the Codex-side `StatusSourceLocator` impl, with
+   **retry + fallback dispatch both owned by `CompositeLocator`'s
+   impl** (the retry loop in `CodexAdapter::status_source` moves
+   into it).
+2. **All 5 traits and `AgentBindings` are `pub(crate)`** by default;
+   `TranscriptState::start_or_replace` narrows to `pub(crate)` as
+   already planned. `#[doc(hidden)] pub` is reserved for genuinely
+   unavoidable signature leaks (`TranscriptHandle` remains the only
+   such case).
+3. **`AgentBindings::for_attach -> Result<Self, AttachError>`** — a
+   new domain enum carrying meaningful variants (NoAgentDetected,
+   UnsupportedAgent, LocatorExhausted, LocatorFatal, LocatorAmbiguous,
+   ValidatorRejected, …). String conversion happens at
+   `start_agent_watcher_inner` (or the future
+   `AgentWatcherService::start`) via `.to_string()`.
+
+### v4 ordering (same as v3, with tactical adjustments)
+
+| Step                      | Change vs. v3                                                                                                                                                                                                                                                                                                         | Addresses              |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| 0a / 0b                   | Unchanged.                                                                                                                                                                                                                                                                                                            | —                      |
+| 0c                        | Unchanged (`LocatedStatusSource` + `StatusSnapshot` + `TranscriptPathSource` with `static_hint` / `dynamic_hint`).                                                                                                                                                                                                    | —                      |
+| A-status                  | Unchanged.                                                                                                                                                                                                                                                                                                            | —                      |
+| **B'**                    | **Tactical changes:** (a) all 5 traits + `AgentBindings` are `pub(crate)` (not `#[doc(hidden)] pub`); (b) Claude implements `ClaudeStatusFileLocator`; Codex implements `CompositeLocator` (which now owns retry + fallback); (c) `AgentBindings::for_attach -> Result<Self, AttachError>` with a proper domain enum. | R3.4, R4.1, R4.2, R4.3 |
+| **B''**                   | Unchanged (`TranscriptState::start_or_replace` narrows to `pub(crate)`).                                                                                                                                                                                                                                              | R3.3                   |
+| D'                        | Unchanged. Returned `AttachError` is mapped to `String` at this boundary.                                                                                                                                                                                                                                             | R4.3                   |
+| A-transcript _(optional)_ | Unchanged.                                                                                                                                                                                                                                                                                                            | —                      |
+| C _(optional)_            | Unchanged.                                                                                                                                                                                                                                                                                                            | —                      |
+
+### Revised cost estimates (post-Round-4)
+
+R4 amendments add ~0.5–1 day total — primarily for the `AttachError`
+enum + per-site mapping at the IPC boundary, and Claude's trivial
+locator impl + Codex retry relocation.
+
+**Core path (0a → 0b → 0c → A-status → B' → B'' → D'): ~6.5–9 days**
+(was 6–8 in v3).
+
+- 0a: 0.5d, 0b: 0.25d, 0c: 1d, A-status: 1d
+- B' (5-trait split + AgentBindings + Claude locator + Codex retry move + AttachError enum): **~2d** (was 1.5d)
+- B'': 1.5d
+- D': 0.5–1d (now includes AttachError → String mapping at boundary)
+
+**Optional extensions** (unchanged):
+
+- A-transcript: +1.5–2d (after D')
+- C (common tailer): +1.5–2d (after A-transcript)
+
+**Full delivery: ~9.5–13 days. Core-only: ~6.5–9 days.**
+
+---
+
 ## Prompts used
 
 ### Round 1 prompt
@@ -694,6 +854,23 @@ EXPLICITLY: "No new findings. The revised plan addresses all
 previously-raised issues."
 
 Otherwise: numbered findings (max 10), each with IDEA block.
+```
+
+### Round 4 prompt
+
+```
+Round 4 of refactor roadmap review.
+
+Validate v3 closes R3.1-R3.5 and doesn't re-open earlier findings. Focus
+new issues on:
+- Locator scope (only CompositeLocator? what about Claude?)
+- Visibility decision (#[doc(hidden)] pub for all 5 traits — too broad?)
+- AgentBindings::for_attach error type
+- 5-trait split shared state, locator uniformity, A-transcript optionality
+- Cost estimate honesty
+
+STOP CRITERION: explicit "No new findings." if v3 holds.
+Otherwise prefix findings R4.* (max 10) with IDEA blocks.
 ```
 
 ### Round 3 prompt
