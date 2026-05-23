@@ -179,22 +179,30 @@ export const useWaterCursor = (
     }
 
     const clearInline = (): void => {
+      // Reset closure state unconditionally — these aren't tied to refs.
+      active = false
+      // Re-sync so the next attach starts from the correct instantaneous waterTop.
+      currentWaterTop = null
+      velWaterTop = 0
+
       const refs = refsRef.current
       if (refs === null) {
         return
       }
       refs.slosh.removeAttribute('data-interactive')
       refs.slosh.style.transform = ''
-      refs.slosh.style.transformOrigin = ''
+      // transformOrigin is intentionally NOT cleared here. React owns that
+      // inline style via JSX style={{ transformOrigin }} on the <g> element.
+      // React's virtual-DOM diff compares virtual-DOM-to-virtual-DOM, so after
+      // clearInline clears the inline style React never re-writes it on
+      // subsequent renders — the SVG <g> falls back to its default origin (0 0)
+      // and the ambient slosh keyframe rotates around the wrong pivot until the
+      // next hover.
       refs.waveAShift.style.transform = ''
       refs.waveBShift.style.transform = ''
       refs.waveAAnim.style.animationDuration = ''
       refs.waveBAnim.style.animationDuration = ''
       refs.sheen.setAttribute('fill-opacity', '0')
-      active = false
-      // Re-sync so the next attach starts from the correct instantaneous waterTop.
-      currentWaterTop = null
-      velWaterTop = 0
     }
 
     function ensureLoop(): void {
@@ -249,9 +257,12 @@ export const useWaterCursor = (
           Math.abs(cur.sheenA - target.sheenA) < 0.01 &&
           Math.abs(cur.sheenX - target.sheenX) < 0.01 &&
           // Keep looping while waterTop is still chasing the CSS transition.
+          // velWaterTop threshold prevents early termination mid-flight under
+          // rapid pct changes (velocity ~12 px/s while position is within 0.02).
           (currentWaterTop === null ||
             refsRef.current === null ||
-            Math.abs(currentWaterTop - refsRef.current.waterTop) < 0.02)
+            (Math.abs(currentWaterTop - refsRef.current.waterTop) < 0.02 &&
+              Math.abs(velWaterTop) < 0.1))
 
         const atRest =
           target.tilt === 0 &&

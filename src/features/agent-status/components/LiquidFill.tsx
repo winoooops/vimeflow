@@ -79,7 +79,7 @@ const computeGeom = (w: number, h: number, pct: number): Geom => {
   const liquidH = (h - 4) * (clamped / 100)
   const top = h - liquidH
   const ambientAmp = Math.min(1.8, w * 0.09)
-  const baseFloor = top + ambientAmp + 0.5
+  const baseFloor = Math.min(top + ambientAmp + 0.5, h)
   // waveA at phase 0, waveB at phase 0.125. With cycles=4, the second
   // wave is shifted by 0.5 cycles (180°) relative to the first — the
   // maximum visible contrast that still preserves the seamless-loop

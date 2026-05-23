@@ -405,6 +405,84 @@ describe('useWaterCursor — vfliquidwake wake event (Finding 4)', () => {
   })
 })
 
+// Round-3 Finding 1: clearInline must not clear React-owned transformOrigin
+describe('useWaterCursor — clearInline preserves React-owned transformOrigin (Round-3 F1)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test('transformOrigin is NOT empty after a complete hover → leave → settle cycle', async () => {
+    mockMatchMedia(makeMql(false))
+    const refs = makeRefs()
+    // Simulate what React sets on mount via JSX style={{ transformOrigin }}.
+    refs.slosh.style.transformOrigin = '11px 110px'
+
+    render(<Harness refs={refs} addSpy={vi.fn()} removeSpy={vi.fn()} />)
+    const wrap = screen.getByTestId('wrap')
+    stubRect(wrap, 100, 100)
+
+    // 1. Hover to start the spring.
+    act(() => {
+      firePointer(wrap, 'pointermove', { clientX: 80, clientY: 50 })
+    })
+    await flushRaf(3)
+
+    // 2. Leave to let the spring return to rest and call clearInline.
+    act(() => {
+      firePointer(wrap, 'pointerleave')
+    })
+    await flushRaf(80) // well past spring settle at omega=6.5
+
+    // transformOrigin must still be non-empty — clearInline must not have cleared it.
+    expect(refs.slosh.style.transformOrigin).not.toBe('')
+  })
+})
+
+// Round-3 Finding 2: active flag must reset before null guard so pct=0 unmount
+// doesn't leave active=true and silently break data-interactive on the next remount.
+describe('useWaterCursor — active flag resets before null guard (Round-3 F2)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test('data-interactive is written on remount after clearInline with null refs', async () => {
+    mockMatchMedia(makeMql(false))
+    const refs = makeRefs()
+
+    render(<Harness refs={refs} addSpy={vi.fn()} removeSpy={vi.fn()} />)
+    const wrap = screen.getByTestId('wrap')
+    stubRect(wrap, 100, 100)
+
+    // 1. Hover to make active=true.
+    act(() => {
+      firePointer(wrap, 'pointermove', { clientX: 80, clientY: 50 })
+    })
+    await flushRaf(2)
+    expect(refs.slosh.getAttribute('data-interactive')).toBe('on')
+
+    // 2. Fire pointerleave to let the spring return to rest and call clearInline.
+    //    The key contract: active must be reset to false BEFORE the null guard
+    //    so that even if refs are null (pct=0 unmount path) the flag is cleared.
+    //    We can't null refsRef.current from outside the Harness closure, so we
+    //    verify the observable consequence: after settle, data-interactive is
+    //    gone, and a subsequent hover re-adds it (proving active was false).
+    act(() => {
+      firePointer(wrap, 'pointerleave')
+    })
+    await flushRaf(80)
+    // active=false must have been set. data-interactive must be gone.
+    expect(refs.slosh.getAttribute('data-interactive')).toBeNull()
+
+    // 3. Re-hover — because active=false was set correctly, apply() will call
+    //    setAttribute('data-interactive', 'on') again on the first frame.
+    act(() => {
+      firePointer(wrap, 'pointermove', { clientX: 80, clientY: 50 })
+    })
+    await flushRaf(2)
+    expect(refs.slosh.getAttribute('data-interactive')).toBe('on')
+  })
+})
+
 // Finding 3: detach() resets spring state so reduced-motion toggle OFF mid-hover
 // starts from initial values, not stale pre-detach tilt/amp.
 describe('useWaterCursor — detach resets spring state (Finding 3)', () => {

@@ -233,6 +233,27 @@ describe('LiquidFill — sheen cy stability', () => {
   })
 })
 
+// Round-3 Finding 3: baseFloor is clamped to h at near-zero pct values.
+describe('LiquidFill — baseFloor clamp at near-full pct (Round-3 F3)', () => {
+  test('liquid-base y attribute does not exceed h=110 at pct=1', () => {
+    render(<LiquidFill mode="bar" pct={1} color="#cba6f7" testId="lf-f3" />)
+    // At pct=1 (w=22, h=110):
+    // liquidH = (110-4)*(1/100) = 1.06; top = 108.94
+    // ambientAmp = min(1.8, 22*0.09) = 1.8
+    // baseFloor (unclamped) = 108.94 + 1.8 + 0.5 = 111.24 — exceeds h=110
+    // After clamp: baseFloor = min(111.24, 110) = 110
+    const baseRect = screen.getByTestId('liquid-base')
+    const y = parseFloat(baseRect.getAttribute('y') ?? '999')
+    expect(y).toBeLessThanOrEqual(110)
+  })
+})
+
+// Round-3 Finding 4: settled check includes velWaterTop velocity threshold.
+// The fix is a one-liner with low direct test-surface value in jsdom (rAF
+// timing is not faithful enough to reliably observe mid-flight velocity).
+// TODO: add a browser-environment (Playwright/Cypress) integration test that
+// fires rapid pct changes and asserts the sheen cy doesn't snap mid-transition.
+
 describe('LiquidFill — fill mode', () => {
   beforeEach(() => {
     MockResizeObserver.instances = []
