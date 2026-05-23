@@ -81,9 +81,10 @@ pub(crate) const AGENT_SPECS: &[AgentSpec] = &[
     },
 ];
 
-/// Look up the spec for a given agent type. Panics in debug builds if
-/// the registry has drifted away from [`AgentType`] — the registry must
-/// cover every enum variant.
+/// Look up the spec for a given agent type. Panics if the registry has
+/// drifted away from [`AgentType`] — the registry must cover every enum
+/// variant. The panic fires in both debug and release builds; treat it
+/// as a programming-error guard, not a recoverable runtime error.
 pub(crate) fn spec_for(agent_type: AgentType) -> &'static AgentSpec {
     AGENT_SPECS
         .iter()
@@ -129,24 +130,44 @@ pub(crate) fn default_proc_root() -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    /// The registry must cover every `AgentType` variant — if a new
-    /// variant is added to the enum without a matching `AGENT_SPECS`
-    /// entry, `spec_for` panics at runtime. Exhaustive match here makes
-    /// the contract a compile-time requirement instead.
+    /// The registry must cover every `AgentType` variant. Two layered
+    /// checks make the contract hold:
+    ///
+    /// 1. **Compile-time** — the closure below contains a `match` whose
+    ///    arms list every known variant. Adding a new variant to
+    ///    `AgentType` without updating this arm fails to compile here.
+    ///    The closure is never invoked; the exhaustiveness check fires
+    ///    at definition time regardless.
+    /// 2. **Runtime** — the loop below calls `spec_for` for each known
+    ///    variant. If a variant exists in the enum + match arm but
+    ///    `AGENT_SPECS` is missing its entry, `spec_for` panics here
+    ///    (failing this test) rather than only at production attach.
+    ///
+    /// The two checks are intentionally redundant: (1) catches "added
+    /// variant, forgot test"; (2) catches "added variant + test arm,
+    /// forgot `AGENT_SPECS`".
     #[test]
     fn registry_covers_every_agent_type() {
-        // Compile-error if a new AgentType is added without updating the
-        // match arms below.
-        fn assert_registered(agent_type: AgentType) {
-            let _ = spec_for(agent_type);
-        }
+        // (1) Compile-time exhaustiveness — adding a new AgentType
+        //     variant without listing it here triggers a non-exhaustive
+        //     match error at this match expression.
+        let _ = |at: AgentType| match at {
+            AgentType::ClaudeCode
+            | AgentType::Codex
+            | AgentType::Aider
+            | AgentType::Generic => spec_for(at),
+        };
+
+        // (2) Runtime registry-presence check — must mirror the match
+        //     arms above. `spec_for` panics if AGENT_SPECS is missing
+        //     the entry, failing the test loudly.
         for agent_type in [
             AgentType::ClaudeCode,
             AgentType::Codex,
             AgentType::Aider,
             AgentType::Generic,
         ] {
-            assert_registered(agent_type);
+            let _ = spec_for(agent_type);
         }
     }
 

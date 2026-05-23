@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-20
+last_updated: 2026-05-23
 ref_count: 24
 ---
 
@@ -534,4 +534,13 @@ filesystem scope restrictions).
 - **File:** `src/features/command-palette/hooks/useCommandPalette.test.ts`
 - **Finding:** PR #236 hoisted `useCommandPalette` out of `CommandPalette.tsx` and rewrote `CommandPalette.test.tsx` as a 9-test controlled-render suite. The old integration suite (15 tests, including keyboard-event-plumbing assertions) was retired correctly, and the keyboard state-transition tests were carried over to `useCommandPalette.test.ts`. But four behavioral contracts on the global capture-phase listener were left behind: (1) `preventDefault` + `stopPropagation` on open, (2) same on close, (3) `event.repeat` suppression (the key-hold flicker guard), and (4) capture-phase priority over a child element's `stopPropagation`. The hook still implements all four at `useCommandPalette.ts:256-265`, but no test exercises them. A future refactor that drops `{ capture: true }`, swaps the `event.repeat` guard for a debouncer, or removes the `preventDefault` calls would pass every test while silently allowing browser/Electron shortcut leakage or key-hold flicker.
 - **Fix:** Added four tests to the existing `describe('keyboard trigger - Ctrl+:')` block. Each dispatches a real `KeyboardEvent`, spies on the relevant event methods, and asserts the observable outcome (spy invocation + palette state). The repeat-suppression test specifically opens the palette via a non-repeat event FIRST, then dispatches the repeat event — testing only the closed-state case would let a buggy implementation that closes on repeat-while-open slip through. The capture-phase test attaches a child listener that calls `event.stopPropagation()` during bubble phase; the hook must still fire because it's registered with `{ capture: true }`. Code-review heuristic: when a refactor splits a component into a hook + render component, behavioral contracts on the hook's side-effect surface (event plumbing, listener phase, repeat guards) must migrate as tests on the hook — not implicitly assumed because "the old integration test was deleted". Audit the OLD test file's expectations before deleting it; any assertion that survives the API change but doesn't show up in the new file is a regression-window gap.
+- **Commit:** same commit as this entry
+
+### 54. registry_covers_every_agent_type test claimed compile-time exhaustiveness via array iteration
+
+- **Source:** github-claude | PR #247 | 2026-05-23
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/config.rs`
+- **Finding:** The test for the `AgentSpec` registry-coverage contract was written as `for at in [ClaudeCode, Codex, Aider, Generic] { let _ = spec_for(at); }` with a doc-comment claiming "Exhaustive match here makes the contract a compile-time requirement." That is false — array literals do not trigger Rust's exhaustiveness check; only `match` expressions do. Adding `AgentType::Cursor` to the enum without updating `AGENT_SPECS` would compile cleanly, the test would still pass (it never sees `Cursor`), and `spec_for(Cursor)` would only panic at the first production attach. The illusion of compile-time safety is worse than no safety at all — a reader trusts a guard that does not exist.
+- **Fix:** Layered two checks. (1) Compile-time: a closure `|at: AgentType| match at { ClaudeCode | Codex | Aider | Generic => spec_for(at) }` whose body is never invoked but whose `match` exhaustiveness fires at definition time — adding a new variant fails to compile here. (2) Runtime: the original `for` loop survives, mirroring the match arms, so a contributor who adds the variant + match arm but forgets `AGENT_SPECS` triggers a test-time panic in `spec_for` rather than a production panic. Code-review heuristic: when a test claims "X is checked at compile time", the only valid implementations are `match`, `const _: () = assert!(...)`, or a typed function whose signature embeds the invariant. Iterating an array literal claims more than it delivers.
 - **Commit:** same commit as this entry

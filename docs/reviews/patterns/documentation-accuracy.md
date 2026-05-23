@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-20
+last_updated: 2026-05-23
 ref_count: 21
 ---
 
@@ -683,4 +683,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `src/features/command-palette/CommandPalette.tsx`
 - **Finding:** Cycle 1's fix for the unguarded array access (KB react-lifecycle §19) inlined the guard as an `((): \`command-${string}\` | undefined => { ... })()`IIFE inside the`activeDescendantId`JSX prop. The IIFE was needed only to attach a template-literal return type that TypeScript wouldn't infer from a bare ternary, but it pulled a 7-line rationale comment into the JSX body — violating the project's "never write multi-paragraph docstrings or multi-line comment blocks — one short line max" rule from root`CLAUDE.md`. The cognitive overhead in JSX (readers may suspect early-return semantics) compounded the style violation; module-level helpers don't have either problem.
 - **Fix:** Extracted `getActiveDescendantId(clampedSelectedIndex, filteredResults): \`command-${string}\` | undefined` to a module-level helper above the component. The JSX prop becomes a single-line helper call. The 7-line rationale collapses to a single comment line on the helper that points at the react-lifecycle pattern entry (§19) for the full reasoning. Code-review heuristic: when a JSX expression needs (a) a typed return + (b) multi-line context, the right home is a module-level helper — not an IIFE in JSX. The IIFE is a syntactic shortcut that costs the file's readability budget twice (function object per render + comment-style violation) for one type-inference convenience.
+- **Commit:** same commit as this entry
+
+### 73. spec_for doc-comment claimed "in debug builds" but the panic is unconditional
+
+- **Source:** github-claude | PR #247 | 2026-05-23
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/config.rs`
+- **Finding:** `spec_for(agent_type: AgentType)` was documented as "Panics in debug builds if the registry has drifted..." but the implementation used `unwrap_or_else(|| panic!(...))` with no `#[cfg(debug_assertions)]` guard — it panics in every build. A future contributor reading the doc might believe release builds silently fall through, or might add a release-only fallback that would be worse than the crash. The unconditional panic is the right behavior here (a programming-error invariant should fail loudly); only the doc was wrong.
+- **Fix:** Dropped "in debug builds" from the doc-comment. New wording: "Panics if the registry has drifted away from `AgentType` — the registry must cover every enum variant. The panic fires in both debug and release builds; treat it as a programming-error guard, not a recoverable runtime error." Code-review heuristic: words like "in debug builds", "in tests", "may panic" in Rust doc-comments are contracts — they imply specific `cfg()` gates or fallback paths. Use them only when those gates exist; otherwise the implementation drifts from the documentation contract.
 - **Commit:** same commit as this entry
