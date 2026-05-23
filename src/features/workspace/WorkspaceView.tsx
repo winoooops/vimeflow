@@ -312,13 +312,20 @@ export const WorkspaceView = (): ReactElement => {
     updatePaneAgentType,
   ])
 
-  // Mirror the agent's structured cwd into pane.cwd. The transcript JSONL
-  // (Claude Code today; Codex follow-up) stamps every entry with the
-  // agent's current cwd; the `agent-cwd` event surfaces transitions.
-  // Tool-call-driven moves like Claude's built-in `EnterWorktree` do NOT
-  // change the interactive shell's $PWD, so neither OSC 7 nor PTY text
-  // patterns catch them — this bridge is what makes the worktree chip +
-  // git branch follow agent-driven worktree switches.
+  // Mirror the agent's structured cwd into pane.cwd. Both adapters expose
+  // an `agent-cwd` event on transitions; the sources differ:
+  //  - Claude Code stamps `cwd` on every transcript JSONL entry, so
+  //    transitions surface as soon as the next line is parsed.
+  //  - Codex stamps cwd in session_meta.payload.cwd (session start) and
+  //    response_item.payload.arguments.workdir for exec_command function
+  //    calls (mid-session). turn_context.cwd is intentionally ignored
+  //    by the backend — pinned to session-start and would cause false
+  //    reverts.
+  // Tool-call-driven moves like Claude's built-in `EnterWorktree` and
+  // codex's "switch to worktree" navigation do NOT change the interactive
+  // shell's $PWD, so neither OSC 7 nor PTY text patterns catch them —
+  // this bridge is what makes the worktree chip + git branch follow
+  // agent-driven worktree switches.
   //
   // Guards (Codex review on PR #239): scope to the active pane's session;
   // skip exited sessions; require the agent to be currently active so a
