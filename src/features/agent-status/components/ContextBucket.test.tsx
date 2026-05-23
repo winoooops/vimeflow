@@ -1,8 +1,8 @@
-import { describe, test, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { ContextBucket, formatTokens, formatContextSize } from './ContextBucket'
 import type { ContextBucketProps } from './ContextBucket'
-import { BAR_DIMS, computeBaseFloor } from './LiquidFill'
+import { computeBaseFloor } from './LiquidFill'
 import {
   LIQUID_COLOR_PRIMARY_CONTAINER,
   LIQUID_COLOR_TERTIARY,
@@ -62,6 +62,47 @@ describe('ContextBucket', () => {
   })
 
   describe('fill height at various percentages', () => {
+    type ROCallback = (entries: { contentRect: DOMRectReadOnly }[]) => void
+    class MockResizeObserver {
+      static instances: MockResizeObserver[] = []
+      cb: ROCallback
+      constructor(cb: ROCallback) {
+        this.cb = cb
+        MockResizeObserver.instances.push(this)
+      }
+      observe = vi.fn()
+      unobserve = vi.fn()
+      disconnect = vi.fn()
+      trigger(rect: { width: number; height: number }): void {
+        this.cb([
+          {
+            contentRect: {
+              ...rect,
+              top: 0,
+              left: 0,
+              right: rect.width,
+              bottom: rect.height,
+              x: 0,
+              y: 0,
+              toJSON: () => ({}),
+            } as DOMRectReadOnly,
+          },
+        ])
+      }
+    }
+
+    const REAL_FILL_W = 300
+    const REAL_FILL_H = 72
+
+    beforeEach(() => {
+      MockResizeObserver.instances = []
+
+      const g = globalThis as unknown as {
+        ResizeObserver: typeof ResizeObserver
+      }
+      g.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
+    })
+
     const getWrapperTy = (container: HTMLElement): number => {
       // eslint-disable-next-line testing-library/no-node-access -- SVG transform style is not reachable via a11y queries
       const wrapperEl = container.querySelector(
@@ -78,8 +119,13 @@ describe('ContextBucket', () => {
       const { container } = render(
         <ContextBucket {...defaultProps} usedPercentage={50} />
       )
-
-      const expectedY = computeBaseFloor(BAR_DIMS.w, BAR_DIMS.h, 50)
+      act(() => {
+        MockResizeObserver.instances[0]?.trigger({
+          width: REAL_FILL_W,
+          height: REAL_FILL_H,
+        })
+      })
+      const expectedY = computeBaseFloor(REAL_FILL_W, REAL_FILL_H, 50)
       expect(getWrapperTy(container)).toBeCloseTo(expectedY, 1)
     })
 
@@ -87,8 +133,13 @@ describe('ContextBucket', () => {
       const { container } = render(
         <ContextBucket {...defaultProps} usedPercentage={74} />
       )
-
-      const expectedY = computeBaseFloor(BAR_DIMS.w, BAR_DIMS.h, 74)
+      act(() => {
+        MockResizeObserver.instances[0]?.trigger({
+          width: REAL_FILL_W,
+          height: REAL_FILL_H,
+        })
+      })
+      const expectedY = computeBaseFloor(REAL_FILL_W, REAL_FILL_H, 74)
       expect(getWrapperTy(container)).toBeCloseTo(expectedY, 1)
     })
 
@@ -96,8 +147,13 @@ describe('ContextBucket', () => {
       const { container } = render(
         <ContextBucket {...defaultProps} usedPercentage={90} />
       )
-
-      const expectedY = computeBaseFloor(BAR_DIMS.w, BAR_DIMS.h, 90)
+      act(() => {
+        MockResizeObserver.instances[0]?.trigger({
+          width: REAL_FILL_W,
+          height: REAL_FILL_H,
+        })
+      })
+      const expectedY = computeBaseFloor(REAL_FILL_W, REAL_FILL_H, 90)
       expect(getWrapperTy(container)).toBeCloseTo(expectedY, 1)
     })
   })

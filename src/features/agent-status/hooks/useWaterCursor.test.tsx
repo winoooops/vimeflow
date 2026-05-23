@@ -355,6 +355,31 @@ describe('useWaterCursor — tune prop identity stability (Finding 1)', () => {
   })
 })
 
+// Round-8 Finding 1: pure-wake cycle must NOT set data-interactive
+describe('useWaterCursor — pure-wake does not activate hover state (Round-8 F1)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test('pure wake (pct change, no hover) does not set data-interactive', async () => {
+    mockMatchMedia(makeMql(false))
+    const refs = makeRefs()
+    refs.waterTop = 50
+
+    render(<Harness refs={refs} addSpy={vi.fn()} removeSpy={vi.fn()} />)
+
+    const wrap = screen.getByTestId('wrap')
+    stubRect(wrap, 100, 100)
+    // No pointermove — just simulate a pct change → wake
+    refs.waterTop = 30
+    act(() => {
+      wrap.dispatchEvent(new Event('vfliquidwake'))
+    })
+    await flushRaf(5)
+    expect(refs.slosh.getAttribute('data-interactive')).toBeNull()
+  })
+})
+
 // Finding 2: sheen cy tracks waterTop transition
 // NOTE: jsdom provides no real CSS transitions or rAF timing, so a meaningful
 // integration test for the 500ms waterTop animation would require a real

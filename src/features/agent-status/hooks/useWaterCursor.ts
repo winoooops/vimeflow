@@ -152,41 +152,60 @@ export const useWaterCursor = (
       if (refs === null) {
         return
       }
-      if (!active) {
-        refs.slosh.setAttribute('data-interactive', 'on')
-        active = true
+
+      // Hover-driven writes are skipped on pure-wake frames (pct change
+      // with no hover). On a pure wake, hover targets stay at ambient,
+      // so the slosh/wave/animationDuration writes here would be no-op
+      // identity values that clearInline() reverses in the same frame —
+      // unnecessary DOM work and fragile against future style-flushes.
+      const hoverActive =
+        target.tilt !== 0 ||
+        target.amp !== 1 ||
+        target.shiftX !== 0 ||
+        target.lift !== 0 ||
+        target.skew !== 0 ||
+        target.speedT !== 0 ||
+        target.sheenA !== 0 ||
+        target.sheenX !== 0
+
+      if (hoverActive) {
+        if (!active) {
+          refs.slosh.setAttribute('data-interactive', 'on')
+          active = true
+        }
+
+        refs.slosh.style.transform = `rotate(${cur.tilt.toFixed(3)}deg)`
+
+        const tx = `translateY(${cur.lift.toFixed(3)}px) scaleY(${cur.amp.toFixed(
+          4
+        )}) translateX(${cur.shiftX.toFixed(
+          3
+        )}px) skewX(${(-cur.skew).toFixed(3)}deg)`
+
+        const txA = `translateY(${cur.lift.toFixed(
+          3
+        )}px) scaleY(${cur.amp.toFixed(4)}) translateX(${(
+          cur.shiftX * 0.6
+        ).toFixed(3)}px) skewX(${(-cur.skew).toFixed(3)}deg)`
+        refs.waveAShift.style.transform = txA
+        refs.waveBShift.style.transform = tx
+
+        const speedFactor = 1 + cur.speedT * (T.speedup - 1)
+        refs.waveAAnim.style.animationDuration =
+          (3.4 / speedFactor).toFixed(3) + 's'
+
+        refs.waveBAnim.style.animationDuration =
+          (4.8 / speedFactor).toFixed(3) + 's'
       }
-      refs.slosh.style.transform = `rotate(${cur.tilt.toFixed(3)}deg)`
 
-      const tx = `translateY(${cur.lift.toFixed(3)}px) scaleY(${cur.amp.toFixed(
-        4
-      )}) translateX(${cur.shiftX.toFixed(
-        3
-      )}px) skewX(${(-cur.skew).toFixed(3)}deg)`
-
-      const txA = `translateY(${cur.lift.toFixed(
-        3
-      )}px) scaleY(${cur.amp.toFixed(4)}) translateX(${(
-        cur.shiftX * 0.6
-      ).toFixed(3)}px) skewX(${(-cur.skew).toFixed(3)}deg)`
-      refs.waveAShift.style.transform = txA
-      refs.waveBShift.style.transform = tx
-
-      const speedFactor = 1 + cur.speedT * (T.speedup - 1)
-      refs.waveAAnim.style.animationDuration =
-        (3.4 / speedFactor).toFixed(3) + 's'
-
-      refs.waveBAnim.style.animationDuration =
-        (4.8 / speedFactor).toFixed(3) + 's'
-
+      // Sheen position + opacity track currentWaterTop on every frame
+      // (wake or hover) so the highlight stays attached to the surface
+      // during pct transitions.
+      const sheenWaterTop = currentWaterTop ?? refs.waterTop
       const w = refs.dims.w
       const sheenX = w / 2 + cur.sheenX * (w / 2 - 1)
       refs.sheen.setAttribute('cx', sheenX.toFixed(2))
-      // Use the spring-animated currentWaterTop so the sheen tracks the 500ms
-      // CSS transition on pct changes instead of snapping to the new level.
-      const animatedTop = currentWaterTop ?? refs.waterTop
-      refs.sheen.setAttribute('cy', (animatedTop + cur.lift - 0.3).toFixed(2))
-
+      refs.sheen.setAttribute('cy', (sheenWaterTop + cur.lift - 0.3).toFixed(2))
       refs.sheen.setAttribute('fill-opacity', (cur.sheenA * 0.55).toFixed(3))
     }
 
