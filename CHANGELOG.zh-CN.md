@@ -11,6 +11,10 @@
 - 将英文和中文 README 缩短为当前 `0.1.0` 版本线的源码构建指南，并把更深入的实现细节改为通过引用文档进入。
 - 在中英文 README 中补充 Lifeline Claude Code 扩展，以及本仓库作为 harness engineering 实践项目的定位。
 
+### Fixed
+
+- 应用内终端现在可以正常运行 `nvim`、`htop`、`less` 等全屏 TUI 应用程序。此前生产构建会在第一个 DECRQM 模式查询转义序列上卡住——原因是 esbuild 的压缩器破坏了 `@xterm/xterm` 中 `requestMode` 处理函数的 const-enum IIFE 片段。Vite 已切换到 `terser` 压缩器，该模式可被完整保留。(#249)
+
 ## [0.1.0] - 当前源码支持版本线
 
 ### Supported
