@@ -408,4 +408,46 @@ mod noop_tests {
         assert_eq!(runtime.live_cwd(), Some(PathBuf::from("/tmp/workspace")));
         assert_eq!(runtime.session_id(), "sid-runtime-live");
     }
+
+    /// Step 0b: cloning a `SessionRuntimeContext` MUST keep both
+    /// handles attached to the SAME `Arc`-backed `PtyState`. A
+    /// future contributor swapping the implicit `Clone` derive for
+    /// a manual impl that clones into independent state would break
+    /// the "live cwd through `SessionRuntimeContext`" guarantee and
+    /// this test would catch it.
+    ///
+    /// Proof strategy: insert a session via a `PtyState` handle that
+    /// is shared with the original runtime context, clone the
+    /// runtime, then assert the clone reports the same cwd. Inserting
+    /// AFTER the clone closes the loophole where two independent
+    /// empty `PtyState`s could pass the smoke test in
+    /// `attach::tests::session_runtime_context_is_clone`.
+    #[test]
+    fn session_runtime_context_clone_shares_pty_state() {
+        use super::attach::SessionRuntimeContext;
+
+        let state = PtyState::new();
+        let session_id = "sid-runtime-shared".to_string();
+        // `PtyState` is `Arc<Mutex<...>>`-backed; cloning before the
+        // runtime takes ownership of one clone keeps the other handle
+        // usable for the post-clone insert.
+        let runtime = SessionRuntimeContext::new(session_id.clone(), state.clone());
+        let cloned_runtime = runtime.clone();
+
+        // Both handles look empty before any insert — the live
+        // cross-clone visibility check is the one that follows.
+        assert_eq!(runtime.live_cwd(), None);
+        assert_eq!(cloned_runtime.live_cwd(), None);
+
+        state
+            .try_insert(session_id.clone(), make_test_session(), 64)
+            .unwrap_or_else(|_| panic!("insert session"));
+
+        let expected = Some(PathBuf::from("/tmp/workspace"));
+        assert_eq!(runtime.live_cwd(), expected);
+        // The decisive assertion: a `Clone` impl that broke the
+        // shared-`Arc` invariant would leave `cloned_runtime` reading
+        // its own empty `PtyState` and this would return `None`.
+        assert_eq!(cloned_runtime.live_cwd(), expected);
+    }
 }

@@ -218,13 +218,13 @@ mod tests {
     }
 
     /// `SessionRuntimeContext::session_id` round-trips through the
-    /// constructor. Data-shape only; the live-cwd semantic test lives in
+    /// constructor. Data-shape only; the live-cwd semantic test (plus
+    /// the cross-clone shared-state assertion) lives in
     /// `adapter::mod::noop_tests` where `make_test_session` builds a
     /// real PTY-backed `ManagedSession`.
     #[test]
     fn session_runtime_context_remembers_session_id() {
-        let runtime =
-            SessionRuntimeContext::new("sid-runtime".to_string(), PtyState::new());
+        let runtime = SessionRuntimeContext::new("sid-runtime".to_string(), PtyState::new());
         assert_eq!(runtime.session_id(), "sid-runtime");
     }
 
@@ -235,21 +235,24 @@ mod tests {
     /// re-check and `PtyState` actually being read.
     #[test]
     fn session_runtime_context_live_cwd_is_none_for_missing_session() {
-        let runtime =
-            SessionRuntimeContext::new("sid-missing".to_string(), PtyState::new());
+        let runtime = SessionRuntimeContext::new("sid-missing".to_string(), PtyState::new());
         assert_eq!(runtime.live_cwd(), None);
     }
 
-    /// Clone propagates the same view: cloned context sees the same
-    /// underlying `PtyState`, so a future insert into either handle is
-    /// visible from both. Cheap because `PtyState` is `Arc`-backed.
+    /// `Clone` impl exists and produces an identically-shaped handle:
+    /// same session id, same `None` cwd on an empty `PtyState`. Two
+    /// independent empty states would pass these assertions too, so
+    /// this is a smoke test, NOT a proof that clones share the
+    /// underlying `Arc`-backed `PtyState`. The shared-state invariant
+    /// is asserted by
+    /// `session_runtime_context_clone_shares_pty_state` in
+    /// `adapter::mod::noop_tests`, where the PTY-backed test helper
+    /// `make_test_session` lives.
     #[test]
     fn session_runtime_context_is_clone() {
-        let original =
-            SessionRuntimeContext::new("sid-clone".to_string(), PtyState::new());
+        let original = SessionRuntimeContext::new("sid-clone".to_string(), PtyState::new());
         let cloned = original.clone();
         assert_eq!(cloned.session_id(), original.session_id());
-        // Both views must agree on the absent-session result.
         assert_eq!(cloned.live_cwd(), original.live_cwd());
     }
 }
