@@ -746,3 +746,5 @@ worktree-absent panes. If overflow shows, drop `max-w-[340px]` to
   PR-A reviewer or PR-B).
 - **Telemetry on chip render state.** Not needed; the chip is
   presentational.
+
+<!-- codex-reviewed: 2026-05-23T15:45:45Z -->
