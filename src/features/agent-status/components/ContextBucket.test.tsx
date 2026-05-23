@@ -58,7 +58,9 @@ describe('ContextBucket', () => {
   describe('fill height at various percentages', () => {
     const getWrapperTy = (container: HTMLElement): number => {
       // eslint-disable-next-line testing-library/no-node-access -- SVG transform style is not reachable via a11y queries
-      const wrapperEl = container.querySelector('[data-testid="liquid-water-y-base"]')
+      const wrapperEl = container.querySelector(
+        '[data-testid="liquid-water-y-base"]'
+      )
       expect(wrapperEl).not.toBeNull()
       const wrapper = wrapperEl as HTMLElement
       const match = /translateY\((.+?)px\)/.exec(wrapper.style.transform)

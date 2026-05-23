@@ -35,7 +35,9 @@ describe('LiquidFill — bar mode geometry', () => {
     // pct=50 → liquidH=(110-4)*0.5=53 → top=57. ambientAmp = min(1.8, 22*0.09) = 1.8.
     // baseFloor expected = 57 + 1.8 + 0.5 = 59.3
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
-    const wrapperEl = container.querySelector('[data-testid="liquid-water-y-base"]')
+    const wrapperEl = container.querySelector(
+      '[data-testid="liquid-water-y-base"]'
+    )
     expect(wrapperEl).not.toBeNull()
     const wrapper = wrapperEl as HTMLElement
     expect(wrapper.style.transition).toBe('transform 500ms ease')
@@ -257,7 +259,9 @@ describe('LiquidFill — baseFloor clamp at near-full pct (Round-3 F3)', () => {
     // baseFloor (unclamped) = 108.94 + 1.8 + 0.5 = 111.24 — exceeds h=110
     // After clamp: baseFloor = min(111.24, 110) = 110
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
-    const wrapperEl = container.querySelector('[data-testid="liquid-water-y-base"]')
+    const wrapperEl = container.querySelector(
+      '[data-testid="liquid-water-y-base"]'
+    )
     expect(wrapperEl).not.toBeNull()
     const wrapper = wrapperEl as HTMLElement
     const match = /translateY\((.+?)px\)/.exec(wrapper.style.transform)
