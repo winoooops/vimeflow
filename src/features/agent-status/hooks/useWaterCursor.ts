@@ -305,9 +305,17 @@ export const useWaterCursor = (
           target.sheenA === 0 &&
           target.sheenX === 0
         if (settled) {
-          if (atRest) {
+          if (atRest || refsRef.current === null) {
             cur = initialTarget()
             vel = initialVel()
+            target.tilt = 0
+            target.amp = 1
+            target.shiftX = 0
+            target.lift = 0
+            target.skew = 0
+            target.speedT = 0
+            target.sheenX = 0
+            target.sheenA = 0
             clearInline()
           }
           rafId = null

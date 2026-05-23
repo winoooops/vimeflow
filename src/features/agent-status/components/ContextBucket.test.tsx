@@ -1,5 +1,9 @@
 import { act, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test } from 'vitest'
+import {
+  MockResizeObserver,
+  installMockResizeObserver,
+} from '../../../test/mockResizeObserver'
 import { ContextBucket, formatTokens, formatContextSize } from './ContextBucket'
 import type { ContextBucketProps } from './ContextBucket'
 import { computeBaseFloor } from './LiquidFill'
@@ -62,45 +66,11 @@ describe('ContextBucket', () => {
   })
 
   describe('fill height at various percentages', () => {
-    type ROCallback = (entries: { contentRect: DOMRectReadOnly }[]) => void
-    class MockResizeObserver {
-      static instances: MockResizeObserver[] = []
-      cb: ROCallback
-      constructor(cb: ROCallback) {
-        this.cb = cb
-        MockResizeObserver.instances.push(this)
-      }
-      observe = vi.fn()
-      unobserve = vi.fn()
-      disconnect = vi.fn()
-      trigger(rect: { width: number; height: number }): void {
-        this.cb([
-          {
-            contentRect: {
-              ...rect,
-              top: 0,
-              left: 0,
-              right: rect.width,
-              bottom: rect.height,
-              x: 0,
-              y: 0,
-              toJSON: () => ({}),
-            } as DOMRectReadOnly,
-          },
-        ])
-      }
-    }
-
     const REAL_FILL_W = 300
     const REAL_FILL_H = 72
 
     beforeEach(() => {
-      MockResizeObserver.instances = []
-
-      const g = globalThis as unknown as {
-        ResizeObserver: typeof ResizeObserver
-      }
-      g.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
+      installMockResizeObserver()
     })
 
     const getWrapperTy = (container: HTMLElement): number => {

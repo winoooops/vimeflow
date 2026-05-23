@@ -1,5 +1,9 @@
 import { act, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test } from 'vitest'
+import {
+  MockResizeObserver,
+  installMockResizeObserver,
+} from '../../../test/mockResizeObserver'
 import { LiquidFill } from './LiquidFill'
 
 // jsdom does not provide PointerEvent — see useWaterCursor.test.tsx
@@ -190,35 +194,6 @@ describe('LiquidFill — cursor hook integration', () => {
   })
 })
 
-type ROCallback = (entries: { contentRect: DOMRectReadOnly }[]) => void
-class MockResizeObserver {
-  static instances: MockResizeObserver[] = []
-  cb: ROCallback
-  constructor(cb: ROCallback) {
-    this.cb = cb
-    MockResizeObserver.instances.push(this)
-  }
-  observe = vi.fn()
-  unobserve = vi.fn()
-  disconnect = vi.fn()
-  trigger(rect: { width: number; height: number }): void {
-    this.cb([
-      {
-        contentRect: {
-          ...rect,
-          top: 0,
-          left: 0,
-          right: rect.width,
-          bottom: rect.height,
-          x: 0,
-          y: 0,
-          toJSON: () => ({}),
-        } as DOMRectReadOnly,
-      },
-    ])
-  }
-}
-
 describe('LiquidFill — sheen cy stability', () => {
   test('cy attribute is not re-committed by React when pct changes', () => {
     const { container, rerender } = render(
@@ -278,10 +253,7 @@ describe('LiquidFill — baseFloor clamp at near-full pct (Round-3 F3)', () => {
 
 describe('LiquidFill — fill mode', () => {
   beforeEach(() => {
-    MockResizeObserver.instances = []
-    const g = globalThis as unknown as { ResizeObserver: typeof ResizeObserver }
-
-    g.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
+    installMockResizeObserver()
   })
 
   test('renders SVG with measured width/height attributes after ResizeObserver fires', () => {
