@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-05-23
-ref_count: 21
+ref_count: 22
 ---
 
 # Documentation Accuracy
@@ -692,4 +692,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `crates/backend/src/agent/config.rs`
 - **Finding:** `spec_for(agent_type: AgentType)` was documented as "Panics in debug builds if the registry has drifted..." but the implementation used `unwrap_or_else(|| panic!(...))` with no `#[cfg(debug_assertions)]` guard — it panics in every build. A future contributor reading the doc might believe release builds silently fall through, or might add a release-only fallback that would be worse than the crash. The unconditional panic is the right behavior here (a programming-error invariant should fail loudly); only the doc was wrong.
 - **Fix:** Dropped "in debug builds" from the doc-comment. New wording: "Panics if the registry has drifted away from `AgentType` — the registry must cover every enum variant. The panic fires in both debug and release builds; treat it as a programming-error guard, not a recoverable runtime error." Code-review heuristic: words like "in debug builds", "in tests", "may panic" in Rust doc-comments are contracts — they imply specific `cfg()` gates or fallback paths. Use them only when those gates exist; otherwise the implementation drifts from the documentation contract.
+- **Commit:** same commit as this entry
+
+### 74. parse_status comment claimed test exercised a read path that the test bypassed
+
+- **Source:** github-claude | PR #256 | 2026-05-23
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/codex/mod.rs`
+- **Finding:** `CodexAdapter::parse_status` (Step 0c v1) contained a `let transcript_path = self.resolved_rollout_path.lock()...; let _ = transcript_path;` block — a deliberately-unused mutex read + heap `String` allocation per status update. The justifying comment claimed the deprecated mutex was kept "read" so the pinned regression test (`parse_status_includes_resolved_rollout_path_when_available`) could anchor the back-compat contract. But the test seeded the mutex directly in a separate block BEFORE calling `parse_status` and then read the mutex DIRECTLY afterwards — it never relied on `parse_status` touching the mutex at all. The comment misled future readers into thinking the read-path was load-bearing; in reality it was dead code on the hot path (every Codex statusline update paid a `Mutex::lock()` + `to_string_lossy().to_string()`).
+- **Fix:** Removed lines 136-141 (the dead `let _ = transcript_path;` block). Rewrote both (a) the `parse_status` comment to describe what's actually pinned and where (write side: `located_status_source_returns_resolved_rollout_on_happy_path`; "slot not cleared on parse" side: `parse_status_includes_resolved_rollout_path_when_available`) and (b) the regression test's own comment to admit it pre-seeds directly. Code-review heuristic: a `let _ = expr;` pattern justified ONLY by "the test reads this" is a smell — verify the test actually reaches the code path through the production entry point; if it pre-seeds and reads directly, the in-function read is dead and the comment is lying.
 - **Commit:** same commit as this entry

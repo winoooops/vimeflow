@@ -127,19 +127,22 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
-        // The deprecated `transcript_path` field is gone from
-        // `ParsedStatus` as of Step 0c. The mutex is still read so the
-        // pinned regression test
-        // (`parse_status_includes_resolved_rollout_path_when_available`)
-        // can assert the field stays populated — that's how a future
-        // removal step can prove no caller observes it.
-        let transcript_path = self
-            .resolved_rollout_path
-            .lock()
-            .ok()
-            .and_then(|slot| slot.as_ref().map(|path| path.to_string_lossy().to_string()));
-        let _ = transcript_path; // back-compat read; intentionally unused by parser
-
+        // Step 0c: `ParsedStatus.transcript_path` was removed; the
+        // rollout path now reaches the watcher via
+        // `TranscriptPathSource::static_hint(&LocatedStatusSource)`,
+        // reading the value off the `LocatedStatusSource` returned by
+        // `located_status_source` at attach time.
+        //
+        // The deprecated `resolved_rollout_path` mutex is NOT read
+        // here — `parse_status` is on the hot path (every statusline
+        // update), and a `Mutex::lock()` + `String` allocation per
+        // call adds up. The write side of the mutex (in
+        // `located_status_source`) is anchored by the
+        // `located_status_source_returns_resolved_rollout_on_happy_path`
+        // test; the "slot is not cleared by subsequent parse_status
+        // calls" property is anchored by
+        // `parse_status_includes_resolved_rollout_path_when_available`,
+        // which pre-populates the mutex and reads it directly.
         parser::parse_rollout(session_id, raw)
     }
 
@@ -217,10 +220,17 @@ mod adapter_tests {
 
     #[test]
     fn parse_status_includes_resolved_rollout_path_when_available() {
-        // Back-compat regression test: the deprecated mutex is still
-        // populated by `located_status_source` so a future step that
-        // proves no caller reads it can land cleanly. Keep this until
-        // the mutex is actually removed (tracked under Step B'/D').
+        // Back-compat regression test. Pins two properties of the
+        // deprecated `resolved_rollout_path` mutex side channel:
+        // (a) the slot holds the value the caller pre-populated, and
+        // (b) calling `parse_status` does NOT clear it.
+        //
+        // This test pre-seeds the mutex directly (not via the
+        // production write path) — the locator-side write is anchored
+        // separately by
+        // `located_status_source_returns_resolved_rollout_on_happy_path`.
+        // Together the two tests pin both sides of the back-compat
+        // contract so a future step can drop the mutex confidently.
         let adapter = CodexAdapter::new(12345, SystemTime::UNIX_EPOCH);
         {
             let mut slot = adapter
@@ -235,9 +245,9 @@ mod adapter_tests {
         let parsed = <CodexAdapter as AgentAdapter>::parse_status(&adapter, "pty-1", raw)
             .expect("minimal codex status parses");
 
-        // The transcript path field is gone; what we still pin is that
-        // the deprecated slot holds the expected value (proving the
-        // back-compat write path is intact).
+        // The transcript path field is gone from `ParsedStatus`; what
+        // we pin is (a) the parse succeeded and (b) the slot is
+        // unchanged after parse_status returned.
         assert_eq!(parsed.event.agent_session_id, "sess");
         assert_eq!(
             adapter
