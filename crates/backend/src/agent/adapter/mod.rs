@@ -4,10 +4,13 @@
 //! on `dyn AgentAdapter`, and the watcher orchestration body lives in
 //! `base::start_for`.
 
+mod attach;
 pub mod base;
 pub mod claude_code;
 pub mod codex;
 pub mod types;
+
+pub(crate) use attach::AttachContext;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -95,7 +98,7 @@ impl NoOpAdapter {
 
 impl AgentAdapter for NoOpAdapter {
     fn agent_type(&self) -> AgentType {
-        self.agent_type.clone()
+        self.agent_type
     }
 
     fn status_source(&self, cwd: &Path, session_id: &str) -> Result<StatusSource, String> {
@@ -145,11 +148,18 @@ pub(crate) async fn start_agent_watcher_inner(
     events: Arc<dyn EventSink>,
     session_id: String,
 ) -> Result<(), String> {
-    let (cwd, _shell_pid, pty_start, agent_type, agent_pid) =
-        resolve_bind_inputs(&pty_state, &session_id, detect_agent)?;
+    let attach = resolve_bind_inputs(&pty_state, &session_id, detect_agent)?;
 
-    let adapter = <dyn AgentAdapter>::for_attach(agent_type, agent_pid, pty_start)?;
-    let cwd_path = PathBuf::from(cwd);
+    // `AgentType` is `Copy` so no clone needed; `initial_cwd` is cloned
+    // because the rest of `attach` is reserved for later refactor steps
+    // (B' / D') that will plumb the full context through the adapter
+    // binding chain.
+    let adapter = <dyn AgentAdapter>::for_attach(
+        attach.agent_type,
+        attach.agent_pid,
+        attach.pty_start,
+    )?;
+    let cwd_path = attach.initial_cwd.clone();
     // `adapter.start(...)` walks into `base::start_for`, which calls
     // `adapter.status_source(...)`. For codex sessions, that call runs a
     // bounded retry (up to 5 attempts × 100 ms inter-attempt sleeps)
@@ -178,7 +188,7 @@ fn resolve_bind_inputs<F>(
     pty_state: &PtyState,
     session_id: &SessionId,
     detect: F,
-) -> Result<(String, u32, std::time::SystemTime, AgentType, u32), String>
+) -> Result<AttachContext, String>
 where
     F: FnOnce(u32) -> Option<(AgentType, u32)>,
 {
@@ -197,7 +207,21 @@ where
     let (agent_type, agent_pid) = detect(shell_pid)
         .ok_or_else(|| format!("no agent detected in PTY session {}", session_id))?;
 
-    Ok((cwd, shell_pid, pty_start, agent_type, agent_pid))
+    // All per-agent metadata flows through the central registry —
+    // adding a new agent only touches `crate::agent::config`, not this
+    // populator. Per v4-frozen Step 0a (expanded per PR #247 review).
+    let spec = crate::agent::config::spec_for(agent_type);
+
+    Ok(AttachContext {
+        session_id: session_id.clone(),
+        initial_cwd: PathBuf::from(cwd),
+        shell_pid,
+        agent_pid,
+        pty_start,
+        agent_type,
+        provider_home: spec.provider_home(),
+        proc_root: crate::agent::config::default_proc_root(),
+    })
 }
 
 /// Stop watching an agent status source.
@@ -301,12 +325,61 @@ mod noop_tests {
             .try_insert(session_id.clone(), make_test_session(), 64)
             .unwrap_or_else(|_| panic!("insert session"));
 
-        let (_cwd, shell_pid, _pty_start, agent_type, agent_pid) =
-            resolve_bind_inputs(&state, &session_id, |_| Some((AgentType::Codex, 4242)))
-                .expect("bind inputs");
+        let attach = resolve_bind_inputs(&state, &session_id, |_| Some((AgentType::Codex, 4242)))
+            .expect("bind inputs");
 
-        assert!(matches!(agent_type, AgentType::Codex));
-        assert_ne!(shell_pid, agent_pid);
-        assert_eq!(agent_pid, 4242);
+        assert!(matches!(attach.agent_type, AgentType::Codex));
+        assert_ne!(attach.shell_pid, attach.agent_pid);
+        assert_eq!(attach.agent_pid, 4242);
+    }
+
+    #[test]
+    fn resolve_bind_inputs_populates_attach_context_fields() {
+        let state = PtyState::new();
+        let session_id = "sid-populate".to_string();
+        state
+            .try_insert(session_id.clone(), make_test_session(), 64)
+            .unwrap_or_else(|_| panic!("insert session"));
+
+        let attach = resolve_bind_inputs(&state, &session_id, |_| Some((AgentType::Codex, 4242)))
+            .expect("bind inputs");
+
+        // Identity / attach facts surfaced into the typed struct.
+        assert_eq!(attach.session_id, "sid-populate");
+        assert_eq!(attach.initial_cwd, PathBuf::from("/tmp/workspace"));
+        assert_eq!(attach.pty_start, SystemTime::UNIX_EPOCH);
+        assert_eq!(attach.agent_pid, 4242);
+        assert_eq!(attach.agent_type, AgentType::Codex);
+
+        // `provider_home` resolves from the central registry; for Codex
+        // it ends with `.codex`. Structural assertion (not pinning the
+        // full path) so the test doesn't depend on $HOME.
+        let provider_home = attach
+            .provider_home
+            .expect("Codex spec defines a home subdir");
+        assert!(provider_home.ends_with(".codex"));
+
+        // `proc_root` is platform-dependent.
+        if cfg!(target_os = "linux") {
+            assert_eq!(attach.proc_root, Some(PathBuf::from("/proc")));
+        } else {
+            assert_eq!(attach.proc_root, None);
+        }
+    }
+
+    #[test]
+    fn resolve_bind_inputs_provider_home_none_for_agents_without_subdir() {
+        let state = PtyState::new();
+        let session_id = "sid-aider".to_string();
+        state
+            .try_insert(session_id.clone(), make_test_session(), 64)
+            .unwrap_or_else(|_| panic!("insert session"));
+
+        let attach = resolve_bind_inputs(&state, &session_id, |_| Some((AgentType::Aider, 9999)))
+            .expect("bind inputs");
+
+        assert_eq!(attach.agent_type, AgentType::Aider);
+        // Aider has no `home_subdir` in the registry → provider_home is None.
+        assert_eq!(attach.provider_home, None);
     }
 }

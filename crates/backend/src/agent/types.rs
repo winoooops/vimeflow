@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Agent type identifier
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
