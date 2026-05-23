@@ -62,6 +62,9 @@ words:
   - catppuccin
   - Catppuccin
 
+  # Custom DOM events
+  - vfliquidwake
+
   # Workspace domain abbreviations
   - sess # session
   - proj # project

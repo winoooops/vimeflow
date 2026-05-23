@@ -1,4 +1,10 @@
 import type { ReactElement } from 'react'
+import { LiquidFill } from './LiquidFill'
+import {
+  LIQUID_COLOR_ERROR,
+  LIQUID_COLOR_PRIMARY_CONTAINER,
+  LIQUID_COLOR_TERTIARY,
+} from './liquidColors'
 
 export interface ContextBucketProps {
   usedPercentage: number | null
@@ -42,28 +48,42 @@ const getEmoji = (pct: number | null): string => {
   return '\u{1F975}'
 }
 
-const getColorClass = (
-  pct: number | null
-): { fill: string; bar: string; text: string } => {
+type ColorTier = 'primary' | 'tertiary' | 'error'
+
+const getColorTier = (pct: number | null): ColorTier => {
   if (pct !== null && pct >= 90) {
-    return {
-      fill: 'from-error/50 to-error',
-      bar: 'bg-error',
-      text: 'text-error',
-    }
+    return 'error'
   }
   if (pct !== null && pct >= 80) {
-    return {
-      fill: 'from-tertiary/50 to-tertiary',
-      bar: 'bg-tertiary',
-      text: 'text-tertiary',
-    }
+    return 'tertiary'
   }
 
-  return {
-    fill: 'from-primary-container/50 to-primary-container',
-    bar: 'bg-primary-container',
-    text: 'text-primary-container',
+  return 'primary'
+}
+
+const getTierColors = (
+  pct: number | null
+): { bar: string; text: string; hex: string } => {
+  switch (getColorTier(pct)) {
+    case 'error':
+      return {
+        bar: 'bg-error',
+        text: 'text-error',
+        hex: LIQUID_COLOR_ERROR,
+      }
+    case 'tertiary':
+      return {
+        bar: 'bg-tertiary',
+        text: 'text-tertiary',
+        hex: LIQUID_COLOR_TERTIARY,
+      }
+    case 'primary':
+    default:
+      return {
+        bar: 'bg-primary-container',
+        text: 'text-primary-container',
+        hex: LIQUID_COLOR_PRIMARY_CONTAINER,
+      }
   }
 }
 
@@ -75,7 +95,7 @@ export const ContextBucket = ({
 }: ContextBucketProps): ReactElement => {
   const pct = usedPercentage
   const effectivePct = pct ?? 0
-  const colors = getColorClass(pct)
+  const tierColors = getTierColors(pct)
   const emoji = getEmoji(pct)
   const totalTokens = totalInputTokens + totalOutputTokens
 
@@ -90,7 +110,7 @@ export const ContextBucket = ({
           CURRENT CONTEXT
         </span>
         <span
-          className={`font-mono text-xs font-semibold ${pct !== null ? colors.text : 'text-outline'}`}
+          className={`font-mono text-xs font-semibold ${pct !== null ? tierColors.text : 'text-outline'}`}
           data-testid="context-percentage"
         >
           {pct !== null ? `${Math.round(pct)}%` : '\u2014'}
@@ -115,24 +135,20 @@ export const ContextBucket = ({
             }}
           />
           {/* Fill */}
-          <div
-            className={`relative w-full bg-gradient-to-t ${colors.fill}`}
-            data-testid="bucket-fill"
-            style={{
-              height: `${effectivePct}%`,
-              transition: 'height 500ms ease',
-              boxShadow:
-                pct !== null && effectivePct > 0
-                  ? '0 -4px 12px var(--tw-shadow-color, rgba(203, 166, 247, 0.25))'
-                  : 'none',
-            }}
+          <LiquidFill
+            mode="fill"
+            pct={effectivePct}
+            color={tierColors.hex}
+            glow
+            className="h-full w-full"
+            testId="bucket-fill"
           />
         </div>
 
         {/* Scale */}
         <div className="flex flex-col justify-between py-0.5 font-mono text-[8px] text-outline">
           <span>{formatContextSize(contextWindowSize)}</span>
-          <span className={pct !== null ? colors.text : 'text-outline'}>
+          <span className={pct !== null ? tierColors.text : 'text-outline'}>
             {pct !== null ? `${formatTokens(totalTokens)}` : '\u2014'}
           </span>
           <span>0k</span>
@@ -142,7 +158,7 @@ export const ContextBucket = ({
       {/* Progress bar */}
       <div className="mb-2 h-[5px] overflow-hidden rounded-full bg-surface">
         <div
-          className={`h-full rounded-full ${colors.bar}`}
+          className={`h-full rounded-full ${tierColors.bar}`}
           data-testid="progress-bar-fill"
           style={{
             width: `${effectivePct}%`,

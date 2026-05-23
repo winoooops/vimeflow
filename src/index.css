@@ -163,10 +163,11 @@
   background: #4a444f;
 }
 
-/* Agent activity rail bucket animations.
-   Two opposing sine-wave translations create the ripple; vfSlosh tilts
-   the whole liquid mass < 1deg. Honors prefers-reduced-motion. */
-@keyframes vfWaveA {
+/* Liquid bucket animations (used by both Bucket and ContextBucket via
+   LiquidFill). Two opposing sine-wave translations create the ripple;
+   vfLiquidSlosh tilts the whole liquid mass < 1deg. Honors
+   prefers-reduced-motion. */
+@keyframes vfLiquidWaveA {
   from {
     transform: translateX(0);
   }
@@ -175,7 +176,7 @@
   }
 }
 
-@keyframes vfWaveB {
+@keyframes vfLiquidWaveB {
   from {
     transform: translateX(-50%);
   }
@@ -184,7 +185,7 @@
   }
 }
 
-@keyframes vfSlosh {
+@keyframes vfLiquidSlosh {
   0%,
   100% {
     transform: translateX(0) rotate(0deg);
@@ -194,22 +195,26 @@
   }
 }
 
-.vf-bucket-wave-a {
-  animation: vfWaveA 3.4s linear infinite;
+.vf-liquid-wave-a {
+  animation: vfLiquidWaveA 3.4s linear infinite;
 }
 
-.vf-bucket-wave-b {
-  animation: vfWaveB 4.8s linear infinite;
+.vf-liquid-wave-b {
+  animation: vfLiquidWaveB 4.8s linear infinite;
 }
 
-.vf-bucket-slosh {
-  animation: vfSlosh 2.6s ease-in-out infinite;
+.vf-liquid-slosh {
+  animation: vfLiquidSlosh 2.6s ease-in-out infinite;
+}
+
+.vf-liquid-slosh[data-interactive='on'] {
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vf-bucket-wave-a,
-  .vf-bucket-wave-b,
-  .vf-bucket-slosh {
+  .vf-liquid-wave-a,
+  .vf-liquid-wave-b,
+  .vf-liquid-slosh {
     animation: none;
   }
 }

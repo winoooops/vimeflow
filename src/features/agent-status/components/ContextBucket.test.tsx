@@ -1,7 +1,17 @@
-import { describe, test, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, test } from 'vitest'
+import {
+  MockResizeObserver,
+  installMockResizeObserver,
+} from '../../../test/mockResizeObserver'
 import { ContextBucket, formatTokens, formatContextSize } from './ContextBucket'
 import type { ContextBucketProps } from './ContextBucket'
+import { computeBaseFloor } from './LiquidFill'
+import {
+  LIQUID_COLOR_PRIMARY_CONTAINER,
+  LIQUID_COLOR_TERTIARY,
+  LIQUID_COLOR_ERROR,
+} from './liquidColors'
 
 const defaultProps: ContextBucketProps = {
   usedPercentage: 50,
@@ -37,8 +47,7 @@ describe('ContextBucket', () => {
     test('renders 0% fill when usedPercentage is null', () => {
       render(<ContextBucket {...defaultProps} usedPercentage={null} />)
 
-      const fill = screen.getByTestId('bucket-fill')
-      expect(fill.style.height).toBe('0%')
+      expect(screen.queryByTestId('liquid-base')).not.toBeInTheDocument()
     })
 
     test('renders dash for percentage when usedPercentage is null', () => {
@@ -57,25 +66,65 @@ describe('ContextBucket', () => {
   })
 
   describe('fill height at various percentages', () => {
-    test('renders 50% fill height', () => {
-      render(<ContextBucket {...defaultProps} usedPercentage={50} />)
+    const REAL_FILL_W = 300
+    const REAL_FILL_H = 72
 
-      const fill = screen.getByTestId('bucket-fill')
-      expect(fill.style.height).toBe('50%')
+    beforeEach(() => {
+      installMockResizeObserver()
+    })
+
+    const getWrapperTy = (container: HTMLElement): number => {
+      // eslint-disable-next-line testing-library/no-node-access -- SVG transform style is not reachable via a11y queries
+      const wrapperEl = container.querySelector(
+        '[data-testid="liquid-water-y-base"]'
+      )
+      expect(wrapperEl).not.toBeNull()
+      const wrapper = wrapperEl as HTMLElement
+      const match = /translateY\((.+?)px\)/.exec(wrapper.style.transform)
+
+      return parseFloat(match?.[1] ?? '0')
+    }
+
+    test('renders 50% fill height', () => {
+      const { container } = render(
+        <ContextBucket {...defaultProps} usedPercentage={50} />
+      )
+      act(() => {
+        MockResizeObserver.instances[0]?.trigger({
+          width: REAL_FILL_W,
+          height: REAL_FILL_H,
+        })
+      })
+      const expectedY = computeBaseFloor(REAL_FILL_W, REAL_FILL_H, 50)
+      expect(getWrapperTy(container)).toBeCloseTo(expectedY, 1)
     })
 
     test('renders 74% fill height', () => {
-      render(<ContextBucket {...defaultProps} usedPercentage={74} />)
-
-      const fill = screen.getByTestId('bucket-fill')
-      expect(fill.style.height).toBe('74%')
+      const { container } = render(
+        <ContextBucket {...defaultProps} usedPercentage={74} />
+      )
+      act(() => {
+        MockResizeObserver.instances[0]?.trigger({
+          width: REAL_FILL_W,
+          height: REAL_FILL_H,
+        })
+      })
+      const expectedY = computeBaseFloor(REAL_FILL_W, REAL_FILL_H, 74)
+      expect(getWrapperTy(container)).toBeCloseTo(expectedY, 1)
     })
 
     test('renders 90% fill height', () => {
-      render(<ContextBucket {...defaultProps} usedPercentage={90} />)
-
-      const fill = screen.getByTestId('bucket-fill')
-      expect(fill.style.height).toBe('90%')
+      const { container } = render(
+        <ContextBucket {...defaultProps} usedPercentage={90} />
+      )
+      act(() => {
+        MockResizeObserver.instances[0]?.trigger({
+          width: REAL_FILL_W,
+          height: REAL_FILL_H,
+        })
+      })
+      const expectedY = computeBaseFloor(REAL_FILL_W, REAL_FILL_H, 90)
+      expect(getWrapperTy(container)).toBeCloseTo(expectedY, 1)
     })
   })
 
@@ -111,11 +160,17 @@ describe('ContextBucket', () => {
 
   describe('color shifts', () => {
     test('uses primary colors below 80%', () => {
-      render(<ContextBucket {...defaultProps} usedPercentage={50} />)
+      const { container } = render(
+        <ContextBucket {...defaultProps} usedPercentage={50} />
+      )
 
-      const fill = screen.getByTestId('bucket-fill')
-      expect(fill.className).toContain('from-primary-container/50')
-      expect(fill.className).toContain('to-primary-container')
+      // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
+      const stops = container.querySelectorAll(
+        'linearGradient[id^="liquid-fill-"] stop'
+      )
+      expect(stops[0]?.getAttribute('stop-color')).toBe(
+        LIQUID_COLOR_PRIMARY_CONTAINER
+      )
 
       const bar = screen.getByTestId('progress-bar-fill')
       expect(bar.className).toContain('bg-primary-container')
@@ -125,11 +180,15 @@ describe('ContextBucket', () => {
     })
 
     test('shifts to warning (tertiary) at 80%', () => {
-      render(<ContextBucket {...defaultProps} usedPercentage={80} />)
+      const { container } = render(
+        <ContextBucket {...defaultProps} usedPercentage={80} />
+      )
 
-      const fill = screen.getByTestId('bucket-fill')
-      expect(fill.className).toContain('from-tertiary/50')
-      expect(fill.className).toContain('to-tertiary')
+      // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
+      const stops = container.querySelectorAll(
+        'linearGradient[id^="liquid-fill-"] stop'
+      )
+      expect(stops[0]?.getAttribute('stop-color')).toBe(LIQUID_COLOR_TERTIARY)
 
       const bar = screen.getByTestId('progress-bar-fill')
       expect(bar.className).toContain('bg-tertiary')
@@ -139,11 +198,15 @@ describe('ContextBucket', () => {
     })
 
     test('shifts to error at 90%', () => {
-      render(<ContextBucket {...defaultProps} usedPercentage={90} />)
+      const { container } = render(
+        <ContextBucket {...defaultProps} usedPercentage={90} />
+      )
 
-      const fill = screen.getByTestId('bucket-fill')
-      expect(fill.className).toContain('from-error/50')
-      expect(fill.className).toContain('to-error')
+      // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
+      const stops = container.querySelectorAll(
+        'linearGradient[id^="liquid-fill-"] stop'
+      )
+      expect(stops[0]?.getAttribute('stop-color')).toBe(LIQUID_COLOR_ERROR)
 
       const bar = screen.getByTestId('progress-bar-fill')
       expect(bar.className).toContain('bg-error')
@@ -154,11 +217,11 @@ describe('ContextBucket', () => {
   })
 
   describe('CSS transition', () => {
-    test('has height transition on bucket fill', () => {
+    test('has transform transition on liquid wave', () => {
       render(<ContextBucket {...defaultProps} usedPercentage={50} />)
 
-      const fill = screen.getByTestId('bucket-fill')
-      expect(fill.style.transition).toBe('height 500ms ease')
+      const waveY = screen.getByTestId('liquid-water-y-b')
+      expect(waveY.style.transition).toBe('transform 500ms ease')
     })
   })
 
