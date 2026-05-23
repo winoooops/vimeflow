@@ -11,6 +11,10 @@ pub mod codex;
 pub mod types;
 
 pub(crate) use attach::AttachContext;
+// `SessionRuntimeContext` (also in `attach`) is not re-exported yet —
+// step 0b only defines the type; the first production caller lands in
+// step B'' when `TranscriptState::start_or_replace` rewires onto it.
+// Tests reach it directly as `attach::SessionRuntimeContext`.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -381,5 +385,27 @@ mod noop_tests {
         assert_eq!(attach.agent_type, AgentType::Aider);
         // Aider has no `home_subdir` in the registry → provider_home is None.
         assert_eq!(attach.provider_home, None);
+    }
+
+    /// Step 0b: `SessionRuntimeContext::live_cwd` returns the cwd the
+    /// session was inserted with, surfaced as the `PathBuf` that the
+    /// transcript-replace caller already consumes. Confirms the
+    /// "session present → Some(cwd)" branch end-to-end with a real
+    /// PTY-backed `ManagedSession` from `make_test_session`.
+    #[test]
+    fn session_runtime_context_live_cwd_reads_pty_state() {
+        use super::attach::SessionRuntimeContext;
+
+        let state = PtyState::new();
+        let session_id = "sid-runtime-live".to_string();
+        state
+            .try_insert(session_id.clone(), make_test_session(), 64)
+            .unwrap_or_else(|_| panic!("insert session"));
+
+        let runtime = SessionRuntimeContext::new(session_id.clone(), state);
+
+        // `make_test_session` inserts cwd = "/tmp/workspace".
+        assert_eq!(runtime.live_cwd(), Some(PathBuf::from("/tmp/workspace")));
+        assert_eq!(runtime.session_id(), "sid-runtime-live");
     }
 }
