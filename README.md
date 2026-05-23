@@ -29,6 +29,7 @@ Development on non-Linux systems may work, but the current supported build path 
 Prerequisites:
 
 - Node.js >= 22; Node 24 from `.nvmrc` is preferred for CI parity
+- `nvm` is optional but recommended for using `.nvmrc`; skip `nvm use` if Node 24 is already active through another manager
 - Rust stable toolchain
 - Git
 - Linux for the supported AppImage packaging path
@@ -36,7 +37,7 @@ Prerequisites:
 ```bash
 git clone https://github.com/winoooops/vimeflow.git
 cd vimeflow
-nvm use
+nvm use # Optional: switches to Node 24 from .nvmrc
 npm ci
 ```
 

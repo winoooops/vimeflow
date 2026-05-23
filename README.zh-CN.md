@@ -29,6 +29,7 @@ Vimeflow 目前**仅支持从源码构建和使用 0.1.0 版本**。
 前置条件：
 
 - Node.js >= 22；推荐使用 `.nvmrc` 中的 Node 24 以对齐 CI
+- `nvm` 是可选但推荐的 `.nvmrc` 读取工具；如果已通过其他工具启用 Node 24，可跳过 `nvm use`
 - Rust stable 工具链
 - Git
 - Linux（用于当前受支持的 AppImage 打包路径）
@@ -36,7 +37,7 @@ Vimeflow 目前**仅支持从源码构建和使用 0.1.0 版本**。
 ```bash
 git clone https://github.com/winoooops/vimeflow.git
 cd vimeflow
-nvm use
+nvm use # 可选：切换到 .nvmrc 中的 Node 24
 npm ci
 ```
 
