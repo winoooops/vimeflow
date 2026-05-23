@@ -75,6 +75,12 @@ interface Geom {
   wavePathB: string
 }
 
+const applyBaseFloorClamp = (
+  top: number,
+  ambientAmp: number,
+  h: number
+): number => Math.min(top + ambientAmp + 0.5, h)
+
 /**
  * Returns the y coordinate (in SVG user units) of the solid-fill body's
  * top edge for a given container size and percentage. Exported for
@@ -86,7 +92,7 @@ export const computeBaseFloor = (w: number, h: number, pct: number): number => {
   const top = h - liquidH
   const ambientAmp = Math.min(1.8, w * 0.09)
 
-  return Math.min(top + ambientAmp + 0.5, h)
+  return applyBaseFloorClamp(top, ambientAmp, h)
 }
 
 const computeGeom = (w: number, h: number, pct: number): Geom => {
@@ -94,7 +100,7 @@ const computeGeom = (w: number, h: number, pct: number): Geom => {
   const liquidH = (h - 4) * (clamped / 100)
   const top = h - liquidH
   const ambientAmp = Math.min(1.8, w * 0.09)
-  const baseFloor = computeBaseFloor(w, h, pct)
+  const baseFloor = applyBaseFloorClamp(top, ambientAmp, h)
   // waveA at phase 0, waveB at phase 0.125. With cycles=4, the second
   // wave is shifted by 0.5 cycles (180°) relative to the first — the
   // maximum visible contrast that still preserves the seamless-loop

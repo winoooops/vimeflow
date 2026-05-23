@@ -161,6 +161,7 @@ describe('useWaterCursor — skeleton + reduced-motion gate', () => {
     const kinds = removeSpy.mock.calls.map((c: string[]) => c[0])
     expect(kinds).toContain('pointermove')
     expect(kinds).toContain('pointerleave')
+    expect(kinds).toContain('vfliquidwake')
   })
 })
 

@@ -61,29 +61,15 @@ const getColorTier = (pct: number | null): ColorTier => {
   return 'primary'
 }
 
-const getColorClass = (
-  pct: number | null
-): { fill: string; bar: string; text: string } => {
+const getColorClass = (pct: number | null): { bar: string; text: string } => {
   switch (getColorTier(pct)) {
     case 'error':
-      return {
-        fill: 'from-error/50 to-error',
-        bar: 'bg-error',
-        text: 'text-error',
-      }
+      return { bar: 'bg-error', text: 'text-error' }
     case 'tertiary':
-      return {
-        fill: 'from-tertiary/50 to-tertiary',
-        bar: 'bg-tertiary',
-        text: 'text-tertiary',
-      }
+      return { bar: 'bg-tertiary', text: 'text-tertiary' }
     case 'primary':
     default:
-      return {
-        fill: 'from-primary-container/50 to-primary-container',
-        bar: 'bg-primary-container',
-        text: 'text-primary-container',
-      }
+      return { bar: 'bg-primary-container', text: 'text-primary-container' }
   }
 }
 
