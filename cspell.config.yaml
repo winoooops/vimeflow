@@ -101,6 +101,8 @@ words:
   - pty
   - termios
   - statusline
+  - nvim
+  - DECRQM
 
 ignorePaths:
   - node_modules
