@@ -56,11 +56,11 @@ const NON_MODAL_FOCUS = false
 const IS_MAC = isMacPlatform()
 
 const COPY_SHORTCUT = formatShortcut(
-  IS_MAC ? ['Mod', 'C'] : ['Ctrl', 'Shift', 'C'],
+  IS_MAC ? ['Mod', 'C'] : ['Ctrl', 'Shift', 'C']
 )
 
 const PASTE_SHORTCUT = formatShortcut(
-  IS_MAC ? ['Mod', 'Shift', 'V'] : ['Ctrl', 'Shift', 'V'],
+  IS_MAC ? ['Mod', 'Shift', 'V'] : ['Ctrl', 'Shift', 'V']
 )
 
 export const TerminalContextMenu = ({
