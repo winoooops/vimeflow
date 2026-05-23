@@ -473,6 +473,23 @@ mod status_source_tests {
             src.static_transcript_hint.as_deref(),
             Some(rollout_path.to_string_lossy().as_ref()),
         );
+        // Back-compat check: the production write path
+        // (`located_status_source` itself) still populates the
+        // deprecated mutex slot. Pinning this directly here (rather
+        // than only in the parse-side test) ensures a future edit
+        // that drops the `*slot = Some(...)` assignment is caught
+        // even though `parse_status` no longer surfaces the value.
+        assert_eq!(
+            adapter
+                .resolved_rollout_path
+                .lock()
+                .ok()
+                .and_then(|slot| slot.clone()),
+            Some(rollout_path.clone()),
+            "located_status_source must keep populating the deprecated \
+             resolved_rollout_path mutex for back-compat until a later \
+             step removes the field"
+        );
     }
 
     #[test]

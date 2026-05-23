@@ -25,12 +25,14 @@ impl TranscriptPathSource for ClaudeCodeAdapter {
     // inside every statusline JSON update.
 
     fn dynamic_hint(&self, raw: &str) -> Option<RawPath> {
-        // Light JSON pass extracts only `transcript_path`; the full
-        // statusline parse still runs once per update via
-        // `parse_status` for the event side of the contract. The
-        // sibling parse here keeps `TranscriptPathSource` honest as a
-        // standalone trait — when B' moves it off `AgentAdapter`
-        // entirely, this code path stays unchanged.
+        // Re-parses the JSON to surface just `transcript_path`. The
+        // win vs. calling `parse_statusline` here is skipping the
+        // event construction, NOT skipping the JSON parse itself —
+        // see `statusline::extract_transcript_path` docs for the
+        // detail and the deferred-optimization escape hatch. Keeps
+        // `TranscriptPathSource` honest as a standalone trait — when
+        // B' moves it off `AgentAdapter` entirely, this code path
+        // stays unchanged.
         statusline::extract_transcript_path(raw)
     }
 }

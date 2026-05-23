@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
-use crate::agent::types::AgentStatusEvent;
+use crate::agent::types::{
+    AgentStatusEvent, ContextWindowStatus, CostMetrics, RateLimits,
+};
 
 /// Raw, untrusted, not-yet-validated transcript path emitted by either
 /// the locator at attach time (via
@@ -45,23 +47,43 @@ pub struct LocatedStatusSource {
     pub static_transcript_hint: Option<RawPath>,
 }
 
-/// Decoder output — provider-neutral status state.
+/// Decoder output — provider-neutral status state, **session-id-free**
+/// and **transcript-path-free**.
 ///
 /// Defined in step 0c per the v4-frozen plan; reserved for the
 /// state-decoder split (Step B') that moves status decoding off the
 /// `AgentAdapter` trait. For 0c the type exists but no caller consumes
-/// it directly — `parse_status` continues to return [`ParsedStatus`],
-/// which has lost its `transcript_path` field in this step.
+/// it directly — `parse_status` continues to return [`ParsedStatus`]
+/// (a session-id-stamped envelope built by runtime code), which has
+/// lost its `transcript_path` field in this step.
 ///
-/// Distinct from `ParsedStatus` in two ways: (a) `session_id` lives on
-/// the embedded event today and B' will lift it out so the decoder
-/// becomes session-id-free, and (b) `StatusSnapshot` never carries a
-/// transcript path — that lookup is fully owned by
-/// [`TranscriptPathSource`].
+/// Distinct from `ParsedStatus`/`AgentStatusEvent` in two structural
+/// ways:
+///
+/// 1. No `session_id` — the Vimeflow PTY session id is a runtime fact,
+///    not a decoder output. Future Step B' will have the decoder
+///    return this type, and the runtime composes
+///    `AgentStatusEvent { session_id, ..snapshot }` afterwards.
+/// 2. No transcript path — that lookup is fully owned by
+///    [`TranscriptPathSource`]; the decoder never surfaces it.
+///
+/// Field set mirrors the non-`session_id` fields of
+/// [`AgentStatusEvent`]. A future B' commit changes the conversion
+/// from "manual struct build" to a `From<StatusSnapshot> for
+/// AgentStatusEvent` plus the runtime-supplied id.
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct StatusSnapshot {
-    pub event: AgentStatusEvent,
+    /// Agent's internal session id (distinct from the Vimeflow PTY
+    /// session id, which lives on `AgentStatusEvent.session_id` and is
+    /// stamped by runtime code, not by the decoder).
+    pub agent_session_id: String,
+    pub model_id: String,
+    pub model_display_name: String,
+    pub version: String,
+    pub context_window: ContextWindowStatus,
+    pub cost: CostMetrics,
+    pub rate_limits: RateLimits,
 }
 
 /// Statusline-parser output as consumed by `base/watcher_runtime`.
