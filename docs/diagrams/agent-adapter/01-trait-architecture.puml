@@ -1,0 +1,88 @@
+@startuml
+title 1. AgentAdapter — trait + implementations
+
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+package "adapter::types" #EEE {
+  class StatusSource {
+    +path: PathBuf
+    +trust_root: PathBuf
+  }
+  class ParsedStatus {
+    +event: AgentStatusEvent
+    +transcript_path: Option<String>
+  }
+  enum ValidateTranscriptError {
+    NotFound
+    OutsideRoot
+    NotAFile
+    InvalidPath
+    Other
+  }
+}
+
+package "adapter::base" #DEF {
+  class TranscriptHandle <<RAII>>
+  class TranscriptState
+  class AgentWatcherState
+  class WatcherHandle <<RAII>>
+}
+
+interface "AgentAdapter\n(Send + Sync + 'static)" as AA {
+  +agent_type() : AgentType
+  +status_source(cwd, sid) : StatusSource
+  +parse_status(sid, raw) : ParsedStatus
+  +validate_transcript(raw) : PathBuf
+  +tail_transcript(events, sid, cwd, path) : TranscriptHandle
+}
+
+class "<<dyn AgentAdapter>>\n(impl on trait object)" as DYN {
+  +for_attach(type, pid, pty_start) : Arc<Self>
+  +start(events, pty, ts, sid, cwd, ws) : ()
+  +stop(ws, sid) : bool
+}
+
+class ClaudeCodeAdapter {
+  (empty marker struct)
+}
+class CodexAdapter {
+  -pid : u32
+  -pty_start : SystemTime
+  -codex_home : PathBuf
+  -locator_cache : OnceLock<CompositeLocator>
+  -resolved_rollout_path : Mutex<Option<PathBuf>>
+}
+class NoOpAdapter {
+  -agent_type : AgentType
+}
+
+AA <|.. ClaudeCodeAdapter
+AA <|.. CodexAdapter
+AA <|.. NoOpAdapter
+
+DYN ..> AA : built on top of\nthe trait object
+
+AA ..> StatusSource : returns
+AA ..> ParsedStatus : returns
+AA ..> ValidateTranscriptError : returns
+AA ..> TranscriptHandle : returns
+
+DYN ..> AgentWatcherState : insert/remove
+DYN ..> TranscriptState : passed into start()
+
+note bottom of DYN
+  base::start_for(adapter, events, pty,
+                  transcript_state, sid, cwd, ws)
+  is the watcher orchestration body.
+  The trait only carries provider hooks.
+end note
+
+note right of CodexAdapter
+  Stateful — caches a CompositeLocator
+  and the resolved rollout path so
+  parse_status() can echo it back as
+  ParsedStatus.transcript_path.
+end note
+
+@enduml

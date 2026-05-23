@@ -1,0 +1,59 @@
+@startuml
+title 5. Lifecycle — attach + status watch + transcript tail
+
+skinparam responseMessageBelowArrow true
+
+participant "Electron IPC\n(start_agent_watcher)" as ipc
+participant "adapter::mod\nstart_agent_watcher_inner" as outer
+participant "<<dyn AgentAdapter>>\n::for_attach" as factory
+participant "Adapter\n(ClaudeCode | Codex)" as adapter
+participant "base::start_for" as sf
+participant "watcher_runtime\n::start_watching" as sw
+participant "TranscriptState" as ts
+participant "tail thread\n(TranscriptHandle)" as th
+participant "EventSink" as sink
+
+ipc -> outer : session_id
+outer -> outer : resolve_bind_inputs\n(cwd, pid, pty_start, agent_type)
+outer -> factory : for_attach(type, pid, pty_start)
+factory --> outer : Arc<dyn AgentAdapter>
+outer -> outer : spawn_blocking
+outer -> adapter : start(events, pty, ts, sid, cwd, ws)
+adapter -> sf : base::start_for(...)
+
+sf -> adapter : status_source(cwd, sid)
+note right of adapter
+  Claude Code: trivial path build.
+  Codex: retry_locator(...) — up to
+  5×100 ms on NotYetReady; caches
+  resolved_rollout_path on success.
+end note
+adapter --> sf : StatusSource{path, trust_root}
+
+sf -> sf : ensure_status_source_under_trust_root\n(two-phase canonicalize)
+sf -> sw : start_watching(adapter, events, pty, ts, sid, path)
+
+sw -> sw : notify::recommended_watcher\n+ spawn 3 s poll thread\n+ inline-init read of file
+
+== On each statusline change ==
+sw -> adapter : parse_status(sid, raw)
+adapter --> sw : ParsedStatus{event, transcript_path?}
+sw -> sink : emit agent-status
+
+opt transcript_path present
+  sw -> adapter : validate_transcript(raw)
+  adapter --> sw : canonical PathBuf
+  sw -> ts : start_or_replace(adapter, events, sid, path, cwd)
+  note right of ts
+    Per-session start_gate Mutex held
+    during stop(old) → spawn(new)
+    to avoid duplicate replay.
+  end note
+  ts -> adapter : tail_transcript(events, sid, cwd, path)
+  adapter -> th : spawn tail loop
+  adapter --> ts : TranscriptHandle
+  ts --> sw : TranscriptStartStatus
+  th -> sink : emit agent-tool-call /\nagent-turn / agent-cwd / test-run
+end
+
+@enduml
