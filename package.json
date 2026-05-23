@@ -57,6 +57,7 @@
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@fontsource-variable/manrope": "^5.2.8",
     "@fontsource-variable/material-symbols-outlined": "^5.2.43",
+    "@pierre/diffs": "^1.2.2",
     "@replit/codemirror-vim": "^6.3.0",
     "@xterm/addon-canvas": "^0.7.0",
     "@xterm/addon-fit": "^0.11.0",
