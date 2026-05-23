@@ -2,292 +2,114 @@
 
 <div align="center">
 
-**A CLI Agent Control Plane for the Terminal-First Era**
+**A terminal-first workspace for AI coding agents**
 
-🇺🇸 English | [🇨🇳 简体中文](./README.zh-CN.md)
+English | [简体中文](./README.zh-CN.md)
 
-</div>
-
-<div align="center">
-
-<img src="docs/media/hero-init.gif" alt="Spawning a Claude Code session in Vimeflow and running /init — the agent panel auto-detects and streams tool calls live" width="900" />
-
-<sub>Spawn <code>claude</code>, run <code>/init</code>, watch the agent panel auto-detect and stream tool calls live.</sub>
+<img src="docs/media/hero-init.gif" alt="Starting a Claude Code session in Vimeflow and watching the agent panel stream tool calls" width="900" />
 
 </div>
 
-> An Electron desktop app that unifies terminal sessions, file explorer, code editor, and git diff into a single workspace — purpose-built for AI coding agents like Claude Code and Codex.
+Vimeflow is an Electron desktop app with a Rust `vimeflow-backend` sidecar. It brings terminal sessions, multi-pane layouts, file browsing, code editing, git diff review, command palette actions, and live Claude Code / Codex observability into one workspace.
 
-Vimeflow is a **CLI coding agent control plane** built with Electron 42 (renderer: React + TypeScript) on top of a long-lived `vimeflow-backend` Rust sidecar (PTY, filesystem, git, agent observability) over LSP-framed JSON IPC. It gives you one window to manage terminal sessions where AI agents work, browse files, review diffs, and edit code — all with vim-style keybindings and a dark atmospheric UI.
+## Current Support
 
-> Historical note: Vimeflow was originally a Tauri 2 desktop app. The Electron migration ([retrospective](docs/superpowers/retros/2026-05-16-electron-migration.md), PRs [#209](https://github.com/winoooops/vimeflow/pull/209) / [#210](https://github.com/winoooops/vimeflow/pull/210) / [#211](https://github.com/winoooops/vimeflow/pull/211)) replaced the Tauri shell with Electron + a runtime-neutral Rust sidecar in May 2026.
+Vimeflow currently supports **version 0.1.0 from source code only**.
 
-But the product is only half the story. This repository is also a testbed for **Lifeline-driven, AI-native development**: an autonomous agent loop builds features from specification, governed by layered rules and specialized agents.
+- Supported release line: `0.1.0`
+- Supported packaged target: Linux AppImage built locally from source
+- Desktop runtime: Electron 42 + Rust sidecar over LSP-framed JSON IPC
+- Agent observability: Claude Code and Codex
+- Not yet supported: hosted binary releases, macOS / Windows packaging, signing, or auto-update
 
-## What's Built
+Development on non-Linux systems may work, but the current supported build path is source checkout plus the Linux AppImage target.
 
-![Vimeflow workspace — Icon Rail, Sidebar, Terminal Zone with an active Claude Code session, and the Agent Status panel](docs/media/workspace-overview.png)
+## Build And Run From Source
 
-### Terminal Core (Phase 3)
+Prerequisites:
 
-Full xterm.js terminal integrated with the `vimeflow-backend` Rust sidecar via Electron IPC:
-
-- **DesktopTerminalService** — singleton renderer-side bridge between xterm.js and `portable-pty` (renamed from `TauriTerminalService` in PR-D3)
-- Rust PTY commands: spawn, write, resize, kill — dispatched through `BackendState` methods; stdout streamed via `StdoutEventSink` events
-- Session caching per tab plus per-session multi-pane terminal layouts
-- ResizeObserver + FitAddon for responsive terminal sizing
-- WebGL renderer with Catppuccin Mocha theme
-
-### Workspace Shell (Phase 2 + UI Handoff)
-
-A terminal-first workspace inspired by IDE + terminal multiplexer patterns:
-
-- **Icon Rail** — project avatars and navigation
-- **Sidebar** — Sessions / Files tabs, handoff-styled session rows, status indicators, subtitles, state pills, and line deltas
-- **Session Tabs** — browser-style tabs wired to `useSessionManager`
-- **Terminal Zone** — primary workspace area with `SplitView` layouts (`single`, `vsplit`, `hsplit`, `threeRight`, `quad`) and 1-4 real xterm.js panes per session
-- **Layout Switcher** — toolbar for passive layout changes plus `Mod+1-4` pane focus and `Mod+\` layout cycling
-- **DockPanel** — editor and diff panels docked bottom / top / left / right with elastic resizing and keyboard-adjustable handles
-- **Agent Activity Panel** — status, metrics, collapsible sections, scoped to the active pane's PTY
-- **Context Switcher** — Sessions / Files tabs in the left sidebar; Editor / Diff live in the dock
-- **Status Bar** — compact workspace status row
-
-Current UI handoff progress is tracked in [`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml). Steps 1-5c2 are done (`#171`, `#173`, `#174`, `#190`, `#198`, `#199`, `#203`, `#204`), and follow-up chrome work has landed for DockPanel positioning / elastic resize / shared focus / shortcut tooltips (`#215`, `#218`, `#219`, `#224`). Remaining visual work includes auto-grow on layout pick, activity-panel polish, and the open shortcut-discovery issue for `Mod+\` / `Mod+B` ([#225](https://github.com/winoooops/vimeflow/issues/225)).
-
-### Agent Status Sidebar (Phase 4)
-
-Real-time agent observability panel that auto-detects running AI coding agents in terminal sessions. Supports **Claude Code** and **Codex** (since [#154](https://github.com/winoooops/vimeflow/pull/154)) with one shared frontend:
-
-- **`AgentAdapter` trait** — `crates/backend/src/agent/adapter/` defines a single trait (`status_source` / `parse_status` / `validate_transcript` / `tail_transcript`) that each agent's adapter implements; the watcher pipeline, frontend events, and panel UI are agent-agnostic
-- **Claude Code adapter** (`adapter/claude_code/`) — per-session shell script pipes Claude's statusline JSON to a watched file; the adapter parses it and emits sidecar events (`agent-detected`, `agent-status`, `agent-tool-call`, `agent-disconnected`)
-- **Codex adapter** (`adapter/codex/`) — schema-driven SQLite locator over `~/.codex/*.sqlite` (logs DB → thread_id, threads DB → rollout JSONL path) with `/proc`-driven Linux fast-paths and FS-scan fallback; fold `event_msg.token_count` into the same `AgentStatusEvent` shape Claude emits
-- **Rust backend orchestration** — `crates/backend/src/agent/` adds the agent detector (process tree polling), the `base::start_for` watcher driver (file-change notify + polling fallback), and per-adapter transcript JSONL tailers for tool-call / turn / test-run signals
-- **Frontend panel** — `src/features/agent-status/` with `useAgentStatus` hook subscribing to the sidecar event bus, plus components: StatusCard (identity + model badge), BudgetMetrics (adaptive ApiKey/Subscriber/Fallback layout — Codex sessions render Subscriber with rate-limit bars; Claude API-key sessions render the Cost cell), ContextBucket (fill gauge + progress bar driven by `last_token_usage` for Codex, `total_input_tokens` for Claude), ToolCallSummary (aggregated chips), RecentToolCalls, FilesChanged, TestResults, and ActivityFooter
-- **Auto-collapse** — panel is 0px when no agent detected, animates to 280px on detection, holds final state for 5s after disconnect
-- **ts-rs type codegen** — Rust types exported to `src/bindings/` for type-safe frontend consumption (`CostMetrics.totalCostUsd: number | null` distinguishes Codex's no-cost surface from Claude's reported cost)
-
-Design specs: [`2026-04-12-agent-status-sidebar/`](docs/superpowers/specs/2026-04-12-agent-status-sidebar/CLAUDE.md) (panel) · [`2026-05-02-claude-adapter-refactor-design.md`](docs/superpowers/specs/2026-05-02-claude-adapter-refactor-design.md) (trait abstraction, Stage 1) · [`2026-05-03-codex-adapter-stage-2-design.md`](docs/superpowers/specs/2026-05-03-codex-adapter-stage-2-design.md) (Codex adapter, Stage 2) · [`2026-05-04-codex-adapter-stage-2-scope-expansion.md`](docs/decisions/2026-05-04-codex-adapter-stage-2-scope-expansion.md) (ratified deviations)
-
-<p align="center">
-  <img src="docs/media/agent-status-sidebar.png" alt="Agent Status Sidebar — Current Context gauge, Token Cache block, Activity feed, Files Changed, Tests panel" width="280" />
-</p>
-
-<p align="center"><sub>Right panel close-up — Context gauge, Token Cache, Activity feed, Files Changed, and Tests panel. Driven by either a Claude Code or Codex session via the shared <code>AgentAdapter</code> trait.</sub></p>
-
-### Feature Modules
-
-| Module              | Description                                                                                                                   |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| **terminal**        | xterm.js + sidecar PTY IPC bridge, session management                                                                         |
-| **editor**          | IDE-style tabbed editor — CodeMirror 6, vim mode (@replit/codemirror-vim), vim status bar                                     |
-| **diff**            | Lazygit-style git diff viewer (side-by-side + unified, hunk navigation, stage/discard)                                        |
-| **files**           | File explorer tree with breadcrumbs, git status badges (M/A/D/U), drag-and-drop                                               |
-| **command-palette** | Vim-style `:` palette (global shortcut, fuzzy match, namespace drill-in) — built-in command registry shipping incrementally   |
-| **agent-status**    | Real-time agent observability panel — multi-agent (Claude Code + Codex) via the `AgentAdapter` trait                          |
-| **workspace**       | Layout shell composing the rail, sidebar, session tabs, SplitView terminal canvas, dock panel, status bar, and activity panel |
-
-![Editor with vim mode — `:w` typed, status bar shows -- NORMAL --](docs/media/editor-vim.png)
-
-![Diff Viewer — changed files list and a hunk with green added lines](docs/media/git-diff.png)
-
-### Quality
-
-- Vitest + Testing Library coverage across frontend/domain modules, plus Rust tests for backend modules
-- Accessibility-first test queries (`getByRole` over `getByText`)
-- Pre-commit hooks: ESLint + Prettier on staged files
-- Commit-msg hook: conventional commits via commitlint
-- Pre-push hook: full Vitest run
-
-### Linked worktrees inside the repo
-
-If you create linked worktrees inside the project, for example `git worktree add .claude/worktrees/feat-x ...`, add `.claude/worktrees/` to `.gitignore`. Otherwise the directory appears as untracked in `git status` from the main repo, and the watcher fires extra `git-status-changed` events for filesystem activity inside the worktree. Branch labels and the diff panel still stay correct; the watcher is just chattier than necessary.
-
-## Changelog
-
-See [`CHANGELOG.md`](./CHANGELOG.md) (English) or [`CHANGELOG.zh-CN.md`](./CHANGELOG.zh-CN.md) (简体中文) for the linear timeline of notable changes. Each entry may cross-link review patterns from [`docs/reviews/`](./docs/reviews/CLAUDE.md) that it applied, updated, or created — so the CHANGELOG is the _when_ and `docs/reviews/` is the _why_.
-
-## Tech Stack
-
-| Layer         | Technologies                                          |
-| ------------- | ----------------------------------------------------- |
-| **Desktop**   | Electron 42, Rust sidecar, portable-pty, tokio        |
-| **Frontend**  | React 19, TypeScript 5 (strict), Vite                 |
-| **Styling**   | Tailwind CSS v4, Catppuccin Mocha semantic tokens     |
-| **Terminal**  | xterm.js 6, WebGL addon, FitAddon                     |
-| **Editor**    | CodeMirror 6, @replit/codemirror-vim (vim mode)       |
-| **Animation** | Framer Motion 12                                      |
-| **Testing**   | Vitest 3, Testing Library                             |
-| **Quality**   | ESLint 9 (flat config), Prettier 3, Husky, commitlint |
-| **Git**       | simple-git 3, diff2html 3                             |
-
-## Design System: "The Obsidian Lens"
-
-Dark atmospheric UI built on the Catppuccin Mocha palette — treats UI as illuminated, translucent layers within a deep void.
-
-- **No visible borders** — use tonal depth and surface hierarchy (8 levels)
-- **Glassmorphism** for floating elements (60-80% opacity, 12-20px blur)
-- **Typography**: Manrope (headlines), Inter (body/labels), JetBrains Mono (code)
-- **Semantic tokens**: `bg-surface-container`, `text-on-surface`, `text-primary`, etc.
-
-Full spec: [`docs/design/DESIGN.md`](docs/design/DESIGN.md)
-
-## Quick Start
+- Node.js >= 22; Node 24 from `.nvmrc` is preferred for CI parity
+- Rust stable toolchain
+- Git
+- Linux for the supported AppImage packaging path
 
 ```bash
-# Prerequisites: Node >= 22 (Node 24 via .nvmrc for CI parity), Rust toolchain
-nvm use                          # Uses .nvmrc
-
-# Frontend only (no Rust backend; useful for renderer-only iteration)
-npm install
-npm run dev                      # Vite dev server at localhost:5173
-
-# Full desktop app (requires Rust)
-npm run electron:dev             # Electron + Rust sidecar (vimeflow-backend)
-
-# Linux dev hosts without a working Chromium sandbox
-VIMEFLOW_NO_SANDBOX=1 npm run electron:dev
-
-# Packaged Linux AppImage
-npm run electron:build           # Produces release/vimeflow-<version>-x64.AppImage
-
-# Tests
-npm test                         # Vitest suite
-npx vitest run src/path/file.test.tsx  # Single file
-
-# Quality
-npm run lint                     # ESLint (type-checked)
-npm run format:check             # Prettier check
-npm run type-check               # tsc -b
+git clone https://github.com/winoooops/vimeflow.git
+cd vimeflow
+nvm use
+npm ci
 ```
 
-### Shell Setup (OSC 7)
-
-The sidebar file explorer auto-syncs with the terminal's working directory. This relies on your shell emitting [OSC 7](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Operating-System-Commands) escape sequences when `cd` is used.
-
-| Shell    | Status                                            |
-| -------- | ------------------------------------------------- |
-| **zsh**  | Works out of the box                              |
-| **fish** | Works out of the box                              |
-| **bash** | Requires a one-time setup (adds `PROMPT_COMMAND`) |
+Run the desktop app from source:
 
 ```bash
-# Automatic setup (idempotent — safe to run multiple times)
+npm run electron:dev
+```
+
+On Linux hosts without a working Chromium sandbox:
+
+```bash
+VIMEFLOW_NO_SANDBOX=1 npm run electron:dev
+```
+
+Build the supported `0.1.0` AppImage:
+
+```bash
+npm run electron:build
+chmod +x release/vimeflow-0.1.0-x64.AppImage
+./release/vimeflow-0.1.0-x64.AppImage --no-sandbox
+```
+
+If the host does not provide `libfuse2`, use AppImage's fallback:
+
+```bash
+./release/vimeflow-0.1.0-x64.AppImage --appimage-extract-and-run --no-sandbox
+```
+
+## Use Vimeflow
+
+1. Start Vimeflow with `npm run electron:dev` or the locally built AppImage.
+2. Open a terminal pane and run `claude` or `codex`.
+3. Use the workspace to split panes, browse files, edit code, and review git diffs.
+4. The agent status panel appears when a supported agent is detected.
+
+For terminal working-directory sync, `zsh` and `fish` usually emit OSC 7 automatically. For `bash`, run:
+
+```bash
 ./scripts/setup-shell-osc7.sh
 ```
 
-Or add manually to `~/.bashrc`:
+## Lifeline And Harness Engineering
+
+This repository is also a practical harness-engineering project. Vimeflow's development workflow uses the [Lifeline Claude Code extension](https://github.com/winoooops/lifeline) for planning, autonomous implementation loops, reviews, PR requests, upstream review handling, and PR approval.
+
+Project-local setup notes live in [CLAUDE.md](./CLAUDE.md#lifeline-plugin-setup).
+
+## Verify A Checkout
 
 ```bash
-PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND;}"'printf "\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'
+npm run lint
+npm run format:check
+npm run type-check
+npm test
+cargo test --manifest-path crates/backend/Cargo.toml
 ```
 
-### Linux: AppImage smoke
-
-`npm run electron:build` produces `release/vimeflow-<version>-x64.AppImage`. On dev hosts without a SUID `chrome-sandbox`, launch with `--no-sandbox`:
+Regenerate TypeScript bindings after Rust type changes:
 
 ```bash
-chmod +x release/vimeflow-*.AppImage
-./release/vimeflow-*.AppImage --no-sandbox &
+npm run generate:bindings
 ```
 
-On hosts without `libfuse2`, fall back to `--appimage-extract-and-run --no-sandbox` (extracts to tmp and runs the unpacked tree). Post-PR-D3, the GTK/WebKitGTK renderer flags from the old Tauri setup (`WEBKIT_DISABLE_DMABUF_RENDERER=1`) are no longer needed — Electron ships its own Chromium.
+## Project References
 
-### Lifeline Plugin Setup
-
-The autonomous development workflow is provided by the dedicated [Lifeline Claude Code plugin](https://github.com/winoooops/lifeline). Lifeline provides `/lifeline:planner`, `/lifeline:loop`, `/lifeline:review`, `/lifeline:request-pr`, `/lifeline:upsource-review`, and `/lifeline:approve-pr`.
-
-```bash
-# 1. Register the Lifeline marketplace (one-time)
-/plugin marketplace add winoooops/lifeline
-
-# 2. Install the plugin
-/plugin install lifeline@lifeline
-
-# 3. Reload to activate
-/reload-plugins
-```
-
-After installation, Lifeline is cached under Claude Code's plugin cache and persists across sessions. Project-local usage notes live in [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup).
-
-> Plugin skills don't appear in `/` autocomplete due to a [known Claude Code bug](https://github.com/anthropics/claude-code/issues/18949). See [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup) for the optional autocomplete workaround.
-
-## Repository Structure
-
-```
-CLAUDE.md                   # AI navigation hub (agents start here)
-ARCHITECT.md                # Architecture decisions, Electron sidecar IPC patterns
-docs/design/DESIGN.md       # UI design system (single source of truth)
-
-src/
-├── features/
-│   ├── workspace/          # Workspace shell, session tabs/sidebar, DockPanel
-│   ├── terminal/           # xterm.js + DesktopTerminalService IPC bridge
-│   ├── editor/             # Tabbed code editor with CodeMirror 6 + vim mode
-│   ├── diff/               # Lazygit-style diff viewer
-│   ├── files/              # File explorer tree
-│   ├── command-palette/    # Vim-style command palette
-│   └── agent-status/       # Real-time agent observability panel
-├── components/             # Shared primitives (Tooltip)
-├── hooks/                  # Shared React hooks
-├── agents/                 # Agent metadata registry
-├── bindings/               # Generated Rust -> TypeScript types
-└── test/                   # Vitest setup
-
-Cargo.toml                  # Workspace root manifest (members = ["crates/backend"])
-Cargo.lock                  # Workspace lockfile (tracked at repo root)
-target/                     # Cargo workspace build dir (gitignored)
-.cargo/config.toml          # Cargo env: TS_RS_EXPORT_DIR = src/bindings/
-crates/                     # Rust workspace members
-└── backend/                # Renamed from src-tauri/
-    ├── src/
-    │   ├── bin/
-    │   │   └── vimeflow-backend.rs  # Sidecar binary entry — stdin/stdout LSP-framed JSON IPC
-    │   ├── lib.rs                   # Module declarations only (post-PR-D3 collapse)
-    │   ├── runtime/                 # BackendState, IPC router, EventSink trait
-    │   ├── terminal/                # PTY commands (_inner helpers + BackendState methods)
-    │   ├── filesystem/              # List/read/write commands with scope validation
-    │   ├── git/                     # Git status, diff, stage/unstage
-    │   └── agent/                   # Agent detector, statusline watcher, transcript parser
-    ├── Cargo.toml                   # Crate manifest (Tauri deps removed in PR-D3)
-    └── README.md                    # Crate-level orientation
-
-electron/                   # Electron desktop shell (PR-D1+)
-├── main.ts                 # App lifecycle + ipcMain + sidecar process orchestration
-├── preload.ts              # contextBridge.exposeInMainWorld('vimeflow', { invoke, listen })
-├── sidecar.ts              # LSP frame codec + pending-request map + shutdown escalation
-├── ipc-channels.ts         # Channel-name constants
-└── backend-methods.ts      # Production method allowlist
-
-electron-builder.yml        # Linux AppImage packaging config
-
-agents/                     # 10 specialized AI agent definitions
-rules/                      # Hierarchical dev standards (common + TS + Rust)
-```
-
-## The AI-Native Development Process
-
-Traditional projects have humans write code and AI assist. Vimeflow inverts this:
-
-1. **Humans write specs** — product requirements, design system, development rules
-2. **Lifeline builds features** — the dedicated plugin decomposes specs into a feature list and implements them incrementally
-3. **Specialized agents review the work** — 10 AI agents handle planning, TDD, code review, security, and documentation
-4. **Rules govern everything** — a hierarchical rule system (common + language-specific) ensures consistency without human intervention per commit
-
-Lifeline is the dedicated workflow plugin for Vimeflow's AI-native development loop. See [`CLAUDE.md`](CLAUDE.md#lifeline-plugin-setup) for Vimeflow-specific usage notes and <https://github.com/winoooops/lifeline> for the plugin runbook.
-
-## Roadmap
-
-| Phase      | Status      | Description                                                                 |
-| ---------- | ----------- | --------------------------------------------------------------------------- |
-| Phase 1    | Done        | Historical Tauri scaffold; superseded by the Electron sidecar runtime       |
-| Phase 2    | Done        | Workspace layout shell                                                      |
-| Phase 3    | Done        | Terminal core (xterm.js + Electron-sidecar PTY IPC)                         |
-| Phase 4    | Done        | Agent status sidebar (Claude Code / Codex detection, telemetry, UI)         |
-| UI Handoff | In progress | Multi-pane terminal canvas and DockPanel landed; remaining polish continues |
-| Phase 5    | Planned     | Durable session persistence/state                                           |
-| Phase 6+   | Planned     | Remaining context, usage, and desktop polish work                           |
-
-Progress tracked in [`docs/roadmap/progress.yaml`](docs/roadmap/progress.yaml).
+- Setup details: [SETUP.md](./SETUP.md)
+- Development commands and style: [DEVELOPMENT.md](./DEVELOPMENT.md)
+- Architecture and Electron sidecar IPC: [ARCHITECT.md](./ARCHITECT.md)
+- Design system: [DESIGN.md](./DESIGN.md) and [docs/design/UNIFIED.md](./docs/design/UNIFIED.md)
+- Current roadmap status: [docs/roadmap/progress.yaml](./docs/roadmap/progress.yaml)
+- Changelog: [CHANGELOG.md](./CHANGELOG.md) / [CHANGELOG.zh-CN.md](./CHANGELOG.zh-CN.md)
+- Backend crate notes: [crates/backend/README.md](./crates/backend/README.md)
 
 ## License
 
