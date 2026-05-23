@@ -336,9 +336,11 @@ export const useWaterCursor = (
       mql.removeEventListener('change', onMqlChange as EventListener)
       detach()
     }
-    // JSON.stringify(tune) is a stable primitive dep — re-runs only when tune
-    // VALUES change, not when callers pass a fresh inline-object identity each
-    // render (which would tear down and reattach the spring at 60fps).
+    // Effect deps intentionally narrow: wrapRef and refsRef are stable
+    // useRef objects (identity never changes); JSON.stringify(tune) covers
+    // tune VALUE changes without churning on object identity. The effect
+    // closure also reads refsRef.current internally — that's correct (it's
+    // a ref, not a reactive value).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wrapRef, refsRef, JSON.stringify(tune)])
 }

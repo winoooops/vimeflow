@@ -1,5 +1,10 @@
 import type { ReactElement } from 'react'
 import { LiquidFill } from './LiquidFill'
+import {
+  LIQUID_COLOR_ERROR,
+  LIQUID_COLOR_PRIMARY_CONTAINER,
+  LIQUID_COLOR_TERTIARY,
+} from './liquidColors'
 
 export interface ContextBucketProps {
   usedPercentage: number | null
@@ -70,14 +75,13 @@ const getColorClass = (
 
 const hexForColorClass = (pct: number | null): string => {
   if (pct !== null && pct >= 90) {
-    return '#ffb4ab' // tailwind.config.js:25 — error
+    return LIQUID_COLOR_ERROR
   }
-
   if (pct !== null && pct >= 80) {
-    return '#ff94a5' // tailwind.config.js:21 — tertiary
+    return LIQUID_COLOR_TERTIARY
   }
 
-  return '#cba6f7' // tailwind.config.js:10 — primary-container
+  return LIQUID_COLOR_PRIMARY_CONTAINER
 }
 
 export const ContextBucket = ({
