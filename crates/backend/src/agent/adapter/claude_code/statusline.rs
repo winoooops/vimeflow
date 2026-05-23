@@ -9,13 +9,19 @@ use crate::agent::types::{
 };
 use serde_json::Value;
 
-/// Parsed statusline result with the event and optional transcript path
+/// Parsed statusline result wrapping the typed status event.
+///
+/// Step 0c (post-upsource review) dropped the former
+/// `transcript_path: Option<String>` field — the watcher now resolves
+/// the transcript path independently via
+/// [`extract_transcript_path`] (which `TranscriptPathSource::dynamic_hint`
+/// calls). Keeping a parallel field here was dead code:
+/// `ClaudeCodeAdapter::parse_status` discards it and no test exercises
+/// the live extraction through this path.
 #[derive(Debug, Clone)]
 pub struct ParsedStatusline {
     /// The typed agent status event
     pub event: AgentStatusEvent,
-    /// Transcript path extracted from statusline (used by watcher to start tailing)
-    pub transcript_path: Option<String>,
 }
 
 /// `transcript_path` extractor — used by
@@ -68,9 +74,6 @@ pub fn parse_statusline(session_id: &str, json: &str) -> Result<ParsedStatusline
     // Extract rate limits
     let rate_limits = parse_rate_limits(&value);
 
-    // Extract transcript path
-    let transcript_path = transcript_path(&value);
-
     let event = AgentStatusEvent {
         session_id: session_id.to_string(),
         agent_session_id,
@@ -82,10 +85,11 @@ pub fn parse_statusline(session_id: &str, json: &str) -> Result<ParsedStatusline
         rate_limits,
     };
 
-    Ok(ParsedStatusline {
-        event,
-        transcript_path,
-    })
+    // Note: transcript_path extraction happens via the standalone
+    // `extract_transcript_path` helper (called by
+    // `TranscriptPathSource::dynamic_hint`). Not surfaced here.
+
+    Ok(ParsedStatusline { event })
 }
 
 /// Parse context window fields from a JSON value
@@ -494,11 +498,9 @@ mod tests {
         let seven_day = event.rate_limits.seven_day.as_ref().unwrap();
         assert!((seven_day.used_percentage - 5.0).abs() < f64::EPSILON);
 
-        // Transcript path
-        assert_eq!(
-            parsed.transcript_path.as_deref(),
-            Some("/home/user/.claude/sessions/abc-123/transcript.jsonl")
-        );
+        // Transcript path: pinned separately via
+        // `extract_transcript_path` tests below — `parse_statusline`
+        // no longer surfaces it as of Step 0c.
     }
 
     #[test]
@@ -520,7 +522,6 @@ mod tests {
         assert_eq!(event.context_window.context_window_size, 0);
         assert!(event.context_window.current_usage.is_none());
         assert_eq!(event.cost.total_cost_usd, None);
-        assert!(parsed.transcript_path.is_none());
     }
 
     #[test]
@@ -743,5 +744,28 @@ mod tests {
         let event = &result.unwrap().event;
         assert_eq!(event.model_id, "claude-opus-4-20250514");
         assert_eq!(event.model_display_name, "claude-opus-4-20250514");
+    }
+
+    /// Step 0c (post-upsource cycle 2): replaces the deleted
+    /// `parsed.transcript_path` assertions in `parses_full_statusline_json`
+    /// + `parses_minimal_json`. The semantic coverage migrates from
+    /// `parse_statusline`'s dropped field to the standalone
+    /// `extract_transcript_path` helper. The full live-path contract
+    /// (Claude adapter → `TranscriptPathSource::dynamic_hint`) is
+    /// covered in `claude_code/mod.rs::dynamic_hint_extracts_transcript_path_when_present`.
+    #[test]
+    fn extract_transcript_path_returns_field_when_present_else_none() {
+        let with_path = r#"{"transcript_path": "/home/u/.claude/sessions/x.jsonl", "model": {"id": "x"}}"#;
+        assert_eq!(
+            extract_transcript_path(with_path).as_deref(),
+            Some("/home/u/.claude/sessions/x.jsonl"),
+        );
+
+        let without_path = r#"{"model": {"id": "x"}}"#;
+        assert_eq!(extract_transcript_path(without_path), None);
+
+        // Lenient on malformed JSON — returns None instead of panicking.
+        let malformed = r#"{not valid json"#;
+        assert_eq!(extract_transcript_path(malformed), None);
     }
 }
