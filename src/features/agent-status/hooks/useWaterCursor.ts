@@ -82,6 +82,12 @@ export const useWaterCursor = (
     let lastT = performance.now()
     let active = false
 
+    // Tracks the animated water-top position — springs toward refs.waterTop each
+    // rAF frame so the sheen follows the 500ms CSS transition on pct changes
+    // instead of snapping to the new level instantly.
+    let currentWaterTop: number | null = null
+    let velWaterTop = 0
+
     const onMove = (e: PointerEvent): void => {
       const refs = refsRef.current
       if (refs === null) {
@@ -157,7 +163,10 @@ export const useWaterCursor = (
       const w = refs.dims.w
       const sheenX = w / 2 + cur.sheenX * (w / 2 - 1)
       refs.sheen.setAttribute('cx', sheenX.toFixed(2))
-      refs.sheen.setAttribute('cy', (refs.waterTop + cur.lift - 0.3).toFixed(2))
+      // Use the spring-animated currentWaterTop so the sheen tracks the 500ms
+      // CSS transition on pct changes instead of snapping to the new level.
+      const animatedTop = currentWaterTop ?? refs.waterTop
+      refs.sheen.setAttribute('cy', (animatedTop + cur.lift - 0.3).toFixed(2))
 
       refs.sheen.setAttribute('fill-opacity', (cur.sheenA * 0.55).toFixed(3))
     }
@@ -176,6 +185,9 @@ export const useWaterCursor = (
       refs.waveBAnim.style.animationDuration = ''
       refs.sheen.setAttribute('fill-opacity', '0')
       active = false
+      // Re-sync so the next attach starts from the correct instantaneous waterTop.
+      currentWaterTop = null
+      velWaterTop = 0
     }
 
     function ensureLoop(): void {
@@ -204,6 +216,20 @@ export const useWaterCursor = (
           vel[k] += a * dt
           cur[k] += vel[k] * dt
         }
+
+        // Spring-animate currentWaterTop toward refs.waterTop using the same
+        // critically-damped spring (omega w) so the sheen smoothly follows the
+        // 500ms CSS transition on pct changes instead of snapping instantly.
+        const refsNow = refsRef.current
+        if (refsNow !== null) {
+          currentWaterTop ??= refsNow.waterTop
+
+          const aTop =
+            -2 * w * velWaterTop - w * w * (currentWaterTop - refsNow.waterTop)
+          velWaterTop += aTop * dt
+          currentWaterTop += velWaterTop * dt
+        }
+
         apply()
 
         const settled =
@@ -214,7 +240,11 @@ export const useWaterCursor = (
           Math.abs(cur.skew - target.skew) < 0.02 &&
           Math.abs(cur.speedT - target.speedT) < 0.01 &&
           Math.abs(cur.sheenA - target.sheenA) < 0.01 &&
-          Math.abs(cur.sheenX - target.sheenX) < 0.01
+          Math.abs(cur.sheenX - target.sheenX) < 0.01 &&
+          // Keep looping while waterTop is still chasing the CSS transition.
+          (currentWaterTop === null ||
+            refsRef.current === null ||
+            Math.abs(currentWaterTop - refsRef.current.waterTop) < 0.02)
 
         const atRest =
           target.tilt === 0 &&
@@ -263,6 +293,19 @@ export const useWaterCursor = (
       }
       rafId = null
       clearInline()
+      // Reset spring state so the next attach starts from a clean slate.
+      // Without this, a reduced-motion toggle OFF mid-hover would resume from
+      // stale tilt/amp values and cause a visible 1-frame snap.
+      cur = initialTarget()
+      vel = initialVel()
+      target.tilt = 0
+      target.amp = 1
+      target.shiftX = 0
+      target.lift = 0
+      target.skew = 0
+      target.speedT = 0
+      target.sheenX = 0
+      target.sheenA = 0
     }
 
     const onMqlChange = (
@@ -284,5 +327,9 @@ export const useWaterCursor = (
       mql.removeEventListener('change', onMqlChange as EventListener)
       detach()
     }
-  }, [wrapRef, refsRef, tune])
+    // JSON.stringify(tune) is a stable primitive dep — re-runs only when tune
+    // VALUES change, not when callers pass a fresh inline-object identity each
+    // render (which would tear down and reattach the spring at 60fps).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wrapRef, refsRef, JSON.stringify(tune)])
 }
