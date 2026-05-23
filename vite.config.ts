@@ -674,6 +674,13 @@ export default defineConfig(({ mode }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },
+  build: {
+    // esbuild's minifier mangles @xterm/xterm 6.0.0's const-enum IIFE in
+    // requestMode (drops `let r`, rewrites `r ||= {}` as assignment to
+    // an undeclared `i`), throwing ReferenceError when a TUI sends DECRQM
+    // queries (nvim, less, htop). Terser preserves the pattern correctly.
+    minify: 'terser',
+  },
   server: {
     port: 5173,
     strictPort: true,
