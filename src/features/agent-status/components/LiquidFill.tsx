@@ -120,6 +120,11 @@ export const LiquidFill = ({
   const waveAAnimRef = useRef<SVGGElement | null>(null)
   const waveBAnimRef = useRef<SVGGElement | null>(null)
   const sheenRef = useRef<SVGEllipseElement | null>(null)
+  // Capture the initial sheen y. After mount, useWaterCursor owns the
+  // cy attribute via setAttribute — React must NOT re-commit cy on
+  // pct changes, or the sheen snaps to the new water level before
+  // the spring can chase it.
+  const initialSheenCyRef = useRef(geom.top)
 
   useEffect(() => {
     if (mode !== 'fill' || wrapRef.current === null) {
@@ -290,7 +295,7 @@ export const LiquidFill = ({
                   ref={sheenRef}
                   data-testid="liquid-sheen"
                   cx={w / 2}
-                  cy={geom.top}
+                  cy={initialSheenCyRef.current}
                   rx={Math.max(3, w * 0.27)}
                   ry="0.8"
                   fill={`url(#${sheenId})`}

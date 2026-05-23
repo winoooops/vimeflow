@@ -206,6 +206,33 @@ class MockResizeObserver {
   }
 }
 
+describe('LiquidFill — sheen cy stability', () => {
+  test('cy attribute is not re-committed by React when pct changes', () => {
+    const { container, rerender } = render(
+      <LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />
+    )
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
+    const sheen = container.querySelector('[data-testid="liquid-sheen"]')
+    expect(sheen).not.toBeNull()
+    const initialCy = sheen?.getAttribute('cy')
+
+    // Simulate the hook taking over: write a different cy via setAttribute.
+    sheen?.setAttribute('cy', '99.99')
+
+    // Re-render with a different pct (water rose).
+    rerender(<LiquidFill mode="bar" pct={80} color="#cba6f7" testId="lf" />)
+
+    // The cy we wrote via setAttribute must NOT be overwritten by React's
+    // commit. If React re-committed cy=geom.top, this would be a snapped
+    // value matching the new pct's top — not 99.99.
+    const cyAfterRerender = sheen?.getAttribute('cy')
+    expect(cyAfterRerender).toBe('99.99')
+    // The initial cy at mount must reflect the initial pct geometry.
+    expect(initialCy).not.toBeNull()
+    expect(parseFloat(initialCy ?? '0')).toBeGreaterThan(0)
+  })
+})
+
 describe('LiquidFill — fill mode', () => {
   beforeEach(() => {
     MockResizeObserver.instances = []
