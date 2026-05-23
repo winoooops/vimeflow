@@ -2,7 +2,7 @@
 
 [English](./CHANGELOG.md) | 简体中文
 
-本文件记录 Vimeflow 当前受支持的用户可见状态。更详细的实现时间线请查看 [docs/roadmap/progress.yaml](./docs/roadmap/progress.yaml)、[docs/superpowers/](./docs/superpowers/) 以及 [docs/reviews/](./docs/reviews/CLAUDE.md) 中的 review 知识库。
+本文件记录 Vimeflow 当前受支持的用户可见状态。更详细的实现时间线请查看 [docs/roadmap/progress.yaml](./docs/roadmap/progress.yaml)、[docs/superpowers/](./docs/superpowers/) 以及 [docs/reviews/CLAUDE.md](./docs/reviews/CLAUDE.md) 中的 review 知识库。
 
 ## [Unreleased]
 

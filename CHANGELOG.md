@@ -2,7 +2,7 @@
 
 English | [简体中文](./CHANGELOG.zh-CN.md)
 
-This file records the supported user-facing state of Vimeflow. For the detailed implementation timeline, use [docs/roadmap/progress.yaml](./docs/roadmap/progress.yaml), [docs/superpowers/](./docs/superpowers/), and the review knowledge base in [docs/reviews/](./docs/reviews/CLAUDE.md).
+This file records the supported user-facing state of Vimeflow. For the detailed implementation timeline, use [docs/roadmap/progress.yaml](./docs/roadmap/progress.yaml), [docs/superpowers/](./docs/superpowers/), and the review knowledge base in [docs/reviews/CLAUDE.md](./docs/reviews/CLAUDE.md).
 
 ## [Unreleased]
 
