@@ -44,7 +44,10 @@ export const Dropdown = <T extends string | number>({
     middleware: [offset(4), flip(), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
   })
-  const dismiss = useDismiss(context)
+  // Close when any ancestor scrolls — the diff pane is `overflow: auto`,
+  // so scrolling there would leave the portal-rendered popover floating
+  // away from its trigger (PR1 QA finding).
+  const dismiss = useDismiss(context, { ancestorScroll: true })
   const role = useRole(context, { role: 'menu' })
 
   const { getReferenceProps, getFloatingProps } = useInteractions([
@@ -63,13 +66,16 @@ export const Dropdown = <T extends string | number>({
         ref={refs.setReference}
         type="button"
         onClick={(): void => setOpen((previous) => !previous)}
-        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-container-high/60 hover:bg-surface-container-highest/80 text-on-surface text-xs font-medium transition-colors"
+        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-container-high/60 hover:bg-surface-container-highest/80 text-on-surface text-xs font-medium transition-colors min-w-[6rem] justify-between"
+        title={current?.label ?? String(value)}
         {...getReferenceProps()}
       >
-        {current?.label ?? String(value)}
+        <span className="truncate max-w-[7rem]">
+          {current?.label ?? String(value)}
+        </span>
         <span
           aria-hidden="true"
-          className="material-symbols-outlined text-sm leading-none"
+          className="material-symbols-outlined text-sm leading-none shrink-0"
         >
           expand_more
         </span>

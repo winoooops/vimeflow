@@ -252,6 +252,10 @@ export const ViewSettingsDropdown = ({
 
       return true
     },
+    // Close on ancestor scroll so the portal-mounted popover doesn't
+    // float away from its trigger when the diff body scrolls (PR1 QA
+    // observed: scrolling left the menu stuck in mid-air).
+    ancestorScroll: true,
   })
   const outerRole = useRole(outerContext, { role: 'menu' })
 
@@ -276,7 +280,10 @@ export const ViewSettingsDropdown = ({
     middleware: [offset(4), flip(), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
   })
-  const indicatorsDismiss = useDismiss(indicatorsContext)
+
+  const indicatorsDismiss = useDismiss(indicatorsContext, {
+    ancestorScroll: true,
+  })
   const indicatorsRole = useRole(indicatorsContext, { role: 'menu' })
 
   const {
@@ -300,7 +307,10 @@ export const ViewSettingsDropdown = ({
     middleware: [offset(4), flip(), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
   })
-  const overflowDismiss = useDismiss(overflowContext)
+
+  const overflowDismiss = useDismiss(overflowContext, {
+    ancestorScroll: true,
+  })
   const overflowRole = useRole(overflowContext, { role: 'menu' })
 
   const {

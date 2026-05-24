@@ -287,6 +287,18 @@ export const DiffPanelContent = ({
   const effectiveDiffStyle: DiffStyle = splitForced ? 'unified' : diffStyle
   const tooNarrow = paneWidth > 0 && paneWidth < DIFF_MIN_WIDTH_PX
 
+  // Memoize the Pierre input pair on response identity. Without this,
+  // `toPierreInputs(response)` would mint fresh { oldFile, newFile } object
+  // references on every parent render, invalidating Pierre's internal
+  // `useMemo([oldFile, newFile])` and forcing a re-tokenize on each render —
+  // also a suspected contributor to the "theme switches once, then sticks"
+  // bug observed during PR1 QA. Declared BEFORE the early returns below so
+  // the hook order is stable across renders (rules-of-hooks).
+  const pierreInputs = useMemo(
+    () => (response ? toPierreInputs(response) : null),
+    [response]
+  )
+
   // Loading state
   if (effectiveStatusLoading) {
     return (
@@ -331,8 +343,6 @@ export const DiffPanelContent = ({
       </div>
     )
   }
-
-  const pierreInputs = response ? toPierreInputs(response) : null
 
   // Populated state (horizontal split: file list + toolbar + Pierre diff)
   return (
@@ -394,6 +404,16 @@ export const DiffPanelContent = ({
             <DiffNarrowPlaceholder min={DIFF_MIN_WIDTH_PX} />
           ) : (
             <MultiFileDiff
+              // `key={theme}` forces a clean remount on theme change.
+              // Pierre's WorkerPoolManager-driven theme path normally
+              // rerenders via subscribeToThemeChanges, but PR1 QA observed
+              // the second theme switch sticking. Forcing a remount is a
+              // belt-and-braces remedy: a brand-new FileDiff instance
+              // requests fresh tokenization from the pool, which has the
+              // updated theme by then (our useEffect above flushed it).
+              // Cost: one extra tokenize per theme change. Acceptable for
+              // v1; revisit if perf is an issue with very large diffs.
+              key={theme}
               oldFile={pierreInputs.oldFile}
               newFile={pierreInputs.newFile}
               options={{
